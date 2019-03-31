@@ -40,13 +40,18 @@
     
   - `$ ./client.py SendTransaction --source FILENAME` will parse a transaction
     from `FILENAME` and send it. The transaction should be written in a JSON
-    format as used in acorn tests. See `test/transactions` repository for
+    format as used in acorn tests. See `acorn/test/transactions` repository for
     examples of how to write transactions.
     
   - `$ ./client.py LoadModule --source FILENAME` will try to parse and process
     an acorn module and store it in a local cache. It does not talk to the
     baker. A module can be deployed by writing a "DeployModule" transaction
     after the module has been loaded into the local cache.
+    
+    See `acorn/test/transactions/commcounter.json` for an example.
+    
+- See the examples in `acorn/test/contracts` for some example contracts which
+  one can deploy.
     
     
   
