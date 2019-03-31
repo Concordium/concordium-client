@@ -40,9 +40,9 @@ packages:
 # extra-deps: []
 
 extra-deps: 
-- ../Oak-Core
-- ../crypto
-- ../globalstate-mockup
+- ./acorn
+- ./crypto
+- ./globalstate-mockup
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

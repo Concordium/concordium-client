@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-RUST_SRC=../crypto/rust-src
+RUST_SRC=./crypto/rust-src
 
 if [ -d $RUST_SRC ]; then
     cargo build --release --manifest-path $RUST_SRC/Cargo.toml

@@ -1,0 +1,12 @@
+[submodule "prototype"]
+	path = prototype
+	url = git@gitlab.com:Concordium/consensus/prototype.git
+[submodule "crypto"]
+	path = crypto
+	url = git@gitlab.com:Concordium/crypto.git
+[submodule "globalstate-mockup"]
+	path = globalstate-mockup
+	url = git@gitlab.com:Concordium/consensus/globalstate-mockup.git
+[submodule "acorn"]
+	path = acorn
+	url = git@gitlab.com:Concordium/oak/acorn.git

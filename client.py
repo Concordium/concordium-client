@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import grpc
 
 import concordium_pb2
@@ -7,7 +9,7 @@ import subprocess
 
 import argparse
 
-import codecs
+import base58 # pip3 install base58
 
 def callHaskell(args):
     return subprocess.Popen(['./stack', 'run', 'simple-client', '--'] + args,
@@ -66,7 +68,7 @@ def setup():
            print(errs.decode())
 
     elif args.command == 'GetAccountState':
-       res = runAccountState(codecs.decode(args.account, 'hex'))
+       res = runAccountState(base58.b58decode(args.account))
 
        subp = callHaskell(['--get-final-account-state'])
        out, errs = subp.communicate(input=res, timeout=5)
