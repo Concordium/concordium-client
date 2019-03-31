@@ -52,6 +52,11 @@
     
 - See the examples in `acorn/test/contracts` for some example contracts which
   one can deploy.
-    
+
+- See `example.json` for an example transaction.
+
+- The global state of the baker starts with one account with 2^62 GTU tokens,
+  and address "1mcCFDQBgpb8936qeGXaukCqttwu".
+
     
   
