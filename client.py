@@ -9,6 +9,8 @@ import subprocess
 
 import argparse
 
+import json
+
 import base58 # pip3 install base58
 
 def callHaskell(args):
@@ -18,6 +20,10 @@ def callHaskell(args):
                             stdin=subprocess.PIPE)
 
 BAKER = 'localhost:11100'
+# "node-0-rpc.eu.test.concordium.com:80"
+
+def print_json(s):
+    return json.dumps(json.loads(s), indent=2, sort_keys=True)
 
 def setup():
     parser = argparse.ArgumentParser(description='Talk to nodes.')
@@ -45,6 +51,10 @@ def setup():
                         dest='source')
     parser.add_argument('--baker',
                         metavar='BAKER',
+                        type=str,
+                        dest='baker')
+    parser.add_argument('--blockHash',
+                        metavar='BLOCKHASH',
                         type=str,
                         dest='baker')
     
@@ -102,7 +112,7 @@ def setup():
            print(errs.decode())
 
     elif args.command == 'LoadModule':
-       supb = callHaskell(['--load-module', args.source])
+       subp = callHaskell(['--load-module', args.source])
        out, errs = subp.communicate(timeout=5)
        if not errs:
            print("Success.")
@@ -113,7 +123,7 @@ def setup():
                  
 
     elif args.command == 'ListModules':
-       supb = callHaskell(['--list-modules'])
+       subp = callHaskell(['--list-modules'])
        out, errs = subp.communicate(timeout=5)
        if not errs:
            print("Success.")
@@ -136,6 +146,19 @@ def setup():
               print("Baker: Error decoding transaction.")
        else: 
           print(errs.decode())
+
+    elif args.command == 'GetBlockInfo':
+      res = runGetBlockInfo(args.blockHash)
+      print(print_json(res))
+
+    elif args.command == "GetBranches":
+        res = runGetBranches()
+        print(print_json(res))
+
+    elif args.command == "GetConsensusStatus":
+        res = runGetConsensusStatus()
+        print(print_json(res))
+
     else:
        print("Unknown command.")
 
@@ -181,10 +204,30 @@ def runGetConsensusStatus():
                                            metadata=[('authentication', 'rpcadmin')])
     return response.json_value
     
+def runGetBranches():
+    with grpc.insecure_channel(BAKER) as channel:
+        stub = concordium_pb2_grpc.P2PStub(channel)
+        response = stub.GetBranches(request = concordium_pb2.Empty(),
+                                    metadata=[('authentication', 'rpcadmin')])
+    return response.json_value
+
+def runGetBlockInfo(blockHash):
+    with grpc.insecure_channel(BAKER) as channel:
+        stub = concordium_pb2_grpc.P2PStub(channel)
+        response = stub.GetBlockInfo(request = concordium_pb2.BlockHash(block_hash = blockHash),
+                                    metadata=[('authentication', 'rpcadmin')])
+    return response.json_value
+
+def traverse(d):
+    print(runGetBlockInfo(d["blockHash"]))
+    for e in d["children"]:
+        traverse(e)
 
 
 if __name__ == '__main__':
-   pass
+    setup()
+    # branches = json.loads(runGetBranches())
+    # traverse(branches)
 
-setup()
+# print(runGetConsensusStatus())
 
