@@ -1,0 +1,12 @@
+{
+    "payload": {
+        "transactionType": "Transfer",
+        "amount": 100,
+        "toaddress" : { "accountAddress" : "1mcCFDQBgpb8936qeGXaukCqttwu" }
+    },
+    "metadata": {
+        "nonce" : 1,
+        "sender": "1mcCFDQBgpb8936qeGXaukCqttwu",
+        "gasAmount": 123
+    }
+}

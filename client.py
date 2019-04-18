@@ -14,13 +14,12 @@ import json
 import base58 # pip3 install base58
 
 def callHaskell(args):
-    return subprocess.Popen(['./stack', 'run', 'simple-client', '--'] + args,
+    return subprocess.Popen(['./stack', 'exec', '--', 'simple-client'] + args,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE,
                             stdin=subprocess.PIPE)
 
-BAKER = 'localhost:11100'
-# "node-0-rpc.eu.test.concordium.com:80"
+BAKER = "node-0-rpc.eu.test.concordium.com:80"
 
 def print_json(s):
     return json.dumps(json.loads(s), indent=2, sort_keys=True)
@@ -56,7 +55,7 @@ def setup():
     parser.add_argument('--blockHash',
                         metavar='BLOCKHASH',
                         type=str,
-                        dest='baker')
+                        dest='blockHash')
     
     args = parser.parse_args()
 
@@ -151,6 +150,11 @@ def setup():
       res = runGetBlockInfo(args.blockHash)
       print(print_json(res))
 
+    elif args.command == 'GetBestBlockInfo':
+      res = runGetConsensusStatus()
+      bestBlockHash = json.loads(res)["bestBlock"]
+      print(print_json(runGetBlockInfo(bestBlockHash)))
+
     elif args.command == "GetBranches":
         res = runGetBranches()
         print(print_json(res))
@@ -166,28 +170,28 @@ def runAccountList():
     with grpc.insecure_channel(BAKER) as channel:
         stub = concordium_pb2_grpc.P2PStub(channel)
         response = stub.GetLastFinalAccountList(request = concordium_pb2.Empty(), metadata=[('authentication', 'rpcadmin')])
-    return response.payload
+        return response.payload
 
 
 def runInstanceList():
     with grpc.insecure_channel(BAKER) as channel:
         stub = concordium_pb2_grpc.P2PStub(channel)
         response = stub.GetLastFinalInstances(request = concordium_pb2.Empty(), metadata=[('authentication', 'rpcadmin')])
-    return response.payload
+        return response.payload
 
 
 def runAccountState(acc):
     with grpc.insecure_channel(BAKER) as channel:
         stub = concordium_pb2_grpc.P2PStub(channel)
         response = stub.GetLastFinalAccountInfo(request = concordium_pb2.AccountAddress(payload=acc), metadata=[('authentication', 'rpcadmin')])
-    return response.payload
+        return response.payload
 
 
 def runContractState(arg):
     with grpc.insecure_channel(BAKER) as channel:
         stub = concordium_pb2_grpc.P2PStub(channel)
         response = stub.GetLastFinalInstanceInfo(request = concordium_pb2.ContractInstanceAddress(payload=arg), metadata=[('authentication', 'rpcadmin')])
-    return response.payload
+        return response.payload
 
 
 def runSendTransaction(arg):
@@ -195,28 +199,28 @@ def runSendTransaction(arg):
         stub = concordium_pb2_grpc.P2PStub(channel)
         response = stub.SendTransaction(request = concordium_pb2.SendTransactionRequest(network_id=1000, payload=arg),
                                         metadata=[('authentication', 'rpcadmin')])
-    return response.value
+        return response.value
 
 def runGetConsensusStatus():
     with grpc.insecure_channel(BAKER) as channel:
         stub = concordium_pb2_grpc.P2PStub(channel)
         response = stub.GetConsensusStatus(request = concordium_pb2.Empty(),
                                            metadata=[('authentication', 'rpcadmin')])
-    return response.json_value
+        return response.json_value
     
 def runGetBranches():
     with grpc.insecure_channel(BAKER) as channel:
         stub = concordium_pb2_grpc.P2PStub(channel)
         response = stub.GetBranches(request = concordium_pb2.Empty(),
                                     metadata=[('authentication', 'rpcadmin')])
-    return response.json_value
+        return response.json_value
 
 def runGetBlockInfo(blockHash):
     with grpc.insecure_channel(BAKER) as channel:
         stub = concordium_pb2_grpc.P2PStub(channel)
         response = stub.GetBlockInfo(request = concordium_pb2.BlockHash(block_hash = blockHash),
                                     metadata=[('authentication', 'rpcadmin')])
-    return response.json_value
+        return response.json_value
 
 def traverse(d):
     print(runGetBlockInfo(d["blockHash"]))
