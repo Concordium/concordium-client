@@ -163,6 +163,9 @@ def setup():
         res = runGetConsensusStatus()
         print(print_json(res))
 
+    elif args.command == "GetTreeInfo":
+        traverse(json.loads(runGetBranches()))
+
     else:
        print("Unknown command.")
 
@@ -223,15 +226,11 @@ def runGetBlockInfo(blockHash):
         return response.json_value
 
 def traverse(d):
-    print(runGetBlockInfo(d["blockHash"]))
+    print(print_json(runGetBlockInfo(d["blockHash"])))
     for e in d["children"]:
         traverse(e)
 
 
 if __name__ == '__main__':
     setup()
-    # branches = json.loads(runGetBranches())
-    # traverse(branches)
-
-# print(runGetConsensusStatus())
 
