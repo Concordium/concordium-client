@@ -139,6 +139,16 @@ class P2PStub(object):
         request_serializer=concordium__pb2.ContractInstanceAddress.SerializeToString,
         response_deserializer=concordium__pb2.SuccessfulBytePayloadResponse.FromString,
         )
+    self.GetBannedPeers = channel.unary_unary(
+        '/P2P/GetBannedPeers',
+        request_serializer=concordium__pb2.Empty.SerializeToString,
+        response_deserializer=concordium__pb2.PeerListResponse.FromString,
+        )
+    self.Shutdown = channel.unary_unary(
+        '/P2P/Shutdown',
+        request_serializer=concordium__pb2.Empty.SerializeToString,
+        response_deserializer=concordium__pb2.SuccessResponse.FromString,
+        )
 
 
 class P2PServicer(object):
@@ -320,6 +330,20 @@ class P2PServicer(object):
     context.set_details('Method not implemented!')
     raise NotImplementedError('Method not implemented!')
 
+  def GetBannedPeers(self, request, context):
+    # missing associated documentation comment in .proto file
+    pass
+    context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+    context.set_details('Method not implemented!')
+    raise NotImplementedError('Method not implemented!')
+
+  def Shutdown(self, request, context):
+    # missing associated documentation comment in .proto file
+    pass
+    context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+    context.set_details('Method not implemented!')
+    raise NotImplementedError('Method not implemented!')
+
 
 def add_P2PServicer_to_server(servicer, server):
   rpc_method_handlers = {
@@ -447,6 +471,16 @@ def add_P2PServicer_to_server(servicer, server):
           servicer.GetLastFinalInstanceInfo,
           request_deserializer=concordium__pb2.ContractInstanceAddress.FromString,
           response_serializer=concordium__pb2.SuccessfulBytePayloadResponse.SerializeToString,
+      ),
+      'GetBannedPeers': grpc.unary_unary_rpc_method_handler(
+          servicer.GetBannedPeers,
+          request_deserializer=concordium__pb2.Empty.FromString,
+          response_serializer=concordium__pb2.PeerListResponse.SerializeToString,
+      ),
+      'Shutdown': grpc.unary_unary_rpc_method_handler(
+          servicer.Shutdown,
+          request_deserializer=concordium__pb2.Empty.FromString,
+          response_serializer=concordium__pb2.SuccessResponse.SerializeToString,
       ),
   }
   generic_handler = grpc.method_handlers_generic_handler(

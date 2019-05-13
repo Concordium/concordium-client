@@ -32,9 +32,17 @@ executables:
 
     dependencies:
     - acorn
+    - globalstate
+    - globalstate-types
+    - scheduler
+    - concordium-crypto
     - optparse-applicative
     - directory
     - cereal
     - text
     - bytestring
+    - base16-bytestring
     - unordered-containers
+    - aeson
+    - base58string
+    - random

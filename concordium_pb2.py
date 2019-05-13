@@ -20,7 +20,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   package='',
   syntax='proto3',
   serialized_options=None,
-  serialized_pb=_b('\n\x10\x63oncordium.proto\x1a\x1egoogle/protobuf/wrappers.proto\"\x1f\n\x0eNumberResponse\x12\r\n\x05value\x18\x01 \x01(\x04\" \n\x0fSuccessResponse\x12\r\n\x05value\x18\x01 \x01(\x08\"\x1f\n\x0eStringResponse\x12\r\n\x05value\x18\x01 \x01(\t\"i\n\x12PeerConnectRequest\x12(\n\x02ip\x18\x01 \x01(\x0b\x32\x1c.google.protobuf.StringValue\x12)\n\x04port\x18\x02 \x01(\x0b\x32\x1b.google.protobuf.Int32Value\"\x91\x01\n\x0bPeerElement\x12-\n\x07node_id\x18\x01 \x01(\x0b\x32\x1c.google.protobuf.StringValue\x12)\n\x04port\x18\x02 \x01(\x0b\x32\x1b.google.protobuf.Int32Value\x12(\n\x02ip\x18\x03 \x01(\x0b\x32\x1c.google.protobuf.StringValue\"A\n\x10PeerListResponse\x12\x11\n\tnode_type\x18\x01 \x01(\t\x12\x1a\n\x04peer\x18\x02 \x03(\x0b\x32\x0c.PeerElement\"\xac\x01\n\x11PeerStatsResponse\x12/\n\tpeerstats\x18\x01 \x03(\x0b\x32\x1c.PeerStatsResponse.PeerStats\x1a\x66\n\tPeerStats\x12\x0f\n\x07node_id\x18\x01 \x01(\t\x12\x14\n\x0cpackets_sent\x18\x02 \x01(\x04\x12\x18\n\x10packets_received\x18\x03 \x01(\x04\x12\x18\n\x10measured_latency\x18\x04 \x01(\x04\"\xd1\x01\n\x12SendMessageRequest\x12-\n\x07node_id\x18\x01 \x01(\x0b\x32\x1c.google.protobuf.StringValue\x12/\n\nnetwork_id\x18\x02 \x01(\x0b\x32\x1b.google.protobuf.Int32Value\x12,\n\x07message\x18\x03 \x01(\x0b\x32\x1b.google.protobuf.BytesValue\x12-\n\tbroadcast\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.BoolValue\"\x1d\n\rMessageDirect\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\" \n\x10MessageBroadcast\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\"\r\n\x0bMessageNone\"\xfc\x01\n\x11P2PNetworkMessage\x12\x13\n\x0breceived_at\x18\x01 \x01(\x04\x12\x0f\n\x07sent_at\x18\x02 \x01(\x04\x12\x0e\n\x06sender\x18\x03 \x01(\t\x12\x12\n\nnetwork_id\x18\x04 \x01(\r\x12\x12\n\nmessage_id\x18\x05 \x01(\t\x12(\n\x0emessage_direct\x18\x14 \x01(\x0b\x32\x0e.MessageDirectH\x00\x12.\n\x11message_broadcast\x18\x15 \x01(\x0b\x32\x11.MessageBroadcastH\x00\x12$\n\x0cmessage_none\x18\x16 \x01(\x0b\x32\x0c.MessageNoneH\x00\x42\t\n\x07payload\"H\n\x19PoCSendTransactionMessage\x12\x12\n\nnetwork_id\x18\x01 \x01(\r\x12\x17\n\x0fmessage_content\x18\x02 \x01(\t\"G\n\x14NetworkChangeRequest\x12/\n\nnetwork_id\x18\x01 \x01(\x0b\x32\x1b.google.protobuf.Int32Value\"o\n\x10NodeInfoResponse\x12-\n\x07node_id\x18\x01 \x01(\x0b\x32\x1c.google.protobuf.StringValue\x12\x19\n\x11\x63urrent_localtime\x18\x02 \x01(\x04\x12\x11\n\tnode_type\x18\x03 \x01(\t\"3\n\x1dSuccessfulJsonPayloadResponse\x12\x12\n\njson_value\x18\x01 \x01(\t\"\x1f\n\tBlockHash\x12\x12\n\nblock_hash\x18\x01 \x01(\t\"8\n\x12\x42lockHashAndAmount\x12\x12\n\nblock_hash\x18\x01 \x01(\t\x12\x0e\n\x06\x61mount\x18\x02 \x01(\x04\"=\n\x16SendTransactionRequest\x12\x12\n\nnetwork_id\x18\x01 \x01(\r\x12\x0f\n\x07payload\x18\x02 \x01(\x0c\"0\n\x1dSuccessfulBytePayloadResponse\x12\x0f\n\x07payload\x18\x01 \x01(\x0c\"!\n\x0e\x41\x63\x63ountAddress\x12\x0f\n\x07payload\x18\x01 \x01(\x0c\"*\n\x17\x43ontractInstanceAddress\x12\x0f\n\x07payload\x18\x01 \x01(\x0c\"\x07\n\x05\x45mpty2\xf1\n\n\x03P2P\x12\x36\n\x0bPeerConnect\x12\x13.PeerConnectRequest\x1a\x10.SuccessResponse\"\x00\x12\'\n\nPeerUptime\x12\x06.Empty\x1a\x0f.NumberResponse\"\x00\x12*\n\rPeerTotalSent\x12\x06.Empty\x1a\x0f.NumberResponse\"\x00\x12.\n\x11PeerTotalReceived\x12\x06.Empty\x1a\x0f.NumberResponse\"\x00\x12(\n\x0bPeerVersion\x12\x06.Empty\x1a\x0f.StringResponse\"\x00\x12\x36\n\x0bSendMessage\x12\x13.SendMessageRequest\x1a\x10.SuccessResponse\"\x00\x12)\n\tPeerStats\x12\x06.Empty\x1a\x12.PeerStatsResponse\"\x00\x12\'\n\x08PeerList\x12\x06.Empty\x1a\x11.PeerListResponse\"\x00\x12/\n\x11SubscriptionStart\x12\x06.Empty\x1a\x10.SuccessResponse\"\x00\x12.\n\x10SubscriptionStop\x12\x06.Empty\x1a\x10.SuccessResponse\"\x00\x12\x30\n\x10SubscriptionPoll\x12\x06.Empty\x1a\x12.P2PNetworkMessage\"\x00\x12+\n\x07\x42\x61nNode\x12\x0c.PeerElement\x1a\x10.SuccessResponse\"\x00\x12-\n\tUnbanNode\x12\x0c.PeerElement\x1a\x10.SuccessResponse\"\x00\x12\x38\n\x0bJoinNetwork\x12\x15.NetworkChangeRequest\x1a\x10.SuccessResponse\"\x00\x12\x39\n\x0cLeaveNetwork\x12\x15.NetworkChangeRequest\x1a\x10.SuccessResponse\"\x00\x12\'\n\x08NodeInfo\x12\x06.Empty\x1a\x11.NodeInfoResponse\"\x00\x12>\n\x12GetConsensusStatus\x12\x06.Empty\x1a\x1e.SuccessfulJsonPayloadResponse\"\x00\x12<\n\x0cGetBlockInfo\x12\n.BlockHash\x1a\x1e.SuccessfulJsonPayloadResponse\"\x00\x12\x45\n\x0cGetAncestors\x12\x13.BlockHashAndAmount\x1a\x1e.SuccessfulJsonPayloadResponse\"\x00\x12\x37\n\x0bGetBranches\x12\x06.Empty\x1a\x1e.SuccessfulJsonPayloadResponse\"\x00\x12>\n\x0fSendTransaction\x12\x17.SendTransactionRequest\x1a\x10.SuccessResponse\"\x00\x12\x43\n\x17GetLastFinalAccountList\x12\x06.Empty\x1a\x1e.SuccessfulBytePayloadResponse\"\x00\x12\x41\n\x15GetLastFinalInstances\x12\x06.Empty\x1a\x1e.SuccessfulBytePayloadResponse\"\x00\x12L\n\x17GetLastFinalAccountInfo\x12\x0f.AccountAddress\x1a\x1e.SuccessfulBytePayloadResponse\"\x00\x12V\n\x18GetLastFinalInstanceInfo\x12\x18.ContractInstanceAddress\x1a\x1e.SuccessfulBytePayloadResponse\"\x00\x62\x06proto3')
+  serialized_pb=_b('\n\x10\x63oncordium.proto\x1a\x1egoogle/protobuf/wrappers.proto\"\x1f\n\x0eNumberResponse\x12\r\n\x05value\x18\x01 \x01(\x04\" \n\x0fSuccessResponse\x12\r\n\x05value\x18\x01 \x01(\x08\"\x1f\n\x0eStringResponse\x12\r\n\x05value\x18\x01 \x01(\t\"i\n\x12PeerConnectRequest\x12(\n\x02ip\x18\x01 \x01(\x0b\x32\x1c.google.protobuf.StringValue\x12)\n\x04port\x18\x02 \x01(\x0b\x32\x1b.google.protobuf.Int32Value\"\x92\x01\n\x0bPeerElement\x12-\n\x07node_id\x18\x01 \x01(\x0b\x32\x1c.google.protobuf.StringValue\x12*\n\x04port\x18\x02 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12(\n\x02ip\x18\x03 \x01(\x0b\x32\x1c.google.protobuf.StringValue\"A\n\x10PeerListResponse\x12\x11\n\tpeer_type\x18\x01 \x01(\t\x12\x1a\n\x04peer\x18\x02 \x03(\x0b\x32\x0c.PeerElement\"\xac\x01\n\x11PeerStatsResponse\x12/\n\tpeerstats\x18\x01 \x03(\x0b\x32\x1c.PeerStatsResponse.PeerStats\x1a\x66\n\tPeerStats\x12\x0f\n\x07node_id\x18\x01 \x01(\t\x12\x14\n\x0cpackets_sent\x18\x02 \x01(\x04\x12\x18\n\x10packets_received\x18\x03 \x01(\x04\x12\x18\n\x10measured_latency\x18\x04 \x01(\x04\"\xd1\x01\n\x12SendMessageRequest\x12-\n\x07node_id\x18\x01 \x01(\x0b\x32\x1c.google.protobuf.StringValue\x12/\n\nnetwork_id\x18\x02 \x01(\x0b\x32\x1b.google.protobuf.Int32Value\x12,\n\x07message\x18\x03 \x01(\x0b\x32\x1b.google.protobuf.BytesValue\x12-\n\tbroadcast\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.BoolValue\"\x1d\n\rMessageDirect\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\" \n\x10MessageBroadcast\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\"\r\n\x0bMessageNone\"\xfc\x01\n\x11P2PNetworkMessage\x12\x13\n\x0breceived_at\x18\x01 \x01(\x04\x12\x0f\n\x07sent_at\x18\x02 \x01(\x04\x12\x0e\n\x06sender\x18\x03 \x01(\t\x12\x12\n\nnetwork_id\x18\x04 \x01(\r\x12\x12\n\nmessage_id\x18\x05 \x01(\t\x12(\n\x0emessage_direct\x18\x14 \x01(\x0b\x32\x0e.MessageDirectH\x00\x12.\n\x11message_broadcast\x18\x15 \x01(\x0b\x32\x11.MessageBroadcastH\x00\x12$\n\x0cmessage_none\x18\x16 \x01(\x0b\x32\x0c.MessageNoneH\x00\x42\t\n\x07payload\"H\n\x19PoCSendTransactionMessage\x12\x12\n\nnetwork_id\x18\x01 \x01(\r\x12\x17\n\x0fmessage_content\x18\x02 \x01(\t\"G\n\x14NetworkChangeRequest\x12/\n\nnetwork_id\x18\x01 \x01(\x0b\x32\x1b.google.protobuf.Int32Value\"o\n\x10NodeInfoResponse\x12-\n\x07node_id\x18\x01 \x01(\x0b\x32\x1c.google.protobuf.StringValue\x12\x19\n\x11\x63urrent_localtime\x18\x02 \x01(\x04\x12\x11\n\tpeer_type\x18\x03 \x01(\t\"3\n\x1dSuccessfulJsonPayloadResponse\x12\x12\n\njson_value\x18\x01 \x01(\t\"\x1f\n\tBlockHash\x12\x12\n\nblock_hash\x18\x01 \x01(\t\"8\n\x12\x42lockHashAndAmount\x12\x12\n\nblock_hash\x18\x01 \x01(\t\x12\x0e\n\x06\x61mount\x18\x02 \x01(\x04\"=\n\x16SendTransactionRequest\x12\x12\n\nnetwork_id\x18\x01 \x01(\r\x12\x0f\n\x07payload\x18\x02 \x01(\x0c\"0\n\x1dSuccessfulBytePayloadResponse\x12\x0f\n\x07payload\x18\x01 \x01(\x0c\"!\n\x0e\x41\x63\x63ountAddress\x12\x0f\n\x07payload\x18\x01 \x01(\x0c\"*\n\x17\x43ontractInstanceAddress\x12\x0f\n\x07payload\x18\x01 \x01(\x0c\"\x07\n\x05\x45mpty2\xc8\x0b\n\x03P2P\x12\x36\n\x0bPeerConnect\x12\x13.PeerConnectRequest\x1a\x10.SuccessResponse\"\x00\x12\'\n\nPeerUptime\x12\x06.Empty\x1a\x0f.NumberResponse\"\x00\x12*\n\rPeerTotalSent\x12\x06.Empty\x1a\x0f.NumberResponse\"\x00\x12.\n\x11PeerTotalReceived\x12\x06.Empty\x1a\x0f.NumberResponse\"\x00\x12(\n\x0bPeerVersion\x12\x06.Empty\x1a\x0f.StringResponse\"\x00\x12\x36\n\x0bSendMessage\x12\x13.SendMessageRequest\x1a\x10.SuccessResponse\"\x00\x12)\n\tPeerStats\x12\x06.Empty\x1a\x12.PeerStatsResponse\"\x00\x12\'\n\x08PeerList\x12\x06.Empty\x1a\x11.PeerListResponse\"\x00\x12/\n\x11SubscriptionStart\x12\x06.Empty\x1a\x10.SuccessResponse\"\x00\x12.\n\x10SubscriptionStop\x12\x06.Empty\x1a\x10.SuccessResponse\"\x00\x12\x30\n\x10SubscriptionPoll\x12\x06.Empty\x1a\x12.P2PNetworkMessage\"\x00\x12+\n\x07\x42\x61nNode\x12\x0c.PeerElement\x1a\x10.SuccessResponse\"\x00\x12-\n\tUnbanNode\x12\x0c.PeerElement\x1a\x10.SuccessResponse\"\x00\x12\x38\n\x0bJoinNetwork\x12\x15.NetworkChangeRequest\x1a\x10.SuccessResponse\"\x00\x12\x39\n\x0cLeaveNetwork\x12\x15.NetworkChangeRequest\x1a\x10.SuccessResponse\"\x00\x12\'\n\x08NodeInfo\x12\x06.Empty\x1a\x11.NodeInfoResponse\"\x00\x12>\n\x12GetConsensusStatus\x12\x06.Empty\x1a\x1e.SuccessfulJsonPayloadResponse\"\x00\x12<\n\x0cGetBlockInfo\x12\n.BlockHash\x1a\x1e.SuccessfulJsonPayloadResponse\"\x00\x12\x45\n\x0cGetAncestors\x12\x13.BlockHashAndAmount\x1a\x1e.SuccessfulJsonPayloadResponse\"\x00\x12\x37\n\x0bGetBranches\x12\x06.Empty\x1a\x1e.SuccessfulJsonPayloadResponse\"\x00\x12>\n\x0fSendTransaction\x12\x17.SendTransactionRequest\x1a\x10.SuccessResponse\"\x00\x12\x43\n\x17GetLastFinalAccountList\x12\x06.Empty\x1a\x1e.SuccessfulBytePayloadResponse\"\x00\x12\x41\n\x15GetLastFinalInstances\x12\x06.Empty\x1a\x1e.SuccessfulBytePayloadResponse\"\x00\x12L\n\x17GetLastFinalAccountInfo\x12\x0f.AccountAddress\x1a\x1e.SuccessfulBytePayloadResponse\"\x00\x12V\n\x18GetLastFinalInstanceInfo\x12\x18.ContractInstanceAddress\x1a\x1e.SuccessfulBytePayloadResponse\"\x00\x12-\n\x0eGetBannedPeers\x12\x06.Empty\x1a\x11.PeerListResponse\"\x00\x12&\n\x08Shutdown\x12\x06.Empty\x1a\x10.SuccessResponse\"\x00\x62\x06proto3')
   ,
   dependencies=[google_dot_protobuf_dot_wrappers__pb2.DESCRIPTOR,])
 
@@ -199,7 +199,7 @@ _PEERELEMENT = _descriptor.Descriptor(
   oneofs=[
   ],
   serialized_start=260,
-  serialized_end=405,
+  serialized_end=406,
 )
 
 
@@ -211,7 +211,7 @@ _PEERLISTRESPONSE = _descriptor.Descriptor(
   containing_type=None,
   fields=[
     _descriptor.FieldDescriptor(
-      name='node_type', full_name='PeerListResponse.node_type', index=0,
+      name='peer_type', full_name='PeerListResponse.peer_type', index=0,
       number=1, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=_b("").decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
@@ -236,8 +236,8 @@ _PEERLISTRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=407,
-  serialized_end=472,
+  serialized_start=408,
+  serialized_end=473,
 )
 
 
@@ -288,8 +288,8 @@ _PEERSTATSRESPONSE_PEERSTATS = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=545,
-  serialized_end=647,
+  serialized_start=546,
+  serialized_end=648,
 )
 
 _PEERSTATSRESPONSE = _descriptor.Descriptor(
@@ -318,8 +318,8 @@ _PEERSTATSRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=475,
-  serialized_end=647,
+  serialized_start=476,
+  serialized_end=648,
 )
 
 
@@ -370,8 +370,8 @@ _SENDMESSAGEREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=650,
-  serialized_end=859,
+  serialized_start=651,
+  serialized_end=860,
 )
 
 
@@ -401,8 +401,8 @@ _MESSAGEDIRECT = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=861,
-  serialized_end=890,
+  serialized_start=862,
+  serialized_end=891,
 )
 
 
@@ -432,8 +432,8 @@ _MESSAGEBROADCAST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=892,
-  serialized_end=924,
+  serialized_start=893,
+  serialized_end=925,
 )
 
 
@@ -456,8 +456,8 @@ _MESSAGENONE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=926,
-  serialized_end=939,
+  serialized_start=927,
+  serialized_end=940,
 )
 
 
@@ -539,8 +539,8 @@ _P2PNETWORKMESSAGE = _descriptor.Descriptor(
       name='payload', full_name='P2PNetworkMessage.payload',
       index=0, containing_type=None, fields=[]),
   ],
-  serialized_start=942,
-  serialized_end=1194,
+  serialized_start=943,
+  serialized_end=1195,
 )
 
 
@@ -577,8 +577,8 @@ _POCSENDTRANSACTIONMESSAGE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1196,
-  serialized_end=1268,
+  serialized_start=1197,
+  serialized_end=1269,
 )
 
 
@@ -608,8 +608,8 @@ _NETWORKCHANGEREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1270,
-  serialized_end=1341,
+  serialized_start=1271,
+  serialized_end=1342,
 )
 
 
@@ -635,7 +635,7 @@ _NODEINFORESPONSE = _descriptor.Descriptor(
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR),
     _descriptor.FieldDescriptor(
-      name='node_type', full_name='NodeInfoResponse.node_type', index=2,
+      name='peer_type', full_name='NodeInfoResponse.peer_type', index=2,
       number=3, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=_b("").decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
@@ -653,8 +653,8 @@ _NODEINFORESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1343,
-  serialized_end=1454,
+  serialized_start=1344,
+  serialized_end=1455,
 )
 
 
@@ -684,8 +684,8 @@ _SUCCESSFULJSONPAYLOADRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1456,
-  serialized_end=1507,
+  serialized_start=1457,
+  serialized_end=1508,
 )
 
 
@@ -715,8 +715,8 @@ _BLOCKHASH = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1509,
-  serialized_end=1540,
+  serialized_start=1510,
+  serialized_end=1541,
 )
 
 
@@ -753,8 +753,8 @@ _BLOCKHASHANDAMOUNT = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1542,
-  serialized_end=1598,
+  serialized_start=1543,
+  serialized_end=1599,
 )
 
 
@@ -791,8 +791,8 @@ _SENDTRANSACTIONREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1600,
-  serialized_end=1661,
+  serialized_start=1601,
+  serialized_end=1662,
 )
 
 
@@ -822,8 +822,8 @@ _SUCCESSFULBYTEPAYLOADRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1663,
-  serialized_end=1711,
+  serialized_start=1664,
+  serialized_end=1712,
 )
 
 
@@ -853,8 +853,8 @@ _ACCOUNTADDRESS = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1713,
-  serialized_end=1746,
+  serialized_start=1714,
+  serialized_end=1747,
 )
 
 
@@ -884,8 +884,8 @@ _CONTRACTINSTANCEADDRESS = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1748,
-  serialized_end=1790,
+  serialized_start=1749,
+  serialized_end=1791,
 )
 
 
@@ -908,14 +908,14 @@ _EMPTY = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1792,
-  serialized_end=1799,
+  serialized_start=1793,
+  serialized_end=1800,
 )
 
 _PEERCONNECTREQUEST.fields_by_name['ip'].message_type = google_dot_protobuf_dot_wrappers__pb2._STRINGVALUE
 _PEERCONNECTREQUEST.fields_by_name['port'].message_type = google_dot_protobuf_dot_wrappers__pb2._INT32VALUE
 _PEERELEMENT.fields_by_name['node_id'].message_type = google_dot_protobuf_dot_wrappers__pb2._STRINGVALUE
-_PEERELEMENT.fields_by_name['port'].message_type = google_dot_protobuf_dot_wrappers__pb2._INT32VALUE
+_PEERELEMENT.fields_by_name['port'].message_type = google_dot_protobuf_dot_wrappers__pb2._UINT32VALUE
 _PEERELEMENT.fields_by_name['ip'].message_type = google_dot_protobuf_dot_wrappers__pb2._STRINGVALUE
 _PEERLISTRESPONSE.fields_by_name['peer'].message_type = _PEERELEMENT
 _PEERSTATSRESPONSE_PEERSTATS.containing_type = _PEERSTATSRESPONSE
@@ -1140,8 +1140,8 @@ _P2P = _descriptor.ServiceDescriptor(
   file=DESCRIPTOR,
   index=0,
   serialized_options=None,
-  serialized_start=1802,
-  serialized_end=3195,
+  serialized_start=1803,
+  serialized_end=3283,
   methods=[
   _descriptor.MethodDescriptor(
     name='PeerConnect',
@@ -1366,6 +1366,24 @@ _P2P = _descriptor.ServiceDescriptor(
     containing_service=None,
     input_type=_CONTRACTINSTANCEADDRESS,
     output_type=_SUCCESSFULBYTEPAYLOADRESPONSE,
+    serialized_options=None,
+  ),
+  _descriptor.MethodDescriptor(
+    name='GetBannedPeers',
+    full_name='P2P.GetBannedPeers',
+    index=25,
+    containing_service=None,
+    input_type=_EMPTY,
+    output_type=_PEERLISTRESPONSE,
+    serialized_options=None,
+  ),
+  _descriptor.MethodDescriptor(
+    name='Shutdown',
+    full_name='P2P.Shutdown',
+    index=26,
+    containing_service=None,
+    input_type=_EMPTY,
+    output_type=_SUCCESSRESPONSE,
     serialized_options=None,
   ),
 ])

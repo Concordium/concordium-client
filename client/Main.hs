@@ -1,17 +1,33 @@
+{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Main where
 
 import qualified Data.Text.IO as TextIO
 
+import qualified Data.Text.Encoding as Text
+
 import Control.Monad.IO.Class
 
+import qualified Data.ByteString.Base16 as BS16
+
 import qualified Acorn.Utils.Init as Init
-import qualified Acorn.ParserRunner as PR
+import qualified Acorn.Parser.Runner as PR
+import qualified Concordium.Scheduler.Runner as SR
+import qualified Concordium.GlobalState.Transactions as Types
 import qualified Acorn.Parser as Parser
 import Acorn.Interpreter.Primitives(primFuncs)
+import Concordium.GlobalState.Information
+
+import Concordium.Crypto.SignatureScheme
+import qualified Concordium.Crypto.SHA256 as Hash
+import qualified Concordium.ID.AccountHolder as AH
+
+import qualified Data.FixedByteString as FBS
 
 import Acorn.Types
 
@@ -24,6 +40,26 @@ import qualified Data.Serialize as S
 
 import Options.Applicative
 import Data.Semigroup ((<>))
+import Control.Monad.Fail
+import Prelude hiding(fail)
+
+
+import qualified Data.Aeson as AE
+import qualified Data.Aeson.TH as AETH
+import Data.ByteString.Lazy(ByteString)
+
+import Data.Aeson(FromJSON, Value(..), (.:), (.:?), parseJSON, parseJSONList)
+import Data.Aeson.Types(typeMismatch)
+import Concordium.Crypto.Ed25519Signature(randomKeyPair)
+
+import System.Random
+
+kp :: KeyPair
+kp = fst (randomKeyPair (mkStdGen 0))
+
+showKP :: KeyPair -> (BS.ByteString, BS.ByteString)
+showKP (KeyPair (SignKey k) (VerifyKey kv)) =
+  ((BS16.encode k), (BS16.encode kv))
 
 data AppState = AppState { 
                            localContext :: PR.ContextData
@@ -36,6 +72,68 @@ data Options = LoadModule { sourceFile :: !FilePath }
              | GetFinalAccountList
              | GetFinalAccountState
              | GetFinalContractState
+
+
+processTransaction :: MonadFail m => ByteString -> PR.Context m Types.Transaction
+processTransaction txt = do
+  case AE.eitherDecode txt of
+    Left err -> fail $ "Error decoding JSON: " ++ err
+    Right t -> SR.transactionHelper t
+
+
+instance AE.FromJSON SR.TransactionJSON where
+  parseJSON (Object v) = do
+    thSenderKey <- v .: "verifyKey"
+    thNonce <- v .: "nonce"
+    thGasAmount <- v .: "gasAmount"
+    thFinalizedPointer <- v .: "finalizedPointer"
+    let tHeader = Types.makeTransactionHeader Ed25519 thSenderKey thNonce thGasAmount thFinalizedPointer
+    tPayload <- v .: "payload"
+    tSignKey <- SignKey . fst . BS16.decode . Text.encodeUtf8 <$> (v .: "signKey")
+    return $ SR.TJSON tHeader tPayload (KeyPair { signKey = tSignKey, verifyKey = thSenderKey })
+  
+  parseJSON invalid = typeMismatch "Transaction" invalid
+
+
+instance FromJSON Nonce where
+  parseJSON v = Nonce <$> parseJSON v
+
+instance FromJSON Amount where
+  parseJSON v = Amount <$> parseJSON v
+
+instance FromJSON VerifyKey where
+  parseJSON v = VerifyKey . fst . BS16.decode . Text.encodeUtf8 <$> parseJSON v
+
+instance FromJSON BlockHash where
+  parseJSON v = Hash.Hash . FBS.fromByteString . fst . BS16.decode . Text.encodeUtf8 <$> parseJSON v
+
+instance FromJSON ContractAddress where
+  parseJSON (Object v) = do
+    contractIndex <- ContractIndex <$> v .: "index"
+    contractSubindex <- ContractSubindex <$> v .: "subindex"
+    return ContractAddress{..}
+  
+  parseJSON invalid = typeMismatch "ContractAddress" invalid
+
+-- inherit text instances
+instance FromJSON AccountAddress where
+  parseJSON v = AH.base58decodeAddr <$> parseJSON v
+  parseJSONList v = map AH.base58decodeAddr <$> parseJSONList v
+
+instance FromJSON Address where
+  parseJSON (Object v) =  do
+    r <- v .:? "accountAddress"
+    case r of
+      Nothing -> AddressContract <$> (v .: "contractAddress")
+      Just a -> return (AddressAccount a)
+
+  parseJSON invalid = typeMismatch "Address" invalid
+
+
+$(AETH.deriveFromJSON (AETH.defaultOptions { AETH.sumEncoding = AETH.TaggedObject "transactionType" "contents"}) ''SR.PayloadJSON)
+
+
+
 
 argparser :: Parser Options
 argparser = LoadModule
@@ -130,8 +228,8 @@ process ListModules = do
 process (SendTransaction fname) = do
   mdata  <- loadContextData
   source <- BSL.readFile fname
-  t <- PR.evalContext mdata (PR.processTransaction source)
-  let ser = S.runPut (S.put (fst t) <> S.put (snd t))
+  t <- PR.evalContext mdata (processTransaction source)
+  let ser = S.encode t
   BS.putStr ser
 
 process GetFinalAccountList = do
@@ -164,5 +262,5 @@ process GetFinalContractState = do
     Right (Just InstanceInfo{..}) -> do
       putStrLn "Received instance information."
       putStr "Message type: " >> print messageType
-      putStr "Local state:\n  " >> print (showValue localState)
+      putStr "Local state:\n  " >> print localState
       putStr "Amount: " >> print instanceAmount
