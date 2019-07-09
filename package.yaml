@@ -17,6 +17,9 @@ custom-setup:
     - Cabal
     - proto-lens-setup == 0.4.*
 
+default-extensions:
+- OverloadedStrings
+
 # Metadata used when publishing your package
 # synopsis:            Short description of your package
 # category:            Web
@@ -115,3 +118,26 @@ executables:
        - globalstate-types
        - bytestring
        - aeson
+
+  simple-server-client:
+    main:             Main.hs
+    source-dirs:      server
+
+    ghc-options:
+      -threaded
+
+    dependencies:
+       - servant
+       - servant-server
+       - simple-client
+       - wai
+       - wai-cors
+       - wai-extra
+       - wai-middleware-static
+       - warp
+       - process
+       - managed
+       - text
+       - http-types
+       - filepath
+       - bytestring
