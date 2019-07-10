@@ -1,62 +1,44 @@
-- Install python3 grpc dependencies (see
-  https://grpc.io/docs/tutorials/basic/python.html)
+# Simple Client
 
-- Install base58 python library (pip3 install base58 should work)
+## Requisites
 
-- Make sure to `git submodule update --init`
+For generating the protobuf files we need to install [protoc](https://github.com/google/proto-lens/blob/master/docs/installing-protoc.md). The file `proto/concordium.proto` assumes that the `p2p-client` project is located in `../p2p-client` and if that's not the case it will fail. To solve that, just symlink the proper protobuf file or copy the contents from [this](https://gitlab.com/Concordium/p2p-client/blob/develop/src/proto/concordium_p2p_rpc.proto) file there.
 
-- If on linux do
-  - ./build-deps.sh
-  - ./stack build
+Executing `stack build` should now succeed.
 
-- If on other OSs do something equivalent to what those scripts do.
+Don't forget to run `git submodule update --init --recursive` before `stack build`.
 
-- After those steps you should have everything set up.
+## Usage
 
-- You should now start a baker, e.g., use the `docker-compose` method in
-  scripts/local of the p2p-client repository.
-  
-- You can now query the baker using `client.py`. `client.py` uses the
-  haskell-built binary built by `stack build`. In order to run it you might have
-  to modify the `callHaskell` method in `client.py` to reflect how the binary
-  should be called. The default is to just run `./stack run`.
-  
-  You should look into `client.py` to see what commands are supported by the
-  script, I only list a few here.
-  
-  - `$ ./client.py GetAccountList` will print the list of accounts on the last
-    final block. By default the baker is queried at `localhost:11100` but you
-    can modify that with `--baker ...` flag.
-    
-  - `$ ./client.py GetInstanceList` does the same as above but for instances.
-  
-  - `$ ./client.py GetInstanceState --index n --version m` will print the
-    current local state of the instance with index `n` and version `m`, if it
-    exists. `n` and `m` should be non-negative integers.
-    
-  - `$ ./client.py GetAccountState --account ADDR` will print the state of
-    account `ADDR`. `ADDR` should be a base58 (bitcoin flavor) encoding of the
-    address (as returned by `GetAccountList`).
-    
-  - `$ ./client.py SendTransaction --source FILENAME` will parse a transaction
-    from `FILENAME` and send it. The transaction should be written in a JSON
-    format as used in acorn tests. See `acorn/test/transactions` repository for
-    examples of how to write transactions.
-    
-  - `$ ./client.py LoadModule --source FILENAME` will try to parse and process
-    an acorn module and store it in a local cache. It does not talk to the
-    baker. A module can be deployed by writing a "DeployModule" transaction
-    after the module has been loaded into the local cache.
-    
-    See `acorn/test/transactions/commcounter.json` for an example.
-    
-- See the examples in `acorn/test/contracts` for some example contracts which
-  one can deploy.
+The binary has several modes of operation that can be specified by the first argument:
 
-- See `example.json` for an example transaction.
+- `LoadModule <source.acorn>` loads an Acorn source file into the local context. Examples of Acorn modules can be seen in `test/contracts/`.
+- `ListModules` shows the list with the modules stored in the local context
+- `SendTransaction <transaction.json> --grpc-ip <ip> --grpc-port <port>` takes a transaction in JSON format, signs it and sends it to the specified gRPC server. Examples of transactions can be seen in `test/transactions/`.
 
-- The global state of the baker starts with one account with 2^62 GTU tokens,
-  and address "1mcCFDQBgpb8936qeGXaukCqttwu".
+The supported transaction types are:
+* [x] `DeployModule`
+* [x] `InitContract`
+* [x] `Update`
+* [x] `Transfer`
+* [x] `DeployCredential`
+* [x] `DeployEncryptionKey`
+* [x] `AddBaker`
+* [x] `RemoveBaker`
+* [x] `UpdateBakerAccount`
+* [x] `UpdateBakerSignKey`
+* [x] `DelegateStake`
 
-    
-  
+Queries to the state are also available:
+* [x] `GetConsensusInfo`
+* [x] `GetBlockInfo`
+* [x] `GetAccountList`
+* [x] `GetInstances`
+* [x] `GetAccountInfo`
+* [x] `GetInstanceInfo`
+* [x] `GetRewardStatus`
+* [x] `GetBirkParameters`
+* [x] `GetModuleList`
+* [x] `GetModuleSource`
+
+For a reference on this queries, check the [Wiki](https://gitlab.com/Concordium/notes-wiki/wikis/Consensus-queries#state-queries)
