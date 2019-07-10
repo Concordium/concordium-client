@@ -34,25 +34,52 @@ import           Data.Word
 import           GHC.Generics                        (Generic)
 
 instance FromJSON Nonce where
-  parseJSON v = Nonce <$> parseJSON v
+  parseJSON v = do
+   nonce <- parseJSON v
+   case decode (BSL.fromStrict $ Text.encodeUtf8 nonce) of
+    Nothing -> fail "Error decoding Nonce"
+    Just n  -> return n
 
 instance FromJSON Energy where
-  parseJSON v = Energy <$> parseJSON v
+  parseJSON v = do
+   energy <- parseJSON v
+   case decode (BSL.fromStrict $ Text.encodeUtf8 energy) of
+    Nothing -> fail "Error decoding Energy"
+    Just e  -> return e
 
 instance FromJSON Amount where
-  parseJSON v = Amount <$> parseJSON v
+  parseJSON v = do
+   amount <- parseJSON v
+   case decode (BSL.fromStrict $ Text.encodeUtf8 amount) of
+    Nothing -> fail "Error decoding Amount"
+    Just a  -> return a
 
 instance FromJSON VerifyKey where
-  parseJSON v = VerifyKey . fst . BS16.decode . Text.encodeUtf8 <$> parseJSON v
+  parseJSON v = do
+   verifKey <- parseJSON v
+   case decode (BSL.fromStrict . fst . BS16.decode . Text.encodeUtf8 $ verifKey) of
+    Nothing -> fail "Error decoding VerifyKey"
+    Just v  -> return v
 
 instance FromJSON BlockHash where
-  parseJSON v =
-    Hash.Hash . FBS.fromByteString . fst . BS16.decode . Text.encodeUtf8 <$>
-    parseJSON v
+  parseJSON v = do
+   hash <- parseJSON v
+   case decode (BSL.fromStrict . fst . BS16.decode . Text.encodeUtf8 $ hash) of
+    Nothing -> fail "Error decoding Amount"
+    Just h  -> return h
 
 instance FromJSON AccountAddress where
-  parseJSON v = AH.base58decodeAddr <$> parseJSON v
-  parseJSONList v = map AH.base58decodeAddr <$> parseJSONList v
+  parseJSON v = do
+   acAddr <- parseJSON v
+   case decode (BSL.fromStrict . Text.encodeUtf8 $ acAddr) of
+    Nothing -> fail "Error decoding AccountAddress"
+    Just ac -> return ac
+  parseJSONList v = do
+   acAddr <- parseJSONList v
+   let parsed = mapM (decode . BSL.fromStrict . Text.encodeUtf8) acAddr
+   case parsed of
+    Nothing -> fail "Error decoding AccountAddresses"
+    Just ac -> return ac
 
 instance FromJSON Address where
   parseJSON (Object v) = do
@@ -63,24 +90,39 @@ instance FromJSON Address where
   parseJSON invalid = typeMismatch "Address" invalid
 
 instance FromJSON IDTypes.CredentialRegistrationID where
-  parseJSON v =
-    IDTypes.RegIdCred . fst . BS16.decode . Text.encodeUtf8 <$> parseJSON v
+  parseJSON v = do
+   crid <- parseJSON v
+   case decode (BSL.fromStrict . fst . BS16.decode . Text.encodeUtf8 $ crid) of
+    Nothing -> fail "Error decoding CredentialRegistrationID"
+    Just cr -> return cr
 
 instance FromJSON IDTypes.AnonimityRevokerIdentity where
-  parseJSON v =
-    IDTypes.AR_ID . fst . BS16.decode . Text.encodeUtf8 <$> parseJSON v
+  parseJSON v = do
+   arid <- parseJSON v
+   case decode (BSL.fromStrict . fst . BS16.decode . Text.encodeUtf8 $ arid) of
+    Nothing -> fail "Error decoding AnonimityRevokerIdentity"
+    Just ar -> return ar
 
 instance FromJSON IDTypes.SecretShare where
-  parseJSON v =
-    IDTypes.Share . fst . BS16.decode . Text.encodeUtf8 <$> parseJSON v
+  parseJSON v = do
+   ss <- parseJSON v
+   case decode (BSL.fromStrict . fst . BS16.decode . Text.encodeUtf8 $ ss) of
+    Nothing -> fail "Error decoding SecretShare"
+    Just s  -> return s
 
 instance FromJSON IDTypes.IdentityProviderIdentity where
-  parseJSON v =
-    IDTypes.IP_ID . fst . BS16.decode . Text.encodeUtf8 <$> parseJSON v
+  parseJSON v = do
+   ipi <- parseJSON v
+   case decode (BSL.fromStrict . fst . BS16.decode . Text.encodeUtf8 $ ipi) of
+    Nothing -> fail "Error decoding IdentityProviderIdentity"
+    Just ip -> return ip
 
 instance FromJSON IDTypes.ZKProof where
-  parseJSON v =
-    IDTypes.Proof . fst . BS16.decode . Text.encodeUtf8 <$> parseJSON v
+  parseJSON v = do
+   zk <- parseJSON v
+   case decode (BSL.fromStrict . fst . BS16.decode . Text.encodeUtf8 $ zk) of
+    Nothing -> fail "Error decoding ZKProof"
+    Just z  -> return z
 
 -- instance FromJSON IDA.Policy where
 --   parseJSON (Object v) = do
@@ -106,11 +148,14 @@ instance FromJSON IDTypes.CredentialDeploymentInformation where
     return $ IDTypes.CDI verifKey Ed25519 regId arData ipId policy auxData proof
 
 instance FromJSON IDTypes.AccountEncryptionKey where
-  parseJSON v =
-    IDTypes.EncKeyAcc . fst . BS16.decode . Text.encodeUtf8 <$> parseJSON v
+  parseJSON v = do
+   aek <- parseJSON v
+   case decode (BSL.fromStrict . fst . BS16.decode . Text.encodeUtf8 $ aek) of
+    Nothing -> fail "Error decoding AccountEncryptionKey"
+    Just ae -> return ae
 
 instance FromJSON BakerElectionVerifyKey where
-  parseJSON v =do
+  parseJSON v = do
    b16 <- parseJSON v
    case decode (BSL.fromStrict . fst . BS16.decode . Text.encodeUtf8 $ b16) of
     Nothing -> fail "Error decoding VRF PublicKey"
@@ -122,7 +167,11 @@ instance FromJSON Types.Proof where
   parseJSON v = fst . BS16.decode . Text.encodeUtf8 <$> parseJSON v
 
 instance FromJSON BakerId where
-  parseJSON v = BakerId . (fromIntegral :: Int -> Word64) <$> parseJSON v
+  parseJSON v = do
+   bid <- parseJSON v
+   case decode (BSL.fromStrict . Text.encodeUtf8 $ bid) of
+    Nothing -> fail "Error decoding VRF PublicKey"
+    Just bi -> return bi
 
 -- |Transaction header type
 -- To be populated when deserializing a JSON object.
