@@ -5,10 +5,17 @@ license:             BSD3
 author:              "Author name here"
 maintainer:          "example@example.com"
 copyright:           "2019 Author name here"
-
+build-type:          Custom
 extra-source-files:
 - README.md
 - ChangeLog.md
+- proto/concordium.proto
+
+custom-setup:
+  dependencies:
+    - base
+    - Cabal
+    - proto-lens-setup
 
 # Metadata used when publishing your package
 # synopsis:            Short description of your package
@@ -22,27 +29,47 @@ description:         Please see the README on GitHub at <https://github.com/gith
 dependencies:
 - base >= 4.7 && < 5
 
+library:
+  source-dirs:
+      src
+  dependencies:
+    - acorn
+    - aeson
+    - base >=4.7 && <5
+    - base16-bytestring
+    - base58string
+    - bytestring
+    - cereal
+    - concordium-crypto
+    - directory
+    - globalstate
+    - globalstate-types
+    - optparse-applicative
+    - random
+    - scheduler
+    - mtl
+    - text
+    - lens-simple
+    - http2-client-grpc >= 0.7
+    - http2-client >= 0.8
+    - unordered-containers
+    - proto-lens
+    - proto-lens-protobuf-types
+    - proto-lens-runtime
+  generated-exposed-modules:
+    Proto.Concordium
+    Proto.Concordium_Fields
+
 executables:
   simple-client:
     main:             Main.hs
-    source-dirs:      client
+    source-dirs:      app
 
     ghc-options:
       -threaded
 
     dependencies:
-    - acorn
-    - globalstate
-    - globalstate-types
-    - scheduler
-    - concordium-crypto
-    - optparse-applicative
-    - directory
-    - cereal
-    - text
-    - bytestring
-    - base16-bytestring
-    - unordered-containers
-    - aeson
-    - base58string
-    - random
+       - optparse-applicative
+       - mtl
+       - base
+       - simple-client

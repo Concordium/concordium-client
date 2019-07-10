@@ -17,7 +17,7 @@
 #
 # resolver: ./custom-snapshot.yaml
 # resolver: https://example.com/snapshots/2018-01-01.yaml
-resolver: lts-13.15
+resolver: lts-13.26
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -39,11 +39,15 @@ packages:
 # (e.g., acme-missiles-0.3)
 # extra-deps: []
 
-extra-deps: 
-- ./acorn
-- ./crypto
-- ./globalstate-mockup/globalstate-types
-- ./globalstate-mockup/globalstate
+extra-deps:
+- http2-client-0.8.0.0
+- http2-client-grpc-0.5.0.4
+- http2-grpc-types-0.3.0.0
+- proto-lens-0.4.0.1
+- ./prototype/acorn
+- ./prototype/crypto
+- ./prototype/globalstate-mockup/globalstate-types
+- ./prototype/globalstate-mockup/globalstate
 - ./prototype/scheduler
 
 # Override default flag values for local packages and extra-deps
@@ -69,3 +73,4 @@ extra-deps:
 #
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
+allow-newer: true

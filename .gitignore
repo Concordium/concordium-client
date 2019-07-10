@@ -1,3 +1,6 @@
 .stack-work/
 simple-client.cabal
 *~
+.cache
+TAGS
+\#*\#
