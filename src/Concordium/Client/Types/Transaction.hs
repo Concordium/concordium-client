@@ -28,58 +28,43 @@ import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.FixedByteString                as FBS
 import           Data.Maybe
 import           Data.Serialize                      as S
-import           Data.Text                           hiding (map)
+import           Data.Text                           hiding (length, map)
 import qualified Data.Text.Encoding                  as Text
 import           Data.Word
 import           GHC.Generics                        (Generic)
 
+-- Number
 instance FromJSON Nonce where
-  parseJSON v = do
-   nonce <- parseJSON v
-   case S.decode (Text.encodeUtf8 nonce) of
-    Left e  -> fail e
-    Right n -> return n
+  parseJSON v = Nonce <$> parseJSON v
 
+-- Number
 instance FromJSON Energy where
-  parseJSON v = do
-   energy <- parseJSON v
-   case S.decode (Text.encodeUtf8 energy) of
-    Left e  -> fail e
-    Right n -> return n
+  parseJSON v = Energy <$> parseJSON v
 
+-- Number
 instance FromJSON Amount where
-  parseJSON v = do
-   amount <- parseJSON v
-   case S.decode (Text.encodeUtf8 amount) of
-    Left e  -> fail e
-    Right n -> return n
+  parseJSON v = Amount <$> parseJSON v
 
+-- Length + data (serializes with `put :: Bytestring -> Put`)
 instance FromJSON VerifyKey where
   parseJSON v = do
    verifKey <- parseJSON v
-   case S.decode (fst . BS16.decode . Text.encodeUtf8 $ verifKey) of
-    Left e  -> fail e
-    Right n -> return n
+   let plainBs = fst . BS16.decode . Text.encodeUtf8 $ verifKey
+   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word) of
+     Left e  -> fail e
+     Right n -> return n
 
+-- Data (serializes with `putByteString :: Bytestring -> Put`)
 instance FromJSON BlockHash where
   parseJSON v = do
    hash <- parseJSON v
-   case S.decode (fst . BS16.decode . Text.encodeUtf8 $ hash) of
+   case S.decode . fst . BS16.decode . Text.encodeUtf8 $ hash of
     Left e  -> fail e
     Right n -> return n
 
 instance FromJSON AccountAddress where
-  parseJSON v = do
-   acAddr <- parseJSON v
-   case S.decode (Text.encodeUtf8 acAddr) of
-    Left e  -> fail e
-    Right n -> return n
-  parseJSONList v = do
-   acAddr <- parseJSONList v
-   let parsed = mapM (S.decode . Text.encodeUtf8) acAddr
-   case parsed of
-    Left e  -> fail e
-    Right n -> return n
+  parseJSON v = AH.base58decodeAddr <$> parseJSON v
+  parseJSONList v = map AH.base58decodeAddr <$> parseJSONList v
 
 instance FromJSON Address where
   parseJSON (Object v) = do
@@ -89,38 +74,51 @@ instance FromJSON Address where
       Just a  -> return (AddressAccount a)
   parseJSON invalid = typeMismatch "Address" invalid
 
+-- Data (serializes with `putByteString :: Bytestring -> Put`)
+-- TODO: This function takes a B16 encoded bytestring of length 48 bytes
+-- so we need 96 chars to represent it. A plain bytestring is not writable
+-- by hand (non-printable chars) but maybe it doesn't make sense to even have
+-- a bytestring but rather a number. Discuss with Ales in the future.
 instance FromJSON IDTypes.CredentialRegistrationID where
   parseJSON v = do
    crid <- parseJSON v
-   case S.decode (fst . BS16.decode . Text.encodeUtf8 $ crid) of
+   case S.decode . fst . BS16.decode . Text.encodeUtf8 $ crid of
     Left e  -> fail e
     Right n -> return n
 
+-- Length + data (serializes with `put :: Bytestring -> Put`)
 instance FromJSON IDTypes.AnonimityRevokerIdentity where
-  parseJSON v = do
+  parseJSON v =do
    arid <- parseJSON v
-   case S.decode (fst . BS16.decode . Text.encodeUtf8 $ arid) of
+   let plainBs = fst . BS16.decode . Text.encodeUtf8 $ arid
+   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word) of
     Left e  -> fail e
     Right n -> return n
 
+-- Length + data (serializes with `put :: Bytestring -> Put`)
 instance FromJSON IDTypes.SecretShare where
   parseJSON v = do
    ss <- parseJSON v
-   case S.decode (fst . BS16.decode . Text.encodeUtf8 $ ss) of
+   let plainBs = fst . BS16.decode . Text.encodeUtf8 $ ss
+   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word) of
     Left e  -> fail e
     Right n -> return n
 
+-- Length + data (serializes with `put :: Bytestring -> Put`)
 instance FromJSON IDTypes.IdentityProviderIdentity where
   parseJSON v = do
-   ipi <- parseJSON v
-   case S.decode (fst . BS16.decode . Text.encodeUtf8 $ ipi) of
+   ipid <- parseJSON v
+   let plainBs = fst . BS16.decode . Text.encodeUtf8 $ ipid
+   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word) of
     Left e  -> fail e
     Right n -> return n
 
+-- Length + data (serializes with Generic i.e. `put :: Bytestring -> Put`)
 instance FromJSON IDTypes.ZKProof where
   parseJSON v = do
    zk <- parseJSON v
-   case S.decode (fst . BS16.decode . Text.encodeUtf8 $ zk) of
+   let plainBs = fst . BS16.decode . Text.encodeUtf8 $ zk
+   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word) of
     Left e  -> fail e
     Right n -> return n
 
@@ -136,6 +134,7 @@ instance FromJSON IDTypes.ZKProof where
 --        IDA.AtomicCitizenship <$> citizenship -- <|>
 --        IDA.Conj <$> conj <|>
 --         IDA.Disj <$> disj
+
 instance FromJSON IDTypes.CredentialDeploymentInformation where
   parseJSON (Object v) = do
     verifKey <- v .: "verificationKey"
@@ -147,32 +146,30 @@ instance FromJSON IDTypes.CredentialDeploymentInformation where
     proof <- v .: "proof"
     return $ IDTypes.CDI verifKey Ed25519 regId arData ipId policy auxData proof
 
+-- Length + data (serializes with `put :: Bytestring -> Put`)
 instance FromJSON IDTypes.AccountEncryptionKey where
   parseJSON v = do
    aek <- parseJSON v
-   case S.decode (fst . BS16.decode . Text.encodeUtf8 $ aek) of
+   let plainBs = fst . BS16.decode . Text.encodeUtf8 $ aek
+   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word) of
     Left e  -> fail e
     Right n -> return n
 
+-- Data (serializes with `putByteString :: Bytestring -> Put`)
 instance FromJSON BakerElectionVerifyKey where
   parseJSON v = do
    b16 <- parseJSON v
-   case S.decode (fst . BS16.decode . Text.encodeUtf8 $ b16) of
+   case S.decode . fst . BS16.decode . Text.encodeUtf8 $ b16 of
     Left e  -> fail e
     Right n -> return n
 
--- instance FromJSON BakerSignVerifyKey where
---   parseJSON v = undefined
+-- Data (serializes with `putByteString :: Bytestring -> Put`)
 instance FromJSON Types.Proof where
   parseJSON v = fst . BS16.decode . Text.encodeUtf8 <$> parseJSON v
 
+-- Number
 instance FromJSON BakerId where
-  parseJSON v = do
-   bid <- parseJSON v
-   case S.decode (Text.encodeUtf8 bid) of
-    Left e  -> fail e
-    Right n -> return n
-
+  parseJSON v = BakerId <$> parseJSON v
 
 -- |Transaction header type
 -- To be populated when deserializing a JSON object.
