@@ -15,6 +15,7 @@ module Concordium.Client.Runner
   , runInClient
   , EnvData(..)
   , GrpcConfig
+  , processTransaction_
   ) where
 
 import qualified Acorn.Core                          as Core
@@ -230,6 +231,22 @@ readModule filePath = do
   case S.decodeLazy source of
     Left err  -> liftIO (die err)
     Right mod -> return mod
+
+
+processTransaction_ transaction networkId = do
+  transaction <- do
+    nonce <-
+      case thNonce . metadata $ transaction of
+        Nothing    -> undefined --askBaker
+        Just nonce -> return nonce
+    let properT =
+          makeTransactionHeaderWithNonce (metadata transaction) nonce
+    encodeAndSignTransaction
+      (payload transaction)
+      properT
+      (KeyPair (CT.signKey transaction) (Types.thSenderKey properT))
+  sendTransactionToBaker transaction networkId
+
 
 encodeAndSignTransaction ::
      (MonadFail m, MonadIO m)

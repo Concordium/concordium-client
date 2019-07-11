@@ -141,3 +141,4 @@ executables:
        - http-types
        - filepath
        - bytestring
+       - acorn

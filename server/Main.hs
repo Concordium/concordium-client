@@ -9,16 +9,18 @@ import System.IO (hSetBuffering, hSetEncoding, BufferMode(..), stdout, utf8)
 
 import Server
 import qualified Api
-
+import Concordium.Client.Commands as COM
 
 main :: IO ()
 main = manage $ do
   program $ do
     putStrLn $ "[server] Booting..."
 
+    let backend = COM.GRPC { host = "127.0.0.1", port = 11103 }
+
     -- Boot the http server
     let middlewares = allowCsrf . corsified
-    runHttp Api.servantApp middlewares
+    runHttp (Api.servantApp backend)  middlewares
 
 
 -- | Wrapper for runManaged that than runs forever.
