@@ -99,7 +99,7 @@ useBackend act b =
       mdata <- loadContextData
       source <- BSL.readFile fname
       t <- PR.evalContext mdata $ runInClient b $ processTransaction source nid
-      putStrLn $ "Transaction sent to the baker. It's hash is " ++ show (Types.trHash t)
+      putStrLn $ "Transaction sent to the baker. Its hash is " ++ show (Types.trHash t)
     GetConsensusInfo -> runInClient b getConsensusStatus
     GetBlockInfo block -> runInClient b $ getBlockInfo block
     GetAccountList block -> runInClient b $ getAccountList block
