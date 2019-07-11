@@ -7,7 +7,7 @@
         "transactionType": "DeployCredential",
         "credential": {
             "verificationKey": "3e4f11b8a43f5b4c63f9d85ae9de365057c9bce8c57caf84e34f1040e5f59ecd",
-            "registrationId": "000000000000000000000000000000000000000000000001",
+            "registrationId": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
             "revocationData" : [],
             "identityProvider": "ip_id",
             "auxData": "auxdata",
