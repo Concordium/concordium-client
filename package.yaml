@@ -127,18 +127,20 @@ executables:
       -threaded
 
     dependencies:
+       - bytestring
+       - filepath
+       - http-types
+       - managed
+       - process
        - servant
        - servant-server
        - simple-client
+       - text
        - wai
        - wai-cors
        - wai-extra
        - wai-middleware-static
        - warp
-       - process
-       - managed
-       - text
-       - http-types
-       - filepath
-       - bytestring
+       # Concordium
        - acorn
+       - scheduler
