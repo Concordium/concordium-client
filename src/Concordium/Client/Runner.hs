@@ -6,6 +6,7 @@ module Concordium.Client.Runner
   ( process
   ) where
 
+import qualified Acorn.Core                          as Core
 import qualified Acorn.Parser.Runner                 as PR
 import           Concordium.Client.Commands          as COM
 import           Concordium.Client.GRPC
@@ -60,7 +61,7 @@ newtype ClientMonad m a =
            , MonadIO
            )
 
-client :: PR.Context m a -> ClientMonad (PR.Context m) a
+client :: PR.Context Core.UA m a -> ClientMonad (PR.Context Core.UA m) a
 client comp = ClientMonad {_runClientMonad = ReaderT (const comp)}
 
 runInClient :: Monad m => Backend -> ClientMonad m a -> m a
@@ -117,7 +118,7 @@ processTransaction ::
      (MonadFail m, MonadIO m)
   => BSL.ByteString
   -> Int
-  -> ClientMonad (PR.Context m) Types.Transaction
+  -> ClientMonad (PR.Context Core.UA m) Types.Transaction
 processTransaction source networkId =
   case AE.eitherDecode source of
     Left err -> fail $ "Error decoding JSON: " ++ err
@@ -143,7 +144,7 @@ encodeAndSignTransaction ::
   => CT.TransactionJSONPayload
   -> Types.TransactionHeader
   -> KeyPair
-  -> ClientMonad (PR.Context m) Types.Transaction
+  -> ClientMonad (PR.Context Core.UA m) Types.Transaction
 encodeAndSignTransaction pl th keys =
   Types.signTransaction keys th . Types.encodePayload <$>
   case pl of
