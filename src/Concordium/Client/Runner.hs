@@ -68,7 +68,7 @@ runInClient bkend action =
   (runReaderT . _runClientMonad)
     action
   -- separate in cases for different backends (maybe abstract in a typeclass)
-    (EnvData . mkGrpcClient $ GrpcConfig (COM.host bkend) (COM.port bkend))
+    (EnvData . mkGrpcClient $ GrpcConfig (COM.host bkend) (COM.port bkend) (COM.target bkend))
 
 -- |Execute the command given in the CLArguments
 process :: Command -> IO ()

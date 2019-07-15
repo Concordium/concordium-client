@@ -23,6 +23,7 @@ data Backend =
   GRPC
     { host :: HostName
     , port :: PortNumber
+    , target :: Maybe String
     }
 
 -- |Available commands
@@ -97,7 +98,7 @@ programOptions =
   grpcBackend
 
 grpcBackend :: Parser (Maybe Backend)
-grpcBackend = optional $ GRPC <$> hostParser <*> portParser
+grpcBackend = optional $ GRPC <$> hostParser <*> portParser <*> targetParser
 
 loadModuleCommand :: Mod CommandFields Action
 loadModuleCommand =
@@ -146,6 +147,12 @@ portParser =
     auto
     (long "grpc-port" <> metavar "GRPC-PORT" <>
      help "Port where the gRPC server is listening.")
+
+targetParser :: Parser (Maybe String)
+targetParser =
+  optional $ strOption
+    (long "grpc-target" <> metavar "GRPC-TARGET" <>
+     help "Target node name when using a proxy.")
 
 getConsensusInfoCommand :: Mod CommandFields Action
 getConsensusInfoCommand =
