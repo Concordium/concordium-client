@@ -6,12 +6,18 @@
     "payload": {
         "transactionType": "DeployCredential",
         "credential": {
-            "verificationKey": "3e4f11b8a43f5b4c63f9d85ae9de365057c9bce8c57caf84e34f1040e5f59ecd",
-            "registrationId": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
-            "revocationData" : [],
-            "identityProvider": "ip_id",
-            "auxData": "auxdata",
-            "proof": "proof"
+            "values": {
+                "scheme": 0,
+                "verifyKey": "3e4f11b8a43f5b4c63f9d85ae9de365057c9bce8c57caf84e34f1040e5f59ecd",
+                "registrationId": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+                "identityProvider": "id_prov",
+                "policy": {
+                    "variant": 10,
+                    "expiry": 1910350632,
+                    "items": []
+                }
+            },
+            "proofs": "3e4f11b8a43f5b4c63f9d85ae9de365057c9bce8c57caf84e34f1040e5f59ecd3e4f11b8a43f5b4c63f9d85ae9de365057c9bce8c57caf84e34f1040e5f59ecd"
         }
     },
     "signKey": "b52f4ce89e78e45934851e395c6258f7240ce6902526c78a8960927c8959a363"

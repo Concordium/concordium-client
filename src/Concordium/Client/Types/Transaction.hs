@@ -14,7 +14,6 @@ import           Concordium.Crypto.SignatureScheme   (SchemeId (..),
 import qualified Concordium.Crypto.VRF               as VRF
 import           Concordium.GlobalState.Transactions
 import qualified Concordium.ID.Account               as AH
-import qualified Concordium.ID.Attributes            as IDA
 import qualified Concordium.ID.Types                 as IDTypes
 import qualified Concordium.Scheduler.Types          as Types
 import           Concordium.Types
@@ -50,7 +49,7 @@ instance FromJSON VerifyKey where
   parseJSON v = do
    verifKey <- parseJSON v
    let plainBs = fst . BS16.decode . Text.encodeUtf8 $ verifKey
-   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word) of
+   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
      Left e  -> fail e
      Right n -> return n
 
@@ -75,10 +74,6 @@ instance FromJSON Address where
   parseJSON invalid = typeMismatch "Address" invalid
 
 -- Data (serializes with `putByteString :: Bytestring -> Put`)
--- TODO: This function takes a B16 encoded bytestring of length 48 bytes
--- so we need 96 chars to represent it. A plain bytestring is not writable
--- by hand (non-printable chars) but maybe it doesn't make sense to even have
--- a bytestring but rather a number. Discuss with Ales in the future.
 instance FromJSON IDTypes.CredentialRegistrationID where
   parseJSON v = do
    crid <- parseJSON v
@@ -91,16 +86,7 @@ instance FromJSON IDTypes.AnonimityRevokerIdentity where
   parseJSON v =do
    arid <- parseJSON v
    let plainBs = fst . BS16.decode . Text.encodeUtf8 $ arid
-   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word) of
-    Left e  -> fail e
-    Right n -> return n
-
--- Length + data (serializes with `put :: Bytestring -> Put`)
-instance FromJSON IDTypes.SecretShare where
-  parseJSON v = do
-   ss <- parseJSON v
-   let plainBs = fst . BS16.decode . Text.encodeUtf8 $ ss
-   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word) of
+   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
     Left e  -> fail e
     Right n -> return n
 
@@ -109,49 +95,58 @@ instance FromJSON IDTypes.IdentityProviderIdentity where
   parseJSON v = do
    ipid <- parseJSON v
    let plainBs = fst . BS16.decode . Text.encodeUtf8 $ ipid
-   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word) of
+   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
     Left e  -> fail e
     Right n -> return n
 
--- Length + data (serializes with Generic i.e. `put :: Bytestring -> Put`)
-instance FromJSON IDTypes.ZKProof where
+-- Enum
+instance FromJSON SchemeId where
   parseJSON v = do
-   zk <- parseJSON v
-   let plainBs = fst . BS16.decode . Text.encodeUtf8 $ zk
-   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word) of
-    Left e  -> fail e
-    Right n -> return n
+    toEnum <$> parseJSON v
 
--- instance FromJSON IDA.Policy where
---   parseJSON (Object v) = do
---     atomicBD <- v .:? "birthDate"
---     maxAccount <- v .:? "maxAccount"
---     citizenship <- v .:? "citizenships"
---     conj <- v .:? "conj"
---     disj <- v .:? "disj"
---     return . fromJust $ IDA.AtomicBD <$> atomicBD <|>
---       IDA.AtomicMaxAccount <$> maxAccount <|>
---        IDA.AtomicCitizenship <$> citizenship -- <|>
---        IDA.Conj <$> conj <|>
---         IDA.Disj <$> disj
+instance FromJSON IDTypes.PolicyItem where
+  parseJSON (Object v) = do
+    -- Num
+    idx <- v .: "index"
+    -- Data (serializes with `fsbPut`)
+    val <- v .: "value"
+    case S.decode val of
+       Left e  -> fail e
+       Right n -> return $ IDTypes.PolicyItem idx n
+
+instance FromJSON IDTypes.Policy where
+  parseJSON (Object v) = do
+    -- Num
+    variant <- v .: "variant"
+    -- Num
+    expiry <- v .: "expiry"
+    items <- v .: "items"
+    return $ IDTypes.Policy variant expiry items
+
+instance FromJSON IDTypes.CredentialDeploymentValues where
+  parseJSON (Object v) = do
+    scheme <- v .: "scheme"
+    verif <- v .: "verifyKey"
+    reg <- v .: "registrationId"
+    idpi <- v .: "identityProvider"
+    pol <- v .: "policy"
+    return $ IDTypes.CredentialDeploymentValues scheme verif reg idpi pol
 
 instance FromJSON IDTypes.CredentialDeploymentInformation where
   parseJSON (Object v) = do
-    verifKey <- v .: "verificationKey"
-    regId <- v .: "registrationId"
-    arData <- v .: "revocationData"
-    ipId <- v .: "identityProvider"
-    let policy = IDA.AtomicMaxAccount (IDA.LessThan 100) -- <- v .: "policy" --hard coded until it gets more structured
-    auxData <- fst . BS16.decode . Text.encodeUtf8 <$> v .: "auxData"
-    proof <- v .: "proof"
-    return $ IDTypes.CDI verifKey Ed25519 regId arData ipId policy auxData proof
+    cdi <- v .: "values"
+    proofs <- v .: "proofs"
+    let plainBs = fst . BS16.decode . Text.encodeUtf8 $ proofs
+    case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word32) of
+      Left e  -> fail e
+      Right n -> return $ IDTypes.CredentialDeploymentInformation cdi n
 
 -- Length + data (serializes with `put :: Bytestring -> Put`)
 instance FromJSON IDTypes.AccountEncryptionKey where
   parseJSON v = do
    aek <- parseJSON v
    let plainBs = fst . BS16.decode . Text.encodeUtf8 $ aek
-   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word) of
+   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
     Left e  -> fail e
     Right n -> return n
 
@@ -252,7 +247,7 @@ data TransactionJSON =
     , payload  :: TransactionJSONPayload
     , signKey  :: SignKey
     }
-  deriving (Generic)
+  deriving (Generic, Show)
 
 instance AE.FromJSON TransactionJSON where
   parseJSON (Object v) = do

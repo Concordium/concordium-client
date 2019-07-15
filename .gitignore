@@ -4,3 +4,4 @@ simple-client.cabal
 .cache
 TAGS
 \#*\#
+extra-libs/
