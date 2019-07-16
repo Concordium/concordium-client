@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Concordium.Client.Runner
@@ -26,7 +25,6 @@ import           Control.Monad.IO.Class
 import           Control.Monad.Reader                hiding (fail)
 import           Control.Monad.State                 hiding (fail)
 import qualified Data.ByteString                     as BS
-import           Data.ByteString.Internal            (w2c)
 import qualified Data.ByteString.Lazy                as BSL
 import           Data.ByteString.Lazy.Char8          (null, unlines)
 import qualified Data.Serialize                      as S
@@ -38,8 +36,6 @@ import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client
 
 import           Data.Aeson                          as AE
-import           Data.Aeson.Encode.Pretty
-import           Data.Attoparsec.Lazy                (Result (..), parse)
 import qualified Data.HashMap.Strict                 as Map
 import           Data.Maybe
 import           Data.Text
@@ -178,37 +174,6 @@ encodeAndSignTransaction pl th keys =
     (CT.UpdateBakerSignKey ubsid ubsk ubsp) ->
       return $ Types.UpdateBakerSignKey ubsid ubsk ubsp
     (CT.DelegateStake dsid) -> return $ Types.DelegateStake dsid
-
-outputGRPC ret f =
-  case ret of
-    Left e -> fail "Unable to send consensus query: too much concurrency"
-    Right (Right val) -> do
-      let response = (\(_, _, g) -> g) val
-      case response of
-        Left e  -> fail $ "gRPC response error: " ++ e
-        Right v -> f v
-    Right (Left e) -> fail $ "Unable to send consensus query: " ++ show e
-
-printJSON ret =
-  case ret ^? unaryOutput . CF.jsonValue of
-    Nothing -> outputGRPC ret print
-    Just jsonval ->
-      putStrLn . Prelude.map w2c . BSL.unpack .
-      Data.ByteString.Lazy.Char8.unlines .
-      Prelude.map encodePretty .
-      values .
-      BSL.fromStrict .
-      encodeUtf8 $
-      jsonval
-
-values :: BSL.ByteString -> [Value]
-values s =
-  case parse json' s of
-    Done rest v -> v : values rest
-    Fail rest _ _
-      | Data.ByteString.Lazy.Char8.null rest -> []
-      | otherwise ->
-        error ("Error in gRPC output decoding as a json: " ++ show s)
 
 sendTransactionToBaker ::
      (Monad m, MonadIO m)
