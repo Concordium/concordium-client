@@ -47,19 +47,20 @@ instance FromJSON Amount where
 -- Length + data (serializes with `put :: Bytestring -> Put`)
 instance FromJSON VerifyKey where
   parseJSON v = do
-   verifKey <- parseJSON v
-   let plainBs = fst . BS16.decode . Text.encodeUtf8 $ verifKey
-   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
-     Left e  -> fail e
-     Right n -> return n
+    verifKey <- parseJSON v
+    let plainBs = fst . BS16.decode . Text.encodeUtf8 $ verifKey
+    case S.decode . flip BS.append plainBs $
+         S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
+      Left e  -> fail e
+      Right n -> return n
 
 -- Data (serializes with `putByteString :: Bytestring -> Put`)
 instance FromJSON BlockHash where
   parseJSON v = do
-   hash <- parseJSON v
-   case S.decode . fst . BS16.decode . Text.encodeUtf8 $ hash of
-    Left e  -> fail e
-    Right n -> return n
+    hash <- parseJSON v
+    case S.decode . fst . BS16.decode . Text.encodeUtf8 $ hash of
+      Left e  -> fail e
+      Right n -> return n
 
 instance FromJSON AccountAddress where
   parseJSON v = AH.base58decodeAddr <$> parseJSON v
@@ -76,47 +77,50 @@ instance FromJSON Address where
 -- Data (serializes with `putByteString :: Bytestring -> Put`)
 instance FromJSON IDTypes.CredentialRegistrationID where
   parseJSON v = do
-   crid <- parseJSON v
-   case S.decode . fst . BS16.decode . Text.encodeUtf8 $ crid of
-    Left e  -> fail e
-    Right n -> return n
+    crid <- parseJSON v
+    case S.decode . fst . BS16.decode . Text.encodeUtf8 $ crid of
+      Left e  -> fail e
+      Right n -> return n
 
 -- Length + data (serializes with `put :: Bytestring -> Put`)
 instance FromJSON IDTypes.AnonimityRevokerIdentity where
-  parseJSON v =do
-   arid <- parseJSON v
-   let plainBs = fst . BS16.decode . Text.encodeUtf8 $ arid
-   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
-    Left e  -> fail e
-    Right n -> return n
+  parseJSON v = do
+    arid <- parseJSON v
+    let plainBs = fst . BS16.decode . Text.encodeUtf8 $ arid
+    case S.decode . flip BS.append plainBs $
+         S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
+      Left e  -> fail e
+      Right n -> return n
 
 -- Length + data (serializes with `put :: Bytestring -> Put`)
 instance FromJSON IDTypes.IdentityProviderIdentity where
   parseJSON v = do
-   ipid <- parseJSON v
-   let plainBs = fst . BS16.decode . Text.encodeUtf8 $ ipid
-   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
-    Left e  -> fail e
-    Right n -> return n
+    ipid <- parseJSON v
+    let plainBs = fst . BS16.decode . Text.encodeUtf8 $ ipid
+    case S.decode . flip BS.append plainBs $
+         S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
+      Left e  -> fail e
+      Right n -> return n
 
 -- Enum
 instance FromJSON SchemeId where
-  parseJSON v = do
-    toEnum <$> parseJSON v
+  parseJSON v = toEnum <$> parseJSON v
 
 instance FromJSON IDTypes.PolicyItem where
-  parseJSON (Object v) = do
+  parseJSON (Object v)
     -- Num
+   = do
     idx <- v .: "index"
     -- Data (serializes with `fsbPut`)
     val <- v .: "value"
     case S.decode val of
-       Left e  -> fail e
-       Right n -> return $ IDTypes.PolicyItem idx n
+      Left e  -> fail e
+      Right n -> return $ IDTypes.PolicyItem idx n
 
 instance FromJSON IDTypes.Policy where
-  parseJSON (Object v) = do
+  parseJSON (Object v)
     -- Num
+   = do
     variant <- v .: "variant"
     -- Num
     expiry <- v .: "expiry"
@@ -137,26 +141,28 @@ instance FromJSON IDTypes.CredentialDeploymentInformation where
     cdi <- v .: "values"
     proofs <- v .: "proofs"
     let plainBs = fst . BS16.decode . Text.encodeUtf8 $ proofs
-    case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word32) of
+    case S.decode . flip BS.append plainBs $
+         S.encode (fromIntegral . BS.length $ plainBs :: Word32) of
       Left e  -> fail e
       Right n -> return $ IDTypes.CredentialDeploymentInformation cdi n
 
 -- Length + data (serializes with `put :: Bytestring -> Put`)
 instance FromJSON IDTypes.AccountEncryptionKey where
   parseJSON v = do
-   aek <- parseJSON v
-   let plainBs = fst . BS16.decode . Text.encodeUtf8 $ aek
-   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
-    Left e  -> fail e
-    Right n -> return n
+    aek <- parseJSON v
+    let plainBs = fst . BS16.decode . Text.encodeUtf8 $ aek
+    case S.decode . flip BS.append plainBs $
+         S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
+      Left e  -> fail e
+      Right n -> return n
 
 -- Data (serializes with `putByteString :: Bytestring -> Put`)
 instance FromJSON BakerElectionVerifyKey where
   parseJSON v = do
-   b16 <- parseJSON v
-   case S.decode . fst . BS16.decode . Text.encodeUtf8 $ b16 of
-    Left e  -> fail e
-    Right n -> return n
+    b16 <- parseJSON v
+    case S.decode . fst . BS16.decode . Text.encodeUtf8 $ b16 of
+      Left e  -> fail e
+      Right n -> return n
 
 -- Data (serializes with `putByteString :: Bytestring -> Put`)
 instance FromJSON Types.Proof where
@@ -169,17 +175,17 @@ instance FromJSON BakerId where
 -- |Transaction header type
 -- To be populated when deserializing a JSON object.
 data TransactionJSONHeader =
-  TransactionJSONHeader {
+  TransactionJSONHeader
   -- |Verification key of the sender.
-  thSenderKey          :: IDTypes.AccountVerificationKey
+    { thSenderKey        :: IDTypes.AccountVerificationKey
   -- |Nonce of the account. If not present it should be derived
   -- from the context or queried to the state
-  , thNonce            :: Maybe Nonce
+    , thNonce            :: Maybe Nonce
   -- |Amount dedicated for the execution of this transaction.
-  , thGasAmount        :: Energy
+    , thGasAmount        :: Energy
   -- |Pointer to a finalized block. If this is too out of date at
   -- the time of execution the transaction is dropped
-  , thFinalizedPointer :: BlockHash
+    , thFinalizedPointer :: BlockHash
     }
   deriving (Eq, Show)
 

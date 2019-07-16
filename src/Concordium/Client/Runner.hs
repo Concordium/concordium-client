@@ -26,7 +26,9 @@ import           Control.Monad.IO.Class
 import           Control.Monad.Reader                hiding (fail)
 import           Control.Monad.State                 hiding (fail)
 import qualified Data.ByteString                     as BS
+import           Data.ByteString.Internal            (w2c)
 import qualified Data.ByteString.Lazy                as BSL
+import           Data.ByteString.Lazy.Char8          (null, unlines)
 import qualified Data.Serialize                      as S
 import qualified Data.Text.IO                        as TextIO hiding (putStrLn)
 import           Lens.Simple
@@ -36,12 +38,16 @@ import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client
 
 import           Data.Aeson                          as AE
+import           Data.Aeson.Encode.Pretty
+import           Data.Attoparsec.Lazy                (Result (..), parse)
 import qualified Data.HashMap.Strict                 as Map
 import           Data.Maybe
 import           Data.Text
+import           Data.Text.Encoding
 import           System.Random
 
-import           Prelude                             hiding (fail)
+import           Prelude                             hiding (fail, null,
+                                                      unlines)
 
 newtype EnvData =
   EnvData
@@ -100,7 +106,8 @@ useBackend act b =
       mdata <- loadContextData
       source <- BSL.readFile fname
       t <- PR.evalContext mdata $ runInClient b $ processTransaction source nid
-      putStrLn $ "Transaction sent to the baker. Its hash is " ++ show (Types.trHash t)
+      putStrLn $ "Transaction sent to the baker. Its hash is " ++
+        show (Types.trHash t)
     GetConsensusInfo -> runInClient b getConsensusStatus
     GetBlockInfo block -> runInClient b $ getBlockInfo block
     GetAccountList block -> runInClient b $ getAccountList block
@@ -182,6 +189,27 @@ outputGRPC ret f =
         Right v -> f v
     Right (Left e) -> fail $ "Unable to send consensus query: " ++ show e
 
+printJSON ret =
+  case ret ^? unaryOutput . CF.jsonValue of
+    Nothing -> outputGRPC ret print
+    Just jsonval ->
+      putStrLn . Prelude.map w2c . BSL.unpack .
+      Data.ByteString.Lazy.Char8.unlines .
+      Prelude.map encodePretty .
+      values .
+      BSL.fromStrict .
+      encodeUtf8 $
+      jsonval
+
+values :: BSL.ByteString -> [Value]
+values s =
+  case parse json' s of
+    Done rest v -> v : values rest
+    Fail rest _ _
+      | Data.ByteString.Lazy.Char8.null rest -> []
+      | otherwise ->
+        error ("Error in gRPC output decoding as a json: " ++ show s)
+
 sendTransactionToBaker ::
      (Monad m, MonadIO m)
   => Types.Transaction
@@ -195,8 +223,8 @@ sendTransactionToBaker t nid = do
       rawUnary
         (RPC :: RPC P2P "sendTransaction")
         client
-        (defMessage & CF.networkId .~ fromIntegral nid &
-         CF.payload .~ S.encode t)
+        (defMessage & CF.networkId .~ fromIntegral nid & CF.payload .~
+         S.encode t)
     outputGRPC ret (\_ -> return ())
   return t
 
@@ -206,7 +234,7 @@ getConsensusStatus = do
   liftIO $ do
     client <- grpc env
     ret <- rawUnary (RPC :: RPC P2P "getConsensusStatus") client defMessage
-    outputGRPC ret print
+    printJSON ret
 
 getBlockInfo :: Text -> ClientMonad IO ()
 getBlockInfo hash = do
@@ -218,7 +246,7 @@ getBlockInfo hash = do
         (RPC :: RPC P2P "getBlockInfo")
         client
         (defMessage & CF.blockHash .~ hash)
-    outputGRPC ret print
+    printJSON ret
 
 getAccountList :: Text -> ClientMonad IO ()
 getAccountList hash = do
@@ -230,7 +258,7 @@ getAccountList hash = do
         (RPC :: RPC P2P "getAccountList")
         client
         (defMessage & CF.blockHash .~ hash)
-    outputGRPC ret print
+    printJSON ret
 
 getInstances :: Text -> ClientMonad IO ()
 getInstances hash = do
@@ -242,7 +270,7 @@ getInstances hash = do
         (RPC :: RPC P2P "getInstances")
         client
         (defMessage & CF.blockHash .~ hash)
-    outputGRPC ret print
+    printJSON ret
 
 getAccountInfo :: Text -> Text -> ClientMonad IO ()
 getAccountInfo hash account = do
@@ -254,7 +282,7 @@ getAccountInfo hash account = do
         (RPC :: RPC P2P "getAccountInfo")
         client
         (defMessage & CF.blockHash .~ hash & CF.address .~ account)
-    outputGRPC ret print
+    printJSON ret
 
 getInstanceInfo :: Text -> Text -> ClientMonad IO ()
 getInstanceInfo hash account = do
@@ -266,7 +294,7 @@ getInstanceInfo hash account = do
         (RPC :: RPC P2P "getInstanceInfo")
         client
         (defMessage & CF.blockHash .~ hash & CF.address .~ account)
-    outputGRPC ret print
+    printJSON ret
 
 getRewardStatus :: Text -> ClientMonad IO ()
 getRewardStatus hash = do
@@ -278,7 +306,7 @@ getRewardStatus hash = do
         (RPC :: RPC P2P "getRewardStatus")
         client
         (defMessage & CF.blockHash .~ hash)
-    outputGRPC ret print
+    printJSON ret
 
 getBirkParameters :: Text -> ClientMonad IO ()
 getBirkParameters hash = do
@@ -290,7 +318,7 @@ getBirkParameters hash = do
         (RPC :: RPC P2P "getBirkParameters")
         client
         (defMessage & CF.blockHash .~ hash)
-    outputGRPC ret print
+    printJSON ret
 
 getModuleList :: Text -> ClientMonad IO ()
 getModuleList hash = do
@@ -302,7 +330,7 @@ getModuleList hash = do
         (RPC :: RPC P2P "getModuleList")
         client
         (defMessage & CF.blockHash .~ hash)
-    outputGRPC ret print
+    printJSON ret
 
 getModuleSource :: Text -> Text -> ClientMonad IO ()
 getModuleSource hash moduleref = do
