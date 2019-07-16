@@ -30,7 +30,6 @@ import           Data.Text.Encoding
 import qualified Data.Text.IO                 as TextIO
 import           System.Directory
 
-
 -- |Loads the ".cache" file in current directory and generates a Context with it
 loadContextData :: IO (PR.ContextData Core.UA)
 loadContextData = do
@@ -74,10 +73,7 @@ printJSON ret =
   case ret ^? unaryOutput . CF.jsonValue of
     Nothing -> outputGRPC ret print
     Just jsonval ->
-      putStrLn . map w2c . BSL.unpack .
-      BSL8.unlines .
-      map encodePretty .
-      values .
+      putStrLn . map w2c . BSL.unpack . BSL8.unlines . map encodePretty . values .
       BSL.fromStrict .
       encodeUtf8 $
       jsonval

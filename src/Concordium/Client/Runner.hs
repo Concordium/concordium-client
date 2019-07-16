@@ -114,8 +114,20 @@ useBackend act b =
     GetRewardStatus block -> runInClient b $ getRewardStatus block
     GetBirkParameters block -> runInClient b $ getBirkParameters block
     GetModuleList block -> runInClient b $ getModuleList block
-    GetModuleSource block moduleref ->
-      runInClient b $ getModuleSource block moduleref
+    GetModuleSource block moduleref -> do
+      mdata <- loadContextData
+      modl <-
+        PR.evalContext mdata . runInClient b . getModuleSource block $ moduleref
+      case modl of
+        Left x ->
+          print $ "Unable to get the Module from the gRPC server: " ++ show x
+        Right v -> do
+          s <-
+            PR.evalContext
+              mdata
+              (PR.ppModuleInCtx v :: PR.Context Core.UA IO String)
+          putStrLn $ "Retrieved module " ++ show moduleref
+          putStrLn s
 
 processTransaction ::
      (MonadFail m, MonadIO m)
@@ -297,7 +309,11 @@ getModuleList hash = do
         (defMessage & CF.blockHash .~ hash)
     printJSON ret
 
-getModuleSource :: Text -> Text -> ClientMonad IO ()
+getModuleSource ::
+     (Monad m, MonadIO m)
+  => Text
+  -> Text
+  -> ClientMonad (PR.Context Core.UA m) (Either String (Core.Module Core.UA))
 getModuleSource hash moduleref = do
   env <- ask
   liftIO $ do
@@ -307,4 +323,4 @@ getModuleSource hash moduleref = do
         (RPC :: RPC P2P "getModuleSource")
         client
         (defMessage & CF.blockHash .~ hash & CF.moduleRef .~ moduleref)
-    outputGRPC ret print
+    return $ S.decode (ret ^. unaryOutput . CF.payload)
