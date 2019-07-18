@@ -44,16 +44,6 @@ instance FromJSON Energy where
 instance FromJSON Amount where
   parseJSON v = Amount <$> parseJSON v
 
--- Length + data (serializes with `put :: Bytestring -> Put`)
-instance FromJSON VerifyKey where
-  parseJSON v = do
-    verifKey <- parseJSON v
-    let plainBs = fst . BS16.decode . Text.encodeUtf8 $ verifKey
-    case S.decode . flip BS.append plainBs $
-         S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
-      Left e  -> fail e
-      Right n -> return n
-
 -- Data (serializes with `putByteString :: Bytestring -> Put`)
 instance FromJSON BlockHash where
   parseJSON v = do
@@ -73,78 +63,6 @@ instance FromJSON Address where
       Nothing -> AddressContract <$> (v .: "contractAddress")
       Just a  -> return (AddressAccount a)
   parseJSON invalid = typeMismatch "Address" invalid
-
--- Data (serializes with `putByteString :: Bytestring -> Put`)
-instance FromJSON IDTypes.CredentialRegistrationID where
-  parseJSON v = do
-    crid <- parseJSON v
-    case S.decode . fst . BS16.decode . Text.encodeUtf8 $ crid of
-      Left e  -> fail e
-      Right n -> return n
-
--- Length + data (serializes with `put :: Bytestring -> Put`)
-instance FromJSON IDTypes.AnonimityRevokerIdentity where
-  parseJSON v = do
-    arid <- parseJSON v
-    let plainBs = fst . BS16.decode . Text.encodeUtf8 $ arid
-    case S.decode . flip BS.append plainBs $
-         S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
-      Left e  -> fail e
-      Right n -> return n
-
--- Length + data (serializes with `put :: Bytestring -> Put`)
-instance FromJSON IDTypes.IdentityProviderIdentity where
-  parseJSON v = do
-    ipid <- parseJSON v
-    let plainBs = fst . BS16.decode . Text.encodeUtf8 $ ipid
-    case S.decode . flip BS.append plainBs $
-         S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
-      Left e  -> fail e
-      Right n -> return n
-
--- Enum
-instance FromJSON SchemeId where
-  parseJSON v = toEnum <$> parseJSON v
-
-instance FromJSON IDTypes.PolicyItem where
-  parseJSON (Object v)
-    -- Num
-   = do
-    idx <- v .: "index"
-    -- Data (serializes with `fsbPut`)
-    val <- v .: "value"
-    case S.decode val of
-      Left e  -> fail e
-      Right n -> return $ IDTypes.PolicyItem idx n
-
-instance FromJSON IDTypes.Policy where
-  parseJSON (Object v)
-    -- Num
-   = do
-    variant <- v .: "variant"
-    -- Num
-    expiry <- v .: "expiry"
-    items <- v .: "items"
-    return $ IDTypes.Policy variant expiry items
-
-instance FromJSON IDTypes.CredentialDeploymentValues where
-  parseJSON (Object v) = do
-    scheme <- v .: "scheme"
-    verif <- v .: "verifyKey"
-    reg <- v .: "registrationId"
-    idpi <- v .: "identityProvider"
-    pol <- v .: "policy"
-    return $ IDTypes.CredentialDeploymentValues scheme verif reg idpi pol
-
-instance FromJSON IDTypes.CredentialDeploymentInformation where
-  parseJSON (Object v) = do
-    cdi <- v .: "values"
-    proofs <- v .: "proofs"
-    let plainBs = fst . BS16.decode . Text.encodeUtf8 $ proofs
-    case S.decode . flip BS.append plainBs $
-         S.encode (fromIntegral . BS.length $ plainBs :: Word32) of
-      Left e  -> fail e
-      Right n -> return $ IDTypes.CredentialDeploymentInformation cdi n
 
 -- Length + data (serializes with `put :: Bytestring -> Put`)
 instance FromJSON IDTypes.AccountEncryptionKey where
