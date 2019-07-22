@@ -44,6 +44,7 @@ import           System.Random
 
 import           Prelude                             hiding (fail, null,
                                                       unlines)
+import           System.Exit(die)
 
 newtype EnvData =
   EnvData
@@ -154,8 +155,15 @@ processTransaction source networkId =
           Nothing -> undefined
       sendTransactionToBaker transaction networkId
 
+readModule :: MonadIO m => FilePath -> ClientMonad m (Core.Module Core.UA)
+readModule filePath = do
+  source <- liftIO $ BSL.readFile filePath
+  case S.decodeLazy source of
+    Left err -> liftIO (die err)
+    Right mod -> return mod
+
 encodeAndSignTransaction ::
-     MonadFail m
+     (MonadFail m, MonadIO m)
   => CT.TransactionJSONPayload
   -> Types.TransactionHeader
   -> KeyPair
@@ -163,6 +171,8 @@ encodeAndSignTransaction ::
 encodeAndSignTransaction pl th keys =
   Types.signTransaction keys th . Types.encodePayload <$>
   case pl of
+    (CT.DeployModuleFromSource fileName) ->
+      Types.DeployModule <$> readModule fileName  -- deserializing is not necessary, but easiest for now.
     (CT.DeployModule mnameText) ->
       Types.DeployModule <$> client (PR.getModule mnameText)
     (CT.InitContract initAmount mnameText cNameText paramExpr) -> do

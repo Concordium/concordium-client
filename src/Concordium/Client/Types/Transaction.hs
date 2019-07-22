@@ -107,9 +107,17 @@ data TransactionJSONHeader =
     }
   deriving (Eq, Show)
 
+data ModuleSource =
+  ByName Text
+  | FromSource Text
+  deriving(Eq, Show)
+
 -- |Payload of a transaction
 data TransactionJSONPayload
-  = DeployModule
+  = DeployModuleFromSource
+      { moduleSource :: FilePath
+      } -- ^ Read a serialized module from a file and deploy it.
+  | DeployModule
       { moduleName :: Text
       } -- ^ Deploys a blockchain-ready version of the module, as retrieved from the Context
   | InitContract
