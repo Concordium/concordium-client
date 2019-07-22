@@ -14,7 +14,6 @@ import           Concordium.Crypto.SignatureScheme   (SchemeId (..),
 import qualified Concordium.Crypto.VRF               as VRF
 import           Concordium.GlobalState.Transactions
 import qualified Concordium.ID.Account               as AH
-import qualified Concordium.ID.Attributes            as IDA
 import qualified Concordium.ID.Types                 as IDTypes
 import qualified Concordium.Scheduler.Types          as Types
 import           Concordium.Types
@@ -45,22 +44,13 @@ instance FromJSON Energy where
 instance FromJSON Amount where
   parseJSON v = Amount <$> parseJSON v
 
--- Length + data (serializes with `put :: Bytestring -> Put`)
-instance FromJSON VerifyKey where
-  parseJSON v = do
-   verifKey <- parseJSON v
-   let plainBs = fst . BS16.decode . Text.encodeUtf8 $ verifKey
-   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word) of
-     Left e  -> fail e
-     Right n -> return n
-
 -- Data (serializes with `putByteString :: Bytestring -> Put`)
 instance FromJSON BlockHash where
   parseJSON v = do
-   hash <- parseJSON v
-   case S.decode . fst . BS16.decode . Text.encodeUtf8 $ hash of
-    Left e  -> fail e
-    Right n -> return n
+    hash <- parseJSON v
+    case S.decode . fst . BS16.decode . Text.encodeUtf8 $ hash of
+      Left e  -> fail e
+      Right n -> return n
 
 instance FromJSON AccountAddress where
   parseJSON v = AH.base58decodeAddr <$> parseJSON v
@@ -74,94 +64,23 @@ instance FromJSON Address where
       Just a  -> return (AddressAccount a)
   parseJSON invalid = typeMismatch "Address" invalid
 
--- Data (serializes with `putByteString :: Bytestring -> Put`)
--- TODO: This function takes a B16 encoded bytestring of length 48 bytes
--- so we need 96 chars to represent it. A plain bytestring is not writable
--- by hand (non-printable chars) but maybe it doesn't make sense to even have
--- a bytestring but rather a number. Discuss with Ales in the future.
-instance FromJSON IDTypes.CredentialRegistrationID where
-  parseJSON v = do
-   crid <- parseJSON v
-   case S.decode . fst . BS16.decode . Text.encodeUtf8 $ crid of
-    Left e  -> fail e
-    Right n -> return n
-
--- Length + data (serializes with `put :: Bytestring -> Put`)
-instance FromJSON IDTypes.AnonimityRevokerIdentity where
-  parseJSON v =do
-   arid <- parseJSON v
-   let plainBs = fst . BS16.decode . Text.encodeUtf8 $ arid
-   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word) of
-    Left e  -> fail e
-    Right n -> return n
-
--- Length + data (serializes with `put :: Bytestring -> Put`)
-instance FromJSON IDTypes.SecretShare where
-  parseJSON v = do
-   ss <- parseJSON v
-   let plainBs = fst . BS16.decode . Text.encodeUtf8 $ ss
-   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word) of
-    Left e  -> fail e
-    Right n -> return n
-
--- Length + data (serializes with `put :: Bytestring -> Put`)
-instance FromJSON IDTypes.IdentityProviderIdentity where
-  parseJSON v = do
-   ipid <- parseJSON v
-   let plainBs = fst . BS16.decode . Text.encodeUtf8 $ ipid
-   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word) of
-    Left e  -> fail e
-    Right n -> return n
-
--- Length + data (serializes with Generic i.e. `put :: Bytestring -> Put`)
-instance FromJSON IDTypes.ZKProof where
-  parseJSON v = do
-   zk <- parseJSON v
-   let plainBs = fst . BS16.decode . Text.encodeUtf8 $ zk
-   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word) of
-    Left e  -> fail e
-    Right n -> return n
-
--- instance FromJSON IDA.Policy where
---   parseJSON (Object v) = do
---     atomicBD <- v .:? "birthDate"
---     maxAccount <- v .:? "maxAccount"
---     citizenship <- v .:? "citizenships"
---     conj <- v .:? "conj"
---     disj <- v .:? "disj"
---     return . fromJust $ IDA.AtomicBD <$> atomicBD <|>
---       IDA.AtomicMaxAccount <$> maxAccount <|>
---        IDA.AtomicCitizenship <$> citizenship -- <|>
---        IDA.Conj <$> conj <|>
---         IDA.Disj <$> disj
-
-instance FromJSON IDTypes.CredentialDeploymentInformation where
-  parseJSON (Object v) = do
-    verifKey <- v .: "verificationKey"
-    regId <- v .: "registrationId"
-    arData <- v .: "revocationData"
-    ipId <- v .: "identityProvider"
-    let policy = IDA.AtomicMaxAccount (IDA.LessThan 100) -- <- v .: "policy" --hard coded until it gets more structured
-    auxData <- fst . BS16.decode . Text.encodeUtf8 <$> v .: "auxData"
-    proof <- v .: "proof"
-    return $ IDTypes.CDI verifKey Ed25519 regId arData ipId policy auxData proof
-
 -- Length + data (serializes with `put :: Bytestring -> Put`)
 instance FromJSON IDTypes.AccountEncryptionKey where
   parseJSON v = do
-   aek <- parseJSON v
-   let plainBs = fst . BS16.decode . Text.encodeUtf8 $ aek
-   case S.decode . flip BS.append plainBs $ S.encode (fromIntegral . BS.length $ plainBs :: Word) of
-    Left e  -> fail e
-    Right n -> return n
+    aek <- parseJSON v
+    let plainBs = fst . BS16.decode . Text.encodeUtf8 $ aek
+    case S.decode . flip BS.append plainBs $
+         S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
+      Left e  -> fail e
+      Right n -> return n
 
 -- Data (serializes with `putByteString :: Bytestring -> Put`)
 instance FromJSON BakerElectionVerifyKey where
   parseJSON v = do
-   b16 <- parseJSON v
-   case S.decode . fst . BS16.decode . Text.encodeUtf8 $ b16 of
-    Left e  -> fail e
-    Right n -> return n
+    b16 <- parseJSON v
+    case S.decode . fst . BS16.decode . Text.encodeUtf8 $ b16 of
+      Left e  -> fail e
+      Right n -> return n
 
 -- Data (serializes with `putByteString :: Bytestring -> Put`)
 instance FromJSON Types.Proof where
@@ -174,23 +93,31 @@ instance FromJSON BakerId where
 -- |Transaction header type
 -- To be populated when deserializing a JSON object.
 data TransactionJSONHeader =
-  TransactionJSONHeader {
+  TransactionJSONHeader
   -- |Verification key of the sender.
-  thSenderKey          :: IDTypes.AccountVerificationKey
+    { thSenderKey        :: IDTypes.AccountVerificationKey
   -- |Nonce of the account. If not present it should be derived
   -- from the context or queried to the state
-  , thNonce            :: Maybe Nonce
+    , thNonce            :: Maybe Nonce
   -- |Amount dedicated for the execution of this transaction.
-  , thGasAmount        :: Energy
+    , thGasAmount        :: Energy
   -- |Pointer to a finalized block. If this is too out of date at
   -- the time of execution the transaction is dropped
-  , thFinalizedPointer :: BlockHash
+    , thFinalizedPointer :: BlockHash
     }
   deriving (Eq, Show)
 
+data ModuleSource =
+  ByName Text
+  | FromSource Text
+  deriving(Eq, Show)
+
 -- |Payload of a transaction
 data TransactionJSONPayload
-  = DeployModule
+  = DeployModuleFromSource
+      { moduleSource :: FilePath
+      } -- ^ Read a serialized module from a file and deploy it.
+  | DeployModule
       { moduleName :: Text
       } -- ^ Deploys a blockchain-ready version of the module, as retrieved from the Context
   | InitContract
@@ -252,7 +179,7 @@ data TransactionJSON =
     , payload  :: TransactionJSONPayload
     , signKey  :: SignKey
     }
-  deriving (Generic)
+  deriving (Generic, Show)
 
 instance AE.FromJSON TransactionJSON where
   parseJSON (Object v) = do
