@@ -75,3 +75,20 @@ executables:
        - mtl
        - base
        - simple-client
+
+  tx-generator:
+    main:            Main.hs
+    source-dirs:     generator
+    ghc-options:
+      -threaded
+
+    dependencies:
+       - optparse-applicative
+       - mtl
+       - base
+       - simple-client
+       - scheduler
+       - random
+       - concordium-crypto
+       - globalstate
+       - globalstate-types

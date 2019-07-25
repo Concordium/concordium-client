@@ -21,6 +21,7 @@ import           Control.Applicative
 import           Data.Aeson                          as AE
 import qualified Data.Aeson.TH                       as AETH
 import           Data.Aeson.Types                    (typeMismatch)
+import qualified Data.ByteString.Short               as BSS
 import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Base16              as BS16
 import qualified Data.ByteString.Lazy                as BSL
@@ -190,7 +191,7 @@ instance AE.FromJSON TransactionJSON where
     let tHeader = TransactionJSONHeader {..}
     tPayload <- v .: "payload"
     tSignKey <-
-      SignKey . fst . BS16.decode . Text.encodeUtf8 <$> (v .: "signKey")
+      SignKey . BSS.toShort . fst . BS16.decode . Text.encodeUtf8 <$> (v .: "signKey")
     return $ TransactionJSON tHeader tPayload tSignKey
   parseJSON invalid = typeMismatch "Transaction" invalid
 

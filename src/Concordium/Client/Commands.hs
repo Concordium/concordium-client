@@ -1,5 +1,8 @@
 module Concordium.Client.Commands
   ( optsParser
+  , hostParser
+  , portParser
+  , targetParser
   , Command(..)
   , Action(..)
   , Backend(..)

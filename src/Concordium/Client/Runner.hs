@@ -3,6 +3,9 @@
 
 module Concordium.Client.Runner
   ( process
+  , sendTransactionToBaker
+  , ClientMonad
+  , runInClient
   ) where
 
 import qualified Acorn.Core                          as Core
