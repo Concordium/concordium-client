@@ -22,6 +22,9 @@ blockPointer :: BlockHash
 blockPointer = hash ""
 
 deployModule :: MonadIO m => Backend -> Nonce -> Energy -> Core.Module Core.UA -> m Transaction
-deployModule back nonce amount amodule = runInClient back (sendTransactionToBaker tx 100)
-    where tx = Types.signTransaction mateuszKP txHeader (Types.encodePayload (Types.DeployModule amodule))
-          txHeader = Types.makeTransactionHeader Sig.Ed25519 (Sig.verifyKey mateuszKP) nonce amount blockPointer 
+deployModule = deployModuleWithKey mateuszKP
+
+deployModuleWithKey :: MonadIO m => Sig.KeyPair -> Backend -> Nonce -> Energy -> Module UA -> m Transaction
+deployModuleWithKey kp back nonce amount amodule = runInClient back (sendTransactionToBaker tx 100)
+    where tx = Types.signTransaction kp txHeader (Types.encodePayload (Types.DeployModule amodule))
+          txHeader = Types.makeTransactionHeader Sig.Ed25519 (Sig.verifyKey kp) nonce amount blockPointer
