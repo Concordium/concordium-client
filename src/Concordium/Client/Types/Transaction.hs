@@ -4,29 +4,23 @@
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TypeSynonymInstances #-}
-
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Concordium.Client.Types.Transaction where
 
-import qualified Concordium.Crypto.SHA256            as Hash
 import           Concordium.Crypto.SignatureScheme   (SchemeId (..),
                                                       SignKey (..),
-                                                      VerifyKey (..))
-import qualified Concordium.Crypto.VRF               as VRF
+                                                      )
 import           Concordium.GlobalState.Transactions
 import qualified Concordium.ID.Account               as AH
 import qualified Concordium.ID.Types                 as IDTypes
 import qualified Concordium.Scheduler.Types          as Types
 import           Concordium.Types
-import           Control.Applicative
 import           Data.Aeson                          as AE
 import qualified Data.Aeson.TH                       as AETH
 import           Data.Aeson.Types                    (typeMismatch)
 import qualified Data.ByteString.Short               as BSS
 import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Base16              as BS16
-import qualified Data.ByteString.Lazy                as BSL
-import qualified Data.FixedByteString                as FBS
-import           Data.Maybe
 import           Data.Serialize                      as S
 import           Data.Text                           hiding (length, map)
 import qualified Data.Text.Encoding                  as Text

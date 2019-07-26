@@ -1,22 +1,17 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# OPTIONS_GHC -Wall #-}
 module Main where
 
 import Concordium.Client.Commands
 import Concordium.Client.Runner
 import Control.Monad.Reader
 import Options.Applicative
-import Concordium.Client.Types.Transaction
 import Concordium.Types
 import Concordium.GlobalState.Transactions
-import Concordium.Crypto.SignatureScheme
-import Concordium.Crypto.Ed25519Signature(randomKeyPair)
-import Concordium.Crypto.SHA256
-import qualified Concordium.ID.Account as ID
 import qualified Concordium.Scheduler.Utils.Init.Example as Example
 import Control.Concurrent
-import System.Random
 
 mkTransaction :: Nonce -> Transaction
 mkTransaction = Example.makeTransaction True (ContractAddress 0 0)
@@ -55,6 +50,7 @@ parser = info (helper <*> ((,) <$> grpcBackend <*> txOptions)) (fullDesc <> prog
 sendTx :: MonadIO m => Nonce -> ClientMonad m Transaction
 sendTx nonce = sendTransactionToBaker (mkTransaction nonce) 100
 
+go :: Backend -> TxOptions -> IO b
 go backend TxOptions{..} = loop startNonce
   where loop nonce = do
           let nextNonce = nonce + fromIntegral perBatch

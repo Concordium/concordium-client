@@ -10,14 +10,13 @@ module Concordium.Client.Runner
 
 import qualified Acorn.Core                          as Core
 import qualified Acorn.Parser.Runner                 as PR
-import           Concordium.Client.Commands          as COM
+import           Concordium.Client.Commands          as COM hiding (networkId)
 import           Concordium.Client.GRPC
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction as CT
-import           Concordium.Crypto.Ed25519Signature  (randomKeyPair)
 import           Concordium.Crypto.SignatureScheme   (KeyPair (..))
 
-import           Data.ProtoLens                      (defMessage, fieldsByTag)
+import           Data.ProtoLens                      (defMessage)
 import           Proto.Concordium
 import qualified Proto.Concordium_Fields             as CF
 
@@ -26,27 +25,20 @@ import qualified Concordium.Scheduler.Types          as Types
 import           Control.Monad.Fail
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader                hiding (fail)
-import           Control.Monad.State                 hiding (fail)
-import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Lazy                as BSL
-import           Data.ByteString.Lazy.Char8          (null, unlines)
 import qualified Data.Serialize                      as S
 import qualified Data.Text.IO                        as TextIO hiding (putStrLn)
 import           Lens.Simple
 
 import           Network.GRPC.Client
 import           Network.GRPC.Client.Helpers
-import           Network.HTTP2.Client
 
 import           Data.Aeson                          as AE
 import qualified Data.HashMap.Strict                 as Map
 import           Data.Maybe
 import           Data.Text
-import           Data.Text.Encoding
-import           System.Random
 
-import           Prelude                             hiding (fail, null,
-                                                      unlines)
+import           Prelude                             hiding (fail, null, unlines, mod)
 import           System.Exit(die)
 
 newtype EnvData =
@@ -67,13 +59,13 @@ newtype ClientMonad m a =
            , MonadIO
            )
 
-client :: PR.Context Core.UA m a -> ClientMonad (PR.Context Core.UA m) a
-client comp = ClientMonad {_runClientMonad = ReaderT (const comp)}
+liftContext :: PR.Context Core.UA m a -> ClientMonad (PR.Context Core.UA m) a
+liftContext comp = ClientMonad {_runClientMonad = ReaderT (const comp)}
 
-runInClient :: Monad m => Backend -> ClientMonad m a -> m a
-runInClient bkend action =
+runInClient :: Backend -> ClientMonad m a -> m a
+runInClient bkend comp =
   (runReaderT . _runClientMonad)
-    action
+    comp
   -- separate in cases for different backends (maybe abstract in a typeclass)
     (EnvData . mkGrpcClient $ GrpcConfig (COM.host bkend) (COM.port bkend) (COM.target bkend))
 
@@ -177,21 +169,21 @@ encodeAndSignTransaction pl th keys =
     (CT.DeployModuleFromSource fileName) ->
       Types.DeployModule <$> readModule fileName  -- deserializing is not necessary, but easiest for now.
     (CT.DeployModule mnameText) ->
-      Types.DeployModule <$> client (PR.getModule mnameText)
+      Types.DeployModule <$> liftContext (PR.getModule mnameText)
     (CT.InitContract initAmount mnameText cNameText paramExpr) -> do
-      (mref, _, tys) <- client $ PR.getModuleTmsTys mnameText
+      (mref, _, tys) <- liftContext $ PR.getModuleTmsTys mnameText
       case Map.lookup cNameText tys of
         Just contName -> do
-          params <- client $ PR.processTmInCtx mnameText paramExpr
+          params <- liftContext $ PR.processTmInCtx mnameText paramExpr
           return $ Types.InitContract initAmount mref contName params 0
         Nothing -> error (show cNameText)
     (CT.Update mnameText updateAmount updateAddress msgText) -> do
-      msg <- client $ PR.processTmInCtx mnameText msgText
+      msg <- liftContext $ PR.processTmInCtx mnameText msgText
       return $ Types.Update updateAmount updateAddress msg 0
     (CT.Transfer transferTo transferAmount) ->
       return $ Types.Transfer transferTo transferAmount
     (CT.DeployCredential cred) -> return $ Types.DeployCredential cred
-    (CT.DeployEncryptionKey key) -> return $ Types.DeployEncryptionKey key
+    (CT.DeployEncryptionKey encKey) -> return $ Types.DeployEncryptionKey encKey
     (CT.AddBaker evk svk ba p) -> return $ Types.AddBaker evk svk ba p
     (CT.RemoveBaker rbid rbp) -> return $ Types.RemoveBaker rbid rbp
     (CT.UpdateBakerAccount ubid uba ubp) ->
@@ -201,7 +193,7 @@ encodeAndSignTransaction pl th keys =
     (CT.DelegateStake dsid) -> return $ Types.DelegateStake dsid
 
 sendTransactionToBaker ::
-     (Monad m, MonadIO m)
+     (MonadIO m)
   => Types.Transaction
   -> Int
   -> ClientMonad m Types.Transaction
@@ -323,7 +315,7 @@ getModuleList hash = do
     printJSON ret
 
 getModuleSource ::
-     (Monad m, MonadIO m)
+     (MonadIO m)
   => Text
   -> Text
   -> ClientMonad (PR.Context Core.UA m) (Either String (Core.Module Core.UA))

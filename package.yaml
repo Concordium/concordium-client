@@ -30,6 +30,12 @@ dependencies:
 - base >= 4.7 && < 5
 
 library:
+  ghc-options:
+    - -Wall
+    - -Wcompat
+    - -Werror=missing-fields
+    - -Wredundant-constraints
+    - -O2
   source-dirs:
       src
   dependencies:
@@ -68,7 +74,12 @@ executables:
     source-dirs:      app
 
     ghc-options:
-      -threaded
+      - -Wall
+      - -Wcompat
+      - -Werror=missing-fields
+      - -Wredundant-constraints
+      - -O2
+      - -threaded
 
     dependencies:
        - optparse-applicative
@@ -80,7 +91,12 @@ executables:
     main:            Main.hs
     source-dirs:     generator
     ghc-options:
-      -threaded
+      - -Wall
+      - -Wcompat
+      - -Werror=missing-fields
+      - -Wredundant-constraints
+      - -O2
+      - -threaded
 
     dependencies:
        - optparse-applicative
