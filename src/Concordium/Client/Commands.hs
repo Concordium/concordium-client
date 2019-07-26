@@ -14,8 +14,6 @@ import           Network.HTTP2.Client
 import           Options.Applicative
 import           Paths_simple_client  (version)
 
-import           Concordium.Types
-
 data Command =
   Command
     { action  :: Action
