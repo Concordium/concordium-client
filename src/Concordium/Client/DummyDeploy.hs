@@ -18,11 +18,17 @@ import Acorn.Core as Core
 mateuszKP :: Sig.KeyPair
 mateuszKP = fst (randomKeyPair (mkStdGen 0))
 
+mateuszKP' :: Sig.KeyPair
+mateuszKP' = fst (randomKeyPair (mkStdGen 1))
+
 blockPointer :: BlockHash
 blockPointer = hash ""
 
 deployModule :: MonadIO m => Backend -> Nonce -> Energy -> Core.Module Core.UA -> m Transaction
 deployModule = deployModuleWithKey mateuszKP
+
+deployModule' :: MonadIO m => Backend -> Nonce -> Energy -> Core.Module Core.UA -> m Transaction
+deployModule' = deployModuleWithKey mateuszKP'
 
 deployModuleWithKey :: MonadIO m => Sig.KeyPair -> Backend -> Nonce -> Energy -> Module UA -> m Transaction
 deployModuleWithKey kp back nonce amount amodule = runInClient back (sendTransactionToBaker tx 100)
