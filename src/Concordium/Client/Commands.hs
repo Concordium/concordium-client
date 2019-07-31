@@ -22,8 +22,8 @@ data Command =
 
 data Backend =
   GRPC
-    { host :: HostName
-    , port :: PortNumber
+    { host   :: HostName
+    , port   :: PortNumber
     , target :: Maybe String
     }
 
@@ -36,7 +36,11 @@ data Action
   | SendTransaction
       { sourceFile :: !FilePath
       , networkId  :: !Int
+      , hookIt     :: !Bool
       } -- ^ Loads a transaction in the context of the local database and sends it to the specified RPC server
+  | HookTransaction
+      { transactionHash :: !Text
+      } -- ^ Queries the gRPC for the information about the execution of a transaction
   | GetConsensusInfo -- ^ Queries the gRPC server for the consensus information
   | GetBlockInfo
       { blockHash :: !Text
@@ -86,6 +90,7 @@ programOptions =
   Command <$>
   hsubparser
     (loadModuleCommand <> listModulesCommand <> sendTransactionCommand <>
+     hookTransactionCommand <>
      getConsensusInfoCommand <>
      getBlockInfoCommand <>
      getAccountListCommand <>
@@ -132,9 +137,21 @@ sendTransactionCommand =
           (metavar "NET-ID" <>
            help "Network ID for the transaction to be sent through" <>
            value 100 <>
-           showDefault))
+           showDefault) <*>
+        flag False True (short 'h' <> long "hook"))
        (progDesc
           "Parse transaction in current context and send it to the baker."))
+
+hookTransactionCommand :: Mod CommandFields Action
+hookTransactionCommand =
+  command
+    "HookTransaction"
+    (info
+       (HookTransaction <$>
+        strArgument
+          (metavar "TX-HASH" <> help "Hash of the transaction to query for"))
+       (progDesc
+          "Query the gRPC for the information about the execution of a transaction."))
 
 hostParser :: Parser HostName
 hostParser =
@@ -151,7 +168,8 @@ portParser =
 
 targetParser :: Parser (Maybe String)
 targetParser =
-  optional $ strOption
+  optional $
+  strOption
     (long "grpc-target" <> metavar "GRPC-TARGET" <>
      help "Target node name when using a proxy.")
 

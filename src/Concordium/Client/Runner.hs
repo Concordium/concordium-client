@@ -4,8 +4,10 @@
 module Concordium.Client.Runner
   ( process
   , sendTransactionToBaker
-  , ClientMonad
+  , ClientMonad(..)
   , runInClient
+  , EnvData(..)
+  , GrpcConfig
   ) where
 
 import qualified Acorn.Core                          as Core
@@ -38,12 +40,13 @@ import qualified Data.HashMap.Strict                 as Map
 import           Data.Maybe
 import           Data.Text
 
-import           Prelude                             hiding (fail, null, unlines, mod)
-import           System.Exit(die)
+import           Prelude                             hiding (fail, mod, null,
+                                                      unlines)
+import           System.Exit                         (die)
 
 newtype EnvData =
   EnvData
-    { grpc :: IO GrpcClient
+    { grpc :: GrpcClient
     }
 
 -- |Monad in which the program would run
@@ -62,12 +65,12 @@ newtype ClientMonad m a =
 liftContext :: PR.Context Core.UA m a -> ClientMonad (PR.Context Core.UA m) a
 liftContext comp = ClientMonad {_runClientMonad = ReaderT (const comp)}
 
-runInClient :: Backend -> ClientMonad m a -> m a
-runInClient bkend comp =
-  (runReaderT . _runClientMonad)
-    comp
-  -- separate in cases for different backends (maybe abstract in a typeclass)
-    (EnvData . mkGrpcClient $ GrpcConfig (COM.host bkend) (COM.port bkend) (COM.target bkend))
+runInClient :: (MonadIO m) => Backend -> ClientMonad m a -> m a
+runInClient bkend comp = do
+  client <-
+    liftIO $ mkGrpcClient $
+    GrpcConfig (COM.host bkend) (COM.port bkend) (COM.target bkend)
+  (runReaderT . _runClientMonad) comp $! EnvData client
 
 -- |Execute the command given in the CLArguments
 process :: Command -> IO ()
@@ -94,12 +97,15 @@ process command =
 useBackend :: Action -> Backend -> IO ()
 useBackend act b =
   case act of
-    SendTransaction fname nid -> do
+    SendTransaction fname nid hook -> do
       mdata <- loadContextData
       source <- BSL.readFile fname
-      t <- PR.evalContext mdata $ runInClient b $ processTransaction source nid
+      t <-
+        PR.evalContext mdata $ runInClient b $
+        processTransaction source nid hook
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (Types.trHash t)
+    HookTransaction txh -> runInClient b $ hookTransaction txh
     GetConsensusInfo -> runInClient b getConsensusStatus
     GetBlockInfo block -> runInClient b $ getBlockInfo block
     GetAccountList block -> runInClient b $ getAccountList block
@@ -124,13 +130,15 @@ useBackend act b =
               (PR.ppModuleInCtx v :: PR.Context Core.UA IO String)
           putStrLn $ "Retrieved module " ++ show moduleref
           putStrLn s
+    _ -> undefined
 
 processTransaction ::
      (MonadFail m, MonadIO m)
   => BSL.ByteString
   -> Int
+  -> Bool
   -> ClientMonad (PR.Context Core.UA m) Types.Transaction
-processTransaction source networkId =
+processTransaction source networkId hookit =
   case AE.eitherDecode source of
     Left err -> fail $ "Error decoding JSON: " ++ err
     Right t -> do
@@ -148,13 +156,18 @@ processTransaction source networkId =
               properT
               (KeyPair (CT.signKey transaction) (Types.thSenderKey properT))
           Nothing -> undefined
+      when hookit $ do
+        liftIO . putStrLn $ "Installing hook for transaction " ++
+          show (Types.trHash transaction)
+        sendHookToBaker (Types.trHash transaction)
       sendTransactionToBaker transaction networkId
+      return transaction
 
 readModule :: MonadIO m => FilePath -> ClientMonad m (Core.Module Core.UA)
 readModule filePath = do
   source <- liftIO $ BSL.readFile filePath
   case S.decodeLazy source of
-    Left err -> liftIO (die err)
+    Left err  -> liftIO (die err)
     Right mod -> return mod
 
 encodeAndSignTransaction ::
@@ -167,7 +180,7 @@ encodeAndSignTransaction pl th keys =
   Types.signTransaction keys th . Types.encodePayload <$>
   case pl of
     (CT.DeployModuleFromSource fileName) ->
-      Types.DeployModule <$> readModule fileName  -- deserializing is not necessary, but easiest for now.
+      Types.DeployModule <$> readModule fileName -- deserializing is not necessary, but easiest for now.
     (CT.DeployModule mnameText) ->
       Types.DeployModule <$> liftContext (PR.getModule mnameText)
     (CT.InitContract initAmount mnameText cNameText paramExpr) -> do
@@ -192,29 +205,49 @@ encodeAndSignTransaction pl th keys =
       return $ Types.UpdateBakerSignKey ubsid ubsk ubsp
     (CT.DelegateStake dsid) -> return $ Types.DelegateStake dsid
 
-sendTransactionToBaker ::
-     (MonadIO m)
-  => Types.Transaction
-  -> Int
-  -> ClientMonad m Types.Transaction
-sendTransactionToBaker t nid = do
+sendHookToBaker :: (MonadIO m) => Types.TransactionHash -> ClientMonad m ()
+sendHookToBaker txh = do
   env <- ask
   liftIO $ do
-    client <- grpc env
+    let client = grpc env
     ret <-
+      rawUnary
+        (RPC :: RPC P2P "hookTransaction")
+        client
+        (defMessage & CF.transactionHash .~ pack (show txh))
+    printJSON ret
+
+sendTransactionToBaker ::
+     (MonadIO m) => Types.Transaction -> Int -> ClientMonad m ()
+sendTransactionToBaker t nid = do
+  env <- ask
+  d <-
+    liftIO $ do
+      let client = grpc env
       rawUnary
         (RPC :: RPC P2P "sendTransaction")
         client
         (defMessage & CF.networkId .~ fromIntegral nid & CF.payload .~
          S.encode t)
-    outputGRPC ret (\_ -> return ())
-  return t
+  d `seq` return ()
+
+hookTransaction :: Text -> ClientMonad IO ()
+hookTransaction txh = do
+  env <- ask
+  liftIO $ do
+    let client = grpc env
+    ret <-
+      rawUnary
+        (RPC :: RPC P2P "hookTransaction")
+        client
+        (defMessage & CF.transactionHash .~ txh)
+    printJSON ret
 
 getConsensusStatus :: ClientMonad IO ()
 getConsensusStatus = do
   env <- ask
   liftIO $ do
-    client <- grpc env
+    let client = grpc env
     ret <- rawUnary (RPC :: RPC P2P "getConsensusStatus") client defMessage
     printJSON ret
 
@@ -222,7 +255,7 @@ getBlockInfo :: Text -> ClientMonad IO ()
 getBlockInfo hash = do
   env <- ask
   liftIO $ do
-    client <- grpc env
+    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "getBlockInfo")
@@ -234,7 +267,7 @@ getAccountList :: Text -> ClientMonad IO ()
 getAccountList hash = do
   env <- ask
   liftIO $ do
-    client <- grpc env
+    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "getAccountList")
@@ -246,7 +279,7 @@ getInstances :: Text -> ClientMonad IO ()
 getInstances hash = do
   env <- ask
   liftIO $ do
-    client <- grpc env
+    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "getInstances")
@@ -258,7 +291,7 @@ getAccountInfo :: Text -> Text -> ClientMonad IO ()
 getAccountInfo hash account = do
   env <- ask
   liftIO $ do
-    client <- grpc env
+    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "getAccountInfo")
@@ -270,7 +303,7 @@ getInstanceInfo :: Text -> Text -> ClientMonad IO ()
 getInstanceInfo hash account = do
   env <- ask
   liftIO $ do
-    client <- grpc env
+    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "getInstanceInfo")
@@ -282,7 +315,7 @@ getRewardStatus :: Text -> ClientMonad IO ()
 getRewardStatus hash = do
   env <- ask
   liftIO $ do
-    client <- grpc env
+    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "getRewardStatus")
@@ -294,7 +327,7 @@ getBirkParameters :: Text -> ClientMonad IO ()
 getBirkParameters hash = do
   env <- ask
   liftIO $ do
-    client <- grpc env
+    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "getBirkParameters")
@@ -306,7 +339,7 @@ getModuleList :: Text -> ClientMonad IO ()
 getModuleList hash = do
   env <- ask
   liftIO $ do
-    client <- grpc env
+    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "getModuleList")
@@ -322,7 +355,7 @@ getModuleSource ::
 getModuleSource hash moduleref = do
   env <- ask
   liftIO $ do
-    client <- grpc env
+    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "getModuleSource")
