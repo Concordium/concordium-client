@@ -95,6 +95,7 @@ executables:
       - -Werror=missing-fields
       - -Wredundant-constraints
       - -O2
+      - -threaded
 
     dependencies:
        - optparse-applicative

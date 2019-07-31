@@ -68,9 +68,9 @@ liftContext comp = ClientMonad {_runClientMonad = ReaderT (const comp)}
 runInClient :: (MonadIO m) => Backend -> ClientMonad m a -> m a
 runInClient bkend comp = do
   client <-
-    liftIO $ mkGrpcClient $
+    liftIO $ mkGrpcClient $!
     GrpcConfig (COM.host bkend) (COM.port bkend) (COM.target bkend)
-  (runReaderT . _runClientMonad) comp $! EnvData client
+  client `seq` (runReaderT . _runClientMonad) comp $! EnvData client
 
 -- |Execute the command given in the CLArguments
 process :: Command -> IO ()
@@ -224,12 +224,17 @@ sendTransactionToBaker t nid = do
   d <-
     liftIO $ do
       let client = grpc env
+      putStrLn $ "In  -> " ++ show (Types.trHash t) ++ " " ++
+        show (Types.thNonce . Types.trHeader $ t)
       rawUnary
         (RPC :: RPC P2P "sendTransaction")
         client
         (defMessage & CF.networkId .~ fromIntegral nid & CF.payload .~
          S.encode t)
-  d `seq` return ()
+  d `seq` do
+    liftIO . putStrLn $ "Out -> " ++ show (Types.trHash t) ++ " " ++
+      show (Types.thNonce . Types.trHeader $ t)
+    return ()
 
 hookTransaction :: Text -> ClientMonad IO ()
 hookTransaction txh = do
