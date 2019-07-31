@@ -5,3 +5,8 @@ simple-client.cabal
 TAGS
 \#*\#
 extra-libs/
+0
+*.hp
+*.prof
+*.prof.html
+*.svg

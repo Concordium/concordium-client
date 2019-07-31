@@ -59,9 +59,17 @@ showLocalModules cdata =
              Nothing -> return ())
         (Map.toList modinfos)
 
+-- The complexity of the first parameter comes from the return type of
+-- rawUnary. See the documentation
+-- http://hackage.haskell.org/package/http2-client-grpc-0.7.0.0/docs/Network-GRPC-Client-Helpers.html#v:rawUnary
+outputGRPC ::
+     (Show a1)
+  => Either a2 (Either a1 (a3, b, Either String t))
+  -> (t -> IO ())
+  -> IO ()
 outputGRPC ret f =
   case ret of
-    Left e -> fail "Unable to send consensus query: too much concurrency"
+    Left _ -> fail "Unable to send consensus query: too much concurrency"
     Right (Right val) -> do
       let response = (\(_, _, g) -> g) val
       case response of

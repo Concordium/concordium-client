@@ -5,11 +5,11 @@
 {-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
+
 module Concordium.Client.Types.Transaction where
 
 import           Concordium.Crypto.SignatureScheme   (SchemeId (..),
-                                                      SignKey (..),
-                                                      )
+                                                      SignKey (..))
 import           Concordium.GlobalState.Transactions
 import qualified Concordium.ID.Account               as AH
 import qualified Concordium.ID.Types                 as IDTypes
@@ -18,9 +18,9 @@ import           Concordium.Types
 import           Data.Aeson                          as AE
 import qualified Data.Aeson.TH                       as AETH
 import           Data.Aeson.Types                    (typeMismatch)
-import qualified Data.ByteString.Short               as BSS
 import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Base16              as BS16
+import qualified Data.ByteString.Short               as BSS
 import           Data.Serialize                      as S
 import           Data.Text                           hiding (length, map)
 import qualified Data.Text.Encoding                  as Text
@@ -102,10 +102,10 @@ data TransactionJSONHeader =
     }
   deriving (Eq, Show)
 
-data ModuleSource =
-  ByName Text
+data ModuleSource
+  = ByName Text
   | FromSource Text
-  deriving(Eq, Show)
+  deriving (Eq, Show)
 
 -- |Payload of a transaction
 data TransactionJSONPayload
@@ -185,7 +185,8 @@ instance AE.FromJSON TransactionJSON where
     let tHeader = TransactionJSONHeader {..}
     tPayload <- v .: "payload"
     tSignKey <-
-      SignKey . BSS.toShort . fst . BS16.decode . Text.encodeUtf8 <$> (v .: "signKey")
+      SignKey . BSS.toShort . fst . BS16.decode . Text.encodeUtf8 <$>
+      (v .: "signKey")
     return $ TransactionJSON tHeader tPayload tSignKey
   parseJSON invalid = typeMismatch "Transaction" invalid
 

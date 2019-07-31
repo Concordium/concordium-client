@@ -79,7 +79,6 @@ executables:
       - -Werror=missing-fields
       - -Wredundant-constraints
       - -O2
-      - -threaded
 
     dependencies:
        - optparse-applicative
@@ -96,15 +95,18 @@ executables:
       - -Werror=missing-fields
       - -Wredundant-constraints
       - -O2
-      - -threaded
 
     dependencies:
        - optparse-applicative
        - mtl
+       - acorn
+       - unordered-containers
+       - text
        - base
        - simple-client
        - scheduler
        - random
+       - split
        - concordium-crypto
        - globalstate
        - globalstate-types
