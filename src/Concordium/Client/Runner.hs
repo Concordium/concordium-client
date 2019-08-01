@@ -4,6 +4,8 @@
 module Concordium.Client.Runner
   ( process
   , sendTransactionToBaker
+  , getConsensusStatus
+  , getAccountInfo
   , ClientMonad(..)
   , runInClient
   , EnvData(..)
@@ -105,17 +107,17 @@ useBackend act b =
         processTransaction source nid hook
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (Types.trHash t)
-    HookTransaction txh -> runInClient b $ hookTransaction txh
-    GetConsensusInfo -> runInClient b getConsensusStatus
-    GetBlockInfo block -> runInClient b $ getBlockInfo block
-    GetAccountList block -> runInClient b $ getAccountList block
-    GetInstances block -> runInClient b $ getInstances block
-    GetAccountInfo block account -> runInClient b $ getAccountInfo block account
+    HookTransaction txh -> runInClient b $ hookTransaction txh >>= printJSON
+    GetConsensusInfo -> runInClient b $ getConsensusStatus >>= printJSON
+    GetBlockInfo block -> runInClient b $ getBlockInfo block >>= printJSON
+    GetAccountList block -> runInClient b $ getAccountList block >>= printJSON
+    GetInstances block -> runInClient b $ getInstances block >>= printJSON
+    GetAccountInfo block account -> runInClient b $ getAccountInfo block account >>= printJSON
     GetInstanceInfo block account ->
-      runInClient b $ getInstanceInfo block account
-    GetRewardStatus block -> runInClient b $ getRewardStatus block
-    GetBirkParameters block -> runInClient b $ getBirkParameters block
-    GetModuleList block -> runInClient b $ getModuleList block
+      runInClient b $ getInstanceInfo block account >>= printJSON
+    GetRewardStatus block -> runInClient b $ getRewardStatus block >>= printJSON
+    GetBirkParameters block -> runInClient b $ getBirkParameters block >>= printJSON
+    GetModuleList block -> runInClient b $ getModuleList block >>= printJSON
     GetModuleSource block moduleref -> do
       mdata <- loadContextData
       modl <-
@@ -159,7 +161,7 @@ processTransaction source networkId hookit =
       when hookit $ do
         liftIO . putStrLn $ "Installing hook for transaction " ++
           show (Types.trHash transaction)
-        sendHookToBaker (Types.trHash transaction)
+        printJSON =<< sendHookToBaker (Types.trHash transaction)
       sendTransactionToBaker transaction networkId
       return transaction
 
@@ -205,25 +207,23 @@ encodeAndSignTransaction pl th keys =
       return $ Types.UpdateBakerSignKey ubsid ubsk ubsp
     (CT.DelegateStake dsid) -> return $ Types.DelegateStake dsid
 
-sendHookToBaker :: (MonadIO m) => Types.TransactionHash -> ClientMonad m ()
+sendHookToBaker :: (MonadIO m) => Types.TransactionHash -> ClientMonad m (Either String [Value])
 sendHookToBaker txh = do
-  env <- ask
+  client <- asks grpc
   liftIO $ do
-    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "hookTransaction")
         client
         (defMessage & CF.transactionHash .~ pack (show txh))
-    printJSON ret
+    return $ processJSON ret
 
 sendTransactionToBaker ::
      (MonadIO m) => Types.Transaction -> Int -> ClientMonad m ()
 sendTransactionToBaker t nid = do
-  env <- ask
+  client <- asks grpc
   d <-
     liftIO $ do
-      let client = grpc env
       rawUnary
         (RPC :: RPC P2P "sendTransaction")
         client
@@ -231,121 +231,111 @@ sendTransactionToBaker t nid = do
          S.encode t)
   d `seq` return ()
 
-hookTransaction :: Text -> ClientMonad IO ()
+hookTransaction :: Text -> ClientMonad IO (Either String [Value])
 hookTransaction txh = do
-  env <- ask
+  client <- asks grpc
   liftIO $ do
-    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "hookTransaction")
         client
         (defMessage & CF.transactionHash .~ txh)
-    printJSON ret
+    return $ processJSON ret
 
-getConsensusStatus :: ClientMonad IO ()
+getConsensusStatus :: ClientMonad IO (Either String [Value])
 getConsensusStatus = do
-  env <- ask
+  client <- asks grpc
   liftIO $ do
-    let client = grpc env
     ret <- rawUnary (RPC :: RPC P2P "getConsensusStatus") client defMessage
-    printJSON ret
+    return $ processJSON ret
 
-getBlockInfo :: Text -> ClientMonad IO ()
+getBlockInfo :: Text -> ClientMonad IO (Either String [Value])
 getBlockInfo hash = do
-  env <- ask
+  client <- asks grpc
   liftIO $ do
-    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "getBlockInfo")
         client
         (defMessage & CF.blockHash .~ hash)
-    printJSON ret
+    return $ processJSON ret
 
-getAccountList :: Text -> ClientMonad IO ()
+getAccountList :: Text -> ClientMonad IO (Either String [Value])
 getAccountList hash = do
-  env <- ask
+  client <- asks grpc
   liftIO $ do
-    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "getAccountList")
         client
         (defMessage & CF.blockHash .~ hash)
-    printJSON ret
+    return $ processJSON ret
 
-getInstances :: Text -> ClientMonad IO ()
+getInstances :: Text -> ClientMonad IO (Either String [Value])
 getInstances hash = do
-  env <- ask
+  client <- asks grpc
   liftIO $ do
-    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "getInstances")
         client
         (defMessage & CF.blockHash .~ hash)
-    printJSON ret
+    return $ processJSON ret
 
-getAccountInfo :: Text -> Text -> ClientMonad IO ()
+getAccountInfo :: Text -> Text -> ClientMonad IO (Either String [Value])
 getAccountInfo hash account = do
-  env <- ask
+  client <- asks grpc
   liftIO $ do
-    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "getAccountInfo")
         client
         (defMessage & CF.blockHash .~ hash & CF.address .~ account)
-    printJSON ret
+    return $ processJSON ret
 
-getInstanceInfo :: Text -> Text -> ClientMonad IO ()
+getInstanceInfo :: Text -> Text -> ClientMonad IO (Either String [Value])
 getInstanceInfo hash account = do
-  env <- ask
+  client <- asks grpc
   liftIO $ do
-    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "getInstanceInfo")
         client
         (defMessage & CF.blockHash .~ hash & CF.address .~ account)
-    printJSON ret
+    return $ processJSON ret
 
-getRewardStatus :: Text -> ClientMonad IO ()
+getRewardStatus :: Text -> ClientMonad IO (Either String [Value])
 getRewardStatus hash = do
-  env <- ask
+  client <- asks grpc
   liftIO $ do
-    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "getRewardStatus")
         client
         (defMessage & CF.blockHash .~ hash)
-    printJSON ret
+    return $ processJSON ret
 
-getBirkParameters :: Text -> ClientMonad IO ()
+getBirkParameters :: Text -> ClientMonad IO (Either String [Value])
 getBirkParameters hash = do
-  env <- ask
+  client <- asks grpc
   liftIO $ do
-    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "getBirkParameters")
         client
         (defMessage & CF.blockHash .~ hash)
-    printJSON ret
+    return $ processJSON ret
 
-getModuleList :: Text -> ClientMonad IO ()
+getModuleList :: Text -> ClientMonad IO (Either String [Value])
 getModuleList hash = do
-  env <- ask
+  client <- asks grpc
   liftIO $ do
-    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "getModuleList")
         client
         (defMessage & CF.blockHash .~ hash)
-    printJSON ret
+    return $ processJSON ret
 
 getModuleSource ::
      (MonadIO m)
@@ -353,9 +343,8 @@ getModuleSource ::
   -> Text
   -> ClientMonad (PR.Context Core.UA m) (Either String (Core.Module Core.UA))
 getModuleSource hash moduleref = do
-  env <- ask
+  client <- asks grpc
   liftIO $ do
-    let client = grpc env
     ret <-
       rawUnary
         (RPC :: RPC P2P "getModuleSource")

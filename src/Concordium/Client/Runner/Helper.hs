@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 
 module Concordium.Client.Runner.Helper
@@ -6,6 +7,7 @@ module Concordium.Client.Runner.Helper
   , showLocalModules
   , outputGRPC
   , printJSON
+  , processJSON
   ) where
 
 import qualified Acorn.Core                   as Core
@@ -19,16 +21,19 @@ import qualified Proto.Concordium_Fields      as CF
 
 import           Data.Attoparsec.Lazy         (Result (..), parse)
 import           Lens.Simple
-import           Network.GRPC.Client.Helpers
 
 import           Data.Aeson
 import           Data.Aeson.Encode.Pretty
-import           Data.ByteString.Internal     (w2c)
 import qualified Data.ByteString.Lazy         as BSL
 import qualified Data.ByteString.Lazy.Char8   as BSL8
 import           Data.Text.Encoding
 import qualified Data.Text.IO                 as TextIO
 import           System.Directory
+import Prelude hiding(fail)
+import Control.Monad.Fail
+import Data.Text(Text)
+import qualified Lens.Labels as Labels
+import Control.Monad.IO.Class
 
 -- |Loads the ".cache" file in current directory and generates a Context with it
 loadContextData :: IO (PR.ContextData Core.UA)
@@ -65,26 +70,32 @@ showLocalModules cdata =
 outputGRPC ::
      (Show a1)
   => Either a2 (Either a1 (a3, b, Either String t))
-  -> (t -> IO ())
-  -> IO ()
-outputGRPC ret f =
+  -> Either String t
+outputGRPC ret =
   case ret of
-    Left _ -> fail "Unable to send consensus query: too much concurrency"
+    Left _ -> Left "Unable to send consensus query: too much concurrency"
     Right (Right val) -> do
-      let response = (\(_, _, g) -> g) val
+      let (_, _, response) = val
       case response of
-        Left e  -> fail $ "gRPC response error: " ++ e
-        Right v -> f v
-    Right (Left e) -> fail $ "Unable to send consensus query: " ++ show e
+        Left e  -> Left $ "gRPC response error: " ++ e
+        Right v -> Right v
+    Right (Left e) -> Left $ "Unable to send consensus query: " ++ show e
 
-printJSON ret =
-  case ret ^? unaryOutput . CF.jsonValue of
-    Nothing -> outputGRPC ret print
-    Just jsonval ->
-      putStrLn . map w2c . BSL.unpack . BSL8.unlines . map encodePretty . values .
-      BSL.fromStrict .
-      encodeUtf8 $
-      jsonval
+processJSON :: (Show a1, Labels.HasLens' a "jsonValue" Text) =>
+  Either a2 (Either a1 (a3, b, Either String a)) -> Either String [Value]
+processJSON ret = do
+  val <- outputGRPC ret
+  let r = val ^. CF.jsonValue
+  return . values . BSL.fromStrict . encodeUtf8 $ r
+
+printJSON :: MonadIO m => Either String [Value] -> m ()
+printJSON v = liftIO $ 
+  case v of
+    Left err -> putStrLn err
+    Right jsonVals -> printJSONValues jsonVals
+
+printJSONValues :: [Value] -> IO ()
+printJSONValues = mapM_ (BSL8.putStrLn . encodePretty)
 
 values :: BSL.ByteString -> [Value]
 values s =
