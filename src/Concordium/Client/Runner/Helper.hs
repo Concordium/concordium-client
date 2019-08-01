@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE FlexibleContexts #-}
 
 module Concordium.Client.Runner.Helper
@@ -22,18 +22,18 @@ import qualified Proto.Concordium_Fields      as CF
 import           Data.Attoparsec.Lazy         (Result (..), parse)
 import           Lens.Simple
 
+import           Control.Monad.Fail
+import           Control.Monad.IO.Class
 import           Data.Aeson
 import           Data.Aeson.Encode.Pretty
 import qualified Data.ByteString.Lazy         as BSL
 import qualified Data.ByteString.Lazy.Char8   as BSL8
+import           Data.Text                    (Text)
 import           Data.Text.Encoding
 import qualified Data.Text.IO                 as TextIO
+import qualified Lens.Labels                  as Labels
+import           Prelude                      hiding (fail)
 import           System.Directory
-import Prelude hiding(fail)
-import Control.Monad.Fail
-import Data.Text(Text)
-import qualified Lens.Labels as Labels
-import Control.Monad.IO.Class
 
 -- |Loads the ".cache" file in current directory and generates a Context with it
 loadContextData :: IO (PR.ContextData Core.UA)
@@ -81,17 +81,20 @@ outputGRPC ret =
         Right v -> Right v
     Right (Left e) -> Left $ "Unable to send consensus query: " ++ show e
 
-processJSON :: (Show a1, Labels.HasLens' a "jsonValue" Text) =>
-  Either a2 (Either a1 (a3, b, Either String a)) -> Either String [Value]
+processJSON ::
+     (Show a1, Labels.HasLens' a "jsonValue" Text)
+  => Either a2 (Either a1 (a3, b, Either String a))
+  -> Either String [Value]
 processJSON ret = do
   val <- outputGRPC ret
   let r = val ^. CF.jsonValue
   return . values . BSL.fromStrict . encodeUtf8 $ r
 
 printJSON :: MonadIO m => Either String [Value] -> m ()
-printJSON v = liftIO $ 
+printJSON v =
+  liftIO $
   case v of
-    Left err -> putStrLn err
+    Left err       -> putStrLn err
     Right jsonVals -> printJSONValues jsonVals
 
 printJSONValues :: [Value] -> IO ()

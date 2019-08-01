@@ -112,11 +112,13 @@ useBackend act b =
     GetBlockInfo block -> runInClient b $ getBlockInfo block >>= printJSON
     GetAccountList block -> runInClient b $ getAccountList block >>= printJSON
     GetInstances block -> runInClient b $ getInstances block >>= printJSON
-    GetAccountInfo block account -> runInClient b $ getAccountInfo block account >>= printJSON
+    GetAccountInfo block account ->
+      runInClient b $ getAccountInfo block account >>= printJSON
     GetInstanceInfo block account ->
       runInClient b $ getInstanceInfo block account >>= printJSON
     GetRewardStatus block -> runInClient b $ getRewardStatus block >>= printJSON
-    GetBirkParameters block -> runInClient b $ getBirkParameters block >>= printJSON
+    GetBirkParameters block ->
+      runInClient b $ getBirkParameters block >>= printJSON
     GetModuleList block -> runInClient b $ getModuleList block >>= printJSON
     GetModuleSource block moduleref -> do
       mdata <- loadContextData
@@ -207,7 +209,10 @@ encodeAndSignTransaction pl th keys =
       return $ Types.UpdateBakerSignKey ubsid ubsk ubsp
     (CT.DelegateStake dsid) -> return $ Types.DelegateStake dsid
 
-sendHookToBaker :: (MonadIO m) => Types.TransactionHash -> ClientMonad m (Either String [Value])
+sendHookToBaker ::
+     (MonadIO m)
+  => Types.TransactionHash
+  -> ClientMonad m (Either String [Value])
 sendHookToBaker txh = do
   client <- asks grpc
   liftIO $ do
@@ -223,12 +228,11 @@ sendTransactionToBaker ::
 sendTransactionToBaker t nid = do
   client <- asks grpc
   d <-
-    liftIO $ do
-      rawUnary
-        (RPC :: RPC P2P "sendTransaction")
-        client
-        (defMessage & CF.networkId .~ fromIntegral nid & CF.payload .~
-         S.encode t)
+    liftIO $
+    rawUnary
+      (RPC :: RPC P2P "sendTransaction")
+      client
+      (defMessage & CF.networkId .~ fromIntegral nid & CF.payload .~ S.encode t)
   d `seq` return ()
 
 hookTransaction :: Text -> ClientMonad IO (Either String [Value])
