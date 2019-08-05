@@ -80,7 +80,9 @@ runInClient bkend comp = do
   client <-
     liftIO $ mkGrpcClient $
     GrpcConfig (COM.host bkend) (COM.port bkend) (COM.target bkend)
-  (runReaderT . _runClientMonad) comp $! EnvData client
+  ret <- (runReaderT . _runClientMonad) comp $! EnvData client
+  liftIO $ close client
+  return ret
 
 -- |Execute the command given in the CLArguments
 process :: Command -> IO ()
