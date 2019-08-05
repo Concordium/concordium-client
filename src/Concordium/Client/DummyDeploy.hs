@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, LambdaCase #-}
 
 module Concordium.Client.DummyDeploy where
 
@@ -7,9 +7,6 @@ import           Concordium.Client.Runner
 import           Concordium.GlobalState.Transactions
 import qualified Concordium.Scheduler.Types          as Types
 import           Concordium.Types                    as Types
-import qualified Data.HashMap.Strict                 as HM
-import           Data.String
-import           Data.Word
 
 import           Concordium.Crypto.Ed25519Signature  (randomKeyPair)
 import           Concordium.Crypto.SHA256            (hash)
@@ -17,9 +14,9 @@ import qualified Concordium.Crypto.SignatureScheme   as Sig
 import           System.Random
 
 import           Acorn.Core                          as Core
-import           Data.Aeson
 
-import           Data.Text
+import           Data.Maybe
+import           Prelude hiding(mod)
 
 import qualified Concordium.ID.Account               as IDA
 
@@ -33,11 +30,11 @@ blockPointer :: BlockHash
 blockPointer = hash ""
 
 deployModule ::
-     Backend -> Maybe Nonce -> Energy -> Core.Module Core.UA -> IO Transaction
+     Backend -> Maybe Nonce -> Energy -> [Module UA] -> IO [Transaction]
 deployModule = deployModuleWithKey mateuszKP
 
 deployModule' ::
-     Backend -> Maybe Nonce -> Energy -> Core.Module Core.UA -> IO Transaction
+     Backend -> Maybe Nonce -> Energy -> [Module UA] -> IO [Transaction]
 deployModule' = deployModuleWithKey mateuszKP'
 
 deployModuleWithKey ::
@@ -45,15 +42,15 @@ deployModuleWithKey ::
   -> Backend
   -> Maybe Nonce
   -> Energy
-  -> Module UA
-  -> IO Transaction
-deployModuleWithKey kp back mnonce amount amodule = runInClient back comp
+  -> [Module UA]
+  -> IO [Transaction]
+deployModuleWithKey kp back mnonce amount amodules = runInClient back comp
   where
-    tx nonce =
+    tx nonce mod =
       Types.signTransaction
         kp
         (txHeader nonce)
-        (Types.encodePayload (Types.DeployModule amodule))
+        (Types.encodePayload (Types.DeployModule mod))
     txHeader nonce =
       Types.makeTransactionHeader
         Sig.Ed25519
@@ -61,50 +58,9 @@ deployModuleWithKey kp back mnonce amount amodule = runInClient back comp
         nonce
         amount
         blockPointer
-    comp =
-      case mnonce of
-        Nothing -> do
-          cinfo <- getConsensusStatus
-          case cinfo of
-            Left err -> fail err
-            Right [] -> fail "Should not happen."
-            Right (v:_) ->
-              case readBestBlock v of
-                Just (String blockhash) -> do
-                  ainfo <-
-                    getAccountInfo
-                      blockhash
-                      (fromString
-                         (show
-                            (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519)))
-                  case ainfo of
-                    Left err -> fail err
-                    Right [] -> fail "Should not happen."
-                    Right (aval:_) ->
-                      case readAccountNonce aval of
-                        Just (Number nonce) -> do
-                          let transaction =
-                                tx .
-                                Nonce .
-                                (fromIntegral :: Integer -> Word64) . floor $
-                                nonce
-                          sendTransactionToBaker
-                            (tx .
-                             Nonce . (fromIntegral :: Integer -> Word64) . floor $
-                             nonce)
-                            100
-                          return transaction
-                        _ -> fail "Nonce not present in answer"
-                _ -> fail "Best Block not present in answer"
-        Just nonce -> do
-          let transaction = tx nonce
-          sendTransactionToBaker transaction 100
-          return transaction
 
-readBestBlock :: Value -> Maybe Value
-readBestBlock (Object o) = HM.lookup (pack "bestBlock") o
-readBestBlock _          = Nothing
-
-readAccountNonce :: Value -> Maybe Value
-readAccountNonce (Object o) = HM.lookup (pack "accountNonce") o
-readAccountNonce _          = Nothing
+    comp = do
+      nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) =<< getBestBlockHash)
+      let transactions = zipWith tx [nonce..] amodules
+      mapM_ (flip sendTransactionToBaker 100) transactions
+      return transactions

@@ -1,8 +1,12 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Concordium.Client.Runner
   ( process
+  , getAccountNonce
+  , getBestBlockHash
   , sendTransactionToBaker
   , getConsensusStatus
   , getAccountInfo
@@ -19,6 +23,8 @@ import           Concordium.Client.GRPC
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Crypto.SignatureScheme   (KeyPair (..))
+import qualified Concordium.Crypto.SignatureScheme   as Sig
+import qualified Concordium.ID.Account               as IDA
 
 import           Data.ProtoLens                      (defMessage)
 import           Proto.Concordium
@@ -38,9 +44,11 @@ import           Network.GRPC.Client
 import           Network.GRPC.Client.Helpers
 
 import           Data.Aeson                          as AE
+import           Data.Aeson.Types                    as AE
 import qualified Data.HashMap.Strict                 as Map
 import           Data.Maybe
 import           Data.Text
+import           Data.String
 
 import           Prelude                             hiding (fail, mod, null,
                                                       unlines)
@@ -94,7 +102,7 @@ process command =
       showLocalModules mdata
     -- The rest of the commands expect a backend to be provided
     act ->
-      maybe (print "No Backend provided") (useBackend act) (backend command)
+      maybe (putStrLn "No Backend provided") (useBackend act) (backend command)
 
 useBackend :: Action -> Backend -> IO ()
 useBackend act b =
@@ -151,7 +159,9 @@ processTransaction source networkId hookit =
           Just transaction -> do
             nonce <-
               case thNonce . metadata $ transaction of
-                Nothing    -> undefined --askBaker
+                Nothing    ->
+                  let senderAddress = IDA.accountAddress (thSenderKey (metadata transaction)) Sig.Ed25519
+                  in getAccountNonce senderAddress =<< getBestBlockHash
                 Just nonce -> return nonce
             let properT =
                   makeTransactionHeaderWithNonce (metadata transaction) nonce
@@ -166,6 +176,34 @@ processTransaction source networkId hookit =
         printJSON =<< sendHookToBaker (Types.trHash transaction)
       sendTransactionToBaker transaction networkId
       return transaction
+
+
+getBestBlockHash :: (MonadFail m, MonadIO m) => ClientMonad m Text
+getBestBlockHash = do
+  getConsensusStatus >>= \case
+    Left err -> fail err
+    Right [] -> fail "Should not happen."
+    Right (v:_) ->
+      case parse readBestBlock v of
+        Success bh -> return bh
+        Error err -> fail err
+
+getAccountNonce :: (MonadFail m, MonadIO m) => Types.AccountAddress -> Text -> ClientMonad m Types.Nonce
+getAccountNonce addr blockhash =
+  getAccountInfo blockhash (fromString (show addr)) >>= \case
+    Left err -> fail err
+    Right [] -> fail "Should not happen."
+    Right (aval:_) ->
+      case parse readAccountNonce aval of
+        Success nonce -> return nonce
+        Error err -> fail err
+
+readBestBlock :: Value -> Parser Text
+readBestBlock = withObject "Best block hash" $ \v -> v .: "bestBlock"
+
+readAccountNonce :: Value -> Parser Types.Nonce
+readAccountNonce = withObject "Account nonce" $ \v -> v .: "accountNonce"
+
 
 readModule :: MonadIO m => FilePath -> ClientMonad m (Core.Module Core.UA)
 readModule filePath = do
@@ -246,7 +284,7 @@ hookTransaction txh = do
         (defMessage & CF.transactionHash .~ txh)
     return $ processJSON ret
 
-getConsensusStatus :: ClientMonad IO (Either String [Value])
+getConsensusStatus :: (MonadFail m, MonadIO m) => ClientMonad m (Either String [Value])
 getConsensusStatus = do
   client <- asks grpc
   liftIO $ do
@@ -286,7 +324,7 @@ getInstances hash = do
         (defMessage & CF.blockHash .~ hash)
     return $ processJSON ret
 
-getAccountInfo :: Text -> Text -> ClientMonad IO (Either String [Value])
+getAccountInfo :: (MonadFail m, MonadIO m) => Text -> Text -> ClientMonad m (Either String [Value])
 getAccountInfo hash account = do
   client <- asks grpc
   liftIO $ do

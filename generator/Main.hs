@@ -14,7 +14,6 @@ import           Control.Concurrent
 import           Control.Monad.Reader
 import           Options.Applicative
 
-
 import           Acorn.Core                          as Core
 import qualified Acorn.Parser                        as Parser
 import           Acorn.Utils.Init
