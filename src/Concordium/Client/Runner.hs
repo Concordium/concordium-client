@@ -232,8 +232,13 @@ readModule filePath = do
     Left err  -> liftIO (die err)
     Right mod -> return mod
 
-
-processTransaction_ transaction networkId = do
+processTransaction_ ::
+     (MonadFail m, MonadIO m)
+  => TransactionJSON
+  -> Int
+  -> Bool
+  -> ClientMonad (PR.Context Core.UA m) Types.Transaction
+processTransaction_ transaction networkId hookit = do
   transaction <- do
     nonce <-
       case thNonce . metadata $ transaction of
@@ -245,8 +250,13 @@ processTransaction_ transaction networkId = do
       (payload transaction)
       properT
       (KeyPair (CT.signKey transaction) (Types.thSenderKey properT))
-  sendTransactionToBaker transaction networkId
 
+  when hookit $ do
+    liftIO . putStrLn $ "Installing hook for transaction " ++
+      show (Types.trHash transaction)
+    sendHookToBaker (Types.trHash transaction)
+  sendTransactionToBaker transaction networkId
+  return transaction
 
 encodeAndSignTransaction ::
      (MonadFail m, MonadIO m)

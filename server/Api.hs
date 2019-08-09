@@ -48,8 +48,11 @@ servantApp backend = genericServe routesAsServer
 
       let nid = 1234 -- @TODO what is the network ID actually for...? What should it be in wallet context?
 
-      t <- PR.evalContext mdata $ runInClient backend $ processTransaction_ transaction nid
-      putStrLn $ "Transaction sent to the baker: " ++ (show $ t)
+      t <- do
+        let hookIt = False
+        PR.evalContext mdata $ runInClient backend $ processTransaction_ transaction nid hookIt
+
+      putStrLn $ "Transaction sent to the baker: " ++ show (Types.trHash t)
 
     -- @TODO What response should we send?
     pure "Submitted"
