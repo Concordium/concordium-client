@@ -16,7 +16,7 @@ main = manage $ do
   program $ do
     putStrLn $ "[server] Booting..."
 
-    let backend = COM.GRPC { host = "127.0.0.1", port = 11107 }
+    let backend = COM.GRPC { host = "127.0.0.1", port = 11118, target = Nothing }
 
     -- Boot the http server
     let middlewares = allowCsrf . corsified
