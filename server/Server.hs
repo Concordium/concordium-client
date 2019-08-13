@@ -5,16 +5,15 @@ import Data.ByteString (ByteString)
 import Data.Function ((&))
 
 import qualified Network.Wai.Handler.Warp as W
-import Network.HTTP.Types                (status404, status200)
 import System.FilePath                   ((</>))
-import Network.Wai                       (Application, Middleware, responseLBS, responseFile)
+import Network.Wai                       (Application, Middleware)
 import Network.Wai.Middleware.AddHeaders (addHeaders)
 import Network.Wai.Middleware.Cors       (CorsResourcePolicy(..), cors)
 import Network.Wai.Middleware.HttpAuth   (basicAuth)
 import Network.Wai.Middleware.Static     (staticPolicy, policy, Policy)
 import Network.Wai.Middleware.Gzip       (gzip, def)
 import qualified Network.Wai.Middleware.ForceSSL as M (forceSSL)
-import System.IO                         (FilePath)
+
 
 import qualified Config
 
