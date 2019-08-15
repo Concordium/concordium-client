@@ -26,7 +26,7 @@ import           Concordium.Client.Types.Transaction
 import           Concordium.Client.Commands          as COM
 import qualified Acorn.Parser.Runner                 as PR
 import qualified Concordium.Scheduler.Types          as Types
-
+import SimpleIdClientMock
 
 data Routes r = Routes
     { sendTransaction :: r :-
@@ -35,6 +35,9 @@ data Routes r = Routes
     , typecheckContract :: r :-
         "v1" :> "typecheckContract" :> ReqBody '[JSON] Text
                                     :> Post '[JSON] Text
+    , identityGenerateCHI :: r :-
+        "v1" :> "identityGenerateCHI" :> ReqBody '[JSON] Text
+                                      :> Post '[JSON] Text
     }
   deriving (Generic)
 
@@ -97,3 +100,8 @@ servantApp backend = genericServe routesAsServer
               pure $ T.pack stderr
           else
               pure "unknownerr"
+
+
+  identityGenerateCHI :: Text -> Handler Text
+  identityGenerateCHI name = do
+    liftIO $ SimpleIdClientMock.createChi name

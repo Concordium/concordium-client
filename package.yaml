@@ -132,11 +132,12 @@ executables:
        - filepath
        - http-types
        - managed
+       - neat-interpolation
        - process
        - servant
        - servant-server
-       - simple-client
        - silently
+       - simple-client
        - text
        - wai
        - wai-cors
