@@ -64,7 +64,7 @@ Paste into `database/identity_provider-5.json`
 Then sign the PIO.
 
 ```
-simple_id_client ip-sign-pio --pio mario-pio.json --ip-data database/identity_provider-5.json --out mario-identity-object.json
+simple_id_client ip-sign-pio --pio mario-pio.json --ip-data database/identity_provider-5.json --out mario-spio.json
 ```
 
 ### User: Deployment of credentials onto the chain

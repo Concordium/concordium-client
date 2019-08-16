@@ -4,12 +4,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 module Api where
 
 import Network.Wai                   (Application)
 import Control.Monad.Managed         (liftIO)
+import Data.Aeson.Types              (ToJSON, FromJSON)
 import Data.Text                     (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
@@ -32,14 +34,49 @@ data Routes r = Routes
     { sendTransaction :: r :-
         "v1" :> "sendTransaction" :> ReqBody '[JSON] TransactionJSON
                                   :> Post '[JSON] Text
+
     , typecheckContract :: r :-
         "v1" :> "typecheckContract" :> ReqBody '[JSON] Text
                                     :> Post '[JSON] Text
+
     , identityGenerateCHI :: r :-
         "v1" :> "identityGenerateCHI" :> ReqBody '[JSON] Text
                                       :> Post '[JSON] Text
+
+    , identityCreateAciPio :: r :-
+        "v1" :> "identityCreateAciPio" :> ReqBody '[JSON] CreateAciPioRequest
+                                       :> Post '[JSON] CreateAciPioResponse
+
+    , identitySignPio :: r :-
+        "v1" :> "identitySignPio" :> ReqBody '[JSON] SignPioRequest
+                                  :> Post '[JSON] Text
+
     }
   deriving (Generic)
+
+
+data CreateAciPioRequest =
+  CreateAciPioRequest
+    { scheme :: IdAttributesScheme
+    , chi :: Text
+    }
+  deriving (FromJSON, Generic, Show)
+
+
+data CreateAciPioResponse =
+  CreateAciPioResponse
+    { aci :: Text
+    , pio :: Text
+    }
+  deriving (ToJSON, Generic, Show)
+
+
+data SignPioRequest =
+  SignPioRequest
+    { pio :: Text
+    , identityProviderId :: Text
+    }
+  deriving (FromJSON, Generic, Show)
 
 
 api :: Proxy (ToServantApi Routes)
@@ -105,3 +142,14 @@ servantApp backend = genericServe routesAsServer
   identityGenerateCHI :: Text -> Handler Text
   identityGenerateCHI name = do
     liftIO $ SimpleIdClientMock.createChi name
+
+
+  identityCreateAciPio :: CreateAciPioRequest -> Handler CreateAciPioResponse
+  identityCreateAciPio CreateAciPioRequest{ scheme, chi } = do
+    (aci, pio) <- liftIO $ SimpleIdClientMock.createAciPio scheme chi
+    pure $ CreateAciPioResponse { aci = aci, pio = pio }
+
+
+  identitySignPio :: SignPioRequest -> Handler Text
+  identitySignPio SignPioRequest{ pio, identityProviderId } = do
+    liftIO $ SimpleIdClientMock.signPio pio identityProviderId
