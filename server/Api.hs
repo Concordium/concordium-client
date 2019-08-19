@@ -39,8 +39,8 @@ data Routes r = Routes
         "v1" :> "typecheckContract" :> ReqBody '[JSON] Text
                                     :> Post '[JSON] Text
 
-    , identityGenerateCHI :: r :-
-        "v1" :> "identityGenerateCHI" :> ReqBody '[JSON] Text
+    , identityGenerateChi :: r :-
+        "v1" :> "identityGenerateChi" :> ReqBody '[JSON] Text
                                       :> Post '[JSON] Text
 
     , identityCreateAciPio :: r :-
@@ -140,8 +140,8 @@ servantApp backend = genericServe routesAsServer
               pure "unknownerr"
 
 
-  identityGenerateCHI :: Text -> Handler Text
-  identityGenerateCHI name = do
+  identityGenerateChi :: Text -> Handler Text
+  identityGenerateChi name = do
     liftIO $ SimpleIdClientMock.createChi name
 
 

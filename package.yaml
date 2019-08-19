@@ -127,6 +127,7 @@ executables:
       -threaded
 
     dependencies:
+       - aeson
        - bytestring
        - directory
        - filepath
