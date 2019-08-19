@@ -93,7 +93,8 @@ servantApp backend = genericServe routesAsServer
     liftIO $ do
       mdata <- loadContextData
 
-      let nid = 1234 -- @TODO what is the network ID actually for...? What should it be in wallet context?
+      -- The networkId is for running multiple networks that's not the same chain, but hasn't been taken into use yet
+      let nid = 1000
 
       t <- do
         let hookIt = False
