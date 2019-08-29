@@ -18,6 +18,7 @@ import           Acorn.Core                          as Core
 import qualified Data.ByteString                     as BS
 import qualified Data.Serialize.Put                  as P
 import           Data.Maybe
+import           Data.Aeson(Value)
 import           Prelude hiding(mod)
 
 import qualified Concordium.ID.Account               as IDA
@@ -32,11 +33,11 @@ blockPointer :: BlockHash
 blockPointer = hash ""
 
 deployModule ::
-     Backend -> Maybe Nonce -> Energy -> [Module UA] -> IO [Transaction]
+     Backend -> Maybe Nonce -> Energy -> [Module UA] -> IO [(Transaction, Either String [Value])]
 deployModule = deployModuleWithKey mateuszKP
 
 deployModule' ::
-     Backend -> Maybe Nonce -> Energy -> [Module UA] -> IO [Transaction]
+     Backend -> Maybe Nonce -> Energy -> [Module UA] -> IO [(Transaction, Either String [Value])]
 deployModule' = deployModuleWithKey mateuszKP'
 
 deployModuleWithKey ::
@@ -45,7 +46,7 @@ deployModuleWithKey ::
   -> Maybe Nonce
   -> Energy
   -> [Module UA]
-  -> IO [Transaction]
+  -> IO [(Transaction, Either String [Value])]
 deployModuleWithKey kp back mnonce amount amodules = runInClient back comp
   where
     tx nonce mod =
@@ -64,8 +65,11 @@ deployModuleWithKey kp back mnonce amount amodules = runInClient back comp
     comp = do
       nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) =<< getBestBlockHash)
       let transactions = zipWith tx [nonce..] amodules
-      mapM_ (flip sendTransactionToBaker 100) transactions
-      return transactions
+      mapM (\ctx -> do
+                txReturn <- sendHookToBaker (Types.trHash ctx)
+                sendTransactionToBaker ctx 100
+                return (ctx, txReturn)
+            ) transactions
 
 
 initContractWithKey ::
@@ -77,7 +81,7 @@ initContractWithKey ::
   -> Core.ModuleRef
   -> Core.TyName
   -> Core.Expr Core.UA Core.ModuleName
-  -> IO Transaction
+  -> IO (Transaction, Either String [Value])
 initContractWithKey kp back mnonce energy amount homeModule contractName contractFlags = runInClient back comp
   where
     tx nonce =
@@ -105,5 +109,6 @@ initContractWithKey kp back mnonce energy amount homeModule contractName contrac
     comp = do
       nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) =<< getBestBlockHash)
       let transaction = tx nonce
+      txReturn <- sendHookToBaker (Types.trHash transaction)
       sendTransactionToBaker transaction 100
-      return transaction
+      return (transaction, txReturn)

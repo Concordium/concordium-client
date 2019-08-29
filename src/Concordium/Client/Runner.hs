@@ -8,6 +8,7 @@ module Concordium.Client.Runner
   , getAccountNonce
   , getBestBlockHash
   , sendTransactionToBaker
+  , sendHookToBaker
   , getConsensusStatus
   , getAccountInfo
   , ClientMonad(..)
