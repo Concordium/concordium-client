@@ -17,6 +17,7 @@ module Concordium.Client.Runner
   ) where
 
 import qualified Acorn.Core                          as Core
+import qualified Acorn.Core.PrettyPrint              as PP
 import qualified Acorn.Parser.Runner                 as PR
 import           Concordium.Client.Commands          as COM hiding (networkId)
 import           Concordium.Client.GRPC
@@ -137,13 +138,11 @@ useBackend act b =
       case modl of
         Left x ->
           print $ "Unable to get the Module from the gRPC server: " ++ show x
-        Right v -> do
-          s <-
-            PR.evalContext
-              mdata
-              (PR.ppModuleInCtx v :: PR.Context Core.UA IO String)
-          putStrLn $ "Retrieved module " ++ show moduleref
-          putStrLn s
+        Right v ->
+          let s = show (PP.showModule v)
+          in do
+            putStrLn $ "Retrieved module " ++ show moduleref
+            putStrLn s
     _ -> undefined
 
 processTransaction ::

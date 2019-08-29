@@ -60,8 +60,8 @@ simpleCounterCtx = let (_, _, tms, _) = Parser.modNames (first baseStateWithCoun
 inCtx :: Text.Text -> Core.Name
 inCtx txt = fromJust (Map.lookup txt simpleCounterCtx)
 
-inCtxTm :: Text.Text -> Core.Expr Core.UA origin
-inCtxTm = Core.Atom . Core.LocalDef . inCtx
+inCtxTm :: Text.Text -> Core.Atom origin
+inCtxTm = Core.Var . Core.LocalDef . inCtx
 
 mkTransaction :: Nonce -> Core.Expr Core.UA Core.ModuleName -> Types.Transaction
 mkTransaction n dat  = Runner.signTx mateuszKP hdr payload
@@ -118,7 +118,7 @@ processBatch delay dat b = do
 
 go :: TxOptions -> ClientMonad IO ()
 go TxOptions{..} = do
-  let dat = Core.App (inCtxTm "Inc") (Core.Literal (Core.Int64 10))
+  let dat = Core.App (inCtxTm "Inc") [Core.Literal (Core.Int64 10)]
   foldM_ (\_ a -> processBatch delay dat a) undefined (chunksOf perBatch [startNonce..])
 
 main :: IO ()
