@@ -254,7 +254,7 @@ processTransaction_ transaction networkId hookit = do
   when hookit $ do
     liftIO . putStrLn $ "Installing hook for transaction " ++
       show (Types.trHash transaction)
-    sendHookToBaker (Types.trHash transaction)
+    printJSON =<< sendHookToBaker (Types.trHash transaction)
   sendTransactionToBaker transaction networkId
   return transaction
 

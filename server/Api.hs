@@ -13,6 +13,7 @@ import Network.Wai                   (Application)
 import Control.Monad.Managed         (liftIO)
 import Data.Aeson.Types              (ToJSON, FromJSON)
 import Data.Text                     (Text)
+import Data.Maybe                    (fromMaybe)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import System.Directory
@@ -39,6 +40,10 @@ data Routes r = Routes
         "v1" :> "typecheckContract" :> ReqBody '[JSON] Text
                                     :> Post '[JSON] Text
 
+    , betaComboProvision :: r :-
+        "v1" :> "betaComboProvision" :> ReqBody '[JSON] ComboProvisionRequest
+                                     :> Post '[JSON] ComboProvisionResponse
+
     , identityGenerateChi :: r :-
         "v1" :> "identityGenerateChi" :> ReqBody '[JSON] Text
                                       :> Post '[JSON] Text
@@ -53,6 +58,25 @@ data Routes r = Routes
 
     }
   deriving (Generic)
+
+
+
+data ComboProvisionRequest =
+  ComboProvisionRequest
+    { scheme :: Text
+    , attributes :: [Text]
+    , accountKeys :: Maybe Text
+    }
+  deriving (FromJSON, Generic, Show)
+
+
+data ComboProvisionResponse =
+  ComboProvisionResponse
+    { accountKeys :: Text
+    , aci :: Text
+    , spio :: Text
+    }
+  deriving (ToJSON, Generic, Show)
 
 
 data CreateAciPioRequest =
@@ -138,6 +162,19 @@ servantApp backend = genericServe routesAsServer
               pure $ T.pack stderr
           else
               pure "unknownerr"
+
+
+  betaComboProvision :: ComboProvisionRequest -> Handler ComboProvisionResponse
+  betaComboProvision ComboProvisionRequest{ scheme, attributes, accountKeys } = do
+    (aci, pio) <- liftIO $ SimpleIdClientMock.createAciPio SimpleIdClientMock.V2 "x"
+    spio <- liftIO $ SimpleIdClientMock.signPio "x" "x"
+
+    pure $
+      ComboProvisionResponse
+        { accountKeys = fromMaybe "@TODO generate new account keys here" accountKeys
+        , aci = aci
+        , spio = spio
+        }
 
 
   identityGenerateChi :: Text -> Handler Text
