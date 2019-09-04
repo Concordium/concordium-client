@@ -44,6 +44,10 @@ data Routes r = Routes
         "v1" :> "betaComboProvision" :> ReqBody '[JSON] ComboProvisionRequest
                                      :> Post '[JSON] ComboProvisionResponse
 
+    , accountTransactions :: r :-
+        "v1" :> "accountTransactions" :> ReqBody '[JSON] Text
+                                     :> Post '[JSON] [AccountTransaction]
+
     , identityGenerateChi :: r :-
         "v1" :> "identityGenerateChi" :> ReqBody '[JSON] Text
                                       :> Post '[JSON] Text
@@ -60,11 +64,10 @@ data Routes r = Routes
   deriving (Generic)
 
 
-
 data ComboProvisionRequest =
   ComboProvisionRequest
     { scheme :: Text
-    , attributes :: [Text]
+    , attributes :: [(Text,Text)]
     , accountKeys :: Maybe Text
     }
   deriving (FromJSON, Generic, Show)
@@ -169,12 +172,17 @@ servantApp backend = genericServe routesAsServer
     (aci, pio) <- liftIO $ SimpleIdClientMock.createAciPio SimpleIdClientMock.V2 "x"
     spio <- liftIO $ SimpleIdClientMock.signPio "x" "x"
 
+    liftIO $ putStrLn $ show attributes
     pure $
       ComboProvisionResponse
         { accountKeys = fromMaybe "@TODO generate new account keys here" accountKeys
         , aci = aci
         , spio = spio
         }
+
+  accountTransactions :: Text -> Handler [AccountTransaction]
+  accountTransactions address =
+    pure $ SimpleIdClientMock.accountTransactions address
 
 
   identityGenerateChi :: Text -> Handler Text

@@ -132,3 +132,33 @@ signPio pio identityProviderId =
       "signature": "868eb423cf15c89eaf8388c5a9ceddcc3bae02ce74dc96e11510f5671392f6f5ff195ec97807fe1cb01809c88272234498d7ea7bae75d3b1c46b4210262ee81c5b38f56ed1dcf44cead22ab98058573dfeb2d81dbe44149f1247aad9df8882b4"
     }
   |]
+
+
+data AccountTransaction =
+  AccountTransaction
+    { transactionId :: Text
+    , transactionType :: TransactionType
+    , amount :: Int
+    , fromAddress :: Text
+    , toAddress :: Text
+    , blockNumber :: Int
+    , slotNumber :: Int
+    }
+  deriving (ToJSON, Generic, Show)
+
+
+data TransactionType
+  = Sent
+  | Received
+  | Shielded
+  | Unshielded
+  deriving (ToJSON, Generic, Show)
+
+
+accountTransactions :: Text -> [AccountTransaction]
+accountTransactions address =
+  [ AccountTransaction { transactionId = "abcd", transactionType = Received, amount = 123, fromAddress = "x", toAddress = "y", blockNumber = 123, slotNumber = 321 }
+  , AccountTransaction { transactionId = "efgh", transactionType = Sent, amount = 123, fromAddress = "x", toAddress = "y", blockNumber = 123, slotNumber = 321 }
+  , AccountTransaction { transactionId = "ijkl", transactionType = Shielded, amount = 123, fromAddress = "x", toAddress = "y", blockNumber = 123, slotNumber = 321 }
+  , AccountTransaction { transactionId = "mnop", transactionType = Unshielded, amount = 123, fromAddress = "x", toAddress = "y", blockNumber = 123, slotNumber = 321 }
+  ]
