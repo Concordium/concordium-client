@@ -2,7 +2,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-
+{-# LANGUAGE BangPatterns #-}
 module Concordium.Client.Runner
   ( process
   , getAccountNonce
@@ -80,10 +80,10 @@ liftContext comp = ClientMonad {_runClientMonad = ReaderT (const comp)}
 runInClient :: (MonadIO m) => Backend -> ClientMonad m a -> m a
 runInClient bkend comp = do
   client <-
-    liftIO $ mkGrpcClient $
+    liftIO $ mkGrpcClient $!
     GrpcConfig (COM.host bkend) (COM.port bkend) (COM.target bkend)
   ret <- (runReaderT . _runClientMonad) comp $! EnvData client
-  liftIO $ close client
+  liftIO $! close client
   return ret
 
 -- |Execute the command given in the CLArguments
@@ -267,13 +267,13 @@ sendTransactionToBaker ::
      (MonadIO m) => Types.Transaction -> Int -> ClientMonad m ()
 sendTransactionToBaker t nid = do
   client <- asks grpc
-  d <-
-    liftIO $
+  !_ <-
+    liftIO $!
     rawUnary
       (RPC :: RPC P2P "sendTransaction")
       client
       (defMessage & CF.networkId .~ fromIntegral nid & CF.payload .~ S.encode t)
-  d `seq` return ()
+  return ()
 
 hookTransaction :: Text -> ClientMonad IO (Either String [Value])
 hookTransaction txh = do

@@ -10,3 +10,4 @@ extra-libs/
 *.prof
 *.prof.html
 *.svg
+*.eventlog

@@ -1,12 +1,10 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
 {-# OPTIONS_GHC -Wall #-}
 module Main where
 
 import           Concordium.Client.Commands
-import           Concordium.Client.GRPC
 import           Concordium.Client.Runner
 import           Concordium.GlobalState.Transactions
 import           Concordium.Types
@@ -14,62 +12,8 @@ import           Control.Concurrent
 import           Control.Monad.Reader
 import           Options.Applicative
 
-import           Acorn.Core                          as Core
-import qualified Acorn.Parser                        as Parser
-import           Acorn.Utils.Init
-import           Acorn.Utils.Init.TH
-import           Concordium.Client.Commands          as COM hiding (networkId)
-import           Concordium.Crypto.Ed25519Signature  (randomKeyPair)
-import           Concordium.Crypto.SHA256            (Hash (..))
-import           Concordium.Crypto.SignatureScheme   (KeyPair,
-                                                      SchemeId (Ed25519))
-import qualified Concordium.Crypto.SignatureScheme   as Sig
-import qualified Concordium.Scheduler.Runner         as Runner
-import qualified Concordium.Scheduler.Types          as Types
-import qualified Data.FixedByteString                as FBS
-import           Data.Foldable
-import qualified Data.HashMap.Strict                 as Map
-import           Data.Maybe
-import qualified Data.Text                           as Text
-import           System.Random
-
-import           Data.List.Split
-
-blockPointer :: BlockHash
-blockPointer = Hash (FBS.pack (replicate 32 (fromIntegral (0 :: Word))))
-
-mateuszKP :: KeyPair
-mateuszKP = fst (randomKeyPair (mkStdGen 0))
-
-makeHeader :: KeyPair -> Nonce -> Energy -> Types.TransactionHeader
-makeHeader kp nonce amount = Types.makeTransactionHeader Ed25519 (Sig.verifyKey kp) nonce amount blockPointer
-
-baseStateWithCounter :: (Parser.Env, Core.ModuleName, ProcessedModules)
-baseStateWithCounter = foldl' handleFile
-                             baseState
-                             $(embedFiles [Left  "test/contracts/SimpleAccount.acorn"
-                                           ,Left  "test/contracts/SimpleCounter.acorn"]
-                                          )
-
-first :: (a, b, c) -> a
-first (x, _, _) = x
-
-simpleCounterCtx :: Map.HashMap Text.Text Core.Name
-simpleCounterCtx = let (_, _, tms, _) = Parser.modNames (first baseStateWithCounter) Map.! "SimpleCounter" in tms
-
-inCtx :: Text.Text -> Core.Name
-inCtx txt = fromJust (Map.lookup txt simpleCounterCtx)
-
-inCtxTm :: Text.Text -> Core.Atom origin
-inCtxTm = Core.Var . Core.LocalDef . inCtx
-
-mkTransaction :: Nonce -> Core.Expr Core.UA Core.ModuleName -> Types.Transaction
-mkTransaction n dat  = Runner.signTx mateuszKP hdr payload
-    where
-        hdr = makeHeader mateuszKP n 100000
-        payload = Types.encodePayload (Types.Update 0 (ContractAddress 0 0) dat (-1))
-
-{-# INLINE mkTransaction #-}
+import qualified Concordium.Scheduler.Types              as Types
+import qualified Concordium.Scheduler.Utils.Init.Example as Example
 
 data TxOptions = TxOptions {
   -- |What is the starting nonce.
@@ -88,7 +32,10 @@ txOptions = do
                                                metavar "NONCE" <>
                                                help "Nonce to start generation with.")
   let perBatch = option auto (value 10 <>
-                              showDefault <> long "batch" <> metavar "NUM" <> help "Size of a batch to send at once.")
+                              showDefault <>
+                              long "batch" <>
+                              metavar "NUM" <>
+                              help "Size of a batch to send at once.")
   let delay = option auto (value 10 <>
                            showDefault <>
                            long "delay" <>
@@ -100,29 +47,44 @@ grpcBackend :: Parser Backend
 grpcBackend = GRPC <$> hostParser <*> portParser <*> targetParser
 
 parser :: ParserInfo (Backend, TxOptions)
-parser = info (helper <*> ((,) <$> grpcBackend <*> txOptions)) (fullDesc <> progDesc "Generate transactions for a fixed contract.")
+parser = info (helper <*> ((,) <$> grpcBackend <*> txOptions))
+         (fullDesc <> progDesc "Generate transactions for a fixed contract.")
 
-sendTx :: MonadIO m => Core.Expr Core.UA Core.ModuleName -> Nonce -> ClientMonad m Transaction
-sendTx dat nonce = do
-  let tx = mkTransaction nonce dat
+mkTransaction :: Nonce -> Types.Transaction
+mkTransaction = Example.makeTransaction True (ContractAddress 0 0)
+{-# INLINE mkTransaction #-}
+
+sendTx :: MonadIO m =>  Nonce -> ClientMonad m Transaction
+sendTx nonce = do
+  let tx = mkTransaction nonce
   sendTransactionToBaker tx 100
   return tx
-
 {-# INLINE sendTx #-}
 
-processBatch :: Int -> Core.Expr Core.UA Core.ModuleName -> [Nonce] -> ClientMonad IO ()
-processBatch delay dat b = do
+processBatch :: Int -> [Nonce] -> ClientMonad IO ()
+processBatch delay b = do
   liftIO $ print b
-  mapM_ (sendTx dat) b
+  mapM_ sendTx b
   liftIO $ threadDelay (delay * 10^(6::Int))
 
-go :: TxOptions -> ClientMonad IO ()
-go TxOptions{..} = do
-  let dat = Core.App (inCtxTm "Inc") [Core.Literal (Core.Int64 10)]
-  foldM_ (\_ a -> processBatch delay dat a) undefined (chunksOf perBatch [startNonce..])
+-- The `x` parameter should go away once we find why the threads block at around 450 txs
+go :: Backend -> TxOptions -> Nonce -> IO Nonce
+go backend TxOptions{..} x =  runInClient backend $ loop startNonce x
+  where loop nonce x = do
+          if nonce < x then do
+            let nextNonce = nonce + fromIntegral perBatch
+            sent <- mapM sendTx [nonce..nextNonce-1]
+            liftIO $ do
+              putStrLn "Sent the following transactions."
+              mapM_ (print . transactionHeader) sent
+              threadDelay (delay * 10^(6::Int))
+            loop nextNonce x
+          else
+            return nonce
 
+-- The `foldM` should go away once we find why the threads block at around 450 txs
 main :: IO ()
-main = (\(a,b) -> do
-          client <- mkGrpcClient $! GrpcConfig (COM.host a) (COM.port a) (COM.target a)
-          client `seq` ((runReaderT . _runClientMonad) (go b) (EnvData client))
-       ) =<< execParser parser
+main = do
+  (a, b) <- execParser parser
+  _ <- foldM (\x y -> uncurry go (a,b {startNonce = x}) y) (startNonce b) [399,799..]
+  return ()
