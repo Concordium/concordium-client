@@ -44,6 +44,7 @@ import           Lens.Simple
 
 import           Network.GRPC.Client
 import           Network.GRPC.Client.Helpers
+import           Network.HTTP2.Client.Exceptions
 
 import           Data.Aeson                          as AE
 import           Data.Aeson.Types                    as AE
@@ -64,7 +65,7 @@ newtype EnvData =
 -- |Monad in which the program would run
 newtype ClientMonad m a =
   ClientMonad
-    { _runClientMonad :: ReaderT EnvData m a
+    { _runClientMonad :: ReaderT EnvData (ExceptT ClientError m) a
     }
   deriving ( Functor
            , Applicative
@@ -74,17 +75,34 @@ newtype ClientMonad m a =
            , MonadIO
            )
 
-liftContext :: PR.Context Core.UA m a -> ClientMonad (PR.Context Core.UA m) a
-liftContext comp = ClientMonad {_runClientMonad = ReaderT (const comp)}
+liftContext :: Monad m => PR.Context Core.UA m a -> ClientMonad (PR.Context Core.UA m) a
+liftContext comp = ClientMonad {_runClientMonad = ReaderT (lift . const comp)}
 
-runInClient :: (MonadIO m) => Backend -> ClientMonad m a -> m a
+liftClientIO :: MonadIO m => ClientIO a -> ClientMonad m a
+liftClientIO comp = ClientMonad {_runClientMonad = ReaderT (\_ -> do
+                                                               r <- liftIO (runClientIO comp)
+                                                               case r of
+                                                                 Left err -> throwError err
+                                                                 Right res -> return res
+                                                           )}
+
+liftClientIOToM :: MonadIO m => ClientIO a -> ExceptT ClientError m a
+liftClientIOToM comp = do
+  r <- liftIO (runClientIO comp)
+  case r of
+    Left err -> throwError err
+    Right res -> return res
+
+runInClient :: MonadIO m => Backend -> ClientMonad m a -> m a
 runInClient bkend comp = do
-  client <-
-    liftIO $ mkGrpcClient $!
-    GrpcConfig (COM.host bkend) (COM.port bkend) (COM.target bkend)
-  ret <- (runReaderT . _runClientMonad) comp $! EnvData client
-  liftIO $! close client
-  return ret
+  r <- runExceptT $! do
+    client <- liftClientIOToM (mkGrpcClient $! GrpcConfig (COM.host bkend) (COM.port bkend) (COM.target bkend))
+    ret <- ((runReaderT . _runClientMonad) comp $! EnvData client)
+    liftClientIOToM (close client)
+    return ret
+  case r of
+    Left err -> error (show err)
+    Right x -> return x
 
 -- |Execute the command given in the CLArguments
 process :: Command -> IO ()
@@ -115,7 +133,7 @@ useBackend act b =
       mdata <- loadContextData
       source <- BSL.readFile fname
       t <-
-        PR.evalContext mdata $ runInClient b $
+        PR.evalContext mdata $ runInClient b $ 
         processTransaction source nid hook
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (Types.trHash t)
@@ -255,20 +273,19 @@ sendHookToBaker ::
   -> ClientMonad m (Either String [Value])
 sendHookToBaker txh = do
   client <- asks grpc
-  liftIO $ do
-    ret <-
+  ret <- liftClientIO $!
       rawUnary
         (RPC :: RPC P2P "hookTransaction")
         client
         (defMessage & CF.transactionHash .~ pack (show txh))
-    return $ processJSON ret
+  return $ processJSON ret
 
 sendTransactionToBaker ::
      (MonadIO m) => Types.Transaction -> Int -> ClientMonad m ()
 sendTransactionToBaker t nid = do
   client <- asks grpc
   !_ <-
-    liftIO $!
+    liftClientIO $!
     rawUnary
       (RPC :: RPC P2P "sendTransaction")
       client
@@ -278,7 +295,7 @@ sendTransactionToBaker t nid = do
 hookTransaction :: Text -> ClientMonad IO (Either String [Value])
 hookTransaction txh = do
   client <- asks grpc
-  liftIO $ do
+  liftClientIO $! do
     ret <-
       rawUnary
         (RPC :: RPC P2P "hookTransaction")
@@ -289,14 +306,14 @@ hookTransaction txh = do
 getConsensusStatus :: (MonadFail m, MonadIO m) => ClientMonad m (Either String [Value])
 getConsensusStatus = do
   client <- asks grpc
-  liftIO $ do
+  liftClientIO $! do
     ret <- rawUnary (RPC :: RPC P2P "getConsensusStatus") client defMessage
     return $ processJSON ret
 
 getBlockInfo :: Text -> ClientMonad IO (Either String [Value])
 getBlockInfo hash = do
   client <- asks grpc
-  liftIO $ do
+  liftClientIO $! do
     ret <-
       rawUnary
         (RPC :: RPC P2P "getBlockInfo")
@@ -307,7 +324,7 @@ getBlockInfo hash = do
 getAccountList :: Text -> ClientMonad IO (Either String [Value])
 getAccountList hash = do
   client <- asks grpc
-  liftIO $ do
+  liftClientIO $! do
     ret <-
       rawUnary
         (RPC :: RPC P2P "getAccountList")
@@ -318,7 +335,7 @@ getAccountList hash = do
 getInstances :: Text -> ClientMonad IO (Either String [Value])
 getInstances hash = do
   client <- asks grpc
-  liftIO $ do
+  liftClientIO $! do
     ret <-
       rawUnary
         (RPC :: RPC P2P "getInstances")
@@ -329,7 +346,7 @@ getInstances hash = do
 getAccountInfo :: (MonadFail m, MonadIO m) => Text -> Text -> ClientMonad m (Either String [Value])
 getAccountInfo hash account = do
   client <- asks grpc
-  liftIO $ do
+  liftClientIO $! do
     ret <-
       rawUnary
         (RPC :: RPC P2P "getAccountInfo")
@@ -340,7 +357,7 @@ getAccountInfo hash account = do
 getInstanceInfo :: Text -> Text -> ClientMonad IO (Either String [Value])
 getInstanceInfo hash account = do
   client <- asks grpc
-  liftIO $ do
+  liftClientIO $! do
     ret <-
       rawUnary
         (RPC :: RPC P2P "getInstanceInfo")
@@ -351,7 +368,7 @@ getInstanceInfo hash account = do
 getRewardStatus :: Text -> ClientMonad IO (Either String [Value])
 getRewardStatus hash = do
   client <- asks grpc
-  liftIO $ do
+  liftClientIO $! do
     ret <-
       rawUnary
         (RPC :: RPC P2P "getRewardStatus")
@@ -362,7 +379,7 @@ getRewardStatus hash = do
 getBirkParameters :: Text -> ClientMonad IO (Either String [Value])
 getBirkParameters hash = do
   client <- asks grpc
-  liftIO $ do
+  liftClientIO $! do
     ret <-
       rawUnary
         (RPC :: RPC P2P "getBirkParameters")
@@ -373,7 +390,7 @@ getBirkParameters hash = do
 getModuleList :: Text -> ClientMonad IO (Either String [Value])
 getModuleList hash = do
   client <- asks grpc
-  liftIO $ do
+  liftClientIO $! do
     ret <-
       rawUnary
         (RPC :: RPC P2P "getModuleList")
@@ -388,7 +405,7 @@ getModuleSource ::
   -> ClientMonad (PR.Context Core.UA m) (Either String (Core.Module Core.UA))
 getModuleSource hash moduleref = do
   client <- asks grpc
-  liftIO $ do
+  liftClientIO $! do
     ret <-
       rawUnary
         (RPC :: RPC P2P "getModuleSource")

@@ -15,7 +15,7 @@ custom-setup:
   dependencies:
     - base
     - Cabal
-    - proto-lens-setup
+    - proto-lens-setup == 0.4.*
 
 # Metadata used when publishing your package
 # synopsis:            Short description of your package
@@ -62,9 +62,9 @@ library:
     - http2-client-grpc >= 0.7
     - http2-client >= 0.8
     - unordered-containers
-    - proto-lens
-    - proto-lens-protobuf-types
-    - proto-lens-runtime
+    - proto-lens == 0.5.*
+    - proto-lens-protobuf-types == 0.5.*
+    - proto-lens-runtime == 0.5.*
   generated-exposed-modules:
     Proto.Concordium
     Proto.Concordium_Fields
@@ -99,6 +99,7 @@ executables:
       - -threaded
 
     dependencies:
+       - async
        - optparse-applicative
        - mtl
        - acorn
@@ -112,3 +113,5 @@ executables:
        - concordium-crypto
        - globalstate
        - globalstate-types
+       - bytestring
+       - aeson

@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE LambdaCase #-}
 {-# OPTIONS_GHC -Wall #-}
 module Main where
 
@@ -12,8 +13,13 @@ import           Control.Concurrent
 import           Control.Monad.Reader
 import           Options.Applicative
 
-import qualified Concordium.Scheduler.Types              as Types
+import qualified Data.Aeson as AE
+import qualified Data.Aeson.Types as AE
+import qualified Data.ByteString.Lazy as BSL
+
 import qualified Concordium.Scheduler.Utils.Init.Example as Example
+import qualified Concordium.Crypto.SignatureScheme as Sig
+import qualified Concordium.Crypto.SHA256 as Hash
 
 data TxOptions = TxOptions {
   -- |What is the starting nonce.
@@ -21,7 +27,9 @@ data TxOptions = TxOptions {
   -- |How many transactions to send per batch.
   perBatch   :: Int,
   -- |In seconds.
-  delay      :: Int
+  delay      :: Int,
+  -- |File with JSON encoded keys for the source account.
+  keysFile :: FilePath
   }
 
 txOptions :: Parser TxOptions
@@ -41,7 +49,8 @@ txOptions = do
                            long "delay" <>
                            metavar "SECONDS" <>
                            help "Delay between batches.")
-  TxOptions . fromIntegral <$> startNonce <*> perBatch <*> delay
+  let keys = strOption (long "keyPair" <> short 'k' <> metavar "FILENAME")
+  TxOptions . fromIntegral <$> startNonce <*> perBatch <*> delay <*> keys
 
 grpcBackend :: Parser Backend
 grpcBackend = GRPC <$> hostParser <*> portParser <*> targetParser
@@ -50,41 +59,42 @@ parser :: ParserInfo (Backend, TxOptions)
 parser = info (helper <*> ((,) <$> grpcBackend <*> txOptions))
          (fullDesc <> progDesc "Generate transactions for a fixed contract.")
 
-mkTransaction :: Nonce -> Types.Transaction
-mkTransaction = Example.makeTransaction True (ContractAddress 0 0)
-{-# INLINE mkTransaction #-}
+sendTx :: MonadIO m => Transaction -> ClientMonad m Transaction
+sendTx tx = sendTransactionToBaker tx 100 >> return tx
 
-sendTx :: MonadIO m =>  Nonce -> ClientMonad m Transaction
-sendTx nonce = do
-  let tx = mkTransaction nonce
-  sendTransactionToBaker tx 100
-  return tx
-{-# INLINE sendTx #-}
+-- |The 'endNonce' parameter should go away once we find why the threads block at around 450 txs
+go :: Backend -> Int -> Int -> (Nonce -> Transaction) -> Nonce -> Nonce -> IO Nonce
+go backend delay perBatch sign startNonce endNonce =
+  runInClient backend $! (loop startNonce)
 
-processBatch :: Int -> [Nonce] -> ClientMonad IO ()
-processBatch delay b = do
-  liftIO $ print b
-  mapM_ sendTx b
-  liftIO $ threadDelay (delay * 10^(6::Int))
-
--- The `x` parameter should go away once we find why the threads block at around 450 txs
-go :: Backend -> TxOptions -> Nonce -> IO Nonce
-go backend TxOptions{..} x =  runInClient backend $ loop startNonce x
-  where loop nonce x = do
-          if nonce < x then do
+  where loop nonce = do
+          if nonce < endNonce then do
             let nextNonce = nonce + fromIntegral perBatch
-            sent <- mapM sendTx [nonce..nextNonce-1]
+            sent <- mapM (sendTx . sign)  [nonce..nextNonce-1]
             liftIO $ do
               putStrLn "Sent the following transactions."
               mapM_ (print . transactionHeader) sent
               threadDelay (delay * 10^(6::Int))
-            loop nextNonce x
+            loop nextNonce
           else
             return nonce
 
--- The `foldM` should go away once we find why the threads block at around 450 txs
 main :: IO ()
 main = do
-  (a, b) <- execParser parser
-  _ <- foldM (\x y -> uncurry go (a,b {startNonce = x}) y) (startNonce b) [399,799..]
-  return ()
+  (backend, txoptions) <- execParser parser
+  AE.eitherDecode <$> BSL.readFile (keysFile txoptions) >>= \case
+    Left err -> putStrLn $ "Could not read the keys because: " ++ err
+    Right v ->
+      case AE.parseEither parseKeys v of
+        Left err' -> putStrLn $ "Could not decode JSON because: " ++ err'
+        Right keyPair@Sig.KeyPair{..} -> do
+          let txBody = trPayload (Example.makeTransaction True (ContractAddress 0 0) 0)
+          let txHeader nonce = makeTransactionHeader Sig.Ed25519 verifyKey nonce 1000 (Hash.hash "")
+          let sign nonce = signTransaction keyPair (txHeader nonce) txBody
+          let folder = go backend (delay txoptions) (perBatch txoptions) sign
+          foldM_ folder (startNonce txoptions) [100,200..]
+
+  where parseKeys = AE.withObject "Account keypair" $ \obj -> do
+          verifyKey <- obj AE..: "verifyKey"
+          signKey <- obj AE..: "signKey"
+          return $ Sig.KeyPair{..}

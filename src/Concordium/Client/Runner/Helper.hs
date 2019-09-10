@@ -18,6 +18,7 @@ import qualified Acorn.Utils.Init             as Init
 import qualified Data.HashMap.Strict          as Map
 
 import qualified Proto.Concordium_Fields      as CF
+import qualified Data.ProtoLens.Field as Field
 
 import           Data.Attoparsec.Lazy         (Result (..), parse)
 import           Lens.Simple
@@ -31,7 +32,6 @@ import qualified Data.ByteString.Lazy.Char8   as BSL8
 import           Data.Text                    (Text)
 import           Data.Text.Encoding
 import qualified Data.Text.IO                 as TextIO
-import qualified Lens.Labels                  as Labels
 import           Prelude                      hiding (fail)
 import           System.Directory
 
@@ -82,7 +82,7 @@ outputGRPC ret =
     Right (Left e) -> Left $ "Unable to send consensus query: " ++ show e
 
 processJSON ::
-     (Show a1, Labels.HasLens' a "jsonValue" Text)
+     (Show a1, Field.HasField a "jsonValue" Text)
   => Either a2 (Either a1 (a3, b, Either String a))
   -> Either String [Value]
 processJSON ret = do

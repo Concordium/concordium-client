@@ -16,15 +16,16 @@ data GrpcConfig =
     }
   deriving (Show)
 
-mkGrpcClient :: GrpcConfig -> IO GrpcClient
+mkGrpcClient :: GrpcConfig -> ClientIO GrpcClient
 mkGrpcClient config =
   let auth = ("authentication", "rpcadmin")
       header =
         case target config of
           Just t  -> [auth, ("target", pack t)]
           Nothing -> [auth]
-   in setupGrpcClient
-        ((grpcClientConfigSimple (host config) (port config) False)
-           { _grpcClientConfigCompression = gzip
-           , _grpcClientConfigHeaders = header
-           })
+      cfg = (grpcClientConfigSimple (host config) (port config) False)
+                 { _grpcClientConfigCompression = gzip
+                 , _grpcClientConfigHeaders = header
+                 }
+   in setupGrpcClient cfg
+        
