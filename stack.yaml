@@ -44,13 +44,14 @@ build:
   executable-profiling: true
 
 extra-deps:
-- http2-client-0.9.0.0
 - http2-client-grpc-0.7.0.0
 - http2-grpc-types-0.4.0.0
 - proto-lens-0.5.1.0
 - proto-lens-protobuf-types-0.5.0.0
 - proto-lens-runtime-0.5.0.0
 - proto-lens-protoc-0.5.0.0
+- github: lucasdicioccio/http2-client
+  commit: d1cac5951a37211bfa08167d6aec3625537b8624
 - ./prototype/acorn
 - ./prototype/crypto
 - ./prototype/globalstate-mockup/globalstate-types

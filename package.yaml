@@ -60,7 +60,7 @@ library:
     - lens-simple
     - lens-labels >= 0.3
     - http2-client-grpc >= 0.7
-    - http2-client >= 0.8
+    - http2-client >= 0.9
     - unordered-containers
     - proto-lens == 0.5.*
     - proto-lens-protobuf-types == 0.5.*

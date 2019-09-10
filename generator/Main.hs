@@ -63,21 +63,23 @@ sendTx :: MonadIO m => Transaction -> ClientMonad m Transaction
 sendTx tx = sendTransactionToBaker tx 100 >> return tx
 
 -- |The 'endNonce' parameter should go away once we find why the threads block at around 450 txs
-go :: Backend -> Int -> Int -> (Nonce -> Transaction) -> Nonce -> Nonce -> IO Nonce
-go backend delay perBatch sign startNonce endNonce =
+go :: Backend -> Int -> Int -> (Nonce -> Transaction) -> Nonce -> IO ()
+go backend delay perBatch sign startNonce =
   runInClient backend $! (loop startNonce)
 
   where loop nonce = do
-          if nonce < endNonce then do
-            let nextNonce = nonce + fromIntegral perBatch
-            sent <- mapM (sendTx . sign)  [nonce..nextNonce-1]
-            liftIO $ do
-              putStrLn "Sent the following transactions."
-              mapM_ (print . transactionHeader) sent
-              threadDelay (delay * 10^(6::Int))
-            loop nextNonce
-          else
-            return nonce
+          let nextNonce = nonce + fromIntegral perBatch
+          _ <- mapM (\nnce -> do
+                        tx <- sendTx (sign nnce)
+                        liftIO $ do
+                          putStrLn "Sent transaction."
+                          print tx
+                    ) [nonce..nextNonce-1]
+          liftIO $ do
+            -- putStrLn "Sent the following transactions."
+            -- mapM_ (print . transactionHeader) sent
+            threadDelay (delay * 10^(6::Int))
+          loop nextNonce
 
 main :: IO ()
 main = do
@@ -91,8 +93,7 @@ main = do
           let txBody = trPayload (Example.makeTransaction True (ContractAddress 0 0) 0)
           let txHeader nonce = makeTransactionHeader Sig.Ed25519 verifyKey nonce 1000 (Hash.hash "")
           let sign nonce = signTransaction keyPair (txHeader nonce) txBody
-          let folder = go backend (delay txoptions) (perBatch txoptions) sign
-          foldM_ folder (startNonce txoptions) [100,200..]
+          go backend (delay txoptions) (perBatch txoptions) sign (startNonce txoptions)
 
   where parseKeys = AE.withObject "Account keypair" $ \obj -> do
           verifyKey <- obj AE..: "verifyKey"
