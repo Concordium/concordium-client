@@ -129,8 +129,10 @@ executables:
     dependencies:
        - aeson
        - bytestring
+       - containers
        - directory
        - filepath
+       - http-conduit
        - http-types
        - managed
        - neat-interpolation
