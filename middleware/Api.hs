@@ -14,6 +14,7 @@ import Control.Monad.Managed         (liftIO)
 import Data.Aeson.Types              (ToJSON, FromJSON)
 import Data.Text                     (Text)
 import Data.Maybe                    (fromMaybe)
+import Data.Map
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import System.Directory
@@ -29,7 +30,9 @@ import           Concordium.Client.Types.Transaction
 import           Concordium.Client.Commands          as COM
 import qualified Acorn.Parser.Runner                 as PR
 import qualified Concordium.Scheduler.Types          as Types
+import Concordium.Crypto.SignatureScheme (KeyPair)
 import SimpleIdClientMock
+import SimpleIdClientApi
 
 data Routes r = Routes
     { sendTransaction :: r :-
@@ -68,16 +71,15 @@ data ComboProvisionRequest =
   ComboProvisionRequest
     { scheme :: Text
     , attributes :: [(Text,Text)]
-    , accountKeys :: Maybe Text
+    , accountKeys :: Maybe Text -- @TODO fix type
     }
   deriving (FromJSON, Generic, Show)
 
 
 data ComboProvisionResponse =
   ComboProvisionResponse
-    { accountKeys :: Text
-    , aci :: Text
-    , spio :: Text
+    { accountKeys :: AccountKeyPair
+    , spio :: IdCredential
     }
   deriving (ToJSON, Generic, Show)
 
@@ -169,16 +171,59 @@ servantApp backend = genericServe routesAsServer
 
   betaComboProvision :: ComboProvisionRequest -> Handler ComboProvisionResponse
   betaComboProvision ComboProvisionRequest{ scheme, attributes, accountKeys } = do
-    (aci, pio) <- liftIO $ SimpleIdClientMock.createAciPio SimpleIdClientMock.V2 "x"
-    spio <- liftIO $ SimpleIdClientMock.signPio "x" "x"
 
-    liftIO $ putStrLn $ show attributes
+    let attributesStub = -- @TODO inject attribute list components
+          [ ("birthYear", "2013")
+          , ("residenceCountryCode", "386")
+          ]
+
+        idObjectRequest =
+          IdObjectRequest
+            { ipIdentity = 0
+            , name = "Ales" -- @TODO inject name
+            , attributes = fromList -- @TODO make these a dynamic in future
+                ([ ("creationTime", "1341324324")
+                , ("expiryDate", "1910822399")
+                , ("maxAccount", "30")
+                , ("variant", "0")
+                ] ++ attributesStub)
+            }
+
+    idObjectRespose <- liftIO $ postIdObjectRequest idObjectRequest
+
+    liftIO $ putStrLn "✅ Got IdObjectResponse"
+
+    let credentialRequest =
+          IdCredentialRequest
+            { ipIdentity = ipIdentity (idObjectRespose :: IdObjectResponse)
+            , preIdentityObject = preIdentityObject (idObjectRespose :: IdObjectResponse)
+            , privateData = privateData (idObjectRespose :: IdObjectResponse)
+            , signature = signature (idObjectRespose :: IdObjectResponse)
+            , revealedItems = ["birthYear"] -- @TODO take revealed items preferences from user
+            , accountNumber = 0
+            }
+
+    idCredentialResponse <- liftIO $ postIdCredentialRequest credentialRequest
+
+    liftIO $ putStrLn "✅ Got idCredentialResponse"
+
+    -- putStrLn $ BS.unpack $ encode idCredentialResponse
+    -- (aci, pio) <- liftIO $ SimpleIdClientMock.createAciPio SimpleIdClientMock.V2 "x"
+    -- spio <- liftIO $ SimpleIdClientMock.signPio "x" "x"
+
+    -- liftIO $ putStrLn $ show attributes
+
+    -- @TODO need to fetch finalizedPointer from GetConsensusStatus and inject it into deploy command
     pure $
       ComboProvisionResponse
-        { accountKeys = fromMaybe "@TODO generate new account keys here" accountKeys
-        , aci = aci
-        , spio = spio
+        { accountKeys = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
+        , spio = credential (idCredentialResponse :: IdCredentialResponse)
         }
+
+        -- { accountKeys = fromMaybe "@TODO generate new account keys here" accountKeys
+        -- , aci = aci
+        -- , spio = spio
+        -- }
 
   accountTransactions :: Text -> Handler [AccountTransaction]
   accountTransactions address =

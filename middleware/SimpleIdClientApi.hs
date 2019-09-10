@@ -22,31 +22,6 @@ import Control.Monad.IO.Class
 
 -- API mock tests
 
-testIdObjectRequest = do
-  putStrLn $ show sampleIdObjectRequest
-  idObjectRespose <- postIdObjectRequest sampleIdObjectRequest
-
-  putStrLn "✅ Got IdObjectResponse"
-
-  let credentialRequest =
-        IdCredentialRequest
-          { ipIdentity = ipIdentity (idObjectRespose :: IdObjectResponse)
-          , preIdentityObject = preIdentityObject (idObjectRespose :: IdObjectResponse)
-          , privateData = privateData (idObjectRespose :: IdObjectResponse)
-          , signature = signature (idObjectRespose :: IdObjectResponse)
-          , revealedItems = ["birthYear"]
-          , accountNumber = 0
-          }
-
-  -- putStrLn $ BS.unpack $ encode credentialRequest
-
-  idCredentialResponse <- postIdCredentialRequest credentialRequest
-
-  putStrLn "✅ Got idCredentialResponse"
-
-  putStrLn $ BS.unpack $ encode idCredentialResponse
-
-  pure "hello"
 
 -- API requests
 
