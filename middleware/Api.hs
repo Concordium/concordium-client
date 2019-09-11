@@ -43,9 +43,13 @@ data Routes r = Routes
         "v1" :> "typecheckContract" :> ReqBody '[JSON] Text
                                     :> Post '[JSON] Text
 
-    , betaComboProvision :: r :-
-        "v1" :> "betaComboProvision" :> ReqBody '[JSON] ComboProvisionRequest
-                                     :> Post '[JSON] ComboProvisionResponse
+    , betaIdProvision :: r :-
+        "v1" :> "betaIdProvision" :> ReqBody '[JSON] BetaIdProvisionRequest
+                                     :> Post '[JSON] BetaIdProvisionResponse
+
+    , betaAccountProvision :: r :-
+        "v1" :> "betaAccountProvision" :> ReqBody '[JSON] BetaAccountProvisionRequest
+                                     :> Post '[JSON] BetaAccountProvisionResponse
 
     , accountTransactions :: r :-
         "v1" :> "accountTransactions" :> ReqBody '[JSON] Text
@@ -67,22 +71,31 @@ data Routes r = Routes
   deriving (Generic)
 
 
-data ComboProvisionRequest =
-  ComboProvisionRequest
+data BetaIdProvisionRequest =
+  BetaIdProvisionRequest
     { scheme :: Text
     , attributes :: [(Text,Text)]
     , accountKeys :: Maybe Text -- @TODO fix type
     }
   deriving (FromJSON, Generic, Show)
 
+-- The BetaIdProvisionResponse is just what the SimpleIdClient returns for Identity Object provisioning
+type BetaIdProvisionResponse = IdObjectResponse
 
-data ComboProvisionResponse =
+
+-- The BetaAccountProvisionRequest is just what the SimpleIdClient expects for Identity Credential provisioning
+-- @TODO but will shortly expand to inclkude relvealedAttributes and accountNumber fields
+type BetaAccountProvisionRequest = IdCredentialRequest
+
+data BetaAccountProvisionResponse =
   ComboProvisionResponse
     { accountKeys :: AccountKeyPair
     , spio :: IdCredential
     }
   deriving (ToJSON, Generic, Show)
 
+
+-- Legacy @TODO remove?
 
 data CreateAciPioRequest =
   CreateAciPioRequest
@@ -169,8 +182,8 @@ servantApp backend = genericServe routesAsServer
               pure "unknownerr"
 
 
-  betaComboProvision :: ComboProvisionRequest -> Handler ComboProvisionResponse
-  betaComboProvision ComboProvisionRequest{ scheme, attributes, accountKeys } = do
+  betaIdProvision :: BetaIdProvisionRequest -> Handler BetaIdProvisionResponse
+  betaIdProvision BetaIdProvisionRequest{ scheme, attributes, accountKeys } = do
 
     let attributesStub = -- @TODO inject attribute list components
           [ ("birthYear", "2013")
@@ -189,16 +202,22 @@ servantApp backend = genericServe routesAsServer
                 ] ++ attributesStub)
             }
 
-    idObjectRespose <- liftIO $ postIdObjectRequest idObjectRequest
+    idObjectResponse <- liftIO $ postIdObjectRequest idObjectRequest
 
     liftIO $ putStrLn "✅ Got IdObjectResponse"
 
+    pure idObjectResponse
+
+
+  betaComboProvision :: BetaAccountProvisionRequest -> Handler BetaAccountProvisionResponse
+  betaComboProvision accountProvisionRequest = do
+
     let credentialRequest =
           IdCredentialRequest
-            { ipIdentity = ipIdentity (idObjectRespose :: IdObjectResponse)
-            , preIdentityObject = preIdentityObject (idObjectRespose :: IdObjectResponse)
-            , privateData = privateData (idObjectRespose :: IdObjectResponse)
-            , signature = signature (idObjectRespose :: IdObjectResponse)
+            { ipIdentity = ipIdentity (accountProvisionRequest :: BetaAccountProvisionRequest)
+            , preIdentityObject = preIdentityObject (accountProvisionRequest :: BetaAccountProvisionRequest)
+            , privateData = privateData (accountProvisionRequest :: BetaAccountProvisionRequest)
+            , signature = signature (accountProvisionRequest :: BetaAccountProvisionRequest)
             , revealedItems = ["birthYear"] -- @TODO take revealed items preferences from user
             , accountNumber = 0
             }
@@ -207,23 +226,14 @@ servantApp backend = genericServe routesAsServer
 
     liftIO $ putStrLn "✅ Got idCredentialResponse"
 
-    -- putStrLn $ BS.unpack $ encode idCredentialResponse
-    -- (aci, pio) <- liftIO $ SimpleIdClientMock.createAciPio SimpleIdClientMock.V2 "x"
-    -- spio <- liftIO $ SimpleIdClientMock.signPio "x" "x"
-
     -- liftIO $ putStrLn $ show attributes
 
-    -- @TODO need to fetch finalizedPointer from GetConsensusStatus and inject it into deploy command
     pure $
       ComboProvisionResponse
         { accountKeys = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
         , spio = credential (idCredentialResponse :: IdCredentialResponse)
         }
 
-        -- { accountKeys = fromMaybe "@TODO generate new account keys here" accountKeys
-        -- , aci = aci
-        -- , spio = spio
-        -- }
 
   accountTransactions :: Text -> Handler [AccountTransaction]
   accountTransactions address =

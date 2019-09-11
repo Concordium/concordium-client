@@ -20,8 +20,6 @@ import Servant.API.Generic
 import Data.Map
 import Control.Monad.IO.Class
 
--- API mock tests
-
 
 -- API requests
 
@@ -100,19 +98,6 @@ sampleIdObjectRequest =
         , ("variant", "0")
         ]
     }
-
--- {
---     "ipIdentity": 0,
---     "name": "Aleš",
---     "attributes": {
---       "age": 31,
---       "business": true,
---       "citizenship": 38,
---       "expiryDate": 1910822399,
---       "maxAccount": 200,
---       "variant": 1
---     }
--- }
 
 
 data IdObjectResponse =
