@@ -11,3 +11,5 @@ extra-libs/
 *.prof.html
 *.svg
 *.eventlog
+*-bakers.tar.gz
+concordium.proto
