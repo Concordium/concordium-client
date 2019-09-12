@@ -11,12 +11,17 @@ module Api where
 
 import Network.Wai                   (Application)
 import Control.Monad.Managed         (liftIO)
+import Data.Aeson                    (encode, decode')
 import Data.Aeson.Types              (ToJSON, FromJSON)
 import Data.Text                     (Text)
 import Data.Maybe                    (fromMaybe)
 import Data.Map
-import qualified Data.Text as T
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as Text
 import qualified Data.Text.IO as TIO
+import qualified Data.ByteString.Lazy.Char8 as BS
+import qualified Data.ByteString.Base16              as BS16
+import qualified Data.ByteString.Short               as BSS
 import System.Directory
 import System.Process
 import System.Exit
@@ -30,9 +35,14 @@ import           Concordium.Client.Types.Transaction
 import           Concordium.Client.Commands          as COM
 import qualified Acorn.Parser.Runner                 as PR
 import qualified Concordium.Scheduler.Types          as Types
-import Concordium.Crypto.SignatureScheme (KeyPair)
+import           Concordium.Crypto.SignatureScheme   ( SchemeId (..)
+                                                     , SignKey (..)
+                                                     , VerifyKey (..)
+                                                     )
+import qualified Concordium.ID.Account
 import SimpleIdClientMock
 import SimpleIdClientApi
+
 
 data Routes r = Routes
     { sendTransaction :: r :-
@@ -88,7 +98,7 @@ type BetaIdProvisionResponse = IdObjectResponse
 type BetaAccountProvisionRequest = IdCredentialRequest
 
 data BetaAccountProvisionResponse =
-  ComboProvisionResponse
+  BetaAccountProvisionResponse
     { accountKeys :: AccountKeyPair
     , spio :: IdCredential
     }
@@ -177,7 +187,7 @@ servantApp backend = genericServe routesAsServer
           pure "ok"
         ExitFailure code -> do
           if code == 1 then
-              pure $ T.pack stderr
+              pure $ Text.pack stderr
           else
               pure "unknownerr"
 
@@ -209,8 +219,8 @@ servantApp backend = genericServe routesAsServer
     pure idObjectResponse
 
 
-  betaComboProvision :: BetaAccountProvisionRequest -> Handler BetaAccountProvisionResponse
-  betaComboProvision accountProvisionRequest = do
+  betaAccountProvision :: BetaAccountProvisionRequest -> Handler BetaAccountProvisionResponse
+  betaAccountProvision accountProvisionRequest = do
 
     let credentialRequest =
           IdCredentialRequest
@@ -229,7 +239,7 @@ servantApp backend = genericServe routesAsServer
     -- liftIO $ putStrLn $ show attributes
 
     pure $
-      ComboProvisionResponse
+      BetaAccountProvisionResponse
         { accountKeys = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
         , spio = credential (idCredentialResponse :: IdCredentialResponse)
         }
@@ -254,3 +264,115 @@ servantApp backend = genericServe routesAsServer
   identitySignPio :: SignPioRequest -> Handler Text
   identitySignPio SignPioRequest{ pio, identityProviderId } = do
     liftIO $ SimpleIdClientMock.signPio pio identityProviderId
+
+
+
+
+{--
+
+This chains together the full process that is split into seperate APIs above so
+it can be more easily tested via `stack ghci` using `:r` for quick reloads.
+
+Once proven together, relevant parts are integrated into the APIs above.
+
+Currently, this seems to work all the way through to submitting onto the chain
+and being accepted baked into a block.
+
+There is however an issue with GetAccountInfo gRPC call on the new account:
+
+https://gist.github.com/supermario/8e58460662e4d6cb769a7c82fda0723b
+
+--}
+debugTestFullProvision :: IO String
+debugTestFullProvision = do
+
+  let attributesStub = -- @TODO inject attribute list components
+        [ ("birthYear", "2013")
+        , ("residenceCountryCode", "386")
+        ]
+
+      idObjectRequest =
+        IdObjectRequest
+          { ipIdentity = 0
+          , name = "Ales" -- @TODO inject name
+          , attributes = fromList -- @TODO make these a dynamic in future
+              ([ ("creationTime", "1341324324")
+              , ("expiryDate", "1910822399")
+              , ("maxAccount", "30")
+              , ("variant", "0")
+              ] ++ attributesStub)
+          }
+
+  idObjectResponse <- postIdObjectRequest idObjectRequest
+
+  putStrLn "✅ Got IdObjectResponse"
+
+  let credentialRequest =
+        IdCredentialRequest
+          { ipIdentity = ipIdentity (idObjectResponse :: BetaIdProvisionResponse)
+          , preIdentityObject = preIdentityObject (idObjectResponse :: BetaIdProvisionResponse)
+          , privateData = privateData (idObjectResponse :: BetaIdProvisionResponse)
+          , signature = signature (idObjectResponse :: BetaIdProvisionResponse)
+          , revealedItems = ["birthYear"] -- @TODO take revealed items preferences from user
+          , accountNumber = 0
+          }
+
+  idCredentialResponse <- postIdCredentialRequest credentialRequest
+
+  putStrLn "✅ Got idCredentialResponse"
+
+  putStrLn "✅ Generating JSON for idCredentialResponse:"
+  putStrLn $ BS.unpack $ encode idCredentialResponse
+
+  let betaAccountProvisionResponse =
+        BetaAccountProvisionResponse
+          { accountKeys = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
+          , spio = credential (idCredentialResponse :: IdCredentialResponse)
+          }
+
+  let transactionHeader =
+        TransactionJSONHeader
+          { thSenderKey = certainDecode "\"3e4f11b8a43f5b4c63f9d85ae9de365057c9bce8c57caf84e34f1040e5f59ecd\"" -- verifyKey @TODO figure out how to create this value directly
+          , thNonce = Just 1
+          , thGasAmount = 4000
+          , thFinalizedPointer = certainDecode "\"170afb6659a6d4a375524124606177d5704629c55335edeac28b3cfabc0ff11a\"" -- @NOTE unused, will be removed
+          }
+
+      deployTransaction =
+        TransactionJSON
+          { metadata = transactionHeader
+          , payload =
+              DeployCredential
+                { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
+          -- @TODO is this the right way to make this value...? Taken from the FromJSON instance. If so make a helper
+          , signKey = SignKey . BSS.toShort . fst . BS16.decode . Text.encodeUtf8 $ "b52f4ce89e78e45934851e395c6258f7240ce6902526c78a8960927c8959a363"
+          }
+
+  putStrLn "✅ Generating JSON for deployTransaction:"
+  putStrLn $ show deployTransaction
+
+  let newAccountKeyPair = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
+      -- @TODO is this the right way to make this value...? Copied from signKey above. If so make a helper
+      newVerifyKey = VerifyKey . BSS.toShort . fst . BS16.decode . Text.encodeUtf8 $ verifyKey (newAccountKeyPair :: AccountKeyPair)
+      newAccountAddress = Concordium.ID.Account.accountAddress newVerifyKey Ed25519
+
+  putStrLn $ "✅ Deployed account address will be: " ++ show newAccountAddress
+
+  mdata <- loadContextData
+  -- The networkId is for running multiple networks that's not the same chain, but hasn't been taken into use yet
+  let nid = 1000
+  let backend = COM.GRPC { host = "127.0.0.1", port = 11160, target = Nothing }
+
+  t <- do
+    let hookIt = True
+    PR.evalContext mdata $ runInClient backend $ processTransaction_ deployTransaction nid hookIt
+
+  putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (Types.trHash t)
+
+  pure "Done."
+
+
+certainDecode value =
+  case decode' value of
+    Just v -> v
+    Nothing -> error $ "Well... not so certain now huh! certainDecode failed on:\n\n" ++ show value
