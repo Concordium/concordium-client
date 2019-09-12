@@ -24,7 +24,7 @@ then
       ARGS="$ARGS --nonce $START_NONCE"
     fi
 
-    tar xzf /bakers-$NUM_BAKERS.tar.gz -C /tmp
+    tar xzf /$NUM_BAKERS-bakers.tar.gz -C /tmp
     mv /tmp/genesis_data/baker-$ID-account.json /tx_generator_account.json
     rm -rf /tmp/genesis_data
     /tx-generator --grpc-ip $GRPC_IP --grpc-port $GRPC_PORT --keyPair /tx_generator_account.json $ARGS
