@@ -142,6 +142,7 @@ executables:
        - silently
        - simple-client
        - text
+       - time
        - wai
        - wai-cors
        - wai-extra

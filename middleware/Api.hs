@@ -6,6 +6,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 module Api where
 
@@ -13,18 +14,19 @@ import Network.Wai                   (Application)
 import Control.Monad.Managed         (liftIO)
 import Data.Aeson                    (encode, decode')
 import Data.Aeson.Types              (ToJSON, FromJSON)
+import qualified Data.Aeson as AE
 import Data.Text                     (Text)
-import Data.Maybe                    (fromMaybe)
 import Data.Map
+import Data.Time.Clock.POSIX
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Text.IO as TIO
-import qualified Data.ByteString.Lazy.Char8 as BS
-import qualified Data.ByteString.Base16              as BS16
-import qualified Data.ByteString.Short               as BSS
+import qualified Data.ByteString                     as BS
+import qualified Data.ByteString.Lazy.Char8          as BS8
 import System.Directory
 import System.Process
 import System.Exit
+import System.IO.Unsafe
 import Servant
 import Servant.API.Generic
 import Servant.Server.Generic
@@ -35,11 +37,10 @@ import           Concordium.Client.Types.Transaction
 import           Concordium.Client.Commands          as COM
 import qualified Acorn.Parser.Runner                 as PR
 import qualified Concordium.Scheduler.Types          as Types
-import           Concordium.Crypto.SignatureScheme   ( SchemeId (..)
-                                                     , SignKey (..)
-                                                     , VerifyKey (..)
-                                                     )
+import           Concordium.Crypto.SignatureScheme   (SchemeId (..), VerifyKey)
+import qualified Concordium.Crypto.SHA256
 import qualified Concordium.ID.Account
+import qualified Concordium.ID.Types
 import SimpleIdClientMock
 import SimpleIdClientApi
 
@@ -55,15 +56,19 @@ data Routes r = Routes
 
     , betaIdProvision :: r :-
         "v1" :> "betaIdProvision" :> ReqBody '[JSON] BetaIdProvisionRequest
-                                     :> Post '[JSON] BetaIdProvisionResponse
+                                  :> Post '[JSON] BetaIdProvisionResponse
 
     , betaAccountProvision :: r :-
         "v1" :> "betaAccountProvision" :> ReqBody '[JSON] BetaAccountProvisionRequest
-                                     :> Post '[JSON] BetaAccountProvisionResponse
+                                       :> Post '[JSON] BetaAccountProvisionResponse
+
+    , betaGtuDrop :: r :-
+        "v1" :> "betaGtuDrop" :> ReqBody '[JSON] Text
+                              :> Post '[JSON] BetaGtuDropResponse
 
     , accountTransactions :: r :-
         "v1" :> "accountTransactions" :> ReqBody '[JSON] Text
-                                     :> Post '[JSON] [AccountTransaction]
+                                      :> Post '[JSON] [AccountTransaction]
 
     , identityGenerateChi :: r :-
         "v1" :> "identityGenerateChi" :> ReqBody '[JSON] Text
@@ -83,9 +88,8 @@ data Routes r = Routes
 
 data BetaIdProvisionRequest =
   BetaIdProvisionRequest
-    { scheme :: Text
-    , attributes :: [(Text,Text)]
-    , accountKeys :: Maybe Text -- @TODO fix type
+    { attributes :: [(Text,Text)]
+    , accountKeys :: Maybe AccountKeyPair
     }
   deriving (FromJSON, Generic, Show)
 
@@ -103,6 +107,17 @@ data BetaAccountProvisionResponse =
     , spio :: IdCredential
     }
   deriving (ToJSON, Generic, Show)
+
+
+data BetaGtuDropResponse =
+  BetaGtuDropResponse
+    { transactionId :: Types.TransactionHash
+    }
+  deriving (ToJSON, Generic, Show)
+
+
+instance ToJSON Types.TransactionHash where
+  toJSON v = AE.String $ Text.decodeUtf8 $ (Concordium.Crypto.SHA256.hashToByteString v)
 
 
 -- Legacy @TODO remove?
@@ -193,23 +208,25 @@ servantApp backend = genericServe routesAsServer
 
 
   betaIdProvision :: BetaIdProvisionRequest -> Handler BetaIdProvisionResponse
-  betaIdProvision BetaIdProvisionRequest{ scheme, attributes, accountKeys } = do
+  betaIdProvision BetaIdProvisionRequest{ attributes, accountKeys } = do
 
-    let attributesStub = -- @TODO inject attribute list components
-          [ ("birthYear", "2013")
-          , ("residenceCountryCode", "386")
-          ]
+    liftIO $ putStrLn "✅ Got the following attributes:"
+    liftIO $ putStrLn $ show attributes
 
-        idObjectRequest =
+    creationTime <- liftIO $ round `fmap` getPOSIXTime
+
+    let
+      expiryDate = creationTime + (60*60*24*365) -- Expires in 365 days from now
+      idObjectRequest =
           IdObjectRequest
             { ipIdentity = 0
-            , name = "Ales" -- @TODO inject name
-            , attributes = fromList -- @TODO make these a dynamic in future
-                ([ ("creationTime", "1341324324")
-                , ("expiryDate", "1910822399")
+            , name = "middleware-beta-autogen"
+            , attributes = fromList
+                ([ ("creationTime", Text.pack $ show creationTime)
+                , ("expiryDate", Text.pack $ show expiryDate)
                 , ("maxAccount", "30")
                 , ("variant", "0")
-                ] ++ attributesStub)
+                ] ++ attributes)
             }
 
     idObjectResponse <- liftIO $ postIdObjectRequest idObjectRequest
@@ -245,6 +262,17 @@ servantApp backend = genericServe routesAsServer
         }
 
 
+  betaGtuDrop :: Text -> Handler BetaGtuDropResponse
+  betaGtuDrop toAddressText = do
+    let toAddress = certainDecode $ encode $ toAddressText
+
+    liftIO $ putStrLn $ "✅ Requesting GTU Drop for " ++ show toAddress
+
+    transactionId <- liftIO $ godTransaction 2 $ Transfer { toaddress = toAddress, amount = 100 }
+
+    pure $ BetaGtuDropResponse { transactionId = transactionId }
+
+
   accountTransactions :: Text -> Handler [AccountTransaction]
   accountTransactions address =
     pure $ SimpleIdClientMock.accountTransactions address
@@ -267,6 +295,66 @@ servantApp backend = genericServe routesAsServer
 
 
 
+-- For beta, uses the mateuszKP which is seeded with funds
+-- @TODO track and increment nonces automatically in this function without requiring a param
+godTransaction :: Types.Nonce -> TransactionJSONPayload -> IO Types.TransactionHash
+godTransaction nonce payload = do
+  let
+    transaction =
+      TransactionJSON
+        { metadata = transactionHeader
+        , payload = payload
+        , signKey = certainDecode "\"b52f4ce89e78e45934851e395c6258f7240ce6902526c78a8960927c8959a363\""
+        }
+
+    transactionHeader =
+          TransactionJSONHeader
+            { thSenderKey = certainDecode "\"3e4f11b8a43f5b4c63f9d85ae9de365057c9bce8c57caf84e34f1040e5f59ecd\""
+            , thNonce = Just nonce
+            , thGasAmount = 4000
+            -- @NOTE thFinalizedPointer is unused, will be removed in future, just needs to be a valid looking pointer
+            , thFinalizedPointer = certainDecode "\"170afb6659a6d4a375524124606177d5704629c55335edeac28b3cfabc0ff11a\""
+            }
+
+  executeTransaction transaction
+
+
+executeTransaction :: TransactionJSON -> IO Types.TransactionHash
+executeTransaction transaction = do
+
+  mdata <- loadContextData
+  -- The networkId is for running multiple networks that's not the same chain, but hasn't been taken into use yet
+  let nid = 1000
+  let backend = COM.GRPC { host = "127.0.0.1", port = 11165, target = Nothing }
+
+  t <- do
+    let hookIt = True
+    PR.evalContext mdata $ runInClient backend $ processTransaction_ transaction nid hookIt
+
+  putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (Types.trHash t)
+  pure $ Types.trHash t
+
+
+verifyKeyToAccountAddress :: VerifyKey -> Types.Address
+verifyKeyToAccountAddress verifyKey =
+  Types.AddressAccount $ Concordium.ID.Account.accountAddress verifyKey Ed25519
+
+
+-- Dirty helper to help us with "definitely certain" value decoding
+certainDecode :: (FromJSON a) => BS8.ByteString -> a
+certainDecode bytestring =
+  case decode' bytestring of
+    Just v -> v
+    Nothing -> error $ "Well... not so certain now huh! certainDecode failed on:\n\n" ++ show bytestring
+
+
+-- Dirty helper to help us with "definitely certain" account address decoding
+certainAccountAddress :: BS.ByteString -> Types.Address
+certainAccountAddress addressBytestring =
+  case unsafePerformIO $ Concordium.ID.Types.safeDecodeBase58Address addressBytestring of
+    Just address -> Types.AddressAccount address
+    Nothing -> error $ "Well... not so certain now huh! certainAccountAddress failed on:\n\n" ++ show addressBytestring
+
 
 {--
 
@@ -276,11 +364,7 @@ it can be more easily tested via `stack ghci` using `:r` for quick reloads.
 Once proven together, relevant parts are integrated into the APIs above.
 
 Currently, this seems to work all the way through to submitting onto the chain
-and being accepted baked into a block.
-
-There is however an issue with GetAccountInfo gRPC call on the new account:
-
-https://gist.github.com/supermario/8e58460662e4d6cb769a7c82fda0723b
+and being accepted baked into a block with the new account credited 100 GTU.
 
 --}
 debugTestFullProvision :: IO String
@@ -294,7 +378,7 @@ debugTestFullProvision = do
       idObjectRequest =
         IdObjectRequest
           { ipIdentity = 0
-          , name = "Ales" -- @TODO inject name
+          , name = "middleware-beta-debug"
           , attributes = fromList -- @TODO make these a dynamic in future
               ([ ("creationTime", "1341324324")
               , ("expiryDate", "1910822399")
@@ -322,7 +406,7 @@ debugTestFullProvision = do
   putStrLn "✅ Got idCredentialResponse"
 
   putStrLn "✅ Generating JSON for idCredentialResponse:"
-  putStrLn $ BS.unpack $ encode idCredentialResponse
+  putStrLn $ BS8.unpack $ encode idCredentialResponse
 
   let betaAccountProvisionResponse =
         BetaAccountProvisionResponse
@@ -330,49 +414,18 @@ debugTestFullProvision = do
           , spio = credential (idCredentialResponse :: IdCredentialResponse)
           }
 
-  let transactionHeader =
-        TransactionJSONHeader
-          { thSenderKey = certainDecode "\"3e4f11b8a43f5b4c63f9d85ae9de365057c9bce8c57caf84e34f1040e5f59ecd\"" -- verifyKey @TODO figure out how to create this value directly
-          , thNonce = Just 1
-          , thGasAmount = 4000
-          , thFinalizedPointer = certainDecode "\"170afb6659a6d4a375524124606177d5704629c55335edeac28b3cfabc0ff11a\"" -- @NOTE unused, will be removed
-          }
-
-      deployTransaction =
-        TransactionJSON
-          { metadata = transactionHeader
-          , payload =
-              DeployCredential
-                { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
-          -- @TODO is this the right way to make this value...? Taken from the FromJSON instance. If so make a helper
-          , signKey = SignKey . BSS.toShort . fst . BS16.decode . Text.encodeUtf8 $ "b52f4ce89e78e45934851e395c6258f7240ce6902526c78a8960927c8959a363"
-          }
-
-  putStrLn "✅ Generating JSON for deployTransaction:"
-  putStrLn $ show deployTransaction
-
   let newAccountKeyPair = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
-      -- @TODO is this the right way to make this value...? Copied from signKey above. If so make a helper
-      newVerifyKey = VerifyKey . BSS.toShort . fst . BS16.decode . Text.encodeUtf8 $ verifyKey (newAccountKeyPair :: AccountKeyPair)
-      newAccountAddress = Concordium.ID.Account.accountAddress newVerifyKey Ed25519
+      newVerifyKey = verifyKey (newAccountKeyPair :: AccountKeyPair)
+      newAccountAddress = verifyKeyToAccountAddress newVerifyKey
 
   putStrLn $ "✅ Deployed account address will be: " ++ show newAccountAddress
 
-  mdata <- loadContextData
-  -- The networkId is for running multiple networks that's not the same chain, but hasn't been taken into use yet
-  let nid = 1000
-  let backend = COM.GRPC { host = "127.0.0.1", port = 11160, target = Nothing }
+  -- @TODO need a global incrementing store for the nonces
 
-  t <- do
-    let hookIt = True
-    PR.evalContext mdata $ runInClient backend $ processTransaction_ deployTransaction nid hookIt
+  _ <- godTransaction 1 $ DeployCredential { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
 
-  putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (Types.trHash t)
+  putStrLn $ "✅ Requesting GTU Drop for " ++ show newAccountAddress
+
+  _ <- godTransaction 2 $ Transfer { toaddress = newAccountAddress, amount = 100 }
 
   pure "Done."
-
-
-certainDecode value =
-  case decode' value of
-    Just v -> v
-    Nothing -> error $ "Well... not so certain now huh! certainDecode failed on:\n\n" ++ show value

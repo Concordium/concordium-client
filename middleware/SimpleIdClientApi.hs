@@ -20,6 +20,8 @@ import Servant.API.Generic
 import Data.Map
 import Control.Monad.IO.Class
 
+import Concordium.Crypto.SignatureScheme (SignKey (..), VerifyKey (..))
+
 
 -- API requests
 
@@ -279,8 +281,8 @@ data IdCredentialResponse =
 
 data AccountKeyPair =
   AccountKeyPair
-    { signKey :: Text
-    , verifyKey :: Text
+    { signKey :: SignKey
+    , verifyKey :: VerifyKey
     }
   deriving (Generic, Show, FromJSON, ToJSON)
 
