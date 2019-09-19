@@ -41,8 +41,10 @@ import           Concordium.Crypto.SignatureScheme   (SchemeId (..), VerifyKey)
 import qualified Concordium.Crypto.SHA256
 import qualified Concordium.ID.Account
 import qualified Concordium.ID.Types
+
 import SimpleIdClientMock
 import SimpleIdClientApi
+import EsApi
 
 
 data Routes r = Routes
@@ -68,7 +70,7 @@ data Routes r = Routes
 
     , accountTransactions :: r :-
         "v1" :> "accountTransactions" :> ReqBody '[JSON] Text
-                                      :> Post '[JSON] [AccountTransaction]
+                                      :> Post '[JSON] AccountTransactionsResponse
 
     , identityGenerateChi :: r :-
         "v1" :> "identityGenerateChi" :> ReqBody '[JSON] Text
@@ -97,14 +99,22 @@ data BetaIdProvisionRequest =
 type BetaIdProvisionResponse = IdObjectResponse
 
 
--- The BetaAccountProvisionRequest is just what the SimpleIdClient expects for Identity Credential provisioning
--- @TODO but will shortly expand to inclkude relvealedAttributes and accountNumber fields
-type BetaAccountProvisionRequest = IdCredentialRequest
+data BetaAccountProvisionRequest =
+  BetaAccountProvisionRequest
+    { ipIdentity :: Int
+    , preIdentityObject :: PreIdentityObject
+    , privateData :: PrivateData
+    , signature :: Text
+    , revealedItems :: [Text]
+    }
+  deriving (ToJSON, FromJSON, Generic, Show)
+
 
 data BetaAccountProvisionResponse =
   BetaAccountProvisionResponse
     { accountKeys :: AccountKeyPair
     , spio :: IdCredential
+    , address :: Text
     }
   deriving (ToJSON, Generic, Show)
 
@@ -117,7 +127,7 @@ data BetaGtuDropResponse =
 
 
 instance ToJSON Types.TransactionHash where
-  toJSON v = AE.String $ Text.decodeUtf8 $ (Concordium.Crypto.SHA256.hashToByteString v)
+  toJSON v = AE.String $ Text.pack $ show v
 
 
 -- Legacy @TODO remove?
@@ -245,8 +255,8 @@ servantApp backend = genericServe routesAsServer
             , preIdentityObject = preIdentityObject (accountProvisionRequest :: BetaAccountProvisionRequest)
             , privateData = privateData (accountProvisionRequest :: BetaAccountProvisionRequest)
             , signature = signature (accountProvisionRequest :: BetaAccountProvisionRequest)
-            , revealedItems = ["birthYear"] -- @TODO take revealed items preferences from user
-            , accountNumber = 0
+            , revealedItems = revealedItems (accountProvisionRequest :: BetaAccountProvisionRequest)
+            , accountNumber = 0 -- @TODO auto increment account number from Elastic?
             }
 
     idCredentialResponse <- liftIO $ postIdCredentialRequest credentialRequest
@@ -255,16 +265,25 @@ servantApp backend = genericServe routesAsServer
 
     -- liftIO $ putStrLn $ show attributes
 
+    let newAccountKeyPair = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
+        newVerifyKey = verifyKey (newAccountKeyPair :: AccountKeyPair)
+        -- @TODO fix me with proper ToJSON not show which includes "AddressAccount" label
+        -- Fix the tempDecodeAddress in wallet frontend at the same time
+        newAccountAddress = verifyKeyToAccountAddress newVerifyKey
+
+    _ <- liftIO $ godTransaction 1 $ DeployCredential { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
+
     pure $
       BetaAccountProvisionResponse
         { accountKeys = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
         , spio = credential (idCredentialResponse :: IdCredentialResponse)
+        , address = Text.pack . show $ newAccountAddress
         }
 
 
   betaGtuDrop :: Text -> Handler BetaGtuDropResponse
   betaGtuDrop toAddressText = do
-    let toAddress = certainDecode $ encode $ toAddressText
+    let toAddress = certainAccountAddress toAddressText
 
     liftIO $ putStrLn $ "✅ Requesting GTU Drop for " ++ show toAddress
 
@@ -273,9 +292,9 @@ servantApp backend = genericServe routesAsServer
     pure $ BetaGtuDropResponse { transactionId = transactionId }
 
 
-  accountTransactions :: Text -> Handler [AccountTransaction]
+  accountTransactions :: Text -> Handler AccountTransactionsResponse
   accountTransactions address =
-    pure $ SimpleIdClientMock.accountTransactions address
+    liftIO $ EsApi.getAccountTransactions address
 
 
   identityGenerateChi :: Text -> Handler Text
@@ -312,11 +331,17 @@ godTransaction nonce payload = do
             { thSenderKey = certainDecode "\"3e4f11b8a43f5b4c63f9d85ae9de365057c9bce8c57caf84e34f1040e5f59ecd\""
             , thNonce = Just nonce
             , thGasAmount = 4000
-            -- @NOTE thFinalizedPointer is unused, will be removed in future, just needs to be a valid looking pointer
+            -- @NOTE thFinalizedPointer is unused, will be removed in future, just needs to be a valid-looking pointer
             , thFinalizedPointer = certainDecode "\"170afb6659a6d4a375524124606177d5704629c55335edeac28b3cfabc0ff11a\""
             }
 
   executeTransaction transaction
+
+
+-- bumpNonceForAddress :: Types.Address -> IO Int
+-- bumpNonceForAddress address =
+
+
 
 
 executeTransaction :: TransactionJSON -> IO Types.TransactionHash
@@ -325,7 +350,7 @@ executeTransaction transaction = do
   mdata <- loadContextData
   -- The networkId is for running multiple networks that's not the same chain, but hasn't been taken into use yet
   let nid = 1000
-  let backend = COM.GRPC { host = "127.0.0.1", port = 11165, target = Nothing }
+  let backend = COM.GRPC { host = "127.0.0.1", port = 11108, target = Nothing }
 
   t <- do
     let hookIt = True
@@ -349,11 +374,11 @@ certainDecode bytestring =
 
 
 -- Dirty helper to help us with "definitely certain" account address decoding
-certainAccountAddress :: BS.ByteString -> Types.Address
-certainAccountAddress addressBytestring =
-  case unsafePerformIO $ Concordium.ID.Types.safeDecodeBase58Address addressBytestring of
+certainAccountAddress :: Text -> Types.Address
+certainAccountAddress addressText =
+  case unsafePerformIO $ Concordium.ID.Types.safeDecodeBase58Address $ Text.encodeUtf8 addressText of
     Just address -> Types.AddressAccount address
-    Nothing -> error $ "Well... not so certain now huh! certainAccountAddress failed on:\n\n" ++ show addressBytestring
+    Nothing -> error $ "Well... not so certain now huh! certainAccountAddress failed on:\n\n" ++ show (Text.unpack addressText)
 
 
 {--
@@ -370,18 +395,22 @@ and being accepted baked into a block with the new account credited 100 GTU.
 debugTestFullProvision :: IO String
 debugTestFullProvision = do
 
-  let attributesStub = -- @TODO inject attribute list components
-        [ ("birthYear", "2013")
-        , ("residenceCountryCode", "386")
+  creationTime <- liftIO $ round `fmap` getPOSIXTime
+
+  let attributesStub =
+        [ ("birthYear", "2000")
+        , ("residenceCountryCode", "184") -- (GB) Great Britain
         ]
+
+      expiryDate = creationTime + (60*60*24*365) -- Expires in 365 days from now
 
       idObjectRequest =
         IdObjectRequest
           { ipIdentity = 0
           , name = "middleware-beta-debug"
           , attributes = fromList -- @TODO make these a dynamic in future
-              ([ ("creationTime", "1341324324")
-              , ("expiryDate", "1910822399")
+              ([ ("creationTime", Text.pack $ show creationTime)
+              , ("expiryDate", Text.pack $ show expiryDate)
               , ("maxAccount", "30")
               , ("variant", "0")
               ] ++ attributesStub)
@@ -408,15 +437,16 @@ debugTestFullProvision = do
   putStrLn "✅ Generating JSON for idCredentialResponse:"
   putStrLn $ BS8.unpack $ encode idCredentialResponse
 
-  let betaAccountProvisionResponse =
-        BetaAccountProvisionResponse
-          { accountKeys = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
-          , spio = credential (idCredentialResponse :: IdCredentialResponse)
-          }
-
   let newAccountKeyPair = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
       newVerifyKey = verifyKey (newAccountKeyPair :: AccountKeyPair)
       newAccountAddress = verifyKeyToAccountAddress newVerifyKey
+
+      betaAccountProvisionResponse =
+        BetaAccountProvisionResponse
+          { accountKeys = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
+          , spio = credential (idCredentialResponse :: IdCredentialResponse)
+          , address = Text.pack . show $ newAccountAddress
+          }
 
   putStrLn $ "✅ Deployed account address will be: " ++ show newAccountAddress
 
