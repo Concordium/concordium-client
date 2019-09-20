@@ -359,9 +359,14 @@ executeTransaction transaction = do
   pure $ Types.trHash t
 
 
-verifyKeyToAccountAddress :: VerifyKey -> Types.Address
+verifyKeyToAddress :: VerifyKey -> Types.Address
+verifyKeyToAddress verifyKey =
+  Types.AddressAccount $ verifyKeyToAccountAddress verifyKey
+
+
+verifyKeyToAccountAddress :: VerifyKey -> Concordium.ID.Types.AccountAddress
 verifyKeyToAccountAddress verifyKey =
-  Types.AddressAccount $ Concordium.ID.Account.accountAddress verifyKey Ed25519
+  Concordium.ID.Account.accountAddress verifyKey Ed25519
 
 
 -- Dirty helper to help us with "definitely certain" value decoding
@@ -438,23 +443,24 @@ debugTestFullProvision = do
 
   let newAccountKeyPair = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
       newVerifyKey = verifyKey (newAccountKeyPair :: AccountKeyPair)
+      newAddress = verifyKeyToAddress newVerifyKey
       newAccountAddress = verifyKeyToAccountAddress newVerifyKey
 
       betaAccountProvisionResponse =
         BetaAccountProvisionResponse
           { accountKeys = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
           , spio = credential (idCredentialResponse :: IdCredentialResponse)
-          , address = Text.pack . show $ newAccountAddress
+          , address = Text.pack . show $ newAddress
           }
 
-  putStrLn $ "✅ Deployed account address will be: " ++ show newAccountAddress
+  putStrLn $ "✅ Deployed account address will be: " ++ show newAddress
 
   -- @TODO need a global incrementing store for the nonces
 
   _ <- godTransaction $ DeployCredential { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
 
-  putStrLn $ "✅ Requesting GTU Drop for " ++ show newAccountAddress
+  putStrLn $ "✅ Requesting GTU Drop for " ++ show newAddress
 
-  _ <- godTransaction $ Transfer { toaddress = newAccountAddress, amount = 100 }
+  _ <- godTransaction $ Transfer { toaddress = newAddress, amount = 100 }
 
   pure "Done."
