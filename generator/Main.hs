@@ -61,7 +61,6 @@ parser = info (helper <*> ((,) <$> grpcBackend <*> txOptions))
 sendTx :: MonadIO m => BareTransaction -> ClientMonad m BareTransaction
 sendTx tx = sendTransactionToBaker tx 100 >> return tx
 
--- |The 'endNonce' parameter should go away once we find why the threads block at around 450 txs
 go :: Backend -> Int -> Int -> (Nonce -> BareTransaction) -> Nonce -> IO ()
 go backend delay perBatch sign startNonce =
   runInClient backend $! (loop startNonce)
