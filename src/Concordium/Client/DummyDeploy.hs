@@ -107,36 +107,20 @@ updateContractWithKey ::
   -> Amount
   -> ContractAddress
   -> Core.Expr Core.UA Core.ModuleName
-  -> IO (Transaction, Either String [Value])
+  -> IO (BareTransaction, Either String [Value])
 updateContractWithKey kp back mnonce energy amount address message = runInClient back comp
   where
-    tx nonce =
-      Types.signTransaction
-        kp
-        (txHeader nonce)
-        (Types.encodePayload updateContract)
-
-    txHeader nonce =
-      Types.makeTransactionHeader
-        Sig.Ed25519
-        (Sig.verifyKey kp)
-        nonce
-        energy
-        blockPointer
-
-    dummySizeThatWillBeDeprecated =
-      1
+    tx nonce = helper kp nonce energy updateContract
 
     updateContract =
       Types.Update
         amount
         address
         message
-        dummySizeThatWillBeDeprecated
 
     comp = do
       nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) =<< getBestBlockHash)
       let transaction = tx nonce
-      txReturn <- sendHookToBaker (Types.trHash transaction)
+      txReturn <- sendHookToBaker (Types.transactionHash transaction)
       sendTransactionToBaker transaction 100
       return (transaction, txReturn)
