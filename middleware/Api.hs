@@ -271,7 +271,7 @@ servantApp backend = genericServe routesAsServer
         -- Fix the tempDecodeAddress in wallet frontend at the same time
         newAccountAddress = verifyKeyToAccountAddress newVerifyKey
 
-    _ <- liftIO $ godTransaction 1 $ DeployCredential { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
+    _ <- liftIO $ godTransaction $ DeployCredential { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
 
     pure $
       BetaAccountProvisionResponse
@@ -287,7 +287,7 @@ servantApp backend = genericServe routesAsServer
 
     liftIO $ putStrLn $ "✅ Requesting GTU Drop for " ++ show toAddress
 
-    transactionId <- liftIO $ godTransaction 2 $ Transfer { toaddress = toAddress, amount = 100 }
+    transactionId <- liftIO $ godTransaction $ Transfer { toaddress = toAddress, amount = 100 }
 
     pure $ BetaGtuDropResponse { transactionId = transactionId }
 
@@ -316,8 +316,11 @@ servantApp backend = genericServe routesAsServer
 
 -- For beta, uses the mateuszKP which is seeded with funds
 -- @TODO track and increment nonces automatically in this function without requiring a param
-godTransaction :: Types.Nonce -> TransactionJSONPayload -> IO Types.TransactionHash
-godTransaction nonce payload = do
+godTransaction :: TransactionJSONPayload -> IO Types.TransactionHash
+godTransaction payload = do
+
+  nonce <- EsApi.takeNextNonceFor "73PghERVtFm3Q6TZT6gd61S2ZxrJ"
+
   let
     transaction =
       TransactionJSON
@@ -338,12 +341,6 @@ godTransaction nonce payload = do
   executeTransaction transaction
 
 
--- bumpNonceForAddress :: Types.Address -> IO Int
--- bumpNonceForAddress address =
-
-
-
-
 executeTransaction :: TransactionJSON -> IO Types.TransactionHash
 executeTransaction transaction = do
 
@@ -357,6 +354,8 @@ executeTransaction transaction = do
     PR.evalContext mdata $ runInClient backend $ processTransaction_ transaction nid hookIt
 
   putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (Types.trHash t)
+  putStrLn $ show transaction
+
   pure $ Types.trHash t
 
 
@@ -452,10 +451,10 @@ debugTestFullProvision = do
 
   -- @TODO need a global incrementing store for the nonces
 
-  _ <- godTransaction 1 $ DeployCredential { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
+  _ <- godTransaction $ DeployCredential { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
 
   putStrLn $ "✅ Requesting GTU Drop for " ++ show newAccountAddress
 
-  _ <- godTransaction 2 $ Transfer { toaddress = newAccountAddress, amount = 100 }
+  _ <- godTransaction $ Transfer { toaddress = newAccountAddress, amount = 100 }
 
   pure "Done."

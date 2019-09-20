@@ -8,6 +8,7 @@
 
 module EsApi where
 
+import qualified Control.Exception as E
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
 import Data.Text                 (Text)
@@ -18,95 +19,113 @@ import Data.Aeson.Types          (ToJSON, FromJSON, typeMismatch)
 import Network.HTTP.Types.Header (RequestHeaders)
 import Network.HTTP.Conduit
 import Network.HTTP.Simple
+import Network.HTTP.Types.Status (statusCode)
 import NeatInterpolation
 import Servant.API.Generic
 import Data.Map
 import Control.Monad.IO.Class
-
+import qualified Concordium.Scheduler.Types as Types
+import Concordium.Client.Types.Transaction
+import Concordium.Types
 
 -- API requests
 
-commitWithNextNonce :: Text -> IO Int
-commitWithNextNonce address =
-  pure 1
+{-
+
+Uses ElasticSearch Optimistic Concurrency Control:
+https://www.elastic.co/guide/en/elasticsearch/reference/current/optimistic-concurrency-control.html
+
+In future we'll need to rearchitect this to also handle transaction failures and
+re-syncing chain nonce (i.e in untracked transaction scenarios), but for beta
+we're skipping this for now.
+
+-}
+takeNextNonceFor :: Text -> IO Types.Nonce
+takeNextNonceFor accountAddress = do
+
+  (nonceQueryResponseE :: Either HttpException NonceQueryResponse) <-
+    getJsonRequestEither ("http://localhost:9200/index_nonce_log/_doc/" ++ T.unpack accountAddress)
+
+  case nonceQueryResponseE of
+    Right nonceQueryResponse -> do
+      putStrLn $ "✅ got nonceQueryResponse, progressing..."
+      let
+        nonceBody newNonce =
+          [text|
+            { "nonce": $newNonce }
+          |]
+
+        newNonce = (nonce nonceQueryResponse) + 1
+
+        url =
+          "http://localhost:9200/index_nonce_log/_doc/" ++ (T.unpack accountAddress) ++
+          "?if_seq_no=" ++ (show $ _seq_no nonceQueryResponse) ++
+          "&if_primary_term=" ++ (show $ _primary_term nonceQueryResponse)
+
+        body (Nonce v) = (nonceBody $ T.pack . show $ v)
+
+      (nonceIncrementResponseE :: Either HttpException NonceIncrementResponse) <- postTextRequestEither url (body newNonce)
+
+      case nonceIncrementResponseE of
+        Right nonceIncrementResponse ->
+          case nonceIncrementResponse of
+            NonceConfirmed -> pure newNonce
+            NonceAlreadyTaken -> do
+              -- @TODO never fires as decoders not attempted on non-200 - how to fix this?
+              putStrLn "⚠️ Nonce already taken! Retrying..."
+              takeNextNonceFor accountAddress
+        Left err -> do
+          case err of
+            HttpExceptionRequest _ (StatusCodeException res _) ->
+              if statusCode (responseStatus res) == 409 then do
+                putStrLn "⚠️ Nonce already taken! Retrying..."
+                takeNextNonceFor accountAddress
+
+              else do
+                putStrLn "❌ Unexpected HttpException:"
+                putStrLn $ show err
+                -- @TODO handle failures here
+                error "Nonce acquisition failed, fatal error."
+
+    Left err -> do
+      case err of
+        HttpExceptionRequest _ (StatusCodeException res _) ->
+          if statusCode (responseStatus res) == 404 then do
+            putStrLn $ "✅ No nonce exists, initializing"
+            initializeNonce accountAddress -- @TODO handle failures here
+            pure $ Nonce 1
+          else do
+            putStrLn "❌ Unexpected HttpException:"
+            putStrLn $ show err
+            -- @TODO handle failures here
+            error "Nonce acquisition failed, fatal error."
 
 
-
-
-getNonceFor :: Text -> IO Int
-getNonceFor accountAddress = do
-
-  (nonceQueryResponse :: NonceQueryResponse) <-
-    getJsonRequest ("http://localhost:9200/index_nonce_log/account/" ++ T.unpack accountAddress)
-
-  putStrLn $ show nonceQueryResponse
-
+initializeNonce :: Text -> IO NonceInitializeResponse
+initializeNonce address = do
   let
-    -- @TODO what other transfer types do we care about for now?
-
-    nonceBody newNonce =
-      [text|{ "nonce": $newNonce }|]
-
-    newNonce = (nonce nonceQueryResponse) + 1
+    newNonce = [text|
+      { "nonce": 1 }
+    |]
 
     url =
-      "http://localhost:9200/index_nonce_log/_doc/" ++ (T.unpack accountAddress) ++
-      "?if_seq_no=" ++ (show $ _seq_no nonceQueryResponse - 1) ++
-      "&if_primary_term=" ++ (show $ _primary_term nonceQueryResponse)
+      "http://localhost:9200/index_nonce_log/_doc/" ++ (T.unpack address)
 
-    body = (nonceBody $ T.pack . show $ newNonce)
-
-  putStrLn url
-  putStrLn $ show body
-
-  (nonceIncrementResponse :: NonceIncrementResponse) <-
-    postTextRequest
-      url
-      body
-
-  putStrLn $ show nonceIncrementResponse
-
-  pure newNonce
+  postTextRequest url newNonce
 
 
+data NonceInitializeResponse =
+  NonceInitialized
 
--- http://localhost:9200/index_nonce_log/account/4q2FFMLFPWDr1e7wUCLkXpXgMKz5?if_seq_no=11&if_primary_term=1
--- http://localhost:9200/index_nonce_log/account/4q2FFMLFPWDr1e7wUCLkXpXgMKz5?if_seq_no=12&if_primary_term=1
+instance AE.FromJSON NonceInitializeResponse where
+  parseJSON (Object v) = do
+    result :: Text <- v .: "result"
+    if result == "created" then
+      return NonceInitialized
+    else
+      fail "NonceInitializeResponse did not see a result=created value"
 
-  -- {
-  --     "_index": "index_nonce_log",
-  --     "_type": "account",
-  --     "_id": "4q2FFMLFPWDr1e7wUCLkXpXgMKz5",
-  --     "_version": 11,
-  --     "result": "updated",
-  --     "_shards": {
-  --         "total": 2,
-  --         "successful": 1,
-  --         "failed": 0
-  --     },
-  --     "_seq_no": 10,
-  --     "_primary_term": 1
-  -- }
-  --
-  -- {
-  --   "error": {
-  --       "root_cause": [
-  --           {
-  --               "type": "version_conflict_engine_exception",
-  --               "reason": "[4q2FFMLFPWDr1e7wUCLkXpXgMKz5]: version conflict, required seqNo [9], primary term [1]. current document has seqNo [10] and primary term [1]",
-  --               "index_uuid": "-5XtMieBTYO71rawLpqfDg",
-  --               "shard": "0",
-  --               "index": "index_nonce_log"
-  --           }
-  --       ],
-  --       "type": "version_conflict_engine_exception",
-  --       "reason": "[4q2FFMLFPWDr1e7wUCLkXpXgMKz5]: version conflict, required seqNo [9], primary term [1]. current document has seqNo [10] and primary term [1]",
-  --       "index_uuid": "-5XtMieBTYO71rawLpqfDg",
-  --       "shard": "0",
-  --       "index": "index_nonce_log"
-  --   },
-  --   "status": 409
-  -- }
+  parseJSON invalid = typeMismatch "NonceInitializeResponse" invalid
 
 
 data NonceIncrementResponse =
@@ -133,15 +152,14 @@ instance AE.FromJSON NonceIncrementResponse where
   parseJSON invalid = typeMismatch "OutcomesSearchResponseJson" invalid
 
 
-
-
 data NonceQueryResponse =
   NonceQueryResponse
     { _seq_no :: Int
     , _primary_term :: Int
-    , nonce :: Int
+    , nonce :: Types.Nonce
     }
   deriving (Show)
+
 
 instance AE.FromJSON NonceQueryResponse where
   parseJSON (Object v) = do
@@ -154,8 +172,6 @@ instance AE.FromJSON NonceQueryResponse where
     return $ NonceQueryResponse {..}
 
   parseJSON invalid = typeMismatch "OutcomesSearchResponseJson" invalid
-
-
 
 
 getAccountTransactions :: Text -> IO AccountTransactionsResponse
@@ -198,10 +214,22 @@ getJsonRequest url = do
   jsonRequest req
 
 
+getJsonRequestEither ::  (FromJSON response) => String -> IO (Either HttpException response)
+getJsonRequestEither url = do
+  req <- setHeaders <$> parseUrlThrow url
+  jsonRequestEither req
+
+
 postTextRequest :: FromJSON response => String -> Text -> IO response
 postTextRequest url request = do
   req <- setRequestBodyLBS (BS.fromStrict $ E.encodeUtf8 request) . setHeaders . setPost <$> parseUrlThrow url
   jsonRequest req
+
+
+postTextRequestEither :: FromJSON response => String -> Text -> IO (Either HttpException response)
+postTextRequestEither url request = do
+  req <- setRequestBodyLBS (BS.fromStrict $ E.encodeUtf8 request) . setHeaders . setPost <$> parseUrlThrow url
+  jsonRequestEither req
 
 
 postJsonRequest ::  (ToJSON request, FromJSON response) => String -> request -> IO response
@@ -212,15 +240,41 @@ postJsonRequest url requestObject = do
 
 jsonRequest :: FromJSON response => Request -> IO response
 jsonRequest req = do
-  manager <- newManager tlsManagerSettings -- @TODO put the tlsManger into reader
-  res     <- Network.HTTP.Conduit.httpLbs req manager
+  res <- jsonRequestEither req
 
-  case eitherDecode (responseBody res) of
-    Left  err -> do
-      putStrLn "There was an error decoding this response:"
-      putStrLn $ show $ responseBody res
-      error err
+  case res of
+    Left err -> do
+      putStrLn "❌ Unhandled Left:"
+      putStrLn "Request:"
+      putStrLn $ case requestBody req of
+        RequestBodyLBS lbs -> BS.unpack lbs
+        _ -> "<RequestBody non-LBS>"
+
+      error $ show err
+
     Right result -> pure result
+
+
+jsonRequestEither :: FromJSON response => Request -> IO (Either HttpException response)
+jsonRequestEither req = do
+  manager <- newManager tlsManagerSettings -- @TODO put the tlsManger into reader
+
+  let
+    doReq = do
+      res <- Network.HTTP.Conduit.httpLbs req manager
+      case eitherDecode (responseBody res) of
+        Right response -> pure $ Right response
+        Left err -> error $ show err
+
+    errorHandler err =
+      case err of
+        HttpExceptionRequest _ (StatusCodeException res _) ->
+          pure $ Left err
+        _ -> E.throw err
+
+  res <- E.catch doReq errorHandler
+
+  pure res
 
 
 textRequest :: Request -> IO Text
