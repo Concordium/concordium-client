@@ -19,7 +19,6 @@ import qualified Data.ByteString.Lazy as BSL
 
 import qualified Concordium.Scheduler.Utils.Init.Example as Example
 import qualified Concordium.Crypto.SignatureScheme as Sig
-import qualified Concordium.Crypto.SHA256 as Hash
 
 data TxOptions = TxOptions {
   -- |What is the starting nonce.
@@ -59,11 +58,11 @@ parser :: ParserInfo (Backend, TxOptions)
 parser = info (helper <*> ((,) <$> grpcBackend <*> txOptions))
          (fullDesc <> progDesc "Generate transactions for a fixed contract.")
 
-sendTx :: MonadIO m => Transaction -> ClientMonad m Transaction
+sendTx :: MonadIO m => BareTransaction -> ClientMonad m BareTransaction
 sendTx tx = sendTransactionToBaker tx 100 >> return tx
 
 -- |The 'endNonce' parameter should go away once we find why the threads block at around 450 txs
-go :: Backend -> Int -> Int -> (Nonce -> Transaction) -> Nonce -> IO ()
+go :: Backend -> Int -> Int -> (Nonce -> BareTransaction) -> Nonce -> IO ()
 go backend delay perBatch sign startNonce =
   runInClient backend $! (loop startNonce)
 
@@ -90,8 +89,8 @@ main = do
       case AE.parseEither parseKeys v of
         Left err' -> putStrLn $ "Could not decode JSON because: " ++ err'
         Right keyPair@Sig.KeyPair{..} -> do
-          let txBody = trPayload (Example.makeTransaction True (ContractAddress 0 0) 0)
-          let txHeader nonce = makeTransactionHeader Sig.Ed25519 verifyKey nonce 1000 (Hash.hash "")
+          let txBody = btrPayload (Example.makeTransaction True (ContractAddress 0 0) 0)
+          let txHeader nonce = makeTransactionHeader Sig.Ed25519 verifyKey (payloadSize txBody) nonce 1000
           let sign nonce = signTransaction keyPair (txHeader nonce) txBody
           go backend (delay txoptions) (perBatch txoptions) sign (startNonce txoptions)
 

@@ -8,10 +8,7 @@
 
 module Concordium.Client.Types.Transaction where
 
-import           Concordium.Crypto.SignatureScheme   (SchemeId (..),
-                                                      SignKey (..))
-import           Concordium.GlobalState.Transactions
-import qualified Concordium.ID.Account               as AH
+import           Concordium.Crypto.SignatureScheme   (SignKey (..))
 import qualified Concordium.ID.Types                 as IDTypes
 import qualified Concordium.Scheduler.Types          as Types
 import           Concordium.Types
@@ -39,18 +36,6 @@ instance FromJSON Energy where
 instance FromJSON Amount where
   parseJSON v = Amount <$> parseJSON v
 
--- Data (serializes with `putByteString :: Bytestring -> Put`)
-instance FromJSON BlockHash where
-  parseJSON v = do
-    hash <- parseJSON v
-    case S.decode . fst . BS16.decode . Text.encodeUtf8 $ hash of
-      Left e  -> fail e
-      Right n -> return n
-
-instance FromJSON AccountAddress where
-  parseJSON v = AH.base58decodeAddr <$> parseJSON v
-  parseJSONList v = map AH.base58decodeAddr <$> parseJSONList v
-
 instance FromJSON Address where
   parseJSON (Object v) = do
     r <- v .:? "accountAddress"
@@ -66,14 +51,6 @@ instance FromJSON IDTypes.AccountEncryptionKey where
     let plainBs = fst . BS16.decode . Text.encodeUtf8 $ aek
     case S.decode . flip BS.append plainBs $
          S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
-      Left e  -> fail e
-      Right n -> return n
-
--- Data (serializes with `putByteString :: Bytestring -> Put`)
-instance FromJSON BakerElectionVerifyKey where
-  parseJSON v = do
-    b16 <- parseJSON v
-    case S.decode . fst . BS16.decode . Text.encodeUtf8 $ b16 of
       Left e  -> fail e
       Right n -> return n
 
@@ -96,9 +73,6 @@ data TransactionJSONHeader =
     , thNonce            :: Maybe Nonce
   -- |Amount dedicated for the execution of this transaction.
     , thGasAmount        :: Energy
-  -- |Pointer to a finalized block. If this is too out of date at
-  -- the time of execution the transaction is dropped
-    , thFinalizedPointer :: BlockHash
     }
   deriving (Eq, Show)
 
@@ -181,7 +155,6 @@ instance AE.FromJSON TransactionJSON where
     thSenderKey <- v .: "verifyKey"
     thNonce <- v .:? "nonce"
     thGasAmount <- v .: "gasAmount"
-    thFinalizedPointer <- v .: "finalizedPointer"
     let tHeader = TransactionJSONHeader {..}
     tPayload <- v .: "payload"
     tSignKey <-
@@ -189,9 +162,3 @@ instance AE.FromJSON TransactionJSON where
       (v .: "signKey")
     return $ TransactionJSON tHeader tPayload tSignKey
   parseJSON invalid = typeMismatch "Transaction" invalid
-
--- |Creates a proper transaction header populating the Nonce if needed
-makeTransactionHeaderWithNonce ::
-     TransactionJSONHeader -> Types.Nonce -> Types.TransactionHeader
-makeTransactionHeaderWithNonce (TransactionJSONHeader sk _ ga fp) nonce =
-  makeTransactionHeader Ed25519 sk nonce ga fp

@@ -15,8 +15,6 @@ import           System.Random
 
 import           Acorn.Core                          as Core
 
-import qualified Data.ByteString                     as BS
-import qualified Data.Serialize.Put                  as P
 import           Data.Maybe
 import           Data.Aeson(Value)
 import           Prelude hiding(mod)
@@ -33,12 +31,23 @@ blockPointer :: BlockHash
 blockPointer = hash ""
 
 deployModule ::
-     Backend -> Maybe Nonce -> Energy -> [Module UA] -> IO [(Transaction, Either String [Value])]
+     Backend -> Maybe Nonce -> Energy -> [Module UA] -> IO [(BareTransaction, Either String [Value])]
 deployModule = deployModuleWithKey mateuszKP
 
 deployModule' ::
-     Backend -> Maybe Nonce -> Energy -> [Module UA] -> IO [(Transaction, Either String [Value])]
+     Backend -> Maybe Nonce -> Energy -> [Module UA] -> IO [(BareTransaction, Either String [Value])]
 deployModule' = deployModuleWithKey mateuszKP'
+
+helper :: Sig.KeyPair -> Nonce -> Energy -> Types.Payload -> BareTransaction
+helper kp nonce energy spayload =
+      let header = Types.makeTransactionHeader 
+                         Sig.Ed25519
+                         (Sig.verifyKey kp)
+                         (Types.payloadSize encPayload)
+                         nonce
+                         energy
+          encPayload = Types.encodePayload spayload
+      in Types.signTransaction kp header encPayload
 
 deployModuleWithKey ::
      Sig.KeyPair
@@ -46,27 +55,16 @@ deployModuleWithKey ::
   -> Maybe Nonce
   -> Energy
   -> [Module UA]
-  -> IO [(Transaction, Either String [Value])]
+  -> IO [(BareTransaction, Either String [Value])]
 deployModuleWithKey kp back mnonce amount amodules = runInClient back comp
   where
-    tx nonce mod =
-      Types.signTransaction
-        kp
-        (txHeader nonce)
-        (Types.encodePayload (Types.DeployModule mod))
-    txHeader nonce =
-      Types.makeTransactionHeader
-        Sig.Ed25519
-        (Sig.verifyKey kp)
-        nonce
-        amount
-        blockPointer
+    tx nonce mod = helper kp nonce amount (Types.DeployModule mod)
 
     comp = do
       nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) =<< getBestBlockHash)
       let transactions = zipWith tx [nonce..] amodules
       mapM (\ctx -> do
-                txReturn <- sendHookToBaker (Types.trHash ctx)
+                txReturn <- sendHookToBaker (Types.transactionHash ctx)
                 sendTransactionToBaker ctx 100
                 return (ctx, txReturn)
             ) transactions
@@ -81,22 +79,10 @@ initContractWithKey ::
   -> Core.ModuleRef
   -> Core.TyName
   -> Core.Expr Core.UA Core.ModuleName
-  -> IO (Transaction, Either String [Value])
+  -> IO (BareTransaction, Either String [Value])
 initContractWithKey kp back mnonce energy amount homeModule contractName contractFlags = runInClient back comp
   where
-    tx nonce =
-      Types.signTransaction
-        kp
-        (txHeader nonce)
-        (Types.encodePayload initContract)
-
-    txHeader nonce =
-      Types.makeTransactionHeader
-        Sig.Ed25519
-        (Sig.verifyKey kp)
-        nonce
-        energy
-        blockPointer
+    tx nonce = helper kp nonce energy initContract
 
     initContract =
       Types.InitContract
@@ -104,11 +90,10 @@ initContractWithKey kp back mnonce energy amount homeModule contractName contrac
         homeModule
         contractName
         contractFlags
-        (BS.length $ P.runPut $ Core.putExpr contractFlags)
 
     comp = do
       nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) =<< getBestBlockHash)
       let transaction = tx nonce
-      txReturn <- sendHookToBaker (Types.trHash transaction)
+      txReturn <- sendHookToBaker (Types.transactionHash transaction)
       sendTransactionToBaker transaction 100
       return (transaction, txReturn)

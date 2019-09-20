@@ -136,7 +136,7 @@ useBackend act b =
         PR.evalContext mdata $ runInClient b $ 
         processTransaction source nid hook
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
-        show (Types.trHash t)
+        show (Types.transactionHash t)
     HookTransaction txh -> runInClient b $ hookTransaction txh >>= printJSON
     GetConsensusInfo -> runInClient b $ getConsensusStatus >>= printJSON
     GetBlockInfo block -> runInClient b $ getBlockInfo block >>= printJSON
@@ -169,7 +169,7 @@ processTransaction ::
   => BSL.ByteString
   -> Int
   -> Bool
-  -> ClientMonad (PR.Context Core.UA m) Types.Transaction
+  -> ClientMonad (PR.Context Core.UA m) Types.BareTransaction
 processTransaction source networkId hookit =
   case AE.eitherDecode source of
     Left err -> fail $ "Error decoding JSON: " ++ err
@@ -179,21 +179,20 @@ processTransaction source networkId hookit =
           Just transaction -> do
             nonce <-
               case thNonce . metadata $ transaction of
-                Nothing    ->
+                Nothing ->
                   let senderAddress = IDA.accountAddress (thSenderKey (metadata transaction)) Sig.Ed25519
                   in getAccountNonce senderAddress =<< getBestBlockHash
                 Just nonce -> return nonce
-            let properT =
-                  makeTransactionHeaderWithNonce (metadata transaction) nonce
             encodeAndSignTransaction
               (payload transaction)
-              properT
-              (KeyPair (CT.signKey transaction) (Types.thSenderKey properT))
+              (thGasAmount (metadata transaction))
+              nonce
+              (KeyPair (CT.signKey transaction) (thSenderKey (metadata transaction)))
           Nothing -> undefined
       when hookit $ do
-        liftIO . putStrLn $ "Installing hook for transaction " ++
-          show (Types.trHash transaction)
-        printJSON =<< sendHookToBaker (Types.trHash transaction)
+        let trHash = Types.transactionHash transaction
+        liftIO . putStrLn $ "Installing hook for transaction " ++ show trHash
+        printJSON =<< sendHookToBaker trHash
       sendTransactionToBaker transaction networkId
       return transaction
 
@@ -235,12 +234,12 @@ readModule filePath = do
 encodeAndSignTransaction ::
      (MonadFail m, MonadIO m)
   => CT.TransactionJSONPayload
-  -> Types.TransactionHeader
+  -> Types.Energy
+  -> Types.Nonce
   -> KeyPair
-  -> ClientMonad (PR.Context Core.UA m) Types.Transaction
-encodeAndSignTransaction pl th keys =
-  Types.signTransaction keys th . Types.encodePayload <$>
-  case pl of
+  -> ClientMonad (PR.Context Core.UA m) Types.BareTransaction
+encodeAndSignTransaction pl energy nonce keys = do
+  txPayload <- case pl of
     (CT.DeployModuleFromSource fileName) ->
       Types.DeployModule <$> readModule fileName -- deserializing is not necessary, but easiest for now.
     (CT.DeployModule mnameText) ->
@@ -250,11 +249,11 @@ encodeAndSignTransaction pl th keys =
       case Map.lookup cNameText tys of
         Just contName -> do
           params <- liftContext $ PR.processTmInCtx mnameText paramExpr
-          return $ Types.InitContract initAmount mref contName params 0
+          return $ Types.InitContract initAmount mref contName params
         Nothing -> error (show cNameText)
     (CT.Update mnameText updateAmount updateAddress msgText) -> do
       msg <- liftContext $ PR.processTmInCtx mnameText msgText
-      return $ Types.Update updateAmount updateAddress msg 0
+      return $ Types.Update updateAmount updateAddress msg
     (CT.Transfer transferTo transferAmount) ->
       return $ Types.Transfer transferTo transferAmount
     (CT.DeployCredential cred) -> return $ Types.DeployCredential cred
@@ -266,6 +265,11 @@ encodeAndSignTransaction pl th keys =
     (CT.UpdateBakerSignKey ubsid ubsk ubsp) ->
       return $ Types.UpdateBakerSignKey ubsid ubsk ubsp
     (CT.DelegateStake dsid) -> return $ Types.DelegateStake dsid
+
+  let encPayload = Types.encodePayload txPayload
+  let header = Types.makeTransactionHeader Sig.Ed25519 (verifyKey keys) (Types.payloadSize encPayload) nonce energy
+  return $ Types.signTransaction keys header encPayload
+
 
 sendHookToBaker ::
      (MonadIO m)
@@ -281,7 +285,7 @@ sendHookToBaker txh = do
   return $ processJSON ret
 
 sendTransactionToBaker ::
-     (MonadIO m) => Types.Transaction -> Int -> ClientMonad m ()
+     (MonadIO m) => Types.BareTransaction -> Int -> ClientMonad m ()
 sendTransactionToBaker t nid = do
   client <- asks grpc
   !_ <-
