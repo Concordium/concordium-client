@@ -347,7 +347,7 @@ executeTransaction transaction = do
   mdata <- loadContextData
   -- The networkId is for running multiple networks that's not the same chain, but hasn't been taken into use yet
   let nid = 1000
-  let backend = COM.GRPC { host = "127.0.0.1", port = 11108, target = Nothing }
+  let backend = COM.GRPC { host = "127.0.0.1", port = 11166, target = Nothing }
 
   t <- do
     let hookIt = True

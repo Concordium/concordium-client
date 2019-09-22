@@ -30,20 +30,26 @@ boot waiApp middlewares = do
   port <- Config.lookupEnv "PORT" 8081
   env  <- Config.lookupEnv "ENV" Config.Development
 
-  let run = W.defaultSettings
-              & W.setBeforeMainLoop (printStatus env port)
+  nodeUrl <- Config.lookupEnv "NODE_URL" "127.0.0.1:1112"
+  esUrl <- Config.lookupEnv "ES_URL" "http://127.0.0.1:8888"
+  simpleIdUrl <- Config.lookupEnv "SIMPLEID_URL" "http://127.0.0.1:8000"
+
+  let
+    printStatus = do
+      putStrLn $ "NODE_URL: " ++ show nodeUrl
+      putStrLn $ "ES_URL: " ++ show esUrl
+      putStrLn $ "SIMPLEID_URL: " ++ show simpleIdUrl
+      putStrLn $ "Environment: " ++ show env
+      putStrLn $ "Server started: http://localhost:" ++ show port
+
+    run = W.defaultSettings
+              & W.setBeforeMainLoop printStatus
               & W.setPort port
               & W.runSettings
 
   _ <- forkIO $ run $ Config.logger env . middlewares $ waiApp
 
   pure ()
-
-
-printStatus :: Config.Environment -> Int -> IO ()
-printStatus env port = do
-  putStrLn $ "Environment: " ++ show env
-  putStrLn $ "Server started: http://localhost:" ++ show port
 
 
 -- Middlewares
