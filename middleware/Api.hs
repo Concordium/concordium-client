@@ -14,19 +14,17 @@ import Network.Wai                   (Application)
 import Control.Monad.Managed         (liftIO)
 import Data.Aeson                    (encode, decode')
 import Data.Aeson.Types              (ToJSON, FromJSON)
-import qualified Data.Aeson as AE
 import Data.Text                     (Text)
+import Data.Time.Clock
 import Data.Map
 import Data.Time.Clock.POSIX
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Text.IO as TIO
-import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Lazy.Char8          as BS8
 import System.Directory
 import System.Process
 import System.Exit
-import System.IO.Unsafe
 import Servant
 import Servant.API.Generic
 import Servant.Server.Generic
@@ -38,7 +36,6 @@ import           Concordium.Client.Commands          as COM
 import qualified Acorn.Parser.Runner                 as PR
 import qualified Concordium.Scheduler.Types          as Types
 import           Concordium.Crypto.SignatureScheme   (SchemeId (..), VerifyKey)
-import qualified Concordium.Crypto.SHA256
 import qualified Concordium.ID.Account
 import qualified Concordium.ID.Types
 
@@ -126,10 +123,6 @@ data BetaGtuDropResponse =
   deriving (ToJSON, Generic, Show)
 
 
-instance ToJSON Types.TransactionHash where
-  toJSON v = AE.String $ Text.pack $ show v
-
-
 -- Legacy @TODO remove?
 
 data CreateAciPioRequest =
@@ -177,7 +170,9 @@ servantApp backend = genericServe routesAsServer
         let hookIt = False
         PR.evalContext mdata $ runInClient backend $ processTransaction_ transaction nid hookIt
 
-      putStrLn $ "Transaction sent to the baker: " ++ show (Types.trHash t)
+      created <- getCurrentTime
+
+      putStrLn $ "Transaction sent to the baker: " ++ show (bareTransactionHash t created)
 
     -- @TODO What response should we send?
     pure "Submitted"
@@ -334,8 +329,6 @@ godTransaction payload = do
             { thSenderKey = certainDecode "\"3e4f11b8a43f5b4c63f9d85ae9de365057c9bce8c57caf84e34f1040e5f59ecd\""
             , thNonce = Just nonce
             , thGasAmount = 4000
-            -- @NOTE thFinalizedPointer is unused, will be removed in future, just needs to be a valid-looking pointer
-            , thFinalizedPointer = certainDecode "\"170afb6659a6d4a375524124606177d5704629c55335edeac28b3cfabc0ff11a\""
             }
 
   executeTransaction transaction
@@ -353,10 +346,12 @@ executeTransaction transaction = do
     let hookIt = True
     PR.evalContext mdata $ runInClient backend $ processTransaction_ transaction nid hookIt
 
-  putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (Types.trHash t)
+  created <- getCurrentTime
+
+  putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (bareTransactionHash t created)
   putStrLn $ show transaction
 
-  pure $ Types.trHash t
+  pure $ bareTransactionHash t created
 
 
 verifyKeyToAddress :: VerifyKey -> Types.Address
@@ -380,7 +375,7 @@ certainDecode bytestring =
 -- Dirty helper to help us with "definitely certain" account address decoding
 certainAccountAddress :: Text -> Types.Address
 certainAccountAddress addressText =
-  case unsafePerformIO $ Concordium.ID.Types.safeDecodeBase58Address $ Text.encodeUtf8 addressText of
+  case decode' $ BS8.fromStrict $ Text.encodeUtf8 addressText of
     Just address -> Types.AddressAccount address
     Nothing -> error $ "Well... not so certain now huh! certainAccountAddress failed on:\n\n" ++ show (Text.unpack addressText)
 
@@ -444,7 +439,6 @@ debugTestFullProvision = do
   let newAccountKeyPair = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
       newVerifyKey = verifyKey (newAccountKeyPair :: AccountKeyPair)
       newAddress = verifyKeyToAddress newVerifyKey
-      newAccountAddress = verifyKeyToAccountAddress newVerifyKey
 
       betaAccountProvisionResponse =
         BetaAccountProvisionResponse
@@ -464,3 +458,8 @@ debugTestFullProvision = do
   _ <- godTransaction $ Transfer { toaddress = newAddress, amount = 100 }
 
   pure "Done."
+
+
+bareTransactionHash :: Types.BareTransaction -> UTCTime -> Types.TransactionHash
+bareTransactionHash bare currentTime =
+  Types.trHash $ Types.fromBareTransaction currentTime bare

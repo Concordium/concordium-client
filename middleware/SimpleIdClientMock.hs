@@ -134,31 +134,31 @@ signPio pio identityProviderId =
   |]
 
 
-data AccountTransaction =
-  AccountTransaction
-    { transactionId :: Text
-    , transactionType :: TransactionType
-    , amount :: Int
-    , fromAddress :: Text
-    , toAddress :: Text
-    , blockNumber :: Int
-    , slotNumber :: Int
-    }
-  deriving (ToJSON, Generic, Show)
+-- data AccountTransaction =
+--   AccountTransaction
+--     { transactionId :: Text
+--     , transactionType :: TransactionType
+--     , amount :: Int
+--     , fromAddress :: Text
+--     , toAddress :: Text
+--     , blockNumber :: Int
+--     , slotNumber :: Int
+--     }
+--   deriving (ToJSON, Generic, Show)
+--
+--
+-- data TransactionType
+--   = Sent
+--   | Received
+--   | Shielded
+--   | Unshielded
+--   deriving (ToJSON, Generic, Show)
 
 
-data TransactionType
-  = Sent
-  | Received
-  | Shielded
-  | Unshielded
-  deriving (ToJSON, Generic, Show)
-
-
-accountTransactions :: Text -> [AccountTransaction]
-accountTransactions address =
-  [ AccountTransaction { transactionId = "abcd", transactionType = Received, amount = 123, fromAddress = "x", toAddress = "y", blockNumber = 123, slotNumber = 321 }
-  , AccountTransaction { transactionId = "efgh", transactionType = Sent, amount = 123, fromAddress = "x", toAddress = "y", blockNumber = 123, slotNumber = 321 }
-  , AccountTransaction { transactionId = "ijkl", transactionType = Shielded, amount = 123, fromAddress = "x", toAddress = "y", blockNumber = 123, slotNumber = 321 }
-  , AccountTransaction { transactionId = "mnop", transactionType = Unshielded, amount = 123, fromAddress = "x", toAddress = "y", blockNumber = 123, slotNumber = 321 }
-  ]
+-- accountTransactions :: Text -> [AccountTransaction]
+-- accountTransactions address =
+--   [ AccountTransaction { transactionId = "abcd", transactionType = Received, amount = 123, fromAddress = "x", toAddress = "y", blockNumber = 123, slotNumber = 321 }
+--   , AccountTransaction { transactionId = "efgh", transactionType = Sent, amount = 123, fromAddress = "x", toAddress = "y", blockNumber = 123, slotNumber = 321 }
+--   , AccountTransaction { transactionId = "ijkl", transactionType = Shielded, amount = 123, fromAddress = "x", toAddress = "y", blockNumber = 123, slotNumber = 321 }
+--   , AccountTransaction { transactionId = "mnop", transactionType = Unshielded, amount = 123, fromAddress = "x", toAddress = "y", blockNumber = 123, slotNumber = 321 }
+--   ]

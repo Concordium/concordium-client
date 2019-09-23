@@ -134,7 +134,7 @@ useBackend act b =
       mdata <- loadContextData
       source <- BSL.readFile fname
       t <-
-        PR.evalContext mdata $ runInClient b $ 
+        PR.evalContext mdata $ runInClient b $
         processTransaction source nid hook
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (Types.transactionHash t)
@@ -237,24 +237,25 @@ processTransaction_ ::
   => TransactionJSON
   -> Int
   -> Bool
-  -> ClientMonad (PR.Context Core.UA m) Types.Transaction
+  -> ClientMonad (PR.Context Core.UA m) Types.BareTransaction
 processTransaction_ transaction networkId hookit = do
   transaction <- do
     nonce <-
       case thNonce . metadata $ transaction of
-        Nothing    -> undefined --askBaker
+        Nothing ->
+          let senderAddress = IDA.accountAddress (thSenderKey (metadata transaction)) Sig.Ed25519
+          in getAccountNonce senderAddress =<< getBestBlockHash
         Just nonce -> return nonce
-    let properT =
-          makeTransactionHeaderWithNonce (metadata transaction) nonce
     encodeAndSignTransaction
       (payload transaction)
-      properT
-      (KeyPair (CT.signKey transaction) (Types.thSenderKey properT))
+      (thGasAmount (metadata transaction))
+      nonce
+      (KeyPair (CT.signKey transaction) (thSenderKey (metadata transaction)))
 
   when hookit $ do
-    liftIO . putStrLn $ "Installing hook for transaction " ++
-      show (Types.trHash transaction)
-    printJSON =<< sendHookToBaker (Types.trHash transaction)
+    let trHash = Types.transactionHash transaction
+    liftIO . putStrLn $ "Installing hook for transaction " ++ show trHash
+    printJSON =<< sendHookToBaker trHash
   sendTransactionToBaker transaction networkId
   return transaction
 
