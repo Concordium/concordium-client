@@ -5,6 +5,7 @@ import qualified System.Environment as E    (lookupEnv)
 import Network.Wai                          (Middleware)
 import Network.Wai.Middleware.RequestLogger (logStdoutDev, logStdout)
 import Data.Maybe                           (fromMaybe)
+import Data.Text                            (Text, pack, unpack)
 
 
 data Environment =
@@ -23,10 +24,10 @@ lookupEnv name defaultVal = do
     Just a  -> fromMaybe defaultVal (readMaybe a)
 
 
-lookupEnvString :: String -> String -> IO String
-lookupEnvString name defaultVal = do
-  param <- E.lookupEnv name
-  pure $ fromMaybe defaultVal param
+lookupEnvText :: Text -> Text -> IO Text
+lookupEnvText name defaultVal = do
+  param <- E.lookupEnv (unpack name)
+  pure $ fromMaybe defaultVal (fmap pack param)
 
 
 logger :: Environment -> Middleware

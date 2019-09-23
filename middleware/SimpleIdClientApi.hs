@@ -6,19 +6,14 @@
 
 module SimpleIdClientApi where
 
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as E
 import Data.Text                 (Text)
-import qualified Data.ByteString.Lazy.Char8 as BS
-import Data.Aeson                (eitherDecode, encode)
 import Data.Aeson.Types          (ToJSON, FromJSON)
-import Network.HTTP.Types.Header (RequestHeaders)
+import Data.Aeson                (eitherDecode)
 import Network.HTTP.Conduit
 import Network.HTTP.Simple
-import NeatInterpolation
 import Servant.API.Generic
 import Data.Map
-import Control.Monad.IO.Class
+import qualified Data.Text as Text
 
 import Concordium.Crypto.SignatureScheme (SignKey (..), VerifyKey (..))
 
@@ -31,14 +26,14 @@ import Concordium.Crypto.SignatureScheme (SignKey (..), VerifyKey (..))
 --     getJsonRequest "localhost:8000/ips"
 
 
-postIdObjectRequest :: IdObjectRequest -> IO IdObjectResponse
-postIdObjectRequest idObjectRequest = do
-    postJsonRequest "http://localhost:8000/identity_object" idObjectRequest -- @TODO paramaterise local port for simple_id_client_server
+postIdObjectRequest :: Text -> IdObjectRequest -> IO IdObjectResponse
+postIdObjectRequest idUrl idObjectRequest = do
+    postJsonRequest (Text.unpack idUrl ++ "/identity_object") idObjectRequest
 
 
-postIdCredentialRequest :: IdCredentialRequest -> IO IdCredentialResponse
-postIdCredentialRequest idCredentialRequest = do
-    postJsonRequest "http://localhost:8000/generate_credential" idCredentialRequest -- @TODO paramaterise local port for simple_id_client_server
+postIdCredentialRequest :: Text -> IdCredentialRequest -> IO IdCredentialResponse
+postIdCredentialRequest idUrl idCredentialRequest = do
+    postJsonRequest (Text.unpack idUrl ++ "/generate_credential") idCredentialRequest
 
 
 -- API Helpers

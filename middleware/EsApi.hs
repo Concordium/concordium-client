@@ -40,11 +40,11 @@ re-syncing chain nonce (i.e in untracked transaction scenarios), but for beta
 we're skipping this for now.
 
 -}
-takeNextNonceFor :: Text -> IO Types.Nonce
-takeNextNonceFor accountAddress = do
+takeNextNonceFor :: Text -> Text -> IO Types.Nonce
+takeNextNonceFor esUrl accountAddress = do
 
   (nonceQueryResponseE :: Either HttpException NonceQueryResponse) <-
-    getJsonRequestEither ("http://localhost:9200/index_nonce_log/_doc/" ++ T.unpack accountAddress)
+    getJsonRequestEither (T.unpack esUrl ++ "/index_nonce_log/_doc/" ++ T.unpack accountAddress)
 
   case nonceQueryResponseE of
     Right nonceQueryResponse -> do
@@ -58,7 +58,7 @@ takeNextNonceFor accountAddress = do
         newNonce = (nonce nonceQueryResponse) + 1
 
         url =
-          "http://localhost:9200/index_nonce_log/_doc/" ++ (T.unpack accountAddress) ++
+          T.unpack esUrl ++ "/index_nonce_log/_doc/" ++ (T.unpack accountAddress) ++
           "?if_seq_no=" ++ (show $ _seq_no nonceQueryResponse) ++
           "&if_primary_term=" ++ (show $ _primary_term nonceQueryResponse)
 
@@ -73,13 +73,13 @@ takeNextNonceFor accountAddress = do
             NonceAlreadyTaken -> do
               -- @TODO never fires as decoders not attempted on non-200 - how to fix this?
               putStrLn "⚠️ Nonce already taken! Retrying..."
-              takeNextNonceFor accountAddress
+              takeNextNonceFor esUrl accountAddress
         Left err -> do
           case err of
             HttpExceptionRequest _ (StatusCodeException res _) ->
               if statusCode (responseStatus res) == 409 then do
                 putStrLn "⚠️ Nonce already taken! Retrying..."
-                takeNextNonceFor accountAddress
+                takeNextNonceFor esUrl accountAddress
 
               else do
                 putStrLn "❌ Unexpected HttpException:"
@@ -92,7 +92,7 @@ takeNextNonceFor accountAddress = do
         HttpExceptionRequest _ (StatusCodeException res _) ->
           if statusCode (responseStatus res) == 404 then do
             putStrLn $ "✅ No nonce exists, initializing"
-            initializeNonce accountAddress -- @TODO handle failures here
+            initializeNonce esUrl accountAddress -- @TODO handle failures here
             pure $ Nonce 1
           else do
             putStrLn "❌ Unexpected HttpException:"
@@ -101,15 +101,14 @@ takeNextNonceFor accountAddress = do
             error "Nonce acquisition failed, fatal error."
 
 
-initializeNonce :: Text -> IO NonceInitializeResponse
-initializeNonce address = do
+initializeNonce :: Text -> Text -> IO NonceInitializeResponse
+initializeNonce esUrl address = do
   let
     newNonce = [text|
       { "nonce": 1 }
     |]
 
-    url =
-      "http://localhost:9200/index_nonce_log/_doc/" ++ (T.unpack address)
+    url = T.unpack esUrl ++ "/index_nonce_log/_doc/" ++ (T.unpack address)
 
   postTextRequest url newNonce
 
@@ -174,8 +173,8 @@ instance AE.FromJSON NonceQueryResponse where
   parseJSON invalid = typeMismatch "OutcomesSearchResponseJson" invalid
 
 
-getAccountTransactions :: Text -> IO AccountTransactionsResponse
-getAccountTransactions accountAddress = do
+getAccountTransactions :: Text -> Text -> IO AccountTransactionsResponse
+getAccountTransactions esUrl accountAddress = do
   let
     -- @TODO what other transfer types do we care about for now?
     q =
@@ -198,8 +197,7 @@ getAccountTransactions accountAddress = do
       |]
 
   (outcomes :: OutcomesSearchResponseJson) <-
-    -- @TODO paramaterise local port for elasticsearch
-    postTextRequest "http://localhost:9200/index_transfer_log/_search" q
+    postTextRequest (T.unpack esUrl ++ "/index_transfer_log/_search") q
 
   putStrLn $ show outcomes
 

@@ -15,19 +15,22 @@ import Control.Monad.Managed         (liftIO)
 import Data.Aeson                    (encode, decode')
 import Data.Aeson.Types              (ToJSON, FromJSON)
 import Data.Text                     (Text)
-import Data.Time.Clock
-import Data.Map
-import Data.Time.Clock.POSIX
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Text.IO as TIO
-import qualified Data.ByteString.Lazy.Char8          as BS8
-import System.Directory
-import System.Process
-import System.Exit
+import qualified Data.ByteString.Lazy.Char8 as BS8
+import Data.List.Split
+import Data.Map
+import Data.Time.Clock
+import Data.Time.Clock.POSIX
 import Servant
 import Servant.API.Generic
 import Servant.Server.Generic
+import System.Directory
+import System.Exit
+import System.Process
+import System.Random
+import Text.Read (readMaybe)
 
 import           Concordium.Client.Runner
 import           Concordium.Client.Runner.Helper
@@ -35,10 +38,13 @@ import           Concordium.Client.Types.Transaction
 import           Concordium.Client.Commands          as COM
 import qualified Acorn.Parser.Runner                 as PR
 import qualified Concordium.Scheduler.Types          as Types
-import           Concordium.Crypto.SignatureScheme   (SchemeId (..), VerifyKey)
+import           Concordium.Crypto.SignatureScheme   (SchemeId (..), VerifyKey, KeyPair(..))
+import           Concordium.Crypto.Ed25519Signature  (randomKeyPair)
 import qualified Concordium.ID.Account
 import qualified Concordium.ID.Types
+import qualified Concordium.Scheduler.Utils.Init.Example
 
+import qualified Config
 import SimpleIdClientMock
 import SimpleIdClientApi
 import EsApi
@@ -62,7 +68,7 @@ data Routes r = Routes
                                        :> Post '[JSON] BetaAccountProvisionResponse
 
     , betaGtuDrop :: r :-
-        "v1" :> "betaGtuDrop" :> ReqBody '[JSON] Text
+        "v1" :> "betaGtuDrop" :> ReqBody '[JSON] Types.Address
                               :> Post '[JSON] BetaGtuDropResponse
 
     , accountTransactions :: r :-
@@ -153,8 +159,8 @@ api :: Proxy (ToServantApi Routes)
 api = genericApi (Proxy :: Proxy Routes)
 
 
-servantApp :: COM.Backend -> Application
-servantApp backend = genericServe routesAsServer
+servantApp :: COM.Backend -> Text -> Text -> Application
+servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
  where
   routesAsServer = Routes {..} :: Routes AsServer
 
@@ -168,7 +174,7 @@ servantApp backend = genericServe routesAsServer
 
       t <- do
         let hookIt = False
-        PR.evalContext mdata $ runInClient backend $ processTransaction_ transaction nid hookIt
+        PR.evalContext mdata $ runInClient nodeBackend $ processTransaction_ transaction nid hookIt
 
       created <- getCurrentTime
 
@@ -234,7 +240,7 @@ servantApp backend = genericServe routesAsServer
                 ] ++ attributes)
             }
 
-    idObjectResponse <- liftIO $ postIdObjectRequest idObjectRequest
+    idObjectResponse <- liftIO $ postIdObjectRequest idUrl idObjectRequest
 
     liftIO $ putStrLn "✅ Got IdObjectResponse"
 
@@ -254,7 +260,7 @@ servantApp backend = genericServe routesAsServer
             , accountNumber = 0 -- @TODO auto increment account number from Elastic?
             }
 
-    idCredentialResponse <- liftIO $ postIdCredentialRequest credentialRequest
+    idCredentialResponse <- liftIO $ postIdCredentialRequest idUrl credentialRequest
 
     liftIO $ putStrLn "✅ Got idCredentialResponse"
 
@@ -266,7 +272,7 @@ servantApp backend = genericServe routesAsServer
         -- Fix the tempDecodeAddress in wallet frontend at the same time
         newAccountAddress = verifyKeyToAccountAddress newVerifyKey
 
-    _ <- liftIO $ godTransaction $ DeployCredential { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
+    _ <- liftIO $ godTransaction nodeBackend esUrl $ DeployCredential { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
 
     pure $
       BetaAccountProvisionResponse
@@ -276,20 +282,19 @@ servantApp backend = genericServe routesAsServer
         }
 
 
-  betaGtuDrop :: Text -> Handler BetaGtuDropResponse
-  betaGtuDrop toAddressText = do
-    let toAddress = certainAccountAddress toAddressText
+  betaGtuDrop :: Types.Address -> Handler BetaGtuDropResponse
+  betaGtuDrop toAddress = do
 
     liftIO $ putStrLn $ "✅ Requesting GTU Drop for " ++ show toAddress
 
-    transactionId <- liftIO $ godTransaction $ Transfer { toaddress = toAddress, amount = 100 }
+    transactionId <- liftIO $ godTransaction nodeBackend esUrl $ Transfer { toaddress = toAddress, amount = 100 }
 
     pure $ BetaGtuDropResponse { transactionId = transactionId }
 
 
   accountTransactions :: Text -> Handler AccountTransactionsResponse
   accountTransactions address =
-    liftIO $ EsApi.getAccountTransactions address
+    liftIO $ EsApi.getAccountTransactions idUrl address
 
 
   identityGenerateChi :: Text -> Handler Text
@@ -308,43 +313,46 @@ servantApp backend = genericServe routesAsServer
     liftIO $ SimpleIdClientMock.signPio pio identityProviderId
 
 
-
 -- For beta, uses the mateuszKP which is seeded with funds
--- @TODO track and increment nonces automatically in this function without requiring a param
-godTransaction :: TransactionJSONPayload -> IO Types.TransactionHash
-godTransaction payload = do
+godTransaction :: Backend -> Text -> TransactionJSONPayload -> IO Types.TransactionHash
+godTransaction nodeBackend esUrl payload = do
 
-  nonce <- EsApi.takeNextNonceFor "73PghERVtFm3Q6TZT6gd61S2ZxrJ"
+  let mateuszAccountText = Text.pack $ show Concordium.Scheduler.Utils.Init.Example.mateuszAccount
+
+  nonce <- EsApi.takeNextNonceFor esUrl mateuszAccountText
 
   let
     transaction =
       TransactionJSON
         { metadata = transactionHeader
         , payload = payload
-        , signKey = certainDecode "\"b52f4ce89e78e45934851e395c6258f7240ce6902526c78a8960927c8959a363\""
+        , signKey = Concordium.Crypto.SignatureScheme.signKey mateuszKP
         }
 
     transactionHeader =
           TransactionJSONHeader
-            { thSenderKey = certainDecode "\"3e4f11b8a43f5b4c63f9d85ae9de365057c9bce8c57caf84e34f1040e5f59ecd\""
+            { thSenderKey = Concordium.Crypto.SignatureScheme.verifyKey mateuszKP
             , thNonce = Just nonce
-            , thGasAmount = 4000
+            , thGasAmount = 100000
             }
 
-  executeTransaction transaction
+  executeTransaction nodeBackend transaction
 
 
-executeTransaction :: TransactionJSON -> IO Types.TransactionHash
-executeTransaction transaction = do
+mateuszKP :: KeyPair
+mateuszKP = fst (randomKeyPair (mkStdGen 0))
+
+
+executeTransaction :: Backend -> TransactionJSON -> IO Types.TransactionHash
+executeTransaction nodeBackend transaction = do
 
   mdata <- loadContextData
   -- The networkId is for running multiple networks that's not the same chain, but hasn't been taken into use yet
   let nid = 1000
-  let backend = COM.GRPC { host = "127.0.0.1", port = 11166, target = Nothing }
 
   t <- do
     let hookIt = True
-    PR.evalContext mdata $ runInClient backend $ processTransaction_ transaction nid hookIt
+    PR.evalContext mdata $ runInClient nodeBackend $ processTransaction_ transaction nid hookIt
 
   created <- getCurrentTime
 
@@ -394,6 +402,28 @@ and being accepted baked into a block with the new account credited 100 GTU.
 debugTestFullProvision :: IO String
 debugTestFullProvision = do
 
+  nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:11100"
+  esUrl <- Config.lookupEnvText "ES_URL" "http://localhost:9200"
+  idUrl <- Config.lookupEnvText "SIMPLEID_URL" "http://localhost:8000"
+
+  putStrLn $ "✅ nodeUrl = " ++ Text.unpack nodeUrl
+  putStrLn $ "✅ esUrl = " ++ Text.unpack esUrl
+  putStrLn $ "✅ idUrl = " ++ Text.unpack idUrl
+
+
+  let
+    (nodeHost, nodePort) =
+      case splitOn ":" $ Text.unpack nodeUrl of
+        nodeHost:nodePortText:_ -> case readMaybe nodePortText of
+          Just nodePort ->
+            (nodeHost, nodePort)
+          Nothing ->
+            error $ "Could not parse port for given NODE_URL: " ++ nodePortText
+        _ ->
+          error $ "Could not parse host:port for given NODE_URL: " ++ Text.unpack nodeUrl
+
+    nodeBackend = COM.GRPC { host = nodeHost, port = nodePort, target = Nothing }
+
   creationTime <- liftIO $ round `fmap` getPOSIXTime
 
   let attributesStub =
@@ -415,7 +445,7 @@ debugTestFullProvision = do
               ] ++ attributesStub)
           }
 
-  idObjectResponse <- postIdObjectRequest idObjectRequest
+  idObjectResponse <- postIdObjectRequest idUrl idObjectRequest
 
   putStrLn "✅ Got IdObjectResponse"
 
@@ -429,7 +459,7 @@ debugTestFullProvision = do
           , accountNumber = 0
           }
 
-  idCredentialResponse <- postIdCredentialRequest credentialRequest
+  idCredentialResponse <- postIdCredentialRequest idUrl credentialRequest
 
   putStrLn "✅ Got idCredentialResponse"
 
@@ -447,15 +477,13 @@ debugTestFullProvision = do
           , address = Text.pack . show $ newAddress
           }
 
-  putStrLn $ "✅ Deployed account address will be: " ++ show newAddress
+  putStrLn $ "✅ Deploying credentials for: " ++ show newAddress
 
-  -- @TODO need a global incrementing store for the nonces
+  _ <- godTransaction nodeBackend esUrl $ DeployCredential { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
 
-  _ <- godTransaction $ DeployCredential { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
+  putStrLn $ "✅ Requesting GTU Drop for: " ++ show newAddress
 
-  putStrLn $ "✅ Requesting GTU Drop for " ++ show newAddress
-
-  _ <- godTransaction $ Transfer { toaddress = newAddress, amount = 100 }
+  _ <- godTransaction nodeBackend esUrl $ Transfer { toaddress = newAddress, amount = 100 }
 
   pure "Done."
 

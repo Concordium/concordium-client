@@ -7,7 +7,6 @@ module SimpleIdClientMock where
 
 import Data.Text                     (Text)
 import Data.Aeson.Types              (ToJSON, FromJSON)
-import qualified Data.Text as T
 import NeatInterpolation
 import Servant.API.Generic
 

@@ -13,38 +13,53 @@ import Network.Wai.Middleware.HttpAuth   (basicAuth)
 import Network.Wai.Middleware.Static     (staticPolicy, policy, Policy)
 import Network.Wai.Middleware.Gzip       (gzip, def)
 import qualified Network.Wai.Middleware.ForceSSL as M (forceSSL)
-
+import Data.List.Split
+import qualified Data.Text as T
+import Text.Read (readMaybe)
 
 import qualified Config
+import Concordium.Client.Commands as COM
+import qualified Api
+
 
 type Middlewares = (Network.Wai.Application -> Network.Wai.Application)
 
 {- Fork a thread and boot the http server as a Wai app on Warp -}
-runHttp :: Network.Wai.Application -> Middlewares -> IO ()
-runHttp = boot
+runHttp :: Middlewares -> IO ()
+runHttp middlewares = do
 
-
-
-boot :: Network.Wai.Application -> Middlewares -> IO ()
-boot waiApp middlewares = do
-  port <- Config.lookupEnv "PORT" 8081
+  serverPort <- Config.lookupEnv "PORT" 8081
   env  <- Config.lookupEnv "ENV" Config.Development
 
-  nodeUrl <- Config.lookupEnv "NODE_URL" "127.0.0.1:1112"
-  esUrl <- Config.lookupEnv "ES_URL" "http://127.0.0.1:8888"
-  simpleIdUrl <- Config.lookupEnv "SIMPLEID_URL" "http://127.0.0.1:8000"
+  nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:11100"
+  esUrl <- Config.lookupEnvText "ES_URL" "http://localhost:9200"
+  idUrl <- Config.lookupEnvText "SIMPLEID_URL" "http://localhost:8000"
 
   let
+    (nodeHost, nodePort) =
+      case splitOn ":" (T.unpack nodeUrl) of
+        nodeHost_:nodePortText:_ -> case readMaybe nodePortText of
+          Just nodePort_ ->
+            (nodeHost_, nodePort_)
+          Nothing ->
+            error $ "Could not parse port for given NODE_URL: " ++ nodePortText
+        _ ->
+          error $ "Could not parse host:port for given NODE_URL: " ++ T.unpack nodeUrl
+
+    nodeBackend = COM.GRPC { host = nodeHost, port = nodePort, target = Nothing }
+
+    waiApp = Api.servantApp nodeBackend esUrl idUrl
+
     printStatus = do
       putStrLn $ "NODE_URL: " ++ show nodeUrl
       putStrLn $ "ES_URL: " ++ show esUrl
-      putStrLn $ "SIMPLEID_URL: " ++ show simpleIdUrl
+      putStrLn $ "SIMPLEID_URL: " ++ show idUrl
       putStrLn $ "Environment: " ++ show env
-      putStrLn $ "Server started: http://localhost:" ++ show port
+      putStrLn $ "Server started: http://localhost:" ++ show serverPort
 
     run = W.defaultSettings
               & W.setBeforeMainLoop printStatus
-              & W.setPort port
+              & W.setPort serverPort
               & W.runSettings
 
   _ <- forkIO $ run $ Config.logger env . middlewares $ waiApp

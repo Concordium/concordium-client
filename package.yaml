@@ -137,10 +137,12 @@ executables:
        - managed
        - neat-interpolation
        - process
+       - random
        - servant
        - servant-server
        - silently
        - simple-client
+       - split
        - text
        - time
        - wai
