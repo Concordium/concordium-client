@@ -27,10 +27,10 @@ See the bottom of `middleware/Api.hs` for the `debugTestFullProvision` function.
 
 ### Generate identity + credentials request
 
-Edit the following line to match your local environment/node:
+You can boot `ghci` with the supported ENV vars:
 
 ```
-let backend = COM.GRPC { host = "127.0.0.1", port = 11160, target = Nothing }
+NODE_URL="localhost:11100" ES_URL="http://localhost:9200" SIMPLEID_URL="http://localhost:8000" stack ghci
 ```
 
 Then in GHCI you can do:
@@ -48,21 +48,25 @@ This will currently:
 - Call `simple_id_server` to generate an ID
 - Call `simple_id_server` to generate credentials for that ID
 - Call gRPC with the crafted `DeployCredentials` transaction
+- Call gRPC a `Transfer` for a GTU drop to the new account
 
 Use `:r` to reload ghci again on further changes.
 
 The last thing you should see if successful is something like:
 
 ```
-✅ Deployed account address will be: 5W3bEM996GaYzbuBX7WEdt9fmQeV
-Installing hook for transaction 649339ed1c0a0b19747543bf44a692ddd393d6a22b48f40c099c17b04afeaeaa
+✅ Requesting GTU Drop for: AddressAccount 1FBcjuG4XBaovzqRKwrfDidhjG1aHDZuzM
+✅ got nonceQueryResponse, progressing...
+Installing hook for transaction cfe6490e80cbccc6c0e33fc5f60d58c877b6315e93c4068dbbb7126d38df1139
 {
     "status": "absent",
     "results": [],
-    "expires": "2019-09-12T15:44:41.4848528Z",
-    "transactionHash": "649339ed1c0a0b19747543bf44a692ddd393d6a22b48f40c099c17b04afeaeaa"
+    "expires": "2019-09-23T15:46:59.9327019Z",
+    "transactionHash": "cfe6490e80cbccc6c0e33fc5f60d58c877b6315e93c4068dbbb7126d38df1139"
 }
-✅ Transaction sent to the baker and hooked: 649339ed1c0a0b19747543bf44a692ddd393d6a22b48f40c099c17b04afeaeaa
+✅ Transaction sent to the baker and hooked: cfe6490e80cbccc6c0e33fc5f60d58c877b6315e93c4068dbbb7126d38df1139
+TransactionJSON {metadata = TransactionJSONHeader {thSenderKey = 3e4f11b8a43f5b4c63f9d85ae9de365057c9bce8c57caf84e34f1040e5f59ecd, thNonce = Just (Nonce 2), thGasAmount = 4000}, payload = Transfer {toaddress = AddressAccount 1FBcjuG4XBaovzqRKwrfDidhjG1aHDZuzM, amount = 100}, signKey = b52f4ce89e78e45934851e395c6258f7240ce6902526c78a8960927c8959a363}
+"Done."
 ```
 
 

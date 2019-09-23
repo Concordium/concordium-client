@@ -196,12 +196,19 @@ getAccountTransactions esUrl accountAddress = do
         }
       |]
 
-  (outcomes :: OutcomesSearchResponseJson) <-
-    postTextRequest (T.unpack esUrl ++ "/index_transfer_log/_search") q
+  (outcomes :: Either HttpException OutcomesSearchResponseJson) <-
+    postTextRequestEither (T.unpack esUrl ++ "/index_transfer_log/_search") q
 
-  putStrLn $ show outcomes
+  case outcomes of
+    Right outcomes ->
+      pure $ AccountTransactionsResponse (results outcomes) accountAddress
+    Left err -> do
+      putStrLn $ "❌ failed to find transactions for " ++ show accountAddress
+      putStrLn $ show err
+      pure $ AccountTransactionsResponse [] accountAddress
 
-  pure $ AccountTransactionsResponse (results outcomes) accountAddress
+
+
 
 
 -- API Helpers
