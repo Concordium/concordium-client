@@ -294,7 +294,7 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
 
   accountTransactions :: Text -> Handler AccountTransactionsResponse
   accountTransactions address =
-    liftIO $ EsApi.getAccountTransactions idUrl address
+    liftIO $ EsApi.getAccountTransactions esUrl address
 
 
   identityGenerateChi :: Text -> Handler Text
