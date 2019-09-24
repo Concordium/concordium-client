@@ -13,7 +13,7 @@ module Api where
 import Network.Wai                   (Application)
 import Control.Monad.Managed         (liftIO)
 import Data.Aeson                    (encode, decode')
-import Data.Aeson.Types              (ToJSON, FromJSON)
+import Data.Aeson.Types              (ToJSON, FromJSON, parseJSON, typeMismatch, (.:), Value(..))
 import Data.Text                     (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
@@ -51,15 +51,7 @@ import EsApi
 
 
 data Routes r = Routes
-    { sendTransaction :: r :-
-        "v1" :> "sendTransaction" :> ReqBody '[JSON] TransactionJSON
-                                  :> Post '[JSON] Text
-
-    , typecheckContract :: r :-
-        "v1" :> "typecheckContract" :> ReqBody '[JSON] Text
-                                    :> Post '[JSON] Text
-
-    , betaIdProvision :: r :-
+    { betaIdProvision :: r :-
         "v1" :> "betaIdProvision" :> ReqBody '[JSON] BetaIdProvisionRequest
                                   :> Post '[JSON] BetaIdProvisionResponse
 
@@ -74,6 +66,19 @@ data Routes r = Routes
     , accountTransactions :: r :-
         "v1" :> "accountTransactions" :> ReqBody '[JSON] Text
                                       :> Post '[JSON] AccountTransactionsResponse
+
+    , transfer :: r :-
+        "v1" :> "transfer" :> ReqBody '[JSON] TransferRequest
+                           :> Post '[JSON] TransferResponse
+
+    , typecheckContract :: r :-
+        "v1" :> "typecheckContract" :> ReqBody '[JSON] Text
+                                    :> Post '[JSON] Text
+
+    -- Legacy
+    , sendTransaction :: r :-
+        "v1" :> "sendTransaction" :> ReqBody '[JSON] TransactionJSON
+                                  :> Post '[JSON] Text
 
     , identityGenerateChi :: r :-
         "v1" :> "identityGenerateChi" :> ReqBody '[JSON] Text
@@ -124,6 +129,30 @@ data BetaAccountProvisionResponse =
 
 data BetaGtuDropResponse =
   BetaGtuDropResponse
+    { transactionId :: Types.TransactionHash
+    }
+  deriving (ToJSON, Generic, Show)
+
+
+data TransferRequest =
+  TransferRequest
+    { keypair :: KeyPair
+    , to :: Types.Address
+    , amount :: Int
+    }
+  deriving (FromJSON, Generic, Show)
+
+
+instance FromJSON KeyPair where
+  parseJSON (Object v) = do
+    verifyKey <- v .: "verifyKey"
+    signKey <- v .: "signKey"
+    pure $ KeyPair {..}
+  parseJSON invalid = typeMismatch "KeyPair" invalid
+
+
+data TransferResponse =
+  TransferResponse
     { transactionId :: Types.TransactionHash
     }
   deriving (ToJSON, Generic, Show)
@@ -264,15 +293,11 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
 
     liftIO $ putStrLn "✅ Got idCredentialResponse"
 
-    -- liftIO $ putStrLn $ show attributes
-
     let newAccountKeyPair = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
         newVerifyKey = verifyKey (newAccountKeyPair :: AccountKeyPair)
-        -- @TODO fix me with proper ToJSON not show which includes "AddressAccount" label
-        -- Fix the tempDecodeAddress in wallet frontend at the same time
         newAccountAddress = verifyKeyToAccountAddress newVerifyKey
 
-    _ <- liftIO $ godTransaction nodeBackend esUrl $ DeployCredential { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
+    _ <- liftIO $ runGodTransaction nodeBackend esUrl $ DeployCredential { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
 
     pure $
       BetaAccountProvisionResponse
@@ -287,7 +312,7 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
 
     liftIO $ putStrLn $ "✅ Requesting GTU Drop for " ++ show toAddress
 
-    transactionId <- liftIO $ godTransaction nodeBackend esUrl $ Transfer { toaddress = toAddress, amount = 100 }
+    transactionId <- liftIO $ runGodTransaction nodeBackend esUrl $ Transfer { toaddress = toAddress, amount = 100 }
 
     pure $ BetaGtuDropResponse { transactionId = transactionId }
 
@@ -295,6 +320,18 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
   accountTransactions :: Text -> Handler AccountTransactionsResponse
   accountTransactions address =
     liftIO $ EsApi.getAccountTransactions esUrl address
+
+
+  transfer :: TransferRequest -> Handler TransferResponse
+  transfer TransferRequest{ keypair, to, amount } = do
+
+    let accountAddress = keypairToAccountAddress keypair
+
+    liftIO $ putStrLn $ "✅ Sending " ++ show amount ++ " from " ++ show accountAddress ++ " to " ++ show to
+
+    transactionId <- liftIO $ runTransaction nodeBackend esUrl (Transfer { toaddress = to, amount = 100 }) keypair
+
+    pure $ TransferResponse { transactionId = transactionId }
 
 
   identityGenerateChi :: Text -> Handler Text
@@ -314,24 +351,29 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
 
 
 -- For beta, uses the mateuszKP which is seeded with funds
-godTransaction :: Backend -> Text -> TransactionJSONPayload -> IO Types.TransactionHash
-godTransaction nodeBackend esUrl payload = do
+runGodTransaction :: Backend -> Text -> TransactionJSONPayload -> IO Types.TransactionHash
+runGodTransaction nodeBackend esUrl payload = do
+  runTransaction nodeBackend esUrl payload mateuszKP
 
-  let mateuszAccountText = Text.pack $ show Concordium.Scheduler.Utils.Init.Example.mateuszAccount
 
-  nonce <- EsApi.takeNextNonceFor esUrl mateuszAccountText
+runTransaction :: Backend -> Text -> TransactionJSONPayload -> KeyPair -> IO Types.TransactionHash
+runTransaction nodeBackend esUrl payload keypair = do
+
+  let accountAddressText = Text.pack $ show $ keypairToAccountAddress keypair
+
+  nonce <- EsApi.takeNextNonceFor esUrl accountAddressText
 
   let
     transaction =
       TransactionJSON
         { metadata = transactionHeader
         , payload = payload
-        , signKey = Concordium.Crypto.SignatureScheme.signKey mateuszKP
+        , signKey = Concordium.Crypto.SignatureScheme.signKey keypair
         }
 
     transactionHeader =
           TransactionJSONHeader
-            { thSenderKey = Concordium.Crypto.SignatureScheme.verifyKey mateuszKP
+            { thSenderKey = Concordium.Crypto.SignatureScheme.verifyKey keypair
             , thNonce = Just nonce
             , thGasAmount = 100000
             }
@@ -370,6 +412,11 @@ verifyKeyToAddress verifyKey =
 verifyKeyToAccountAddress :: VerifyKey -> Concordium.ID.Types.AccountAddress
 verifyKeyToAccountAddress verifyKey =
   Concordium.ID.Account.accountAddress verifyKey Ed25519
+
+
+keypairToAccountAddress :: KeyPair -> Concordium.ID.Types.AccountAddress
+keypairToAccountAddress keypair =
+  Concordium.ID.Account.accountAddress (Concordium.Crypto.SignatureScheme.verifyKey keypair) Ed25519
 
 
 -- Dirty helper to help us with "definitely certain" value decoding
@@ -479,11 +526,11 @@ debugTestFullProvision = do
 
   putStrLn $ "✅ Deploying credentials for: " ++ show newAddress
 
-  _ <- godTransaction nodeBackend esUrl $ DeployCredential { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
+  _ <- runGodTransaction nodeBackend esUrl $ DeployCredential { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
 
   putStrLn $ "✅ Requesting GTU Drop for: " ++ show newAddress
 
-  _ <- godTransaction nodeBackend esUrl $ Transfer { toaddress = newAddress, amount = 100 }
+  _ <- runGodTransaction nodeBackend esUrl $ Transfer { toaddress = newAddress, amount = 100 }
 
   pure "Done."
 
