@@ -9,15 +9,16 @@ import           Concordium.Client.Commands
 import           Concordium.Client.Runner
 import           Concordium.GlobalState.Transactions
 import           Concordium.Types
+import           Concordium.Types.Execution
 import           Control.Concurrent
 import           Control.Monad.Reader
 import           Options.Applicative
+import Concordium.ID.Account as AH
 
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import qualified Data.ByteString.Lazy as BSL
 
-import qualified Concordium.Scheduler.Utils.Init.Example as Example
 import qualified Concordium.Crypto.SignatureScheme as Sig
 
 data TxOptions = TxOptions {
@@ -67,15 +68,9 @@ go backend delay perBatch sign startNonce =
 
   where loop nonce = do
           let nextNonce = nonce + fromIntegral perBatch
-          _ <- mapM (\nnce -> do
-                        tx <- sendTx (sign nnce)
-                        liftIO $ do
-                          putStrLn "Sent transaction."
-                          print tx
-                    ) [nonce..nextNonce-1]
+          mapM_ (sendTx . sign) [nonce..nextNonce-1]
           liftIO $ do
-            -- putStrLn "Sent the following transactions."
-            -- mapM_ (print . transactionHeader) sent
+            putStrLn $ "Sent " ++ show perBatch ++ " transactions to " ++ show (target backend)
             threadDelay (delay * 10^(6::Int))
           loop nextNonce
 
@@ -88,7 +83,9 @@ main = do
       case AE.parseEither parseKeys v of
         Left err' -> putStrLn $ "Could not decode JSON because: " ++ err'
         Right keyPair@Sig.KeyPair{..} -> do
-          let txBody = btrPayload (Example.makeTransaction True (ContractAddress 0 0) 0)
+          let selfAddress = AH.accountAddress verifyKey Sig.Ed25519
+          print $ "Using sender account = " ++ show selfAddress
+          let txBody = encodePayload (Transfer (AddressAccount selfAddress) 1) -- transfer 1 GTU to myself.
           let txHeader nonce = makeTransactionHeader Sig.Ed25519 verifyKey (payloadSize txBody) nonce 1000
           let sign nonce = signTransaction keyPair (txHeader nonce) txBody
           go backend (delay txoptions) (perBatch txoptions) sign (startNonce txoptions)

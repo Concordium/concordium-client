@@ -8,10 +8,7 @@ import           Concordium.GlobalState.Transactions
 import qualified Concordium.Scheduler.Types          as Types
 import           Concordium.Types                    as Types
 
-import           Concordium.Crypto.Ed25519Signature  (randomKeyPair)
-import           Concordium.Crypto.SHA256            (hash)
 import qualified Concordium.Crypto.SignatureScheme   as Sig
-import           System.Random
 
 import           Acorn.Core                          as Core
 
@@ -20,23 +17,6 @@ import           Data.Aeson(Value)
 import           Prelude hiding(mod)
 
 import qualified Concordium.ID.Account               as IDA
-
-mateuszKP :: Sig.KeyPair
-mateuszKP = fst (randomKeyPair (mkStdGen 0))
-
-mateuszKP' :: Sig.KeyPair
-mateuszKP' = fst (randomKeyPair (mkStdGen 1))
-
-blockPointer :: BlockHash
-blockPointer = hash ""
-
-deployModule ::
-     Backend -> Maybe Nonce -> Energy -> [Module UA] -> IO [(BareTransaction, Either String [Value])]
-deployModule = deployModuleWithKey mateuszKP
-
-deployModule' ::
-     Backend -> Maybe Nonce -> Energy -> [Module UA] -> IO [(BareTransaction, Either String [Value])]
-deployModule' = deployModuleWithKey mateuszKP'
 
 helper :: Sig.KeyPair -> Nonce -> Energy -> Types.Payload -> BareTransaction
 helper kp nonce energy spayload =
