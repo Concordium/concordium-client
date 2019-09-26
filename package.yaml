@@ -134,6 +134,7 @@ executables:
        - filepath
        - http-conduit
        - http-types
+       - iso8601-time
        - managed
        - neat-interpolation
        - process

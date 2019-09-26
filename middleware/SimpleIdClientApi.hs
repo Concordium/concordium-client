@@ -15,6 +15,7 @@ import Servant.API.Generic
 import Data.Map
 import qualified Data.Text as Text
 
+import Http
 import Concordium.Crypto.SignatureScheme (SignKey (..), VerifyKey (..))
 
 
@@ -36,42 +37,8 @@ postIdCredentialRequest idUrl idCredentialRequest = do
     postJsonRequest (Text.unpack idUrl ++ "/generate_credential") idCredentialRequest
 
 
--- API Helpers
-
-getJsonRequest ::  (FromJSON response) => String -> IO response
-getJsonRequest url = do
-  req <- setHeaders <$> parseUrlThrow url
-  jsonRequest req
-
-
-postJsonRequest ::  (ToJSON request, FromJSON response) => String -> request -> IO response
-postJsonRequest url requestObject = do
-  req <- setRequestBodyJSON requestObject . setHeaders . setPost <$> parseUrlThrow url
-  jsonRequest req
-
-
-jsonRequest :: FromJSON response => Request -> IO response
-jsonRequest req = do
-  manager <- newManager tlsManagerSettings -- @TODO put the tlsManger into reader
-  res     <- Network.HTTP.Conduit.httpLbs req manager
-
-  case eitherDecode (responseBody res) of
-    Left  err -> do
-      putStrLn "There was an error decoding this response:"
-      putStrLn $ show $ responseBody res
-      error err
-    Right result -> pure result
-
-
-setHeaders :: Request -> Request
-setHeaders h = h { requestHeaders = [("Content-Type", "application/json")] }
-
-
-setPost :: Request -> Request
-setPost h = h { method = "POST" }
-
-
 -- Data types
+
 
 data IdObjectRequest =
   IdObjectRequest

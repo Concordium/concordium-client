@@ -45,7 +45,6 @@ import qualified Concordium.ID.Types
 import qualified Concordium.Scheduler.Utils.Init.Example
 
 import qualified Config
-import SimpleIdClientMock
 import SimpleIdClientApi
 import EsApi
 
@@ -74,23 +73,6 @@ data Routes r = Routes
     , typecheckContract :: r :-
         "v1" :> "typecheckContract" :> ReqBody '[JSON] Text
                                     :> Post '[JSON] Text
-
-    -- Legacy
-    , sendTransaction :: r :-
-        "v1" :> "sendTransaction" :> ReqBody '[JSON] TransactionJSON
-                                  :> Post '[JSON] Text
-
-    , identityGenerateChi :: r :-
-        "v1" :> "identityGenerateChi" :> ReqBody '[JSON] Text
-                                      :> Post '[JSON] Text
-
-    , identityCreateAciPio :: r :-
-        "v1" :> "identityCreateAciPio" :> ReqBody '[JSON] CreateAciPioRequest
-                                       :> Post '[JSON] CreateAciPioResponse
-
-    , identitySignPio :: r :-
-        "v1" :> "identitySignPio" :> ReqBody '[JSON] SignPioRequest
-                                  :> Post '[JSON] Text
 
     }
   deriving (Generic)
@@ -158,31 +140,6 @@ data TransferResponse =
   deriving (ToJSON, Generic, Show)
 
 
--- Legacy @TODO remove?
-
-data CreateAciPioRequest =
-  CreateAciPioRequest
-    { scheme :: IdAttributesScheme
-    , chi :: Text
-    }
-  deriving (FromJSON, Generic, Show)
-
-
-data CreateAciPioResponse =
-  CreateAciPioResponse
-    { aci :: Text
-    , pio :: Text
-    }
-  deriving (ToJSON, Generic, Show)
-
-
-data SignPioRequest =
-  SignPioRequest
-    { pio :: Text
-    , identityProviderId :: Text
-    }
-  deriving (FromJSON, Generic, Show)
-
 
 api :: Proxy (ToServantApi Routes)
 api = genericApi (Proxy :: Proxy Routes)
@@ -192,25 +149,6 @@ servantApp :: COM.Backend -> Text -> Text -> Application
 servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
  where
   routesAsServer = Routes {..} :: Routes AsServer
-
-  sendTransaction :: TransactionJSON -> Handler Text
-  sendTransaction transaction = do
-    liftIO $ do
-      mdata <- loadContextData
-
-      -- The networkId is for running multiple networks that's not the same chain, but hasn't been taken into use yet
-      let nid = 1000
-
-      t <- do
-        let hookIt = False
-        PR.evalContext mdata $ runInClient nodeBackend $ processTransaction_ transaction nid hookIt
-
-      created <- getCurrentTime
-
-      putStrLn $ "Transaction sent to the baker: " ++ show (bareTransactionHash t created)
-
-    -- @TODO What response should we send?
-    pure "Submitted"
 
 
   typecheckContract :: Text -> Handler Text
@@ -334,22 +272,6 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
     pure $ TransferResponse { transactionId = transactionId }
 
 
-  identityGenerateChi :: Text -> Handler Text
-  identityGenerateChi name = do
-    liftIO $ SimpleIdClientMock.createChi name
-
-
-  identityCreateAciPio :: CreateAciPioRequest -> Handler CreateAciPioResponse
-  identityCreateAciPio CreateAciPioRequest{ scheme, chi } = do
-    (aci, pio) <- liftIO $ SimpleIdClientMock.createAciPio scheme chi
-    pure $ CreateAciPioResponse { aci = aci, pio = pio }
-
-
-  identitySignPio :: SignPioRequest -> Handler Text
-  identitySignPio SignPioRequest{ pio, identityProviderId } = do
-    liftIO $ SimpleIdClientMock.signPio pio identityProviderId
-
-
 -- For beta, uses the mateuszKP which is seeded with funds
 runGodTransaction :: Backend -> Text -> TransactionJSONPayload -> IO Types.TransactionHash
 runGodTransaction nodeBackend esUrl payload = do
@@ -378,15 +300,15 @@ runTransaction nodeBackend esUrl payload keypair = do
             , thGasAmount = 100000
             }
 
-  executeTransaction nodeBackend transaction
+  executeTransaction esUrl nodeBackend transaction
 
 
 mateuszKP :: KeyPair
 mateuszKP = fst (randomKeyPair (mkStdGen 0))
 
 
-executeTransaction :: Backend -> TransactionJSON -> IO Types.TransactionHash
-executeTransaction nodeBackend transaction = do
+executeTransaction :: Text -> Backend -> TransactionJSON -> IO Types.TransactionHash
+executeTransaction esUrl nodeBackend transaction = do
 
   mdata <- loadContextData
   -- The networkId is for running multiple networks that's not the same chain, but hasn't been taken into use yet
@@ -401,7 +323,17 @@ executeTransaction nodeBackend transaction = do
   putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (bareTransactionHash t created)
   putStrLn $ show transaction
 
+
+  EsApi.logBareTransaction esUrl t (verifyKeyToAccountAddress $ thSenderKey $ metadata transaction)
+
+  putStrLn $ "✅ Bare tansaction logged into ElasticSearch"
+
   pure $ bareTransactionHash t created
+
+
+bareTransactionHash :: Types.BareTransaction -> UTCTime -> Types.TransactionHash
+bareTransactionHash bare currentTime =
+  Types.trHash $ Types.fromBareTransaction currentTime bare
 
 
 verifyKeyToAddress :: VerifyKey -> Types.Address
@@ -533,8 +465,3 @@ debugTestFullProvision = do
   _ <- runGodTransaction nodeBackend esUrl $ Transfer { toaddress = newAddress, amount = 100 }
 
   pure "Done."
-
-
-bareTransactionHash :: Types.BareTransaction -> UTCTime -> Types.TransactionHash
-bareTransactionHash bare currentTime =
-  Types.trHash $ Types.fromBareTransaction currentTime bare

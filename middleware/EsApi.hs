@@ -8,25 +8,26 @@
 
 module EsApi where
 
-import qualified Control.Exception as E
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as E
+import qualified Data.Text.Encoding as T
+import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.Encoding as TL
+import Data.Time.Clock
+import Data.Time.Clock.POSIX
+import Data.Time.ISO8601
+
+import Data.Aeson as AE
 import Data.Text                 (Text)
-import qualified Data.ByteString.Lazy.Char8 as BS
-import           Data.Aeson                          as AE
-import Data.Aeson                (eitherDecode, encode, parseJSONList)
 import Data.Aeson.Types          (ToJSON, FromJSON, typeMismatch)
-import Network.HTTP.Types.Header (RequestHeaders)
 import Network.HTTP.Conduit
-import Network.HTTP.Simple
 import Network.HTTP.Types.Status (statusCode)
 import NeatInterpolation
 import Servant.API.Generic
-import Data.Map
-import Control.Monad.IO.Class
+
+import qualified Concordium.Crypto.ByteStringHelpers
 import qualified Concordium.Scheduler.Types as Types
-import Concordium.Client.Types.Transaction
 import Concordium.Types
+import Http
 
 -- API requests
 
@@ -209,95 +210,6 @@ getAccountTransactions esUrl accountAddress = do
 
 
 
-
-
--- API Helpers
-
-getJsonRequest ::  (FromJSON response) => String -> IO response
-getJsonRequest url = do
-  req <- setHeaders <$> parseUrlThrow url
-  jsonRequest req
-
-
-getJsonRequestEither ::  (FromJSON response) => String -> IO (Either HttpException response)
-getJsonRequestEither url = do
-  req <- setHeaders <$> parseUrlThrow url
-  jsonRequestEither req
-
-
-postTextRequest :: FromJSON response => String -> Text -> IO response
-postTextRequest url request = do
-  req <- setRequestBodyLBS (BS.fromStrict $ E.encodeUtf8 request) . setHeaders . setPost <$> parseUrlThrow url
-  jsonRequest req
-
-
-postTextRequestEither :: FromJSON response => String -> Text -> IO (Either HttpException response)
-postTextRequestEither url request = do
-  req <- setRequestBodyLBS (BS.fromStrict $ E.encodeUtf8 request) . setHeaders . setPost <$> parseUrlThrow url
-  jsonRequestEither req
-
-
-postJsonRequest ::  (ToJSON request, FromJSON response) => String -> request -> IO response
-postJsonRequest url requestObject = do
-  req <- setRequestBodyJSON requestObject . setHeaders . setPost <$> parseUrlThrow url
-  jsonRequest req
-
-
-jsonRequest :: FromJSON response => Request -> IO response
-jsonRequest req = do
-  res <- jsonRequestEither req
-
-  case res of
-    Left err -> do
-      putStrLn "❌ Unhandled Left:"
-      putStrLn "Request:"
-      putStrLn $ case requestBody req of
-        RequestBodyLBS lbs -> BS.unpack lbs
-        _ -> "<RequestBody non-LBS>"
-
-      error $ show err
-
-    Right result -> pure result
-
-
-jsonRequestEither :: FromJSON response => Request -> IO (Either HttpException response)
-jsonRequestEither req = do
-  manager <- newManager tlsManagerSettings -- @TODO put the tlsManger into reader
-
-  let
-    doReq = do
-      res <- Network.HTTP.Conduit.httpLbs req manager
-      case eitherDecode (responseBody res) of
-        Right response -> pure $ Right response
-        Left err -> error $ show err
-
-    errorHandler err =
-      case err of
-        HttpExceptionRequest _ (StatusCodeException res _) ->
-          pure $ Left err
-        _ -> E.throw err
-
-  res <- E.catch doReq errorHandler
-
-  pure res
-
-
-textRequest :: Request -> IO Text
-textRequest req = do
-  manager <- newManager tlsManagerSettings -- @TODO put the tlsManger into reader
-  res     <- Network.HTTP.Conduit.httpLbs req manager
-
-  pure $ E.decodeUtf8 $ BS.toStrict $ responseBody res
-
-
-setHeaders :: Request -> Request
-setHeaders h = h { requestHeaders = [("Content-Type", "application/json")] }
-
-
-setPost :: Request -> Request
-setPost h = h { method = "POST" }
-
-
 data AccountTransactionsResponse =
   AccountTransactionsResponse
     { transactions :: [TransactionOutcome]
@@ -340,3 +252,43 @@ data TransactionOutcome =
     , baker_id :: Maybe Text
     }
   deriving (FromJSON, ToJSON, Generic, Show)
+
+
+-- Logs base16 encoded transactions to ES for replay on testnet reboots
+logBareTransaction :: Text -> Types.BareTransaction -> Types.AccountAddress -> IO ()
+logBareTransaction esUrl bareTransaction address = do
+
+  created <- getCurrentTime
+
+  let
+    encodeCreated = T.pack $ formatISO8601 created
+
+    encodedTransaction = Concordium.Crypto.ByteStringHelpers.serializeBase16 bareTransaction
+
+    encodedAddress = TL.toStrict $ TL.decodeUtf8 $ AE.encode address
+
+    body =
+      [text|
+        { "timestamp": "$encodeCreated"
+        , "originating_account_address": $encodedAddress
+        , "transaction": "$encodedTransaction"
+        }
+      |]
+
+    url = T.unpack esUrl ++ "/index_transaction_log/_doc"
+
+  putStrLn $ T.unpack body
+
+  (result :: Either HttpException LogBareTransactionResponse) <-
+    postTextRequestEither url body
+
+  putStrLn $ show result
+
+  pure ()
+
+
+data LogBareTransactionResponse =
+  LogBareTransactionResponse
+  { result :: Text
+  }
+  deriving (FromJSON, Generic, Show)
