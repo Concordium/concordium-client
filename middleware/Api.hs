@@ -30,6 +30,7 @@ import System.Directory
 import System.Exit
 import System.Process
 import System.Random
+import System.IO.Unsafe
 import Text.Read (readMaybe)
 
 import           Concordium.Client.Runner
@@ -39,7 +40,7 @@ import           Concordium.Client.Commands          as COM
 import qualified Acorn.Parser.Runner                 as PR
 import qualified Concordium.Scheduler.Types          as Types
 import           Concordium.Crypto.SignatureScheme   (SchemeId (..), VerifyKey, KeyPair(..))
-import           Concordium.Crypto.Ed25519Signature  (randomKeyPair)
+import           Concordium.Crypto.Ed25519Signature  (randomKeyPair, pubKey)
 import qualified Concordium.ID.Account
 import qualified Concordium.ID.Types
 import qualified Concordium.Scheduler.Utils.Init.Example
@@ -272,10 +273,10 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
     pure $ TransferResponse { transactionId = transactionId }
 
 
--- For beta, uses the mateuszKP which is seeded with funds
+-- For beta, uses the middlewareGodKP which is seeded with funds
 runGodTransaction :: Backend -> Text -> TransactionJSONPayload -> IO Types.TransactionHash
 runGodTransaction nodeBackend esUrl payload = do
-  runTransaction nodeBackend esUrl payload mateuszKP
+  runTransaction nodeBackend esUrl payload middlewareGodKP
 
 
 runTransaction :: Backend -> Text -> TransactionJSONPayload -> KeyPair -> IO Types.TransactionHash
@@ -303,8 +304,11 @@ runTransaction nodeBackend esUrl payload keypair = do
   executeTransaction esUrl nodeBackend transaction
 
 
-mateuszKP :: KeyPair
-mateuszKP = fst (randomKeyPair (mkStdGen 0))
+middlewareGodKP :: KeyPair
+middlewareGodKP = do
+  -- https://gitlab.com/Concordium/p2p-client/blob/d41aba2cc3bfed7c5be21fe0612581f9c90e9e45/scripts/genesis-data/beta_accounts/beta-account-0.json
+  let verifyKey = certainDecode "\"016fb793ef489eaf256eac1ebbe2513919b60dfd4fad9645f2425127af6e109f\""
+  KeyPair verifyKey (unsafePerformIO $ pubKey verifyKey)
 
 
 executeTransaction :: Text -> Backend -> TransactionJSON -> IO Types.TransactionHash
