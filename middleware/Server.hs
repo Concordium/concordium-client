@@ -89,10 +89,7 @@ auth username password = basicAuth (\u p -> pure $ u == username && p == passwor
 -- | @x-csrf-token@ allowance.
 -- The following header will be set: @Access-Control-Allow-Headers: x-csrf-token@.
 allowCsrf :: Middleware
-allowCsrf = addHeaders
-  [ ("Access-Control-Allow-Headers", "x-csrf-token,authorization")
-  , ("Access-Control-Allow-Origin", "*")
-  ]
+allowCsrf = addHeaders [("Access-Control-Allow-Headers", "x-csrf-token,authorization")]
 
 -- | CORS middleware configured with 'appCorsResourcePolicy'.
 corsified :: Middleware
