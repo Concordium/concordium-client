@@ -51,6 +51,7 @@ import EsApi
 
 
 data Routes r = Routes
+    -- Public Middleware APIs
     { betaIdProvision :: r :-
         "v1" :> "betaIdProvision" :> ReqBody '[JSON] BetaIdProvisionRequest
                                   :> Post '[JSON] BetaIdProvisionResponse
@@ -75,6 +76,13 @@ data Routes r = Routes
         "v1" :> "typecheckContract" :> ReqBody '[JSON] Text
                                     :> Post '[JSON] Text
 
+    -- Private Middleware APIs (accessible on local client instance of Middleware only)
+    , getNodeState :: r :-
+        "v1" :> "nodeState" :> Get '[JSON] GetNodeStateResponse
+
+    , setNodeState :: r :-
+        "v1" :> "nodeState" :> ReqBody '[JSON] SetNodeStateRequest
+                            :> Post '[JSON] SetNodeStateResponse
     }
   deriving (Generic)
 
@@ -140,6 +148,47 @@ data TransferResponse =
     }
   deriving (ToJSON, Generic, Show)
 
+
+
+data GetNodeStateResponse =
+  GetNodeStateResponse
+    { name :: Text
+    , id :: Text
+    , version :: Text
+    , running :: Bool
+    , runningSince :: Int
+    , sent :: Int
+    , received :: Int
+    , isBaking :: Bool
+    , isInBakingCommittee :: Bool
+    , isFinalizing :: Bool
+    , isInFinalizingCommittee :: Bool
+    , timestamp :: Int
+    }
+  deriving (FromJSON, ToJSON, Generic, Show)
+
+
+data SetNodeStateRequest =
+  SetNodeStateRequest
+    { name :: Maybe Text
+    , id :: Maybe Text
+    , version :: Maybe Text
+    , running :: Maybe Bool
+    , runningSince :: Maybe Int
+    , sent :: Maybe Int
+    , received :: Maybe Int
+    , isBaking :: Maybe Bool
+    , isInBakingCommittee :: Maybe Bool
+    , isFinalizing :: Maybe Bool
+    , isInFinalizingCommittee :: Maybe Bool
+    }
+  deriving (FromJSON, ToJSON, Generic, Show)
+
+
+data SetNodeStateResponse =
+  SetNodeStateResponse
+    { success :: Bool }
+  deriving (FromJSON, ToJSON, Generic, Show)
 
 
 api :: Proxy (ToServantApi Routes)
@@ -271,6 +320,33 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
     transactionId <- liftIO $ runTransaction nodeBackend esUrl (Transfer { toaddress = to, amount = 100 }) keypair
 
     pure $ TransferResponse { transactionId = transactionId }
+
+
+  getNodeState :: Handler GetNodeStateResponse
+  getNodeState = do
+    timestamp <- liftIO $ round `fmap` getPOSIXTime
+    pure $
+      GetNodeStateResponse
+        { name = "dummy"
+        , id = "dummy"
+        , version = "dummy"
+        , running = True
+        , runningSince = 1569684258
+        , sent = 12345
+        , received = 12345
+        , isBaking = True
+        , isInBakingCommittee = True
+        , isFinalizing = True
+        , isInFinalizingCommittee = True
+        , timestamp = timestamp
+        }
+
+
+  setNodeState :: SetNodeStateRequest -> Handler SetNodeStateResponse
+  setNodeState request =
+    pure $
+      SetNodeStateResponse
+        { success = True }
 
 
 -- For beta, uses the middlewareGodKP which is seeded with funds
