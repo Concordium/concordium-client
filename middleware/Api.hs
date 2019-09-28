@@ -287,6 +287,12 @@ runTransaction nodeBackend esUrl payload keypair = do
   nonce <- EsApi.takeNextNonceFor esUrl accountAddressText
 
   let
+    gasAmount =
+      case payload of
+        Transfer _ _       -> 10
+        DeployCredential _ -> 10000
+        _                  -> 10000
+
     transaction =
       TransactionJSON
         { metadata = transactionHeader
@@ -298,7 +304,7 @@ runTransaction nodeBackend esUrl payload keypair = do
           TransactionJSONHeader
             { thSenderKey = Concordium.Crypto.SignatureScheme.verifyKey keypair
             , thNonce = Just nonce
-            , thGasAmount = 100000
+            , thGasAmount = gasAmount
             }
 
   executeTransaction esUrl nodeBackend transaction
