@@ -300,7 +300,7 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
 
     liftIO $ putStrLn $ "✅ Requesting GTU Drop for " ++ show toAddress
 
-    transactionId <- liftIO $ runGodTransaction nodeBackend esUrl $ Transfer { toaddress = toAddress, amount = 100 }
+    transactionId <- liftIO $ runGodTransaction nodeBackend esUrl $ Transfer { toaddress = toAddress, amount = 1000000 }
 
     pure $ BetaGtuDropResponse { transactionId = transactionId }
 
