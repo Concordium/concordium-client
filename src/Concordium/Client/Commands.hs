@@ -73,6 +73,7 @@ data Action
       , moduleRef :: !Text
       } -- ^ Queries the gRPC server for the source of a module on a specific block
   | GetNodeInfo -- ^Queries the gRPC server for the node information.
+  | GetBakerPrivateData -- ^Queries the gRPC server for the private data of the baker.
 
 -- |Parser for the command line arguments
 optsParser :: ParserInfo Command
@@ -102,7 +103,8 @@ programOptions =
      getBirkParametersCommand <>
      getModuleListCommand <>
      getModuleSourceCommand <>
-     getNodeInfoCommand) <*>
+     getNodeInfoCommand <>
+     getBakerPrivateDataCommand) <*>
   grpcBackend
 
 grpcBackend :: Parser (Maybe Backend)
@@ -116,6 +118,13 @@ getNodeInfoCommand =
        (pure GetNodeInfo)
        (progDesc "Query the gRPC server for the node information."))
 
+getBakerPrivateDataCommand :: Mod CommandFields Action
+getBakerPrivateDataCommand =
+  command
+    "GetBakerPrivateData"
+    (info
+       (pure GetBakerPrivateData)
+       (progDesc "Query the gRPC server for the private baker info."))
 
 loadModuleCommand :: Mod CommandFields Action
 loadModuleCommand =

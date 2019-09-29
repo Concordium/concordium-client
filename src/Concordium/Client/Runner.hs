@@ -53,6 +53,8 @@ import           Data.Maybe
 import           Data.Text
 import           Data.String
 
+import Data.Word
+
 import           Prelude                             hiding (fail, mod, null,
                                                       unlines)
 import           System.Exit                         (die)
@@ -178,6 +180,7 @@ useBackend act b =
             putStrLn $ "Retrieved module " ++ show moduleref
             putStrLn s
     GetNodeInfo -> runInClient b $ getNodeInfo >>= printNodeInfo
+    GetBakerPrivateData -> runInClient b $ getBakerPrivateData >>= printJSON
     _ -> undefined
 
 getNodeInfo :: ClientMonad IO (Either String NodeInfoResponse)
@@ -186,6 +189,65 @@ getNodeInfo = do
   liftClientIO $! do
     ret <- rawUnary (RPC :: RPC P2P "nodeInfo") client defMessage
     return $ (outputGRPC ret)
+
+getPeerTotalSent :: ClientMonad IO (Either String Word64)
+getPeerTotalSent = do
+  client <- asks grpc
+  liftClientIO $! do
+    ret <- rawUnary (RPC :: RPC P2P "peerTotalSent") client defMessage
+    return $ ((^. CF.value) <$> outputGRPC ret)
+
+
+getPeerTotalReceived :: ClientMonad IO (Either String Word64)
+getPeerTotalReceived = do
+  client <- asks grpc
+  liftClientIO $! do
+    ret <- rawUnary (RPC :: RPC P2P "peerTotalReceived") client defMessage
+    return $ ((^. CF.value) <$> outputGRPC ret)
+
+getPeerVersion :: ClientMonad IO (Either String Text)
+getPeerVersion = do
+  client <- asks grpc
+  liftClientIO $! do
+    ret <- rawUnary (RPC :: RPC P2P "peerVersion") client defMessage
+    return $ ((^. CF.value) <$> outputGRPC ret)
+
+getPeerStats :: ClientMonad IO (Either String PeerStatsResponse)
+getPeerStats = do
+  client <- asks grpc
+  liftClientIO $! do
+    ret <- rawUnary (RPC :: RPC P2P "peerStats") client defMessage
+    return $ (outputGRPC ret)
+
+getPeerList :: ClientMonad IO (Either String PeerListResponse)
+getPeerList = do
+  client <- asks grpc
+  liftClientIO $! do
+    ret <- rawUnary (RPC :: RPC P2P "peerList") client defMessage
+    return $ (outputGRPC ret)
+
+-- |Return Right True if baker successfully started, 
+startBaker :: ClientMonad IO (Either String Bool)
+startBaker = do
+  client <- asks grpc
+  liftClientIO $! do
+    ret <- rawUnary (RPC :: RPC P2P "startBaker") client defMessage
+    return $ ((^. CF.value) <$> outputGRPC ret)
+
+-- |Return Right True if baker successfully stopped.
+stopBaker :: ClientMonad IO (Either String Bool)
+stopBaker = do
+  client <- asks grpc
+  liftClientIO $! do
+    ret <- rawUnary (RPC :: RPC P2P "stopBaker") client defMessage
+    return $ ((^. CF.value) <$> outputGRPC ret)
+
+getBakerPrivateData :: ClientMonad IO (Either String [Value])
+getBakerPrivateData = do
+  client <- asks grpc
+  liftClientIO $! do
+    ret <- rawUnary (RPC :: RPC P2P "getBakerPrivateData") client defMessage
+    return $ (processJSON ret)
 
 printNodeInfo :: MonadIO m => Either String NodeInfoResponse -> m ()
 printNodeInfo mni =
