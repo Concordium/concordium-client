@@ -128,6 +128,21 @@ process command =
     act ->
       maybe (putStrLn "No Backend provided") (useBackend act) (backend command)
 
+-- loop :: Either String [Value] -> ClientMonad IO ()
+-- loop v =
+--   case v of
+--     Left err       -> liftIO $ putStrLn err
+--     Right (AE.Object m:[]) ->
+--       case Map.lookup "blockParent" m of
+--         Just (String parent) -> do
+--           printJSON v
+--           case Map.lookup "blockSlot" m of
+--             Just (AE.Number x) | x > 0 -> do
+--               getBlockInfo parent >>= loop
+--             _ -> liftIO $ putStrLn "Genesis block reached."
+--         Nothing -> liftIO $ putStrLn "No parent."
+
+
 useBackend :: Action -> Backend -> IO ()
 useBackend act b =
   case act of
@@ -165,7 +180,29 @@ useBackend act b =
           in do
             putStrLn $ "Retrieved module " ++ show moduleref
             putStrLn s
+    GetNodeInfo -> runInClient b $ getNodeInfo >>= printNodeInfo
     _ -> undefined
+
+getNodeInfo :: ClientMonad IO (Either String NodeInfoResponse)
+getNodeInfo = do
+  client <- asks grpc
+  liftClientIO $! do
+    ret <- rawUnary (RPC :: RPC P2P "nodeInfo") client defMessage
+    return $ (outputGRPC ret)
+
+printNodeInfo :: MonadIO m => Either String NodeInfoResponse -> m ()
+printNodeInfo mni =
+  case mni of
+    Left err -> liftIO (putStrLn err)
+    Right ni -> liftIO $ do
+      putStrLn $ "Node id: " ++ show (ni ^. CF.nodeId ^. CF.value)
+      putStrLn $ "Current local time: " ++ show (ni ^. CF.currentLocaltime)
+      putStrLn $ "Peer type: " ++ show (ni ^. CF.peerType)
+      putStrLn $ "Baker running: " ++ show (ni ^. CF.consensusBakerRunning)
+      putStrLn $ "Consensus running: " ++ show (ni ^. CF.consensusRunning)
+      putStrLn $ "Consensus type: " ++ show (ni ^. CF.consensusType)
+      putStrLn $ "Baker committee member: " ++ show (ni ^. CF.consensusBakerCommittee)
+      putStrLn $ "Finalization committee member: " ++ show (ni ^. CF.consensusFinalizerCommittee)
 
 processTransaction ::
      (MonadFail m, MonadIO m)

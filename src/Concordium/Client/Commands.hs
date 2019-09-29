@@ -73,6 +73,7 @@ data Action
       { blockHash :: !Text
       , moduleRef :: !Text
       } -- ^ Queries the gRPC server for the source of a module on a specific block
+  | GetNodeInfo -- ^Queries the gRPC server for the node information.
 
 -- |Parser for the command line arguments
 optsParser :: ParserInfo Command
@@ -102,11 +103,21 @@ programOptions =
      getRewardStatusCommand <>
      getBirkParametersCommand <>
      getModuleListCommand <>
-     getModuleSourceCommand) <*>
+     getModuleSourceCommand <>
+     getNodeInfoCommand) <*>
   grpcBackend
 
 grpcBackend :: Parser (Maybe Backend)
 grpcBackend = optional $ GRPC <$> hostParser <*> portParser <*> targetParser
+
+getNodeInfoCommand :: Mod CommandFields Action
+getNodeInfoCommand =
+  command
+    "GetNodeInfo"
+    (info
+       (pure GetNodeInfo)
+       (progDesc "Query the gRPC server for the node information."))
+
 
 loadModuleCommand :: Mod CommandFields Action
 loadModuleCommand =
