@@ -192,7 +192,7 @@ printNodeInfo mni =
   case mni of
     Left err -> liftIO (putStrLn err)
     Right ni -> liftIO $ do
-      putStrLn $ "Node id: " ++ show (ni ^. CF.nodeId)
+      putStrLn $ "Node id: " ++ show (ni ^. CF.nodeId ^. CF.value)
       putStrLn $ "Current local time: " ++ show (ni ^. CF.currentLocaltime)
       putStrLn $ "Peer type: " ++ show (ni ^. CF.peerType)
       putStrLn $ "Baker running: " ++ show (ni ^. CF.consensusBakerRunning)
