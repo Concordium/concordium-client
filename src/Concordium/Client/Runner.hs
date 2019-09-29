@@ -155,7 +155,6 @@ useBackend act b =
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (Types.transactionHash t)
     HookTransaction txh -> runInClient b $ hookTransaction txh >>= printJSON
-    NodeInfo -> runInClient b $ nodeInfo >>= printJSON
     GetConsensusInfo -> runInClient b $ getConsensusStatus >>= printJSON
     GetBlockInfo block -> runInClient b $ getBlockInfo block >>= printJSON
     GetAccountList block -> runInClient b $ getAccountList block >>= printJSON
@@ -188,7 +187,7 @@ getNodeInfo = do
   client <- asks grpc
   liftClientIO $! do
     ret <- rawUnary (RPC :: RPC P2P "nodeInfo") client defMessage
-    return $ (outputGRPC ret)
+    return $! outputGRPC ret
 
 printNodeInfo :: MonadIO m => Either String NodeInfoResponse -> m ()
 printNodeInfo mni =
@@ -278,7 +277,7 @@ processTransaction_ ::
   -> Bool
   -> ClientMonad (PR.Context Core.UA m) Types.BareTransaction
 processTransaction_ transaction networkId hookit = do
-  transaction <- do
+  tx <- do
     nonce <-
       case thNonce . metadata $ transaction of
         Nothing ->
@@ -292,11 +291,11 @@ processTransaction_ transaction networkId hookit = do
       (KeyPair (CT.signKey transaction) (thSenderKey (metadata transaction)))
 
   when hookit $ do
-    let trHash = Types.transactionHash transaction
+    let trHash = Types.transactionHash tx
     liftIO . putStrLn $ "Installing hook for transaction " ++ show trHash
     printJSON =<< sendHookToBaker trHash
-  sendTransactionToBaker transaction networkId
-  return transaction
+  sendTransactionToBaker tx networkId
+  return tx
 
 encodeAndSignTransaction ::
      (MonadFail m, MonadIO m)
@@ -373,15 +372,6 @@ hookTransaction txh = do
         client
         (defMessage & CF.transactionHash .~ txh)
     return $ processJSON ret
-
-nodeInfo :: (MonadFail m, MonadIO m) => ClientMonad m (Either String [Value])
-nodeInfo = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <- rawUnary (RPC :: RPC P2P "nodeInfo") client defMessage
-    liftIO $ putStrLn $ show ret
-    -- return $ processJSON ret
-    return $ Right []
 
 getConsensusStatus :: (MonadFail m, MonadIO m) => ClientMonad m (Either String [Value])
 getConsensusStatus = do

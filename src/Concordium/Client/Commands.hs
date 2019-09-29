@@ -93,7 +93,6 @@ programOptions =
   hsubparser
     (loadModuleCommand <> listModulesCommand <> sendTransactionCommand <>
      hookTransactionCommand <>
-     nodeInfoCommand <>
      getConsensusInfoCommand <>
      getBlockInfoCommand <>
      getAccountListCommand <>
@@ -185,14 +184,6 @@ targetParser =
   strOption
     (long "grpc-target" <> metavar "GRPC-TARGET" <>
      help "Target node name when using a proxy.")
-
-nodeInfoCommand :: Mod CommandFields Action
-nodeInfoCommand =
-  command
-    "NodeInfo"
-    (info
-       (pure NodeInfo)
-       (progDesc "Query the gRPC server for the node information."))
 
 getConsensusInfoCommand :: Mod CommandFields Action
 getConsensusInfoCommand =
