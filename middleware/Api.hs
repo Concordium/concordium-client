@@ -551,3 +551,10 @@ debugTestFullProvision = do
   _ <- runGodTransaction nodeBackend esUrl $ Transfer { toaddress = newAddress, amount = 100 }
 
   pure "Done."
+
+
+
+debugGrpc = do
+  let nodeBackend = COM.GRPC { host = "localhost", port = 11103, target = Nothing }
+
+  useBackend NodeInfo nodeBackend

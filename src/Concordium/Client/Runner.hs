@@ -16,6 +16,7 @@ module Concordium.Client.Runner
   , EnvData(..)
   , GrpcConfig
   , processTransaction_
+  , useBackend
   ) where
 
 import qualified Acorn.Core                          as Core
@@ -139,6 +140,7 @@ useBackend act b =
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (Types.transactionHash t)
     HookTransaction txh -> runInClient b $ hookTransaction txh >>= printJSON
+    NodeInfo -> runInClient b $ nodeInfo >>= printJSON
     GetConsensusInfo -> runInClient b $ getConsensusStatus >>= printJSON
     GetBlockInfo block -> runInClient b $ getBlockInfo block >>= printJSON
     GetAccountList block -> runInClient b $ getAccountList block >>= printJSON
@@ -334,6 +336,15 @@ hookTransaction txh = do
         client
         (defMessage & CF.transactionHash .~ txh)
     return $ processJSON ret
+
+nodeInfo :: (MonadFail m, MonadIO m) => ClientMonad m (Either String [Value])
+nodeInfo = do
+  client <- asks grpc
+  liftClientIO $! do
+    ret <- rawUnary (RPC :: RPC P2P "nodeInfo") client defMessage
+    liftIO $ putStrLn $ show ret
+    -- return $ processJSON ret
+    return $ Right []
 
 getConsensusStatus :: (MonadFail m, MonadIO m) => ClientMonad m (Either String [Value])
 getConsensusStatus = do

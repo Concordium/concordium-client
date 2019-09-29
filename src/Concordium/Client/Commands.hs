@@ -41,6 +41,7 @@ data Action
   | HookTransaction
       { transactionHash :: !Text
       } -- ^ Queries the gRPC for the information about the execution of a transaction
+  | NodeInfo -- ^ Queries the gRPC server for node information
   | GetConsensusInfo -- ^ Queries the gRPC server for the consensus information
   | GetBlockInfo
       { blockHash :: !Text
@@ -91,6 +92,7 @@ programOptions =
   hsubparser
     (loadModuleCommand <> listModulesCommand <> sendTransactionCommand <>
      hookTransactionCommand <>
+     nodeInfoCommand <>
      getConsensusInfoCommand <>
      getBlockInfoCommand <>
      getAccountListCommand <>
@@ -172,6 +174,14 @@ targetParser =
   strOption
     (long "grpc-target" <> metavar "GRPC-TARGET" <>
      help "Target node name when using a proxy.")
+
+nodeInfoCommand :: Mod CommandFields Action
+nodeInfoCommand =
+  command
+    "NodeInfo"
+    (info
+       (pure NodeInfo)
+       (progDesc "Query the gRPC server for the node information."))
 
 getConsensusInfoCommand :: Mod CommandFields Action
 getConsensusInfoCommand =
