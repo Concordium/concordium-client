@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -ex
+set -e
 
 normal()  { tput sgr0;    }
 red()     { tput setaf 1; }

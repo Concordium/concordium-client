@@ -32,6 +32,7 @@ import System.Process
 import System.Random
 import System.IO.Unsafe
 import Text.Read (readMaybe)
+import Lens.Simple
 
 import           Concordium.Client.Runner
 import           Concordium.Client.Runner.Helper
@@ -44,6 +45,7 @@ import           Concordium.Crypto.Ed25519Signature  (randomKeyPair, pubKey)
 import qualified Concordium.ID.Account
 import qualified Concordium.ID.Types
 import qualified Concordium.Scheduler.Utils.Init.Example
+import qualified Proto.Concordium_Fields             as CF
 
 import qualified Config
 import SimpleIdClientApi
@@ -160,9 +162,11 @@ data GetNodeStateResponse =
     , sent :: Int
     , received :: Int
     , isBaking :: Bool
-    , isInBakingCommittee :: Bool
+    , inBakingCommittee :: Bool
     , isFinalizing :: Bool
-    , isInFinalizingCommittee :: Bool
+    , inFinalizingCommittee :: Bool
+    , signatureVerifyKey :: Text
+    , selectionVerifyKey :: Text
     , timestamp :: Int
     }
   deriving (FromJSON, ToJSON, Generic, Show)
@@ -178,9 +182,9 @@ data SetNodeStateRequest =
     , sent :: Maybe Int
     , received :: Maybe Int
     , isBaking :: Maybe Bool
-    , isInBakingCommittee :: Maybe Bool
+    , inBakingCommittee :: Maybe Bool
     , isFinalizing :: Maybe Bool
-    , isInFinalizingCommittee :: Maybe Bool
+    , inFinalizingCommittee :: Maybe Bool
     }
   deriving (FromJSON, ToJSON, Generic, Show)
 
@@ -325,21 +329,59 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
   getNodeState :: Handler GetNodeStateResponse
   getNodeState = do
     timestamp <- liftIO $ round `fmap` getPOSIXTime
-    pure $
-      GetNodeStateResponse
-        { name = "dummy"
-        , id = "dummy"
-        , version = "dummy"
-        , running = True
-        , runningSince = 1569684258
-        , sent = 12345
-        , received = 12345
-        , isBaking = True
-        , isInBakingCommittee = True
-        , isFinalizing = True
-        , isInFinalizingCommittee = True
-        , timestamp = timestamp
-        }
+    infoE <- liftIO $ runInClient nodeBackend $ getNodeInfo
+
+    case infoE of
+      Right ni -> do
+        pure $
+          GetNodeStateResponse
+            { name = ""
+            , id = ni ^. CF.nodeId ^. CF.value
+            , version = ""
+            , running = ni ^. CF.consensusRunning
+            , runningSince = 0
+            , sent = 0
+            , received = 0
+            , isBaking = ni ^. CF.consensusBakerRunning
+            , inBakingCommittee = ni ^. CF.consensusBakerCommittee
+            , isFinalizing = True
+            , inFinalizingCommittee = ni ^. CF.consensusFinalizerCommittee
+            , signatureVerifyKey = ""
+            , selectionVerifyKey = ""
+            , timestamp = timestamp
+            }
+
+
+
+            -- putStrLn $ "Node id: " ++ show ()
+            -- putStrLn $ "Current local time: " ++ show (ni ^. CF.currentLocaltime)
+            -- putStrLn $ "Peer type: " ++ show (ni ^. CF.peerType)
+            -- putStrLn $ "Baker running: " ++ show ()
+            -- putStrLn $ "Consensus running: " ++ show ()
+            -- putStrLn $ "Consensus type: " ++ show (ni ^. CF.consensusType)
+            -- putStrLn $ "Baker committee member: " ++ show ()
+            -- putStrLn $ "Finalization committee member: " ++ show ()
+
+      Left err ->
+        error $ show err
+
+
+
+    -- pure $
+    --   GetNodeStateResponse
+    --     { name = "dummy"
+    --     , id = "dummy"
+    --     , version = "dummy"
+    --     , running = True
+    --     , runningSince = 1569684258
+    --     , sent = 12345
+    --     , received = 12345
+    --     , isBaking = True
+    --     , inBakingCommittee = True
+    --     , isFinalizing = True
+    --     , inFinalizingCommittee = True
+    --     , timestamp = timestamp
+    --     }
 
 
   setNodeState :: SetNodeStateRequest -> Handler SetNodeStateResponse
@@ -555,6 +597,45 @@ debugTestFullProvision = do
 
 
 debugGrpc = do
-  let nodeBackend = COM.GRPC { host = "localhost", port = 11103, target = Nothing }
+  let nodeBackend = COM.GRPC { host = "localhost", port = 11109, target = Nothing }
 
-  useBackend NodeInfo nodeBackend
+  infoE <- runInClient nodeBackend $ getNodeInfo
+
+  case infoE of
+    Right ni -> do
+      putStrLn $ show ni
+
+      pure $
+        GetNodeStateResponse
+          { name = ""
+          , id = ni ^. CF.nodeId ^. CF.value
+          , version = ""
+          , running = ni ^. CF.consensusRunning
+          , runningSince = 0
+          , sent = 0
+          , received = 0
+          , isBaking = ni ^. CF.consensusBakerRunning
+          , inBakingCommittee = ni ^. CF.consensusBakerCommittee
+          , isFinalizing = True
+          , inFinalizingCommittee = ni ^. CF.consensusFinalizerCommittee
+          , signatureVerifyKey = ""
+          , selectionVerifyKey = ""
+          , timestamp = 0
+          }
+
+          -- putStrLn $ "Node id: " ++ show ()
+          -- putStrLn $ "Current local time: " ++ show (ni ^. CF.currentLocaltime)
+          -- putStrLn $ "Peer type: " ++ show (ni ^. CF.peerType)
+          -- putStrLn $ "Baker running: " ++ show ()
+          -- putStrLn $ "Consensus running: " ++ show ()
+          -- putStrLn $ "Consensus type: " ++ show (ni ^. CF.consensusType)
+          -- putStrLn $ "Baker committee member: " ++ show ()
+          -- putStrLn $ "Finalization committee member: " ++ show ()
+
+    Left err ->
+      error $ show err
+
+
+  -- getNodeInfo
+  --
+  -- useBackend GetNodeInfo nodeBackend

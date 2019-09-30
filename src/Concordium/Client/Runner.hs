@@ -20,7 +20,7 @@ module Concordium.Client.Runner
   , EnvData(..)
   , GrpcConfig
   , processTransaction_
-  , useBackend
+  , getNodeInfo
   ) where
 
 import qualified Acorn.Core                          as Core

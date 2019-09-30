@@ -135,6 +135,7 @@ executables:
        - http-conduit
        - http-types
        - iso8601-time
+       - lens-simple
        - managed
        - neat-interpolation
        - process
