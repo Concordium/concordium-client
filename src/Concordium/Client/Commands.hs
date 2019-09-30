@@ -74,6 +74,9 @@ data Action
       } -- ^ Queries the gRPC server for the source of a module on a specific block
   | GetNodeInfo -- ^Queries the gRPC server for the node information.
   | GetBakerPrivateData -- ^Queries the gRPC server for the private data of the baker.
+  | GetPeerData {
+      includeBootstrapper :: !Bool -- ^Whether to include bootstrapper node in the stats or not.
+      } -- ^Get all data as pertaining to the node's role as a member of the P2P network.
 
 -- |Parser for the command line arguments
 optsParser :: ParserInfo Command
@@ -104,11 +107,21 @@ programOptions =
      getModuleListCommand <>
      getModuleSourceCommand <>
      getNodeInfoCommand <>
-     getBakerPrivateDataCommand) <*>
+     getBakerPrivateDataCommand <>
+     getPeerDataCommand
+    ) <*>
   grpcBackend
 
 grpcBackend :: Parser (Maybe Backend)
 grpcBackend = optional $ GRPC <$> hostParser <*> portParser <*> targetParser
+
+getPeerDataCommand :: Mod CommandFields Action
+getPeerDataCommand =
+  command
+    "GetPeerData"
+    (info
+       (GetPeerData <$> switch (long "bootstrapper"))
+       (progDesc "Query the gRPC server for the node information."))
 
 getNodeInfoCommand :: Mod CommandFields Action
 getNodeInfoCommand =

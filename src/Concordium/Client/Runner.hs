@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
@@ -7,6 +8,9 @@ module Concordium.Client.Runner
   ( process
   , getAccountNonce
   , getBestBlockHash
+  , PeerData(..)
+  , getPeerData
+  , getNodeInfo
   , sendTransactionToBaker
   , sendHookToBaker
   , getConsensusStatus
@@ -181,7 +185,56 @@ useBackend act b =
             putStrLn s
     GetNodeInfo -> runInClient b $ getNodeInfo >>= printNodeInfo
     GetBakerPrivateData -> runInClient b $ getBakerPrivateData >>= printJSON
+    GetPeerData bootstrapper -> runInClient b $ getPeerData bootstrapper >>= printPeerData
     _ -> undefined
+
+printPeerData :: MonadIO m => Either String PeerData -> m ()
+printPeerData epd =
+  case epd of
+    Left err -> liftIO $ putStrLn err
+    Right PeerData{..} -> liftIO $ do
+      putStrLn $ "Total packets sent: " ++ show totalSent
+      putStrLn $ "Total packets received: " ++ show totalReceived
+      putStrLn $ "Peer version: " ++ unpack version
+      putStrLn $ "Peer stats:"
+      forM_ (peerStats ^. CF.peerstats) $ \ps -> do
+        putStrLn $ "  Peer: " ++ unpack (ps ^. CF.nodeId)
+        putStrLn $ "    Packets sent: " ++ show (ps ^. CF.packetsSent)
+        putStrLn $ "    Packets received: " ++ show (ps ^. CF.packetsReceived)
+        putStrLn $ "    Measured latency: " ++ show (ps ^. CF.measuredLatency)
+        putStrLn ""
+
+      putStrLn $ "Peer type: " ++ unpack (peerList ^. CF.peerType)
+      putStrLn $ "Peers:"
+      forM_ (peerList ^. CF.peer) $ \pe -> do
+        putStrLn $ "  Node id: " ++ unpack (pe ^. CF.nodeId ^. CF.value)
+        putStrLn $ "    Port: " ++ show (pe ^. CF.port ^. CF.value)
+        putStrLn $ "    IP: " ++ unpack (pe ^. CF.ip ^. CF.value)
+        putStrLn ""
+
+data PeerData = PeerData {
+  totalSent :: Word64,
+  totalReceived :: Word64,
+  version :: Text,
+  peerStats :: PeerStatsResponse,
+  peerList :: PeerListResponse
+  }
+
+getPeerData :: Bool -> ClientMonad IO (Either String PeerData)
+getPeerData bootstrapper = do
+  totalSent' <- getPeerTotalSent
+  totalReceived' <- getPeerTotalReceived
+  version' <- getPeerVersion
+  peerStats' <- getPeerStats bootstrapper
+  peerList' <- getPeerList bootstrapper
+  return $ do
+    totalSent <- totalSent'
+    totalReceived <- totalReceived'
+    version <- version'
+    peerStats <- peerStats'
+    peerList <- peerList'
+    return PeerData{..}
+
 
 getNodeInfo :: ClientMonad IO (Either String NodeInfoResponse)
 getNodeInfo = do
@@ -212,18 +265,18 @@ getPeerVersion = do
     ret <- rawUnary (RPC :: RPC P2P "peerVersion") client defMessage
     return $ ((^. CF.value) <$> outputGRPC ret)
 
-getPeerStats :: ClientMonad IO (Either String PeerStatsResponse)
-getPeerStats = do
+getPeerStats :: Bool -> ClientMonad IO (Either String PeerStatsResponse)
+getPeerStats bootstrapper = do
   client <- asks grpc
   liftClientIO $! do
-    ret <- rawUnary (RPC :: RPC P2P "peerStats") client defMessage
+    ret <- rawUnary (RPC :: RPC P2P "peerStats") client (defMessage & CF.includeBootstrappers .~ bootstrapper)
     return $ (outputGRPC ret)
 
-getPeerList :: ClientMonad IO (Either String PeerListResponse)
-getPeerList = do
+getPeerList :: Bool -> ClientMonad IO (Either String PeerListResponse)
+getPeerList bootstrapper = do
   client <- asks grpc
   liftClientIO $! do
-    ret <- rawUnary (RPC :: RPC P2P "peerList") client defMessage
+    ret <- rawUnary (RPC :: RPC P2P "peerList") client (defMessage & CF.includeBootstrappers .~ bootstrapper)
     return $ (outputGRPC ret)
 
 -- |Return Right True if baker successfully started, 
