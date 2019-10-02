@@ -131,7 +131,7 @@ data TransferRequest =
   TransferRequest
     { keypair :: KeyPair
     , to :: Types.Address
-    , amount :: Int
+    , amount :: Types.Amount
     }
   deriving (FromJSON, Generic, Show)
 
@@ -321,7 +321,7 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
 
     liftIO $ putStrLn $ "✅ Sending " ++ show amount ++ " from " ++ show accountAddress ++ " to " ++ show to
 
-    transactionId <- liftIO $ runTransaction nodeBackend esUrl (Transfer { toaddress = to, amount = 100 }) keypair
+    transactionId <- liftIO $ runTransaction nodeBackend esUrl (Transfer { toaddress = to, amount = amount }) keypair
 
     pure $ TransferResponse { transactionId = transactionId }
 
