@@ -1,8 +1,10 @@
-{-# LANGUAGE OverloadedStrings, LambdaCase #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Concordium.Client.DummyDeploy where
 
 import           Concordium.Client.Commands
+import           Concordium.Client.GRPC
 import           Concordium.Client.Runner
 import           Concordium.GlobalState.Transactions
 import qualified Concordium.Scheduler.Types          as Types
@@ -12,15 +14,16 @@ import qualified Concordium.Crypto.SignatureScheme   as Sig
 
 import           Acorn.Core                          as Core
 
+import           Data.Aeson                          (Value)
 import           Data.Maybe
-import           Data.Aeson(Value)
-import           Prelude hiding(mod)
+import           Data.Text (pack)
+import           Prelude                             hiding (mod)
 
 import qualified Concordium.ID.Account               as IDA
 
 helper :: Sig.KeyPair -> Nonce -> Energy -> Types.Payload -> BareTransaction
 helper kp nonce energy spayload =
-      let header = Types.makeTransactionHeader 
+      let header = Types.makeTransactionHeader
                          Sig.Ed25519
                          (Sig.verifyKey kp)
                          (Types.payloadSize encPayload)
@@ -44,7 +47,7 @@ deployModuleWithKey kp back mnonce amount amodules = runInClient back comp
       nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) =<< getBestBlockHash)
       let transactions = zipWith tx [nonce..] amodules
       mapM (\ctx -> do
-                txReturn <- sendHookToBaker (Types.transactionHash ctx)
+                txReturn <- hookTransaction (pack . show $ Types.transactionHash ctx)
                 sendTransactionToBaker ctx 100
                 return (ctx, txReturn)
             ) transactions
@@ -74,7 +77,7 @@ initContractWithKey kp back mnonce energy amount homeModule contractName contrac
     comp = do
       nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) =<< getBestBlockHash)
       let transaction = tx nonce
-      txReturn <- sendHookToBaker (Types.transactionHash transaction)
+      txReturn <- hookTransaction (pack . show $ Types.transactionHash transaction)
       sendTransactionToBaker transaction 100
       return (transaction, txReturn)
 
@@ -101,6 +104,6 @@ updateContractWithKey kp back mnonce energy amount address message = runInClient
     comp = do
       nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) =<< getBestBlockHash)
       let transaction = tx nonce
-      txReturn <- sendHookToBaker (Types.transactionHash transaction)
+      txReturn <- hookTransaction (pack . show $ Types.transactionHash transaction)
       sendTransactionToBaker transaction 100
       return (transaction, txReturn)

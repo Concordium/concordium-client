@@ -75,9 +75,62 @@ data Action
       } -- ^ Queries the gRPC server for the source of a module on a specific block
   | GetNodeInfo -- ^Queries the gRPC server for the node information.
   | GetBakerPrivateData -- ^Queries the gRPC server for the private data of the baker.
-  | GetPeerData {
-      includeBootstrapper :: !Bool -- ^Whether to include bootstrapper node in the stats or not.
+  | GetPeerData
+      { includeBootstrapper :: !Bool -- ^Whether to include bootstrapper node in the stats or not.
       } -- ^Get all data as pertaining to the node's role as a member of the P2P network.
+  | StartBaker
+  | StopBaker
+  | PeerConnect
+      { ip     :: !Text
+      , portPC :: !Int
+      }
+  | GetPeerUptime
+  | SendMessage
+      { nodeId    :: !Text
+      , netId     :: !Int
+      , message   :: !Text
+      , broadcast :: !Bool
+      }
+  | SubscriptionStart
+  | SubscriptionStop
+  | SubscriptionPoll
+  | BanNode
+      { nodeId   :: !Text
+      , nodePort :: !Int
+      , nodeIp   :: !Text
+      }
+  | UnbanNode
+      { nodeId   :: !Text
+      , nodePort :: !Int
+      , nodeIp   :: !Text
+      }
+  | JoinNetwork
+      { netId :: !Int
+      }
+  | LeaveNetwork
+      { netId :: !Int
+      }
+  | GetAncestors
+      { blockHash :: !Text
+      , amount    :: !Int
+      }
+  | GetBranches
+  | GetBannedPeers
+  | Shutdown
+  | TpsTest
+      { networkId :: !Int
+      , nodeId    :: !Text
+      , directory :: !Text
+      }
+  | DumpStart
+  | DumpStop
+  | RetransmitRequest
+      { identifier  :: !Text
+      , elementType :: !Int
+      , since       :: !Int
+      , networkId   :: !Int
+      }
+  | GetSkovStats
 
 -- |Parser for the command line arguments
 optsParser :: ParserInfo Command
@@ -109,7 +162,28 @@ programOptions =
      getModuleSourceCommand <>
      getNodeInfoCommand <>
      getBakerPrivateDataCommand <>
-     getPeerDataCommand
+     getPeerDataCommand <>
+     startBakerCommand <>
+     stopBakerCommand <>
+     peerConnectCommand <>
+     getPeerUptimeCommand <>
+     sendMessageCommand <>
+     subscriptionStartCommand <>
+     subscriptionStopCommand <>
+     subscriptionPollCommand <>
+     banNodeCommand <>
+     unbanNodeCommand <>
+     joinNetworkCommand <>
+     leaveNetworkCommand <>
+     getAncestorsCommand <>
+     getBranchesCommand <>
+     getBannedPeersCommand <>
+     shutdownCommand <>
+     tpsTestCommand <>
+     dumpStartCommand <>
+     dumpStopCommand <>
+     retransmitRequestCommand <>
+     getSkovStatsCommand
     ) <*>
   grpcBackend
 
@@ -303,3 +377,218 @@ getModuleSourceCommand =
         strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query") <*>
         strArgument (metavar "MODULE-REF" <> help "Reference of the module"))
        (progDesc "Query the gRPC server for the source of a module."))
+
+startBakerCommand :: Mod CommandFields Action
+startBakerCommand =
+    command
+     "StartBaker"
+    (info
+       (pure StartBaker)
+       (progDesc "Start the baker."))
+
+stopBakerCommand :: Mod CommandFields Action
+stopBakerCommand =
+    command
+     "StopBaker"
+    (info
+       (pure StopBaker)
+       (progDesc "Stop the baker."))
+
+peerConnectCommand :: Mod CommandFields Action
+peerConnectCommand =
+    command
+     "PeerConnect"
+    (info
+       (GetModuleSource <$>
+        strArgument (metavar "PEER-IP" <> help "IP of the peer we want to connect to") <*>
+        argument
+          auto
+          (metavar "PEER-PORT" <> help "Port of the peer we want to connect to"))
+       (progDesc "Connecto to a specified peer."))
+
+getPeerUptimeCommand :: Mod CommandFields Action
+getPeerUptimeCommand =
+    command
+     "GetPeerUptime"
+    (info
+       (pure GetPeerUptime)
+       (progDesc "Get the node uptime."))
+
+sendMessageCommand :: Mod CommandFields Action
+sendMessageCommand =
+    command
+     "SendMessage"
+    (info
+       (SendMessage <$>
+        strArgument (metavar "NODE-ID" <> help "ID of the recipent") <*>
+        argument
+          auto
+          (metavar "NET-ID" <> help "Network ID") <*>
+        strArgument (metavar "MESSAGE" <> help "Message to be sent") <*>
+        argument
+          auto
+          (metavar "BROADCAST" <> help "Is broadcast?"))
+       (progDesc "Send a direct message."))
+
+subscriptionStartCommand :: Mod CommandFields Action
+subscriptionStartCommand =
+    command
+     "SubscriptionStart"
+    (info
+       (pure SubscriptionStart)
+       (progDesc "Start the subscription."))
+
+subscriptionStopCommand :: Mod CommandFields Action
+subscriptionStopCommand =
+    command
+     "SubscriptionStop"
+    (info
+       (pure SubscriptionStop)
+       (progDesc "Stop the subscription."))
+
+subscriptionPollCommand :: Mod CommandFields Action
+subscriptionPollCommand =
+    command
+     "SubscriptionPoll"
+    (info
+       (pure SubscriptionPoll)
+       (progDesc "Poll the subscription."))
+
+banNodeCommand :: Mod CommandFields Action
+banNodeCommand =
+    command
+     "BanNode"
+    (info
+       (BanNode <$>
+        strArgument (metavar "NODE-ID" <> help "ID of the node to be banned") <*>
+        argument
+          auto
+          (metavar "NODE-PORT" <> help "Port of the node to be banned") <*>
+        argument
+          auto
+          (metavar "NODE-IP" <> help "IP of the node to be banned"))
+       (progDesc "Ban a node."))
+
+unbanNodeCommand :: Mod CommandFields Action
+unbanNodeCommand =
+    command
+     "UnbanNode"
+    (info
+       (UnbanNode <$>
+        strArgument (metavar "NODE-ID" <> help "ID of the node to be unbanned") <*>
+        argument
+          auto
+          (metavar "NODE-PORT" <> help "Port of the node to be unbanned") <*>
+        argument
+          auto
+          (metavar "NODE-IP" <> help "IP of the node to be unbanned"))
+       (progDesc "Unban a node."))
+
+joinNetworkCommand :: Mod CommandFields Action
+joinNetworkCommand =
+    command
+     "JoinNetwork"
+    (info
+       (JoinNetwork <$>
+        argument auto (metavar "NET-ID" <> help "ID of the network"))
+       (progDesc "Join a network."))
+
+leaveNetworkCommand :: Mod CommandFields Action
+leaveNetworkCommand =
+    command
+     "LeaveNetwork"
+    (info
+       (LeaveNetwork <$>
+        argument auto (metavar "NET-ID" <> help "ID of the network"))
+       (progDesc "Leave a network."))
+
+getAncestorsCommand :: Mod CommandFields Action
+getAncestorsCommand =
+    command
+     "GetAncestors"
+    (info
+       (GetAncestors <$>
+        strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query") <*>
+        argument
+          auto
+          (metavar "AMOUNT" <> help "How many ancestors"))
+       (progDesc "Get the ancestors of a block."))
+
+getBranchesCommand :: Mod CommandFields Action
+getBranchesCommand =
+    command
+     "GetBranches"
+    (info
+       (pure GetBranches)
+       (progDesc "Get branches in consensus."))
+
+getBannedPeersCommand :: Mod CommandFields Action
+getBannedPeersCommand =
+    command
+     "GetBannedPeers"
+    (info
+       (pure GetBannedPeers)
+       (progDesc "Get banned peers."))
+
+shutdownCommand :: Mod CommandFields Action
+shutdownCommand =
+    command
+    "Shutdown"
+    (info
+       (pure Shutdown)
+       (progDesc "Shutdown the node gracefully."))
+
+tpsTestCommand :: Mod CommandFields Action
+tpsTestCommand =
+    command
+     "TpsTest"
+    (info
+       (TpsTest <$>
+        argument
+          auto
+          (metavar "NET_ID" <> help "Network ID") <*>
+        strArgument (metavar "NODE-ID" <> help "ID of the node") <*>
+        strArgument (metavar "DIR" <> help "Directory"))
+       (progDesc "Tps test."))
+
+dumpStartCommand :: Mod CommandFields Action
+dumpStartCommand =
+    command
+    "DumpStart"
+    (info
+       (pure DumpStart)
+       (progDesc "Start dumping the packages."))
+
+dumpStopCommand :: Mod CommandFields Action
+dumpStopCommand =
+    command
+    "DumpStop"
+    (info
+       (pure DumpStop)
+       (progDesc "Stop dumping the packages."))
+
+retransmitRequestCommand :: Mod CommandFields Action
+retransmitRequestCommand =
+    command
+     "RetransmitRequest"
+    (info
+       (RetransmitRequest <$>
+        strArgument (metavar "ID" <> help "ID") <*>
+        argument
+          auto
+          (metavar "ELEMENT" <> help "Type of element to request for") <*>
+        argument
+          auto
+          (metavar "SINCE" <> help "Time epoch") <*>
+        argument
+          auto
+          (metavar "NET_ID" <> help "Network ID"))
+       (progDesc "Request a retransmision of specific elements."))
+
+getSkovStatsCommand :: Mod CommandFields Action
+getSkovStatsCommand =
+     command
+    "GetSkovStats"
+    (info
+       (pure GetSkovStats)
+       (progDesc "Get skov statistics."))
