@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings, LambdaCase #-}
-
 module Concordium.Client.DummyDeploy where
 
 import           Concordium.Client.Commands

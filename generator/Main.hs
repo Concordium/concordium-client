@@ -62,17 +62,22 @@ parser = info (helper <*> ((,) <$> grpcBackend <*> txOptions))
 sendTx :: MonadIO m => BareTransaction -> ClientMonad m BareTransaction
 sendTx tx = sendTransactionToBaker tx 100 >> return tx
 
-go :: Backend -> Int -> Int -> (Nonce -> BareTransaction) -> Nonce -> IO ()
-go backend delay perBatch sign startNonce =
-  runInClient backend $! (loop startNonce)
+iterateM_ :: Monad m => (a -> m a) -> a -> m b
+iterateM_ f a = f a >>= iterateM_ f
 
-  where loop nonce = do
+go :: Backend -> Int -> Int -> (Nonce -> BareTransaction) -> Nonce -> IO ()
+go backend delay perBatch sign startNonce = do
+  -- restart connection every 100 transactions
+  iterateM_ (runInClient backend . loop 100) startNonce
+
+  where loop left nonce | left <= 0 = return nonce
+                        | otherwise = do
           let nextNonce = nonce + fromIntegral perBatch
           mapM_ (sendTx . sign) [nonce..nextNonce-1]
           liftIO $ do
             putStrLn $ "Sent " ++ show perBatch ++ " transactions to " ++ show (target backend)
             threadDelay (delay * 10^(6::Int))
-          loop nextNonce
+          loop (left - perBatch) nextNonce
 
 main :: IO ()
 main = do

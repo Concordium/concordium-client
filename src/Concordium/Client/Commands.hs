@@ -77,6 +77,21 @@ data Action
   | GetPeerData {
       includeBootstrapper :: !Bool -- ^Whether to include bootstrapper node in the stats or not.
       } -- ^Get all data as pertaining to the node's role as a member of the P2P network.
+  | MakeBakerPayload {
+        -- |JSON file with baker keys (leadership election and signing).
+        bakerKeysFile :: !FilePath,
+        -- |JSON file with with account keys.
+        accountKeysFile :: !FilePath,
+        -- |File to output the payload.
+        payloadFIle :: !FilePath
+      }
+  | SendTransactionPayload {
+      -- |JSON file with minimum header data
+      headerFile :: !FilePath,
+      -- |JSON file with serialized payload.
+      payloadInputFile :: !FilePath,
+      networkId :: !Int
+      }
 
 -- |Parser for the command line arguments
 optsParser :: ParserInfo Command
@@ -108,12 +123,47 @@ programOptions =
      getModuleSourceCommand <>
      getNodeInfoCommand <>
      getBakerPrivateDataCommand <>
-     getPeerDataCommand
+     getPeerDataCommand <>
+     getMakeBakerPayloadCommand <>
+     sendTransactionPayloadCommand
     ) <*>
   grpcBackend
 
 grpcBackend :: Parser (Maybe Backend)
 grpcBackend = optional $ GRPC <$> hostParser <*> portParser <*> targetParser
+
+getMakeBakerPayloadCommand :: Mod CommandFields Action
+getMakeBakerPayloadCommand =
+  command
+    "MakeBaker"
+    (info
+       (MakeBakerPayload <$> 
+        (strArgument
+          (metavar "BAKER-KEYS" <> help "File with baker public and private keys")) <*>
+        (strArgument
+          (metavar "ACCOUNT-KEYS" <> help "File with desired baker account and private keys")) <*>
+        (strArgument
+          (metavar "OUTPUT" <> help "File where the generated payload is output.")))
+       (progDesc "Make the transaction data necessary to become a baker. During beta only concordium genesis accounts can add bakers."))
+
+sendTransactionPayloadCommand :: Mod CommandFields Action
+sendTransactionPayloadCommand =
+  command
+    "SendTransactionPayload"
+    (info
+       (SendTransactionPayload <$> 
+        (strArgument
+          (metavar "METADATA" <> help "File with metadata of the transaction.")) <*>
+        (strArgument
+          (metavar "PAYLOAD" <> help "File with the payload.")) <*>
+        (argument
+          auto
+          (metavar "NET-ID" <>
+           help "Network ID for the transaction to be sent through" <>
+           value 100 <>
+           showDefault))
+        )
+       (progDesc "Make the transaction data necessary to become a baker. During beta only concordium genesis accounts can add bakers."))
 
 getPeerDataCommand :: Mod CommandFields Action
 getPeerDataCommand =
