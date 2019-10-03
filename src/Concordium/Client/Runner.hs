@@ -154,7 +154,7 @@ useBackend act b =
       mdata <- loadContextData
       source <- BSL.readFile fname
       t <-
-        PR.evalContext mdata $ runInClient b $ 
+        PR.evalContext mdata $ runInClient b $
         processTransaction source nid hook
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (Types.transactionHash t)
@@ -279,7 +279,7 @@ getPeerList bootstrapper = do
     ret <- rawUnary (RPC :: RPC P2P "peerList") client (defMessage & CF.includeBootstrappers .~ bootstrapper)
     return $ (outputGRPC ret)
 
--- |Return Right True if baker successfully started, 
+-- |Return Right True if baker successfully started,
 startBaker :: ClientMonad IO (Either String Bool)
 startBaker = do
   client <- asks grpc
@@ -410,7 +410,7 @@ encodeAndSignTransaction pl energy nonce keys = do
       return $ Types.Transfer transferTo transferAmount
     (CT.DeployCredential cred) -> return $ Types.DeployCredential cred
     (CT.DeployEncryptionKey encKey) -> return $ Types.DeployEncryptionKey encKey
-    (CT.AddBaker evk svk ba p) -> return $ Types.AddBaker evk svk ba p
+    (CT.AddBaker evk svk ba p pe pa) -> return $ Types.AddBaker evk svk ba p pe pa
     (CT.RemoveBaker rbid rbp) -> return $ Types.RemoveBaker rbid rbp
     (CT.UpdateBakerAccount ubid uba ubp) ->
       return $ Types.UpdateBakerAccount ubid uba ubp

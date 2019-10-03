@@ -13,3 +13,4 @@ extra-libs/
 *.eventlog
 *-bakers.tar.gz
 concordium.proto
+stack.yaml.lock
