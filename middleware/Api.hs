@@ -28,6 +28,8 @@ import Servant.API.Generic
 import Servant.Server.Generic
 import System.Directory
 import System.Exit
+import System.Environment
+import System.IO.Error
 import System.Process
 import System.Random
 import System.IO.Unsafe
@@ -35,6 +37,7 @@ import Text.Read (readMaybe)
 import Lens.Simple
 
 import           Concordium.Client.Runner
+import           Concordium.Client.GRPC
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction
 import           Concordium.Client.Commands          as COM
@@ -162,9 +165,9 @@ data GetNodeStateResponse =
     , sent :: Int
     , received :: Int
     , isBaking :: Bool
-    , inBakingCommittee :: Bool
+    , isInBakingCommittee :: Bool
     , isFinalizing :: Bool
-    , inFinalizingCommittee :: Bool
+    , isInFinalizingCommittee :: Bool
     , signatureVerifyKey :: Text
     , selectionVerifyKey :: Text
     , timestamp :: Int
@@ -182,9 +185,9 @@ data SetNodeStateRequest =
     , sent :: Maybe Int
     , received :: Maybe Int
     , isBaking :: Maybe Bool
-    , inBakingCommittee :: Maybe Bool
+    , isInBakingCommittee :: Maybe Bool
     , isFinalizing :: Maybe Bool
-    , inFinalizingCommittee :: Maybe Bool
+    , isInFinalizingCommittee :: Maybe Bool
     }
   deriving (FromJSON, ToJSON, Generic, Show)
 
@@ -331,24 +334,46 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
     timestamp <- liftIO $ round `fmap` getPOSIXTime
     infoE <- liftIO $ runInClient nodeBackend $ getNodeInfo
 
+    nameQuery <- liftIO $ tryIOError (Text.pack <$> getEnv "NODE_NAME")
+    let name = case nameQuery of
+                 Right x -> x
+                 _ -> "unknown"
+
+    versionQuery <- liftIO $ runInClient nodeBackend $ getPeerVersion
+    let version = case versionQuery of
+                  Right x -> x
+                  _ -> "unknown"
+
+    uptimeQuery <- liftIO $ runInClient nodeBackend $ getPeerUptime
+    let runningSince = case uptimeQuery of
+                       Right x -> fromIntegral x
+                       _ -> 0
+
+
+    sentQuery <- liftIO $ runInClient nodeBackend $ getPeerTotalSent
+    let sent = case sentQuery of
+               Right x -> fromIntegral x
+               _ -> 0
+
+    receivedQuery <- liftIO $ runInClient nodeBackend $ getPeerTotalReceived
+    let received = case receivedQuery of
+                   Right x -> fromIntegral x
+                   _ -> 0
+
     case infoE of
       Right ni -> do
         pure $
           GetNodeStateResponse
-            { name = ""
-            , id = ni ^. CF.nodeId ^. CF.value
-            , version = ""
+            { id = ni ^. CF.nodeId ^. CF.value
             , running = ni ^. CF.consensusRunning
-            , runningSince = 0
-            , sent = 0
-            , received = 0
             , isBaking = ni ^. CF.consensusBakerRunning
-            , inBakingCommittee = ni ^. CF.consensusBakerCommittee
+            , isInBakingCommittee = ni ^. CF.consensusBakerCommittee
             , isFinalizing = True
-            , inFinalizingCommittee = ni ^. CF.consensusFinalizerCommittee
+            , isInFinalizingCommittee = ni ^. CF.consensusFinalizerCommittee
             , signatureVerifyKey = ""
             , selectionVerifyKey = ""
             , timestamp = timestamp
+            , ..
             }
 
 
@@ -377,9 +402,9 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
     --     , sent = 12345
     --     , received = 12345
     --     , isBaking = True
-    --     , inBakingCommittee = True
+    --     , isInBakingCommittee = True
     --     , isFinalizing = True
-    --     , inFinalizingCommittee = True
+    --     , isInFinalizingCommittee = True
     --     , timestamp = timestamp
     --     }
 
@@ -597,9 +622,35 @@ debugTestFullProvision = do
 
 
 debugGrpc = do
-  let nodeBackend = COM.GRPC { host = "localhost", port = 11109, target = Nothing }
+  let nodeBackend = COM.GRPC { host = "localhost", port = 11103, target = Nothing }
 
   infoE <- runInClient nodeBackend $ getNodeInfo
+
+  nameQuery <- liftIO $ tryIOError (Text.pack <$> getEnv "NODE_NAME")
+  let name = case nameQuery of
+        Right x -> x
+        _ -> "unknown"
+
+  versionQuery <- runInClient nodeBackend $ getPeerVersion
+  let version = case versionQuery of
+                  Right x -> x
+                  _ -> "unknown"
+
+  uptimeQuery <- runInClient nodeBackend $ getPeerUptime
+  let runningSince = case uptimeQuery of
+                       Right x -> fromIntegral x
+                       _ -> 0
+
+
+  sentQuery <- runInClient nodeBackend $ getPeerTotalSent
+  let sent = case sentQuery of
+               Right x -> fromIntegral x
+               _ -> 0
+
+  receivedQuery <- runInClient nodeBackend $ getPeerTotalReceived
+  let received = case receivedQuery of
+                   Right x -> fromIntegral x
+                   _ -> 0
 
   case infoE of
     Right ni -> do
@@ -607,35 +658,17 @@ debugGrpc = do
 
       pure $
         GetNodeStateResponse
-          { name = ""
-          , id = ni ^. CF.nodeId ^. CF.value
-          , version = ""
+          { id = ni ^. CF.nodeId ^. CF.value
           , running = ni ^. CF.consensusRunning
-          , runningSince = 0
-          , sent = 0
-          , received = 0
           , isBaking = ni ^. CF.consensusBakerRunning
-          , inBakingCommittee = ni ^. CF.consensusBakerCommittee
+          , isInBakingCommittee = ni ^. CF.consensusBakerCommittee
           , isFinalizing = True
-          , inFinalizingCommittee = ni ^. CF.consensusFinalizerCommittee
+          , isInFinalizingCommittee = ni ^. CF.consensusFinalizerCommittee
           , signatureVerifyKey = ""
           , selectionVerifyKey = ""
           , timestamp = 0
+          , ..
           }
-
-          -- putStrLn $ "Node id: " ++ show ()
-          -- putStrLn $ "Current local time: " ++ show (ni ^. CF.currentLocaltime)
-          -- putStrLn $ "Peer type: " ++ show (ni ^. CF.peerType)
-          -- putStrLn $ "Baker running: " ++ show ()
-          -- putStrLn $ "Consensus running: " ++ show ()
-          -- putStrLn $ "Consensus type: " ++ show (ni ^. CF.consensusType)
-          -- putStrLn $ "Baker committee member: " ++ show ()
-          -- putStrLn $ "Finalization committee member: " ++ show ()
 
     Left err ->
       error $ show err
-
-
-  -- getNodeInfo
-  --
-  -- useBackend GetNodeInfo nodeBackend

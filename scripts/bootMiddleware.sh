@@ -25,6 +25,4 @@ else
   echo "Booting with node at port: $(green)$NODE$(normal)"
 fi
 
-stack install simple-client:middleware
-
-NODE_URL="localhost:$NODE" ES_URL="http://localhost:9200" SIMPLEID_URL="http://localhost:8000" middleware
+NODE_URL="localhost:$NODE" ES_URL="http://localhost:9200" SIMPLEID_URL="http://localhost:8000" stack run middleware

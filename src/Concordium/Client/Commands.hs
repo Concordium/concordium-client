@@ -404,7 +404,7 @@ peerConnectCommand =
         argument
           auto
           (metavar "PEER-PORT" <> help "Port of the peer we want to connect to"))
-       (progDesc "Connecto to a specified peer."))
+       (progDesc "Connect to a specified peer."))
 
 getPeerUptimeCommand :: Mod CommandFields Action
 getPeerUptimeCommand =
