@@ -1,4 +1,7 @@
-{-# LANGUAGE OverloadedStrings, BangPatterns, DataKinds, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings, BangPatterns, DataKinds, GeneralizedNewtypeDeriving, TypeApplications, ScopedTypeVariables #-}
 
 module Concordium.Client.GRPC where
 
@@ -8,6 +11,8 @@ import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client
 
 import           Data.ProtoLens                      (defMessage)
+import           Data.ProtoLens.Service.Types
+import qualified Data.ProtoLens.Field as Field
 import           Proto.Concordium
 import qualified Proto.Concordium_Fields             as CF
 
@@ -82,432 +87,227 @@ mkGrpcClient config =
    in setupGrpcClient cfg
 
 getNodeInfo :: ClientMonad IO (Either String NodeInfoResponse)
-getNodeInfo = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <- rawUnary (RPC :: RPC P2P "nodeInfo") client defMessage
-    return $! outputGRPC ret
+getNodeInfo = withUnaryNoMsg' (call @"nodeInfo")
 
 getPeerTotalSent :: ClientMonad IO (Either String Word64)
-getPeerTotalSent = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <- rawUnary (RPC :: RPC P2P "peerTotalSent") client defMessage
-    return $ ((^. CF.value) <$> outputGRPC ret)
+getPeerTotalSent = withUnaryNoMsg (call @"peerTotalSent") CF.value
 
 getPeerTotalReceived :: ClientMonad IO (Either String Word64)
-getPeerTotalReceived = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <- rawUnary (RPC :: RPC P2P "peerTotalReceived") client defMessage
-    return $ ((^. CF.value) <$> outputGRPC ret)
+getPeerTotalReceived = withUnaryNoMsg (call @"peerTotalReceived") CF.value
 
 getPeerVersion :: ClientMonad IO (Either String Text)
-getPeerVersion = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <- rawUnary (RPC :: RPC P2P "peerVersion") client defMessage
-    return $ ((^. CF.value) <$> outputGRPC ret)
+getPeerVersion = withUnaryNoMsg (call @"peerVersion") CF.value
 
 getPeerStats :: Bool -> ClientMonad IO (Either String PeerStatsResponse)
-getPeerStats bootstrapper = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <- rawUnary (RPC :: RPC P2P "peerStats") client (defMessage & CF.includeBootstrappers .~ bootstrapper)
-    return $ (outputGRPC ret)
+getPeerStats bootstrapper = withUnary' (call @"peerStats") msg
+  where msg = defMessage & CF.includeBootstrappers .~ bootstrapper
 
 getPeerList :: Bool -> ClientMonad IO (Either String PeerListResponse)
-getPeerList bootstrapper = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <- rawUnary (RPC :: RPC P2P "peerList") client (defMessage & CF.includeBootstrappers .~ bootstrapper)
-    return $ (outputGRPC ret)
+getPeerList bootstrapper = withUnary' (call @"peerList") msg
+  where msg = defMessage & CF.includeBootstrappers .~ bootstrapper
 
 -- |Return Right True if baker successfully started,
 startBaker :: ClientMonad IO (Either String Bool)
-startBaker = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <- rawUnary (RPC :: RPC P2P "startBaker") client defMessage
-    return $ ((^. CF.value) <$> outputGRPC ret)
+startBaker = withUnaryNoMsg (call @"startBaker") CF.value
 
 -- |Return Right True if baker successfully stopped.
 stopBaker :: ClientMonad IO (Either String Bool)
-stopBaker = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <- rawUnary (RPC :: RPC P2P "stopBaker") client defMessage
-    return $ ((^. CF.value) <$> outputGRPC ret)
+stopBaker = withUnaryNoMsg (call @"stopBaker") CF.value
 
-getBakerPrivateData :: ClientMonad IO (Either String [Value])
-getBakerPrivateData = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <- rawUnary (RPC :: RPC P2P "getBakerPrivateData") client defMessage
-    return $ (processJSON ret)
+getBakerPrivateData :: ClientMonad IO (Either String Value)
+getBakerPrivateData = withUnaryNoMsg (call @"getBakerPrivateData") (to processJSON)
 
 sendTransactionToBaker ::
      (MonadIO m) => Types.BareTransaction -> Int -> ClientMonad m ()
-sendTransactionToBaker t nid = do
-  client <- asks grpc
-  !_ <-
-    liftClientIO $!
-    rawUnary
-      (RPC :: RPC P2P "sendTransaction")
-      client
-      (defMessage & CF.networkId .~ fromIntegral nid & CF.payload .~ S.encode t)
-  return ()
+sendTransactionToBaker t nid = withUnaryCore (call @"sendTransaction") msg (const ())
+  where msg = defMessage & CF.networkId .~ fromIntegral nid & CF.payload .~ S.encode t
 
-hookTransaction :: (MonadIO m) => Text -> ClientMonad m (Either String [Value])
-hookTransaction txh = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "hookTransaction")
-        client
-        (defMessage & CF.transactionHash .~ txh)
-    return $ processJSON ret
 
-getConsensusStatus :: (MonadFail m, MonadIO m) => ClientMonad m (Either String [Value])
-getConsensusStatus = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <- rawUnary (RPC :: RPC P2P "getConsensusStatus") client defMessage
-    return $ processJSON ret
+hookTransaction :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
+hookTransaction txh = withUnary (call @"hookTransaction") msg (to processJSON)
+  where msg = defMessage & CF.transactionHash .~ txh
 
-getBlockInfo :: Text -> ClientMonad IO (Either String [Value])
-getBlockInfo hash = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "getBlockInfo")
-        client
-        (defMessage & CF.blockHash .~ hash)
-    return $ processJSON ret
+getConsensusStatus :: (MonadIO m) => ClientMonad m (Either String Value)
+getConsensusStatus = withUnaryNoMsg (call @"getConsensusStatus") (to processJSON)
 
-getAccountList :: Text -> ClientMonad IO (Either String [Value])
-getAccountList hash = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "getAccountList")
-        client
-        (defMessage & CF.blockHash .~ hash)
-    return $ processJSON ret
+getBlockInfo :: Text -> ClientMonad IO (Either String Value)
+getBlockInfo hash = withUnaryBlock (call @"getBlockInfo") hash (to processJSON)
 
-getInstances :: Text -> ClientMonad IO (Either String [Value])
-getInstances hash = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "getInstances")
-        client
-        (defMessage & CF.blockHash .~ hash)
-    return $ processJSON ret
+getAccountList :: Text -> ClientMonad IO (Either String Value)
+getAccountList hash = withUnaryBlock (call @"getAccountList") hash (to processJSON)
 
-getAccountInfo :: (MonadFail m, MonadIO m) => Text -> Text -> ClientMonad m (Either String [Value])
-getAccountInfo hash account = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "getAccountInfo")
-        client
-        (defMessage & CF.blockHash .~ hash & CF.address .~ account)
-    return $ processJSON ret
+getInstances :: Text -> ClientMonad IO (Either String Value)
+getInstances hash = withUnaryBlock (call @"getInstances") hash (to processJSON)
 
-getInstanceInfo :: Text -> Text -> ClientMonad IO (Either String [Value])
-getInstanceInfo hash account = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "getInstanceInfo")
-        client
-        (defMessage & CF.blockHash .~ hash & CF.address .~ account)
-    return $ processJSON ret
+getAccountInfo :: (MonadIO m) => Text -> Text -> ClientMonad m (Either String Value)
+getAccountInfo hash account = withUnary (call @"getAccountInfo") msg (to processJSON)
+  where msg = defMessage & CF.blockHash .~ hash & CF.address .~ account
 
-getRewardStatus :: Text -> ClientMonad IO (Either String [Value])
-getRewardStatus hash = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "getRewardStatus")
-        client
-        (defMessage & CF.blockHash .~ hash)
-    return $ processJSON ret
+getInstanceInfo :: Text -> Text -> ClientMonad IO (Either String Value)
+getInstanceInfo hash account = withUnary (call @"getInstanceInfo") msg (to processJSON)
+  where msg = defMessage & CF.blockHash .~ hash & CF.address .~ account
 
-getBirkParameters :: Text -> ClientMonad IO (Either String [Value])
-getBirkParameters hash = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "getBirkParameters")
-        client
-        (defMessage & CF.blockHash .~ hash)
-    return $ processJSON ret
+getRewardStatus :: Text -> ClientMonad IO (Either String Value)
+getRewardStatus hash = withUnaryBlock (call @"getRewardStatus") hash (to processJSON)
 
-getModuleList :: Text -> ClientMonad IO (Either String [Value])
-getModuleList hash = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "getModuleList")
-        client
-        (defMessage & CF.blockHash .~ hash)
-    return $ processJSON ret
+getBirkParameters :: Text -> ClientMonad IO (Either String Value)
+getBirkParameters hash = withUnaryBlock (call @"getBirkParameters") hash (to processJSON)
+
+getModuleList :: Text -> ClientMonad IO (Either String Value)
+getModuleList hash = withUnaryBlock (call @"getModuleList") hash (to processJSON)
 
 getModuleSource ::
      (MonadIO m)
   => Text
   -> Text
   -> ClientMonad (PR.Context Core.UA m) (Either String (Core.Module Core.UA))
-getModuleSource hash moduleref = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "getModuleSource")
-        client
-        (defMessage & CF.blockHash .~ hash & CF.moduleRef .~ moduleref)
-    return $ S.decode (ret ^. unaryOutput . CF.payload)
+getModuleSource hash moduleref = withUnaryCore (call @"getModuleSource") msg k
+  where msg = defMessage
+              & (CF.blockHash .~ hash)
+              & CF.moduleRef .~ moduleref
+        k ret = ret >>= S.decode . (^. CF.payload)
 
 peerConnect :: Text -> Int -> ClientMonad IO (Either String Bool)
-peerConnect ip port = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "peerConnect")
-        client
-        (defMessage &
-         CF.ip .~ (defMessage & CF.value .~ ip) &
-         CF.port .~ (defMessage & CF.value .~ fromIntegral port))
-    return $ (^. CF.value) <$> outputGRPC ret
+peerConnect ip peerPort = withUnary (call @"peerConnect") msg CF.value
+  where msg = defMessage &
+              CF.ip .~ (defMessage & CF.value .~ ip) &
+              CF.port .~ (defMessage & CF.value .~ fromIntegral peerPort)
 
 getPeerUptime :: ClientMonad IO (Either String Word64)
-getPeerUptime = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "peerUptime")
-        client
-        defMessage
-    return $ (^. CF.value) <$> outputGRPC ret
+getPeerUptime = withUnaryNoMsg (call @"peerUptime") CF.value
 
 sendMessage :: Text -> Int -> ByteString -> Bool -> ClientMonad IO (Either String Bool)
-sendMessage nodeId netId message broadcast = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "sendMessage")
-        client
-        (defMessage &
-         CF.nodeId .~ (defMessage & CF.value .~ nodeId) &
-         CF.networkId .~ (defMessage & CF.value .~ fromIntegral netId) &
-         CF.message .~ (defMessage & CF.value .~ message) &
-         CF.broadcast .~ (defMessage & CF.value .~ broadcast))
-    return $ (^. CF.value) <$> outputGRPC ret
+sendMessage nodeId netId message broadcast = withUnary (call @"sendMessage") msg CF.value
+  where msg = defMessage &
+              CF.nodeId .~ (defMessage & CF.value .~ nodeId) &
+              CF.networkId .~ (defMessage & CF.value .~ fromIntegral netId) &
+              CF.message .~ (defMessage & CF.value .~ message) &
+              CF.broadcast .~ (defMessage & CF.value .~ broadcast)
 
 subscriptionStart :: ClientMonad IO (Either String Bool)
-subscriptionStart = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "subscriptionStart")
-        client
-        defMessage
-    return $ (^. CF.value) <$> outputGRPC ret
+subscriptionStart = withUnaryNoMsg (call @"subscriptionStart") CF.value
 
 subscriptionStop :: ClientMonad IO (Either String Bool)
-subscriptionStop = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "subscriptionStop")
-        client
-        defMessage
-    return $ (^. CF.value) <$> outputGRPC ret
+subscriptionStop = withUnaryNoMsg (call @"subscriptionStop") CF.value
 
 subscriptionPoll :: ClientMonad IO (Either String P2PNetworkMessage)
-subscriptionPoll = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "subscriptionPoll")
-        client
-        defMessage
-    return $ outputGRPC ret
+subscriptionPoll = withUnaryNoMsg' (call @"subscriptionPoll")
 
 banNode :: Text -> Int -> Text -> ClientMonad IO (Either String Bool)
-banNode id port ip = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "banNode")
-        client
-        (defMessage &
-         CF.nodeId .~ (defMessage & CF.value .~ id) &
-         CF.ip .~ (defMessage & CF.value .~ ip) &
-         CF.port .~ (defMessage & CF.value .~ fromIntegral port))
-    return $ (^. CF.value) <$> outputGRPC ret
+banNode identifier peerPort ip = withUnary (call @"banNode") msg CF.value
+  where msg = defMessage &
+              CF.nodeId .~ (defMessage & CF.value .~ identifier) &
+              CF.ip .~ (defMessage & CF.value .~ ip) &
+              CF.port .~ (defMessage & CF.value .~ fromIntegral peerPort)
 
 unbanNode :: Text -> Int -> Text -> ClientMonad IO (Either String Bool)
-unbanNode id port ip = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "unbanNode")
-        client
-        (defMessage &
-         CF.nodeId .~ (defMessage & CF.value .~ id) &
-         CF.ip .~ (defMessage & CF.value .~ ip) &
-         CF.port .~ (defMessage & CF.value .~ fromIntegral port))
-    return $ (^. CF.value) <$> outputGRPC ret
+unbanNode identifier peerPort ip = withUnary (call @"unbanNode") msg CF.value
+  where msg = defMessage &
+              CF.nodeId .~ (defMessage & CF.value .~ identifier) &
+              CF.ip .~ (defMessage & CF.value .~ ip) &
+              CF.port .~ (defMessage & CF.value .~ fromIntegral peerPort)
 
 joinNetwork :: Int -> ClientMonad IO (Either String Bool)
-joinNetwork net = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "joinNetwork")
-        client
-        (defMessage &
-         CF.networkId .~ (defMessage & CF.value .~ fromIntegral net))
-    return $ (^. CF.value) <$> outputGRPC ret
+joinNetwork net = withUnary (call @"joinNetwork") msg CF.value
+    where msg = defMessage &
+                CF.networkId .~ (defMessage & CF.value .~ fromIntegral net)
 
 leaveNetwork :: Int -> ClientMonad IO (Either String Bool)
-leaveNetwork net = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-        (RPC :: RPC P2P "leaveNetwork")
-        client
-        (defMessage &
-         CF.networkId .~ (defMessage & CF.value .~ fromIntegral net))
-    return $ ((^. CF.value) <$> outputGRPC ret)
+leaveNetwork net = withUnary (call @"leaveNetwork") msg CF.value
+  where msg = defMessage &
+              CF.networkId .~ (defMessage & CF.value .~ fromIntegral net)
 
-getAncestors :: Text -> Int -> ClientMonad IO (Either String [Value])
-getAncestors blockHash amount = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-      (RPC :: RPC P2P "getAncestors")
-      client
-      (defMessage &
-       CF.blockHash .~ blockHash &
-       CF.amount .~ fromIntegral amount)
-    return $ processJSON ret
+getAncestors :: Text -> Int -> ClientMonad IO (Either String Value)
+getAncestors blockHash amount = withUnary (call @"getAncestors") msg (to processJSON)
+  where msg = defMessage &
+            CF.blockHash .~ blockHash &
+            CF.amount .~ fromIntegral amount
 
-getBranches :: ClientMonad IO (Either String [Value])
-getBranches = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-      (RPC :: RPC P2P "getBranches")
-      client
-      defMessage
-    return $ processJSON ret
+getBranches :: ClientMonad IO (Either String Value)
+getBranches = withUnaryNoMsg (call @"getBranches") (to processJSON)
 
 getBannedPeers :: ClientMonad IO (Either String PeerListResponse)
-getBannedPeers = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-      (RPC :: RPC P2P "getBannedPeers")
-      client
-      defMessage
-    return $ outputGRPC ret
-
+getBannedPeers = withUnaryNoMsg' (call @"getBannedPeers") 
 
 shutdown :: ClientMonad IO (Either String Bool)
-shutdown = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-      (RPC :: RPC P2P "shutdown")
-      client
-      defMessage
-    return $ (^. CF.value) <$> outputGRPC ret
+shutdown = withUnaryNoMsg (call @"shutdown") CF.value
 
 tpsTest :: Int -> Text -> Text -> ClientMonad IO (Either String Bool)
-tpsTest netId id dir = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-      (RPC :: RPC P2P "tpsTest")
-      client
-      (defMessage &
-       CF.networkId .~ fromIntegral netId &
-       CF.id .~ id &
-       CF.directory .~ dir)
-    return $ (^. CF.value) <$> outputGRPC ret
+tpsTest netId identifier dir = withUnary (call @"tpsTest") msg CF.value
+    where msg = defMessage &
+              CF.networkId .~ fromIntegral netId &
+              CF.id .~ identifier &
+              CF.directory .~ dir
 
 dumpStart :: ClientMonad IO (Either String Bool)
-dumpStart = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-      (RPC :: RPC P2P "dumpStart")
-      client
-      defMessage
-    return $ (^. CF.value) <$> outputGRPC ret
+dumpStart = withUnaryNoMsg (call @"dumpStart") CF.value
 
 dumpStop :: ClientMonad IO (Either String Bool)
-dumpStop = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-      (RPC :: RPC P2P "dumpStop")
-      client
-      defMessage
-    return $ (^. CF.value) <$> outputGRPC ret
+dumpStop = withUnaryNoMsg (call @"dumpStop") CF.value
 
 retransmitRequest :: Text -> Int -> Int -> Int -> ClientMonad IO (Either String Bool)
-retransmitRequest identifier elementType since networkId = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <-
-      rawUnary
-      (RPC :: RPC P2P "retransmitRequest")
-      client
-      (defMessage &
-       CF.id .~ identifier &
-       CF.elementType .~ fromIntegral elementType &
-       CF.since .~ (defMessage & CF.value .~ fromIntegral since) &
-       CF.networkId .~ fromIntegral networkId)
-    return $ (^. CF.value) <$> outputGRPC ret
+retransmitRequest identifier elementType since networkId =
+  withUnary (call @"retransmitRequest") msg CF.value
+  where msg = defMessage &
+            CF.id .~ identifier &
+            CF.elementType .~ fromIntegral elementType &
+            CF.since .~ (defMessage & CF.value .~ fromIntegral since) &
+            CF.networkId .~ fromIntegral networkId
 
 getSkovStats :: ClientMonad IO (Either String GRPCSkovStats)
-getSkovStats = do
+getSkovStats = withUnaryNoMsg (call @"getSkovStats") CF.gsStats
+
+withUnaryCore :: forall m n b. (HasMethod P2P m, MonadIO n)
+          => RPC P2P m
+          -> MethodInput P2P m
+          -> (Either String (MethodOutput P2P m) -> b)
+          -> ClientMonad n b
+withUnaryCore method message k = do
   client <- asks grpc
   liftClientIO $! do
-    ret <-
-      rawUnary
-      (RPC :: RPC P2P "getSkovStats")
-      client
-      defMessage
-    return $ (^. CF.gsStats) <$> outputGRPC ret
+    ret <- rawUnary method client message
+    return $ k (outputGRPC ret)
+
+withUnaryCoreNoMsg :: forall m n b. (HasMethod P2P m, MonadIO n)
+          => RPC P2P m
+          -> (Either String (MethodOutput P2P m) -> b)
+          -> ClientMonad n b
+withUnaryCoreNoMsg method = withUnaryCore method defMessage 
+
+withUnary :: forall m n b. (HasMethod P2P m, MonadIO n)
+          => RPC P2P m
+          -> MethodInput P2P m
+          -> Getter' (MethodOutput P2P m) b
+          -> ClientMonad n (Either String b)
+withUnary method message k = withUnaryCore method message (\x -> (^. k) <$> x)
+
+withUnary' :: forall m n. (HasMethod P2P m, MonadIO n)
+           => RPC P2P m
+           -> MethodInput P2P m
+           -> ClientMonad n (Either String (MethodOutput P2P m))
+withUnary' method message = withUnary method message (to id)
+
+withUnaryNoMsg :: forall m n b. (HasMethod P2P m, MonadIO n)
+               => RPC P2P m
+               -> Getter' (MethodOutput P2P m) b
+               -> ClientMonad n (Either String b)
+withUnaryNoMsg method = withUnary method defMessage
+
+
+withUnaryBlock :: forall m n b. (HasMethod P2P m,
+                                   MonadIO n,
+                                   Field.HasField (MethodInput P2P m) "blockHash" Text)
+               => RPC P2P m
+               -> Text
+               -> Getter' (MethodOutput P2P m) b
+               -> ClientMonad n (Either String b)
+withUnaryBlock method hash = withUnary method (defMessage & CF.blockHash .~ hash)
+
+
+withUnaryNoMsg' :: forall m n. (HasMethod P2P m, MonadIO n)
+                => RPC P2P m
+                -> ClientMonad n (Either String (MethodOutput P2P m))
+withUnaryNoMsg' method = withUnary' method defMessage
+
+call :: forall m . RPC P2P m
+call = RPC @P2P @m

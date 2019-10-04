@@ -38,10 +38,10 @@ deployModuleWithKey ::
   -> Maybe Nonce
   -> Energy
   -> [Module UA]
-  -> IO [(BareTransaction, Either String [Value])]
-deployModuleWithKey kp back mnonce amount amodules = runInClient back comp
+  -> IO [(BareTransaction, Either String Value)]
+deployModuleWithKey kp back mnonce energy amodules = runInClient back comp
   where
-    tx nonce mod = helper kp nonce amount (Types.DeployModule mod)
+    tx nonce mod = helper kp nonce energy (Types.DeployModule mod)
 
     comp = do
       nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) =<< getBestBlockHash)
@@ -62,14 +62,14 @@ initContractWithKey ::
   -> Core.ModuleRef
   -> Core.TyName
   -> Core.Expr Core.UA Core.ModuleName
-  -> IO (BareTransaction, Either String [Value])
-initContractWithKey kp back mnonce energy amount homeModule contractName contractFlags = runInClient back comp
+  -> IO (BareTransaction, Either String Value)
+initContractWithKey kp back mnonce energy initAmount homeModule contractName contractFlags = runInClient back comp
   where
     tx nonce = helper kp nonce energy initContract
 
     initContract =
       Types.InitContract
-        amount
+        initAmount
         homeModule
         contractName
         contractFlags
@@ -90,16 +90,12 @@ updateContractWithKey ::
   -> Amount
   -> ContractAddress
   -> Core.Expr Core.UA Core.ModuleName
-  -> IO (BareTransaction, Either String [Value])
-updateContractWithKey kp back mnonce energy amount address message = runInClient back comp
+  -> IO (BareTransaction, Either String Value)
+updateContractWithKey kp back mnonce energy transferAmount address msg = runInClient back comp
   where
     tx nonce = helper kp nonce energy updateContract
 
-    updateContract =
-      Types.Update
-        amount
-        address
-        message
+    updateContract = Types.Update transferAmount address msg
 
     comp = do
       nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) =<< getBestBlockHash)

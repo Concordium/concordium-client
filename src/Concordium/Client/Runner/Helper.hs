@@ -20,14 +20,13 @@ import qualified Data.HashMap.Strict          as Map
 import qualified Proto.Concordium_Fields      as CF
 import qualified Data.ProtoLens.Field as Field
 
-import           Data.Attoparsec.Lazy         (Result (..), parse)
 import           Lens.Simple
 
 import           Control.Monad.Fail
 import           Control.Monad.IO.Class
 import           Data.Aeson
 import           Data.Aeson.Encode.Pretty
-import qualified Data.ByteString.Lazy         as BSL
+import qualified Data.ByteString              as BS
 import qualified Data.ByteString.Lazy.Char8   as BSL8
 import           Data.Text                    (Text)
 import           Data.Text.Encoding
@@ -81,30 +80,23 @@ outputGRPC ret =
         Right v -> Right v
     Right (Left e) -> Left $ "Unable to send consensus query: " ++ show e
 
-processJSON ::
-     (Show a1, Field.HasField a "jsonValue" Text)
-  => Either a2 (Either a1 (a3, b, Either String a))
-  -> Either String [Value]
-processJSON ret = do
-  val <- outputGRPC ret
+processJSON :: (Field.HasField a "jsonValue" Text) => a -> Value
+processJSON val = do
   let r = val ^. CF.jsonValue
-  return . values . BSL.fromStrict . encodeUtf8 $ r
+  value . encodeUtf8 $ r
 
-printJSON :: MonadIO m => Either String [Value] -> m ()
+printJSON :: MonadIO m => Either String Value -> m ()
 printJSON v =
   liftIO $
   case v of
     Left err       -> putStrLn err
     Right jsonVals -> printJSONValues jsonVals
 
-printJSONValues :: [Value] -> IO ()
-printJSONValues = mapM_ (BSL8.putStrLn . encodePretty)
+printJSONValues :: Value -> IO ()
+printJSONValues = BSL8.putStrLn . encodePretty
 
-values :: BSL.ByteString -> [Value]
-values s =
-  case parse json' s of
-    Done rest v -> v : values rest
-    Fail rest _ _
-      | BSL8.null rest -> []
-      | otherwise ->
-        error ("Error in gRPC output decoding as a json: " ++ show s)
+value :: BS.ByteString -> Value
+value s =
+  case eitherDecodeStrict' s of
+    Right v -> v
+    Left err -> error ("Error in gRPC output decoding as a json: " ++ err)

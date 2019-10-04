@@ -182,8 +182,8 @@ useBackend act b =
     _ -> undefined
 
 printSuccess :: Either String Bool -> ClientMonad IO ()
-printSuccess (Left x)  = liftIO . print $ x
-printSuccess (Right x) = liftIO $ if x then print "OK" else print "FAIL"
+printSuccess (Left x)  = liftIO . putStrLn $ x
+printSuccess (Right x) = liftIO $ if x then putStrLn "OK" else putStrLn "FAIL"
 
 data PeerData = PeerData {
   totalSent     :: Word64,
@@ -251,8 +251,7 @@ getBestBlockHash :: (MonadFail m, MonadIO m) => ClientMonad m Text
 getBestBlockHash = do
   getConsensusStatus >>= \case
     Left err -> fail err
-    Right [] -> fail "Should not happen."
-    Right (v:_) ->
+    Right v ->
       case parse readBestBlock v of
         Success bh -> return bh
         Error err  -> fail err
@@ -261,8 +260,7 @@ getAccountNonce :: (MonadFail m, MonadIO m) => Types.AccountAddress -> Text -> C
 getAccountNonce addr blockhash =
   getAccountInfo blockhash (fromString (show addr)) >>= \case
     Left err -> fail err
-    Right [] -> fail "Should not happen."
-    Right (aval:_) ->
+    Right aval ->
       case parse readAccountNonce aval of
         Success nonce -> return nonce
         Error err     -> fail err
