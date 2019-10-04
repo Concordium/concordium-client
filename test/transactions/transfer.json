@@ -1,12 +1,11 @@
 {
-    "verifyKey": "6285b4c946e935b1e201cc9e5ea944f8b9af964fdde5cbb5603df3b36fba5352",
-    "nonce": 2,
+    "verifyKey": "85b603dda0e69072a8cefec940bf8783fb05f740f20954f8279e863e5619fd4e",
+    "nonce": 1,
     "gasAmount": 1000,
-    "finalizedPointer": "bcda294b9ec65b3de2a36f822db5a006ece6a209389737f1d9e4b9082848e4c8",
     "payload": {
         "transactionType": "Transfer",
-        "amount": 50,
-        "toaddress" : { "accountAddress" : "11XfcFYeHg4VhpCRqfru4njE8QEKPyaGyhV" }
+        "amount": 1125899906840000,
+        "toaddress" : { "accountAddress" : "11VbRVnkvn3ids1buFhinpQ4T6aVuPdqDKK" }
     },
-    "signKey": "b8e4937844f1357b0c46571b00ab25e03da0c9f08a7e585a184a2ba1061adaad"
+    "signKey": "016fb793ef489eaf256eac1ebbe2513919b60dfd4fad9645f2425127af6e109f"
 }

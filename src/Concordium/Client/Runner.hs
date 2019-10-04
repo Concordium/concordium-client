@@ -29,6 +29,8 @@ import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Crypto.SignatureScheme   (KeyPair (..))
 import qualified Concordium.Crypto.SignatureScheme   as Sig
+import qualified Concordium.Crypto.Proofs            as Proofs
+import qualified Concordium.Crypto.VRF               as VRF
 import qualified Concordium.ID.Account               as IDA
 
 import qualified Concordium.Scheduler.Types          as Types
@@ -179,6 +181,8 @@ useBackend act b =
     DumpStop -> runInClient b $ dumpStop >>= printSuccess
     RetransmitRequest identifier elementType since networkId -> runInClient b $ retransmitRequest identifier elementType since networkId >>= printSuccess
     GetSkovStats -> runInClient b $ getSkovStats >>= (liftIO . print)
+    MakeBakerPayload bakerKeysFile accountKeysFile payloadFile -> handleMakeBaker bakerKeysFile accountKeysFile payloadFile
+    SendTransactionPayload headerFile payloadFile nid -> runInClient b $ handleSendTransactionPayload nid headerFile payloadFile
     _ -> undefined
 
 printSuccess :: Either String Bool -> ClientMonad IO ()
@@ -192,6 +196,75 @@ data PeerData = PeerData {
   peerStats     :: PeerStatsResponse,
   peerList      :: PeerListResponse
   }
+except :: IO (Maybe b) -> String -> IO b
+except c err = c >>= \case
+  Just x -> return x
+  Nothing -> die err
+
+
+handleSendTransactionPayload :: Int -> FilePath -> FilePath -> ClientMonad IO ()
+handleSendTransactionPayload networkId headerFile payloadFile = do
+  headerValue <- liftIO $ eitherDecodeFileStrict headerFile
+  payload <- (S.decodeLazy <$> liftIO (BSL.readFile payloadFile)) >>= \case
+    Left err -> liftIO $ die $ "Could not decode payload because: " ++ err
+    Right p -> return p
+
+  (scheme, signKey, verifyKey, nonce, energy) <-
+    case headerValue >>= parseEither headerParser of
+      Left err ->
+        liftIO $ die $ "Could not decode header because: " ++ err
+      Right hdr -> return hdr
+
+  let encPayload = Types.encodePayload payload
+  let header = Types.makeTransactionHeader scheme verifyKey (Types.payloadSize encPayload) nonce energy
+  let tx = Types.signTransaction (Sig.KeyPair signKey verifyKey) header encPayload
+  sendTransactionToBaker tx networkId
+
+  where headerParser = withObject "Transaction header" $ \v -> do
+          verifyKey <- v .: "verifyKey"
+          signKey <- v .: "signKey"
+          signScheme <- v .:? "signatureScheme" .!= Sig.Ed25519
+          nonce <- v .: "nonce"
+          energy <- v .: "gasAmount"
+          return (signScheme, signKey, verifyKey, nonce, energy)
+
+handleMakeBaker :: FilePath -> FilePath -> FilePath -> IO ()
+handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
+  bakerKeysValue <- eitherDecodeFileStrict bakerKeysFile
+  bakerAccountValue <- eitherDecodeFileStrict accountKeysFile
+  (vrfPrivate, vrfVerify, signKey, verifyKey) <-
+    case bakerKeysValue >>= parseEither bakerKeysParser of
+      Left err ->
+        die $ "Could not decode file with baker keys because: " ++ err
+      Right keys -> return keys
+  (scheme, accountSign, accountVerify) <-
+    case bakerAccountValue >>= parseEither accountKeysParser of
+      Left err ->
+        die $ "Could not decode file with baker keys because: " ++ err
+      Right keys -> return keys
+  let abElectionVerifyKey = vrfVerify
+  let abSignatureVerifyKey = verifyKey
+  let abAccount = IDA.accountAddress accountVerify scheme
+  let challenge = S.runPut (S.put abElectionVerifyKey <> S.put abSignatureVerifyKey <> S.put abAccount)
+  abProofElection <- Proofs.proveDlog25519VRF challenge (VRF.KeyPair vrfPrivate vrfVerify) `except` "Could not produce VRF key proof."
+  abProofSig <- Proofs.proveDlog25519KP challenge (Sig.KeyPair signKey verifyKey) `except` "Could not produce signature key proof."
+  abProofAccount <- Proofs.proveDlog25519KP challenge (Sig.KeyPair accountSign accountVerify) `except` "Could not produce account keys proof."
+
+  let addBaker = Types.AddBaker{..}
+  BSL.writeFile payloadFile (S.encodeLazy addBaker)
+
+  where bakerKeysParser = withObject "Baker keys" $ \v -> do
+          vrfPrivate <- v .: "electionPrivateKey"
+          vrfVerifyKey <- v .: "electionVerifyKey"
+          signKey <- v .: "signatureSignKey"
+          verifyKey <- v .: "signatureVerifyKey"
+          return (vrfPrivate, vrfVerifyKey, signKey, verifyKey)
+
+        accountKeysParser = withObject "Account keys" $ \v -> do
+          verifyKey <- v .: "verifyKey"
+          signKey <- v .: "signKey"
+          signScheme <- v .: "signatureScheme"
+          return (signScheme, signKey, verifyKey)
 
 printPeerData :: MonadIO m => Either String PeerData -> m ()
 printPeerData epd =
@@ -201,7 +274,7 @@ printPeerData epd =
       putStrLn $ "Total packets sent: " ++ show totalSent
       putStrLn $ "Total packets received: " ++ show totalReceived
       putStrLn $ "Peer version: " ++ unpack version
-      putStrLn $ "Peer stats:"
+      putStrLn "Peer stats:"
       forM_ (peerStats ^. CF.peerstats) $ \ps -> do
         putStrLn $ "  Peer: " ++ unpack (ps ^. CF.nodeId)
         putStrLn $ "    Packets sent: " ++ show (ps ^. CF.packetsSent)
@@ -210,11 +283,11 @@ printPeerData epd =
         putStrLn ""
 
       putStrLn $ "Peer type: " ++ unpack (peerList ^. CF.peerType)
-      putStrLn $ "Peers:"
+      putStrLn "Peers:"
       forM_ (peerList ^. CF.peer) $ \pe -> do
-        putStrLn $ "  Node id: " ++ unpack (pe ^. CF.nodeId ^. CF.value)
-        putStrLn $ "    Port: " ++ show (pe ^. CF.port ^. CF.value)
-        putStrLn $ "    IP: " ++ unpack (pe ^. CF.ip ^. CF.value)
+        putStrLn $ "  Node id: " ++ unpack (pe ^. CF.nodeId . CF.value)
+        putStrLn $ "    Port: " ++ show (pe ^. CF.port . CF.value)
+        putStrLn $ "    IP: " ++ unpack (pe ^. CF.ip . CF.value)
         putStrLn ""
 
 getPeerData :: Bool -> ClientMonad IO (Either String PeerData)
@@ -237,7 +310,7 @@ printNodeInfo mni =
   case mni of
     Left err -> liftIO (putStrLn err)
     Right ni -> liftIO $ do
-      putStrLn $ "Node id: " ++ show (ni ^. CF.nodeId ^. CF.value)
+      putStrLn $ "Node id: " ++ show (ni ^. CF.nodeId . CF.value)
       putStrLn $ "Current local time: " ++ show (ni ^. CF.currentLocaltime)
       putStrLn $ "Peer type: " ++ show (ni ^. CF.peerType)
       putStrLn $ "Baker running: " ++ show (ni ^. CF.consensusBakerRunning)
@@ -248,7 +321,7 @@ printNodeInfo mni =
 
 
 getBestBlockHash :: (MonadFail m, MonadIO m) => ClientMonad m Text
-getBestBlockHash = do
+getBestBlockHash =
   getConsensusStatus >>= \case
     Left err -> fail err
     Right v ->
@@ -343,7 +416,7 @@ encodeAndSignTransaction pl energy nonce keys = do
       return $ Types.Transfer transferTo transferAmount
     (CT.DeployCredential cred) -> return $ Types.DeployCredential cred
     (CT.DeployEncryptionKey encKey) -> return $ Types.DeployEncryptionKey encKey
-    (CT.AddBaker evk svk ba p) -> return $ Types.AddBaker evk svk ba p
+    (CT.AddBaker evk svk ba p pe pa) -> return $ Types.AddBaker evk svk ba p pe pa
     (CT.RemoveBaker rbid rbp) -> return $ Types.RemoveBaker rbid rbp
     (CT.UpdateBakerAccount ubid uba ubp) ->
       return $ Types.UpdateBakerAccount ubid uba ubp

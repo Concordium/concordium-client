@@ -9,6 +9,7 @@
 module Concordium.Client.Types.Transaction where
 
 import           Concordium.Crypto.SignatureScheme   (SignKey (..))
+import           Concordium.Crypto.Proofs
 import qualified Concordium.ID.Types                 as IDTypes
 import qualified Concordium.Scheduler.Types          as Types
 import           Concordium.Types
@@ -115,7 +116,9 @@ data TransactionJSONPayload
       { electionVerifyKey  :: BakerElectionVerifyKey
       , signatureVerifyKey :: BakerSignVerifyKey
       , bakerAccount       :: AccountAddress
-      , proof              :: Types.Proof
+      , proofSig           :: Dlog25519Proof
+      , proofElection      :: Dlog25519Proof
+      , proofAccount       :: Dlog25519Proof
       }
   | RemoveBaker
       { removeId :: BakerId
@@ -124,12 +127,12 @@ data TransactionJSONPayload
   | UpdateBakerAccount
       { bakerId        :: BakerId
       , accountAddress :: AccountAddress
-      , proof          :: Types.Proof
+      , proofBa        :: Dlog25519Proof
       }
   | UpdateBakerSignKey
       { bakerId    :: BakerId
       , newSignKey :: BakerSignVerifyKey
-      , proof      :: Types.Proof
+      , proofBs    :: Dlog25519Proof
       }
   | DelegateStake
       { bakerId :: BakerId
