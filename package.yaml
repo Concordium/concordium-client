@@ -17,6 +17,9 @@ custom-setup:
     - Cabal
     - proto-lens-setup == 0.4.*
 
+default-extensions:
+- OverloadedStrings
+
 # Metadata used when publishing your package
 # synopsis:            Short description of your package
 # category:            Web
@@ -25,6 +28,11 @@ custom-setup:
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
 description:         Please see the README on GitHub at <https://github.com/githubuser/simple-client#readme>
+
+flags:
+  middleware:
+    manual: True
+    default: False
 
 dependencies:
 - base >= 4.7 && < 5
@@ -115,3 +123,46 @@ executables:
        - globalstate-types
        - bytestring
        - aeson
+
+
+  middleware:
+    when:
+      - condition: flag(middleware)
+        then:
+          main:             Main.hs
+          source-dirs:      middleware
+          ghc-options:
+            - -threaded
+          dependencies:
+            - aeson
+            - bytestring
+            - containers
+            - directory
+            - filepath
+            - http-conduit
+            - http-types
+            - iso8601-time
+            - lens-simple
+            - managed
+            - neat-interpolation
+            - process
+            - random
+            - servant
+            - servant-server
+            - silently
+            - simple-client
+            - split
+            - text
+            - time
+            - wai
+            - wai-cors
+            - wai-extra
+            - wai-middleware-static
+            - warp
+            - acorn
+            - scheduler
+            - concordium-crypto
+            - globalstate-types
+        else:
+          main:             DummyMain.hs
+          source-dirs:      middleware-dummy

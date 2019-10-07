@@ -1,6 +1,7 @@
 module Concordium.Client.DummyDeploy where
 
 import           Concordium.Client.Commands
+import           Concordium.Client.GRPC
 import           Concordium.Client.Runner
 import           Concordium.GlobalState.Transactions
 import qualified Concordium.Scheduler.Types          as Types
@@ -10,15 +11,16 @@ import qualified Concordium.Crypto.SignatureScheme   as Sig
 
 import           Acorn.Core                          as Core
 
+import           Data.Aeson                          (Value)
 import           Data.Maybe
-import           Data.Aeson(Value)
-import           Prelude hiding(mod)
+import           Data.Text (pack)
+import           Prelude                             hiding (mod)
 
 import qualified Concordium.ID.Account               as IDA
 
 helper :: Sig.KeyPair -> Nonce -> Energy -> Types.Payload -> BareTransaction
 helper kp nonce energy spayload =
-      let header = Types.makeTransactionHeader 
+      let header = Types.makeTransactionHeader
                          Sig.Ed25519
                          (Sig.verifyKey kp)
                          (Types.payloadSize encPayload)
@@ -33,16 +35,16 @@ deployModuleWithKey ::
   -> Maybe Nonce
   -> Energy
   -> [Module UA]
-  -> IO [(BareTransaction, Either String [Value])]
-deployModuleWithKey kp back mnonce amount amodules = runInClient back comp
+  -> IO [(BareTransaction, Either String Value)]
+deployModuleWithKey kp back mnonce energy amodules = runInClient back comp
   where
-    tx nonce mod = helper kp nonce amount (Types.DeployModule mod)
+    tx nonce mod = helper kp nonce energy (Types.DeployModule mod)
 
     comp = do
       nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) =<< getBestBlockHash)
       let transactions = zipWith tx [nonce..] amodules
       mapM (\ctx -> do
-                txReturn <- sendHookToBaker (Types.transactionHash ctx)
+                txReturn <- hookTransaction (pack . show $ Types.transactionHash ctx)
                 sendTransactionToBaker ctx 100
                 return (ctx, txReturn)
             ) transactions
@@ -57,14 +59,14 @@ initContractWithKey ::
   -> Core.ModuleRef
   -> Core.TyName
   -> Core.Expr Core.UA Core.ModuleName
-  -> IO (BareTransaction, Either String [Value])
-initContractWithKey kp back mnonce energy amount homeModule contractName contractFlags = runInClient back comp
+  -> IO (BareTransaction, Either String Value)
+initContractWithKey kp back mnonce energy initAmount homeModule contractName contractFlags = runInClient back comp
   where
     tx nonce = helper kp nonce energy initContract
 
     initContract =
       Types.InitContract
-        amount
+        initAmount
         homeModule
         contractName
         contractFlags
@@ -72,7 +74,7 @@ initContractWithKey kp back mnonce energy amount homeModule contractName contrac
     comp = do
       nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) =<< getBestBlockHash)
       let transaction = tx nonce
-      txReturn <- sendHookToBaker (Types.transactionHash transaction)
+      txReturn <- hookTransaction (pack . show $ Types.transactionHash transaction)
       sendTransactionToBaker transaction 100
       return (transaction, txReturn)
 
@@ -85,20 +87,16 @@ updateContractWithKey ::
   -> Amount
   -> ContractAddress
   -> Core.Expr Core.UA Core.ModuleName
-  -> IO (BareTransaction, Either String [Value])
-updateContractWithKey kp back mnonce energy amount address message = runInClient back comp
+  -> IO (BareTransaction, Either String Value)
+updateContractWithKey kp back mnonce energy transferAmount address msg = runInClient back comp
   where
     tx nonce = helper kp nonce energy updateContract
 
-    updateContract =
-      Types.Update
-        amount
-        address
-        message
+    updateContract = Types.Update transferAmount address msg
 
     comp = do
       nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) =<< getBestBlockHash)
       let transaction = tx nonce
-      txReturn <- sendHookToBaker (Types.transactionHash transaction)
+      txReturn <- hookTransaction (pack . show $ Types.transactionHash transaction)
       sendTransactionToBaker transaction 100
       return (transaction, txReturn)
