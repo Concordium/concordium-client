@@ -49,11 +49,14 @@ import qualified Concordium.ID.Account
 import qualified Concordium.ID.Types
 import qualified Concordium.Scheduler.Utils.Init.Example
 import qualified Proto.Concordium_Fields             as CF
+import Control.Monad
 
 import qualified Config
 import SimpleIdClientApi
 import EsApi
 
+godsToken :: Text
+godsToken = "47434137412923191713117532"
 
 data Routes r = Routes
     -- Public Middleware APIs
@@ -88,6 +91,10 @@ data Routes r = Routes
     , setNodeState :: r :-
         "v1" :> "nodeState" :> ReqBody '[JSON] SetNodeStateRequest
                             :> Post '[JSON] SetNodeStateResponse
+
+    , replayTransactions :: r :-
+        "v1" :> "replayTransactions" :> ReqBody '[JSON] ReplayTransactionsRequest
+                                     :> Post '[JSON] ReplayTransactionsResponse
     }
   deriving (Generic)
 
@@ -197,6 +204,11 @@ data SetNodeStateResponse =
     { success :: Bool }
   deriving (FromJSON, ToJSON, Generic, Show)
 
+data ReplayTransactionsRequest = ReplayTransactionsRequest  { adminToken :: Text }
+  deriving (FromJSON, ToJSON, Generic, Show)
+
+data ReplayTransactionsResponse = ReplayTransactionsResponse { success :: Bool }
+  deriving (FromJSON, ToJSON, Generic, Show)
 
 api :: Proxy (ToServantApi Routes)
 api = genericApi (Proxy :: Proxy Routes)
@@ -414,6 +426,19 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
     pure $
       SetNodeStateResponse
         { success = True }
+
+  replayTransactions :: ReplayTransactionsRequest -> Handler ReplayTransactionsResponse
+  replayTransactions req = do
+    if adminToken req == godsToken then do
+      transactions <- liftIO $ getTransactionsForReplay esUrl
+
+      let nid = 1000
+      _ <- forM transactions (runInClient nodeBackend . (flip sendTransactionToBaker) nid)
+
+      return $ ReplayTransactionsResponse True
+    else
+      return $ ReplayTransactionsResponse False
+
 
 
 -- For beta, uses the middlewareGodKP which is seeded with funds
