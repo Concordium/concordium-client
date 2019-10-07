@@ -52,6 +52,8 @@ import qualified Config
 import SimpleIdClientApi
 import EsApi
 
+godsToken :: Text
+godsToken = "47434137412923191713117532"
 
 data Routes r = Routes
     -- Public Middleware APIs
@@ -88,7 +90,8 @@ data Routes r = Routes
                             :> Post '[JSON] SetNodeStateResponse
 
     , replayTransactions :: r :-
-        "v1" :> "replayTransactions" :> Post '[JSON] ReplayTransactionsResponse
+        "v1" :> "replayTransactions" :> ReqBody '[JSON] ReplayTransactionsRequest
+                                     :> Post '[JSON] ReplayTransactionsResponse
     }
   deriving (Generic)
 
@@ -198,10 +201,10 @@ data SetNodeStateResponse =
     { success :: Bool }
   deriving (FromJSON, ToJSON, Generic, Show)
 
-data ReplayTransactionsRequest = ReplayTransactionsRequest
+data ReplayTransactionsRequest = ReplayTransactionsRequest  { adminToken :: Text }
   deriving (FromJSON, ToJSON, Generic, Show)
 
-data ReplayTransactionsResponse = ReplayTransactionsResponse
+data ReplayTransactionsResponse = ReplayTransactionsResponse { success :: Bool }
   deriving (FromJSON, ToJSON, Generic, Show)
 
 api :: Proxy (ToServantApi Routes)
@@ -399,14 +402,17 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
       SetNodeStateResponse
         { success = True }
 
-  replayTransactions :: Handler ReplayTransactionsResponse
-  replayTransactions = do
-    transactions <- liftIO $ getTransactionsForReplay esUrl
+  replayTransactions :: ReplayTransactionsRequest -> Handler ReplayTransactionsResponse
+  replayTransactions req = do
+    if adminToken req == godsToken then do
+      transactions <- liftIO $ getTransactionsForReplay esUrl
 
-    let nid = 1000
-    _ <- forM transactions (runInClient nodeBackend . (flip sendTransactionToBaker) nid)
+      let nid = 1000
+      _ <- forM transactions (runInClient nodeBackend . (flip sendTransactionToBaker) nid)
 
-    return $ ReplayTransactionsResponse
+      return $ ReplayTransactionsResponse True
+    else
+      return $ ReplayTransactionsResponse False
 
 
 
