@@ -304,7 +304,7 @@ getTransactionsForReplay esUrl = do
         "size": "1000",
         "sort": [
           { "timestamp":
-            {"order" : "desc"}
+            {"order" : "asc"}
           }
         ],
         "query": {
