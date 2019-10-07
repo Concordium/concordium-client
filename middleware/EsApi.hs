@@ -28,6 +28,7 @@ import qualified Concordium.Crypto.ByteStringHelpers
 import qualified Concordium.Scheduler.Types as Types
 import Concordium.Types
 import Http
+import Control.Monad
 
 -- API requests
 
@@ -292,3 +293,88 @@ data LogBareTransactionResponse =
   { result :: Text
   }
   deriving (FromJSON, Generic, Show)
+
+
+getTransactionsForReplay :: Text -> IO [Types.BareTransaction]
+getTransactionsForReplay esUrl = do
+   let
+    q =
+      [text|
+      {
+        "size": "1000",
+        "sort": [
+          { "timestamp":
+            {"order" : "desc"}
+          }
+        ],
+        "query": {
+          "match_all": {}
+        }
+      }
+      |]
+
+   (firstTransactions :: Either HttpException TransactionsQueryResponse) <-
+        postTextRequestEither (T.unpack esUrl ++ "/index_transaction_log/_search?scroll=1m") q
+
+   allTransactions <- case firstTransactions of
+          Left _ -> return firstTransactions
+          Right trans -> getTxs esUrl trans
+
+   case allTransactions of
+     Left err -> do
+       putStrLn $ "❌ failed to find all the saved transactions"
+       putStrLn $ show err
+       return []
+     Right (TransactionsQueryResponse txs _) -> do
+       mapM (Concordium.Crypto.ByteStringHelpers.deserializeBase16 . transaction)
+        (filter (not . T.null . transaction) txs)
+   where
+     getTxs :: Text -> TransactionsQueryResponse -> IO (Either HttpException TransactionsQueryResponse)
+     getTxs url t@(TransactionsQueryResponse td scrollId) = do
+        let
+          q =
+            [text|
+                 {
+                 "scroll": "1m",
+                 "scroll_id": "$scrollId"
+                 }
+                 |]
+        (transactions :: Either HttpException TransactionsQueryResponse) <-
+          postTextRequestEither (T.unpack esUrl ++ "/_search/scroll") q
+        case transactions of
+          Left _ -> return transactions
+          Right (TransactionsQueryResponse [] _) -> return $ Right t
+          Right (TransactionsQueryResponse td2 scrId) -> getTxs url $ TransactionsQueryResponse (td ++ td2) scrId
+
+data TransactionsQueryResponse =
+  TransactionsQueryResponse
+  {
+    transactions :: [TransactionData]
+  , scrollId :: Text
+  }
+  deriving (Generic, Show)
+
+instance AE.FromJSON TransactionsQueryResponse where
+  parseJSON (Object v) = do
+    scrollId <- v .: "_scroll_id"
+    hits_ <- v .: "hits"
+    hits <- hits_ .: "hits"
+    results <- mapM (.: "_source") hits
+
+    return $ TransactionsQueryResponse results scrollId
+
+  parseJSON invalid = typeMismatch "TransactionsQueryResponse" invalid
+
+data TransactionData =
+  TransactionData
+  {
+    transaction :: Text
+  }
+  deriving (Generic, Show)
+
+instance AE.FromJSON TransactionData where
+  parseJSON (Object v) = do
+    tx <- v .:? "transaction"
+    return . TransactionData $ maybe T.empty Prelude.id tx
+
+  parseJSON invalid = typeMismatch "TransactionsQueryResponse" invalid
