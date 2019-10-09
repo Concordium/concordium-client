@@ -44,7 +44,8 @@ data Action
   | NodeInfo -- ^ Queries the gRPC server for node information
   | GetConsensusInfo -- ^ Queries the gRPC server for the consensus information
   | GetBlockInfo
-      { blockHash :: !Text
+      { blockHash :: !Text,
+        every :: !Bool
       } -- ^ Queries the gRPC server for the information of a specific block
   | GetAccountList
       { blockHash :: !Text
@@ -89,8 +90,8 @@ data Action
         bakerKeysFile :: !FilePath,
         -- |JSON file with with account keys.
         accountKeysFile :: !FilePath,
-        -- |File to output the payload.
-        payloadFIle :: !FilePath
+        -- |File to output the payload, if desired.
+        payloadFile :: !(Maybe FilePath)
       }
   | SendTransactionPayload {
       -- |JSON file with minimum header data
@@ -217,8 +218,8 @@ getMakeBakerPayloadCommand =
           (metavar "BAKER-KEYS" <> help "File with baker public and private keys")) <*>
         (strArgument
           (metavar "ACCOUNT-KEYS" <> help "File with desired baker account and private keys")) <*>
-        (strArgument
-          (metavar "OUTPUT" <> help "File where the generated payload is output.")))
+        (optional (strArgument
+          (metavar "OUTPUT" <> help "File where the generated transaction is output."))))
        (progDesc "Make the transaction data necessary to become a baker. During beta only concordium genesis accounts can add bakers."))
 
 sendTransactionPayloadCommand :: Mod CommandFields Action
@@ -345,7 +346,8 @@ getBlockInfoCommand =
     "GetBlockInfo"
     (info
        (GetBlockInfo <$>
-        strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query") <*>
+        flag False True (short 'a' <> long "all"))
        (progDesc "Query the gRPC server for a specific block."))
 
 getAccountListCommand :: Mod CommandFields Action

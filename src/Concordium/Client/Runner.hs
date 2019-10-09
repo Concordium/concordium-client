@@ -42,6 +42,7 @@ import           Control.Monad.Fail
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader                hiding (fail)
 import qualified Data.ByteString.Lazy                as BSL
+import qualified Data.ByteString.Lazy.Char8          as BSL8
 import qualified Data.Serialize                      as S
 import qualified Data.Text.IO                        as TextIO hiding (putStrLn)
 import           Lens.Simple
@@ -51,6 +52,7 @@ import           Network.HTTP2.Client.Exceptions
 
 import           Data.Aeson                          as AE
 import           Data.Aeson.Types                    as AE
+import qualified Data.Aeson.Encode.Pretty            as AE
 import qualified Data.HashMap.Strict                 as Map
 import           Data.Maybe
 import           Data.String
@@ -103,22 +105,25 @@ process command =
       putStrLn "The following modules are in the local database.\n"
       showLocalModules mdata
     -- The rest of the commands expect a backend to be provided
+    MakeBakerPayload bakerKeysFile accountKeysFile payloadFile -> handleMakeBaker bakerKeysFile accountKeysFile payloadFile
     act ->
       maybe (putStrLn "No Backend provided") (useBackend act) (backend command)
 
--- loop :: Either String [Value] -> ClientMonad IO ()
--- loop v =
---   case v of
---     Left err       -> liftIO $ putStrLn err
---     Right (AE.Object m:[]) ->
---       case Map.lookup "blockParent" m of
---         Just (String parent) -> do
---           printJSON v
---           case Map.lookup "blockSlot" m of
---             Just (AE.Number x) | x > 0 -> do
---               getBlockInfo parent >>= loop
---             _ -> liftIO $ putStrLn "Genesis block reached."
---         Nothing -> liftIO $ putStrLn "No parent."
+-- |Look up block infos all the way to genesis.
+loop :: Either String Value -> ClientMonad IO ()
+loop v =
+  case v of
+    Left err       -> liftIO $ putStrLn err
+    Right (AE.Object m) ->
+      case Map.lookup "blockParent" m of
+        Just (String parent) -> do
+          printJSON v
+          case Map.lookup "blockSlot" m of
+            Just (AE.Number x) | x > 0 -> do
+              getBlockInfo parent >>= loop
+            _ -> return () -- Genesis block reached.
+        _ -> error "Unexpected return value for block parent."
+    _ -> error "Unexptected return value for getBlockInfo."
 
 
 useBackend :: Action -> Backend -> IO ()
@@ -132,9 +137,9 @@ useBackend act b =
         processTransaction source nid hook
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (Types.transactionHash t)
-    HookTransaction txh -> runInClient b $ hookTransaction (pack (show txh)) >>= printJSON
+    HookTransaction txh -> runInClient b $ hookTransaction txh >>= printJSON
     GetConsensusInfo -> runInClient b $ getConsensusStatus >>= printJSON
-    GetBlockInfo block -> runInClient b $ getBlockInfo block >>= printJSON
+    GetBlockInfo block every -> runInClient b $ getBlockInfo block >>= if every then loop else printJSON
     GetAccountList block -> runInClient b $ getAccountList block >>= printJSON
     GetInstances block -> runInClient b $ getInstances block >>= printJSON
     GetAccountInfo block account ->
@@ -181,7 +186,6 @@ useBackend act b =
     DumpStop -> runInClient b $ dumpStop >>= printSuccess
     RetransmitRequest identifier elementType since networkId -> runInClient b $ retransmitRequest identifier elementType since networkId >>= printSuccess
     GetSkovStats -> runInClient b $ getSkovStats >>= (liftIO . print)
-    MakeBakerPayload bakerKeysFile accountKeysFile payloadFile -> handleMakeBaker bakerKeysFile accountKeysFile payloadFile
     SendTransactionPayload headerFile payloadFile nid -> runInClient b $ handleSendTransactionPayload nid headerFile payloadFile
     _ -> undefined
 
@@ -228,7 +232,7 @@ handleSendTransactionPayload networkId headerFile payloadFile = do
           energy <- v .: "gasAmount"
           return (signScheme, signKey, verifyKey, nonce, energy)
 
-handleMakeBaker :: FilePath -> FilePath -> FilePath -> IO ()
+handleMakeBaker :: FilePath -> FilePath -> Maybe FilePath -> IO ()
 handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
   bakerKeysValue <- eitherDecodeFileStrict bakerKeysFile
   bakerAccountValue <- eitherDecodeFileStrict accountKeysFile
@@ -250,8 +254,18 @@ handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
   abProofSig <- Proofs.proveDlog25519KP challenge (Sig.KeyPair signKey verifyKey) `except` "Could not produce signature key proof."
   abProofAccount <- Proofs.proveDlog25519KP challenge (Sig.KeyPair accountSign accountVerify) `except` "Could not produce account keys proof."
 
-  let addBaker = Types.AddBaker{..}
-  BSL.writeFile payloadFile (S.encodeLazy addBaker)
+  -- let addBaker = Types.AddBaker{..}
+  let out = AE.encodePretty $
+          object ["transactionType" AE..= String "AddBaker",
+                  "electionVerifyKey" AE..= abElectionVerifyKey,
+                  "signatureVerifyKey" AE..= abSignatureVerifyKey,
+                  "bakerAccount" AE..= abAccount,
+                  "proofSig" AE..= abProofSig,
+                  "proofElection" AE..= abProofElection,
+                  "proofAccount" AE..= abProofAccount]
+  case payloadFile of
+    Nothing -> BSL8.putStrLn out
+    Just fileName -> BSL.writeFile fileName out
 
   where bakerKeysParser = withObject "Baker keys" $ \v -> do
           vrfPrivate <- v .: "electionPrivateKey"

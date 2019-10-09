@@ -123,6 +123,7 @@ executables:
        - globalstate-types
        - bytestring
        - aeson
+       - time
 
 
   middleware:

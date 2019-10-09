@@ -15,6 +15,7 @@ import           Control.Monad.Reader
 import           Options.Applicative
 import Concordium.ID.Account as AH
 
+import Data.Time.Clock
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import qualified Data.ByteString.Lazy as BSL
@@ -68,16 +69,20 @@ iterateM_ f a = f a >>= iterateM_ f
 go :: Backend -> Int -> Int -> (Nonce -> BareTransaction) -> Nonce -> IO ()
 go backend delay perBatch sign startNonce = do
   -- restart connection every 100 transactions
-  iterateM_ (runInClient backend . loop 100) startNonce
+  startTime <- getCurrentTime
+  iterateM_ (runInClient backend . loop startTime 100) (0, startNonce)
 
-  where loop left nonce | left <= 0 = return nonce
-                        | otherwise = do
+  where loop startTime left p@(total, nonce) | left <= 0 = return p
+                                           | otherwise = do
           let nextNonce = nonce + fromIntegral perBatch
           mapM_ (sendTx . sign) [nonce..nextNonce-1]
+          let newTotal = total + perBatch
           liftIO $ do
-            putStrLn $ "Sent " ++ show perBatch ++ " transactions to " ++ show (target backend)
+            currentTime <- getCurrentTime
+            let rate = show (fromIntegral (total + perBatch) / (diffUTCTime currentTime startTime))
+            putStrLn $ "Total transactions sent to " ++ show (target backend) ++ " = " ++ show newTotal ++ ", rate per second = " ++ show rate
             threadDelay (delay * 10^(6::Int))
-          loop (left - perBatch) nextNonce
+          loop startTime (left - perBatch) (newTotal, nextNonce)
 
 main :: IO ()
 main = do
