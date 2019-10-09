@@ -184,6 +184,11 @@ getAccountTransactions esUrl accountAddress = do
       [text|
         {
           "size": "10000",
+          "sort": [
+          { "timestamp":
+            {"order" : "desc"}
+          }
+          ],
           "query": {
             "bool": {
               "must": [
