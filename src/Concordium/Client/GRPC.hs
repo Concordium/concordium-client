@@ -29,7 +29,7 @@ import qualified Data.Serialize                      as S
 import           Lens.Simple
 
 import           Data.Aeson                          as AE
-import           Data.ByteString                     (ByteString)
+import qualified Data.ByteString                     as BS
 import           Data.Text
 import           Data.String
 
@@ -176,13 +176,15 @@ peerConnect ip peerPort = withUnary (call @"peerConnect") msg CF.value
 getPeerUptime :: ClientMonad IO (Either String Word64)
 getPeerUptime = withUnaryNoMsg (call @"peerUptime") CF.value
 
-sendMessage :: Text -> Int -> ByteString -> Bool -> ClientMonad IO (Either String Bool)
-sendMessage nodeId netId message broadcast = withUnary (call @"sendMessage") msg CF.value
-  where msg = defMessage &
-              CF.nodeId .~ (defMessage & CF.value .~ nodeId) &
-              CF.networkId .~ (defMessage & CF.value .~ fromIntegral netId) &
-              CF.message .~ (defMessage & CF.value .~ message) &
-              CF.broadcast .~ (defMessage & CF.value .~ broadcast)
+sendMessage :: Text -> Int -> Bool -> ClientMonad IO (Either String Bool)
+sendMessage nodeId netId broadcast = do
+  message <- liftIO BS.getContents
+  let msg = defMessage &
+            CF.nodeId .~ (defMessage & CF.value .~ nodeId) &
+            CF.networkId .~ (defMessage & CF.value .~ fromIntegral netId) &
+            CF.message .~ (defMessage & CF.value .~ message) &
+            CF.broadcast .~ (defMessage & CF.value .~ broadcast)
+  withUnary (call @"sendMessage") msg CF.value
 
 subscriptionStart :: ClientMonad IO (Either String Bool)
 subscriptionStart = withUnaryNoMsg (call @"subscriptionStart") CF.value

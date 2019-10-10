@@ -57,7 +57,6 @@ import qualified Data.HashMap.Strict                 as Map
 import           Data.Maybe
 import           Data.String
 import           Data.Text
-import           Data.Text.Encoding                  (encodeUtf8)
 
 import           Data.Word
 
@@ -169,7 +168,7 @@ useBackend act b =
     StopBaker -> runInClient b $ stopBaker >>= printSuccess
     PeerConnect ip port -> runInClient b $ peerConnect ip port >>= printSuccess
     GetPeerUptime -> runInClient b $ getPeerUptime >>= (liftIO . print)
-    SendMessage nodeId netId message broadcast -> runInClient b $ sendMessage nodeId netId (encodeUtf8 message) broadcast >>= printSuccess
+    SendMessage nodeId netId broadcast -> runInClient b $ sendMessage nodeId netId broadcast >>= printSuccess
     SubscriptionStart -> runInClient b $ subscriptionStart >>= printSuccess
     SubscriptionStop -> runInClient b $ subscriptionStop >>= printSuccess
     SubscriptionPoll -> runInClient b $ subscriptionStart >>= (liftIO . print)

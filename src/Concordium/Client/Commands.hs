@@ -104,7 +104,6 @@ data Action
   | SendMessage
       { nodeId    :: !Text
       , netId     :: !Int
-      , message   :: !Text
       , broadcast :: !Bool
       }
   | SubscriptionStart
@@ -246,7 +245,7 @@ getPeerDataCommand =
   command
     "GetPeerData"
     (info
-       (GetPeerData <$> switch (long "bootstrapper"))
+       (GetPeerData <$> switch (long "bootstrapper" <> help "Include the bootstrapper in the peer data."))
        (progDesc "Query the gRPC server for the node information."))
 
 getNodeInfoCommand :: Mod CommandFields Action
@@ -297,7 +296,7 @@ sendTransactionCommand =
            help "Network ID for the transaction to be sent through" <>
            value 100 <>
            showDefault) <*>
-        flag False True (short 'h' <> long "hook"))
+        switch (short 'h' <> long "hook" <> help "Install a transaction hook before sending."))
        (progDesc
           "Parse transaction in current context and send it to the baker."))
 
@@ -347,7 +346,7 @@ getBlockInfoCommand =
     (info
        (GetBlockInfo <$>
         strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query") <*>
-        flag False True (short 'a' <> long "all"))
+        switch (short 'a' <> long "all" <> help "Traverse all parent blocks and get their info as well."))
        (progDesc "Query the gRPC server for a specific block."))
 
 getAccountListCommand :: Mod CommandFields Action
@@ -475,12 +474,13 @@ sendMessageCommand =
         strArgument (metavar "NODE-ID" <> help "ID of the recipent") <*>
         argument
           auto
-          (metavar "NET-ID" <> help "Network ID") <*>
-        strArgument (metavar "MESSAGE" <> help "Message to be sent") <*>
-        argument
-          auto
-          (metavar "BROADCAST" <> help "Is broadcast?"))
-       (progDesc "Send a direct message."))
+          (metavar "NET-ID" <>
+           help "Network ID" <>
+           value 100 <>
+           showDefault) <*>
+        switch (short 'b' <> long "broadcast" <> help "Broadcast the message.")
+       )
+       (progDesc "Read a message from standard input and send it as a direct message."))
 
 subscriptionStartCommand :: Mod CommandFields Action
 subscriptionStartCommand =
