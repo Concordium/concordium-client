@@ -25,10 +25,10 @@ import qualified Concordium.Crypto.SignatureScheme as Sig
 data TxOptions = TxOptions {
   -- |What is the starting nonce.
   startNonce :: Nonce,
-  -- |How many transactions to send per batch.
-  perBatch   :: Int,
-  -- |In seconds.
-  delay      :: Int,
+  -- |How many transactions to send per second.
+  tps :: !Int,
+  -- |Whether to output a log after each transaction that is sent.
+  logit :: !Bool,
   -- |File with JSON encoded keys for the source account.
   keysFile :: FilePath
   }
@@ -40,18 +40,14 @@ txOptions = do
                                                long "nonce" <>
                                                metavar "NONCE" <>
                                                help "Nonce to start generation with.")
-  let perBatch = option auto (value 10 <>
-                              showDefault <>
-                              long "batch" <>
-                              metavar "NUM" <>
-                              help "Size of a batch to send at once.")
-  let delay = option auto (value 10 <>
-                           showDefault <>
-                           long "delay" <>
-                           metavar "SECONDS" <>
-                           help "Delay between batches.")
+  let tps = option auto (value 10 <>
+                         showDefault <>
+                         long "tps" <>
+                         metavar "NUM" <>
+                         help "Number of transactions per second.")
+  let logit = switch (long "log" <> help "Emit for each transaction sent.")
   let keys = strOption (long "keyPair" <> short 'k' <> metavar "FILENAME")
-  TxOptions . fromIntegral <$> startNonce <*> perBatch <*> delay <*> keys
+  TxOptions . fromIntegral <$> startNonce <*> tps <*> logit <*> keys
 
 grpcBackend :: Parser Backend
 grpcBackend = GRPC <$> hostParser <*> portParser <*> targetParser
@@ -66,23 +62,20 @@ sendTx tx = sendTransactionToBaker tx 100 >> return tx
 iterateM_ :: Monad m => (a -> m a) -> a -> m b
 iterateM_ f a = f a >>= iterateM_ f
 
-go :: Backend -> Int -> Int -> (Nonce -> BareTransaction) -> Nonce -> IO ()
-go backend delay perBatch sign startNonce = do
-  -- restart connection every 100 transactions
+go :: Backend -> Bool -> Int -> (Nonce -> BareTransaction) -> Nonce -> IO ()
+go backend logit tps sign startNonce = do
   startTime <- getCurrentTime
-  iterateM_ (runInClient backend . loop startTime 100) (0, startNonce)
+  runInClient backend (loop startNonce startTime)
 
-  where loop startTime left p@(total, nonce) | left <= 0 = return p
-                                           | otherwise = do
-          let nextNonce = nonce + fromIntegral perBatch
-          mapM_ (sendTx . sign) [nonce..nextNonce-1]
-          let newTotal = total + perBatch
+  where loop nextNonce nextTime = do
+          _ <- sendTx (sign nextNonce)
           liftIO $ do
-            currentTime <- getCurrentTime
-            let rate = show (fromIntegral (total + perBatch) / (diffUTCTime currentTime startTime))
-            putStrLn $ "Total transactions sent to " ++ show (target backend) ++ " = " ++ show newTotal ++ ", rate per second = " ++ show rate
-            threadDelay (delay * 10^(6::Int))
-          loop startTime (left - perBatch) (newTotal, nextNonce)
+            when logit $ putStrLn $ "Sent transaction to " ++ show (target backend) ++ " with nonce = " ++ show nextNonce
+            ct <- getCurrentTime
+            let toWait = diffUTCTime nextTime ct
+            when (toWait > 0) $ threadDelay (truncate $ toWait * 1e6)
+          loop (nextNonce + 1) (addUTCTime delay nextTime)
+        delay = 1 / fromIntegral tps
 
 main :: IO ()
 main = do
@@ -98,7 +91,7 @@ main = do
           let txBody = encodePayload (Transfer (AddressAccount selfAddress) 1) -- transfer 1 GTU to myself.
           let txHeader nonce = makeTransactionHeader Sig.Ed25519 verifyKey (payloadSize txBody) nonce 1000
           let sign nonce = signTransaction keyPair (txHeader nonce) txBody
-          go backend (delay txoptions) (perBatch txoptions) sign (startNonce txoptions)
+          go backend (logit txoptions) (tps txoptions) sign (startNonce txoptions)
 
   where parseKeys = AE.withObject "Account keypair" $ \obj -> do
           verifyKey <- obj AE..: "verifyKey"

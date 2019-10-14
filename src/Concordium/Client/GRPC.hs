@@ -118,10 +118,10 @@ getBakerPrivateData :: ClientMonad IO (Either String Value)
 getBakerPrivateData = withUnaryNoMsg (call @"getBakerPrivateData") (to processJSON)
 
 sendTransactionToBaker ::
-     (MonadIO m) => Types.BareTransaction -> Int -> ClientMonad m ()
-sendTransactionToBaker t nid = withUnaryCore (call @"sendTransaction") msg (const ())
-  where msg = defMessage & CF.networkId .~ fromIntegral nid & CF.payload .~ S.encode t
-
+     (MonadIO m) => Types.BareTransaction -> Int -> ClientMonad m (Either String Bool)
+sendTransactionToBaker t nid = do
+  let msg = defMessage & CF.networkId .~ fromIntegral nid & CF.payload .~ S.encode t
+  withUnary (call @"sendTransaction") msg CF.value
 
 hookTransaction :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
 hookTransaction txh = withUnary (call @"hookTransaction") msg (to processJSON)

@@ -221,7 +221,10 @@ handleSendTransactionPayload networkId headerFile payloadFile = do
   let encPayload = Types.encodePayload payload
   let header = Types.makeTransactionHeader scheme verifyKey (Types.payloadSize encPayload) nonce energy
   let tx = Types.signTransaction (Sig.KeyPair signKey verifyKey) header encPayload
-  sendTransactionToBaker tx networkId
+  sendTransactionToBaker tx networkId >>= \case
+    Left err -> liftIO $ putStrLn $ "Could not send transaction because: " ++ err
+    Right False -> liftIO $ putStrLn $ "Could not send transaction."
+    Right True -> liftIO $ putStrLn $ "Transaction sent."
 
   where headerParser = withObject "Transaction header" $ \v -> do
           verifyKey <- v .: "verifyKey"
