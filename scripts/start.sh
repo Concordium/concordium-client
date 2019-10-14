@@ -9,19 +9,14 @@ then
   if [[ "$ID" -lt "$MAX_AMOUNT_OF_GENERATORS" ]];
   then
     ARGS=""
-    if [ -n "$BATCH_SIZE" ];
+    if [ -n "$TPS" ]; 
     then
-      ARGS="$ARGS --batch $BATCH_SIZE"
+      ARGS="$ARGS --tps $TPS"
     fi
 
-    if [ -n "$DELAY" ]; 
+    if [ -n "$LOGGING" ]; 
     then
-      ARGS="$ARGS --delay $DELAY"
-    fi
-
-    if [ -n "$START_NONCE" ]; 
-    then
-      ARGS="$ARGS --nonce $START_NONCE"
+      ARGS="$ARGS --log"
     fi
 
     tar xzf /$NUM_BAKERS-bakers.tar.gz -C /tmp
