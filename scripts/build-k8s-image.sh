@@ -2,7 +2,7 @@
 
 if [ ! -z "$JENKINS_HOME" ]; then
   git clone git@gitlab.com:Concordium/p2p-client.git
-  if [ "$#" >= 1 ]
+  if [[ $# -ge 1 ]]
   then
     ( cd p2p-client && git checkout $1 )
   fi
