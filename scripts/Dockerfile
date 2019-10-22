@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:experimental
 FROM ubuntu as build
 
 COPY . /build
@@ -6,7 +7,7 @@ COPY *-bakers.tar.gz /build/
 
 WORKDIR /build
 
-RUN ./scripts/build-tx-generator.sh
+RUN --mount=type=ssh ./scripts/build-tx-generator.sh
 
 FROM ubuntu
 
