@@ -177,7 +177,7 @@ useBackend act b =
     JoinNetwork netId -> runInClient b $ joinNetwork netId >>= printSuccess
     LeaveNetwork netId -> runInClient b $ leaveNetwork netId >>= printSuccess
     GetAncestors blockHash amount -> runInClient b $ getAncestors blockHash amount >>= (liftIO . print)
-    GetBranches -> runInClient b $ getBranches >>= (liftIO . print)
+    GetBranches -> runInClient b $ getBranches >>= printJSON
     GetBannedPeers -> runInClient b $ getBannedPeers >>= (liftIO . print)
     Shutdown -> runInClient b $ shutdown >>= printSuccess
     TpsTest networkId nodeId directory -> runInClient b $ tpsTest networkId nodeId directory >>= (liftIO . print)
@@ -402,8 +402,10 @@ processTransaction_ transaction networkId hookit = do
     let trHash = Types.transactionHash tx
     liftIO . putStrLn $ "Installing hook for transaction " ++ show trHash
     printJSON =<< hookTransaction (pack . show $ trHash)
-  sendTransactionToBaker tx networkId
-  return tx
+  sendTransactionToBaker tx networkId >>= \case
+    Left err -> fail err
+    Right False -> fail "Transaction not accepted by the baker."
+    Right True -> return tx
 
 encodeAndSignTransaction ::
      (MonadFail m, MonadIO m)
