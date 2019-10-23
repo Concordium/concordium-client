@@ -402,8 +402,10 @@ processTransaction_ transaction networkId hookit = do
     let trHash = Types.transactionHash tx
     liftIO . putStrLn $ "Installing hook for transaction " ++ show trHash
     printJSON =<< hookTransaction (pack . show $ trHash)
-  sendTransactionToBaker tx networkId
-  return tx
+  sendTransactionToBaker tx networkId >>= \case
+    Left err -> fail err
+    Right False -> fail "Transaction not accepted by the baker."
+    Right True -> return tx
 
 encodeAndSignTransaction ::
      (MonadFail m, MonadIO m)
