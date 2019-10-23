@@ -176,8 +176,8 @@ useBackend act b =
     UnbanNode nodeId nodePort nodeIp -> runInClient b $ unbanNode nodeId nodePort nodeIp >>= printSuccess
     JoinNetwork netId -> runInClient b $ joinNetwork netId >>= printSuccess
     LeaveNetwork netId -> runInClient b $ leaveNetwork netId >>= printSuccess
-    GetAncestors blockHash amount -> runInClient b $ getAncestors blockHash amount >>= (liftIO . print)
-    GetBranches -> runInClient b $ getBranches >>= (liftIO . print)
+    GetAncestors blockHash amount -> runInClient b $ getAncestors blockHash amount >>= printJSON
+    GetBranches -> runInClient b $ getBranches >>= printJSON
     GetBannedPeers -> runInClient b $ getBannedPeers >>= (liftIO . print)
     Shutdown -> runInClient b $ shutdown >>= printSuccess
     TpsTest networkId nodeId directory -> runInClient b $ tpsTest networkId nodeId directory >>= (liftIO . print)
@@ -246,7 +246,7 @@ handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
   (scheme, accountSign, accountVerify) <-
     case bakerAccountValue >>= parseEither accountKeysParser of
       Left err ->
-        die $ "Could not decode file with baker keys because: " ++ err
+        die $ "Could not decode file with account keys because: " ++ err
       Right keys -> return keys
   let abElectionVerifyKey = vrfVerify
   let abSignatureVerifyKey = verifyKey
