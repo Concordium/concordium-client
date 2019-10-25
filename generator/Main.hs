@@ -14,6 +14,7 @@ import           Control.Concurrent
 import           Control.Monad.Reader
 import           Options.Applicative
 import Concordium.ID.Account as AH
+import System.Exit
 
 import Data.Time.Clock
 import qualified Data.Aeson as AE
@@ -57,7 +58,11 @@ parser = info (helper <*> ((,) <$> grpcBackend <*> txOptions))
          (fullDesc <> progDesc "Generate transactions for a fixed contract.")
 
 sendTx :: MonadIO m => BareTransaction -> ClientMonad m BareTransaction
-sendTx tx = sendTransactionToBaker tx 100 >> return tx
+sendTx tx =
+  sendTransactionToBaker tx 100 >>= \case
+    Left err -> liftIO $ die err
+    Right False -> liftIO $ die $ "Could not send transaction (rejected)."
+    Right True -> return tx
 
 iterateM_ :: Monad m => (a -> m a) -> a -> m b
 iterateM_ f a = f a >>= iterateM_ f
