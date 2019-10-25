@@ -354,7 +354,31 @@ executeTransaction esUrl nodeBackend transaction = do
 
   EsApi.logBareTransaction esUrl t (Concordium.ID.Account.accountAddress $ thSenderKey $ metadata transaction)
 
-  putStrLn "✅ Bare tansaction logged into ElasticSearch"
+  EsApi.logBareTransaction esUrl t (verifyKeyToAccountAddress $ thSenderKey $ metadata transaction)
+
+  putStrLn $ "✅ Bare tansaction logged into ElasticSearch"
+
+  pure $ bareTransactionHash t created
+
+
+bareTransactionHash :: Types.BareTransaction -> UTCTime -> Types.TransactionHash
+bareTransactionHash bare currentTime =
+  Types.trHash $ Types.fromBareTransaction (floor . utcTimeToPOSIXSeconds $ currentTime) bare
+
+
+verifyKeyToAddress :: VerifyKey -> Types.Address
+verifyKeyToAddress verifyKey =
+  Types.AddressAccount $ verifyKeyToAccountAddress verifyKey
+
+
+verifyKeyToAccountAddress :: VerifyKey -> Concordium.ID.Types.AccountAddress
+verifyKeyToAccountAddress verifyKey =
+  Concordium.ID.Account.accountAddress verifyKey Ed25519
+
+
+keypairToAccountAddress :: KeyPair -> Concordium.ID.Types.AccountAddress
+keypairToAccountAddress keypair =
+  Concordium.ID.Account.accountAddress (Concordium.Crypto.SignatureScheme.verifyKey keypair) Ed25519
 
   pure $ Types.transactionHash t
 
