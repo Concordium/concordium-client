@@ -182,7 +182,6 @@ getAccountTransactions :: Text -> Text -> IO AccountTransactionsResponse
 getAccountTransactions esUrl address = do
   let
     -- @TODO what other transfer types do we care about for now?
-    -- @TODO @js - include scrolling pagination here to avoid max limit of 10_000
     q =
       [text|
         {
