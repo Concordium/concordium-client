@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 module Concordium.Client.DummyDeploy where
 
 import           Concordium.Client.Commands
@@ -45,8 +46,10 @@ deployModuleWithKey kp back mnonce energy amodules = runInClient back comp
       let transactions = zipWith tx [nonce..] amodules
       mapM (\ctx -> do
                 txReturn <- hookTransaction (pack . show $ Types.transactionHash ctx)
-                sendTransactionToBaker ctx 100
-                return (ctx, txReturn)
+                sendTransactionToBaker ctx 100 >>= \case
+                  Left err -> return (ctx, Left err)
+                  Right False -> return (ctx, Left "Transaction rejected.")
+                  Right True -> return (ctx, txReturn)
             ) transactions
 
 
@@ -75,9 +78,10 @@ initContractWithKey kp back mnonce energy initAmount homeModule contractName con
       nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) =<< getBestBlockHash)
       let transaction = tx nonce
       txReturn <- hookTransaction (pack . show $ Types.transactionHash transaction)
-      sendTransactionToBaker transaction 100
-      return (transaction, txReturn)
-
+      sendTransactionToBaker transaction 100 >>= \case
+        Left err -> return (transaction, Left err)
+        Right False -> return (transaction, Left "Transaction rejected.")
+        Right True -> return (transaction, txReturn)
 
 updateContractWithKey ::
      Sig.KeyPair
@@ -98,5 +102,7 @@ updateContractWithKey kp back mnonce energy transferAmount address msg = runInCl
       nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) =<< getBestBlockHash)
       let transaction = tx nonce
       txReturn <- hookTransaction (pack . show $ Types.transactionHash transaction)
-      sendTransactionToBaker transaction 100
-      return (transaction, txReturn)
+      sendTransactionToBaker transaction 100 >>= \case
+        Left err -> return (transaction, Left err)
+        Right False -> return (transaction, Left "Transaction rejected.")
+        Right True -> return (transaction, txReturn)
