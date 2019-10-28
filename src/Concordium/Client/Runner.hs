@@ -7,12 +7,14 @@ module Concordium.Client.Runner
   ( process
   , getAccountNonce
   , getBestBlockHash
+  , getLastFinalBlockHash
   , PeerData(..)
   , getPeerData
   , getNodeInfo
   , sendTransactionToBaker
   , getConsensusStatus
   , getAccountInfo
+  , getModuleSet
   , ClientMonad(..)
   , runInClient
   , EnvData(..)
@@ -46,6 +48,7 @@ import qualified Data.ByteString.Lazy.Char8          as BSL8
 import qualified Data.Serialize                      as S
 import qualified Data.Text.IO                        as TextIO hiding (putStrLn)
 import           Lens.Simple
+import qualified Data.HashSet as Set
 
 import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client.Exceptions
@@ -124,6 +127,18 @@ loop v =
         _ -> error "Unexpected return value for block parent."
     _ -> error "Unexptected return value for getBlockInfo."
 
+withBestBlockHash :: (MonadIO m, MonadFail m) => Maybe Text -> (Text -> ClientMonad m b) -> ClientMonad m b
+withBestBlockHash v c =
+  case v of
+    Nothing -> getBestBlockHash >>= c
+    Just x -> c x
+
+withLastFinalBlockHash :: (MonadIO m, MonadFail m) => Maybe Text -> (Text -> ClientMonad m b) -> ClientMonad m b
+withLastFinalBlockHash v c =
+  case v of
+    Nothing -> getBestBlockHash >>= c
+    Just x -> c x
+
 
 useBackend :: Action -> Backend -> IO ()
 useBackend act b =
@@ -138,21 +153,21 @@ useBackend act b =
         show (Types.transactionHash t)
     HookTransaction txh -> runInClient b $ hookTransaction txh >>= printJSON
     GetConsensusInfo -> runInClient b $ getConsensusStatus >>= printJSON
-    GetBlockInfo block every -> runInClient b $ getBlockInfo block >>= if every then loop else printJSON
-    GetAccountList block -> runInClient b $ getAccountList block >>= printJSON
-    GetInstances block -> runInClient b $ getInstances block >>= printJSON
-    GetAccountInfo block account ->
-      runInClient b $ getAccountInfo block account >>= printJSON
-    GetInstanceInfo block account ->
-      runInClient b $ getInstanceInfo block account >>= printJSON
-    GetRewardStatus block -> runInClient b $ getRewardStatus block >>= printJSON
+    GetBlockInfo every block -> runInClient b $ withBestBlockHash block getBlockInfo >>= if every then loop else printJSON
+    GetAccountList block -> runInClient b $ withBestBlockHash block getAccountList >>= printJSON
+    GetInstances block -> runInClient b $ withBestBlockHash block getInstances >>= printJSON
+    GetAccountInfo account block ->
+      runInClient b $ withBestBlockHash block (getAccountInfo account) >>= printJSON
+    GetInstanceInfo account block ->
+      runInClient b $ withBestBlockHash block (getInstanceInfo account) >>= printJSON
+    GetRewardStatus block -> runInClient b $ withBestBlockHash block getRewardStatus >>= printJSON
     GetBirkParameters block ->
-      runInClient b $ getBirkParameters block >>= printJSON
-    GetModuleList block -> runInClient b $ getModuleList block >>= printJSON
-    GetModuleSource block moduleref -> do
+      runInClient b $ withBestBlockHash block getBirkParameters >>= printJSON
+    GetModuleList block -> runInClient b $ withBestBlockHash block getModuleList >>= printJSON
+    GetModuleSource moduleref block -> do
       mdata <- loadContextData
       modl <-
-        PR.evalContext mdata . runInClient b . getModuleSource block $ moduleref
+        PR.evalContext mdata . runInClient b $ withBestBlockHash block (getModuleSource moduleref)
       case modl of
         Left x ->
           print $ "Unable to get the Module from the gRPC server: " ++ show x
@@ -176,7 +191,7 @@ useBackend act b =
     UnbanNode nodeId nodePort nodeIp -> runInClient b $ unbanNode nodeId nodePort nodeIp >>= printSuccess
     JoinNetwork netId -> runInClient b $ joinNetwork netId >>= printSuccess
     LeaveNetwork netId -> runInClient b $ leaveNetwork netId >>= printSuccess
-    GetAncestors blockHash amount -> runInClient b $ getAncestors blockHash amount >>= printJSON
+    GetAncestors amount blockHash -> runInClient b $ withLastFinalBlockHash blockHash (getAncestors amount) >>= printJSON
     GetBranches -> runInClient b $ getBranches >>= printJSON
     GetBannedPeers -> runInClient b $ getBannedPeers >>= (liftIO . print)
     Shutdown -> runInClient b $ shutdown >>= printSuccess
@@ -345,17 +360,39 @@ getBestBlockHash =
         Success bh -> return bh
         Error err  -> fail err
 
+getLastFinalBlockHash :: (MonadFail m, MonadIO m) => ClientMonad m Text
+getLastFinalBlockHash =
+  getConsensusStatus >>= \case
+    Left err -> fail err
+    Right v ->
+      case parse readLastFinalBlock v of
+        Success bh -> return bh
+        Error err  -> fail err
+
 getAccountNonce :: (MonadFail m, MonadIO m) => Types.AccountAddress -> Text -> ClientMonad m Types.Nonce
 getAccountNonce addr blockhash =
-  getAccountInfo blockhash (fromString (show addr)) >>= \case
+  getAccountInfo (fromString (show addr)) blockhash >>= \case
     Left err -> fail err
     Right aval ->
       case parse readAccountNonce aval of
         Success nonce -> return nonce
         Error err     -> fail err
 
+getModuleSet :: Text -> ClientMonad IO (Set.HashSet Types.ModuleRef)
+getModuleSet blockhash =
+  getModuleList blockhash >>= \case
+    Left err -> fail err
+    Right v ->
+      case fromJSON v of
+        AE.Error s -> fail s
+        AE.Success xs -> return $ Set.fromList (fmap Types.ModuleRef xs)
+
 readBestBlock :: Value -> Parser Text
 readBestBlock = withObject "Best block hash" $ \v -> v .: "bestBlock"
+
+readLastFinalBlock :: Value -> Parser Text
+readLastFinalBlock = withObject "Last final hash" $ \v -> v .: "lastFinalizedBlock"
+
 
 readAccountNonce :: Value -> Parser Types.Nonce
 readAccountNonce = withObject "Account nonce" $ \v -> v .: "accountNonce"

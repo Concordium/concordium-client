@@ -44,35 +44,35 @@ data Action
   | NodeInfo -- ^ Queries the gRPC server for node information
   | GetConsensusInfo -- ^ Queries the gRPC server for the consensus information
   | GetBlockInfo
-      { blockHash :: !Text,
-        every :: !Bool
+      { every :: !Bool,
+        blockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the information of a specific block
   | GetAccountList
-      { blockHash :: !Text
+      { blockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the list of accounts on a specific block
   | GetInstances
-      { blockHash :: !Text
+      { blockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the list of instances on a specific block
   | GetAccountInfo
-      { blockHash      :: !Text
-      , accountAddress :: !Text
+      { accountAddress :: !Text
+      , blockHash      :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the information of an account on a specific block
   | GetInstanceInfo
-      { blockHash       :: !Text
-      , contractAddress :: !Text
+      { contractAddress :: !Text,
+        blockHash       :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the information of an instance on a specific block
   | GetRewardStatus
-      { blockHash :: !Text
+      { blockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the reward status on a specific block
   | GetBirkParameters
-      { blockHash :: !Text
+      { blockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the Birk parameters on a specific block
   | GetModuleList
-      { blockHash :: !Text
+      { blockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the list of modules on a specific block
   | GetModuleSource
-      { blockHash :: !Text
-      , moduleRef :: !Text
+      { moduleRef :: !Text,
+        blockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the source of a module on a specific block
   | GetNodeInfo -- ^Queries the gRPC server for the node information.
   | GetBakerPrivateData -- ^Queries the gRPC server for the private data of the baker.
@@ -126,8 +126,8 @@ data Action
       { netId :: !Int
       }
   | GetAncestors
-      { blockHash :: !Text
-      , amount    :: !Int
+      { amount    :: !Int,
+        blockHash :: !(Maybe Text) -- defaults to last finalized block
       }
   | GetBranches
   | GetBannedPeers
@@ -345,8 +345,9 @@ getBlockInfoCommand =
     "GetBlockInfo"
     (info
        (GetBlockInfo <$>
-        strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query") <*>
-        switch (short 'a' <> long "all" <> help "Traverse all parent blocks and get their info as well."))
+        switch (short 'a' <> long "all" <> help "Traverse all parent blocks and get their info as well.") <*>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+       )
        (progDesc "Query the gRPC server for a specific block."))
 
 getAccountListCommand :: Mod CommandFields Action
@@ -355,7 +356,7 @@ getAccountListCommand =
     "GetAccountList"
     (info
        (GetAccountList <$>
-        strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
        (progDesc "Query the gRPC server for the list of accounts."))
 
 getInstancesCommand :: Mod CommandFields Action
@@ -364,7 +365,7 @@ getInstancesCommand =
     "GetInstances"
     (info
        (GetInstances <$>
-        strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
        (progDesc "Query the gRPC server for the list of instances."))
 
 getAccountInfoCommand :: Mod CommandFields Action
@@ -373,10 +374,9 @@ getAccountInfoCommand =
     "GetAccountInfo"
     (info
        (GetAccountInfo <$>
-        strArgument
-          (metavar "BLOCK-HASH" <>
-           help "Hash of the block in which to do the query") <*>
-        strArgument (metavar "ACCOUNT" <> help "Account to be queried about"))
+        strArgument (metavar "ACCOUNT" <> help "Account to be queried about") <*> 
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block in which to do the query"))
+       )
        (progDesc "Query the gRPC server for the information of an account."))
 
 getInstanceInfoCommand :: Mod CommandFields Action
@@ -385,11 +385,10 @@ getInstanceInfoCommand =
     "GetInstanceInfo"
     (info
        (GetInstanceInfo <$>
-        strArgument
-          (metavar "BLOCK-HASH" <>
-           help "Hash of the block in which to do the query") <*>
-        strArgument
-          (metavar "INSTANCE" <> help "Contract address to be queried about"))
+        strArgument (metavar "INSTANCE" <> help "Contract address to be queried about") <*>
+        optional (strArgument (metavar "BLOCK-HASH" <>
+                               help "Hash of the block in which to do the query"))
+       )
        (progDesc "Query the gRPC server for the information of an instance."))
 
 getRewardStatusCommand :: Mod CommandFields Action
@@ -398,7 +397,7 @@ getRewardStatusCommand =
     "GetRewardStatus"
     (info
        (GetRewardStatus <$>
-        strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
        (progDesc "Query the gRPC server for the reward status."))
 
 getBirkParametersCommand :: Mod CommandFields Action
@@ -407,7 +406,7 @@ getBirkParametersCommand =
     "GetBirkParameters"
     (info
        (GetBirkParameters <$>
-        strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
        (progDesc "Query the gRPC server for the Birk parameters."))
 
 getModuleListCommand :: Mod CommandFields Action
@@ -416,7 +415,7 @@ getModuleListCommand =
     "GetModuleList"
     (info
        (GetModuleList <$>
-        strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
        (progDesc "Query the gRPC server for the list of modules."))
 
 getModuleSourceCommand :: Mod CommandFields Action
@@ -425,8 +424,8 @@ getModuleSourceCommand =
     "GetModuleSource"
     (info
        (GetModuleSource <$>
-        strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query") <*>
-        strArgument (metavar "MODULE-REF" <> help "Reference of the module"))
+        strArgument (metavar "MODULE-REF" <> help "Reference of the module") <*>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
        (progDesc "Query the gRPC server for the source of a module."))
 
 startBakerCommand :: Mod CommandFields Action
@@ -560,10 +559,11 @@ getAncestorsCommand =
      "GetAncestors"
     (info
        (GetAncestors <$>
-        strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query") <*>
         argument
           auto
-          (metavar "AMOUNT" <> help "How many ancestors"))
+          (metavar "AMOUNT" <> help "How many ancestors") <*>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+       )
        (progDesc "Get the ancestors of a block."))
 
 getBranchesCommand :: Mod CommandFields Action

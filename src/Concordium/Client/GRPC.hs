@@ -140,11 +140,11 @@ getInstances :: Text -> ClientMonad IO (Either String Value)
 getInstances hash = withUnaryBlock (call @"getInstances") hash (to processJSON)
 
 getAccountInfo :: (MonadIO m) => Text -> Text -> ClientMonad m (Either String Value)
-getAccountInfo hash account = withUnary (call @"getAccountInfo") msg (to processJSON)
+getAccountInfo account hash = withUnary (call @"getAccountInfo") msg (to processJSON)
   where msg = defMessage & CF.blockHash .~ hash & CF.address .~ account
 
 getInstanceInfo :: Text -> Text -> ClientMonad IO (Either String Value)
-getInstanceInfo hash account = withUnary (call @"getInstanceInfo") msg (to processJSON)
+getInstanceInfo account hash = withUnary (call @"getInstanceInfo") msg (to processJSON)
   where msg = defMessage & CF.blockHash .~ hash & CF.address .~ account
 
 getRewardStatus :: Text -> ClientMonad IO (Either String Value)
@@ -161,7 +161,7 @@ getModuleSource ::
   => Text
   -> Text
   -> ClientMonad (PR.Context Core.UA m) (Either String (Core.Module Core.UA))
-getModuleSource hash moduleref = withUnaryCore (call @"getModuleSource") msg k
+getModuleSource moduleref hash = withUnaryCore (call @"getModuleSource") msg k
   where msg = defMessage
               & (CF.blockHash .~ hash)
               & CF.moduleRef .~ moduleref
@@ -219,8 +219,8 @@ leaveNetwork net = withUnary (call @"leaveNetwork") msg CF.value
   where msg = defMessage &
               CF.networkId .~ (defMessage & CF.value .~ fromIntegral net)
 
-getAncestors :: Text -> Int -> ClientMonad IO (Either String Value)
-getAncestors blockHash amount = withUnary (call @"getAncestors") msg (to processJSON)
+getAncestors :: Int -> Text -> ClientMonad IO (Either String Value)
+getAncestors amount blockHash = withUnary (call @"getAncestors") msg (to processJSON)
   where msg = defMessage &
             CF.blockHash .~ blockHash &
             CF.amount .~ fromIntegral amount
