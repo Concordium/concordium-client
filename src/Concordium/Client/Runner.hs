@@ -133,13 +133,6 @@ withBestBlockHash v c =
     Nothing -> getBestBlockHash >>= c
     Just x -> c x
 
-withLastFinalBlockHash :: (MonadIO m, MonadFail m) => Maybe Text -> (Text -> ClientMonad m b) -> ClientMonad m b
-withLastFinalBlockHash v c =
-  case v of
-    Nothing -> getBestBlockHash >>= c
-    Just x -> c x
-
-
 useBackend :: Action -> Backend -> IO ()
 useBackend act b =
   case act of
