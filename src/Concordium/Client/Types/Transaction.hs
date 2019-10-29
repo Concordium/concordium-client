@@ -11,8 +11,8 @@ module Concordium.Client.Types.Transaction where
 import           Concordium.Crypto.SignatureScheme   (SignKey (..))
 import           Concordium.Crypto.Proofs
 import qualified Concordium.ID.Types                 as IDTypes
-import qualified Concordium.Scheduler.Types          as Types
 import           Concordium.Types
+import           Concordium.Types.Execution          as Types
 import           Data.Aeson                          as AE
 import qualified Data.Aeson.TH                       as AETH
 import           Data.Aeson.Types                    (typeMismatch)

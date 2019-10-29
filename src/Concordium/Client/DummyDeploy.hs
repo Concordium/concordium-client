@@ -5,7 +5,8 @@ import           Concordium.Client.Commands
 import           Concordium.Client.GRPC
 import           Concordium.Client.Runner
 import           Concordium.GlobalState.Transactions
-import qualified Concordium.Scheduler.Types          as Types
+import qualified Concordium.GlobalState.Transactions as Types
+import qualified Concordium.Types.Execution          as Types
 import           Concordium.Types                    as Types
 
 import qualified Concordium.Crypto.SignatureScheme   as Sig

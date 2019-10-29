@@ -35,7 +35,9 @@ import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.VRF               as VRF
 import qualified Concordium.ID.Account               as IDA
 
-import qualified Concordium.Scheduler.Types          as Types
+import qualified Concordium.GlobalState.Transactions as Types
+import qualified Concordium.Types.Execution          as Types
+import qualified Concordium.Types                    as Types
 
 import           Proto.Concordium
 import qualified Proto.Concordium_Fields             as CF

@@ -62,7 +62,6 @@ library:
     - globalstate-types
     - optparse-applicative
     - random
-    - scheduler
     - mtl
     - text
     - lens-simple
@@ -116,7 +115,6 @@ executables:
        - text
        - base
        - simple-client
-       - scheduler
        - random
        - split
        - concordium-crypto
@@ -162,7 +160,6 @@ executables:
             - wai-middleware-static
             - warp
             - acorn
-            - scheduler
             - concordium-crypto
             - globalstate-types
         else:

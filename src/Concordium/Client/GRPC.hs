@@ -20,7 +20,7 @@ import qualified Acorn.Core                          as Core
 import qualified Acorn.Parser.Runner                 as PR
 import           Concordium.Client.Runner.Helper
 
-import qualified Concordium.Scheduler.Types          as Types
+import           Concordium.GlobalState.Transactions(BareTransaction)
 
 import           Control.Monad.Fail
 import           Control.Monad.IO.Class
@@ -118,7 +118,7 @@ getBakerPrivateData :: ClientMonad IO (Either String Value)
 getBakerPrivateData = withUnaryNoMsg (call @"getBakerPrivateData") (to processJSON)
 
 sendTransactionToBaker ::
-     (MonadIO m) => Types.BareTransaction -> Int -> ClientMonad m (Either String Bool)
+     (MonadIO m) => BareTransaction -> Int -> ClientMonad m (Either String Bool)
 sendTransactionToBaker t nid = do
   let msg = defMessage & CF.networkId .~ fromIntegral nid & CF.payload .~ S.encode t
   withUnary (call @"sendTransaction") msg CF.value
