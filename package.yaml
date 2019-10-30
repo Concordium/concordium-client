@@ -161,6 +161,7 @@ executables:
             - acorn
             - concordium-crypto
             - globalstate-types
+            - globalstate
         else:
           main:             DummyMain.hs
           source-dirs:      middleware-dummy

@@ -358,13 +358,7 @@ executeTransaction esUrl nodeBackend transaction = do
 
   putStrLn $ "✅ Bare tansaction logged into ElasticSearch"
 
-  pure $ bareTransactionHash t created
-
-
-bareTransactionHash :: Types.BareTransaction -> UTCTime -> Types.TransactionHash
-bareTransactionHash bare currentTime =
-  Types.trHash $ Types.fromBareTransaction (floor . utcTimeToPOSIXSeconds $ currentTime) bare
-
+  pure $ TXS.transactionHash t
 
 verifyKeyToAddress :: VerifyKey -> Types.Address
 verifyKeyToAddress verifyKey =
