@@ -4,8 +4,8 @@ module Concordium.Client.DummyDeploy where
 import           Concordium.Client.Commands
 import           Concordium.Client.GRPC
 import           Concordium.Client.Runner
-import           Concordium.GlobalState.Transactions
-import qualified Concordium.GlobalState.Transactions as Types
+import           Concordium.Types.Transactions
+import qualified Concordium.Types.Transactions as Types
 import qualified Concordium.Types.Execution          as Types
 import           Concordium.Types                    as Types
 
@@ -38,8 +38,7 @@ topoSort nodes = snd <$> foldM (go Set.empty) (Set.empty, []) (Map.keys nodes)
 helper :: Sig.KeyPair -> Nonce -> Energy -> Types.Payload -> BareTransaction
 helper kp nonce energy spayload =
       let header = Types.makeTransactionHeader
-                         Sig.Ed25519
-                         (Sig.verifyKey kp)
+                         (Sig.correspondingVerifyKey kp)
                          (Types.payloadSize encPayload)
                          nonce
                          energy
@@ -67,7 +66,7 @@ deployModuleWithKey kp back mnonce energy amodules = runInClient back comp
         Nothing -> fail "Circular dependencies. Will not deploy."
         Just orderedMods -> do
           bestBlockHash <- getBestBlockHash
-          nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) bestBlockHash)
+          nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.correspondingVerifyKey kp)) bestBlockHash)
           alreadyDeployed <- getModuleSet bestBlockHash
           -- TODO: technically the above two lines can fail if finalization
           -- happens to purge the currently best block. failure should be
@@ -104,7 +103,7 @@ initContractWithKey kp back mnonce energy initAmount homeModule contractName con
         contractFlags
 
     comp = do
-      nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) =<< getBestBlockHash)
+      nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.correspondingVerifyKey kp)) =<< getBestBlockHash)
       let transaction = tx nonce
       txReturn <- hookTransaction (pack . show $ Types.transactionHash transaction)
       sendTransactionToBaker transaction 100 >>= \case
@@ -128,7 +127,7 @@ updateContractWithKey kp back mnonce energy transferAmount address msg = runInCl
     updateContract = Types.Update transferAmount address msg
 
     comp = do
-      nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.verifyKey kp) Sig.Ed25519) =<< getBestBlockHash)
+      nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.correspondingVerifyKey kp)) =<< getBestBlockHash)
       let transaction = tx nonce
       txReturn <- hookTransaction (pack . show $ Types.transactionHash transaction)
       sendTransactionToBaker transaction 100 >>= \case

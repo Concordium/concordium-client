@@ -20,7 +20,7 @@ import qualified Acorn.Core                          as Core
 import qualified Acorn.Parser.Runner                 as PR
 import           Concordium.Client.Runner.Helper
 
-import           Concordium.GlobalState.Transactions(BareTransaction)
+import           Concordium.Types.Transactions(BareTransaction)
 
 import           Control.Monad.Fail
 import           Control.Monad.IO.Class

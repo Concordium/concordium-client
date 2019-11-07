@@ -1,3 +1,9 @@
-[submodule "prototype"]
-	path = prototype
-	url = git@gitlab.com:Concordium/consensus/prototype.git
+[submodule "deps/acorn"]
+	path = deps/acorn
+	url = ../oak/acorn.git
+[submodule "deps/crypto"]
+	path = deps/crypto
+	url = ../crypto.git
+[submodule "deps/globalstate-types"]
+	path = deps/globalstate-types
+	url = ../consensus/globalstate-types.git

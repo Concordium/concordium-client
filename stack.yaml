@@ -52,11 +52,9 @@ extra-deps:
 - proto-lens-protoc-0.5.0.0
 - github: lucasdicioccio/http2-client
   commit: d1cac5951a37211bfa08167d6aec3625537b8624
-- ./prototype/acorn
-- ./prototype/crypto
-- ./prototype/globalstate-mockup/globalstate-types
-- ./prototype/globalstate-mockup/globalstate
-- ./prototype/scheduler
+- ./deps/acorn
+- ./deps/crypto
+- ./deps/globalstate-types
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

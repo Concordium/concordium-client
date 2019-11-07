@@ -58,7 +58,6 @@ library:
     - cereal
     - concordium-crypto
     - directory
-    - globalstate
     - globalstate-types
     - optparse-applicative
     - random
@@ -118,7 +117,6 @@ executables:
        - random
        - split
        - concordium-crypto
-       - globalstate
        - globalstate-types
        - bytestring
        - aeson

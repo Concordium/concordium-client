@@ -7,7 +7,7 @@ module Main where
 
 import           Concordium.Client.Commands
 import           Concordium.Client.Runner
-import           Concordium.GlobalState.Transactions
+import           Concordium.Types.Transactions
 import           Concordium.Types
 import           Concordium.Types.Execution
 import           Control.Concurrent
@@ -90,15 +90,12 @@ main = do
     Right v ->
       case AE.parseEither parseKeys v of
         Left err' -> putStrLn $ "Could not decode JSON because: " ++ err'
-        Right keyPair@Sig.KeyPair{..} -> do
-          let selfAddress = AH.accountAddress verifyKey Sig.Ed25519
+        Right keyPair -> do
+          let selfAddress = AH.accountAddress (Sig.correspondingVerifyKey keyPair)
           print $ "Using sender account = " ++ show selfAddress
           let txBody = encodePayload (Transfer (AddressAccount selfAddress) 1) -- transfer 1 GTU to myself.
-          let txHeader nonce = makeTransactionHeader Sig.Ed25519 verifyKey (payloadSize txBody) nonce 1000
+          let txHeader nonce = makeTransactionHeader (Sig.correspondingVerifyKey keyPair) (payloadSize txBody) nonce 1000
           let sign nonce = signTransaction keyPair (txHeader nonce) txBody
           go backend (logit txoptions) (tps txoptions) sign (startNonce txoptions)
 
-  where parseKeys = AE.withObject "Account keypair" $ \obj -> do
-          verifyKey <- obj AE..: "verifyKey"
-          signKey <- obj AE..: "signKey"
-          return $ Sig.KeyPair{..}
+  where parseKeys = AE.parseJSON

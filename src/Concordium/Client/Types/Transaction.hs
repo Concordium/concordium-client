@@ -8,7 +8,8 @@
 
 module Concordium.Client.Types.Transaction where
 
-import           Concordium.Crypto.SignatureScheme   (SignKey (..))
+import           Concordium.Crypto.SignatureScheme   (KeyPair(..))
+import qualified Concordium.Crypto.SignatureScheme   as Sig
 import           Concordium.Crypto.Proofs
 import qualified Concordium.ID.Types                 as IDTypes
 import           Concordium.Types
@@ -18,7 +19,6 @@ import qualified Data.Aeson.TH                       as AETH
 import           Data.Aeson.Types                    (typeMismatch)
 import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Base16              as BS16
-import qualified Data.ByteString.Short               as BSS
 import           Data.Serialize                      as S
 import           Data.Text                           hiding (length, map)
 import qualified Data.Text.Encoding                  as Text
@@ -149,19 +149,17 @@ data TransactionJSON =
   TransactionJSON
     { metadata :: TransactionJSONHeader
     , payload  :: TransactionJSONPayload
-    , signKey  :: SignKey
+    , signKey  :: KeyPair
     }
   deriving (Generic, Show)
 
 instance AE.FromJSON TransactionJSON where
-  parseJSON (Object v) = do
-    thSenderKey <- v .: "verifyKey"
+  parseJSON obj@(Object v) = do
+    kp <- parseJSON obj
+    let thSenderKey = Sig.correspondingVerifyKey kp
     thNonce <- v .:? "nonce"
     thGasAmount <- v .: "gasAmount"
     let tHeader = TransactionJSONHeader {..}
     tPayload <- v .: "payload"
-    tSignKey <-
-      SignKey . BSS.toShort . fst . BS16.decode . Text.encodeUtf8 <$>
-      (v .: "signKey")
-    return $ TransactionJSON tHeader tPayload tSignKey
+    return $ TransactionJSON tHeader tPayload kp
   parseJSON invalid = typeMismatch "Transaction" invalid

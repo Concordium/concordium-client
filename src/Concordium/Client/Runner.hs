@@ -31,11 +31,12 @@ import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Crypto.SignatureScheme   (KeyPair (..))
 import qualified Concordium.Crypto.SignatureScheme   as Sig
+import qualified Concordium.Crypto.BlockSignature   as BlockSig
 import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.VRF               as VRF
 import qualified Concordium.ID.Account               as IDA
 
-import qualified Concordium.GlobalState.Transactions as Types
+import qualified Concordium.Types.Transactions as Types
 import qualified Concordium.Types.Execution          as Types
 import qualified Concordium.Types                    as Types
 
@@ -222,27 +223,26 @@ handleSendTransactionPayload networkId headerFile payloadFile = do
     Left err -> liftIO $ die $ "Could not decode payload because: " ++ err
     Right p -> return p
 
-  (scheme, signKey, verifyKey, nonce, energy) <-
+  (kp, nonce, energy) <-
     case headerValue >>= parseEither headerParser of
       Left err ->
         liftIO $ die $ "Could not decode header because: " ++ err
       Right hdr -> return hdr
 
   let encPayload = Types.encodePayload payload
-  let header = Types.makeTransactionHeader scheme verifyKey (Types.payloadSize encPayload) nonce energy
-  let tx = Types.signTransaction (Sig.KeyPair signKey verifyKey) header encPayload
+  let verifyKey = Sig.correspondingVerifyKey kp
+  let header = Types.makeTransactionHeader verifyKey (Types.payloadSize encPayload) nonce energy
+  let tx = Types.signTransaction kp header encPayload
   sendTransactionToBaker tx networkId >>= \case
     Left err -> liftIO $ putStrLn $ "Could not send transaction because: " ++ err
     Right False -> liftIO $ putStrLn $ "Could not send transaction."
     Right True -> liftIO $ putStrLn $ "Transaction sent."
 
-  where headerParser = withObject "Transaction header" $ \v -> do
-          verifyKey <- v .: "verifyKey"
-          signKey <- v .: "signKey"
-          signScheme <- v .:? "signatureScheme" .!= Sig.Ed25519
+  where headerParser obj = flip (withObject "Transaction header") obj $ \v -> do
+          kp <- parseJSON obj
           nonce <- v .: "nonce"
           energy <- v .: "gasAmount"
-          return (signScheme, signKey, verifyKey, nonce, energy)
+          return (kp, nonce, energy)
 
 handleMakeBaker :: FilePath -> FilePath -> Maybe FilePath -> IO ()
 handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
@@ -253,18 +253,19 @@ handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
       Left err ->
         die $ "Could not decode file with baker keys because: " ++ err
       Right keys -> return keys
-  (scheme, accountSign, accountVerify) <-
-    case bakerAccountValue >>= parseEither accountKeysParser of
+  kp <-
+    case bakerAccountValue >>= parseEither parseJSON of
       Left err ->
         die $ "Could not decode file with account keys because: " ++ err
       Right keys -> return keys
   let abElectionVerifyKey = vrfVerify
   let abSignatureVerifyKey = verifyKey
-  let abAccount = IDA.accountAddress accountVerify scheme
+  let accountVerify = Sig.correspondingVerifyKey kp
+  let abAccount = IDA.accountAddress accountVerify
   let challenge = S.runPut (S.put abElectionVerifyKey <> S.put abSignatureVerifyKey <> S.put abAccount)
   abProofElection <- Proofs.proveDlog25519VRF challenge (VRF.KeyPair vrfPrivate vrfVerify) `except` "Could not produce VRF key proof."
-  abProofSig <- Proofs.proveDlog25519KP challenge (Sig.KeyPair signKey verifyKey) `except` "Could not produce signature key proof."
-  abProofAccount <- Proofs.proveDlog25519KP challenge (Sig.KeyPair accountSign accountVerify) `except` "Could not produce account keys proof."
+  abProofSig <- Proofs.proveDlog25519Block challenge (BlockSig.KeyPair signKey verifyKey) `except` "Could not produce signature key proof."
+  abProofAccount <- Proofs.proveDlog25519KP challenge kp `except` "Could not produce account keys proof."
 
   -- let addBaker = Types.AddBaker{..}
   let out = AE.encodePretty $
@@ -285,12 +286,6 @@ handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
           signKey <- v .: "signatureSignKey"
           verifyKey <- v .: "signatureVerifyKey"
           return (vrfPrivate, vrfVerifyKey, signKey, verifyKey)
-
-        accountKeysParser = withObject "Account keys" $ \v -> do
-          verifyKey <- v .: "verifyKey"
-          signKey <- v .: "signKey"
-          signScheme <- v .: "signatureScheme"
-          return (signScheme, signKey, verifyKey)
 
 printPeerData :: MonadIO m => Either String PeerData -> m ()
 printPeerData epd =
@@ -421,14 +416,14 @@ processTransaction_ transaction networkId hookit = do
     nonce <-
       case thNonce . metadata $ transaction of
         Nothing ->
-          let senderAddress = IDA.accountAddress (thSenderKey (metadata transaction)) Sig.Ed25519
+          let senderAddress = IDA.accountAddress (thSenderKey (metadata transaction))
           in getAccountNonce senderAddress =<< getBestBlockHash
         Just nonce -> return nonce
     encodeAndSignTransaction
       (payload transaction)
       (thGasAmount (metadata transaction))
       nonce
-      (KeyPair (CT.signKey transaction) (thSenderKey (metadata transaction)))
+      (CT.signKey transaction)
 
   when hookit $ do
     let trHash = Types.transactionHash tx
@@ -475,5 +470,5 @@ encodeAndSignTransaction pl energy nonce keys = do
     (CT.DelegateStake dsid) -> return $ Types.DelegateStake dsid
 
   let encPayload = Types.encodePayload txPayload
-  let header = Types.makeTransactionHeader Sig.Ed25519 (verifyKey keys) (Types.payloadSize encPayload) nonce energy
+  let header = Types.makeTransactionHeader (Sig.correspondingVerifyKey keys) (Types.payloadSize encPayload) nonce energy
   return $ Types.signTransaction keys header encPayload
