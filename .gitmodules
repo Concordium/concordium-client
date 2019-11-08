@@ -7,3 +7,6 @@
 [submodule "deps/globalstate-types"]
 	path = deps/globalstate-types
 	url = ../consensus/globalstate-types.git
+[submodule "deps/grpc-api"]
+	path = deps/grpc-api
+	url = git@gitlab.com:Concordium/grpc-api.git

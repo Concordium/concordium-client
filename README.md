@@ -2,7 +2,7 @@
 
 ## Requisites
 
-For generating the protobuf files we need to install [protoc](https://github.com/google/proto-lens/blob/master/docs/installing-protoc.md). The file `proto/concordium.proto` assumes that the `p2p-client` project is located in `../p2p-client` and if that's not the case it will fail. To solve that, just symlink the proper protobuf file or copy the contents from [this](https://gitlab.com/Concordium/p2p-client/blob/develop/src/proto/concordium_p2p_rpc.proto) file there.
+For generating the protobuf files we need to install [protoc](https://github.com/google/proto-lens/blob/master/docs/installing-protoc.md).
 
 Executing `stack build` should now succeed.
 
