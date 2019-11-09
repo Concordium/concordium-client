@@ -6,15 +6,12 @@ if [ ! -z "$JENKINS_HOME" ]; then
   then
     ( cd p2p-client && git checkout $1 )
   fi
-  cat p2p-client/src/proto/concordium_p2p_rpc.proto > concordium.proto
   cp p2p-client/scripts/genesis-data/*-bakers.tar.gz .
   VERSION=`( cd p2p-client && git rev-parse --verify HEAD )`
 else
-  cat ../p2p-client/src/proto/concordium_p2p_rpc.proto > concordium.proto
   cp ../p2p-client/scripts/genesis-data/*-bakers.tar.gz .
   VERSION=`( cd ../p2p-client && git rev-parse --verify HEAD )`
 fi
-
 
 echo "Going to build a transaction generator which matches p2p-client @ $VERSION"
 
