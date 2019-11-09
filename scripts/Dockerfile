@@ -2,7 +2,6 @@
 FROM ubuntu as build
 
 COPY . /build
-COPY concordium.proto /build/proto/concordium.proto
 COPY *-bakers.tar.gz /build/
 
 WORKDIR /build
