@@ -45,6 +45,8 @@ data IdObjectRequest =
     { ipIdentity :: Int
     , name :: Text
     , attributes :: Map Text Text
+    , anonymityRevokers :: [Int]
+    , threshold :: Int
     }
   deriving (Generic, Show, ToJSON)
 
@@ -61,6 +63,8 @@ sampleIdObjectRequest =
         , ("residenceCountryCode", "386")
         , ("variant", "0")
         ]
+    , anonymityRevokers = [0,1,2]
+    , threshold = 2
     }
 
 
@@ -78,21 +82,27 @@ data PreIdentityObject =
     { accountHolderName :: Text
     , attributeList :: Map Text Text
     , idCredPubIp :: Text
+    , idCredPub :: Text
     , idCredSecCommitment :: Text
-    , ipArData :: IpArData
+    , sndIdCredSecCommitment :: Text
+    , ipArData :: [IpArData]
+    , choiceArData :: [Int]
+    , revocationThreshold :: Int
     , pokSecCred :: Text
-    , prfKeyCommitmentWithAR :: Text
+    , sndPokSecCred :: Text
+    , proofCommitmentsToIdCredSecSame :: Text
     , prfKeyCommitmentWithID :: Text
+    , prfKeySharingCoeffCommitments :: [Text]
     , proofCommitmentsSame :: Text
-    , proofEncryptionPrf :: Text
     }
   deriving (Generic, Show, FromJSON, ToJSON)
 
 data IpArData =
   IpArData
-    { arDescription :: Text
-    , arIdentity :: Int
-    , prfKeyEncryption :: Text
+    { arIdentity :: Int
+    , encPrfKeyShare :: Text
+    , prfKeyShareNumber :: Int
+    , proofComEncEq :: Text
     }
   deriving (Generic, Show, FromJSON, ToJSON)
 
@@ -114,7 +124,6 @@ data PrivateDataAci =
 data CredentialHolderInformation =
   CredentialHolderInformation
     { idCredPublic :: Text
-    , idCredPublicIP :: Text
     , idCredSecret :: Text
     , name :: Text
     }
@@ -245,12 +254,12 @@ type AccountKeyPair = KeyPair
 
 data IdCredential =
   IdCredential
-    { arData:: IdCredArData
+    { arData :: [IdCredArData]
     , ipIdentity :: Int
     , policy :: IdCredPolicy
     , proofs :: Text
     , regId :: Text
-    , schemeId :: Text
+    , threshold :: Int
     , verifyKey :: Text
     }
   deriving (Generic, Show, FromJSON, ToJSON)
@@ -258,7 +267,8 @@ data IdCredential =
 data IdCredArData =
   IdCredArData
     { arIdentity :: Int
-    , idCredPubEnc :: Text
+    , encIdCredPubShare :: Text
+    , idCredPubShareNumber :: Int
     }
   deriving (Generic, Show, FromJSON, ToJSON)
 

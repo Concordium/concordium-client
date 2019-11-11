@@ -54,6 +54,7 @@ import Control.Monad
 import qualified Config
 import SimpleIdClientApi
 import EsApi
+import Api.Messages
 
 godsToken :: Text
 godsToken = "47434137412923191713117532"
@@ -97,105 +98,6 @@ data Routes r = Routes
                                      :> Post '[JSON] ReplayTransactionsResponse
     }
   deriving (Generic)
-
-
-data BetaIdProvisionRequest =
-  BetaIdProvisionRequest
-    { attributes :: [(Text,Text)]
-    , accountKeys :: Maybe AccountKeyPair
-    }
-  deriving (FromJSON, Generic, Show)
-
--- The BetaIdProvisionResponse is just what the SimpleIdClient returns for Identity Object provisioning
-type BetaIdProvisionResponse = IdObjectResponse
-
-data BetaAccountProvisionRequest =
-  BetaAccountProvisionRequest
-    { ipIdentity :: Int
-    , preIdentityObject :: PreIdentityObject
-    , privateData :: PrivateData
-    , signature :: Text
-    , revealedItems :: [Text]
-    }
-  deriving (ToJSON, FromJSON, Generic, Show)
-
-
-data BetaAccountProvisionResponse =
-  BetaAccountProvisionResponse
-    { accountKeys :: AccountKeyPair
-    , spio :: IdCredential
-    , address :: Text
-    }
-  deriving (ToJSON, Generic, Show)
-
-
-data BetaGtuDropResponse =
-  BetaGtuDropResponse
-    { transactionId :: Types.TransactionHash
-    }
-  deriving (ToJSON, Generic, Show)
-
-data TransferRequest =
-  TransferRequest
-    { keypair :: KeyPair
-    , to :: Types.Address
-    , amount :: Types.Amount
-    }
-  deriving (FromJSON, Generic, Show)
-
-data TransferResponse =
-  TransferResponse
-    { transactionId :: Types.TransactionHash
-    }
-  deriving (ToJSON, Generic, Show)
-
-data GetNodeStateResponse =
-  GetNodeStateResponse
-    { name :: Text
-    , id :: Text
-    , version :: Text
-    , running :: Bool
-    , runningSince :: Int
-    , sent :: Int
-    , received :: Int
-    , isBaking :: Bool
-    , isInBakingCommittee :: Bool
-    , isFinalizing :: Bool
-    , isInFinalizingCommittee :: Bool
-    , signatureVerifyKey :: Text
-    , selectionVerifyKey :: Text
-    , timestamp :: Int
-    }
-  deriving (FromJSON, ToJSON, Generic, Show)
-
-
-data SetNodeStateRequest =
-  SetNodeStateRequest
-    { name :: Maybe Text
-    , id :: Maybe Text
-    , version :: Maybe Text
-    , running :: Maybe Bool
-    , runningSince :: Maybe Int
-    , sent :: Maybe Int
-    , received :: Maybe Int
-    , isBaking :: Maybe Bool
-    , isInBakingCommittee :: Maybe Bool
-    , isFinalizing :: Maybe Bool
-    , isInFinalizingCommittee :: Maybe Bool
-    }
-  deriving (FromJSON, ToJSON, Generic, Show)
-
-
-data SetNodeStateResponse =
-  SetNodeStateResponse
-    { success :: Bool }
-  deriving (FromJSON, ToJSON, Generic, Show)
-
-data ReplayTransactionsRequest = ReplayTransactionsRequest  { adminToken :: Text }
-  deriving (FromJSON, ToJSON, Generic, Show)
-
-data ReplayTransactionsResponse = ReplayTransactionsResponse { success :: Bool }
-  deriving (FromJSON, ToJSON, Generic, Show)
 
 api :: Proxy (ToServantApi Routes)
 api = genericApi (Proxy :: Proxy Routes)
@@ -261,6 +163,8 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
                 , ("maxAccount", "30")
                 , ("variant", "0")
                 ] ++ attributes)
+            , anonymityRevokers = [0,1,2]
+            , threshold = 2
             }
 
     idObjectResponse <- liftIO $ postIdObjectRequest idUrl idObjectRequest
@@ -425,8 +329,6 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
     else
       return $ ReplayTransactionsResponse False
 
-
-
 -- For beta, uses the middlewareGodKP which is seeded with funds
 runGodTransaction :: Backend -> Text -> TransactionJSONPayload -> IO Types.TransactionHash
 runGodTransaction nodeBackend esUrl payload = do
@@ -557,7 +459,7 @@ debugTestFullProvision = do
 
       idObjectRequest =
         IdObjectRequest
-          { ipIdentity = 0
+          { ipIdentity = 5
           , name = "middleware-beta-debug"
           , attributes = fromList -- @TODO make these a dynamic in future
               ([ ("creationTime", Text.pack $ show creationTime)
@@ -565,6 +467,8 @@ debugTestFullProvision = do
               , ("maxAccount", "30")
               , ("variant", "0")
               ] ++ attributesStub)
+          , anonymityRevokers = [0,1,2]
+          , threshold = 2
           }
 
   idObjectResponse <- postIdObjectRequest idUrl idObjectRequest
