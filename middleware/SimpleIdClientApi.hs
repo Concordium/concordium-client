@@ -16,7 +16,7 @@ import Data.Map
 import qualified Data.Text as Text
 
 import Http
-import Concordium.Crypto.SignatureScheme (SignKey (..), VerifyKey (..))
+import Concordium.Crypto.BlockSignature (SignKey (..), VerifyKey (..))
 
 
 -- API requests

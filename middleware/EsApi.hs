@@ -25,7 +25,9 @@ import NeatInterpolation
 import Servant.API.Generic
 
 import qualified Concordium.Crypto.ByteStringHelpers
-import qualified Concordium.Scheduler.Types as Types
+import qualified Concordium.Types as Types
+import qualified Concordium.Types.Transactions as Types
+
 import Concordium.Types
 import Http
 import Control.Monad

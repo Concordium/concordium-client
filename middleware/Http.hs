@@ -24,7 +24,6 @@ import NeatInterpolation
 import Servant.API.Generic
 import Data.Map
 import Control.Monad.IO.Class
-import qualified Concordium.Scheduler.Types as Types
 import Concordium.Client.Types.Transaction
 import Concordium.Types
 

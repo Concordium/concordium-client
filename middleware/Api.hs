@@ -42,12 +42,13 @@ import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction
 import           Concordium.Client.Commands          as COM
 import qualified Acorn.Parser.Runner                 as PR
-import qualified Concordium.Scheduler.Types          as Types
+import qualified Concordium.Types                    as Types
+import qualified Concordium.Types.Transactions       as Types
 import           Concordium.Crypto.SignatureScheme   (SchemeId (..), VerifyKey, KeyPair(..))
-import           Concordium.Crypto.Ed25519Signature  (randomKeyPair, pubKey)
+import           Concordium.Crypto.Ed25519Signature  (randomKeyPair, deriveVerifyKey)
 import qualified Concordium.ID.Account
 import qualified Concordium.ID.Types
-import qualified Concordium.Scheduler.Utils.Init.Example
+-- import qualified Concordium.Scheduler.Utils.Init.Example
 import qualified Proto.Concordium_Fields             as CF
 import Control.Monad
 
@@ -146,12 +147,12 @@ data TransferRequest =
   deriving (FromJSON, Generic, Show)
 
 
-instance FromJSON KeyPair where
-  parseJSON (Object v) = do
-    verifyKey <- v .: "verifyKey"
-    signKey <- v .: "signKey"
-    pure $ KeyPair {..}
-  parseJSON invalid = typeMismatch "KeyPair" invalid
+-- instance FromJSON KeyPair where
+--   parseJSON (Object v) = do
+--     verifyKey <- v .: "verifyKey"
+--     signKey <- v .: "signKey"
+--     pure $ KeyPairEd25519 {..}
+--   parseJSON invalid = typeMismatch "KeyPair" invalid
 
 
 data TransferResponse =
@@ -482,7 +483,7 @@ middlewareGodKP :: KeyPair
 middlewareGodKP = do
   -- https://gitlab.com/Concordium/p2p-client/blob/d41aba2cc3bfed7c5be21fe0612581f9c90e9e45/scripts/genesis-data/beta_accounts/beta-account-0.json
   let verifyKey = certainDecode "\"016fb793ef489eaf256eac1ebbe2513919b60dfd4fad9645f2425127af6e109f\""
-  KeyPair verifyKey (unsafePerformIO $ pubKey verifyKey)
+  KeyPair verifyKey (unsafePerformIO $ deriveVerifyKey verifyKey)
 
 
 executeTransaction :: Text -> Backend -> TransactionJSON -> IO Types.TransactionHash
