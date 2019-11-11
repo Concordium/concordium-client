@@ -44,11 +44,10 @@ import           Concordium.Client.Commands          as COM
 import qualified Acorn.Parser.Runner                 as PR
 import qualified Concordium.Types                    as Types
 import qualified Concordium.Types.Transactions       as Types
-import           Concordium.Crypto.SignatureScheme   (SchemeId (..), VerifyKey, KeyPair(..))
+import           Concordium.Crypto.SignatureScheme   (SchemeId (..), VerifyKey, KeyPair(..), correspondingVerifyKey)
 import           Concordium.Crypto.Ed25519Signature  (randomKeyPair, deriveVerifyKey)
 import qualified Concordium.ID.Account
 import qualified Concordium.ID.Types
--- import qualified Concordium.Scheduler.Utils.Init.Example
 import qualified Proto.Concordium_Fields             as CF
 import Control.Monad
 
@@ -110,7 +109,6 @@ data BetaIdProvisionRequest =
 -- The BetaIdProvisionResponse is just what the SimpleIdClient returns for Identity Object provisioning
 type BetaIdProvisionResponse = IdObjectResponse
 
-
 data BetaAccountProvisionRequest =
   BetaAccountProvisionRequest
     { ipIdentity :: Int
@@ -137,7 +135,6 @@ data BetaGtuDropResponse =
     }
   deriving (ToJSON, Generic, Show)
 
-
 data TransferRequest =
   TransferRequest
     { keypair :: KeyPair
@@ -146,22 +143,11 @@ data TransferRequest =
     }
   deriving (FromJSON, Generic, Show)
 
-
--- instance FromJSON KeyPair where
---   parseJSON (Object v) = do
---     verifyKey <- v .: "verifyKey"
---     signKey <- v .: "signKey"
---     pure $ KeyPairEd25519 {..}
---   parseJSON invalid = typeMismatch "KeyPair" invalid
-
-
 data TransferResponse =
   TransferResponse
     { transactionId :: Types.TransactionHash
     }
   deriving (ToJSON, Generic, Show)
-
-
 
 data GetNodeStateResponse =
   GetNodeStateResponse
@@ -302,8 +288,7 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
     liftIO $ putStrLn "✅ Got idCredentialResponse"
 
     let newAccountKeyPair = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
-        newVerifyKey = verifyKey (newAccountKeyPair :: AccountKeyPair)
-        newAccountAddress = verifyKeyToAccountAddress newVerifyKey
+        newAccountAddress = Concordium.ID.Account.accountAddress (correspondingVerifyKey newAccountKeyPair)
 
     _ <- liftIO $ runGodTransaction nodeBackend esUrl $ DeployCredential { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
 
@@ -333,7 +318,7 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
   transfer :: TransferRequest -> Handler TransferResponse
   transfer TransferRequest{ keypair, to, amount } = do
 
-    let accountAddress = keypairToAccountAddress keypair
+    let accountAddress = Concordium.ID.Account.accountAddress (correspondingVerifyKey keypair)
 
     liftIO $ putStrLn $ "✅ Sending " ++ show amount ++ " from " ++ show accountAddress ++ " to " ++ show to
 
@@ -451,7 +436,7 @@ runGodTransaction nodeBackend esUrl payload = do
 runTransaction :: Backend -> Text -> TransactionJSONPayload -> KeyPair -> IO Types.TransactionHash
 runTransaction nodeBackend esUrl payload keypair = do
 
-  let accountAddressText = Text.pack $ show $ keypairToAccountAddress keypair
+  let accountAddressText = Text.pack . show . Concordium.ID.Account.accountAddress . correspondingVerifyKey $ keypair
 
   nonce <- EsApi.takeNextNonceFor esUrl accountAddressText
 
@@ -466,12 +451,12 @@ runTransaction nodeBackend esUrl payload keypair = do
       TransactionJSON
         { metadata = transactionHeader
         , payload = payload
-        , signKey = Concordium.Crypto.SignatureScheme.signKey keypair
+        , signKey = keypair
         }
 
     transactionHeader =
           TransactionJSONHeader
-            { thSenderKey = Concordium.Crypto.SignatureScheme.verifyKey keypair
+            { thSenderKey = correspondingVerifyKey keypair
             , thNonce = Just nonce
             , thGasAmount = gasAmount
             }
@@ -482,8 +467,8 @@ runTransaction nodeBackend esUrl payload keypair = do
 middlewareGodKP :: KeyPair
 middlewareGodKP = do
   -- https://gitlab.com/Concordium/p2p-client/blob/d41aba2cc3bfed7c5be21fe0612581f9c90e9e45/scripts/genesis-data/beta_accounts/beta-account-0.json
-  let verifyKey = certainDecode "\"016fb793ef489eaf256eac1ebbe2513919b60dfd4fad9645f2425127af6e109f\""
-  KeyPair verifyKey (unsafePerformIO $ deriveVerifyKey verifyKey)
+  let signKey = certainDecode "\"016fb793ef489eaf256eac1ebbe2513919b60dfd4fad9645f2425127af6e109f\""
+  KeyPairEd25519 signKey (deriveVerifyKey signKey)
 
 
 executeTransaction :: Text -> Backend -> TransactionJSON -> IO Types.TransactionHash
@@ -499,36 +484,15 @@ executeTransaction esUrl nodeBackend transaction = do
 
   created <- getCurrentTime
 
-  putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (bareTransactionHash t created)
+  putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (Types.transactionHash t)
   putStrLn $ show transaction
 
 
-  EsApi.logBareTransaction esUrl t (verifyKeyToAccountAddress $ thSenderKey $ metadata transaction)
+  EsApi.logBareTransaction esUrl t (Concordium.ID.Account.accountAddress $ thSenderKey $ metadata transaction)
 
   putStrLn $ "✅ Bare tansaction logged into ElasticSearch"
 
-  pure $ bareTransactionHash t created
-
-
-bareTransactionHash :: Types.BareTransaction -> UTCTime -> Types.TransactionHash
-bareTransactionHash bare currentTime =
-  Types.trHash $ Types.fromBareTransaction currentTime bare
-
-
-verifyKeyToAddress :: VerifyKey -> Types.Address
-verifyKeyToAddress verifyKey =
-  Types.AddressAccount $ verifyKeyToAccountAddress verifyKey
-
-
-verifyKeyToAccountAddress :: VerifyKey -> Concordium.ID.Types.AccountAddress
-verifyKeyToAccountAddress verifyKey =
-  Concordium.ID.Account.accountAddress verifyKey Ed25519
-
-
-keypairToAccountAddress :: KeyPair -> Concordium.ID.Types.AccountAddress
-keypairToAccountAddress keypair =
-  Concordium.ID.Account.accountAddress (Concordium.Crypto.SignatureScheme.verifyKey keypair) Ed25519
-
+  pure $ Types.transactionHash t
 
 -- Dirty helper to help us with "definitely certain" value decoding
 certainDecode :: (FromJSON a) => BS8.ByteString -> a
@@ -625,8 +589,7 @@ debugTestFullProvision = do
   putStrLn $ BS8.unpack $ encode idCredentialResponse
 
   let newAccountKeyPair = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
-      newVerifyKey = verifyKey (newAccountKeyPair :: AccountKeyPair)
-      newAddress = verifyKeyToAddress newVerifyKey
+      newAddress = Types.AddressAccount $ Concordium.ID.Account.accountAddress (correspondingVerifyKey newAccountKeyPair)
 
       betaAccountProvisionResponse =
         BetaAccountProvisionResponse

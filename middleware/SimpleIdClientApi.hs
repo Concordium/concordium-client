@@ -16,7 +16,7 @@ import Data.Map
 import qualified Data.Text as Text
 
 import Http
-import Concordium.Crypto.BlockSignature (SignKey (..), VerifyKey (..))
+import Concordium.Crypto.SignatureScheme (KeyPair(..))
 
 
 -- API requests
@@ -241,12 +241,7 @@ data IdCredentialResponse =
     }
   deriving (Generic, Show, FromJSON, ToJSON)
 
-data AccountKeyPair =
-  AccountKeyPair
-    { signKey :: SignKey
-    , verifyKey :: VerifyKey
-    }
-  deriving (Generic, Show, FromJSON, ToJSON)
+type AccountKeyPair = KeyPair
 
 data IdCredential =
   IdCredential
