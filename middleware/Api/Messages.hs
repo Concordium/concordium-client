@@ -3,17 +3,17 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 module Api.Messages where
 
-import Data.Text                     (Text)
-import Data.Aeson
-import GHC.Generics
+import           Data.Text (Text)
+import           Data.Aeson
+import           GHC.Generics
 
-import qualified Concordium.Types                    as Types
-import qualified Concordium.Types.Transactions       as Types
-import           Concordium.Crypto.SignatureScheme   (KeyPair(..))
+import           Concordium.Client.Types.Transaction ()
+import           Concordium.Crypto.SignatureScheme (KeyPair(..))
 import qualified Concordium.ID.Types
-import Concordium.Client.Types.Transaction ()
+import qualified Concordium.Types as Types
+import qualified Concordium.Types.Transactions as Types
 
-import SimpleIdClientApi
+import           SimpleIdClientApi
 
 data BetaIdProvisionRequest =
   BetaIdProvisionRequest

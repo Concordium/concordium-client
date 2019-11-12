@@ -5,13 +5,13 @@
 module Http where
 
 import qualified Control.Exception as E
-import qualified Data.Text.Encoding as E
-import Data.Text                 (Text)
+import           Data.Aeson (eitherDecode)
+import           Data.Aeson.Types (ToJSON, FromJSON)
 import qualified Data.ByteString.Lazy.Char8 as BS
-import Data.Aeson                (eitherDecode)
-import Data.Aeson.Types          (ToJSON, FromJSON)
-import Network.HTTP.Conduit
-import Network.HTTP.Simple
+import           Data.Text (Text)
+import qualified Data.Text.Encoding as E
+import           Network.HTTP.Conduit
+import           Network.HTTP.Simple
 
 
 -- HTTP helpers

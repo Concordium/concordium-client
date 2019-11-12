@@ -1,24 +1,23 @@
 module Server (module Server, addHeaders) where
 
-import Control.Concurrent (forkIO)
-import Data.ByteString (ByteString)
-import Data.Function ((&))
-
-import qualified Network.Wai.Handler.Warp as W
-import System.FilePath                   ((</>))
-import Network.Wai                       (Application, Middleware)
-import Network.Wai.Middleware.AddHeaders (addHeaders)
-import Network.Wai.Middleware.Cors       (CorsResourcePolicy(..), cors)
-import Network.Wai.Middleware.HttpAuth   (basicAuth)
-import Network.Wai.Middleware.Static     (staticPolicy, policy, Policy)
-import Network.Wai.Middleware.Gzip       (gzip, def)
-import qualified Network.Wai.Middleware.ForceSSL as M (forceSSL)
-import Data.List.Split
+import           Control.Concurrent (forkIO)
+import           Data.ByteString (ByteString)
+import           Data.Function ((&))
+import           Data.List.Split
 import qualified Data.Text as T
-import Text.Read (readMaybe)
+import           Network.Wai (Application, Middleware)
+import qualified Network.Wai.Handler.Warp as W
+import           Network.Wai.Middleware.AddHeaders (addHeaders)
+import           Network.Wai.Middleware.Cors (CorsResourcePolicy(..), cors)
+import qualified Network.Wai.Middleware.ForceSSL as M (forceSSL)
+import           Network.Wai.Middleware.Gzip (gzip, def)
+import           Network.Wai.Middleware.HttpAuth (basicAuth)
+import           Network.Wai.Middleware.Static (staticPolicy, policy, Policy)
+import           System.FilePath ((</>))
+import           Text.Read (readMaybe)
 
 import qualified Config
-import Concordium.Client.Commands as COM
+import           Concordium.Client.Commands as COM
 import qualified Api
 
 

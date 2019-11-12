@@ -2,8 +2,8 @@
 
 module Main where
 
-import Control.Concurrent    (threadDelay)
-import Control.Monad         (forever)
+import Control.Concurrent (threadDelay)
+import Control.Monad (forever)
 import Control.Monad.Managed (Managed, MonadIO, liftIO, runManaged)
 import System.IO (hSetBuffering, hSetEncoding, BufferMode(..), stdout, utf8)
 

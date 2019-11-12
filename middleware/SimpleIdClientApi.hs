@@ -6,17 +6,17 @@
 
 module SimpleIdClientApi where
 
-import Data.Text                 (Text)
-import Data.Aeson.Types          (ToJSON(..), FromJSON)
-import Data.Aeson                (Value(..), (.=))
-import Servant.API.Generic
-import Data.Map
+import           Data.Aeson (Value(..), (.=))
+import           Data.Aeson.Types (ToJSON(..), FromJSON)
 import qualified Data.HashMap.Strict as DMS (fromList)
+import           Data.Map
+import           Data.Text (Text)
 import qualified Data.Text as Text
+import           Servant.API.Generic
 
-import Http
-import Concordium.Crypto.SignatureScheme (KeyPair(..))
-import Concordium.ID.Types (CredentialDeploymentInformation(..))
+import           Http
+import           Concordium.Crypto.SignatureScheme (KeyPair(..))
+import           Concordium.ID.Types (CredentialDeploymentInformation(..))
 
 
 -- API requests

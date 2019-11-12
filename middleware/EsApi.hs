@@ -8,25 +8,25 @@
 
 module EsApi where
 
+import Data.Maybe
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Encoding as TL
 import Data.Time.Clock
 import Data.Time.ISO8601
-import Data.Maybe
 
 import Data.Aeson as AE
-import Data.Text                 (Text)
 import Data.Aeson.Types          (ToJSON, FromJSON, typeMismatch)
+import Data.Text                 (Text)
+import NeatInterpolation
 import Network.HTTP.Conduit
 import Network.HTTP.Types.Status (statusCode)
-import NeatInterpolation
 import Servant.API.Generic
 
+import Concordium.Client.Types.Transaction ()
 import qualified Concordium.Crypto.ByteStringHelpers
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Transactions as Types
-import Concordium.Client.Types.Transaction ()
 
 import Concordium.Types
 import Http

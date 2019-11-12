@@ -8,47 +8,47 @@
 
 module Api where
 
-import Network.Wai                   (Application)
-import Control.Monad.Managed         (liftIO)
-import Data.Aeson                    (encode, decode')
-import Data.Aeson.Types              (FromJSON)
-import Data.Text                     (Text)
+import           Network.Wai (Application)
+import           Control.Monad.Managed (liftIO)
+import           Data.Aeson (encode, decode')
+import           Data.Aeson.Types (FromJSON)
+import           Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Text.IO as TIO
 import qualified Data.ByteString.Lazy.Char8 as BS8
-import Data.List.Split
-import Data.Map
-import Data.Time.Clock.POSIX
-import Servant
-import Servant.API.Generic
-import Servant.Server.Generic
-import System.Directory
-import System.Exit
-import System.Environment
-import System.IO.Error
-import System.Process
-import Text.Read (readMaybe)
-import Lens.Simple
+import           Data.List.Split
+import           Data.Map
+import           Data.Time.Clock.POSIX
+import           Servant
+import           Servant.API.Generic
+import           Servant.Server.Generic
+import           System.Directory
+import           System.Exit
+import           System.Environment
+import           System.IO.Error
+import           System.Process
+import           Text.Read (readMaybe)
+import           Lens.Simple
 
-import           Concordium.Client.Runner
+import qualified Acorn.Parser.Runner as PR
+import           Concordium.Client.Commands as COM
 import           Concordium.Client.GRPC
+import           Concordium.Client.Runner
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction
-import           Concordium.Client.Commands          as COM
-import qualified Acorn.Parser.Runner                 as PR
-import qualified Concordium.Types                    as Types
-import qualified Concordium.Types.Transactions       as Types
-import           Concordium.Crypto.SignatureScheme   (KeyPair(..), correspondingVerifyKey)
-import           Concordium.Crypto.Ed25519Signature  (deriveVerifyKey)
+import           Concordium.Crypto.Ed25519Signature (deriveVerifyKey)
+import           Concordium.Crypto.SignatureScheme (KeyPair(..), correspondingVerifyKey)
 import qualified Concordium.ID.Account
-import qualified Proto.Concordium_Fields             as CF
-import Control.Monad
+import qualified Concordium.Types as Types
+import qualified Concordium.Types.Transactions as Types
+import           Control.Monad
+import qualified Proto.Concordium_Fields as CF
 
 import qualified Config
-import SimpleIdClientApi
-import EsApi
-import Api.Messages
+import           SimpleIdClientApi
+import           EsApi
+import           Api.Messages
 
 godsToken :: Text
 godsToken = "47434137412923191713117532"
