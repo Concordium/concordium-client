@@ -504,7 +504,7 @@ debugTestFullProvision = do
 
   putStrLn $ "✅ Deploying credentials for: " ++ show newAddress
 
-  _ <- runGodTransaction nodeBackend esUrl $ DeployCredential { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
+  _ <- runGodTransaction nodeBackend esUrl $ DeployCredential { credential = credential (idCredentialResponse :: IdCredentialResponse) }
 
   putStrLn $ "✅ Requesting GTU Drop for: " ++ show newAddress
 

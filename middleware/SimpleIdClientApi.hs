@@ -3,20 +3,23 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module SimpleIdClientApi where
 
 import Data.Text                 (Text)
-import Data.Aeson.Types          (ToJSON, FromJSON)
-import Data.Aeson                (eitherDecode)
+import Data.Aeson.Types          (ToJSON(..), FromJSON)
+import Data.Aeson                (eitherDecode, Value(..), (.=))
 import Network.HTTP.Conduit
 import Network.HTTP.Simple
 import Servant.API.Generic
 import Data.Map
+import qualified Data.HashMap.Strict as DMS (fromList)
 import qualified Data.Text as Text
 
 import Http
 import Concordium.Crypto.SignatureScheme (KeyPair(..))
+import Concordium.ID.Types (CredentialDeploymentInformation(..))
 
 
 -- API requests
@@ -241,44 +244,21 @@ data IdCredentialRequest =
 --     "accountNumber": 3
 -- }
 
-
+instance ToJSON CredentialDeploymentInformation where
+  toJSON CredentialDeploymentInformation{..} = Object $
+    (case toJSON cdiValues of
+      Object o -> o
+      _ -> error "Should not happen")
+    <> DMS.fromList ["proof" .= cdiProofs]
 
 data IdCredentialResponse =
   IdCredentialResponse
     { accountKeyPair :: AccountKeyPair
-    , credential :: IdCredential
+    , credential :: CredentialDeploymentInformation
     }
   deriving (Generic, Show, FromJSON, ToJSON)
 
 type AccountKeyPair = KeyPair
-
-data IdCredential =
-  IdCredential
-    { arData :: [IdCredArData]
-    , ipIdentity :: Int
-    , policy :: IdCredPolicy
-    , proofs :: Text
-    , regId :: Text
-    , threshold :: Int
-    , verifyKey :: Text
-    }
-  deriving (Generic, Show, FromJSON, ToJSON)
-
-data IdCredArData =
-  IdCredArData
-    { arIdentity :: Int
-    , encIdCredPubShare :: Text
-    , idCredPubShareNumber :: Int
-    }
-  deriving (Generic, Show, FromJSON, ToJSON)
-
-data IdCredPolicy =
-  IdCredPolicy
-    { expiry :: Int
-    , revealedItems :: [IdCredRevealedItem]
-    , variant :: Int
-    }
-  deriving (Generic, Show, FromJSON, ToJSON)
 
 data IdCredRevealedItem =
   IdCredRevealedItem

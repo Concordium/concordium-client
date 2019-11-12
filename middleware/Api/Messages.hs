@@ -72,7 +72,7 @@ data BetaAccountProvisionRequest =
 data BetaAccountProvisionResponse =
   BetaAccountProvisionResponse
     { accountKeys :: AccountKeyPair
-    , spio :: IdCredential
+    , spio :: Concordium.ID.Types.CredentialDeploymentInformation
     , address :: Text
     }
   deriving (ToJSON, Generic, Show)
