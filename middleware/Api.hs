@@ -1,11 +1,9 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
 module Api where
@@ -13,7 +11,7 @@ module Api where
 import Network.Wai                   (Application)
 import Control.Monad.Managed         (liftIO)
 import Data.Aeson                    (encode, decode')
-import Data.Aeson.Types              (ToJSON, FromJSON, parseJSON, typeMismatch, (.:), Value(..))
+import Data.Aeson.Types              (FromJSON)
 import Data.Text                     (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
@@ -21,7 +19,6 @@ import qualified Data.Text.IO as TIO
 import qualified Data.ByteString.Lazy.Char8 as BS8
 import Data.List.Split
 import Data.Map
-import Data.Time.Clock
 import Data.Time.Clock.POSIX
 import Servant
 import Servant.API.Generic
@@ -31,8 +28,6 @@ import System.Exit
 import System.Environment
 import System.IO.Error
 import System.Process
-import System.Random
-import System.IO.Unsafe
 import Text.Read (readMaybe)
 import Lens.Simple
 
@@ -44,10 +39,9 @@ import           Concordium.Client.Commands          as COM
 import qualified Acorn.Parser.Runner                 as PR
 import qualified Concordium.Types                    as Types
 import qualified Concordium.Types.Transactions       as Types
-import           Concordium.Crypto.SignatureScheme   (SchemeId (..), VerifyKey, KeyPair(..), correspondingVerifyKey)
-import           Concordium.Crypto.Ed25519Signature  (randomKeyPair, deriveVerifyKey)
+import           Concordium.Crypto.SignatureScheme   (KeyPair(..), correspondingVerifyKey)
+import           Concordium.Crypto.Ed25519Signature  (deriveVerifyKey)
 import qualified Concordium.ID.Account
-import qualified Concordium.ID.Types
 import qualified Proto.Concordium_Fields             as CF
 import Control.Monad
 
@@ -110,7 +104,7 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
 
 
   typecheckContract :: Text -> Handler Text
-  typecheckContract contractCode = do
+  typecheckContract contractCode =
     liftIO $ do
 
       {- Rather hacky but KISS approach to "integrating" with the oak compiler
@@ -130,13 +124,13 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
       createDirectoryIfMissing True "tmp/"
       TIO.writeFile "tmp/Contract.elm" contractCode
 
-      (exitCode, stdout, stderr)
+      (exitCode, _, stderr)
         <- readProcessWithExitCode "oak" ["build", "tmp/Contract.elm"] []
 
       case exitCode of
-        ExitSuccess -> do
+        ExitSuccess ->
           pure "ok"
-        ExitFailure code -> do
+        ExitFailure code ->
           if code == 1 then
               pure $ Text.pack stderr
           else
@@ -144,12 +138,12 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
 
 
   betaIdProvision :: BetaIdProvisionRequest -> Handler BetaIdProvisionResponse
-  betaIdProvision BetaIdProvisionRequest{ attributes, accountKeys } = do
+  betaIdProvision BetaIdProvisionRequest{..} = do
 
     liftIO $ putStrLn "✅ Got the following attributes:"
-    liftIO $ putStrLn $ show attributes
+    liftIO $ print attributes
 
-    creationTime <- liftIO $ round `fmap` getPOSIXTime
+    creationTime :: Int <- liftIO $ round `fmap` getPOSIXTime
 
     let
       expiryDate = creationTime + (60*60*24*365) -- Expires in 365 days from now
@@ -220,7 +214,7 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
 
 
   transfer :: TransferRequest -> Handler TransferResponse
-  transfer TransferRequest{ keypair, to, amount } = do
+  transfer TransferRequest{..} = do
 
     let accountAddress = Concordium.ID.Account.accountAddress (correspondingVerifyKey keypair)
 
@@ -234,39 +228,39 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
   getNodeState :: Handler GetNodeStateResponse
   getNodeState = do
     timestamp <- liftIO $ round `fmap` getPOSIXTime
-    infoE <- liftIO $ runInClient nodeBackend $ getNodeInfo
+    infoE <- liftIO $ runInClient nodeBackend getNodeInfo
 
     nameQuery <- liftIO $ tryIOError (Text.pack <$> getEnv "NODE_NAME")
     let name = case nameQuery of
                  Right x -> x
                  _ -> "unknown"
 
-    versionQuery <- liftIO $ runInClient nodeBackend $ getPeerVersion
+    versionQuery <- liftIO $ runInClient nodeBackend getPeerVersion
     let version = case versionQuery of
                   Right x -> x
                   _ -> "unknown"
 
-    uptimeQuery <- liftIO $ runInClient nodeBackend $ getPeerUptime
+    uptimeQuery <- liftIO $ runInClient nodeBackend getPeerUptime
     let runningSince = case uptimeQuery of
                        Right x -> fromIntegral x
                        _ -> 0
 
 
-    sentQuery <- liftIO $ runInClient nodeBackend $ getPeerTotalSent
+    sentQuery <- liftIO $ runInClient nodeBackend getPeerTotalSent
     let sent = case sentQuery of
                Right x -> fromIntegral x
                _ -> 0
 
-    receivedQuery <- liftIO $ runInClient nodeBackend $ getPeerTotalReceived
+    receivedQuery <- liftIO $ runInClient nodeBackend getPeerTotalReceived
     let received = case receivedQuery of
                    Right x -> fromIntegral x
                    _ -> 0
 
     case infoE of
-      Right ni -> do
+      Right ni ->
         pure $
           GetNodeStateResponse
-            { id = ni ^. CF.nodeId ^. CF.value
+            { id = ni ^. (CF.nodeId . CF.value)
             , running = ni ^. CF.consensusRunning
             , isBaking = ni ^. CF.consensusBakerRunning
             , isInBakingCommittee = ni ^. CF.consensusBakerCommittee
@@ -278,52 +272,22 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
             , ..
             }
 
-
-
-            -- putStrLn $ "Node id: " ++ show ()
-            -- putStrLn $ "Current local time: " ++ show (ni ^. CF.currentLocaltime)
-            -- putStrLn $ "Peer type: " ++ show (ni ^. CF.peerType)
-            -- putStrLn $ "Baker running: " ++ show ()
-            -- putStrLn $ "Consensus running: " ++ show ()
-            -- putStrLn $ "Consensus type: " ++ show (ni ^. CF.consensusType)
-            -- putStrLn $ "Baker committee member: " ++ show ()
-            -- putStrLn $ "Finalization committee member: " ++ show ()
-
       Left err ->
         error $ show err
 
-
-
-    -- pure $
-    --   GetNodeStateResponse
-    --     { name = "dummy"
-    --     , id = "dummy"
-    --     , version = "dummy"
-    --     , running = True
-    --     , runningSince = 1569684258
-    --     , sent = 12345
-    --     , received = 12345
-    --     , isBaking = True
-    --     , isInBakingCommittee = True
-    --     , isFinalizing = True
-    --     , isInFinalizingCommittee = True
-    --     , timestamp = timestamp
-    --     }
-
-
   setNodeState :: SetNodeStateRequest -> Handler SetNodeStateResponse
-  setNodeState request =
+  setNodeState _ =
     pure $
       SetNodeStateResponse
         { success = True }
 
   replayTransactions :: ReplayTransactionsRequest -> Handler ReplayTransactionsResponse
-  replayTransactions req = do
+  replayTransactions req =
     if adminToken req == godsToken then do
       transactions <- liftIO $ getTransactionsForReplay esUrl
 
       let nid = 1000
-      _ <- forM transactions (runInClient nodeBackend . (flip sendTransactionToBaker) nid)
+      forM_ transactions (runInClient nodeBackend . flip sendTransactionToBaker nid)
 
       return $ ReplayTransactionsResponse True
     else
@@ -331,7 +295,7 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
 
 -- For beta, uses the middlewareGodKP which is seeded with funds
 runGodTransaction :: Backend -> Text -> TransactionJSONPayload -> IO Types.TransactionHash
-runGodTransaction nodeBackend esUrl payload = do
+runGodTransaction nodeBackend esUrl payload =
   runTransaction nodeBackend esUrl payload middlewareGodKP
 
 
@@ -384,15 +348,13 @@ executeTransaction esUrl nodeBackend transaction = do
     let hookIt = True
     PR.evalContext mdata $ runInClient nodeBackend $ processTransaction_ transaction nid hookIt
 
-  created <- getCurrentTime
-
   putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (Types.transactionHash t)
-  putStrLn $ show transaction
+  print transaction
 
 
   EsApi.logBareTransaction esUrl t (Concordium.ID.Account.accountAddress $ thSenderKey $ metadata transaction)
 
-  putStrLn $ "✅ Bare tansaction logged into ElasticSearch"
+  putStrLn "✅ Bare tansaction logged into ElasticSearch"
 
   pure $ Types.transactionHash t
 
@@ -438,9 +400,9 @@ debugTestFullProvision = do
   let
     (nodeHost, nodePort) =
       case splitOn ":" $ Text.unpack nodeUrl of
-        nodeHost:nodePortText:_ -> case readMaybe nodePortText of
-          Just nodePort ->
-            (nodeHost, nodePort)
+        nodeHostText:nodePortText:_ -> case readMaybe nodePortText of
+          Just nodePortText ->
+            (nodeHostText, nodePortText)
           Nothing ->
             error $ "Could not parse port for given NODE_URL: " ++ nodePortText
         _ ->
@@ -448,7 +410,7 @@ debugTestFullProvision = do
 
     nodeBackend = COM.GRPC { host = nodeHost, port = nodePort, target = Nothing }
 
-  creationTime <- liftIO $ round `fmap` getPOSIXTime
+  creationTime :: Int <- liftIO $ round `fmap` getPOSIXTime
 
   let attributesStub =
         [ ("birthYear", "2000")
@@ -495,13 +457,6 @@ debugTestFullProvision = do
   let newAccountKeyPair = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
       newAddress = Types.AddressAccount $ Concordium.ID.Account.accountAddress (correspondingVerifyKey newAccountKeyPair)
 
-      betaAccountProvisionResponse =
-        BetaAccountProvisionResponse
-          { accountKeys = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
-          , spio = credential (idCredentialResponse :: IdCredentialResponse)
-          , address = Text.pack . show $ newAddress
-          }
-
   putStrLn $ "✅ Deploying credentials for: " ++ show newAddress
 
   _ <- runGodTransaction nodeBackend esUrl $ DeployCredential { credential = credential (idCredentialResponse :: IdCredentialResponse) }
@@ -512,46 +467,45 @@ debugTestFullProvision = do
 
   pure "Done."
 
-
-
+debugGrpc :: IO GetNodeStateResponse
 debugGrpc = do
   let nodeBackend = COM.GRPC { host = "localhost", port = 11103, target = Nothing }
 
-  infoE <- runInClient nodeBackend $ getNodeInfo
+  infoE <- runInClient nodeBackend getNodeInfo
 
   nameQuery <- liftIO $ tryIOError (Text.pack <$> getEnv "NODE_NAME")
   let name = case nameQuery of
         Right x -> x
         _ -> "unknown"
 
-  versionQuery <- runInClient nodeBackend $ getPeerVersion
+  versionQuery <- runInClient nodeBackend getPeerVersion
   let version = case versionQuery of
                   Right x -> x
                   _ -> "unknown"
 
-  uptimeQuery <- runInClient nodeBackend $ getPeerUptime
+  uptimeQuery <- runInClient nodeBackend getPeerUptime
   let runningSince = case uptimeQuery of
                        Right x -> fromIntegral x
                        _ -> 0
 
 
-  sentQuery <- runInClient nodeBackend $ getPeerTotalSent
+  sentQuery <- runInClient nodeBackend getPeerTotalSent
   let sent = case sentQuery of
                Right x -> fromIntegral x
                _ -> 0
 
-  receivedQuery <- runInClient nodeBackend $ getPeerTotalReceived
+  receivedQuery <- runInClient nodeBackend getPeerTotalReceived
   let received = case receivedQuery of
                    Right x -> fromIntegral x
                    _ -> 0
 
   case infoE of
     Right ni -> do
-      putStrLn $ show ni
+      print ni
 
       pure $
         GetNodeStateResponse
-          { id = ni ^. CF.nodeId ^. CF.value
+          { id = ni ^. (CF.nodeId . CF.value)
           , running = ni ^. CF.consensusRunning
           , isBaking = ni ^. CF.consensusBakerRunning
           , isInBakingCommittee = ni ^. CF.consensusBakerCommittee

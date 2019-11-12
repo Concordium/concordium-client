@@ -1,35 +1,20 @@
-{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE RecordWildCards #-}
 
 module Http where
 
 import qualified Control.Exception as E
-import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
 import Data.Text                 (Text)
 import qualified Data.ByteString.Lazy.Char8 as BS
-import           Data.Aeson                          as AE
-import Data.Aeson                (eitherDecode, encode, parseJSONList)
-import Data.Aeson.Types          (ToJSON, FromJSON, typeMismatch)
-import Network.HTTP.Types.Header (RequestHeaders)
+import Data.Aeson                (eitherDecode)
+import Data.Aeson.Types          (ToJSON, FromJSON)
 import Network.HTTP.Conduit
 import Network.HTTP.Simple
-import Network.HTTP.Types.Status (statusCode)
-import NeatInterpolation
-import Servant.API.Generic
-import Data.Map
-import Control.Monad.IO.Class
-import Concordium.Client.Types.Transaction
-import Concordium.Types
 
 
 -- HTTP helpers
-
 
 getJsonRequest ::  (FromJSON response) => String -> IO response
 getJsonRequest url = do
@@ -91,13 +76,11 @@ jsonRequestEither req = do
 
     errorHandler err =
       case err of
-        HttpExceptionRequest _ (StatusCodeException res _) ->
+        HttpExceptionRequest _ (StatusCodeException _ _) ->
           pure $ Left err
         _ -> E.throw err
 
-  res <- E.catch doReq errorHandler
-
-  pure res
+  E.catch doReq errorHandler
 
 
 textRequest :: Request -> IO Text

@@ -27,7 +27,7 @@ lookupEnv name defaultVal = do
 lookupEnvText :: Text -> Text -> IO Text
 lookupEnvText name defaultVal = do
   param <- E.lookupEnv (unpack name)
-  pure $ fromMaybe defaultVal (fmap pack param)
+  pure $ maybe defaultVal pack param
 
 
 logger :: Environment -> Middleware

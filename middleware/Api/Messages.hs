@@ -3,55 +3,22 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 module Api.Messages where
 
-import Network.Wai                   (Application)
-import Control.Monad.Managed         (liftIO)
-import Data.Aeson                    (encode, decode')
-import Data.Aeson.Types              (ToJSON, FromJSON, parseJSON, typeMismatch, (.:), Value(..))
 import Data.Text                     (Text)
-import qualified Data.Text as Text
-import qualified Data.Text.Encoding as Text
-import qualified Data.Text.IO as TIO
-import qualified Data.ByteString.Lazy.Char8 as BS8
-import Data.List.Split
-import Data.Map
-import Data.Time.Clock
-import Data.Time.Clock.POSIX
-import Servant
-import Servant.API.Generic
-import Servant.Server.Generic
-import System.Directory
-import System.Exit
-import System.Environment
-import System.IO.Error
-import System.Process
-import System.Random
-import System.IO.Unsafe
-import Text.Read (readMaybe)
-import Lens.Simple
+import Data.Aeson
+import GHC.Generics
 
-import           Concordium.Client.Runner
-import           Concordium.Client.GRPC
-import           Concordium.Client.Runner.Helper
-import           Concordium.Client.Types.Transaction
-import           Concordium.Client.Commands          as COM
-import qualified Acorn.Parser.Runner                 as PR
 import qualified Concordium.Types                    as Types
 import qualified Concordium.Types.Transactions       as Types
-import           Concordium.Crypto.SignatureScheme   (SchemeId (..), VerifyKey, KeyPair(..), correspondingVerifyKey)
-import           Concordium.Crypto.Ed25519Signature  (randomKeyPair, deriveVerifyKey)
-import qualified Concordium.ID.Account
+import           Concordium.Crypto.SignatureScheme   (KeyPair(..))
 import qualified Concordium.ID.Types
-import qualified Proto.Concordium_Fields             as CF
-import Control.Monad
+import Concordium.Client.Types.Transaction ()
 
-import qualified Config
 import SimpleIdClientApi
-import EsApi
 
 data BetaIdProvisionRequest =
   BetaIdProvisionRequest
     { attributes :: [(Text,Text)]
-    , accountKeys :: Maybe AccountKeyPair
+    , accountKeys :: Maybe KeyPair
     }
   deriving (FromJSON, Generic, Show)
 
@@ -71,14 +38,14 @@ data BetaAccountProvisionRequest =
 
 data BetaAccountProvisionResponse =
   BetaAccountProvisionResponse
-    { accountKeys :: AccountKeyPair
+    { accountKeys :: KeyPair
     , spio :: Concordium.ID.Types.CredentialDeploymentInformation
     , address :: Text
     }
   deriving (ToJSON, Generic, Show)
 
 
-data BetaGtuDropResponse =
+newtype BetaGtuDropResponse =
   BetaGtuDropResponse
     { transactionId :: Types.TransactionHash
     }
@@ -92,7 +59,7 @@ data TransferRequest =
     }
   deriving (FromJSON, Generic, Show)
 
-data TransferResponse =
+newtype TransferResponse =
   TransferResponse
     { transactionId :: Types.TransactionHash
     }
@@ -135,13 +102,13 @@ data SetNodeStateRequest =
   deriving (FromJSON, ToJSON, Generic, Show)
 
 
-data SetNodeStateResponse =
+newtype SetNodeStateResponse =
   SetNodeStateResponse
     { success :: Bool }
   deriving (FromJSON, ToJSON, Generic, Show)
 
-data ReplayTransactionsRequest = ReplayTransactionsRequest  { adminToken :: Text }
+newtype ReplayTransactionsRequest = ReplayTransactionsRequest  { adminToken :: Text }
   deriving (FromJSON, ToJSON, Generic, Show)
 
-data ReplayTransactionsResponse = ReplayTransactionsResponse { success :: Bool }
+newtype ReplayTransactionsResponse = ReplayTransactionsResponse { success :: Bool }
   deriving (FromJSON, ToJSON, Generic, Show)

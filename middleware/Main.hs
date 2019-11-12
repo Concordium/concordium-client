@@ -11,9 +11,9 @@ import Server
 
 
 main :: IO ()
-main = manage $ do
+main = manage $
   program $ do
-    putStrLn $ "[server] Booting..."
+    putStrLn "[server] Booting..."
 
     -- Boot the http server
     let middlewares = allowCsrf . corsified
