@@ -7,7 +7,7 @@ if [ ! -z "$JENKINS_HOME" ]; then
     ( cd genesis-data && git checkout $1 )
   fi
   cp genesis-data/*-bakers.tar.gz .
-  VERSION=`( cd genesis && git rev-parse --verify HEAD )`
+  VERSION=`( cd genesis-data && git rev-parse --verify HEAD )`
 else
   cp ../genesis-data/*-bakers.tar.gz .
   VERSION=`( cd ../genesis-data && git rev-parse --verify HEAD )`
