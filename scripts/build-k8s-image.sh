@@ -9,8 +9,8 @@ if [ ! -z "$JENKINS_HOME" ]; then
   cp genesis-data/*-bakers.tar.gz .
   VERSION=`( cd genesis && git rev-parse --verify HEAD )`
 else
-  cp ../p2p-client/scripts/genesis-data/*-bakers.tar.gz .
-  VERSION=`( cd ../p2p-client && git rev-parse --verify HEAD )`
+  cp ../genesis-data/*-bakers.tar.gz .
+  VERSION=`( cd ../genesis-data && git rev-parse --verify HEAD )`
 fi
 
 echo "Going to build a transaction generator which matches genesis @ $VERSION"
