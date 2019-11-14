@@ -18,7 +18,5 @@ echo "Going to build a transaction generator which matches genesis @ $VERSION"
 export DOCKER_BUILDKIT=1
 
 docker build --ssh default -f scripts/Dockerfile -t 192549843005.dkr.ecr.eu-west-1.amazonaws.com/concordium/tx-generator:$VERSION .
-rm concordium.proto
-rm *-bakers.tar.gz
 
 docker push 192549843005.dkr.ecr.eu-west-1.amazonaws.com/concordium/tx-generator:$VERSION
