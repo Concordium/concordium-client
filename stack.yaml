@@ -84,4 +84,4 @@ allow-newer: true
 
 flags:
   simple-client:
-    middleware: true
+    middleware: false
