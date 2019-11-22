@@ -219,7 +219,7 @@ getAccountTransactions esUrl address = do
       pure $ AccountTransactionsResponse (results outcomes) address
     Left err -> do
       putStrLn $ "❌ failed to find transactions for " ++ show address
-      putStrLn $ show err
+      print err
       pure $ AccountTransactionsResponse [] address
   where
      getOutcomes :: Text -> OutcomesSearchResponseJson -> IO (Either HttpException OutcomesSearchResponseJson)
@@ -257,13 +257,10 @@ data OutcomesSearchResponseJson =
   deriving (Show)
 
 
-
 instance AE.FromJSON OutcomesSearchResponseJson where
   parseJSON (Object v) = do
     scrollId <- v .: "_scroll_id"
-    hits_ <- v .: "hits"
-    hits <- hits_ .: "hits"
-    results <- mapM (.: "_source") hits
+    results <- (v .: "hits") >>= (.: "hits") >>= mapM (.: "_source")
 
     return $ OutcomesSearchResponseJson results scrollId
 
