@@ -182,7 +182,6 @@ getAccountTransactions :: Text -> Text -> IO AccountTransactionsResponse
 getAccountTransactions esUrl address = do
   let
     -- @TODO what other transfer types do we care about for now?
-    -- @TODO @js - include scrolling pagination here to avoid max limit of 10_000
     q =
       [text|
         {
@@ -208,16 +207,38 @@ getAccountTransactions esUrl address = do
         }
       |]
 
-  (outcomes :: Either HttpException OutcomesSearchResponseJson) <-
-    postTextRequestEither (T.unpack esUrl ++ "/index_transfer_log/_search") q
+  (firstOutcomes :: Either HttpException OutcomesSearchResponseJson) <-
+    postTextRequestEither (T.unpack esUrl ++ "/index_transfer_log/_search?scroll=1m") q
 
-  case outcomes of
-    Right val ->
-      pure $ AccountTransactionsResponse (results val) address
+  allOutcomes <- case firstOutcomes of
+          Left _ -> return firstOutcomes
+          Right trans -> getOutcomes esUrl trans
+
+  case allOutcomes of
+    Right outcomes ->
+      pure $ AccountTransactionsResponse (results outcomes) address
     Left err -> do
       putStrLn $ "❌ failed to find transactions for " ++ show address
       print err
       pure $ AccountTransactionsResponse [] address
+  where
+     getOutcomes :: Text -> OutcomesSearchResponseJson -> IO (Either HttpException OutcomesSearchResponseJson)
+     getOutcomes url t@(OutcomesSearchResponseJson td scrollId) = do
+        let
+          q =
+            [text|
+                 {
+                 "scroll": "1m",
+                 "scroll_id": "$scrollId"
+                 }
+                 |]
+        (transactions :: Either HttpException OutcomesSearchResponseJson) <-
+          postTextRequestEither (T.unpack esUrl ++ "/_search/scroll") q
+        case transactions of
+          Left _ -> return transactions
+          Right (OutcomesSearchResponseJson [] _) -> return $ Right t
+          Right (OutcomesSearchResponseJson td2 scrId) -> getOutcomes url $  OutcomesSearchResponseJson (td ++ td2) scrId
+
 
 data AccountTransactionsResponse =
   AccountTransactionsResponse
@@ -227,19 +248,21 @@ data AccountTransactionsResponse =
   deriving (ToJSON, Generic, Show)
 
 
-newtype OutcomesSearchResponseJson =
+data OutcomesSearchResponseJson =
   OutcomesSearchResponseJson
-    { results :: [TransactionOutcome]
+    {
+      results :: [TransactionOutcome]
+      , scrollId :: Text
     }
   deriving (Show)
 
 
-
 instance AE.FromJSON OutcomesSearchResponseJson where
   parseJSON (Object v) = do
+    scrollId <- v .: "_scroll_id"
     results <- (v .: "hits") >>= (.: "hits") >>= mapM (.: "_source")
 
-    return $ OutcomesSearchResponseJson results
+    return $ OutcomesSearchResponseJson results scrollId
 
   parseJSON invalid = typeMismatch "OutcomesSearchResponseJson" invalid
 
