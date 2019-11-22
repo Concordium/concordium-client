@@ -216,11 +216,11 @@ getAccountTransactions esUrl address = do
 
   case allOutcomes of
     Right outcomes ->
-      pure $ AccountTransactionsResponse (results outcomes) accountAddress
+      pure $ AccountTransactionsResponse (results outcomes) address
     Left err -> do
-      putStrLn $ "❌ failed to find transactions for " ++ show accountAddress
+      putStrLn $ "❌ failed to find transactions for " ++ show address
       putStrLn $ show err
-      pure $ AccountTransactionsResponse [] accountAddress
+      pure $ AccountTransactionsResponse [] address
   where
      getOutcomes :: Text -> OutcomesSearchResponseJson -> IO (Either HttpException OutcomesSearchResponseJson)
      getOutcomes url t@(OutcomesSearchResponseJson td scrollId) = do
@@ -248,7 +248,7 @@ data AccountTransactionsResponse =
   deriving (ToJSON, Generic, Show)
 
 
-newtype OutcomesSearchResponseJson =
+data OutcomesSearchResponseJson =
   OutcomesSearchResponseJson
     {
       results :: [TransactionOutcome]
