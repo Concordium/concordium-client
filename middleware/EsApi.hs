@@ -8,27 +8,28 @@
 
 module EsApi where
 
+import Data.Maybe
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Encoding as TL
 import Data.Time.Clock
-import Data.Time.Clock.POSIX
 import Data.Time.ISO8601
 
 import Data.Aeson as AE
-import Data.Text                 (Text)
 import Data.Aeson.Types          (ToJSON, FromJSON, typeMismatch)
+import Data.Text                 (Text)
+import NeatInterpolation
 import Network.HTTP.Conduit
 import Network.HTTP.Types.Status (statusCode)
-import NeatInterpolation
 import Servant.API.Generic
 
+import Concordium.Client.Types.Transaction ()
 import qualified Concordium.Crypto.ByteStringHelpers
-import qualified Concordium.Scheduler.Types as Types
+import qualified Concordium.Types as Types
+import qualified Concordium.Types.Transactions as Types
+
 import Concordium.Types
 import Http
-import Control.Monad
 
 -- API requests
 
@@ -43,28 +44,36 @@ we're skipping this for now.
 
 -}
 takeNextNonceFor :: Text -> Text -> IO Types.Nonce
-takeNextNonceFor esUrl accountAddress = do
+takeNextNonceFor esUrl address = do
+
+  let
+    unexpected :: HttpException -> IO a
+    unexpected err = do
+        putStrLn "❌ Unexpected HttpException:"
+        print err
+        -- @TODO handle failures here
+        error "Nonce acquisition failed, fatal error."
 
   (nonceQueryResponseE :: Either HttpException NonceQueryResponse) <-
-    getJsonRequestEither (T.unpack esUrl ++ "/index_nonce_log/_doc/" ++ T.unpack accountAddress)
+    getJsonRequestEither (T.unpack esUrl ++ "/index_nonce_log/_doc/" ++ T.unpack address)
 
   case nonceQueryResponseE of
     Right nonceQueryResponse -> do
-      putStrLn $ "✅ got nonceQueryResponse, progressing..."
+      putStrLn "✅ got nonceQueryResponse, progressing..."
       let
-        nonceBody newNonce =
+        nonceBody nonceValue =
           [text|
-            { "nonce": $newNonce }
+            { "nonce": $nonceValue }
           |]
 
-        newNonce = (nonce nonceQueryResponse) + 1
+        newNonce = nonce nonceQueryResponse + 1
 
         url =
-          T.unpack esUrl ++ "/index_nonce_log/_doc/" ++ (T.unpack accountAddress) ++
-          "?if_seq_no=" ++ (show $ _seq_no nonceQueryResponse) ++
-          "&if_primary_term=" ++ (show $ _primary_term nonceQueryResponse)
+          T.unpack esUrl ++ "/index_nonce_log/_doc/" ++ T.unpack address ++
+          "?if_seq_no=" ++ show (_seq_no nonceQueryResponse) ++
+          "&if_primary_term=" ++ show (_primary_term nonceQueryResponse)
 
-        body (Nonce v) = (nonceBody $ T.pack . show $ v)
+        body (Nonce v) = nonceBody . T.pack . show $ v
 
       (nonceIncrementResponseE :: Either HttpException NonceIncrementResponse) <- postTextRequestEither url (body newNonce)
 
@@ -75,32 +84,26 @@ takeNextNonceFor esUrl accountAddress = do
             NonceAlreadyTaken -> do
               -- @TODO never fires as decoders not attempted on non-200 - how to fix this?
               putStrLn "⚠️ Nonce already taken! Retrying..."
-              takeNextNonceFor esUrl accountAddress
-        Left err -> do
+              takeNextNonceFor esUrl address
+        Left err ->
           case err of
             HttpExceptionRequest _ (StatusCodeException res _) ->
               if statusCode (responseStatus res) == 409 then do
                 putStrLn "⚠️ Nonce already taken! Retrying..."
-                takeNextNonceFor esUrl accountAddress
-
-              else do
-                putStrLn "❌ Unexpected HttpException:"
-                putStrLn $ show err
-                -- @TODO handle failures here
-                error "Nonce acquisition failed, fatal error."
-
-    Left err -> do
+                takeNextNonceFor esUrl address
+              else
+                unexpected err
+            _ -> unexpected err
+    Left err ->
       case err of
         HttpExceptionRequest _ (StatusCodeException res _) ->
           if statusCode (responseStatus res) == 404 then do
-            putStrLn $ "✅ No nonce exists, initializing"
-            initializeNonce esUrl accountAddress -- @TODO handle failures here
+            putStrLn "✅ No nonce exists, initializing"
+            _ <- initializeNonce esUrl address -- @TODO handle failures here
             pure $ Nonce 1
-          else do
-            putStrLn "❌ Unexpected HttpException:"
-            putStrLn $ show err
-            -- @TODO handle failures here
-            error "Nonce acquisition failed, fatal error."
+          else
+            unexpected err
+        _ -> unexpected err
 
 
 initializeNonce :: Text -> Text -> IO NonceInitializeResponse
@@ -110,7 +113,7 @@ initializeNonce esUrl address = do
       { "nonce": 1 }
     |]
 
-    url = T.unpack esUrl ++ "/index_nonce_log/_doc/" ++ (T.unpack address)
+    url = T.unpack esUrl ++ "/index_nonce_log/_doc/" ++ T.unpack address
 
   postTextRequest url newNonce
 
@@ -176,7 +179,7 @@ instance AE.FromJSON NonceQueryResponse where
 
 
 getAccountTransactions :: Text -> Text -> IO AccountTransactionsResponse
-getAccountTransactions esUrl accountAddress = do
+getAccountTransactions esUrl address = do
   let
     -- @TODO what other transfer types do we care about for now?
     -- @TODO @js - include scrolling pagination here to avoid max limit of 10_000
@@ -193,8 +196,8 @@ getAccountTransactions esUrl accountAddress = do
             "bool": {
               "must": [
                 { "bool": { "should": [
-                  { "match": { "to_account": "$accountAddress" } },
-                  { "match": { "from_account": "$accountAddress" } }
+                  { "match": { "to_account": "$address" } },
+                  { "match": { "from_account": "$address" } }
                 ] } },
                 { "bool": { "must": [
                   { "match": { "message_type": "DirectTransfer" } }
@@ -209,14 +212,12 @@ getAccountTransactions esUrl accountAddress = do
     postTextRequestEither (T.unpack esUrl ++ "/index_transfer_log/_search") q
 
   case outcomes of
-    Right outcomes ->
-      pure $ AccountTransactionsResponse (results outcomes) accountAddress
+    Right val ->
+      pure $ AccountTransactionsResponse (results val) address
     Left err -> do
-      putStrLn $ "❌ failed to find transactions for " ++ show accountAddress
-      putStrLn $ show err
-      pure $ AccountTransactionsResponse [] accountAddress
-
-
+      putStrLn $ "❌ failed to find transactions for " ++ show address
+      print err
+      pure $ AccountTransactionsResponse [] address
 
 data AccountTransactionsResponse =
   AccountTransactionsResponse
@@ -226,18 +227,17 @@ data AccountTransactionsResponse =
   deriving (ToJSON, Generic, Show)
 
 
-data OutcomesSearchResponseJson =
+newtype OutcomesSearchResponseJson =
   OutcomesSearchResponseJson
     { results :: [TransactionOutcome]
     }
   deriving (Show)
 
 
+
 instance AE.FromJSON OutcomesSearchResponseJson where
   parseJSON (Object v) = do
-    hits_ <- v .: "hits"
-    hits <- hits_ .: "hits"
-    results <- mapM (.: "_source") hits
+    results <- (v .: "hits") >>= (.: "hits") >>= mapM (.: "_source")
 
     return $ OutcomesSearchResponseJson results
 
@@ -290,12 +290,12 @@ logBareTransaction esUrl bareTransaction address = do
   (result :: Either HttpException LogBareTransactionResponse) <-
     postTextRequestEither url body
 
-  putStrLn $ show result
+  print result
 
   pure ()
 
 
-data LogBareTransactionResponse =
+newtype LogBareTransactionResponse =
   LogBareTransactionResponse
   { result :: Text
   }
@@ -329,10 +329,10 @@ getTransactionsForReplay esUrl = do
 
    case allTransactions of
      Left err -> do
-       putStrLn $ "❌ failed to find all the saved transactions"
-       putStrLn $ show err
+       putStrLn "❌ failed to find all the saved transactions"
+       print err
        return []
-     Right (TransactionsQueryResponse txs _) -> do
+     Right (TransactionsQueryResponse txs _) ->
        mapM (Concordium.Crypto.ByteStringHelpers.deserializeBase16 . transaction)
         (filter (not . T.null . transaction) txs)
    where
@@ -364,15 +364,13 @@ data TransactionsQueryResponse =
 instance AE.FromJSON TransactionsQueryResponse where
   parseJSON (Object v) = do
     scrollId <- v .: "_scroll_id"
-    hits_ <- v .: "hits"
-    hits <- hits_ .: "hits"
-    results <- mapM (.: "_source") hits
+    results <- (v .: "hits") >>= (.: "hits") >>= mapM (.: "_source")
 
     return $ TransactionsQueryResponse results scrollId
 
   parseJSON invalid = typeMismatch "TransactionsQueryResponse" invalid
 
-data TransactionData =
+newtype TransactionData =
   TransactionData
   {
     transaction :: Text
@@ -382,6 +380,6 @@ data TransactionData =
 instance AE.FromJSON TransactionData where
   parseJSON (Object v) = do
     tx <- v .:? "transaction"
-    return . TransactionData $ maybe T.empty Prelude.id tx
+    return . TransactionData $ fromMaybe T.empty tx
 
   parseJSON invalid = typeMismatch "TransactionsQueryResponse" invalid

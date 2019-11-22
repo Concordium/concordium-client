@@ -1,11 +1,11 @@
 module Config where
 
-import Text.Read                            (readMaybe)
-import qualified System.Environment as E    (lookupEnv)
-import Network.Wai                          (Middleware)
-import Network.Wai.Middleware.RequestLogger (logStdoutDev, logStdout)
-import Data.Maybe                           (fromMaybe)
-import Data.Text                            (Text, pack, unpack)
+import           Data.Maybe (fromMaybe)
+import           Data.Text (Text, pack, unpack)
+import           Network.Wai (Middleware)
+import           Network.Wai.Middleware.RequestLogger (logStdoutDev, logStdout)
+import qualified System.Environment as E (lookupEnv)
+import           Text.Read (readMaybe)
 
 
 data Environment =
@@ -27,7 +27,7 @@ lookupEnv name defaultVal = do
 lookupEnvText :: Text -> Text -> IO Text
 lookupEnvText name defaultVal = do
   param <- E.lookupEnv (unpack name)
-  pure $ fromMaybe defaultVal (fmap pack param)
+  pure $ maybe defaultVal pack param
 
 
 logger :: Environment -> Middleware

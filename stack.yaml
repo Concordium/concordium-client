@@ -82,6 +82,6 @@ extra-lib-dirs:
 # compiler-check: newer-minor
 allow-newer: true
 
-# flags:
-#   simple-client:
-#     middleware: true
+flags:
+  simple-client:
+    middleware: false

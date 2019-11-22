@@ -152,6 +152,7 @@ executables:
             - split
             - text
             - time
+            - unordered-containers
             - wai
             - wai-cors
             - wai-extra
