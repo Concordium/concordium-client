@@ -30,6 +30,7 @@ import           System.IO.Error
 import           System.Process
 import           Text.Read (readMaybe)
 import           Lens.Simple
+import qualified Data.ByteString.Base16 as Base16
 
 import qualified Acorn.Parser.Runner as PR
 import           Concordium.Client.Commands as COM
@@ -39,6 +40,7 @@ import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction
 import           Concordium.Crypto.Ed25519Signature (deriveVerifyKey)
 import           Concordium.Crypto.SignatureScheme (KeyPair(..), correspondingVerifyKey)
+import qualified Concordium.Crypto.SHA256 as SHA256
 import qualified Concordium.ID.Account
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Transactions as Types
@@ -171,6 +173,14 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
   betaAccountProvision :: BetaAccountProvisionRequest -> Handler BetaAccountProvisionResponse
   betaAccountProvision accountProvisionRequest = do
 
+    -- Re-use the account nonce mechanism with the hashed prfKey for accountNumber increment per credential
+    let privateData_ = privateData (accountProvisionRequest :: BetaAccountProvisionRequest)
+        aci_ = aci (privateData_ :: PrivateData)
+        prfKey_ = prfKey (aci_ :: PrivateDataAci)
+        accountIdKey = Text.decodeUtf8 . Base16.encode . SHA256.hashToByteString . SHA256.hash . Text.encodeUtf8 $ prfKey_
+
+    (Types.Nonce nonce) <- liftIO $ EsApi.takeNextNonceFor esUrl accountIdKey
+
     let credentialRequest =
           IdCredentialRequest
             { ipIdentity = ipIdentity (accountProvisionRequest :: BetaAccountProvisionRequest)
@@ -178,7 +188,7 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
             , privateData = privateData (accountProvisionRequest :: BetaAccountProvisionRequest)
             , signature = signature (accountProvisionRequest :: BetaAccountProvisionRequest)
             , revealedItems = revealedItems (accountProvisionRequest :: BetaAccountProvisionRequest)
-            , accountNumber = 0 -- @TODO auto increment account number from Elastic?
+            , accountNumber = fromIntegral nonce
             }
 
     idCredentialResponse <- liftIO $ postIdCredentialRequest idUrl credentialRequest
@@ -188,7 +198,7 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
     let newAccountKeyPair = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
         newAccountAddress = Concordium.ID.Account.accountAddress (correspondingVerifyKey newAccountKeyPair)
 
-    _ <- liftIO $ runGodTransaction nodeBackend esUrl $ DeployCredential { credential = certainDecode $ encode $ credential (idCredentialResponse :: IdCredentialResponse) }
+    _ <- liftIO $ runGodTransaction nodeBackend esUrl $ DeployCredential { credential = credential (idCredentialResponse :: IdCredentialResponse) }
 
     pure $
       BetaAccountProvisionResponse
@@ -423,7 +433,7 @@ debugTestFullProvision = do
         IdObjectRequest
           { ipIdentity = 5
           , name = "middleware-beta-debug"
-          , attributes = fromList -- @TODO make these a dynamic in future
+          , attributes = fromList
               ([ ("creationTime", Text.pack $ show creationTime)
               , ("expiryDate", Text.pack $ show expiryDate)
               , ("maxAccount", "30")
@@ -443,7 +453,7 @@ debugTestFullProvision = do
           , preIdentityObject = preIdentityObject (idObjectResponse :: BetaIdProvisionResponse)
           , privateData = privateData (idObjectResponse :: BetaIdProvisionResponse)
           , signature = signature (idObjectResponse :: BetaIdProvisionResponse)
-          , revealedItems = ["birthYear"] -- @TODO take revealed items preferences from user
+          , revealedItems = ["birthYear"]
           , accountNumber = 0
           }
 
