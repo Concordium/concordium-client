@@ -173,11 +173,11 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
   betaAccountProvision :: BetaAccountProvisionRequest -> Handler BetaAccountProvisionResponse
   betaAccountProvision accountProvisionRequest = do
 
-    -- Re-use the account nonce mechanism with the hashed prfKey for accountNumber increment per credential 
+    -- Re-use the account nonce mechanism with the hashed prfKey for accountNumber increment per credential
     let privateData_ = privateData (accountProvisionRequest :: BetaAccountProvisionRequest)
         aci_ = aci (privateData_ :: PrivateData)
         prfKey_ = prfKey (aci_ :: PrivateDataAci)
-        accountIdKey = Text.decodeUtf8 $ Base16.encode $ SHA256.hashToByteString $ SHA256.hash (Text.encodeUtf8 prfKey_)
+        accountIdKey = Text.decodeUtf8 . Base16.encode . SHA256.hashToByteString . SHA256.hash . Text.encodeUtf8 $ prfKey_
 
     (Types.Nonce nonce) <- liftIO $ EsApi.takeNextNonceFor esUrl accountIdKey
 
