@@ -1,2 +1,2 @@
 import Data.ProtoLens.Setup
-main = defaultMainGeneratingProtos "proto"
+main = defaultMainGeneratingProtos "deps/grpc-api"

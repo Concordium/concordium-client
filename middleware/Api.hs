@@ -45,7 +45,7 @@ import qualified Concordium.ID.Account
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Transactions as Types
 import           Control.Monad
-import qualified Proto.Concordium_Fields as CF
+import qualified Proto.ConcordiumP2pRpc_Fields as CF
 
 import qualified Config
 import           SimpleIdClientApi

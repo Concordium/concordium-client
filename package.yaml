@@ -9,7 +9,7 @@ build-type:          Custom
 extra-source-files:
 - README.md
 - ChangeLog.md
-- proto/concordium.proto
+- deps/grpc-api/concordium_p2p_rpc.proto
 
 custom-setup:
   dependencies:
@@ -73,8 +73,8 @@ library:
     - proto-lens-protobuf-types == 0.5.*
     - proto-lens-runtime == 0.5.*
   generated-exposed-modules:
-    Proto.Concordium
-    Proto.Concordium_Fields
+    Proto.ConcordiumP2pRpc
+    Proto.ConcordiumP2pRpc_Fields
 
 executables:
   simple-client:

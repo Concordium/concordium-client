@@ -13,8 +13,8 @@ import           Network.HTTP2.Client
 import           Data.ProtoLens                      (defMessage)
 import           Data.ProtoLens.Service.Types
 import qualified Data.ProtoLens.Field as Field
-import           Proto.Concordium
-import qualified Proto.Concordium_Fields             as CF
+import           Proto.ConcordiumP2pRpc
+import qualified Proto.ConcordiumP2pRpc_Fields             as CF
 
 import qualified Acorn.Core                          as Core
 import qualified Acorn.Parser.Runner                 as PR

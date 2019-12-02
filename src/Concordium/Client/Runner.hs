@@ -40,8 +40,8 @@ import qualified Concordium.Types.Transactions as Types
 import qualified Concordium.Types.Execution          as Types
 import qualified Concordium.Types                    as Types
 
-import           Proto.Concordium
-import qualified Proto.Concordium_Fields             as CF
+import           Proto.ConcordiumP2pRpc
+import qualified Proto.ConcordiumP2pRpc_Fields             as CF
 
 import           Control.Monad.Fail
 import           Control.Monad.IO.Class

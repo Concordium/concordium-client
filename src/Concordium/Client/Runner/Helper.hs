@@ -17,7 +17,7 @@ import qualified Acorn.Parser.Runner          as PR
 import qualified Acorn.Utils.Init             as Init
 import qualified Data.HashMap.Strict          as Map
 
-import qualified Proto.Concordium_Fields      as CF
+import qualified Proto.ConcordiumP2pRpc_Fields      as CF
 import qualified Data.ProtoLens.Field as Field
 
 import           Lens.Simple
