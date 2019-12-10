@@ -85,8 +85,11 @@ executables:
       - -Werror=missing-fields
       - -Wredundant-constraints
       - -O2
-    ld-options:
-      - -static
+
+    when:
+      - condition: os(linux)
+        ld-options:
+        - -static
 
     dependencies:
        - optparse-applicative
