@@ -64,7 +64,6 @@ library:
     - mtl
     - text
     - lens-simple
-    - lens-labels >= 0.3
     - http2-client-grpc >= 0.7
     - http2-client >= 0.9
     - unordered-containers
@@ -87,6 +86,8 @@ executables:
       - -Werror=missing-fields
       - -Wredundant-constraints
       - -O2
+    ld-options:
+      - -static
 
     dependencies:
        - optparse-applicative
