@@ -343,7 +343,7 @@ runTransaction nodeBackend esUrl payload keypair = do
 middlewareGodKP :: KeyPair
 middlewareGodKP = do
   -- https://gitlab.com/Concordium/p2p-client/blob/d41aba2cc3bfed7c5be21fe0612581f9c90e9e45/scripts/genesis-data/beta_accounts/beta-account-0.json
-  let signKey = certainDecode "\"016fb793ef489eaf256eac1ebbe2513919b60dfd4fad9645f2425127af6e109f\""
+  let signKey = certainDecode "\"de55bb798f08c68df0d055b580a02d0c73b2911953d288931fead886dd0a8d86\""
   KeyPairEd25519 signKey (deriveVerifyKey signKey)
 
 
