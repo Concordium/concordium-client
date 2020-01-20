@@ -13,15 +13,13 @@ import           Concordium.Types.Execution
 import           Control.Concurrent
 import           Control.Monad.Reader
 import           Options.Applicative
-import Concordium.ID.Account as AH
 import System.Exit
 
 import Data.Time.Clock
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import qualified Data.ByteString.Lazy as BSL
-
-import qualified Concordium.Crypto.SignatureScheme as Sig
+import qualified Data.HashMap.Strict as Map
 
 data TxOptions = TxOptions {
   -- |What is the starting nonce.
@@ -88,14 +86,21 @@ main = do
   AE.eitherDecode <$> BSL.readFile (keysFile txoptions) >>= \case
     Left err -> putStrLn $ "Could not read the keys because: " ++ err
     Right v ->
-      case AE.parseEither parseKeys v of
+      case AE.parseEither accountKeysParser v of
         Left err' -> putStrLn $ "Could not decode JSON because: " ++ err'
-        Right keyPair -> do
-          let selfAddress = AH.accountAddress (Sig.correspondingVerifyKey keyPair)
+        Right (selfAddress, keyMap) -> do
           print $ "Using sender account = " ++ show selfAddress
           let txBody = encodePayload (Transfer (AddressAccount selfAddress) 1) -- transfer 1 GTU to myself.
-          let txHeader nonce = makeTransactionHeader (Sig.correspondingVerifyKey keyPair) (payloadSize txBody) nonce 1000
-          let sign nonce = signTransaction keyPair (txHeader nonce) txBody
+          let txHeader nonce = TransactionHeader {
+                thSender = selfAddress,
+                thNonce = nonce,
+                thEnergyAmount = 1000,
+                thPayloadSize = payloadSize txBody
+                }
+          let sign nonce = signTransaction (Map.toList keyMap) (txHeader nonce) txBody
           go backend (logit txoptions) (tps txoptions) sign (startNonce txoptions)
 
-  where parseKeys = AE.parseJSON
+  where accountKeysParser = AE.withObject "Account keys" $ \v -> do
+          accountAddr <- v AE..: "account"
+          keyMap <- v AE..: "keys"
+          return (accountAddr, keyMap)

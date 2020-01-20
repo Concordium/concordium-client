@@ -4,12 +4,11 @@ module Concordium.Client.DummyDeploy where
 import           Concordium.Client.Commands
 import           Concordium.Client.GRPC
 import           Concordium.Client.Runner
-import           Concordium.Types.Transactions
-import qualified Concordium.Types.Transactions as Types
+import           Concordium.Client.Types.Transaction as CT
+import           Concordium.ID.Types                 as IDTypes
+import qualified Concordium.Types.Transactions       as Types
 import qualified Concordium.Types.Execution          as Types
 import           Concordium.Types                    as Types
-
-import qualified Concordium.Crypto.SignatureScheme   as Sig
 
 import           Acorn.Core                          as Core
 
@@ -18,7 +17,6 @@ import           Data.Maybe
 import           Data.Text (pack)
 import           Prelude                             hiding (mod)
 
-import qualified Concordium.ID.Account               as IDA
 import qualified Data.HashMap.Strict as Map
 import qualified Data.HashSet as Set
 import Data.Hashable
@@ -35,26 +33,28 @@ topoSort nodes = snd <$> foldM (go Set.empty) (Set.empty, []) (Map.keys nodes)
                 (perm', l') <- foldM (go temp') (perm, l) (Map.lookupDefault [] node nodes)
                 Just (Set.insert node perm', node:l')
 
-helper :: Sig.KeyPair -> Nonce -> Energy -> Types.Payload -> BareTransaction
-helper kp nonce energy spayload =
-      let header = Types.makeTransactionHeader
-                         (Sig.correspondingVerifyKey kp)
-                         (Types.payloadSize encPayload)
-                         nonce
-                         energy
-          encPayload = Types.encodePayload spayload
-      in Types.signTransaction kp header encPayload
+helper :: AccountAddress -> CT.KeyMap -> Nonce -> Energy -> Types.Payload -> Types.BareTransaction
+helper sender keyMap nonce energy payload =
+  let encPayload = Types.encodePayload payload
+      header = Types.TransactionHeader {
+        Types.thSender = sender,
+        Types.thNonce = nonce,
+        Types.thEnergyAmount = energy,
+        Types.thPayloadSize = Types.payloadSize encPayload
+        }
+  in Types.signTransaction (Map.toList keyMap) header encPayload
 
 deployModuleWithKey ::
-     Sig.KeyPair
+     IDTypes.AccountAddress
+  -> CT.KeyMap
   -> Backend
   -> Maybe Nonce
   -> Energy
   -> [Module UA]
-  -> IO [(BareTransaction, Either String Value, ModuleRef)]
-deployModuleWithKey kp back mnonce energy amodules = runInClient back comp
+  -> IO [(Types.BareTransaction, Either String Value, ModuleRef)]
+deployModuleWithKey sender keyMap back mnonce energy amodules = runInClient back comp
   where
-    tx nonce mhash = (helper kp nonce energy (Types.DeployModule (moduleMap Map.! mhash)), mhash)
+    tx nonce mhash = (helper sender keyMap nonce energy (Types.DeployModule (moduleMap Map.! mhash)), mhash)
 
     moduleMap = Map.fromList . map (\m -> (Core.moduleHash m, m)) $ amodules
 
@@ -66,7 +66,7 @@ deployModuleWithKey kp back mnonce energy amodules = runInClient back comp
         Nothing -> fail "Circular dependencies. Will not deploy."
         Just orderedMods -> do
           bestBlockHash <- getBestBlockHash
-          nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.correspondingVerifyKey kp)) bestBlockHash)
+          nonce <- flip fromMaybe mnonce <$> (getAccountNonce sender bestBlockHash)
           alreadyDeployed <- getModuleSet bestBlockHash
           -- TODO: technically the above two lines can fail if finalization
           -- happens to purge the currently best block. failure should be
@@ -82,7 +82,8 @@ deployModuleWithKey kp back mnonce energy amodules = runInClient back comp
 
 
 initContractWithKey ::
-     Sig.KeyPair
+     IDTypes.AccountAddress
+  -> CT.KeyMap
   -> Backend
   -> Maybe Nonce
   -> Energy
@@ -90,10 +91,10 @@ initContractWithKey ::
   -> Core.ModuleRef
   -> Core.TyName
   -> Core.Expr Core.UA Core.ModuleName
-  -> IO (BareTransaction, Either String Value)
-initContractWithKey kp back mnonce energy initAmount homeModule contractName contractFlags = runInClient back comp
+  -> IO (Types.BareTransaction, Either String Value)
+initContractWithKey sender keyMap back mnonce energy initAmount homeModule contractName contractFlags = runInClient back comp
   where
-    tx nonce = helper kp nonce energy initContract
+    tx nonce = helper sender keyMap nonce energy initContract
 
     initContract =
       Types.InitContract
@@ -103,7 +104,7 @@ initContractWithKey kp back mnonce energy initAmount homeModule contractName con
         contractFlags
 
     comp = do
-      nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.correspondingVerifyKey kp)) =<< getBestBlockHash)
+      nonce <- flip fromMaybe mnonce <$> (getAccountNonce sender =<< getBestBlockHash)
       let transaction = tx nonce
       txReturn <- hookTransaction (pack . show $ Types.transactionHash transaction)
       sendTransactionToBaker transaction 100 >>= \case
@@ -112,22 +113,23 @@ initContractWithKey kp back mnonce energy initAmount homeModule contractName con
         Right True -> return (transaction, txReturn)
 
 updateContractWithKey ::
-     Sig.KeyPair
+     IDTypes.AccountAddress
+  -> CT.KeyMap
   -> Backend
   -> Maybe Nonce
   -> Energy
   -> Amount
   -> ContractAddress
   -> Core.Expr Core.UA Core.ModuleName
-  -> IO (BareTransaction, Either String Value)
-updateContractWithKey kp back mnonce energy transferAmount address msg = runInClient back comp
+  -> IO (Types.BareTransaction, Either String Value)
+updateContractWithKey sender keyMap back mnonce energy transferAmount address msg = runInClient back comp
   where
-    tx nonce = helper kp nonce energy updateContract
+    tx nonce = helper sender keyMap nonce energy updateContract
 
     updateContract = Types.Update transferAmount address msg
 
     comp = do
-      nonce <- flip fromMaybe mnonce <$> (getAccountNonce (IDA.accountAddress (Sig.correspondingVerifyKey kp)) =<< getBestBlockHash)
+      nonce <- flip fromMaybe mnonce <$> (getAccountNonce sender =<< getBestBlockHash)
       let transaction = tx nonce
       txReturn <- hookTransaction (pack . show $ Types.transactionHash transaction)
       sendTransactionToBaker transaction 100 >>= \case
