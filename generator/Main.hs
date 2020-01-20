@@ -13,13 +13,15 @@ import           Concordium.Types.Execution
 import           Control.Concurrent
 import           Control.Monad.Reader
 import           Options.Applicative
+import Concordium.ID.Account as AH
 import System.Exit
 
 import Data.Time.Clock
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import qualified Data.ByteString.Lazy as BSL
-import qualified Data.HashMap.Strict as Map
+
+import qualified Concordium.Crypto.SignatureScheme as Sig
 
 data TxOptions = TxOptions {
   -- |What is the starting nonce.
@@ -86,21 +88,14 @@ main = do
   AE.eitherDecode <$> BSL.readFile (keysFile txoptions) >>= \case
     Left err -> putStrLn $ "Could not read the keys because: " ++ err
     Right v ->
-      case AE.parseEither accountKeysParser v of
+      case AE.parseEither parseKeys v of
         Left err' -> putStrLn $ "Could not decode JSON because: " ++ err'
-        Right (selfAddress, keyMap) -> do
+        Right keyPair -> do
+          let selfAddress = AH.accountAddress (Sig.correspondingVerifyKey keyPair)
           print $ "Using sender account = " ++ show selfAddress
           let txBody = encodePayload (Transfer (AddressAccount selfAddress) 1) -- transfer 1 GTU to myself.
-          let txHeader nonce = TransactionHeader {
-                thSender = selfAddress,
-                thNonce = nonce,
-                thEnergyAmount = 1000,
-                thPayloadSize = payloadSize txBody
-                }
-          let sign nonce = signTransaction (Map.toList keyMap) (txHeader nonce) txBody
+          let txHeader nonce = makeTransactionHeader (Sig.correspondingVerifyKey keyPair) (payloadSize txBody) nonce 1000
+          let sign nonce = signTransaction keyPair (txHeader nonce) txBody
           go backend (logit txoptions) (tps txoptions) sign (startNonce txoptions)
 
-  where accountKeysParser = AE.withObject "Account keys" $ \v -> do
-          accountAddr <- v AE..: "account"
-          keyMap <- v AE..: "keys"
-          return (accountAddr, keyMap)
+  where parseKeys = AE.parseJSON
