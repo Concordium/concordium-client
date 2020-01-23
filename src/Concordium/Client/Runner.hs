@@ -414,18 +414,17 @@ processTransaction_ ::
   -> ClientMonad (PR.Context Core.UA m) Types.BareTransaction
 processTransaction_ transaction networkId hookit = do
   tx <- do
+    let header = metadata transaction
+        sender = thSenderAddress header
     nonce <-
-      case thNonce . metadata $ transaction of
-        Nothing ->
-          let senderAddress = thSenderAddress (metadata transaction)
-          in getAccountNonce senderAddress =<< getBestBlockHash
+      case thNonce header of
+        Nothing ->  getBestBlockHash >>= getAccountNonce sender
         Just nonce -> return nonce
     encodeAndSignTransaction
       (payload transaction)
-      (thEnergyAmount (metadata transaction))
+      (thEnergyAmount header)
       nonce
-      (thSenderAddress (metadata transaction))
-      (keys transaction)
+      (sender, (keys transaction))
 
   when hookit $ do
     let trHash = Types.transactionHash tx
@@ -441,10 +440,9 @@ encodeAndSignTransaction ::
   => CT.TransactionJSONPayload
   -> Types.Energy
   -> Types.Nonce
-  -> Types.AccountAddress
-  -> CT.KeyMap
+  -> CT.SenderData
   -> ClientMonad (PR.Context Core.UA m) Types.BareTransaction
-encodeAndSignTransaction pl energy nonce sender keys = do
+encodeAndSignTransaction pl energy nonce (sender, keys) = do
   txPayload <- case pl of
     (CT.DeployModuleFromSource fileName) ->
       Types.DeployModule <$> readModule fileName -- deserializing is not necessary, but easiest for now.
@@ -473,10 +471,9 @@ encodeAndSignTransaction pl energy nonce sender keys = do
     (CT.DelegateStake dsid) -> return $ Types.DelegateStake dsid
 
   let encPayload = Types.encodePayload txPayload
-  let payloadSize = Types.payloadSize encPayload
-  let header = Types.TransactionHeader{
+      header = Types.TransactionHeader{
         thSender = sender,
-        thPayloadSize = payloadSize,
+        thPayloadSize = Types.payloadSize encPayload,
         thNonce = nonce,
         thEnergyAmount = energy
   }
