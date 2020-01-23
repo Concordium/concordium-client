@@ -1,11 +1,24 @@
 {
-    "verifyKey": "85b603dda0e69072a8cefec940bf8783fb05f740f20954f8279e863e5619fd4e",
+    "sender": "3M3cAqFN3MzeaE88pxDys7ia6SFZhT7jtC4pHd9AwoTBYSVqdM",
+    "keys": {
+        "0": {
+            "signKey": "e83998691848313ec357a7c9f11f4ff9153dfc001e4592e37cd5fcdd1a0a9728",
+            "verifyKey": "19bf1669f814e52ca1dc1cca4fe066a6019030746a2204bb03f48cc1ea417adf"
+        },
+        "1": {
+            "signKey": "8f57eed950053634442177c958fd4cb154fa8e9d8f8bfe19305773342bd73a89",
+            "verifyKey": "2504cc68b930fa6509f283ed15077a19d99879a13dfd6209fbd2c3a7dd1dd499"
+        },
+        "2": {
+            "signKey": "8c406af58c57ae4eaa0b41a37d4acacc2fb8a76ad560b1ae53c7e7e18737d996",
+            "verifyKey": "6816f383b170ca0c0fe57d8a82d60cb3ec056b564bf6bfa01e27d447b3d92583"
+        }
+    },
     "nonce": 1,
-    "gasAmount": 1000,
+    "energyAmount": 1000000,
     "payload": {
         "transactionType": "Transfer",
-        "amount": 1125899906840000,
-        "toaddress" : { "accountAddress" : "11VbRVnkvn3ids1buFhinpQ4T6aVuPdqDKK" }
-    },
-    "signKey": "016fb793ef489eaf256eac1ebbe2513919b60dfd4fad9645f2425127af6e109f"
+        "amount": 112,
+        "toaddress" : { "accountAddress" : "3M3cAqFN3MzeaE88pxDys7ia6SFZhT7jtC4pHd9AwoTBYSVqdM" }
+    }
 }
