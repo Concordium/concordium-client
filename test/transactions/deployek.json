@@ -1,11 +1,23 @@
 {
-    "verifyKey": "3e4f11b8a43f5b4c63f9d85ae9de365057c9bce8c57caf84e34f1040e5f59ecd",
+    "sender": "3M3cAqFN3MzeaE88pxDys7ia6SFZhT7jtC4pHd9AwoTBYSVqdM",
+    "keys": {
+        "0": {
+            "signKey": "e83998691848313ec357a7c9f11f4ff9153dfc001e4592e37cd5fcdd1a0a9728",
+            "verifyKey": "19bf1669f814e52ca1dc1cca4fe066a6019030746a2204bb03f48cc1ea417adf"
+        },
+        "1": {
+            "signKey": "8f57eed950053634442177c958fd4cb154fa8e9d8f8bfe19305773342bd73a89",
+            "verifyKey": "2504cc68b930fa6509f283ed15077a19d99879a13dfd6209fbd2c3a7dd1dd499"
+        },
+        "2": {
+            "signKey": "8c406af58c57ae4eaa0b41a37d4acacc2fb8a76ad560b1ae53c7e7e18737d996",
+            "verifyKey": "6816f383b170ca0c0fe57d8a82d60cb3ec056b564bf6bfa01e27d447b3d92583"
+        }
+    },
     "nonce": 1,
-    "gasAmount": 1000,
-    "finalizedPointer": "2bd4ab35963a68deec560a8882a264fe078861b509520f567321c460d76f5aa7",
+    "energyAmount": 1000000,
     "payload": {
         "transactionType": "DeployEncryptionKey",
         "key": "3e4f11b8a43f5b4c63f9d85ae9de365057c9bce8c57caf84e34f1040e5f59ecd"
-    },
-    "signKey": "b52f4ce89e78e45934851e395c6258f7240ce6902526c78a8960927c8959a363"
+    }
 }

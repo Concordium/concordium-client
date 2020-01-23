@@ -9,7 +9,6 @@
 module Concordium.Client.Types.Transaction where
 
 import           Concordium.Crypto.SignatureScheme   (KeyPair(..))
-import qualified Concordium.Crypto.SignatureScheme   as Sig
 import           Concordium.Crypto.Proofs
 import qualified Concordium.ID.Types                 as IDTypes
 import           Concordium.Types
@@ -19,6 +18,7 @@ import qualified Data.Aeson.TH                       as AETH
 import           Data.Aeson.Types                    (typeMismatch)
 import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Base16              as BS16
+import qualified Data.HashMap.Strict                 as Map
 import           Data.Serialize                      as S
 import           Data.Text                           hiding (length, map)
 import qualified Data.Text.Encoding                  as Text
@@ -67,13 +67,13 @@ instance FromJSON BakerId where
 -- To be populated when deserializing a JSON object.
 data TransactionJSONHeader =
   TransactionJSONHeader
-  -- |Verification key of the sender.
-    { thSenderKey        :: IDTypes.AccountVerificationKey
+  -- |Address of the sender.
+    { thSenderAddress    :: IDTypes.AccountAddress
   -- |Nonce of the account. If not present it should be derived
   -- from the context or queried to the state
     , thNonce            :: Maybe Nonce
   -- |Amount dedicated for the execution of this transaction.
-    , thGasAmount        :: Energy
+    , thEnergyAmount     :: Energy
     }
   deriving (Eq, Show)
 
@@ -118,7 +118,7 @@ data TransactionJSONPayload
       , bakerAccount       :: AccountAddress
       , proofSig           :: Dlog25519Proof
       , proofElection      :: Dlog25519Proof
-      , proofAccount       :: Dlog25519Proof
+      , proofAccounts      :: AccountOwnershipProof
       }
   | RemoveBaker
       { removeId :: BakerId
@@ -127,7 +127,7 @@ data TransactionJSONPayload
   | UpdateBakerAccount
       { bakerId        :: BakerId
       , accountAddress :: AccountAddress
-      , proofBa        :: Dlog25519Proof
+      , proofBa        :: AccountOwnershipProof
       }
   | UpdateBakerSignKey
       { bakerId    :: BakerId
@@ -144,22 +144,23 @@ AETH.deriveFromJSON
      {AETH.sumEncoding = AETH.TaggedObject "transactionType" "contents"})
   ''TransactionJSONPayload
 
+type KeyMap = Map.HashMap IDTypes.KeyIndex KeyPair
+
 -- |Transaction as retrieved from a JSON object
 data TransactionJSON =
   TransactionJSON
     { metadata :: TransactionJSONHeader
     , payload  :: TransactionJSONPayload
-    , signKey  :: KeyPair
+    , keys     :: KeyMap
     }
   deriving (Generic, Show)
 
 instance AE.FromJSON TransactionJSON where
-  parseJSON obj@(Object v) = do
-    kp <- parseJSON obj
-    let thSenderKey = Sig.correspondingVerifyKey kp
+  parseJSON = withObject "Transaction" $ \v -> do
+    thSenderAddress <- v .: "sender"
     thNonce <- v .:? "nonce"
-    thGasAmount <- v .: "gasAmount"
+    thEnergyAmount <- v .: "energyAmount"
     let tHeader = TransactionJSONHeader {..}
     tPayload <- v .: "payload"
-    return $ TransactionJSON tHeader tPayload kp
-  parseJSON invalid = typeMismatch "Transaction" invalid
+    keyMap <- v .: "keys"
+    return $ TransactionJSON tHeader tPayload keyMap

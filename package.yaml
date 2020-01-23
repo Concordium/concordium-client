@@ -33,6 +33,10 @@ flags:
   middleware:
     manual: True
     default: False
+  static:
+    description: Use static linking.
+    manual: true
+    default: false
 
 dependencies:
 - base >= 4.7 && < 5
@@ -87,7 +91,7 @@ executables:
       - -O2
 
     when:
-      - condition: os(linux)
+      - condition: flag(static)
         ld-options:
         - -static
 
