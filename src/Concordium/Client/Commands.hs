@@ -93,13 +93,6 @@ data Action
         -- |File to output the payload, if desired.
         payloadFile :: !(Maybe FilePath)
       }
-  | SendTransactionPayload {
-      -- |JSON file with minimum header data
-      headerFile :: !FilePath,
-      -- |JSON file with serialized payload.
-      payloadInputFile :: !FilePath,
-      networkId :: !Int
-      }
   | GetPeerUptime
   | SendMessage
       { nodeId    :: !Text
@@ -199,8 +192,7 @@ programOptions =
      dumpStopCommand <>
      retransmitRequestCommand <>
      getSkovStatsCommand <>
-     getMakeBakerPayloadCommand <>
-     sendTransactionPayloadCommand
+     getMakeBakerPayloadCommand
     ) <*>
   grpcBackend
 
@@ -219,25 +211,6 @@ getMakeBakerPayloadCommand =
           (metavar "ACCOUNT-KEYS" <> help "File with desired baker account and private keys")) <*>
         (optional (strArgument
           (metavar "OUTPUT" <> help "File where the generated transaction is output."))))
-       (progDesc "Make the transaction data necessary to become a baker. During beta only concordium genesis accounts can add bakers."))
-
-sendTransactionPayloadCommand :: Mod CommandFields Action
-sendTransactionPayloadCommand =
-  command
-    "SendTransactionPayload"
-    (info
-       (SendTransactionPayload <$> 
-        (strArgument
-          (metavar "METADATA" <> help "File with metadata of the transaction.")) <*>
-        (strArgument
-          (metavar "PAYLOAD" <> help "File with the payload.")) <*>
-        (argument
-          auto
-          (metavar "NET-ID" <>
-           help "Network ID for the transaction to be sent through" <>
-           value 100 <>
-           showDefault))
-        )
        (progDesc "Make the transaction data necessary to become a baker. During beta only concordium genesis accounts can add bakers."))
 
 getPeerDataCommand :: Mod CommandFields Action

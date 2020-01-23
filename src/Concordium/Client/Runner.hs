@@ -195,7 +195,6 @@ useBackend act b =
     DumpStop -> runInClient b $ dumpStop >>= printSuccess
     RetransmitRequest identifier elementType since networkId -> runInClient b $ retransmitRequest identifier elementType since networkId >>= printSuccess
     GetSkovStats -> runInClient b $ getSkovStats >>= (liftIO . print)
-    SendTransactionPayload headerFile payloadFile nid -> runInClient b $ handleSendTransactionPayload nid headerFile payloadFile
     _ -> undefined
 
 printSuccess :: Either String Bool -> ClientMonad IO ()
@@ -213,35 +212,6 @@ except :: IO (Maybe b) -> String -> IO b
 except c err = c >>= \case
   Just x -> return x
   Nothing -> die err
-
-handleSendTransactionPayload :: Int -> FilePath -> FilePath -> ClientMonad IO ()
-handleSendTransactionPayload networkId headerFile payloadFile = do
-  headerValue <- liftIO $ eitherDecodeFileStrict headerFile
-  payload <- (S.decodeLazy <$> liftIO (BSL.readFile payloadFile)) >>= \case
-    Left err -> liftIO $ die $ "Could not decode payload because: " ++ err
-    Right p -> return p
-
-  (thSender, keyMap, thNonce, thEnergyAmount) <-
-    case headerValue >>= parseEither headerParser of
-      Left err ->
-        liftIO $ die $ "Could not decode header because: " ++ err
-      Right hdr -> return hdr
-
-  let encPayload = Types.encodePayload payload
-      header = Types.TransactionHeader{thPayloadSize = Types.payloadSize encPayload, ..}
-
-  let tx = Types.signTransaction (Map.toList keyMap) header encPayload
-  sendTransactionToBaker tx networkId >>= \case
-    Left err -> liftIO $ putStrLn $ "Could not send transaction because: " ++ err
-    Right False -> liftIO $ putStrLn $ "Could not send transaction."
-    Right True -> liftIO $ putStrLn $ "Transaction sent."
-
-  where headerParser obj = flip (withObject "Transaction header") obj $ \v -> do
-          senderAddr <- v .: "sender"
-          keyMap <- v .: "keys"
-          nonce <- v .: "nonce"
-          energy <- v .: "energyAmount"
-          return (senderAddr, keyMap, nonce, energy)
 
 handleMakeBaker :: FilePath -> FilePath -> Maybe FilePath -> IO ()
 handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
