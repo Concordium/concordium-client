@@ -35,23 +35,22 @@ topoSort nodes = snd <$> foldM (go Set.empty) (Set.empty, []) (Map.keys nodes)
                 (perm', l') <- foldM (go temp') (perm, l) (Map.lookupDefault [] node nodes)
                 Just (Set.insert node perm', node:l')
 
-helper :: AccountAddress -> CT.KeyMap -> Nonce -> Energy -> Types.Payload -> Types.BareTransaction
-helper thSender keyMap thNonce thEnergyAmount payload =
+helper :: CT.SenderData -> Nonce -> Energy -> Types.Payload -> Types.BareTransaction
+helper (thSender, keyMap) thNonce thEnergyAmount payload =
   let encPayload = Types.encodePayload payload
       header = Types.TransactionHeader{thPayloadSize = payloadSize encPayload, ..}
   in Types.signTransaction (Map.toList keyMap) header encPayload
 
 deployModuleWithKey ::
-     IDTypes.AccountAddress
-  -> CT.KeyMap
+     CT.SenderData
   -> Backend
   -> Maybe Nonce
   -> Energy
   -> [Module UA]
   -> IO [(Types.BareTransaction, Either String Value, ModuleRef)]
-deployModuleWithKey sender keyMap back mnonce energy amodules = runInClient back comp
+deployModuleWithKey senderData@(sender, _) back mnonce energy amodules = runInClient back comp
   where
-    tx nonce mhash = (helper sender keyMap nonce energy (Types.DeployModule (moduleMap Map.! mhash)), mhash)
+    tx nonce mhash = (helper senderData nonce energy (Types.DeployModule (moduleMap Map.! mhash)), mhash)
 
     moduleMap = Map.fromList . map (\m -> (Core.moduleHash m, m)) $ amodules
 
@@ -79,8 +78,7 @@ deployModuleWithKey sender keyMap back mnonce energy amodules = runInClient back
 
 
 initContractWithKey ::
-     IDTypes.AccountAddress
-  -> CT.KeyMap
+     CT.SenderData
   -> Backend
   -> Maybe Nonce
   -> Energy
@@ -89,9 +87,9 @@ initContractWithKey ::
   -> Core.TyName
   -> Core.Expr Core.UA Core.ModuleName
   -> IO (Types.BareTransaction, Either String Value)
-initContractWithKey sender keyMap back mnonce energy initAmount homeModule contractName contractFlags = runInClient back comp
+initContractWithKey senderData@(sender, _) back mnonce energy initAmount homeModule contractName contractFlags = runInClient back comp
   where
-    tx nonce = helper sender keyMap nonce energy initContract
+    tx nonce = helper senderData nonce energy initContract
 
     initContract =
       Types.InitContract
@@ -110,8 +108,7 @@ initContractWithKey sender keyMap back mnonce energy initAmount homeModule contr
         Right True -> return (transaction, txReturn)
 
 updateContractWithKey ::
-     IDTypes.AccountAddress
-  -> CT.KeyMap
+     CT.SenderData
   -> Backend
   -> Maybe Nonce
   -> Energy
@@ -119,9 +116,9 @@ updateContractWithKey ::
   -> ContractAddress
   -> Core.Expr Core.UA Core.ModuleName
   -> IO (Types.BareTransaction, Either String Value)
-updateContractWithKey sender keyMap back mnonce energy transferAmount address msg = runInClient back comp
+updateContractWithKey senderData@(sender, _) back mnonce energy transferAmount address msg = runInClient back comp
   where
-    tx nonce = helper sender keyMap nonce energy updateContract
+    tx nonce = helper senderData nonce energy updateContract
 
     updateContract = Types.Update transferAmount address msg
 

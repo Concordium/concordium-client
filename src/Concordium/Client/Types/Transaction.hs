@@ -146,6 +146,8 @@ AETH.deriveFromJSON
 
 type KeyMap = Map.HashMap IDTypes.KeyIndex KeyPair
 
+type SenderData = (IDTypes.AccountAddress, KeyMap)
+
 -- |Transaction as retrieved from a JSON object
 data TransactionJSON =
   TransactionJSON
