@@ -7,7 +7,6 @@ import           Concordium.Client.Commands
 import           Concordium.Client.GRPC
 import           Concordium.Client.Runner
 import           Concordium.Client.Types.Transaction as CT
-import           Concordium.ID.Types                 as IDTypes
 import qualified Concordium.Types.Transactions       as Types
 import qualified Concordium.Types.Execution          as Types
 import           Concordium.Types                    as Types
