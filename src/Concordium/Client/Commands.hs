@@ -211,7 +211,7 @@ getMakeBakerPayloadCommand =
           (metavar "ACCOUNT-KEYS" <> help "File with desired baker account and private keys")) <*>
         (optional (strArgument
           (metavar "OUTPUT" <> help "File where the generated transaction is output."))))
-       (progDesc "Make the transaction data necessary to become a baker. During beta only concordium genesis accounts can add bakers."))
+       (progDesc "Make the transaction data necessary to become a baker."))
 
 getPeerDataCommand :: Mod CommandFields Action
 getPeerDataCommand =
