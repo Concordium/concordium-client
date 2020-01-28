@@ -32,6 +32,7 @@ import           Concordium.Client.GRPC
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction as CT
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
+import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.VRF               as VRF
 
@@ -217,7 +218,7 @@ handleMakeBaker :: FilePath -> FilePath -> Maybe FilePath -> IO ()
 handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
   bakerKeysValue <- eitherDecodeFileStrict bakerKeysFile
   bakerAccountValue <- eitherDecodeFileStrict accountKeysFile
-  (vrfPrivate, vrfVerify, signKey, verifyKey) <-
+  (vrfPrivate, vrfVerify, signKey, verifyKey, aggrVerifyKey :: Bls.PublicKey) <-
     case bakerKeysValue >>= parseEither bakerKeysParser of
       Left err ->
         die $ "Could not decode file with baker keys because: " ++ err
@@ -238,6 +239,7 @@ handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
           object ["transactionType" AE..= String "AddBaker",
                   "electionVerifyKey" AE..= abElectionVerifyKey,
                   "signatureVerifyKey" AE..= abSignatureVerifyKey,
+                  "aggregationVerifyKey" AE..= aggrVerifyKey,
                   "bakerAccount" AE..= accountAddr,
                   "proofSig" AE..= abProofSig,
                   "proofElection" AE..= abProofElection,
@@ -256,7 +258,8 @@ handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
           vrfVerifyKey <- v .: "electionVerifyKey"
           signKey <- v .: "signatureSignKey"
           verifyKey <- v .: "signatureVerifyKey"
-          return (vrfPrivate, vrfVerifyKey, signKey, verifyKey)
+          aggrVerifyKey <- v .: "aggregationVerifyKey"
+          return (vrfPrivate, vrfVerifyKey, signKey, verifyKey, aggrVerifyKey)
 
 printPeerData :: MonadIO m => Either String PeerData -> m ()
 printPeerData epd =
@@ -432,7 +435,7 @@ encodeAndSignTransaction pl energy nonce (sender, keys) = do
       return $ Types.Transfer transferTo transferAmount
     (CT.DeployCredential cred) -> return $ Types.DeployCredential cred
     (CT.DeployEncryptionKey encKey) -> return $ Types.DeployEncryptionKey encKey
-    (CT.AddBaker evk svk ba p pe pa) -> return $ Types.AddBaker evk svk ba p pe pa
+    (CT.AddBaker evk svk avk ba p pe pa) -> return $ Types.AddBaker evk svk avk ba p pe pa
     (CT.RemoveBaker rbid rbp) -> return $ Types.RemoveBaker rbid rbp
     (CT.UpdateBakerAccount ubid uba ubp) ->
       return $ Types.UpdateBakerAccount ubid uba ubp

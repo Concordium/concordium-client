@@ -113,12 +113,13 @@ data TransactionJSONPayload
       { key :: IDTypes.AccountEncryptionKey
       }
   | AddBaker
-      { electionVerifyKey  :: BakerElectionVerifyKey
-      , signatureVerifyKey :: BakerSignVerifyKey
-      , bakerAccount       :: AccountAddress
-      , proofSig           :: Dlog25519Proof
-      , proofElection      :: Dlog25519Proof
-      , proofAccounts      :: AccountOwnershipProof
+      { electionVerifyKey    :: BakerElectionVerifyKey
+      , signatureVerifyKey   :: BakerSignVerifyKey
+      , aggregationVerifyKey :: BakerAggregationVerifyKey
+      , bakerAccount         :: AccountAddress
+      , proofSig             :: Dlog25519Proof
+      , proofElection        :: Dlog25519Proof
+      , proofAccounts        :: AccountOwnershipProof
       }
   | RemoveBaker
       { removeId :: BakerId
