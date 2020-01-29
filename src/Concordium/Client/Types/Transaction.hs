@@ -36,6 +36,10 @@ instance FromJSON Energy where
 -- Number
 instance FromJSON Amount where
   parseJSON v = Amount <$> parseJSON v
+  
+-- Number
+instance FromJSON TransactionExpiryTime where
+  parseJSON v = TransactionExpiryTime <$> parseJSON v
 
 instance FromJSON Address where
   parseJSON (Object v) = do
@@ -74,6 +78,8 @@ data TransactionJSONHeader =
     , thNonce            :: Maybe Nonce
   -- |Amount dedicated for the execution of this transaction.
     , thEnergyAmount     :: Energy
+  -- |Absolute time after which transaction will not be executed.
+    , thExpiry           :: TransactionExpiryTime
     }
   deriving (Eq, Show)
 
@@ -163,6 +169,7 @@ instance AE.FromJSON TransactionJSON where
     thSenderAddress <- v .: "sender"
     thNonce <- v .:? "nonce"
     thEnergyAmount <- v .: "energyAmount"
+    thExpiry <- v .: "expiry"
     let tHeader = TransactionJSONHeader {..}
     tPayload <- v .: "payload"
     keyMap <- v .: "keys"

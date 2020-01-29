@@ -397,6 +397,7 @@ processTransaction_ transaction networkId hookit = do
       (payload transaction)
       (thEnergyAmount header)
       nonce
+      (thExpiry header)
       (sender, (keys transaction))
 
   when hookit $ do
@@ -413,9 +414,10 @@ encodeAndSignTransaction ::
   => CT.TransactionJSONPayload
   -> Types.Energy
   -> Types.Nonce
+  -> Types.TransactionExpiryTime
   -> CT.SenderData
   -> ClientMonad (PR.Context Core.UA m) Types.BareTransaction
-encodeAndSignTransaction pl energy nonce (sender, keys) = do
+encodeAndSignTransaction pl energy nonce expiry (sender, keys) = do
   txPayload <- case pl of
     (CT.DeployModuleFromSource fileName) ->
       Types.DeployModule <$> readModule fileName -- deserializing is not necessary, but easiest for now.
@@ -448,6 +450,7 @@ encodeAndSignTransaction pl energy nonce (sender, keys) = do
         thSender = sender,
         thPayloadSize = Types.payloadSize encPayload,
         thNonce = nonce,
-        thEnergyAmount = energy
+        thEnergyAmount = energy,
+        thExpiry = expiry
   }
   return $ Types.signTransaction (Map.toList keys) header encPayload

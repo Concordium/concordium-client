@@ -34,8 +34,8 @@ topoSort nodes = snd <$> foldM (go Set.empty) (Set.empty, []) (Map.keys nodes)
                 (perm', l') <- foldM (go temp') (perm, l) (Map.lookupDefault [] node nodes)
                 Just (Set.insert node perm', node:l')
 
-helper :: CT.SenderData -> Nonce -> Energy -> Types.Payload -> Types.BareTransaction
-helper (thSender, keyMap) thNonce thEnergyAmount payload =
+helper :: CT.SenderData -> Nonce -> Energy -> Types.TransactionExpiryTime -> Types.Payload -> Types.BareTransaction
+helper (thSender, keyMap) thNonce thEnergyAmount thExpiry payload =
   let encPayload = Types.encodePayload payload
       header = Types.TransactionHeader{thPayloadSize = payloadSize encPayload, ..}
   in Types.signTransaction (Map.toList keyMap) header encPayload
@@ -45,11 +45,12 @@ deployModuleWithKey ::
   -> Backend
   -> Maybe Nonce
   -> Energy
+  -> TransactionExpiryTime
   -> [Module UA]
   -> IO [(Types.BareTransaction, Either String Value, ModuleRef)]
-deployModuleWithKey senderData@(sender, _) back mnonce energy amodules = runInClient back comp
+deployModuleWithKey senderData@(sender, _) back mnonce energy expiry amodules = runInClient back comp
   where
-    tx nonce mhash = (helper senderData nonce energy (Types.DeployModule (moduleMap Map.! mhash)), mhash)
+    tx nonce mhash = (helper senderData nonce energy expiry (Types.DeployModule (moduleMap Map.! mhash)), mhash)
 
     moduleMap = Map.fromList . map (\m -> (Core.moduleHash m, m)) $ amodules
 
@@ -81,14 +82,15 @@ initContractWithKey ::
   -> Backend
   -> Maybe Nonce
   -> Energy
+  -> Types.TransactionExpiryTime
   -> Amount
   -> Core.ModuleRef
   -> Core.TyName
   -> Core.Expr Core.UA Core.ModuleName
   -> IO (Types.BareTransaction, Either String Value)
-initContractWithKey senderData@(sender, _) back mnonce energy initAmount homeModule contractName contractFlags = runInClient back comp
+initContractWithKey senderData@(sender, _) back mnonce energy expiry initAmount homeModule contractName contractFlags = runInClient back comp
   where
-    tx nonce = helper senderData nonce energy initContract
+    tx nonce = helper senderData nonce energy expiry initContract
 
     initContract =
       Types.InitContract
@@ -111,13 +113,14 @@ updateContractWithKey ::
   -> Backend
   -> Maybe Nonce
   -> Energy
+  -> Types.TransactionExpiryTime
   -> Amount
   -> ContractAddress
   -> Core.Expr Core.UA Core.ModuleName
   -> IO (Types.BareTransaction, Either String Value)
-updateContractWithKey senderData@(sender, _) back mnonce energy transferAmount address msg = runInClient back comp
+updateContractWithKey senderData@(sender, _) back mnonce energy expiry transferAmount address msg = runInClient back comp
   where
-    tx nonce = helper senderData nonce energy updateContract
+    tx nonce = helper senderData nonce energy expiry updateContract
 
     updateContract = Types.Update transferAmount address msg
 

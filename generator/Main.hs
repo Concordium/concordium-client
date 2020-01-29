@@ -65,13 +65,16 @@ sendTx tx =
 iterateM_ :: Monad m => (a -> m a) -> a -> m b
 iterateM_ f a = f a >>= iterateM_ f
 
-go :: Backend -> Bool -> Int -> (Nonce -> BareTransaction) -> Nonce -> IO ()
+go :: Backend -> Bool -> Int -> (Nonce -> TransactionExpiryTime -> BareTransaction) -> Nonce -> IO ()
 go backend logit tps sign startNonce = do
   startTime <- getCurrentTime
   runInClient backend (loop startNonce startTime)
 
   where loop nextNonce nextTime = do
-          _ <- sendTx (sign nextNonce)
+          -- This makes transactions expire after 60 seconds according to client time.
+          -- It assumes that the client's time is not more than 60 seconds behind the chain time.
+          let expiry = TransactionExpiryTime $ utcTimeToTransactionTime $ addUTCTime 60 nextTime
+          _ <- sendTx (sign nextNonce expiry)
           liftIO $ do
             when logit $ putStrLn $ "Sent transaction to " ++ show (target backend) ++ " with nonce = " ++ show nextNonce
             ct <- getCurrentTime
@@ -91,13 +94,14 @@ main = do
         Right (selfAddress, keyMap) -> do
           print $ "Using sender account = " ++ show selfAddress
           let txBody = encodePayload (Transfer (AddressAccount selfAddress) 1) -- transfer 1 GTU to myself.
-          let txHeader nonce = TransactionHeader {
+          let txHeader nonce expiry = TransactionHeader {
                 thSender = selfAddress,
                 thNonce = nonce,
                 thEnergyAmount = 1000,
-                thPayloadSize = payloadSize txBody
+                thPayloadSize = payloadSize txBody,
+                thExpiry = expiry
                 }
-          let sign nonce = signTransaction (Map.toList keyMap) (txHeader nonce) txBody
+          let sign nonce expiry = signTransaction (Map.toList keyMap) (txHeader nonce expiry) txBody
           go backend (logit txoptions) (tps txoptions) sign (startNonce txoptions)
 
   where accountKeysParser = AE.withObject "Account keys" $ \v -> do
