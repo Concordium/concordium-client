@@ -15,3 +15,6 @@ extra-libs/
 *-bakers.tar.gz
 concordium.proto
 stack.yaml.lock
+.idea
+*.iml
+
