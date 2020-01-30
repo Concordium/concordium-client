@@ -16,7 +16,7 @@
     },
     "nonce": 1,
     "energyAmount": 1000000,
-    "expiry": 18446744073709551615, // maxBound :: Word64
+    "expiry": 18446744073709551615,
     "payload": {
         "transactionType": "DeployEncryptionKey",
         "key": "3e4f11b8a43f5b4c63f9d85ae9de365057c9bce8c57caf84e34f1040e5f59ecd"

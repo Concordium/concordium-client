@@ -25,22 +25,6 @@ import qualified Data.Text.Encoding                  as Text
 import           Data.Word
 import           GHC.Generics                        (Generic)
 
--- Number
-instance FromJSON Nonce where
-  parseJSON v = Nonce <$> parseJSON v
-
--- Number
-instance FromJSON Energy where
-  parseJSON v = Energy <$> parseJSON v
-
--- Number
-instance FromJSON Amount where
-  parseJSON v = Amount <$> parseJSON v
-  
--- Number
-instance FromJSON TransactionExpiryTime where
-  parseJSON v = TransactionExpiryTime <$> parseJSON v
-
 instance FromJSON Address where
   parseJSON (Object v) = do
     r <- v .:? "accountAddress"

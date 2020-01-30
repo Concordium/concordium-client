@@ -16,7 +16,7 @@
     },
     "nonce": 1,
     "energyAmount": 1000000,
-    "expiry": 18446744073709551615, // maxBound :: Word64
+    "expiry": 18446744073709551615,
     "finalizedPointer": "2bd4ab35963a68deec560a8882a264fe078861b509520f567321c460d76f5aa7",
     "payload": {
         "transactionType": "DelegateStake",

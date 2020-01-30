@@ -16,7 +16,7 @@
     },
     "nonce": 1,
     "energyAmount": 1000000,
-    "expiry": 18446744073709551615, // maxBound :: Word64
+    "expiry": 18446744073709551615,
     "payload": {
         "transactionType": "DeployModuleFromSource",
         "moduleSource" : "test/SimpleCounter.acorn.bin"
