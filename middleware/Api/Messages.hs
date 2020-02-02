@@ -12,6 +12,8 @@ import           Concordium.Crypto.SignatureScheme (KeyPair(..))
 import qualified Concordium.ID.Types
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Transactions as Types
+import qualified Concordium.Client.Types.Transaction as Types
+import qualified Concordium.ID.Types as IDTypes
 
 import           SimpleIdClientApi
 
@@ -38,7 +40,7 @@ data BetaAccountProvisionRequest =
 
 data BetaAccountProvisionResponse =
   BetaAccountProvisionResponse
-    { accountKeys :: KeyPair
+    { accountKeys :: Types.KeyMap
     , spio :: Concordium.ID.Types.CredentialDeploymentInformation
     , address :: Text
     }
@@ -53,7 +55,7 @@ newtype BetaGtuDropResponse =
 
 data TransferRequest =
   TransferRequest
-    { keypair :: KeyPair
+    { account :: (IDTypes.AccountAddress, Types.KeyMap)
     , to :: Types.Address
     , amount :: Types.Amount
     }

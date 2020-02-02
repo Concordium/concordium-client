@@ -13,10 +13,13 @@ import           Data.Map
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Servant.API.Generic
+import qualified Data.HashMap.Strict as Map
 
 import           Http
 import           Concordium.Crypto.SignatureScheme (KeyPair(..))
 import           Concordium.ID.Types (CredentialDeploymentInformation(..))
+import qualified Concordium.Client.Types.Transaction as Types
+import qualified Concordium.ID.Types as IDTypes
 
 
 -- API requests
@@ -81,10 +84,8 @@ data PreIdentityObject =
   PreIdentityObject
     { accountHolderName :: Text
     , attributeList :: Map Text Text
-    , idCredPubIp :: Text
     , idCredPub :: Text
     , idCredSecCommitment :: Text
-    , sndIdCredSecCommitment :: Text
     , ipArData :: [IpArData]
     , choiceArData :: [Int]
     , revocationThreshold :: Int
@@ -123,8 +124,7 @@ data PrivateDataAci =
 
 data CredentialHolderInformation =
   CredentialHolderInformation
-    { idCredPublic :: Text
-    , idCredSecret :: Text
+    { idCredSecret :: Text
     , name :: Text
     }
   deriving (Generic, Show, FromJSON, ToJSON)
@@ -150,9 +150,16 @@ instance ToJSON CredentialDeploymentInformation where
 
 data IdCredentialResponse =
   IdCredentialResponse
-    { accountKeyPair :: KeyPair
+    { accountAddress :: IDTypes.AccountAddress
+    , accountData :: AccountDataKeys
     , credential :: CredentialDeploymentInformation
     }
+  deriving (Generic, Show, FromJSON, ToJSON)
+
+data AccountDataKeys =
+  AccountDataKeys
+    { keys :: Types.KeyMap
+  }
   deriving (Generic, Show, FromJSON, ToJSON)
 
 data IdCredRevealedItem =

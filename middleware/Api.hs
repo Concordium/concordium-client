@@ -5,6 +5,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 module Api where
 
@@ -31,6 +32,8 @@ import           System.Process
 import           Text.Read (readMaybe)
 import           Lens.Simple
 import qualified Data.ByteString.Base16 as Base16
+import qualified Data.HashMap.Strict as Map
+import NeatInterpolation
 
 import qualified Acorn.Parser.Runner as PR
 import           Concordium.Client.Commands as COM
@@ -41,9 +44,11 @@ import           Concordium.Client.Types.Transaction
 import           Concordium.Crypto.Ed25519Signature (deriveVerifyKey)
 import           Concordium.Crypto.SignatureScheme (KeyPair(..), correspondingVerifyKey)
 import qualified Concordium.Crypto.SHA256 as SHA256
-import qualified Concordium.ID.Account
+
+import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Transactions as Types
+import qualified Concordium.Client.Types.Transaction as Types
 import           Control.Monad
 import qualified Proto.ConcordiumP2pRpc_Fields as CF
 
@@ -52,8 +57,10 @@ import           SimpleIdClientApi
 import           EsApi
 import           Api.Messages
 
+
 godsToken :: Text
 godsToken = "47434137412923191713117532"
+
 
 data Routes r = Routes
     -- Public Middleware APIs
@@ -151,7 +158,7 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
       expiryDate = creationTime + (60*60*24*365) -- Expires in 365 days from now
       idObjectRequest =
           IdObjectRequest
-            { ipIdentity = 0
+            { ipIdentity = 5
             , name = "middleware-beta-autogen"
             , attributes = fromList
                 ([ ("creationTime", Text.pack $ show creationTime)
@@ -195,14 +202,14 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
 
     liftIO $ putStrLn "✅ Got idCredentialResponse"
 
-    let newAccountKeyPair = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
-        newAccountAddress = Concordium.ID.Account.accountAddress (correspondingVerifyKey newAccountKeyPair)
+    let
+      newAccountAddress = accountAddress (idCredentialResponse :: IdCredentialResponse)
 
     _ <- liftIO $ runGodTransaction nodeBackend esUrl $ DeployCredential { credential = credential (idCredentialResponse :: IdCredentialResponse) }
 
     pure $
       BetaAccountProvisionResponse
-        { accountKeys = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
+        { accountKeys = SimpleIdClientApi.keys $ SimpleIdClientApi.accountData (idCredentialResponse :: IdCredentialResponse)
         , spio = credential (idCredentialResponse :: IdCredentialResponse)
         , address = Text.pack . show $ newAccountAddress
         }
@@ -226,11 +233,12 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
   transfer :: TransferRequest -> Handler TransferResponse
   transfer TransferRequest{..} = do
 
-    let accountAddress = Concordium.ID.Account.accountAddress (correspondingVerifyKey keypair)
+    let
+      (accountAddress, keymap) = account
 
     liftIO $ putStrLn $ "✅ Sending " ++ show amount ++ " from " ++ show accountAddress ++ " to " ++ show to
 
-    transactionId <- liftIO $ runTransaction nodeBackend esUrl (Transfer { toaddress = to, amount = amount }) keypair
+    transactionId <- liftIO $ runTransaction nodeBackend esUrl (Transfer { toaddress = to, amount = amount }) account
 
     pure $ TransferResponse { transactionId = transactionId }
 
@@ -303,21 +311,23 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
     else
       return $ ReplayTransactionsResponse False
 
--- For beta, uses the middlewareGodKP which is seeded with funds
+-- For beta, uses the middlewareGodAccount which is seeded with funds
 runGodTransaction :: Backend -> Text -> TransactionJSONPayload -> IO Types.TransactionHash
 runGodTransaction nodeBackend esUrl payload =
-  runTransaction nodeBackend esUrl payload middlewareGodKP
+  runTransaction nodeBackend esUrl payload middlewareGodAccount
 
 
-runTransaction :: Backend -> Text -> TransactionJSONPayload -> KeyPair -> IO Types.TransactionHash
-runTransaction nodeBackend esUrl payload keypair = do
+runTransaction :: Backend -> Text -> TransactionJSONPayload -> Account -> IO Types.TransactionHash
+runTransaction nodeBackend esUrl payload (address, keyMap) = do
 
-  let accountAddressText = Text.pack . show . Concordium.ID.Account.accountAddress . correspondingVerifyKey $ keypair
+  let accountAddressText = Text.pack $ show address
 
   nonce <- EsApi.takeNextNonceFor esUrl accountAddressText
 
   let
-    gasAmount =
+    -- These are the agreed fixed costs for testnet, they
+    -- will change when tokenomics is finalized
+    energyAmount =
       case payload of
         Transfer _ _       -> 10
         DeployCredential _ -> 10000
@@ -327,28 +337,49 @@ runTransaction nodeBackend esUrl payload keypair = do
       TransactionJSON
         { metadata = transactionHeader
         , payload = payload
-        , signKey = keypair
+        , keys = keyMap
         }
 
     transactionHeader =
           TransactionJSONHeader
-            { thSenderKey = correspondingVerifyKey keypair
+            { thSenderAddress = address
             , thNonce = Just nonce
-            , thGasAmount = gasAmount
+            , thEnergyAmount = energyAmount
             }
 
-  executeTransaction esUrl nodeBackend transaction
+  executeTransaction esUrl nodeBackend transaction address
 
 
-middlewareGodKP :: KeyPair
-middlewareGodKP = do
-  -- https://gitlab.com/Concordium/p2p-client/blob/d41aba2cc3bfed7c5be21fe0612581f9c90e9e45/scripts/genesis-data/beta_accounts/beta-account-0.json
-  let signKey = certainDecode "\"de55bb798f08c68df0d055b580a02d0c73b2911953d288931fead886dd0a8d86\""
-  KeyPairEd25519 signKey (deriveVerifyKey signKey)
+type Account = (IDTypes.AccountAddress, Types.KeyMap)
+
+middlewareGodAccount :: Account
+middlewareGodAccount = do
+  -- https://gitlab.com/Concordium/p2p-client/blob/master/scripts/genesis-data/beta_accounts/beta-account-0.json
+  let
+    keyMap =
+      certainDecode [text|
+        {
+          "0": {
+            "signKey": "a0ffe8633d271571c47c635ac7f3607e470ce1019a556e9cdf3e259c8c5dc34c",
+            "verifyKey": "0a323d8f3817c2f1e573022d23411319a1443fc9f0088f54c001133d6d65f110"
+          },
+          "1": {
+            "signKey": "32a2dba586f72ec665dbd9712e623a6f5eae48ed36456b592a67818c60e30d68",
+            "verifyKey": "6ace3e8b6783df146779ca24f7ffc6b6d0289e850d29377bf17bca90ddfaf5a4"
+          },
+          "2": {
+            "signKey": "099a34eb037359aee28e5014e2bdb8c61e527507db7ad8beacd4c849e240ddb8",
+            "verifyKey": "001b5ff5f8371f9db8ff9b374d421c64a40dba4bdbd8749345fd8409c026477c"
+          }
+        }
+      |]
+    address =
+      certainDecode "\"4A3qVqCa6SA7dLF6pcnbjXVmj94iDH3uPLK57p8kJeYguzU8eW\""
+  (address, keyMap)
 
 
-executeTransaction :: Text -> Backend -> TransactionJSON -> IO Types.TransactionHash
-executeTransaction esUrl nodeBackend transaction = do
+executeTransaction :: Text -> Backend -> TransactionJSON -> Types.AccountAddress -> IO Types.TransactionHash
+executeTransaction esUrl nodeBackend transaction address = do
 
   mdata <- loadContextData
   -- The networkId is for running multiple networks that's not the same chain, but hasn't been taken into use yet
@@ -361,27 +392,18 @@ executeTransaction esUrl nodeBackend transaction = do
   putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (Types.transactionHash t)
   print transaction
 
-
-  EsApi.logBareTransaction esUrl t (Concordium.ID.Account.accountAddress $ thSenderKey $ metadata transaction)
+  EsApi.logBareTransaction esUrl t address
 
   putStrLn "✅ Bare tansaction logged into ElasticSearch"
 
   pure $ Types.transactionHash t
 
 -- Dirty helper to help us with "definitely certain" value decoding
-certainDecode :: (FromJSON a) => BS8.ByteString -> a
-certainDecode bytestring =
-  case decode' bytestring of
+certainDecode :: (FromJSON a) => Text -> a
+certainDecode t =
+  case decode' $ BS8.fromStrict $ Text.encodeUtf8 t of
     Just v -> v
-    Nothing -> error $ "Well... not so certain now huh! certainDecode failed on:\n\n" ++ show bytestring
-
-
--- Dirty helper to help us with "definitely certain" account address decoding
-certainAccountAddress :: Text -> Types.Address
-certainAccountAddress addressText =
-  case decode' $ BS8.fromStrict $ Text.encodeUtf8 addressText of
-    Just address -> Types.AddressAccount address
-    Nothing -> error $ "Well... not so certain now huh! certainAccountAddress failed on:\n\n" ++ show (Text.unpack addressText)
+    Nothing -> error $ "Well... not so certain now huh! certainDecode failed on:\n\n" ++ Text.unpack t
 
 
 {--
@@ -464,10 +486,10 @@ debugTestFullProvision = do
   putStrLn "✅ Generating JSON for idCredentialResponse:"
   putStrLn $ BS8.unpack $ encode idCredentialResponse
 
-  let newAccountKeyPair = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
-      newAddress = Types.AddressAccount $ Concordium.ID.Account.accountAddress (correspondingVerifyKey newAccountKeyPair)
+  let
+    newAddress = Types.AddressAccount $ SimpleIdClientApi.accountAddress idCredentialResponse
 
-  putStrLn $ "✅ Deploying credentials for: " ++ show newAddress
+  putStrLn $ "✅ Deploying credentials for: " ++ show (SimpleIdClientApi.accountAddress idCredentialResponse)
 
   _ <- runGodTransaction nodeBackend esUrl $ DeployCredential { credential = credential (idCredentialResponse :: IdCredentialResponse) }
 
@@ -476,6 +498,7 @@ debugTestFullProvision = do
   _ <- runGodTransaction nodeBackend esUrl $ Transfer { toaddress = newAddress, amount = 100 }
 
   pure "Done."
+
 
 debugGrpc :: IO GetNodeStateResponse
 debugGrpc = do

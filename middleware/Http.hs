@@ -9,6 +9,7 @@ import           Data.Aeson (eitherDecode)
 import           Data.Aeson.Types (ToJSON, FromJSON)
 import qualified Data.ByteString.Lazy.Char8 as BS
 import           Data.Text (Text)
+import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
 import           Network.HTTP.Conduit
 import           Network.HTTP.Simple
@@ -72,7 +73,7 @@ jsonRequestEither req = do
       res <- Network.HTTP.Conduit.httpLbs req manager
       case eitherDecode (responseBody res) of
         Right response -> pure $ Right response
-        Left err -> error $ show err
+        Left err -> error $ (T.unpack $ E.decodeUtf8 $ BS.toStrict $ responseBody res) ++ "\nresult resulted in error:\n" ++ show err
 
     errorHandler err =
       case err of
