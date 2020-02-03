@@ -1,0 +1,562 @@
+module Concordium.Client.LegacyCommands
+  ( LegacyAction(..)
+  , legacyProgramOptions
+  ) where
+
+import Data.Text
+import Options.Applicative
+
+-- |Available commands
+data LegacyAction
+  = LoadModule
+      { sourceFile :: !FilePath
+      } -- ^ Loads a module into the local database
+  | ListModules -- ^ List the local available modules
+  | SendTransaction
+      { sourceFile :: !FilePath
+      , networkId  :: !Int
+      , hookIt     :: !Bool
+      } -- ^ Loads a transaction in the context of the local database and sends it to the specified RPC server
+  | HookTransaction
+      { transactionHash :: !Text
+      } -- ^ Queries the gRPC for the information about the execution of a transaction
+  | NodeInfo -- ^ Queries the gRPC server for node information
+  | GetConsensusInfo -- ^ Queries the gRPC server for the consensus information
+  | GetBlockInfo
+      { every :: !Bool,
+        blockHash :: !(Maybe Text)
+      } -- ^ Queries the gRPC server for the information of a specific block
+  | GetAccountList
+      { blockHash :: !(Maybe Text)
+      } -- ^ Queries the gRPC server for the list of accounts on a specific block
+  | GetInstances
+      { blockHash :: !(Maybe Text)
+      } -- ^ Queries the gRPC server for the list of instances on a specific block
+  | GetAccountInfo
+      { accountAddress :: !Text
+      , blockHash      :: !(Maybe Text)
+      } -- ^ Queries the gRPC server for the information of an account on a specific block
+  | GetInstanceInfo
+      { contractAddress :: !Text,
+        blockHash       :: !(Maybe Text)
+      } -- ^ Queries the gRPC server for the information of an instance on a specific block
+  | GetRewardStatus
+      { blockHash :: !(Maybe Text)
+      } -- ^ Queries the gRPC server for the reward status on a specific block
+  | GetBirkParameters
+      { blockHash :: !(Maybe Text)
+      } -- ^ Queries the gRPC server for the Birk parameters on a specific block
+  | GetModuleList
+      { blockHash :: !(Maybe Text)
+      } -- ^ Queries the gRPC server for the list of modules on a specific block
+  | GetModuleSource
+      { moduleRef :: !Text,
+        blockHash :: !(Maybe Text)
+      } -- ^ Queries the gRPC server for the source of a module on a specific block
+  | GetNodeInfo -- ^Queries the gRPC server for the node information.
+  | GetBakerPrivateData -- ^Queries the gRPC server for the private data of the baker.
+  | GetPeerData
+      { includeBootstrapper :: !Bool -- ^Whether to include bootstrapper node in the stats or not.
+      } -- ^Get all data as pertaining to the node's role as a member of the P2P network.
+  | StartBaker
+  | StopBaker
+  | PeerConnect
+      { ip     :: !Text
+      , portPC :: !Int
+      }
+  | MakeBakerPayload {
+        -- |JSON file with baker keys (leadership election and signing).
+        bakerKeysFile :: !FilePath,
+        -- |JSON file with with account keys.
+        accountKeysFile :: !FilePath,
+        -- |File to output the payload, if desired.
+        payloadFile :: !(Maybe FilePath)
+      }
+  | GetPeerUptime
+  | SendMessage
+      { nodeId    :: !Text
+      , netId     :: !Int
+      , broadcast :: !Bool
+      }
+  | SubscriptionStart
+  | SubscriptionStop
+  | SubscriptionPoll
+  | BanNode
+      { nodeId   :: !Text
+      , nodePort :: !Int
+      , nodeIp   :: !Text
+      }
+  | UnbanNode
+      { nodeId   :: !Text
+      , nodePort :: !Int
+      , nodeIp   :: !Text
+      }
+  | JoinNetwork
+      { netId :: !Int
+      }
+  | LeaveNetwork
+      { netId :: !Int
+      }
+  | GetAncestors
+      { amount    :: !Int,
+        blockHash :: !(Maybe Text) -- defaults to last finalized block
+      }
+  | GetBranches
+  | GetBannedPeers
+  | Shutdown
+  | TpsTest
+      { networkId :: !Int
+      , nodeId    :: !Text
+      , directory :: !Text
+      }
+  | DumpStart
+  | DumpStop
+  | RetransmitRequest
+      { identifier  :: !Text
+      , elementType :: !Int
+      , since       :: !Int
+      , networkId   :: !Int
+      }
+  | GetSkovStats
+  deriving (Show)
+
+legacyProgramOptions :: Parser LegacyAction
+legacyProgramOptions =
+  hsubparser
+    (loadModuleCommand <> listModulesCommand <> sendTransactionCommand <>
+     hookTransactionCommand <>
+     getConsensusInfoCommand <>
+     getBlockInfoCommand <>
+     getAccountListCommand <>
+     getInstancesCommand <>
+     getAccountInfoCommand <>
+     getInstanceInfoCommand <>
+     getRewardStatusCommand <>
+     getBirkParametersCommand <>
+     getModuleListCommand <>
+     getModuleSourceCommand <>
+     getNodeInfoCommand <>
+     getBakerPrivateDataCommand <>
+     getPeerDataCommand <>
+     startBakerCommand <>
+     stopBakerCommand <>
+     peerConnectCommand <>
+     getPeerUptimeCommand <>
+     sendMessageCommand <>
+     subscriptionStartCommand <>
+     subscriptionStopCommand <>
+     subscriptionPollCommand <>
+     banNodeCommand <>
+     unbanNodeCommand <>
+     joinNetworkCommand <>
+     leaveNetworkCommand <>
+     getAncestorsCommand <>
+     getBranchesCommand <>
+     getBannedPeersCommand <>
+     shutdownCommand <>
+     tpsTestCommand <>
+     dumpStartCommand <>
+     dumpStopCommand <>
+     retransmitRequestCommand <>
+     getSkovStatsCommand <>
+     getMakeBakerPayloadCommand
+    )
+
+getMakeBakerPayloadCommand :: Mod CommandFields LegacyAction
+getMakeBakerPayloadCommand =
+  command
+    "MakeBaker"
+    (info
+       (MakeBakerPayload <$>
+        (strArgument
+          (metavar "BAKER-KEYS" <> help "File with baker public and private keys")) <*>
+        (strArgument
+          (metavar "ACCOUNT-KEYS" <> help "File with desired baker account and private keys")) <*>
+        (optional (strArgument
+          (metavar "OUTPUT" <> help "File where the generated transaction is output."))))
+       (progDesc "Make the transaction data necessary to become a baker."))
+
+getPeerDataCommand :: Mod CommandFields LegacyAction
+getPeerDataCommand =
+  command
+    "GetPeerData"
+    (info
+       (GetPeerData <$> switch (long "bootstrapper" <> help "Include the bootstrapper in the peer data."))
+       (progDesc "Query the gRPC server for the node information."))
+
+getNodeInfoCommand :: Mod CommandFields LegacyAction
+getNodeInfoCommand =
+  command
+    "GetNodeInfo"
+    (info
+       (pure GetNodeInfo)
+       (progDesc "Query the gRPC server for the node information."))
+
+getBakerPrivateDataCommand :: Mod CommandFields LegacyAction
+getBakerPrivateDataCommand =
+  command
+    "GetBakerPrivateData"
+    (info
+       (pure GetBakerPrivateData)
+       (progDesc "Query the gRPC server for the private baker info."))
+
+loadModuleCommand :: Mod CommandFields LegacyAction
+loadModuleCommand =
+  command
+    "LoadModule"
+    (info
+       (LoadModule <$>
+        strArgument
+          (metavar "MODULE-SOURCE" <> help "File with the Acorn source code"))
+       (progDesc "Parse module and add it to the local database."))
+
+listModulesCommand :: Mod CommandFields LegacyAction
+listModulesCommand =
+  command
+    "ListModules"
+    (info
+       (pure ListModules)
+       (progDesc "List local modules and deployed modules."))
+
+sendTransactionCommand :: Mod CommandFields LegacyAction
+sendTransactionCommand =
+  command
+    "SendTransaction"
+    (info
+       (SendTransaction <$>
+        strArgument
+          (metavar "TX-SOURCE" <> help "JSON file with the transaction") <*>
+        argument
+          auto
+          (metavar "NET-ID" <>
+           help "Network ID for the transaction to be sent through" <>
+           value 100 <>
+           showDefault) <*>
+        switch (short 'h' <> long "hook" <> help "Install a transaction hook before sending."))
+       (progDesc
+          "Parse transaction in current context and send it to the baker."))
+
+hookTransactionCommand :: Mod CommandFields LegacyAction
+hookTransactionCommand =
+  command
+    "HookTransaction"
+    (info
+       (HookTransaction <$>
+        strArgument
+          (metavar "TX-HASH" <> help "Hash of the transaction to query for"))
+       (progDesc
+          "Query the gRPC for the information about the execution of a transaction."))
+
+getConsensusInfoCommand :: Mod CommandFields LegacyAction
+getConsensusInfoCommand =
+  command
+    "GetConsensusInfo"
+    (info
+       (pure GetConsensusInfo)
+       (progDesc "Query the gRPC server for the consensus information."))
+
+getBlockInfoCommand :: Mod CommandFields LegacyAction
+getBlockInfoCommand =
+  command
+    "GetBlockInfo"
+    (info
+       (GetBlockInfo <$>
+        switch (short 'a' <> long "all" <> help "Traverse all parent blocks and get their info as well.") <*>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+       )
+       (progDesc "Query the gRPC server for a specific block."))
+
+getAccountListCommand :: Mod CommandFields LegacyAction
+getAccountListCommand =
+  command
+    "GetAccountList"
+    (info
+       (GetAccountList <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
+       (progDesc "Query the gRPC server for the list of accounts."))
+
+getInstancesCommand :: Mod CommandFields LegacyAction
+getInstancesCommand =
+  command
+    "GetInstances"
+    (info
+       (GetInstances <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
+       (progDesc "Query the gRPC server for the list of instances."))
+
+getAccountInfoCommand :: Mod CommandFields LegacyAction
+getAccountInfoCommand =
+  command
+    "GetAccountInfo"
+    (info
+       (GetAccountInfo <$>
+        strArgument (metavar "ACCOUNT" <> help "Account to be queried about") <*> 
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block in which to do the query"))
+       )
+       (progDesc "Query the gRPC server for the information of an account."))
+
+getInstanceInfoCommand :: Mod CommandFields LegacyAction
+getInstanceInfoCommand =
+  command
+    "GetInstanceInfo"
+    (info
+       (GetInstanceInfo <$>
+        strArgument (metavar "INSTANCE" <> help "Contract address to be queried about") <*>
+        optional (strArgument (metavar "BLOCK-HASH" <>
+                               help "Hash of the block in which to do the query"))
+       )
+       (progDesc "Query the gRPC server for the information of an instance."))
+
+getRewardStatusCommand :: Mod CommandFields LegacyAction
+getRewardStatusCommand =
+  command
+    "GetRewardStatus"
+    (info
+       (GetRewardStatus <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
+       (progDesc "Query the gRPC server for the reward status."))
+
+getBirkParametersCommand :: Mod CommandFields LegacyAction
+getBirkParametersCommand =
+  command
+    "GetBirkParameters"
+    (info
+       (GetBirkParameters <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
+       (progDesc "Query the gRPC server for the Birk parameters."))
+
+getModuleListCommand :: Mod CommandFields LegacyAction
+getModuleListCommand =
+  command
+    "GetModuleList"
+    (info
+       (GetModuleList <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
+       (progDesc "Query the gRPC server for the list of modules."))
+
+getModuleSourceCommand :: Mod CommandFields LegacyAction
+getModuleSourceCommand =
+  command
+    "GetModuleSource"
+    (info
+       (GetModuleSource <$>
+        strArgument (metavar "MODULE-REF" <> help "Reference of the module") <*>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
+       (progDesc "Query the gRPC server for the source of a module."))
+
+startBakerCommand :: Mod CommandFields LegacyAction
+startBakerCommand =
+    command
+     "StartBaker"
+    (info
+       (pure StartBaker)
+       (progDesc "Start the baker."))
+
+stopBakerCommand :: Mod CommandFields LegacyAction
+stopBakerCommand =
+    command
+     "StopBaker"
+    (info
+       (pure StopBaker)
+       (progDesc "Stop the baker."))
+
+peerConnectCommand :: Mod CommandFields LegacyAction
+peerConnectCommand =
+    command
+     "PeerConnect"
+    (info
+       (GetModuleSource <$>
+        strArgument (metavar "PEER-IP" <> help "IP of the peer we want to connect to") <*>
+        argument
+          auto
+          (metavar "PEER-PORT" <> help "Port of the peer we want to connect to"))
+       (progDesc "Connect to a specified peer."))
+
+getPeerUptimeCommand :: Mod CommandFields LegacyAction
+getPeerUptimeCommand =
+    command
+     "GetPeerUptime"
+    (info
+       (pure GetPeerUptime)
+       (progDesc "Get the node uptime."))
+
+sendMessageCommand :: Mod CommandFields LegacyAction
+sendMessageCommand =
+    command
+     "SendMessage"
+    (info
+       (SendMessage <$>
+        strArgument (metavar "NODE-ID" <> help "ID of the recipent") <*>
+        argument
+          auto
+          (metavar "NET-ID" <>
+           help "Network ID" <>
+           value 100 <>
+           showDefault) <*>
+        switch (short 'b' <> long "broadcast" <> help "Broadcast the message.")
+       )
+       (progDesc "Read a message from standard input and send it as a direct message."))
+
+subscriptionStartCommand :: Mod CommandFields LegacyAction
+subscriptionStartCommand =
+    command
+     "SubscriptionStart"
+    (info
+       (pure SubscriptionStart)
+       (progDesc "Start the subscription."))
+
+subscriptionStopCommand :: Mod CommandFields LegacyAction
+subscriptionStopCommand =
+    command
+     "SubscriptionStop"
+    (info
+       (pure SubscriptionStop)
+       (progDesc "Stop the subscription."))
+
+subscriptionPollCommand :: Mod CommandFields LegacyAction
+subscriptionPollCommand =
+    command
+     "SubscriptionPoll"
+    (info
+       (pure SubscriptionPoll)
+       (progDesc "Poll the subscription."))
+
+banNodeCommand :: Mod CommandFields LegacyAction
+banNodeCommand =
+    command
+     "BanNode"
+    (info
+       (BanNode <$>
+        strArgument (metavar "NODE-ID" <> help "ID of the node to be banned") <*>
+        argument
+          auto
+          (metavar "NODE-PORT" <> help "Port of the node to be banned") <*>
+        argument
+          auto
+          (metavar "NODE-IP" <> help "IP of the node to be banned"))
+       (progDesc "Ban a node."))
+
+unbanNodeCommand :: Mod CommandFields LegacyAction
+unbanNodeCommand =
+    command
+     "UnbanNode"
+    (info
+       (UnbanNode <$>
+        strArgument (metavar "NODE-ID" <> help "ID of the node to be unbanned") <*>
+        argument
+          auto
+          (metavar "NODE-PORT" <> help "Port of the node to be unbanned") <*>
+        argument
+          auto
+          (metavar "NODE-IP" <> help "IP of the node to be unbanned"))
+       (progDesc "Unban a node."))
+
+joinNetworkCommand :: Mod CommandFields LegacyAction
+joinNetworkCommand =
+    command
+     "JoinNetwork"
+    (info
+       (JoinNetwork <$>
+        argument auto (metavar "NET-ID" <> help "ID of the network"))
+       (progDesc "Join a network."))
+
+leaveNetworkCommand :: Mod CommandFields LegacyAction
+leaveNetworkCommand =
+    command
+     "LeaveNetwork"
+    (info
+       (LeaveNetwork <$>
+        argument auto (metavar "NET-ID" <> help "ID of the network"))
+       (progDesc "Leave a network."))
+
+getAncestorsCommand :: Mod CommandFields LegacyAction
+getAncestorsCommand =
+    command
+     "GetAncestors"
+    (info
+       (GetAncestors <$>
+        argument
+          auto
+          (metavar "AMOUNT" <> help "How many ancestors") <*>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+       )
+       (progDesc "Get the ancestors of a block."))
+
+getBranchesCommand :: Mod CommandFields LegacyAction
+getBranchesCommand =
+    command
+     "GetBranches"
+    (info
+       (pure GetBranches)
+       (progDesc "Get branches in consensus."))
+
+getBannedPeersCommand :: Mod CommandFields LegacyAction
+getBannedPeersCommand =
+    command
+     "GetBannedPeers"
+    (info
+       (pure GetBannedPeers)
+       (progDesc "Get banned peers."))
+
+shutdownCommand :: Mod CommandFields LegacyAction
+shutdownCommand =
+    command
+    "Shutdown"
+    (info
+       (pure Shutdown)
+       (progDesc "Shutdown the node gracefully."))
+
+tpsTestCommand :: Mod CommandFields LegacyAction
+tpsTestCommand =
+    command
+     "TpsTest"
+    (info
+       (TpsTest <$>
+        argument
+          auto
+          (metavar "NET_ID" <> help "Network ID") <*>
+        strArgument (metavar "NODE-ID" <> help "ID of the node") <*>
+        strArgument (metavar "DIR" <> help "Directory"))
+       (progDesc "Tps test."))
+
+dumpStartCommand :: Mod CommandFields LegacyAction
+dumpStartCommand =
+    command
+    "DumpStart"
+    (info
+       (pure DumpStart)
+       (progDesc "Start dumping the packages."))
+
+dumpStopCommand :: Mod CommandFields LegacyAction
+dumpStopCommand =
+    command
+    "DumpStop"
+    (info
+       (pure DumpStop)
+       (progDesc "Stop dumping the packages."))
+
+retransmitRequestCommand :: Mod CommandFields LegacyAction
+retransmitRequestCommand =
+    command
+     "RetransmitRequest"
+    (info
+       (RetransmitRequest <$>
+        strArgument (metavar "ID" <> help "ID") <*>
+        argument
+          auto
+          (metavar "ELEMENT" <> help "Type of element to request for") <*>
+        argument
+          auto
+          (metavar "SINCE" <> help "Time epoch") <*>
+        argument
+          auto
+          (metavar "NET_ID" <> help "Network ID"))
+       (progDesc "Request a retransmision of specific elements."))
+
+getSkovStatsCommand :: Mod CommandFields LegacyAction
+getSkovStatsCommand =
+     command
+    "GetSkovStats"
+    (info
+       (pure GetSkovStats)
+       (progDesc "Get skov statistics."))

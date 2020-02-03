@@ -48,11 +48,8 @@ txOptions = do
   let keys = strOption (long "keyPair" <> short 'k' <> metavar "FILENAME")
   TxOptions . fromIntegral <$> startNonce <*> tps <*> logit <*> keys
 
-grpcBackend :: Parser Backend
-grpcBackend = GRPC <$> hostParser <*> portParser <*> targetParser
-
 parser :: ParserInfo (Backend, TxOptions)
-parser = info (helper <*> ((,) <$> grpcBackend <*> txOptions))
+parser = info (helper <*> ((,) <$> backendParser <*> txOptions))
          (fullDesc <> progDesc "Generate transactions for a fixed contract.")
 
 sendTx :: MonadIO m => BareTransaction -> ClientMonad m BareTransaction
