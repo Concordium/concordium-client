@@ -92,9 +92,15 @@ runInClient bkend comp = do
     Right x  -> return x
 
 -- |Execute the command given in the CLArguments
-process :: Command -> IO ()
-process command =
-  case action command of
+process :: COM.Options -> IO ()
+process (Options command backend) =
+  case command of
+    LegacyCommand c -> legacyProcess c backend
+    -- TODO Implement process for other types...
+
+legacyProcess :: COM.LegacyAction -> Maybe COM.Backend -> IO ()
+legacyProcess action backend =
+  case action of
     LoadModule fname -> do
       mdata <- loadContextData
       cdata <-
@@ -112,7 +118,7 @@ process command =
     -- The rest of the commands expect a backend to be provided
     MakeBakerPayload bakerKeysFile accountKeysFile payloadFile -> handleMakeBaker bakerKeysFile accountKeysFile payloadFile
     act ->
-      maybe (putStrLn "No Backend provided") (useBackend act) (backend command)
+      maybe (putStrLn "No Backend provided") (useBackend act) backend
 
 -- |Look up block infos all the way to genesis.
 loop :: Either String Value -> ClientMonad IO ()
@@ -136,7 +142,7 @@ withBestBlockHash v c =
     Nothing -> getBestBlockHash >>= c
     Just x -> c x
 
-useBackend :: Action -> Backend -> IO ()
+useBackend :: LegacyAction -> Backend -> IO ()
 useBackend act b =
   case act of
     SendTransaction fname nid hook -> do
