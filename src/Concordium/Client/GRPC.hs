@@ -81,7 +81,7 @@ mkGrpcClient config =
           Just t  -> [auth, ("target", BS8.pack t)]
           Nothing -> [auth]
       cfg = (grpcClientConfigSimple (host config) (port config) False)
-                 { _grpcClientConfigCompression = gzip
+                 { _grpcClientConfigCompression = uncompressed
                  , _grpcClientConfigHeaders = header
                  }
    in setupGrpcClient cfg
