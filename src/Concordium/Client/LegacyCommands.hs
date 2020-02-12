@@ -73,14 +73,6 @@ data LegacyAction
         payloadFile :: !(Maybe FilePath)
       }
   | GetPeerUptime
-  | SendMessage
-      { nodeId    :: !Text
-      , netId     :: !Int
-      , broadcast :: !Bool
-      }
-  | SubscriptionStart
-  | SubscriptionStop
-  | SubscriptionPoll
   | BanNode
       { nodeId   :: !Text
       , nodePort :: !Int
@@ -111,13 +103,6 @@ data LegacyAction
       }
   | DumpStart
   | DumpStop
-  | RetransmitRequest
-      { identifier  :: !Text
-      , elementType :: !Int
-      , since       :: !Int
-      , networkId   :: !Int
-      }
-  | GetSkovStats
   deriving (Show)
 
 legacyProgramOptions :: Parser LegacyAction
@@ -142,10 +127,6 @@ legacyProgramOptions =
      stopBakerCommand <>
      peerConnectCommand <>
      getPeerUptimeCommand <>
-     sendMessageCommand <>
-     subscriptionStartCommand <>
-     subscriptionStopCommand <>
-     subscriptionPollCommand <>
      banNodeCommand <>
      unbanNodeCommand <>
      joinNetworkCommand <>
@@ -157,8 +138,6 @@ legacyProgramOptions =
      tpsTestCommand <>
      dumpStartCommand <>
      dumpStopCommand <>
-     retransmitRequestCommand <>
-     getSkovStatsCommand <>
      getMakeBakerPayloadCommand
     )
 
@@ -380,47 +359,6 @@ getPeerUptimeCommand =
        (pure GetPeerUptime)
        (progDesc "Get the node uptime."))
 
-sendMessageCommand :: Mod CommandFields LegacyAction
-sendMessageCommand =
-    command
-     "SendMessage"
-    (info
-       (SendMessage <$>
-        strArgument (metavar "NODE-ID" <> help "ID of the recipent") <*>
-        argument
-          auto
-          (metavar "NET-ID" <>
-           help "Network ID" <>
-           value 100 <>
-           showDefault) <*>
-        switch (short 'b' <> long "broadcast" <> help "Broadcast the message.")
-       )
-       (progDesc "Read a message from standard input and send it as a direct message."))
-
-subscriptionStartCommand :: Mod CommandFields LegacyAction
-subscriptionStartCommand =
-    command
-     "SubscriptionStart"
-    (info
-       (pure SubscriptionStart)
-       (progDesc "Start the subscription."))
-
-subscriptionStopCommand :: Mod CommandFields LegacyAction
-subscriptionStopCommand =
-    command
-     "SubscriptionStop"
-    (info
-       (pure SubscriptionStop)
-       (progDesc "Stop the subscription."))
-
-subscriptionPollCommand :: Mod CommandFields LegacyAction
-subscriptionPollCommand =
-    command
-     "SubscriptionPoll"
-    (info
-       (pure SubscriptionPoll)
-       (progDesc "Poll the subscription."))
-
 banNodeCommand :: Mod CommandFields LegacyAction
 banNodeCommand =
     command
@@ -534,29 +472,3 @@ dumpStopCommand =
     (info
        (pure DumpStop)
        (progDesc "Stop dumping the packages."))
-
-retransmitRequestCommand :: Mod CommandFields LegacyAction
-retransmitRequestCommand =
-    command
-     "RetransmitRequest"
-    (info
-       (RetransmitRequest <$>
-        strArgument (metavar "ID" <> help "ID") <*>
-        argument
-          auto
-          (metavar "ELEMENT" <> help "Type of element to request for") <*>
-        argument
-          auto
-          (metavar "SINCE" <> help "Time epoch") <*>
-        argument
-          auto
-          (metavar "NET_ID" <> help "Network ID"))
-       (progDesc "Request a retransmision of specific elements."))
-
-getSkovStatsCommand :: Mod CommandFields LegacyAction
-getSkovStatsCommand =
-     command
-    "GetSkovStats"
-    (info
-       (pure GetSkovStats)
-       (progDesc "Get skov statistics."))

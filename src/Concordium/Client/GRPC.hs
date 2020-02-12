@@ -12,15 +12,15 @@ import           Network.HTTP2.Client
 
 import           Data.ProtoLens                      (defMessage)
 import           Data.ProtoLens.Service.Types
-import qualified Data.ProtoLens.Field as Field
+import qualified Data.ProtoLens.Field                as Field
 import           Proto.ConcordiumP2pRpc
-import qualified Proto.ConcordiumP2pRpc_Fields             as CF
+import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 
 import qualified Acorn.Core                          as Core
 import qualified Acorn.Parser.Runner                 as PR
 import           Concordium.Client.Runner.Helper
 
-import           Concordium.Types.Transactions(BareTransaction)
+import           Concordium.Types.Transactions      (BareTransaction)
 
 import           Control.Monad.Fail
 import           Control.Monad.IO.Class
@@ -29,14 +29,12 @@ import qualified Data.Serialize                      as S
 import           Lens.Simple
 
 import           Data.Aeson                          as AE
-import qualified Data.ByteString                     as BS
 import           Data.Text
 import           Data.String
 
 import           Data.Word
 
-import           Prelude                             hiding (fail, mod, null,
-                                                      unlines)
+import           Prelude                             hiding (fail, mod, null, unlines)
 
 data GrpcConfig =
   GrpcConfig
@@ -176,25 +174,6 @@ peerConnect ip peerPort = withUnary (call @"peerConnect") msg CF.value
 getPeerUptime :: ClientMonad IO (Either String Word64)
 getPeerUptime = withUnaryNoMsg (call @"peerUptime") CF.value
 
-sendMessage :: Text -> Int -> Bool -> ClientMonad IO (Either String Bool)
-sendMessage nodeId netId broadcast = do
-  message <- liftIO BS.getContents
-  let msg = defMessage &
-            CF.nodeId .~ (defMessage & CF.value .~ nodeId) &
-            CF.networkId .~ (defMessage & CF.value .~ fromIntegral netId) &
-            CF.message .~ (defMessage & CF.value .~ message) &
-            CF.broadcast .~ (defMessage & CF.value .~ broadcast)
-  withUnary (call @"sendMessage") msg CF.value
-
-subscriptionStart :: ClientMonad IO (Either String Bool)
-subscriptionStart = withUnaryNoMsg (call @"subscriptionStart") CF.value
-
-subscriptionStop :: ClientMonad IO (Either String Bool)
-subscriptionStop = withUnaryNoMsg (call @"subscriptionStop") CF.value
-
-subscriptionPoll :: ClientMonad IO (Either String P2PNetworkMessage)
-subscriptionPoll = withUnaryNoMsg' (call @"subscriptionPoll")
-
 banNode :: Text -> Int -> Text -> ClientMonad IO (Either String Bool)
 banNode identifier peerPort ip = withUnary (call @"banNode") msg CF.value
   where msg = defMessage &
@@ -246,18 +225,6 @@ dumpStart = withUnaryNoMsg (call @"dumpStart") CF.value
 
 dumpStop :: ClientMonad IO (Either String Bool)
 dumpStop = withUnaryNoMsg (call @"dumpStop") CF.value
-
-retransmitRequest :: Text -> Int -> Int -> Int -> ClientMonad IO (Either String Bool)
-retransmitRequest identifier elementType since networkId =
-  withUnary (call @"retransmitRequest") msg CF.value
-  where msg = defMessage &
-            CF.id .~ identifier &
-            CF.elementType .~ fromIntegral elementType &
-            CF.since .~ (defMessage & CF.value .~ fromIntegral since) &
-            CF.networkId .~ fromIntegral networkId
-
-getSkovStats :: ClientMonad IO (Either String GRPCSkovStats)
-getSkovStats = withUnaryNoMsg (call @"getSkovStats") CF.gsStats
 
 withUnaryCore :: forall m n b. (HasMethod P2P m, MonadIO n)
           => RPC P2P m

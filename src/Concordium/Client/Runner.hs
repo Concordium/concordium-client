@@ -185,10 +185,6 @@ useBackend act b =
     StopBaker -> runInClient b $ stopBaker >>= printSuccess
     PeerConnect ip port -> runInClient b $ peerConnect ip port >>= printSuccess
     GetPeerUptime -> runInClient b $ getPeerUptime >>= (liftIO . print)
-    SendMessage nodeId netId broadcast -> runInClient b $ sendMessage nodeId netId broadcast >>= printSuccess
-    SubscriptionStart -> runInClient b $ subscriptionStart >>= printSuccess
-    SubscriptionStop -> runInClient b $ subscriptionStop >>= printSuccess
-    SubscriptionPoll -> runInClient b $ subscriptionStart >>= (liftIO . print)
     BanNode nodeId nodePort nodeIp -> runInClient b $ banNode nodeId nodePort nodeIp >>= printSuccess
     UnbanNode nodeId nodePort nodeIp -> runInClient b $ unbanNode nodeId nodePort nodeIp >>= printSuccess
     JoinNetwork netId -> runInClient b $ joinNetwork netId >>= printSuccess
@@ -200,8 +196,6 @@ useBackend act b =
     TpsTest networkId nodeId directory -> runInClient b $ tpsTest networkId nodeId directory >>= (liftIO . print)
     DumpStart -> runInClient b $ dumpStart >>= printSuccess
     DumpStop -> runInClient b $ dumpStop >>= printSuccess
-    RetransmitRequest identifier elementType since networkId -> runInClient b $ retransmitRequest identifier elementType since networkId >>= printSuccess
-    GetSkovStats -> runInClient b $ getSkovStats >>= (liftIO . print)
     _ -> undefined
 
 printSuccess :: Either String Bool -> ClientMonad IO ()
