@@ -827,30 +827,6 @@ $ simple-client GetPeerUptime
 Right 13504701
 ```
 
-#### `SendMessage NODE-ID`
-
-Reads a message from stdin and then doesn't appear to do anything with it.
-
-Output: `OK`.
-
-#### `SubscriptionStart`
-
-Doesn't seem to do anything.
-
-Output: `OK`.
-
-#### `SubscriptionStop`
-
-Doesn't seem to do anything.
-
-Output: `OK`.
-
-#### `SubscriptionPoll`
-
-Doesn't seem to do anything.
-
-Output: `Right True`.
-
 #### `BanNode NODE-ID NODE-PORT NODE-IP`
 
 Doesn't seem to do anything.
@@ -951,18 +927,6 @@ Output: `gRPC response error: Feature not activated`.
 Output format: Text.
 
 Output: `gRPC response error: Feature not activated`.
-
-#### `RetransmitRequest ID ELEMENT SINCE NET_ID`
-
-Output format: Text.
-
-Output: `gRPC response error:`.
-
-#### `GetSkovStats`
-
-Output format: Haskell `Either` value.
-
-Output: `Right {}`.
 
 #### `MakeBaker BAKER-KEYS ACCOUNT-KEYS`
 
