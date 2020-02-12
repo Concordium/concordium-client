@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
@@ -27,7 +26,8 @@ module Concordium.Client.Runner
 import qualified Acorn.Core                          as Core
 import qualified Acorn.Core.PrettyPrint              as PP
 import qualified Acorn.Parser.Runner                 as PR
-import           Concordium.Client.Commands          as COM hiding (networkId)
+
+import           Concordium.Client.Commands          as COM
 import           Concordium.Client.GRPC
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction as CT
@@ -35,7 +35,6 @@ import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.VRF               as VRF
-
 import qualified Concordium.Types.Transactions       as Types
 import qualified Concordium.Types.Execution          as Types
 import qualified Concordium.Types                    as Types
@@ -46,29 +45,25 @@ import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 import           Control.Monad.Fail
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader                hiding (fail)
-import qualified Data.ByteString.Lazy                as BSL
-import qualified Data.ByteString.Lazy.Char8          as BSL8
-import qualified Data.Serialize                      as S
-import qualified Data.Text.IO                        as TextIO hiding (putStrLn)
-import           Lens.Simple
-import qualified Data.HashSet as Set
-
-import           Network.GRPC.Client.Helpers
-import           Network.HTTP2.Client.Exceptions
-
 import           Data.Aeson                          as AE
 import           Data.Aeson.Types                    as AE
 import qualified Data.Aeson.Encode.Pretty            as AE
+import qualified Data.ByteString.Lazy                as BSL
+import qualified Data.ByteString.Lazy.Char8          as BSL8
+import qualified Data.HashSet as Set
 import qualified Data.HashMap.Strict                 as Map
 import           Data.Maybe
+import qualified Data.Serialize                      as S
 import           Data.String
 import           Data.Text
-
+import qualified Data.Text.IO                        as TextIO hiding (putStrLn)
 import           Data.Word
-
-import           Prelude                             hiding (fail, mod, null,
-                                                      unlines)
+import           Lens.Simple
+import           Network.GRPC.Client.Helpers
+import           Network.HTTP2.Client.Exceptions
+import           Prelude                             hiding (fail, mod, null, unlines)
 import           System.Exit                         (die)
+import           System.IO
 
 liftContext :: Monad m => PR.Context Core.UA m a -> ClientMonad (PR.Context Core.UA m) a
 liftContext comp = ClientMonad {_runClientMonad = ReaderT (lift . const comp)}
@@ -93,13 +88,33 @@ runInClient bkend comp = do
 
 -- |Execute the command given in the CLArguments
 process :: COM.Options -> IO ()
-process (Options command backend) =
-  case command of
-    LegacyCommand c -> legacyProcess c backend
-    -- TODO Implement process for other types...
+process (Options (LegacyCmd c) backend) = processLegacyCmd c backend
+process (Options command backend) = do
+  -- Disable output buffering.
+  hSetBuffering stdout NoBuffering
+  -- Evaluate command.
+  maybe printNoBackend p backend
+  where p = case command of
+              TransactionCmd c -> processTransactionCmd c
+              AccountCmd c -> processAccountCmd c
+              ModuleCmd c -> processModuleCmd c
+              ContractCmd c -> processContractCmd c
+              LegacyCmd _ -> error "Unreachable case: LegacyCmd."
 
-legacyProcess :: COM.LegacyAction -> Maybe COM.Backend -> IO ()
-legacyProcess action backend =
+processTransactionCmd :: TransactionCmd -> Backend -> IO ()
+processTransactionCmd action backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
+
+processAccountCmd :: AccountCmd -> Backend -> IO ()
+processAccountCmd action backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
+
+processModuleCmd :: ModuleCmd -> Backend -> IO ()
+processModuleCmd action backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
+
+processContractCmd :: ContractCmd -> Backend -> IO ()
+processContractCmd action backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
+
+processLegacyCmd :: LegacyCmd -> Maybe Backend -> IO ()
+processLegacyCmd action backend =
   case action of
     LoadModule fname -> do
       mdata <- loadContextData
@@ -118,7 +133,10 @@ legacyProcess action backend =
     -- The rest of the commands expect a backend to be provided
     MakeBakerPayload bakerKeysFile accountKeysFile payloadFile -> handleMakeBaker bakerKeysFile accountKeysFile payloadFile
     act ->
-      maybe (putStrLn "No Backend provided") (useBackend act) backend
+      maybe printNoBackend (useBackend act) backend
+
+printNoBackend :: IO ()
+printNoBackend = putStrLn "No Backend provided"
 
 -- |Look up block infos all the way to genesis.
 loop :: Either String Value -> ClientMonad IO ()
@@ -142,15 +160,13 @@ withBestBlockHash v c =
     Nothing -> getBestBlockHash >>= c
     Just x -> c x
 
-useBackend :: LegacyAction -> Backend -> IO ()
+useBackend :: LegacyCmd -> Backend -> IO ()
 useBackend act b =
   case act of
     SendTransaction fname nid hook -> do
       mdata <- loadContextData
       source <- BSL.readFile fname
-      t <-
-        PR.evalContext mdata $ runInClient b $
-        processTransaction source nid hook
+      t <- PR.evalContext mdata $ runInClient b $ processTransaction source nid hook
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (Types.transactionHash t)
     HookTransaction txh -> runInClient b $ hookTransaction txh >>= printJSON
@@ -377,15 +393,16 @@ processTransaction ::
 processTransaction source networkId hookit =
   case AE.eitherDecode source of
     Left err -> fail $ "Error decoding JSON: " ++ err
-    Right t  -> processTransaction_ t networkId hookit
+    Right t  -> processTransaction_ t networkId hookit True
 
 processTransaction_ ::
      (MonadFail m, MonadIO m)
   => TransactionJSON
   -> Int
   -> Bool
+  -> Bool
   -> ClientMonad (PR.Context Core.UA m) Types.BareTransaction
-processTransaction_ transaction networkId hookit = do
+processTransaction_ transaction networkId hookit verbose = do
   tx <- do
     let header = metadata transaction
         sender = thSenderAddress header
@@ -398,12 +415,15 @@ processTransaction_ transaction networkId hookit = do
       (thEnergyAmount header)
       nonce
       (thExpiry header)
-      (sender, (keys transaction))
+      (sender, (CT.keys transaction))
 
   when hookit $ do
     let trHash = Types.transactionHash tx
-    liftIO . putStrLn $ "Installing hook for transaction " ++ show trHash
-    printJSON =<< hookTransaction (pack . show $ trHash)
+    when verbose $
+      liftIO . putStrLn $ "Installing hook for transaction " ++ show trHash
+
+    h <- hookTransaction (pack . show $ trHash)
+    when verbose $ printJSON h
   sendTransactionToBaker tx networkId >>= \case
     Left err -> fail err
     Right False -> fail "Transaction not accepted by the baker."

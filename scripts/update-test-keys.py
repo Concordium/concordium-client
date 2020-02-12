@@ -48,3 +48,4 @@ for tf in test_files:
             test_json['payload']['toaddress']['accountAddress'] = receiver_account
 
         f.write(json.dumps(test_json, indent=4))
+        f.write('\n')
