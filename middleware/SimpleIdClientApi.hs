@@ -47,25 +47,36 @@ data IdObjectRequest =
   IdObjectRequest
     { ipIdentity :: Int
     , name :: Text
-    , attributes :: Map Text Text
+    , attributes :: Attributes
     , anonymityRevokers :: [Int]
     , threshold :: Int
     }
   deriving (Generic, Show, ToJSON)
+
+
+data Attributes =
+  Attributes
+    { chosenAttributes :: Map Text Text
+    , expiryDate :: Int
+    }
+  deriving (Generic, Show, ToJSON, FromJSON)
+
 
 sampleIdObjectRequest :: IdObjectRequest
 sampleIdObjectRequest =
   IdObjectRequest
     { ipIdentity = 0
     , name = "Ales"
-    , attributes = fromList
-        [ ("birthYear", "2013")
-        , ("creationTime", "1341324324")
-        , ("expiryDate", "1910822399")
-        , ("maxAccount", "30")
-        , ("residenceCountryCode", "386")
-        , ("variant", "0")
-        ]
+    , attributes =
+        Attributes
+          { chosenAttributes =
+              fromList
+                [ ("DateOfBirth", "1234")
+                , ("MaxAccount", "30")
+                , ("CountryOfResidence", "386")
+                ]
+          , expiryDate = 1893456000 -- 2030/01/01
+          }
     , anonymityRevokers = [0,1,2]
     , threshold = 2
     }
@@ -74,8 +85,15 @@ sampleIdObjectRequest =
 data IdObjectResponse =
   IdObjectResponse
     { ipIdentity :: Int
+    , identityObject :: IdentityObject
+    , idUseData :: IdUseData
+    }
+  deriving (Generic, Show, FromJSON, ToJSON)
+
+data IdentityObject =
+  IdentityObject
+    { attributeList :: Attributes
     , preIdentityObject :: PreIdentityObject
-    , privateData :: PrivateData
     , signature :: Text
     }
   deriving (Generic, Show, FromJSON, ToJSON)
@@ -83,18 +101,23 @@ data IdObjectResponse =
 data PreIdentityObject =
   PreIdentityObject
     { accountHolderName :: Text
-    , attributeList :: Map Text Text
     , idCredPub :: Text
     , idCredSecCommitment :: Text
     , ipArData :: [IpArData]
-    , choiceArData :: [Int]
-    , revocationThreshold :: Int
+    , choiceArData :: ChoiceArData
     , pokSecCred :: Text
     , sndPokSecCred :: Text
     , proofCommitmentsToIdCredSecSame :: Text
-    , prfKeyCommitmentWithID :: Text
+    , prfKeyCommitmentWithIP :: Text
     , prfKeySharingCoeffCommitments :: [Text]
     , proofCommitmentsSame :: Text
+    }
+  deriving (Generic, Show, FromJSON, ToJSON)
+
+data ChoiceArData =
+  ChoiceArData
+    { arIdentities :: [Int]
+    , threshold :: Int
     }
   deriving (Generic, Show, FromJSON, ToJSON)
 
@@ -107,17 +130,16 @@ data IpArData =
     }
   deriving (Generic, Show, FromJSON, ToJSON)
 
-data PrivateData =
-  PrivateData
-    { aci :: PrivateDataAci
-    , pioRandomness :: Text
+data IdUseData =
+  IdUseData
+    { aci :: IdUseDataAci
+    , randomness :: Text
     }
   deriving (Generic, Show, FromJSON, ToJSON)
 
-data PrivateDataAci =
-  PrivateDataAci
-    { attributes :: Map Text Text
-    , credentialHolderInformation :: CredentialHolderInformation
+data IdUseDataAci =
+  IdUseDataAci
+    { credentialHolderInformation :: CredentialHolderInformation
     , prfKey :: Text
     }
   deriving (Generic, Show, FromJSON, ToJSON)
@@ -133,9 +155,8 @@ data CredentialHolderInformation =
 data IdCredentialRequest =
   IdCredentialRequest
     { ipIdentity :: Int
-    , preIdentityObject :: PreIdentityObject
-    , privateData :: PrivateData
-    , signature :: Text
+    , identityObject :: IdentityObject
+    , idUseData :: IdUseData
     , revealedItems :: [Text]
     , accountNumber :: Int
     }

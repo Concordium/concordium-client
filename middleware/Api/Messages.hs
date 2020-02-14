@@ -30,9 +30,8 @@ type BetaIdProvisionResponse = IdObjectResponse
 data BetaAccountProvisionRequest =
   BetaAccountProvisionRequest
     { ipIdentity :: Int
-    , preIdentityObject :: PreIdentityObject
-    , privateData :: PrivateData
-    , signature :: Text
+    , identityObject :: IdentityObject
+    , idUseData :: IdUseData
     , revealedItems :: [Text]
     }
   deriving (ToJSON, FromJSON, Generic, Show)

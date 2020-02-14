@@ -160,12 +160,15 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
           IdObjectRequest
             { ipIdentity = 5
             , name = "middleware-beta-autogen"
-            , attributes = fromList
-                ([ ("creationTime", Text.pack $ show creationTime)
-                , ("expiryDate", Text.pack $ show expiryDate)
-                , ("maxAccount", "30")
-                , ("variant", "0")
-                ] ++ attributes)
+            , attributes =
+                Attributes
+                  { chosenAttributes =
+                      fromList
+                        ([ ("CreationTime", Text.pack $ show creationTime)
+                        , ("MaxAccount", "30")
+                        ] ++ attributes)
+                  , expiryDate = expiryDate
+                  }
             , anonymityRevokers = [0,1,2]
             , threshold = 2
             }
@@ -181,9 +184,9 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
   betaAccountProvision accountProvisionRequest = do
 
     -- Re-use the account nonce mechanism with the hashed prfKey for accountNumber increment per credential
-    let privateData_ = privateData (accountProvisionRequest :: BetaAccountProvisionRequest)
-        aci_ = aci (privateData_ :: PrivateData)
-        prfKey_ = prfKey (aci_ :: PrivateDataAci)
+    let idUseData_ = idUseData (accountProvisionRequest :: BetaAccountProvisionRequest)
+        aci_ = aci (idUseData_ :: IdUseData)
+        prfKey_ = prfKey (aci_ :: IdUseDataAci)
         accountIdKey = Text.decodeUtf8 . Base16.encode . SHA256.hashToByteString . SHA256.hash . Text.encodeUtf8 $ prfKey_
 
     (Types.Nonce nonce) <- liftIO $ EsApi.takeNextNonceFor esUrl accountIdKey
@@ -191,9 +194,8 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
     let credentialRequest =
           IdCredentialRequest
             { ipIdentity = ipIdentity (accountProvisionRequest :: BetaAccountProvisionRequest)
-            , preIdentityObject = preIdentityObject (accountProvisionRequest :: BetaAccountProvisionRequest)
-            , privateData = privateData (accountProvisionRequest :: BetaAccountProvisionRequest)
-            , signature = signature (accountProvisionRequest :: BetaAccountProvisionRequest)
+            , identityObject = identityObject (accountProvisionRequest :: BetaAccountProvisionRequest)
+            , idUseData = idUseData (accountProvisionRequest :: BetaAccountProvisionRequest)
             , revealedItems = revealedItems (accountProvisionRequest :: BetaAccountProvisionRequest)
             , accountNumber = fromIntegral nonce
             }
@@ -324,7 +326,11 @@ runTransaction nodeBackend esUrl payload (address, keyMap) = do
 
   nonce <- EsApi.takeNextNonceFor esUrl accountAddressText
 
+  currentTime <- liftIO $ round `fmap` getPOSIXTime
+
   let
+    transactionExpiry = currentTime + (60*30) -- Expires in 30 minutes from now
+
     -- These are the agreed fixed costs for testnet, they
     -- will change when tokenomics is finalized
     energyAmount =
@@ -345,6 +351,7 @@ runTransaction nodeBackend esUrl payload (address, keyMap) = do
             { thSenderAddress = address
             , thNonce = Just nonce
             , thEnergyAmount = energyAmount
+            , thExpiry = Types.TransactionExpiryTime transactionExpiry
             }
 
   executeTransaction esUrl nodeBackend transaction address
@@ -354,22 +361,22 @@ type Account = (IDTypes.AccountAddress, Types.KeyMap)
 
 middlewareGodAccount :: Account
 middlewareGodAccount = do
-  -- https://gitlab.com/Concordium/p2p-client/blob/master/scripts/genesis-data/beta_accounts/beta-account-0.json
+  -- https://gitlab.com/Concordium/genesis-data/-/blob/master/beta_accounts/beta-account-0.json
   let
     keyMap =
       certainDecode [text|
         {
           "0": {
-            "signKey": "a0ffe8633d271571c47c635ac7f3607e470ce1019a556e9cdf3e259c8c5dc34c",
-            "verifyKey": "0a323d8f3817c2f1e573022d23411319a1443fc9f0088f54c001133d6d65f110"
+            "signKey": "438fe75467a2b7167f8834691ecf0b91e7dc9443b4b6056431e484db00934967",
+            "verifyKey": "92efe3e541a90661bf0cdead5eb34b19843c1473143b551d90fb5bbbbda69ac8"
           },
           "1": {
-            "signKey": "32a2dba586f72ec665dbd9712e623a6f5eae48ed36456b592a67818c60e30d68",
-            "verifyKey": "6ace3e8b6783df146779ca24f7ffc6b6d0289e850d29377bf17bca90ddfaf5a4"
+            "signKey": "38cfc93274834c9c4f4bfad26f3251ac212986a4e464ade632c40e358009d6af",
+            "verifyKey": "cb87fd5472146a4b9c914c2038704c139ae83057bba1170b05a4580e4f8353fd"
           },
           "2": {
-            "signKey": "099a34eb037359aee28e5014e2bdb8c61e527507db7ad8beacd4c849e240ddb8",
-            "verifyKey": "001b5ff5f8371f9db8ff9b374d421c64a40dba4bdbd8749345fd8409c026477c"
+            "signKey": "41b0919117d1e006ac069834b01f8c8f7f1267ac0dc288f200fde981917c3558",
+            "verifyKey": "42b581be3991b77fe9ef3b40bbd2944cc7a23799b941b31231adb162df054d4b"
           }
         }
       |]
@@ -387,7 +394,7 @@ executeTransaction esUrl nodeBackend transaction address = do
 
   t <- do
     let hookIt = True
-    PR.evalContext mdata $ runInClient nodeBackend $ processTransaction_ transaction nid hookIt
+    PR.evalContext mdata $ runInClient nodeBackend $ processTransaction_ transaction nid hookIt True
 
   putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (Types.transactionHash t)
   print transaction
@@ -428,6 +435,7 @@ debugTestFullProvision = do
   putStrLn $ "✅ esUrl = " ++ Text.unpack esUrl
   putStrLn $ "✅ idUrl = " ++ Text.unpack idUrl
 
+  putStrLn "➡️  Submitting IdObjectRequest"
 
   let
     (nodeHost, nodePort) =
@@ -445,8 +453,8 @@ debugTestFullProvision = do
   creationTime :: Int <- liftIO $ round `fmap` getPOSIXTime
 
   let attributesStub =
-        [ ("birthYear", "2000")
-        , ("residenceCountryCode", "184") -- (GB) Great Britain
+        [ ("DateOfBirth", "2000")
+        , ("CountryOfResidence", "184") -- (GB) Great Britain
         ]
 
       expiryDate = creationTime + (60*60*24*365) -- Expires in 365 days from now
@@ -455,12 +463,15 @@ debugTestFullProvision = do
         IdObjectRequest
           { ipIdentity = 5
           , name = "middleware-beta-debug"
-          , attributes = fromList
-              ([ ("creationTime", Text.pack $ show creationTime)
-              , ("expiryDate", Text.pack $ show expiryDate)
-              , ("maxAccount", "30")
-              , ("variant", "0")
-              ] ++ attributesStub)
+          , attributes =
+              Attributes
+                { chosenAttributes =
+                    fromList
+                      ([ ("CreationTime", Text.pack $ show creationTime)
+                      , ("MaxAccount", "30")
+                      ] ++ attributesStub)
+                , expiryDate = expiryDate
+                }
           , anonymityRevokers = [0,1,2]
           , threshold = 2
           }
@@ -472,12 +483,13 @@ debugTestFullProvision = do
   let credentialRequest =
         IdCredentialRequest
           { ipIdentity = ipIdentity (idObjectResponse :: BetaIdProvisionResponse)
-          , preIdentityObject = preIdentityObject (idObjectResponse :: BetaIdProvisionResponse)
-          , privateData = privateData (idObjectResponse :: BetaIdProvisionResponse)
-          , signature = signature (idObjectResponse :: BetaIdProvisionResponse)
-          , revealedItems = ["birthYear"]
+          , identityObject = identityObject (idObjectResponse :: BetaIdProvisionResponse)
+          , idUseData = idUseData (idObjectResponse :: BetaIdProvisionResponse)
+          , revealedItems = ["DateOfBirth"]
           , accountNumber = 0
           }
+
+  putStrLn "➡️  Submitting IdCredentialRequest"
 
   idCredentialResponse <- postIdCredentialRequest idUrl credentialRequest
 
