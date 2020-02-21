@@ -58,8 +58,34 @@ import           EsApi
 import           Api.Messages
 
 
-godsToken :: Text
-godsToken = "47434137412923191713117532"
+middlewareGodAccount :: Account
+middlewareGodAccount = do
+  -- https://gitlab.com/Concordium/genesis-data/-/blob/master/beta_accounts/beta-account-0.json
+  let
+    keyMap =
+      certainDecode [text|
+        {
+          "0": {
+            "signKey": "438fe75467a2b7167f8834691ecf0b91e7dc9443b4b6056431e484db00934967",
+            "verifyKey": "92efe3e541a90661bf0cdead5eb34b19843c1473143b551d90fb5bbbbda69ac8"
+          },
+          "1": {
+            "signKey": "38cfc93274834c9c4f4bfad26f3251ac212986a4e464ade632c40e358009d6af",
+            "verifyKey": "cb87fd5472146a4b9c914c2038704c139ae83057bba1170b05a4580e4f8353fd"
+          },
+          "2": {
+            "signKey": "41b0919117d1e006ac069834b01f8c8f7f1267ac0dc288f200fde981917c3558",
+            "verifyKey": "42b581be3991b77fe9ef3b40bbd2944cc7a23799b941b31231adb162df054d4b"
+          }
+        }
+      |]
+    address =
+      certainDecode "\"3c3WY2QPmM8jfFb1bVDMtW9o51FwoiB3rEJDvxadUqMgFXKMk3\""
+  (address, keyMap)
+
+
+adminAuthToken :: Text
+adminAuthToken = "47434137412923191713117532"
 
 
 data Routes r = Routes
@@ -303,7 +329,7 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
 
   replayTransactions :: ReplayTransactionsRequest -> Handler ReplayTransactionsResponse
   replayTransactions req =
-    if adminToken req == godsToken then do
+    if adminToken req == adminAuthToken then do
       transactions <- liftIO $ getTransactionsForReplay esUrl
 
       let nid = 1000
@@ -358,31 +384,6 @@ runTransaction nodeBackend esUrl payload (address, keyMap) = do
 
 
 type Account = (IDTypes.AccountAddress, Types.KeyMap)
-
-middlewareGodAccount :: Account
-middlewareGodAccount = do
-  -- https://gitlab.com/Concordium/genesis-data/-/blob/master/beta_accounts/beta-account-0.json
-  let
-    keyMap =
-      certainDecode [text|
-        {
-          "0": {
-            "signKey": "438fe75467a2b7167f8834691ecf0b91e7dc9443b4b6056431e484db00934967",
-            "verifyKey": "92efe3e541a90661bf0cdead5eb34b19843c1473143b551d90fb5bbbbda69ac8"
-          },
-          "1": {
-            "signKey": "38cfc93274834c9c4f4bfad26f3251ac212986a4e464ade632c40e358009d6af",
-            "verifyKey": "cb87fd5472146a4b9c914c2038704c139ae83057bba1170b05a4580e4f8353fd"
-          },
-          "2": {
-            "signKey": "41b0919117d1e006ac069834b01f8c8f7f1267ac0dc288f200fde981917c3558",
-            "verifyKey": "42b581be3991b77fe9ef3b40bbd2944cc7a23799b941b31231adb162df054d4b"
-          }
-        }
-      |]
-    address =
-      certainDecode "\"4A3qVqCa6SA7dLF6pcnbjXVmj94iDH3uPLK57p8kJeYguzU8eW\""
-  (address, keyMap)
 
 
 executeTransaction :: Text -> Backend -> TransactionJSON -> Types.AccountAddress -> IO Types.TransactionHash
