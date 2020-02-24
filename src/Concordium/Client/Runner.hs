@@ -247,7 +247,7 @@ handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
   let abElectionVerifyKey = vrfVerify
   let abSignatureVerifyKey = verifyKey
   let abAggregationVerifyKey :: Types.BakerAggregationVerifyKey = aggrVerifyKey
-  let challenge = S.runPut (S.put abElectionVerifyKey <> S.put abSignatureVerifyKey <> S.pub abAggregationVerifyKey <> S.put accountAddr)
+  let challenge = S.runPut (S.put abElectionVerifyKey <> S.put abSignatureVerifyKey <> S.put abAggregationVerifyKey <> S.put accountAddr)
   abProofElection <- Proofs.proveDlog25519VRF challenge (VRF.KeyPair vrfPrivate vrfVerify) `except` "Could not produce VRF key proof."
   abProofSig <- Proofs.proveDlog25519Block challenge (BlockSig.KeyPair signKey verifyKey) `except` "Could not produce signature key proof."
   abProofAccounts <- forM keyMap (\key -> Proofs.proveDlog25519KP challenge key `except` "Could not produce account keys proof.")
