@@ -11,6 +11,7 @@ magenta() { tput setaf 5; }
 cyan()    { tput setaf 6; }
 white()   { tput setaf 7; }
 
+stack install simple-client:middleware --flag "simple-client:middleware"
 
 NODES=$(docker ps --filter "publish=10000" --format "{{.Ports}}" | cut -d' ' -f5 | cut -d':' -f2 | cut -d'-' -f1);
 
@@ -25,4 +26,8 @@ else
   echo "Booting with node at port: $(green)$NODE$(normal)"
 fi
 
-NODE_URL="localhost:$NODE" ES_URL="http://localhost:9200" SIMPLEID_URL="http://localhost:8000" stack run middleware
+
+NODE_URL="localhost:$NODE" \
+ES_URL="http://localhost:9200" \
+SIMPLEID_URL="http://localhost:8000" \
+middleware

@@ -5,6 +5,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 module Api where
 
@@ -31,6 +32,8 @@ import           System.Process
 import           Text.Read (readMaybe)
 import           Lens.Simple
 import qualified Data.ByteString.Base16 as Base16
+import qualified Data.HashMap.Strict as Map
+import NeatInterpolation
 
 import qualified Acorn.Parser.Runner as PR
 import           Concordium.Client.Commands as COM
@@ -41,9 +44,11 @@ import           Concordium.Client.Types.Transaction
 import           Concordium.Crypto.Ed25519Signature (deriveVerifyKey)
 import           Concordium.Crypto.SignatureScheme (KeyPair(..), correspondingVerifyKey)
 import qualified Concordium.Crypto.SHA256 as SHA256
-import qualified Concordium.ID.Account
+
+import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Transactions as Types
+import qualified Concordium.Client.Types.Transaction as Types
 import           Control.Monad
 import qualified Proto.ConcordiumP2pRpc_Fields as CF
 
@@ -52,8 +57,36 @@ import           SimpleIdClientApi
 import           EsApi
 import           Api.Messages
 
-godsToken :: Text
-godsToken = "47434137412923191713117532"
+
+middlewareGodAccount :: Account
+middlewareGodAccount = do
+  -- https://gitlab.com/Concordium/genesis-data/-/blob/master/beta_accounts/beta-account-0.json
+  let
+    keyMap =
+      certainDecode [text|
+        {
+          "0": {
+            "signKey": "438fe75467a2b7167f8834691ecf0b91e7dc9443b4b6056431e484db00934967",
+            "verifyKey": "92efe3e541a90661bf0cdead5eb34b19843c1473143b551d90fb5bbbbda69ac8"
+          },
+          "1": {
+            "signKey": "38cfc93274834c9c4f4bfad26f3251ac212986a4e464ade632c40e358009d6af",
+            "verifyKey": "cb87fd5472146a4b9c914c2038704c139ae83057bba1170b05a4580e4f8353fd"
+          },
+          "2": {
+            "signKey": "41b0919117d1e006ac069834b01f8c8f7f1267ac0dc288f200fde981917c3558",
+            "verifyKey": "42b581be3991b77fe9ef3b40bbd2944cc7a23799b941b31231adb162df054d4b"
+          }
+        }
+      |]
+    address =
+      certainDecode "\"3c3WY2QPmM8jfFb1bVDMtW9o51FwoiB3rEJDvxadUqMgFXKMk3\""
+  (address, keyMap)
+
+
+adminAuthToken :: Text
+adminAuthToken = "47434137412923191713117532"
+
 
 data Routes r = Routes
     -- Public Middleware APIs
@@ -151,14 +184,17 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
       expiryDate = creationTime + (60*60*24*365) -- Expires in 365 days from now
       idObjectRequest =
           IdObjectRequest
-            { ipIdentity = 0
+            { ipIdentity = 5
             , name = "middleware-beta-autogen"
-            , attributes = fromList
-                ([ ("creationTime", Text.pack $ show creationTime)
-                , ("expiryDate", Text.pack $ show expiryDate)
-                , ("maxAccount", "30")
-                , ("variant", "0")
-                ] ++ attributes)
+            , attributes =
+                Attributes
+                  { chosenAttributes =
+                      fromList
+                        ([ ("CreationTime", Text.pack $ show creationTime)
+                        , ("MaxAccount", "30")
+                        ] ++ attributes)
+                  , expiryDate = expiryDate
+                  }
             , anonymityRevokers = [0,1,2]
             , threshold = 2
             }
@@ -174,9 +210,9 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
   betaAccountProvision accountProvisionRequest = do
 
     -- Re-use the account nonce mechanism with the hashed prfKey for accountNumber increment per credential
-    let privateData_ = privateData (accountProvisionRequest :: BetaAccountProvisionRequest)
-        aci_ = aci (privateData_ :: PrivateData)
-        prfKey_ = prfKey (aci_ :: PrivateDataAci)
+    let idUseData_ = idUseData (accountProvisionRequest :: BetaAccountProvisionRequest)
+        aci_ = aci (idUseData_ :: IdUseData)
+        prfKey_ = prfKey (aci_ :: IdUseDataAci)
         accountIdKey = Text.decodeUtf8 . Base16.encode . SHA256.hashToByteString . SHA256.hash . Text.encodeUtf8 $ prfKey_
 
     (Types.Nonce nonce) <- liftIO $ EsApi.takeNextNonceFor esUrl accountIdKey
@@ -184,9 +220,8 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
     let credentialRequest =
           IdCredentialRequest
             { ipIdentity = ipIdentity (accountProvisionRequest :: BetaAccountProvisionRequest)
-            , preIdentityObject = preIdentityObject (accountProvisionRequest :: BetaAccountProvisionRequest)
-            , privateData = privateData (accountProvisionRequest :: BetaAccountProvisionRequest)
-            , signature = signature (accountProvisionRequest :: BetaAccountProvisionRequest)
+            , identityObject = identityObject (accountProvisionRequest :: BetaAccountProvisionRequest)
+            , idUseData = idUseData (accountProvisionRequest :: BetaAccountProvisionRequest)
             , revealedItems = revealedItems (accountProvisionRequest :: BetaAccountProvisionRequest)
             , accountNumber = fromIntegral nonce
             }
@@ -195,14 +230,14 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
 
     liftIO $ putStrLn "✅ Got idCredentialResponse"
 
-    let newAccountKeyPair = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
-        newAccountAddress = Concordium.ID.Account.accountAddress (correspondingVerifyKey newAccountKeyPair)
+    let
+      newAccountAddress = accountAddress (idCredentialResponse :: IdCredentialResponse)
 
     _ <- liftIO $ runGodTransaction nodeBackend esUrl $ DeployCredential { credential = credential (idCredentialResponse :: IdCredentialResponse) }
 
     pure $
       BetaAccountProvisionResponse
-        { accountKeys = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
+        { accountKeys = SimpleIdClientApi.keys $ SimpleIdClientApi.accountData (idCredentialResponse :: IdCredentialResponse)
         , spio = credential (idCredentialResponse :: IdCredentialResponse)
         , address = Text.pack . show $ newAccountAddress
         }
@@ -226,11 +261,12 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
   transfer :: TransferRequest -> Handler TransferResponse
   transfer TransferRequest{..} = do
 
-    let accountAddress = Concordium.ID.Account.accountAddress (correspondingVerifyKey keypair)
+    let
+      (accountAddress, keymap) = account
 
     liftIO $ putStrLn $ "✅ Sending " ++ show amount ++ " from " ++ show accountAddress ++ " to " ++ show to
 
-    transactionId <- liftIO $ runTransaction nodeBackend esUrl (Transfer { toaddress = to, amount = amount }) keypair
+    transactionId <- liftIO $ runTransaction nodeBackend esUrl (Transfer { toaddress = to, amount = amount }) account
 
     pure $ TransferResponse { transactionId = transactionId }
 
@@ -293,7 +329,7 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
 
   replayTransactions :: ReplayTransactionsRequest -> Handler ReplayTransactionsResponse
   replayTransactions req =
-    if adminToken req == godsToken then do
+    if adminToken req == adminAuthToken then do
       transactions <- liftIO $ getTransactionsForReplay esUrl
 
       let nid = 1000
@@ -303,21 +339,27 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
     else
       return $ ReplayTransactionsResponse False
 
--- For beta, uses the middlewareGodKP which is seeded with funds
+-- For beta, uses the middlewareGodAccount which is seeded with funds
 runGodTransaction :: Backend -> Text -> TransactionJSONPayload -> IO Types.TransactionHash
 runGodTransaction nodeBackend esUrl payload =
-  runTransaction nodeBackend esUrl payload middlewareGodKP
+  runTransaction nodeBackend esUrl payload middlewareGodAccount
 
 
-runTransaction :: Backend -> Text -> TransactionJSONPayload -> KeyPair -> IO Types.TransactionHash
-runTransaction nodeBackend esUrl payload keypair = do
+runTransaction :: Backend -> Text -> TransactionJSONPayload -> Account -> IO Types.TransactionHash
+runTransaction nodeBackend esUrl payload (address, keyMap) = do
 
-  let accountAddressText = Text.pack . show . Concordium.ID.Account.accountAddress . correspondingVerifyKey $ keypair
+  let accountAddressText = Text.pack $ show address
 
   nonce <- EsApi.takeNextNonceFor esUrl accountAddressText
 
+  currentTime <- liftIO $ round `fmap` getPOSIXTime
+
   let
-    gasAmount =
+    transactionExpiry = currentTime + (60*30) -- Expires in 30 minutes from now
+
+    -- These are the agreed fixed costs for testnet, they
+    -- will change when tokenomics is finalized
+    energyAmount =
       case payload of
         Transfer _ _       -> 10
         DeployCredential _ -> 10000
@@ -327,28 +369,25 @@ runTransaction nodeBackend esUrl payload keypair = do
       TransactionJSON
         { metadata = transactionHeader
         , payload = payload
-        , signKey = keypair
+        , keys = keyMap
         }
 
     transactionHeader =
           TransactionJSONHeader
-            { thSenderKey = correspondingVerifyKey keypair
+            { thSenderAddress = address
             , thNonce = Just nonce
-            , thGasAmount = gasAmount
+            , thEnergyAmount = energyAmount
+            , thExpiry = Types.TransactionExpiryTime transactionExpiry
             }
 
-  executeTransaction esUrl nodeBackend transaction
+  executeTransaction esUrl nodeBackend transaction address
 
 
-middlewareGodKP :: KeyPair
-middlewareGodKP = do
-  -- https://gitlab.com/Concordium/p2p-client/blob/d41aba2cc3bfed7c5be21fe0612581f9c90e9e45/scripts/genesis-data/beta_accounts/beta-account-0.json
-  let signKey = certainDecode "\"de55bb798f08c68df0d055b580a02d0c73b2911953d288931fead886dd0a8d86\""
-  KeyPairEd25519 signKey (deriveVerifyKey signKey)
+type Account = (IDTypes.AccountAddress, Types.KeyMap)
 
 
-executeTransaction :: Text -> Backend -> TransactionJSON -> IO Types.TransactionHash
-executeTransaction esUrl nodeBackend transaction = do
+executeTransaction :: Text -> Backend -> TransactionJSON -> Types.AccountAddress -> IO Types.TransactionHash
+executeTransaction esUrl nodeBackend transaction address = do
 
   mdata <- loadContextData
   -- The networkId is for running multiple networks that's not the same chain, but hasn't been taken into use yet
@@ -356,32 +395,23 @@ executeTransaction esUrl nodeBackend transaction = do
 
   t <- do
     let hookIt = True
-    PR.evalContext mdata $ runInClient nodeBackend $ processTransaction_ transaction nid hookIt
+    PR.evalContext mdata $ runInClient nodeBackend $ processTransaction_ transaction nid hookIt True
 
   putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (Types.transactionHash t)
   print transaction
 
-
-  EsApi.logBareTransaction esUrl t (Concordium.ID.Account.accountAddress $ thSenderKey $ metadata transaction)
+  EsApi.logBareTransaction esUrl t address
 
   putStrLn "✅ Bare tansaction logged into ElasticSearch"
 
   pure $ Types.transactionHash t
 
 -- Dirty helper to help us with "definitely certain" value decoding
-certainDecode :: (FromJSON a) => BS8.ByteString -> a
-certainDecode bytestring =
-  case decode' bytestring of
+certainDecode :: (FromJSON a) => Text -> a
+certainDecode t =
+  case decode' $ BS8.fromStrict $ Text.encodeUtf8 t of
     Just v -> v
-    Nothing -> error $ "Well... not so certain now huh! certainDecode failed on:\n\n" ++ show bytestring
-
-
--- Dirty helper to help us with "definitely certain" account address decoding
-certainAccountAddress :: Text -> Types.Address
-certainAccountAddress addressText =
-  case decode' $ BS8.fromStrict $ Text.encodeUtf8 addressText of
-    Just address -> Types.AddressAccount address
-    Nothing -> error $ "Well... not so certain now huh! certainAccountAddress failed on:\n\n" ++ show (Text.unpack addressText)
+    Nothing -> error $ "Well... not so certain now huh! certainDecode failed on:\n\n" ++ Text.unpack t
 
 
 {--
@@ -406,6 +436,7 @@ debugTestFullProvision = do
   putStrLn $ "✅ esUrl = " ++ Text.unpack esUrl
   putStrLn $ "✅ idUrl = " ++ Text.unpack idUrl
 
+  putStrLn "➡️  Submitting IdObjectRequest"
 
   let
     (nodeHost, nodePort) =
@@ -423,8 +454,8 @@ debugTestFullProvision = do
   creationTime :: Int <- liftIO $ round `fmap` getPOSIXTime
 
   let attributesStub =
-        [ ("birthYear", "2000")
-        , ("residenceCountryCode", "184") -- (GB) Great Britain
+        [ ("DateOfBirth", "2000")
+        , ("CountryOfResidence", "184") -- (GB) Great Britain
         ]
 
       expiryDate = creationTime + (60*60*24*365) -- Expires in 365 days from now
@@ -433,12 +464,15 @@ debugTestFullProvision = do
         IdObjectRequest
           { ipIdentity = 5
           , name = "middleware-beta-debug"
-          , attributes = fromList
-              ([ ("creationTime", Text.pack $ show creationTime)
-              , ("expiryDate", Text.pack $ show expiryDate)
-              , ("maxAccount", "30")
-              , ("variant", "0")
-              ] ++ attributesStub)
+          , attributes =
+              Attributes
+                { chosenAttributes =
+                    fromList
+                      ([ ("CreationTime", Text.pack $ show creationTime)
+                      , ("MaxAccount", "30")
+                      ] ++ attributesStub)
+                , expiryDate = expiryDate
+                }
           , anonymityRevokers = [0,1,2]
           , threshold = 2
           }
@@ -450,12 +484,13 @@ debugTestFullProvision = do
   let credentialRequest =
         IdCredentialRequest
           { ipIdentity = ipIdentity (idObjectResponse :: BetaIdProvisionResponse)
-          , preIdentityObject = preIdentityObject (idObjectResponse :: BetaIdProvisionResponse)
-          , privateData = privateData (idObjectResponse :: BetaIdProvisionResponse)
-          , signature = signature (idObjectResponse :: BetaIdProvisionResponse)
-          , revealedItems = ["birthYear"]
+          , identityObject = identityObject (idObjectResponse :: BetaIdProvisionResponse)
+          , idUseData = idUseData (idObjectResponse :: BetaIdProvisionResponse)
+          , revealedItems = ["DateOfBirth"]
           , accountNumber = 0
           }
+
+  putStrLn "➡️  Submitting IdCredentialRequest"
 
   idCredentialResponse <- postIdCredentialRequest idUrl credentialRequest
 
@@ -464,10 +499,10 @@ debugTestFullProvision = do
   putStrLn "✅ Generating JSON for idCredentialResponse:"
   putStrLn $ BS8.unpack $ encode idCredentialResponse
 
-  let newAccountKeyPair = accountKeyPair (idCredentialResponse :: IdCredentialResponse)
-      newAddress = Types.AddressAccount $ Concordium.ID.Account.accountAddress (correspondingVerifyKey newAccountKeyPair)
+  let
+    newAddress = Types.AddressAccount $ SimpleIdClientApi.accountAddress idCredentialResponse
 
-  putStrLn $ "✅ Deploying credentials for: " ++ show newAddress
+  putStrLn $ "✅ Deploying credentials for: " ++ show (SimpleIdClientApi.accountAddress idCredentialResponse)
 
   _ <- runGodTransaction nodeBackend esUrl $ DeployCredential { credential = credential (idCredentialResponse :: IdCredentialResponse) }
 
@@ -476,6 +511,7 @@ debugTestFullProvision = do
   _ <- runGodTransaction nodeBackend esUrl $ Transfer { toaddress = newAddress, amount = 100 }
 
   pure "Done."
+
 
 debugGrpc :: IO GetNodeStateResponse
 debugGrpc = do
