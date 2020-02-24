@@ -110,6 +110,7 @@ data TransactionJSONPayload
       , proofSig             :: Dlog25519Proof
       , proofElection        :: Dlog25519Proof
       , proofAccounts        :: AccountOwnershipProof
+      , proofAggregation     :: BakerAggregationProof
       }
   | RemoveBaker
       { removeId :: BakerId
