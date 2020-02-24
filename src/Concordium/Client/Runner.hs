@@ -34,6 +34,7 @@ import           Concordium.Client.Types.Transaction as CT
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
+import qualified Concordium.Crypto.SignatureScheme   as Sig
 import qualified Concordium.Crypto.VRF               as VRF
 import qualified Concordium.Types.Transactions       as Types
 import qualified Concordium.Types.Execution          as Types
@@ -461,7 +462,15 @@ encodeAndSignTransaction pl energy nonce expiry (sender, keys) = do
       return $ Types.Transfer transferTo transferAmount
     (CT.DeployCredential cred) -> return $ Types.DeployCredential cred
     (CT.DeployEncryptionKey encKey) -> return $ Types.DeployEncryptionKey encKey
-    (CT.AddBaker evk svk avk ba p pe pa pagg) -> return $ Types.AddBaker evk svk avk ba p pe pa pagg
+    (CT.AddBaker evk epk svk avk apk (BlockSig.KeyPair spk _) acc kp) ->
+      let challenge = S.runPut (S.put evk <> S.put svk <> S.put avk <> S.put acc)
+      in do
+        Just proofElection <- liftIO $ Proofs.proveDlog25519VRF challenge epk
+        Just proofSig <- liftIO $ Proofs.proveDlog25519KP challenge (Sig.KeyPairEd25519 spk svk)
+        Just proofAccount' <- liftIO $ Proofs.proveDlog25519KP challenge kp
+        let proofAccount = Types.singletonAOP proofAccount'
+            proofAggregation = Bls.proveKnowledgeOfSK challenge apk
+        return $ Types.AddBaker evk svk avk acc proofSig proofElection proofAccount proofAggregation
     (CT.RemoveBaker rbid rbp) -> return $ Types.RemoveBaker rbid rbp
     (CT.UpdateBakerAccount ubid uba ubp) ->
       return $ Types.UpdateBakerAccount ubid uba ubp
