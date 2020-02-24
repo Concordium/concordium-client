@@ -20,8 +20,10 @@ import qualified Acorn.Core                          as Core
 import qualified Acorn.Parser.Runner                 as PR
 import           Concordium.Client.Runner.Helper
 
+import           Concordium.Client.Cli
 import           Concordium.Types.Transactions      (BareTransaction)
 
+import           Control.Concurrent
 import           Control.Monad.Fail
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader                hiding (fail)
@@ -31,8 +33,8 @@ import           Lens.Simple
 import           Data.Aeson                          as AE
 import           Data.Text
 import           Data.String
-
 import           Data.Word
+import           Text.Printf
 
 import           Prelude                             hiding (fail, mod, null, unlines)
 
@@ -62,6 +64,19 @@ newtype ClientMonad m a =
            , MonadFail
            , MonadIO
            )
+
+instance (MonadIO m) => TransactionStatusQuery (ClientMonad m) where
+  queryTransactionStatus hash = do
+    r <- hookTransaction (pack $ show hash)
+    tx <- case r of
+            Left err -> error $ "RPC error: " ++ err
+            Right tx -> return tx
+    case fromJSON tx of
+      Error err -> error $ printf "cannot parse '%s' as JSON: %s" (show tx) err
+      Success v -> return v
+  wait t = liftIO $ do
+    putChar '.'
+    threadDelay $ t*1000000
 
 liftClientIO :: MonadIO m => ClientIO a -> ClientMonad m a
 liftClientIO comp = ClientMonad {_runClientMonad = ReaderT (\_ -> do

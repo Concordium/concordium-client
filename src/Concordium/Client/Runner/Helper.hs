@@ -2,7 +2,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 module Concordium.Client.Runner.Helper
-  ( loadContextData
+  ( emptyContextData
+  , loadContextData
   , writeContextData
   , showLocalModules
   , outputGRPC
@@ -33,6 +34,14 @@ import           Data.Text.Encoding
 import qualified Data.Text.IO                 as TextIO
 import           Prelude                      hiding (fail)
 import           System.Directory
+
+-- Empty context data for use when the context needs to be passed but isn't actually used.
+-- Is intended for transitional use only.
+emptyContextData :: PR.ContextData Core.UA
+emptyContextData = PR.ContextData
+                   { PR.parserEnv = Parser.emptyEnv
+                   , PR.nextModName = 0
+                   , PR.modMap = Map.empty }
 
 -- |Loads the ".cache" file in current directory and generates a Context with it
 loadContextData :: IO (PR.ContextData Core.UA)
