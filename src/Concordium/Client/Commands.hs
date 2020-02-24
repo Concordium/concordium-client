@@ -138,7 +138,7 @@ transactionCfgParser =
     optional (strOption (long "keys" <> metavar "KEYS" <> help "any number of sign/verify keys specified as JSON ({<key-idx>: {<sign-key>, <verify-key>})")) <*>
     optional (option auto (long "nonce" <> metavar "NONCE" <> help "transaction nonce")) <*>
     optional (option auto (long "energy" <> metavar "MAX-ENERGY" <> help "maximum allowed amount of energy to spend on transaction")) <*>
-    optional (option auto (long "expiration" <> metavar "EXPIRATION" <> help "expiration time of a transaction, specified as a UNIX epoch timestamp"))
+    optional (option auto (long "expiry" <> metavar "EXPIRY" <> help "expiration time of a transaction, specified as a UNIX epoch timestamp"))
 
 programOptions :: Parser Options
 programOptions = Options <$>
@@ -186,10 +186,10 @@ transactionSendGtuCmd =
     "send-gtu"
     (info
       (TransactionSendGtu <$>
-        strOption (long "to" <> metavar "TO-ACCOUNT" <> help "address of the receiver") <*>
-        option auto (long "amount" <> metavar "AMOUNT" <> help "amount of GTUs to send") <*>
+        strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "address of the receiver") <*>
+        option auto (long "amount" <> metavar "GTU-AMOUNT" <> help "amount of GTUs to send") <*>
         transactionCfgParser)
-      (progDesc "transfer GTUs from one account to another account (sending to contracts is currently not supported with this method - use 'transaction submit')"))
+      (progDesc "transfer GTU from one account to another account (sending to contracts is currently not supported with this method - use 'transaction submit')"))
 
 accountCmds :: Mod CommandFields Cmd
 accountCmds =

@@ -27,10 +27,13 @@ import qualified Acorn.Core                          as Core
 import qualified Acorn.Core.PrettyPrint              as PP
 import qualified Acorn.Parser.Runner                 as PR
 
+import           Concordium.Client.Cli
 import           Concordium.Client.Commands          as COM
 import           Concordium.Client.GRPC
 import           Concordium.Client.Runner.Helper
+import           Concordium.Client.Output
 import           Concordium.Client.Types.Transaction as CT
+import           Concordium.Client.Validate
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
@@ -50,6 +53,7 @@ import           Data.Aeson.Types                    as AE
 import qualified Data.Aeson.Encode.Pretty            as AE
 import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
+import qualified Data.Char                           as C
 import qualified Data.HashSet as Set
 import qualified Data.HashMap.Strict                 as Map
 import           Data.Maybe
@@ -62,6 +66,7 @@ import           Lens.Simple
 import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client.Exceptions
 import           Prelude                             hiding (fail, mod, null, unlines)
+import           Text.Printf
 import           System.Exit                         (die)
 import           System.IO
 
@@ -102,7 +107,81 @@ process (Options command backend) = do
               LegacyCmd _ -> error "Unreachable case: LegacyCmd."
 
 processTransactionCmd :: TransactionCmd -> Backend -> IO ()
-processTransactionCmd action backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
+processTransactionCmd action backend =
+  case action of
+    TransactionSubmit fname -> do
+      mdata <- loadContextData
+      source <- BSL.readFile fname
+      tx <- PR.evalContext mdata $ runInClient backend $ processTransaction source defaultNetId defaultHook
+      printf "Transaction '%s' sent to the baker...\n" (show $ Types.transactionHash tx)
+    TransactionStatus hash -> do
+      validateTransactionHash hash
+      status <- runInClient backend $ queryTransactionStatus (read $ unpack hash)
+      printTransactionStatus status
+    TransactionSendGtu receiver amount cfg -> do
+      toAddress <- getAddressArg "to address" $ Just receiver
+      fromAddress <- getAddressArg "from address" $ sender cfg
+      energy <- getArg "max energy amount" $ maxEnergyAmount cfg
+      expiration <- getArg "expiration" $ expiration cfg
+      keys <- getKeysArg $ COM.keys cfg
+      printf "Sending %s GTU from '%s' to '%s'.\n" (show amount) (show fromAddress) (show toAddress)
+      printf "Allowing up to %s NRG to be spent as transaction fee.\n" (show energy)
+      printf "Confirm [yN]: "
+      input <- getChar
+      when (C.toLower input /= 'y') $ die "Transaction cancelled."
+
+      let t = TransactionJSON
+                (TransactionJSONHeader fromAddress (nonce cfg) energy expiration)
+                (Transfer (Types.AddressAccount toAddress) amount)
+                keys
+      -- TODO Only needed because we're going through the generic
+      --      processTransaction/encodeAndSignTransaction functions.
+      --      Refactor to only include what's needed.
+      tx <- PR.evalContext emptyContextData $ runInClient backend $ processTransaction_ t defaultNetId defaultHook False
+      let hash = Types.transactionHash tx
+      printf "Transaction sent to the baker. Waiting for transaction to be committed and finalized.\n"
+      printf "You may skip this by interrupting this command (using Ctrl-C) - the transaction will still get processed\n"
+      printf "and may be queried using 'transaction status %s'.\n" (show hash)
+
+      t1 <- getFormattedLocalTimeOfDay
+      printf "[%s] Waiting for the transaction to be committed..." t1
+      committedStatus <- runInClient backend $ awaitState 2 Committed hash
+      putStrLn ""
+
+      when (tsrState committedStatus == Absent) $ die "Transaction failed before it got committed. Most likely because it was invalid."
+
+      printTransactionStatus committedStatus
+
+      -- If the transaction goes back to pending state after being committed to a branch which gets dropped later on,
+      -- the command will currently keep presenting the transaction as committed and awaiting finalization.
+      -- As the transaction is still expected to go back to being committed or (if for instance it expires) become absent,
+      -- this seems acceptable from a UX perspective. Also, this is expected to be a very uncommon case.
+
+      t2 <- getFormattedLocalTimeOfDay
+      printf "[%s] Waiting for the transaction to be finalized..." t2
+      finalizedStatus <- runInClient backend $ awaitState 5 Finalized hash
+      putStrLn ""
+
+      when (tsrState finalizedStatus == Absent) $ die "Transaction failed after it was committed."
+
+      -- Print out finalized status if the outcome differs from that of the committed status.
+      when (tsrResults committedStatus /= tsrResults finalizedStatus) $ do
+        printTransactionStatus finalizedStatus
+
+      t3 <- getFormattedLocalTimeOfDay
+      printf "[%s] Transfer completed.\n" t3
+
+-- Poll the transaction state continuously until it is "at least" the provided one.
+-- Note that the "absent" state is considered the "highest" state,
+-- so the loop will break if, for instance, the transaction state goes from "committed" to "absent".
+awaitState :: (TransactionStatusQuery m) => Int -> TransactionState -> Types.TransactionHash -> m TransactionStatusResult
+awaitState t s hash = do
+  status <- queryTransactionStatus hash
+  if tsrState status >= s then
+    return status
+  else do
+    wait t
+    awaitState t s hash
 
 processAccountCmd :: AccountCmd -> Backend -> IO ()
 processAccountCmd action backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
@@ -330,7 +409,6 @@ printNodeInfo mni =
       putStrLn $ "Baker committee member: " ++ show (ni ^. CF.consensusBakerCommittee)
       putStrLn $ "Finalization committee member: " ++ show (ni ^. CF.consensusFinalizerCommittee)
 
-
 getBestBlockHash :: (MonadFail m, MonadIO m) => ClientMonad m Text
 getBestBlockHash =
   getConsensusStatus >>= \case
@@ -351,12 +429,13 @@ getLastFinalBlockHash =
 
 getAccountNonce :: (MonadFail m, MonadIO m) => Types.AccountAddress -> Text -> ClientMonad m Types.Nonce
 getAccountNonce addr blockhash =
-  getAccountInfo (fromString (show addr)) blockhash >>= \case
+  getAccountInfo (fromString $ show addr) blockhash >>= \case
     Left err -> fail err
     Right aval ->
-      case parse readAccountNonce aval of
-        Success nonce -> return nonce
+      case parseNullable readAccountNonce aval of
         Error err     -> fail err
+        Success Nothing -> fail $ printf "account '%s' not found" (show addr)
+        Success (Just nonce) -> return nonce
 
 getModuleSet :: Text -> ClientMonad IO (Set.HashSet Types.ModuleRef)
 getModuleSet blockhash =
@@ -373,9 +452,16 @@ readBestBlock = withObject "Best block hash" $ \v -> v .: "bestBlock"
 readLastFinalBlock :: Value -> Parser Text
 readLastFinalBlock = withObject "Last final hash" $ \v -> v .: "lastFinalizedBlock"
 
-
 readAccountNonce :: Value -> Parser Types.Nonce
 readAccountNonce = withObject "Account nonce" $ \v -> v .: "accountNonce"
+
+parseNullable :: (Value -> Parser a) -> Value -> Result (Maybe a)
+parseNullable p v = parse (nullable p) v
+
+nullable :: (Value -> Parser a) -> Value -> Parser (Maybe a)
+nullable p v = case v of
+                Null -> return Nothing
+                _ -> Just <$> p v
 
 readModule :: MonadIO m => FilePath -> ClientMonad m (Core.Module Core.UA)
 readModule filePath = do

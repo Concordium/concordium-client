@@ -66,6 +66,7 @@ library:
     - random
     - mtl
     - text
+    - time
     - lens-simple
     - http2-client-grpc >= 0.7
     - http2-client >= 0.9
