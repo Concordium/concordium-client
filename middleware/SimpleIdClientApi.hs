@@ -106,7 +106,6 @@ data PreIdentityObject =
     , ipArData :: [IpArData]
     , choiceArData :: ChoiceArData
     , pokSecCred :: Text
-    , sndPokSecCred :: Text
     , proofCommitmentsToIdCredSecSame :: Text
     , prfKeyCommitmentWithIP :: Text
     , prfKeySharingCoeffCommitments :: [Text]
