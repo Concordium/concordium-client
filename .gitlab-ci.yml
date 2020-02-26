@@ -20,5 +20,5 @@ build-and-test:
   script:
     - "git config --global url.https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/.insteadOf ssh://git@gitlab.com:22/"
     - "./build-deps.sh"
-    - "LD_LIBRARY_PATH=$(pwd)/crypto/rust-src/target/release:$LD_LIBRARY_PATH stack build --ghc-options -j4 | ts '[%Y-%m-%d %H:%M:%.S]'"
-    - "LD_LIBRARY_PATH=$(pwd)/crypto/rust-src/target/release:$LD_LIBRARY_PATH stack test | ts '[%Y-%m-%d %H:%M:%.S]'"
+    - "LD_LIBRARY_PATH=$(pwd)/deps/crypto/rust-src/target/release:$LD_LIBRARY_PATH stack build --ghc-options -j4 | ts '[%Y-%m-%d %H:%M:%.S]'"
+    - "LD_LIBRARY_PATH=$(pwd)/deps/crypto/rust-src/target/release:$LD_LIBRARY_PATH stack test | ts '[%Y-%m-%d %H:%M:%.S]'"
