@@ -2,11 +2,11 @@
 
 set -e
 
-if [[ -n "$BAKER_ID" && -n "$NUM_BAKERS" && -n "$MAX_AMOUNT_OF_GENERATORS" ]];
+if [[ -n "$BAKER_ID" && -n "$NUM_BAKERS" ]];
 then
   ID=$(echo $BAKER_ID | cut -d'-' -f2)
 
-  if [[ "$ID" -lt "$MAX_AMOUNT_OF_GENERATORS" ]];
+  if [[ "$(($ID % 10))" -eq 0 ]];
   then
     ARGS=""
     if [ -n "$TPS" ]; 
