@@ -1,9 +1,12 @@
 module Concordium.Client.Output where
 
 import Concordium.Client.Cli
+import Concordium.Types
 
-import Control.Monad
+import Control.Monad.Writer
+import Data.Functor
 import Data.List
+import Data.Text (Text)
 import Data.Time
 import Text.Printf
 
@@ -21,35 +24,79 @@ getLocalTimeOfDay = do
 showFormattedTimeOfDay :: TimeOfDay -> String
 showFormattedTimeOfDay = formatTime defaultTimeLocale "%T"
 
-printPresentBlockList :: [TransactionStatusResultItem] -> IO ()
-printPresentBlockList rs = case Prelude.length rs of
-  0 -> return ()
-  1 -> do
-    let r = rs !! 0
-    printf "Transaction is present in block %s with status \"%s\".\n" (show $ tsriBlockHash r) (tsriResult r)
-  n -> do
-    printf "Transaction is present in %d blocks:\n" n
-    forM_ (Prelude.zip rs [1..]) $ \(r, i) ->
-      printf "%d: %s with status %s\n" (i::Int) (show $ tsriBlockHash r) (tsriResult r)
+data TransactionOutcome = TransactionOutcome
+                          { toStatus :: Text
+                          , toGtuCost :: Amount
+                          , toNrgCost :: Energy }
+                        deriving (Eq)
 
-printTransactionStatus :: TransactionStatusResult -> IO ()
+type Printer = Writer [String] ()
+
+runPrinter :: Printer -> IO ()
+runPrinter p = mapM_ putStrLn $ execWriter p
+
+transactionOutcome :: TransactionStatusResultItem -> TransactionOutcome
+transactionOutcome t = TransactionOutcome
+                       { toStatus = tsriResult t
+                       , toGtuCost = tsriExecutionCost t
+                       , toNrgCost = tsriExecutionEnergyCost t }
+
+printTransactionStatus :: TransactionStatusResult -> Printer
 printTransactionStatus status =
   case tsrState status of
-    Pending -> putStrLn "Transaction is pending."
-    Absent -> putStrLn "Transaction is absent."
+    Pending -> tell ["Transaction is pending."]
+    Absent -> tell ["Transaction is absent."]
     Committed -> do
-      printf "Transaction is committed%s.\n" costsFragment
-      printBlocks
+      case Prelude.map (\t -> (tsriBlockHash t, transactionOutcome t)) $ tsrResults status of
+        [] ->
+          -- No blocks.
+          tell ["Transaction is committed (no block information received)."]
+        [(hash, outcome)] ->
+          -- Single block.
+          tell [printf
+                "Transaction is committed into block %s with %s."
+                (show hash)
+                (showOutcomeFragment outcome)]
+        blocks ->
+          -- Multiple blocks.
+          case nub $ Prelude.map snd blocks of
+            [outcome] -> do
+              -- Single outcome.
+              tell [printf
+                     "Transaction is committed into the following %d blocks with %s:"
+                     (length blocks)
+                     (showOutcomeFragment outcome)]
+              tell $ blocks <&> \(hash, _) ->
+                                  printf "- %s" (show hash)
+            _ -> do
+              -- Multiple outcomes.
+              tell [printf
+                     "Transaction is committed into the following %d blocks:"
+                     (length blocks)]
+              tell $ blocks <&> \(hash, outcome) ->
+                                  printf
+                                    "- %s with %s."
+                                    (show hash)
+                                    (showOutcomeFragment outcome)
     Finalized -> do
-      printf "Transaction is finalized%s.\n" costsFragment
-      printBlocks
+      case tsrResults status of
+        [] ->
+          -- No blocks.
+          tell ["Transaction is finalized (no block information received)."]
+        [r] ->
+          -- Single block.
+          tell [printf
+                 "Transaction is finalized into block %s with %s."
+                 (show $ tsriBlockHash r)
+                 (showOutcomeFragment $ transactionOutcome r)]
+        _ ->
+          -- Multiple blocks.
+          tell ["Transaction is finalized into multiple blocks - this is very unexpected!"]
   where
-    res = tsrResults status
-    printBlocks = printPresentBlockList res
-    costs = let cs = Prelude.map tsriExecutionCost res
-                es = Prelude.map tsriExecutionEnergyCost res
-            in Prelude.zip cs es
-    costsFragment = case nub costs of
-                      [] -> "" :: String
-                      [(c, e)] -> printf " with cost %s GTU (%s NRG)" (show c) (show e)
-                      cs -> printf " with ambiguous cost %s (debug: %s)" (show cs) (show res)
+    showCostFragment :: Amount -> Energy -> String
+    showCostFragment gtu nrg = printf "%s GTU (%s NRG)" (show gtu) (show nrg)
+    showOutcomeFragment :: TransactionOutcome -> String
+    showOutcomeFragment outcome = printf
+                                    "status \"%s\" and cost %s"
+                                    (toStatus outcome)
+                                    (showCostFragment (toGtuCost outcome) (toNrgCost outcome))

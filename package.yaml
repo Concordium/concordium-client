@@ -173,3 +173,17 @@ executables:
         else:
           main:             DummyMain.hs
           source-dirs:      middleware-dummy
+
+tests:
+  simple-client-test:
+    main:             Spec.hs
+    source-dirs:      test
+    dependencies:
+    - simple-client
+    - globalstate-types
+    - hspec >= 2.6
+    - QuickCheck >= 2.12
+    - hspec-expectations >= 0.8
+    - mtl >= 2.2.2
+    - containers
+

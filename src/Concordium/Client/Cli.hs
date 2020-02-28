@@ -63,7 +63,7 @@ data TransactionStatusResult = TransactionStatusResult
   { tsrState :: !TransactionState
   , tsrResults :: ![TransactionStatusResultItem]
   , tsrHash :: !TransactionHash }
-  deriving (Show)
+  deriving (Eq, Show)
 
 instance AE.FromJSON TransactionStatusResultItem where
   parseJSON = withObject "Transaction status result" $ \v -> do
