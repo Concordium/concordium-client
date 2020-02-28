@@ -21,6 +21,7 @@ module Concordium.Client.Runner
   , EnvData(..)
   , GrpcConfig
   , processTransaction_
+  , awaitState
   ) where
 
 import qualified Acorn.Core                          as Core
@@ -117,7 +118,7 @@ processTransactionCmd action backend =
     TransactionStatus hash -> do
       validateTransactionHash hash
       status <- runInClient backend $ queryTransactionStatus (read $ unpack hash)
-      printTransactionStatus status
+      runPrinter $ printTransactionStatus status
     TransactionSendGtu receiver amount cfg -> do
       toAddress <- getAddressArg "to address" $ Just receiver
       fromAddress <- getAddressArg "from address" $ sender cfg
@@ -150,7 +151,7 @@ processTransactionCmd action backend =
 
       when (tsrState committedStatus == Absent) $ die "Transaction failed before it got committed. Most likely because it was invalid."
 
-      printTransactionStatus committedStatus
+      runPrinter $ printTransactionStatus committedStatus
 
       -- If the transaction goes back to pending state after being committed to a branch which gets dropped later on,
       -- the command will currently keep presenting the transaction as committed and awaiting finalization.
@@ -166,7 +167,7 @@ processTransactionCmd action backend =
 
       -- Print out finalized status if the outcome differs from that of the committed status.
       when (tsrResults committedStatus /= tsrResults finalizedStatus) $ do
-        printTransactionStatus finalizedStatus
+        runPrinter $ printTransactionStatus finalizedStatus
 
       t3 <- getFormattedLocalTimeOfDay
       printf "[%s] Transfer completed.\n" t3
