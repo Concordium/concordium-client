@@ -185,7 +185,7 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
       idObjectRequest =
           IdObjectRequest
             { ipIdentity = 5
-            , name = "middleware-beta-autogen"
+            , name = "concordium-testnet-issuer"
             , attributes =
                 Attributes
                   { chosenAttributes =
