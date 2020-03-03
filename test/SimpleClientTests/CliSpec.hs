@@ -2,10 +2,10 @@ module SimpleClientTests.CliSpec where
 
 import Test.Hspec hiding (pending)
 
-import qualified SimpleClientTests.TransactionSpec as TS
+import SimpleClientTests.AccountSpec
+import SimpleClientTests.TransactionSpec
 
 tests :: Spec
 tests = do
-  TS.awaitStateTests
-  TS.printTransactionStatusTests
-
+  accountSpec
+  transactionSpec

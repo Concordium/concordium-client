@@ -1,6 +1,7 @@
 module Concordium.Client.Commands
   ( optsParser
   , backendParser
+  , Verbose
   , Options(..)
   , Cmd(..)
   , TransactionCmd(..)
@@ -20,10 +21,13 @@ import Paths_simple_client (version)
 import Concordium.Client.LegacyCommands
 import Concordium.Types
 
+type Verbose = Bool
+
 data Options =
   Options
   { cmd :: Cmd
-  , backend :: Maybe Backend }
+  , backend :: Maybe Backend
+  , verbose :: Verbose }
   deriving (Show)
 
 data Backend =
@@ -148,7 +152,8 @@ programOptions = Options <$>
                       moduleCmds <>
                       contractCmds
                      ) <|> (LegacyCmd <$> legacyProgramOptions)) <*>
-                   (optional backendParser)
+                   (optional backendParser) <*>
+                   (switch (long "verbose" <> help "Make output verbose"))
 
 transactionCmds :: Mod CommandFields Cmd
 transactionCmds =

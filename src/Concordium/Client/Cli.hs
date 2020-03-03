@@ -20,6 +20,22 @@ import Prelude hiding (fail)
 import Text.Printf
 import System.Exit (die)
 
+data AccountInfoResult = AccountInfoResult
+  { airAmount :: !Amount
+  , airNonce :: !Nonce
+  , airDelegation :: !(Maybe BakerId),
+    -- TODO Change to ![IDTypes.CredentialDeploymentValues] once backend is updated.
+    airCredentials :: ![(Int, IDTypes.CredentialDeploymentValues)] }
+  deriving (Show)
+
+instance AE.FromJSON AccountInfoResult where
+  parseJSON = withObject "Account info" $ \v -> do
+    airAmount <- v .: "accountAmount"
+    airNonce <- v .: "accountNonce"
+    airDelegation <- v .: "accountDelegation"
+    airCredentials <- v .: "accountCredentials"
+    return $ AccountInfoResult {..}
+
 -- Hardcode network ID and hook.
 defaultNetId :: Int
 defaultNetId = 100

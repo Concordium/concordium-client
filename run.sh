@@ -25,5 +25,5 @@ port="$(docker port "p2p-client_baker_$node" | cut -d: -f2)"
 [ -z "$port" ] && fail "cannot resolve docker port for node $node" 2
 
 # Construct command.
-echo "> stack run simple-client -- --grpc-ip localhost --grpc-port $port ${args[@]}"
+>&2 echo "> stack run simple-client -- --grpc-ip localhost --grpc-port $port ${args[@]}"
 stack run simple-client -- --grpc-ip localhost --grpc-port "$port" "${args[@]}"

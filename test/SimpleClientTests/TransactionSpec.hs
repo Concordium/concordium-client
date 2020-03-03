@@ -83,6 +83,11 @@ initQuery s = awaitState 0 s exampleTransactionHash
 initState :: [TransactionStatusResult] -> ([TransactionStatusResult], Int)
 initState rs = (rs, 0)
 
+transactionSpec :: Spec
+transactionSpec = describe "transaction" $ do
+  awaitStateTests
+  printTransactionStatusTests
+
 awaitStateTests :: Spec
 awaitStateTests = describe "await state" $ do
   describe "committed state" $ do
@@ -213,5 +218,5 @@ printTransactionStatusTests = describe "print transaction status" $ do
   describe "finalized with multiple outcomes" $
     specify "correct output" $
       p TransactionStatusResult { tsrHash = exampleTransactionHash, tsrState = Finalized, tsrResults = [outcomeSuccess1a, outcomeSuccess1b]} `shouldBe`
-        [ "Transaction is finalized into multiple blocks - this is very unexpected!" ]
+        [ "Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!" ]
   where p = execWriter . printTransactionStatus
