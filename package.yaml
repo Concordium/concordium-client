@@ -60,6 +60,7 @@ library:
     - bytestring
     - cereal
     - concordium-crypto
+    - containers
     - directory
     - globalstate-types
     - optparse-applicative
@@ -114,21 +115,21 @@ executables:
       - -threaded
 
     dependencies:
-       - async
-       - optparse-applicative
-       - mtl
-       - acorn
-       - unordered-containers
-       - text
-       - base
-       - simple-client
-       - random
-       - split
-       - concordium-crypto
-       - globalstate-types
-       - bytestring
-       - aeson
-       - time
+      - async
+      - optparse-applicative
+      - mtl
+      - acorn
+      - unordered-containers
+      - text
+      - base
+      - simple-client
+      - random
+      - split
+      - concordium-crypto
+      - globalstate-types
+      - bytestring
+      - aeson
+      - time
 
 
   middleware:
@@ -179,11 +180,12 @@ tests:
     main:             Spec.hs
     source-dirs:      test
     dependencies:
-    - simple-client
-    - globalstate-types
-    - hspec >= 2.6
-    - QuickCheck >= 2.12
-    - hspec-expectations >= 0.8
-    - mtl >= 2.2.2
-    - containers
-
+      - simple-client
+      - concordium-crypto
+      - globalstate-types
+      - containers
+      - hspec >= 2.6
+      - hspec-expectations >= 0.8
+      - mtl >= 2.2.2
+      - QuickCheck >= 2.12
+      - text

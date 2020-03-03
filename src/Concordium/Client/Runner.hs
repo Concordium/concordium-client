@@ -31,8 +31,8 @@ import qualified Acorn.Parser.Runner                 as PR
 import           Concordium.Client.Cli
 import           Concordium.Client.Commands          as COM
 import           Concordium.Client.GRPC
-import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Output
+import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Client.Validate
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
@@ -67,9 +67,9 @@ import           Lens.Simple
 import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client.Exceptions
 import           Prelude                             hiding (fail, mod, null, unlines)
-import           Text.Printf
 import           System.Exit                         (die)
 import           System.IO
+import           Text.Printf
 
 liftContext :: Monad m => PR.Context Core.UA m a -> ClientMonad (PR.Context Core.UA m) a
 liftContext comp = ClientMonad {_runClientMonad = ReaderT (lift . const comp)}
@@ -92,17 +92,16 @@ runInClient bkend comp = do
     Left err -> error (show err)
     Right x  -> return x
 
--- |Execute the command given in the CLArguments
 process :: COM.Options -> IO ()
-process (Options (LegacyCmd c) backend) = processLegacyCmd c backend
-process (Options command backend) = do
+process (Options (LegacyCmd c) backend _) = processLegacyCmd c backend
+process (Options command backend verbose) = do
   -- Disable output buffering.
   hSetBuffering stdout NoBuffering
   -- Evaluate command.
   maybe printNoBackend p backend
   where p = case command of
               TransactionCmd c -> processTransactionCmd c
-              AccountCmd c -> processAccountCmd c
+              AccountCmd c -> processAccountCmd c verbose
               ModuleCmd c -> processModuleCmd c
               ContractCmd c -> processContractCmd c
               LegacyCmd _ -> error "Unreachable case: LegacyCmd."
@@ -184,8 +183,29 @@ awaitState t s hash = do
     wait t
     awaitState t s hash
 
-processAccountCmd :: AccountCmd -> Backend -> IO ()
-processAccountCmd action backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
+processAccountCmd :: AccountCmd -> Verbose -> Backend -> IO ()
+processAccountCmd action verbose backend =
+  case action of
+    AccountShow address block -> do
+      r <- runInClient backend $ withBestBlockHash block (getAccountInfo address)
+      v <- case r of
+        Left err -> die $ "RPC error: " ++ err
+        Right v -> return v
+      account <- case fromJSON v of
+        Error err -> die $ printf "cannot parse '%s' as JSON: %s" (show v) err
+        Success a -> return a
+      case account of
+        Nothing -> putStrLn "Account not found."
+        Just a -> runPrinter $ printAccountInfo address a verbose
+    AccountList block -> do
+      r <- runInClient backend $ withBestBlockHash block getAccountList
+      v <- case r of
+             Left err -> die $ "RPC error: " ++ err
+             Right v -> return v
+      accountAddrs <- case fromJSON v of
+                        Error err -> die $ printf "cannot parse '%s' as JSON: %s" (show v) err
+                        Success as -> return as
+      runPrinter $ printAccountList accountAddrs
 
 processModuleCmd :: ModuleCmd -> Backend -> IO ()
 processModuleCmd action backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
@@ -487,7 +507,7 @@ processTransaction_ ::
   => TransactionJSON
   -> Int
   -> Bool
-  -> Bool
+  -> Verbose
   -> ClientMonad (PR.Context Core.UA m) Types.BareTransaction
 processTransaction_ transaction networkId hookit verbose = do
   tx <- do

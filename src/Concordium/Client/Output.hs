@@ -1,14 +1,32 @@
 module Concordium.Client.Output where
 
 import Concordium.Client.Cli
-import Concordium.Types
+import Concordium.Client.Commands (Verbose)
+import qualified Concordium.Types as Types
+import qualified Concordium.ID.Types as IDTypes
 
 import Control.Monad.Writer
+import qualified Data.Aeson.Encode.Pretty as AE
+import qualified Data.ByteString.Lazy as BSL
 import Data.Functor
 import Data.List
-import Data.Text (Text)
+import qualified Data.Map.Strict as M
+import Data.Text (Text, unpack)
+import Data.Text.Encoding
 import Data.Time
 import Text.Printf
+
+-- PRINTER
+
+type Printer = Writer [String] ()
+
+runPrinter :: Printer -> IO ()
+runPrinter p = mapM_ putStrLn $ execWriter p
+
+-- TIME
+
+showFormattedUtcTime :: UTCTime -> String
+showFormattedUtcTime t = formatTime defaultTimeLocale rfc822DateFormat t
 
 getFormattedLocalTimeOfDay :: IO String
 getFormattedLocalTimeOfDay = do
@@ -24,16 +42,63 @@ getLocalTimeOfDay = do
 showFormattedTimeOfDay :: TimeOfDay -> String
 showFormattedTimeOfDay = formatTime defaultTimeLocale "%T"
 
+-- ACCOUNT
+
+showNone :: String
+showNone = "none"
+
+showRevealedAttributes :: M.Map IDTypes.AttributeTag IDTypes.AttributeValue -> String
+showRevealedAttributes as =
+  if null as then
+    "none"
+  else
+    intercalate ", " $ map showAttr $ (M.toList as)
+  where
+    showTag t = case M.lookup t IDTypes.invMapping of
+                  Nothing -> printf "<%s>" (show t)
+                  Just k -> unpack k
+    showAttr (t, IDTypes.AttributeValue v) = printf "%s=%s" (showTag t) (show v)
+
+printAccountInfo :: Text -> AccountInfoResult -> Verbose -> Printer
+printAccountInfo address a verbose = do
+  tell [ printf "Address:    %s" address
+       , printf "Amount:     %s GTU" (show $ airAmount a)
+       , printf "Nonce:      %s" (show $ airNonce a)
+       , printf "Delegation: %s" (maybe showNone show $ airDelegation a)
+       , "" ]
+
+  case Prelude.map snd $ airCredentials a of
+      [] -> tell ["Credentials: " ++ showNone]
+      creds -> do
+        tell ["Credentials:"]
+        if verbose then
+          tell $ creds <&> (unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty)
+        else
+          forM_ creds printCred
+
+printCred :: IDTypes.CredentialDeploymentValues -> Printer
+printCred c =
+  tell [ printf "* %s:" (show $ IDTypes.cdvRegId c)
+       , printf "  - expiration: %s" expiry
+       , printf "  - revealed attributes: %s" (showRevealedAttributes attrs) ]
+  where
+    p = IDTypes.cdvPolicy c
+    e = show $ IDTypes.pExpiry p
+    attrs = IDTypes.pItems p
+    expiry = case parseTimeM False defaultTimeLocale "%s" e of
+               Nothing -> printf "invalid expiration time '%s'" e
+               Just t -> showFormattedUtcTime t
+
+printAccountList :: [Text] -> Printer
+printAccountList addresses = tell $ map unpack addresses
+
+-- TRANSACTION
+
 data TransactionOutcome = TransactionOutcome
                           { toStatus :: Text
-                          , toGtuCost :: Amount
-                          , toNrgCost :: Energy }
+                          , toGtuCost :: Types.Amount
+                          , toNrgCost :: Types.Energy }
                         deriving (Eq)
-
-type Printer = Writer [String] ()
-
-runPrinter :: Printer -> IO ()
-runPrinter p = mapM_ putStrLn $ execWriter p
 
 transactionOutcome :: TransactionStatusResultItem -> TransactionOutcome
 transactionOutcome t = TransactionOutcome
@@ -91,9 +156,9 @@ printTransactionStatus status =
                  (showOutcomeFragment $ transactionOutcome r)]
         _ ->
           -- Multiple blocks.
-          tell ["Transaction is finalized into multiple blocks - this is very unexpected!"]
+          tell ["Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!"]
   where
-    showCostFragment :: Amount -> Energy -> String
+    showCostFragment :: Types.Amount -> Types.Energy -> String
     showCostFragment gtu nrg = printf "%s GTU (%s NRG)" (show gtu) (show nrg)
     showOutcomeFragment :: TransactionOutcome -> String
     showOutcomeFragment outcome = printf
