@@ -13,9 +13,7 @@ import           Concordium.Types                    as Types
 
 import           Acorn.Core                          as Core
 
-import           Data.Aeson                          (Value)
 import           Data.Maybe
-import           Data.Text (pack)
 import           Prelude                             hiding (mod)
 
 import qualified Data.HashMap.Strict as Map
@@ -47,7 +45,7 @@ deployModuleWithKey ::
   -> Energy
   -> TransactionExpiryTime
   -> [Module UA]
-  -> IO [(Types.BareTransaction, Either String Value, ModuleRef)]
+  -> IO [(Types.BareTransaction, Either String (), ModuleRef)]
 deployModuleWithKey senderData@(sender, _) back mnonce energy expiry amodules = runInClient back comp
   where
     tx nonce mhash = (helper senderData nonce energy expiry (Types.DeployModule (moduleMap Map.! mhash)), mhash)
@@ -69,11 +67,10 @@ deployModuleWithKey senderData@(sender, _) back mnonce energy expiry amodules = 
           -- handled more gracefully by retrying
           let transactions = zipWith tx [nonce..] (filter (not . (`Set.member` alreadyDeployed)) (reverse orderedMods))
           mapM (\(ctx, mhash) -> do
-                   txReturn <- hookTransaction (pack . show $ Types.transactionHash ctx)
                    sendTransactionToBaker ctx 100 >>= \case
                      Left err -> return (ctx, Left err, mhash)
                      Right False -> return (ctx, Left "Transaction rejected.", mhash)
-                     Right True -> return (ctx, txReturn, mhash)
+                     Right True -> return (ctx, Right (), mhash)
                ) transactions
 
 
@@ -87,7 +84,7 @@ initContractWithKey ::
   -> Core.ModuleRef
   -> Core.TyName
   -> Core.Expr Core.UA Core.ModuleName
-  -> IO (Types.BareTransaction, Either String Value)
+  -> IO (Types.BareTransaction, Either String ())
 initContractWithKey senderData@(sender, _) back mnonce energy expiry initAmount homeModule contractName contractFlags = runInClient back comp
   where
     tx nonce = helper senderData nonce energy expiry initContract
@@ -102,11 +99,10 @@ initContractWithKey senderData@(sender, _) back mnonce energy expiry initAmount 
     comp = do
       nonce <- flip fromMaybe mnonce <$> (getAccountNonce sender =<< getBestBlockHash)
       let transaction = tx nonce
-      txReturn <- hookTransaction (pack . show $ Types.transactionHash transaction)
       sendTransactionToBaker transaction 100 >>= \case
         Left err -> return (transaction, Left err)
         Right False -> return (transaction, Left "Transaction rejected.")
-        Right True -> return (transaction, txReturn)
+        Right True -> return (transaction, Right ())
 
 updateContractWithKey ::
      CT.SenderData
@@ -117,7 +113,7 @@ updateContractWithKey ::
   -> Amount
   -> ContractAddress
   -> Core.Expr Core.UA Core.ModuleName
-  -> IO (Types.BareTransaction, Either String Value)
+  -> IO (Types.BareTransaction, Either String ())
 updateContractWithKey senderData@(sender, _) back mnonce energy expiry transferAmount address msg = runInClient back comp
   where
     tx nonce = helper senderData nonce energy expiry updateContract
@@ -127,8 +123,7 @@ updateContractWithKey senderData@(sender, _) back mnonce energy expiry transferA
     comp = do
       nonce <- flip fromMaybe mnonce <$> (getAccountNonce sender =<< getBestBlockHash)
       let transaction = tx nonce
-      txReturn <- hookTransaction (pack . show $ Types.transactionHash transaction)
       sendTransactionToBaker transaction 100 >>= \case
         Left err -> return (transaction, Left err)
         Right False -> return (transaction, Left "Transaction rejected.")
-        Right True -> return (transaction, txReturn)
+        Right True -> return (transaction, Right ())

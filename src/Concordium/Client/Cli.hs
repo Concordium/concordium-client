@@ -4,7 +4,6 @@
 module Concordium.Client.Cli where
 
 import Concordium.Types
-import Concordium.Types.Transactions
 import Concordium.Client.Types.Transaction
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types.Transactions as Types
@@ -39,9 +38,6 @@ instance AE.FromJSON AccountInfoResult where
 -- Hardcode network ID and hook.
 defaultNetId :: Int
 defaultNetId = 100
-
-defaultHook :: Bool
-defaultHook = True
 
 getArg :: String -> Maybe a -> IO a
 getArg name input = case input of
@@ -103,5 +99,5 @@ instance AE.FromJSON TransactionStatusResult where
     return $ TransactionStatusResult {..}
 
 class (Monad m) => TransactionStatusQuery m where
-  queryTransactionStatus :: Types.TransactionHash -> m TransactionStatusResult
+  queryTransactionStatus :: TransactionHash -> m TransactionStatusResult
   wait :: Int -> m ()

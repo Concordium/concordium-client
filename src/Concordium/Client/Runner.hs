@@ -112,7 +112,7 @@ processTransactionCmd action backend =
     TransactionSubmit fname -> do
       mdata <- loadContextData
       source <- BSL.readFile fname
-      tx <- PR.evalContext mdata $ runInClient backend $ processTransaction source defaultNetId defaultHook
+      tx <- PR.evalContext mdata $ runInClient backend $ processTransaction source defaultNetId
       printf "Transaction '%s' sent to the baker...\n" (show $ Types.transactionHash tx)
     TransactionStatus hash -> do
       validateTransactionHash hash
@@ -137,7 +137,7 @@ processTransactionCmd action backend =
       -- TODO Only needed because we're going through the generic
       --      processTransaction/encodeAndSignTransaction functions.
       --      Refactor to only include what's needed.
-      tx <- PR.evalContext emptyContextData $ runInClient backend $ processTransaction_ t defaultNetId defaultHook False
+      tx <- PR.evalContext emptyContextData $ runInClient backend $ processTransaction_ t defaultNetId False
       let hash = Types.transactionHash tx
       printf "Transaction sent to the baker. Waiting for transaction to be committed and finalized.\n"
       printf "You may skip this by interrupting this command (using Ctrl-C) - the transaction will still get processed\n"
@@ -263,19 +263,21 @@ withBestBlockHash v c =
 useBackend :: LegacyCmd -> Backend -> IO ()
 useBackend act b =
   case act of
-    SendTransaction fname nid hook -> do
+    SendTransaction fname nid -> do
       mdata <- loadContextData
       source <- BSL.readFile fname
-      t <- PR.evalContext mdata $ runInClient b $ processTransaction source nid hook
+      t <- PR.evalContext mdata $ runInClient b $ processTransaction source nid
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (Types.transactionHash t)
-    HookTransaction txh -> runInClient b $ hookTransaction txh >>= printJSON
     GetConsensusInfo -> runInClient b $ getConsensusStatus >>= printJSON
     GetBlockInfo every block -> runInClient b $ withBestBlockHash block getBlockInfo >>= if every then loop else printJSON
+    GetBlockSummary block -> runInClient b $ withBestBlockHash block getBlockSummary >>= printJSON
     GetAccountList block -> runInClient b $ withBestBlockHash block getAccountList >>= printJSON
     GetInstances block -> runInClient b $ withBestBlockHash block getInstances >>= printJSON
     GetAccountInfo account block ->
       runInClient b $ withBestBlockHash block (getAccountInfo account) >>= printJSON
+    GetAccountNonFinalized account ->
+      runInClient b $ getAccountNonFinalizedTransactions account >>= printJSON
     GetInstanceInfo account block ->
       runInClient b $ withBestBlockHash block (getInstanceInfo account) >>= printJSON
     GetRewardStatus block -> runInClient b $ withBestBlockHash block getRewardStatus >>= printJSON
@@ -309,7 +311,6 @@ useBackend act b =
     GetBranches -> runInClient b $ getBranches >>= printJSON
     GetBannedPeers -> runInClient b $ getBannedPeers >>= (liftIO . print)
     Shutdown -> runInClient b $ shutdown >>= printSuccess
-    TpsTest networkId nodeId directory -> runInClient b $ tpsTest networkId nodeId directory >>= (liftIO . print)
     DumpStart -> runInClient b $ dumpStart >>= printSuccess
     DumpStop -> runInClient b $ dumpStop >>= printSuccess
     _ -> undefined
@@ -495,21 +496,19 @@ processTransaction ::
      (MonadFail m, MonadIO m)
   => BSL.ByteString
   -> Int
-  -> Bool
   -> ClientMonad (PR.Context Core.UA m) Types.BareTransaction
-processTransaction source networkId hookit =
+processTransaction source networkId =
   case AE.eitherDecode source of
     Left err -> fail $ "Error decoding JSON: " ++ err
-    Right t  -> processTransaction_ t networkId hookit True
+    Right t  -> processTransaction_ t networkId True
 
 processTransaction_ ::
      (MonadFail m, MonadIO m)
   => TransactionJSON
   -> Int
-  -> Bool
   -> Verbose
   -> ClientMonad (PR.Context Core.UA m) Types.BareTransaction
-processTransaction_ transaction networkId hookit verbose = do
+processTransaction_ transaction networkId _verbose = do
   tx <- do
     let header = metadata transaction
         sender = thSenderAddress header
@@ -524,13 +523,6 @@ processTransaction_ transaction networkId hookit verbose = do
       (thExpiry header)
       (sender, (CT.keys transaction))
 
-  when hookit $ do
-    let trHash = Types.transactionHash tx
-    when verbose $
-      liftIO . putStrLn $ "Installing hook for transaction " ++ show trHash
-
-    h <- hookTransaction (pack . show $ trHash)
-    when verbose $ printJSON h
   sendTransactionToBaker tx networkId >>= \case
     Left err -> fail err
     Right False -> fail "Transaction not accepted by the baker."

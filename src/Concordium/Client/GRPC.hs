@@ -67,7 +67,7 @@ newtype ClientMonad m a =
 
 instance (MonadIO m) => TransactionStatusQuery (ClientMonad m) where
   queryTransactionStatus hash = do
-    r <- hookTransaction (pack $ show hash)
+    r <- getTransactionStatus (pack $ show hash)
     tx <- case r of
             Left err -> error $ "RPC error: " ++ err
             Right tx -> return tx
@@ -136,9 +136,16 @@ sendTransactionToBaker t nid = do
   let msg = defMessage & CF.networkId .~ fromIntegral nid & CF.payload .~ S.encode t
   withUnary (call @"sendTransaction") msg CF.value
 
-hookTransaction :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
-hookTransaction txh = withUnary (call @"hookTransaction") msg (to processJSON)
+getTransactionStatus :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
+getTransactionStatus txh = withUnary (call @"getTransactionStatus") msg (to processJSON)
   where msg = defMessage & CF.transactionHash .~ txh
+
+getAccountNonFinalizedTransactions :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
+getAccountNonFinalizedTransactions addr = withUnary (call @"getAccountNonFinalizedTransactions") msg (to processJSON)
+  where msg = defMessage & CF.accountAddress .~ addr
+
+getBlockSummary :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
+getBlockSummary hash = withUnaryBlock (call @"getBlockSummary") hash (to processJSON)
 
 getConsensusStatus :: (MonadIO m) => ClientMonad m (Either String Value)
 getConsensusStatus = withUnaryNoMsg (call @"getConsensusStatus") (to processJSON)
@@ -178,7 +185,7 @@ getModuleSource moduleref hash = withUnaryCore (call @"getModuleSource") msg k
   where msg = defMessage
               & (CF.blockHash .~ hash)
               & CF.moduleRef .~ moduleref
-        k ret = ret >>= S.decode . (^. CF.payload)
+        k ret = ret >>= S.decode . (^. CF.value)
 
 peerConnect :: Text -> Int -> ClientMonad IO (Either String Bool)
 peerConnect ip peerPort = withUnary (call @"peerConnect") msg CF.value
@@ -227,13 +234,6 @@ getBannedPeers = withUnaryNoMsg' (call @"getBannedPeers")
 
 shutdown :: ClientMonad IO (Either String Bool)
 shutdown = withUnaryNoMsg (call @"shutdown") CF.value
-
-tpsTest :: Int -> Text -> Text -> ClientMonad IO (Either String Bool)
-tpsTest netId identifier dir = withUnary (call @"tpsTest") msg CF.value
-    where msg = defMessage &
-              CF.networkId .~ fromIntegral netId &
-              CF.id .~ identifier &
-              CF.directory .~ dir
 
 dumpStart :: ClientMonad IO (Either String Bool)
 dumpStart = withUnaryNoMsg (call @"dumpStart") CF.value

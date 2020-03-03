@@ -25,31 +25,9 @@ import qualified Data.Text.Encoding                  as Text
 import           Data.Word
 import           GHC.Generics                        (Generic)
 
-instance FromJSON Address where
-  parseJSON (Object v) = do
-    r <- v .:? "accountAddress"
-    case r of
-      Nothing -> AddressContract <$> (v .: "contractAddress")
-      Just a  -> return (AddressAccount a)
-  parseJSON invalid = typeMismatch "Address" invalid
-
--- Length + data (serializes with `put :: Bytestring -> Put`)
-instance FromJSON IDTypes.AccountEncryptionKey where
-  parseJSON v = do
-    aek <- parseJSON v
-    let plainBs = fst . BS16.decode . Text.encodeUtf8 $ aek
-    case S.decode . flip BS.append plainBs $
-         S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
-      Left e  -> fail e
-      Right n -> return n
-
 -- Data (serializes with `putByteString :: Bytestring -> Put`)
 instance FromJSON Types.Proof where
   parseJSON v = fst . BS16.decode . Text.encodeUtf8 <$> parseJSON v
-
--- Number
-instance FromJSON BakerId where
-  parseJSON v = BakerId <$> parseJSON v
 
 -- |Transaction header type
 -- To be populated when deserializing a JSON object.
