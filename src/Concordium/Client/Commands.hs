@@ -25,16 +25,16 @@ type Verbose = Bool
 
 data Options =
   Options
-  { cmd :: Cmd
-  , backend :: Maybe Backend
-  , verbose :: Verbose }
+  { optsCmd :: Cmd
+  , optsBackend :: Maybe Backend
+  , optsVerbose :: Verbose }
   deriving (Show)
 
 data Backend =
   GRPC
-    { host   :: HostName
-    , port   :: PortNumber
-    , target :: Maybe String }
+    { grpcHost   :: HostName
+    , grpcPort   :: PortNumber
+    , grpcTarget :: Maybe String }
   deriving (Show)
 
 data Cmd
@@ -95,11 +95,11 @@ data ContractCmd
 
 data TransactionCfg =
   TransactionCfg
-  { sender :: !(Maybe Text)
-  , keys :: !(Maybe Text)
-  , nonce :: !(Maybe Nonce)
-  , maxEnergyAmount :: !(Maybe Energy)
-  , expiration :: !(Maybe TransactionExpiryTime) }
+  { tcSender :: !(Maybe Text)
+  , tcKeys :: !(Maybe Text)
+  , tcNonce :: !(Maybe Nonce)
+  , tcMaxEnergyAmount :: !(Maybe Energy)
+  , tcExpiration :: !(Maybe TransactionExpiryTime) }
   deriving (Show)
 
 optsParser :: ParserInfo Options

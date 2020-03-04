@@ -84,7 +84,7 @@ liftClientIOToM comp = do
 runInClient :: MonadIO m => Backend -> ClientMonad m a -> m a
 runInClient bkend comp = do
   r <- runExceptT $! do
-    client <- liftClientIOToM (mkGrpcClient $! GrpcConfig (COM.host bkend) (COM.port bkend) (COM.target bkend))
+    client <- liftClientIOToM (mkGrpcClient $! GrpcConfig (COM.grpcHost bkend) (COM.grpcPort bkend) (COM.grpcTarget bkend))
     ret <- ((runReaderT . _runClientMonad) comp $! EnvData client)
     liftClientIOToM (close client)
     return ret
@@ -120,10 +120,10 @@ processTransactionCmd action backend =
       runPrinter $ printTransactionStatus status
     TransactionSendGtu receiver amount cfg -> do
       toAddress <- getAddressArg "to address" $ Just receiver
-      fromAddress <- getAddressArg "from address" $ sender cfg
-      energy <- getArg "max energy amount" $ maxEnergyAmount cfg
-      expiration <- getArg "expiration" $ expiration cfg
-      keys <- getKeysArg $ COM.keys cfg
+      fromAddress <- getAddressArg "from address" $ tcSender cfg
+      energy <- getArg "max energy amount" $ tcMaxEnergyAmount cfg
+      expiration <- getArg "expiration" $ tcExpiration cfg
+      keys <- getKeysArg $ COM.tcKeys cfg
       printf "Sending %s GTU from '%s' to '%s'.\n" (show amount) (show fromAddress) (show toAddress)
       printf "Allowing up to %s NRG to be spent as transaction fee.\n" (show energy)
       printf "Confirm [yN]: "
@@ -131,7 +131,7 @@ processTransactionCmd action backend =
       when (C.toLower input /= 'y') $ die "Transaction cancelled."
 
       let t = TransactionJSON
-                (TransactionJSONHeader fromAddress (nonce cfg) energy expiration)
+                (TransactionJSONHeader fromAddress (tcNonce cfg) energy expiration)
                 (Transfer (Types.AddressAccount toAddress) amount)
                 keys
       -- TODO Only needed because we're going through the generic
