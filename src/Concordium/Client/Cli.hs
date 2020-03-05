@@ -4,11 +4,13 @@
 module Concordium.Client.Cli where
 
 import Concordium.Types
+import Concordium.Types.Execution
 import Concordium.Client.Types.Transaction
 import qualified Concordium.ID.Types as IDTypes
 
 import Control.Monad hiding (fail)
 import Control.Monad.Fail
+import qualified Data.HashMap.Strict as HM
 import Data.Aeson as AE
 import Data.Aeson.Types as AE
 import Data.List
@@ -60,7 +62,7 @@ getAddressArg name input = do
     Left err -> die $ printf "%s: %s" name err
     Right a -> return a
 
-data TransactionState = Pending | Committed | Finalized | Absent deriving (Eq, Ord, Show)
+data TransactionState = Received | Committed | Finalized | Absent deriving (Eq, Ord, Show)
 
 data TransactionStatusResultItem = TransactionStatusResultItem
   { tsriBlockHash :: !BlockHash
@@ -72,29 +74,23 @@ data TransactionStatusResultItem = TransactionStatusResultItem
 
 data TransactionStatusResult = TransactionStatusResult
   { tsrState :: !TransactionState
-  , tsrResults :: ![TransactionStatusResultItem]
-  , tsrHash :: !TransactionHash }
+  , tsrResults :: !(HM.HashMap BlockHash (Maybe TransactionSummary))
+  }
   deriving (Eq, Show)
 
-instance AE.FromJSON TransactionStatusResultItem where
-  parseJSON = withObject "Transaction status result" $ \v -> do
-    tsriBlockHash <- v .: "blockHash"
-    tsriResult <- v .: "result"
-    tsriEvents <- v .: "events"
-    tsriExecutionEnergyCost <- v .: "executionEnergyCost"
-    tsriExecutionCost <- v .: "executionCost"
-    return $ TransactionStatusResultItem {..}
-
 instance AE.FromJSON TransactionStatusResult where
-  parseJSON = withObject "Transaction status" $ \v -> do
-    tsrState <- (v .: "status" :: Parser String) >>= \case
-      "pending" -> return Pending
-      "absent" -> return Absent
+  parseJSON Null = return TransactionStatusResult{tsrState = Absent, tsrResults = HM.empty}
+  parseJSON v = flip (withObject "Transaction status") v $ \obj -> do
+    tsrState <- (obj .: "status" :: Parser String) >>= \case
+      "received" -> return Received
       "committed" -> return Committed
       "finalized" -> return Finalized
       s -> fail $ printf "invalid status '%s'" s
-    tsrResults <- v .: "results"
-    tsrHash <- v .: "transactionHash"
+    tsrResults <- foldM (\hm (k, summary) -> do
+                            case AE.fromJSON (String k) of
+                              AE.Error _ -> return hm
+                              AE.Success bh -> flip (HM.insert bh) hm <$> parseJSON summary
+                        ) HM.empty (HM.toList obj)
     return $ TransactionStatusResult {..}
 
 class (Monad m) => TransactionStatusQuery m where

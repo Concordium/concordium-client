@@ -3,11 +3,14 @@ module Concordium.Client.Output where
 import Concordium.Client.Cli
 import Concordium.Client.Commands (Verbose)
 import qualified Concordium.Types as Types
+import Concordium.Types.Execution
 import qualified Concordium.ID.Types as IDTypes
 
 import Control.Monad.Writer
 import qualified Data.Aeson.Encode.Pretty as AE
 import qualified Data.ByteString.Lazy as BSL
+import qualified Data.HashMap.Strict as HM
+import Data.Maybe
 import Data.Functor
 import Data.List
 import qualified Data.Map.Strict as M
@@ -109,13 +112,13 @@ transactionOutcome t = TransactionOutcome
 printTransactionStatus :: TransactionStatusResult -> Printer
 printTransactionStatus status =
   case tsrState status of
-    Pending -> tell ["Transaction is pending."]
+    Received -> tell ["Transaction is pending."]
     Absent -> tell ["Transaction is absent."]
     Committed -> do
-      case Prelude.map (\t -> (tsriBlockHash t, transactionOutcome t)) $ tsrResults status of
+      case mapMaybe (\(k,v) -> maybe Nothing (\x -> Just (k, x)) v) $ HM.toList (tsrResults status) of
         [] ->
           -- No blocks.
-          tell ["Transaction is committed (no block information received)."]
+          tell ["Transaction is committed (no block information received)."] -- FIXME: This should never happen.
         [(hash, outcome)] ->
           -- Single block.
           tell [printf
@@ -144,24 +147,24 @@ printTransactionStatus status =
                                     (show hash)
                                     (showOutcomeFragment outcome)
     Finalized -> do
-      case tsrResults status of
+      case mapMaybe (\(k,v) -> maybe Nothing (\x -> Just (k, x)) v) $ HM.toList (tsrResults status) of
         [] ->
           -- No blocks.
-          tell ["Transaction is finalized (no block information received)."]
-        [r] ->
+          tell ["Transaction is finalized (no block information received)."] -- FIXME: Should not happen
+        [(hash, outcome)] ->
           -- Single block.
           tell [printf
                  "Transaction is finalized into block %s with %s."
-                 (show $ tsriBlockHash r)
-                 (showOutcomeFragment $ transactionOutcome r)]
+                 (show $ hash)
+                 (showOutcomeFragment $ outcome)]
         _ ->
           -- Multiple blocks.
           tell ["Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!"]
   where
     showCostFragment :: Types.Amount -> Types.Energy -> String
     showCostFragment gtu nrg = printf "%s GTU (%s NRG)" (show gtu) (show nrg)
-    showOutcomeFragment :: TransactionOutcome -> String
+    showOutcomeFragment :: TransactionSummary -> String
     showOutcomeFragment outcome = printf
-                                    "status \"%s\" and cost %s"
-                                    (toStatus outcome)
-                                    (showCostFragment (toGtuCost outcome) (toNrgCost outcome))
+                                    "index in block \"%s\" and cost %s"
+                                    (fromIntegral (tsIndex outcome) :: Word)
+                                    (showCostFragment (tsCost outcome) (tsEnergyCost outcome))
