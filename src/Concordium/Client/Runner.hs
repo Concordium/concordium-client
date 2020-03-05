@@ -38,6 +38,7 @@ import           Concordium.Client.Validate
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
+import qualified Concordium.Crypto.SignatureScheme   as Sig
 import qualified Concordium.Crypto.VRF               as VRF
 import qualified Concordium.Types.Transactions       as Types
 import qualified Concordium.Types.Execution          as Types
@@ -274,6 +275,8 @@ useBackend act b =
     GetBlockSummary block -> runInClient b $ withBestBlockHash block getBlockSummary >>= printJSON
     GetAccountList block -> runInClient b $ withBestBlockHash block getAccountList >>= printJSON
     GetInstances block -> runInClient b $ withBestBlockHash block getInstances >>= printJSON
+    GetTransactionStatus txhash -> runInClient b $ getTransactionStatus txhash >>= printJSON
+    GetTransactionStatusInBlock txhash block -> runInClient b $ getTransactionStatusInBlock txhash block >>= printJSON
     GetAccountInfo account block ->
       runInClient b $ withBestBlockHash block (getAccountInfo account) >>= printJSON
     GetAccountNonFinalized account ->
@@ -335,7 +338,7 @@ handleMakeBaker :: FilePath -> FilePath -> Maybe FilePath -> IO ()
 handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
   bakerKeysValue <- eitherDecodeFileStrict bakerKeysFile
   bakerAccountValue <- eitherDecodeFileStrict accountKeysFile
-  (vrfPrivate, vrfVerify, signKey, verifyKey, aggrVerifyKey :: Bls.PublicKey) <-
+  (vrfPrivate, vrfVerify, signKey, verifyKey, aggrSignKey, aggrVerifyKey) <-
     case bakerKeysValue >>= parseEither bakerKeysParser of
       Left err ->
         die $ "Could not decode file with baker keys because: " ++ err
@@ -347,21 +350,24 @@ handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
       Right addrKeys -> return addrKeys
   let abElectionVerifyKey = vrfVerify
   let abSignatureVerifyKey = verifyKey
-  let challenge = S.runPut (S.put abElectionVerifyKey <> S.put abSignatureVerifyKey <> S.put accountAddr)
+  let abAggregationVerifyKey :: Types.BakerAggregationVerifyKey = aggrVerifyKey
+  let challenge = S.runPut (S.put abElectionVerifyKey <> S.put abSignatureVerifyKey <> S.put abAggregationVerifyKey <> S.put accountAddr)
   abProofElection <- Proofs.proveDlog25519VRF challenge (VRF.KeyPair vrfPrivate vrfVerify) `except` "Could not produce VRF key proof."
   abProofSig <- Proofs.proveDlog25519Block challenge (BlockSig.KeyPair signKey verifyKey) `except` "Could not produce signature key proof."
   abProofAccounts <- forM keyMap (\key -> Proofs.proveDlog25519KP challenge key `except` "Could not produce account keys proof.")
+  let abProofAggregation = Bls.proveKnowledgeOfSK challenge aggrSignKey
 
   let out = AE.encodePretty $
           object ["transactionType" AE..= String "AddBaker",
                   "electionVerifyKey" AE..= abElectionVerifyKey,
                   "signatureVerifyKey" AE..= abSignatureVerifyKey,
-                  "aggregationVerifyKey" AE..= aggrVerifyKey,
+                  "aggregationVerifyKey" AE..= abAggregationVerifyKey,
                   "bakerAccount" AE..= accountAddr,
                   "proofSig" AE..= abProofSig,
                   "proofElection" AE..= abProofElection,
                   "account" AE..= accountAddr,
-                  "proofAccounts" AE..= Types.AccountOwnershipProof (Map.toList abProofAccounts)]
+                  "proofAccounts" AE..= Types.AccountOwnershipProof (Map.toList abProofAccounts),
+                  "proofAggregation" AE..= abProofAggregation]
   case payloadFile of
     Nothing -> BSL8.putStrLn out
     Just fileName -> BSL.writeFile fileName out
@@ -375,8 +381,9 @@ handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
           vrfVerifyKey <- v .: "electionVerifyKey"
           signKey <- v .: "signatureSignKey"
           verifyKey <- v .: "signatureVerifyKey"
+          aggrSignKey <- v .: "aggregationPrivateKey"
           aggrVerifyKey <- v .: "aggregationVerifyKey"
-          return (vrfPrivate, vrfVerifyKey, signKey, verifyKey, aggrVerifyKey)
+          return (vrfPrivate, vrfVerifyKey, signKey, verifyKey, aggrSignKey, aggrVerifyKey)
 
 printPeerData :: MonadIO m => Either String PeerData -> m ()
 printPeerData epd =
@@ -556,7 +563,15 @@ encodeAndSignTransaction pl energy nonce expiry (sender, keys) = do
       return $ Types.Transfer transferTo transferAmount
     (CT.DeployCredential cred) -> return $ Types.DeployCredential cred
     (CT.DeployEncryptionKey encKey) -> return $ Types.DeployEncryptionKey encKey
-    (CT.AddBaker evk svk avk ba p pe pa) -> return $ Types.AddBaker evk svk avk ba p pe pa
+    (CT.AddBaker evk epk svk avk apk (BlockSig.KeyPair spk _) acc kp) ->
+      let challenge = S.runPut (S.put evk <> S.put svk <> S.put avk <> S.put acc)
+      in do
+        Just proofElection <- liftIO $ Proofs.proveDlog25519VRF challenge epk
+        Just proofSig <- liftIO $ Proofs.proveDlog25519KP challenge (Sig.KeyPairEd25519 spk svk)
+        Just proofAccount' <- liftIO $ Proofs.proveDlog25519KP challenge kp
+        let proofAccount = Types.singletonAOP proofAccount'
+            proofAggregation = Bls.proveKnowledgeOfSK challenge apk
+        return $ Types.AddBaker evk svk avk acc proofSig proofElection proofAccount proofAggregation
     (CT.RemoveBaker rbid rbp) -> return $ Types.RemoveBaker rbid rbp
     (CT.UpdateBakerAccount ubid uba ubp) ->
       return $ Types.UpdateBakerAccount ubid uba ubp

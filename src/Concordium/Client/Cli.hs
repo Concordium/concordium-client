@@ -6,7 +6,6 @@ module Concordium.Client.Cli where
 import Concordium.Types
 import Concordium.Client.Types.Transaction
 import qualified Concordium.ID.Types as IDTypes
-import qualified Concordium.Types.Transactions as Types
 
 import Control.Monad hiding (fail)
 import Control.Monad.Fail

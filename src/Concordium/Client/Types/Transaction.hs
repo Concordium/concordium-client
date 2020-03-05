@@ -15,14 +15,10 @@ import           Concordium.Types
 import           Concordium.Types.Execution          as Types
 import           Data.Aeson                          as AE
 import qualified Data.Aeson.TH                       as AETH
-import           Data.Aeson.Types                    (typeMismatch)
-import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Base16              as BS16
 import qualified Data.HashMap.Strict                 as Map
-import           Data.Serialize                      as S
 import           Data.Text                           hiding (length, map)
 import qualified Data.Text.Encoding                  as Text
-import           Data.Word
 import           GHC.Generics                        (Generic)
 
 -- Data (serializes with `putByteString :: Bytestring -> Put`)
@@ -81,13 +77,14 @@ data TransactionJSONPayload
       { key :: IDTypes.AccountEncryptionKey
       }
   | AddBaker
-      { electionVerifyKey    :: BakerElectionVerifyKey
-      , signatureVerifyKey   :: BakerSignVerifyKey
-      , aggregationVerifyKey :: BakerAggregationVerifyKey
-      , bakerAccount         :: AccountAddress
-      , proofSig             :: Dlog25519Proof
-      , proofElection        :: Dlog25519Proof
-      , proofAccounts        :: AccountOwnershipProof
+      { electionVerifyKey     :: BakerElectionVerifyKey
+      , electionPrivateKey    :: BakerElectionPrivateKey
+      , signVerifyKey         :: BakerSignVerifyKey
+      , aggregationVerifykey  :: BakerAggregationVerifyKey
+      , aggregationPrivateKey :: BakerAggregationPrivateKey
+      , signPrivateKey        :: BakerSignPrivateKey
+      , bakerAccountValue     :: AccountAddress
+      , bakerKeypair          :: KeyPair
       }
   | RemoveBaker
       { removeId :: BakerId

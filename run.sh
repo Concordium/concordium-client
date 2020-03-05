@@ -26,4 +26,4 @@ port="$(docker port "p2p-client_baker_$node" | cut -d: -f2)"
 
 # Construct command.
 >&2 echo "> stack run simple-client -- --grpc-ip localhost --grpc-port $port ${args[@]}"
-stack run simple-client -- --grpc-ip localhost --grpc-port "$port" "${args[@]}"
+LD_LIBRARY_PATH=./extra-libs stack run simple-client -- --grpc-ip localhost --grpc-port "$port" "${args[@]}"

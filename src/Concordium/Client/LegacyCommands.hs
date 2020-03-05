@@ -18,6 +18,10 @@ data LegacyCmd
   | GetTransactionStatus
       { legacyTransactionHash :: !Text
       } -- ^ Queries the gRPC for the information about the execution of a transaction
+  | GetTransactionStatusInBlock
+      { legacyTransactionHash :: !Text,
+        legacyBlockHash' :: !Text
+      } -- ^ Queries the gRPC for the information about the execution of a transaction
   | GetAccountNonFinalized {
       legacyAddress :: !Text
       } -- ^Get non finalized transactions for a given account.
@@ -109,6 +113,7 @@ legacyProgramOptions =
   hsubparser
     (loadModuleCommand <> listModulesCommand <> sendTransactionCommand <>
      getTransactionStatusCommand <>
+     getTransactionStatusInBlockCommand <>
      getConsensusInfoCommand <>
      getBlockInfoCommand <>
      getBlockSummaryCommand <>
@@ -224,6 +229,21 @@ getTransactionStatusCommand =
           (metavar "TX-HASH" <> help "Hash of the transaction to query for"))
        (progDesc
           "Query the gRPC for the information about the execution of a transaction."))
+
+getTransactionStatusInBlockCommand :: Mod CommandFields LegacyCmd
+getTransactionStatusInBlockCommand =
+  command
+    "GetTransactionStatusInBlock"
+    (info
+       (GetTransactionStatusInBlock <$>
+        strArgument
+          (metavar "TX-HASH" <> help "Hash of the transaction to query for") <*> 
+        strArgument
+          (metavar "BLOCK-HASH" <> help "Hash of the block.")
+       )
+       (progDesc
+          "Query the gRPC for the information about the execution of a transaction in a specific block."))
+
 
 getConsensusInfoCommand :: Mod CommandFields LegacyCmd
 getConsensusInfoCommand =

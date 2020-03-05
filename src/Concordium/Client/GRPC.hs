@@ -140,6 +140,10 @@ getTransactionStatus :: (MonadIO m) => Text -> ClientMonad m (Either String Valu
 getTransactionStatus txh = withUnary (call @"getTransactionStatus") msg (to processJSON)
   where msg = defMessage & CF.transactionHash .~ txh
 
+getTransactionStatusInBlock :: (MonadIO m) => Text -> Text -> ClientMonad m (Either String Value)
+getTransactionStatusInBlock txh bh = withUnary (call @"getTransactionStatusInBlock") msg (to processJSON)
+  where msg = defMessage & CF.transactionHash .~ txh & CF.blockHash .~ bh
+
 getAccountNonFinalizedTransactions :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
 getAccountNonFinalizedTransactions addr = withUnary (call @"getAccountNonFinalizedTransactions") msg (to processJSON)
   where msg = defMessage & CF.accountAddress .~ addr
