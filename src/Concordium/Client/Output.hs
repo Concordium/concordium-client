@@ -1,9 +1,11 @@
+{-# LANGUAGE LambdaCase #-}
+
 module Concordium.Client.Output where
 
 import Concordium.Client.Cli
 import Concordium.Client.Commands (Verbose)
 import qualified Concordium.Types as Types
-import Concordium.Types.Execution
+import qualified Concordium.Types.Execution as Types
 import qualified Concordium.ID.Types as IDTypes
 
 import Control.Monad.Writer
@@ -11,6 +13,7 @@ import qualified Data.Aeson.Encode.Pretty as AE
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.HashMap.Strict as HM
 import Data.Maybe
+import Data.Function
 import Data.Functor
 import Data.List
 import qualified Data.Map.Strict as M
@@ -103,11 +106,11 @@ data TransactionOutcome = TransactionOutcome
                           , toNrgCost :: Types.Energy }
                         deriving (Eq)
 
-transactionOutcome :: TransactionStatusResultItem -> TransactionOutcome
-transactionOutcome t = TransactionOutcome
-                       { toStatus = tsriResult t
-                       , toGtuCost = tsriExecutionCost t
-                       , toNrgCost = tsriExecutionEnergyCost t }
+-- transactionOutcome :: TransactionStatusResultItem -> TransactionOutcome
+-- transactionOutcome t = TransactionOutcome
+--                        { toStatus = tsriResult t
+--                        , toGtuCost = tsriExecutionCost t
+--                        , toNrgCost = tsriExecutionEnergyCost t }
 
 printTransactionStatus :: TransactionStatusResult -> Printer
 printTransactionStatus status =
@@ -115,7 +118,7 @@ printTransactionStatus status =
     Received -> tell ["Transaction is pending."]
     Absent -> tell ["Transaction is absent."]
     Committed -> do
-      case mapMaybe (\(k,v) -> maybe Nothing (\x -> Just (k, x)) v) $ HM.toList (tsrResults status) of
+      case mapMaybe (\(k,v) -> maybe Nothing (\x -> Just (k, x)) v) $ sortBy (compare `on` fst) $ HM.toList (tsrResults status) of
         [] ->
           -- No blocks.
           tell ["Transaction is committed (no block information received)."] -- FIXME: This should never happen.
@@ -163,8 +166,11 @@ printTransactionStatus status =
   where
     showCostFragment :: Types.Amount -> Types.Energy -> String
     showCostFragment gtu nrg = printf "%s GTU (%s NRG)" (show gtu) (show nrg)
-    showOutcomeFragment :: TransactionSummary -> String
+    showOutcomeFragment :: Types.TransactionSummary -> String
     showOutcomeFragment outcome = printf
-                                    "index in block \"%s\" and cost %s"
-                                    (fromIntegral (tsIndex outcome) :: Word)
-                                    (showCostFragment (tsCost outcome) (tsEnergyCost outcome))
+                                    "status \"%s\" and cost %s"
+                                    (showOutcomeStatusFragment $ Types.tsResult outcome :: String)
+                                    (showCostFragment (Types.tsCost outcome) (Types.tsEnergyCost outcome))
+    showOutcomeStatusFragment = \case
+      Types.TxSuccess _ -> "success"
+      Types.TxReject _ -> "rejected"

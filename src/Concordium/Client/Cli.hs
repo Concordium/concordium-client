@@ -64,18 +64,11 @@ getAddressArg name input = do
 
 data TransactionState = Received | Committed | Finalized | Absent deriving (Eq, Ord, Show)
 
-data TransactionStatusResultItem = TransactionStatusResultItem
-  { tsriBlockHash :: !BlockHash
-  , tsriResult :: !Text
-  , tsriEvents :: ![Text]
-  , tsriExecutionEnergyCost :: !Energy
-  , tsriExecutionCost :: !Amount }
-  deriving (Eq, Show)
+type TransactionBlockResults = HM.HashMap BlockHash (Maybe TransactionSummary)
 
 data TransactionStatusResult = TransactionStatusResult
   { tsrState :: !TransactionState
-  , tsrResults :: !(HM.HashMap BlockHash (Maybe TransactionSummary))
-  }
+  , tsrResults :: !TransactionBlockResults } -- TODO Rename to "blocks".
   deriving (Eq, Show)
 
 instance AE.FromJSON TransactionStatusResult where
