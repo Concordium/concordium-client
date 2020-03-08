@@ -70,7 +70,7 @@ go backend logit tps sign startNonce = do
   where loop nextNonce nextTime = do
           _ <- sendTx (sign nextNonce)
           liftIO $ do
-            when logit $ putStrLn $ "Sent transaction to " ++ show (target backend) ++ " with nonce = " ++ show nextNonce
+            when logit $ putStrLn $ "Sent transaction to " ++ show (grpcTarget backend) ++ " with nonce = " ++ show nextNonce
             ct <- getCurrentTime
             let toWait = diffUTCTime nextTime ct
             when (toWait > 0) $ threadDelay (truncate $ toWait * 1e6)

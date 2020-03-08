@@ -45,7 +45,7 @@ runHttp middlewares = do
         _ ->
           error $ "Could not parse host:port for given NODE_URL: " ++ T.unpack nodeUrl
 
-    nodeBackend = COM.GRPC { host = nodeHost, port = nodePort, target = Nothing }
+    nodeBackend = COM.GRPC { grpcHost = nodeHost, grpcPort = nodePort, grpcTarget = Nothing }
 
     waiApp = Api.servantApp nodeBackend esUrl idUrl
 

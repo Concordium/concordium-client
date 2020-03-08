@@ -1,4 +1,5 @@
 {-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings, BangPatterns, DataKinds, GeneralizedNewtypeDeriving, TypeApplications, ScopedTypeVariables #-}
@@ -22,6 +23,7 @@ import           Concordium.Client.Runner.Helper
 
 import           Concordium.Client.Cli
 import           Concordium.Types.Transactions      (BareTransaction)
+import           Concordium.Types as Types
 
 import           Control.Concurrent
 import           Control.Monad.Fail
@@ -30,7 +32,9 @@ import           Control.Monad.Reader                hiding (fail)
 import qualified Data.Serialize                      as S
 import           Lens.Simple
 
-import           Data.Aeson                          as AE
+import           Data.Aeson as AE
+import           Data.Aeson.Types as AE
+import qualified Data.HashSet as Set
 import           Data.Text
 import           Data.String
 import           Data.Word
@@ -87,8 +91,8 @@ liftClientIO comp = ClientMonad {_runClientMonad = ReaderT (\_ -> do
                                                            )}
 
 -- |Execute the computation with the given environment (using the established connection).
-runClient :: ClientMonad m a -> EnvData -> m (Either ClientError a)
-runClient comp config = runExceptT $ runReaderT (_runClientMonad comp) config
+runClient :: EnvData -> ClientMonad m a -> m (Either ClientError a)
+runClient config comp = runExceptT $ runReaderT (_runClientMonad comp) config
 
 mkGrpcClient :: GrpcConfig -> ClientIO EnvData
 mkGrpcClient config =
@@ -303,3 +307,72 @@ withUnaryNoMsg' method = withUnary' method defMessage
 
 call :: forall m . RPC P2P m
 call = RPC @P2P @m
+
+
+-- *Some helper wrappers around the raw commands
+
+getBestBlockHash :: (MonadFail m, MonadIO m) => ClientMonad m Text
+getBestBlockHash =
+  getConsensusStatus >>= \case
+    Left err -> fail err
+    Right v ->
+      case parse readBestBlock v of
+        Success bh -> return bh
+        Error err  -> fail err
+
+getLastFinalBlockHash :: (MonadFail m, MonadIO m) => ClientMonad m Text
+getLastFinalBlockHash =
+  getConsensusStatus >>= \case
+    Left err -> fail err
+    Right v ->
+      case parse readLastFinalBlock v of
+        Success bh -> return bh
+        Error err  -> fail err
+
+getAccountNonce :: (MonadFail m, MonadIO m) => Types.AccountAddress -> Text -> ClientMonad m Types.Nonce
+getAccountNonce addr blockhash =
+  getAccountInfo (fromString $ show addr) blockhash >>= \case
+    Left err -> fail err
+    Right aval ->
+      case parseNullable readAccountNonce aval of
+        Error err     -> fail err
+        Success Nothing -> fail $ printf "account '%s' not found" (show addr)
+        Success (Just nonce) -> return nonce
+
+getModuleSet :: Text -> ClientMonad IO (Set.HashSet Types.ModuleRef)
+getModuleSet blockhash =
+  getModuleList blockhash >>= \case
+    Left err -> fail err
+    Right v ->
+      case fromJSON v of
+        AE.Error s -> fail s
+        AE.Success xs -> return $ Set.fromList (fmap Types.ModuleRef xs)
+
+readBestBlock :: Value -> Parser Text
+readBestBlock = withObject "Best block hash" $ \v -> v .: "bestBlock"
+
+readLastFinalBlock :: Value -> Parser Text
+readLastFinalBlock = withObject "Last final hash" $ \v -> v .: "lastFinalizedBlock"
+
+readAccountNonce :: Value -> Parser Types.Nonce
+readAccountNonce = withObject "Account nonce" $ \v -> v .: "accountNonce"
+
+parseNullable :: (Value -> Parser a) -> Value -> Result (Maybe a)
+parseNullable p v = parse (nullable p) v
+
+nullable :: (Value -> Parser a) -> Value -> Parser (Maybe a)
+nullable p v = case v of
+                Null -> return Nothing
+                _ -> Just <$> p v
+
+withBestBlockHash :: (MonadIO m, MonadFail m) => Maybe Text -> (Text -> ClientMonad m b) -> ClientMonad m b
+withBestBlockHash v c =
+  case v of
+    Nothing -> getBestBlockHash >>= c
+    Just x -> c x
+
+withLastFinalBlockHash :: (MonadIO m, MonadFail m) => Maybe Text -> (Text -> ClientMonad m b) -> ClientMonad m b
+withLastFinalBlockHash v c =
+  case v of
+    Nothing -> getLastFinalBlockHash >>= c
+    Just x -> c x

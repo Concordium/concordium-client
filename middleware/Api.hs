@@ -449,7 +449,7 @@ debugTestFullProvision = do
         _ ->
           error $ "Could not parse host:port for given NODE_URL: " ++ Text.unpack nodeUrl
 
-    nodeBackend = COM.GRPC { host = nodeHost, port = nodePort, target = Nothing }
+    nodeBackend = COM.GRPC { grpcHost = nodeHost, grpcPort = nodePort, grpcTarget = Nothing }
 
   creationTime :: Int <- liftIO $ round `fmap` getPOSIXTime
 
@@ -515,7 +515,7 @@ debugTestFullProvision = do
 
 debugGrpc :: IO GetNodeStateResponse
 debugGrpc = do
-  let nodeBackend = COM.GRPC { host = "localhost", port = 11103, target = Nothing }
+  let nodeBackend = COM.GRPC { grpcHost = "localhost", grpcPort = 11103, grpcTarget = Nothing }
 
   infoE <- withClient nodeBackend getNodeInfo
 

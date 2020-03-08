@@ -56,7 +56,6 @@ import qualified Data.Aeson.Encode.Pretty            as AE
 import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
 import qualified Data.Char                           as C
-import qualified Data.HashSet as Set
 import qualified Data.HashMap.Strict                 as Map
 import           Data.Maybe
 import qualified Data.Serialize                      as S
@@ -85,8 +84,8 @@ liftClientIOToM comp = do
 withClient :: MonadIO m => Backend -> ClientMonad m a -> m a
 withClient bkend comp = do
   r <- runExceptT $! do
-    client <- liftClientIOToM (mkGrpcClient $! GrpcConfig (COM.host bkend) (COM.port bkend) (COM.target bkend))
-    ret <- (runReaderT . _runClientMonad) comp $! client
+    client <- liftClientIOToM (mkGrpcClient $! GrpcConfig (COM.grpcHost bkend) (COM.grpcPort bkend) (COM.grpcTarget bkend))
+    ret <- ((runReaderT . _runClientMonad) comp $! client)
     liftClientIOToM (close (grpc client))
     return ret
   case r of
@@ -121,10 +120,10 @@ processTransactionCmd action backend =
       runPrinter $ printTransactionStatus status
     TransactionSendGtu receiver amount cfg -> do
       toAddress <- getAddressArg "to address" $ Just receiver
-      fromAddress <- getAddressArg "from address" $ sender cfg
-      energy <- getArg "max energy amount" $ maxEnergyAmount cfg
-      expiration <- getArg "expiration" $ expiration cfg
-      keys <- getKeysArg $ COM.keys cfg
+      fromAddress <- getAddressArg "from address" $ tcSender cfg
+      energy <- getArg "max energy amount" $ tcMaxEnergyAmount cfg
+      expiration <- getArg "expiration" $ tcExpiration cfg
+      keys <- getKeysArg $ COM.tcKeys cfg
       printf "Sending %s GTU from '%s' to '%s'.\n" (show amount) (show fromAddress) (show toAddress)
       printf "Allowing up to %s NRG to be spent as transaction fee.\n" (show energy)
       printf "Confirm [yN]: "
@@ -132,7 +131,7 @@ processTransactionCmd action backend =
       when (C.toLower input /= 'y') $ die "Transaction cancelled."
 
       let t = TransactionJSON
-                (TransactionJSONHeader fromAddress (nonce cfg) energy expiration)
+                (TransactionJSONHeader fromAddress (tcNonce cfg) energy expiration)
                 (Transfer (Types.AddressAccount toAddress) amount)
                 keys
       -- TODO Only needed because we're going through the generic
@@ -254,12 +253,6 @@ loop v =
             _ -> return () -- Genesis block reached.
         _ -> error "Unexpected return value for block parent."
     _ -> error "Unexptected return value for getBlockInfo."
-
-withBestBlockHash :: (MonadIO m, MonadFail m) => Maybe Text -> (Text -> ClientMonad m b) -> ClientMonad m b
-withBestBlockHash v c =
-  case v of
-    Nothing -> getBestBlockHash >>= c
-    Just x -> c x
 
 useBackend :: LegacyCmd -> Backend -> IO ()
 useBackend act b =
@@ -437,60 +430,6 @@ printNodeInfo mni =
       putStrLn $ "Consensus type: " ++ show (ni ^. CF.consensusType)
       putStrLn $ "Baker committee member: " ++ show (ni ^. CF.consensusBakerCommittee)
       putStrLn $ "Finalization committee member: " ++ show (ni ^. CF.consensusFinalizerCommittee)
-
-getBestBlockHash :: (MonadFail m, MonadIO m) => ClientMonad m Text
-getBestBlockHash =
-  getConsensusStatus >>= \case
-    Left err -> fail err
-    Right v ->
-      case parse readBestBlock v of
-        Success bh -> return bh
-        Error err  -> fail err
-
-getLastFinalBlockHash :: (MonadFail m, MonadIO m) => ClientMonad m Text
-getLastFinalBlockHash =
-  getConsensusStatus >>= \case
-    Left err -> fail err
-    Right v ->
-      case parse readLastFinalBlock v of
-        Success bh -> return bh
-        Error err  -> fail err
-
-getAccountNonce :: (MonadFail m, MonadIO m) => Types.AccountAddress -> Text -> ClientMonad m Types.Nonce
-getAccountNonce addr blockhash =
-  getAccountInfo (fromString $ show addr) blockhash >>= \case
-    Left err -> fail err
-    Right aval ->
-      case parseNullable readAccountNonce aval of
-        Error err     -> fail err
-        Success Nothing -> fail $ printf "account '%s' not found" (show addr)
-        Success (Just nonce) -> return nonce
-
-getModuleSet :: Text -> ClientMonad IO (Set.HashSet Types.ModuleRef)
-getModuleSet blockhash =
-  getModuleList blockhash >>= \case
-    Left err -> fail err
-    Right v ->
-      case fromJSON v of
-        AE.Error s -> fail s
-        AE.Success xs -> return $ Set.fromList (fmap Types.ModuleRef xs)
-
-readBestBlock :: Value -> Parser Text
-readBestBlock = withObject "Best block hash" $ \v -> v .: "bestBlock"
-
-readLastFinalBlock :: Value -> Parser Text
-readLastFinalBlock = withObject "Last final hash" $ \v -> v .: "lastFinalizedBlock"
-
-readAccountNonce :: Value -> Parser Types.Nonce
-readAccountNonce = withObject "Account nonce" $ \v -> v .: "accountNonce"
-
-parseNullable :: (Value -> Parser a) -> Value -> Result (Maybe a)
-parseNullable p v = parse (nullable p) v
-
-nullable :: (Value -> Parser a) -> Value -> Parser (Maybe a)
-nullable p v = case v of
-                Null -> return Nothing
-                _ -> Just <$> p v
 
 readModule :: MonadIO m => FilePath -> ClientMonad m (Core.Module Core.UA)
 readModule filePath = do

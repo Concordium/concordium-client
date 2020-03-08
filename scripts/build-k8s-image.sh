@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 
 if [ ! -z "$JENKINS_HOME" ]; then
-  git clone git@gitlab.com:Concordium/genesis-data.git
-  if [[ $# -ge 1 ]]
-  then
-    ( cd genesis-data && git checkout $1 )
+  if [[ $# -ge 1 ]]; then
+    scripts/download_genesis_data.sh $1
+    VERSION=$1
+  else
+    git clone git@gitlab.com:Concordium/genesis-data.git
+    VERSION=`( cd genesis-data && git rev-parse --verify HEAD )`
+    scripts/download_genesis_data.sh $VERSION
   fi
   cp genesis-data/*-bakers.tar.gz .
-  VERSION=`( cd genesis-data && git rev-parse --verify HEAD )`
 else
-  cp ../genesis-data/*-bakers.tar.gz .
   VERSION=`( cd ../genesis-data && git rev-parse --verify HEAD )`
+  scripts/download_genesis_data.sh $VERSION
+  cp genesis-data/*-bakers.tar.gz .
 fi
 
 echo "Going to build a transaction generator which matches genesis @ $VERSION"
