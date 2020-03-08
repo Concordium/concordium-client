@@ -86,14 +86,12 @@ withClient :: MonadIO m => Backend -> ClientMonad m a -> m a
 withClient bkend comp = do
   r <- runExceptT $! do
     client <- liftClientIOToM (mkGrpcClient $! GrpcConfig (COM.host bkend) (COM.port bkend) (COM.target bkend))
-    ret <- (runReaderT . _runClientMonad) comp $! EnvData client
-    liftClientIOToM (close client)
+    ret <- (runReaderT . _runClientMonad) comp $! client
+    liftClientIOToM (close (grpc client))
     return ret
   case r of
     Left err -> error (show err)
     Right x  -> return x
-
-
 
 process :: COM.Options -> IO ()
 process (Options (LegacyCmd c) backend _) = processLegacyCmd c backend

@@ -86,7 +86,11 @@ liftClientIO comp = ClientMonad {_runClientMonad = ReaderT (\_ -> do
                                                                  Right res -> return res
                                                            )}
 
-mkGrpcClient :: GrpcConfig -> ClientIO GrpcClient
+-- |Execute the computation with the given environment (using the established connection).
+runClient :: ClientMonad m a -> EnvData -> m (Either ClientError a)
+runClient comp config = runExceptT $ runReaderT (_runClientMonad comp) config
+
+mkGrpcClient :: GrpcConfig -> ClientIO EnvData
 mkGrpcClient config =
   let auth = ("authentication", "rpcadmin")
       header =
@@ -97,7 +101,7 @@ mkGrpcClient config =
                  { _grpcClientConfigCompression = uncompressed
                  , _grpcClientConfigHeaders = header
                  }
-   in setupGrpcClient cfg
+   in EnvData <$> setupGrpcClient cfg
 
 getNodeInfo :: ClientMonad IO (Either String NodeInfoResponse)
 getNodeInfo = withUnaryNoMsg' (call @"nodeInfo")
