@@ -274,30 +274,30 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
   getNodeState :: Handler GetNodeStateResponse
   getNodeState = do
     timestamp <- liftIO $ round `fmap` getPOSIXTime
-    infoE <- liftIO $ runInClient nodeBackend getNodeInfo
+    infoE <- liftIO $ withClient nodeBackend getNodeInfo
 
     nameQuery <- liftIO $ tryIOError (Text.pack <$> getEnv "NODE_NAME")
     let name = case nameQuery of
                  Right x -> x
                  _ -> "unknown"
 
-    versionQuery <- liftIO $ runInClient nodeBackend getPeerVersion
+    versionQuery <- liftIO $ withClient nodeBackend getPeerVersion
     let version = case versionQuery of
                   Right x -> x
                   _ -> "unknown"
 
-    uptimeQuery <- liftIO $ runInClient nodeBackend getPeerUptime
+    uptimeQuery <- liftIO $ withClient nodeBackend getPeerUptime
     let runningSince = case uptimeQuery of
                        Right x -> fromIntegral x
                        _ -> 0
 
 
-    sentQuery <- liftIO $ runInClient nodeBackend getPeerTotalSent
+    sentQuery <- liftIO $ withClient nodeBackend getPeerTotalSent
     let sent = case sentQuery of
                Right x -> fromIntegral x
                _ -> 0
 
-    receivedQuery <- liftIO $ runInClient nodeBackend getPeerTotalReceived
+    receivedQuery <- liftIO $ withClient nodeBackend getPeerTotalReceived
     let received = case receivedQuery of
                    Right x -> fromIntegral x
                    _ -> 0
@@ -333,7 +333,7 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
       transactions <- liftIO $ getTransactionsForReplay esUrl
 
       let nid = 1000
-      forM_ transactions (runInClient nodeBackend . flip sendTransactionToBaker nid)
+      forM_ transactions (withClient nodeBackend . flip sendTransactionToBaker nid)
 
       return $ ReplayTransactionsResponse True
     else
@@ -395,7 +395,7 @@ executeTransaction esUrl nodeBackend transaction address = do
 
   t <- do
     let hookIt = True
-    PR.evalContext mdata $ runInClient nodeBackend $ processTransaction_ transaction nid hookIt True
+    PR.evalContext mdata $ withClient nodeBackend $ processTransaction_ transaction nid hookIt True
 
   putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (Types.transactionHash t)
   print transaction
@@ -517,30 +517,30 @@ debugGrpc :: IO GetNodeStateResponse
 debugGrpc = do
   let nodeBackend = COM.GRPC { host = "localhost", port = 11103, target = Nothing }
 
-  infoE <- runInClient nodeBackend getNodeInfo
+  infoE <- withClient nodeBackend getNodeInfo
 
   nameQuery <- liftIO $ tryIOError (Text.pack <$> getEnv "NODE_NAME")
   let name = case nameQuery of
         Right x -> x
         _ -> "unknown"
 
-  versionQuery <- runInClient nodeBackend getPeerVersion
+  versionQuery <- withClient nodeBackend getPeerVersion
   let version = case versionQuery of
                   Right x -> x
                   _ -> "unknown"
 
-  uptimeQuery <- runInClient nodeBackend getPeerUptime
+  uptimeQuery <- withClient nodeBackend getPeerUptime
   let runningSince = case uptimeQuery of
                        Right x -> fromIntegral x
                        _ -> 0
 
 
-  sentQuery <- runInClient nodeBackend getPeerTotalSent
+  sentQuery <- withClient nodeBackend getPeerTotalSent
   let sent = case sentQuery of
                Right x -> fromIntegral x
                _ -> 0
 
-  receivedQuery <- runInClient nodeBackend getPeerTotalReceived
+  receivedQuery <- withClient nodeBackend getPeerTotalReceived
   let received = case receivedQuery of
                    Right x -> fromIntegral x
                    _ -> 0

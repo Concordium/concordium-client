@@ -17,7 +17,7 @@ module Concordium.Client.Runner
   , getAccountInfo
   , getModuleSet
   , ClientMonad(..)
-  , runInClient
+  , withClient
   , EnvData(..)
   , GrpcConfig
   , processTransaction_
@@ -82,16 +82,18 @@ liftClientIOToM comp = do
     Left err  -> throwError err
     Right res -> return res
 
-runInClient :: MonadIO m => Backend -> ClientMonad m a -> m a
-runInClient bkend comp = do
+withClient :: MonadIO m => Backend -> ClientMonad m a -> m a
+withClient bkend comp = do
   r <- runExceptT $! do
     client <- liftClientIOToM (mkGrpcClient $! GrpcConfig (COM.host bkend) (COM.port bkend) (COM.target bkend))
-    ret <- ((runReaderT . _runClientMonad) comp $! EnvData client)
+    ret <- (runReaderT . _runClientMonad) comp $! EnvData client
     liftClientIOToM (close client)
     return ret
   case r of
     Left err -> error (show err)
     Right x  -> return x
+
+
 
 process :: COM.Options -> IO ()
 process (Options (LegacyCmd c) backend _) = processLegacyCmd c backend
@@ -113,11 +115,11 @@ processTransactionCmd action backend =
     TransactionSubmit fname -> do
       mdata <- loadContextData
       source <- BSL.readFile fname
-      tx <- PR.evalContext mdata $ runInClient backend $ processTransaction source defaultNetId
+      tx <- PR.evalContext mdata $ withClient backend $ processTransaction source defaultNetId
       printf "Transaction '%s' sent to the baker...\n" (show $ Types.transactionHash tx)
     TransactionStatus hash -> do
       validateTransactionHash hash
-      status <- runInClient backend $ queryTransactionStatus (read $ unpack hash)
+      status <- withClient backend $ queryTransactionStatus (read $ unpack hash)
       runPrinter $ printTransactionStatus status
     TransactionSendGtu receiver amount cfg -> do
       toAddress <- getAddressArg "to address" $ Just receiver
@@ -138,7 +140,7 @@ processTransactionCmd action backend =
       -- TODO Only needed because we're going through the generic
       --      processTransaction/encodeAndSignTransaction functions.
       --      Refactor to only include what's needed.
-      tx <- PR.evalContext emptyContextData $ runInClient backend $ processTransaction_ t defaultNetId False
+      tx <- PR.evalContext emptyContextData $ withClient backend $ processTransaction_ t defaultNetId False
       let hash = Types.transactionHash tx
       printf "Transaction sent to the baker. Waiting for transaction to be committed and finalized.\n"
       printf "You may skip this by interrupting this command (using Ctrl-C) - the transaction will still get processed\n"
@@ -146,7 +148,7 @@ processTransactionCmd action backend =
 
       t1 <- getFormattedLocalTimeOfDay
       printf "[%s] Waiting for the transaction to be committed..." t1
-      committedStatus <- runInClient backend $ awaitState 2 Committed hash
+      committedStatus <- withClient backend $ awaitState 2 Committed hash
       putStrLn ""
 
       when (tsrState committedStatus == Absent) $ die "Transaction failed before it got committed. Most likely because it was invalid."
@@ -160,7 +162,7 @@ processTransactionCmd action backend =
 
       t2 <- getFormattedLocalTimeOfDay
       printf "[%s] Waiting for the transaction to be finalized..." t2
-      finalizedStatus <- runInClient backend $ awaitState 5 Finalized hash
+      finalizedStatus <- withClient backend $ awaitState 5 Finalized hash
       putStrLn ""
 
       when (tsrState finalizedStatus == Absent) $ die "Transaction failed after it was committed."
@@ -188,7 +190,7 @@ processAccountCmd :: AccountCmd -> Verbose -> Backend -> IO ()
 processAccountCmd action verbose backend =
   case action of
     AccountShow address block -> do
-      r <- runInClient backend $ withBestBlockHash block (getAccountInfo address)
+      r <- withClient backend $ withBestBlockHash block (getAccountInfo address)
       v <- case r of
         Left err -> die $ "RPC error: " ++ err
         Right v -> return v
@@ -199,7 +201,7 @@ processAccountCmd action verbose backend =
         Nothing -> putStrLn "Account not found."
         Just a -> runPrinter $ printAccountInfo address a verbose
     AccountList block -> do
-      r <- runInClient backend $ withBestBlockHash block getAccountList
+      r <- withClient backend $ withBestBlockHash block getAccountList
       v <- case r of
              Left err -> die $ "RPC error: " ++ err
              Right v -> return v
@@ -267,30 +269,30 @@ useBackend act b =
     SendTransaction fname nid -> do
       mdata <- loadContextData
       source <- BSL.readFile fname
-      t <- PR.evalContext mdata $ runInClient b $ processTransaction source nid
+      t <- PR.evalContext mdata $ withClient b $ processTransaction source nid
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (Types.transactionHash t)
-    GetConsensusInfo -> runInClient b $ getConsensusStatus >>= printJSON
-    GetBlockInfo every block -> runInClient b $ withBestBlockHash block getBlockInfo >>= if every then loop else printJSON
-    GetBlockSummary block -> runInClient b $ withBestBlockHash block getBlockSummary >>= printJSON
-    GetAccountList block -> runInClient b $ withBestBlockHash block getAccountList >>= printJSON
-    GetInstances block -> runInClient b $ withBestBlockHash block getInstances >>= printJSON
-    GetTransactionStatus txhash -> runInClient b $ getTransactionStatus txhash >>= printJSON
-    GetTransactionStatusInBlock txhash block -> runInClient b $ getTransactionStatusInBlock txhash block >>= printJSON
+    GetConsensusInfo -> withClient b $ getConsensusStatus >>= printJSON
+    GetBlockInfo every block -> withClient b $ withBestBlockHash block getBlockInfo >>= if every then loop else printJSON
+    GetBlockSummary block -> withClient b $ withBestBlockHash block getBlockSummary >>= printJSON
+    GetAccountList block -> withClient b $ withBestBlockHash block getAccountList >>= printJSON
+    GetInstances block -> withClient b $ withBestBlockHash block getInstances >>= printJSON
+    GetTransactionStatus txhash -> withClient b $ getTransactionStatus txhash >>= printJSON
+    GetTransactionStatusInBlock txhash block -> withClient b $ getTransactionStatusInBlock txhash block >>= printJSON
     GetAccountInfo account block ->
-      runInClient b $ withBestBlockHash block (getAccountInfo account) >>= printJSON
+      withClient b $ withBestBlockHash block (getAccountInfo account) >>= printJSON
     GetAccountNonFinalized account ->
-      runInClient b $ getAccountNonFinalizedTransactions account >>= printJSON
+      withClient b $ getAccountNonFinalizedTransactions account >>= printJSON
     GetInstanceInfo account block ->
-      runInClient b $ withBestBlockHash block (getInstanceInfo account) >>= printJSON
-    GetRewardStatus block -> runInClient b $ withBestBlockHash block getRewardStatus >>= printJSON
+      withClient b $ withBestBlockHash block (getInstanceInfo account) >>= printJSON
+    GetRewardStatus block -> withClient b $ withBestBlockHash block getRewardStatus >>= printJSON
     GetBirkParameters block ->
-      runInClient b $ withBestBlockHash block getBirkParameters >>= printJSON
-    GetModuleList block -> runInClient b $ withBestBlockHash block getModuleList >>= printJSON
+      withClient b $ withBestBlockHash block getBirkParameters >>= printJSON
+    GetModuleList block -> withClient b $ withBestBlockHash block getModuleList >>= printJSON
     GetModuleSource moduleref block -> do
       mdata <- loadContextData
       modl <-
-        PR.evalContext mdata . runInClient b $ withBestBlockHash block (getModuleSource moduleref)
+        PR.evalContext mdata . withClient b $ withBestBlockHash block (getModuleSource moduleref)
       case modl of
         Left x ->
           print $ "Unable to get the Module from the gRPC server: " ++ show x
@@ -299,23 +301,23 @@ useBackend act b =
           in do
             putStrLn $ "Retrieved module " ++ show moduleref
             putStrLn s
-    GetNodeInfo -> runInClient b $ getNodeInfo >>= printNodeInfo
-    GetBakerPrivateData -> runInClient b $ getBakerPrivateData >>= printJSON
-    GetPeerData bootstrapper -> runInClient b $ getPeerData bootstrapper >>= printPeerData
-    StartBaker -> runInClient b $ startBaker >>= printSuccess
-    StopBaker -> runInClient b $ stopBaker >>= printSuccess
-    PeerConnect ip port -> runInClient b $ peerConnect ip port >>= printSuccess
-    GetPeerUptime -> runInClient b $ getPeerUptime >>= (liftIO . print)
-    BanNode nodeId nodePort nodeIp -> runInClient b $ banNode nodeId nodePort nodeIp >>= printSuccess
-    UnbanNode nodeId nodePort nodeIp -> runInClient b $ unbanNode nodeId nodePort nodeIp >>= printSuccess
-    JoinNetwork netId -> runInClient b $ joinNetwork netId >>= printSuccess
-    LeaveNetwork netId -> runInClient b $ leaveNetwork netId >>= printSuccess
-    GetAncestors amount blockHash -> runInClient b $ withBestBlockHash blockHash (getAncestors amount) >>= printJSON
-    GetBranches -> runInClient b $ getBranches >>= printJSON
-    GetBannedPeers -> runInClient b $ getBannedPeers >>= (liftIO . print)
-    Shutdown -> runInClient b $ shutdown >>= printSuccess
-    DumpStart -> runInClient b $ dumpStart >>= printSuccess
-    DumpStop -> runInClient b $ dumpStop >>= printSuccess
+    GetNodeInfo -> withClient b $ getNodeInfo >>= printNodeInfo
+    GetBakerPrivateData -> withClient b $ getBakerPrivateData >>= printJSON
+    GetPeerData bootstrapper -> withClient b $ getPeerData bootstrapper >>= printPeerData
+    StartBaker -> withClient b $ startBaker >>= printSuccess
+    StopBaker -> withClient b $ stopBaker >>= printSuccess
+    PeerConnect ip port -> withClient b $ peerConnect ip port >>= printSuccess
+    GetPeerUptime -> withClient b $ getPeerUptime >>= (liftIO . print)
+    BanNode nodeId nodePort nodeIp -> withClient b $ banNode nodeId nodePort nodeIp >>= printSuccess
+    UnbanNode nodeId nodePort nodeIp -> withClient b $ unbanNode nodeId nodePort nodeIp >>= printSuccess
+    JoinNetwork netId -> withClient b $ joinNetwork netId >>= printSuccess
+    LeaveNetwork netId -> withClient b $ leaveNetwork netId >>= printSuccess
+    GetAncestors amount blockHash -> withClient b $ withBestBlockHash blockHash (getAncestors amount) >>= printJSON
+    GetBranches -> withClient b $ getBranches >>= printJSON
+    GetBannedPeers -> withClient b $ getBannedPeers >>= (liftIO . print)
+    Shutdown -> withClient b $ shutdown >>= printSuccess
+    DumpStart -> withClient b $ dumpStart >>= printSuccess
+    DumpStop -> withClient b $ dumpStop >>= printSuccess
     _ -> undefined
 
 printSuccess :: Either String Bool -> ClientMonad IO ()

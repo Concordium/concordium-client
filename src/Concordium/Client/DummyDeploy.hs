@@ -46,7 +46,7 @@ deployModuleWithKey ::
   -> TransactionExpiryTime
   -> [Module UA]
   -> IO [(Types.BareTransaction, Either String (), ModuleRef)]
-deployModuleWithKey senderData@(sender, _) back mnonce energy expiry amodules = runInClient back comp
+deployModuleWithKey senderData@(sender, _) back mnonce energy expiry amodules = withClient back comp
   where
     tx nonce mhash = (helper senderData nonce energy expiry (Types.DeployModule (moduleMap Map.! mhash)), mhash)
 
@@ -85,7 +85,7 @@ initContractWithKey ::
   -> Core.TyName
   -> Core.Expr Core.UA Core.ModuleName
   -> IO (Types.BareTransaction, Either String ())
-initContractWithKey senderData@(sender, _) back mnonce energy expiry initAmount homeModule contractName contractFlags = runInClient back comp
+initContractWithKey senderData@(sender, _) back mnonce energy expiry initAmount homeModule contractName contractFlags = withClient back comp
   where
     tx nonce = helper senderData nonce energy expiry initContract
 
@@ -114,7 +114,7 @@ updateContractWithKey ::
   -> ContractAddress
   -> Core.Expr Core.UA Core.ModuleName
   -> IO (Types.BareTransaction, Either String ())
-updateContractWithKey senderData@(sender, _) back mnonce energy expiry transferAmount address msg = runInClient back comp
+updateContractWithKey senderData@(sender, _) back mnonce energy expiry transferAmount address msg = withClient back comp
   where
     tx nonce = helper senderData nonce energy expiry updateContract
 
