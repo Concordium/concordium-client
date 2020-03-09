@@ -89,9 +89,9 @@ outputGRPC ret =
         Right v -> Right v
     Right (Left e) -> Left $ "Unable to send consensus query: " ++ show e
 
-processJSON :: (Field.HasField a "jsonValue" Text) => a -> Value
+processJSON :: (Field.HasField a "value" Text) => a -> Value
 processJSON val = do
-  let r = val ^. CF.jsonValue
+  let r = val ^. CF.value
   value . encodeUtf8 $ r
 
 printJSON :: MonadIO m => Either String Value -> m ()

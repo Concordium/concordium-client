@@ -65,7 +65,7 @@ iterateM_ f a = f a >>= iterateM_ f
 go :: Backend -> Bool -> Int -> (Nonce -> BareTransaction) -> Nonce -> IO ()
 go backend logit tps sign startNonce = do
   startTime <- getCurrentTime
-  runInClient backend (loop startNonce startTime)
+  withClient backend (loop startNonce startTime)
 
   where loop nextNonce nextTime = do
           _ <- sendTx (sign nextNonce)

@@ -15,41 +15,15 @@ import           Concordium.Types
 import           Concordium.Types.Execution          as Types
 import           Data.Aeson                          as AE
 import qualified Data.Aeson.TH                       as AETH
-import           Data.Aeson.Types                    (typeMismatch)
-import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Base16              as BS16
 import qualified Data.HashMap.Strict                 as Map
-import           Data.Serialize                      as S
 import           Data.Text                           hiding (length, map)
 import qualified Data.Text.Encoding                  as Text
-import           Data.Word
 import           GHC.Generics                        (Generic)
-
-instance FromJSON Address where
-  parseJSON (Object v) = do
-    r <- v .:? "accountAddress"
-    case r of
-      Nothing -> AddressContract <$> (v .: "contractAddress")
-      Just a  -> return (AddressAccount a)
-  parseJSON invalid = typeMismatch "Address" invalid
-
--- Length + data (serializes with `put :: Bytestring -> Put`)
-instance FromJSON IDTypes.AccountEncryptionKey where
-  parseJSON v = do
-    aek <- parseJSON v
-    let plainBs = fst . BS16.decode . Text.encodeUtf8 $ aek
-    case S.decode . flip BS.append plainBs $
-         S.encode (fromIntegral . BS.length $ plainBs :: Word16) of
-      Left e  -> fail e
-      Right n -> return n
 
 -- Data (serializes with `putByteString :: Bytestring -> Put`)
 instance FromJSON Types.Proof where
   parseJSON v = fst . BS16.decode . Text.encodeUtf8 <$> parseJSON v
-
--- Number
-instance FromJSON BakerId where
-  parseJSON v = BakerId <$> parseJSON v
 
 -- |Transaction header type
 -- To be populated when deserializing a JSON object.
@@ -103,13 +77,14 @@ data TransactionJSONPayload
       { key :: IDTypes.AccountEncryptionKey
       }
   | AddBaker
-      { electionVerifyKey    :: BakerElectionVerifyKey
-      , signatureVerifyKey   :: BakerSignVerifyKey
-      , aggregationVerifyKey :: BakerAggregationVerifyKey
-      , bakerAccount         :: AccountAddress
-      , proofSig             :: Dlog25519Proof
-      , proofElection        :: Dlog25519Proof
-      , proofAccounts        :: AccountOwnershipProof
+      { electionVerifyKey     :: BakerElectionVerifyKey
+      , electionPrivateKey    :: BakerElectionPrivateKey
+      , signVerifyKey         :: BakerSignVerifyKey
+      , aggregationVerifykey  :: BakerAggregationVerifyKey
+      , aggregationPrivateKey :: BakerAggregationPrivateKey
+      , signPrivateKey        :: BakerSignPrivateKey
+      , bakerAccountValue     :: AccountAddress
+      , bakerKeypair          :: KeyPair
       }
   | RemoveBaker
       { removeId :: BakerId

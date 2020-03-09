@@ -14,17 +14,26 @@ data LegacyCmd
   | SendTransaction
       { legacySourceFile :: !FilePath
       , legacyNetworkId  :: !Int
-      , legacyHookIt     :: !Bool
       } -- ^ Loads a transaction in the context of the local database and sends it to the specified RPC server
-  | HookTransaction
+  | GetTransactionStatus
       { legacyTransactionHash :: !Text
       } -- ^ Queries the gRPC for the information about the execution of a transaction
+  | GetTransactionStatusInBlock
+      { legacyTransactionHash :: !Text,
+        legacyBlockHash' :: !Text
+      } -- ^ Queries the gRPC for the information about the execution of a transaction
+  | GetAccountNonFinalized {
+      legacyAddress :: !Text
+      } -- ^Get non finalized transactions for a given account.
   | NodeInfo -- ^ Queries the gRPC server for node information
   | GetConsensusInfo -- ^ Queries the gRPC server for the consensus information
   | GetBlockInfo
       { legacyEvery     :: !Bool,
         legacyBlockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the information of a specific block
+  | GetBlockSummary
+      { legacyBlockHash :: !(Maybe Text)
+      } -- ^ Queries the gRPC server for the information of a specific block and its transactions.
   | GetAccountList
       { legacyBlockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the list of accounts on a specific block
@@ -95,11 +104,6 @@ data LegacyCmd
   | GetBranches
   | GetBannedPeers
   | Shutdown
-  | TpsTest
-      { legacyNetworkId :: !Int
-      , legacyNodeId    :: !Text
-      , legacyDirectory :: !Text
-      }
   | DumpStart
   | DumpStop
   deriving (Show)
@@ -108,12 +112,15 @@ legacyProgramOptions :: Parser LegacyCmd
 legacyProgramOptions =
   hsubparser
     (loadModuleCommand <> listModulesCommand <> sendTransactionCommand <>
-     hookTransactionCommand <>
+     getTransactionStatusCommand <>
+     getTransactionStatusInBlockCommand <>
      getConsensusInfoCommand <>
      getBlockInfoCommand <>
+     getBlockSummaryCommand <>
      getAccountListCommand <>
      getInstancesCommand <>
      getAccountInfoCommand <>
+     getAccountNonFinalizedCommand <>
      getInstanceInfoCommand <>
      getRewardStatusCommand <>
      getBirkParametersCommand <>
@@ -134,7 +141,6 @@ legacyProgramOptions =
      getBranchesCommand <>
      getBannedPeersCommand <>
      shutdownCommand <>
-     tpsTestCommand <>
      dumpStartCommand <>
      dumpStopCommand <>
      getMakeBakerPayloadCommand
@@ -209,21 +215,35 @@ sendTransactionCommand =
           (metavar "NET-ID" <>
            help "Network ID for the transaction to be sent through" <>
            value 100 <>
-           showDefault) <*>
-        switch (short 'h' <> long "hook" <> help "Install a transaction hook before sending."))
+           showDefault))
        (progDesc
           "Parse transaction in current context and send it to the baker."))
 
-hookTransactionCommand :: Mod CommandFields LegacyCmd
-hookTransactionCommand =
+getTransactionStatusCommand :: Mod CommandFields LegacyCmd
+getTransactionStatusCommand =
   command
-    "HookTransaction"
+    "GetTransactionStatus"
     (info
-       (HookTransaction <$>
+       (GetTransactionStatus <$>
         strArgument
           (metavar "TX-HASH" <> help "Hash of the transaction to query for"))
        (progDesc
           "Query the gRPC for the information about the execution of a transaction."))
+
+getTransactionStatusInBlockCommand :: Mod CommandFields LegacyCmd
+getTransactionStatusInBlockCommand =
+  command
+    "GetTransactionStatusInBlock"
+    (info
+       (GetTransactionStatusInBlock <$>
+        strArgument
+          (metavar "TX-HASH" <> help "Hash of the transaction to query for") <*> 
+        strArgument
+          (metavar "BLOCK-HASH" <> help "Hash of the block.")
+       )
+       (progDesc
+          "Query the gRPC for the information about the execution of a transaction in a specific block."))
+
 
 getConsensusInfoCommand :: Mod CommandFields LegacyCmd
 getConsensusInfoCommand =
@@ -243,6 +263,17 @@ getBlockInfoCommand =
         optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
        )
        (progDesc "Query the gRPC server for a specific block."))
+
+getBlockSummaryCommand :: Mod CommandFields LegacyCmd
+getBlockSummaryCommand =
+  command
+    "GetBlockSummary"
+    (info
+       (GetBlockSummary <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+       )
+       (progDesc "Query the gRPC server for a specific block and its transactions."))
+
 
 getAccountListCommand :: Mod CommandFields LegacyCmd
 getAccountListCommand =
@@ -272,6 +303,16 @@ getAccountInfoCommand =
         optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block in which to do the query"))
        )
        (progDesc "Query the gRPC server for the information of an account."))
+
+getAccountNonFinalizedCommand :: Mod CommandFields LegacyCmd
+getAccountNonFinalizedCommand =
+  command
+    "GetAccountNonFinalized"
+    (info
+       (GetAccountNonFinalized <$>
+        strArgument (metavar "ACCOUNT" <> help "Account to be queried about")
+       )
+       (progDesc "Query the gRPC server for the information on non-finalized transactions for an account."))
 
 getInstanceInfoCommand :: Mod CommandFields LegacyCmd
 getInstanceInfoCommand =
@@ -443,19 +484,6 @@ shutdownCommand =
     (info
        (pure Shutdown)
        (progDesc "Shutdown the node gracefully."))
-
-tpsTestCommand :: Mod CommandFields LegacyCmd
-tpsTestCommand =
-    command
-     "TpsTest"
-    (info
-       (TpsTest <$>
-        argument
-          auto
-          (metavar "NET_ID" <> help "Network ID") <*>
-        strArgument (metavar "NODE-ID" <> help "ID of the node") <*>
-        strArgument (metavar "DIR" <> help "Directory"))
-       (progDesc "Tps test."))
 
 dumpStartCommand :: Mod CommandFields LegacyCmd
 dumpStartCommand =

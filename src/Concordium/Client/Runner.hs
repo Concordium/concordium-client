@@ -17,7 +17,7 @@ module Concordium.Client.Runner
   , getAccountInfo
   , getModuleSet
   , ClientMonad(..)
-  , runInClient
+  , withClient
   , EnvData(..)
   , GrpcConfig
   , processTransaction_
@@ -38,6 +38,7 @@ import           Concordium.Client.Validate
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
+import qualified Concordium.Crypto.SignatureScheme   as Sig
 import qualified Concordium.Crypto.VRF               as VRF
 import qualified Concordium.Types.Transactions       as Types
 import qualified Concordium.Types.Execution          as Types
@@ -55,7 +56,6 @@ import qualified Data.Aeson.Encode.Pretty            as AE
 import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
 import qualified Data.Char                           as C
-import qualified Data.HashSet as Set
 import qualified Data.HashMap.Strict                 as Map
 import           Data.Maybe
 import qualified Data.Serialize                      as S
@@ -81,12 +81,12 @@ liftClientIOToM comp = do
     Left err  -> throwError err
     Right res -> return res
 
-runInClient :: MonadIO m => Backend -> ClientMonad m a -> m a
-runInClient bkend comp = do
+withClient :: MonadIO m => Backend -> ClientMonad m a -> m a
+withClient bkend comp = do
   r <- runExceptT $! do
     client <- liftClientIOToM (mkGrpcClient $! GrpcConfig (COM.grpcHost bkend) (COM.grpcPort bkend) (COM.grpcTarget bkend))
-    ret <- ((runReaderT . _runClientMonad) comp $! EnvData client)
-    liftClientIOToM (close client)
+    ret <- ((runReaderT . _runClientMonad) comp $! client)
+    liftClientIOToM (close (grpc client))
     return ret
   case r of
     Left err -> error (show err)
@@ -112,11 +112,11 @@ processTransactionCmd action backend =
     TransactionSubmit fname -> do
       mdata <- loadContextData
       source <- BSL.readFile fname
-      tx <- PR.evalContext mdata $ runInClient backend $ processTransaction source defaultNetId defaultHook
+      tx <- PR.evalContext mdata $ withClient backend $ processTransaction source defaultNetId
       printf "Transaction '%s' sent to the baker...\n" (show $ Types.transactionHash tx)
     TransactionStatus hash -> do
       validateTransactionHash hash
-      status <- runInClient backend $ queryTransactionStatus (read $ unpack hash)
+      status <- withClient backend $ queryTransactionStatus (read $ unpack hash)
       runPrinter $ printTransactionStatus status
     TransactionSendGtu receiver amount cfg -> do
       toAddress <- getAddressArg "to address" $ Just receiver
@@ -137,7 +137,7 @@ processTransactionCmd action backend =
       -- TODO Only needed because we're going through the generic
       --      processTransaction/encodeAndSignTransaction functions.
       --      Refactor to only include what's needed.
-      tx <- PR.evalContext emptyContextData $ runInClient backend $ processTransaction_ t defaultNetId defaultHook False
+      tx <- PR.evalContext emptyContextData $ withClient backend $ processTransaction_ t defaultNetId False
       let hash = Types.transactionHash tx
       printf "Transaction sent to the baker. Waiting for transaction to be committed and finalized.\n"
       printf "You may skip this by interrupting this command (using Ctrl-C) - the transaction will still get processed\n"
@@ -145,7 +145,7 @@ processTransactionCmd action backend =
 
       t1 <- getFormattedLocalTimeOfDay
       printf "[%s] Waiting for the transaction to be committed..." t1
-      committedStatus <- runInClient backend $ awaitState 2 Committed hash
+      committedStatus <- withClient backend $ awaitState 2 Committed hash
       putStrLn ""
 
       when (tsrState committedStatus == Absent) $ die "Transaction failed before it got committed. Most likely because it was invalid."
@@ -159,7 +159,7 @@ processTransactionCmd action backend =
 
       t2 <- getFormattedLocalTimeOfDay
       printf "[%s] Waiting for the transaction to be finalized..." t2
-      finalizedStatus <- runInClient backend $ awaitState 5 Finalized hash
+      finalizedStatus <- withClient backend $ awaitState 5 Finalized hash
       putStrLn ""
 
       when (tsrState finalizedStatus == Absent) $ die "Transaction failed after it was committed."
@@ -187,7 +187,7 @@ processAccountCmd :: AccountCmd -> Verbose -> Backend -> IO ()
 processAccountCmd action verbose backend =
   case action of
     AccountShow address block -> do
-      r <- runInClient backend $ withBestBlockHash block (getAccountInfo address)
+      r <- withClient backend $ withBestBlockHash block (getAccountInfo address)
       v <- case r of
         Left err -> die $ "RPC error: " ++ err
         Right v -> return v
@@ -198,7 +198,7 @@ processAccountCmd action verbose backend =
         Nothing -> putStrLn "Account not found."
         Just a -> runPrinter $ printAccountInfo address a verbose
     AccountList block -> do
-      r <- runInClient backend $ withBestBlockHash block getAccountList
+      r <- withClient backend $ withBestBlockHash block getAccountList
       v <- case r of
              Left err -> die $ "RPC error: " ++ err
              Right v -> return v
@@ -254,38 +254,36 @@ loop v =
         _ -> error "Unexpected return value for block parent."
     _ -> error "Unexptected return value for getBlockInfo."
 
-withBestBlockHash :: (MonadIO m, MonadFail m) => Maybe Text -> (Text -> ClientMonad m b) -> ClientMonad m b
-withBestBlockHash v c =
-  case v of
-    Nothing -> getBestBlockHash >>= c
-    Just x -> c x
-
 useBackend :: LegacyCmd -> Backend -> IO ()
 useBackend act b =
   case act of
-    SendTransaction fname nid hook -> do
+    SendTransaction fname nid -> do
       mdata <- loadContextData
       source <- BSL.readFile fname
-      t <- PR.evalContext mdata $ runInClient b $ processTransaction source nid hook
+      t <- PR.evalContext mdata $ withClient b $ processTransaction source nid
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (Types.transactionHash t)
-    HookTransaction txh -> runInClient b $ hookTransaction txh >>= printJSON
-    GetConsensusInfo -> runInClient b $ getConsensusStatus >>= printJSON
-    GetBlockInfo every block -> runInClient b $ withBestBlockHash block getBlockInfo >>= if every then loop else printJSON
-    GetAccountList block -> runInClient b $ withBestBlockHash block getAccountList >>= printJSON
-    GetInstances block -> runInClient b $ withBestBlockHash block getInstances >>= printJSON
+    GetConsensusInfo -> withClient b $ getConsensusStatus >>= printJSON
+    GetBlockInfo every block -> withClient b $ withBestBlockHash block getBlockInfo >>= if every then loop else printJSON
+    GetBlockSummary block -> withClient b $ withBestBlockHash block getBlockSummary >>= printJSON
+    GetAccountList block -> withClient b $ withBestBlockHash block getAccountList >>= printJSON
+    GetInstances block -> withClient b $ withBestBlockHash block getInstances >>= printJSON
+    GetTransactionStatus txhash -> withClient b $ getTransactionStatus txhash >>= printJSON
+    GetTransactionStatusInBlock txhash block -> withClient b $ getTransactionStatusInBlock txhash block >>= printJSON
     GetAccountInfo account block ->
-      runInClient b $ withBestBlockHash block (getAccountInfo account) >>= printJSON
+      withClient b $ withBestBlockHash block (getAccountInfo account) >>= printJSON
+    GetAccountNonFinalized account ->
+      withClient b $ getAccountNonFinalizedTransactions account >>= printJSON
     GetInstanceInfo account block ->
-      runInClient b $ withBestBlockHash block (getInstanceInfo account) >>= printJSON
-    GetRewardStatus block -> runInClient b $ withBestBlockHash block getRewardStatus >>= printJSON
+      withClient b $ withBestBlockHash block (getInstanceInfo account) >>= printJSON
+    GetRewardStatus block -> withClient b $ withBestBlockHash block getRewardStatus >>= printJSON
     GetBirkParameters block ->
-      runInClient b $ withBestBlockHash block getBirkParameters >>= printJSON
-    GetModuleList block -> runInClient b $ withBestBlockHash block getModuleList >>= printJSON
+      withClient b $ withBestBlockHash block getBirkParameters >>= printJSON
+    GetModuleList block -> withClient b $ withBestBlockHash block getModuleList >>= printJSON
     GetModuleSource moduleref block -> do
       mdata <- loadContextData
       modl <-
-        PR.evalContext mdata . runInClient b $ withBestBlockHash block (getModuleSource moduleref)
+        PR.evalContext mdata . withClient b $ withBestBlockHash block (getModuleSource moduleref)
       case modl of
         Left x ->
           print $ "Unable to get the Module from the gRPC server: " ++ show x
@@ -294,24 +292,23 @@ useBackend act b =
           in do
             putStrLn $ "Retrieved module " ++ show moduleref
             putStrLn s
-    GetNodeInfo -> runInClient b $ getNodeInfo >>= printNodeInfo
-    GetBakerPrivateData -> runInClient b $ getBakerPrivateData >>= printJSON
-    GetPeerData bootstrapper -> runInClient b $ getPeerData bootstrapper >>= printPeerData
-    StartBaker -> runInClient b $ startBaker >>= printSuccess
-    StopBaker -> runInClient b $ stopBaker >>= printSuccess
-    PeerConnect ip port -> runInClient b $ peerConnect ip port >>= printSuccess
-    GetPeerUptime -> runInClient b $ getPeerUptime >>= (liftIO . print)
-    BanNode nodeId nodePort nodeIp -> runInClient b $ banNode nodeId nodePort nodeIp >>= printSuccess
-    UnbanNode nodeId nodePort nodeIp -> runInClient b $ unbanNode nodeId nodePort nodeIp >>= printSuccess
-    JoinNetwork netId -> runInClient b $ joinNetwork netId >>= printSuccess
-    LeaveNetwork netId -> runInClient b $ leaveNetwork netId >>= printSuccess
-    GetAncestors amount blockHash -> runInClient b $ withBestBlockHash blockHash (getAncestors amount) >>= printJSON
-    GetBranches -> runInClient b $ getBranches >>= printJSON
-    GetBannedPeers -> runInClient b $ getBannedPeers >>= (liftIO . print)
-    Shutdown -> runInClient b $ shutdown >>= printSuccess
-    TpsTest networkId nodeId directory -> runInClient b $ tpsTest networkId nodeId directory >>= (liftIO . print)
-    DumpStart -> runInClient b $ dumpStart >>= printSuccess
-    DumpStop -> runInClient b $ dumpStop >>= printSuccess
+    GetNodeInfo -> withClient b $ getNodeInfo >>= printNodeInfo
+    GetBakerPrivateData -> withClient b $ getBakerPrivateData >>= printJSON
+    GetPeerData bootstrapper -> withClient b $ getPeerData bootstrapper >>= printPeerData
+    StartBaker -> withClient b $ startBaker >>= printSuccess
+    StopBaker -> withClient b $ stopBaker >>= printSuccess
+    PeerConnect ip port -> withClient b $ peerConnect ip port >>= printSuccess
+    GetPeerUptime -> withClient b $ getPeerUptime >>= (liftIO . print)
+    BanNode nodeId nodePort nodeIp -> withClient b $ banNode nodeId nodePort nodeIp >>= printSuccess
+    UnbanNode nodeId nodePort nodeIp -> withClient b $ unbanNode nodeId nodePort nodeIp >>= printSuccess
+    JoinNetwork netId -> withClient b $ joinNetwork netId >>= printSuccess
+    LeaveNetwork netId -> withClient b $ leaveNetwork netId >>= printSuccess
+    GetAncestors amount blockHash -> withClient b $ withBestBlockHash blockHash (getAncestors amount) >>= printJSON
+    GetBranches -> withClient b $ getBranches >>= printJSON
+    GetBannedPeers -> withClient b $ getBannedPeers >>= (liftIO . print)
+    Shutdown -> withClient b $ shutdown >>= printSuccess
+    DumpStart -> withClient b $ dumpStart >>= printSuccess
+    DumpStop -> withClient b $ dumpStop >>= printSuccess
     _ -> undefined
 
 printSuccess :: Either String Bool -> ClientMonad IO ()
@@ -334,7 +331,7 @@ handleMakeBaker :: FilePath -> FilePath -> Maybe FilePath -> IO ()
 handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
   bakerKeysValue <- eitherDecodeFileStrict bakerKeysFile
   bakerAccountValue <- eitherDecodeFileStrict accountKeysFile
-  (vrfPrivate, vrfVerify, signKey, verifyKey, aggrVerifyKey :: Bls.PublicKey) <-
+  (vrfPrivate, vrfVerify, signKey, verifyKey, aggrSignKey, aggrVerifyKey) <-
     case bakerKeysValue >>= parseEither bakerKeysParser of
       Left err ->
         die $ "Could not decode file with baker keys because: " ++ err
@@ -346,21 +343,24 @@ handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
       Right addrKeys -> return addrKeys
   let abElectionVerifyKey = vrfVerify
   let abSignatureVerifyKey = verifyKey
-  let challenge = S.runPut (S.put abElectionVerifyKey <> S.put abSignatureVerifyKey <> S.put accountAddr)
+  let abAggregationVerifyKey :: Types.BakerAggregationVerifyKey = aggrVerifyKey
+  let challenge = S.runPut (S.put abElectionVerifyKey <> S.put abSignatureVerifyKey <> S.put abAggregationVerifyKey <> S.put accountAddr)
   abProofElection <- Proofs.proveDlog25519VRF challenge (VRF.KeyPair vrfPrivate vrfVerify) `except` "Could not produce VRF key proof."
   abProofSig <- Proofs.proveDlog25519Block challenge (BlockSig.KeyPair signKey verifyKey) `except` "Could not produce signature key proof."
   abProofAccounts <- forM keyMap (\key -> Proofs.proveDlog25519KP challenge key `except` "Could not produce account keys proof.")
+  let abProofAggregation = Bls.proveKnowledgeOfSK challenge aggrSignKey
 
   let out = AE.encodePretty $
           object ["transactionType" AE..= String "AddBaker",
                   "electionVerifyKey" AE..= abElectionVerifyKey,
                   "signatureVerifyKey" AE..= abSignatureVerifyKey,
-                  "aggregationVerifyKey" AE..= aggrVerifyKey,
+                  "aggregationVerifyKey" AE..= abAggregationVerifyKey,
                   "bakerAccount" AE..= accountAddr,
                   "proofSig" AE..= abProofSig,
                   "proofElection" AE..= abProofElection,
                   "account" AE..= accountAddr,
-                  "proofAccounts" AE..= Types.AccountOwnershipProof (Map.toList abProofAccounts)]
+                  "proofAccounts" AE..= Types.AccountOwnershipProof (Map.toList abProofAccounts),
+                  "proofAggregation" AE..= abProofAggregation]
   case payloadFile of
     Nothing -> BSL8.putStrLn out
     Just fileName -> BSL.writeFile fileName out
@@ -374,8 +374,9 @@ handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
           vrfVerifyKey <- v .: "electionVerifyKey"
           signKey <- v .: "signatureSignKey"
           verifyKey <- v .: "signatureVerifyKey"
+          aggrSignKey <- v .: "aggregationPrivateKey"
           aggrVerifyKey <- v .: "aggregationVerifyKey"
-          return (vrfPrivate, vrfVerifyKey, signKey, verifyKey, aggrVerifyKey)
+          return (vrfPrivate, vrfVerifyKey, signKey, verifyKey, aggrSignKey, aggrVerifyKey)
 
 printPeerData :: MonadIO m => Either String PeerData -> m ()
 printPeerData epd =
@@ -430,60 +431,6 @@ printNodeInfo mni =
       putStrLn $ "Baker committee member: " ++ show (ni ^. CF.consensusBakerCommittee)
       putStrLn $ "Finalization committee member: " ++ show (ni ^. CF.consensusFinalizerCommittee)
 
-getBestBlockHash :: (MonadFail m, MonadIO m) => ClientMonad m Text
-getBestBlockHash =
-  getConsensusStatus >>= \case
-    Left err -> fail err
-    Right v ->
-      case parse readBestBlock v of
-        Success bh -> return bh
-        Error err  -> fail err
-
-getLastFinalBlockHash :: (MonadFail m, MonadIO m) => ClientMonad m Text
-getLastFinalBlockHash =
-  getConsensusStatus >>= \case
-    Left err -> fail err
-    Right v ->
-      case parse readLastFinalBlock v of
-        Success bh -> return bh
-        Error err  -> fail err
-
-getAccountNonce :: (MonadFail m, MonadIO m) => Types.AccountAddress -> Text -> ClientMonad m Types.Nonce
-getAccountNonce addr blockhash =
-  getAccountInfo (fromString $ show addr) blockhash >>= \case
-    Left err -> fail err
-    Right aval ->
-      case parseNullable readAccountNonce aval of
-        Error err     -> fail err
-        Success Nothing -> fail $ printf "account '%s' not found" (show addr)
-        Success (Just nonce) -> return nonce
-
-getModuleSet :: Text -> ClientMonad IO (Set.HashSet Types.ModuleRef)
-getModuleSet blockhash =
-  getModuleList blockhash >>= \case
-    Left err -> fail err
-    Right v ->
-      case fromJSON v of
-        AE.Error s -> fail s
-        AE.Success xs -> return $ Set.fromList (fmap Types.ModuleRef xs)
-
-readBestBlock :: Value -> Parser Text
-readBestBlock = withObject "Best block hash" $ \v -> v .: "bestBlock"
-
-readLastFinalBlock :: Value -> Parser Text
-readLastFinalBlock = withObject "Last final hash" $ \v -> v .: "lastFinalizedBlock"
-
-readAccountNonce :: Value -> Parser Types.Nonce
-readAccountNonce = withObject "Account nonce" $ \v -> v .: "accountNonce"
-
-parseNullable :: (Value -> Parser a) -> Value -> Result (Maybe a)
-parseNullable p v = parse (nullable p) v
-
-nullable :: (Value -> Parser a) -> Value -> Parser (Maybe a)
-nullable p v = case v of
-                Null -> return Nothing
-                _ -> Just <$> p v
-
 readModule :: MonadIO m => FilePath -> ClientMonad m (Core.Module Core.UA)
 readModule filePath = do
   source <- liftIO $ BSL.readFile filePath
@@ -495,21 +442,19 @@ processTransaction ::
      (MonadFail m, MonadIO m)
   => BSL.ByteString
   -> Int
-  -> Bool
   -> ClientMonad (PR.Context Core.UA m) Types.BareTransaction
-processTransaction source networkId hookit =
+processTransaction source networkId =
   case AE.eitherDecode source of
     Left err -> fail $ "Error decoding JSON: " ++ err
-    Right t  -> processTransaction_ t networkId hookit True
+    Right t  -> processTransaction_ t networkId True
 
 processTransaction_ ::
      (MonadFail m, MonadIO m)
   => TransactionJSON
   -> Int
-  -> Bool
   -> Verbose
   -> ClientMonad (PR.Context Core.UA m) Types.BareTransaction
-processTransaction_ transaction networkId hookit verbose = do
+processTransaction_ transaction networkId _verbose = do
   tx <- do
     let header = metadata transaction
         sender = thSenderAddress header
@@ -524,13 +469,6 @@ processTransaction_ transaction networkId hookit verbose = do
       (thExpiry header)
       (sender, (CT.keys transaction))
 
-  when hookit $ do
-    let trHash = Types.transactionHash tx
-    when verbose $
-      liftIO . putStrLn $ "Installing hook for transaction " ++ show trHash
-
-    h <- hookTransaction (pack . show $ trHash)
-    when verbose $ printJSON h
   sendTransactionToBaker tx networkId >>= \case
     Left err -> fail err
     Right False -> fail "Transaction not accepted by the baker."
@@ -564,7 +502,15 @@ encodeAndSignTransaction pl energy nonce expiry (sender, keys) = do
       return $ Types.Transfer transferTo transferAmount
     (CT.DeployCredential cred) -> return $ Types.DeployCredential cred
     (CT.DeployEncryptionKey encKey) -> return $ Types.DeployEncryptionKey encKey
-    (CT.AddBaker evk svk avk ba p pe pa) -> return $ Types.AddBaker evk svk avk ba p pe pa
+    (CT.AddBaker evk epk svk avk apk (BlockSig.KeyPair spk _) acc kp) ->
+      let challenge = S.runPut (S.put evk <> S.put svk <> S.put avk <> S.put acc)
+      in do
+        Just proofElection <- liftIO $ Proofs.proveDlog25519VRF challenge epk
+        Just proofSig <- liftIO $ Proofs.proveDlog25519KP challenge (Sig.KeyPairEd25519 spk svk)
+        Just proofAccount' <- liftIO $ Proofs.proveDlog25519KP challenge kp
+        let proofAccount = Types.singletonAOP proofAccount'
+            proofAggregation = Bls.proveKnowledgeOfSK challenge apk
+        return $ Types.AddBaker evk svk avk acc proofSig proofElection proofAccount proofAggregation
     (CT.RemoveBaker rbid rbp) -> return $ Types.RemoveBaker rbid rbp
     (CT.UpdateBakerAccount ubid uba ubp) ->
       return $ Types.UpdateBakerAccount ubid uba ubp
