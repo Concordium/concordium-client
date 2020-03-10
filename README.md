@@ -38,6 +38,9 @@ If a transaction with a reused nonce is submitted, the following helpful error m
 simple-client: user error (gRPC response error: Got non-success response from FFI interface Stale)
 ```
 
+The nonce must be provided if a transaction is created from a (JSON) payload file (i.e. `transaction submit` or `SendTransaction`).
+For `transaction send-gtu`, the nonce is resolved from the backend by default.
+
 #### "Best" block
 
 Commands that operate on a specific block default to the "best" block if the parameter is omitted.
@@ -45,6 +48,64 @@ Commands that operate on a specific block default to the "best" block if the par
 There is a bit of a race condition in the way this best block is queried:
 To get the best block, we make a call, and then we need a separate call to get the block info.
 In the meantime the best block could have in fact been pruned due to finalization.
+
+## Configuration
+
+Accounts and keys may be stored in config files on disk to avoid having to pass it as command line options.
+The config directory may be set using the `--config PATH` option and defaults to `$XDG_CONFIG_HOME/concordium`.
+The variable `XDG_CONFIG_HOME` is defined by the
+[XDG standard](https://hackage.haskell.org/package/directory-1.3.6.0/docs/System-Directory.html#v:XdgConfig)
+as the location of user specific configuration.
+If not set or empty, it has the following system-dependent defaults:
+
+* Unix: `$HOME/.config`
+* Windows: `%APPDATA%` (`C:\Users\<user>\AppData\Roaming`)
+
+The expected structure inside the config dir is
+
+```
+<config-dir>
+  /concordium
+    /accounts
+      /names.map    # Mapping from account name to addresses (optional)
+      /<address>
+        /<n>.sign   # n'th sign key for account <address>
+        /<n>.verify # n'th verify key for account <address>
+```
+
+The account name to address map `accounts/names.map` is a key-value file formatted as
+```
+<account1_name> = <account1_addr>
+<account2_name> = <account2_addr>
+...
+```
+
+An account's name as specified in this map may be used in place of its address in the "sender" option of transaction commands.
+The tool will then look up and use the address of the account with that name.
+If no account is provided, it defaults to the one with name "default".
+
+Note that the account map is only consulted once and only if the account reference is not a valid address.
+So the map cannot be used to map the address nor name of one account to another.
+
+The key files (named by `<n>` above) must exist in pairs with numeric names and the extensions shown above.
+Account names may consist of letters, numbers, and the symbols '-' and '_'.
+
+The adhoc script `scripts/init-config.sh <address>` initializes this config structure with `<address>` as the default account.
+After confirming the directory to be initialized (which includes nuking it),
+the script expects a JSON string in the following format to be pasted into stdout.
+
+```
+{
+    <n>: {
+        "signKey": <sign-key>.
+        "verifyKey": <verify-key>
+    },
+    ...
+}
+```
+
+This is the same format as that expected by the `--keys` flag of the [`transaction send-gtu`](#transaction-send-gtu-args) command.
+The script is a temporary solution and will be replaced with proper commands.
 
 ## Prerequisites
 
@@ -85,6 +146,56 @@ This is wrapped up into the script `run.sh` such that one just have to do
 where `NODE-ID` is the container number of the node in the docker-compose cluster (just use `1`).
 
 ## Commands
+
+The commands supported by the tool are divided into two categories: "new" and "legacy".
+As the names indicate, the "new" commands are intended to replace the "legacy" ones once they're fully implemented.
+
+### New commands
+
+The new commands are grouped by topic:
+
+#### Transaction
+
+Transaction sending and inspection.
+
+##### `transaction submit PAYLOAD-FILE`
+
+Low-level command to send transaction from JSON payload.
+
+##### `transaction status TX-HASH`
+
+Poll status on the transaction `TX-HASH`.
+
+##### `transaction send-gtu ARGS...`
+
+Send a Transfer transaction. Required flags:
+
+* `--amount`: Amount of GTU to send.
+* `--sender`: Name or address of the sender account.
+* `--keys`: Keys of the sender account.
+* `--receiver`: Address of the receiver account.
+* `--expiry`: Expiry time of the transaction (Unix epoch timestamp).
+* `--energy`: Amount of NRG to allocate to the transaction.
+
+See the [Configuration](#configuration) section for descriptions of account name and the format of `--keys`.
+
+After signing and sending the "transfer" transaction, the command follows the life cycle of the transaction.
+Unless it gets interrupted (which doesn't prevent the transaction from progressing),
+the command blocks, waiting for the transaction to get committed and ultimately finalized.
+
+#### Account
+
+Account inspection.
+
+##### `account show <address>`
+
+Show details of a specific account.
+
+##### `account list`
+
+Show list of all account addresses.
+
+### Legacy Commands
 
 All the commands supported by the client are documented below.
 See [this wiki page](https://gitlab.com/Concordium/notes-wiki/wikis/Consensus-queries#state-queries)
@@ -195,7 +306,7 @@ Output format: JSON (object).
 Right after sending the transaction in the example above:
 
 ```
-$ simple-clinet HookTransaction 88b123dbf59969bf4e5f05543217385f154b5029f6ebb8b4af9fe3b682e88136
+$ simple-client HookTransaction 88b123dbf59969bf4e5f05543217385f154b5029f6ebb8b4af9fe3b682e88136
 {
     "status": "pending",
     "results": [],
@@ -206,7 +317,7 @@ $ simple-clinet HookTransaction 88b123dbf59969bf4e5f05543217385f154b5029f6ebb8b4
 A few minutes later:
 
 ```
-$ simple-clinet HookTransaction 88b123dbf59969bf4e5f05543217385f154b5029f6ebb8b4af9fe3b682e88136
+$ simple-client HookTransaction 88b123dbf59969bf4e5f05543217385f154b5029f6ebb8b4af9fe3b682e88136
 {
     "status": "committed",
     "results": [

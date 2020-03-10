@@ -111,6 +111,7 @@ processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Backend -> IO ()
 processTransactionCmd action baseCfgDir backend =
   case action of
     TransactionSubmit fname -> do
+      -- TODO Ensure that the "nonce" field is optional in the payload.
       mdata <- loadContextData
       source <- BSL.readFile fname
       tx <- PR.evalContext mdata $ withClient backend $ processTransaction source defaultNetId
