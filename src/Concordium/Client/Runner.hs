@@ -29,6 +29,7 @@ import qualified Acorn.Core.PrettyPrint              as PP
 import qualified Acorn.Parser.Runner                 as PR
 
 import           Concordium.Client.Cli
+import           Concordium.Client.Config
 import           Concordium.Client.Commands          as COM
 import           Concordium.Client.GRPC
 import           Concordium.Client.Output
@@ -93,21 +94,21 @@ withClient bkend comp = do
     Right x  -> return x
 
 process :: COM.Options -> IO ()
-process (Options (LegacyCmd c) backend _) = processLegacyCmd c backend
-process (Options command backend verbose) = do
+process (Options (LegacyCmd c) _ backend _) = processLegacyCmd c backend
+process (Options command cfgDir backend verbose) = do
   -- Disable output buffering.
   hSetBuffering stdout NoBuffering
   -- Evaluate command.
   maybe printNoBackend p backend
   where p = case command of
-              TransactionCmd c -> processTransactionCmd c
+              TransactionCmd c -> processTransactionCmd c cfgDir
               AccountCmd c -> processAccountCmd c verbose
               ModuleCmd c -> processModuleCmd c
               ContractCmd c -> processContractCmd c
               LegacyCmd _ -> error "Unreachable case: LegacyCmd."
 
-processTransactionCmd :: TransactionCmd -> Backend -> IO ()
-processTransactionCmd action backend =
+processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Backend -> IO ()
+processTransactionCmd action baseCfgDir backend =
   case action of
     TransactionSubmit fname -> do
       mdata <- loadContextData
@@ -118,20 +119,31 @@ processTransactionCmd action backend =
       validateTransactionHash hash
       status <- withClient backend $ queryTransactionStatus (read $ unpack hash)
       runPrinter $ printTransactionStatus status
-    TransactionSendGtu receiver amount cfg -> do
+    TransactionSendGtu receiver amount txCfg -> do
+      -- TODO If verbose, print resolved config.
+
+      baseCfg <- getBaseConfig baseCfgDir False
+
+      keysArg <- case decodeKeysArg $ COM.tcKeys txCfg of
+        Nothing -> return Nothing
+        Just (Left err) -> die err
+        Just (Right ks) -> return $ Just ks
+      accCfg <- getAccountConfig (tcSender txCfg) baseCfg Nothing keysArg
+
+      let keys = acKeys accCfg
+          fromAddress = acAddr accCfg
       toAddress <- getAddressArg "to address" $ Just receiver
-      fromAddress <- getAddressArg "from address" $ tcSender cfg
-      energy <- getArg "max energy amount" $ tcMaxEnergyAmount cfg
-      expiration <- getArg "expiration" $ tcExpiration cfg
-      keys <- getKeysArg $ COM.tcKeys cfg
-      printf "Sending %s GTU from '%s' to '%s'.\n" (show amount) (show fromAddress) (show toAddress)
+
+      energy <- getArg "max energy amount" $ tcMaxEnergyAmount txCfg
+      expiry <- getArg "expiry" $ tcExpiration txCfg
+      printf "Sending %s GTU from %s to '%s'.\n" (show amount) (showNamedAddress accCfg) (show toAddress)
       printf "Allowing up to %s NRG to be spent as transaction fee.\n" (show energy)
       printf "Confirm [yN]: "
       input <- getChar
       when (C.toLower input /= 'y') $ die "Transaction cancelled."
 
       let t = TransactionJSON
-                (TransactionJSONHeader fromAddress (tcNonce cfg) energy expiration)
+                (TransactionJSONHeader fromAddress (tcNonce txCfg) energy expiry)
                 (Transfer (Types.AddressAccount toAddress) amount)
                 keys
       -- TODO Only needed because we're going through the generic

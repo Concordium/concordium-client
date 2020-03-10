@@ -4,6 +4,7 @@ module Concordium.Client.Output where
 
 import Concordium.Client.Cli
 import Concordium.Client.Commands (Verbose)
+import Concordium.Client.Config
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Types
 import qualified Concordium.ID.Types as IDTypes
@@ -174,3 +175,11 @@ printTransactionStatus status =
     showOutcomeStatusFragment = \case
       Types.TxSuccess _ -> "success"
       Types.TxReject _ -> "rejected"
+
+-- Produce a string fragment of the address and, if available, name of the account.
+showNamedAddress :: AccountConfig -> String
+showNamedAddress cfg =
+  let addr = printf "'%s'" (show $ acAddr cfg)
+  in case acName cfg of
+    Nothing -> addr
+    Just n -> printf "%s (%s)" addr n

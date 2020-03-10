@@ -63,8 +63,10 @@ library:
     - containers
     - directory
     - globalstate-types
+    - filepath
     - optparse-applicative
     - random
+    - split
     - mtl
     - text
     - time
@@ -130,7 +132,6 @@ executables:
       - bytestring
       - aeson
       - time
-
 
   middleware:
     when:

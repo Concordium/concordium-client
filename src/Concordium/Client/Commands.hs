@@ -26,6 +26,7 @@ type Verbose = Bool
 data Options =
   Options
   { optsCmd :: Cmd
+  , optsConfigDir :: Maybe FilePath
   , optsBackend :: Maybe Backend
   , optsVerbose :: Verbose }
   deriving (Show)
@@ -152,6 +153,7 @@ programOptions = Options <$>
                       moduleCmds <>
                       contractCmds
                      ) <|> (LegacyCmd <$> legacyProgramOptions)) <*>
+                   (optional (strOption (long "config" <> metavar "DIR" <> help "Configuration directory path"))) <*>
                    (optional backendParser) <*>
                    (switch (long "verbose" <> help "Make output verbose"))
 
@@ -173,7 +175,7 @@ transactionSubmitCmd =
     "submit"
     (info
       (TransactionSubmit <$>
-        strArgument (metavar "TX-SOURCE" <> help "JSON file with the transaction"))
+        strArgument (metavar "FILE" <> help "File containing the transaction parameters in JSON format"))
       (progDesc "parse transaction and send it to the baker"))
 
 transactionStatusCmd :: Mod CommandFields TransactionCmd

@@ -45,15 +45,15 @@ getArg name input = case input of
   Nothing -> die $ name ++ " not provided"
   Just v -> return v
 
-getJsonArg :: FromJSON a => String -> Maybe Text -> IO a
-getJsonArg key input = do
-  v <- getArg key input
-  case AE.eitherDecodeStrict $ encodeUtf8 v of
-    Left err -> die $ printf "%s: cannot parse '%s' as JSON: %s" key v err
-    Right r -> return r
+decodeJsonArg :: FromJSON a => String -> Maybe Text -> Maybe (Either String a)
+decodeJsonArg key input = do
+  v <- input
+  Just $ case AE.eitherDecodeStrict $ encodeUtf8 v of
+    Left err -> Left $ printf "%s: cannot parse '%s' as JSON: %s" key v err
+    Right r -> Right r
 
-getKeysArg :: Maybe Text -> IO KeyMap
-getKeysArg = getJsonArg "keys"
+decodeKeysArg :: Maybe Text -> Maybe (Either String KeyMap)
+decodeKeysArg = decodeJsonArg "keys"
 
 getAddressArg :: String -> Maybe Text -> IO IDTypes.AccountAddress
 getAddressArg name input = do
