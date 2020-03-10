@@ -37,13 +37,6 @@ exampleBlockHash3 = read "941c24374cd077de2120fb58732306c3115a08bb7b7cda120a04fe
 exampleBlockHash4 :: Types.BlockHash
 exampleBlockHash4 = read "be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93a9be7f9994"
 
--- outcomeSuccess1a :: TransactionStatusResultItem
--- outcomeSuccess1a = TransactionStatusResultItem
---                    { tsriBlockHash = read "0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389"
---                    , tsriResult = "success"
---                    , tsriEvents = []
---                    , tsriExecutionEnergyCost = 10
---                    , tsriExecutionCost = 10 }
 outcomeSuccess1a :: Types.TransactionSummary
 outcomeSuccess1a = Types.TransactionSummary
                    { Types.tsSender = exampleAccountAddr
@@ -54,13 +47,6 @@ outcomeSuccess1a = Types.TransactionSummary
                    , Types.tsResult = Types.TxSuccess { Types.vrEvents = [] }
                    , Types.tsIndex = Types.TransactionIndex 0 }
 
--- outcomeSuccess1b :: TransactionStatusResultItem
--- outcomeSuccess1b = TransactionStatusResultItem
---                    { tsriBlockHash = read "0f71eeca9f0a497dc4427cab0544f2bcb820b328ad97be29181e212edea708fd"
---                    , tsriResult = "success"
---                    , tsriEvents = []
---                    , tsriExecutionEnergyCost = 10
---                    , tsriExecutionCost = 10 }
 -- TODO Identical to outcomeSuccess1b now.
 outcomeSuccess1b :: Types.TransactionSummary
 outcomeSuccess1b = Types.TransactionSummary
@@ -72,13 +58,6 @@ outcomeSuccess1b = Types.TransactionSummary
                    , Types.tsResult = Types.TxSuccess { Types.vrEvents = [] }
                    , Types.tsIndex = 0 }
 
--- outcomeSuccess2 :: TransactionStatusResultItem
--- outcomeSuccess2 = TransactionStatusResultItem
---                   { tsriBlockHash = read "941c24374cd077de2120fb58732306c3115a08bb7b7cda120a04fecc412b1795"
---                   , tsriResult = "success"
---                   , tsriEvents = []
---                   , tsriExecutionEnergyCost = 20
---                   , tsriExecutionCost = 20 }
 outcomeSuccess2 :: Types.TransactionSummary
 outcomeSuccess2 = Types.TransactionSummary
                   { Types.tsSender = exampleAccountAddr
@@ -89,13 +68,6 @@ outcomeSuccess2 = Types.TransactionSummary
                   , Types.tsResult = Types.TxSuccess { Types.vrEvents = [] }
                   , Types.tsIndex = 0 }
 
--- outcomeFailure :: TransactionStatusResultItem
--- outcomeFailure = TransactionStatusResultItem
---                  { tsriBlockHash = read "be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93a9be7f9994"
---                  , tsriResult = "failure"
---                  , tsriEvents = []
---                  , tsriExecutionEnergyCost = 20
---                  , tsriExecutionCost = 20 }
 outcomeFailure :: Types.TransactionSummary
 outcomeFailure = Types.TransactionSummary
                  { Types.tsSender = exampleAccountAddr
