@@ -41,6 +41,15 @@ log lvl msgs =
                    Err -> "Error: "
         indent = replicate (length prefix) ' '
 
+logInfo :: [String] -> IO ()
+logInfo = log Info
+
+logWarn :: [String] -> IO ()
+logWarn = log Warn
+
+logError :: [String] -> IO ()
+logError = log Err
+
 logFatal :: [String] -> IO a
 logFatal msgs = log Err msgs >> exitFailure
 

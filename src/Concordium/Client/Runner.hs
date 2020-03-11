@@ -67,7 +67,7 @@ import           Data.Word
 import           Lens.Simple
 import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client.Exceptions
-import           Prelude                             hiding (fail, mod, null, unlines, log)
+import           Prelude                             hiding (fail, mod, null, unlines)
 import           System.Exit                         (die)
 import           System.IO
 import           Text.Printf
@@ -126,7 +126,7 @@ processTransactionCmd action verbose baseCfgDir backend =
       mdata <- loadContextData
       source <- BSL.readFile fname
       tx <- PR.evalContext mdata $ withClient backend $ processTransaction source defaultNetId
-      log Info [printf "transaction '%s' sent to the baker" (show $ Types.transactionHash tx)]
+      logInfo [printf "transaction '%s' sent to the baker" (show $ Types.transactionHash tx)]
     TransactionStatus hash -> do
       validateTransactionHash hash
       status <- withClient backend $ queryTransactionStatus (read $ unpack hash)
@@ -156,7 +156,7 @@ processTransactionCmd action verbose baseCfgDir backend =
 
       energy <- getArg "max energy amount" $ tcMaxEnergyAmount txCfg
       expiry <- getArg "expiry" $ tcExpiration txCfg
-      log Info [ printf "sending %s GTU from %s to '%s'" (show amount) (showNamedAddress accCfg) (show toAddress)
+      logInfo [ printf "sending %s GTU from %s to '%s'" (show amount) (showNamedAddress accCfg) (show toAddress)
                , printf "allowing up to %s NRG to be spent as transaction fee" (show energy) ]
       logStr "Confirm [yN]: "
       input <- getChar
@@ -171,7 +171,7 @@ processTransactionCmd action verbose baseCfgDir backend =
       --      Refactor to only include what's needed.
       tx <- PR.evalContext emptyContextData $ withClient backend $ processTransaction_ t defaultNetId False
       let hash = Types.transactionHash tx
-      log Info [ "transaction sent to the baker"
+      logInfo [ "transaction sent to the baker"
                , "waiting for transaction to be committed and finalized"
                , printf "you may skip this by interrupting this command (using Ctrl-C) - the transaction will still get procesed and may be queried using 'transaction status %s'" (show hash) ]
 
