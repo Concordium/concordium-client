@@ -160,7 +160,7 @@ processTransactionCmd action verbose baseCfgDir backend =
                , printf "allowing up to %s NRG to be spent as transaction fee" (show energy) ]
       logStr "Confirm [yN]: "
       input <- getChar
-      when (C.toLower input /= 'y') $ log Fatal ["transaction cancelled"]
+      when (C.toLower input /= 'y') $ logFatal ["transaction cancelled"]
 
       let t = TransactionJSON
                 (TransactionJSONHeader fromAddress (tcNonce txCfg) energy expiry)
@@ -180,7 +180,7 @@ processTransactionCmd action verbose baseCfgDir backend =
       committedStatus <- withClient backend $ awaitState 2 Committed hash
       putStrLn ""
 
-      when (tsrState committedStatus == Absent) $ log Fatal ["transaction failed before it got committed", "most likely because it was invalid"]
+      when (tsrState committedStatus == Absent) $ logFatal ["transaction failed before it got committed", "most likely because it was invalid"]
 
       runPrinter $ printTransactionStatus committedStatus
 
@@ -194,7 +194,7 @@ processTransactionCmd action verbose baseCfgDir backend =
       finalizedStatus <- withClient backend $ awaitState 5 Finalized hash
       putStrLn ""
 
-      when (tsrState finalizedStatus == Absent) $ log Fatal ["transaction failed after it was committed"]
+      when (tsrState finalizedStatus == Absent) $ logFatal ["transaction failed after it was committed"]
 
       -- Print out finalized status if the outcome differs from that of the committed status.
       when (tsrResults committedStatus /= tsrResults finalizedStatus) $ do
@@ -221,10 +221,10 @@ processAccountCmd action verbose backend =
     AccountShow address block -> do
       r <- withClient backend $ withBestBlockHash block (getAccountInfo address)
       v <- case r of
-        Left err -> log Fatal ["RPC error: " ++ err]
+        Left err -> logFatal ["RPC error: " ++ err]
         Right v -> return v
       account <- case fromJSON v of
-        Error err -> log Fatal [printf "cannot parse '%s' as JSON: %s" (show v) err]
+        Error err -> logFatal [printf "cannot parse '%s' as JSON: %s" (show v) err]
         Success a -> return a
       case account of
         Nothing -> putStrLn "Account not found."
@@ -232,10 +232,10 @@ processAccountCmd action verbose backend =
     AccountList block -> do
       r <- withClient backend $ withBestBlockHash block getAccountList
       v <- case r of
-             Left err -> log Fatal ["RPC error: " ++ err]
+             Left err -> logFatal ["RPC error: " ++ err]
              Right v -> return v
       accountAddrs <- case fromJSON v of
-                        Error err -> log Fatal [printf "cannot parse '%s' as JSON: %s" (show v) err]
+                        Error err -> logFatal [printf "cannot parse '%s' as JSON: %s" (show v) err]
                         Success as -> return as
       runPrinter $ printAccountList accountAddrs
 

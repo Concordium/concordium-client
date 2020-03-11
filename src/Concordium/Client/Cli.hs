@@ -17,12 +17,12 @@ import Data.Char
 import Data.List
 import Data.Text (Text)
 import Data.Text.Encoding
-import Prelude hiding (fail)
+import Prelude hiding (fail, log)
 import Text.Printf
-import System.Exit (die)
+import System.Exit (die, exitFailure)
 import System.IO
 
-data Level = Info | Warn | Err | Fatal deriving (Eq)
+data Level = Info | Warn | Err deriving (Eq)
 
 -- Logs a list of sentences. The sentences are pretty printed (capital first letter and dot at the end),
 -- so the input messages should only contain capital letters for names and have no dot suffix.
@@ -34,16 +34,15 @@ log :: Level -> [String] -> IO ()
 log lvl msgs =
   let ls = prettyLines 90 $ map prettyMsg msgs
       msg = foldl (\res l -> let p = if null res then prefix else indent in res ++ p ++ l ++ "\n") "" ls
-  in if lvl == Fatal then
-    die msg
-  else
-    logStr msg
+  in logStr msg
   where prefix = case lvl of
                    Info -> ""
                    Warn-> "Warning: "
                    Err -> "Error: "
-                   Fatal -> "Error: "
         indent = replicate (length prefix) ' '
+
+logFatal :: [String] -> IO a
+logFatal msgs = log Err msgs >> exitFailure
 
 -- Joins sentences to a list of lines. Any given sentence is added to the current line if it
 -- doesn't cause the total line length to exceed maxLineLen.
