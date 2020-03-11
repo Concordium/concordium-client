@@ -7,9 +7,11 @@ import qualified Concordium.Crypto.ByteStringHelpers as BSH
 import qualified Concordium.Crypto.SignatureScheme as S
 import Concordium.Types as Types
 import Concordium.ID.Types as IDTypes
+import Concordium.Client.Cli
 import Concordium.Client.Commands
 import Concordium.Client.Types.Transaction
 
+import Prelude hiding (log)
 import Control.Exception
 import Control.Monad.Except
 import Data.Char
@@ -46,18 +48,18 @@ getBaseConfig :: Maybe FilePath -> Verbose -> IO BaseConfig
 getBaseConfig f verbose = do
   cfgDir <- getBaseConfigDir f
   cfgDirExists <- doesDirectoryExist cfgDir
-  when (not cfgDirExists) $ printf "Warning: Config directory '%s' not found.\n" cfgDir
+  when (not cfgDirExists) $ log Warn [printf "config directory '%s' not found" cfgDir]
 
   let accCfgDir = accountConfigDir cfgDir
   accCfgDirExists <- doesDirectoryExist accCfgDir
-  when (not accCfgDirExists) $ printf "Warning: Account config directory '%s' not found.\n" accCfgDir
+  when (not accCfgDirExists) $ log Warn [printf "account config directory '%s' not found" accCfgDir]
 
   let mapFile = accountNameMapFile accCfgDir
   mapFileExists <- doesFileExist mapFile
   m <- if mapFileExists then
          loadAccountNameMap mapFile
        else do
-         printf "Warning: Account name map file '%s' not found.\n" mapFile
+         log Warn [printf "account name map file '%s' not found" mapFile]
          return M.empty
   return BaseConfig
     { bcVerbose = verbose

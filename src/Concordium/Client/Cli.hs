@@ -13,12 +13,61 @@ import Control.Monad.Fail
 import qualified Data.HashMap.Strict as HM
 import Data.Aeson as AE
 import Data.Aeson.Types as AE
+import Data.Char
 import Data.List
-import Data.Text
+import Data.Text (Text)
 import Data.Text.Encoding
 import Prelude hiding (fail)
 import Text.Printf
 import System.Exit (die)
+import System.IO
+
+data Level = Info | Warn | Err | Fatal deriving (Eq)
+
+-- Logs a list of sentences. The sentences are pretty printed (capital first letter and dot at the end),
+-- so the input messages should only contain capital letters for names and have no dot suffix.
+-- Sentences will be joined on the same line as long as the resulting line doesn't exceed 90 chars.
+-- Depending on the log level, an appropriate prefix is added to the first line.
+-- All lines will be indented such that they align with the first line
+-- (i.e. as if they had all been prefixed).
+log :: Level -> [String] -> IO ()
+log lvl msgs =
+  let ls = prettyLines 90 $ map prettyMsg msgs
+      msg = foldl (\res l -> let p = if null res then prefix else indent in res ++ p ++ l ++ "\n") "" ls
+  in if lvl == Fatal then
+    die msg
+  else
+    logStr msg
+  where prefix = case lvl of
+                   Info -> ""
+                   Warn-> "Warning: "
+                   Err -> "Error: "
+                   Fatal -> "Error: "
+        indent = replicate (length prefix) ' '
+
+-- Joins sentences to a list of lines. Any given sentence is added to the current line if it
+-- doesn't cause the total line length to exceed maxLineLen.
+-- Impl note: The fold is "left" based for the length calculation to be correct.
+prettyLines :: Int -> [String] -> [String]
+prettyLines maxLineLen = reverse . foldl f []
+  where f ls s = case ls of
+                   [] -> [s]
+                   (l:ls') -> if length l + length s + 1 > maxLineLen then
+                                -- New string s doesn't fit on line; add as a new line.
+                                s : ls
+                              else
+                                -- New string s fits on line; append it.
+                                (l ++ " " ++ s) : ls'
+prettyMsg :: String -> String
+prettyMsg = \case
+  "" -> ""
+  (x:xs) -> (toUpper x : xs) ++ "."
+
+logStr :: String -> IO ()
+logStr = hPutStr stderr
+
+logStrLn :: String -> IO ()
+logStrLn = hPutStrLn stderr
 
 data AccountInfoResult = AccountInfoResult
   { airAmount :: !Amount
