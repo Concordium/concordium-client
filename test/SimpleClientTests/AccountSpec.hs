@@ -2,13 +2,9 @@ module SimpleClientTests.AccountSpec where
 
 import Concordium.Client.Cli
 import Concordium.Client.Output
-import Concordium.Client.Runner
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
-import qualified Concordium.Types.Transactions as Types
 import qualified Concordium.Crypto.ByteStringHelpers as BSH
-
-import SimpleClientTests.QueryTransaction
 
 import Control.Monad.Writer
 import Data.Map.Strict as Map

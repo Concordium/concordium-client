@@ -1,7 +1,6 @@
 module SimpleClientTests.ConfigSpec where
 
 import Concordium.Client.Config
-import qualified Concordium.Client.Types.Transaction as T
 import qualified Concordium.Crypto.ByteStringHelpers as BSH
 import qualified Concordium.Crypto.SignatureScheme as S
 import qualified Concordium.ID.Types as IDTypes

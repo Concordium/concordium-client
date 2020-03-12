@@ -4,8 +4,6 @@ module SimpleClientTests.QueryTransaction where
 
 import Concordium.Client.Cli
 
-import Control.Monad
-import Control.Monad.Fail
 import Control.Monad.State.Strict
 
 newtype TestTransactionStatusQuery a = TestTransactionStatusQuery { _runQuery :: State ([TransactionStatusResult], Int) a }

@@ -4,6 +4,7 @@ module Concordium.Client.Commands
   , Verbose
   , Options(..)
   , Cmd(..)
+  , ConfigCmd(..)
   , TransactionCmd(..)
   , AccountCmd(..)
   , ModuleCmd(..)
@@ -41,6 +42,8 @@ data Backend =
 data Cmd
   = LegacyCmd
     { legacyCmd  :: LegacyCmd }
+  | ConfigCmd
+    { configCmd :: ConfigCmd }
   | TransactionCmd
     { transactionCmd :: TransactionCmd }
   | AccountCmd
@@ -49,6 +52,10 @@ data Cmd
     { moduleCmd :: ModuleCmd }
   | ContractCmd
     { contractCmd :: ContractCmd }
+  deriving (Show)
+
+data ConfigCmd
+  = ConfigDump
   deriving (Show)
 
 data TransactionCmd
@@ -151,11 +158,12 @@ programOptions = Options <$>
                      (transactionCmds <>
                       accountCmds <>
                       moduleCmds <>
-                      contractCmds
+                      contractCmds <>
+                      configCmds
                      ) <|> (LegacyCmd <$> legacyProgramOptions)) <*>
                    (optional (strOption (long "config" <> metavar "DIR" <> help "Configuration directory path"))) <*>
                    (optional backendParser) <*>
-                   (switch (long "verbose" <> help "Make output verbose"))
+                   (switch (long "verbose" <> short 'v' <> help "Make output verbose"))
 
 transactionCmds :: Mod CommandFields Cmd
 transactionCmds =
@@ -269,6 +277,7 @@ moduleDeployCmd =
         transactionCfgParser
       )
       (progDesc "deploy module"))
+
 contractCmds :: Mod CommandFields Cmd
 contractCmds =
   command
@@ -311,5 +320,23 @@ contractInitCmd =
         option auto (long "amount" <> metavar "AMOUNT" <> help "amount of GTU to transfer to the contract") <*>
         transactionCfgParser)
       (progDesc "initialize contract from already deployed module"))
+
+configCmds :: Mod CommandFields Cmd
+configCmds =
+  command
+    "config"
+    (info
+      (ConfigCmd <$>
+        (hsubparser
+          configDumpCmd))
+      (progDesc "commands for inspecting and chaning local configuration"))
+
+configDumpCmd :: Mod CommandFields ConfigCmd
+configDumpCmd =
+  command
+    "dump"
+    (info
+      (pure ConfigDump)
+      (progDesc "dump configuration"))
 
 -- TODO Add "consensus" and "node" commands.
