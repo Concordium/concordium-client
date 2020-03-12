@@ -18,6 +18,7 @@ import Data.List
 import Data.Text (Text)
 import Data.Text.Encoding
 import Prelude hiding (fail, log)
+import Text.PrettyPrint
 import Text.Printf
 import System.Exit (die, exitFailure)
 import System.IO
@@ -33,13 +34,12 @@ data Level = Info | Warn | Err deriving (Eq)
 log :: Level -> [String] -> IO ()
 log lvl msgs =
   let ls = prettyLines 90 $ map prettyMsg msgs
-      msg = foldl (\res l -> let p = if null res then prefix else indent in res ++ p ++ l ++ "\n") "" ls
-  in logStr msg
+      doc = prefix <+> vcat (map text ls)
+  in logStrLn $ render doc
   where prefix = case lvl of
-                   Info -> ""
-                   Warn-> "Warning: "
-                   Err -> "Error: "
-        indent = replicate (length prefix) ' '
+                   Info -> empty
+                   Warn-> text "Warning:"
+                   Err -> text "Error:"
 
 logInfo :: [String] -> IO ()
 logInfo = log Info
