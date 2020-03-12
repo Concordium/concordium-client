@@ -91,7 +91,7 @@ parseAccountNameMapEntry line =
       addr <- case strip $ pack v of
                 "" -> throwError "empty address"
                 addr -> case IDTypes.addressFromText addr of
-                       Left err -> throwError $ printf "invalid address '%s': %s" v err
+                       Left err -> throwError $ printf "invalid address '%s': %s" addr err
                        Right a -> return a
       return (name, addr)
     _ -> throwError $ printf "invalid mapping format '%s' (should be '<name> = <address>')" line
@@ -119,7 +119,7 @@ getAccountConfig account cfg keysDir keyMap = do
                   Just p -> p
       km <- try $ loadKeyMap dir
       case km of
-        Left err | isDoesNotExistError err -> die $ printf "keys for account '%s' not found: directory '%s' doesn't exist" (show addr) dir
+        Left err | isDoesNotExistError err -> die $ printf "Keys for account '%s' not found: directory '%s' doesn't exist." (show addr) dir
                  | otherwise -> throw err
         Right k -> return k
     Just km -> return km
@@ -143,6 +143,20 @@ getAccountAddress m input = do
   case resolveAccountAddress m input of
     Nothing -> die $ printf "The identifier '%s' is neither the address nor the name of an account." input
     Just a -> return a
+
+getAllAccountConfigs :: BaseConfig -> IO [AccountConfig]
+getAllAccountConfigs cfg = do
+  let dir = bcAccountCfgDir cfg
+  fs <- listDirectory dir
+  fs' <- filterM (isDirectory dir) $ filter isValidAccountName fs
+  forM fs' $ \f -> getAccountConfig (Just $ pack f) cfg Nothing Nothing
+  where
+    isValidAccountName a =
+      case IDTypes.addressFromText $ pack a of
+        Left _ -> False
+        Right _ -> True
+    isDirectory dir f =
+      doesDirectoryExist $ joinPath [dir, f]
 
 loadKeyMap :: FilePath -> IO KeyMap
 loadKeyMap keysDir = do

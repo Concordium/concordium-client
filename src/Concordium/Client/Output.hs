@@ -2,6 +2,7 @@
 
 module Concordium.Client.Output where
 
+import qualified Concordium.Crypto.SignatureScheme as S
 import Concordium.Client.Cli
 import Concordium.Client.Commands (Verbose)
 import Concordium.Client.Config
@@ -12,12 +13,13 @@ import qualified Concordium.ID.Types as IDTypes
 import Control.Monad.Writer
 import qualified Data.Aeson.Encode.Pretty as AE
 import qualified Data.ByteString.Lazy as BSL
-import qualified Data.HashMap.Strict as HM
 import Data.Maybe
 import Data.Function
 import Data.Functor
 import Data.List
 import qualified Data.Map.Strict as M
+import qualified Data.HashMap.Strict as HM
+import Data.Bool
 import Data.Text (Text, unpack)
 import Data.Text.Encoding
 import Data.Time
@@ -48,6 +50,37 @@ getLocalTimeOfDay = do
 
 showFormattedTimeOfDay :: TimeOfDay -> String
 showFormattedTimeOfDay = formatTime defaultTimeLocale "%T"
+
+-- CONFIG
+
+printBaseConfig :: BaseConfig -> Printer
+printBaseConfig cfg = do
+  tell [ printf "Base configuration:"
+       , printf "- verbose:            %s" (showYesNo $ bcVerbose cfg)
+       , printf "- account config dir: %s" (bcAccountCfgDir cfg)
+       , printf "- account name map:" ]
+  printMap showEntry $ bcAccountNameMap cfg
+  where showEntry (n, a) =
+          printf "    %s -> %s" n (show a)
+
+printAccountConfig :: AccountConfig -> Printer
+printAccountConfig cfg = do
+  tell [ printf "Account configuration:"
+       , printf "- name:    %s" (fromMaybe "none" $ acName cfg)
+       , printf "- address: %s" (show $ acAddr cfg)
+       , printf "- keys:" ]
+  printMap showEntry $ acKeys cfg
+  where showEntry (IDTypes.KeyIndex n, kp) =
+          printf "    %s: %s" (show n) (showKeyPair kp)
+
+printAccountConfigList :: [AccountConfig] -> Printer
+printAccountConfigList cfgs = do
+  tell [ "Account keys:" ]
+  forM_ cfgs $ \cfg -> do
+    tell [ printf "- %s" (showNamedAddress cfg) ]
+    printMap showEntry $ acKeys cfg
+  where showEntry (n, kp) =
+          printf "    %s: %s" (show n) (showKeyPair kp)
 
 -- ACCOUNT
 
@@ -99,6 +132,10 @@ printCred c =
 printAccountList :: [Text] -> Printer
 printAccountList addresses = tell $ map unpack addresses
 
+showKeyPair :: S.KeyPair -> String
+showKeyPair S.KeyPairEd25519 { S.signKey=sk, S.verifyKey=vk } =
+  printf "sign=%s, verify=%s" (show sk) (show vk)
+
 -- TRANSACTION
 
 data TransactionOutcome = TransactionOutcome
@@ -106,12 +143,6 @@ data TransactionOutcome = TransactionOutcome
                           , toGtuCost :: Types.Amount
                           , toNrgCost :: Types.Energy }
                         deriving (Eq)
-
--- transactionOutcome :: TransactionStatusResultItem -> TransactionOutcome
--- transactionOutcome t = TransactionOutcome
---                        { toStatus = tsriResult t
---                        , toGtuCost = tsriExecutionCost t
---                        , toNrgCost = tsriExecutionEnergyCost t }
 
 printTransactionStatus :: TransactionStatusResult -> Printer
 printTransactionStatus status =
@@ -122,7 +153,7 @@ printTransactionStatus status =
       case mapMaybe (\(k,v) -> maybe Nothing (\x -> Just (k, x)) v) $ sortBy (compare `on` fst) $ HM.toList (tsrResults status) of
         [] ->
           -- No blocks.
-          tell ["Transaction is committed (no block information received)."] -- FIXME: This should never happen.
+          tell ["Transaction is committed - no block information received (this should never happen!)."]
         [(hash, outcome)] ->
           -- Single block.
           tell [printf
@@ -154,7 +185,7 @@ printTransactionStatus status =
       case mapMaybe (\(k,v) -> maybe Nothing (\x -> Just (k, x)) v) $ HM.toList (tsrResults status) of
         [] ->
           -- No blocks.
-          tell ["Transaction is finalized (no block information received)."] -- FIXME: Should not happen
+          tell ["Transaction is finalized - no block information received (this should never happen!)."]
         [(hash, outcome)] ->
           -- Single block.
           tell [printf
@@ -183,3 +214,9 @@ showNamedAddress cfg =
   in case acName cfg of
     Nothing -> addr
     Just n -> printf "%s (%s)" addr n
+
+printMap :: ((k, v) -> String) -> HM.HashMap k v -> Printer
+printMap s m = forM_ (HM.toList m) $ \(k, v) -> tell [s (k, v)]
+
+showYesNo :: Bool -> String
+showYesNo = bool "no" "yes"

@@ -101,14 +101,25 @@ process (Options command cfgDir backend verbose) = do
   -- Evaluate command.
   maybe printNoBackend p backend
   where p = case command of
-              TransactionCmd c -> processTransactionCmd c cfgDir
+              ConfigCmd c -> processConfigCmd c cfgDir
+              TransactionCmd c -> processTransactionCmd c verbose cfgDir
               AccountCmd c -> processAccountCmd c verbose
               ModuleCmd c -> processModuleCmd c
               ContractCmd c -> processContractCmd c
               LegacyCmd _ -> error "Unreachable case: LegacyCmd."
 
-processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Backend -> IO ()
-processTransactionCmd action baseCfgDir backend =
+processConfigCmd :: ConfigCmd -> Maybe FilePath -> Backend -> IO ()
+processConfigCmd action baseCfgDir _ =
+  case action of
+    ConfigDump -> do
+      baseCfg <- getBaseConfig baseCfgDir False
+      runPrinter $ printBaseConfig baseCfg
+      putStrLn ""
+      accCfgs <- getAllAccountConfigs baseCfg
+      runPrinter $ printAccountConfigList accCfgs
+
+processTransactionCmd :: TransactionCmd -> Verbose -> Maybe FilePath -> Backend -> IO ()
+processTransactionCmd action verbose baseCfgDir backend =
   case action of
     TransactionSubmit fname -> do
       -- TODO Ensure that the "nonce" field is optional in the payload.
@@ -121,9 +132,11 @@ processTransactionCmd action baseCfgDir backend =
       status <- withClient backend $ queryTransactionStatus (read $ unpack hash)
       runPrinter $ printTransactionStatus status
     TransactionSendGtu receiver amount txCfg -> do
-      -- TODO If verbose, print resolved config.
+      baseCfg <- getBaseConfig baseCfgDir verbose
 
-      baseCfg <- getBaseConfig baseCfgDir False
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
 
       keysArg <- case decodeKeysArg $ COM.tcKeys txCfg of
         Nothing -> return Nothing
@@ -131,8 +144,14 @@ processTransactionCmd action baseCfgDir backend =
         Just (Right ks) -> return $ Just ks
       accCfg <- getAccountConfig (tcSender txCfg) baseCfg Nothing keysArg
 
+      when verbose $ do
+        putStrLn ""
+        runPrinter $ printAccountConfig accCfg
+        putStrLn ""
+
       let keys = acKeys accCfg
           fromAddress = acAddr accCfg
+      -- TODO Allow referencing address by name (similar to "sender")?
       toAddress <- getAddressArg "to address" $ Just receiver
 
       energy <- getArg "max energy amount" $ tcMaxEnergyAmount txCfg

@@ -6,7 +6,6 @@ import Concordium.Client.Runner
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Types
-import qualified Concordium.Types.Transactions as Types
 
 import SimpleClientTests.QueryTransaction
 
@@ -241,11 +240,11 @@ printTransactionStatusTests = describe "print transaction status" $ do
   describe "committed with no outcomes" $
     specify "correct output" $
       p TransactionStatusResult { tsrState = Committed, tsrResults = M.empty } `shouldBe`
-        [ "Transaction is committed (no block information received)." ]
+        [ "Transaction is committed - no block information received (this should never happen!)." ]
   describe "finalized with no outcomes" $
     specify "correct output" $
       p TransactionStatusResult { tsrState = Finalized, tsrResults = M.empty } `shouldBe`
-        [ "Transaction is finalized (no block information received)." ]
+        [ "Transaction is finalized - no block information received (this should never happen!)." ]
   describe "finalized with multiple outcomes" $
     specify "correct output" $
       p TransactionStatusResult { tsrState = Finalized, tsrResults = M.fromList [(exampleBlockHash1, Just outcomeSuccess1a), (exampleBlockHash2, Just outcomeSuccess1b)]} `shouldBe`
