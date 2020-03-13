@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:experimental
-FROM 192549843005.dkr.ecr.eu-west-1.amazonaws.com/concordium/base-haskell-container:0.5 as build
+FROM 192549843005.dkr.ecr.eu-west-1.amazonaws.com/concordium/base-haskell-container:0.7 as build
 
 COPY . /build
 COPY *-bakers.tar.gz /build/
