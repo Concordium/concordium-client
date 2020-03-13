@@ -19,7 +19,6 @@ import Data.Functor
 import Data.List
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Map.Strict as M
-import qualified Data.HashMap.Strict as HM
 import Data.Bool
 import Data.Text (Text, unpack)
 import Data.Text.Encoding

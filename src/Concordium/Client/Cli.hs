@@ -33,13 +33,14 @@ data Level = Info | Warn | Err deriving (Eq)
 -- (i.e. as if they had all been prefixed).
 log :: Level -> [String] -> IO ()
 log lvl msgs =
-  let ls = prettyLines 90 $ map prettyMsg msgs
-      doc = prefix <+> vcat (map text ls)
-  in logStrLn $ render doc
-  where prefix = case lvl of
-                   Info -> empty
-                   Warn-> text "Warning:"
-                   Err -> text "Error:"
+  logStrLn $ renderStyle s doc
+  where
+    s = Style { mode = PageMode, lineLength = 90, ribbonsPerLine = 1.0 }
+    doc = prefix <+> fsep (map (text . prettyMsg) msgs)
+    prefix = case lvl of
+               Info -> empty
+               Warn-> text "Warning:"
+               Err -> text "Error:"
 
 logInfo :: [String] -> IO ()
 logInfo = log Info
@@ -53,19 +54,6 @@ logError = log Err
 logFatal :: [String] -> IO a
 logFatal msgs = log Err msgs >> exitFailure
 
--- Joins sentences to a list of lines. Any given sentence is added to the current line if it
--- doesn't cause the total line length to exceed maxLineLen.
--- Impl note: The fold is "left" based for the length calculation to be correct.
-prettyLines :: Int -> [String] -> [String]
-prettyLines maxLineLen = reverse . foldl f []
-  where f ls s = case ls of
-                   [] -> [s]
-                   (l:ls') -> if length l + length s + 1 > maxLineLen then
-                                -- New string s doesn't fit on line; add as a new line.
-                                s : ls
-                              else
-                                -- New string s fits on line; append it.
-                                (l ++ " " ++ s) : ls'
 prettyMsg :: String -> String
 prettyMsg = \case
   "" -> ""

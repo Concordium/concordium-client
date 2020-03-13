@@ -158,7 +158,7 @@ processTransactionCmd action verbose baseCfgDir backend =
       expiry <- getArg "expiry" $ tcExpiration txCfg
       logInfo [ printf "sending %s GTU from %s to '%s'" (show amount) (showNamedAddress accCfg) (show toAddress)
                , printf "allowing up to %s NRG to be spent as transaction fee" (show energy) ]
-      logStr "Confirm [yN]: "
+      putStr "Confirm [yN]: "
       input <- getChar
       when (C.toLower input /= 'y') $ logFatal ["transaction cancelled"]
 
