@@ -24,6 +24,7 @@ import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Cli
 import           Concordium.Types.Transactions(BareBlockItem)
 import           Concordium.Types as Types
+import           Concordium.ID.Types as IDTypes
 
 import           Control.Concurrent
 import           Control.Monad.Fail
@@ -38,6 +39,7 @@ import qualified Data.HashSet as Set
 import           Data.Text
 import           Data.String
 import           Data.Word
+import           Data.Maybe
 import           Text.Printf
 
 import           Prelude                             hiding (fail, mod, null, unlines)
@@ -356,6 +358,18 @@ getAccountNonceBestGuess addr =
                 nonce <- obj .: "nonce"
                 allFinal <- obj .: "allFinal"
                 return (nonce, allFinal)
+
+-- |Get all the credentials on the account as a list
+getAccountCredentials :: (MonadFail m, MonadIO m) => Types.AccountAddress -> ClientMonad m [IDTypes.CredentialDeploymentValues]
+getAccountCredentials addr =
+  withBestBlockHash Nothing (getAccountInfo (pack (show addr))) >>= \case
+    Left err -> fail err
+    Right v ->
+      case parseNullable accountCredParser v of
+        AE.Success p -> return (fromMaybe [] p)
+        AE.Error s -> fail s
+      where accountCredParser = withObject "Account credential parser" $ \obj -> obj .: "accountCredentials"
+
 
 getModuleSet :: Text -> ClientMonad IO (Set.HashSet Types.ModuleRef)
 getModuleSet blockhash =

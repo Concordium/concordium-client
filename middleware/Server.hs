@@ -1,6 +1,8 @@
+{-# LANGUAGE LambdaCase #-}
 module Server (module Server, addHeaders) where
 
 import           Control.Concurrent (forkIO)
+import           Control.Monad.Except
 import           Data.ByteString (ByteString)
 import           Data.Function ((&))
 import           Data.List.Split
@@ -17,7 +19,7 @@ import           System.FilePath ((</>))
 import           Text.Read (readMaybe)
 
 import qualified Config
-import           Concordium.Client.Commands as COM
+import           Concordium.Client.GRPC
 import qualified Api
 
 
@@ -45,25 +47,29 @@ runHttp middlewares = do
         _ ->
           error $ "Could not parse host:port for given NODE_URL: " ++ T.unpack nodeUrl
 
-    nodeBackend = COM.GRPC { grpcHost = nodeHost, grpcPort = nodePort, grpcTarget = Nothing }
+    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, target = Nothing }
 
-    waiApp = Api.servantApp nodeBackend esUrl idUrl
-
-    printStatus = do
-      putStrLn $ "NODE_URL: " ++ show nodeUrl
-      putStrLn $ "ES_URL: " ++ show esUrl
-      putStrLn $ "SIMPLEID_URL: " ++ show idUrl
-      putStrLn $ "Environment: " ++ show env
-      putStrLn $ "Server started: http://localhost:" ++ show serverPort
-
-    run = W.defaultSettings
-              & W.setBeforeMainLoop printStatus
-              & W.setPort serverPort
-              & W.runSettings
-
-  _ <- forkIO $ run $ Config.logger env . middlewares $ waiApp
-
-  pure ()
+  runExceptT (mkGrpcClient grpcConfig) >>= \case
+    Left err -> fail (show err) -- cannot connect to grpc server
+    Right nodeBackend -> do
+      let 
+        waiApp = Api.servantApp nodeBackend esUrl idUrl
+      
+        printStatus = do
+          putStrLn $ "NODE_URL: " ++ show nodeUrl
+          putStrLn $ "ES_URL: " ++ show esUrl
+          putStrLn $ "SIMPLEID_URL: " ++ show idUrl
+          putStrLn $ "Environment: " ++ show env
+          putStrLn $ "Server started: http://localhost:" ++ show serverPort
+      
+        run = W.defaultSettings
+                  & W.setBeforeMainLoop printStatus
+                  & W.setPort serverPort
+                  & W.runSettings
+      
+      _ <- forkIO $ run $ Config.logger env . middlewares $ waiApp
+      
+      pure ()
 
 
 -- Middlewares

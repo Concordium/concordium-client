@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -51,6 +52,7 @@ import           Concordium.Types.HashableTo
 import qualified Concordium.Types.Transactions as Types
 import qualified Concordium.Client.Types.Transaction as Types
 import           Control.Monad
+import           Control.Monad.Except
 import qualified Proto.ConcordiumP2pRpc_Fields as CF
 
 import qualified Config
@@ -129,7 +131,7 @@ api :: Proxy (ToServantApi Routes)
 api = genericApi (Proxy :: Proxy Routes)
 
 
-servantApp :: COM.Backend -> Text -> Text -> Application
+servantApp :: EnvData -> Text -> Text -> Application
 servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
  where
   routesAsServer = Routes {..} :: Routes AsServer
@@ -206,21 +208,13 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
   betaAccountProvision :: BetaAccountProvisionRequest -> Handler BetaAccountProvisionResponse
   betaAccountProvision accountProvisionRequest = do
 
-    -- Re-use the account nonce mechanism with the hashed prfKey for accountNumber increment per credential
-    let idUseData_ = idUseData (accountProvisionRequest :: BetaAccountProvisionRequest)
-        aci_ = aci (idUseData_ :: IdUseData)
-        prfKey_ = prfKey (aci_ :: IdUseDataAci)
-        accountIdKey = Text.decodeUtf8 . Base16.encode . SHA256.hashToByteString . SHA256.hash . Text.encodeUtf8 $ prfKey_
-
-    (Types.Nonce nonce) <- liftIO $ EsApi.takeNextNonceFor esUrl accountIdKey
-
     let credentialRequest =
           IdCredentialRequest
             { ipIdentity = ipIdentity (accountProvisionRequest :: BetaAccountProvisionRequest)
             , identityObject = identityObject (accountProvisionRequest :: BetaAccountProvisionRequest)
             , idUseData = idUseData (accountProvisionRequest :: BetaAccountProvisionRequest)
             , revealedItems = revealedItems (accountProvisionRequest :: BetaAccountProvisionRequest)
-            , accountNumber = fromIntegral nonce -- FIXME: This is wrong.
+            , accountNumber = accountNumber (accountProvisionRequest :: BetaAccountProvisionRequest)
             }
 
     idCredentialResponse <- liftIO $ postIdCredentialRequest idUrl credentialRequest
@@ -271,30 +265,30 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
   getNodeState :: Handler GetNodeStateResponse
   getNodeState = do
     timestamp <- liftIO $ round `fmap` getPOSIXTime
-    infoE <- liftIO $ withClient nodeBackend getNodeInfo
+    infoE <- liftIO $ runGRPC nodeBackend getNodeInfo
 
     nameQuery <- liftIO $ tryIOError (Text.pack <$> getEnv "NODE_NAME")
     let name = case nameQuery of
                  Right x -> x
                  _ -> "unknown"
 
-    versionQuery <- liftIO $ withClient nodeBackend getPeerVersion
+    versionQuery <- liftIO $ runGRPC nodeBackend getPeerVersion
     let version = case versionQuery of
                   Right x -> x
                   _ -> "unknown"
 
-    uptimeQuery <- liftIO $ withClient nodeBackend getPeerUptime
+    uptimeQuery <- liftIO $ runGRPC nodeBackend getPeerUptime
     let runningSince = case uptimeQuery of
                        Right x -> fromIntegral x
                        _ -> 0
 
 
-    sentQuery <- liftIO $ withClient nodeBackend getPeerTotalSent
+    sentQuery <- liftIO $ runGRPC nodeBackend getPeerTotalSent
     let sent = case sentQuery of
                Right x -> fromIntegral x
                _ -> 0
 
-    receivedQuery <- liftIO $ withClient nodeBackend getPeerTotalReceived
+    receivedQuery <- liftIO $ runGRPC nodeBackend getPeerTotalReceived
     let received = case receivedQuery of
                    Right x -> fromIntegral x
                    _ -> 0
@@ -325,22 +319,28 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
         { success = True }
 
 -- For beta, uses the middlewareGodAccount which is seeded with funds
-runGodTransaction :: Backend -> Text -> TransactionJSONPayload -> IO Types.TransactionHash
+runGodTransaction :: EnvData -> Text -> TransactionJSONPayload -> IO Types.TransactionHash
 runGodTransaction nodeBackend esUrl payload =
   runTransaction nodeBackend esUrl payload middlewareGodAccount
 
-deployCredential :: Backend -> IDTypes.CredentialDeploymentInformation -> IO Types.TransactionHash
+runGRPC :: (MonadIO m) => EnvData -> ClientMonad m a -> m a
+runGRPC envData c =
+  runClient envData c >>= \case
+    Left err -> fail (show err)
+    Right x -> return x
+
+deployCredential :: EnvData -> IDTypes.CredentialDeploymentInformation -> IO Types.TransactionHash
 deployCredential nodeBackend cdi = do
   let toDeploy = Types.CredentialDeployment cdi
   let cdiHash = getHash toDeploy :: Types.TransactionHash
-  withClient nodeBackend (cdiHash <$ sendTransactionToBaker toDeploy 100)
+  runGRPC nodeBackend (cdiHash <$ sendTransactionToBaker toDeploy 100)
 
-runTransaction :: Backend -> Text -> TransactionJSONPayload -> Account -> IO Types.TransactionHash
+runTransaction :: EnvData -> Text -> TransactionJSONPayload -> Account -> IO Types.TransactionHash
 runTransaction nodeBackend esUrl payload (address, keyMap) = do
 
   let accountAddressText = Text.pack $ show address
 
-  nonce <- EsApi.takeNextNonceFor esUrl accountAddressText
+  nonce <- fst <$> runGRPC nodeBackend (getAccountNonceBestGuess address)
 
   currentTime <- liftIO $ round `fmap` getPOSIXTime
 
@@ -376,7 +376,7 @@ runTransaction nodeBackend esUrl payload (address, keyMap) = do
 type Account = (IDTypes.AccountAddress, Types.KeyMap)
 
 
-executeTransaction :: Text -> Backend -> TransactionJSON -> Types.AccountAddress -> IO Types.TransactionHash
+executeTransaction :: Text -> EnvData -> TransactionJSON -> Types.AccountAddress -> IO Types.TransactionHash
 executeTransaction esUrl nodeBackend transaction address = do
 
   mdata <- loadContextData
@@ -384,7 +384,7 @@ executeTransaction esUrl nodeBackend transaction address = do
   let nid = 1000
 
   t <- do
-    PR.evalContext mdata $ withClient nodeBackend $ processTransaction_ transaction nid True
+    PR.evalContext mdata $ runGRPC nodeBackend $ processTransaction_ transaction nid True
 
   putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (getHash t :: Types.TransactionHash)
   print transaction
@@ -434,7 +434,11 @@ debugTestFullProvision = do
         _ ->
           error $ "Could not parse host:port for given NODE_URL: " ++ Text.unpack nodeUrl
 
-    nodeBackend = COM.GRPC { grpcHost = nodeHost, grpcPort = nodePort, grpcTarget = Nothing }
+    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, target = Nothing }
+
+  nodeBackend <- runExceptT (mkGrpcClient grpcConfig) >>= \case
+    Left err -> fail (show err)
+    Right envData -> return envData
 
   creationTime :: Int <- liftIO $ round `fmap` getPOSIXTime
 

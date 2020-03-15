@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
@@ -5,6 +6,7 @@ module Api.Messages where
 
 import           Data.Text (Text)
 import           Data.Aeson
+import           Data.Word
 import           GHC.Generics
 
 import           Concordium.Client.Types.Transaction ()
@@ -33,8 +35,18 @@ data BetaAccountProvisionRequest =
     , identityObject :: IdentityObject
     , idUseData :: IdUseData
     , revealedItems :: [Text]
+    , accountNumber :: Word8
     }
-  deriving (ToJSON, FromJSON, Generic, Show)
+  deriving (ToJSON, Generic, Show)
+
+instance FromJSON BetaAccountProvisionRequest where
+  parseJSON = withObject "BetaAccountProvisionRequest" $ \v -> do
+    ipIdentity <- v .: "ipIdentity"
+    identityObject <- v .: "identityObject"
+    idUseData <- v .: "idUseData"
+    revealedItems <- v .:? "revealedItems" .!= []
+    accountNumber <- v .:? "accountNumber" .!= 0
+    return BetaAccountProvisionRequest{..}
 
 
 data BetaAccountProvisionResponse =
