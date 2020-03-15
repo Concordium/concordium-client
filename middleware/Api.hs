@@ -47,6 +47,7 @@ import qualified Concordium.Crypto.SHA256 as SHA256
 
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
+import           Concordium.Types.HashableTo
 import qualified Concordium.Types.Transactions as Types
 import qualified Concordium.Client.Types.Transaction as Types
 import           Control.Monad
@@ -121,10 +122,6 @@ data Routes r = Routes
     , setNodeState :: r :-
         "v1" :> "nodeState" :> ReqBody '[JSON] SetNodeStateRequest
                             :> Post '[JSON] SetNodeStateResponse
-
-    , replayTransactions :: r :-
-        "v1" :> "replayTransactions" :> ReqBody '[JSON] ReplayTransactionsRequest
-                                     :> Post '[JSON] ReplayTransactionsResponse
     }
   deriving (Generic)
 
@@ -223,7 +220,7 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
             , identityObject = identityObject (accountProvisionRequest :: BetaAccountProvisionRequest)
             , idUseData = idUseData (accountProvisionRequest :: BetaAccountProvisionRequest)
             , revealedItems = revealedItems (accountProvisionRequest :: BetaAccountProvisionRequest)
-            , accountNumber = fromIntegral nonce
+            , accountNumber = fromIntegral nonce -- FIXME: This is wrong.
             }
 
     idCredentialResponse <- liftIO $ postIdCredentialRequest idUrl credentialRequest
@@ -327,23 +324,16 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
       SetNodeStateResponse
         { success = True }
 
-  replayTransactions :: ReplayTransactionsRequest -> Handler ReplayTransactionsResponse
-  replayTransactions req =
-    if adminToken req == adminAuthToken then do
-      transactions <- liftIO $ getTransactionsForReplay esUrl
-
-      let nid = 1000
-      forM_ transactions (withClient nodeBackend . flip sendTransactionToBaker nid)
-
-      return $ ReplayTransactionsResponse True
-    else
-      return $ ReplayTransactionsResponse False
-
 -- For beta, uses the middlewareGodAccount which is seeded with funds
 runGodTransaction :: Backend -> Text -> TransactionJSONPayload -> IO Types.TransactionHash
 runGodTransaction nodeBackend esUrl payload =
   runTransaction nodeBackend esUrl payload middlewareGodAccount
 
+deployCredential :: Backend -> IDTypes.CredentialDeploymentInformation -> IO Types.TransactionHash
+deployCredential nodeBackend cdi = do
+  let toDeploy = Types.CredentialDeployment cdi
+  let cdiHash = getHash toDeploy :: Types.TransactionHash
+  withClient nodeBackend (cdiHash <$ sendTransactionToBaker toDeploy 100)
 
 runTransaction :: Backend -> Text -> TransactionJSONPayload -> Account -> IO Types.TransactionHash
 runTransaction nodeBackend esUrl payload (address, keyMap) = do
@@ -394,17 +384,12 @@ executeTransaction esUrl nodeBackend transaction address = do
   let nid = 1000
 
   t <- do
-    let hookIt = True
-    PR.evalContext mdata $ withClient nodeBackend $ processTransaction_ transaction nid hookIt True
+    PR.evalContext mdata $ withClient nodeBackend $ processTransaction_ transaction nid True
 
-  putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (Types.transactionHash t)
+  putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (getHash t :: Types.TransactionHash)
   print transaction
 
-  EsApi.logBareTransaction esUrl t address
-
-  putStrLn "✅ Bare tansaction logged into ElasticSearch"
-
-  pure $ Types.transactionHash t
+  pure $ getHash t
 
 -- Dirty helper to help us with "definitely certain" value decoding
 certainDecode :: (FromJSON a) => Text -> a

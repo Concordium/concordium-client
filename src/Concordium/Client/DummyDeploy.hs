@@ -60,7 +60,7 @@ deployModuleWithKey senderData@(sender, _) back mnonce energy expiry amodules = 
         Nothing -> fail "Circular dependencies. Will not deploy."
         Just orderedMods -> do
           bestBlockHash <- getBestBlockHash
-          nonce <- flip fromMaybe mnonce <$> (getAccountNonce sender bestBlockHash)
+          nonce <- flip fromMaybe mnonce . fst <$> getAccountNonceBestGuess sender
           alreadyDeployed <- getModuleSet bestBlockHash
           -- TODO: technically the above two lines can fail if finalization
           -- happens to purge the currently best block. failure should be
@@ -97,7 +97,7 @@ initContractWithKey senderData@(sender, _) back mnonce energy expiry initAmount 
         contractFlags
 
     comp = do
-      nonce <- flip fromMaybe mnonce <$> (getAccountNonce sender =<< getBestBlockHash)
+      nonce <- flip fromMaybe mnonce . fst <$> (getAccountNonceBestGuess sender)
       let transaction = tx nonce
       sendTransactionToBaker transaction 100 >>= \case
         Left err -> return (transaction, Left err)
@@ -121,7 +121,7 @@ updateContractWithKey senderData@(sender, _) back mnonce energy expiry transferA
     updateContract = Types.Update transferAmount address msg
 
     comp = do
-      nonce <- flip fromMaybe mnonce <$> (getAccountNonce sender =<< getBestBlockHash)
+      nonce <- flip fromMaybe mnonce . fst <$> (getAccountNonceBestGuess sender)
       let transaction = tx nonce
       sendTransactionToBaker transaction 100 >>= \case
         Left err -> return (transaction, Left err)

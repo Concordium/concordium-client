@@ -343,6 +343,20 @@ getAccountNonce addr blockhash =
         Success Nothing -> fail $ printf "account '%s' not found" (show addr)
         Success (Just nonce) -> return nonce
 
+getAccountNonceBestGuess :: (MonadFail m, MonadIO m) => Types.AccountAddress -> ClientMonad m (Types.Nonce, Bool)
+getAccountNonceBestGuess addr =
+  getNextAccountNonce (pack (show addr)) >>= \case
+    Left err -> fail err
+    Right nonceObj ->
+      case parse nonceGuessParser nonceObj of
+        AE.Success p -> return p
+        AE.Error s -> fail s
+
+      where nonceGuessParser = withObject "Nonce guess return." $ \obj -> do
+                nonce <- obj .: "nonce"
+                allFinal <- obj .: "allFinal"
+                return (nonce, allFinal)
+
 getModuleSet :: Text -> ClientMonad IO (Set.HashSet Types.ModuleRef)
 getModuleSet blockhash =
   getModuleList blockhash >>= \case
