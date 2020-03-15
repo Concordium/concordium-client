@@ -38,7 +38,7 @@ exampleBlockHash4 = read "be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93
 
 outcomeSuccess1a :: Types.TransactionSummary
 outcomeSuccess1a = Types.TransactionSummary
-                   { Types.tsSender = exampleAccountAddr
+                   { Types.tsSender = Just exampleAccountAddr
                    , Types.tsHash = exampleTransactionHash
                    , Types.tsCost = 10
                    , Types.tsEnergyCost = 10
@@ -49,7 +49,7 @@ outcomeSuccess1a = Types.TransactionSummary
 -- TODO Identical to outcomeSuccess1b now.
 outcomeSuccess1b :: Types.TransactionSummary
 outcomeSuccess1b = Types.TransactionSummary
-                   { Types.tsSender = exampleAccountAddr
+                   { Types.tsSender = Just exampleAccountAddr
                    , Types.tsHash = exampleTransactionHash
                    , Types.tsCost = 10
                    , Types.tsEnergyCost = 10
@@ -59,7 +59,7 @@ outcomeSuccess1b = Types.TransactionSummary
 
 outcomeSuccess2 :: Types.TransactionSummary
 outcomeSuccess2 = Types.TransactionSummary
-                  { Types.tsSender = exampleAccountAddr
+                  { Types.tsSender = Just exampleAccountAddr
                   , Types.tsHash = exampleTransactionHash
                   , Types.tsCost = 20
                   , Types.tsEnergyCost = 20
@@ -69,7 +69,7 @@ outcomeSuccess2 = Types.TransactionSummary
 
 outcomeFailure :: Types.TransactionSummary
 outcomeFailure = Types.TransactionSummary
-                 { Types.tsSender = exampleAccountAddr
+                 { Types.tsSender = Just exampleAccountAddr
                  , Types.tsHash = exampleTransactionHash
                  , Types.tsCost = 20
                  , Types.tsEnergyCost = 20
