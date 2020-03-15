@@ -52,7 +52,7 @@ parser :: ParserInfo (Backend, TxOptions)
 parser = info (helper <*> ((,) <$> backendParser <*> txOptions))
          (fullDesc <> progDesc "Generate transactions for a fixed contract.")
 
-sendTx :: MonadIO m => BareTransaction -> ClientMonad m BareTransaction
+sendTx :: MonadIO m => BareBlockItem -> ClientMonad m BareBlockItem
 sendTx tx =
   sendTransactionToBaker tx 100 >>= \case
     Left err -> liftIO $ die err
@@ -62,7 +62,7 @@ sendTx tx =
 iterateM_ :: Monad m => (a -> m a) -> a -> m b
 iterateM_ f a = f a >>= iterateM_ f
 
-go :: Backend -> Bool -> Int -> (Nonce -> BareTransaction) -> Nonce -> IO ()
+go :: Backend -> Bool -> Int -> (Nonce -> BareBlockItem) -> Nonce -> IO ()
 go backend logit tps sign startNonce = do
   startTime <- getCurrentTime
   withClient backend (loop startNonce startTime)
@@ -95,7 +95,7 @@ main = do
                 thPayloadSize = payloadSize txBody,
                 thExpiry = TransactionExpiryTime maxBound
                 }
-          let sign nonce = signTransaction (Map.toList keyMap) (txHeader nonce) txBody
+          let sign nonce = NormalTransaction $ signTransaction (Map.toList keyMap) (txHeader nonce) txBody
           go backend (logit txoptions) (tps txoptions) sign (startNonce txoptions)
 
   where accountKeysParser = AE.withObject "Account keys" $ \v -> do

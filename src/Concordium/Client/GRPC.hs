@@ -22,7 +22,7 @@ import qualified Acorn.Parser.Runner                 as PR
 import           Concordium.Client.Runner.Helper
 
 import           Concordium.Client.Cli
-import           Concordium.Types.Transactions      (BareTransaction)
+import           Concordium.Types.Transactions(BareBlockItem)
 import           Concordium.Types as Types
 
 import           Control.Concurrent
@@ -139,7 +139,7 @@ getBakerPrivateData :: ClientMonad IO (Either String Value)
 getBakerPrivateData = withUnaryNoMsg (call @"getBakerPrivateData") (to processJSON)
 
 sendTransactionToBaker ::
-     (MonadIO m) => BareTransaction -> Int -> ClientMonad m (Either String Bool)
+     (MonadIO m) => BareBlockItem -> Int -> ClientMonad m (Either String Bool)
 sendTransactionToBaker t nid = do
   let msg = defMessage & CF.networkId .~ fromIntegral nid & CF.payload .~ S.encode t
   withUnary (call @"sendTransaction") msg CF.value
@@ -154,6 +154,10 @@ getTransactionStatusInBlock txh bh = withUnary (call @"getTransactionStatusInBlo
 
 getAccountNonFinalizedTransactions :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
 getAccountNonFinalizedTransactions addr = withUnary (call @"getAccountNonFinalizedTransactions") msg (to processJSON)
+  where msg = defMessage & CF.accountAddress .~ addr
+
+getNextAccountNonce :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
+getNextAccountNonce addr = withUnary (call @"getNextAccountNonce") msg (to processJSON)
   where msg = defMessage & CF.accountAddress .~ addr
 
 getBlockSummary :: (MonadIO m) => Text -> ClientMonad m (Either String Value)

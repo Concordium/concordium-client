@@ -32,11 +32,11 @@ topoSort nodes = snd <$> foldM (go Set.empty) (Set.empty, []) (Map.keys nodes)
                 (perm', l') <- foldM (go temp') (perm, l) (Map.lookupDefault [] node nodes)
                 Just (Set.insert node perm', node:l')
 
-helper :: CT.SenderData -> Nonce -> Energy -> Types.TransactionExpiryTime -> Types.Payload -> Types.BareTransaction
+helper :: CT.SenderData -> Nonce -> Energy -> Types.TransactionExpiryTime -> Types.Payload -> Types.BareBlockItem
 helper (thSender, keyMap) thNonce thEnergyAmount thExpiry payload =
   let encPayload = Types.encodePayload payload
       header = Types.TransactionHeader{thPayloadSize = payloadSize encPayload, ..}
-  in Types.signTransaction (Map.toList keyMap) header encPayload
+  in Types.NormalTransaction $ Types.signTransaction (Map.toList keyMap) header encPayload
 
 deployModuleWithKey ::
      CT.SenderData
@@ -45,7 +45,7 @@ deployModuleWithKey ::
   -> Energy
   -> TransactionExpiryTime
   -> [Module UA]
-  -> IO [(Types.BareTransaction, Either String (), ModuleRef)]
+  -> IO [(Types.BareBlockItem, Either String (), ModuleRef)]
 deployModuleWithKey senderData@(sender, _) back mnonce energy expiry amodules = withClient back comp
   where
     tx nonce mhash = (helper senderData nonce energy expiry (Types.DeployModule (moduleMap Map.! mhash)), mhash)
@@ -84,7 +84,7 @@ initContractWithKey ::
   -> Core.ModuleRef
   -> Core.TyName
   -> Core.Expr Core.UA Core.ModuleName
-  -> IO (Types.BareTransaction, Either String ())
+  -> IO (Types.BareBlockItem, Either String ())
 initContractWithKey senderData@(sender, _) back mnonce energy expiry initAmount homeModule contractName contractFlags = withClient back comp
   where
     tx nonce = helper senderData nonce energy expiry initContract
@@ -113,7 +113,7 @@ updateContractWithKey ::
   -> Amount
   -> ContractAddress
   -> Core.Expr Core.UA Core.ModuleName
-  -> IO (Types.BareTransaction, Either String ())
+  -> IO (Types.BareBlockItem, Either String ())
 updateContractWithKey senderData@(sender, _) back mnonce energy expiry transferAmount address msg = withClient back comp
   where
     tx nonce = helper senderData nonce energy expiry updateContract
