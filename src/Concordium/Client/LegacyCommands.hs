@@ -25,6 +25,9 @@ data LegacyCmd
   | GetAccountNonFinalized {
       legacyAddress :: !Text
       } -- ^Get non finalized transactions for a given account.
+  | GetNextAccountNonce {
+      legacyAddress :: !Text
+      } -- ^Get non finalized transactions for a given account.
   | NodeInfo -- ^ Queries the gRPC server for node information
   | GetConsensusInfo -- ^ Queries the gRPC server for the consensus information
   | GetBlockInfo
@@ -121,6 +124,7 @@ legacyProgramOptions =
      getInstancesCommand <>
      getAccountInfoCommand <>
      getAccountNonFinalizedCommand <>
+     getNextAccountNonceCommand <>
      getInstanceInfoCommand <>
      getRewardStatusCommand <>
      getBirkParametersCommand <>
@@ -313,6 +317,17 @@ getAccountNonFinalizedCommand =
         strArgument (metavar "ACCOUNT" <> help "Account to be queried about")
        )
        (progDesc "Query the gRPC server for the information on non-finalized transactions for an account."))
+
+getNextAccountNonceCommand :: Mod CommandFields LegacyCmd
+getNextAccountNonceCommand =
+  command
+    "GetNextAccountNonce"
+    (info
+       (GetNextAccountNonce <$>
+        strArgument (metavar "ACCOUNT" <> help "Account to be queried about")
+       )
+       (progDesc "Query the gRPC server for the best guess on the next account nonce."))
+
 
 getInstanceInfoCommand :: Mod CommandFields LegacyCmd
 getInstanceInfoCommand =
