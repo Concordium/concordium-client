@@ -24,7 +24,7 @@ data FailedTransferReason = InvalidTargetAccount
 $(deriveJSON defaultOptions ''FailedTransferReason)
 
 data SimpleTransactionResult = TransferSuccess { to :: !AccountAddress, amount :: !Amount }
-                             | NewAccount { newAccount :: !AccountAddress }
+                             | NewAccount { accountAddress :: !AccountAddress }
                              | NewCredential { credentialId :: !IDTypes.CredentialRegistrationID,
                                                onAccount :: !AccountAddress
                                              }
