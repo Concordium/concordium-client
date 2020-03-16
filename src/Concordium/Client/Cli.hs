@@ -11,11 +11,56 @@ import qualified Concordium.ID.Types as IDTypes
 import Control.Monad hiding (fail)
 import Data.Aeson as AE
 import Data.List
-import Data.Text
+import Data.Char
+import Data.Text (Text)
 import Data.Text.Encoding
-import Prelude hiding (fail)
+import Prelude hiding (fail, log)
+import Text.PrettyPrint
 import Text.Printf
-import System.Exit (die)
+import System.Exit (die, exitFailure)
+import System.IO
+
+data Level = Info | Warn | Err deriving (Eq)
+
+-- Logs a list of sentences. The sentences are pretty printed (capital first letter and dot at the end),
+-- so the input messages should only contain capital letters for names and have no dot suffix.
+-- Sentences will be joined on the same line as long as the resulting line doesn't exceed 90 chars.
+-- Depending on the log level, an appropriate prefix is added to the first line.
+-- All lines will be indented such that they align with the first line
+-- (i.e. as if they had all been prefixed).
+log :: Level -> [String] -> IO ()
+log lvl msgs =
+  logStrLn $ renderStyle s doc
+  where
+    s = Style { mode = PageMode, lineLength = 90, ribbonsPerLine = 1.0 }
+    doc = prefix <+> fsep (map (text . prettyMsg) msgs)
+    prefix = case lvl of
+               Info -> empty
+               Warn-> text "Warning:"
+               Err -> text "Error:"
+
+logInfo :: [String] -> IO ()
+logInfo = log Info
+
+logWarn :: [String] -> IO ()
+logWarn = log Warn
+
+logError :: [String] -> IO ()
+logError = log Err
+
+logFatal :: [String] -> IO a
+logFatal msgs = log Err msgs >> exitFailure
+
+prettyMsg :: String -> String
+prettyMsg = \case
+  "" -> ""
+  (x:xs) -> (toUpper x : xs) ++ "."
+
+logStr :: String -> IO ()
+logStr = hPutStr stderr
+
+logStrLn :: String -> IO ()
+logStrLn = hPutStrLn stderr
 
 data AccountInfoResult = AccountInfoResult
   { airAmount :: !Amount

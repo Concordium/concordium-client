@@ -128,7 +128,7 @@ processTransactionCmd action verbose baseCfgDir backend =
       mdata <- loadContextData
       source <- BSL.readFile fname
       tx <- PR.evalContext mdata $ withClient backend $ processTransaction source defaultNetId
-      printf "Transaction '%s' sent to the baker...\n" (show $ getBlockItemHash tx)
+      logInfo [printf "transaction '%s' sent to the baker" (show $ getBlockItemHash tx)]
     TransactionStatus hash -> do
       validateTransactionHash hash
       status <- withClient backend $ queryTransactionStatus (read $ unpack hash)
@@ -158,11 +158,11 @@ processTransactionCmd action verbose baseCfgDir backend =
 
       energy <- getArg "max energy amount" $ tcMaxEnergyAmount txCfg
       expiry <- getArg "expiry" $ tcExpiration txCfg
-      printf "Sending %s GTU from %s to '%s'.\n" (show amount) (showNamedAddress accCfg) (show toAddress)
-      printf "Allowing up to %s NRG to be spent as transaction fee.\n" (show energy)
-      printf "Confirm [yN]: "
+      logInfo [ printf "sending %s GTU from %s to '%s'" (show amount) (showNamedAddress accCfg) (show toAddress)
+               , printf "allowing up to %s NRG to be spent as transaction fee" (show energy) ]
+      putStr "Confirm [yN]: "
       input <- getChar
-      when (C.toLower input /= 'y') $ die "Transaction cancelled."
+      when (C.toLower input /= 'y') $ logFatal ["transaction cancelled"]
 
       let t = TransactionJSON
                 (TransactionJSONHeader fromAddress (tcNonce txCfg) energy expiry)
@@ -173,16 +173,16 @@ processTransactionCmd action verbose baseCfgDir backend =
       --      Refactor to only include what's needed.
       tx <- PR.evalContext emptyContextData $ withClient backend $ processTransaction_ t defaultNetId False
       let hash = getBlockItemHash tx
-      printf "Transaction sent to the baker. Waiting for transaction to be committed and finalized.\n"
-      printf "You may skip this by interrupting this command (using Ctrl-C) - the transaction will still get processed\n"
-      printf "and may be queried using 'transaction status %s'.\n" (show hash)
+      logInfo [ "transaction sent to the baker"
+               , "waiting for transaction to be committed and finalized"
+               , printf "you may skip this by interrupting this command (using Ctrl-C) - the transaction will still get procesed and may be queried using 'transaction status %s'" (show hash) ]
 
       t1 <- getFormattedLocalTimeOfDay
       printf "[%s] Waiting for the transaction to be committed..." t1
       committedStatus <- withClient backend $ awaitState 2 Committed hash
       putStrLn ""
 
-      when (tsrState committedStatus == Absent) $ die "Transaction failed before it got committed. Most likely because it was invalid."
+      when (tsrState committedStatus == Absent) $ logFatal ["transaction failed before it got committed", "most likely because it was invalid"]
 
       runPrinter $ printTransactionStatus committedStatus
 
@@ -196,7 +196,7 @@ processTransactionCmd action verbose baseCfgDir backend =
       finalizedStatus <- withClient backend $ awaitState 5 Finalized hash
       putStrLn ""
 
-      when (tsrState finalizedStatus == Absent) $ die "Transaction failed after it was committed."
+      when (tsrState finalizedStatus == Absent) $ logFatal ["transaction failed after it was committed"]
 
       -- Print out finalized status if the outcome differs from that of the committed status.
       when (tsrResults committedStatus /= tsrResults finalizedStatus) $ do
@@ -223,10 +223,10 @@ processAccountCmd action verbose backend =
     AccountShow address block -> do
       r <- withClient backend $ withBestBlockHash block (getAccountInfo address)
       v <- case r of
-        Left err -> die $ "RPC error: " ++ err
+        Left err -> logFatal ["RPC error: " ++ err]
         Right v -> return v
       account <- case fromJSON v of
-        Error err -> die $ printf "cannot parse '%s' as JSON: %s" (show v) err
+        Error err -> logFatal [printf "cannot parse '%s' as JSON: %s" (show v) err]
         Success a -> return a
       case account of
         Nothing -> putStrLn "Account not found."
@@ -234,10 +234,10 @@ processAccountCmd action verbose backend =
     AccountList block -> do
       r <- withClient backend $ withBestBlockHash block getAccountList
       v <- case r of
-             Left err -> die $ "RPC error: " ++ err
+             Left err -> logFatal ["RPC error: " ++ err]
              Right v -> return v
       accountAddrs <- case fromJSON v of
-                        Error err -> die $ printf "cannot parse '%s' as JSON: %s" (show v) err
+                        Error err -> logFatal [printf "cannot parse '%s' as JSON: %s" (show v) err]
                         Success as -> return as
       runPrinter $ printAccountList accountAddrs
 
