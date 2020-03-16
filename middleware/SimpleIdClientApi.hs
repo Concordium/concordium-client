@@ -10,6 +10,7 @@ import           Data.Aeson (Value(..), (.=))
 import           Data.Aeson.Types (ToJSON(..), FromJSON)
 import qualified Data.HashMap.Strict as DMS (fromList)
 import           Data.Map
+import           Data.Word
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Servant.API.Generic
@@ -157,7 +158,7 @@ data IdCredentialRequest =
     , identityObject :: IdentityObject
     , idUseData :: IdUseData
     , revealedItems :: [Text]
-    , accountNumber :: Int
+    , accountNumber :: Word8
     }
   deriving (Generic, Show, FromJSON, ToJSON)
 

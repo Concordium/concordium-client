@@ -42,6 +42,7 @@ import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.SignatureScheme   as Sig
 import qualified Concordium.Crypto.VRF               as VRF
 import qualified Concordium.Types.Transactions       as Types
+import           Concordium.Types.HashableTo
 import qualified Concordium.Types.Execution          as Types
 import qualified Concordium.Types                    as Types
 
@@ -126,7 +127,7 @@ processTransactionCmd action verbose baseCfgDir backend =
       mdata <- loadContextData
       source <- BSL.readFile fname
       tx <- PR.evalContext mdata $ withClient backend $ processTransaction source defaultNetId
-      logInfo [printf "transaction '%s' sent to the baker" (show $ Types.transactionHash tx)]
+      logInfo [printf "transaction '%s' sent to the baker" (show $ getBlockItemHash tx)]
     TransactionStatus hash -> do
       validateTransactionHash hash
       status <- withClient backend $ queryTransactionStatus (read $ unpack hash)
@@ -170,7 +171,7 @@ processTransactionCmd action verbose baseCfgDir backend =
       --      processTransaction/encodeAndSignTransaction functions.
       --      Refactor to only include what's needed.
       tx <- PR.evalContext emptyContextData $ withClient backend $ processTransaction_ t defaultNetId False
-      let hash = Types.transactionHash tx
+      let hash = getBlockItemHash tx
       logInfo [ "transaction sent to the baker"
                , "waiting for transaction to be committed and finalized"
                , printf "you may skip this by interrupting this command (using Ctrl-C) - the transaction will still get procesed and may be queried using 'transaction status %s'" (show hash) ]
@@ -286,6 +287,11 @@ loop v =
         _ -> error "Unexpected return value for block parent."
     _ -> error "Unexptected return value for getBlockInfo."
 
+-- |Helper function to specialize the type, avoiding the need for type
+-- annotations in many places.
+getBlockItemHash :: Types.BareBlockItem -> Types.TransactionHash
+getBlockItemHash = getHash
+
 useBackend :: LegacyCmd -> Backend -> IO ()
 useBackend act b =
   case act of
@@ -294,7 +300,7 @@ useBackend act b =
       source <- BSL.readFile fname
       t <- PR.evalContext mdata $ withClient b $ processTransaction source nid
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
-        show (Types.transactionHash t)
+        show (getBlockItemHash t)
     GetConsensusInfo -> withClient b $ getConsensusStatus >>= printJSON
     GetBlockInfo every block -> withClient b $ withBestBlockHash block getBlockInfo >>= if every then loop else printJSON
     GetBlockSummary block -> withClient b $ withBestBlockHash block getBlockSummary >>= printJSON
@@ -306,6 +312,8 @@ useBackend act b =
       withClient b $ withBestBlockHash block (getAccountInfo account) >>= printJSON
     GetAccountNonFinalized account ->
       withClient b $ getAccountNonFinalizedTransactions account >>= printJSON
+    GetNextAccountNonce account ->
+      withClient b $ getNextAccountNonce account >>= printJSON
     GetInstanceInfo account block ->
       withClient b $ withBestBlockHash block (getInstanceInfo account) >>= printJSON
     GetRewardStatus block -> withClient b $ withBestBlockHash block getRewardStatus >>= printJSON
@@ -423,12 +431,12 @@ printPeerData epd =
         putStrLn $ "  Peer: " ++ unpack (ps ^. CF.nodeId)
         putStrLn $ "    Packets sent: " ++ show (ps ^. CF.packetsSent)
         putStrLn $ "    Packets received: " ++ show (ps ^. CF.packetsReceived)
-        putStrLn $ "    Measured latency: " ++ show (ps ^. CF.measuredLatency)
+        putStrLn $ "    Latency: " ++ show (ps ^. CF.latency)
         putStrLn ""
 
       putStrLn $ "Peer type: " ++ unpack (peerList ^. CF.peerType)
       putStrLn "Peers:"
-      forM_ (peerList ^. CF.peer) $ \pe -> do
+      forM_ (peerList ^. CF.peers) $ \pe -> do
         putStrLn $ "  Node id: " ++ unpack (pe ^. CF.nodeId . CF.value)
         putStrLn $ "    Port: " ++ show (pe ^. CF.port . CF.value)
         putStrLn $ "    IP: " ++ unpack (pe ^. CF.ip . CF.value)
@@ -474,7 +482,7 @@ processTransaction ::
      (MonadFail m, MonadIO m)
   => BSL.ByteString
   -> Int
-  -> ClientMonad (PR.Context Core.UA m) Types.BareTransaction
+  -> ClientMonad (PR.Context Core.UA m) Types.BareBlockItem
 processTransaction source networkId =
   case AE.eitherDecode source of
     Left err -> fail $ "Error decoding JSON: " ++ err
@@ -485,7 +493,7 @@ processTransaction_ ::
   => TransactionJSON
   -> Int
   -> Verbose
-  -> ClientMonad (PR.Context Core.UA m) Types.BareTransaction
+  -> ClientMonad (PR.Context Core.UA m) Types.BareBlockItem
 processTransaction_ transaction networkId _verbose = do
   tx <- do
     let header = metadata transaction
@@ -513,8 +521,8 @@ encodeAndSignTransaction ::
   -> Types.Nonce
   -> Types.TransactionExpiryTime
   -> CT.SenderData
-  -> ClientMonad (PR.Context Core.UA m) Types.BareTransaction
-encodeAndSignTransaction pl energy nonce expiry (sender, keys) = do
+  -> ClientMonad (PR.Context Core.UA m) Types.BareBlockItem
+encodeAndSignTransaction pl energy nonce expiry (sender, keys) = Types.NormalTransaction <$> do
   txPayload <- case pl of
     (CT.DeployModuleFromSource fileName) ->
       Types.DeployModule <$> readModule fileName -- deserializing is not necessary, but easiest for now.
@@ -532,7 +540,6 @@ encodeAndSignTransaction pl energy nonce expiry (sender, keys) = do
       return $ Types.Update updateAmount updateAddress msg
     (CT.Transfer transferTo transferAmount) ->
       return $ Types.Transfer transferTo transferAmount
-    (CT.DeployCredential cred) -> return $ Types.DeployCredential cred
     (CT.DeployEncryptionKey encKey) -> return $ Types.DeployEncryptionKey encKey
     (CT.AddBaker evk epk svk avk apk (BlockSig.KeyPair spk _) acc kp) ->
       let challenge = S.runPut (S.put evk <> S.put svk <> S.put avk <> S.put acc)
