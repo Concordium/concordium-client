@@ -79,11 +79,7 @@ instance AE.FromJSON TransactionStatusResult where
       "committed" -> return Committed
       "finalized" -> return Finalized
       s -> fail $ printf "invalid status '%s'" s
-    tsrResults <- foldM (\hm (k, summary) -> do
-                            case AE.fromJSON (String k) of
-                              AE.Error _ -> return hm
-                              AE.Success bh -> flip (HM.insert bh) hm <$> parseJSON summary
-                        ) HM.empty (HM.toList obj)
+    tsrResults <- obj .:? "outcomes" .!= HM.empty
     return $ TransactionStatusResult {..}
 
 class (Monad m) => TransactionStatusQuery m where
