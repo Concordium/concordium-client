@@ -4,15 +4,12 @@
 module Concordium.Client.Cli where
 
 import Concordium.Types
-import Concordium.Types.Execution
+import Concordium.Client.Types.TransactionStatus
 import Concordium.Client.Types.Transaction
 import qualified Concordium.ID.Types as IDTypes
 
 import Control.Monad hiding (fail)
-import Control.Monad.Fail
-import qualified Data.HashMap.Strict as HM
 import Data.Aeson as AE
-import Data.Aeson.Types as AE
 import Data.List
 import Data.Text
 import Data.Text.Encoding
@@ -61,26 +58,6 @@ getAddressArg name input = do
   case IDTypes.addressFromText v of
     Left err -> die $ printf "%s: %s" name err
     Right a -> return a
-
-data TransactionState = Received | Committed | Finalized | Absent deriving (Eq, Ord, Show)
-
-type TransactionBlockResults = HM.HashMap BlockHash (Maybe TransactionSummary)
-
-data TransactionStatusResult = TransactionStatusResult
-  { tsrState :: !TransactionState
-  , tsrResults :: !TransactionBlockResults } -- TODO Rename to "blocks".
-  deriving (Eq, Show)
-
-instance AE.FromJSON TransactionStatusResult where
-  parseJSON Null = return TransactionStatusResult{tsrState = Absent, tsrResults = HM.empty}
-  parseJSON v = flip (withObject "Transaction status") v $ \obj -> do
-    tsrState <- (obj .: "status" :: Parser String) >>= \case
-      "received" -> return Received
-      "committed" -> return Committed
-      "finalized" -> return Finalized
-      s -> fail $ printf "invalid status '%s'" s
-    tsrResults <- obj .:? "outcomes" .!= HM.empty
-    return $ TransactionStatusResult {..}
 
 class (Monad m) => TransactionStatusQuery m where
   queryTransactionStatus :: TransactionHash -> m TransactionStatusResult

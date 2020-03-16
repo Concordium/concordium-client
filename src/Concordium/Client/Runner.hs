@@ -35,6 +35,7 @@ import           Concordium.Client.GRPC
 import           Concordium.Client.Output
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction as CT
+import           Concordium.Client.Types.TransactionStatus
 import           Concordium.Client.Validate
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls

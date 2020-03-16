@@ -3,6 +3,8 @@ module SimpleClientTests.TransactionSpec where
 import Concordium.Client.Cli
 import Concordium.Client.Output
 import Concordium.Client.Runner
+import Concordium.Client.Types.TransactionStatus
+
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Types

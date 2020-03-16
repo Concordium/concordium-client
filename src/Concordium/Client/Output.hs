@@ -6,6 +6,7 @@ import qualified Concordium.Crypto.SignatureScheme as S
 import Concordium.Client.Cli
 import Concordium.Client.Commands (Verbose)
 import Concordium.Client.Config
+import Concordium.Client.Types.TransactionStatus
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Types
 import qualified Concordium.ID.Types as IDTypes

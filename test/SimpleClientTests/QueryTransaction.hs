@@ -3,6 +3,7 @@
 module SimpleClientTests.QueryTransaction where
 
 import Concordium.Client.Cli
+import Concordium.Client.Types.TransactionStatus
 
 import Control.Monad.State.Strict
 
