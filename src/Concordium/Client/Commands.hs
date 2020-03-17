@@ -13,6 +13,7 @@ module Concordium.Client.Commands
   , ContractCmd(..)
   , LegacyCmd(..)
   , ConsensusCmd(..)
+  , BlockCmd(..)
   ) where
 
 import Data.Text
@@ -55,6 +56,8 @@ data Cmd
     { contractCmd :: ContractCmd }
   | ConsensusCmd
     { consensusCmd :: ConsensusCmd }
+  | BlockCmd
+    { blockCmd :: BlockCmd }
   deriving (Show)
 
 data ConfigCmd
@@ -120,6 +123,11 @@ data ConsensusCmd
     , cspIncludeBakers :: !Bool }
   deriving (Show)
 
+data BlockCmd
+  = BlockShow
+    { bsBlockHash :: !(Maybe Text) }
+  deriving (Show)
+
 optsParser :: ParserInfo Options
 optsParser = info
                (helper <*> versionOption <*> programOptions)
@@ -170,7 +178,8 @@ programOptions = Options <$>
                       moduleCmds <>
                       contractCmds <>
                       configCmds <>
-                      consensusCmds
+                      consensusCmds <>
+                      blockCmds
                      ) <|> (LegacyCmd <$> legacyProgramOptions)) <*>
                    (optional (strOption (long "config" <> metavar "DIR" <> help "Configuration directory path"))) <*>
                    (optional backendParser) <*>
@@ -377,4 +386,23 @@ consensusShowParametersCmd =
       (ConsensusShowParameters <$>
         optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block")) <*>
         switch (long "include-bakers" <> help "include list of bakers"))
-        (progDesc "show election parameters for given (default: \"best\" block)"))
+      (progDesc "show election parameters for given (default: \"best\" block)"))
+
+blockCmds :: Mod CommandFields Cmd
+blockCmds =
+  command
+    "block"
+    (info
+      (BlockCmd <$>
+        (hsubparser
+          (blockShowCmd)))
+      (progDesc "..."))
+
+blockShowCmd :: Mod CommandFields BlockCmd
+blockShowCmd =
+  command
+    "show"
+    (info
+      (BlockShow <$>
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block")))
+      (progDesc "show election parameters for given (default: \"best\" block)"))

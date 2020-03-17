@@ -241,6 +241,29 @@ printBirkParametersBakers r includeBakers = do
     tell $ f <$> bprBakers r
   where f b = printf "%6s: %s    %.4f" (show $ bpbrId b) (show $ bpbrAccount b) (bpbrLotteryPower b)
 
+-- BLOCK
+
+printBlockInfo :: BlockInfoResult -> Printer
+printBlockInfo b =
+  tell [ printf "Hash:                    %s" (show $ birBlockHash b)
+       , printf "Parent:                  %s" (show $ birBlockParent b)
+       , printf "Last finalized:          %s" (show $ birBlockLastFinalized b)
+       , printf "Receive time:            %s" (showFormattedUtcTime $ birBlockReceiveTime b)
+       , printf "Arrive time:             %s" (showFormattedUtcTime $ birBlockReceiveTime b)
+       , printf "Slot:                    %s" (show $ birBlockSlot b)
+       , printf "Slot time:               %s" (show $ birBlockSlotTime b)
+       , printf "Finalized:               %s" (showYesNo $ birFinalized b)
+       , printf "Transaction count:       %d" (birTransactionCount b)
+       , printf "Transaction energy cost: %s" (show $ birTransactionEnergyCost b)
+       , printf "Transactions size:       %d" (birTransactionsSize b)
+       , printf "Total amount:            %s" (show $ birTotalAmount b)
+       , printf "Total encrypted amount:  %s" (show $ birTotalEncryptedAmount b)
+       , printf "Central bank amount:     %s" (show $ birCentralBankAmount b)
+       , printf "Minted amount per slot:  %s" (show $ birMintedAmountPerSlot b)
+       , printf "Execution cost:          %s" (show $ birExecutionCost b) ]
+
+-- UTIL
+
 -- Produce a string fragment of the address and, if available, name of the account.
 showNamedAddress :: AccountConfig -> String
 showNamedAddress cfg =

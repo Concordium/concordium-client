@@ -95,6 +95,17 @@ withClient bkend comp = do
     Left err -> error (show err)
     Right x  -> return x
 
+withClientJson :: (MonadIO m, FromJSON a) => Backend -> ClientMonad m (Either String Value) -> m a
+withClientJson b comp = do
+  r <- withClient b comp
+  liftIO $ putStrLn $ show r
+  s <- case r of
+         Left err -> error $ "RPC error: " ++ err
+         Right v -> return v
+  case fromJSON s of
+    Error err -> error $ printf "cannot parse '%s' as JSON: %s" (show s) err
+    Success v -> return v
+
 process :: COM.Options -> IO ()
 process (Options (LegacyCmd c) _ backend _) = processLegacyCmd c backend
 process (Options command cfgDir backend verbose) = do
@@ -109,6 +120,7 @@ process (Options command cfgDir backend verbose) = do
               ModuleCmd c -> processModuleCmd c
               ContractCmd c -> processContractCmd c
               ConsensusCmd c -> processConsensusCmd c
+              BlockCmd c -> processBlockCmd c
               LegacyCmd _ -> error "Unreachable case: LegacyCmd."
 
 processConfigCmd :: ConfigCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -271,6 +283,13 @@ processConsensusCmd action _ backend =
       case v of
         Nothing -> putStrLn "Block not found."
         Just p -> runPrinter $ printBirkParametersBakers p includeBakers
+
+processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
+processBlockCmd action _ backend =
+  case action of
+    BlockShow b -> do
+      v <- withClientJson backend $ withBestBlockHash b getBlockInfo
+      runPrinter $ printBlockInfo v
 
 processLegacyCmd :: LegacyCmd -> Maybe Backend -> IO ()
 processLegacyCmd action backend =

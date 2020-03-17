@@ -156,6 +156,46 @@ instance AE.FromJSON BirkParametersBakerResult where
     bpbrAccount <- v .: "bakerAccount"
     return $ BirkParametersBakerResult {..}
 
+data BlockInfoResult = BlockInfoResult
+  { birBlockHash :: BlockHash
+  , birBlockParent :: BlockHash
+  , birBlockLastFinalized :: BlockHash
+  , birBlockReceiveTime :: UTCTime
+  , birBlockArriveTime :: UTCTime
+  , birBlockSlot :: Word64
+  , birBlockSlotTime :: UTCTime
+  , birBlockBaker :: Maybe BakerId
+  , birFinalized :: Bool
+  , birTransactionCount :: Integer
+  , birTransactionEnergyCost :: Amount
+  , birTransactionsSize :: Integer
+  , birTotalAmount :: Amount
+  , birTotalEncryptedAmount :: Amount
+  , birCentralBankAmount :: Amount
+  , birMintedAmountPerSlot :: Amount
+  , birExecutionCost :: Amount }
+
+instance AE.FromJSON BlockInfoResult where
+  parseJSON = withObject "Block info" $ \v -> do
+    birBlockHash <- v .: "blockHash"
+    birBlockParent <- v .: "blockParent"
+    birBlockLastFinalized <- v .: "blockLastFinalized"
+    birBlockReceiveTime <- v .: "blockReceiveTime"
+    birBlockArriveTime <- v .: "blockArriveTime"
+    birBlockSlot <- v .: "blockSlot"
+    birBlockSlotTime <- v .: "blockSlotTime"
+    birBlockBaker <- v .: "blockBaker"
+    birFinalized <- v .: "finalized"
+    birTransactionCount <- v .: "transactionCount"
+    birTransactionEnergyCost <- v .: "transactionEnergyCost"
+    birTransactionsSize <- v .: "transactionsSize"
+    birTotalAmount <- v .: "totalAmount"
+    birTotalEncryptedAmount <- v .: "totalEncryptedAmount"
+    birCentralBankAmount <- v .: "centralBankAmount"
+    birMintedAmountPerSlot <- v .: "mintedAmountPerSlot"
+    birExecutionCost <- v .: "executionCost"
+    return BlockInfoResult {..}
+
 -- Hardcode network ID and hook.
 defaultNetId :: Int
 defaultNetId = 100
