@@ -582,6 +582,7 @@ encodeAndSignTransaction pl energy nonce expiry (sender, keys) = Types.NormalTra
     (CT.UpdateBakerSignKey ubsid ubsk ubsp) ->
       return $ Types.UpdateBakerSignKey ubsid ubsk ubsp
     (CT.DelegateStake dsid) -> return $ Types.DelegateStake dsid
+    (CT.UpdateElectionDifficulty d) -> return $ Types.UpdateElectionDifficulty d
 
   let encPayload = Types.encodePayload txPayload
       header = Types.TransactionHeader{

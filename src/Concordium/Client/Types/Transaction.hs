@@ -103,6 +103,9 @@ data TransactionJSONPayload
   | DelegateStake
       { bakerId :: BakerId
       }
+  | UpdateElectionDifficulty
+      { difficulty :: !ElectionDifficulty
+      }
   deriving (Show, Generic)
 
 AETH.deriveFromJSON
