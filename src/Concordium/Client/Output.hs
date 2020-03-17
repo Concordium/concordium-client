@@ -245,22 +245,22 @@ printBirkParametersBakers r includeBakers = do
 
 printBlockInfo :: BlockInfoResult -> Printer
 printBlockInfo b =
-  tell [ printf "Hash:                    %s" (show $ birBlockHash b)
-       , printf "Parent:                  %s" (show $ birBlockParent b)
-       , printf "Last finalized:          %s" (show $ birBlockLastFinalized b)
-       , printf "Finalized:               %s" (showYesNo $ birFinalized b)
-       , printf "Receive time:            %s" (showFormattedUtcTime $ birBlockReceiveTime b)
-       , printf "Arrive time:             %s" (showFormattedUtcTime $ birBlockReceiveTime b)
-       , printf "Slot:                    %s" (show $ birBlockSlot b)
-       , printf "Slot time:               %s" (showFormattedUtcTime $ birBlockSlotTime b)
-       , printf "Transaction count:       %d" (birTransactionCount b)
-       , printf "Transaction energy cost: %s NRG" (show $ birTransactionEnergyCost b)
-       , printf "Transactions size:       %d" (birTransactionsSize b)
-       , printf "Execution cost:          %s GTU" (show $ birExecutionCost b)
-       , printf "Total amount:            %s GTU" (show $ birTotalAmount b)
-       , printf "Total encrypted amount:  %s GTU" (show $ birTotalEncryptedAmount b)
-       , printf "Central bank amount:     %s GTU" (show $ birCentralBankAmount b)
-       , printf "Minted amount per slot:  %s GTU" (show $ birMintedAmountPerSlot b) ]
+  tell [ printf "Hash:                       %s" (show $ birBlockHash b)
+       , printf "Parent:                     %s" (show $ birBlockParent b)
+       , printf "Last finalized:             %s" (show $ birBlockLastFinalized b)
+       , printf "Finalized:                  %s" (showYesNo $ birFinalized b)
+       , printf "Receive time:               %s" (showFormattedUtcTime $ birBlockReceiveTime b)
+       , printf "Arrive time:                %s" (showFormattedUtcTime $ birBlockReceiveTime b)
+       , printf "Slot:                       %s" (show $ birBlockSlot b)
+       , printf "Slot time:                  %s" (showFormattedUtcTime $ birBlockSlotTime b)
+       , printf "Transaction count:          %d" (birTransactionCount b)
+       , printf "Transaction energy cost:    %s NRG" (show $ birTransactionEnergyCost b)
+       , printf "Transactions size:          %d" (birTransactionsSize b)
+       , printf "Transaction execution cost: %s GTU" (show $ birExecutionCost b)
+       , printf "Total amount:               %s GTU" (show $ birTotalAmount b)
+       , printf "Total encrypted amount:     %s GTU" (show $ birTotalEncryptedAmount b)
+       , printf "Central bank amount:        %s GTU" (show $ birCentralBankAmount b)
+       , printf "Minted amount per slot:     %s GTU" (show $ birMintedAmountPerSlot b) ]
 
 -- UTIL
 
