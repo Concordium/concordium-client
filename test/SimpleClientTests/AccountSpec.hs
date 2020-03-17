@@ -84,8 +84,8 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     , ""
     , "Credentials:"
     , "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
-    , "  - expiration: Sat, 20 Nov 2286 17:46:39 UTC"
-    , "  - revealed attributes: none" ]
+    , "  - Expiration: Sat, 20 Nov 2286 17:46:39 UTC"
+    , "  - Revealed attributes: none" ]
   specify "with two credentials" $ p exampleAddress (exampleAccountInfoResult (Just 1) [ exampleCredentials examplePolicyWithoutItems
                                                                                        , exampleCredentials examplePolicyWithTwoItems ]) `shouldBe`
     [ "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
@@ -95,11 +95,11 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     , ""
     , "Credentials:"
     , "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
-    , "  - expiration: Sat, 20 Nov 2286 17:46:39 UTC"
-    , "  - revealed attributes: none"
+    , "  - Expiration: Sat, 20 Nov 2286 17:46:39 UTC"
+    , "  - Revealed attributes: none"
     , "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
-    , "  - expiration: Sat, 20 Nov 2286 17:46:39 UTC"
-    , "  - revealed attributes: CreationTime=2, LastName=4" ]
+    , "  - Expiration: Sat, 20 Nov 2286 17:46:39 UTC"
+    , "  - Revealed attributes: CreationTime=2, LastName=4" ]
   specify "with one credential - verbose" $
     (execWriter $ printAccountInfo exampleAddress (exampleAccountInfoResult (Just 1) [exampleCredentials examplePolicyWithoutItems]) True) `shouldBe`
       [ "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
@@ -131,18 +131,18 @@ printCredSpec :: Spec
 printCredSpec = describe "printCred" $ do
   specify "without attributes" $ (p $ exampleCredentials examplePolicyWithoutItems) `shouldBe`
     [ "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
-    , "  - expiration: Sat, 20 Nov 2286 17:46:39 UTC"
-    , "  - revealed attributes: none" ]
+    , "  - Expiration: Sat, 20 Nov 2286 17:46:39 UTC"
+    , "  - Revealed attributes: none" ]
   specify "with single attribute" $ (p $ exampleCredentials examplePolicyWithOneItem) `shouldBe`
     [ "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
-    , "  - expiration: Sat, 20 Nov 2286 17:46:39 UTC"
-    , "  - revealed attributes: CreationTime=2" ]
+    , "  - Expiration: Sat, 20 Nov 2286 17:46:39 UTC"
+    , "  - Revealed attributes: CreationTime=2" ]
   specify "with two attributes" $ (p $ exampleCredentials examplePolicyWithTwoItems) `shouldBe`
     [ "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
-    , "  - expiration: Sat, 20 Nov 2286 17:46:39 UTC"
-    , "  - revealed attributes: CreationTime=2, LastName=4" ]
+    , "  - Expiration: Sat, 20 Nov 2286 17:46:39 UTC"
+    , "  - Revealed attributes: CreationTime=2, LastName=4" ]
   specify "with attribute having key out of range" $ (p $ exampleCredentials examplePolicyWithItemOutOfRange) `shouldBe`
     [ "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
-    , "  - expiration: Sat, 20 Nov 2286 17:46:39 UTC"
-    , "  - revealed attributes: <255>=1" ]
+    , "  - Expiration: Sat, 20 Nov 2286 17:46:39 UTC"
+    , "  - Revealed attributes: <255>=1" ]
   where p c = execWriter $ printCred c

@@ -14,6 +14,8 @@ import Data.List
 import Data.Char
 import Data.Text (Text)
 import Data.Text.Encoding
+import Data.Time
+import Data.Word
 import Prelude hiding (fail, log)
 import Text.PrettyPrint
 import Text.Printf
@@ -77,6 +79,82 @@ instance AE.FromJSON AccountInfoResult where
     airDelegation <- v .: "accountDelegation"
     airCredentials <- v .: "accountCredentials"
     return $ AccountInfoResult {..}
+
+data ConsensusStatusResult = ConsensusStatusResult
+  { csrBestBlock :: BlockHash
+  , csrGenesisBlock :: BlockHash
+  , csrLastFinalizedBlock :: BlockHash
+  , csrBestBlockHeight :: Word64
+  , csrLastFinalizedBlockHeight :: Word64
+  , csrBlocksReceivedCount :: Int
+  , csrBlockLastReceivedTime :: Maybe UTCTime
+  , csrBlockReceiveLatencyEMA :: Double
+  , csrBlockReceiveLatencyEMSD :: Double
+  , csrBlockReceivePeriodEMA :: Maybe Double
+  , csrBlockReceivePeriodEMSD :: Maybe Double
+  , csrBlocksVerifiedCount :: Int
+  , csrBlockLastArrivedTime :: Maybe UTCTime
+  , csrBlockArriveLatencyEMA :: Double
+  , csrBlockArriveLatencyEMSD :: Double
+  , csrBlockArrivePeriodEMA :: Maybe Double
+  , csrBlockArrivePeriodEMSD :: Maybe Double
+  , csrTransactionsPerBlockEMA :: Double
+  , csrTransactionsPerBlockEMSD :: Double
+  , csrFinalizationCount :: Int
+  , csrLastFinalizedTime :: Maybe UTCTime
+  , csrFinalizationPeriodEMA :: Maybe Double
+  , csrFinalizationPeriodEMSD :: Maybe Double }
+
+instance AE.FromJSON ConsensusStatusResult where
+  parseJSON = withObject "Consensus state" $ \v -> do
+    csrBestBlock <- v .: "bestBlock"
+    csrGenesisBlock <- v .: "genesisBlock"
+    csrLastFinalizedBlock <- v .: "lastFinalizedBlock"
+    csrBestBlockHeight <- v .: "bestBlockHeight"
+    csrLastFinalizedBlockHeight <- v .: "lastFinalizedBlockHeight"
+    csrBlocksReceivedCount <- v .: "blocksReceivedCount"
+    csrBlockLastReceivedTime <- v .: "blockLastReceivedTime"
+    csrBlockReceiveLatencyEMA <- v .: "blockReceiveLatencyEMA"
+    csrBlockReceiveLatencyEMSD <- v .: "blockReceiveLatencyEMSD"
+    csrBlockReceivePeriodEMA <- v .: "blockReceivePeriodEMA"
+    csrBlockReceivePeriodEMSD <- v .: "blockReceivePeriodEMSD"
+    csrBlocksVerifiedCount <- v .: "blocksVerifiedCount"
+    csrBlockLastArrivedTime <- v .: "blockLastArrivedTime"
+    csrBlockArriveLatencyEMA <- v .: "blockArriveLatencyEMA"
+    csrBlockArriveLatencyEMSD <- v .: "blockArriveLatencyEMSD"
+    csrBlockArrivePeriodEMA <- v .: "blockArrivePeriodEMA"
+    csrBlockArrivePeriodEMSD <- v .: "blockArrivePeriodEMSD"
+    csrTransactionsPerBlockEMA <- v .: "transactionsPerBlockEMA"
+    csrTransactionsPerBlockEMSD <- v .: "transactionsPerBlockEMSD"
+    csrFinalizationCount <- v .: "finalizationCount"
+    csrLastFinalizedTime <- v .: "lastFinalizedTime"
+    csrFinalizationPeriodEMA <- v .: "finalizationPeriodEMA"
+    csrFinalizationPeriodEMSD <- v .: "finalizationPeriodEMSD"
+    return $ ConsensusStatusResult {..}
+
+data BirkParametersResult = BirkParametersResult
+  { bprElectionNonce :: LeadershipElectionNonce
+  , bprElectionDifficulty :: ElectionDifficulty
+  , bprBakers :: [BirkParametersBakerResult] }
+
+instance AE.FromJSON BirkParametersResult where
+  parseJSON = withObject "Birk parameters" $ \v -> do
+    bprElectionNonce <- v .: "electionNonce"
+    bprElectionDifficulty <- v .: "electionDifficulty"
+    bprBakers <- v .: "bakers"
+    return $ BirkParametersResult {..}
+
+data BirkParametersBakerResult = BirkParametersBakerResult
+  { bpbrId :: BakerId
+  , bpbrLotteryPower :: ElectionDifficulty
+  , bpbrAccount :: IDTypes.AccountAddress }
+
+instance AE.FromJSON BirkParametersBakerResult where
+  parseJSON = withObject "Baker" $ \v -> do
+    bpbrId <- v .: "bakerId"
+    bpbrLotteryPower <- v .: "bakerLotteryPower"
+    bpbrAccount <- v .: "bakerAccount"
+    return $ BirkParametersBakerResult {..}
 
 -- Hardcode network ID and hook.
 defaultNetId :: Int
