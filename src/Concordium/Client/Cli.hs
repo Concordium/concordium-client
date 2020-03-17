@@ -9,6 +9,7 @@ import Concordium.Client.Types.Transaction
 import qualified Concordium.ID.Types as IDTypes
 
 import Control.Monad hiding (fail)
+import Control.Monad.IO.Class
 import Data.Aeson as AE
 import Data.List
 import Data.Char
@@ -30,7 +31,7 @@ data Level = Info | Warn | Err deriving (Eq)
 -- Depending on the log level, an appropriate prefix is added to the first line.
 -- All lines will be indented such that they align with the first line
 -- (i.e. as if they had all been prefixed).
-log :: Level -> [String] -> IO ()
+log :: MonadIO m => Level -> [String] -> m ()
 log lvl msgs =
   logStrLn $ renderStyle s doc
   where
@@ -41,28 +42,28 @@ log lvl msgs =
                Warn-> text "Warning:"
                Err -> text "Error:"
 
-logInfo :: [String] -> IO ()
+logInfo :: MonadIO m => [String] -> m ()
 logInfo = log Info
 
-logWarn :: [String] -> IO ()
+logWarn :: MonadIO m => [String] -> m ()
 logWarn = log Warn
 
-logError :: [String] -> IO ()
+logError :: MonadIO m => [String] -> m ()
 logError = log Err
 
-logFatal :: [String] -> IO a
-logFatal msgs = log Err msgs >> exitFailure
+logFatal :: MonadIO m => [String] -> m a
+logFatal msgs = log Err msgs >> liftIO exitFailure
 
 prettyMsg :: String -> String
 prettyMsg = \case
   "" -> ""
   (x:xs) -> (toUpper x : xs) ++ "."
 
-logStr :: String -> IO ()
-logStr = hPutStr stderr
+logStr :: MonadIO m => String -> m ()
+logStr = liftIO . hPutStr stderr
 
-logStrLn :: String -> IO ()
-logStrLn = hPutStrLn stderr
+logStrLn :: MonadIO m => String -> m ()
+logStrLn = liftIO . hPutStrLn stderr
 
 data AccountInfoResult = AccountInfoResult
   { airAmount :: !Amount
