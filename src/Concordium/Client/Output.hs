@@ -57,9 +57,9 @@ showFormattedTimeOfDay = formatTime defaultTimeLocale "%T"
 printBaseConfig :: BaseConfig -> Printer
 printBaseConfig cfg = do
   tell [ printf "Base configuration:"
-       , printf "- verbose:            %s" (showYesNo $ bcVerbose cfg)
-       , printf "- account config dir: %s" (bcAccountCfgDir cfg)
-       , printf "- account name map:" ]
+       , printf "- Verbose:            %s" (showYesNo $ bcVerbose cfg)
+       , printf "- Account config dir: %s" (bcAccountCfgDir cfg)
+       , printf "- Account name map:" ]
   printMap showEntry $ bcAccountNameMap cfg
   where showEntry (n, a) =
           printf "    %s -> %s" n (show a)
@@ -67,9 +67,9 @@ printBaseConfig cfg = do
 printAccountConfig :: AccountConfig -> Printer
 printAccountConfig cfg = do
   tell [ printf "Account configuration:"
-       , printf "- name:    %s" (fromMaybe "none" $ acName cfg)
-       , printf "- address: %s" (show $ acAddr cfg)
-       , printf "- keys:" ]
+       , printf "- Name:    %s" (fromMaybe "none" $ acName cfg)
+       , printf "- Address: %s" (show $ acAddr cfg)
+       , printf "- Keys:" ]
   printMap showEntry $ acKeys cfg
   where showEntry (IDTypes.KeyIndex n, kp) =
           printf "    %s: %s" (show n) (showKeyPair kp)
@@ -120,8 +120,8 @@ printAccountInfo address a verbose = do
 printCred :: IDTypes.CredentialDeploymentValues -> Printer
 printCred c =
   tell [ printf "* %s:" (show $ IDTypes.cdvRegId c)
-       , printf "  - expiration: %s" expiry
-       , printf "  - revealed attributes: %s" (showRevealedAttributes attrs) ]
+       , printf "  - Expiration: %s" expiry
+       , printf "  - Revealed attributes: %s" (showRevealedAttributes attrs) ]
   where
     p = IDTypes.cdvPolicy c
     e = show $ IDTypes.pExpiry p
@@ -208,6 +208,39 @@ printTransactionStatus status =
       Types.TxSuccess _ -> "success"
       Types.TxReject _ -> "rejected"
 
+-- CONSENSUS
+
+printConsensusStatus :: ConsensusStatusResult -> Printer
+printConsensusStatus r = do
+  tell [ printf "Best block:                  %s" (show $ csrBestBlock r)
+       , printf "Genesis block:               %s" (show $ csrGenesisBlock r)
+       , printf "Last finalized block:        %s" (show $ csrLastFinalizedBlock r)
+       , printf "Best block height:           %s" (show $ csrBestBlockHeight r)
+       , printf "Last finalized block height: %s" (show $ csrLastFinalizedBlockHeight r)
+       , printf "Blocks received count:       %s" (show $ csrBlocksReceivedCount r)
+       , printf "Block last received time:    %s" (showMaybeUTC $ csrBlockLastReceivedTime r)
+       , printf "Block receive latency:       %s" (showEm (csrBlockReceiveLatencyEMA r) (csrBlockReceiveLatencyEMSD r))
+       , printf "Block receive period:        %s" (showMaybeEm (csrBlockReceivePeriodEMA r) (csrBlockReceivePeriodEMSD r))
+       , printf "Blocks verified count:       %s" (show $ csrBlocksVerifiedCount r)
+       , printf "Block last arrived time:     %s" (showMaybeUTC $ csrBlockLastArrivedTime r)
+       , printf "Block arrive latency:        %s" (showEm (csrBlockArriveLatencyEMA r) (csrBlockArriveLatencyEMSD r))
+       , printf "Block arrive period:         %s" (showMaybeEm (csrBlockArrivePeriodEMA r) (csrBlockArrivePeriodEMSD r))
+       , printf "Transactions per block:      %s" (showEm (csrTransactionsPerBlockEMA r) (csrTransactionsPerBlockEMSD r))
+       , printf "Finalization count:          %s" (show $ csrFinalizationCount r)
+       , printf "Last finalized time:         %s" (showMaybeUTC $ csrLastFinalizedTime r)
+       , printf "Finalization period:         %s" (showMaybeEm (csrFinalizationPeriodEMA r) (csrFinalizationPeriodEMSD r)) ]
+
+printBirkParametersBakers :: BirkParametersResult -> Bool -> Printer
+printBirkParametersBakers r includeBakers = do
+  tell [ printf "Election nonce:      %s" (show $ bprElectionNonce r)
+       , printf "Election difficulty: %s" (show $ bprElectionDifficulty r) ]
+  when includeBakers $ do
+    tell [ "Bakers:"
+         , printf "                             Account                       Lottery power"
+         , printf "        ----------------------------------------------------------------" ]
+    tell $ f <$> bprBakers r
+  where f b = printf "%6s: %s    %.4f" (show $ bpbrId b) (show $ bpbrAccount b) (bpbrLotteryPower b)
+
 -- Produce a string fragment of the address and, if available, name of the account.
 showNamedAddress :: AccountConfig -> String
 showNamedAddress cfg =
@@ -215,6 +248,23 @@ showNamedAddress cfg =
   in case acName cfg of
     Nothing -> addr
     Just n -> printf "%s (%s)" addr n
+
+showMaybe :: (a -> String) -> Maybe a -> String
+showMaybe = maybe showNone
+
+showMaybeUTC :: Maybe UTCTime -> String
+showMaybeUTC = showMaybe showFormattedUtcTime
+
+showEm :: Double -> Double -> String
+showEm a d = printf "%s (EMA), %s (EMSD)" (showSeconds a) (showSeconds d)
+
+showMaybeEm :: Maybe Double -> Maybe Double -> String
+showMaybeEm a d = case (a, d) of
+                    (Just a', Just d') -> showEm a' d'
+                    _ -> showNone
+
+showSeconds :: Double -> String
+showSeconds s = printf "%5d ms" (round $ 1000*s :: Int)
 
 printMap :: ((k, v) -> String) -> HM.HashMap k v -> Printer
 printMap s m = forM_ (HM.toList m) $ \(k, v) -> tell [s (k, v)]

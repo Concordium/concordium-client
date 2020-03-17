@@ -3,15 +3,16 @@ module Concordium.Client.Commands
   , backendParser
   , Verbose
   , Options(..)
+  , Backend(..)
   , Cmd(..)
   , ConfigCmd(..)
+  , TransactionCfg(..)
   , TransactionCmd(..)
   , AccountCmd(..)
   , ModuleCmd(..)
   , ContractCmd(..)
   , LegacyCmd(..)
-  , TransactionCfg(..)
-  , Backend(..)
+  , ConsensusCmd(..)
   ) where
 
 import Data.Text
@@ -52,6 +53,8 @@ data Cmd
     { moduleCmd :: ModuleCmd }
   | ContractCmd
     { contractCmd :: ContractCmd }
+  | ConsensusCmd
+    { consensusCmd :: ConsensusCmd }
   deriving (Show)
 
 data ConfigCmd
@@ -110,6 +113,13 @@ data TransactionCfg =
   , tcExpiration :: !(Maybe TransactionExpiryTime) }
   deriving (Show)
 
+data ConsensusCmd
+  = ConsensusStatus
+  | ConsensusShowParameters
+    { cspBlockHash :: !(Maybe Text)
+    , cspIncludeBakers :: !Bool }
+  deriving (Show)
+
 optsParser :: ParserInfo Options
 optsParser = info
                (helper <*> versionOption <*> programOptions)
@@ -159,7 +169,8 @@ programOptions = Options <$>
                       accountCmds <>
                       moduleCmds <>
                       contractCmds <>
-                      configCmds
+                      configCmds <>
+                      consensusCmds
                      ) <|> (LegacyCmd <$> legacyProgramOptions)) <*>
                    (optional (strOption (long "config" <> metavar "DIR" <> help "Configuration directory path"))) <*>
                    (optional backendParser) <*>
@@ -339,4 +350,31 @@ configDumpCmd =
       (pure ConfigDump)
       (progDesc "dump configuration"))
 
--- TODO Add "consensus" and "node" commands.
+consensusCmds :: Mod CommandFields Cmd
+consensusCmds =
+  command
+    "consensus"
+    (info
+      (ConsensusCmd <$>
+        (hsubparser
+          (consensusStatusCmd <>
+           consensusShowParametersCmd)))
+      (progDesc "commands for inspecting chain health (branching, finalization), block content/history (including listing transactions), election (Birk) and reward/minting parameters"))
+
+consensusStatusCmd :: Mod CommandFields ConsensusCmd
+consensusStatusCmd =
+  command
+    "status"
+    (info
+      (pure ConsensusStatus)
+      (progDesc "list various parameters related to the state of the consensus protocol"))
+
+consensusShowParametersCmd :: Mod CommandFields ConsensusCmd
+consensusShowParametersCmd =
+  command
+    "show-parameters"
+    (info
+      (ConsensusShowParameters <$>
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block")) <*>
+        switch (long "include-bakers" <> help "include list of bakers"))
+        (progDesc "show election parameters for given (default: \"best\" block)"))

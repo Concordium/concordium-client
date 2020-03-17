@@ -101,27 +101,28 @@ process (Options command cfgDir backend verbose) = do
   -- Disable output buffering.
   hSetBuffering stdout NoBuffering
   -- Evaluate command.
-  maybe printNoBackend p backend
+  maybe printNoBackend (p verbose) backend
   where p = case command of
               ConfigCmd c -> processConfigCmd c cfgDir
-              TransactionCmd c -> processTransactionCmd c verbose cfgDir
-              AccountCmd c -> processAccountCmd c verbose
+              TransactionCmd c -> processTransactionCmd c cfgDir
+              AccountCmd c -> processAccountCmd c
               ModuleCmd c -> processModuleCmd c
               ContractCmd c -> processContractCmd c
+              ConsensusCmd c -> processConsensusCmd c
               LegacyCmd _ -> error "Unreachable case: LegacyCmd."
 
-processConfigCmd :: ConfigCmd -> Maybe FilePath -> Backend -> IO ()
-processConfigCmd action baseCfgDir _ =
+processConfigCmd :: ConfigCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
+processConfigCmd action baseCfgDir verbose _ =
   case action of
     ConfigDump -> do
-      baseCfg <- getBaseConfig baseCfgDir False
+      baseCfg <- getBaseConfig baseCfgDir verbose
       runPrinter $ printBaseConfig baseCfg
       putStrLn ""
       accCfgs <- getAllAccountConfigs baseCfg
       runPrinter $ printAccountConfigList accCfgs
 
-processTransactionCmd :: TransactionCmd -> Verbose -> Maybe FilePath -> Backend -> IO ()
-processTransactionCmd action verbose baseCfgDir backend =
+processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
+processTransactionCmd action baseCfgDir verbose backend =
   case action of
     TransactionSubmit fname -> do
       -- TODO Ensure that the "nonce" field is optional in the payload.
@@ -241,11 +242,35 @@ processAccountCmd action verbose backend =
                         Success as -> return as
       runPrinter $ printAccountList accountAddrs
 
-processModuleCmd :: ModuleCmd -> Backend -> IO ()
-processModuleCmd action backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
+processModuleCmd :: ModuleCmd -> Verbose -> Backend -> IO ()
+processModuleCmd action _ backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
 
-processContractCmd :: ContractCmd -> Backend -> IO ()
-processContractCmd action backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
+processContractCmd :: ContractCmd -> Verbose -> Backend -> IO ()
+processContractCmd action _ backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
+
+processConsensusCmd :: ConsensusCmd -> Verbose -> Backend -> IO ()
+processConsensusCmd action _ backend =
+  case action of
+    ConsensusStatus -> do
+      r <- withClient backend getConsensusStatus
+      s <- case r of
+             Left err -> error $ "RPC error: " ++ err
+             Right v -> return v
+      v <- case fromJSON s of
+             Error err -> error $ printf "cannot parse '%s' as JSON: %s" (show s) err
+             Success v -> return v
+      runPrinter $ printConsensusStatus v
+    ConsensusShowParameters b includeBakers -> do
+      r <- withClient backend $ withBestBlockHash b getBirkParameters
+      s <- case r of
+             Left err -> error $ "RPC error: " ++ err
+             Right v -> return v
+      v <- case fromJSON s of
+             Error err -> error $ printf "cannot parse '%s' as JSON: %s" (show s) err
+             Success v -> return v
+      case v of
+        Nothing -> putStrLn "Block not found."
+        Just p -> runPrinter $ printBirkParametersBakers p includeBakers
 
 processLegacyCmd :: LegacyCmd -> Maybe Backend -> IO ()
 processLegacyCmd action backend =
@@ -270,7 +295,7 @@ processLegacyCmd action backend =
       maybe printNoBackend (useBackend act) backend
 
 printNoBackend :: IO ()
-printNoBackend = putStrLn "No Backend provided"
+printNoBackend = putStrLn "No Backend provided."
 
 -- |Look up block infos all the way to genesis.
 loop :: Either String Value -> ClientMonad IO ()
