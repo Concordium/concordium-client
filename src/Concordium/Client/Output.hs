@@ -248,19 +248,19 @@ printBlockInfo b =
   tell [ printf "Hash:                    %s" (show $ birBlockHash b)
        , printf "Parent:                  %s" (show $ birBlockParent b)
        , printf "Last finalized:          %s" (show $ birBlockLastFinalized b)
+       , printf "Finalized:               %s" (showYesNo $ birFinalized b)
        , printf "Receive time:            %s" (showFormattedUtcTime $ birBlockReceiveTime b)
        , printf "Arrive time:             %s" (showFormattedUtcTime $ birBlockReceiveTime b)
        , printf "Slot:                    %s" (show $ birBlockSlot b)
-       , printf "Slot time:               %s" (show $ birBlockSlotTime b)
-       , printf "Finalized:               %s" (showYesNo $ birFinalized b)
+       , printf "Slot time:               %s" (showFormattedUtcTime $ birBlockSlotTime b)
        , printf "Transaction count:       %d" (birTransactionCount b)
-       , printf "Transaction energy cost: %s" (show $ birTransactionEnergyCost b)
+       , printf "Transaction energy cost: %s NRG" (show $ birTransactionEnergyCost b)
        , printf "Transactions size:       %d" (birTransactionsSize b)
-       , printf "Total amount:            %s" (show $ birTotalAmount b)
-       , printf "Total encrypted amount:  %s" (show $ birTotalEncryptedAmount b)
-       , printf "Central bank amount:     %s" (show $ birCentralBankAmount b)
-       , printf "Minted amount per slot:  %s" (show $ birMintedAmountPerSlot b)
-       , printf "Execution cost:          %s" (show $ birExecutionCost b) ]
+       , printf "Execution cost:          %s GTU" (show $ birExecutionCost b)
+       , printf "Total amount:            %s GTU" (show $ birTotalAmount b)
+       , printf "Total encrypted amount:  %s GTU" (show $ birTotalEncryptedAmount b)
+       , printf "Central bank amount:     %s GTU" (show $ birCentralBankAmount b)
+       , printf "Minted amount per slot:  %s GTU" (show $ birMintedAmountPerSlot b) ]
 
 -- UTIL
 
