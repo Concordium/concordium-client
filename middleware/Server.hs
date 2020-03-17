@@ -33,7 +33,7 @@ runHttp middlewares = do
   env  <- Config.lookupEnv "ENV" Config.Development
 
   nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:11100"
-  esUrl <- Config.lookupEnvText "ES_URL" "http://localhost:9200"
+  pgUrl <- Config.lookupEnvText "PG_URL" "host=localhost port=5432 user=concordium dbname=concordium password=concordium"
   idUrl <- Config.lookupEnvText "SIMPLEID_URL" "http://localhost:8000"
 
   let
@@ -52,23 +52,23 @@ runHttp middlewares = do
   runExceptT (mkGrpcClient grpcConfig) >>= \case
     Left err -> fail (show err) -- cannot connect to grpc server
     Right nodeBackend -> do
-      let 
-        waiApp = Api.servantApp nodeBackend esUrl idUrl
-      
+      let
+        waiApp = Api.servantApp nodeBackend pgUrl idUrl
+
         printStatus = do
           putStrLn $ "NODE_URL: " ++ show nodeUrl
-          putStrLn $ "ES_URL: " ++ show esUrl
+          putStrLn $ "PG_URL: " ++ show pgUrl
           putStrLn $ "SIMPLEID_URL: " ++ show idUrl
           putStrLn $ "Environment: " ++ show env
           putStrLn $ "Server started: http://localhost:" ++ show serverPort
-      
+
         run = W.defaultSettings
                   & W.setBeforeMainLoop printStatus
                   & W.setPort serverPort
                   & W.runSettings
-      
+
       _ <- forkIO $ run $ Config.logger env . middlewares $ waiApp
-      
+
       pure ()
 
 

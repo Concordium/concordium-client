@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
-module Api.Messages where
+module Api.Types where
 
 import           Data.Text (Text)
 import           Data.Aeson
@@ -26,8 +26,13 @@ data BetaIdProvisionRequest =
     }
   deriving (FromJSON, Generic, Show)
 
--- The BetaIdProvisionResponse is just what the SimpleIdClient returns for Identity Object provisioning
-type BetaIdProvisionResponse = IdObjectResponse
+-- The BetaIdProvisionResponse is the same as what the SimpleIdClient returns for Identity Object provisioning
+data BetaIdProvisionResponse =
+  BetaIdProvisionResponse
+    { value :: Value
+    }
+  deriving (FromJSON, ToJSON, Generic, Show)
+
 
 data BetaAccountProvisionRequest =
   BetaAccountProvisionRequest
@@ -54,6 +59,7 @@ data BetaAccountProvisionResponse =
     { accountKeys :: Types.KeyMap
     , spio :: Concordium.ID.Types.CredentialDeploymentInformation
     , address :: Text
+    , transactionHash :: Types.TransactionHash
     }
   deriving (ToJSON, Generic, Show)
 
@@ -120,8 +126,27 @@ newtype SetNodeStateResponse =
     { success :: Bool }
   deriving (FromJSON, ToJSON, Generic, Show)
 
-newtype ReplayTransactionsRequest = ReplayTransactionsRequest  { adminToken :: Text }
-  deriving (FromJSON, ToJSON, Generic, Show)
 
-newtype ReplayTransactionsResponse = ReplayTransactionsResponse { success :: Bool }
+data AccountTransactionsResponse =
+  AccountTransactionsResponse
+    { transactions :: [TransactionOutcome]
+    , accountAddress :: Types.AccountAddress
+    }
+  deriving (ToJSON, Generic, Show)
+
+data TransactionOutcome =
+  TransactionOutcome
+    { id :: Text
+    , message_type :: Text
+    , timestamp :: Text
+    , block_hash :: Text
+    , slot :: Text
+    , transaction_hash :: Text
+    , amount :: Text
+    , from_account :: Maybe Types.AccountAddress
+    , to_account :: Maybe Types.AccountAddress
+    , from_contract :: Maybe Types.ContractAddress
+    , to_contract :: Maybe Types.ContractAddress
+    , finalized :: Bool
+    }
   deriving (FromJSON, ToJSON, Generic, Show)
