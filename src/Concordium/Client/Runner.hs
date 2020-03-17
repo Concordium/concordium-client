@@ -95,6 +95,16 @@ withClient bkend comp = do
     Left err -> error (show err)
     Right x  -> return x
 
+withClientJson :: (MonadIO m, FromJSON a) => Backend -> ClientMonad m (Either String Value) -> m a
+withClientJson b comp = do
+  r <- withClient b comp
+  s <- case r of
+         Left err -> logFatal ["RPC error: " ++ err]
+         Right v -> return v
+  case fromJSON s of
+    Error err -> logFatal [printf "cannot parse '%s' as JSON: %s" (show s) err]
+    Success v -> return v
+
 process :: COM.Options -> IO ()
 process (Options (LegacyCmd c) _ backend _) = processLegacyCmd c backend
 process (Options command cfgDir backend verbose) = do
@@ -109,6 +119,7 @@ process (Options command cfgDir backend verbose) = do
               ModuleCmd c -> processModuleCmd c
               ContractCmd c -> processContractCmd c
               ConsensusCmd c -> processConsensusCmd c
+              BlockCmd c -> processBlockCmd c
               LegacyCmd _ -> error "Unreachable case: LegacyCmd."
 
 processConfigCmd :: ConfigCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -222,25 +233,13 @@ processAccountCmd :: AccountCmd -> Verbose -> Backend -> IO ()
 processAccountCmd action verbose backend =
   case action of
     AccountShow address block -> do
-      r <- withClient backend $ withBestBlockHash block (getAccountInfo address)
-      v <- case r of
-        Left err -> logFatal ["RPC error: " ++ err]
-        Right v -> return v
-      account <- case fromJSON v of
-        Error err -> logFatal [printf "cannot parse '%s' as JSON: %s" (show v) err]
-        Success a -> return a
-      case account of
+      v <- withClientJson backend $ withBestBlockHash block (getAccountInfo address)
+      case v of
         Nothing -> putStrLn "Account not found."
         Just a -> runPrinter $ printAccountInfo address a verbose
     AccountList block -> do
-      r <- withClient backend $ withBestBlockHash block getAccountList
-      v <- case r of
-             Left err -> logFatal ["RPC error: " ++ err]
-             Right v -> return v
-      accountAddrs <- case fromJSON v of
-                        Error err -> logFatal [printf "cannot parse '%s' as JSON: %s" (show v) err]
-                        Success as -> return as
-      runPrinter $ printAccountList accountAddrs
+      v <- withClientJson backend $ withBestBlockHash block getAccountList
+      runPrinter $ printAccountList v
 
 processModuleCmd :: ModuleCmd -> Verbose -> Backend -> IO ()
 processModuleCmd action _ backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
@@ -252,25 +251,20 @@ processConsensusCmd :: ConsensusCmd -> Verbose -> Backend -> IO ()
 processConsensusCmd action _ backend =
   case action of
     ConsensusStatus -> do
-      r <- withClient backend getConsensusStatus
-      s <- case r of
-             Left err -> error $ "RPC error: " ++ err
-             Right v -> return v
-      v <- case fromJSON s of
-             Error err -> error $ printf "cannot parse '%s' as JSON: %s" (show s) err
-             Success v -> return v
+      v <- withClientJson backend getConsensusStatus
       runPrinter $ printConsensusStatus v
     ConsensusShowParameters b includeBakers -> do
-      r <- withClient backend $ withBestBlockHash b getBirkParameters
-      s <- case r of
-             Left err -> error $ "RPC error: " ++ err
-             Right v -> return v
-      v <- case fromJSON s of
-             Error err -> error $ printf "cannot parse '%s' as JSON: %s" (show s) err
-             Success v -> return v
+      v <- withClientJson backend $ withBestBlockHash b getBirkParameters
       case v of
         Nothing -> putStrLn "Block not found."
         Just p -> runPrinter $ printBirkParametersBakers p includeBakers
+
+processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
+processBlockCmd action _ backend =
+  case action of
+    BlockShow b -> do
+      v <- withClientJson backend $ withBestBlockHash b getBlockInfo
+      runPrinter $ printBlockInfo v
 
 processLegacyCmd :: LegacyCmd -> Maybe Backend -> IO ()
 processLegacyCmd action backend =
