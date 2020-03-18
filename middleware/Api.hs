@@ -126,7 +126,7 @@ data Routes r = Routes
                                     :> Post '[JSON] Text
 
     , consensusStatus :: r :-
-        "v1" :> "concensusStatus" :> Get '[JSON] Aeson.Value
+        "v1" :> "consensusStatus" :> Get '[JSON] Aeson.Value
 
     , blockInfo :: r :-
         "v1" :> "blockInfo" :> Capture "blockHash" Text
