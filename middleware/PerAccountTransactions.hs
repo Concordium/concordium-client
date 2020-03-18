@@ -77,5 +77,5 @@ processAccounts :: ConnectionString
                 -> ConduitT (Either String PrettyEntry) Void (ReaderT SqlBackend (NoLoggingT IO)) a
                 -- ^How to process the stream of outcomes.
                 -> IO a
-processAccounts connString addr c = 
+processAccounts connString addr c =
   runNoLoggingT $ withPostgresqlPool connString 5 $ runSqlPool (connect (streamAccounts addr) c)

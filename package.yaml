@@ -149,22 +149,30 @@ executables:
             - aeson
             - base16-bytestring
             - bytestring
+            - cereal
             - concordium-crypto
             - containers
             - directory
             - filepath
-            - globalstate-types
             - globalstate
+            - globalstate-types
             - http-conduit
             - iso8601-time
             - lens-simple
             - managed
+            - monad-logger
+            - mtl
             - neat-interpolation
+            - persistent
+            - persistent-pagination
+            - persistent-postgresql
             - process
             - random
             - servant
+            - servant-conduit
             - servant-server
             - silently
+            - safe
             - simple-client
             - split
             - text

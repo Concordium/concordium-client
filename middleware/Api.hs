@@ -13,6 +13,7 @@ module Api where
 import           Network.Wai (Application)
 import           Control.Monad.Managed (liftIO)
 import           Data.Aeson (encode, decode')
+import qualified Data.Aeson as Aeson
 import           Data.Aeson.Types (FromJSON)
 import           Data.Text (Text)
 import qualified Data.Text as Text
@@ -31,34 +32,35 @@ import           System.Environment
 import           System.IO.Error
 import           System.Process
 import           Text.Read (readMaybe)
-import           Lens.Simple
-import qualified Data.ByteString.Base16 as Base16
-import qualified Data.HashMap.Strict as Map
+import           Lens.Simple ((^.))
+import           Safe (headMay)
 import NeatInterpolation
 
 import qualified Acorn.Parser.Runner as PR
 import           Concordium.Client.Commands as COM
 import           Concordium.Client.GRPC
+import qualified Concordium.Client.GRPC as GRPC
 import           Concordium.Client.Runner
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction
-import           Concordium.Crypto.Ed25519Signature (deriveVerifyKey)
-import           Concordium.Crypto.SignatureScheme (KeyPair(..), correspondingVerifyKey)
-import qualified Concordium.Crypto.SHA256 as SHA256
 
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
 import           Concordium.Types.HashableTo
 import qualified Concordium.Types.Transactions as Types
+import qualified Concordium.Types.Execution as Execution
 import qualified Concordium.Client.Types.Transaction as Types
-import           Control.Monad
 import           Control.Monad.Except
 import qualified Proto.ConcordiumP2pRpc_Fields as CF
 
 import qualified Config
 import           SimpleIdClientApi
-import           EsApi
-import           Api.Messages
+import           Api.Types
+
+-- Account transactions
+import           Conduit
+import           PerAccountTransactions
+import qualified Concordium.Client.TransactionStatus
 
 
 middlewareGodAccount :: Account
@@ -69,21 +71,21 @@ middlewareGodAccount = do
       certainDecode [text|
         {
           "0": {
-            "signKey": "438fe75467a2b7167f8834691ecf0b91e7dc9443b4b6056431e484db00934967",
-            "verifyKey": "92efe3e541a90661bf0cdead5eb34b19843c1473143b551d90fb5bbbbda69ac8"
+            "signKey": "db864d164a9cbb572aec4a86ab8601d5daf3b5ca20bf47a72188da67f29f6e9b",
+            "verifyKey": "d1775f75013889777fedebf6511153adff6b567239edcc10a7e62bc4e88b9c62"
           },
           "1": {
-            "signKey": "38cfc93274834c9c4f4bfad26f3251ac212986a4e464ade632c40e358009d6af",
-            "verifyKey": "cb87fd5472146a4b9c914c2038704c139ae83057bba1170b05a4580e4f8353fd"
+            "signKey": "bcfce29a522b44fa07d16629c8731b470de7df99a0af6b504e3b880d414b316e",
+            "verifyKey": "00d56fe011d7fad86eb19af6d8111ac786197a446bf49f4744baf8bf2f8f27b9"
           },
           "2": {
-            "signKey": "41b0919117d1e006ac069834b01f8c8f7f1267ac0dc288f200fde981917c3558",
-            "verifyKey": "42b581be3991b77fe9ef3b40bbd2944cc7a23799b941b31231adb162df054d4b"
+            "signKey": "05b88a98c986f326bd7523092c3088ad5f31c80836669c0562fe6ff7e58054bc",
+            "verifyKey": "d3782ec10031ae864373b12d5b05e79576d0221f95d1d4de5649d8f449e0d4ed"
           }
         }
       |]
     address =
-      certainDecode "\"3c3WY2QPmM8jfFb1bVDMtW9o51FwoiB3rEJDvxadUqMgFXKMk3\""
+      certainDecode "\"3ZFGxLtnUUSJGW2WqjMh1DDjxyq5rnytCwkSqxFTpsWSFdQnNn\""
   (address, keyMap)
 
 
@@ -95,19 +97,25 @@ data Routes r = Routes
     -- Public Middleware APIs
     { betaIdProvision :: r :-
         "v1" :> "betaIdProvision" :> ReqBody '[JSON] BetaIdProvisionRequest
-                                  :> Post '[JSON] BetaIdProvisionResponse
+                                  :> Post '[JSON] Aeson.Value
 
     , betaAccountProvision :: r :-
         "v1" :> "betaAccountProvision" :> ReqBody '[JSON] BetaAccountProvisionRequest
                                        :> Post '[JSON] BetaAccountProvisionResponse
 
-    , betaGtuDrop :: r :-
-        "v1" :> "betaGtuDrop" :> ReqBody '[JSON] Types.Address
-                              :> Post '[JSON] BetaGtuDropResponse
+    , testnetGtuDrop :: r :-
+        "v1" :> "testnetGtuDrop" :> ReqBody '[JSON] Types.Address
+                              :> Post '[JSON] TestnetGtuDropResponse
 
     , accountTransactions :: r :-
-        "v1" :> "accountTransactions" :> ReqBody '[JSON] Text
+        "v1" :> "accountTransactions" :> ReqBody '[JSON] Types.AccountAddress
+                                      -- @TODO get streaming working instead, requires a non-sinking conduit from Persist.SQL
+                                      -- :> StreamPost NewlineFraming JSON (ConduitM () (Either String PrettyEntry) (ReaderT SqlBackend IO) ())
                                       :> Post '[JSON] AccountTransactionsResponse
+
+    , accountNonFinalizedTransactions :: r :-
+        "v1" :> "accountNonFinalizedTransactions" :> ReqBody '[JSON] Text
+                                      :> Post '[JSON] Aeson.Value
 
     , transfer :: r :-
         "v1" :> "transfer" :> ReqBody '[JSON] TransferRequest
@@ -116,6 +124,21 @@ data Routes r = Routes
     , typecheckContract :: r :-
         "v1" :> "typecheckContract" :> ReqBody '[JSON] Text
                                     :> Post '[JSON] Text
+
+    , consensusStatus :: r :-
+        "v1" :> "concensusStatus" :> Get '[JSON] Aeson.Value
+
+    , blockInfo :: r :-
+        "v1" :> "blockInfo" :> Capture "blockHash" Text
+                              :> Get '[JSON] Aeson.Value
+
+    , transactionStatus :: r :-
+        "v1" :> "transactionStatus" :> Capture "hash" Text
+                              :> Get '[JSON] Aeson.Value
+
+    , simpleTransactionStatus :: r :-
+        "v1" :> "simpleTransactionStatus" :> Capture "hash" Text
+                              :> Get '[JSON] Concordium.Client.TransactionStatus.SimpleTransactionStatusResult
 
     -- Private Middleware APIs (accessible on local client instance of Middleware only)
     , getNodeState :: r :-
@@ -132,7 +155,7 @@ api = genericApi (Proxy :: Proxy Routes)
 
 
 servantApp :: EnvData -> Text -> Text -> Application
-servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
+servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
  where
   routesAsServer = Routes {..} :: Routes AsServer
 
@@ -158,20 +181,20 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
       createDirectoryIfMissing True "tmp/"
       TIO.writeFile "tmp/Contract.elm" contractCode
 
-      (exitCode, _, stderr)
+      (exitCode, stdout, stderr)
         <- readProcessWithExitCode "oak" ["build", "tmp/Contract.elm"] []
 
       case exitCode of
         ExitSuccess ->
-          pure "ok"
+          pure $ Text.pack stdout
         ExitFailure code ->
           if code == 1 then
               pure $ Text.pack stderr
           else
-              pure "unknownerr"
+              pure $ "Unexpected exit code" <> Text.pack (show code)
 
 
-  betaIdProvision :: BetaIdProvisionRequest -> Handler BetaIdProvisionResponse
+  betaIdProvision :: BetaIdProvisionRequest -> Handler Aeson.Value
   betaIdProvision BetaIdProvisionRequest{..} = do
 
     liftIO $ putStrLn "✅ Got the following attributes:"
@@ -202,7 +225,7 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
 
     liftIO $ putStrLn "✅ Got IdObjectResponse"
 
-    pure idObjectResponse
+    pure $ Aeson.toJSON idObjectResponse
 
 
   betaAccountProvision :: BetaAccountProvisionRequest -> Handler BetaAccountProvisionResponse
@@ -224,29 +247,111 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
     let
       newAccountAddress = accountAddress (idCredentialResponse :: IdCredentialResponse)
 
-    _ <- liftIO $ runGodTransaction nodeBackend esUrl $ DeployCredential { credential = credential (idCredentialResponse :: IdCredentialResponse) }
+    transactionHash <- liftIO $ deployCredential nodeBackend (credential (idCredentialResponse :: IdCredentialResponse))
 
     pure $
       BetaAccountProvisionResponse
         { accountKeys = SimpleIdClientApi.keys $ SimpleIdClientApi.accountData (idCredentialResponse :: IdCredentialResponse)
         , spio = credential (idCredentialResponse :: IdCredentialResponse)
         , address = Text.pack . show $ newAccountAddress
+        , transactionHash = transactionHash
         }
 
 
-  betaGtuDrop :: Types.Address -> Handler BetaGtuDropResponse
-  betaGtuDrop toAddress = do
+  testnetGtuDrop :: Types.Address -> Handler TestnetGtuDropResponse
+  testnetGtuDrop toAddress = do
+    case toAddress of
+      Types.AddressAccount address -> do
 
-    liftIO $ putStrLn $ "✅ Requesting GTU Drop for " ++ show toAddress
+        accountResult <- liftIO $ runGRPC nodeBackend (withBestBlockHash Nothing (getAccountInfo $ Text.pack . show $ address))
+        nonce <- liftIO $ fst <$> runGRPC nodeBackend (getAccountNonceBestGuess address)
 
-    transactionId <- liftIO $ runGodTransaction nodeBackend esUrl $ Transfer { toaddress = toAddress, amount = 1000000 }
+        case accountResult of
+          Right accountJson -> do
+            let (accountR :: Aeson.Result AccountInfoResponse) = Aeson.fromJSON accountJson
+            case accountR of
+              Aeson.Success account ->
+                if nonce == Types.minNonce && accountAmount account == 0
+                  then do
+                    liftIO $ putStrLn $ "✅ Requesting GTU Drop for " ++ show toAddress
+                    transactionId <- liftIO $ runGodTransaction nodeBackend $ Transfer { toaddress = toAddress, amount = 1000000 }
+                    pure $ TestnetGtuDropResponse { transactionId = transactionId }
 
-    pure $ BetaGtuDropResponse { transactionId = transactionId }
+                  else
+                    throwError $ err403 { errBody = "GTU drop can only be used once per account." }
+
+              Aeson.Error err ->
+                throwError $ err502 { errBody = "JSON error: " <> BS8.pack err }
+
+          Left err ->
+            throwError $ err502 { errBody = "GRPC error: " <> BS8.pack err }
+      _ ->
+        throwError $ err403 { errBody = "GTU drop can only be used for Account addresses." }
 
 
-  accountTransactions :: Text -> Handler AccountTransactionsResponse
-  accountTransactions address =
-    liftIO $ EsApi.getAccountTransactions esUrl address
+  accountTransactions :: Types.AccountAddress -> Handler AccountTransactionsResponse
+  accountTransactions address = do
+    let
+      accountAddress address =
+        case address of
+          Types.AddressAccount a -> Just a
+          _ -> Nothing
+
+      contractAddress address =
+        case address of
+          Types.AddressContract a -> Just a
+          _ -> Nothing
+
+      toTransactionOutcome ep =
+        case ep of
+          Right p -> do
+
+            hash <- Text.pack . show <$> peTransactionHash p
+            summary <-
+              case peTransactionSummary p of
+                Right s -> Just s
+                Left _ -> Nothing
+
+            event <-
+              case Execution.tsResult summary of
+                Execution.TxSuccess events ->
+                  headMay events
+
+                Execution.TxReject reason ->
+                  Nothing
+
+            (from, amount, to) <-
+              case event of
+                Execution.Transferred f a t ->
+                  Just (f, a, t)
+
+                _ -> Nothing
+
+            Just $
+              TransactionOutcome
+                { id = hash
+                , message_type = "STUB"
+                , timestamp = Text.pack . show $ peBlockTime p
+                , block_hash = Text.pack . show $ peBlockHash p
+                , slot = Text.pack . show $ peBlockHeight p
+                , transaction_hash = hash
+                , amount = Text.pack . show $ amount
+                , from_account = accountAddress from
+                , to_account = accountAddress to
+                , from_contract = contractAddress from
+                , to_contract = contractAddress to
+                , finalized = True
+                }
+
+          Left _ -> Nothing
+
+    outcomes <- liftIO $ processAccounts (Text.encodeUtf8 pgUrl) address $ (mapWhileC toTransactionOutcome .| sinkList)
+
+    pure $ AccountTransactionsResponse outcomes address
+
+
+  accountNonFinalizedTransactions :: Text -> Handler Aeson.Value
+  accountNonFinalizedTransactions address = liftIO $ proxyGrpcCall nodeBackend (GRPC.getAccountNonFinalizedTransactions address)
 
 
   transfer :: TransferRequest -> Handler TransferResponse
@@ -257,9 +362,38 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
 
     liftIO $ putStrLn $ "✅ Sending " ++ show amount ++ " from " ++ show accountAddress ++ " to " ++ show to
 
-    transactionId <- liftIO $ runTransaction nodeBackend esUrl (Transfer { toaddress = to, amount = amount }) account
+    transactionId <- liftIO $ runTransaction nodeBackend (Transfer { toaddress = to, amount = amount }) account
 
     pure $ TransferResponse { transactionId = transactionId }
+
+
+  consensusStatus :: Handler Aeson.Value
+  consensusStatus = liftIO $ proxyGrpcCall nodeBackend (GRPC.getConsensusStatus)
+
+
+  blockInfo :: Text -> Handler Aeson.Value
+  blockInfo blockhash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getBlockInfo blockhash)
+
+
+  transactionStatus :: Text -> Handler Aeson.Value
+  transactionStatus hash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getTransactionStatus hash)
+
+
+  simpleTransactionStatus :: Text -> Handler Concordium.Client.TransactionStatus.SimpleTransactionStatusResult
+  simpleTransactionStatus hashRaw = do
+
+    -- @TODO why does using TransactionHash instead of Text in args cause `No instance for (FromHttpApiData SHA256.Hash)`?
+    let hash_ = readMaybe (Text.unpack hashRaw)
+
+    case hash_ of
+      Just hash -> do
+        res <- liftIO $ runGRPC nodeBackend $ Concordium.Client.TransactionStatus.getSimpleTransactionStatus hash
+        case res of
+          Right status -> pure status
+          Left err -> throwError $ err502 { errBody = BS8.pack $ show err }
+
+      Nothing ->
+        throwError $ err400 { errBody = "Invalid transcation hash." }
 
 
   getNodeState :: Handler GetNodeStateResponse
@@ -310,7 +444,8 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
             }
 
       Left err ->
-        error $ show err
+        throwError $ err400 { errBody = BS8.pack $ show err }
+
 
   setNodeState :: SetNodeStateRequest -> Handler SetNodeStateResponse
   setNodeState _ =
@@ -318,10 +453,22 @@ servantApp nodeBackend esUrl idUrl = genericServe routesAsServer
       SetNodeStateResponse
         { success = True }
 
+proxyGrpcCall :: EnvData -> ClientMonad IO (Either a Aeson.Value) -> IO Aeson.Value
+proxyGrpcCall nodeBackend query = do
+  result <- runGRPC nodeBackend query
+  case result of
+    Right obj ->
+      pure $ Aeson.toJSON obj
+    _ ->
+      pure $ Aeson.Null
+
+
+
 -- For beta, uses the middlewareGodAccount which is seeded with funds
-runGodTransaction :: EnvData -> Text -> TransactionJSONPayload -> IO Types.TransactionHash
-runGodTransaction nodeBackend esUrl payload =
-  runTransaction nodeBackend esUrl payload middlewareGodAccount
+runGodTransaction :: EnvData -> TransactionJSONPayload -> IO Types.TransactionHash
+runGodTransaction nodeBackend payload =
+  runTransaction nodeBackend payload middlewareGodAccount
+
 
 runGRPC :: (MonadIO m) => EnvData -> ClientMonad m a -> m a
 runGRPC envData c =
@@ -329,16 +476,19 @@ runGRPC envData c =
     Left err -> fail (show err)
     Right x -> return x
 
+
 deployCredential :: EnvData -> IDTypes.CredentialDeploymentInformation -> IO Types.TransactionHash
 deployCredential nodeBackend cdi = do
   let toDeploy = Types.CredentialDeployment cdi
   let cdiHash = getHash toDeploy :: Types.TransactionHash
+
+  putStrLn $ "✅ Credentials sent to the baker and hooked: " ++ show cdiHash
+
   runGRPC nodeBackend (cdiHash <$ sendTransactionToBaker toDeploy 100)
 
-runTransaction :: EnvData -> Text -> TransactionJSONPayload -> Account -> IO Types.TransactionHash
-runTransaction nodeBackend esUrl payload (address, keyMap) = do
 
-  let accountAddressText = Text.pack $ show address
+runTransaction :: EnvData -> TransactionJSONPayload -> Account -> IO Types.TransactionHash
+runTransaction nodeBackend payload (address, keyMap) = do
 
   nonce <- fst <$> runGRPC nodeBackend (getAccountNonceBestGuess address)
 
@@ -370,14 +520,14 @@ runTransaction nodeBackend esUrl payload (address, keyMap) = do
             , thExpiry = Types.TransactionExpiryTime transactionExpiry
             }
 
-  executeTransaction esUrl nodeBackend transaction address
+  executeTransaction nodeBackend transaction
 
 
 type Account = (IDTypes.AccountAddress, Types.KeyMap)
 
 
-executeTransaction :: Text -> EnvData -> TransactionJSON -> Types.AccountAddress -> IO Types.TransactionHash
-executeTransaction esUrl nodeBackend transaction address = do
+executeTransaction :: EnvData -> TransactionJSON -> IO Types.TransactionHash
+executeTransaction nodeBackend transaction = do
 
   mdata <- loadContextData
   -- The networkId is for running multiple networks that's not the same chain, but hasn't been taken into use yet
@@ -413,12 +563,12 @@ and being accepted baked into a block with the new account credited 100 GTU.
 debugTestFullProvision :: IO String
 debugTestFullProvision = do
 
-  nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:11100"
-  esUrl <- Config.lookupEnvText "ES_URL" "http://localhost:9200"
+  nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:11104"
+  pgUrl <- Config.lookupEnvText "ES_URL" "http://localhost:9200"
   idUrl <- Config.lookupEnvText "SIMPLEID_URL" "http://localhost:8000"
 
   putStrLn $ "✅ nodeUrl = " ++ Text.unpack nodeUrl
-  putStrLn $ "✅ esUrl = " ++ Text.unpack esUrl
+  putStrLn $ "✅ pgUrl = " ++ Text.unpack pgUrl
   putStrLn $ "✅ idUrl = " ++ Text.unpack idUrl
 
   putStrLn "➡️  Submitting IdObjectRequest"
@@ -472,9 +622,9 @@ debugTestFullProvision = do
 
   let credentialRequest =
         IdCredentialRequest
-          { ipIdentity = ipIdentity (idObjectResponse :: BetaIdProvisionResponse)
-          , identityObject = identityObject (idObjectResponse :: BetaIdProvisionResponse)
-          , idUseData = idUseData (idObjectResponse :: BetaIdProvisionResponse)
+          { ipIdentity = ipIdentity (idObjectResponse :: IdObjectResponse)
+          , identityObject = identityObject (idObjectResponse :: IdObjectResponse)
+          , idUseData = idUseData (idObjectResponse :: IdObjectResponse)
           , revealedItems = ["DateOfBirth"]
           , accountNumber = 0
           }
@@ -493,11 +643,13 @@ debugTestFullProvision = do
 
   putStrLn $ "✅ Deploying credentials for: " ++ show (SimpleIdClientApi.accountAddress idCredentialResponse)
 
-  _ <- runGodTransaction nodeBackend esUrl $ DeployCredential { credential = credential (idCredentialResponse :: IdCredentialResponse) }
+  transactionHash <- liftIO $ deployCredential nodeBackend (credential (idCredentialResponse :: IdCredentialResponse))
+
+  putStrLn $ "✅ Deployed credentials, transactionHash: " ++ show transactionHash
 
   putStrLn $ "✅ Requesting GTU Drop for: " ++ show newAddress
 
-  _ <- runGodTransaction nodeBackend esUrl $ Transfer { toaddress = newAddress, amount = 100 }
+  _ <- runGodTransaction nodeBackend $ Transfer { toaddress = newAddress, amount = 100 }
 
   pure "Done."
 
