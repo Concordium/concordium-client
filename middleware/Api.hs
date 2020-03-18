@@ -103,9 +103,9 @@ data Routes r = Routes
         "v1" :> "betaAccountProvision" :> ReqBody '[JSON] BetaAccountProvisionRequest
                                        :> Post '[JSON] BetaAccountProvisionResponse
 
-    , betaGtuDrop :: r :-
-        "v1" :> "betaGtuDrop" :> ReqBody '[JSON] Types.Address
-                              :> Post '[JSON] BetaGtuDropResponse
+    , testnetGtuDrop :: r :-
+        "v1" :> "testnetGtuDrop" :> ReqBody '[JSON] Types.Address
+                              :> Post '[JSON] TestnetGtuDropResponse
 
     , accountTransactions :: r :-
         "v1" :> "accountTransactions" :> ReqBody '[JSON] Types.AccountAddress
@@ -258,28 +258,35 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
         }
 
 
-  betaGtuDrop :: Types.Address -> Handler BetaGtuDropResponse
-  betaGtuDrop toAddress = do
-
+  testnetGtuDrop :: Types.Address -> Handler TestnetGtuDropResponse
+  testnetGtuDrop toAddress = do
     case toAddress of
       Types.AddressAccount address -> do
 
+        accountResult <- liftIO $ runGRPC nodeBackend (withBestBlockHash Nothing (getAccountInfo $ Text.pack . show $ address))
         nonce <- liftIO $ fst <$> runGRPC nodeBackend (getAccountNonceBestGuess address)
 
-        if nonce == 1
-          then do
+        case accountResult of
+          Right accountJson -> do
+            let (accountR :: Aeson.Result AccountInfoResponse) = Aeson.fromJSON accountJson
+            case accountR of
+              Aeson.Success account ->
+                if nonce == Types.minNonce && accountAmount account == 0
+                  then do
+                    liftIO $ putStrLn $ "✅ Requesting GTU Drop for " ++ show toAddress
+                    transactionId <- liftIO $ runGodTransaction nodeBackend $ Transfer { toaddress = toAddress, amount = 1000000 }
+                    pure $ TestnetGtuDropResponse { transactionId = transactionId }
 
-            liftIO $ putStrLn $ "✅ Requesting GTU Drop for " ++ show toAddress
+                  else
+                    throwError $ err403 { errBody = "GTU drop can only be used once per account." }
 
-            transactionId <- liftIO $ runGodTransaction nodeBackend $ Transfer { toaddress = toAddress, amount = 1000000 }
+              Aeson.Error err ->
+                throwError $ err502 { errBody = "JSON error: " <> BS8.pack err }
 
-            pure $ BetaGtuDropResponse { transactionId = transactionId }
-
-          else
-            throwError $ err400 { errBody = "GTU drop can only be used once per account. Nonce for " <> (BS8.pack $ show address) <> " was " <> (BS8.pack $ show nonce) }
-
+          Left err ->
+            throwError $ err502 { errBody = "GRPC error: " <> BS8.pack err }
       _ ->
-        throwError $ err400 { errBody = "GTU drop can only be used for Account addresses." }
+        throwError $ err403 { errBody = "GTU drop can only be used for Account addresses." }
 
 
   accountTransactions :: Types.AccountAddress -> Handler AccountTransactionsResponse
@@ -383,7 +390,7 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
         res <- liftIO $ runGRPC nodeBackend $ Concordium.Client.TransactionStatus.getSimpleTransactionStatus hash
         case res of
           Right status -> pure status
-          Left err -> throwError $ err400 { errBody = BS8.pack $ show err }
+          Left err -> throwError $ err502 { errBody = BS8.pack $ show err }
 
       Nothing ->
         throwError $ err400 { errBody = "Invalid transcation hash." }
