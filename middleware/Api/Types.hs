@@ -19,12 +19,14 @@ import qualified Concordium.ID.Types as IDTypes
 
 import           SimpleIdClientApi
 
+
 data BetaIdProvisionRequest =
   BetaIdProvisionRequest
     { attributes :: [(Text,Text)]
     , accountKeys :: Maybe KeyPair
     }
   deriving (FromJSON, Generic, Show)
+
 
 -- The BetaIdProvisionResponse is the same as what the SimpleIdClient returns for Identity Object provisioning
 data BetaIdProvisionResponse =
@@ -43,6 +45,7 @@ data BetaAccountProvisionRequest =
     , accountNumber :: Word8
     }
   deriving (ToJSON, Generic, Show)
+
 
 instance FromJSON BetaAccountProvisionRequest where
   parseJSON = withObject "BetaAccountProvisionRequest" $ \v -> do
@@ -64,11 +67,26 @@ data BetaAccountProvisionResponse =
   deriving (ToJSON, Generic, Show)
 
 
-newtype BetaGtuDropResponse =
-  BetaGtuDropResponse
+data AccountInfoResponse = AccountInfoResponse
+  { accountAmount :: !Types.Amount
+  , accountNonce :: !Types.Nonce
+  }
+  deriving (Show)
+
+
+instance FromJSON AccountInfoResponse where
+  parseJSON = withObject "Account info" $ \v -> do
+    accountAmount <- v .: "accountAmount"
+    accountNonce <- v .: "accountNonce"
+    return $ AccountInfoResponse {..}
+
+
+newtype TestnetGtuDropResponse =
+  TestnetGtuDropResponse
     { transactionId :: Types.TransactionHash
     }
   deriving (ToJSON, Generic, Show)
+
 
 data TransferRequest =
   TransferRequest
@@ -78,11 +96,13 @@ data TransferRequest =
     }
   deriving (FromJSON, Generic, Show)
 
+
 newtype TransferResponse =
   TransferResponse
     { transactionId :: Types.TransactionHash
     }
   deriving (ToJSON, Generic, Show)
+
 
 data GetNodeStateResponse =
   GetNodeStateResponse
@@ -133,6 +153,7 @@ data AccountTransactionsResponse =
     , accountAddress :: Types.AccountAddress
     }
   deriving (ToJSON, Generic, Show)
+
 
 data TransactionOutcome =
   TransactionOutcome
