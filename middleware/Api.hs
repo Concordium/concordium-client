@@ -501,7 +501,7 @@ runTransaction nodeBackend payload (address, keyMap) = do
     -- will change when tokenomics is finalized
     energyAmount =
       case payload of
-        Transfer _ _       -> 10
+        Transfer _ _       -> 165
         DeployCredential _ -> 10000
         _                  -> 10000
 
