@@ -7,6 +7,7 @@
 module SimpleIdClientApi where
 
 import           Data.Aeson (Value(..), (.=))
+import qualified Data.Aeson as Aeson
 import           Data.Aeson.Types (ToJSON(..), FromJSON)
 import qualified Data.HashMap.Strict as DMS (fromList)
 import           Data.Map
@@ -101,8 +102,7 @@ data IdentityObject =
 
 data PreIdentityObject =
   PreIdentityObject
-    { accountHolderName :: Text
-    , idCredPub :: Text
+    { idCredPub :: Text
     , idCredSecCommitment :: Text
     , ipArData :: [IpArData]
     , choiceArData :: ChoiceArData
@@ -147,7 +147,6 @@ data IdUseDataAci =
 data CredentialHolderInformation =
   CredentialHolderInformation
     { idCredSecret :: Text
-    , name :: Text
     }
   deriving (Generic, Show, FromJSON, ToJSON)
 

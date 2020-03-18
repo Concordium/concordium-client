@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
-module Api.Messages where
+module Api.Types where
 
 import           Data.Text (Text)
 import           Data.Aeson
@@ -19,6 +19,7 @@ import qualified Concordium.ID.Types as IDTypes
 
 import           SimpleIdClientApi
 
+
 data BetaIdProvisionRequest =
   BetaIdProvisionRequest
     { attributes :: [(Text,Text)]
@@ -26,8 +27,14 @@ data BetaIdProvisionRequest =
     }
   deriving (FromJSON, Generic, Show)
 
--- The BetaIdProvisionResponse is just what the SimpleIdClient returns for Identity Object provisioning
-type BetaIdProvisionResponse = IdObjectResponse
+
+-- The BetaIdProvisionResponse is the same as what the SimpleIdClient returns for Identity Object provisioning
+data BetaIdProvisionResponse =
+  BetaIdProvisionResponse
+    { value :: Value
+    }
+  deriving (FromJSON, ToJSON, Generic, Show)
+
 
 data BetaAccountProvisionRequest =
   BetaAccountProvisionRequest
@@ -38,6 +45,7 @@ data BetaAccountProvisionRequest =
     , accountNumber :: Word8
     }
   deriving (ToJSON, Generic, Show)
+
 
 instance FromJSON BetaAccountProvisionRequest where
   parseJSON = withObject "BetaAccountProvisionRequest" $ \v -> do
@@ -54,15 +62,31 @@ data BetaAccountProvisionResponse =
     { accountKeys :: Types.KeyMap
     , spio :: Concordium.ID.Types.CredentialDeploymentInformation
     , address :: Text
+    , transactionHash :: Types.TransactionHash
     }
   deriving (ToJSON, Generic, Show)
 
 
-newtype BetaGtuDropResponse =
-  BetaGtuDropResponse
+data AccountInfoResponse = AccountInfoResponse
+  { accountAmount :: !Types.Amount
+  , accountNonce :: !Types.Nonce
+  }
+  deriving (Show)
+
+
+instance FromJSON AccountInfoResponse where
+  parseJSON = withObject "Account info" $ \v -> do
+    accountAmount <- v .: "accountAmount"
+    accountNonce <- v .: "accountNonce"
+    return $ AccountInfoResponse {..}
+
+
+newtype TestnetGtuDropResponse =
+  TestnetGtuDropResponse
     { transactionId :: Types.TransactionHash
     }
   deriving (ToJSON, Generic, Show)
+
 
 data TransferRequest =
   TransferRequest
@@ -72,11 +96,13 @@ data TransferRequest =
     }
   deriving (FromJSON, Generic, Show)
 
+
 newtype TransferResponse =
   TransferResponse
     { transactionId :: Types.TransactionHash
     }
   deriving (ToJSON, Generic, Show)
+
 
 data GetNodeStateResponse =
   GetNodeStateResponse
@@ -120,8 +146,28 @@ newtype SetNodeStateResponse =
     { success :: Bool }
   deriving (FromJSON, ToJSON, Generic, Show)
 
-newtype ReplayTransactionsRequest = ReplayTransactionsRequest  { adminToken :: Text }
-  deriving (FromJSON, ToJSON, Generic, Show)
 
-newtype ReplayTransactionsResponse = ReplayTransactionsResponse { success :: Bool }
+data AccountTransactionsResponse =
+  AccountTransactionsResponse
+    { transactions :: [TransactionOutcome]
+    , accountAddress :: Types.AccountAddress
+    }
+  deriving (ToJSON, Generic, Show)
+
+
+data TransactionOutcome =
+  TransactionOutcome
+    { id :: Text
+    , message_type :: Text
+    , timestamp :: Text
+    , block_hash :: Text
+    , slot :: Text
+    , transaction_hash :: Text
+    , amount :: Text
+    , from_account :: Maybe Types.AccountAddress
+    , to_account :: Maybe Types.AccountAddress
+    , from_contract :: Maybe Types.ContractAddress
+    , to_contract :: Maybe Types.ContractAddress
+    , finalized :: Bool
+    }
   deriving (FromJSON, ToJSON, Generic, Show)
