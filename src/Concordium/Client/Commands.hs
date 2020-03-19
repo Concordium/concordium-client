@@ -152,19 +152,19 @@ portParser =
   option
     auto
     (long "grpc-port" <> metavar "GRPC-PORT" <>
-     help "Port where the gRPC server is listening.")
+     help "port where the gRPC server is listening")
 
 targetParser :: Parser (Maybe String)
 targetParser =
   optional $
   strOption
     (long "grpc-target" <> metavar "GRPC-TARGET" <>
-     help "Target node name when using a proxy.")
+     help "target node name when using a proxy")
 
 transactionCfgParser :: Parser TransactionCfg
 transactionCfgParser =
   TransactionCfg <$>
-    optional (strOption (long "sender" <> metavar "SENDER" <> help "address of the transaction sender")) <*>
+    optional (strOption (long "sender" <> metavar "SENDER" <> help "name or address of the transaction sender")) <*>
     optional (strOption (long "keys" <> metavar "KEYS" <> help "any number of sign/verify keys specified as JSON ({<key-idx>: {<sign-key>, <verify-key>})")) <*>
     optional (option auto (long "nonce" <> metavar "NONCE" <> help "transaction nonce")) <*>
     optional (option auto (long "energy" <> metavar "MAX-ENERGY" <> help "maximum allowed amount of energy to spend on transaction")) <*>
@@ -181,9 +181,9 @@ programOptions = Options <$>
                       consensusCmds <>
                       blockCmds
                      ) <|> (LegacyCmd <$> legacyProgramOptions)) <*>
-                   (optional (strOption (long "config" <> metavar "DIR" <> help "Configuration directory path"))) <*>
+                   (optional (strOption (long "config" <> metavar "DIR" <> help "configuration directory path"))) <*>
                    (optional backendParser) <*>
-                   (switch (long "verbose" <> short 'v' <> help "Make output verbose"))
+                   (switch (long "verbose" <> short 'v' <> help "make output verbose"))
 
 transactionCmds :: Mod CommandFields Cmd
 transactionCmds =
@@ -203,7 +203,7 @@ transactionSubmitCmd =
     "submit"
     (info
       (TransactionSubmit <$>
-        strArgument (metavar "FILE" <> help "File containing the transaction parameters in JSON format"))
+        strArgument (metavar "FILE" <> help "file containing the transaction parameters in JSON format"))
       (progDesc "parse transaction and send it to the baker"))
 
 transactionStatusCmd :: Mod CommandFields TransactionCmd
@@ -244,7 +244,7 @@ accountShowCmd =
     (info
        (AccountShow <$>
          strArgument (metavar "ADDRESS" <> help "address of the account") <*>
-         optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block")))
+         optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block (default: \"best\")")))
        (progDesc "display account details"))
 
 accountListCmd :: Mod CommandFields AccountCmd
@@ -253,7 +253,7 @@ accountListCmd =
     "list"
     (info
        (AccountList <$>
-         optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block")))
+         optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block (default: \"best\")")))
        (progDesc "list all accounts"))
 
 moduleCmds :: Mod CommandFields Cmd
@@ -275,7 +275,7 @@ moduleShowCmd =
     (info
       (ModuleShow <$>
         strArgument (metavar "REF" <> help "reference ID of the module") <*>
-        optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block")))
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block (default: \"best\")")))
       (progDesc "display module source code"))
 
 moduleListCmd :: Mod CommandFields ModuleCmd
@@ -284,8 +284,8 @@ moduleListCmd =
     "list"
     (info
       (ModuleList <$>
-        optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block")))
-      (progDesc "list all modules at given (default: \"best\") block"))
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block (default: \"best\")")))
+      (progDesc "list all modules"))
 
 moduleDeployCmd :: Mod CommandFields ModuleCmd
 moduleDeployCmd =
@@ -317,8 +317,8 @@ contractShowCmd =
     (info
       (ContractShow <$>
         strArgument (metavar "ADDRESS" <> help "address of the contract") <*>
-        optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block")))
-      (progDesc "display contract state at given (default: \"best\") block"))
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block (default: \"best\")")))
+      (progDesc "display contract state at given block"))
 
 contractListCmd :: Mod CommandFields ContractCmd
 contractListCmd =
@@ -326,8 +326,8 @@ contractListCmd =
     "list"
     (info
       (ContractList <$>
-        optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block")))
-    (progDesc "list all contracts on a specific (default: \"best\") block"))
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block (default: \"best\")")))
+    (progDesc "list all contracts on a specific block"))
 
 contractInitCmd :: Mod CommandFields ContractCmd
 contractInitCmd =
@@ -376,7 +376,7 @@ consensusStatusCmd =
     "status"
     (info
       (pure ConsensusStatus)
-      (progDesc "list various parameters related to the state of the consensus protocol"))
+      (progDesc "list various parameters related to the current state of the consensus protocol"))
 
 consensusShowParametersCmd :: Mod CommandFields ConsensusCmd
 consensusShowParametersCmd =
@@ -384,9 +384,9 @@ consensusShowParametersCmd =
     "show-parameters"
     (info
       (ConsensusShowParameters <$>
-        optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block")) <*>
-        switch (long "include-bakers" <> help "include list of bakers"))
-      (progDesc "show election parameters for given (default: \"best\" block)"))
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block (default: \"best\")")) <*>
+        switch (long "include-bakers" <> help "include the \"lottery power\" of individual bakers"))
+      (progDesc "show election parameters for given block"))
 
 blockCmds :: Mod CommandFields Cmd
 blockCmds =
@@ -404,5 +404,5 @@ blockShowCmd =
     "show"
     (info
       (BlockShow <$>
-        optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block")))
-      (progDesc "show election parameters for given (default: \"best\" block)"))
+        optional (strArgument (metavar "BLOCK" <> help "hash of the block (default: \"best\")")))
+      (progDesc "show stats for a given block"))
