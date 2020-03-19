@@ -331,7 +331,8 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
               TransactionOutcome
                 { id = hash
                 , message_type = "DirectTransfer"
-                , timestamp = Text.pack . show $ peBlockTime p
+                -- JS expects timestamps in milliseconds
+                , timestamp = Text.pack . show $ (peBlockTime p * 1000)
                 , block_hash = Text.pack . show $ peBlockHash p
                 , slot = Text.pack . show $ peBlockHeight p
                 , transaction_hash = hash
