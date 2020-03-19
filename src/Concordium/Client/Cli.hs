@@ -69,8 +69,7 @@ data AccountInfoResult = AccountInfoResult
   { airAmount :: !Amount
   , airNonce :: !Nonce
   , airDelegation :: !(Maybe BakerId),
-    -- TODO Change to ![IDTypes.CredentialDeploymentValues] once backend is updated.
-    airCredentials :: ![(Int, IDTypes.CredentialDeploymentValues)] }
+    airCredentials :: ![IDTypes.CredentialDeploymentValues] }
   deriving (Show)
 
 instance AE.FromJSON AccountInfoResult where
