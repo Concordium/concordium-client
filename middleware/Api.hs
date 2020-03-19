@@ -330,7 +330,7 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
             Just $
               TransactionOutcome
                 { id = hash
-                , message_type = "STUB"
+                , message_type = "DirectTransfer"
                 , timestamp = Text.pack . show $ peBlockTime p
                 , block_hash = Text.pack . show $ peBlockHash p
                 , slot = Text.pack . show $ peBlockHeight p
