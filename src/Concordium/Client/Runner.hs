@@ -140,7 +140,8 @@ processTransactionCmd action baseCfgDir verbose backend =
       mdata <- loadContextData
       source <- BSL.readFile fname
       tx <- PR.evalContext mdata $ withClient backend $ processTransaction source defaultNetId
-      logInfo [printf "transaction '%s' sent to the baker" (show $ getBlockItemHash tx)]
+      logInfo [ printf "transaction sent to the baker"
+              , printf "query status using 'transaction status %s'" (show $ getBlockItemHash tx) ]
     TransactionStatus hash -> do
       validateTransactionHash hash
       status <- withClient backend $ queryTransactionStatus (read $ unpack hash)

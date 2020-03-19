@@ -29,7 +29,7 @@ addr_cfg_dir="$acc_cfg_dir/$address"
 
 read -p "Press ENTER to confirm writing config to $base_cfg_dir (or Ctrl-C to cancel): "
 
-rm -r "$base_cfg_dir"
+rm -rf "$base_cfg_dir"
 mkdir -p "$addr_cfg_dir"
 
 function write_file {

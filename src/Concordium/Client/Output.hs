@@ -108,7 +108,7 @@ printAccountInfo address a verbose = do
        , printf "Delegation: %s" (maybe showNone show $ airDelegation a)
        , "" ]
 
-  case Prelude.map snd $ airCredentials a of
+  case airCredentials a of
       [] -> tell ["Credentials: " ++ showNone]
       creds -> do
         tell ["Credentials:"]
@@ -246,8 +246,8 @@ printBirkParametersBakers r includeBakers = do
 printBlockInfo :: BlockInfoResult -> Printer
 printBlockInfo b =
   tell [ printf "Hash:                       %s" (show $ birBlockHash b)
-       , printf "Parent:                     %s" (show $ birBlockParent b)
-       , printf "Last finalized:             %s" (show $ birBlockLastFinalized b)
+       , printf "Parent block:               %s" (show $ birBlockParent b)
+       , printf "Last finalized block:       %s" (show $ birBlockLastFinalized b)
        , printf "Finalized:                  %s" (showYesNo $ birFinalized b)
        , printf "Receive time:               %s" (showFormattedUtcTime $ birBlockReceiveTime b)
        , printf "Arrive time:                %s" (showFormattedUtcTime $ birBlockReceiveTime b)

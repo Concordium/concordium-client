@@ -45,7 +45,7 @@ for tf in test_files:
         test_json['keys'] = sender_keys
 
         if tf.name == 'transfer.json':
-            test_json['payload']['toaddress']['accountAddress'] = receiver_account
+            test_json['payload']['toaddress']['address'] = receiver_account
 
         f.write(json.dumps(test_json, indent=4))
         f.write('\n')
