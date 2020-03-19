@@ -25,7 +25,7 @@ exampleAccountInfoResult d cs = AccountInfoResult
                                 { airAmount = Types.Amount 1
                                 , airNonce = Types.Nonce 2
                                 , airDelegation = d
-                                , airCredentials = zip (repeat 0) cs }
+                                , airCredentials = cs }
 
 exampleCredentials :: IDTypes.Policy -> IDTypes.CredentialDeploymentValues
 exampleCredentials p = IDTypes.CredentialDeploymentValues

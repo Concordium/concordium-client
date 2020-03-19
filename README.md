@@ -61,7 +61,7 @@ If not set or empty, it has the following system-dependent defaults:
 * Unix: `$HOME/.config`
 * Windows: `%APPDATA%` (`C:\Users\<user>\AppData\Roaming`)
 
-The expected structure inside the config dir is
+The expected structure inside the config directory is
 
 ```
 <config-dir>
@@ -90,6 +90,8 @@ So the map cannot be used to map the address nor name of one account to another.
 The key files (named by `<n>` above) must exist in pairs with numeric names and the extensions shown above.
 Account names may consist of letters, numbers, and the symbols '-' and '_'.
 
+### Initialization
+
 The adhoc script `scripts/init-config.sh <address>` initializes this config structure with `<address>` as the default account.
 After confirming the directory to be initialized (which includes nuking it),
 the script expects a JSON string in the following format to be pasted into stdout.
@@ -97,21 +99,54 @@ the script expects a JSON string in the following format to be pasted into stdou
 ```
 {
     <n>: {
-        "signKey": <sign-key>.
+        "signKey": <sign-key>,
         "verifyKey": <verify-key>
     },
     ...
 }
 ```
 
-This is the same format as that expected by the `--keys` flag of the [`transaction send-gtu`](#transaction-send-gtu-args) command.
+This is the same format as that expected by the `--keys` flag of the [`transaction send-gtu`](#transaction-send-gtu-flags) command.
 The script is a temporary solution and will be replaced with proper commands.
+
+*Example*
+
+```
+$ scripts/init-config.sh 4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y
+Press ENTER to confirm writing config to /home/testuser/.config/concordium (or Ctrl-C to cancel):
+Writing '/home/testuser/.config/concordium/accounts/names.map'.
+Input keys in the same JSON format as the one expected by the --keys flag.
+{
+        "0": {
+            "signKey": "b2217dd42238d5c16d2f3308ceefed96c1316d5f70d682877f2480fdbb15afe9",
+            "verifyKey": "414518b56ae0bbef0802c39eb80b5dccbf7bd557779303a8a467ab3f7d5ac07a"
+        },
+        "1": {
+            "signKey": "8097175288884c429428bf828462d1a29a7845b005c248bb7f2c709b6afbffb3",
+            "verifyKey": "0ce48959ee09e8d5c178f718f876731b6164f39ff23865e134bb86a41b893664"
+        },
+        "2": {
+            "signKey": "10a117dde270c9c38921602290f36f8863653db807881b9b09c4cea578a0a22a",
+            "verifyKey": "3c3a341f906a9cb6a5e204d216df34d2d540001762dfe802ddef29972cfbd150"
+        }
+    }
+^D
+Writing '/home/testuser/.config/concordium/accounts/4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y/0.sign'.
+Writing '/home/testuser/.config/concordium/accounts/4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y/0.verify'.
+Writing '/home/testuser/.config/concordium/accounts/4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y/1.sign'.
+Writing '/home/testuser/.config/concordium/accounts/4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y/1.verify'.
+Writing '/home/testuser/.config/concordium/accounts/4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y/2.sign'.
+Writing '/home/testuser/.config/concordium/accounts/4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y/2.verify'.
+```
 
 ## Prerequisites
 
-* Install the [protoc](https://github.com/google/proto-lens/blob/master/docs/installing-protoc.md) tool for generating protobuf files.
+* Install the [protoc](https://github.com/google/proto-lens/blob/master/docs/installing-protoc.md) tool for generating protobuf files
+  (`sudo apt install protobuf-compiler` on Ubuntu 19.10).
 
-* To initialize dependencies run `git submodule update --init --recursive` after cloning.
+* Install development libraries for PostgreSQL and LMDB (`sudo apt install libpq-dev postgresql-common liblmdb-dev` on Ubuntu 19.10).
+
+* Initialize submodule dependencies after cloning (`git submodule update --init --recursive`).
 
 ## Usage
 
@@ -152,7 +187,30 @@ As the names indicate, the "new" commands are intended to replace the "legacy" o
 
 ### New commands
 
-The new commands are grouped by topic:
+The new commands are grouped by topic. Whenever a command takes an optional block it always defaults to the current "best" block.
+
+#### Configuration
+
+##### `config dump`
+
+Dump persisted configuration.
+
+*Example*
+
+```
+$ simple-client config dump
+Base configuration:
+- Verbose:            no
+- Account config dir: /home/testuser/.config/concordium/accounts
+- Account name map:
+    default -> 3urFJGp9AaU62fQ3DEfCczqJwVt9V3F1gjE5PPBaYgqBD6rqPB
+
+Account keys:
+- '3urFJGp9AaU62fQ3DEfCczqJwVt9V3F1gjE5PPBaYgqBD6rqPB'
+    0: sign=ae3b81da56ab6e556d64abe4beac734e8b257e8dc9d3296e3a8d274208965b28, verify=a237029bdada86f07992ccdaca6d52b3ca27ef3e27444b23270587e117872dba
+    1: sign=ed6f68990129dafccd47daf903f8f59ca7d6554302f02e3a7faa9f7d06032fd8, verify=e76bd607e9b25f3a2005da4e8ecf1fb6a304efa15b7edaaa59ec02e72f5a43f4
+    2: sign=329bb019222c721734f1bfc22d5d30320fe120a2dd33a202a1f1a29b76d9593f, verify=57d18474625f4e4b677ed0cda28725c6e4ce9617c63afbaac08e85c4faa41208
+```
 
 #### Transaction
 
@@ -160,22 +218,42 @@ Transaction sending and inspection.
 
 ##### `transaction submit PAYLOAD-FILE`
 
+*Example*
+
+```
+$ simple-client transaction submit test/transactions/transfer.json
+Transaction sent to the baker.
+Query status using 'transaction status 1b5aedf75e397f2c3fed3f13f96ee12d99952928ef5a0cd18bd39841b7b34430'.
+```
+
 Low-level command to send transaction from JSON payload.
 
 ##### `transaction status TX-HASH`
 
 Poll status on the transaction `TX-HASH`.
 
-##### `transaction send-gtu ARGS...`
+*Example*
 
-Send a Transfer transaction. Required flags:
+```
+$ simple-client transaction status 1b5aedf75e397f2c3fed3f13f96ee12d99952928ef5a0cd18bd39841b7b34430
+Transaction is finalized into block 180ab359d341576e90a23c08302fb78a63e671e0adedb29c306a7c12815c37e1 with status "success" and cost 165 GTU (165 NRG).
+```
+
+##### `transaction send-gtu FLAGS...`
+
+Send a Transfer transaction.
+
+Required flags:
 
 * `--amount`: Amount of GTU to send.
-* `--sender`: Name or address of the sender account.
-* `--keys`: Keys of the sender account.
 * `--receiver`: Address of the receiver account.
 * `--expiry`: Expiry time of the transaction (Unix epoch timestamp).
 * `--energy`: Amount of NRG to allocate to the transaction.
+
+Optional flags (will attempt to resolve from persistent configuration):
+
+* `--sender`: Name or address of the sender account.
+* `--keys`: Keys of the sender account.
 
 See the [Configuration](#configuration) section for descriptions of account name and the format of `--keys`.
 
@@ -183,17 +261,150 @@ After signing and sending the "transfer" transaction, the command follows the li
 Unless it gets interrupted (which doesn't prevent the transaction from progressing),
 the command blocks, waiting for the transaction to get committed and ultimately finalized.
 
+*Example*
+
+```
+$ simple-client transaction send-gtu --amount 100 --energy 10000 --expiry 9999999999 --receiver 3EmnjMy8AY5zoebNaA3HuVx1UShdW8vh9n1YjJztmSc2jN4K3V
+Account reference not provided; using "default".
+Sending 100 GTU from '4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y' (default) to '3EmnjMy8AY5zoebNaA3HuVx1UShdW8vh9n1YjJztmSc2jN4K3V'.
+Allowing up to 10000 NRG to be spent as transaction fee.
+Confirm [yN]: y
+Transaction sent to the baker. Waiting for transaction to be committed and finalized.
+You may skip this by interrupting this command (using Ctrl-C) - the transaction will still get procesed and may be queried using 'transaction status eb7eda074456ab868eb544ac8ffaf3ec84825b76c111d8fa5c67de30d8c3695f'.
+[15:50:26] Waiting for the transaction to be committed.....
+Transaction is committed into block 7b33b3593e3100b38e6f70cd2a8a942116c99c000ea6011ff2af4707dec2a011 with status "success" and cost 165 GTU (165 NRG).
+[15:50:30] Waiting for the transaction to be finalized......
+[15:50:45] Transfer completed.
+```
+
 #### Account
 
 Account inspection.
 
-##### `account show <address>`
+##### `account show ADDRESS [--block BLOCK-HASH]`
 
-Show details of a specific account.
+Show details of a specific account as of a specific block.
 
-##### `account list`
+*Example*
 
-Show list of all account addresses.
+```
+$ simple-client account show 2zgcMk7heVZKaaBfPtxVqmvE3GnrrP7N2nFGHoiC6X9nZT9TaG --block 7b33b3593e3100b38e6f70cd2a8a942116c99c000ea6011ff2af4707dec2a011
+Address:    2zgcMk7heVZKaaBfPtxVqmvE3GnrrP7N2nFGHoiC6X9nZT9TaG
+Amount:     1000000263826 GTU
+Nonce:      1
+Delegation: 3
+
+Credentials:
+* 88d28b6922c4e63fab6b34f0a4ae42d33817102f96d5da20fab7d0a449b92399aef395a87dc587aa799cd202fcb75c90:
+  - Expiration: Thu, 18 Mar 2021 08:40:53 UTC
+  - Revealed attributes: none
+```
+
+##### `account list [--block BLOCK-HASH]`
+
+Show list of all account addresses as of a specific block.
+
+*Example*
+
+```
+$ simple-client account list --block 7b33b3593e3100b38e6f70cd2a8a942116c99c000ea6011ff2af4707dec2a011
+2zgcMk7heVZKaaBfPtxVqmvE3GnrrP7N2nFGHoiC6X9nZT9TaG
+33MT5V7LAzbjfRS537nqq9AqHb4ALymQWwYhriE3kcYr8qsDoS
+3EmnjMy8AY5zoebNaA3HuVx1UShdW8vh9n1YjJztmSc2jN4K3V
+3GqF3FQPxyxUChnBcwsC5jmY4kqWyi6R8dNXHk88GYqCPKaLGP
+3HiDcMNQvWgzeC7NvvNLsajumazeBhStvaj2vdS9aTuKRyTP3a
+3QHhwuM28e9w8azXqoChqPy56vgJfCEuQHRjpzoXv44kALXfiC
+3ZFGxLtnUUSJGW2WqjMh1DDjxyq5rnytCwkSqxFTpsWSFdQnNn
+3eAdHh7atmvo7wcQqgp7Ft1TAU9AhGjTxyjxuTYJqpVc8Uq1SV
+3iXopWKixXBegpj6acM6vcj2SJeG6Tbo4eDdSahX62Rz58Td5q
+3rqX3VeBrshxHnhj5Vt1CMT9J55ybCGd6avSea5oNFLPB65pC2
+4A7L8pPDinfQnUkunEzAYcAYBH5MAFthrbA3NFUq2Ge5fbsnPd
+4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y
+4SS2jUt2Nj7vJuWu3TBCYp1etr47qJPtm3dVyJDHGz751fRpph
+4TJTbQEAfKfqva9CspS4XLCDYaHamvk8nqHXtQqmbdf2dygwwj
+4dxjX98YTMvhZtpVKPorbVPao6GtyJFotRwEwpTHKhPa3fARFn
+```
+
+#### Consensus
+
+Inspection of chain health and election parameters.
+
+##### `consensus status`
+
+List various parameters related to the current state of the consensus protocol.
+
+*Example*
+
+```
+$ simple-client consensus status
+Best block:                  7f9641fd4dfc1ffca2ef187fdddff375bb975764d66d68744574b893b61a8338
+Genesis block:               1c647ab5e7ff63b28926f5eed88a9d49b130942a54d791abfa79b4cc0c98acd0
+Last finalized block:        183e50fb2700716bd6f194f62fbd4b142a657b4bbd6d83bb64093463960ba4f3
+Best block height:           154
+Last finalized block height: 153
+Blocks received count:       128
+Block last received time:    Wed, 18 Mar 2020 14:57:45 UTC
+Block receive latency:          60 ms (EMA),    39 ms (EMSD)
+Block receive period:         7812 ms (EMA),  9086 ms (EMSD)
+Blocks verified count:       171
+Block last arrived time:     Wed, 18 Mar 2020 14:57:45 UTC
+Block arrive latency:           61 ms (EMA),    60 ms (EMSD)
+Block arrive period:          5029 ms (EMA),  6388 ms (EMSD)
+Transactions per block:          0 ms (EMA),     3 ms (EMSD)
+Finalization count:          51
+Last finalized time:         Wed, 18 Mar 2020 14:57:50 UTC
+Finalization period:         17434 ms (EMA), 11541 ms (EMSD)
+```
+
+##### `consensus show-parameters [--block BLOCK-HASH] [--include-bakers]`
+
+Show election parameters as of a specific block, optionally including the "lottery power" of individual bakers.
+
+*Example*
+
+```
+$ simple-client consensus show-parameters --include-bakers
+Election nonce:      758d81a016e747f186a1fd3706f267c07d8e900d0126c08adfd89e34a77eb92c
+Election difficulty: 0.2
+Bakers:
+                             Account                       Lottery power
+        ----------------------------------------------------------------
+     0: 4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y    0.1998
+     1: 3EmnjMy8AY5zoebNaA3HuVx1UShdW8vh9n1YjJztmSc2jN4K3V    0.1998
+     2: 33MT5V7LAzbjfRS537nqq9AqHb4ALymQWwYhriE3kcYr8qsDoS    0.1998
+     3: 2zgcMk7heVZKaaBfPtxVqmvE3GnrrP7N2nFGHoiC6X9nZT9TaG    0.1997
+     4: 3rqX3VeBrshxHnhj5Vt1CMT9J55ybCGd6avSea5oNFLPB65pC2    0.2009
+```
+
+#### Block
+
+Block inspection.
+
+##### `block show [BLOCK-HASH]`
+
+Show stats for a block.
+
+*Example*
+
+```
+$ simple-client block show 7f9641fd4dfc1ffca2ef187fdddff375bb975764d66d68744574b893b61a8338
+Hash:                       7f9641fd4dfc1ffca2ef187fdddff375bb975764d66d68744574b893b61a8338
+Parent block:               183e50fb2700716bd6f194f62fbd4b142a657b4bbd6d83bb64093463960ba4f3
+Last finalized block:       a4e69297aa654e716cb9f52170aa7639d1cf03c83c87e26e4f8109da11761cbb
+Finalized:                  yes
+Receive time:               Wed, 18 Mar 2020 14:57:45 UTC
+Arrive time:                Wed, 18 Mar 2020 14:57:45 UTC
+Slot:                       63921465
+Slot time:                  Wed, 18 Mar 2020 14:57:45 UTC
+Transaction count:          0
+Transaction energy cost:    0 NRG
+Transactions size:          0
+Transaction execution cost: 0 GTU
+Total amount:               15006392146500 GTU
+Total encrypted amount:     0 GTU
+Central bank amount:        368 GTU
+Minted amount per slot:     100 GTU
+```
 
 ### Legacy Commands
 
@@ -216,7 +427,7 @@ There is currently no command for getting back the "translated" module from the 
 
 The command doesn't use the backend, so any `--grpc-*` flags are ignored.
 
-###### Example
+*Example*
 
 ```
 $ simple-client LoadModule ../prototype/scheduler/test/contracts/SimpleCounter.acorn
@@ -232,7 +443,7 @@ Lists all modules which have been loaded on the local client.
 
 The command doesn't use the backend, so any `--grpc-*` flags are ignored.
 
-###### Example
+*Example*
 
 ```
 $ simple-client ListModules
@@ -262,7 +473,7 @@ Supported transaction types (see the `simple-client/test/transactions/` director
 * `UpdateBakerSignKey`
 * `DelegateStake`
 
-###### Example: Deploy module "SimpleCounter"
+*Example: Deploy module "SimpleCounter"*
 
 ```
 $ cat test/transactions/deploy.json 
@@ -301,7 +512,7 @@ If the hook is already installed (i.e. if `--hook` was passed to `SendTransactio
 
 Output format: JSON (object).
 
-###### Example
+*Example*
 
 Right after sending the transaction in the example above:
 
@@ -344,7 +555,7 @@ Retrieves the current state of the consensus layer. The fields are documented in
 
 Output format: JSON (object).
 
-###### Example
+*Example*
 
 ```
 $ simple-client GetConsensusInfo
@@ -381,7 +592,7 @@ Retrieves information on block `BLOCK-HASH` or the current best block if none wa
 
 Output format: JSON (object). Outputs `null` if the provided hash is invalid.
 
-###### Example
+*Example*
 
 ```
 $ /simple-client GetBlockInfo
@@ -436,7 +647,7 @@ Retrieves the IDs of all accounts on a specific (or the current best) block.
 
 Output format: JSON (list).
 
-###### Example
+*Example*
 
 ```
 $ simple-client GetAccountList
@@ -465,7 +676,7 @@ Retrieves information of a specific account on a specific (or the current best) 
 
 Output format: JSON (object).
 
-###### Example
+*Example*
 
 ```
 $ simple-client GetAccountInfo 356XG1CpfGhnhCbVYynFoicssQmXFmV11gBTasKT7nErapsCK2
@@ -535,7 +746,7 @@ Retrieves a list of smart contract instances on the blockchain as of a specific 
 
 Output format: JSON (list).
 
-###### Example: Initialize smart contract "Counter" (from module "SimpleCounter")
+*Example: Initialize smart contract "Counter" (from module "SimpleCounter")*
 
 The local test network starts without any smart contract instances:
 
@@ -614,7 +825,7 @@ The instance ID is given as a JSON document in the format produced by `GetInstan
 
 Output format: JSON (object).
 
-###### Example
+*Example*
 
 ```
 $ simple-client GetInstanceInfo '{ "subindex": 0, "index": 0 }'
@@ -690,7 +901,7 @@ The behavior is to be changed based on workshop discussions.
 
 Output format: JSON (object).
 
-###### Example
+*Example*
 
 ```
 $ simple-client GetRewardStatus
@@ -718,7 +929,7 @@ The Birk parameters of a block consist of:
    
 Output format: JSON (object).
 
-###### Example
+*Example*
 
 ```
 $ simple-client GetBirkParameters
@@ -761,7 +972,7 @@ Retrieves the references of all modules loaded on the chain as of a specific or 
 
 Output format: JSON (list).
 
-###### Example
+*Example*
 
 ```
 [
@@ -786,7 +997,7 @@ Retrieves the "source code" of a module by reference.
 
 Output format: A header line followed by a pretty-printed variant of the Acorn AST of the module (See `LoadModule` above).
 
-###### Example
+*Example*
 
 ```
 $ simple-client GetModuleSource 2790dc37cf1412f41ecb51be92723865520baa8e25f975ea24f0762ceca1c4a9
@@ -824,7 +1035,7 @@ Retrieves information on the activity of the consensus protocol and the roles th
 
 Output format: Text.
 
-###### Example
+*Example*
 
 ```
 $ simple-client GetNodeInfo
@@ -844,7 +1055,7 @@ Retrives the baker's keys. Is currently not access controlled.
 
 Output format: JSON (object).
 
-###### Example
+*Example*
 
 ```
 $ simple-client GetBakerPrivateData
@@ -865,7 +1076,7 @@ The node itself is not included in this list.
 
 Output format: Text.
 
-###### Example
+*Example*
 
 ```
 $ simple-client GetPeerData
@@ -931,7 +1142,7 @@ Retrieves the uptime of the backend node.
 
 Output format: `Either` value marshalled from Haskell containing the uptime in ms.
 
-###### Example
+*Example*
 
 ```
 $ simple-client GetPeerUptime
@@ -973,7 +1184,7 @@ This causes the client to hang.
 
 Output format: JSON (list).
 
-###### Example
+*Example*
 
 ```
 [
@@ -989,7 +1200,7 @@ Retrieves the full tree structure from the last finalized block onwards.
 
 Output format: JSON (object).
 
-###### Example
+*Example*
 
 ```
 $ simple-client GetBranches
