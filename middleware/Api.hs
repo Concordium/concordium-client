@@ -281,7 +281,10 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
                     throwError $ err403 { errBody = "GTU drop can only be used once per account." }
 
               Aeson.Error err ->
-                throwError $ err502 { errBody = "JSON error: " <> BS8.pack err }
+                if err == "parsing Account info failed, expected Object, but encountered Null" then
+                  throwError $ err409 { errBody = "Account is not yet on the network." }
+                else
+                  throwError $ err502 { errBody = "JSON error: " <> BS8.pack err }
 
           Left err ->
             throwError $ err502 { errBody = "GRPC error: " <> BS8.pack err }
