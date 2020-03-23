@@ -161,9 +161,10 @@ data TransactionOutcome =
     , message_type :: Text
     , timestamp :: Text
     , block_hash :: Text
-    , slot :: Text
     , transaction_hash :: Text
     , amount :: Text
+    , cost :: Text
+    , result :: Maybe Text
     , from_account :: Maybe Types.AccountAddress
     , to_account :: Maybe Types.AccountAddress
     , from_contract :: Maybe Types.ContractAddress
