@@ -160,7 +160,6 @@ processTransactionCmd action baseCfgDir verbose backend =
       accCfg <- getAccountConfig (tcSender txCfg) baseCfg Nothing keysArg
 
       when verbose $ do
-        putStrLn ""
         runPrinter $ printAccountConfig accCfg
         putStrLn ""
 
