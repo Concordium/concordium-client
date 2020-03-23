@@ -316,37 +316,53 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
                 Right s -> Just s
                 Left _ -> Nothing
 
-            event <-
-              case Execution.tsResult summary of
-                Execution.TxSuccess events ->
-                  headMay events
+            case Execution.tsResult summary of
+              Execution.TxSuccess events -> do
+                event <- headMay events
 
-                Execution.TxReject reason ->
-                  Nothing
+                (from, amount, to) <-
+                  case event of
+                    Execution.Transferred f a t ->
+                      Just (f, a, t)
 
-            (from, amount, to) <-
-              case event of
-                Execution.Transferred f a t ->
-                  Just (f, a, t)
+                    _ -> Nothing
 
-                _ -> Nothing
+                Just $
+                  TransactionOutcome
+                    { id = hash
+                    , message_type = "DirectTransfer"
+                    -- JS expects timestamps in milliseconds
+                    , timestamp = Text.pack . show $ (peBlockTime p * 1000)
+                    , block_hash = Text.pack . show $ peBlockHash p
+                    , transaction_hash = hash
+                    , amount = Text.pack . show $ amount
+                    , cost = Text.pack . show $ Execution.tsCost summary
+                    , result = Nothing
+                    , from_account = accountAddress from
+                    , to_account = accountAddress to
+                    , from_contract = contractAddress from
+                    , to_contract = contractAddress to
+                    , finalized = True
+                    }
 
-            Just $
-              TransactionOutcome
-                { id = hash
-                , message_type = "DirectTransfer"
-                -- JS expects timestamps in milliseconds
-                , timestamp = Text.pack . show $ (peBlockTime p * 1000)
-                , block_hash = Text.pack . show $ peBlockHash p
-                , slot = Text.pack . show $ peBlockHeight p
-                , transaction_hash = hash
-                , amount = Text.pack . show $ amount
-                , from_account = accountAddress from
-                , to_account = accountAddress to
-                , from_contract = contractAddress from
-                , to_contract = contractAddress to
-                , finalized = True
-                }
+              Execution.TxReject reason ->
+                Just $
+                  TransactionOutcome
+                    { id = hash
+                    , message_type = "DirectTransfer"
+                    -- JS expects timestamps in milliseconds
+                    , timestamp = Text.pack . show $ (peBlockTime p * 1000)
+                    , block_hash = Text.pack . show $ peBlockHash p
+                    , transaction_hash = hash
+                    , amount = ""
+                    , cost = Text.pack . show $ Execution.tsCost summary
+                    , result = Just $ Text.pack . show $ reason
+                    , from_account = Execution.tsSender summary -- @ISSUE seems odd this is AccountAddress and not Address...?
+                    , to_account = Nothing
+                    , from_contract = Nothing
+                    , to_contract = Nothing
+                    , finalized = True
+                    }
 
           Left _ -> Nothing
 
