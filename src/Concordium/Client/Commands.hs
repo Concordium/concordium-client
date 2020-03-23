@@ -61,7 +61,7 @@ data Cmd
   deriving (Show)
 
 data ConfigCmd
-  = ConfigDump
+  = ConfigShow
   deriving (Show)
 
 data TransactionCmd
@@ -131,8 +131,8 @@ data BlockCmd
 optsParser :: ParserInfo Options
 optsParser = info
                (helper <*> versionOption <*> programOptions)
-               (fullDesc <> progDesc "Simple Client" <>
-                header "simple-client - a small client to interact with the p2p-client")
+               (fullDesc <> progDesc "Concordium Client Command Line Interface" <>
+                header "concordium-client - a client to interact with the concordium network.")
 
 versionOption :: Parser (a -> a)
 versionOption =
@@ -348,16 +348,16 @@ configCmds =
     (info
       (ConfigCmd <$>
         (hsubparser
-          configDumpCmd))
+          configShowCmd))
       (progDesc "commands for inspecting and chaning local configuration"))
 
-configDumpCmd :: Mod CommandFields ConfigCmd
-configDumpCmd =
+configShowCmd :: Mod CommandFields ConfigCmd
+configShowCmd =
   command
-    "dump"
+    "show"
     (info
-      (pure ConfigDump)
-      (progDesc "dump configuration"))
+      (pure ConfigShow)
+      (progDesc "show configuration"))
 
 consensusCmds :: Mod CommandFields Cmd
 consensusCmds =

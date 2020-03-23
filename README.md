@@ -191,14 +191,14 @@ The new commands are grouped by topic. Whenever a command takes an optional bloc
 
 #### Configuration
 
-##### `config dump`
+##### `config show`
 
-Dump persisted configuration.
+Show all persisted configuration.
 
 *Example*
 
 ```
-$ simple-client config dump
+$ simple-client config show
 Base configuration:
 - Verbose:            no
 - Account config dir: /home/testuser/.config/concordium/accounts
