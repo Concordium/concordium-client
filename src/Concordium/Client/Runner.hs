@@ -171,6 +171,8 @@ processTransactionCmd action baseCfgDir verbose backend =
 
       energy <- getArg "max energy amount" $ tcMaxEnergyAmount txCfg
       expiry <- getArg "expiry" $ tcExpiration txCfg
+      let transactionFee = fromIntegral $ 6 + (53 * (Prelude.length keys))
+      energy <- promptEnergyUpdate energy transactionFee
       logInfo [ printf "sending %s GTU from %s to '%s'" (show amount) (showNamedAddress accCfg) (show toAddress)
                , printf "allowing up to %s NRG to be spent as transaction fee" (show energy) ]
       putStr "Confirm [yN]: "
@@ -217,6 +219,22 @@ processTransactionCmd action baseCfgDir verbose backend =
 
       t3 <- getFormattedLocalTimeOfDay
       printf "[%s] Transfer completed.\n" t3
+        where
+          promptEnergyUpdate energy actualFee
+            | energy < actualFee = do
+                logInfo ["WARNING: Insufficient energy for transaction!!!"
+                        , printf "Transaction fee will be %s, but only %s energy is dedicated to the transaction" (show actualFee) (show energy)
+                        , printf "Do you want to change the dedicated energy to %s?" (show actualFee)]
+                putStr "Confirm [yN]"
+                input <- getChar
+                if (C.toLower input /= 'y') then return energy else return actualFee
+            | actualFee < energy = do
+                logInfo [ printf "NOTICE: %s energy dedicated to transaction, but only %s energy is needed" (show energy) (show actualFee)
+                        , printf "Do you want to change the dedicated energy to %s? (excess energy will be refunded)" (show actualFee)]
+                putStr "Confirm [yN]"
+                input <- getChar
+                if (C.toLower input /= 'y') then return energy else return actualFee
+            | otherwise = return energy
 
 -- Poll the transaction state continuously until it is "at least" the provided one.
 -- Note that the "absent" state is considered the "highest" state,
