@@ -169,9 +169,9 @@ processTransactionCmd action baseCfgDir verbose backend =
       -- TODO Allow referencing address by name (similar to "sender")?
       toAddress <- getAddressArg "to address" $ Just receiver
 
-      let transactionFee = fromIntegral $ 6 + (53 * (Prelude.length keys))
-      energy <- case (tcMaxEnergyAmount txCfg) of
-                  Nothing -> return $ fromIntegral transactionFee
+      let transactionFee = simpleTransferEnergyCost (Prelude.length keys)
+      energy <- case tcMaxEnergyAmount txCfg of
+                  Nothing -> return transactionFee
                   Just maxEnergy -> promptEnergyUpdate maxEnergy transactionFee
       expiry <- getArg "expiry" $ tcExpiration txCfg
       logInfo [ printf "sending %s GTU from %s to '%s'" (show amount) (showNamedAddress accCfg) (show toAddress)
@@ -223,18 +223,15 @@ processTransactionCmd action baseCfgDir verbose backend =
         where
           promptEnergyUpdate energy actualFee
             | energy < actualFee = do
-                logInfo ["WARNING: Insufficient energy for transaction!!!"
+                logWarn ["Insufficient energy for transaction!"
                         , printf "Transaction fee will be %s, but only %s energy is dedicated to the transaction" (show actualFee) (show energy)
                         , printf "Do you want to change the dedicated energy to %s?" (show actualFee)]
                 putStr "Confirm [yN]"
                 input <- getChar
-                if (C.toLower input /= 'y') then return energy else return actualFee
+                if (C.toLower input == 'y') then return actualFee else return energy
             | actualFee < energy = do
-                logInfo [ printf "NOTICE: %s energy dedicated to transaction, but only %s energy is needed" (show energy) (show actualFee)
-                        , printf "Do you want to change the dedicated energy to %s? (excess energy will be refunded)" (show actualFee)]
-                putStr "Confirm [yN]"
-                input <- getChar
-                if (C.toLower input /= 'y') then return energy else return actualFee
+                logWarn [printf "%s energy dedicated to transaction, but only %s energy is needed" (show energy) (show actualFee)]
+                return energy
             | otherwise = return energy
 
 -- Poll the transaction state continuously until it is "at least" the provided one.
