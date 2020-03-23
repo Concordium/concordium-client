@@ -86,7 +86,7 @@ library:
     Proto.ConcordiumP2pRpc_Fields
 
 executables:
-  simple-client:
+  concordium-client:
     main:             Main.hs
     source-dirs:      app
 
