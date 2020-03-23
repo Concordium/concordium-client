@@ -169,10 +169,11 @@ processTransactionCmd action baseCfgDir verbose backend =
       -- TODO Allow referencing address by name (similar to "sender")?
       toAddress <- getAddressArg "to address" $ Just receiver
 
-      energy <- getArg "max energy amount" $ tcMaxEnergyAmount txCfg
-      expiry <- getArg "expiry" $ tcExpiration txCfg
       let transactionFee = fromIntegral $ 6 + (53 * (Prelude.length keys))
-      energy <- promptEnergyUpdate energy transactionFee
+      energy <- case (tcMaxEnergyAmount txCfg) of
+                  Nothing -> return $ fromIntegral transactionFee
+                  Just maxEnergy -> promptEnergyUpdate maxEnergy transactionFee
+      expiry <- getArg "expiry" $ tcExpiration txCfg
       logInfo [ printf "sending %s GTU from %s to '%s'" (show amount) (showNamedAddress accCfg) (show toAddress)
                , printf "allowing up to %s NRG to be spent as transaction fee" (show energy) ]
       putStr "Confirm [yN]: "
