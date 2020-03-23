@@ -21,7 +21,7 @@ import Data.List
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Map.Strict as M
 import Data.Bool
-import Data.Text (Text, unpack)
+import Data.Text (Text, pack, unpack)
 import Data.Text.Encoding
 import Data.Time
 import Text.Printf
@@ -58,28 +58,40 @@ printBaseConfig :: BaseConfig -> Printer
 printBaseConfig cfg = do
   tell [ printf "Base configuration:"
        , printf "- Verbose:            %s" (showYesNo $ bcVerbose cfg)
-       , printf "- Account config dir: %s" (bcAccountCfgDir cfg)
-       , printf "- Account name map:" ]
-  printMap showEntry $ bcAccountNameMap cfg
-  where showEntry (n, a) =
-          printf "    %s -> %s" n (show a)
+       , printf "- Account config dir: %s" (bcAccountCfgDir cfg) ]
+  printAccountNameMap $ bcAccountNameMap cfg
+  where printAccountNameMap m =
+          if null m then
+            tell [ "- Account name map:   " ++ showNone ]
+          else do
+            tell [ "- Account name map:"]
+            printMap showEntry m
+        showEntry (n, a) = printf "    %s -> %s" n (show a)
 
 printAccountConfig :: AccountConfig -> Printer
 printAccountConfig cfg = do
   tell [ printf "Account configuration:"
-       , printf "- Name:    %s" (fromMaybe "none" $ acName cfg)
-       , printf "- Address: %s" (show $ acAddr cfg)
-       , printf "- Keys:" ]
-  printMap showEntry $ acKeys cfg
-  where showEntry (IDTypes.KeyIndex n, kp) =
+       , printf "- Name:    %s" (fromMaybe (pack showNone) $ acName cfg)
+       , printf "- Address: %s" (show $ acAddr cfg) ]
+  printKeys $ acKeys cfg
+  where printKeys m =
+          if null m then
+            tell [ "- Keys: " ++ showNone ]
+          else do
+            tell [ "- Keys:" ]
+            printMap showEntry m
+        showEntry (n, kp) =
           printf "    %s: %s" (show n) (showKeyPair kp)
 
 printAccountConfigList :: [AccountConfig] -> Printer
-printAccountConfigList cfgs = do
-  tell [ "Account keys:" ]
-  forM_ cfgs $ \cfg -> do
-    tell [ printf "- %s" (showNamedAddress cfg) ]
-    printMap showEntry $ acKeys cfg
+printAccountConfigList cfgs =
+  if null cfgs then
+    tell [ "Account keys: " ++ showNone ]
+  else do
+    tell [ "Account keys:" ]
+    forM_ cfgs $ \cfg -> do
+      tell [ printf "- %s" (showNamedAddress cfg) ]
+      printMap showEntry $ acKeys cfg
   where showEntry (n, kp) =
           printf "    %s: %s" (show n) (showKeyPair kp)
 
