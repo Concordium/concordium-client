@@ -125,7 +125,7 @@ process (Options command cfgDir backend verbose) = do
 processConfigCmd :: ConfigCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processConfigCmd action baseCfgDir verbose _ =
   case action of
-    ConfigDump -> do
+    ConfigShow -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       runPrinter $ printBaseConfig baseCfg
       putStrLn ""
@@ -160,7 +160,6 @@ processTransactionCmd action baseCfgDir verbose backend =
       accCfg <- getAccountConfig (tcSender txCfg) baseCfg Nothing keysArg
 
       when verbose $ do
-        putStrLn ""
         runPrinter $ printAccountConfig accCfg
         putStrLn ""
 
