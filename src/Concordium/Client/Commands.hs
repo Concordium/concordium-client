@@ -131,8 +131,8 @@ data BlockCmd
 optsParser :: ParserInfo Options
 optsParser = info
                (helper <*> versionOption <*> programOptions)
-               (fullDesc <> progDesc "Simple Client" <>
-                header "simple-client - a small client to interact with the p2p-client")
+               (fullDesc <> progDesc "Concordium Client Command Line Interface" <>
+                header "concordium-client - a client to interact with the concordium network.")
 
 versionOption :: Parser (a -> a)
 versionOption =
