@@ -12,6 +12,7 @@ module Api where
 
 import           Network.Wai (Application)
 import           Control.Monad.Managed (liftIO)
+import qualified Data.HashMap.Strict as HM
 import           Data.Aeson (encode, decode')
 import qualified Data.Aeson as Aeson
 import           Data.Aeson.Types (FromJSON)
@@ -521,7 +522,7 @@ runTransaction nodeBackend payload (address, keyMap) = do
     -- will change when tokenomics is finalized
     energyAmount =
       case payload of
-        Transfer _ _       -> (6+53*3) -- 165 @TODO make this dynamic based on number of account signatures
+        Transfer _ _       -> simpleTransferEnergyCost (HM.size keyMap)
         DeployCredential _ -> 10000
         _                  -> 10000
 
