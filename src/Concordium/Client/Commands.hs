@@ -61,7 +61,7 @@ data Cmd
   deriving (Show)
 
 data ConfigCmd
-  = ConfigDump
+  = ConfigShow
   deriving (Show)
 
 data TransactionCmd
@@ -348,16 +348,16 @@ configCmds =
     (info
       (ConfigCmd <$>
         (hsubparser
-          configDumpCmd))
+          configShowCmd))
       (progDesc "commands for inspecting and chaning local configuration"))
 
-configDumpCmd :: Mod CommandFields ConfigCmd
-configDumpCmd =
+configShowCmd :: Mod CommandFields ConfigCmd
+configShowCmd =
   command
-    "dump"
+    "show"
     (info
-      (pure ConfigDump)
-      (progDesc "dump configuration"))
+      (pure ConfigShow)
+      (progDesc "show configuration"))
 
 consensusCmds :: Mod CommandFields Cmd
 consensusCmds =
