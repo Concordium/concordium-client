@@ -111,7 +111,9 @@ getAccountConfig account cfg keysDir keyMap = do
       printf "Account reference not provided; using \"%s\".\n" defaultAccountName
       return defaultAccountName
     Just a -> return a
-  (name, addr) <- getAccountAddress (bcAccountNameMap cfg) account'
+  (name, addr) <- case getAccountAddress (bcAccountNameMap cfg) account' of
+                    Left err -> die err
+                    Right v -> return v
   km <- case keyMap of
     Nothing -> do
       let accCfgDir = bcAccountCfgDir cfg
@@ -139,16 +141,16 @@ resolveAccountAddress m input =
       Just (Just input, a)
     Right a -> Just (Nothing, a)
 
-getAccountAddress :: AccountNameMap -> Text -> IO (Maybe Text, Types.AccountAddress)
+getAccountAddress :: (MonadError String m) => AccountNameMap -> Text -> m (Maybe Text, Types.AccountAddress)
 getAccountAddress m input = do
   case resolveAccountAddress m input of
-    Nothing -> die $ printf "The identifier '%s' is neither the address nor the name of an account." input
+    Nothing -> throwError $ printf "The identifier '%s' is neither the address nor the name of an account." input
     Just a -> return a
 
 getAllAccountConfigs :: BaseConfig -> IO [AccountConfig]
 getAllAccountConfigs cfg = do
   let dir = bcAccountCfgDir cfg
-  fs <- listDirectory dir
+  fs <- safeListDirectory dir
   fs' <- filterM (isDirectory dir) $ filter isValidAccountName fs
   forM fs' $ \f -> getAccountConfig (Just $ pack f) cfg Nothing Nothing
   where
@@ -231,3 +233,8 @@ loadRawKeyMap = foldM f M.empty
   where f rawKeyMap (file, rk) = do
           c <- readFile file
           return $ insertRawKey rk (strip $ pack c) rawKeyMap
+
+safeListDirectory :: FilePath -> IO [FilePath]
+safeListDirectory dir = do
+  e <- doesDirectoryExist dir
+  if e then listDirectory dir else return []
