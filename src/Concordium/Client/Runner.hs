@@ -273,7 +273,7 @@ processConsensusCmd action _ backend =
       v <- withClientJson backend $ withBestBlockHash b getBirkParameters
       case v of
         Nothing -> putStrLn "Block not found."
-        Just p -> runPrinter $ printBirkParametersBakers p includeBakers
+        Just p -> runPrinter $ printBirkParameters includeBakers p
 
 processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
 processBlockCmd action _ backend =
