@@ -3,10 +3,10 @@
 
 module Concordium.Client.Cli where
 
-import Concordium.Types
-import Concordium.Client.Types.TransactionStatus
 import Concordium.Client.Types.Transaction
+import Concordium.Client.Types.TransactionStatus
 import qualified Concordium.ID.Types as IDTypes
+import Concordium.Types
 
 import Control.Monad hiding (fail)
 import Control.Monad.IO.Class
