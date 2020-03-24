@@ -167,7 +167,7 @@ data BlockInfoResult = BlockInfoResult
   , birBlockBaker :: Maybe BakerId
   , birFinalized :: Bool
   , birTransactionCount :: Integer
-  , birTransactionEnergyCost :: Amount
+  , birTransactionEnergyCost :: Energy
   , birTransactionsSize :: Integer
   , birTotalAmount :: Amount
   , birTotalEncryptedAmount :: Amount
