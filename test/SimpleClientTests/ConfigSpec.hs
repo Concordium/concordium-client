@@ -1,10 +1,14 @@
 module SimpleClientTests.ConfigSpec where
 
 import Concordium.Client.Config
+import Concordium.Client.Output
 import qualified Concordium.Crypto.ByteStringHelpers as BSH
 import qualified Concordium.Crypto.SignatureScheme as S
 import qualified Concordium.ID.Types as IDTypes
+import qualified Concordium.Types as Types
+import qualified Concordium.Types.Execution as Types
 
+import Control.Monad.Writer
 import qualified Data.HashMap.Strict as M
 import Data.Text
 import Test.Hspec
@@ -16,6 +20,7 @@ configSpec = describe "config" $ do
   parseAccountNameMapSpec
   resolveAccountAddressSpec
   loadKeyMapSpec
+  printSpec
 
 parseAccountNameMapEntrySpec :: Spec
 parseAccountNameMapEntrySpec = describe "parseAccountNameEntryMap" $ do
@@ -142,3 +147,96 @@ keyMapFromRawSpec = describe "keyMapFromRaw" $ do
         (Just vk1) = BSH.deserializeBase16 v1
         (Just sk2) = BSH.deserializeBase16 s2
         (Just vk2) = BSH.deserializeBase16 v2
+
+printSpec :: Spec
+printSpec = describe "print" $ do
+  printBaseConfigSpec
+  printAccountConfigSpec
+  printAccountConfigListSpec
+
+printBaseConfigSpec :: Spec
+printBaseConfigSpec = describe "base config" $ do
+  specify "with map" $ p exampleBaseConfigWithAccountNameMap `shouldBe`
+    [ "Base configuration:"
+    , "- Verbose:            yes"
+    , "- Account config dir: /some/path"
+    , "- Account name map:"
+    , "    name1 -> 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+    , "    name2 -> 4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y" ]
+  specify "without map" $ p exampleBaseConfigWithoutAccountNameMap `shouldBe`
+    [ "Base configuration:"
+    , "- Verbose:            no"
+    , "- Account config dir: /some/other/path"
+    , "- Account name map:   none" ]
+  where p = execWriter . printBaseConfig
+
+printAccountConfigSpec :: Spec
+printAccountConfigSpec = describe "account config" $ do
+  specify "with keys and name" $ p exampleAccountConfigWithKeysAndName `shouldBe`
+    [ "Account configuration:"
+    , "- Name:    name"
+    , "- Address: 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+      , "- Keys:"
+    , "    2: sign=9b301aa72d991d720750935de632983f1854d701ada3e5b763215d0802d5541c, verify=f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213"
+    , "    11: sign=6d00a10ccac23d2fd0bea163756487288fd19ff3810e1d3f73b686e60d801915, verify=c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027" ]
+  specify "without keys and name" $ p exampleAccountConfigWithoutKeysAndName `shouldBe`
+    [ "Account configuration:"
+    , "- Name:    none"
+    , "- Address: 4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y"
+    , "- Keys:    none" ]
+  where p = execWriter . printAccountConfig
+
+printAccountConfigListSpec :: Spec
+printAccountConfigListSpec = describe "all account config" $ do
+  specify "empty" $ p [] `shouldBe`
+    [ "Account keys: none" ]
+  specify "non-empty" $ p [exampleAccountConfigWithKeysAndName, exampleAccountConfigWithoutKeysAndName] `shouldBe`
+    [ "Account keys:"
+    , "- '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' (name)"
+    , "    2: sign=9b301aa72d991d720750935de632983f1854d701ada3e5b763215d0802d5541c, verify=f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213"
+    , "    11: sign=6d00a10ccac23d2fd0bea163756487288fd19ff3810e1d3f73b686e60d801915, verify=c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027"
+    , "- '4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y'" ]
+  where p = execWriter . printAccountConfigList
+
+exampleBaseConfigWithAccountNameMap :: BaseConfig
+exampleBaseConfigWithAccountNameMap =
+  BaseConfig
+  { bcVerbose = True
+  , bcAccountNameMap = M.fromList [("name1", exampleAccountAddress1), ("name2", exampleAccountAddress2)]
+  , bcAccountCfgDir = "/some/path" }
+
+exampleBaseConfigWithoutAccountNameMap :: BaseConfig
+exampleBaseConfigWithoutAccountNameMap =
+  BaseConfig
+  { bcVerbose = False
+  , bcAccountNameMap = M.empty
+  , bcAccountCfgDir = "/some/other/path"}
+
+exampleAccountConfigWithKeysAndName :: AccountConfig
+exampleAccountConfigWithKeysAndName =
+  AccountConfig
+  { acName = Just "name"
+  , acAddr = exampleAccountAddress1
+  , acKeys = M.fromList [ (11, S.KeyPairEd25519 { S.signKey=sk1, S.verifyKey=vk1 })
+                        , (2, S.KeyPairEd25519 { S.signKey=sk2, S.verifyKey=vk2 }) ] }
+  where s1 = "6d00a10ccac23d2fd0bea163756487288fd19ff3810e1d3f73b686e60d801915"
+        v1 = "c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027"
+        s2 = "9b301aa72d991d720750935de632983f1854d701ada3e5b763215d0802d5541c"
+        v2 = "f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213"
+        (Just sk1) = BSH.deserializeBase16 s1
+        (Just vk1) = BSH.deserializeBase16 v1
+        (Just sk2) = BSH.deserializeBase16 s2
+        (Just vk2) = BSH.deserializeBase16 v2
+
+exampleAccountConfigWithoutKeysAndName :: AccountConfig
+exampleAccountConfigWithoutKeysAndName =
+  AccountConfig
+  { acName = Nothing
+  , acAddr = exampleAccountAddress2
+  , acKeys = M.empty }
+
+exampleAccountAddress1 :: IDTypes.AccountAddress
+Right exampleAccountAddress1 = IDTypes.addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+
+exampleAccountAddress2 :: IDTypes.AccountAddress
+Right exampleAccountAddress2 = IDTypes.addressFromText "4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y"

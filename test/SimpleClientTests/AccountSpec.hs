@@ -17,6 +17,7 @@ exampleAddress = "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
 
 accountSpec :: Spec
 accountSpec = describe "account" $ do
+  printAccountListSpec
   printAccountInfoSpec
   printCredSpec
 
@@ -59,6 +60,13 @@ examplePolicyWithItemOutOfRange :: IDTypes.Policy
 examplePolicyWithItemOutOfRange = IDTypes.Policy
                                   { IDTypes.pExpiry = 9999999999
                                   , IDTypes.pItems = Map.fromList [(IDTypes.AttributeTag 255, IDTypes.AttributeValue 1)] }
+
+printAccountListSpec :: Spec
+printAccountListSpec = describe "printAccountList" $ do
+  specify "empty" $ p [] `shouldBe` []
+  specify "single" $ p [exampleAddress] `shouldBe`
+    ["2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"]
+  where p = execWriter . printAccountList
 
 printAccountInfoSpec :: Spec
 printAccountInfoSpec = describe "printAccountInfo" $ do
@@ -145,4 +153,4 @@ printCredSpec = describe "printCred" $ do
     [ "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
     , "  - Expiration: Sat, 20 Nov 2286 17:46:39 UTC"
     , "  - Revealed attributes: <255>=1" ]
-  where p c = execWriter $ printCred c
+  where p = execWriter . printCred
