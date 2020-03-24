@@ -72,21 +72,21 @@ printAccountInfoSpec :: Spec
 printAccountInfoSpec = describe "printAccountInfo" $ do
   specify "without delegation nor credentials" $ p exampleAddress (exampleAccountInfoResult Nothing []) `shouldBe`
     [ "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-    , "Amount:     1 GTU"
+    , "Amount:     0.0001 GTU"
     , "Nonce:      2"
     , "Delegation: none"
     , ""
     , "Credentials: none" ]
   specify "with delegation" $ p exampleAddress (exampleAccountInfoResult (Just 1) []) `shouldBe`
     [ "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-    , "Amount:     1 GTU"
+    , "Amount:     0.0001 GTU"
     , "Nonce:      2"
     , "Delegation: 1"
     , ""
     , "Credentials: none" ]
   specify "with one credential" $ p exampleAddress (exampleAccountInfoResult (Just 1) [exampleCredentials examplePolicyWithoutItems]) `shouldBe`
     [ "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-    , "Amount:     1 GTU"
+    , "Amount:     0.0001 GTU"
     , "Nonce:      2"
     , "Delegation: 1"
     , ""
@@ -97,7 +97,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
   specify "with two credentials" $ p exampleAddress (exampleAccountInfoResult (Just 1) [ exampleCredentials examplePolicyWithoutItems
                                                                                        , exampleCredentials examplePolicyWithTwoItems ]) `shouldBe`
     [ "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-    , "Amount:     1 GTU"
+    , "Amount:     0.0001 GTU"
     , "Nonce:      2"
     , "Delegation: 1"
     , ""
@@ -111,7 +111,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
   specify "with one credential - verbose" $
     (execWriter $ printAccountInfo exampleAddress (exampleAccountInfoResult (Just 1) [exampleCredentials examplePolicyWithoutItems]) True) `shouldBe`
       [ "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-      , "Amount:     1 GTU"
+      , "Amount:     0.0001 GTU"
       , "Nonce:      2"
       , "Delegation: 1"
       , ""

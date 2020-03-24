@@ -115,7 +115,7 @@ showRevealedAttributes as =
 printAccountInfo :: Text -> AccountInfoResult -> Verbose -> Printer
 printAccountInfo address a verbose = do
   tell [ printf "Address:    %s" address
-       , printf "Amount:     %s GTU" (show $ airAmount a)
+       , printf "Amount:     %s" (showGtu $ airAmount a)
        , printf "Nonce:      %s" (show $ airNonce a)
        , printf "Delegation: %s" (maybe showNone show $ airDelegation a)
        , "" ]
@@ -150,12 +150,6 @@ showKeyPair S.KeyPairEd25519 { S.signKey=sk, S.verifyKey=vk } =
   printf "sign=%s, verify=%s" (show sk) (show vk)
 
 -- TRANSACTION
-
-data TransactionOutcome = TransactionOutcome
-                          { toStatus :: Text
-                          , toGtuCost :: Types.Amount
-                          , toNrgCost :: Types.Energy }
-                        deriving (Eq)
 
 printTransactionStatus :: TransactionStatusResult -> Printer
 printTransactionStatus status =
@@ -210,7 +204,7 @@ printTransactionStatus status =
           tell ["Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!"]
   where
     showCostFragment :: Types.Amount -> Types.Energy -> String
-    showCostFragment gtu nrg = printf "%s GTU (%s NRG)" (show gtu) (show nrg)
+    showCostFragment gtu nrg = printf "%s (%s)" (showGtu gtu) (showNrg nrg)
     showOutcomeFragment :: Types.TransactionSummary -> String
     showOutcomeFragment outcome = printf
                                     "status \"%s\" and cost %s"
@@ -271,13 +265,22 @@ printBlockInfo b =
        , printf "Slot time:                  %s" (showFormattedUtcTime $ birBlockSlotTime b)
        , printf "Baker:                      %s" (showMaybe show $ birBlockBaker b)
        , printf "Transaction count:          %d" (birTransactionCount b)
-       , printf "Transaction energy cost:    %s NRG" (show $ birTransactionEnergyCost b)
+       , printf "Transaction energy cost:    %s" (showNrg $ birTransactionEnergyCost b)
        , printf "Transactions size:          %d" (birTransactionsSize b)
-       , printf "Transaction execution cost: %s GTU" (show $ birExecutionCost b)
-       , printf "Total amount:               %s GTU" (show $ birTotalAmount b)
-       , printf "Total encrypted amount:     %s GTU" (show $ birTotalEncryptedAmount b)
-       , printf "Central bank amount:        %s GTU" (show $ birCentralBankAmount b)
-       , printf "Minted amount per slot:     %s GTU" (show $ birMintedAmountPerSlot b) ]
+       , printf "Transaction execution cost: %s" (showGtu $ birExecutionCost b)
+       , printf "Total amount:               %s" (showGtu $ birTotalAmount b)
+       , printf "Total encrypted amount:     %s" (showGtu $ birTotalEncryptedAmount b)
+       , printf "Central bank amount:        %s" (showGtu $ birCentralBankAmount b)
+       , printf "Minted amount per slot:     %s" (showGtu $ birMintedAmountPerSlot b) ]
+
+-- AMOUNT AND ENERGY
+
+showGtu :: Types.Amount -> String
+showGtu = printf "%.4f GTU" . (/amountPerGtu) . fromIntegral
+  where amountPerGtu = 10000 :: Double
+
+showNrg :: Types.Energy -> String
+showNrg = printf "%s NRG" . show
 
 -- UTIL
 
