@@ -1134,7 +1134,7 @@ Output: `OK`.
 
 #### `PeerConnect NODE-IP NODE-PORT`
 
-Output: `"cannot parse value '<port>'"`, where `<port>` is the provided `NODE-PORT`.
+Output: `OK`.
 
 #### `GetPeerUptime`
 
