@@ -173,8 +173,8 @@ processTransactionCmd action baseCfgDir verbose backend =
                   Nothing -> return transactionFee
                   Just maxEnergy -> promptEnergyUpdate maxEnergy transactionFee
       expiry <- getArg "expiry" $ tcExpiration txCfg
-      logInfo [ printf "sending %s GTU from %s to '%s'" (show amount) (showNamedAddress accCfg) (show toAddress)
-               , printf "allowing up to %s NRG to be spent as transaction fee" (show energy) ]
+      logInfo [ printf "sending %s from %s to '%s'" (showGtu amount) (showNamedAddress accCfg) (show toAddress)
+              , printf "allowing up to %s to be spent as transaction fee" (showNrg energy) ]
       putStr "Confirm [yN]: "
       input <- getChar
       when (C.toLower input /= 'y') $ logFatal ["transaction cancelled"]
@@ -189,8 +189,8 @@ processTransactionCmd action baseCfgDir verbose backend =
       tx <- PR.evalContext emptyContextData $ withClient backend $ processTransaction_ t defaultNetId False
       let hash = getBlockItemHash tx
       logInfo [ "transaction sent to the baker"
-               , "waiting for transaction to be committed and finalized"
-               , printf "you may skip this by interrupting this command (using Ctrl-C) - the transaction will still get procesed and may be queried using 'transaction status %s'" (show hash) ]
+              , "waiting for transaction to be committed and finalized"
+              , printf "you may skip this by interrupting this command (using Ctrl-C) - the transaction will still get procesed and may be queried using 'transaction status %s'" (show hash) ]
 
       t1 <- getFormattedLocalTimeOfDay
       printf "[%s] Waiting for the transaction to be committed..." t1
@@ -219,19 +219,18 @@ processTransactionCmd action baseCfgDir verbose backend =
 
       t3 <- getFormattedLocalTimeOfDay
       printf "[%s] Transfer completed.\n" t3
-        where
-          promptEnergyUpdate energy actualFee
-            | energy < actualFee = do
-                logWarn ["Insufficient energy for transaction!"
-                        , printf "Transaction fee will be %s, but only %s energy is dedicated to the transaction" (show actualFee) (show energy)
-                        , printf "Do you want to change the dedicated energy to %s?" (show actualFee)]
-                putStr "Confirm [yN]"
-                input <- getChar
-                if (C.toLower input == 'y') then return actualFee else return energy
-            | actualFee < energy = do
-                logWarn [printf "%s energy dedicated to transaction, but only %s energy is needed" (show energy) (show actualFee)]
-                return energy
-            | otherwise = return energy
+  where
+    promptEnergyUpdate energy actualFee
+      | energy < actualFee = do
+          logWarn ["insufficient energy allocated to the transaction!"
+                  , printf "transaction fee will be %s, but only %s has been allocated" (showNrg actualFee) (showNrg energy) ]
+          printf "Do you want to increase the energy allocation to %s? [yN]" (showNrg actualFee)
+          input <- getChar
+          if C.toLower input == 'y' then return actualFee else return energy
+      | actualFee < energy = do
+          logInfo [printf "%s allocated to the transaction, but only %s is needed" (showNrg energy) (showNrg actualFee)]
+          return energy
+      | otherwise = return energy
 
 -- Poll the transaction state continuously until it is "at least" the provided one.
 -- Note that the "absent" state is considered the "highest" state,
@@ -273,7 +272,7 @@ processConsensusCmd action _ backend =
       v <- withClientJson backend $ withBestBlockHash b getBirkParameters
       case v of
         Nothing -> putStrLn "Block not found."
-        Just p -> runPrinter $ printBirkParametersBakers p includeBakers
+        Just p -> runPrinter $ printBirkParameters includeBakers p
 
 processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
 processBlockCmd action _ backend =

@@ -65,7 +65,7 @@ printBaseConfig cfg = do
             tell [ "- Account name map:   " ++ showNone ]
           else do
             tell [ "- Account name map:"]
-            printMap showEntry m
+            printMap showEntry $ toSortedList m
         showEntry (n, a) = printf "    %s -> %s" n (show a)
 
 printAccountConfig :: AccountConfig -> Printer
@@ -76,10 +76,10 @@ printAccountConfig cfg = do
   printKeys $ acKeys cfg
   where printKeys m =
           if null m then
-            tell [ "- Keys: " ++ showNone ]
+            tell [ "- Keys:    " ++ showNone ]
           else do
             tell [ "- Keys:" ]
-            printMap showEntry m
+            printMap showEntry $ toSortedList m
         showEntry (n, kp) =
           printf "    %s: %s" (show n) (showKeyPair kp)
 
@@ -91,7 +91,7 @@ printAccountConfigList cfgs =
     tell [ "Account keys:" ]
     forM_ cfgs $ \cfg -> do
       tell [ printf "- %s" (showNamedAddress cfg) ]
-      printMap showEntry $ acKeys cfg
+      printMap showEntry $ toSortedList $ acKeys cfg
   where showEntry (n, kp) =
           printf "    %s: %s" (show n) (showKeyPair kp)
 
@@ -115,7 +115,7 @@ showRevealedAttributes as =
 printAccountInfo :: Text -> AccountInfoResult -> Verbose -> Printer
 printAccountInfo address a verbose = do
   tell [ printf "Address:    %s" address
-       , printf "Amount:     %s GTU" (show $ airAmount a)
+       , printf "Amount:     %s" (showGtu $ airAmount a)
        , printf "Nonce:      %s" (show $ airNonce a)
        , printf "Delegation: %s" (maybe showNone show $ airDelegation a)
        , "" ]
@@ -150,12 +150,6 @@ showKeyPair S.KeyPairEd25519 { S.signKey=sk, S.verifyKey=vk } =
   printf "sign=%s, verify=%s" (show sk) (show vk)
 
 -- TRANSACTION
-
-data TransactionOutcome = TransactionOutcome
-                          { toStatus :: Text
-                          , toGtuCost :: Types.Amount
-                          , toNrgCost :: Types.Energy }
-                        deriving (Eq)
 
 printTransactionStatus :: TransactionStatusResult -> Printer
 printTransactionStatus status =
@@ -210,7 +204,7 @@ printTransactionStatus status =
           tell ["Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!"]
   where
     showCostFragment :: Types.Amount -> Types.Energy -> String
-    showCostFragment gtu nrg = printf "%s GTU (%s NRG)" (show gtu) (show nrg)
+    showCostFragment gtu nrg = printf "%s (%s)" (showGtu gtu) (showNrg nrg)
     showOutcomeFragment :: Types.TransactionSummary -> String
     showOutcomeFragment outcome = printf
                                     "status \"%s\" and cost %s"
@@ -231,26 +225,30 @@ printConsensusStatus r = do
        , printf "Last finalized block height: %s" (show $ csrLastFinalizedBlockHeight r)
        , printf "Blocks received count:       %s" (show $ csrBlocksReceivedCount r)
        , printf "Block last received time:    %s" (showMaybeUTC $ csrBlockLastReceivedTime r)
-       , printf "Block receive latency:       %s" (showEm (csrBlockReceiveLatencyEMA r) (csrBlockReceiveLatencyEMSD r))
-       , printf "Block receive period:        %s" (showMaybeEm (csrBlockReceivePeriodEMA r) (csrBlockReceivePeriodEMSD r))
+       , printf "Block receive latency:       %s" (showEmSeconds (csrBlockReceiveLatencyEMA r) (csrBlockReceiveLatencyEMSD r))
+       , printf "Block receive period:        %s" (showMaybeEmSeconds (csrBlockReceivePeriodEMA r) (csrBlockReceivePeriodEMSD r))
        , printf "Blocks verified count:       %s" (show $ csrBlocksVerifiedCount r)
        , printf "Block last arrived time:     %s" (showMaybeUTC $ csrBlockLastArrivedTime r)
-       , printf "Block arrive latency:        %s" (showEm (csrBlockArriveLatencyEMA r) (csrBlockArriveLatencyEMSD r))
-       , printf "Block arrive period:         %s" (showMaybeEm (csrBlockArrivePeriodEMA r) (csrBlockArrivePeriodEMSD r))
-       , printf "Transactions per block:      %s" (showEm (csrTransactionsPerBlockEMA r) (csrTransactionsPerBlockEMSD r))
+       , printf "Block arrive latency:        %s" (showEmSeconds (csrBlockArriveLatencyEMA r) (csrBlockArriveLatencyEMSD r))
+       , printf "Block arrive period:         %s" (showMaybeEmSeconds (csrBlockArrivePeriodEMA r) (csrBlockArrivePeriodEMSD r))
+       , printf "Transactions per block:      %s" (showEm (printf "%8.3f" $ csrTransactionsPerBlockEMA r) (printf "%8.3f" $ csrTransactionsPerBlockEMSD r))
        , printf "Finalization count:          %s" (show $ csrFinalizationCount r)
        , printf "Last finalized time:         %s" (showMaybeUTC $ csrLastFinalizedTime r)
-       , printf "Finalization period:         %s" (showMaybeEm (csrFinalizationPeriodEMA r) (csrFinalizationPeriodEMSD r)) ]
+       , printf "Finalization period:         %s" (showMaybeEmSeconds (csrFinalizationPeriodEMA r) (csrFinalizationPeriodEMSD r)) ]
 
-printBirkParametersBakers :: BirkParametersResult -> Bool -> Printer
-printBirkParametersBakers r includeBakers = do
+printBirkParameters :: Bool -> BirkParametersResult -> Printer
+printBirkParameters includeBakers r = do
   tell [ printf "Election nonce:      %s" (show $ bprElectionNonce r)
        , printf "Election difficulty: %s" (show $ bprElectionDifficulty r) ]
-  when includeBakers $ do
-    tell [ "Bakers:"
-         , printf "                             Account                       Lottery power"
-         , printf "        ----------------------------------------------------------------" ]
-    tell $ f <$> bprBakers r
+  when includeBakers $
+    case bprBakers r of
+      [] ->
+         tell [ "Bakers:              " ++ showNone ]
+      bs -> do
+        tell [ "Bakers:"
+             , printf "                             Account                       Lottery power"
+             , printf "        ----------------------------------------------------------------" ]
+        tell $ f <$> bs
   where f b = printf "%6s: %s    %.4f" (show $ bpbrId b) (show $ bpbrAccount b) (bpbrLotteryPower b)
 
 -- BLOCK
@@ -262,17 +260,27 @@ printBlockInfo b =
        , printf "Last finalized block:       %s" (show $ birBlockLastFinalized b)
        , printf "Finalized:                  %s" (showYesNo $ birFinalized b)
        , printf "Receive time:               %s" (showFormattedUtcTime $ birBlockReceiveTime b)
-       , printf "Arrive time:                %s" (showFormattedUtcTime $ birBlockReceiveTime b)
+       , printf "Arrive time:                %s" (showFormattedUtcTime $ birBlockArriveTime b)
        , printf "Slot:                       %s" (show $ birBlockSlot b)
        , printf "Slot time:                  %s" (showFormattedUtcTime $ birBlockSlotTime b)
+       , printf "Baker:                      %s" (showMaybe show $ birBlockBaker b)
        , printf "Transaction count:          %d" (birTransactionCount b)
-       , printf "Transaction energy cost:    %s NRG" (show $ birTransactionEnergyCost b)
+       , printf "Transaction energy cost:    %s" (showNrg $ birTransactionEnergyCost b)
        , printf "Transactions size:          %d" (birTransactionsSize b)
-       , printf "Transaction execution cost: %s GTU" (show $ birExecutionCost b)
-       , printf "Total amount:               %s GTU" (show $ birTotalAmount b)
-       , printf "Total encrypted amount:     %s GTU" (show $ birTotalEncryptedAmount b)
-       , printf "Central bank amount:        %s GTU" (show $ birCentralBankAmount b)
-       , printf "Minted amount per slot:     %s GTU" (show $ birMintedAmountPerSlot b) ]
+       , printf "Transaction execution cost: %s" (showGtu $ birExecutionCost b)
+       , printf "Total amount:               %s" (showGtu $ birTotalAmount b)
+       , printf "Total encrypted amount:     %s" (showGtu $ birTotalEncryptedAmount b)
+       , printf "Central bank amount:        %s" (showGtu $ birCentralBankAmount b)
+       , printf "Minted amount per slot:     %s" (showGtu $ birMintedAmountPerSlot b) ]
+
+-- AMOUNT AND ENERGY
+
+showGtu :: Types.Amount -> String
+showGtu = printf "%.4f GTU" . (/amountPerGtu) . fromIntegral
+  where amountPerGtu = 10000 :: Double
+
+showNrg :: Types.Energy -> String
+showNrg = printf "%s NRG" . show
 
 -- UTIL
 
@@ -290,19 +298,25 @@ showMaybe = maybe showNone
 showMaybeUTC :: Maybe UTCTime -> String
 showMaybeUTC = showMaybe showFormattedUtcTime
 
-showEm :: Double -> Double -> String
-showEm a d = printf "%s (EMA), %s (EMSD)" (showSeconds a) (showSeconds d)
+showEm :: String -> String -> String
+showEm a d = printf "%s (EMA), %s (EMSD)" a d
 
-showMaybeEm :: Maybe Double -> Maybe Double -> String
-showMaybeEm a d = case (a, d) of
-                    (Just a', Just d') -> showEm a' d'
+showEmSeconds :: Double -> Double -> String
+showEmSeconds a d = showEm (showSeconds a) (showSeconds d)
+
+showMaybeEmSeconds :: Maybe Double -> Maybe Double -> String
+showMaybeEmSeconds a d = case (a, d) of
+                    (Just a', Just d') -> showEmSeconds a' d'
                     _ -> showNone
 
 showSeconds :: Double -> String
 showSeconds s = printf "%5d ms" (round $ 1000*s :: Int)
 
-printMap :: ((k, v) -> String) -> HM.HashMap k v -> Printer
-printMap s m = forM_ (HM.toList m) $ \(k, v) -> tell [s (k, v)]
+printMap :: ((k, v) -> String) -> [(k, v)] -> Printer
+printMap s m = forM_ m $ \(k, v) -> tell [s (k, v)]
 
 showYesNo :: Bool -> String
 showYesNo = bool "no" "yes"
+
+toSortedList :: Ord k => HM.HashMap k v -> [(k, v)]
+toSortedList = sortOn fst . HM.toList
