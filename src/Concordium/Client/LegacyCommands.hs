@@ -399,7 +399,7 @@ peerConnectCommand =
     command
      "PeerConnect"
     (info
-       (GetModuleSource <$>
+       (PeerConnect <$>
         strArgument (metavar "PEER-IP" <> help "IP of the peer we want to connect to") <*>
         argument
           auto
