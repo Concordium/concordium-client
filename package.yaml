@@ -215,4 +215,5 @@ tests:
       - mtl >= 2.2.2
       - QuickCheck >= 2.12
       - text
+      - time
       - unordered-containers
