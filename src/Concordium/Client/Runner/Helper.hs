@@ -7,6 +7,7 @@ module Concordium.Client.Runner.Helper
   , writeContextData
   , showLocalModules
   , outputGRPC
+  , outputGRPC'
   , printJSON
   , processJSON
   ) where
@@ -77,17 +78,29 @@ showLocalModules cdata =
 -- http://hackage.haskell.org/package/http2-client-grpc-0.7.0.0/docs/Network-GRPC-Client-Helpers.html#v:rawUnary
 outputGRPC ::
      (Show a1)
-  => Either a2 (Either a1 (a3, b, Either String t))
+  => Maybe (Either a1 (a3, b, Either String t))
   -> Either String t
 outputGRPC ret =
   case ret of
-    Left _ -> Left "Unable to send consensus query: too much concurrency"
-    Right (Right val) -> do
+    Nothing -> Left "Cannot connect to GRPC server."
+    Just v -> outputGRPC' v
+
+-- The complexity of the first parameter comes from the return type of
+-- rawUnary. See the documentation
+-- http://hackage.haskell.org/package/http2-client-grpc-0.7.0.0/docs/Network-GRPC-Client-Helpers.html#v:rawUnary
+outputGRPC' ::
+     (Show a1)
+  => Either a1 (a3, b, Either String t)
+  -> Either String t
+outputGRPC' ret =
+  case ret of
+    Right val -> do
       let (_, _, response) = val
       case response of
         Left e  -> Left $ "gRPC response error: " ++ e
         Right v -> Right v
-    Right (Left e) -> Left $ "Unable to send consensus query: " ++ show e
+    Left e -> Left $ "Unable to send consensus query: " ++ show e
+
 
 processJSON :: (Field.HasField a "value" Text) => a -> Value
 processJSON val = do
