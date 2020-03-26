@@ -36,9 +36,11 @@ data Options =
 
 data Backend =
   GRPC
-    { grpcHost   :: HostName
-    , grpcPort   :: PortNumber
-    , grpcTarget :: Maybe String }
+    { grpcHost   :: !HostName
+    , grpcPort   :: !PortNumber
+    , grpcTarget :: !(Maybe String)
+    , grpcRetryNum :: !(Maybe Int)
+    }
   deriving (Show)
 
 data Cmd
@@ -139,7 +141,7 @@ versionOption =
   infoOption (showVersion version) (long "version" <> help "Show version")
 
 backendParser :: Parser Backend
-backendParser = GRPC <$> hostParser <*> portParser <*> targetParser
+backendParser = GRPC <$> hostParser <*> portParser <*> targetParser <*> retryNumParser
 
 hostParser :: Parser HostName
 hostParser =
@@ -160,6 +162,13 @@ targetParser =
   strOption
     (long "grpc-target" <> metavar "GRPC-TARGET" <>
      help "target node name when using a proxy")
+
+retryNumParser :: Parser (Maybe Int)
+retryNumParser =
+  optional $
+    option auto
+    (long "grpc-retry" <> metavar "GRPC-RETRY" <>
+     help "How many times to retry the connection if it fails the first time.")
 
 transactionCfgParser :: Parser TransactionCfg
 transactionCfgParser =
