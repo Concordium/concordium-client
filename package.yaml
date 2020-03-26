@@ -81,6 +81,7 @@ library:
     - proto-lens == 0.5.*
     - proto-lens-protobuf-types == 0.5.*
     - proto-lens-runtime == 0.5.*
+    - concurrent-extra >= 0.7
   generated-exposed-modules:
     Proto.ConcordiumP2pRpc
     Proto.ConcordiumP2pRpc_Fields

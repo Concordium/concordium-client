@@ -605,7 +605,7 @@ debugTestFullProvision = do
         _ ->
           error $ "Could not parse host:port for given NODE_URL: " ++ Text.unpack nodeUrl
 
-    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, target = Nothing }
+    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, target = Nothing, retryNum = Just 5 }
 
   nodeBackend <- runExceptT (mkGrpcClient grpcConfig) >>= \case
     Left err -> fail (show err)
@@ -677,7 +677,7 @@ debugTestFullProvision = do
 
 debugGrpc :: IO GetNodeStateResponse
 debugGrpc = do
-  let nodeBackend = COM.GRPC { grpcHost = "localhost", grpcPort = 11103, grpcTarget = Nothing }
+  let nodeBackend = COM.GRPC { grpcHost = "localhost", grpcPort = 11103, grpcTarget = Nothing, grpcRetryNum = Just 5 }
 
   infoE <- withClient nodeBackend getNodeInfo
 
