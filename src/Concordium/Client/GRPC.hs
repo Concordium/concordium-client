@@ -26,6 +26,7 @@ import           Concordium.Types.Transactions(BareBlockItem)
 import           Concordium.Types as Types
 import           Concordium.ID.Types as IDTypes
 
+import qualified Control.Concurrent.ReadWriteLock as RW
 import           Control.Concurrent
 import           Control.Monad.Fail
 import           Control.Monad.IO.Class
@@ -33,6 +34,7 @@ import           Control.Monad.Reader                hiding (fail)
 import qualified Data.Serialize                      as S
 import           Lens.Simple
 
+import           Data.IORef
 import           Data.Aeson as AE
 import           Data.Aeson.Types as AE
 import qualified Data.HashSet as Set
@@ -46,16 +48,23 @@ import           Prelude                             hiding (fail, mod, null, un
 
 data GrpcConfig =
   GrpcConfig
-    { host   :: HostName
-    , port   :: PortNumber
+    { host   :: !HostName
+    , port   :: !PortNumber
     -- Target node, i.e. "node-0" for use with grpc-proxy.eu.test.concordium.com against testnet
-    , target :: Maybe String
+    , target :: !(Maybe String)
+    , retryNum :: !(Maybe Int)
     }
   deriving (Show)
 
-newtype EnvData =
+data EnvData =
   EnvData
-    { grpc :: GrpcClient
+    {
+      -- How many times to retry to establish the connection.
+      -- 0 means only try once.
+      retryTimes :: !Int,
+      config :: !GrpcClientConfig,
+      rwlock :: RW.RWLock,
+      grpc :: !(IORef (Maybe GrpcClient))
     }
 
 -- |Monad in which the program would run
@@ -107,7 +116,10 @@ mkGrpcClient config =
                  { _grpcClientConfigCompression = uncompressed
                  , _grpcClientConfigHeaders = header
                  }
-   in EnvData <$> setupGrpcClient cfg
+   in liftIO $ do
+       lock <- RW.new
+       ioref <- newIORef Nothing -- don't start the connection just now
+       return $! EnvData (maybe 0 id (retryNum config)) cfg lock ioref
 
 getNodeInfo :: ClientMonad IO (Either String NodeInfoResponse)
 getNodeInfo = withUnaryNoMsg' (call @"nodeInfo")
@@ -265,10 +277,51 @@ withUnaryCore :: forall m n b. (HasMethod P2P m, MonadIO n)
           -> (Either String (MethodOutput P2P m) -> b)
           -> ClientMonad n b
 withUnaryCore method message k = do
-  client <- asks grpc
-  liftClientIO $! do
-    ret <- rawUnary method client message
-    return $ k (outputGRPC ret)
+  clientRef <- asks grpc
+  cfg <- asks config
+  lock <- asks rwlock
+
+  -- try to establish a connection
+  let tryEstablish :: Int -> IO (Maybe GrpcClient)
+      tryEstablish n =
+        if n <= 0 then return Nothing
+        else runExceptT (setupGrpcClient cfg) >>= \case
+               Left _ -> do -- retry in case of error, after waiting 1s
+                 threadDelay 1000000
+                 tryEstablish (n-1)
+               Right client -> return (Just client)
+
+  let tryRun = do
+        RW.withRead lock $ do
+          mclient <- readIORef clientRef
+          case mclient of
+            Nothing -> return Nothing
+            Just client -> runExceptT (rawUnary method client message) >>=
+              \case Left _ -> return Nothing -- client error
+                    Right (Left _) -> return Nothing -- too much concurrency
+                    Right (Right x) -> return (Just x)
+
+  ret <- liftIO tryRun
+
+  case ret of
+    Nothing -> do -- failed, need to establish connection
+      retryNum <- asks retryTimes
+      tryAgain <- liftIO $ RW.withWrite lock $ do
+        readIORef clientRef >>= \case
+          Nothing -> return ()
+          Just oldClient -> runExceptT (close oldClient) >> return () -- FIXME: We ignore failure closing connection here.
+        tryEstablish (retryNum + 1) >>= \case
+          Nothing -> do
+            atomicWriteIORef clientRef Nothing
+            return False
+          Just newClient -> do
+            atomicWriteIORef clientRef (Just newClient)
+            return True
+      if tryAgain then do
+          ret' <- liftIO tryRun
+          return (k (outputGRPC ret'))
+      else return (k (Left "Cannot establish connection to GRPC endpoint."))
+    Just v -> return (k (outputGRPC' v))
 
 withUnaryCoreNoMsg :: forall m n b. (HasMethod P2P m, MonadIO n)
           => RPC P2P m

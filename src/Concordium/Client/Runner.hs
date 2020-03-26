@@ -53,6 +53,7 @@ import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 import           Control.Monad.Fail
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader                hiding (fail)
+import           Data.IORef
 import           Data.Aeson                          as AE
 import           Data.Aeson.Types                    as AE
 import qualified Data.Aeson.Encode.Pretty            as AE
@@ -87,9 +88,9 @@ liftClientIOToM comp = do
 withClient :: MonadIO m => Backend -> ClientMonad m a -> m a
 withClient bkend comp = do
   r <- runExceptT $! do
-    client <- liftClientIOToM (mkGrpcClient $! GrpcConfig (COM.grpcHost bkend) (COM.grpcPort bkend) (COM.grpcTarget bkend))
+    client <- liftClientIOToM (mkGrpcClient $! GrpcConfig (COM.grpcHost bkend) (COM.grpcPort bkend) (COM.grpcTarget bkend) (COM.grpcRetryNum bkend))
     ret <- ((runReaderT . _runClientMonad) comp $! client)
-    liftClientIOToM (close (grpc client))
+    liftClientIOToM (maybe (return ()) close =<< (liftIO . readIORef $ (grpc client)))
     return ret
   case r of
     Left err -> error (show err)
