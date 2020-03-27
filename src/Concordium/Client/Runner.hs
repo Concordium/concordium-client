@@ -107,8 +107,8 @@ withClientJson b comp = do
     Success v -> return v
 
 process :: COM.Options -> IO ()
-process (Options (LegacyCmd c) _ backend _) = processLegacyCmd c backend
-process (Options command cfgDir backend verbose) = do
+process Options{optsCmd = LegacyCmd c, optsBackend = backend} = processLegacyCmd c backend
+process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir, optsVerbose = verbose} = do
   -- Disable output buffering.
   hSetBuffering stdout NoBuffering
   -- Evaluate command.
