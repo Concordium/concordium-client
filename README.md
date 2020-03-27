@@ -465,7 +465,6 @@ Supported transaction types (see the `simple-client/test/transactions/` director
 * `InitContract` (example under `GetInstances`)
 * `Update` (example under `GetInstanceInfo`)
 * `Transfer`
-* `DeployCredential`
 * `DeployEncryptionKey`
 * `RemoveBaker`
 * `UpdateBakerAccount`
