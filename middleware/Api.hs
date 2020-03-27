@@ -523,7 +523,6 @@ runTransaction nodeBackend payload (address, keyMap) = do
     energyAmount =
       case payload of
         Transfer _ _       -> simpleTransferEnergyCost (HM.size keyMap)
-        DeployCredential _ -> 10000
         _                  -> 10000
 
     transaction =
