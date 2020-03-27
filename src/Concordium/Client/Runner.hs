@@ -651,7 +651,7 @@ convertTransactionPayload = \case
   (CT.Transfer transferTo transferAmount) ->
     return $ Types.Transfer transferTo transferAmount
   (CT.DeployEncryptionKey encKey) -> return $ Types.DeployEncryptionKey encKey
-  (CT.RemoveBaker rbid rbp) -> return $ Types.RemoveBaker rbid rbp
+  (CT.RemoveBaker rbid) -> return $ Types.RemoveBaker rbid
   (CT.UpdateBakerAccount ubid uba ubp) ->
     return $ Types.UpdateBakerAccount ubid uba ubp
   (CT.UpdateBakerSignKey ubsid ubsk ubsp) ->
