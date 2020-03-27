@@ -31,8 +31,8 @@ type Verbose = Bool
 data Options =
   Options
   { optsCmd :: Cmd
-  , optsConfigDir :: Maybe FilePath
   , optsBackend :: Maybe Backend
+  , optsConfigDir :: Maybe FilePath
   , optsVerbose :: Verbose }
   deriving (Show)
 
@@ -142,15 +142,22 @@ data BakerCmd
     , baTransactionCfg :: !TransactionCfg }
   deriving (Show)
 
+visibleHelper :: Parser (a -> a)
+visibleHelper = abortOption ShowHelpText $ mconcat
+  [ long "help"
+  , short 'h'
+  , help "Show detailed help text"
+  ]
+
 optsParser :: ParserInfo Options
 optsParser = info
-               (helper <*> versionOption <*> programOptions)
+               (programOptions <**> versionOption <**> visibleHelper)
                (fullDesc <> progDesc "Concordium Client Command Line Interface" <>
                 header "concordium-client - a client to interact with the concordium network.")
 
 versionOption :: Parser (a -> a)
 versionOption =
-  infoOption (showVersion version) (long "version" <> help "Show version")
+  infoOption (showVersion version) (hidden <> long "version" <> help "Show version")
 
 backendParser :: Parser Backend
 backendParser = GRPC <$> hostParser <*> portParser <*> targetParser <*> retryNumParser
@@ -172,14 +179,18 @@ targetParser :: Parser (Maybe String)
 targetParser =
   optional $
   strOption
-    (long "grpc-target" <> metavar "GRPC-TARGET" <>
+    (hidden <>
+     long "grpc-target" <>
+     metavar "GRPC-TARGET" <>
      help "target node name when using a proxy")
 
 retryNumParser :: Parser (Maybe Int)
 retryNumParser =
   optional $
     option auto
-    (long "grpc-retry" <> metavar "GRPC-RETRY" <>
+    (hidden <>
+     long "grpc-retry" <>
+     metavar "GRPC-RETRY" <>
      help "How many times to retry the connection if it fails the first time.")
 
 transactionCfgParser :: Parser TransactionCfg
@@ -193,8 +204,9 @@ transactionCfgParser =
 
 programOptions :: Parser Options
 programOptions = Options <$>
-                   (hsubparser
-                     (transactionCmds <>
+                   ((hsubparser
+                     (metavar "command" <>
+                      transactionCmds <>
                       accountCmds <>
                       moduleCmds <>
                       contractCmds <>
@@ -202,10 +214,10 @@ programOptions = Options <$>
                       consensusCmds <>
                       blockCmds <>
                       bakerCmds
-                     ) <|> (LegacyCmd <$> legacyProgramOptions)) <*>
-                   (optional (strOption (long "config" <> metavar "DIR" <> help "configuration directory path"))) <*>
+                     )) <|> (LegacyCmd <$> legacyProgramOptions)) <*>
                    (optional backendParser) <*>
-                   (switch (long "verbose" <> short 'v' <> help "make output verbose"))
+                   (optional (strOption (long "config" <> metavar "DIR" <> help "configuration directory path"))) <*>
+                   (switch (hidden <> long "verbose" <> short 'v' <> help "make output verbose"))
 
 transactionCmds :: Mod CommandFields Cmd
 transactionCmds =
