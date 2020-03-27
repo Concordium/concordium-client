@@ -79,6 +79,10 @@ data TransactionCmd
     { transactionToAccount :: !Text
     , transactionAmount :: !Amount
     , transactionCfg :: !TransactionCfg }
+  | TransactionDeployCredential
+    {
+      transactionCredentialFile :: !FilePath
+    }
   deriving (Show)
 
 data AccountCmd
@@ -228,7 +232,9 @@ transactionCmds =
         (hsubparser
           (transactionSubmitCmd <>
            transactionStatusCmd <>
-           transactionSendGtuCmd)))
+           transactionSendGtuCmd <>
+           transactionDeployCredentialCmd
+          )))
       (progDesc "commands for submitting and inspecting transactions"))
 
 transactionSubmitCmd :: Mod CommandFields TransactionCmd
@@ -239,6 +245,15 @@ transactionSubmitCmd =
       (TransactionSubmit <$>
         strArgument (metavar "FILE" <> help "file containing the transaction parameters in JSON format"))
       (progDesc "parse transaction and send it to the baker"))
+
+transactionDeployCredentialCmd :: Mod CommandFields TransactionCmd
+transactionDeployCredentialCmd =
+  command
+    "deploy-credential"
+    (info
+      (TransactionDeployCredential <$>
+        strArgument (metavar "FILE" <> help "file containing the credential deployment information"))
+      (progDesc "parse credential and send it to the baker"))
 
 transactionStatusCmd :: Mod CommandFields TransactionCmd
 transactionStatusCmd =

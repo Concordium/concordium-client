@@ -77,9 +77,6 @@ data TransactionJSONPayload
       { toaddress :: Address
       , amount    :: Amount
       } -- ^ Transfers specific amount to the recipent
-  | DeployCredential
-      { credential :: IDTypes.CredentialDeploymentInformation
-      } -- ^ Deploy credentials, creating a new account if one does not yet exist.
   | DeployEncryptionKey
       { key :: IDTypes.AccountEncryptionKey
       }

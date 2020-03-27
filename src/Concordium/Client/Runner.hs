@@ -144,6 +144,12 @@ processTransactionCmd action baseCfgDir verbose backend =
       tx <- PR.evalContext mdata $ withClient backend $ processTransaction source defaultNetId
       logInfo [ printf "transaction sent to the baker"
               , printf "query status using 'transaction status %s'" (show $ getBlockItemHash tx) ]
+    TransactionDeployCredential fname -> do
+      -- TODO Ensure that the "nonce" field is optional in the payload.
+      source <- BSL.readFile fname
+      tx <- withClient backend $ processCredential source defaultNetId
+      logInfo [ printf "credential sent to the baker"
+              , printf "query status using 'transaction status %s'" (show $ getBlockItemHash tx) ]
     TransactionStatus hash -> do
       validateTransactionHash hash
       status <- withClient backend $ queryTransactionStatus (read $ unpack hash)
@@ -611,6 +617,21 @@ processTransaction_ transaction networkId _verbose = do
     Left err -> fail err
     Right False -> fail "Transaction not accepted by the baker."
     Right True -> return tx
+
+processCredential ::
+     (MonadFail m, MonadIO m)
+  => BSL.ByteString
+  -> Int
+  -> ClientMonad m Types.BareBlockItem
+processCredential source networkId =
+  case AE.eitherDecode source of
+    Left err -> fail $ "Error decoding JSON: " ++ err
+    Right cred ->
+      let tx = Types.CredentialDeployment cred
+      in sendTransactionToBaker tx networkId >>= \case
+           Left err -> fail err
+           Right False -> fail "Transaction not accepted by the baker."
+           Right True -> return tx
 
 convertTransactionPayload :: (MonadFail m, MonadIO m) => CT.TransactionJSONPayload -> ClientMonad (PR.Context Core.UA m) Types.Payload
 convertTransactionPayload = \case
