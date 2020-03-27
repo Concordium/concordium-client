@@ -82,7 +82,6 @@ data TransactionJSONPayload
       }
   | RemoveBaker
       { removeId :: BakerId
-      , proof    :: Types.Proof
       }
   | UpdateBakerAccount
       { bakerId        :: BakerId
