@@ -22,7 +22,7 @@ payload="$(jq .)"
 address="$(jq -r .address <<< "$payload")"
 keys="$(jq .accountKeys <<< "$payload")"
 
-base_cfg_dir="$HOME/.config/concordium"
+base_cfg_dir="/var/lib/concordium/config"
 acc_cfg_dir="$base_cfg_dir/accounts"
 addr_cfg_dir="$acc_cfg_dir/$address"
 
