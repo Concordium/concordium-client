@@ -5,8 +5,6 @@ import Concordium.Client.Output
 import qualified Concordium.Crypto.ByteStringHelpers as BSH
 import qualified Concordium.Crypto.SignatureScheme as S
 import qualified Concordium.ID.Types as IDTypes
-import qualified Concordium.Types as Types
-import qualified Concordium.Types.Execution as Types
 
 import Control.Monad.Writer
 import qualified Data.HashMap.Strict as M

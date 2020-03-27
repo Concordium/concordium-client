@@ -1,3 +1,4 @@
+
 module Concordium.Client.Commands
   ( optsParser
   , backendParser
@@ -14,6 +15,7 @@ module Concordium.Client.Commands
   , LegacyCmd(..)
   , ConsensusCmd(..)
   , BlockCmd(..)
+  , BakerCmd(..)
   ) where
 
 import Data.Text
@@ -60,6 +62,8 @@ data Cmd
     { consensusCmd :: ConsensusCmd }
   | BlockCmd
     { blockCmd :: BlockCmd }
+  | BakerCmd
+    { bakerCmd :: BakerCmd }
   deriving (Show)
 
 data ConfigCmd
@@ -130,6 +134,14 @@ data BlockCmd
     { bsBlockHash :: !(Maybe Text) }
   deriving (Show)
 
+data BakerCmd
+  = BakerGenerateKeys
+    { bgkFile :: !(Maybe FilePath) }
+  | BakerAdd
+    { baFile :: !FilePath
+    , baTransactionCfg :: !TransactionCfg }
+  deriving (Show)
+
 optsParser :: ParserInfo Options
 optsParser = info
                (helper <*> versionOption <*> programOptions)
@@ -188,7 +200,8 @@ programOptions = Options <$>
                       contractCmds <>
                       configCmds <>
                       consensusCmds <>
-                      blockCmds
+                      blockCmds <>
+                      bakerCmds
                      ) <|> (LegacyCmd <$> legacyProgramOptions)) <*>
                    (optional (strOption (long "config" <> metavar "DIR" <> help "configuration directory path"))) <*>
                    (optional backendParser) <*>
@@ -415,3 +428,33 @@ blockShowCmd =
       (BlockShow <$>
         optional (strArgument (metavar "BLOCK" <> help "hash of the block (default: \"best\")")))
       (progDesc "show stats for a given block"))
+
+bakerCmds :: Mod CommandFields Cmd
+bakerCmds =
+  command
+    "baker"
+    (info
+      (BakerCmd <$>
+        (hsubparser
+          (bakerGenerateKeysCmd <>
+           bakerAddCmd)))
+      (progDesc "commands for creating and deploying baker credentials"))
+
+bakerGenerateKeysCmd :: Mod CommandFields BakerCmd
+bakerGenerateKeysCmd =
+  command
+    "generate-keys"
+    (info
+      (BakerGenerateKeys <$>
+        optional (strArgument (metavar "FILE" <> help "target file of generated credentials")))
+      (progDesc "create baker credentials and write them to a file or stdout"))
+
+bakerAddCmd :: Mod CommandFields BakerCmd
+bakerAddCmd =
+  command
+    "add"
+    (info
+      (BakerAdd <$>
+        strArgument (metavar "FILE" <> help "file containing the baker credentials") <*>
+        transactionCfgParser)
+      (progDesc "deploy baker credentials to the chain"))

@@ -467,7 +467,6 @@ Supported transaction types (see the `simple-client/test/transactions/` director
 * `Transfer`
 * `DeployCredential`
 * `DeployEncryptionKey`
-* `AddBaker`
 * `RemoveBaker`
 * `UpdateBakerAccount`
 * `UpdateBakerSignKey`
