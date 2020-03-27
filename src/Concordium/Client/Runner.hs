@@ -145,7 +145,6 @@ processTransactionCmd action baseCfgDir verbose backend =
       logInfo [ printf "transaction sent to the baker"
               , printf "query status using 'transaction status %s'" (show $ getBlockItemHash tx) ]
     TransactionDeployCredential fname -> do
-      -- TODO Ensure that the "nonce" field is optional in the payload.
       source <- BSL.readFile fname
       tx <- withClient backend $ processCredential source defaultNetId
       logInfo [ printf "credential sent to the baker"
