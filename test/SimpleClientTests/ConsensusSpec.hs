@@ -3,14 +3,9 @@ module SimpleClientTests.ConsensusSpec where
 import Concordium.Client.Cli
 import Concordium.ID.Types
 import Concordium.Client.Output
-import Concordium.Client.Types.Transaction
-import Concordium.Client.Types.TransactionStatus
-import qualified Concordium.Crypto.ByteStringHelpers as BSH
 import Concordium.Types
 
 import Control.Monad.Writer
-import Data.Map.Strict as Map
-import Data.Text (Text)
 import Data.Time.Clock
 import Data.Time.Format
 

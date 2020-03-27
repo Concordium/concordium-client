@@ -75,14 +75,6 @@ data LegacyCmd
       { legacyIp     :: !Text
       , legacyPortPC :: !Int
       }
-  | MakeBakerPayload {
-        -- |JSON file with baker keys (leadership election and signing).
-        legacyBakerKeysFile   :: !FilePath,
-        -- |JSON file with with account keys.
-        legacyAccountKeysFile :: !FilePath,
-        -- |File to output the payload, if desired.
-        legacyPayloadFile     :: !(Maybe FilePath)
-      }
   | GetPeerUptime
   | BanNode
       { legacyNodeId   :: !Text
@@ -146,23 +138,8 @@ legacyProgramOptions =
      getBannedPeersCommand <>
      shutdownCommand <>
      dumpStartCommand <>
-     dumpStopCommand <>
-     getMakeBakerPayloadCommand
+     dumpStopCommand
     )
-
-getMakeBakerPayloadCommand :: Mod CommandFields LegacyCmd
-getMakeBakerPayloadCommand =
-  command
-    "MakeBaker"
-    (info
-       (MakeBakerPayload <$>
-        (strArgument
-          (metavar "BAKER-KEYS" <> help "File with baker public and private keys")) <*>
-        (strArgument
-          (metavar "ACCOUNT-KEYS" <> help "File with desired baker account and private keys")) <*>
-        (optional (strArgument
-          (metavar "OUTPUT" <> help "File where the generated transaction is output."))))
-       (progDesc "Make the transaction data necessary to become a baker."))
 
 getPeerDataCommand :: Mod CommandFields LegacyCmd
 getPeerDataCommand =

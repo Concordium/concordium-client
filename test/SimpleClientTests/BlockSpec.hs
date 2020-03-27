@@ -2,14 +2,9 @@ module SimpleClientTests.BlockSpec where
 
 import Concordium.Client.Cli
 import Concordium.Client.Output
-import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
-import qualified Concordium.Types.Execution as Types
-import qualified Concordium.Crypto.ByteStringHelpers as BSH
 
 import Control.Monad.Writer
-import Data.Map.Strict as Map
-import Data.Text (Text)
 import Data.Time.Clock
 import Data.Time.Format
 

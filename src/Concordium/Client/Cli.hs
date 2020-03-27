@@ -3,6 +3,9 @@
 
 module Concordium.Client.Cli where
 
+import qualified Concordium.Crypto.BlockSignature as BlockSig
+import qualified Concordium.Crypto.BlsSignature as Bls
+import qualified Concordium.Crypto.VRF as VRF
 import Concordium.Client.Types.Transaction
 import Concordium.Client.Types.TransactionStatus
 import qualified Concordium.ID.Types as IDTypes
@@ -15,6 +18,7 @@ import Data.List
 import Data.Char
 import Data.Text (Text)
 import Data.Text.Encoding
+import qualified Data.ByteString.Char8 as BS
 import Data.Time
 import Data.Word
 import Prelude hiding (fail, log)
@@ -196,6 +200,44 @@ instance AE.FromJSON BlockInfoResult where
     birExecutionCost <- v .: "executionCost"
     return BlockInfoResult {..}
 
+data BakerKeys =
+  BakerKeys
+  { bkSigSignKey :: BlockSig.SignKey
+  , bkSigVerifyKey :: BlockSig.VerifyKey
+  , bkAggrSignKey :: Bls.SecretKey
+  , bkAggrVerifyKey :: Bls.PublicKey
+  , bkElectionSignKey :: VRF.SecretKey
+  , bkElectionVerifyKey :: VRF.PublicKey }
+
+instance AE.FromJSON BakerKeys where
+  parseJSON = withObject "Baker keys" $ \v -> do
+    bkAggrSignKey <- v .: "aggregationSignKey"
+    bkAggrVerifyKey <- v .: "aggregationVerifyKey"
+    bkElectionSignKey <- v .: "electionPrivateKey"
+    bkElectionVerifyKey <- v .: "electionVerifyKey"
+    bkSigSignKey <- v .: "signatureSignKey"
+    bkSigVerifyKey <- v .: "signatureVerifyKey"
+    return BakerKeys {..}
+
+instance AE.ToJSON BakerKeys where
+  toJSON v = object [ "aggregationSignKey" .= bkAggrSignKey v
+                    , "aggregationVerifyKey" .= bkAggrVerifyKey v
+                    , "electionPrivateKey" .= bkElectionSignKey v
+                    , "electionVerifyKey" .= bkElectionVerifyKey v
+                    , "signatureSignKey" .= bkSigSignKey v
+                    , "signatureVerifyKey" .= bkSigVerifyKey v ]
+
+data AccountKeys =
+  AccountKeys
+  { akAddress :: AccountAddress
+  , akKeys :: KeyMap }
+
+instance AE.FromJSON AccountKeys where
+  parseJSON = withObject "Account keys" $ \v -> do
+    akAddress <- v .: "account"
+    akKeys <- v .: "keys"
+    return AccountKeys {..}
+
 -- Hardcode network ID and hook.
 defaultNetId :: Int
 defaultNetId = 100
@@ -205,14 +247,22 @@ getArg name input = case input of
   Nothing -> die $ name ++ " not provided"
   Just v -> return v
 
-decodeJsonArg :: FromJSON a => String -> Maybe Text -> Maybe (Either String a)
+-- |If the string starts with @ we assume the remaining characters are a file name
+-- and we try to read the contents of that file.
+decodeJsonArg :: FromJSON a => String -> Maybe Text -> Maybe (IO (Either String a))
 decodeJsonArg key input = do
   v <- input
-  Just $ case AE.eitherDecodeStrict $ encodeUtf8 v of
-    Left err -> Left $ printf "%s: cannot parse '%s' as JSON: %s" key v err
-    Right r -> Right r
+  Just $ do
+    let bs = encodeUtf8 v
+    res <- case BS.uncons bs of
+             Just ('@', rest) -> do
+               AE.eitherDecodeFileStrict (BS.unpack rest)
+             _ -> return $ AE.eitherDecodeStrict bs
+    case res of
+      Left err -> return (Left $ printf "%s: cannot parse '%s' as JSON: %s" key v err)
+      Right r -> return (Right r)
 
-decodeKeysArg :: Maybe Text -> Maybe (Either String KeyMap)
+decodeKeysArg :: Maybe Text -> Maybe (IO (Either String KeyMap))
 decodeKeysArg = decodeJsonArg "keys"
 
 getAddressArg :: String -> Maybe Text -> IO IDTypes.AccountAddress
