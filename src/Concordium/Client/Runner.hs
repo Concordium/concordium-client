@@ -613,7 +613,7 @@ processTransaction_ transaction networkId _verbose = do
       (CT.keys transaction)
 
   sendTransactionToBaker tx networkId >>= \case
-    Left err -> fail err
+    Left err -> fail $ show err
     Right False -> fail "Transaction not accepted by the baker."
     Right True -> return tx
 

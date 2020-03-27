@@ -21,6 +21,7 @@ import qualified Data.HashMap.Strict          as Map
 
 import qualified Proto.ConcordiumP2pRpc_Fields      as CF
 import qualified Data.ProtoLens.Field as Field
+import qualified Network.URI.Encode(decode)
 
 import           Lens.Simple
 
@@ -97,7 +98,8 @@ outputGRPC' ret =
     Right val -> do
       let (_, _, response) = val
       case response of
-        Left e  -> Left $ "gRPC response error: " ++ e
+        Left e  ->
+          Left $ "gRPC error: " ++ Network.URI.Encode.decode e
         Right v -> Right v
     Left e -> Left $ "Unable to send consensus query: " ++ show e
 
