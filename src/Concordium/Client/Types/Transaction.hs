@@ -83,16 +83,6 @@ data TransactionJSONPayload
   | DeployEncryptionKey
       { key :: IDTypes.AccountEncryptionKey
       }
-  | AddBaker
-      { electionVerifyKey     :: BakerElectionVerifyKey
-      , electionPrivateKey    :: BakerElectionPrivateKey
-      , signVerifyKey         :: BakerSignVerifyKey
-      , aggregationVerifykey  :: BakerAggregationVerifyKey
-      , aggregationPrivateKey :: BakerAggregationPrivateKey
-      , signPrivateKey        :: BakerSignPrivateKey
-      , bakerAccountValue     :: AccountAddress
-      , bakerKeypair          :: KeyPair
-      }
   | RemoveBaker
       { removeId :: BakerId
       , proof    :: Types.Proof

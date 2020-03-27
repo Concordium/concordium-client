@@ -40,7 +40,6 @@ import           Concordium.Client.Validate
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
-import qualified Concordium.Crypto.SignatureScheme   as Sig
 import qualified Concordium.Crypto.VRF               as VRF
 import qualified Concordium.Types.Transactions       as Types
 import           Concordium.Types.HashableTo
@@ -55,8 +54,8 @@ import           Control.Monad.IO.Class
 import           Control.Monad.Reader                hiding (fail)
 import           Data.IORef
 import           Data.Aeson                          as AE
-import           Data.Aeson.Types                    as AE
 import qualified Data.Aeson.Encode.Pretty            as AE
+import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
 import qualified Data.Char                           as C
@@ -65,6 +64,7 @@ import           Data.Maybe
 import qualified Data.Serialize                      as S
 import           Data.String
 import           Data.Text
+import           Data.Text.Encoding
 import qualified Data.Text.IO                        as TextIO hiding (putStrLn)
 import           Data.Word
 import           Lens.Simple
@@ -121,6 +121,7 @@ process (Options command cfgDir backend verbose) = do
               ContractCmd c -> processContractCmd c
               ConsensusCmd c -> processConsensusCmd c
               BlockCmd c -> processBlockCmd c
+              BakerCmd c -> processBakerCmd c cfgDir
               LegacyCmd _ -> error "Unreachable case: LegacyCmd."
 
 processConfigCmd :: ConfigCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -146,6 +147,7 @@ processTransactionCmd action baseCfgDir verbose backend =
     TransactionStatus hash -> do
       validateTransactionHash hash
       status <- withClient backend $ queryTransactionStatus (read $ unpack hash)
+      when verbose $ logInfo [printf "Response: %s" (show status)]
       runPrinter $ printTransactionStatus status
     TransactionSendGtu receiver amount txCfg -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -154,10 +156,11 @@ processTransactionCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      keysArg <- case decodeKeysArg $ COM.tcKeys txCfg of
-        Nothing -> return Nothing
-        Just (Left err) -> die err
-        Just (Right ks) -> return $ Just ks
+      keysArg <- case decodeKeysArg $ tcKeys txCfg of
+                   Nothing -> return Nothing
+                   Just act -> act >>= \case
+                     Left err -> die err
+                     Right ks -> return $ Just ks
       accCfg <- getAccountConfig (tcSender txCfg) baseCfg Nothing keysArg
 
       when verbose $ do
@@ -282,6 +285,90 @@ processBlockCmd action _ backend =
       v <- withClientJson backend $ withBestBlockHash b getBlockInfo
       runPrinter $ printBlockInfo v
 
+processBakerCmd :: BakerCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
+processBakerCmd action baseCfgDir verbose backend =
+  case action of
+    BakerGenerateKeys outputFile -> do
+      -- Aggr/bls keys
+      aggrSk <- Bls.generateSecretKey
+      let aggrPk = Bls.derivePublicKey aggrSk
+      -- Election keys
+      VRF.KeyPair {privateKey=elSk, publicKey=elPk} <- VRF.newKeyPair
+      -- Signature keys
+      BlockSig.KeyPair {signKey=sigSk, verifyKey=sigVk} <- BlockSig.newKeyPair
+      let keys = BakerKeys { bkAggrSignKey = aggrSk
+                           , bkAggrVerifyKey = aggrPk
+                           , bkElectionSignKey = elSk
+                           , bkElectionVerifyKey = elPk
+                           , bkSigSignKey = sigSk
+                           , bkSigVerifyKey = sigVk }
+      let out = AE.encodePretty keys
+
+      case outputFile of
+        Nothing -> do
+          -- TODO Store in config.
+          BSL8.putStrLn out
+          logInfo [ printf "to add a baker to the chain using these keys, store it in a file and use 'baker add FILE'" ]
+        Just f -> do
+          BSL.writeFile f out
+          logInfo [ printf "keys written to file '%s'" f
+                  , "DO NOT LOSE THIS FILE"
+                  , printf "to add a baker to the chain using these keys, use 'baker add %s'" f ]
+    BakerAdd f txCfg -> do
+      src <- readFile f
+      v <- case eitherDecodeStrict $ encodeUtf8 $ pack src of
+             Left err -> logFatal [printf "cannot decode file '%s' as JSON: %s" f err]
+             Right r -> return r
+      bakerKeys <- case fromJSON v of
+                     Error err -> logFatal [printf "cannot parse '%s' as baker keys: %s" src err]
+                     Success r -> return r
+
+      baseCfg <- getBaseConfig baseCfgDir verbose
+
+      -- TODO Deduplicate with transaction send-gtu.
+      --      And await finalization using the same logic.
+
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+      keysArg <- case decodeKeysArg $ COM.tcKeys txCfg of
+                   Nothing -> return Nothing
+                   Just act -> act >>= \case
+                     Left err -> die err
+                     Right ks -> return $ Just ks
+      accCfg <- getAccountConfig (tcSender txCfg) baseCfg Nothing keysArg
+
+      when verbose $ do
+        runPrinter $ printAccountConfig accCfg
+        putStrLn ""
+
+      energy <- getArg "max energy amount" $ tcMaxEnergyAmount txCfg
+      expiry <- getArg "expiry" $ tcExpiration txCfg
+
+      pl <- generateAddBakerPayload bakerKeys AccountKeys {akAddress = acAddr accCfg, akKeys = acKeys accCfg}
+
+      logInfo [ printf "submitting transaction to add baker using keys from file '%s'" f
+              , "DO NOT LOSE THIS FILE"]
+
+      when verbose $ logInfo [printf "Payload: %s" (show pl)]
+
+      -- Send transaction
+      let sender = acAddr accCfg
+      tx <- withClient backend $ do
+        nonce <- case tcNonce txCfg of
+                   Nothing -> getBestBlockHash >>= getAccountNonce sender
+                   Just n -> return n
+        let tx = encodeAndSignTransaction pl energy nonce expiry sender (acKeys accCfg)
+        sendTransactionToBaker tx defaultNetId >>= \case
+          Left err -> fail err
+          Right False -> fail "Transaction not accepted by the baker."
+          Right True -> return tx
+      when verbose $ logInfo [printf "Transaction: %s" (show tx)]
+      let hash = getBlockItemHash tx
+      logInfo [ "transaction sent to the baker"
+              , printf "the transaction may be queried using 'transaction status %s'" (show hash) ]
+
 processLegacyCmd :: LegacyCmd -> Maybe Backend -> IO ()
 processLegacyCmd action backend =
   case action of
@@ -300,7 +387,6 @@ processLegacyCmd action backend =
       putStrLn "The following modules are in the local database.\n"
       showLocalModules mdata
     -- The rest of the commands expect a backend to be provided
-    MakeBakerPayload bakerKeysFile accountKeysFile payloadFile -> handleMakeBaker bakerKeysFile accountKeysFile payloadFile
     act ->
       maybe printNoBackend (useBackend act) backend
 
@@ -398,61 +484,35 @@ data PeerData = PeerData {
   peerStats     :: PeerStatsResponse,
   peerList      :: PeerListResponse
   }
-except :: IO (Maybe b) -> String -> IO b
-except c err = c >>= \case
-  Just x -> return x
-  Nothing -> die err
 
-handleMakeBaker :: FilePath -> FilePath -> Maybe FilePath -> IO ()
-handleMakeBaker bakerKeysFile accountKeysFile payloadFile = do
-  bakerKeysValue <- eitherDecodeFileStrict bakerKeysFile
-  bakerAccountValue <- eitherDecodeFileStrict accountKeysFile
-  (vrfPrivate, vrfVerify, signKey, verifyKey, aggrSignKey, aggrVerifyKey) <-
-    case bakerKeysValue >>= parseEither bakerKeysParser of
-      Left err ->
-        die $ "Could not decode file with baker keys because: " ++ err
-      Right keys -> return keys
-  (accountAddr :: Types.AccountAddress, keyMap) <-
-    case bakerAccountValue >>= parseEither accountKeysParser of
-      Left err ->
-        die $ "Could not decode file with account keys because: " ++ err
-      Right addrKeys -> return addrKeys
-  let abElectionVerifyKey = vrfVerify
-  let abSignatureVerifyKey = verifyKey
-  let abAggregationVerifyKey :: Types.BakerAggregationVerifyKey = aggrVerifyKey
-  let challenge = S.runPut (S.put abElectionVerifyKey <> S.put abSignatureVerifyKey <> S.put abAggregationVerifyKey <> S.put accountAddr)
-  abProofElection <- Proofs.proveDlog25519VRF challenge (VRF.KeyPair vrfPrivate vrfVerify) `except` "Could not produce VRF key proof."
-  abProofSig <- Proofs.proveDlog25519Block challenge (BlockSig.KeyPair signKey verifyKey) `except` "Could not produce signature key proof."
-  abProofAccounts <- forM keyMap (\key -> Proofs.proveDlog25519KP challenge key `except` "Could not produce account keys proof.")
+generateChallenge :: Types.BakerElectionVerifyKey -> Types.BakerSignVerifyKey -> Types.BakerAggregationVerifyKey -> Types.AccountAddress -> BS.ByteString
+generateChallenge electionVerifyKey sigVerifyKey aggrVerifyKey accountAddr =
+  S.runPut (S.put electionVerifyKey <> S.put sigVerifyKey <> S.put aggrVerifyKey <> S.put accountAddr)
+
+generateAddBakerPayload :: BakerKeys -> AccountKeys -> IO Types.Payload
+generateAddBakerPayload bk ak = do
+  let electionSignKey = bkElectionSignKey bk
+      signatureSignKey = bkSigSignKey bk
+      aggrSignKey = bkAggrSignKey bk
+
+  let abElectionVerifyKey = bkElectionVerifyKey bk
+      abSignatureVerifyKey = bkSigVerifyKey bk
+      abAggregationVerifyKey = bkAggrVerifyKey bk
+
+  let abAccount = akAddress ak
+      keyMap = akKeys ak
+
+  let challenge = generateChallenge abElectionVerifyKey abSignatureVerifyKey abAggregationVerifyKey abAccount
+  abProofElection <- Proofs.proveDlog25519VRF challenge (VRF.KeyPair electionSignKey abElectionVerifyKey) `except` "cannot produce VRF key proof"
+  abProofSig <- Proofs.proveDlog25519Block challenge (BlockSig.KeyPair signatureSignKey abSignatureVerifyKey) `except` "cannot produce signature key proof"
+  proofAccount <- forM keyMap (\key -> Proofs.proveDlog25519KP challenge key `except` "cannot produce account keys proof")
   let abProofAggregation = Bls.proveKnowledgeOfSK challenge aggrSignKey
+      abProofAccount = Types.AccountOwnershipProof (Map.toList proofAccount)
+  return Types.AddBaker {..}
 
-  let out = AE.encodePretty $
-          object ["transactionType" AE..= String "AddBaker",
-                  "electionVerifyKey" AE..= abElectionVerifyKey,
-                  "signatureVerifyKey" AE..= abSignatureVerifyKey,
-                  "aggregationVerifyKey" AE..= abAggregationVerifyKey,
-                  "bakerAccount" AE..= accountAddr,
-                  "proofSig" AE..= abProofSig,
-                  "proofElection" AE..= abProofElection,
-                  "account" AE..= accountAddr,
-                  "proofAccounts" AE..= Types.AccountOwnershipProof (Map.toList abProofAccounts),
-                  "proofAggregation" AE..= abProofAggregation]
-  case payloadFile of
-    Nothing -> BSL8.putStrLn out
-    Just fileName -> BSL.writeFile fileName out
-
-  where accountKeysParser = withObject "Account keys" $ \v -> do
-          accountAddr <- v .: "account"
-          keyMap <- v .: "keys"
-          return (accountAddr, keyMap)
-        bakerKeysParser = withObject "Baker keys" $ \v -> do
-          vrfPrivate <- v .: "electionPrivateKey"
-          vrfVerifyKey <- v .: "electionVerifyKey"
-          signKey <- v .: "signatureSignKey"
-          verifyKey <- v .: "signatureVerifyKey"
-          aggrSignKey <- v .: "aggregationPrivateKey"
-          aggrVerifyKey <- v .: "aggregationVerifyKey"
-          return (vrfPrivate, vrfVerifyKey, signKey, verifyKey, aggrSignKey, aggrVerifyKey)
+  where except c err = c >>= \case
+          Just x -> return x
+          Nothing -> logFatal [err]
 
 printPeerData :: MonadIO m => Either String PeerData -> m ()
 printPeerData epd =
@@ -536,64 +596,58 @@ processTransaction_ transaction networkId _verbose = do
         sender = thSenderAddress header
     nonce <-
       case thNonce header of
-        Nothing ->  getBestBlockHash >>= getAccountNonce sender
+        Nothing -> getBestBlockHash >>= getAccountNonce sender
         Just nonce -> return nonce
-    encodeAndSignTransaction
-      (payload transaction)
+    txPayload <- convertTransactionPayload $ payload transaction
+    return $ encodeAndSignTransaction
+      txPayload
       (thEnergyAmount header)
       nonce
       (thExpiry header)
-      (sender, (CT.keys transaction))
+      sender
+      (CT.keys transaction)
 
   sendTransactionToBaker tx networkId >>= \case
     Left err -> fail err
     Right False -> fail "Transaction not accepted by the baker."
     Right True -> return tx
 
+convertTransactionPayload :: (MonadFail m, MonadIO m) => CT.TransactionJSONPayload -> ClientMonad (PR.Context Core.UA m) Types.Payload
+convertTransactionPayload = \case
+  (CT.DeployModuleFromSource fileName) ->
+    Types.DeployModule <$> readModule fileName -- deserializing is not necessary, but easiest for now.
+  (CT.DeployModule mnameText) ->
+    Types.DeployModule <$> liftContext (PR.getModule mnameText)
+  (CT.InitContract initAmount mnameText cNameText paramExpr) -> do
+    (mref, _, tys) <- liftContext $ PR.getModuleTmsTys mnameText
+    case Map.lookup cNameText tys of
+      Just contName -> do
+        params <- liftContext $ PR.processTmInCtx mnameText paramExpr
+        return $ Types.InitContract initAmount mref contName params
+      Nothing -> error (show cNameText)
+  (CT.Update mnameText updateAmount updateAddress msgText) -> do
+    msg <- liftContext $ PR.processTmInCtx mnameText msgText
+    return $ Types.Update updateAmount updateAddress msg
+  (CT.Transfer transferTo transferAmount) ->
+    return $ Types.Transfer transferTo transferAmount
+  (CT.DeployEncryptionKey encKey) -> return $ Types.DeployEncryptionKey encKey
+  (CT.RemoveBaker rbid rbp) -> return $ Types.RemoveBaker rbid rbp
+  (CT.UpdateBakerAccount ubid uba ubp) ->
+    return $ Types.UpdateBakerAccount ubid uba ubp
+  (CT.UpdateBakerSignKey ubsid ubsk ubsp) ->
+    return $ Types.UpdateBakerSignKey ubsid ubsk ubsp
+  (CT.DelegateStake dsid) -> return $ Types.DelegateStake dsid
+  (CT.UpdateElectionDifficulty d) -> return $ Types.UpdateElectionDifficulty d
+
 encodeAndSignTransaction ::
-     (MonadFail m, MonadIO m)
-  => CT.TransactionJSONPayload
+     Types.Payload
   -> Types.Energy
   -> Types.Nonce
   -> Types.TransactionExpiryTime
-  -> CT.SenderData
-  -> ClientMonad (PR.Context Core.UA m) Types.BareBlockItem
-encodeAndSignTransaction pl energy nonce expiry (sender, keys) = Types.NormalTransaction <$> do
-  txPayload <- case pl of
-    (CT.DeployModuleFromSource fileName) ->
-      Types.DeployModule <$> readModule fileName -- deserializing is not necessary, but easiest for now.
-    (CT.DeployModule mnameText) ->
-      Types.DeployModule <$> liftContext (PR.getModule mnameText)
-    (CT.InitContract initAmount mnameText cNameText paramExpr) -> do
-      (mref, _, tys) <- liftContext $ PR.getModuleTmsTys mnameText
-      case Map.lookup cNameText tys of
-        Just contName -> do
-          params <- liftContext $ PR.processTmInCtx mnameText paramExpr
-          return $ Types.InitContract initAmount mref contName params
-        Nothing -> error (show cNameText)
-    (CT.Update mnameText updateAmount updateAddress msgText) -> do
-      msg <- liftContext $ PR.processTmInCtx mnameText msgText
-      return $ Types.Update updateAmount updateAddress msg
-    (CT.Transfer transferTo transferAmount) ->
-      return $ Types.Transfer transferTo transferAmount
-    (CT.DeployEncryptionKey encKey) -> return $ Types.DeployEncryptionKey encKey
-    (CT.AddBaker evk epk svk avk apk (BlockSig.KeyPair spk _) acc kp) ->
-      let challenge = S.runPut (S.put evk <> S.put svk <> S.put avk <> S.put acc)
-      in do
-        Just proofElection <- liftIO $ Proofs.proveDlog25519VRF challenge epk
-        Just proofSig <- liftIO $ Proofs.proveDlog25519KP challenge (Sig.KeyPairEd25519 spk svk)
-        Just proofAccount' <- liftIO $ Proofs.proveDlog25519KP challenge kp
-        let proofAccount = Types.singletonAOP proofAccount'
-            proofAggregation = Bls.proveKnowledgeOfSK challenge apk
-        return $ Types.AddBaker evk svk avk acc proofSig proofElection proofAccount proofAggregation
-    (CT.RemoveBaker rbid rbp) -> return $ Types.RemoveBaker rbid rbp
-    (CT.UpdateBakerAccount ubid uba ubp) ->
-      return $ Types.UpdateBakerAccount ubid uba ubp
-    (CT.UpdateBakerSignKey ubsid ubsk ubsp) ->
-      return $ Types.UpdateBakerSignKey ubsid ubsk ubsp
-    (CT.DelegateStake dsid) -> return $ Types.DelegateStake dsid
-    (CT.UpdateElectionDifficulty d) -> return $ Types.UpdateElectionDifficulty d
-
+  -> Types.AccountAddress
+  -> KeyMap
+  -> Types.BareBlockItem
+encodeAndSignTransaction txPayload energy nonce expiry sender keys = Types.NormalTransaction $
   let encPayload = Types.encodePayload txPayload
       header = Types.TransactionHeader{
         thSender = sender,
@@ -601,5 +655,5 @@ encodeAndSignTransaction pl energy nonce expiry (sender, keys) = Types.NormalTra
         thNonce = nonce,
         thEnergyAmount = energy,
         thExpiry = expiry
-  }
-  return $ Types.signTransaction (Map.toList keys) header encPayload
+      }
+  in Types.signTransaction (Map.toList keys) header encPayload
