@@ -19,7 +19,6 @@
     "expiry": 18446744073709551615,
     "payload": {
         "transactionType": "RemoveBaker",
-        "removeId": 1,
-        "proof": "proof"
+        "removeId": 1
     }
 }
