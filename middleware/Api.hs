@@ -211,7 +211,7 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
       expiryDate = creationTime + (60*60*24*365) -- Expires in 365 days from now
       idObjectRequest =
           IdObjectRequest
-            { ipIdentity = 5
+            { ipIdentity = 0
             , name = "concordium-testnet-issuer"
             , attributes =
                 Attributes
@@ -629,7 +629,7 @@ debugTestFullProvision = do
 
       idObjectRequest =
         IdObjectRequest
-          { ipIdentity = 5
+          { ipIdentity = 0
           , name = "middleware-beta-debug"
           , attributes =
               Attributes
