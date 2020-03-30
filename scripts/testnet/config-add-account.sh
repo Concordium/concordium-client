@@ -11,7 +11,7 @@ if ! command -v jq >/dev/null; then
 fi
 
 # Expect account name as argument.
-name="$1"
+name="$(tr ' ' '_' <<< "$1")"
 if [ -z "$name" ]; then
     >&2 echo "Required argument 'name' is missing."
     exit 1
