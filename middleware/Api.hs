@@ -133,6 +133,10 @@ data Routes r = Routes
         "v1" :> "blockInfo" :> Capture "blockHash" Text
                               :> Get '[JSON] Aeson.Value
 
+    , blockSummary :: r :-
+        "v1" :> "blockSummary" :> Capture "blockHash" Text
+                              :> Get '[JSON] Aeson.Value
+
     , transactionStatus :: r :-
         "v1" :> "transactionStatus" :> Capture "hash" Text
                               :> Get '[JSON] Aeson.Value
@@ -394,6 +398,10 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
 
   blockInfo :: Text -> Handler Aeson.Value
   blockInfo blockhash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getBlockInfo blockhash)
+
+
+  blockSummary :: Text -> Handler Aeson.Value
+  blockSummary blockhash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getBlockSummary blockhash)
 
 
   transactionStatus :: Text -> Handler Aeson.Value
