@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 module PerAccountTransactions where
 
 import Concordium.GlobalState.SQLiteATI
@@ -5,12 +6,15 @@ import Concordium.Types
 import Concordium.Types.Transactions
 import Concordium.Types.Execution
 
+import Concordium.Client.Utils
+
 import Control.Monad.Logger
 import Control.Monad.Reader
 
 import Data.Serialize(encode)
 import qualified Data.Serialize as S
 import qualified Data.Aeson as AE
+import Data.Aeson.TH
 import Database.Persist
 import Database.Persist.Sql
 import Database.Persist.Postgresql
@@ -37,13 +41,24 @@ streamRawAccounts accountAddr =
                  Descend
                  (Range Nothing Nothing)
 
+data PrettySummary =
+  SpecialTransaction !SpecialTransactionOutcome
+  | BlockTransaction !TransactionSummary
+  deriving(Eq, Show)
+
+$(deriveJSON defaultOptions{sumEncoding=TaggedObject{
+                               tagFieldName = "kind",
+                               contentsFieldName = "details"}
+                           }
+   ''PrettySummary
+  )
+
 data PrettyEntry = PrettyEntry{
   peAccount :: AccountAddress,
   peBlockHash :: BlockHash,
   peBlockHeight :: BlockHeight,
   peBlockTime :: Timestamp,
-  peTransactionHash :: Maybe TransactionHash,
-  peTransactionSummary :: Either SpecialTransactionOutcome TransactionSummary
+  peTransactionSummary :: PrettySummary
   } deriving(Eq, Show)
 
 makePretty :: Entity Entry -> Either String PrettyEntry
@@ -55,11 +70,10 @@ makePretty eentry = do
   let peBlockTime = fromIntegral entryBlockTime
   case entryHash of
     Nothing -> do
-      peTransactionSummary <- Left <$> AE.eitherDecodeStrict entrySummary
-      return $ PrettyEntry{peTransactionHash = Nothing,..}
+      peTransactionSummary <- SpecialTransaction <$> AE.eitherDecodeStrict entrySummary
+      return $ PrettyEntry{..}
     Just txHash -> do
-      peTransactionHash <- Just <$> S.decode txHash
-      peTransactionSummary <- Right <$> AE.eitherDecodeStrict entrySummary
+      peTransactionSummary <- BlockTransaction <$> AE.eitherDecodeStrict entrySummary
       return $ PrettyEntry{..}
 
 streamAccounts :: (MonadIO m)
