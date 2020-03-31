@@ -48,7 +48,7 @@ blockSpec = describe "block" $ do
     , "Total encrypted amount:     0.0123 GTU"
     , "Central bank amount:        0.0042 GTU"
     , "Minted amount per slot:     0.0021 GTU" ]
-  where p = execWriter . printBlockInfo
+  where p = execWriter . printBlockInfo . Just
 
 exampleBlockInfoWithBaker :: BlockInfoResult
 exampleBlockInfoWithBaker =
