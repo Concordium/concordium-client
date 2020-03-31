@@ -156,7 +156,7 @@ data IdCredentialRequest =
     { ipIdentity :: Int
     , identityObject :: IdentityObject
     , idUseData :: IdUseData
-    , revealedItems :: [Text]
+    , revealedAttributes :: Map Text Text
     , accountNumber :: Word8
     }
   deriving (Generic, Show, FromJSON, ToJSON)
