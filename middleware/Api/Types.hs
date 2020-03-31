@@ -156,7 +156,7 @@ newtype SetNodeStateResponse =
 data OutcomeDetails =
   BakingReward {
     odBakerId :: !Types.BakerId,
-    odAmountt :: !Types.Amount
+    odAmount :: !Types.Amount
     }
   | Rejected {
       odTransactionType :: !Text,
