@@ -195,7 +195,7 @@ data TransactionOutcome = TransactionOutcome {
   -- |Details of the change.
   toDetails :: !OutcomeDetails,
   -- |Status of the transaction.
-  toStatus :: !Text
+  toFinalized :: !Bool
   } deriving(Show)
 
 outcomeFromPretty :: PrettyEntry -> TransactionOutcome
@@ -204,7 +204,7 @@ outcomeFromPretty PrettyEntry{..} = TransactionOutcome{..}
         toBlockTime = peBlockTime
 
         -- At the moment all transactions are finalized that we get from the database.
-        toStatus = "finalized"
+        toFinalized = True
 
         toTransactionFee =
           case peTransactionSummary of
