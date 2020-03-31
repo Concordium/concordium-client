@@ -150,18 +150,17 @@ visibleHelper :: Parser (a -> a)
 visibleHelper = abortOption ShowHelpText $ mconcat
   [ long "help"
   , short 'h'
-  , help "Show detailed help text"
-  ]
+  , help "Show detailed help text." ]
 
 optsParser :: ParserInfo Options
 optsParser = info
                (programOptions <**> versionOption <**> visibleHelper)
-               (fullDesc <> progDesc "Concordium Client Command Line Interface" <>
+               (fullDesc <> progDesc "Concordium Client CLI." <>
                 header "concordium-client - a client to interact with the concordium network.")
 
 versionOption :: Parser (a -> a)
 versionOption =
-  infoOption (showVersion version) (hidden <> long "version" <> help "Show version")
+  infoOption (showVersion version) (hidden <> long "version" <> help "Show version.")
 
 backendParser :: Parser Backend
 backendParser = GRPC <$> hostParser <*> portParser <*> targetParser <*> retryNumParser
@@ -170,14 +169,14 @@ hostParser :: Parser HostName
 hostParser =
   strOption
     (long "grpc-ip" <> metavar "GRPC-IP" <>
-     help "IP address on which the gRPC server is listening")
+     help "IP address on which the gRPC server is listening.")
 
 portParser :: Parser PortNumber
 portParser =
   option
     auto
     (long "grpc-port" <> metavar "GRPC-PORT" <>
-     help "port where the gRPC server is listening")
+     help "Port where the gRPC server is listening.")
 
 targetParser :: Parser (Maybe String)
 targetParser =
@@ -186,7 +185,7 @@ targetParser =
     (hidden <>
      long "grpc-target" <>
      metavar "GRPC-TARGET" <>
-     help "target node name when using a proxy")
+     help "Target node name when using a proxy.")
 
 retryNumParser :: Parser (Maybe Int)
 retryNumParser =
@@ -200,11 +199,11 @@ retryNumParser =
 transactionCfgParser :: Parser TransactionCfg
 transactionCfgParser =
   TransactionCfg <$>
-    optional (strOption (long "sender" <> metavar "SENDER" <> help "name or address of the transaction sender")) <*>
-    optional (strOption (long "keys" <> metavar "KEYS" <> help "any number of sign/verify keys specified as JSON ({<key-idx>: {<sign-key>, <verify-key>})")) <*>
-    optional (option auto (long "nonce" <> metavar "NONCE" <> help "transaction nonce")) <*>
-    optional (option auto (long "energy" <> metavar "MAX-ENERGY" <> help "maximum allowed amount of energy to spend on transaction")) <*>
-    optional (option auto (long "expiry" <> metavar "EXPIRY" <> help "expiration time of a transaction, specified as a UNIX epoch timestamp"))
+    optional (strOption (long "sender" <> metavar "SENDER" <> help "Name or address of the transaction sender.")) <*>
+    optional (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified as JSON ({<key-idx>: {<sign-key>, <verify-key>}).")) <*>
+    optional (option auto (long "nonce" <> metavar "NONCE" <> help "Transaction nonce.")) <*>
+    optional (option auto (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction.")) <*>
+    optional (option auto (long "expiry" <> metavar "EXPIRY" <> help "Expiration time of a transaction, specified as a UNIX epoch timestamp."))
 
 programOptions :: Parser Options
 programOptions = Options <$>
@@ -220,8 +219,8 @@ programOptions = Options <$>
                       bakerCmds
                      )) <|> (LegacyCmd <$> legacyProgramOptions)) <*>
                    (optional backendParser) <*>
-                   (optional (strOption (long "config" <> metavar "DIR" <> help "configuration directory path"))) <*>
-                   (switch (hidden <> long "verbose" <> short 'v' <> help "make output verbose"))
+                   (optional (strOption (long "config" <> metavar "DIR" <> help "Configuration directory path."))) <*>
+                   (switch (hidden <> long "verbose" <> short 'v' <> help "Make output verbose."))
 
 transactionCmds :: Mod CommandFields Cmd
 transactionCmds =
@@ -235,7 +234,7 @@ transactionCmds =
            transactionSendGtuCmd <>
            transactionDeployCredentialCmd
           )))
-      (progDesc "commands for submitting and inspecting transactions"))
+      (progDesc "Commands for submitting and inspecting transactions."))
 
 transactionSubmitCmd :: Mod CommandFields TransactionCmd
 transactionSubmitCmd =
@@ -243,8 +242,8 @@ transactionSubmitCmd =
     "submit"
     (info
       (TransactionSubmit <$>
-        strArgument (metavar "FILE" <> help "file containing the transaction parameters in JSON format"))
-      (progDesc "parse transaction and send it to the baker"))
+        strArgument (metavar "FILE" <> help "File containing the transaction parameters in JSON format."))
+      (progDesc "Parse transaction and send it to the baker."))
 
 transactionDeployCredentialCmd :: Mod CommandFields TransactionCmd
 transactionDeployCredentialCmd =
@@ -252,8 +251,8 @@ transactionDeployCredentialCmd =
     "deploy-credential"
     (info
       (TransactionDeployCredential <$>
-        strArgument (metavar "FILE" <> help "file containing the credential deployment information"))
-      (progDesc "parse credential and send it to the baker"))
+        strArgument (metavar "FILE" <> help "File containing the credential deployment information."))
+      (progDesc "Parse credential and send it to the baker."))
 
 transactionStatusCmd :: Mod CommandFields TransactionCmd
 transactionStatusCmd =
@@ -261,8 +260,8 @@ transactionStatusCmd =
     "status"
     (info
       (TransactionStatus <$>
-        strArgument (metavar "TX-HASH" <> help "hash of the transaction"))
-      (progDesc "get status of a transaction"))
+        strArgument (metavar "TX-HASH" <> help "Hash of the transaction."))
+      (progDesc "Get status of a transaction."))
 
 transactionSendGtuCmd :: Mod CommandFields TransactionCmd
 transactionSendGtuCmd =
@@ -270,10 +269,10 @@ transactionSendGtuCmd =
     "send-gtu"
     (info
       (TransactionSendGtu <$>
-        strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "address of the receiver") <*>
-        option auto (long "amount" <> metavar "GTU-AMOUNT" <> help "amount of GTUs to send") <*>
+        strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
+        option auto (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
         transactionCfgParser)
-      (progDesc "transfer GTU from one account to another account (sending to contracts is currently not supported with this method - use 'transaction submit')"))
+      (progDesc "Transfer GTU from one account to another account (sending to contracts is currently not supported with this method - use 'transaction submit')."))
 
 accountCmds :: Mod CommandFields Cmd
 accountCmds =
@@ -284,7 +283,7 @@ accountCmds =
         (hsubparser
           (accountShowCmd <>
            accountListCmd)))
-      (progDesc "commands for inspecting accounts"))
+      (progDesc "Commands for inspecting accounts."))
 
 accountShowCmd :: Mod CommandFields AccountCmd
 accountShowCmd =
@@ -292,9 +291,9 @@ accountShowCmd =
     "show"
     (info
        (AccountShow <$>
-         strArgument (metavar "ADDRESS" <> help "address of the account") <*>
-         optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block (default: \"best\")")))
-       (progDesc "display account details"))
+         strArgument (metavar "ADDRESS" <> help "Address of the account.") <*>
+         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+       (progDesc "Display account details."))
 
 accountListCmd :: Mod CommandFields AccountCmd
 accountListCmd =
@@ -302,8 +301,8 @@ accountListCmd =
     "list"
     (info
        (AccountList <$>
-         optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block (default: \"best\")")))
-       (progDesc "list all accounts"))
+         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+       (progDesc "List all accounts."))
 
 moduleCmds :: Mod CommandFields Cmd
 moduleCmds =
@@ -315,7 +314,7 @@ moduleCmds =
           (moduleShowCmd <>
            moduleListCmd <>
            moduleDeployCmd)))
-      (progDesc "commands for inspecting and deploying modules"))
+      (progDesc "Commands for inspecting and deploying modules."))
 
 moduleShowCmd :: Mod CommandFields ModuleCmd
 moduleShowCmd =
@@ -323,9 +322,9 @@ moduleShowCmd =
     "show"
     (info
       (ModuleShow <$>
-        strArgument (metavar "REF" <> help "reference ID of the module") <*>
-        optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block (default: \"best\")")))
-      (progDesc "display module source code"))
+        strArgument (metavar "REF" <> help "Reference ID of the module.") <*>
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+      (progDesc "Display module source code."))
 
 moduleListCmd :: Mod CommandFields ModuleCmd
 moduleListCmd =
@@ -333,8 +332,8 @@ moduleListCmd =
     "list"
     (info
       (ModuleList <$>
-        optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block (default: \"best\")")))
-      (progDesc "list all modules"))
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+      (progDesc "List all modules."))
 
 moduleDeployCmd :: Mod CommandFields ModuleCmd
 moduleDeployCmd =
@@ -342,10 +341,10 @@ moduleDeployCmd =
     "deploy"
     (info
       (ModuleDeploy <$>
-        strArgument (metavar "MODLE-NAME" <> help "name of the module to deploy") <*>
+        strArgument (metavar "MODLE-NAME" <> help "Name of the module to deploy.") <*>
         transactionCfgParser
       )
-      (progDesc "deploy module"))
+      (progDesc "Deploy module."))
 
 contractCmds :: Mod CommandFields Cmd
 contractCmds =
@@ -357,7 +356,7 @@ contractCmds =
           (contractShowCmd <>
            contractListCmd <>
            contractInitCmd)))
-      (progDesc "commands for inspecting and initializing smart contracts"))
+      (progDesc "Commands for inspecting and initializing smart contracts."))
 
 contractShowCmd :: Mod CommandFields ContractCmd
 contractShowCmd =
@@ -365,9 +364,9 @@ contractShowCmd =
     "show"
     (info
       (ContractShow <$>
-        strArgument (metavar "ADDRESS" <> help "address of the contract") <*>
-        optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block (default: \"best\")")))
-      (progDesc "display contract state at given block"))
+        strArgument (metavar "ADDRESS" <> help "Address of the contract.") <*>
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+      (progDesc "Display contract state at given block."))
 
 contractListCmd :: Mod CommandFields ContractCmd
 contractListCmd =
@@ -375,8 +374,8 @@ contractListCmd =
     "list"
     (info
       (ContractList <$>
-        optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block (default: \"best\")")))
-    (progDesc "list all contracts on a specific block"))
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+    (progDesc "List all contracts on a specific block."))
 
 contractInitCmd :: Mod CommandFields ContractCmd
 contractInitCmd =
@@ -384,11 +383,11 @@ contractInitCmd =
     "init"
     (info
       (ContractInit <$>
-        strOption (long "module" <> metavar "MODULE" <> help "module containing the contract") <*>
-        strOption (long "name" <> metavar "NAME" <> help "name of the contract in the module") <*>
-        option auto (long "amount" <> metavar "AMOUNT" <> help "amount of GTU to transfer to the contract") <*>
+        strOption (long "module" <> metavar "MODULE" <> help "Module containing the contract.") <*>
+        strOption (long "name" <> metavar "NAME" <> help "Name of the contract in the module.") <*>
+        option auto (long "amount" <> metavar "AMOUNT" <> help "Amount of GTU to transfer to the contract.") <*>
         transactionCfgParser)
-      (progDesc "initialize contract from already deployed module"))
+      (progDesc "Initialize contract from already deployed module."))
 
 configCmds :: Mod CommandFields Cmd
 configCmds =
@@ -398,7 +397,7 @@ configCmds =
       (ConfigCmd <$>
         (hsubparser
           configShowCmd))
-      (progDesc "commands for inspecting and chaning local configuration"))
+      (progDesc "Commands for inspecting and chaning local configuration."))
 
 configShowCmd :: Mod CommandFields ConfigCmd
 configShowCmd =
@@ -406,7 +405,7 @@ configShowCmd =
     "show"
     (info
       (pure ConfigShow)
-      (progDesc "show configuration"))
+      (progDesc "Show configuration."))
 
 consensusCmds :: Mod CommandFields Cmd
 consensusCmds =
@@ -417,7 +416,7 @@ consensusCmds =
         (hsubparser
           (consensusStatusCmd <>
            consensusShowParametersCmd)))
-      (progDesc "commands for inspecting chain health (branching, finalization), block content/history (including listing transactions), election (Birk) and reward/minting parameters"))
+      (progDesc "Commands for inspecting chain health (branching, finalization), block content/history (including listing transactions), election (Birk) and reward/minting parameters."))
 
 consensusStatusCmd :: Mod CommandFields ConsensusCmd
 consensusStatusCmd =
@@ -425,7 +424,7 @@ consensusStatusCmd =
     "status"
     (info
       (pure ConsensusStatus)
-      (progDesc "list various parameters related to the current state of the consensus protocol"))
+      (progDesc "List various parameters related to the current state of the consensus protocol."))
 
 consensusShowParametersCmd :: Mod CommandFields ConsensusCmd
 consensusShowParametersCmd =
@@ -433,9 +432,9 @@ consensusShowParametersCmd =
     "show-parameters"
     (info
       (ConsensusShowParameters <$>
-        optional (strOption (long "block" <> metavar "BLOCK" <> help "hash of the block (default: \"best\")")) <*>
-        switch (long "include-bakers" <> help "include the \"lottery power\" of individual bakers"))
-      (progDesc "show election parameters for given block"))
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")) <*>
+        switch (long "include-bakers" <> help "Include the \"lottery power\" of individual bakers."))
+      (progDesc "Show election parameters for given block."))
 
 blockCmds :: Mod CommandFields Cmd
 blockCmds =
@@ -445,7 +444,7 @@ blockCmds =
       (BlockCmd <$>
         (hsubparser
           (blockShowCmd)))
-      (progDesc "..."))
+      (progDesc "Commands for inspecting individual blocks."))
 
 blockShowCmd :: Mod CommandFields BlockCmd
 blockShowCmd =
@@ -453,8 +452,8 @@ blockShowCmd =
     "show"
     (info
       (BlockShow <$>
-        optional (strArgument (metavar "BLOCK" <> help "hash of the block (default: \"best\")")))
-      (progDesc "show stats for a given block"))
+        optional (strArgument (metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+      (progDesc "Show the backend's information about a specific block. Note that some fields (e.g. slot time) are objective while others (e.g. arrival time) are specific to the particular baker being queried."))
 
 bakerCmds :: Mod CommandFields Cmd
 bakerCmds =
@@ -465,7 +464,7 @@ bakerCmds =
         (hsubparser
           (bakerGenerateKeysCmd <>
            bakerAddCmd)))
-      (progDesc "commands for creating and deploying baker credentials"))
+      (progDesc "Commands for creating and deploying baker credentials."))
 
 bakerGenerateKeysCmd :: Mod CommandFields BakerCmd
 bakerGenerateKeysCmd =
@@ -473,8 +472,8 @@ bakerGenerateKeysCmd =
     "generate-keys"
     (info
       (BakerGenerateKeys <$>
-        optional (strArgument (metavar "FILE" <> help "target file of generated credentials")))
-      (progDesc "create baker credentials and write them to a file or stdout"))
+        optional (strArgument (metavar "FILE" <> help "Target file of generated credentials.")))
+      (progDesc "Create baker credentials and write them to a file or stdout."))
 
 bakerAddCmd :: Mod CommandFields BakerCmd
 bakerAddCmd =
@@ -482,6 +481,6 @@ bakerAddCmd =
     "add"
     (info
       (BakerAdd <$>
-        strArgument (metavar "FILE" <> help "file containing the baker credentials") <*>
+        strArgument (metavar "FILE" <> help "File containing the baker credentials.") <*>
         transactionCfgParser)
-      (progDesc "deploy baker credentials to the chain"))
+      (progDesc "Deploy baker credentials to the chain."))
