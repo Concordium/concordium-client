@@ -7,6 +7,7 @@ module Api.Types where
 import           Data.Text (Text)
 import           Data.Aeson
 import           Data.Word
+import           Data.Map (Map)
 import           GHC.Generics
 
 import           Concordium.Client.Types.Transaction ()
@@ -22,7 +23,7 @@ import           SimpleIdClientApi
 
 data BetaIdProvisionRequest =
   BetaIdProvisionRequest
-    { attributes :: [(Text,Text)]
+    { attributes :: Map Text Text
     , accountKeys :: Maybe KeyPair
     }
   deriving (FromJSON, Generic, Show)
@@ -41,7 +42,7 @@ data BetaAccountProvisionRequest =
     { ipIdentity :: Int
     , identityObject :: IdentityObject
     , idUseData :: IdUseData
-    , revealedItems :: [Text]
+    , revealedAttributes :: Map Text Text
     , accountNumber :: Word8
     }
   deriving (ToJSON, Generic, Show)
@@ -52,7 +53,7 @@ instance FromJSON BetaAccountProvisionRequest where
     ipIdentity <- v .: "ipIdentity"
     identityObject <- v .: "identityObject"
     idUseData <- v .: "idUseData"
-    revealedItems <- v .:? "revealedItems" .!= []
+    revealedAttributes <- v .: "revealedAttributes"
     accountNumber <- v .:? "accountNumber" .!= 0
     return BetaAccountProvisionRequest{..}
 
