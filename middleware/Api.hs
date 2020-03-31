@@ -44,6 +44,7 @@ import qualified Concordium.Client.GRPC as GRPC
 import           Concordium.Client.Runner
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction
+import           Concordium.Client.Cli
 
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
@@ -117,6 +118,11 @@ data Routes r = Routes
     , accountNonFinalizedTransactions :: r :-
         "v1" :> "accountNonFinalizedTransactions" :> ReqBody '[JSON] Text
                                       :> Post '[JSON] Aeson.Value
+
+    , accountBestBalance :: r :-
+        "v1" :> "accountBestBalance" :> ReqBody '[JSON] Text
+                                     :> Post '[JSON] Aeson.Value
+
 
     , transfer :: r :-
         "v1" :> "transfer" :> ReqBody '[JSON] TransferRequest
@@ -377,6 +383,11 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
 
   accountNonFinalizedTransactions :: Text -> Handler Aeson.Value
   accountNonFinalizedTransactions address = liftIO $ proxyGrpcCall nodeBackend (GRPC.getAccountNonFinalizedTransactions address)
+
+  accountBestBalance :: Text -> Handler Aeson.Value
+  accountBestBalance address = do
+    liftIO $ proxyGrpcCall nodeBackend
+      (GRPC.withBestBlockHash Nothing (GRPC.getAccountInfo address))
 
 
   transfer :: TransferRequest -> Handler TransferResponse
