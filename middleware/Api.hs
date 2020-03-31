@@ -72,21 +72,21 @@ middlewareGodAccount = do
       certainDecode [text|
         {
           "0": {
-            "signKey": "db864d164a9cbb572aec4a86ab8601d5daf3b5ca20bf47a72188da67f29f6e9b",
-            "verifyKey": "d1775f75013889777fedebf6511153adff6b567239edcc10a7e62bc4e88b9c62"
+            "signKey": "2b691fa23b44587db2530aa72167c8c129405fe0997d92aa57b56c5cffa7be3f",
+            "verifyKey": "bb22fbf84e0dfd58e0e66f44828cfbba1e345fef34e0d3b84c2d0d9820c1cc2e"
           },
           "1": {
-            "signKey": "bcfce29a522b44fa07d16629c8731b470de7df99a0af6b504e3b880d414b316e",
-            "verifyKey": "00d56fe011d7fad86eb19af6d8111ac786197a446bf49f4744baf8bf2f8f27b9"
+            "signKey": "8cce05dbb16fa77e9ea17b7ad76a037ec9d01bc0bc5729e751b6c324f392a3d8",
+            "verifyKey": "28ab64e9ce014e8fc1f78c06e1f68a5b31f42a9192f439d1474d090c073ba7d7"
           },
           "2": {
-            "signKey": "05b88a98c986f326bd7523092c3088ad5f31c80836669c0562fe6ff7e58054bc",
-            "verifyKey": "d3782ec10031ae864373b12d5b05e79576d0221f95d1d4de5649d8f449e0d4ed"
+            "signKey": "d958933b532d2bc39cfd20ecec6a2351e531115d68ab1c3a6e0fff565de4051a",
+            "verifyKey": "538baa3460dcd92aa2a0ef8b80977ae03f6074e885b08822cb6c8b1a7acc003f"
           }
         }
       |]
     address =
-      certainDecode "\"3ZFGxLtnUUSJGW2WqjMh1DDjxyq5rnytCwkSqxFTpsWSFdQnNn\""
+      certainDecode "\"43TULx3kDPDeQy1C1iLwBbS5EEV96cYPw5ZRdA9Dm4D23hxGZt\""
   (address, keyMap)
 
 
@@ -132,6 +132,10 @@ data Routes r = Routes
 
     , blockInfo :: r :-
         "v1" :> "blockInfo" :> Capture "blockHash" Text
+                              :> Get '[JSON] Aeson.Value
+
+    , blockSummary :: r :-
+        "v1" :> "blockSummary" :> Capture "blockHash" Text
                               :> Get '[JSON] Aeson.Value
 
     , transactionStatus :: r :-
@@ -208,7 +212,7 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
       expiryDate = creationTime + (60*60*24*365) -- Expires in 365 days from now
       idObjectRequest =
           IdObjectRequest
-            { ipIdentity = 5
+            { ipIdentity = 0
             , name = "concordium-testnet-issuer"
             , attributes =
                 Attributes
@@ -338,6 +342,10 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
 
   blockInfo :: Text -> Handler Aeson.Value
   blockInfo blockhash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getBlockInfo blockhash)
+
+
+  blockSummary :: Text -> Handler Aeson.Value
+  blockSummary blockhash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getBlockSummary blockhash)
 
 
   transactionStatus :: Text -> Handler Aeson.Value
@@ -565,7 +573,7 @@ debugTestFullProvision = do
 
       idObjectRequest =
         IdObjectRequest
-          { ipIdentity = 5
+          { ipIdentity = 0
           , name = "middleware-beta-debug"
           , attributes =
               Attributes

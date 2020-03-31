@@ -253,8 +253,9 @@ printBirkParameters includeBakers r = do
 
 -- BLOCK
 
-printBlockInfo :: BlockInfoResult -> Printer
-printBlockInfo b =
+printBlockInfo :: Maybe BlockInfoResult -> Printer
+printBlockInfo Nothing = tell [ printf "Block not found." ]
+printBlockInfo (Just b) =
   tell [ printf "Hash:                       %s" (show $ birBlockHash b)
        , printf "Parent block:               %s" (show $ birBlockParent b)
        , printf "Last finalized block:       %s" (show $ birBlockLastFinalized b)

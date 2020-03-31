@@ -287,6 +287,10 @@ processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
 processBlockCmd action _ backend =
   case action of
     BlockShow b -> do
+      unless (maybe True isValidBlockHash b) $
+          -- NB: The use of show on text is deliberate to produce quoted output.
+          logFatal [show (fromJust b) ++ " is not a valid block hash."]
+
       v <- withClientJson backend $ withBestBlockHash b getBlockInfo
       runPrinter $ printBlockInfo v
 
