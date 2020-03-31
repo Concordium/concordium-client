@@ -397,7 +397,7 @@ configCmds =
       (ConfigCmd <$>
         (hsubparser
           configShowCmd))
-      (progDesc "Commands for inspecting and chaning local configuration."))
+      (progDesc "Commands for inspecting and changing local configuration."))
 
 configShowCmd :: Mod CommandFields ConfigCmd
 configShowCmd =
