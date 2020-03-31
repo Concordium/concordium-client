@@ -216,10 +216,10 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
             , attributes =
                 Attributes
                   { chosenAttributes =
-                      fromList
-                        ([ ("CreationTime", Text.pack $ show creationTime)
+                      (fromList
+                        [ ("CreationTime", Text.pack $ show creationTime)
                         , ("MaxAccount", "30")
-                        ] ++ attributes)
+                        ]) <> attributes
                   , expiryDate = expiryDate
                   }
             , anonymityRevokers = [0,1,2]
@@ -241,7 +241,7 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
             { ipIdentity = ipIdentity (accountProvisionRequest :: BetaAccountProvisionRequest)
             , identityObject = identityObject (accountProvisionRequest :: BetaAccountProvisionRequest)
             , idUseData = idUseData (accountProvisionRequest :: BetaAccountProvisionRequest)
-            , revealedItems = revealedItems (accountProvisionRequest :: BetaAccountProvisionRequest)
+            , revealedAttributes = revealedAttributes (accountProvisionRequest :: BetaAccountProvisionRequest)
             , accountNumber = accountNumber (accountProvisionRequest :: BetaAccountProvisionRequest)
             }
 
@@ -653,7 +653,7 @@ debugTestFullProvision = do
           { ipIdentity = ipIdentity (idObjectResponse :: IdObjectResponse)
           , identityObject = identityObject (idObjectResponse :: IdObjectResponse)
           , idUseData = idUseData (idObjectResponse :: IdObjectResponse)
-          , revealedItems = ["DateOfBirth"]
+          , revealedAttributes = fromList [("DateOfBirth","19800101")]
           , accountNumber = 0
           }
 
