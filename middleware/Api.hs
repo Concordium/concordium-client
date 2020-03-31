@@ -386,22 +386,8 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
 
   accountBestBalance :: Text -> Handler Aeson.Value
   accountBestBalance address = do
-    result <- liftIO $ runGRPC nodeBackend GRPC.getConsensusStatus
-
-    consensusStatus :: ConsensusStatusResult <-
-      case result of
-        Right obj -> do
-          case Aeson.fromJSON obj of
-            Aeson.Success r ->
-              liftIO $ pure r
-
-            Aeson.Error s ->
-              throwError $ err502 { errBody = BS8.pack $ show s }
-
-        Left err -> throwError $ err502 { errBody = BS8.pack $ show err }
-
     liftIO $ proxyGrpcCall nodeBackend
-      (GRPC.getAccountInfo address (Text.pack $ show $ csrBestBlock consensusStatus))
+      (GRPC.withBestBlockHash Nothing (GRPC.getAccountInfo address))
 
 
   transfer :: TransferRequest -> Handler TransferResponse
