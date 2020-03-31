@@ -193,14 +193,19 @@ data TransactionOutcome = TransactionOutcome {
   -- this field is Nothing.
   toTransactionFee :: !(Maybe Types.Amount),
   -- |Details of the change.
-  toDetails :: !OutcomeDetails
+  toDetails :: !OutcomeDetails,
+  -- |Status of the transaction.
+  toStatus :: !Text
   } deriving(Show)
 
 outcomeFromPretty :: PrettyEntry -> TransactionOutcome
 outcomeFromPretty PrettyEntry{..} = TransactionOutcome{..}
   where toBlockHash = peBlockHash
         toBlockTime = peBlockTime
-        
+
+        -- At the moment all transactions are finalized that we get from the database.
+        toStatus = "finalized"
+
         toTransactionFee =
           case peTransactionSummary of
             SpecialTransaction _ -> Nothing
