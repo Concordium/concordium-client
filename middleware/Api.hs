@@ -673,7 +673,7 @@ debugTestFullProvision = do
   let garbagePayload = Types.EncodedPayload BSS.empty
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign garbagePayload 7) 100)
 
-  let removeBakerPayload = Execution.encodePayload (Execution.RemoveBaker 0) -- should succeed if the add baker succeeded.
+  let removeBakerPayload = Execution.encodePayload (Execution.RemoveBaker 0) -- should fail if baker 0 existed already
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign removeBakerPayload 8) 100)
 
   pure "Done."
