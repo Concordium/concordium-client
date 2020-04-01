@@ -44,6 +44,7 @@ import qualified Concordium.Client.GRPC as GRPC
 import           Concordium.Client.Runner
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction
+import           Concordium.Client.Cli
 
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
@@ -118,6 +119,11 @@ data Routes r = Routes
     , accountNonFinalizedTransactions :: r :-
         "v1" :> "accountNonFinalizedTransactions" :> ReqBody '[JSON] Text
                                       :> Post '[JSON] Aeson.Value
+
+    , accountBestBalance :: r :-
+        "v1" :> "accountBestBalance" :> ReqBody '[JSON] Text
+                                     :> Post '[JSON] Aeson.Value
+
 
     , transfer :: r :-
         "v1" :> "transfer" :> ReqBody '[JSON] TransferRequest
@@ -217,10 +223,10 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
             , attributes =
                 Attributes
                   { chosenAttributes =
-                      fromList
-                        ([ ("CreationTime", Text.pack $ show creationTime)
+                      (fromList
+                        [ ("CreationTime", Text.pack $ show creationTime)
                         , ("MaxAccount", "30")
-                        ] ++ attributes)
+                        ]) <> attributes
                   , expiryDate = expiryDate
                   }
             , anonymityRevokers = [0,1,2]
@@ -242,7 +248,7 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
             { ipIdentity = ipIdentity (accountProvisionRequest :: BetaAccountProvisionRequest)
             , identityObject = identityObject (accountProvisionRequest :: BetaAccountProvisionRequest)
             , idUseData = idUseData (accountProvisionRequest :: BetaAccountProvisionRequest)
-            , revealedItems = revealedItems (accountProvisionRequest :: BetaAccountProvisionRequest)
+            , revealedAttributes = revealedAttributes (accountProvisionRequest :: BetaAccountProvisionRequest)
             , accountNumber = accountNumber (accountProvisionRequest :: BetaAccountProvisionRequest)
             }
 
@@ -321,6 +327,11 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
 
   accountNonFinalizedTransactions :: Text -> Handler Aeson.Value
   accountNonFinalizedTransactions address = liftIO $ proxyGrpcCall nodeBackend (GRPC.getAccountNonFinalizedTransactions address)
+
+  accountBestBalance :: Text -> Handler Aeson.Value
+  accountBestBalance address = do
+    liftIO $ proxyGrpcCall nodeBackend
+      (GRPC.withBestBlockHash Nothing (GRPC.getAccountInfo address))
 
 
   transfer :: TransferRequest -> Handler TransferResponse
@@ -597,7 +608,7 @@ debugTestFullProvision = do
           { ipIdentity = ipIdentity (idObjectResponse :: IdObjectResponse)
           , identityObject = identityObject (idObjectResponse :: IdObjectResponse)
           , idUseData = idUseData (idObjectResponse :: IdObjectResponse)
-          , revealedItems = ["DateOfBirth"]
+          , revealedAttributes = fromList [("DateOfBirth","19800101")]
           , accountNumber = 0
           }
 
