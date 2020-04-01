@@ -185,6 +185,8 @@ $(deriveJSON defaultOptions{sumEncoding=TaggedObject{
   )
 
 data TransactionOutcome = TransactionOutcome {
+  -- |Account whose perspective this outcome is from.
+  toAccount :: !Types.AccountAddress,
   -- |Hash of the block this outcome refers to.
   toBlockHash :: !Types.BlockHash,
   -- |Unix timestamp (in seconds).
@@ -203,6 +205,8 @@ outcomeFromPretty :: PrettyEntry -> TransactionOutcome
 outcomeFromPretty PrettyEntry{..} = TransactionOutcome{..}
   where toBlockHash = peBlockHash
         toBlockTime = peBlockTime
+
+        toAccount = peAccount
 
         -- At the moment all transactions are finalized that we get from the database.
         toFinalized = True
