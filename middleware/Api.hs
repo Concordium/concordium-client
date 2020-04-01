@@ -21,6 +21,7 @@ import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Text.IO as TIO
 import qualified Data.ByteString.Lazy.Char8 as BS8
+import qualified Data.ByteString.Short as BSS
 import           Data.List.Split
 import           Data.Map
 import           Data.Time.Clock.POSIX
@@ -632,7 +633,45 @@ debugTestFullProvision = do
 
   putStrLn $ "✅ Requesting GTU Drop for: " ++ show newAddress
 
-  _ <- runGodTransaction nodeBackend $ Transfer { toaddress = newAddress, amount = 100 }
+  _ <- runGodTransaction nodeBackend $ Transfer { toaddress = newAddress, amount = 1000000 }
+
+  let keyMap = SimpleIdClientApi.keys (accountData idCredentialResponse)
+  let selfAddress = SimpleIdClientApi.accountAddress idCredentialResponse
+
+  let txHeader txBody nonce = Types.TransactionHeader {
+    thSender = selfAddress,
+    thNonce = nonce,
+    thEnergyAmount = 10000,
+    thPayloadSize = Types.payloadSize txBody,
+    thExpiry = Types.TransactionExpiryTime maxBound
+    }
+  let sign txBody nonce = Types.NormalTransaction $ Types.signTransaction (HM.toList keyMap) (txHeader txBody nonce) txBody
+
+  -- transfer to myself
+  let txBodyTransfer = Execution.encodePayload (Execution.Transfer (Types.AddressAccount selfAddress) 1) -- transfer 1 GTU to myself.
+  _ <- runGRPC nodeBackend (sendTransactionToBaker (sign txBodyTransfer 1) 100)
+
+  let txDelegateStake = Execution.encodePayload (Execution.DelegateStake 0) -- assuming baker 0 exists
+  _ <- runGRPC nodeBackend (sendTransactionToBaker (sign txDelegateStake 2) 100)
+
+  let txUndelegateStake = Execution.encodePayload Execution.UndelegateStake
+  _ <- runGRPC nodeBackend (sendTransactionToBaker (sign txDelegateStake 3) 100)
+
+  bakerKeys <- generateBakerKeys
+  addBakerPayload <- Execution.encodePayload <$> generateAddBakerPayload bakerKeys AccountKeys { akAddress = selfAddress, akKeys = keyMap }
+
+  _ <- runGRPC nodeBackend (sendTransactionToBaker (sign addBakerPayload 4) 100)
+
+  let txDelegateStake' = Execution.encodePayload (Execution.DelegateStake 12312312312) -- should fail because baker should not exist
+  _ <- runGRPC nodeBackend (sendTransactionToBaker (sign txDelegateStake' 5) 100)
+
+  -- invalid add baker payload
+  addBakerPayload' <- Execution.encodePayload <$> generateAddBakerPayload bakerKeys AccountKeys { akAddress = selfAddress, akKeys = HM.empty }
+  _ <- runGRPC nodeBackend (sendTransactionToBaker (sign addBakerPayload' 6) 100)
+
+  -- garbage payload
+  let garbagePayload = Types.EncodedPayload BSS.empty
+  _ <- runGRPC nodeBackend (sendTransactionToBaker (sign garbagePayload 7) 100)
 
   pure "Done."
 
