@@ -14,6 +14,8 @@ module Concordium.Client.Runner
   , getNodeInfo
   , sendTransactionToBaker
   , getConsensusStatus
+  , generateBakerKeys
+  , generateAddBakerPayload
   , getAccountInfo
   , getModuleSet
   , ClientMonad(..)
@@ -294,10 +296,8 @@ processBlockCmd action _ backend =
       v <- withClientJson backend $ withBestBlockHash b getBlockInfo
       runPrinter $ printBlockInfo v
 
-processBakerCmd :: BakerCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
-processBakerCmd action baseCfgDir verbose backend =
-  case action of
-    BakerGenerateKeys outputFile -> do
+generateBakerKeys :: IO BakerKeys
+generateBakerKeys = do
       -- Aggr/bls keys
       aggrSk <- Bls.generateSecretKey
       let aggrPk = Bls.derivePublicKey aggrSk
@@ -305,12 +305,19 @@ processBakerCmd action baseCfgDir verbose backend =
       VRF.KeyPair {privateKey=elSk, publicKey=elPk} <- VRF.newKeyPair
       -- Signature keys
       BlockSig.KeyPair {signKey=sigSk, verifyKey=sigVk} <- BlockSig.newKeyPair
-      let keys = BakerKeys { bkAggrSignKey = aggrSk
-                           , bkAggrVerifyKey = aggrPk
-                           , bkElectionSignKey = elSk
-                           , bkElectionVerifyKey = elPk
-                           , bkSigSignKey = sigSk
-                           , bkSigVerifyKey = sigVk }
+      return BakerKeys { bkAggrSignKey = aggrSk
+                       , bkAggrVerifyKey = aggrPk
+                       , bkElectionSignKey = elSk
+                       , bkElectionVerifyKey = elPk
+                       , bkSigSignKey = sigSk
+                       , bkSigVerifyKey = sigVk }
+
+
+processBakerCmd :: BakerCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
+processBakerCmd action baseCfgDir verbose backend =
+  case action of
+    BakerGenerateKeys outputFile -> do
+      keys <- generateBakerKeys
       let out = AE.encodePretty keys
 
       case outputFile of
