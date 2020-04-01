@@ -11,9 +11,14 @@ if ! command -v jq >/dev/null; then
 fi
 
 # Expect account name as argument.
-name="$(tr ' ' '_' <<< "$1")"
+name="$1"
 if [ -z "$name" ]; then
     >&2 echo "Required argument 'name' is missing."
+    exit 1
+fi
+invalid_name_symbols="$(tr -d '[:alnum:]_-' <<< "$name")"
+if [ -n "$invalid_name_symbols" ]; then
+    >&2 echo "Provided name '$name' contains the invalid symbol(s) '$invalid_name_symbols': Only numbers, letters, '-' and '_' are allowed."
     exit 1
 fi
 
