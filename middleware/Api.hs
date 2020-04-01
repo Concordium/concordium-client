@@ -548,7 +548,7 @@ debugTestFullProvision :: IO String
 debugTestFullProvision = do
 
   nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:11104"
-  pgUrl <- Config.lookupEnvText "ES_URL" "http://localhost:9200"
+  pgUrl <- Config.lookupEnvText "PG_URL" "http://localhost:9200"
   idUrl <- Config.lookupEnvText "SIMPLEID_URL" "http://localhost:8000"
 
   putStrLn $ "✅ nodeUrl = " ++ Text.unpack nodeUrl
@@ -622,21 +622,24 @@ debugTestFullProvision = do
   putStrLn "✅ Generating JSON for idCredentialResponse:"
   putStrLn $ BS8.unpack $ encode idCredentialResponse
 
-  let
-    newAddress = Types.AddressAccount $ SimpleIdClientApi.accountAddress idCredentialResponse
-
   putStrLn $ "✅ Deploying credentials for: " ++ show (SimpleIdClientApi.accountAddress idCredentialResponse)
 
   transactionHash <- liftIO $ deployCredential nodeBackend (credential (idCredentialResponse :: IdCredentialResponse))
 
   putStrLn $ "✅ Deployed credentials, transactionHash: " ++ show transactionHash
 
-  putStrLn $ "✅ Requesting GTU Drop for: " ++ show newAddress
-
-  _ <- runGodTransaction nodeBackend $ Transfer { toaddress = newAddress, amount = 1000000 }
-
   let keyMap = SimpleIdClientApi.keys (accountData idCredentialResponse)
   let selfAddress = SimpleIdClientApi.accountAddress idCredentialResponse
+
+  debugTestTransactions nodeBackend selfAddress keyMap
+
+
+debugTestTransactions :: EnvData -> Types.AccountAddress -> Types.KeyMap -> IO String
+debugTestTransactions nodeBackend selfAddress keyMap = do
+
+  putStrLn $ "✅ Requesting GTU Drop for: " ++ show selfAddress
+
+  _ <- runGodTransaction nodeBackend $ Transfer { toaddress = Types.AddressAccount selfAddress, amount = 1000000 }
 
   let txHeader txBody nonce = Types.TransactionHeader {
     thSender = selfAddress,
@@ -677,6 +680,70 @@ debugTestFullProvision = do
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign removeBakerPayload 8) 100)
 
   pure "Done."
+
+
+runDebugTestTransactions :: IO String
+runDebugTestTransactions = do
+  nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:32856"
+  pgUrl <- Config.lookupEnvText "PG_URL" "http://localhost:9200"
+  idUrl <- Config.lookupEnvText "SIMPLEID_URL" "http://localhost:8000"
+
+  putStrLn $ "✅ nodeUrl = " ++ Text.unpack nodeUrl
+  putStrLn $ "✅ pgUrl = " ++ Text.unpack pgUrl
+  putStrLn $ "✅ idUrl = " ++ Text.unpack idUrl
+
+  putStrLn "➡️  Submitting IdObjectRequest"
+
+  let
+    (nodeHost, nodePort) =
+      case splitOn ":" $ Text.unpack nodeUrl of
+        nodeHostText:nodePortText:_ -> case readMaybe nodePortText of
+          Just nodePortText ->
+            (nodeHostText, nodePortText)
+          Nothing ->
+            error $ "Could not parse port for given NODE_URL: " ++ nodePortText
+        _ ->
+          error $ "Could not parse host:port for given NODE_URL: " ++ Text.unpack nodeUrl
+
+    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, target = Nothing, retryNum = Just 5 }
+
+  nodeBackend <- runExceptT (mkGrpcClient grpcConfig) >>= \case
+    Left err -> fail (show err)
+    Right envData -> return envData
+
+
+  debugTestTransactions nodeBackend (fst localTestAccount) (snd localTestAccount)
+
+
+-- If you export a clean created account from wallet (without GTU Drop) and then
+-- drop the details here, running `:r` and then `runDebugTestTransactions` in ghci
+-- will auto-create a bunch of transaction types that will then show up in the wallet
+localTestAccount :: Account
+localTestAccount = do
+  let
+    keyMap =
+      certainDecode [text|
+        {
+          "0": {
+            "signKey": "1aaab0b0e66709281704c0424b1fb688b91125ee0338fc5d10c3c7f596a8e0f0",
+            "verifyKey": "e03ed67ac81b5dc6ac8983140757cbea07e423fbfe4e4ff05672ae13dce9505f",
+            "schemeId": "Ed25519"
+          },
+          "1": {
+            "signKey": "6e0be04246715f6d5243d4e1774961c49f2d03e3d98e968ab0595e6f143e58cf",
+            "verifyKey": "5621532eea865cd2a7af2796470585a5383e587fd8cf4398e7a85d31d79bf761",
+            "schemeId": "Ed25519"
+          },
+          "2": {
+            "signKey": "09973945609b463c29a06fcb9c5616ed39e95667655da1394a3c4d4480ad3d83",
+            "verifyKey": "3822e6382c28c8d39bba8d3eda9f845478599347af3ba9f8441bddadbc1fbd2e",
+            "schemeId": "Ed25519"
+          }
+        }
+      |]
+    address =
+      certainDecode "\"3Es2U5gMdKrqJdXSUVzgW4KUosJ91AxfsAuvKx5tKE9P2SvjVk\""
+  (address, keyMap)
 
 
 debugGrpc :: IO GetNodeStateResponse
