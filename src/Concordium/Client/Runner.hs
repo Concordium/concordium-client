@@ -201,7 +201,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       let hash = getBlockItemHash tx
       logInfo [ "transaction sent to the baker"
               , "waiting for transaction to be committed and finalized"
-              , printf "you may skip this by interrupting this command (using Ctrl-C) - the transaction will still get procesed and may be queried using 'transaction status %s'" (show hash) ]
+              , printf "you may skip this by interrupting this command (using Ctrl-C) - the transaction will still get processed and may be queried using 'transaction status %s'" (show hash) ]
 
       t1 <- getFormattedLocalTimeOfDay
       printf "[%s] Waiting for the transaction to be committed..." t1
