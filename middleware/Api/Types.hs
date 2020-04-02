@@ -1,25 +1,32 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -Wall #-}
 module Api.Types where
 
 import           Data.Text (Text)
+import qualified Data.Text as Text
 import           Data.Aeson
+import           Data.Aeson.TH
 import           Data.Word
 import           Data.Map (Map)
 import           GHC.Generics
 
+import           Concordium.Client.Utils
 import           Concordium.Client.Types.Transaction ()
 import           Concordium.Crypto.SignatureScheme (KeyPair(..))
 import qualified Concordium.ID.Types
 import qualified Concordium.Types as Types
+import qualified Concordium.Types.Execution as Types
 import qualified Concordium.Types.Transactions as Types
 import qualified Concordium.Client.Types.Transaction as Types
 import qualified Concordium.ID.Types as IDTypes
 
 import           SimpleIdClientApi
-
+import           PerAccountTransactions
 
 data BetaIdProvisionRequest =
   BetaIdProvisionRequest
@@ -147,6 +154,94 @@ newtype SetNodeStateResponse =
     { success :: Bool }
   deriving (FromJSON, ToJSON, Generic, Show)
 
+data OutcomeDetails =
+  BakingReward {
+    odBakerId :: !Types.BakerId,
+    odAmount :: !Types.Amount
+    }
+  | Rejected {
+      odTransactionType :: !Text,
+      odReason :: !Text,
+      odTransactionHash :: !Types.TransactionHash
+      }
+  | SimpleTransfer {
+      odAmount :: !Types.Amount,
+      odFromAddress :: !Types.AccountAddress,
+      odToAddress :: !Types.AccountAddress,
+      odTransactionHash :: !Types.TransactionHash
+      }
+  | OtherTransaction {
+      odTransactionType :: !Text,
+      odTransactionHash :: !Types.TransactionHash
+      }deriving(Show)
+
+
+$(deriveJSON defaultOptions{sumEncoding=TaggedObject{
+                               tagFieldName = "detailsKind",
+                               contentsFieldName = "details"},
+                             fieldLabelModifier = firstLower . drop 2
+                           }
+   ''OutcomeDetails
+  )
+
+data TransactionOutcome = TransactionOutcome {
+  -- |Account whose perspective this outcome is from.
+  toAccount :: !Types.AccountAddress,
+  -- |Hash of the block this outcome refers to.
+  toBlockHash :: !Types.BlockHash,
+  -- |Unix timestamp (in seconds).
+  toBlockTime :: !Types.Timestamp,
+  -- |Whether the transaction is incoming or outgoing for the given account.
+  -- If outgoing then this field is present and contains the fee, if incoming
+  -- this field is Nothing.
+  toTransactionFee :: !(Maybe Types.Amount),
+  -- |Details of the change.
+  toDetails :: !OutcomeDetails,
+  -- |Status of the transaction.
+  toFinalized :: !Bool
+  } deriving(Show)
+
+outcomeFromPretty :: PrettyEntry -> TransactionOutcome
+outcomeFromPretty PrettyEntry{..} = TransactionOutcome{..}
+  where toBlockHash = peBlockHash
+        toBlockTime = peBlockTime
+
+        toAccount = peAccount
+
+        -- At the moment all transactions are finalized that we get from the database.
+        toFinalized = True
+
+        toTransactionFee =
+          case peTransactionSummary of
+            SpecialTransaction _ -> Nothing
+            BlockTransaction summary ->
+              if Types.tsSender summary == Just peAccount
+              then Just (Types.tsCost summary)
+              else Nothing
+        prettyType Nothing = "CredentialDeployment"
+        prettyType (Just tt) = Text.pack (Prelude.drop 2 (show tt))
+
+        toDetails =
+          case peTransactionSummary of
+            SpecialTransaction reward -> BakingReward (Types.stoBakerId reward) (Types.stoRewardAmount reward)
+            BlockTransaction Types.TransactionSummary{..} ->
+              case tsResult of
+                Types.TxReject reason ->
+                  Rejected{
+                    odTransactionType = prettyType tsType,
+                    odReason = Text.pack (show reason),
+                    odTransactionHash = tsHash
+                    }
+                Types.TxSuccess _ ->
+                  case tsType of
+                    Just Types.TTTransfer |
+                        Types.TxSuccess [Types.Transferred{etTo = Types.AddressAccount odToAddress,
+                                                           etFrom = Types.AddressAccount odFromAddress, ..}] <- tsResult
+                            -> SimpleTransfer{odAmount = etAmount, odTransactionHash = tsHash,..}
+                        
+                    _ -> OtherTransaction{odTransactionType = prettyType tsType, odTransactionHash = tsHash }
+
+$(deriveJSON defaultOptions{fieldLabelModifier = firstLower . drop 2 } ''TransactionOutcome)
 
 data AccountTransactionsResponse =
   AccountTransactionsResponse
@@ -155,21 +250,3 @@ data AccountTransactionsResponse =
     }
   deriving (ToJSON, Generic, Show)
 
-
-data TransactionOutcome =
-  TransactionOutcome
-    { id :: Text
-    , message_type :: Text
-    , timestamp :: Text
-    , block_hash :: Text
-    , transaction_hash :: Text
-    , amount :: Text
-    , cost :: Text
-    , result :: Maybe Text
-    , from_account :: Maybe Types.AccountAddress
-    , to_account :: Maybe Types.AccountAddress
-    , from_contract :: Maybe Types.ContractAddress
-    , to_contract :: Maybe Types.ContractAddress
-    , finalized :: Bool
-    }
-  deriving (FromJSON, ToJSON, Generic, Show)
