@@ -4,13 +4,13 @@ module Concordium.Client.TransactionStatus where
 
 import Data.Aeson
 import Data.Aeson.TH
-import Data.Char
 import Control.Monad.IO.Class
 import qualified Data.Text as Text
 
 import Concordium.Types.Execution
 import qualified Concordium.ID.Types as IDTypes
 import Concordium.Types
+import Concordium.Types.Utils
 
 import Concordium.Client.Types.TransactionStatus
 import Concordium.Client.GRPC
@@ -21,7 +21,7 @@ data FailedTransferReason = InvalidTargetAccount
                           | InsufficientEnergy
                           deriving(Eq,Show)
 
-$(deriveJSON defaultOptions ''FailedTransferReason)
+$(deriveJSON defaultOptions{constructorTagModifier=firstLower} ''FailedTransferReason)
 
 data SimpleTransactionResult = TransferSuccess { to :: !AccountAddress, amount :: !Amount }
                              | NewAccount { accountAddress :: !AccountAddress }
@@ -35,7 +35,7 @@ data SimpleTransactionResult = TransferSuccess { to :: !AccountAddress, amount :
 $(deriveJSON defaultOptions{sumEncoding=TaggedObject{
                                tagFieldName = "outcome",
                                contentsFieldName = "details"},
-                             constructorTagModifier = map toLower
+                             constructorTagModifier = firstLower
                            }
    ''SimpleTransactionResult
   )
