@@ -5,8 +5,7 @@ import Concordium.GlobalState.SQLiteATI
 import Concordium.Types
 import Concordium.Types.Transactions
 import Concordium.Types.Execution
-
-import Concordium.Client.Utils
+import Concordium.Types.Utils
 
 import Control.Monad.Logger
 import Control.Monad.Reader
