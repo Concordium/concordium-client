@@ -15,7 +15,7 @@ import           Data.Word
 import           Data.Map (Map)
 import           GHC.Generics
 
-import           Concordium.Client.Utils
+import           Concordium.Types.Utils
 import           Concordium.Client.Types.Transaction ()
 import           Concordium.Crypto.SignatureScheme (KeyPair(..))
 import qualified Concordium.ID.Types

@@ -5,14 +5,14 @@ module Concordium.Client.Types.TransactionStatus where
 import qualified Data.HashMap.Strict as HM
 import Data.Aeson
 import Data.Aeson.TH
-import Data.Char
 
 import Concordium.Types.Execution
 import Concordium.Types
+import Concordium.Types.Utils
 
 data TransactionState = Received | Committed | Finalized | Absent deriving (Eq, Ord, Show)
 
-$(deriveJSON defaultOptions{constructorTagModifier = map toLower} ''TransactionState)
+$(deriveJSON defaultOptions{constructorTagModifier = firstLower} ''TransactionState)
 
 
 type TransactionBlockResults' a = HM.HashMap BlockHash (Maybe (TransactionSummary' a))
