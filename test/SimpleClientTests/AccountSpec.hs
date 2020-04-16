@@ -52,19 +52,21 @@ examplePolicyWithOneItem :: IDTypes.Policy
 examplePolicyWithOneItem = IDTypes.Policy
                            { IDTypes.pCreatedAt = IDTypes.YearMonth 2020 4
                            , IDTypes.pValidTo = IDTypes.YearMonth 2021 4
-                           , IDTypes.pItems = Map.fromList [(IDTypes.AttributeTag 1, IDTypes.AttributeValue 2)] }
+                           , IDTypes.pItems = Map.fromList [(IDTypes.AttributeTag 1,
+                                                             IDTypes.AttributeValue "Value-2")] }
 
 examplePolicyWithTwoItems :: IDTypes.Policy
 examplePolicyWithTwoItems = IDTypes.Policy
                             { IDTypes.pCreatedAt = IDTypes.YearMonth 2020 4
                             , IDTypes.pValidTo = IDTypes.YearMonth 2021 4
-                            , IDTypes.pItems = Map.fromList [(IDTypes.AttributeTag 1, IDTypes.AttributeValue 2), (IDTypes.AttributeTag 3, IDTypes.AttributeValue 4)] }
+                            , IDTypes.pItems = Map.fromList [(IDTypes.AttributeTag 1, IDTypes.AttributeValue "Value-1"),
+                                                             (IDTypes.AttributeTag 3, IDTypes.AttributeValue "Value-2")] }
 
 examplePolicyWithItemOutOfRange :: IDTypes.Policy
 examplePolicyWithItemOutOfRange = IDTypes.Policy
                                   { IDTypes.pCreatedAt = IDTypes.YearMonth 2020 4
                                   , IDTypes.pValidTo = IDTypes.YearMonth 2021 4
-                                  , IDTypes.pItems = Map.fromList [(IDTypes.AttributeTag 255, IDTypes.AttributeValue 1)] }
+                                  , IDTypes.pItems = Map.fromList [(IDTypes.AttributeTag 255, IDTypes.AttributeValue "Value")] }
 
 printAccountListSpec :: Spec
 printAccountListSpec = describe "printAccountList" $ do
