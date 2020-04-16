@@ -17,7 +17,7 @@
 #
 # resolver: ./custom-snapshot.yaml
 # resolver: https://example.com/snapshots/2018-01-01.yaml
-resolver: lts-14.14
+resolver: lts-15.8
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -44,14 +44,21 @@ build:
   executable-profiling: true
 
 extra-deps:
-- http2-client-grpc-0.7.0.0
-- http2-grpc-types-0.4.0.0
-- proto-lens-0.5.1.0
-- proto-lens-protobuf-types-0.5.0.0
-- proto-lens-runtime-0.5.0.0
-- proto-lens-protoc-0.5.0.0
+# th-utilities was removed in LTS 15.0
+- th-utilities-0.2.4.0
+
+# lens-simple was removed in LTS 15.0
+- lens-simple-0.1.0.9
+- lens-family-1.2.3
+- lens-family-core-1.2.3
+
+# http2-client was never included in stackage
 - github: lucasdicioccio/http2-client
-  commit: d1cac5951a37211bfa08167d6aec3625537b8624
+  commit: 7201f65b31bf0a2b0bc4a904173233e1e728697b
+- http2-client-grpc-0.8.0.0
+- http2-grpc-types-0.5.0.0
+- http2-grpc-proto-lens-0.1.0.0
+
 - ./deps/acorn
 - ./deps/crypto
 - ./deps/globalstate-types
@@ -84,7 +91,7 @@ extra-lib-dirs:
 #
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
-allow-newer: true
+# allow-newer: true
 
 flags:
   simple-client:
