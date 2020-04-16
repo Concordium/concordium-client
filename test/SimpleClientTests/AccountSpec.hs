@@ -44,21 +44,26 @@ exampleCredentials p = IDTypes.CredentialDeploymentValues
         (Just share) = BSH.deserializeBase16 "a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46fa1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f"
 
 examplePolicyWithoutItems :: IDTypes.Policy
-examplePolicyWithoutItems = IDTypes.Policy { IDTypes.pExpiry = 9999999999, IDTypes.pItems = Map.empty }
+examplePolicyWithoutItems = IDTypes.Policy { IDTypes.pCreatedAt = IDTypes.YearMonth 2020 4
+                                           , IDTypes.pValidTo = IDTypes.YearMonth 2021 4
+                                           , IDTypes.pItems = Map.empty }
 
 examplePolicyWithOneItem :: IDTypes.Policy
 examplePolicyWithOneItem = IDTypes.Policy
-                           { IDTypes.pExpiry = 9999999999
+                           { IDTypes.pCreatedAt = IDTypes.YearMonth 2020 4
+                           , IDTypes.pValidTo = IDTypes.YearMonth 2021 4
                            , IDTypes.pItems = Map.fromList [(IDTypes.AttributeTag 1, IDTypes.AttributeValue 2)] }
 
 examplePolicyWithTwoItems :: IDTypes.Policy
 examplePolicyWithTwoItems = IDTypes.Policy
-                            { IDTypes.pExpiry = 9999999999
+                            { IDTypes.pCreatedAt = IDTypes.YearMonth 2020 4
+                            , IDTypes.pValidTo = IDTypes.YearMonth 2021 4
                             , IDTypes.pItems = Map.fromList [(IDTypes.AttributeTag 1, IDTypes.AttributeValue 2), (IDTypes.AttributeTag 3, IDTypes.AttributeValue 4)] }
 
 examplePolicyWithItemOutOfRange :: IDTypes.Policy
 examplePolicyWithItemOutOfRange = IDTypes.Policy
-                                  { IDTypes.pExpiry = 9999999999
+                                  { IDTypes.pCreatedAt = IDTypes.YearMonth 2020 4
+                                  , IDTypes.pValidTo = IDTypes.YearMonth 2021 4
                                   , IDTypes.pItems = Map.fromList [(IDTypes.AttributeTag 255, IDTypes.AttributeValue 1)] }
 
 printAccountListSpec :: Spec

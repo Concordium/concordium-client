@@ -136,7 +136,7 @@ printCred c =
        , printf "  - Revealed attributes: %s" (showRevealedAttributes attrs) ]
   where
     p = IDTypes.cdvPolicy c
-    e = show $ IDTypes.pExpiry p
+    e = show $ IDTypes.pValidTo p
     attrs = IDTypes.pItems p
     expiry = case parseTimeM False defaultTimeLocale "%s" e of
                Nothing -> printf "invalid expiration time '%s'" e
