@@ -151,7 +151,7 @@ data Routes r = Routes
 
     , simpleTransactionStatus :: r :-
         "v1" :> "simpleTransactionStatus" :> Capture "hash" Text
-                              :> Get '[JSON] Concordium.Client.TransactionStatus.SimpleTransactionStatusResult
+                              :> Get '[JSON] Aeson.Value
 
     -- Private Middleware APIs (accessible on local client instance of Middleware only)
     , getNodeState :: r :-
@@ -364,7 +364,7 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
   transactionStatus hash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getTransactionStatus hash)
 
 
-  simpleTransactionStatus :: Text -> Handler Concordium.Client.TransactionStatus.SimpleTransactionStatusResult
+  simpleTransactionStatus :: Text -> Handler Aeson.Value
   simpleTransactionStatus hashRaw = do
 
     -- @TODO why does using TransactionHash instead of Text in args cause `No instance for (FromHttpApiData SHA256.Hash)`?
