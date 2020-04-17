@@ -38,6 +38,10 @@ runPrinter p = mapM_ putStrLn $ execWriter p
 showFormattedUtcTime :: UTCTime -> String
 showFormattedUtcTime t = formatTime defaultTimeLocale rfc822DateFormat t
 
+showFormattedUtcYearMonth :: UTCTime -> String
+showFormattedUtcYearMonth t = formatTime defaultTimeLocale "%b %0Y" t
+
+
 getFormattedLocalTimeOfDay :: IO String
 getFormattedLocalTimeOfDay = do
   t <- getLocalTimeOfDay
@@ -136,11 +140,11 @@ printCred c =
        , printf "  - Revealed attributes: %s" (showRevealedAttributes attrs) ]
   where
     p = IDTypes.cdvPolicy c
-    e = show $ IDTypes.pExpiry p
+    e = show $ IDTypes.pValidTo p
     attrs = IDTypes.pItems p
-    expiry = case parseTimeM False defaultTimeLocale "%s" e of
+    expiry = case parseTimeM False defaultTimeLocale "%0Y%0m" e of
                Nothing -> printf "invalid expiration time '%s'" e
-               Just t -> showFormattedUtcTime t
+               Just t -> showFormattedUtcYearMonth t
 
 printAccountList :: [Text] -> Printer
 printAccountList addresses = tell $ map unpack addresses
