@@ -5,6 +5,8 @@
 {-# OPTIONS_GHC -Wall #-}
 module Main where
 
+import Text.Read
+import Data.Maybe
 import           Concordium.Client.Commands
 import           Concordium.Client.Runner
 import           Concordium.Types.Transactions
@@ -79,6 +81,8 @@ go backend logit tps sign startNonce = do
 
 main :: IO ()
 main = do
+  let addr = case AE.fromJSON (AE.String "4rc1uQGFgg3iAUovGuSFbv1TqMeyYUC3ioqi9bkcxz4PER4vA6") of
+               AE.Success v -> v
   (backend, txoptions) <- execParser parser
   AE.eitherDecode <$> BSL.readFile (keysFile txoptions) >>= \case
     Left err -> putStrLn $ "Could not read the keys because: " ++ err
@@ -87,7 +91,7 @@ main = do
         Left err' -> putStrLn $ "Could not decode JSON because: " ++ err'
         Right (selfAddress, keyMap) -> do
           print $ "Using sender account = " ++ show selfAddress
-          let txBody = encodePayload (Transfer (AddressAccount selfAddress) 1) -- transfer 1 GTU to myself.
+          let txBody = encodePayload (Transfer (AddressAccount addr) 1) -- transfer 1 GTU to myself.
           let txHeader nonce = TransactionHeader {
                 thSender = selfAddress,
                 thNonce = nonce,
