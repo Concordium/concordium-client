@@ -458,7 +458,7 @@ runGodTransaction nodeBackend payload =
 runGRPC :: (MonadIO m) => EnvData -> ClientMonad m a -> m a
 runGRPC envData c =
   runClient envData c >>= \case
-    Left err -> fail (show err)
+    Left err -> liftIO $ fail (show err)
     Right x -> return x
 
 

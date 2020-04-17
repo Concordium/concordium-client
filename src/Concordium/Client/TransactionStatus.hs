@@ -26,17 +26,17 @@ getSimpleTransactionStatus trHash = do
               [(bh,outcome)] -> do
                 fields <- outcomeToPairs outcome
                 return $ object $ ["status" .= String "finalized", "blockHashes" .= [bh :: BlockHash]] <> fields
-              _ -> fail "expected exactly one outcome for a finalized transaction"
+              _ -> Left "expected exactly one outcome for a finalized transaction"
             "committed" -> do
               outcomes <- HM.toList <$> parseEither (.: "outcomes") o
               fields <- outcomesToPairs (snd <$> outcomes)
               return $ object $ ["status" .= String "committed", "blockHashes" .= (fst <$> outcomes :: [BlockHash])] <> fields
-            s -> fail ("unexpected \"status\": " <> s)
-        _ -> fail "expected null or object"
+            s -> Left ("unexpected \"status\": " <> s)
+        _ -> Left "expected null or object"
       -- TransactionStatusResult{..} <- eitherStatus >>= parseEither parseJSON :: Either String TransactionStatusResult
   where
     outcomeToPairs :: TransactionSummary -> Either String [Pair]
-    outcomeToPairs TransactionSummary{..} = 
+    outcomeToPairs TransactionSummary{..} =
       (["transactionHash" .= tsHash
       , "sender" .= tsSender
       , "cost" .= tsCost] <>) <$>
@@ -49,7 +49,7 @@ getSimpleTransactionStatus trHash = do
               return ["outcome" .= String "newCredential"]
             es ->
               Left $ "Unexpected outcome of credential deployment: " ++ show es
-        Just TTTransfer -> 
+        Just TTTransfer ->
           case tsResult of
             TxSuccess [Transferred{etTo = AddressAccount addr,..}] ->
               return ["outcome" .= String "transferSuccess", "to" .= addr, "amount" .= etAmount]

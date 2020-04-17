@@ -4,6 +4,8 @@ import Concordium.Client.Cli
 import Concordium.Client.Output
 import qualified Concordium.Types as Types
 
+import Data.Functor.Identity
+import Control.Monad.Trans.Except
 import Control.Monad.Writer
 import Data.Time.Clock
 import Data.Time.Format
@@ -101,11 +103,14 @@ exampleBlockHash2 = read "0f71eeca9f0a497dc4427cab0544f2bcb820b328ad97be29181e21
 exampleBlockHash3 :: Types.BlockHash
 exampleBlockHash3 = read "941c24374cd077de2120fb58732306c3115a08bb7b7cda120a04fecc412b1795"
 
+instance MonadFail Identity where
+  fail = error
+
 exampleTime1 :: UTCTime
-Right exampleTime1 = parseTimeM False defaultTimeLocale "%s" "1000000"
+Right exampleTime1 = runExcept $ parseTimeM False defaultTimeLocale "%s" "1000000"
 
 exampleTime2 :: UTCTime
-Right exampleTime2 = parseTimeM False defaultTimeLocale "%s" "1234567"
+Right exampleTime2 = runExcept $ parseTimeM False defaultTimeLocale "%s" "1234567"
 
 exampleTime3 :: UTCTime
-Right exampleTime3 = parseTimeM False defaultTimeLocale "%s" "2000000"
+Right exampleTime3 = runExcept $ parseTimeM False defaultTimeLocale "%s" "2000000"
