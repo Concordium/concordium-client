@@ -10,6 +10,7 @@ import qualified Data.ByteString.Char8               as BS8
 import           Network.GRPC.Client
 import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client
+import           Network.GRPC.HTTP2.ProtoLens
 
 import           Data.ProtoLens                      (defMessage)
 import           Data.ProtoLens.Service.Types
@@ -54,7 +55,6 @@ data GrpcConfig =
     , target :: !(Maybe String)
     , retryNum :: !(Maybe Int)
     }
-  deriving (Show)
 
 data EnvData =
   EnvData
@@ -260,7 +260,7 @@ getBranches :: ClientMonad IO (Either String Value)
 getBranches = withUnaryNoMsg (call @"getBranches") (to processJSON)
 
 getBannedPeers :: ClientMonad IO (Either String PeerListResponse)
-getBannedPeers = withUnaryNoMsg' (call @"getBannedPeers") 
+getBannedPeers = withUnaryNoMsg' (call @"getBannedPeers")
 
 shutdown :: ClientMonad IO (Either String Bool)
 shutdown = withUnaryNoMsg (call @"shutdown") CF.value
@@ -271,6 +271,8 @@ dumpStart = withUnaryNoMsg (call @"dumpStart") CF.value
 dumpStop :: ClientMonad IO (Either String Bool)
 dumpStop = withUnaryNoMsg (call @"dumpStop") CF.value
 
+-- | Setup the GRPC client and run a rawUnary call with the provided message to the provided method,
+-- the output is interpreted using the function given in the third parameter.
 withUnaryCore :: forall m n b. (HasMethod P2P m, MonadIO n)
           => RPC P2P m
           -> MethodInput P2P m
@@ -323,12 +325,14 @@ withUnaryCore method message k = do
       else return (k (Left "Cannot establish connection to GRPC endpoint."))
     Just v -> return (k (outputGRPC' v))
 
+-- | Setup the GRPC client and run a rawUnary call to the provided method.
 withUnaryCoreNoMsg :: forall m n b. (HasMethod P2P m, MonadIO n)
           => RPC P2P m
           -> (Either String (MethodOutput P2P m) -> b)
           -> ClientMonad n b
-withUnaryCoreNoMsg method = withUnaryCore method defMessage 
+withUnaryCoreNoMsg method = withUnaryCore method defMessage
 
+-- | Call a method with a given message and use a Getter on the output.
 withUnary :: forall m n b. (HasMethod P2P m, MonadIO n)
           => RPC P2P m
           -> MethodInput P2P m
@@ -336,12 +340,14 @@ withUnary :: forall m n b. (HasMethod P2P m, MonadIO n)
           -> ClientMonad n (Either String b)
 withUnary method message k = withUnaryCore method message (\x -> (^. k) <$> x)
 
+-- | Call a method with a given message using the `id` lens on the output.
 withUnary' :: forall m n. (HasMethod P2P m, MonadIO n)
            => RPC P2P m
            -> MethodInput P2P m
            -> ClientMonad n (Either String (MethodOutput P2P m))
 withUnary' method message = withUnary method message (to id)
 
+-- | Call a method without a message using the given lens
 withUnaryNoMsg :: forall m n b. (HasMethod P2P m, MonadIO n)
                => RPC P2P m
                -> Getter' (MethodOutput P2P m) b
@@ -349,6 +355,7 @@ withUnaryNoMsg :: forall m n b. (HasMethod P2P m, MonadIO n)
 withUnaryNoMsg method = withUnary method defMessage
 
 
+-- | Call a method with a message that has `blockHash` as a field and use the given lens on the output
 withUnaryBlock :: forall m n b. (HasMethod P2P m,
                                    MonadIO n,
                                    Field.HasField (MethodInput P2P m) "blockHash" Text)
@@ -358,7 +365,7 @@ withUnaryBlock :: forall m n b. (HasMethod P2P m,
                -> ClientMonad n (Either String b)
 withUnaryBlock method hash = withUnary method (defMessage & CF.blockHash .~ hash)
 
-
+-- | Call a method with an empty message using the `id` lens on the output.
 withUnaryNoMsg' :: forall m n. (HasMethod P2P m, MonadIO n)
                 => RPC P2P m
                 -> ClientMonad n (Either String (MethodOutput P2P m))
@@ -366,7 +373,6 @@ withUnaryNoMsg' method = withUnary' method defMessage
 
 call :: forall m . RPC P2P m
 call = RPC @P2P @m
-
 
 -- *Some helper wrappers around the raw commands
 

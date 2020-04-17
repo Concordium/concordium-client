@@ -75,12 +75,14 @@ library:
     - lens-simple
     - http2-client-grpc >= 0.7
     - http2-client >= 0.9
+    - http2-grpc-types
+    - http2-grpc-proto-lens
     - unordered-containers
     - hashable >= 1.2
     - pretty
-    - proto-lens == 0.5.*
-    - proto-lens-protobuf-types == 0.5.*
-    - proto-lens-runtime == 0.5.*
+    - proto-lens == 0.6.*
+    - proto-lens-protobuf-types == 0.6.*
+    - proto-lens-runtime == 0.6.*
     - uri-encode >= 1.5
     - concurrent-extra >= 0.7
   generated-exposed-modules:
@@ -217,5 +219,6 @@ tests:
       - mtl >= 2.2.2
       - QuickCheck >= 2.12
       - text
+      - transformers
       - time
       - unordered-containers

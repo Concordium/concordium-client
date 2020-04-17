@@ -36,14 +36,16 @@ instance FromJSON Types.Proof where
 -- To be populated when deserializing a JSON object.
 data TransactionJSONHeader =
   TransactionJSONHeader
-  -- |Address of the sender.
-    { thSenderAddress    :: IDTypes.AccountAddress
-  -- |Nonce of the account. If not present it should be derived
-  -- from the context or queried to the state
+
+    {
+      -- |Address of the sender.
+      thSenderAddress    :: IDTypes.AccountAddress
+      -- |Nonce of the account. If not present it should be derived
+      -- from the context or queried to the state
     , thNonce            :: Maybe Nonce
-  -- |Amount dedicated for the execution of this transaction.
+      -- |Amount dedicated for the execution of this transaction.
     , thEnergyAmount     :: Energy
-  -- |Absolute time after which transaction will not be executed.
+      -- |Absolute time after which transaction will not be executed.
     , thExpiry           :: TransactionExpiryTime
     }
   deriving (Eq, Show)
