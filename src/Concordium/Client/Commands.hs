@@ -7,7 +7,7 @@ module Concordium.Client.Commands
   , Backend(..)
   , Cmd(..)
   , ConfigCmd(..)
-  , TransactionCfg(..)
+  , TransactionOpts(..)
   , TransactionCmd(..)
   , AccountCmd(..)
   , ModuleCmd(..)
@@ -78,7 +78,7 @@ data TransactionCmd
   | TransactionSendGtu
     { transactionToAccount :: !Text
     , transactionAmount :: !Amount
-    , transactionCfg :: !TransactionCfg }
+    , transactionOpts :: !TransactionOpts }
   | TransactionDeployCredential
     {
       transactionCredentialFile :: !FilePath
@@ -101,7 +101,7 @@ data ModuleCmd
     { moduleBlockHash :: !(Maybe Text) }
   | ModuleDeploy
     { moduleName :: !Text
-    , moduleTransactionCfg :: !TransactionCfg }
+    , moduleTransactionOpts :: !TransactionOpts }
   deriving (Show)
 
 data ContractCmd
@@ -114,16 +114,16 @@ data ContractCmd
     { contractModuleName :: !Text
     , contractName :: !Text
     , contractParameter :: !Text
-    , contractTransactionCfg :: !TransactionCfg }
+    , contractTransactionOpts :: !TransactionOpts }
   deriving (Show)
 
-data TransactionCfg =
-  TransactionCfg
-  { tcSender :: !(Maybe Text)
-  , tcKeys :: !(Maybe Text)
-  , tcNonce :: !(Maybe Nonce)
-  , tcMaxEnergyAmount :: !(Maybe Energy)
-  , tcExpiration :: !(Maybe TransactionExpiryTime) }
+data TransactionOpts =
+  TransactionOpts
+  { toSender :: !(Maybe Text)
+  , toKeys :: !(Maybe Text)
+  , toNonce :: !(Maybe Nonce)
+  , toMaxEnergyAmount :: !(Maybe Energy)
+  , toExpiration :: !(Maybe TransactionExpiryTime) }
   deriving (Show)
 
 data ConsensusCmd
@@ -143,7 +143,7 @@ data BakerCmd
     { bgkFile :: !(Maybe FilePath) }
   | BakerAdd
     { baFile :: !FilePath
-    , baTransactionCfg :: !TransactionCfg }
+    , baTransactionOpts :: !TransactionOpts }
   deriving (Show)
 
 visibleHelper :: Parser (a -> a)
@@ -196,9 +196,9 @@ retryNumParser =
      metavar "GRPC-RETRY" <>
      help "How many times to retry the connection if it fails the first time.")
 
-transactionCfgParser :: Parser TransactionCfg
+transactionCfgParser :: Parser TransactionOpts
 transactionCfgParser =
-  TransactionCfg <$>
+  TransactionOpts <$>
     optional (strOption (long "sender" <> metavar "SENDER" <> help "Name or address of the transaction sender.")) <*>
     optional (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified as JSON ({<key-idx>: {<sign-key>, <verify-key>}).")) <*>
     optional (option auto (long "nonce" <> metavar "NONCE" <> help "Transaction nonce.")) <*>

@@ -38,7 +38,7 @@ import           Concordium.Client.Output
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Client.Types.TransactionStatus
-import           Concordium.Client.Validate
+import           Concordium.Client.Parse
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
@@ -144,104 +144,40 @@ processTransactionCmd action baseCfgDir verbose backend =
       mdata <- loadContextData
       source <- BSL.readFile fname
       tx <- PR.evalContext mdata $ withClient backend $ processTransaction source defaultNetId
-      logInfo [ printf "transaction sent to the baker"
-              , printf "query status using 'transaction status %s'" (show $ getBlockItemHash tx) ]
+      withClient backend $ tailTransaction $ getBlockItemHash tx
     TransactionDeployCredential fname -> do
       source <- BSL.readFile fname
       tx <- withClient backend $ processCredential source defaultNetId
-      logInfo [ printf "credential sent to the baker"
-              , printf "query status using 'transaction status %s'" (show $ getBlockItemHash tx) ]
-    TransactionStatus hash -> do
-      validateTransactionHash hash
-      status <- withClient backend $ queryTransactionStatus (read $ unpack hash)
+      withClient backend $ tailTransaction $ getBlockItemHash tx
+    TransactionStatus h -> do
+      hash <- case parseTransactionHash h of
+        Nothing -> logFatal [printf "invalid transaction hash '%s'" h]
+        Just hash -> return hash
+      status <- withClient backend $ queryTransactionStatus hash
       when verbose $ logInfo [printf "Response: %s" (show status)]
       runPrinter $ printTransactionStatus status
-    TransactionSendGtu receiver amount txCfg -> do
+      -- TODO This works but output doesn't make sense if transaction is already committed/finalized.
+      --      It should skip already completed steps.
+      -- withClient backend $ tailTransaction hash
+    TransactionSendGtu receiver amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      keysArg <- case decodeKeysArg $ tcKeys txCfg of
-                   Nothing -> return Nothing
-                   Just act -> act >>= \case
-                     Left err -> die err
-                     Right ks -> return $ Just ks
-      accCfg <- getAccountConfig (tcSender txCfg) baseCfg Nothing keysArg
+      ttxCfg <- getTransferTransactionCfg baseCfg txOpts receiver amount
 
       when verbose $ do
-        runPrinter $ printAccountConfig accCfg
+        runPrinter $ printAccountConfig $ tcAccountCfg $ ttcTransactionCfg ttxCfg
         putStrLn ""
 
-      let keys = acKeys accCfg
-          fromAddress = acAddr accCfg
-      -- TODO Allow referencing address by name (similar to "sender")?
-      toAddress <- getAddressArg "to address" $ Just receiver
-
-      let transactionFee = simpleTransferEnergyCost (Prelude.length keys)
-      energy <- case tcMaxEnergyAmount txCfg of
-                  Nothing -> return transactionFee
-                  Just maxEnergy -> promptEnergyUpdate maxEnergy transactionFee
-      expiry <- getArg "expiry" $ tcExpiration txCfg
-      logInfo [ printf "sending %s from %s to '%s'" (showGtu amount) (showNamedAddress accCfg) (show toAddress)
-              , printf "allowing up to %s to be spent as transaction fee" (showNrg energy) ]
-      putStr "Confirm [yN]: "
-      input <- getChar
-      when (C.toLower input /= 'y') $ logFatal ["transaction cancelled"]
-
-      let t = TransactionJSON
-                (TransactionJSONHeader fromAddress (tcNonce txCfg) energy expiry)
-                (Transfer (Types.AddressAccount toAddress) amount)
-                keys
       -- TODO Only needed because we're going through the generic
       --      processTransaction/encodeAndSignTransaction functions.
       --      Refactor to only include what's needed.
+      t <- transferTransactionPayload ttxCfg True
       tx <- PR.evalContext emptyContextData $ withClient backend $ processTransaction_ t defaultNetId False
-      let hash = getBlockItemHash tx
-      logInfo [ "transaction sent to the baker"
-              , "waiting for transaction to be committed and finalized"
-              , printf "you may skip this by interrupting this command (using Ctrl-C) - the transaction will still get processed and may be queried using 'transaction status %s'" (show hash) ]
-
-      t1 <- getFormattedLocalTimeOfDay
-      printf "[%s] Waiting for the transaction to be committed..." t1
-      committedStatus <- withClient backend $ awaitState 2 Committed hash
-      putStrLn ""
-
-      when (tsrState committedStatus == Absent) $ logFatal ["transaction failed before it got committed", "most likely because it was invalid"]
-
-      runPrinter $ printTransactionStatus committedStatus
-
-      -- If the transaction goes back to pending state after being committed to a branch which gets dropped later on,
-      -- the command will currently keep presenting the transaction as committed and awaiting finalization.
-      -- As the transaction is still expected to go back to being committed or (if for instance it expires) become absent,
-      -- this seems acceptable from a UX perspective. Also, this is expected to be a very uncommon case.
-
-      t2 <- getFormattedLocalTimeOfDay
-      printf "[%s] Waiting for the transaction to be finalized..." t2
-      finalizedStatus <- withClient backend $ awaitState 5 Finalized hash
-      putStrLn ""
-
-      when (tsrState finalizedStatus == Absent) $ logFatal ["transaction failed after it was committed"]
-
-      -- Print out finalized status if the outcome differs from that of the committed status.
-      when (tsrResults committedStatus /= tsrResults finalizedStatus) $ do
-        runPrinter $ printTransactionStatus finalizedStatus
-
-      t3 <- getFormattedLocalTimeOfDay
-      printf "[%s] Transfer completed.\n" t3
-  where
-    promptEnergyUpdate energy actualFee
-      | energy < actualFee = do
-          logWarn ["insufficient energy allocated to the transaction!"
-                  , printf "transaction fee will be %s, but only %s has been allocated" (showNrg actualFee) (showNrg energy) ]
-          printf "Do you want to increase the energy allocation to %s? [yN]" (showNrg actualFee)
-          input <- getChar
-          if C.toLower input == 'y' then return actualFee else return energy
-      | actualFee < energy = do
-          logInfo [printf "%s allocated to the transaction, but only %s is needed" (showNrg energy) (showNrg actualFee)]
-          return energy
-      | otherwise = return energy
+      withClient backend $ tailTransaction $ getBlockItemHash tx
 
 -- Poll the transaction state continuously until it is "at least" the provided one.
 -- Note that the "absent" state is considered the "highest" state,
@@ -254,6 +190,182 @@ awaitState t s hash = do
   else do
     wait t
     awaitState t s hash
+
+-- Function type for computing the transaction energy cost for a given number of keys.
+-- Returns Nothing if the cost cannot be computed.
+type ComputeEnergyCost = Int -> Types.Energy
+
+-- Resolved configuration common to all transaction types.
+data TransactionConfig =
+  TransactionConfig
+  { tcAccountCfg :: AccountConfig
+  , tcNonce :: Maybe Types.Nonce
+  , tcEnergy :: Types.Energy
+  , tcExpiry :: Types.TransactionExpiryTime }
+
+-- Resolve transaction config based on persisted config and CLI flags.
+-- If the energy cost function returns a value which is different from the
+-- specified energy, a warning is logged.
+-- If too low, the user is prompted to increase the energy allocation.
+getTransactionCfg :: BaseConfig -> TransactionOpts -> Maybe ComputeEnergyCost -> IO TransactionConfig
+getTransactionCfg baseCfg txOpts energyCost = do
+  keysArg <- case decodeJsonArg $ toKeys txOpts of
+               Nothing -> return Nothing
+               Just act -> act >>= \case
+                 Left err -> logFatal [printf "cannot decode keys: %s" err]
+                 Right ks -> return $ Just ks
+  accCfg <- getAccountConfig (toSender txOpts) baseCfg Nothing keysArg
+
+  let computedCost = case energyCost of
+                       Nothing -> Nothing
+                       Just ec -> Just $ ec $ Prelude.length $ acKeys accCfg
+  energy <- case (toMaxEnergyAmount txOpts, computedCost) of
+              (Nothing, Nothing) -> logFatal ["energy amount not specified"]
+              (Nothing, Just c) -> do
+                logInfo [printf "using default energy amount of %s" (showNrg c)]
+                return c
+              (Just maxCost, Nothing) -> return maxCost
+              (Just maxCost, Just c) -> promptEnergyUpdate maxCost c
+
+  -- TODO Accept duration format and add default.
+  expiry <- getArg "expiry" $ toExpiration txOpts
+  return TransactionConfig
+    { tcAccountCfg = accCfg
+    , tcNonce = toNonce txOpts
+    , tcEnergy = energy
+    , tcExpiry = expiry }
+  where
+    promptEnergyUpdate energy actualFee
+      | energy < actualFee = do
+          logWarn [ "insufficient energy allocated to the transaction!"
+                  , printf "transaction fee will be %s, but only %s has been allocated" (showNrg actualFee) (showNrg energy) ]
+          printf "Do you want to increase the energy allocation to %s? [yN]" (showNrg actualFee)
+          input <- getChar
+          if C.toLower input == 'y' then return actualFee else return energy
+      | actualFee < energy = do
+          logInfo [printf "%s allocated to the transaction, but only %s is needed" (showNrg energy) (showNrg actualFee)]
+          return energy
+      | otherwise = return energy
+
+-- Resolved configuration for a transfer transaction.
+data TransferTransactionConfig =
+  TransferTransactionConfig
+  { ttcTransactionCfg :: TransactionConfig
+  , ttcReceiver :: Types.AccountAddress
+  , ttcAmount :: Types.Amount }
+
+getTransferTransactionCfg :: BaseConfig -> TransactionOpts -> Text -> Types.Amount -> IO TransferTransactionConfig
+getTransferTransactionCfg baseCfg txOpts receiver amount = do
+  txCfg <- getTransactionCfg baseCfg txOpts (Just $ simpleTransferEnergyCost)
+
+  -- TODO Allow referencing address by name (similar to "sender")?
+  receiverAddress <- getAddressArg "to address" $ Just receiver
+
+  return TransferTransactionConfig
+    { ttcTransactionCfg = txCfg
+    , ttcAmount = amount
+    , ttcReceiver = receiverAddress }
+
+-- Resolved configuration for a baker add transaction.
+data BakerAddTransactionConfig =
+  BakerAddTransactionConfig
+  { batcTransactionConfig :: TransactionConfig
+  , batcBakerKeys :: BakerKeys }
+
+getBakerAddTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> IO BakerAddTransactionConfig
+getBakerAddTransactionCfg baseCfg txOpts f = do
+  txCfg <- getTransactionCfg baseCfg txOpts (Just nrgCost)
+  src <- readFile f
+  v <- case eitherDecodeStrict $ encodeUtf8 $ pack src of
+         Left err -> logFatal [printf "cannot decode file '%s' as JSON: %s" f err]
+         Right r -> return r
+  bakerKeys <- case fromJSON v of
+                 Error err -> logFatal [printf "cannot parse '%s' as baker keys: %s" src err]
+                 Success r -> return r
+  return BakerAddTransactionConfig
+    { batcTransactionConfig = txCfg
+    , batcBakerKeys = bakerKeys }
+  where nrgCost _ = 3000
+
+-- Convert transfer transaction config into a valid payload, optionally asking the user for confirmation.
+transferTransactionPayload :: TransferTransactionConfig -> Bool -> IO TransactionJSON
+transferTransactionPayload ttxCfg confirm = do
+  let TransferTransactionConfig
+        { ttcTransactionCfg = TransactionConfig
+                              { tcEnergy = energy
+                              , tcExpiry = expiry
+                              , tcNonce = nonce
+                              , tcAccountCfg = accCfg@AccountConfig
+                                               { acAddr = fromAddress
+                                               , acKeys = keys }}
+        , ttcAmount = amount
+        , ttcReceiver = toAddress }
+        = ttxCfg
+
+  logInfo [ printf "sending %s from %s to '%s'" (showGtu amount) (showNamedAddress accCfg) (show toAddress)
+          , printf "allowing up to %s to be spent as transaction fee" (showNrg energy) ]
+  askConfirmation confirm
+
+  return $ TransactionJSON
+             (TransactionJSONHeader fromAddress nonce energy expiry)
+             (Transfer (Types.AddressAccount toAddress) amount)
+             keys
+
+-- Convert baker add transaction config into a valid payload, optionally asking the user for confirmation.
+bakerAddTransactionPayload :: BakerAddTransactionConfig -> FilePath -> Bool -> IO Types.Payload
+bakerAddTransactionPayload batxCfg f confirm = do
+  let txCfg = batcTransactionConfig batxCfg
+      bakerKeys = batcBakerKeys batxCfg
+      accCfg = tcAccountCfg txCfg
+      energy = tcEnergy txCfg
+
+  logInfo [ printf "submitting transaction to add baker using keys from file '%s'" f
+          , printf "allowing up to %s to be spent as transaction fee" (showNrg energy) ]
+  askConfirmation confirm
+
+  generateAddBakerPayload bakerKeys AccountKeys {akAddress = acAddr accCfg, akKeys = acKeys accCfg}
+
+-- If enabled is true, ask the user to "confirm" on stdin and exit the program unless 'y' or 'Y' was entered.
+askConfirmation :: Bool -> IO ()
+askConfirmation enabled = when enabled $ do
+  putStr "Confirm [yN]: "
+  input <- getChar
+  when (C.toLower input /= 'y') $ logFatal ["transaction cancelled"]
+
+-- Continuously query and display transaction status until the transaction is finalized.
+tailTransaction :: (MonadIO m) => Types.TransactionHash -> ClientMonad m ()
+tailTransaction hash = do
+  logInfo [ "transaction sent to the baker"
+          , "waiting for transaction to be committed and finalized"
+          , printf "you may skip this by interrupting this command (using Ctrl-C) - the transaction will still get processed and may be queried using 'transaction status %s'" (show hash) ]
+
+  t1 <- getFormattedLocalTimeOfDay
+  liftIO $ printf "[%s] Waiting for the transaction to be committed..." t1
+  committedStatus <- awaitState 2 Committed hash
+  liftIO $ putStrLn ""
+
+  when (tsrState committedStatus == Absent) $ logFatal ["transaction failed before it got committed", "most likely because it was invalid"]
+
+  runPrinter $ printTransactionStatus committedStatus
+
+  -- If the transaction goes back to pending state after being committed to a branch which gets dropped later on,
+  -- the command will currently keep presenting the transaction as committed and awaiting finalization.
+  -- As the transaction is still expected to go back to being committed or (if for instance it expires) become absent,
+  -- this seems acceptable from a UX perspective. Also, this is expected to be a very uncommon case.
+
+  t2 <- getFormattedLocalTimeOfDay
+  liftIO $ printf "[%s] Waiting for the transaction to be finalized..." t2
+  finalizedStatus <- awaitState 5 Finalized hash
+  liftIO $ putStrLn ""
+
+  when (tsrState finalizedStatus == Absent) $ logFatal ["transaction failed after it was committed"]
+
+  -- Print out finalized status if the outcome differs from that of the committed status.
+  when (tsrResults committedStatus /= tsrResults finalizedStatus) $ do
+    runPrinter $ printTransactionStatus finalizedStatus
+
+  t3 <- getFormattedLocalTimeOfDay
+  liftIO $ printf "[%s] Transaction completed.\n" t3
 
 processAccountCmd :: AccountCmd -> Verbose -> Backend -> IO ()
 processAccountCmd action verbose backend =
@@ -289,9 +401,8 @@ processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
 processBlockCmd action _ backend =
   case action of
     BlockShow b -> do
-      unless (maybe True isValidBlockHash b) $
-          -- NB: The use of show on text is deliberate to produce quoted output.
-          logFatal [show (fromJust b) ++ " is not a valid block hash."]
+      when (maybe False (isNothing . parseTransactionHash) b) $
+        logFatal [printf "invalid block hash '%s'" (fromJust b)]
 
       v <- withClientJson backend $ withBestBlockHash b getBlockInfo
       runPrinter $ printBlockInfo v
@@ -330,60 +441,38 @@ processBakerCmd action baseCfgDir verbose backend =
           logInfo [ printf "keys written to file '%s'" f
                   , "DO NOT LOSE THIS FILE"
                   , printf "to add a baker to the chain using these keys, use 'baker add %s'" f ]
-    BakerAdd f txCfg -> do
-      src <- readFile f
-      v <- case eitherDecodeStrict $ encodeUtf8 $ pack src of
-             Left err -> logFatal [printf "cannot decode file '%s' as JSON: %s" f err]
-             Right r -> return r
-      bakerKeys <- case fromJSON v of
-                     Error err -> logFatal [printf "cannot parse '%s' as baker keys: %s" src err]
-                     Success r -> return r
-
+    BakerAdd f txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-
-      -- TODO Deduplicate with transaction send-gtu.
-      --      And await finalization using the same logic.
-
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      keysArg <- case decodeKeysArg $ COM.tcKeys txCfg of
-                   Nothing -> return Nothing
-                   Just act -> act >>= \case
-                     Left err -> die err
-                     Right ks -> return $ Just ks
-      accCfg <- getAccountConfig (tcSender txCfg) baseCfg Nothing keysArg
-
+      batxCfg <- getBakerAddTransactionCfg baseCfg txOpts f
       when verbose $ do
-        runPrinter $ printAccountConfig accCfg
+        runPrinter $ printAccountConfig $ tcAccountCfg $ batcTransactionConfig batxCfg
         putStrLn ""
 
-      energy <- getArg "max energy amount" $ tcMaxEnergyAmount txCfg
-      expiry <- getArg "expiry" $ tcExpiration txCfg
+      pl <- bakerAddTransactionPayload batxCfg f True
 
-      pl <- generateAddBakerPayload bakerKeys AccountKeys {akAddress = acAddr accCfg, akKeys = acKeys accCfg}
-
-      logInfo [ printf "submitting transaction to add baker using keys from file '%s'" f
-              , "DO NOT LOSE THIS FILE"]
-
-      when verbose $ logInfo [printf "Payload: %s" (show pl)]
-
+      -- TODO Abstract out...
       -- Send transaction
-      let sender = acAddr accCfg
+      let txCfg = batcTransactionConfig batxCfg
+          energy = tcEnergy txCfg
+          expiry = tcExpiry txCfg
+          accCfg = tcAccountCfg txCfg
+          sender = acAddr accCfg
+          keys = acKeys accCfg
       tx <- withClient backend $ do
         nonce <- case tcNonce txCfg of
                    Nothing -> getBestBlockHash >>= getAccountNonce sender
                    Just n -> return n
-        let tx = encodeAndSignTransaction pl energy nonce expiry sender (acKeys accCfg)
+        let tx = encodeAndSignTransaction pl energy nonce expiry sender keys
         sendTransactionToBaker tx defaultNetId >>= \case
           Left err -> fail err
           Right False -> fail "Transaction not accepted by the baker."
           Right True -> return tx
-      when verbose $ logInfo [printf "Transaction: %s" (show tx)]
-      let hash = getBlockItemHash tx
-      logInfo [ "transaction sent to the baker"
-              , printf "the transaction may be queried using 'transaction status %s'" (show hash) ]
+
+      withClient backend $ tailTransaction $ getBlockItemHash tx
 
 processLegacyCmd :: LegacyCmd -> Maybe Backend -> IO ()
 processLegacyCmd action backend =
