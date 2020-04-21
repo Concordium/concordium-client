@@ -249,8 +249,8 @@ getArg name input = case input of
 
 -- |If the string starts with @ we assume the remaining characters are a file name
 -- and we try to read the contents of that file.
-decodeJsonArg :: FromJSON a => String -> Maybe Text -> Maybe (IO (Either String a))
-decodeJsonArg key input = do
+decodeJsonArg :: FromJSON a => Maybe Text -> Maybe (IO (Either String a))
+decodeJsonArg input = do
   v <- input
   Just $ do
     let bs = encodeUtf8 v
@@ -258,12 +258,9 @@ decodeJsonArg key input = do
              Just ('@', rest) -> do
                AE.eitherDecodeFileStrict (BS.unpack rest)
              _ -> return $ AE.eitherDecodeStrict bs
-    case res of
-      Left err -> return (Left $ printf "%s: cannot parse '%s' as JSON: %s" key v err)
-      Right r -> return (Right r)
-
-decodeKeysArg :: Maybe Text -> Maybe (IO (Either String KeyMap))
-decodeKeysArg = decodeJsonArg "keys"
+    return $ case res of
+               Left err -> Left $ printf "cannot parse '%s' as JSON: %s" v err
+               Right r -> Right r
 
 getAddressArg :: String -> Maybe Text -> IO IDTypes.AccountAddress
 getAddressArg name input = do
