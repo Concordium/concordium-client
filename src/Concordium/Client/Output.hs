@@ -30,8 +30,8 @@ import Text.Printf
 
 type Printer = Writer [String] ()
 
-runPrinter :: Printer -> IO ()
-runPrinter p = mapM_ putStrLn $ execWriter p
+runPrinter :: (MonadIO m) => Printer -> m ()
+runPrinter p = liftIO $ mapM_ putStrLn $ execWriter p
 
 -- TIME
 
@@ -42,9 +42,9 @@ showFormattedUtcYearMonth :: UTCTime -> String
 showFormattedUtcYearMonth t = formatTime defaultTimeLocale "%b %0Y" t
 
 
-getFormattedLocalTimeOfDay :: IO String
+getFormattedLocalTimeOfDay :: (MonadIO m) => m String
 getFormattedLocalTimeOfDay = do
-  t <- getLocalTimeOfDay
+  t <- liftIO getLocalTimeOfDay
   return $ showFormattedTimeOfDay t
 
 getLocalTimeOfDay :: IO TimeOfDay
