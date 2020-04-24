@@ -197,7 +197,6 @@ executables:
             - http-types >= 0.12
             - network >= 2.8
             - wai-conduit >= 3
-            - yesod >= 1.6
             - mtl >= 2.2.2
             - monad-logger >= 0.3
             - cereal >= 0.5.8
