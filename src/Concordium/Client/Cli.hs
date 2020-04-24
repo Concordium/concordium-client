@@ -6,6 +6,7 @@ module Concordium.Client.Cli where
 import qualified Concordium.Crypto.BlockSignature as BlockSig
 import qualified Concordium.Crypto.BlsSignature as Bls
 import qualified Concordium.Crypto.VRF as VRF
+import Concordium.Client.Parse
 import Concordium.Client.Types.Transaction
 import Concordium.Client.Types.TransactionStatus
 import qualified Concordium.ID.Types as IDTypes
@@ -20,6 +21,7 @@ import Data.Text (Text)
 import Data.Text.Encoding
 import qualified Data.ByteString.Char8 as BS
 import Data.Time
+import Data.Time.Clock.POSIX
 import Data.Word
 import Prelude hiding (fail, log)
 import Text.PrettyPrint
@@ -68,6 +70,18 @@ logStr = liftIO . hPutStr stderr
 
 logStrLn :: MonadIO m => String -> m ()
 logStrLn = liftIO . hPutStrLn stderr
+
+getLocalTimeOfDay :: IO TimeOfDay
+getLocalTimeOfDay = do
+  tz <- getCurrentTimeZone
+  t <- getCurrentTime
+  return $ localTimeOfDay $ utcToLocalTime tz t
+
+getCurrentTimeUnix :: IO Timestamp
+getCurrentTimeUnix = round <$> getPOSIXTime
+
+timeFromTimestamp :: Timestamp -> UTCTime
+timeFromTimestamp t = posixSecondsToUTCTime $ fromIntegral t
 
 data AccountInfoResult = AccountInfoResult
   { airAmount :: !Amount
@@ -268,6 +282,15 @@ getAddressArg name input = do
   case IDTypes.addressFromText v of
     Left err -> die $ printf "%s: %s" name err
     Right a -> return a
+
+getTimestampArg :: String -> Timestamp -> Maybe Text -> IO Timestamp
+getTimestampArg name now input = do
+  case input of
+    Nothing -> return $ now + defaultExpiryDurationSecs
+    Just v -> case parseTimestamp now v of
+                Left err -> logFatal [printf "invalid %s '%s': %s" name v err]
+                Right e -> return e
+  where defaultExpiryDurationSecs = 600 -- 10 mins
 
 class (Monad m) => TransactionStatusQuery m where
   queryTransactionStatus :: TransactionHash -> m TransactionStatusResult
