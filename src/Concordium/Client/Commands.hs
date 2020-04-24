@@ -41,8 +41,7 @@ data Backend =
     { grpcHost   :: !HostName
     , grpcPort   :: !PortNumber
     , grpcTarget :: !(Maybe String)
-    , grpcRetryNum :: !(Maybe Int)
-    }
+    , grpcRetryNum :: !(Maybe Int) }
   deriving (Show)
 
 data Cmd
@@ -80,9 +79,7 @@ data TransactionCmd
     , transactionAmount :: !Amount
     , transactionOpts :: !TransactionOpts }
   | TransactionDeployCredential
-    {
-      transactionCredentialFile :: !FilePath
-    }
+    { transactionCredentialFile :: !FilePath }
   deriving (Show)
 
 data AccountCmd
@@ -91,6 +88,9 @@ data AccountCmd
     , accountBlockHash :: !(Maybe Text) }
   | AccountList
     { accountBlockHash :: !(Maybe Text) }
+  | AccountDelegate
+    { adBakerId :: !BakerId
+    , adTransactionOpts :: !TransactionOpts }
   deriving (Show)
 
 data ModuleCmd
@@ -196,13 +196,13 @@ retryNumParser =
      metavar "GRPC-RETRY" <>
      help "How many times to retry the connection if it fails the first time.")
 
-transactionCfgParser :: Parser TransactionOpts
-transactionCfgParser =
+transactionOptsParser :: Parser TransactionOpts
+transactionOptsParser =
   TransactionOpts <$>
     optional (strOption (long "sender" <> metavar "SENDER" <> help "Name or address of the transaction sender.")) <*>
     optional (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified as JSON ({<key-idx>: {<sign-key>, <verify-key>}).")) <*>
     optional (option auto (long "nonce" <> metavar "NONCE" <> help "Transaction nonce.")) <*>
-    optional (option auto (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction.")) <*>
+    optional (option auto (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction. Depeding on the transaction type, this flag may be optional.")) <*>
     optional (strOption (long "expiry" <> metavar "EXPIRY" <> help "Expiration time of a transaction, specified as a relative duration (\"30s\", \"5m\", etc.) or UNIX epoch timestamp."))
 
 programOptions :: Parser Options
@@ -232,8 +232,7 @@ transactionCmds =
           (transactionSubmitCmd <>
            transactionStatusCmd <>
            transactionSendGtuCmd <>
-           transactionDeployCredentialCmd
-          )))
+           transactionDeployCredentialCmd)))
       (progDesc "Commands for submitting and inspecting transactions."))
 
 transactionSubmitCmd :: Mod CommandFields TransactionCmd
@@ -271,7 +270,7 @@ transactionSendGtuCmd =
       (TransactionSendGtu <$>
         strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
         option auto (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
-        transactionCfgParser)
+        transactionOptsParser)
       (progDesc "Transfer GTU from one account to another account (sending to contracts is currently not supported with this method - use 'transaction submit')."))
 
 accountCmds :: Mod CommandFields Cmd
@@ -282,7 +281,8 @@ accountCmds =
       (AccountCmd <$>
         (hsubparser
           (accountShowCmd <>
-           accountListCmd)))
+           accountListCmd <>
+           accountDelegateCmd)))
       (progDesc "Commands for inspecting accounts."))
 
 accountShowCmd :: Mod CommandFields AccountCmd
@@ -303,6 +303,16 @@ accountListCmd =
        (AccountList <$>
          optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
        (progDesc "List all accounts."))
+
+accountDelegateCmd :: Mod CommandFields AccountCmd
+accountDelegateCmd =
+  command
+    "delegate"
+    (info
+      (AccountDelegate <$>
+        option auto (long "baker" <> metavar "BAKER-ID" <> help "Baker to which the stake of the sender's account should be delegated.") <*>
+        transactionOptsParser)
+      (progDesc "Delegate stake of account to baker."))
 
 moduleCmds :: Mod CommandFields Cmd
 moduleCmds =
@@ -342,7 +352,7 @@ moduleDeployCmd =
     (info
       (ModuleDeploy <$>
         strArgument (metavar "MODLE-NAME" <> help "Name of the module to deploy.") <*>
-        transactionCfgParser
+        transactionOptsParser
       )
       (progDesc "Deploy module."))
 
@@ -386,7 +396,7 @@ contractInitCmd =
         strOption (long "module" <> metavar "MODULE" <> help "Module containing the contract.") <*>
         strOption (long "name" <> metavar "NAME" <> help "Name of the contract in the module.") <*>
         option auto (long "amount" <> metavar "AMOUNT" <> help "Amount of GTU to transfer to the contract.") <*>
-        transactionCfgParser)
+        transactionOptsParser)
       (progDesc "Initialize contract from already deployed module."))
 
 configCmds :: Mod CommandFields Cmd
@@ -482,5 +492,5 @@ bakerAddCmd =
     (info
       (BakerAdd <$>
         strArgument (metavar "FILE" <> help "File containing the baker credentials.") <*>
-        transactionCfgParser)
+        transactionOptsParser)
       (progDesc "Deploy baker credentials to the chain."))

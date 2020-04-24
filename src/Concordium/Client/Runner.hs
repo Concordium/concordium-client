@@ -118,7 +118,7 @@ process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir
   where p = case command of
               ConfigCmd c -> processConfigCmd c cfgDir
               TransactionCmd c -> processTransactionCmd c cfgDir
-              AccountCmd c -> processAccountCmd c
+              AccountCmd c -> processAccountCmd c cfgDir
               ModuleCmd c -> processModuleCmd c
               ContractCmd c -> processContractCmd c
               ConsensusCmd c -> processConsensusCmd c
@@ -170,14 +170,14 @@ processTransactionCmd action baseCfgDir verbose backend =
         putStrLn ""
 
       ttxCfg <- getTransferTransactionCfg baseCfg txOpts receiver amount
-
+      let txCfg = ttcTransactionCfg ttxCfg
       when verbose $ do
-        runPrinter $ printAccountConfig $ tcAccountCfg $ ttcTransactionCfg ttxCfg
+        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
         putStrLn ""
 
       pl <- transferTransactionPayload ttxCfg True
       withClient backend $ do
-        tx <- startTransaction (ttcTransactionCfg ttxCfg) pl
+        tx <- startTransaction txCfg pl
         tailTransaction $ getBlockItemHash tx
 
 -- Poll the transaction state continuously until it is "at least" the provided one.
@@ -280,8 +280,14 @@ getTransferTransactionCfg baseCfg txOpts receiver amount = do
 -- Resolved configuration for a baker add transaction.
 data BakerAddTransactionConfig =
   BakerAddTransactionConfig
-  { batcTransactionConfig :: TransactionConfig
+  { batcTransactionCfg :: TransactionConfig
   , batcBakerKeys :: BakerKeys }
+
+-- Resolved configuration for an account delegation transaction.
+data AccountDelegateTransactionConfig =
+  AccountDelegateTransactionConfig
+  { adtcTransactionCfg :: TransactionConfig
+  , adtcBakerId :: Types.BakerId }
 
 getBakerAddTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> IO BakerAddTransactionConfig
 getBakerAddTransactionCfg baseCfg txOpts f = do
@@ -294,9 +300,17 @@ getBakerAddTransactionCfg baseCfg txOpts f = do
                  Error err -> logFatal [printf "cannot parse '%s' as baker keys: %s" src err]
                  Success r -> return r
   return BakerAddTransactionConfig
-    { batcTransactionConfig = txCfg
+    { batcTransactionCfg = txCfg
     , batcBakerKeys = bakerKeys }
   where nrgCost _ = 3000
+
+-- Resolved configuration for a account delegation transaction.
+getAccountDelegateTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> IO AccountDelegateTransactionConfig
+getAccountDelegateTransactionCfg baseCfg txOpts bakerId = do
+  txCfg <- getTransactionCfg baseCfg txOpts $ Just accountDelegateEnergyCost
+  return AccountDelegateTransactionConfig
+    { adtcTransactionCfg = txCfg
+    , adtcBakerId = bakerId }
 
 -- Convert transfer transaction config into a valid payload, optionally asking the user for confirmation.
 transferTransactionPayload :: TransferTransactionConfig -> Bool -> IO Types.Payload
@@ -317,12 +331,12 @@ transferTransactionPayload ttxCfg confirm = do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  return $ Types.Transfer (Types.AddressAccount toAddress) amount
+  return Types.Transfer { tToAddress = Types.AddressAccount toAddress, tAmount = amount}
 
 -- Convert baker add transaction config into a valid payload, optionally asking the user for confirmation.
 bakerAddTransactionPayload :: BakerAddTransactionConfig -> FilePath -> Bool -> IO Types.Payload
 bakerAddTransactionPayload batxCfg f confirm = do
-  let txCfg = batcTransactionConfig batxCfg
+  let txCfg = batcTransactionCfg batxCfg
       bakerKeys = batcBakerKeys batxCfg
       accCfg = tcAccountCfg txCfg
       energy = tcEnergy txCfg
@@ -334,6 +348,26 @@ bakerAddTransactionPayload batxCfg f confirm = do
     unless confirmed exitTransactionCancelled
 
   generateAddBakerPayload bakerKeys AccountKeys {akAddress = acAddr accCfg, akKeys = acKeys accCfg}
+
+accountDelegateTransactionPayload :: AccountDelegateTransactionConfig -> Bool -> IO Types.Payload
+accountDelegateTransactionPayload adtxCfg confirm = do
+  let AccountDelegateTransactionConfig
+        { adtcTransactionCfg = TransactionConfig
+                              { tcEnergy = energy
+                              , tcExpiry = Types.TransactionExpiryTime {expiry = expiryTs}
+                              , tcAccountCfg = accCfg }
+        , adtcBakerId = bakerId }
+        = adtxCfg
+
+  logInfo [ printf "delegating stake from account %s to baker %s" (showNamedAddress accCfg) (show bakerId)
+          , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+          , printf "transaction expires at %s" (showTimeFormatted $ timeFromTimestamp expiryTs) ]
+
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  return Types.DelegateStake { dsID = bakerId }
 
 -- Encode, sign, and send transaction to baker.
 startTransaction :: (MonadFail m, MonadIO m) => TransactionConfig -> Types.Payload -> ClientMonad m Types.BareBlockItem
@@ -404,8 +438,8 @@ tailTransaction hash = do
   liftIO $ printf "[%s] Transaction completed.\n" t3
   where getLocalTimeOfDayFormatted = liftIO getLocalTimeOfDay >>= return . showTimeOfDay
 
-processAccountCmd :: AccountCmd -> Verbose -> Backend -> IO ()
-processAccountCmd action verbose backend =
+processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
+processAccountCmd action baseCfgDir verbose backend =
   case action of
     AccountShow address block -> do
       v <- withClientJson backend $ withBestBlockHash block (getAccountInfo address)
@@ -415,6 +449,23 @@ processAccountCmd action verbose backend =
     AccountList block -> do
       v <- withClientJson backend $ withBestBlockHash block getAccountList
       runPrinter $ printAccountList v
+    AccountDelegate bakerId txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+      adtxCfg <- getAccountDelegateTransactionCfg baseCfg txOpts bakerId
+      let txCfg = adtcTransactionCfg adtxCfg
+      when verbose $ do
+        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        putStrLn ""
+
+      pl <- accountDelegateTransactionPayload adtxCfg True
+      withClient backend $ do
+        tx <- startTransaction txCfg pl
+        tailTransaction $ getBlockItemHash tx
 
 processModuleCmd :: ModuleCmd -> Verbose -> Backend -> IO ()
 processModuleCmd action _ backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
@@ -485,14 +536,15 @@ processBakerCmd action baseCfgDir verbose backend =
         putStrLn ""
 
       batxCfg <- getBakerAddTransactionCfg baseCfg txOpts f
+      let txCfg = batcTransactionCfg batxCfg
       when verbose $ do
-        runPrinter $ printAccountConfig $ tcAccountCfg $ batcTransactionConfig batxCfg
+        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
         putStrLn ""
 
       pl <- bakerAddTransactionPayload batxCfg f True
 
       withClient backend $ do
-        tx <- startTransaction (batcTransactionConfig batxCfg) pl
+        tx <- startTransaction txCfg pl
         tailTransaction $ getBlockItemHash tx
 
 processLegacyCmd :: LegacyCmd -> Maybe Backend -> IO ()
