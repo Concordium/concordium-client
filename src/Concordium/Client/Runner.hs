@@ -97,10 +97,12 @@ withClient bkend comp = do
     Right x  -> return x
 
 withClientJson :: (MonadIO m, FromJSON a) => Backend -> ClientMonad m (Either String Value) -> m a
-withClientJson b comp = do
-  r <- withClient b comp
+withClientJson b c = withClient b c >>= getFromJson
+
+getFromJson :: (MonadIO m, FromJSON a) => Either String Value -> m a
+getFromJson r = do
   s <- case r of
-         Left err -> logFatal ["RPC error: " ++ err]
+         Left err -> logFatal [printf "RPC error: %s" err]
          Right v -> return v
   case fromJSON s of
     Error err -> logFatal [printf "cannot parse '%s' as JSON: %s" (show s) err]
@@ -141,12 +143,15 @@ processTransactionCmd action baseCfgDir verbose backend =
       -- TODO Ensure that the "nonce" field is optional in the payload.
       mdata <- loadContextData
       source <- BSL.readFile fname
-      tx <- PR.evalContext mdata $ withClient backend $ processTransaction source defaultNetId
-      withClient backend $ tailTransaction $ getBlockItemHash tx
+
+      PR.evalContext mdata $ withClient backend $ do
+        tx <- processTransaction source defaultNetId
+        tailTransaction $ getBlockItemHash tx
     TransactionDeployCredential fname -> do
       source <- BSL.readFile fname
-      tx <- withClient backend $ processCredential source defaultNetId
-      withClient backend $ tailTransaction $ getBlockItemHash tx
+      withClient backend $ do
+        tx <- processCredential source defaultNetId
+        tailTransaction $ getBlockItemHash tx
     TransactionStatus h -> do
       hash <- case parseTransactionHash h of
         Nothing -> logFatal [printf "invalid transaction hash '%s'" h]
@@ -170,12 +175,10 @@ processTransactionCmd action baseCfgDir verbose backend =
         runPrinter $ printAccountConfig $ tcAccountCfg $ ttcTransactionCfg ttxCfg
         putStrLn ""
 
-      -- TODO Only needed because we're going through the generic
-      --      processTransaction/encodeAndSignTransaction functions.
-      --      Refactor to only include what's needed.
-      t <- transferTransactionPayload ttxCfg True
-      tx <- PR.evalContext emptyContextData $ withClient backend $ processTransaction_ t defaultNetId False
-      withClient backend $ tailTransaction $ getBlockItemHash tx
+      pl <- transferTransactionPayload ttxCfg True
+      withClient backend $ do
+        tx <- startTransaction (ttcTransactionCfg ttxCfg) pl
+        tailTransaction $ getBlockItemHash tx
 
 -- Poll the transaction state continuously until it is "at least" the provided one.
 -- Note that the "absent" state is considered the "highest" state,
@@ -296,16 +299,13 @@ getBakerAddTransactionCfg baseCfg txOpts f = do
   where nrgCost _ = 3000
 
 -- Convert transfer transaction config into a valid payload, optionally asking the user for confirmation.
-transferTransactionPayload :: TransferTransactionConfig -> Bool -> IO TransactionJSON
+transferTransactionPayload :: TransferTransactionConfig -> Bool -> IO Types.Payload
 transferTransactionPayload ttxCfg confirm = do
   let TransferTransactionConfig
         { ttcTransactionCfg = TransactionConfig
                               { tcEnergy = energy
-                              , tcExpiry = expiry@Types.TransactionExpiryTime {expiry = expiryTs}
-                              , tcNonce = nonce
-                              , tcAccountCfg = accCfg@AccountConfig
-                                               { acAddr = fromAddress
-                                               , acKeys = keys }}
+                              , tcExpiry = Types.TransactionExpiryTime {expiry = expiryTs}
+                              , tcAccountCfg = accCfg }
         , ttcAmount = amount
         , ttcReceiver = toAddress }
         = ttxCfg
@@ -317,10 +317,7 @@ transferTransactionPayload ttxCfg confirm = do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  return $ TransactionJSON
-             (TransactionJSONHeader fromAddress nonce energy expiry)
-             (Transfer (Types.AddressAccount toAddress) amount)
-             keys
+  return $ Types.Transfer (Types.AddressAccount toAddress) amount
 
 -- Convert baker add transaction config into a valid payload, optionally asking the user for confirmation.
 bakerAddTransactionPayload :: BakerAddTransactionConfig -> FilePath -> Bool -> IO Types.Payload
@@ -337,6 +334,39 @@ bakerAddTransactionPayload batxCfg f confirm = do
     unless confirmed exitTransactionCancelled
 
   generateAddBakerPayload bakerKeys AccountKeys {akAddress = acAddr accCfg, akKeys = acKeys accCfg}
+
+-- Encode, sign, and send transaction to baker.
+startTransaction :: (MonadFail m, MonadIO m) => TransactionConfig -> Types.Payload -> ClientMonad m Types.BareBlockItem
+startTransaction txCfg pl = do
+  let TransactionConfig
+        { tcEnergy = energy
+        , tcExpiry = expiry
+        , tcNonce = n
+        , tcAccountCfg = AccountConfig
+                         { acAddr = sender
+                         , acKeys = keys } }
+        = txCfg
+  nonce <- getNonce sender n
+  let tx = encodeAndSignTransaction pl energy nonce expiry sender keys
+  sendTransactionToBaker tx defaultNetId >>= \case
+    Left err -> fail err
+    Right False -> fail "transaction not accepted by the baker"
+    Right True -> return tx
+
+getNonce :: (MonadFail m, MonadIO m) => Types.AccountAddress -> Maybe Types.Nonce -> ClientMonad m Types.Nonce
+getNonce sender nonce = do
+  case nonce of
+    Nothing -> do
+      currentNonce <- getBestBlockHash >>= getAccountNonce sender
+      nextNonce <- getNextAccountNonce (pack $ show sender) >>= getFromJson
+      liftIO $ when (currentNonce /= nextNonce) $ do
+        logWarn [ printf "there is a pending transaction with nonce %s, but last committed one has %s" (show $ nextNonce-1) (show $ currentNonce-1)
+                , printf "this transaction will have nonce %s and might hang if the pending transaction fails" (show nextNonce)
+                , "proceed if you're confident that all currently pending transactions are valid" ]
+        confirmed <- askConfirmation $ Just "proceed?"
+        unless confirmed exitTransactionCancelled
+      return nextNonce
+    Just v -> return v
 
 -- Continuously query and display transaction status until the transaction is finalized.
 tailTransaction :: (MonadIO m) => Types.TransactionHash -> ClientMonad m ()
@@ -461,25 +491,9 @@ processBakerCmd action baseCfgDir verbose backend =
 
       pl <- bakerAddTransactionPayload batxCfg f True
 
-      -- TODO Abstract out...
-      -- Send transaction
-      let txCfg = batcTransactionConfig batxCfg
-          energy = tcEnergy txCfg
-          expiry = tcExpiry txCfg
-          accCfg = tcAccountCfg txCfg
-          sender = acAddr accCfg
-          keys = acKeys accCfg
-      tx <- withClient backend $ do
-        nonce <- case tcNonce txCfg of
-                   Nothing -> getBestBlockHash >>= getAccountNonce sender
-                   Just n -> return n
-        let tx = encodeAndSignTransaction pl energy nonce expiry sender keys
-        sendTransactionToBaker tx defaultNetId >>= \case
-          Left err -> fail err
-          Right False -> fail "Transaction not accepted by the baker."
-          Right True -> return tx
-
-      withClient backend $ tailTransaction $ getBlockItemHash tx
+      withClient backend $ do
+        tx <- startTransaction (batcTransactionConfig batxCfg) pl
+        tailTransaction $ getBlockItemHash tx
 
 processLegacyCmd :: LegacyCmd -> Maybe Backend -> IO ()
 processLegacyCmd action backend =
