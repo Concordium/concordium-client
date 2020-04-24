@@ -240,6 +240,16 @@ instance AE.FromJSON BlockInfoResult where
     birExecutionCost <- v .: "executionCost"
     return BlockInfoResult {..}
 
+data NextAccountNonce = NextAccountNonce
+  { nanNonce :: Nonce
+  , nanAllFinal :: Bool }
+
+instance AE.FromJSON NextAccountNonce where
+  parseJSON = withObject "next nonce" $ \v -> do
+    nanNonce <- v .: "nonce"
+    nanAllFinal <- v .: "allFinal"
+    return NextAccountNonce {..}
+
 data BakerKeys =
   BakerKeys
   { bkSigSignKey :: BlockSig.SignKey
