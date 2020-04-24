@@ -8,6 +8,7 @@ import SimpleClientTests.AccountSpec
 import SimpleClientTests.ConsensusSpec
 import SimpleClientTests.BlockSpec
 import SimpleClientTests.LogSpec
+import SimpleClientTests.ParseSpec
 
 tests :: Spec
 tests = do
@@ -17,3 +18,4 @@ tests = do
   consensusSpec
   blockSpec
   logSpec
+  parseSpec
