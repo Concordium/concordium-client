@@ -16,9 +16,11 @@ import Control.Monad hiding (fail)
 import Control.Monad.IO.Class
 import Data.Aeson as AE
 import Data.List
-import Data.Char
-import Data.Text (Text)
+import qualified Data.Char as C
+import Data.Maybe
+import Data.Text hiding (empty)
 import Data.Text.Encoding
+import qualified Data.Text.IO as T
 import qualified Data.ByteString.Char8 as BS
 import Data.Time
 import Data.Time.Clock.POSIX
@@ -26,7 +28,8 @@ import Data.Word
 import Prelude hiding (fail, log)
 import Text.PrettyPrint
 import Text.Printf
-import System.Exit (die, exitFailure)
+import System.Console.ANSI
+import System.Exit (exitFailure, exitSuccess)
 import System.IO
 
 data Level = Info | Warn | Err deriving (Eq)
@@ -37,39 +40,62 @@ data Level = Info | Warn | Err deriving (Eq)
 -- Depending on the log level, an appropriate prefix is added to the first line.
 -- All lines will be indented such that they align with the first line
 -- (i.e. as if they had all been prefixed).
-log :: MonadIO m => Level -> [String] -> m ()
-log lvl msgs =
-  logStrLn $ renderStyle s doc
+log :: MonadIO m => Level -> Maybe Color -> [String] -> m ()
+log lvl color msgs = do
+  let doc = prefix <+> fsep (Prelude.map (text . prettyMsg ".") msgs)
+      out = logStrLn $ renderStyle s doc
+  case color of
+    Nothing -> out
+    Just c -> do
+      liftIO $ setSGR [SetColor Foreground Vivid c]
+      out
+      liftIO $ setSGR [Reset]
   where
     s = Style { mode = PageMode, lineLength = 90, ribbonsPerLine = 1.0 }
-    doc = prefix <+> fsep (map (text . prettyMsg) msgs)
     prefix = case lvl of
                Info -> empty
                Warn-> text "Warning:"
                Err -> text "Error:"
 
+logSuccess :: MonadIO m => [String] -> m ()
+logSuccess = log Info $ Just Green
+
 logInfo :: MonadIO m => [String] -> m ()
-logInfo = log Info
+logInfo = log Info Nothing
 
 logWarn :: MonadIO m => [String] -> m ()
-logWarn = log Warn
+logWarn = log Warn $ Just Yellow
 
 logError :: MonadIO m => [String] -> m ()
-logError = log Err
+logError = log Err $ Just Red
 
 logFatal :: MonadIO m => [String] -> m a
-logFatal msgs = log Err msgs >> liftIO exitFailure
+logFatal msgs = logError msgs >> liftIO exitFailure
 
-prettyMsg :: String -> String
-prettyMsg = \case
+logExit :: MonadIO m => [String] -> m a
+logExit msgs = logInfo msgs >> liftIO exitSuccess
+
+prettyMsg :: String -> String -> String
+prettyMsg punctuation = \case
   "" -> ""
-  (x:xs) -> (toUpper x : xs) ++ "."
+  (x:xs) -> (C.toUpper x : xs) ++ punctuation
 
 logStr :: MonadIO m => String -> m ()
 logStr = liftIO . hPutStr stderr
 
 logStrLn :: MonadIO m => String -> m ()
 logStrLn = liftIO . hPutStrLn stderr
+
+-- Ask the user to "confirm" on stdin and return the result.
+askConfirmation :: Maybe String -> IO Bool
+askConfirmation prompt = do
+  putStr $ prettyMsg " [yN]: " $ fromMaybe defaultPrompt prompt
+  input <- T.getLine
+  return $ (strip $ toLower input) == "y"
+  where defaultPrompt = "confirm"
+
+exitTransactionCancelled :: IO ()
+exitTransactionCancelled = logExit ["transaction cancelled"]
 
 getLocalTimeOfDay :: IO TimeOfDay
 getLocalTimeOfDay = do
@@ -258,7 +284,7 @@ defaultNetId = 100
 
 getArg :: String -> Maybe a -> IO a
 getArg name input = case input of
-  Nothing -> die $ name ++ " not provided"
+  Nothing -> logFatal [name ++ " not provided"]
   Just v -> return v
 
 -- |If the string starts with @ we assume the remaining characters are a file name
@@ -280,7 +306,7 @@ getAddressArg :: String -> Maybe Text -> IO IDTypes.AccountAddress
 getAddressArg name input = do
   v <- getArg name input
   case IDTypes.addressFromText v of
-    Left err -> die $ printf "%s: %s" name err
+    Left err -> logFatal [printf "%s: %s" name err]
     Right a -> return a
 
 getTimestampArg :: String -> Timestamp -> Maybe Text -> IO Timestamp

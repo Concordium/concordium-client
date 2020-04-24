@@ -56,6 +56,7 @@ library:
     - acorn
     - aeson
     - aeson-pretty
+    - ansi-terminal
     - attoparsec
     - base >=4.7 && <5
     - base16-bytestring
