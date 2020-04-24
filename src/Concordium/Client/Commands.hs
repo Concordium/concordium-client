@@ -123,7 +123,7 @@ data TransactionOpts =
   , toKeys :: !(Maybe Text)
   , toNonce :: !(Maybe Nonce)
   , toMaxEnergyAmount :: !(Maybe Energy)
-  , toExpiration :: !(Maybe TransactionExpiryTime) }
+  , toExpiration :: !(Maybe Text) }
   deriving (Show)
 
 data ConsensusCmd
@@ -203,7 +203,7 @@ transactionCfgParser =
     optional (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified as JSON ({<key-idx>: {<sign-key>, <verify-key>}).")) <*>
     optional (option auto (long "nonce" <> metavar "NONCE" <> help "Transaction nonce.")) <*>
     optional (option auto (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction.")) <*>
-    optional (option auto (long "expiry" <> metavar "EXPIRY" <> help "Expiration time of a transaction, specified as a UNIX epoch timestamp."))
+    optional (strOption (long "expiry" <> metavar "EXPIRY" <> help "Expiration time of a transaction, specified as a relative duration (\"30s\", \"5m\", etc.) or UNIX epoch timestamp."))
 
 programOptions :: Parser Options
 programOptions = Options <$>
