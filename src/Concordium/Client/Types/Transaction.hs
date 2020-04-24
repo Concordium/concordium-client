@@ -39,7 +39,6 @@ instance FromJSON Types.Proof where
 -- To be populated when deserializing a JSON object.
 data TransactionJSONHeader =
   TransactionJSONHeader
-
     {
       -- |Address of the sender.
       thSenderAddress    :: IDTypes.AccountAddress
