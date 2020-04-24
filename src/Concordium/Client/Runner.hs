@@ -60,7 +60,6 @@ import qualified Data.Aeson.Encode.Pretty            as AE
 import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
-import qualified Data.Char                           as C
 import qualified Data.HashMap.Strict                 as Map
 import           Data.Maybe
 import qualified Data.Serialize                      as S
@@ -73,7 +72,6 @@ import           Lens.Simple
 import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client.Exceptions
 import           Prelude                             hiding (fail, mod, null, unlines)
-import           System.Exit                         (die)
 import           System.IO
 import           Text.Printf
 
@@ -248,11 +246,10 @@ getTransactionCfg baseCfg txOpts energyCost = do
   where
     promptEnergyUpdate energy actualFee
       | energy < actualFee = do
-          logWarn [ "insufficient energy allocated to the transaction!"
+          logWarn [ "insufficient energy allocated to the transaction"
                   , printf "transaction fee will be %s, but only %s has been allocated" (showNrg actualFee) (showNrg energy) ]
-          printf "Do you want to increase the energy allocation to %s? [yN]" (showNrg actualFee)
-          input <- getChar
-          if C.toLower input == 'y' then return actualFee else return energy
+          confirmed <- askConfirmation $ Just $ printf "Do you want to increase the energy allocation to %s?" (showNrg actualFee)
+          return $ if confirmed then actualFee else energy
       | actualFee < energy = do
           logInfo [printf "%s allocated to the transaction, but only %s is needed" (showNrg energy) (showNrg actualFee)]
           return energy
@@ -267,7 +264,7 @@ data TransferTransactionConfig =
 
 getTransferTransactionCfg :: BaseConfig -> TransactionOpts -> Text -> Types.Amount -> IO TransferTransactionConfig
 getTransferTransactionCfg baseCfg txOpts receiver amount = do
-  txCfg <- getTransactionCfg baseCfg txOpts (Just $ simpleTransferEnergyCost)
+  txCfg <- getTransactionCfg baseCfg txOpts $ Just simpleTransferEnergyCost
 
   -- TODO Allow referencing address by name (similar to "sender")?
   receiverAddress <- getAddressArg "to address" $ Just receiver
@@ -285,7 +282,7 @@ data BakerAddTransactionConfig =
 
 getBakerAddTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> IO BakerAddTransactionConfig
 getBakerAddTransactionCfg baseCfg txOpts f = do
-  txCfg <- getTransactionCfg baseCfg txOpts (Just nrgCost)
+  txCfg <- getTransactionCfg baseCfg txOpts $ Just nrgCost
   src <- readFile f
   v <- case eitherDecodeStrict $ encodeUtf8 $ pack src of
          Left err -> logFatal [printf "cannot decode file '%s' as JSON: %s" f err]
@@ -313,10 +310,12 @@ transferTransactionPayload ttxCfg confirm = do
         , ttcReceiver = toAddress }
         = ttxCfg
 
-  logInfo [ printf "sending %s from %s to '%s'" (showGtu amount) (showNamedAddress accCfg) (show toAddress)
-          , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-          , printf "transaction expires at %s" (showTimeFormatted $ timeFromTimestamp expiryTs) ]
-  askConfirmation confirm
+  logSuccess [ printf "sending %s from %s to '%s'" (showGtu amount) (showNamedAddress accCfg) (show toAddress)
+             , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+             , printf "transaction expires at %s" (showTimeFormatted $ timeFromTimestamp expiryTs) ]
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
 
   return $ TransactionJSON
              (TransactionJSONHeader fromAddress nonce energy expiry)
@@ -331,25 +330,20 @@ bakerAddTransactionPayload batxCfg f confirm = do
       accCfg = tcAccountCfg txCfg
       energy = tcEnergy txCfg
 
-  logInfo [ printf "submitting transaction to add baker using keys from file '%s'" f
-          , printf "allowing up to %s to be spent as transaction fee" (showNrg energy) ]
-  askConfirmation confirm
+  logSuccess [ printf "submitting transaction to add baker using keys from file '%s'" f
+             , printf "allowing up to %s to be spent as transaction fee" (showNrg energy) ]
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
 
   generateAddBakerPayload bakerKeys AccountKeys {akAddress = acAddr accCfg, akKeys = acKeys accCfg}
-
--- If enabled is true, ask the user to "confirm" on stdin and exit the program unless 'y' or 'Y' was entered.
-askConfirmation :: Bool -> IO ()
-askConfirmation enabled = when enabled $ do
-  putStr "Confirm [yN]: "
-  input <- getChar
-  when (C.toLower input /= 'y') $ logFatal ["transaction cancelled"]
 
 -- Continuously query and display transaction status until the transaction is finalized.
 tailTransaction :: (MonadIO m) => Types.TransactionHash -> ClientMonad m ()
 tailTransaction hash = do
-  logInfo [ "transaction sent to the baker"
-          , "waiting for transaction to be committed and finalized"
-          , printf "you may skip this by interrupting this command (using Ctrl-C) - the transaction will still get processed and may be queried using 'transaction status %s'" (show hash) ]
+  logSuccess [ "transaction sent to the baker"
+             , "waiting for transaction to be committed and finalized"
+             , printf "you may skip this by interrupting this command (using Ctrl-C) - the transaction will still get processed and may be queried using 'transaction status %s'" (show hash) ]
 
   t1 <- getLocalTimeOfDayFormatted
   liftIO $ printf "[%s] Waiting for the transaction to be committed..." t1
@@ -451,9 +445,9 @@ processBakerCmd action baseCfgDir verbose backend =
           logInfo [ printf "to add a baker to the chain using these keys, store it in a file and use 'baker add FILE'" ]
         Just f -> do
           BSL.writeFile f out
-          logInfo [ printf "keys written to file '%s'" f
-                  , "DO NOT LOSE THIS FILE"
-                  , printf "to add a baker to the chain using these keys, use 'baker add %s'" f ]
+          logSuccess [ printf "keys written to file '%s'" f
+                     , "DO NOT LOSE THIS FILE"
+                     , printf "to add a baker to the chain using these keys, use 'baker add %s'" f ]
     BakerAdd f txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
@@ -689,7 +683,7 @@ readModule :: MonadIO m => FilePath -> ClientMonad m (Core.Module Core.UA)
 readModule filePath = do
   source <- liftIO $ BSL.readFile filePath
   case S.decodeLazy source of
-    Left err  -> liftIO (die err)
+    Left err  -> logFatal [err]
     Right mod -> return mod
 
 processTransaction ::

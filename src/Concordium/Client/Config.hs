@@ -19,7 +19,6 @@ import qualified Data.HashMap.Strict as M
 import Data.Text (Text, pack, unpack, strip)
 import System.Directory
 import System.IO.Error
-import System.Exit (die)
 import System.FilePath
 import Text.Printf
 
@@ -74,7 +73,7 @@ loadAccountNameMap :: FilePath -> IO AccountNameMap
 loadAccountNameMap f = do
     c <- readFile f
     case parseAccountNameMap $ lines c of
-      Left err -> die $ printf "Cannot parse account name map file '%s': %s." f err
+      Left err -> logFatal [printf "cannot parse account name map file '%s': %s" f err]
       Right m -> return m
 
 parseAccountNameMap :: (MonadError String m) => [String] -> m AccountNameMap
@@ -108,11 +107,11 @@ getAccountConfig :: Maybe Text -> BaseConfig -> Maybe FilePath -> Maybe KeyMap -
 getAccountConfig account cfg keysDir keyMap = do
   account' <- case account of
     Nothing -> do
-      printf "Account reference not provided; using \"%s\".\n" defaultAccountName
+      logInfo [printf "account reference not provided; using \"%s\"" defaultAccountName]
       return defaultAccountName
     Just a -> return a
   (name, addr) <- case getAccountAddress (bcAccountNameMap cfg) account' of
-                    Left err -> die err
+                    Left err -> logFatal [err]
                     Right v -> return v
   km <- case keyMap of
     Nothing -> do
@@ -122,7 +121,7 @@ getAccountConfig account cfg keysDir keyMap = do
                   Just p -> p
       km <- try $ loadKeyMap dir
       case km of
-        Left err | isDoesNotExistError err -> die $ printf "Keys for account '%s' not found: directory '%s' doesn't exist." (show addr) dir
+        Left err | isDoesNotExistError err -> logFatal [printf "keys for account '%s' not found: directory '%s' doesn't exist" (show addr) dir]
                  | otherwise -> throw err
         Right k -> return k
     Just km -> return km
@@ -144,7 +143,7 @@ resolveAccountAddress m input =
 getAccountAddress :: (MonadError String m) => AccountNameMap -> Text -> m (Maybe Text, Types.AccountAddress)
 getAccountAddress m input = do
   case resolveAccountAddress m input of
-    Nothing -> throwError $ printf "The identifier '%s' is neither the address nor the name of an account." input
+    Nothing -> throwError $ printf "the identifier '%s' is neither the address nor the name of an account" input
     Just a -> return a
 
 getAllAccountConfigs :: BaseConfig -> IO [AccountConfig]
@@ -167,7 +166,7 @@ loadKeyMap keysDir = do
   let rawKeys = rawKeysFromFiles keysDir keyFilenames
   rawKeyMap <- loadRawKeyMap rawKeys
   case keyMapFromRaw rawKeyMap of
-    Left err -> die $ printf "cannot load keys: %s" err
+    Left err -> logFatal [printf "cannot load keys: %s" err]
     Right km -> return km
 
 type KeyName = String

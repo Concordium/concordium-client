@@ -21,12 +21,15 @@ import           Data.Text                           hiding (length, map)
 import qualified Data.Text.Encoding                  as Text
 import           GHC.Generics                        (Generic)
 
-
-
 -- |Cost of a simple transfer transaction where the sender provides n signatures.
 -- This must be in sync with the cost in Concordium.Scheduler.Cost
 simpleTransferEnergyCost :: Int -> Energy
 simpleTransferEnergyCost n = fromIntegral $ 6 + (53 * n)
+
+-- |Cost of a stake delegation transaction where the sender provides n signatures.
+-- This must be in sync with the cost in Concordium.Scheduler.Cost
+accountDelegateEnergyCost :: Int -> Energy
+accountDelegateEnergyCost = simpleTransferEnergyCost
 
 -- Data (serializes with `putByteString :: Bytestring -> Put`)
 instance FromJSON Types.Proof where
