@@ -6,6 +6,7 @@ import qualified Concordium.Crypto.SignatureScheme as S
 import Concordium.Client.Cli
 import Concordium.Client.Commands (Verbose)
 import Concordium.Client.Config
+import Concordium.Client.Parse
 import Concordium.Client.Types.TransactionStatus
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Types
@@ -35,26 +36,24 @@ runPrinter p = liftIO $ mapM_ putStrLn $ execWriter p
 
 -- TIME
 
-showFormattedUtcTime :: UTCTime -> String
-showFormattedUtcTime t = formatTime defaultTimeLocale rfc822DateFormat t
+-- Convert time to string using the provided formatting and "default" (American) locale.
+-- Normally one of the functions below should be used instead of this one.
+showTime :: String -> UTCTime -> String
+showTime = formatTime defaultTimeLocale
 
-showFormattedUtcYearMonth :: UTCTime -> String
-showFormattedUtcYearMonth t = formatTime defaultTimeLocale "%b %0Y" t
+-- Convert time to string using the RFC822 date formatting and "default" (American) locale.
+showTimeFormatted :: UTCTime -> String
+showTimeFormatted = showTime rfc822DateFormat
 
+-- Convert time to string formatted as "<month (3 letters)> <year (4 digits)>".
+-- This is the format used for credential expiration.
+showTimeYearMonth :: UTCTime -> String
+showTimeYearMonth = showTime "%b %0Y"
 
-getFormattedLocalTimeOfDay :: (MonadIO m) => m String
-getFormattedLocalTimeOfDay = do
-  t <- liftIO getLocalTimeOfDay
-  return $ showFormattedTimeOfDay t
-
-getLocalTimeOfDay :: IO TimeOfDay
-getLocalTimeOfDay = do
-  tz <- getCurrentTimeZone
-  t <- getCurrentTime
-  return $ localTimeOfDay $ utcToLocalTime tz t
-
-showFormattedTimeOfDay :: TimeOfDay -> String
-showFormattedTimeOfDay = formatTime defaultTimeLocale "%T"
+-- Convert time of day to string formatted as "<hour>:<minute>:<second>" (all zero-padded).
+-- This is the format used for timestamps in logging.
+showTimeOfDay :: TimeOfDay -> String
+showTimeOfDay = formatTime defaultTimeLocale "%T"
 
 -- CONFIG
 
@@ -142,9 +141,9 @@ printCred c =
     p = IDTypes.cdvPolicy c
     e = show $ IDTypes.pValidTo p
     attrs = IDTypes.pItems p
-    expiry = case parseTimeM False defaultTimeLocale "%0Y%0m" e of
+    expiry = case parseCredExpiry e of
                Nothing -> printf "invalid expiration time '%s'" e
-               Just t -> showFormattedUtcYearMonth t
+               Just t -> showTimeYearMonth t
 
 printAccountList :: [Text] -> Printer
 printAccountList addresses = tell $ map unpack addresses
@@ -264,10 +263,10 @@ printBlockInfo (Just b) =
        , printf "Parent block:               %s" (show $ birBlockParent b)
        , printf "Last finalized block:       %s" (show $ birBlockLastFinalized b)
        , printf "Finalized:                  %s" (showYesNo $ birFinalized b)
-       , printf "Receive time:               %s" (showFormattedUtcTime $ birBlockReceiveTime b)
-       , printf "Arrive time:                %s" (showFormattedUtcTime $ birBlockArriveTime b)
+       , printf "Receive time:               %s" (showTimeFormatted $ birBlockReceiveTime b)
+       , printf "Arrive time:                %s" (showTimeFormatted $ birBlockArriveTime b)
        , printf "Slot:                       %s" (show $ birBlockSlot b)
-       , printf "Slot time:                  %s" (showFormattedUtcTime $ birBlockSlotTime b)
+       , printf "Slot time:                  %s" (showTimeFormatted $ birBlockSlotTime b)
        , printf "Baker:                      %s" (showMaybe show $ birBlockBaker b)
        , printf "Transaction count:          %d" (birTransactionCount b)
        , printf "Transaction energy cost:    %s" (showNrg $ birTransactionEnergyCost b)
@@ -301,7 +300,7 @@ showMaybe :: (a -> String) -> Maybe a -> String
 showMaybe = maybe showNone
 
 showMaybeUTC :: Maybe UTCTime -> String
-showMaybeUTC = showMaybe showFormattedUtcTime
+showMaybeUTC = showMaybe showTimeFormatted
 
 showEm :: String -> String -> String
 showEm a d = printf "%s (EMA), %s (EMSD)" a d

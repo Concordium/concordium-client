@@ -35,10 +35,10 @@ import           Concordium.Client.Config
 import           Concordium.Client.Commands          as COM
 import           Concordium.Client.GRPC
 import           Concordium.Client.Output
+import           Concordium.Client.Parse
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Client.Types.TransactionStatus
-import           Concordium.Client.Parse
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
@@ -227,13 +227,24 @@ getTransactionCfg baseCfg txOpts energyCost = do
               (Just maxCost, Nothing) -> return maxCost
               (Just maxCost, Just c) -> promptEnergyUpdate maxCost c
 
-  -- TODO Accept duration format and add default.
-  expiry <- getArg "expiry" $ toExpiration txOpts
+  now <- getCurrentTimeUnix
+  expiry <- getTimestampArg "expiry" now $ toExpiration txOpts
+  -- Warn if expiry is in the past or very near or distant future.
+  -- As the timestamps are unsigned, taking the simple difference might cause underflow.
+  if expiry < now then
+    logWarn [ "expiration time is in the past", "the transaction will not be committed" ]
+  else if expiry < now + 30 then
+    logWarn [ printf "expiration time is in just %s seconds" (now - expiry)
+            , "this may not be enough time for the transaction to be committed" ]
+  else if expiry > now + 3600 then
+    logWarn [ "expiration time is in more than one hour" ]
+  else return () -- between 1m and 1h into the future
+
   return TransactionConfig
     { tcAccountCfg = accCfg
     , tcNonce = toNonce txOpts
     , tcEnergy = energy
-    , tcExpiry = expiry }
+    , tcExpiry = Types.TransactionExpiryTime expiry }
   where
     promptEnergyUpdate energy actualFee
       | energy < actualFee = do
@@ -293,7 +304,7 @@ transferTransactionPayload ttxCfg confirm = do
   let TransferTransactionConfig
         { ttcTransactionCfg = TransactionConfig
                               { tcEnergy = energy
-                              , tcExpiry = expiry
+                              , tcExpiry = expiry@Types.TransactionExpiryTime {expiry = expiryTs}
                               , tcNonce = nonce
                               , tcAccountCfg = accCfg@AccountConfig
                                                { acAddr = fromAddress
@@ -303,7 +314,8 @@ transferTransactionPayload ttxCfg confirm = do
         = ttxCfg
 
   logInfo [ printf "sending %s from %s to '%s'" (showGtu amount) (showNamedAddress accCfg) (show toAddress)
-          , printf "allowing up to %s to be spent as transaction fee" (showNrg energy) ]
+          , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+          , printf "transaction expires at %s" (showTimeFormatted $ timeFromTimestamp expiryTs) ]
   askConfirmation confirm
 
   return $ TransactionJSON
@@ -339,7 +351,7 @@ tailTransaction hash = do
           , "waiting for transaction to be committed and finalized"
           , printf "you may skip this by interrupting this command (using Ctrl-C) - the transaction will still get processed and may be queried using 'transaction status %s'" (show hash) ]
 
-  t1 <- getFormattedLocalTimeOfDay
+  t1 <- getLocalTimeOfDayFormatted
   liftIO $ printf "[%s] Waiting for the transaction to be committed..." t1
   committedStatus <- awaitState 2 Committed hash
   liftIO $ putStrLn ""
@@ -353,7 +365,7 @@ tailTransaction hash = do
   -- As the transaction is still expected to go back to being committed or (if for instance it expires) become absent,
   -- this seems acceptable from a UX perspective. Also, this is expected to be a very uncommon case.
 
-  t2 <- getFormattedLocalTimeOfDay
+  t2 <- getLocalTimeOfDayFormatted
   liftIO $ printf "[%s] Waiting for the transaction to be finalized..." t2
   finalizedStatus <- awaitState 5 Finalized hash
   liftIO $ putStrLn ""
@@ -364,8 +376,9 @@ tailTransaction hash = do
   when (tsrResults committedStatus /= tsrResults finalizedStatus) $ do
     runPrinter $ printTransactionStatus finalizedStatus
 
-  t3 <- getFormattedLocalTimeOfDay
+  t3 <- getLocalTimeOfDayFormatted
   liftIO $ printf "[%s] Transaction completed.\n" t3
+  where getLocalTimeOfDayFormatted = liftIO getLocalTimeOfDay >>= return . showTimeOfDay
 
 processAccountCmd :: AccountCmd -> Verbose -> Backend -> IO ()
 processAccountCmd action verbose backend =
