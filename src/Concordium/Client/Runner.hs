@@ -1,4 +1,3 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -65,7 +64,6 @@ import           Data.Maybe
 import qualified Data.Serialize                      as S
 import           Data.String
 import           Data.Text
-import           Data.Text.Encoding
 import qualified Data.Text.IO                        as TextIO hiding (putStrLn)
 import           Data.Word
 import           Lens.Micro.Platform
@@ -89,8 +87,8 @@ withClient :: MonadIO m => Backend -> ClientMonad m a -> m a
 withClient bkend comp = do
   r <- runExceptT $! do
     client <- liftClientIOToM (mkGrpcClient $! GrpcConfig (COM.grpcHost bkend) (COM.grpcPort bkend) (COM.grpcTarget bkend) (COM.grpcRetryNum bkend))
-    ret <- ((runReaderT . _runClientMonad) comp $! client)
-    liftClientIOToM (maybe (return ()) close =<< (liftIO . readIORef $ (grpc client)))
+    ret <- (runReaderT . _runClientMonad) comp $! client
+    liftClientIOToM (maybe (return ()) close =<< (liftIO . readIORef $ grpc client))
     return ret
   case r of
     Left err -> error (show err)
@@ -210,7 +208,7 @@ data TransactionConfig =
 -- If too low, the user is prompted to increase the energy allocation.
 getTransactionCfg :: BaseConfig -> TransactionOpts -> Maybe ComputeEnergyCost -> IO TransactionConfig
 getTransactionCfg baseCfg txOpts energyCost = do
-  keysArg <- case decodeJsonArg $ toKeys txOpts of
+  keysArg <- case toKeys txOpts >>= decodeJsonArg of
                Nothing -> return Nothing
                Just act -> act >>= \case
                  Left err -> logFatal [printf "cannot decode keys: %s" err]
@@ -230,16 +228,7 @@ getTransactionCfg baseCfg txOpts energyCost = do
 
   now <- getCurrentTimeUnix
   expiry <- getTimestampArg "expiry" now $ toExpiration txOpts
-  -- Warn if expiry is in the past or very near or distant future.
-  -- As the timestamps are unsigned, taking the simple difference might cause underflow.
-  if expiry < now then
-    logWarn [ "expiration time is in the past", "the transaction will not be committed" ]
-  else if expiry < now + 30 then
-    logWarn [ printf "expiration time is in just %s seconds" (now - expiry)
-            , "this may not be enough time for the transaction to be committed" ]
-  else if expiry > now + 3600 then
-    logWarn [ "expiration time is in more than one hour" ]
-  else return () -- between 1m and 1h into the future
+  warnSuspiciousExpiry expiry now
 
   return TransactionConfig
     { tcAccountCfg = accCfg
@@ -257,6 +246,18 @@ getTransactionCfg baseCfg txOpts energyCost = do
           logInfo [printf "%s allocated to the transaction, but only %s is needed" (showNrg energy) (showNrg actualFee)]
           return energy
       | otherwise = return energy
+    -- Warn if expiry is in the past or very near or distant future.
+    -- As the timestamps are unsigned, taking the simple difference might cause underflow.
+    warnSuspiciousExpiry e now
+      | e < now =
+        logWarn [ "expiration time is in the past"
+                , "the transaction will not be committed" ]
+      | e < now + 30 =
+        logWarn [ printf "expiration time is in just %s seconds" (now - e)
+                , "this may not be enough time for the transaction to be committed" ]
+      | e > now + 3600 =
+        logWarn [ "expiration time is in more than one hour" ]
+      | otherwise = return ()
 
 -- Resolved configuration for a transfer transaction.
 data TransferTransactionConfig =
@@ -292,13 +293,7 @@ data AccountDelegateTransactionConfig =
 getBakerAddTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> IO BakerAddTransactionConfig
 getBakerAddTransactionCfg baseCfg txOpts f = do
   txCfg <- getTransactionCfg baseCfg txOpts $ Just nrgCost
-  src <- readFile f
-  v <- case eitherDecodeStrict $ encodeUtf8 $ pack src of
-         Left err -> logFatal [printf "cannot decode file '%s' as JSON: %s" f err]
-         Right r -> return r
-  bakerKeys <- case fromJSON v of
-                 Error err -> logFatal [printf "cannot parse '%s' as baker keys: %s" src err]
-                 Success r -> return r
+  bakerKeys <- eitherDecodeFileStrict f >>= getFromJson
   return BakerAddTransactionConfig
     { batcTransactionCfg = txCfg
     , batcBakerKeys = bakerKeys }
@@ -388,7 +383,7 @@ startTransaction txCfg pl = do
     Right True -> return tx
 
 getNonce :: (MonadFail m, MonadIO m) => Types.AccountAddress -> Maybe Types.Nonce -> ClientMonad m Types.Nonce
-getNonce sender nonce = do
+getNonce sender nonce =
   case nonce of
     Nothing -> do
       currentNonce <- getBestBlockHash >>= getAccountNonce sender
@@ -409,8 +404,7 @@ tailTransaction hash = do
              , "waiting for transaction to be committed and finalized"
              , printf "you may skip this by interrupting this command (using Ctrl-C) - the transaction will still get processed and may be queried using 'transaction status %s'" (show hash) ]
 
-  t1 <- getLocalTimeOfDayFormatted
-  liftIO $ printf "[%s] Waiting for the transaction to be committed..." t1
+  liftIO $ printf "[%s] Waiting for the transaction to be committed..." =<< getLocalTimeOfDayFormatted
   committedStatus <- awaitState 2 Committed hash
   liftIO $ putStrLn ""
 
@@ -423,20 +417,18 @@ tailTransaction hash = do
   -- As the transaction is still expected to go back to being committed or (if for instance it expires) become absent,
   -- this seems acceptable from a UX perspective. Also, this is expected to be a very uncommon case.
 
-  t2 <- getLocalTimeOfDayFormatted
-  liftIO $ printf "[%s] Waiting for the transaction to be finalized..." t2
+  liftIO $ printf "[%s] Waiting for the transaction to be finalized..." =<< getLocalTimeOfDayFormatted
   finalizedStatus <- awaitState 5 Finalized hash
   liftIO $ putStrLn ""
 
   when (tsrState finalizedStatus == Absent) $ logFatal ["transaction failed after it was committed"]
 
   -- Print out finalized status if the outcome differs from that of the committed status.
-  when (tsrResults committedStatus /= tsrResults finalizedStatus) $ do
+  when (tsrResults committedStatus /= tsrResults finalizedStatus) $
     runPrinter $ printTransactionStatus finalizedStatus
 
-  t3 <- getLocalTimeOfDayFormatted
-  liftIO $ printf "[%s] Transaction completed.\n" t3
-  where getLocalTimeOfDayFormatted = liftIO getLocalTimeOfDay >>= return . showTimeOfDay
+  liftIO $ printf "[%s] Transaction completed.\n" =<< getLocalTimeOfDayFormatted
+  where getLocalTimeOfDayFormatted = showTimeOfDay <$> getLocalTimeOfDay
 
 processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processAccountCmd action baseCfgDir verbose backend =
@@ -581,7 +573,7 @@ loop v =
         Just (String parent) -> do
           printJSON v
           case Map.lookup "blockSlot" m of
-            Just (AE.Number x) | x > 0 -> do
+            Just (AE.Number x) | x > 0 ->
               getBlockInfo parent >>= loop
             _ -> return () -- Genesis block reached.
         _ -> error "Unexpected return value for block parent."
