@@ -23,7 +23,7 @@ import qualified Proto.ConcordiumP2pRpc_Fields      as CF
 import qualified Data.ProtoLens.Field as Field
 import qualified Network.URI.Encode(decode)
 
-import           Lens.Simple
+import           Lens.Micro.Platform
 
 import           Control.Monad.Fail
 import           Control.Monad.IO.Class

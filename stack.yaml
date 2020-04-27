@@ -47,11 +47,6 @@ extra-deps:
 # th-utilities was removed in LTS 15.0
 - th-utilities-0.2.4.0
 
-# lens-simple was removed in LTS 15.0
-- lens-simple-0.1.0.9
-- lens-family-1.2.3
-- lens-family-core-1.2.3
-
 # http2-client was never included in stackage
 - github: lucasdicioccio/http2-client
   commit: 7201f65b31bf0a2b0bc4a904173233e1e728697b
