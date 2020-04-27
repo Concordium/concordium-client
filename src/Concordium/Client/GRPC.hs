@@ -47,6 +47,8 @@ import           Text.Printf
 
 import           Prelude                             hiding (fail, mod, null, unlines)
 
+type LoggerMethod = Text -> IO ()
+
 data GrpcConfig =
   GrpcConfig
     { host   :: !HostName
@@ -54,6 +56,8 @@ data GrpcConfig =
     -- Target node, i.e. "node-0" for use with grpc-proxy.eu.test.concordium.com against testnet
     , target :: !(Maybe String)
     , retryNum :: !(Maybe Int)
+    -- |Timeout of each RPC call (defaults to 5min if not given).
+    , timeout :: !(Maybe Int)
     }
 
 data EnvData =
@@ -64,7 +68,8 @@ data EnvData =
       retryTimes :: !Int,
       config :: !GrpcClientConfig,
       rwlock :: RW.RWLock,
-      grpc :: !(IORef (Maybe GrpcClient))
+      grpc :: !(IORef (Maybe GrpcClient)),
+      logger :: LoggerMethod
     }
 
 -- |Monad in which the program would run
@@ -105,8 +110,8 @@ liftClientIO comp = ClientMonad {_runClientMonad = ReaderT (\_ -> do
 runClient :: EnvData -> ClientMonad m a -> m (Either ClientError a)
 runClient config comp = runExceptT $ runReaderT (_runClientMonad comp) config
 
-mkGrpcClient :: GrpcConfig -> ClientIO EnvData
-mkGrpcClient config =
+mkGrpcClient :: GrpcConfig -> Maybe LoggerMethod -> ClientIO EnvData
+mkGrpcClient config mLogger =
   let auth = ("authentication", "rpcadmin")
       header =
         case target config of
@@ -115,11 +120,13 @@ mkGrpcClient config =
       cfg = (grpcClientConfigSimple (host config) (port config) False)
                  { _grpcClientConfigCompression = uncompressed
                  , _grpcClientConfigHeaders = header
+                 , _grpcClientConfigTimeout = Timeout (fromMaybe 300 (timeout config))
                  }
    in liftIO $ do
        lock <- RW.new
        ioref <- newIORef Nothing -- don't start the connection just now
-       return $! EnvData (fromMaybe 0 $ retryNum config) cfg lock ioref
+       let logger = fromMaybe (const (return ())) mLogger
+       return $! EnvData (fromMaybe 0 $ retryNum config) cfg lock ioref logger
 
 getNodeInfo :: ClientMonad IO (Either String NodeInfoResponse)
 getNodeInfo = withUnaryNoMsg' (call @"nodeInfo")
@@ -282,10 +289,12 @@ withUnaryCore method message k = do
   clientRef <- asks grpc
   cfg <- asks config
   lock <- asks rwlock
+  logm <- asks logger
 
   -- try to establish a connection
   let tryEstablish :: Int -> IO (Maybe GrpcClient)
-      tryEstablish n =
+      tryEstablish n = do
+        logm $ "Trying to establish connection, n = " <> pack (show n)
         if n <= 0 then return Nothing
         else runExceptT (setupGrpcClient cfg) >>= \case
                Left _ -> do -- retry in case of error, after waiting 1s
@@ -295,18 +304,24 @@ withUnaryCore method message k = do
 
   let tryRun =
         RW.withRead lock $ do
+          logm "Running gRPC query."
           mclient <- readIORef clientRef
           case mclient of
-            Nothing -> return Nothing
-            Just client -> runExceptT (rawUnary method client message) >>=
-              \case Left _ -> return Nothing -- client error
-                    Right (Left _) -> return Nothing -- too much concurrency
-                    Right (Right x) -> return (Just x)
+            Nothing -> do
+              logm "No network client."
+              return Nothing
+            Just client -> do
+              logm "Network client exists, running query."
+              runExceptT (rawUnary method client message) >>=
+                \case Left _ -> return Nothing -- client error
+                      Right (Left _) -> return Nothing -- too much concurrency
+                      Right (Right x) -> return (Just x)
 
   ret <- liftIO tryRun
 
   case ret of
     Nothing -> do -- failed, need to establish connection
+      liftIO (logm "gRPC call failed. Will try to reestablish connection.")
       retryNum <- asks retryTimes
       tryAgain <- liftIO $ RW.withWrite lock $ do
         readIORef clientRef >>= \case
@@ -317,9 +332,11 @@ withUnaryCore method message k = do
             atomicWriteIORef clientRef Nothing
             return False
           Just newClient -> do
+            logm "Established a connection."
             atomicWriteIORef clientRef (Just newClient)
             return True
       if tryAgain then do
+          logm "Reestablished connection, trying again."
           ret' <- liftIO tryRun
           return (k (outputGRPC ret'))
       else return (k (Left "Cannot establish connection to GRPC endpoint."))

@@ -16,7 +16,6 @@ import Control.Monad.Writer
 import qualified Data.Aeson.Encode.Pretty as AE
 import qualified Data.ByteString.Lazy as BSL
 import Data.Maybe
-import Data.Function
 import Data.Functor
 import Data.List
 import qualified Data.HashMap.Strict as HM

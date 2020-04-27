@@ -568,9 +568,9 @@ debugTestFullProvision = do
         _ ->
           error $ "Could not parse host:port for given NODE_URL: " ++ Text.unpack nodeUrl
 
-    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, target = Nothing, retryNum = Just 5 }
+    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, target = Nothing, retryNum = Just 5, timeout = Nothing }
 
-  nodeBackend <- runExceptT (mkGrpcClient grpcConfig) >>= \case
+  nodeBackend <- runExceptT (mkGrpcClient grpcConfig Nothing) >>= \case
     Left err -> fail (show err)
     Right envData -> return envData
 
@@ -705,9 +705,9 @@ runDebugTestTransactions = do
         _ ->
           error $ "Could not parse host:port for given NODE_URL: " ++ Text.unpack nodeUrl
 
-    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, target = Nothing, retryNum = Just 5 }
+    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, target = Nothing, retryNum = Just 5, timeout = Nothing }
 
-  nodeBackend <- runExceptT (mkGrpcClient grpcConfig) >>= \case
+  nodeBackend <- runExceptT (mkGrpcClient grpcConfig Nothing) >>= \case
     Left err -> fail (show err)
     Right envData -> return envData
 
