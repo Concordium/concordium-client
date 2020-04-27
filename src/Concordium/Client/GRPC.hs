@@ -336,7 +336,7 @@ withUnaryCore method message k = do
             atomicWriteIORef clientRef (Just newClient)
             return True
       if tryAgain then do
-          logm "Reestablished connection, trying again."
+          liftIO (logm "Reestablished connection, trying again.")
           ret' <- liftIO tryRun
           return (k (outputGRPC ret'))
       else return (k (Left "Cannot establish connection to GRPC endpoint."))
