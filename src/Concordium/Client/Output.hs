@@ -108,7 +108,7 @@ showRevealedAttributes as =
   if null as then
     "none"
   else
-    intercalate ", " $ map showAttr $ (M.toList as)
+    intercalate ", " $ map showAttr $ M.toList as
   where
     showTag t = case M.lookup t IDTypes.invMapping of
                   Nothing -> printf "<%s>" (show t)
@@ -159,8 +159,8 @@ printTransactionStatus status =
   case tsrState status of
     Received -> tell ["Transaction is pending."]
     Absent -> tell ["Transaction is absent."]
-    Committed -> do
-      case mapMaybe (\(k,v) -> maybe Nothing (\x -> Just (k, x)) v) $ sortBy (compare `on` fst) $ HM.toList (tsrResults status) of
+    Committed ->
+      case mapMaybe (\(k, v) -> (\x -> (k, x)) <$> v) $ sortOn fst $ HM.toList (tsrResults status) of
         [] ->
           -- No blocks.
           tell ["Transaction is committed - no block information received (this should never happen!)."]
@@ -191,8 +191,8 @@ printTransactionStatus status =
                                     "- %s with %s."
                                     (show hash)
                                     (showOutcomeFragment outcome)
-    Finalized -> do
-      case mapMaybe (\(k,v) -> maybe Nothing (\x -> Just (k, x)) v) $ HM.toList (tsrResults status) of
+    Finalized ->
+      case mapMaybe (\(k,v) -> (\x -> (k, x)) <$> v) $ HM.toList (tsrResults status) of
         [] ->
           -- No blocks.
           tell ["Transaction is finalized - no block information received (this should never happen!)."]
@@ -200,8 +200,8 @@ printTransactionStatus status =
           -- Single block.
           tell [printf
                  "Transaction is finalized into block %s with %s."
-                 (show $ hash)
-                 (showOutcomeFragment $ outcome)]
+                 (show hash)
+                 (showOutcomeFragment outcome)]
         _ ->
           -- Multiple blocks.
           tell ["Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!"]
@@ -220,7 +220,7 @@ printTransactionStatus status =
 -- CONSENSUS
 
 printConsensusStatus :: ConsensusStatusResult -> Printer
-printConsensusStatus r = do
+printConsensusStatus r =
   tell [ printf "Best block:                  %s" (show $ csrBestBlock r)
        , printf "Genesis block:               %s" (show $ csrGenesisBlock r)
        , printf "Last finalized block:        %s" (show $ csrLastFinalizedBlock r)
@@ -303,7 +303,7 @@ showMaybeUTC :: Maybe UTCTime -> String
 showMaybeUTC = showMaybe showTimeFormatted
 
 showEm :: String -> String -> String
-showEm a d = printf "%s (EMA), %s (EMSD)" a d
+showEm = printf "%s (EMA), %s (EMSD)"
 
 showEmSeconds :: Double -> Double -> String
 showEmSeconds a d = showEm (showSeconds a) (showSeconds d)

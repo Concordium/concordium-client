@@ -2,7 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE OverloadedStrings, BangPatterns, DataKinds, GeneralizedNewtypeDeriving, TypeApplications, ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings, DataKinds, GeneralizedNewtypeDeriving, TypeApplications, ScopedTypeVariables #-}
 
 module Concordium.Client.GRPC where
 
@@ -119,7 +119,7 @@ mkGrpcClient config =
    in liftIO $ do
        lock <- RW.new
        ioref <- newIORef Nothing -- don't start the connection just now
-       return $! EnvData (maybe 0 id (retryNum config)) cfg lock ioref
+       return $! EnvData (fromMaybe 0 $ retryNum config) cfg lock ioref
 
 getNodeInfo :: ClientMonad IO (Either String NodeInfoResponse)
 getNodeInfo = withUnaryNoMsg' (call @"nodeInfo")
@@ -293,7 +293,7 @@ withUnaryCore method message k = do
                  tryEstablish (n-1)
                Right client -> return (Just client)
 
-  let tryRun = do
+  let tryRun =
         RW.withRead lock $ do
           mclient <- readIORef clientRef
           case mclient of
@@ -449,7 +449,7 @@ readAccountNonce :: Value -> Parser Types.Nonce
 readAccountNonce = withObject "Account nonce" $ \v -> v .: "accountNonce"
 
 parseNullable :: (Value -> Parser a) -> Value -> Result (Maybe a)
-parseNullable p v = parse (nullable p) v
+parseNullable = parse . nullable
 
 nullable :: (Value -> Parser a) -> Value -> Parser (Maybe a)
 nullable p v = case v of
