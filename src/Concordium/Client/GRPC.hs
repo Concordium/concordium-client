@@ -33,7 +33,7 @@ import           Control.Monad.Fail
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader                hiding (fail)
 import qualified Data.Serialize                      as S
-import           Lens.Simple
+import           Lens.Micro.Platform
 
 import           Data.IORef
 import           Data.Aeson as AE
@@ -336,7 +336,7 @@ withUnaryCoreNoMsg method = withUnaryCore method defMessage
 withUnary :: forall m n b. (HasMethod P2P m, MonadIO n)
           => RPC P2P m
           -> MethodInput P2P m
-          -> Getter' (MethodOutput P2P m) b
+          -> SimpleGetter (MethodOutput P2P m) b
           -> ClientMonad n (Either String b)
 withUnary method message k = withUnaryCore method message (\x -> (^. k) <$> x)
 
@@ -350,7 +350,7 @@ withUnary' method message = withUnary method message (to id)
 -- | Call a method without a message using the given lens
 withUnaryNoMsg :: forall m n b. (HasMethod P2P m, MonadIO n)
                => RPC P2P m
-               -> Getter' (MethodOutput P2P m) b
+               -> SimpleGetter (MethodOutput P2P m) b
                -> ClientMonad n (Either String b)
 withUnaryNoMsg method = withUnary method defMessage
 
@@ -361,7 +361,7 @@ withUnaryBlock :: forall m n b. (HasMethod P2P m,
                                    Field.HasField (MethodInput P2P m) "blockHash" Text)
                => RPC P2P m
                -> Text
-               -> Getter' (MethodOutput P2P m) b
+               -> SimpleGetter (MethodOutput P2P m) b
                -> ClientMonad n (Either String b)
 withUnaryBlock method hash = withUnary method (defMessage & CF.blockHash .~ hash)
 
