@@ -46,11 +46,11 @@ getBaseConfig :: Maybe FilePath -> Verbose -> IO BaseConfig
 getBaseConfig f verbose = do
   cfgDir <- getBaseConfigDir f
   cfgDirExists <- doesDirectoryExist cfgDir
-  when (not cfgDirExists) $ logWarn [printf "config directory '%s' not found" cfgDir]
+  unless cfgDirExists $ logWarn [printf "config directory '%s' not found" cfgDir]
 
   let accCfgDir = accountConfigDir cfgDir
   accCfgDirExists <- doesDirectoryExist accCfgDir
-  when (not accCfgDirExists) $ logWarn [printf "account config directory '%s' not found" accCfgDir]
+  unless accCfgDirExists $ logWarn [printf "account config directory '%s' not found" accCfgDir]
 
   let mapFile = accountNameMapFile accCfgDir
   mapFileExists <- doesFileExist mapFile
@@ -141,7 +141,7 @@ resolveAccountAddress m input =
     Right a -> Just (Nothing, a)
 
 getAccountAddress :: (MonadError String m) => AccountNameMap -> Text -> m (Maybe Text, Types.AccountAddress)
-getAccountAddress m input = do
+getAccountAddress m input =
   case resolveAccountAddress m input of
     Nothing -> throwError $ printf "the identifier '%s' is neither the address nor the name of an account" input
     Just a -> return a
@@ -177,7 +177,7 @@ type RawKeyId = (KeyName, KeyType)
 type RawKeyMap = M.HashMap KeyName (Maybe KeyContents, Maybe KeyContents)
 
 rawKeysFromFiles :: FilePath -> [FilePath] -> [(FilePath, RawKeyId)]
-rawKeysFromFiles keysDir keyFilenames = foldr f [] keyFilenames
+rawKeysFromFiles keysDir = foldr f []
   where f file rks = case rawKeyIdFromFile file of
                        Nothing -> rks
                        Just k -> (joinPath [keysDir, file], k) : rks

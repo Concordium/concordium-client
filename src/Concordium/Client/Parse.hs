@@ -41,7 +41,7 @@ parseCredExpiry :: (MonadFail m) => String -> m UTCTime
 parseCredExpiry = parseTime "%0Y%0m"
 
 parseTimestamp :: (MonadError String m) => Timestamp -> Text -> m Timestamp
-parseTimestamp now input  = do
+parseTimestamp now input = do
   (t, u) <- parseDuration input
   return $ case u of
     Nothing -> t
