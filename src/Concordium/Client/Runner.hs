@@ -68,7 +68,7 @@ import           Data.Text
 import           Data.Text.Encoding
 import qualified Data.Text.IO                        as TextIO hiding (putStrLn)
 import           Data.Word
-import           Lens.Simple
+import           Lens.Micro.Platform
 import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client.Exceptions
 import           Prelude                             hiding (fail, mod, null, unlines)

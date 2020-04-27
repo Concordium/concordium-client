@@ -37,8 +37,8 @@ flags:
     default: True
   static:
     description: Use static linking.
-    manual: true
-    default: false
+    manual: True
+    default: False
 
 dependencies:
 - base >= 4.7 && < 5
@@ -73,7 +73,6 @@ library:
     - mtl
     - text
     - time
-    - lens-simple
     - http2-client-grpc >= 0.7
     - http2-client >= 0.9
     - http2-grpc-types
@@ -84,6 +83,7 @@ library:
     - proto-lens == 0.6.*
     - proto-lens-protobuf-types == 0.6.*
     - proto-lens-runtime == 0.6.*
+    - microlens-platform
     - uri-encode >= 1.5
     - concurrent-extra >= 0.7
   generated-exposed-modules:
@@ -163,7 +163,7 @@ executables:
             - globalstate-types
             - http-conduit
             - iso8601-time
-            - lens-simple
+            - microlens-platform
             - managed
             - monad-logger
             - mtl
