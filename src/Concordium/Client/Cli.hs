@@ -91,7 +91,7 @@ askConfirmation :: Maybe String -> IO Bool
 askConfirmation prompt = do
   putStr $ prettyMsg " [yN]: " $ fromMaybe defaultPrompt prompt
   input <- T.getLine
-  return $ (strip $ toLower input) == "y"
+  return $ strip (toLower input) == "y"
   where defaultPrompt = "confirm"
 
 exitTransactionCancelled :: IO ()
@@ -100,14 +100,13 @@ exitTransactionCancelled = logExit ["transaction cancelled"]
 getLocalTimeOfDay :: IO TimeOfDay
 getLocalTimeOfDay = do
   tz <- getCurrentTimeZone
-  t <- getCurrentTime
-  return $ localTimeOfDay $ utcToLocalTime tz t
+  localTimeOfDay . utcToLocalTime tz <$> getCurrentTime
 
 getCurrentTimeUnix :: IO Timestamp
 getCurrentTimeUnix = round <$> getPOSIXTime
 
 timeFromTimestamp :: Timestamp -> UTCTime
-timeFromTimestamp t = posixSecondsToUTCTime $ fromIntegral t
+timeFromTimestamp = posixSecondsToUTCTime . fromIntegral
 
 data AccountInfoResult = AccountInfoResult
   { airAmount :: !Amount
@@ -294,18 +293,17 @@ defaultNetId = 100
 
 getArg :: String -> Maybe a -> IO a
 getArg name input = case input of
-  Nothing -> logFatal [name ++ " not provided"]
+  Nothing -> logFatal [printf "required flag '%s' not provided" name]
   Just v -> return v
 
 -- |If the string starts with @ we assume the remaining characters are a file name
 -- and we try to read the contents of that file.
-decodeJsonArg :: FromJSON a => Maybe Text -> Maybe (IO (Either String a))
-decodeJsonArg input = do
-  v <- input
+decodeJsonArg :: FromJSON a => Text -> Maybe (IO (Either String a))
+decodeJsonArg v =
   Just $ do
     let bs = encodeUtf8 v
     res <- case BS.uncons bs of
-             Just ('@', rest) -> do
+             Just ('@', rest) ->
                AE.eitherDecodeFileStrict (BS.unpack rest)
              _ -> return $ AE.eitherDecodeStrict bs
     return $ case res of
@@ -320,7 +318,7 @@ getAddressArg name input = do
     Right a -> return a
 
 getTimestampArg :: String -> Timestamp -> Maybe Text -> IO Timestamp
-getTimestampArg name now input = do
+getTimestampArg name now input =
   case input of
     Nothing -> return $ now + defaultExpiryDurationSecs
     Just v -> case parseTimestamp now v of

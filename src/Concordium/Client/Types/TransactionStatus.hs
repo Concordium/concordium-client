@@ -14,7 +14,6 @@ data TransactionState = Received | Committed | Finalized | Absent deriving (Eq, 
 
 $(deriveJSON defaultOptions{constructorTagModifier = firstLower} ''TransactionState)
 
-
 type TransactionBlockResults' a = HM.HashMap BlockHash (Maybe (TransactionSummary' a))
 
 type TransactionBlockResults = TransactionBlockResults' ValidResult
@@ -36,7 +35,4 @@ instance FromJSON a => FromJSON (TransactionStatusResult' a) where
 instance ToJSON a => ToJSON (TransactionStatusResult' a) where
   toJSON TransactionStatusResult{..} =
     object $ ("status" .= tsrState):mapObject
-    where mapObject =
-            case HM.null tsrResults of
-              True -> []
-              False -> ["outcomes" .= tsrResults]
+    where mapObject = ["outcomes" .= tsrResults | HM.null tsrResults]

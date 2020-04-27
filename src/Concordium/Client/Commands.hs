@@ -207,7 +207,7 @@ transactionOptsParser =
 
 programOptions :: Parser Options
 programOptions = Options <$>
-                   ((hsubparser
+                   (hsubparser
                      (metavar "command" <>
                       transactionCmds <>
                       accountCmds <>
@@ -217,10 +217,10 @@ programOptions = Options <$>
                       consensusCmds <>
                       blockCmds <>
                       bakerCmds
-                     )) <|> (LegacyCmd <$> legacyProgramOptions)) <*>
-                   (optional backendParser) <*>
-                   (optional (strOption (long "config" <> metavar "DIR" <> help "Configuration directory path."))) <*>
-                   (switch (hidden <> long "verbose" <> short 'v' <> help "Make output verbose."))
+                     ) <|> LegacyCmd <$> legacyProgramOptions) <*>
+                   optional backendParser <*>
+                   optional (strOption (long "config" <> metavar "DIR" <> help "Configuration directory path.")) <*>
+                   switch (hidden <> long "verbose" <> short 'v' <> help "Make output verbose.")
 
 transactionCmds :: Mod CommandFields Cmd
 transactionCmds =
@@ -228,11 +228,11 @@ transactionCmds =
     "transaction"
     (info
       (TransactionCmd <$>
-        (hsubparser
+        hsubparser
           (transactionSubmitCmd <>
            transactionStatusCmd <>
            transactionSendGtuCmd <>
-           transactionDeployCredentialCmd)))
+           transactionDeployCredentialCmd))
       (progDesc "Commands for submitting and inspecting transactions."))
 
 transactionSubmitCmd :: Mod CommandFields TransactionCmd
@@ -279,10 +279,10 @@ accountCmds =
     "account"
     (info
       (AccountCmd <$>
-        (hsubparser
+        hsubparser
           (accountShowCmd <>
            accountListCmd <>
-           accountDelegateCmd)))
+           accountDelegateCmd))
       (progDesc "Commands for inspecting accounts."))
 
 accountShowCmd :: Mod CommandFields AccountCmd
@@ -320,10 +320,10 @@ moduleCmds =
     "module"
     (info
       (ModuleCmd <$>
-        (hsubparser
+        hsubparser
           (moduleShowCmd <>
            moduleListCmd <>
-           moduleDeployCmd)))
+           moduleDeployCmd))
       (progDesc "Commands for inspecting and deploying modules."))
 
 moduleShowCmd :: Mod CommandFields ModuleCmd
@@ -362,10 +362,10 @@ contractCmds =
     "contract"
     (info
       (ContractCmd <$>
-        (hsubparser
+        hsubparser
           (contractShowCmd <>
            contractListCmd <>
-           contractInitCmd)))
+           contractInitCmd))
       (progDesc "Commands for inspecting and initializing smart contracts."))
 
 contractShowCmd :: Mod CommandFields ContractCmd
@@ -405,8 +405,8 @@ configCmds =
     "config"
     (info
       (ConfigCmd <$>
-        (hsubparser
-          configShowCmd))
+        hsubparser
+          configShowCmd)
       (progDesc "Commands for inspecting and changing local configuration."))
 
 configShowCmd :: Mod CommandFields ConfigCmd
@@ -423,9 +423,9 @@ consensusCmds =
     "consensus"
     (info
       (ConsensusCmd <$>
-        (hsubparser
+        hsubparser
           (consensusStatusCmd <>
-           consensusShowParametersCmd)))
+           consensusShowParametersCmd))
       (progDesc "Commands for inspecting chain health (branching, finalization), block content/history (including listing transactions), election (Birk) and reward/minting parameters."))
 
 consensusStatusCmd :: Mod CommandFields ConsensusCmd
@@ -452,8 +452,8 @@ blockCmds =
     "block"
     (info
       (BlockCmd <$>
-        (hsubparser
-          (blockShowCmd)))
+        hsubparser
+          blockShowCmd)
       (progDesc "Commands for inspecting individual blocks."))
 
 blockShowCmd :: Mod CommandFields BlockCmd
@@ -471,9 +471,9 @@ bakerCmds =
     "baker"
     (info
       (BakerCmd <$>
-        (hsubparser
+        hsubparser
           (bakerGenerateKeysCmd <>
-           bakerAddCmd)))
+           bakerAddCmd))
       (progDesc "Commands for creating and deploying baker credentials."))
 
 bakerGenerateKeysCmd :: Mod CommandFields BakerCmd
