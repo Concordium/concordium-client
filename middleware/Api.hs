@@ -34,7 +34,7 @@ import           System.Environment
 import           System.IO.Error
 import           System.Process
 import           Text.Read (readMaybe)
-import           Lens.Simple ((^.))
+import           Lens.Micro.Platform ((^.))
 import           Safe (headMay)
 import NeatInterpolation
 
