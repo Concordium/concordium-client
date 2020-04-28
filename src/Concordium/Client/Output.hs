@@ -16,7 +16,6 @@ import Control.Monad.Writer
 import qualified Data.Aeson.Encode.Pretty as AE
 import qualified Data.ByteString.Lazy as BSL
 import Data.Maybe
-import Data.Function
 import Data.Functor
 import Data.List
 import qualified Data.HashMap.Strict as HM
@@ -74,8 +73,8 @@ printBaseConfig cfg = do
 printAccountConfig :: AccountConfig -> Printer
 printAccountConfig cfg = do
   tell [ printf "Account configuration:"
-       , printf "- Name:    %s" (fromMaybe (pack showNone) $ acName cfg)
-       , printf "- Address: %s" (show $ acAddr cfg) ]
+       , printf "- Name:    %s" (fromMaybe (pack showNone) $ naName $ acAddr cfg)
+       , printf "- Address: %s" (show $ naAddr $ acAddr cfg) ]
   printKeys $ acKeys cfg
   where printKeys m =
           if null m then
@@ -93,7 +92,7 @@ printAccountConfigList cfgs =
   else do
     tell [ "Account keys:" ]
     forM_ cfgs $ \cfg -> do
-      tell [ printf "- %s" (showNamedAddress cfg) ]
+      tell [ printf "- %s" (showNamedAddress $ acAddr cfg) ]
       printMap showEntry $ toSortedList $ acKeys cfg
   where showEntry (n, kp) =
           printf "    %s: %s" (show n) (showKeyPair kp)
@@ -115,9 +114,10 @@ showRevealedAttributes as =
                   Just k -> unpack k
     showAttr (t, IDTypes.AttributeValue v) = printf "%s=%s" (showTag t) (show v)
 
-printAccountInfo :: Text -> AccountInfoResult -> Verbose -> Printer
-printAccountInfo address a verbose = do
-  tell [ printf "Address:    %s" address
+printAccountInfo :: NamedAddress -> AccountInfoResult -> Verbose -> Printer
+printAccountInfo addr a verbose = do
+  tell [ printf "Local name: %s" (showMaybe unpack $ naName addr)
+       , printf "Address:    %s" (show $ naAddr addr)
        , printf "Amount:     %s" (showGtu $ airAmount a)
        , printf "Nonce:      %s" (show $ airNonce a)
        , printf "Delegation: %s" (maybe showNone show $ airDelegation a)
@@ -146,7 +146,7 @@ printCred c =
                Just t -> showTimeYearMonth t
 
 printAccountList :: [Text] -> Printer
-printAccountList addresses = tell $ map unpack addresses
+printAccountList = tell . map unpack
 
 showKeyPair :: S.KeyPair -> String
 showKeyPair S.KeyPairEd25519 { S.signKey=sk, S.verifyKey=vk } =
@@ -289,10 +289,10 @@ showNrg = printf "%s NRG" . show
 -- UTIL
 
 -- Produce a string fragment of the address and, if available, name of the account.
-showNamedAddress :: AccountConfig -> String
-showNamedAddress cfg =
-  let addr = printf "'%s'" (show $ acAddr cfg)
-  in case acName cfg of
+showNamedAddress :: NamedAddress -> String
+showNamedAddress NamedAddress { naName = name, naAddr = a } =
+  let addr = printf "'%s'" (show a)
+  in case name of
     Nothing -> addr
     Just n -> printf "%s (%s)" addr n
 
