@@ -27,6 +27,7 @@ import           Concordium.Types.Transactions(BareBlockItem)
 import           Concordium.Types as Types
 import           Concordium.ID.Types as IDTypes
 
+import           Control.Exception
 import qualified Control.Concurrent.ReadWriteLock as RW
 import           Control.Concurrent.Async
 import           Control.Concurrent
@@ -298,11 +299,11 @@ withUnaryCore method message k = do
       tryEstablish n = do
         logm $ "Trying to establish connection, n = " <> pack (show n)
         if n <= 0 then return Nothing
-        else runExceptT (setupGrpcClient cfg) >>= \case
-               Left _ -> do -- retry in case of error, after waiting 1s
+        else try @ IOException (runExceptT (setupGrpcClient cfg)) >>= \case
+               Right (Right client) -> return (Just client)
+               _ -> do -- retry in case of error or exception, after waiting 1s
                  threadDelay 1000000
                  tryEstablish (n-1)
-               Right client -> return (Just client)
 
   let tryRun =
         RW.withRead lock $ do
