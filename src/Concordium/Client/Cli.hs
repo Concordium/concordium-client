@@ -287,14 +287,12 @@ instance AE.FromJSON AccountKeys where
     akKeys <- v .: "keys"
     return AccountKeys {..}
 
+data NamedAddress = NamedAddress { naName :: Maybe Text, naAddr :: AccountAddress }
+  deriving (Show, Eq)
+
 -- Hardcode network ID and hook.
 defaultNetId :: Int
 defaultNetId = 100
-
-getArg :: String -> Maybe a -> IO a
-getArg name input = case input of
-  Nothing -> logFatal [printf "required flag '%s' not provided" name]
-  Just v -> return v
 
 -- |If the string starts with @ we assume the remaining characters are a file name
 -- and we try to read the contents of that file.
@@ -309,13 +307,6 @@ decodeJsonArg v =
     return $ case res of
                Left err -> Left $ printf "cannot parse '%s' as JSON: %s" v err
                Right r -> Right r
-
-getAddressArg :: String -> Maybe Text -> IO IDTypes.AccountAddress
-getAddressArg name input = do
-  v <- getArg name input
-  case IDTypes.addressFromText v of
-    Left err -> logFatal [printf "%s: %s" name err]
-    Right a -> return a
 
 getTimestampArg :: String -> Timestamp -> Maybe Text -> IO Timestamp
 getTimestampArg name now input =

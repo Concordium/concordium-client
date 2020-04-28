@@ -14,6 +14,7 @@ import Concordium.Client.Types.Transaction
 import Control.Exception
 import Control.Monad.Except
 import Data.Char
+import Data.List
 import Data.List.Split
 import qualified Data.HashMap.Strict as M
 import Data.Text (Text, pack, unpack, strip)
@@ -98,10 +99,8 @@ parseAccountNameMapEntry line =
   where supportedChar c = isAlphaNum c || c == '-' || c == '_'
 
 data AccountConfig = AccountConfig
-                     { acName :: Maybe Text
-                     , acAddr :: Types.AccountAddress
+                     { acAddr :: NamedAddress
                      , acKeys :: KeyMap }
-                   deriving (Show)
 
 getAccountConfig :: Maybe Text -> BaseConfig -> Maybe FilePath -> Maybe KeyMap -> IO AccountConfig
 getAccountConfig account cfg keysDir keyMap = do
@@ -110,37 +109,40 @@ getAccountConfig account cfg keysDir keyMap = do
       logInfo [printf "account reference not provided; using \"%s\"" defaultAccountName]
       return defaultAccountName
     Just a -> return a
-  (name, addr) <- case getAccountAddress (bcAccountNameMap cfg) account' of
-                    Left err -> logFatal [err]
-                    Right v -> return v
+  namedAddr <- case getAccountAddress (bcAccountNameMap cfg) account' of
+                 Left err -> logFatal [err]
+                 Right v -> return v
   km <- case keyMap of
     Nothing -> do
       let accCfgDir = bcAccountCfgDir cfg
+          addr = naAddr namedAddr
           dir = case keysDir of
                   Nothing -> joinPath [accCfgDir, show addr]
                   Just p -> p
-      km <- try $ loadKeyMap dir
-      case km of
-        Left err | isDoesNotExistError err -> logFatal [printf "keys for account '%s' not found: directory '%s' doesn't exist" (show addr) dir]
-                 | otherwise -> throw err
-        Right k -> return k
+      handleJust
+        (guard . isDoesNotExistError)
+        (\_ -> logFatal [printf "keys for account '%s' not found: directory '%s' doesn't exist" (show addr) dir])
+        (loadKeyMap dir)
     Just km -> return km
   return AccountConfig
-    { acName = name
-    , acAddr = addr
+    { acAddr = namedAddr
     , acKeys = km }
 
-resolveAccountAddress :: AccountNameMap -> Text -> Maybe (Maybe Text, Types.AccountAddress)
-resolveAccountAddress m input =
+resolveAccountAddress :: AccountNameMap -> Text -> Maybe NamedAddress
+resolveAccountAddress m input = do
   -- Try parsing input as account address
-  case IDTypes.addressFromText input of
-    Left _ -> do
-      -- Assume input is a name. Look it up in map.
-      a <- M.lookup input m
-      Just (Just input, a)
-    Right a -> Just (Nothing, a)
+  (n, a) <- case IDTypes.addressFromText input of
+              Left _ -> do
+                -- Assume input is a name. Look it up in the map.
+                a <- M.lookup input m
+                return (Just input, a)
+              Right a -> do
+                -- Input is an address. Try to look up its name in the map.
+                let name = fst <$> find ((== a) . snd) (M.toList m)
+                return (name, a)
+  return NamedAddress { naName = n, naAddr = a }
 
-getAccountAddress :: (MonadError String m) => AccountNameMap -> Text -> m (Maybe Text, Types.AccountAddress)
+getAccountAddress :: (MonadError String m) => AccountNameMap -> Text -> m NamedAddress
 getAccountAddress m input =
   case resolveAccountAddress m input of
     Nothing -> throwError $ printf "the identifier '%s' is neither the address nor the name of an account" input
