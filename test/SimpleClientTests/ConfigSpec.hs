@@ -1,5 +1,6 @@
 module SimpleClientTests.ConfigSpec where
 
+import Concordium.Client.Cli
 import Concordium.Client.Config
 import Concordium.Client.Output
 import qualified Concordium.Crypto.ByteStringHelpers as BSH
@@ -68,11 +69,11 @@ parseAccountNameMapSpec = describe "parseAccountNameMap" $ do
 resolveAccountAddressSpec :: Spec
 resolveAccountAddressSpec = describe "resolveAccountAddress" $ do
   specify "valid account address" $
-    r M.empty s1 `shouldBe` Just (Nothing, a1)
+    r M.empty s1 `shouldBe` Just NamedAddress { naName = Nothing, naAddr = a1 }
   specify "valid account address is not looked up in map" $
-    r (M.fromList [(s1, a2)]) s1 `shouldBe` Just (Nothing, a1)
+    r (M.fromList [(s1, a2)]) s1 `shouldBe` Just NamedAddress { naName = Nothing, naAddr = a1 }
   specify "existing account name" $
-    r (M.fromList [("name", a1)]) "name" `shouldBe` Just (Just "name", a1)
+    r (M.fromList [("name", a1)]) "name" `shouldBe` Just NamedAddress { naName = Just "name", naAddr = a1 }
   specify "nonexisting account name" $
     r M.empty "name" `shouldBe` Nothing
   where r = resolveAccountAddress
@@ -213,8 +214,7 @@ exampleBaseConfigWithoutAccountNameMap =
 exampleAccountConfigWithKeysAndName :: AccountConfig
 exampleAccountConfigWithKeysAndName =
   AccountConfig
-  { acName = Just "name"
-  , acAddr = exampleAccountAddress1
+  { acAddr = NamedAddress { naName = Just "name" , naAddr = exampleAccountAddress1 }
   , acKeys = M.fromList [ (11, S.KeyPairEd25519 { S.signKey=sk1, S.verifyKey=vk1 })
                         , (2, S.KeyPairEd25519 { S.signKey=sk2, S.verifyKey=vk2 }) ] }
   where s1 = "6d00a10ccac23d2fd0bea163756487288fd19ff3810e1d3f73b686e60d801915"
@@ -229,8 +229,7 @@ exampleAccountConfigWithKeysAndName =
 exampleAccountConfigWithoutKeysAndName :: AccountConfig
 exampleAccountConfigWithoutKeysAndName =
   AccountConfig
-  { acName = Nothing
-  , acAddr = exampleAccountAddress2
+  { acAddr = NamedAddress { naName = Nothing, naAddr = exampleAccountAddress2}
   , acKeys = M.empty }
 
 exampleAccountAddress1 :: IDTypes.AccountAddress
