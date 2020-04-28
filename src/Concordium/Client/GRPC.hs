@@ -28,6 +28,7 @@ import           Concordium.Types as Types
 import           Concordium.ID.Types as IDTypes
 
 import qualified Control.Concurrent.ReadWriteLock as RW
+import           Control.Concurrent.Async
 import           Control.Concurrent
 import           Control.Monad.Fail
 import           Control.Monad.IO.Class
@@ -290,6 +291,7 @@ withUnaryCore method message k = do
   cfg <- asks config
   lock <- asks rwlock
   logm <- asks logger
+  let Timeout timeoutSeconds = _grpcClientConfigTimeout cfg
 
   -- try to establish a connection
   let tryEstablish :: Int -> IO (Maybe GrpcClient)
@@ -312,10 +314,13 @@ withUnaryCore method message k = do
               return Nothing
             Just client -> do
               logm "Network client exists, running query."
-              runExceptT (rawUnary method client message) >>=
-                \case Left _ -> return Nothing -- client error
-                      Right (Left _) -> return Nothing -- too much concurrency
-                      Right (Right x) -> return (Just x)
+              let runRPC = runExceptT (rawUnary method client message) >>=
+                           \case Left _ -> return Nothing -- client error
+                                 Right (Left _) -> return Nothing -- too much concurrency
+                                 Right (Right x) -> return (Just x)
+              race (threadDelay (timeoutSeconds * 1000000)) runRPC >>=
+                 \case Left () -> Nothing <$ logm "Timeout out."
+                       Right x -> return x
 
   ret <- liftIO tryRun
 
