@@ -8,12 +8,13 @@ import qualified Concordium.Crypto.ByteStringHelpers as BSH
 
 import Control.Monad.Writer
 import Data.Map.Strict as Map
-import Data.Text (Text)
+import Data.Text (pack)
 
 import Test.Hspec
 
-exampleAddress :: Text
-exampleAddress = "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+exampleAddress :: NamedAddress
+exampleAddress = NamedAddress (Just "example") a
+  where Right a = IDTypes.addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
 
 accountSpec :: Spec
 accountSpec = describe "account" $ do
@@ -39,7 +40,7 @@ exampleCredentials p = IDTypes.CredentialDeploymentValues
                                               , IDTypes.ardIdCredPubShare = share
                                               , IDTypes.ardIdCredPubShareNumber = IDTypes.ShareNumber 0 }]
                        , IDTypes.cdvPolicy = p }
-  where (Right acc) = IDTypes.addressFromText exampleAddress
+  where acc = naAddr exampleAddress
         (Just regId) = BSH.deserializeBase16 "a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f"
         (Just share) = BSH.deserializeBase16 "a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46fa1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f"
 
@@ -71,28 +72,31 @@ examplePolicyWithItemOutOfRange = IDTypes.Policy
 printAccountListSpec :: Spec
 printAccountListSpec = describe "printAccountList" $ do
   specify "empty" $ p [] `shouldBe` []
-  specify "single" $ p [exampleAddress] `shouldBe`
+  specify "single" $ p [pack $ show $ naAddr exampleAddress] `shouldBe`
     ["2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"]
   where p = execWriter . printAccountList
 
 printAccountInfoSpec :: Spec
 printAccountInfoSpec = describe "printAccountInfo" $ do
   specify "without delegation nor credentials" $ p exampleAddress (exampleAccountInfoResult Nothing []) `shouldBe`
-    [ "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+    [ "Local name: example"
+    , "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
     , "Amount:     0.0001 GTU"
     , "Nonce:      2"
     , "Delegation: none"
     , ""
     , "Credentials: none" ]
   specify "with delegation" $ p exampleAddress (exampleAccountInfoResult (Just 1) []) `shouldBe`
-    [ "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+    [ "Local name: example"
+    , "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
     , "Amount:     0.0001 GTU"
     , "Nonce:      2"
     , "Delegation: 1"
     , ""
     , "Credentials: none" ]
   specify "with one credential" $ p exampleAddress (exampleAccountInfoResult (Just 1) [exampleCredentials examplePolicyWithoutItems]) `shouldBe`
-    [ "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+    [ "Local name: example"
+    , "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
     , "Amount:     0.0001 GTU"
     , "Nonce:      2"
     , "Delegation: 1"
@@ -103,7 +107,8 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     , "  - Revealed attributes: none" ]
   specify "with two credentials" $ p exampleAddress (exampleAccountInfoResult (Just 1) [ exampleCredentials examplePolicyWithoutItems
                                                                                        , exampleCredentials examplePolicyWithTwoItems ]) `shouldBe`
-    [ "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+    [ "Local name: example"
+    , "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
     , "Amount:     0.0001 GTU"
     , "Nonce:      2"
     , "Delegation: 1"
@@ -117,7 +122,8 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     , "  - Revealed attributes: lastName=\"Value-1\", dob=\"Value-2\"" ]
   specify "with one credential - verbose" $
     (execWriter $ printAccountInfo exampleAddress (exampleAccountInfoResult (Just 1) [exampleCredentials examplePolicyWithoutItems]) True) `shouldBe`
-      [ "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+      [ "Local name: example"
+      , "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
       , "Amount:     0.0001 GTU"
       , "Nonce:      2"
       , "Delegation: 1"
