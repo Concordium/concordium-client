@@ -107,6 +107,12 @@ getFromJson r = do
     Error err -> logFatal [printf "cannot parse '%s' as JSON: %s" (show s) err]
     Success v -> return v
 
+getAccountAddressArg :: AccountNameMap -> Maybe Text -> IO NamedAddress
+getAccountAddressArg m input =
+  case getAccountAddress m $ fromMaybe defaultAccountName input of
+    Left err -> logFatal [err]
+    Right v -> return v
+
 process :: COM.Options -> IO ()
 process Options{optsCmd = LegacyCmd c, optsBackend = backend} = processLegacyCmd c backend
 process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir, optsVerbose = verbose} = do
@@ -163,7 +169,6 @@ processTransactionCmd action baseCfgDir verbose backend =
       -- withClient backend $ tailTransaction hash
     TransactionSendGtu receiver amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -264,20 +269,19 @@ getTransactionCfg baseCfg txOpts energyCost = do
 data TransferTransactionConfig =
   TransferTransactionConfig
   { ttcTransactionCfg :: TransactionConfig
-  , ttcReceiver :: Types.AccountAddress
+  , ttcReceiver :: NamedAddress
   , ttcAmount :: Types.Amount }
 
 getTransferTransactionCfg :: BaseConfig -> TransactionOpts -> Text -> Types.Amount -> IO TransferTransactionConfig
 getTransferTransactionCfg baseCfg txOpts receiver amount = do
   txCfg <- getTransactionCfg baseCfg txOpts $ Just simpleTransferEnergyCost
 
-  -- TODO Allow referencing address by name (similar to "sender")?
-  receiverAddress <- getAddressArg "to address" $ Just receiver
+  receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
 
   return TransferTransactionConfig
     { ttcTransactionCfg = txCfg
-    , ttcAmount = amount
-    , ttcReceiver = receiverAddress }
+    , ttcReceiver = receiverAddress
+    , ttcAmount = amount }
 
 -- Resolved configuration for a baker add transaction.
 data BakerAddTransactionConfig =
@@ -315,27 +319,31 @@ transferTransactionPayload ttxCfg confirm = do
         { ttcTransactionCfg = TransactionConfig
                               { tcEnergy = energy
                               , tcExpiry = Types.TransactionExpiryTime {expiry = expiryTs}
-                              , tcAccountCfg = accCfg }
+                              , tcAccountCfg = AccountConfig { acAddr = fromAddress } }
         , ttcAmount = amount
         , ttcReceiver = toAddress }
         = ttxCfg
 
-  logSuccess [ printf "sending %s from %s to '%s'" (showGtu amount) (showNamedAddress accCfg) (show toAddress)
+  logSuccess [ printf "sending %s from %s to %s" (showGtu amount) (showNamedAddress fromAddress) (showNamedAddress toAddress)
              , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
              , printf "transaction expires at %s" (showTimeFormatted $ timeFromTimestamp expiryTs) ]
   when confirm $ do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  return Types.Transfer { tToAddress = Types.AddressAccount toAddress, tAmount = amount}
+  return Types.Transfer { tToAddress = Types.AddressAccount $ naAddr toAddress, tAmount = amount }
 
 -- Convert baker add transaction config into a valid payload, optionally asking the user for confirmation.
 bakerAddTransactionPayload :: BakerAddTransactionConfig -> FilePath -> Bool -> IO Types.Payload
 bakerAddTransactionPayload batxCfg f confirm = do
-  let txCfg = batcTransactionCfg batxCfg
-      bakerKeys = batcBakerKeys batxCfg
-      accCfg = tcAccountCfg txCfg
-      energy = tcEnergy txCfg
+  let BakerAddTransactionConfig
+        { batcTransactionCfg = TransactionConfig
+                               { tcAccountCfg = AccountConfig
+                                                { acAddr = NamedAddress { naAddr = addr }
+                                                , acKeys = keys }
+                               , tcEnergy = energy }
+        , batcBakerKeys = bakerKeys }
+        = batxCfg
 
   logSuccess [ printf "submitting transaction to add baker using keys from file '%s'" f
              , printf "allowing up to %s to be spent as transaction fee" (showNrg energy) ]
@@ -343,7 +351,7 @@ bakerAddTransactionPayload batxCfg f confirm = do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  generateAddBakerPayload bakerKeys AccountKeys {akAddress = acAddr accCfg, akKeys = acKeys accCfg}
+  generateAddBakerPayload bakerKeys AccountKeys {akAddress = addr, akKeys = keys}
 
 accountDelegateTransactionPayload :: AccountDelegateTransactionConfig -> Bool -> IO Types.Payload
 accountDelegateTransactionPayload adtxCfg confirm = do
@@ -351,11 +359,11 @@ accountDelegateTransactionPayload adtxCfg confirm = do
         { adtcTransactionCfg = TransactionConfig
                               { tcEnergy = energy
                               , tcExpiry = Types.TransactionExpiryTime {expiry = expiryTs}
-                              , tcAccountCfg = accCfg }
+                              , tcAccountCfg = AccountConfig { acAddr = addr } }
         , adtcBakerId = bakerId }
         = adtxCfg
 
-  logInfo [ printf "delegating stake from account %s to baker %s" (showNamedAddress accCfg) (show bakerId)
+  logInfo [ printf "delegating stake from account %s to baker %s" (showNamedAddress addr) (show bakerId)
           , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
           , printf "transaction expires at %s" (showTimeFormatted $ timeFromTimestamp expiryTs) ]
 
@@ -373,11 +381,11 @@ startTransaction txCfg pl = do
         , tcExpiry = expiry
         , tcNonce = n
         , tcAccountCfg = AccountConfig
-                         { acAddr = sender
+                         { acAddr = NamedAddress { naAddr = addr }
                          , acKeys = keys } }
         = txCfg
-  nonce <- getNonce sender n
-  let tx = encodeAndSignTransaction pl energy nonce expiry sender keys
+  nonce <- getNonce addr n
+  let tx = encodeAndSignTransaction pl energy nonce expiry addr keys
   sendTransactionToBaker tx defaultNetId >>= \case
     Left err -> fail err
     Right False -> fail "transaction not accepted by the baker"
@@ -435,10 +443,16 @@ processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processAccountCmd action baseCfgDir verbose backend =
   case action of
     AccountShow address block -> do
-      v <- withClientJson backend $ withBestBlockHash block (getAccountInfo address)
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+      na <- getAccountAddressArg (bcAccountNameMap baseCfg) address
+      v <- withClientJson backend $ withBestBlockHash block $ getAccountInfo (pack $ show $ naAddr na)
       case v of
         Nothing -> putStrLn "Account not found."
-        Just a -> runPrinter $ printAccountInfo address a verbose
+        Just a -> runPrinter $ printAccountInfo na a verbose
     AccountList block -> do
       v <- withClientJson backend $ withBestBlockHash block getAccountList
       runPrinter $ printAccountList v
