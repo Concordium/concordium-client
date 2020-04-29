@@ -86,6 +86,7 @@ library:
     - microlens-platform
     - uri-encode >= 1.5
     - concurrent-extra >= 0.7
+    - async >= 2.2
   generated-exposed-modules:
     Proto.ConcordiumP2pRpc
     Proto.ConcordiumP2pRpc_Fields
