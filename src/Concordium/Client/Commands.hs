@@ -84,7 +84,7 @@ data TransactionCmd
 
 data AccountCmd
   = AccountShow
-    { accountAddress :: !Text
+    { accountAddress :: !(Maybe Text)
     , accountBlockHash :: !(Maybe Text) }
   | AccountList
     { accountBlockHash :: !(Maybe Text) }
@@ -291,7 +291,7 @@ accountShowCmd =
     "show"
     (info
        (AccountShow <$>
-         strArgument (metavar "ADDRESS" <> help "Address of the account.") <*>
+         optional (strArgument (metavar "ADDRESS" <> help "Address of the account.")) <*>
          optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
        (progDesc "Display account details."))
 
