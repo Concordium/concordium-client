@@ -12,6 +12,7 @@ import qualified Data.HashMap.Strict as M
 import Data.Text
 import Test.Hspec
 import Text.Printf
+import System.FilePath ((</>))
 
 configSpec :: Spec
 configSpec = describe "config" $ do
@@ -94,7 +95,7 @@ rawKeysFromFilesSpec = describe "rawKeysFromFilesSpec" $ do
     rawKeysFromFiles "dir" [] `shouldBe` []
   specify "sign and verify files are included, others are skipped" $
     rawKeysFromFiles "dir" ["0.sign", "0.verify", "sign", "1.verify"] `shouldBe`
-    [("dir/0.sign", ("0", Sign)), ("dir/0.verify", ("0", Verify)), ("dir/1.verify", ("1", Verify))]
+    [("dir" </> "0.sign", ("0", Sign)), ("dir" </> "0.verify", ("0", Verify)), ("dir" </> "1.verify", ("1", Verify))]
 
 insertRawKeySpec :: Spec
 insertRawKeySpec = describe "insertRawKey" $ do

@@ -40,7 +40,7 @@ parseTime = parseTimeM False defaultTimeLocale
 parseCredExpiry :: (MonadFail m) => String -> m UTCTime
 parseCredExpiry = parseTime "%0Y%0m"
 
-parseTimestamp :: (MonadError String m) => Timestamp -> Text -> m Timestamp
+parseTimestamp :: (MonadError String m) => TransactionExpiryTime -> Text -> m TransactionExpiryTime
 parseTimestamp now input = do
   (t, u) <- parseDuration input
   return $ case u of
@@ -51,7 +51,7 @@ parseTimestamp now input = do
           Minute -> 60
           Hour -> 3600
 
-parseDuration :: (MonadError String m) => Text -> m (Timestamp, Maybe DurationUnit)
+parseDuration :: (MonadError String m) => Text -> m (TransactionExpiryTime, Maybe DurationUnit)
 parseDuration t =
   case reads $ unpack t of
     [(n, r)] -> do
