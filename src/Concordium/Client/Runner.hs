@@ -240,7 +240,7 @@ getTransactionCfg baseCfg txOpts energyCost = do
     { tcAccountCfg = accCfg
     , tcNonce = toNonce txOpts
     , tcEnergy = energy
-    , tcExpiry = Types.TransactionExpiryTime expiry }
+    , tcExpiry = expiry }
   where
     promptEnergyUpdate energy actualFee
       | energy < actualFee = do
@@ -259,7 +259,7 @@ getTransactionCfg baseCfg txOpts energyCost = do
         logWarn [ "expiration time is in the past"
                 , "the transaction will not be committed" ]
       | e < now + 30 =
-        logWarn [ printf "expiration time is in just %s seconds" (now - e)
+        logWarn [ printf "expiration time is in just %s seconds" (Types.expiry $ now - e)
                 , "this may not be enough time for the transaction to be committed" ]
       | e > now + 3600 =
         logWarn [ "expiration time is in more than one hour" ]
@@ -318,7 +318,7 @@ transferTransactionPayload ttxCfg confirm = do
   let TransferTransactionConfig
         { ttcTransactionCfg = TransactionConfig
                               { tcEnergy = energy
-                              , tcExpiry = Types.TransactionExpiryTime {expiry = expiryTs}
+                              , tcExpiry = expiryTs
                               , tcAccountCfg = AccountConfig { acAddr = fromAddress } }
         , ttcAmount = amount
         , ttcReceiver = toAddress }
@@ -326,7 +326,7 @@ transferTransactionPayload ttxCfg confirm = do
 
   logSuccess [ printf "sending %s from %s to %s" (showGtu amount) (showNamedAddress fromAddress) (showNamedAddress toAddress)
              , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-             , printf "transaction expires at %s" (showTimeFormatted $ timeFromTimestamp expiryTs) ]
+             , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiryTs) ]
   when confirm $ do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
@@ -358,14 +358,14 @@ accountDelegateTransactionPayload adtxCfg confirm = do
   let AccountDelegateTransactionConfig
         { adtcTransactionCfg = TransactionConfig
                               { tcEnergy = energy
-                              , tcExpiry = Types.TransactionExpiryTime {expiry = expiryTs}
+                              , tcExpiry = expiryTs
                               , tcAccountCfg = AccountConfig { acAddr = addr } }
         , adtcBakerId = bakerId }
         = adtxCfg
 
   logInfo [ printf "delegating stake from account %s to baker %s" (showNamedAddress addr) (show bakerId)
           , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-          , printf "transaction expires at %s" (showTimeFormatted $ timeFromTimestamp expiryTs) ]
+          , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiryTs) ]
 
   when confirm $ do
     confirmed <- askConfirmation Nothing

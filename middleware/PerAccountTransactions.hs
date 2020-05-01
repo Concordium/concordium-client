@@ -5,7 +5,6 @@ import Concordium.GlobalState.SQLiteATI
 import Concordium.Types
 import Concordium.Types.Transactions
 import Concordium.Types.Execution
-import Concordium.Types.Utils
 
 import Control.Monad.Logger
 import Control.Monad.Reader
@@ -20,6 +19,7 @@ import Database.Persist.Postgresql
 import Database.Persist.Pagination
 import Data.Conduit
 import Data.Conduit.Combinators as Conduit
+import Data.Time.Clock.POSIX
 
 type PageResult m = ReaderT SqlBackend m (Maybe (Page Entry (Key Entry)))
 
@@ -56,7 +56,7 @@ data PrettyEntry = PrettyEntry{
   peAccount :: AccountAddress,
   peBlockHash :: BlockHash,
   peBlockHeight :: BlockHeight,
-  peBlockTime :: Timestamp,
+  peBlockTime :: POSIXTime,
   peTransactionSummary :: PrettySummary
   } deriving(Eq, Show)
 
@@ -71,7 +71,7 @@ makePretty eentry = do
     Nothing -> do
       peTransactionSummary <- SpecialTransaction <$> AE.eitherDecodeStrict entrySummary
       return $ PrettyEntry{..}
-    Just txHash -> do
+    Just _txHash -> do
       peTransactionSummary <- BlockTransaction <$> AE.eitherDecodeStrict entrySummary
       return $ PrettyEntry{..}
 

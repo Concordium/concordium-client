@@ -102,11 +102,11 @@ getLocalTimeOfDay = do
   tz <- getCurrentTimeZone
   localTimeOfDay . utcToLocalTime tz <$> getCurrentTime
 
-getCurrentTimeUnix :: IO Timestamp
-getCurrentTimeUnix = round <$> getPOSIXTime
+getCurrentTimeUnix :: IO TransactionExpiryTime
+getCurrentTimeUnix = TransactionExpiryTime . round <$> getPOSIXTime
 
-timeFromTimestamp :: Timestamp -> UTCTime
-timeFromTimestamp = posixSecondsToUTCTime . fromIntegral
+timeFromTransactionExpiryTime :: TransactionExpiryTime -> UTCTime
+timeFromTransactionExpiryTime = posixSecondsToUTCTime . fromIntegral . expiry
 
 data AccountInfoResult = AccountInfoResult
   { airAmount :: !Amount
@@ -308,7 +308,7 @@ decodeJsonArg v =
                Left err -> Left $ printf "cannot parse '%s' as JSON: %s" v err
                Right r -> Right r
 
-getTimestampArg :: String -> Timestamp -> Maybe Text -> IO Timestamp
+getTimestampArg :: String -> TransactionExpiryTime -> Maybe Text -> IO TransactionExpiryTime
 getTimestampArg name now input =
   case input of
     Nothing -> return $ now + defaultExpiryDurationSecs
