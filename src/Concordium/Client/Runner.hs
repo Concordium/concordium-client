@@ -1,8 +1,5 @@
-{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-
 module Concordium.Client.Runner
   ( process
   , getAccountNonce
@@ -63,9 +60,10 @@ import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
 import qualified Data.HashMap.Strict                 as Map
 import           Data.Maybe
+import           Data.List
 import qualified Data.Serialize                      as S
 import           Data.String
-import           Data.Text
+import           Data.Text                           hiding (take)
 import qualified Data.Text.IO                        as TextIO hiding (putStrLn)
 import           Data.Word
 import           Lens.Micro.Platform
@@ -225,7 +223,7 @@ processTransactionCmd action baseCfgDir verbose backend =
         tx <- startTransaction txCfg pl
         tailTransaction $ getBlockItemHash tx
 
--- Poll the transaction state continuously until it is "at least" the provided one.
+-- |Poll the transaction state continuously until it is "at least" the provided one.
 -- Note that the "absent" state is considered the "highest" state,
 -- so the loop will break if, for instance, the transaction state goes from "committed" to "absent".
 awaitState :: (TransactionStatusQuery m) => Int -> TransactionState -> Types.TransactionHash -> m TransactionStatusResult
@@ -237,11 +235,11 @@ awaitState t s hash = do
     wait t
     awaitState t s hash
 
--- Function type for computing the transaction energy cost for a given number of keys.
+-- |Function type for computing the transaction energy cost for a given number of keys.
 -- Returns Nothing if the cost cannot be computed.
 type ComputeEnergyCost = Int -> Types.Energy
 
--- Resolved configuration common to all transaction types.
+-- |Resolved configuration common to all transaction types.
 data TransactionConfig =
   TransactionConfig
   { tcAccountCfg :: AccountConfig
@@ -249,7 +247,7 @@ data TransactionConfig =
   , tcEnergy :: Types.Energy
   , tcExpiry :: Types.TransactionExpiryTime }
 
--- Resolve transaction config based on persisted config and CLI flags.
+-- |Resolve transaction config based on persisted config and CLI flags.
 -- If the energy cost function returns a value which is different from the
 -- specified energy, a warning is logged.
 -- If too low, the user is prompted to increase the energy allocation.
@@ -374,9 +372,9 @@ transferTransactionPayload ttxCfg confirm = do
 
   return Types.Transfer { tToAddress = Types.AddressAccount $ naAddr toAddress, tAmount = amount }
 
--- Convert baker add transaction config into a valid payload, optionally asking the user for confirmation.
+-- |Convert baker add transaction config into a valid payload, optionally asking the user for confirmation.
 bakerAddTransactionPayload :: BakerAddTransactionConfig -> FilePath -> Bool -> IO Types.Payload
-bakerAddTransactionPayload batxCfg f confirm = do
+bakerAddTransactionPayload batxCfg accountKeysFile confirm = do
   let BakerAddTransactionConfig
         { batcTransactionCfg = TransactionConfig
                                { tcAccountCfg = AccountConfig
@@ -386,13 +384,13 @@ bakerAddTransactionPayload batxCfg f confirm = do
         , batcBakerKeys = bakerKeys }
         = batxCfg
 
-  logSuccess [ printf "submitting transaction to add baker using keys from file '%s'" f
+  logSuccess [ printf "submitting transaction to add baker using keys from file '%s'" accountKeysFile
              , printf "allowing up to %s to be spent as transaction fee" (showNrg energy) ]
   when confirm $ do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  generateAddBakerPayload bakerKeys AccountKeys {akAddress = addr, akKeys = keys}
+  generateAddBakerPayload bakerKeys AccountKeys {akAddress = addr, akKeys = keys, akThreshold = fromIntegral (Map.size keys)}
 
 accountDelegateTransactionPayload :: AccountDelegateTransactionConfig -> Bool -> IO Types.Payload
 accountDelegateTransactionPayload adtxCfg confirm = do
@@ -421,12 +419,14 @@ startTransaction txCfg pl = do
         { tcEnergy = energy
         , tcExpiry = expiry
         , tcNonce = n
-        , tcAccountCfg = AccountConfig
+        , tcAccountCfg = accountCfg@AccountConfig
                          { acAddr = NamedAddress { naAddr = addr }
-                         , acKeys = keys } }
+                         ,..
+                         }
+        }
         = txCfg
   nonce <- getNonce addr n
-  let tx = encodeAndSignTransaction pl energy nonce expiry addr keys
+  let tx = encodeAndSignTransaction pl energy nonce expiry accountCfg
   sendTransactionToBaker tx defaultNetId >>= \case
     Left err -> fail err
     Right False -> fail "transaction not accepted by the baker"
@@ -577,19 +577,19 @@ processBakerCmd action baseCfgDir verbose backend =
           logSuccess [ printf "keys written to file '%s'" f
                      , "DO NOT LOSE THIS FILE"
                      , printf "to add a baker to the chain using these keys, use 'baker add %s'" f ]
-    BakerAdd f txOpts -> do
+    BakerAdd accountKeysFile txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      batxCfg <- getBakerAddTransactionCfg baseCfg txOpts f
+      batxCfg <- getBakerAddTransactionCfg baseCfg txOpts accountKeysFile
       let txCfg = batcTransactionCfg batxCfg
       when verbose $ do
         runPrinter $ printAccountConfig $ tcAccountCfg txCfg
         putStrLn ""
 
-      pl <- bakerAddTransactionPayload batxCfg f True
+      pl <- bakerAddTransactionPayload batxCfg accountKeysFile True
 
       withClient backend $ do
         tx <- startTransaction txCfg pl
@@ -810,6 +810,8 @@ processTransaction source networkId =
     Left err -> fail $ "Error decoding JSON: " ++ err
     Right t  -> processTransaction_ t networkId True
 
+-- |Process a transaction with keys given explicitly.
+-- The transaction is signed with all the given keys.
 processTransaction_ ::
      (MonadFail m, MonadIO m)
   => TransactionJSON
@@ -820,6 +822,10 @@ processTransaction_ transaction networkId _verbose = do
   tx <- do
     let header = metadata transaction
         sender = thSenderAddress header
+        accountConfig = AccountConfig { acAddr = NamedAddress Nothing sender
+                                      , acKeys = CT.keys transaction
+                                      , acThreshold = fromIntegral (Map.size (CT.keys transaction))
+                                      }
     nonce <-
       case thNonce header of
         Nothing -> getBestBlockHash >>= getAccountNonce sender
@@ -830,8 +836,7 @@ processTransaction_ transaction networkId _verbose = do
       (thEnergyAmount header)
       nonce
       (thExpiry header)
-      sender
-      (CT.keys transaction)
+      accountConfig
 
   sendTransactionToBaker tx networkId >>= \case
     Left err -> fail $ show err
@@ -885,11 +890,12 @@ encodeAndSignTransaction ::
   -> Types.Energy
   -> Types.Nonce
   -> Types.TransactionExpiryTime
-  -> Types.AccountAddress
-  -> KeyMap
+  -> AccountConfig
   -> Types.BareBlockItem
-encodeAndSignTransaction txPayload energy nonce expiry sender keys = Types.NormalTransaction $
+encodeAndSignTransaction txPayload energy nonce expiry accountConfig = Types.NormalTransaction $
   let encPayload = Types.encodePayload txPayload
+      sender = acAddress accountConfig
+      threshold = acThreshold accountConfig
       header = Types.TransactionHeader{
         thSender = sender,
         thPayloadSize = Types.payloadSize encPayload,
@@ -897,4 +903,5 @@ encodeAndSignTransaction txPayload energy nonce expiry sender keys = Types.Norma
         thEnergyAmount = energy,
         thExpiry = expiry
       }
-  in Types.signTransaction (Map.toList keys) header encPayload
+      keys = take (fromIntegral threshold) . sortOn fst . Map.toList $ acKeys accountConfig
+  in Types.signTransaction keys header encPayload

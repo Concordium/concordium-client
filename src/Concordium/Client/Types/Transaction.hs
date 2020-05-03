@@ -1,9 +1,7 @@
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE TemplateHaskell      #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Concordium.Client.Types.Transaction where
@@ -111,8 +109,6 @@ AETH.deriveFromJSON
   ''TransactionJSONPayload
 
 type KeyMap = Map.HashMap IDTypes.KeyIndex KeyPair
-
-type SenderData = (IDTypes.AccountAddress, KeyMap)
 
 -- |Transaction as retrieved from a JSON object
 data TransactionJSON =
