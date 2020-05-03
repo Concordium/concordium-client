@@ -94,10 +94,22 @@ initBaseConfig f = do
     , bcAccountCfgDir = accCfgDir
     , bcAccountNameMap = M.empty }
 
+-- |Ensure the basic account config is initialized
+ensureAccountConfigInitialized :: BaseConfig -> IO ()
+ensureAccountConfigInitialized baseCfg = do
+  let accCfgDir = bcAccountCfgDir baseCfg
+  ex <- doesDirectoryExist accCfgDir
+  unless ex $ logFatal [ printf "account directory '%s' does not exist" accCfgDir
+                       , "did you run 'config init' yet?" ]
+
 -- |Add an account to the configuration by creating its key directory and
 -- optionally a name mapping.
-initAccountConfig :: BaseConfig -> NamedAddress -> IO (BaseConfig, AccountConfig)
-initAccountConfig baseCfg namedAddr = do
+initAccountConfig :: BaseConfig
+                  -> NamedAddress
+                  -> Bool
+                  -- ^Whether existence of the account in the config is fatal or not.
+                  -> IO (BaseConfig, AccountConfig)
+initAccountConfig baseCfg namedAddr existFatal = do
   let NamedAddress { naAddr = addr, naName = name } = namedAddr
   case name of
     Nothing -> logInfo [printf "adding account %s without a name" (show addr)]
@@ -106,14 +118,13 @@ initAccountConfig baseCfg namedAddr = do
   -- Check if config has been initialized.
   let accCfgDir = bcAccountCfgDir baseCfg
       mapFile = accountNameMapFile accCfgDir
-  accCfgDirExists <- doesDirectoryExist accCfgDir
-  unless accCfgDirExists $ logFatal [ printf "account directory '%s' does not exist" accCfgDir
-                                    , "did you run 'config init' yet?" ]
+  ensureAccountConfigInitialized baseCfg
+
   -- Create keys directory.
   let keysDir = accountKeysDir accCfgDir addr
   keysDirExists <- doesDirectoryExist keysDir
   if keysDirExists
-    then logWarn [printf "account is already initialized: directory '%s' exists" keysDir]
+    then (if existFatal then logFatal else logWarn) [printf "account is already initialized: directory '%s' exists" keysDir]
     else do
       logInfo [printf "creating directory '%s'" keysDir]
       catch @ IOError (createDirectoryIfMissing False keysDir) $
@@ -134,6 +145,11 @@ initAccountConfig baseCfg namedAddr = do
                     , acKeys = M.empty
                     , acThreshold = 1 -- minimum threshold
                     })
+
+importAccountConfig :: BaseConfig -> AccountConfig -> IO ()
+importAccountConfig baseCfg accountCfg = do
+  void (initAccountConfig baseCfg (acAddr accountCfg) True)
+  writeAccountKeys baseCfg accountCfg
 
 writeAccountNameMap :: FilePath -> AccountNameMap -> IO ()
 writeAccountNameMap file = writeFile file . unlines . map f . sortOn fst . M.toList
@@ -165,9 +181,10 @@ writeAccountKeys baseCfg accCfg = do
   -- Write the threshold as a JSON value. Since it is a simple numeric
   -- value this should look as expected.
   let thresholdFile = accountThresholdFile accCfgDir (acAddress accCfg)
+  logInfo [printf "writing file '%s'" thresholdFile]
   encodeFile thresholdFile (acThreshold accCfg)
   
-  logSuccess ["updated key files"]
+  logSuccess ["wrote key and threshold files"]
 
 getBaseConfig :: Maybe FilePath -> Verbose -> Bool -> IO BaseConfig
 getBaseConfig f verbose autoInit = do
@@ -283,7 +300,7 @@ getAccountConfig account baseCfg keysDir keyMap autoInit = do
                   "" -> return Nothing
                   s -> return $ Just s
         let namedAddr' = NamedAddress { naAddr = addr, naName = name }
-        initAccountConfig baseCfg namedAddr'
+        initAccountConfig baseCfg namedAddr' True
       else do
         (km, acThreshold) <-
           handleJust

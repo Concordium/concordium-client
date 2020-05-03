@@ -54,6 +54,7 @@ import           Control.Monad.IO.Class
 import           Control.Monad.Reader                hiding (fail)
 import           Data.IORef
 import           Data.Aeson                          as AE
+import           Data.Aeson.Types 
 import qualified Data.Aeson.Encode.Pretty            as AE
 import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Lazy                as BSL
@@ -71,6 +72,7 @@ import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client.Exceptions
 import           Prelude                             hiding (fail, mod, null, unlines)
 import           System.IO
+import           System.Directory
 import           Text.Printf
 
 liftContext :: Monad m => PR.Context Core.UA m a -> ClientMonad (PR.Context Core.UA m) a
@@ -115,13 +117,13 @@ getAccountAddressArg m input =
 
 process :: COM.Options -> IO ()
 process Options{optsCmd = LegacyCmd c, optsBackend = backend} = processLegacyCmd c backend
+process Options{optsCmd = ConfigCmd c,..} = processConfigCmd c optsConfigDir optsVerbose
 process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir, optsVerbose = verbose} = do
   -- Disable output buffering.
   hSetBuffering stdout NoBuffering
   -- Evaluate command.
   maybe printNoBackend (p verbose) backend
   where p = case command of
-              ConfigCmd c -> processConfigCmd c cfgDir
               TransactionCmd c -> processTransactionCmd c cfgDir
               AccountCmd c -> processAccountCmd c cfgDir
               ModuleCmd c -> processModuleCmd c
@@ -129,10 +131,21 @@ process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir
               ConsensusCmd c -> processConsensusCmd c
               BlockCmd c -> processBlockCmd c
               BakerCmd c -> processBakerCmd c cfgDir
+              ConfigCmd _ -> error "Unreachable case: ConfigCmd"
               LegacyCmd _ -> error "Unreachable case: LegacyCmd."
 
-processConfigCmd :: ConfigCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
-processConfigCmd action baseCfgDir verbose _ =
+-- |Validate an account name and fail gracefully if the given account name
+-- is invalid.
+readAccountName :: Maybe Text -> IO (Maybe Text)
+readAccountName Nothing = return Nothing
+readAccountName (Just n) =
+    case validateAccountName n of
+      Left err -> logFatal [printf "cannot parse '%s' as an address name: %s" n err]
+      Right v -> return $ Just v
+
+
+processConfigCmd :: ConfigCmd -> Maybe FilePath -> Verbose ->  IO ()
+processConfigCmd action baseCfgDir verbose =
   case action of
     ConfigInit -> void $ initBaseConfig baseCfgDir
     ConfigShow -> do
@@ -148,15 +161,39 @@ processConfigCmd action baseCfgDir verbose _ =
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
 
-        a <- case addressFromText addr of
-               Left err -> logFatal [printf "cannot parse '%s' as an address: %s" addr err]
-               Right a -> return a
-        name' <- case name of
-                   Nothing -> return Nothing
-                   Just n -> case validateAccountName n of
-                               Left err -> logFatal [printf "cannot parse '%s' as an address name: %s" n err]
-                               Right v -> return $ Just v
-        void $ initAccountConfig baseCfg NamedAddress { naName = name', naAddr = a }
+        naAddr <-
+          case addressFromText addr of
+            Left err -> logFatal [printf "cannot parse '%s' as an address: %s" addr err]
+            Right a -> return a
+        naName <- readAccountName name
+        void $ initAccountConfig baseCfg NamedAddress{..} False
+      ConfigAccountImport name file -> do
+        naName <- readAccountName name
+
+        fileExists <- doesFileExist file
+        unless fileExists $ logFatal [printf "the given file '%s' does not exist" file]
+
+        accountCfg <-
+          eitherDecodeFileStrict file >>= \case
+            Left err ->
+              logFatal [printf "cannot read account data: %s" err]
+            Right val -> do
+              let accountParser = AE.withObject "Account data" $ \v -> do
+                    naAddr <- v .: "address"
+                    acKeys <- v .: "accountKeys"
+                    acThreshold <- v .:? "threshold" .!= fromIntegral (Map.size acKeys)
+                    return AccountConfig{acAddr = NamedAddress{..},..}
+              case parseEither accountParser val of
+                Left err ->
+                  logFatal [printf "cannot read account data: %s" err]
+                Right x -> return x
+
+        baseCfg <- getBaseConfig baseCfgDir verbose True
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+        
+        void $ importAccountConfig baseCfg accountCfg
 
     ConfigKeyCmd c -> case c of
       ConfigKeyAdd addr idx sk vk -> do

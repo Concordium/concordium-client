@@ -79,7 +79,11 @@ data ConfigCmd
 data ConfigAccountCmd
   = ConfigAccountAdd
     { caaAddr :: !Text
-    , caaName :: !(Maybe Text) }
+    , caaName :: !(Maybe Text)}
+  | ConfigAccountImport
+    { caiName :: !(Maybe Text),
+      caiFile :: FilePath
+    }
   deriving (Show)
 
 data ConfigKeyCmd
@@ -456,7 +460,7 @@ configAccountCmds =
     (info
       (ConfigAccountCmd <$>
         hsubparser
-          configAccountAddCmd)
+          (configAccountAddCmd <> configAccountImportCmd))
       (progDesc "Commands for inspecting and changing account-specific configuration."))
 
 configAccountAddCmd :: Mod CommandFields ConfigAccountCmd
@@ -468,6 +472,17 @@ configAccountAddCmd =
         strArgument (metavar "ADDRESS" <> help "Address of the account.") <*>
         optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account.")))
       (progDesc "Add account to persistent config."))
+
+configAccountImportCmd :: Mod CommandFields ConfigAccountCmd
+configAccountImportCmd =
+  command
+    "import"
+    (info
+      (ConfigAccountImport <$>
+        optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account.")) <*>
+        strArgument (metavar "PATH" <> help "Account file exported from the wallet.")
+      )
+      (progDesc "Import an account to persistent config."))
 
 configKeyCmds :: Mod CommandFields ConfigCmd
 configKeyCmds =
