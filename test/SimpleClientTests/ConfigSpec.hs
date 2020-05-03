@@ -216,7 +216,8 @@ exampleAccountConfigWithKeysAndName =
   AccountConfig
   { acAddr = NamedAddress { naName = Just "name" , naAddr = exampleAccountAddress1 }
   , acKeys = M.fromList [ (11, S.KeyPairEd25519 { S.signKey=sk1, S.verifyKey=vk1 })
-                        , (2, S.KeyPairEd25519 { S.signKey=sk2, S.verifyKey=vk2 }) ] }
+                        , (2, S.KeyPairEd25519 { S.signKey=sk2, S.verifyKey=vk2 }) ]
+  , acThreshold = 2}
   where s1 = "6d00a10ccac23d2fd0bea163756487288fd19ff3810e1d3f73b686e60d801915"
         v1 = "c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027"
         s2 = "9b301aa72d991d720750935de632983f1854d701ada3e5b763215d0802d5541c"
@@ -230,7 +231,8 @@ exampleAccountConfigWithoutKeysAndName :: AccountConfig
 exampleAccountConfigWithoutKeysAndName =
   AccountConfig
   { acAddr = NamedAddress { naName = Nothing, naAddr = exampleAccountAddress2}
-  , acKeys = M.empty }
+  , acKeys = M.empty
+  , acThreshold = 1}
 
 exampleAccountAddress1 :: IDTypes.AccountAddress
 Right exampleAccountAddress1 = IDTypes.addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"

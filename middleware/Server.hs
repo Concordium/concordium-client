@@ -1,4 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
 module Server (module Server, addHeaders) where
 
 import           Control.Concurrent (forkIO)

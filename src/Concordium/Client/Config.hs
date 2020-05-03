@@ -1,11 +1,11 @@
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase #-}
-
 module Concordium.Client.Config where
 
 import qualified Concordium.Crypto.SignatureScheme as S
 import Concordium.Types as Types
 import Concordium.ID.Types (addressFromText, KeyIndex)
+import qualified Concordium.ID.Types as IDTypes
 import Concordium.Client.Cli
 import Concordium.Client.Commands
 import Concordium.Client.Parse
@@ -14,6 +14,8 @@ import Concordium.Client.Types.Transaction
 import Control.Exception
 import Control.Monad.Except
 import Control.Monad.Trans.Except
+import Data.Maybe
+import Data.Aeson
 import Data.Char
 import Data.List as L
 import Data.List.Split
@@ -25,23 +27,32 @@ import System.IO.Error
 import System.FilePath
 import Text.Printf
 
-getDefaultBaseConfigDir :: IO FilePath
+type BaseConfigDir = FilePath
+
+getDefaultBaseConfigDir :: IO BaseConfigDir
 getDefaultBaseConfigDir = getXdgDirectory XdgConfig "concordium"
 
-accountConfigDir :: FilePath -> FilePath
-accountConfigDir baseCfgDir = joinPath [baseCfgDir, "accounts"]
+-- ** Helper functions to construct paths to account keys storage.
+accountConfigDir :: BaseConfigDir -> FilePath
+accountConfigDir baseCfgDir = baseCfgDir </> "accounts"
 
 accountNameMapFile :: FilePath -> FilePath
-accountNameMapFile accountCfgDir = joinPath [accountCfgDir, "names.map"]
+accountNameMapFile accountCfgDir = accountCfgDir </> "names.map"
 
+-- |Get the name of the directory with keys of an account.
 accountKeysDir :: FilePath -> Types.AccountAddress -> FilePath
-accountKeysDir accCfgDir addr = joinPath [accCfgDir, show addr]
+accountKeysDir accCfgDir addr = accCfgDir </> show addr
+
+-- |Get the name of the file which contains the threshold for the amount of
+-- signatures needed to sign a transaction.
+accountThresholdFile :: FilePath -> Types.AccountAddress -> FilePath
+accountThresholdFile accCfgDir addr = accCfgDir </> show addr <.> "threshold"
 
 data KeyPairFiles = KeyPairFiles { kpfSign :: FilePath , kpfVerify :: FilePath }
 
 accountKeyFiles :: FilePath -> KeyIndex -> KeyPairFiles
-accountKeyFiles keysDir idx = KeyPairFiles { kpfSign = p "sign" , kpfVerify = p "verify" }
-  where p ext = joinPath [keysDir, printf "%s.%s" (show idx) (ext :: String)]
+accountKeyFiles keysDir idx = KeyPairFiles { kpfSign = addExt "sign" , kpfVerify = addExt "verify" }
+  where addExt ext = keysDir </> show idx <.> ext
 
 defaultAccountName :: Text
 defaultAccountName = "default"
@@ -54,17 +65,22 @@ data BaseConfig = BaseConfig
                   , bcAccountCfgDir :: FilePath }
                 deriving (Show)
 
--- Initialize an empty config structure and returns the corresponding base config.
+-- |Initialize an empty config structure and returns the corresponding base config.
 initBaseConfig :: Maybe FilePath -> IO BaseConfig
 initBaseConfig f = do
   baseCfgDir <- getBaseConfigDir f
   logInfo [printf "initializing configuration structure in directory '%s'" baseCfgDir]
 
-  baseCfgDirExists <- doesDirectoryExist baseCfgDir
-  when baseCfgDirExists $ logFatal [printf "directory already exists"]
+  baseCfgDirExists <- doesPathExist baseCfgDir
+  when baseCfgDirExists $ logFatal [printf "path already exists"]
 
   -- Create directories and map file.
-  createDirectoryIfMissing True baseCfgDir
+  -- We only explicitly handle a permission error since that is likely the most
+  -- common one.
+  handleJust (guard . isPermissionError)
+             (\_ -> logFatal [printf "cannot create directory, permission denied"])
+             (createDirectoryIfMissing True baseCfgDir)
+
   let accCfgDir = accountConfigDir baseCfgDir
       mapFile = accountNameMapFile accCfgDir
 
@@ -78,7 +94,7 @@ initBaseConfig f = do
     , bcAccountCfgDir = accCfgDir
     , bcAccountNameMap = M.empty }
 
--- Add an account to the configuration by creating its key directory and
+-- |Add an account to the configuration by creating its key directory and
 -- optionally a name mapping.
 initAccountConfig :: BaseConfig -> NamedAddress -> IO (BaseConfig, AccountConfig)
 initAccountConfig baseCfg namedAddr = do
@@ -91,7 +107,7 @@ initAccountConfig baseCfg namedAddr = do
   let accCfgDir = bcAccountCfgDir baseCfg
       mapFile = accountNameMapFile accCfgDir
   accCfgDirExists <- doesDirectoryExist accCfgDir
-  unless accCfgDirExists $ logFatal [ printf "account directory '%s' doesn't exist" accCfgDir
+  unless accCfgDirExists $ logFatal [ printf "account directory '%s' does not exist" accCfgDir
                                     , "did you run 'config init' yet?" ]
   -- Create keys directory.
   let keysDir = accountKeysDir accCfgDir addr
@@ -100,7 +116,8 @@ initAccountConfig baseCfg namedAddr = do
     then logWarn [printf "account is already initialized: directory '%s' exists" keysDir]
     else do
       logInfo [printf "creating directory '%s'" keysDir]
-      createDirectoryIfMissing False keysDir
+      catch @ IOError (createDirectoryIfMissing False keysDir) $
+          \e -> logFatal [printf "cannot create account directory: %s" (show e)]
       logSuccess ["created key directory"]
 
   -- Add name mapping.
@@ -114,18 +131,22 @@ initAccountConfig baseCfg namedAddr = do
       return baseCfg { bcAccountNameMap = m }
   return (baseCfg', AccountConfig
                     { acAddr = namedAddr
-                    , acKeys = M.empty })
+                    , acKeys = M.empty
+                    , acThreshold = 1 -- minimum threshold
+                    })
 
 writeAccountNameMap :: FilePath -> AccountNameMap -> IO ()
 writeAccountNameMap file = writeFile file . unlines . map f . sortOn fst . M.toList
   where f (name, addr) = printf "%s = %s" name (show addr)
 
+-- |Write the account keys structure into the directory of the given account.
+-- Each key pair is written into two separate files.
 writeAccountKeys :: BaseConfig -> AccountConfig -> IO ()
 writeAccountKeys baseCfg accCfg = do
   let accCfgDir = bcAccountCfgDir baseCfg
-      keysDir = accountKeysDir accCfgDir $ naAddr $ acAddr accCfg
+      keysDir = accountKeysDir accCfgDir $ acAddress accCfg
   keysDirExists <- doesDirectoryExist keysDir
-  unless keysDirExists $ logFatal [ printf "account keys directory '%s' doesn't exist" keysDir
+  unless keysDirExists $ logFatal [ printf "account keys directory '%s' does not exist" keysDir
                                   , "did you run 'config account add ...' yet?" ]
 
   -- TODO Check for duplicates and print warning.
@@ -140,6 +161,12 @@ writeAccountKeys baseCfg accCfg = do
     writeFile kpfSign $ show sk ++ "\n"
     logInfo [printf "writing file '%s'" kpfVerify]
     writeFile kpfVerify $ show vk ++ "\n"
+
+  -- Write the threshold as a JSON value. Since it is a simple numeric
+  -- value this should look as expected.
+  let thresholdFile = accountThresholdFile accCfgDir (acAddress accCfg)
+  encodeFile thresholdFile (acThreshold accCfg)
+  
   logSuccess ["updated key files"]
 
 getBaseConfig :: Maybe FilePath -> Verbose -> Bool -> IO BaseConfig
@@ -211,10 +238,29 @@ validateAccountName name =
   where supportedChar c = isAlphaNum c || c == '-' || c == '_'
 
 data AccountConfig = AccountConfig
-                     { acAddr :: NamedAddress
-                     , acKeys :: KeyMap }
+                     { acAddr :: !NamedAddress
+                     , acKeys :: !KeyMap
+                     , acThreshold :: !IDTypes.SignatureThreshold}
 
-getAccountConfig :: Maybe Text -> BaseConfig -> Maybe FilePath -> Maybe KeyMap -> Bool -> IO (BaseConfig, AccountConfig)
+acAddress :: AccountConfig -> AccountAddress
+acAddress = naAddr . acAddr
+
+getAccountConfig :: Maybe Text
+                 -- ^Name of the account, defaulting to 'defaultAccountName' if not present.
+                 -> BaseConfig
+                 -- ^Configuration settings.
+                 -> Maybe FilePath
+                 -- ^Optional path to the key directory. Defaulting to directory derived from
+                 -- 'BaseConfig' if absent.
+                 -> Maybe KeyMap
+                 -- ^Explicit keys. If provided they take precedence over other parameters,
+                 -- otherwise the function attempts to lookup them up from the key directory.
+                 -- If explicit keys are provided it is assume that the
+                 -- signature threshold for the account is less than the amount
+                 -- of keys provided and all keys will be used to, e.g., sign the transaction.
+                 -> Bool
+                 -- ^Whether to auto initialize the base config directory or not.
+                 -> IO (BaseConfig, AccountConfig)
 getAccountConfig account baseCfg keysDir keyMap autoInit = do
   account' <- case account of
     Nothing -> do
@@ -228,9 +274,7 @@ getAccountConfig account baseCfg keysDir keyMap autoInit = do
     Nothing -> do
       let accCfgDir = bcAccountCfgDir baseCfg
           addr = naAddr namedAddr
-          dir = case keysDir of
-                  Nothing -> accountKeysDir accCfgDir addr
-                  Just p -> p
+          dir = fromMaybe (accountKeysDir accCfgDir addr) keysDir
       dirExists <- doesDirectoryExist dir
       if not dirExists && autoInit then do
         printf "Account '%s' is not yet initialized.\n" (show addr)
@@ -241,19 +285,28 @@ getAccountConfig account baseCfg keysDir keyMap autoInit = do
         let namedAddr' = NamedAddress { naAddr = addr, naName = name }
         initAccountConfig baseCfg namedAddr'
       else do
-        km <- handleJust
+        (km, acThreshold) <-
+          handleJust
                 (guard . isDoesNotExistError)
                 (\_ -> logFatal [ printf "key directory for account '%s' not found" (show addr)
                                 , "did you forget to add the account (using 'config account add')?"])
                 (loadKeyMap dir)
         return (baseCfg, AccountConfig
                          { acAddr = namedAddr
-                         , acKeys = km })
+                         , acKeys = km
+                         ,..})
 
     Just km -> return (baseCfg, AccountConfig
                                 { acAddr = namedAddr
-                                , acKeys = km })
+                                , acKeys = km
+                                , acThreshold = fromIntegral (M.size km) })
 
+-- |Look up an account.
+-- The second argument can be either an account address or a name of an account.
+-- If it is a valid account address (in the sense that it is formatted correctly) then
+-- it is assumed that the input is an address, and we try to look up whether we have it
+-- stored in the config
+-- Otherwise we assume the input is a local name of an account, and we try to look up its address.
 resolveAccountAddress :: AccountNameMap -> Text -> Maybe NamedAddress
 resolveAccountAddress m input = do
   -- Try parsing input as account address.
@@ -288,14 +341,15 @@ getAllAccountConfigs cfg = do
     isDirectory dir f =
       doesDirectoryExist $ joinPath [dir, f]
 
-loadKeyMap :: FilePath -> IO KeyMap
-loadKeyMap keysDir = do
+loadKeyMap :: FilePath -> IO (KeyMap, IDTypes.SignatureThreshold)
+loadKeyMap keysDir = do 
   keyFilenames <- listDirectory keysDir
   let rawKeys = rawKeysFromFiles keysDir keyFilenames
   rawKeyMap <- loadRawKeyMap rawKeys
+  threshold <- loadThreshold keysDir
   case keyMapFromRaw rawKeyMap of
     Left err -> logFatal [printf "cannot load keys: %s" err]
-    Right km -> return km
+    Right km -> return (km, fromMaybe (fromIntegral (M.size km)) threshold)
 
 insertAccountKey :: Maybe KeyIndex -> S.KeyPair -> KeyMap -> KeyMap
 insertAccountKey idx kp km =
@@ -371,6 +425,14 @@ loadRawKeyMap = foldM f M.empty
   where f rawKeyMap (file, rk) = do
           c <- readFile file
           return $ insertRawKey rk (strip $ pack c) rawKeyMap
+
+loadThreshold :: FilePath -> IO (Maybe IDTypes.SignatureThreshold)
+loadThreshold fp = 
+  handleJust (guard . isDoesNotExistError) (const (return Nothing)) $ 
+    eitherDecodeFileStrict' fp >>= \case
+      Left err ->
+        logFatal [printf "threshold file exists but is corrupt: %s" err]
+      Right x -> return (Just x)
 
 safeListDirectory :: FilePath -> IO [FilePath]
 safeListDirectory dir = do
