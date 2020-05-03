@@ -41,7 +41,9 @@ import           Concordium.Client.Types.TransactionStatus
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
+import           Concordium.Crypto.SignatureScheme   as Sig
 import qualified Concordium.Crypto.VRF               as VRF
+import           Concordium.ID.Types                 (addressFromText)
 import qualified Concordium.Types.Transactions       as Types
 import           Concordium.Types.HashableTo
 import qualified Concordium.Types.Execution          as Types
@@ -134,12 +136,51 @@ process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir
 processConfigCmd :: ConfigCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processConfigCmd action baseCfgDir verbose _ =
   case action of
+    ConfigInit -> void $ initBaseConfig baseCfgDir
     ConfigShow -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose
+      baseCfg <- getBaseConfig baseCfgDir verbose True
       runPrinter $ printBaseConfig baseCfg
       putStrLn ""
       accCfgs <- getAllAccountConfigs baseCfg
       runPrinter $ printAccountConfigList accCfgs
+    ConfigAccountCmd c -> case c of
+      ConfigAccountAdd addr name -> do
+        baseCfg <- getBaseConfig baseCfgDir verbose True
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        a <- case addressFromText addr of
+               Left err -> logFatal [printf "cannot parse '%s' as an address: %s" addr err]
+               Right a -> return a
+        name' <- case name of
+                   Nothing -> return Nothing
+                   Just n -> case validateAccountName n of
+                               Left err -> logFatal [printf "cannot parse '%s' as an address name: %s" n err]
+                               Right v -> return $ Just v
+        void $ initAccountConfig baseCfg NamedAddress { naName = name', naAddr = a }
+
+    ConfigKeyCmd c -> case c of
+      ConfigKeyAdd addr idx sk vk -> do
+        baseCfg <- getBaseConfig baseCfgDir verbose True
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        sk' <- case parseSignKey sk of
+                 Left err -> logFatal [printf "cannot parse sign key '%s': %s" sk err]
+                 Right k -> return k
+        vk' <- case parseVerifyKey vk of
+                 Left err -> logFatal [printf "cannot parse verify key '%s': %s" vk err]
+                 Right k -> return k
+        (baseCfg', accCfg) <- getAccountConfig (Just addr) baseCfg Nothing Nothing True
+        let kp = Sig.KeyPairEd25519
+                 { Sig.signKey = sk'
+                 , Sig.verifyKey = vk' }
+            keys = insertAccountKey idx kp $ acKeys accCfg
+            accCfg' = accCfg { acKeys = keys }
+
+        writeAccountKeys baseCfg' accCfg'
 
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processTransactionCmd action baseCfgDir verbose backend =
@@ -168,7 +209,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       --      It should skip already completed steps.
       -- withClient backend $ tailTransaction hash
     TransactionSendGtu receiver amount txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose
+      baseCfg <- getBaseConfig baseCfgDir verbose True
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -219,7 +260,7 @@ getTransactionCfg baseCfg txOpts energyCost = do
                Just act -> act >>= \case
                  Left err -> logFatal [printf "cannot decode keys: %s" err]
                  Right ks -> return $ Just ks
-  accCfg <- getAccountConfig (toSender txOpts) baseCfg Nothing keysArg
+  (_, accCfg) <- getAccountConfig (toSender txOpts) baseCfg Nothing keysArg False
 
   let computedCost = case energyCost of
                        Nothing -> Nothing
@@ -396,7 +437,7 @@ getNonce sender nonce =
   case nonce of
     Nothing -> do
       currentNonce <- getBestBlockHash >>= getAccountNonce sender
-      nextNonce <- getNextAccountNonce (pack $ show sender) >>= getFromJson
+      nextNonce <- nanNonce <$> (getNextAccountNonce (pack $ show sender) >>= getFromJson)
       liftIO $ when (currentNonce /= nextNonce) $ do
         logWarn [ printf "there is a pending transaction with nonce %s, but last committed one has %s" (show $ nextNonce-1) (show $ currentNonce-1)
                 , printf "this transaction will have nonce %s and might hang if the pending transaction fails" (show nextNonce)
@@ -443,7 +484,7 @@ processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processAccountCmd action baseCfgDir verbose backend =
   case action of
     AccountShow address block -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose
+      baseCfg <- getBaseConfig baseCfgDir verbose True
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -457,7 +498,7 @@ processAccountCmd action baseCfgDir verbose backend =
       v <- withClientJson backend $ withBestBlockHash block getAccountList
       runPrinter $ printAccountList v
     AccountDelegate bakerId txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose
+      baseCfg <- getBaseConfig baseCfgDir verbose True
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -537,7 +578,7 @@ processBakerCmd action baseCfgDir verbose backend =
                      , "DO NOT LOSE THIS FILE"
                      , printf "to add a baker to the chain using these keys, use 'baker add %s'" f ]
     BakerAdd f txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose
+      baseCfg <- getBaseConfig baseCfgDir verbose True
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""

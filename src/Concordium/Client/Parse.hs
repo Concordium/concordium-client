@@ -5,8 +5,12 @@ module Concordium.Client.Parse
   , parseBlockHash
   , parseTime
   , parseCredExpiry
-  , parseTimestamp ) where
+  , parseTimestamp
+  , parseSignKey
+  , parseVerifyKey ) where
 
+import qualified Concordium.Crypto.ByteStringHelpers as BSH
+import qualified Concordium.Crypto.Ed25519Signature as Ed25519
 import Concordium.Crypto.SHA256
 import Concordium.Types
 
@@ -63,3 +67,14 @@ parseDuration t =
                 _ -> throwError $ printf "unsupported suffix '%s'" r
       return (n, unit)
     _ -> throwError "non-numeric prefix"
+
+parseSignKey :: (MonadError String m) => Text -> m Ed25519.SignKey
+parseSignKey k = case BSH.deserializeBase16 k of
+                   Nothing -> throwError $ printf "invalid sign key '%s' (should be base-16 string of length 64)" k
+                   Just v -> return v
+
+
+parseVerifyKey :: (MonadError String m) => Text -> m Ed25519.VerifyKey
+parseVerifyKey k = case BSH.deserializeBase16 k of
+                     Nothing -> throwError $ printf "invalid verify key '%s' (should be base-16 string of length 64)" k
+                     Just v -> return v

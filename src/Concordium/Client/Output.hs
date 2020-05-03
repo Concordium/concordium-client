@@ -92,8 +92,12 @@ printAccountConfigList cfgs =
   else do
     tell [ "Account keys:" ]
     forM_ cfgs $ \cfg -> do
-      tell [ printf "- %s" (showNamedAddress $ acAddr cfg) ]
-      printMap showEntry $ toSortedList $ acKeys cfg
+      let keys = acKeys cfg
+      if null keys then
+        tell [ printf "- %s: %s" (showNamedAddress $ acAddr cfg) showNone]
+      else do
+        tell [ printf "- %s:" (showNamedAddress $ acAddr cfg)]
+        printMap showEntry $ toSortedList keys
   where showEntry (n, kp) =
           printf "    %s: %s" (show n) (showKeyPair kp)
 
