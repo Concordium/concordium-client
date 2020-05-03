@@ -9,20 +9,18 @@ node="$1"
 shift
 args=("$@")
 
-function fail {
-	local -r msg="$1"
-	local -r code="$2"
-
-	>&2 echo "Error: $msg."
-	exit "$code"
-}
-
 # Check that arguments were provided.
-[ "${#args}" -eq 0 ] && fail "no arguments provided" 1
+if [ "${#args}" -eq 0 ]; then
+    >&2 echo "Error: no arguments provided"
+    exit 1
+fi
 
 # Extract port of docker container running the node with the provided ID.
 port="$(docker port "p2p-client_baker_$node" | cut -d: -f2)"
-[ -z "$port" ] && fail "cannot resolve docker port for node $node" 2
+if [ -z "$port" ]; then
+    >&2 echo "Error: cannot resolve docker port for node $node. Using port 0."
+    port=0
+fi
 
 # Construct command.
 >&2 echo "> LD_LIBRARY_PATH=deps/crypto/rust-src/target/release stack run concordium-client -- --grpc-ip localhost --grpc-port $port ${args[@]}"

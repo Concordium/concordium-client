@@ -1,4 +1,3 @@
-
 module Concordium.Client.Commands
   ( optsParser
   , backendParser
@@ -7,6 +6,8 @@ module Concordium.Client.Commands
   , Backend(..)
   , Cmd(..)
   , ConfigCmd(..)
+  , ConfigAccountCmd(..)
+  , ConfigKeyCmd(..)
   , TransactionOpts(..)
   , TransactionCmd(..)
   , AccountCmd(..)
@@ -24,6 +25,7 @@ import Network.HTTP2.Client
 import Options.Applicative
 import Paths_simple_client (version)
 import Concordium.Client.LegacyCommands
+import Concordium.ID.Types (KeyIndex)
 import Concordium.Types
 
 type Verbose = Bool
@@ -66,7 +68,26 @@ data Cmd
   deriving (Show)
 
 data ConfigCmd
-  = ConfigShow
+  = ConfigInit
+  | ConfigShow
+  | ConfigAccountCmd -- groups 'config account' commands
+    { configAccountCmd :: ConfigAccountCmd }
+  | ConfigKeyCmd -- groups 'config key' commands
+    { configKeyCmd :: ConfigKeyCmd }
+  deriving (Show)
+
+data ConfigAccountCmd
+  = ConfigAccountAdd
+    { caaAddr :: !Text
+    , caaName :: !(Maybe Text) }
+  deriving (Show)
+
+data ConfigKeyCmd
+  = ConfigKeyAdd
+    { ckaAddr :: !Text
+    , ckaIdx :: !(Maybe KeyIndex)
+    , ckaSignKey :: !Text
+    , ckaVerifyKey :: !Text }
   deriving (Show)
 
 data TransactionCmd
@@ -219,7 +240,7 @@ programOptions = Options <$>
                       bakerCmds
                      ) <|> LegacyCmd <$> legacyProgramOptions) <*>
                    optional backendParser <*>
-                   optional (strOption (long "config" <> metavar "DIR" <> help "Configuration directory path.")) <*>
+                   optional (strOption (long "config" <> metavar "PATH" <> help "Path to the configuration directory.")) <*>
                    switch (hidden <> long "verbose" <> short 'v' <> help "Make output verbose.")
 
 transactionCmds :: Mod CommandFields Cmd
@@ -406,8 +427,19 @@ configCmds =
     (info
       (ConfigCmd <$>
         hsubparser
-          configShowCmd)
+          (configInitCmd <>
+           configShowCmd <>
+           configAccountCmds <>
+           configKeyCmds))
       (progDesc "Commands for inspecting and changing local configuration."))
+
+configInitCmd :: Mod CommandFields ConfigCmd
+configInitCmd =
+  command
+    "init"
+    (info
+      (pure ConfigInit)
+      (progDesc "Initialize configuration."))
 
 configShowCmd :: Mod CommandFields ConfigCmd
 configShowCmd =
@@ -417,6 +449,47 @@ configShowCmd =
       (pure ConfigShow)
       (progDesc "Show configuration."))
 
+configAccountCmds :: Mod CommandFields ConfigCmd
+configAccountCmds =
+  command
+    "account"
+    (info
+      (ConfigAccountCmd <$>
+        hsubparser
+          configAccountAddCmd)
+      (progDesc "Commands for inspecting and changing account-specific configuration."))
+
+configAccountAddCmd :: Mod CommandFields ConfigAccountCmd
+configAccountAddCmd =
+  command
+    "add"
+    (info
+      (ConfigAccountAdd <$>
+        strArgument (metavar "ADDRESS" <> help "Address of the account.") <*>
+        optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account.")))
+      (progDesc "Add account to persistent config."))
+
+configKeyCmds :: Mod CommandFields ConfigCmd
+configKeyCmds =
+  command
+    "key"
+    (info
+      (ConfigKeyCmd <$>
+        hsubparser
+          configKeyAddCmd)
+      (progDesc "Commands for adding and removing keys of an account."))
+
+configKeyAddCmd :: Mod CommandFields ConfigKeyCmd
+configKeyAddCmd =
+  command
+    "add"
+    (info
+      (ConfigKeyAdd <$>
+        strOption (long "account" <> metavar "ACCOUNT" <> help "Name or address of the account.") <*>
+        optional (option auto (long "index" <> metavar "INDEX" <> help "Index of the key.")) <*>
+        strOption (long "sign" <> metavar "KEY" <> help "Sign (private) key.") <*>
+        strOption (long "verify" <> metavar "KEY" <> help "Verify (public) key."))
+      (progDesc "Add key pair of specific account, optionally on a specific index."))
 consensusCmds :: Mod CommandFields Cmd
 consensusCmds =
   command

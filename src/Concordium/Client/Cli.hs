@@ -78,7 +78,8 @@ logExit msgs = logInfo msgs >> liftIO exitSuccess
 prettyMsg :: String -> String -> String
 prettyMsg punctuation = \case
   "" -> ""
-  (x:xs) -> (C.toUpper x : xs) ++ punctuation
+  (x:xs) -> (C.toUpper x : xs) ++ if Prelude.last xs `elem` p then "" else punctuation
+  where p = ".,:;?!" :: String
 
 logStr :: MonadIO m => String -> m ()
 logStr = liftIO . hPutStr stderr

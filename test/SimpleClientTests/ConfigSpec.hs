@@ -191,10 +191,10 @@ printAccountConfigListSpec = describe "all account config" $ do
     [ "Account keys: none" ]
   specify "non-empty" $ p [exampleAccountConfigWithKeysAndName, exampleAccountConfigWithoutKeysAndName] `shouldBe`
     [ "Account keys:"
-    , "- '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' (name)"
+    , "- '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' (name):"
     , "    2: sign=9b301aa72d991d720750935de632983f1854d701ada3e5b763215d0802d5541c, verify=f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213"
     , "    11: sign=6d00a10ccac23d2fd0bea163756487288fd19ff3810e1d3f73b686e60d801915, verify=c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027"
-    , "- '4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y'" ]
+    , "- '4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y': none" ]
   where p = execWriter . printAccountConfigList
 
 exampleBaseConfigWithAccountNameMap :: BaseConfig
