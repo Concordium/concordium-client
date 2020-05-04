@@ -1,9 +1,7 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -661,7 +659,9 @@ debugTestTransactions nodeBackend selfAddress keyMap = do
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign txDelegateStake 3) 100)
 
   bakerKeys <- generateBakerKeys
-  addBakerPayload <- Execution.encodePayload <$> generateAddBakerPayload bakerKeys AccountKeys { akAddress = selfAddress, akKeys = keyMap }
+  addBakerPayload <- Execution.encodePayload <$> generateAddBakerPayload bakerKeys AccountKeys{akAddress = selfAddress,
+                                                                                               akKeys = keyMap,
+                                                                                               akThreshold = fromIntegral (HM.size keyMap) }
 
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign addBakerPayload 4) 100)
 
@@ -669,7 +669,9 @@ debugTestTransactions nodeBackend selfAddress keyMap = do
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign txDelegateStake' 5) 100)
 
   -- invalid add baker payload
-  addBakerPayload' <- Execution.encodePayload <$> generateAddBakerPayload bakerKeys AccountKeys { akAddress = selfAddress, akKeys = HM.empty }
+  addBakerPayload' <- Execution.encodePayload <$> generateAddBakerPayload bakerKeys AccountKeys { akAddress = selfAddress,
+                                                                                                  akKeys = HM.empty,
+                                                                                                  akThreshold = 1 }
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign addBakerPayload' 6) 100)
 
   -- garbage payload

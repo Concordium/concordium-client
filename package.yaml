@@ -20,7 +20,9 @@ custom-setup:
 default-extensions:
 - OverloadedStrings
 - RecordWildCards
+- GeneralizedNewtypeDeriving
 - LambdaCase
+- TupleSections
 
 # Metadata used when publishing your package
 # synopsis:            Short description of your package

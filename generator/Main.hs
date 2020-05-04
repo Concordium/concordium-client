@@ -1,8 +1,5 @@
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE LambdaCase #-}
-{-# OPTIONS_GHC -Wall #-}
 module Main where
 
 import           Concordium.Client.Commands
