@@ -124,28 +124,28 @@ awaitStateTests = describe "await state" $ do
   describe "committed state" $ do
     let q = initQuery Committed
 
-    describe "doesn't wait if state is committed successful" $ do
+    describe "does not wait if state is committed successful" $ do
       let s = initState [committedOneSuccessfulOutcome]
 
       let (finalState, (_, waitCount)) = runQuery q s
       specify "correct final state" $ finalState `shouldBe` committedOneSuccessfulOutcome
       specify "wait not called" $ waitCount `shouldBe` 0
 
-    describe "doesn't wait if state is committed failed" $ do
+    describe "does not wait if state is committed failed" $ do
       let s = initState [committedOneFailedOutcome]
 
       let (finalState, (_, waitCount)) = runQuery q s
       specify "correct final state" $ finalState `shouldBe` committedOneFailedOutcome
       specify "wait not called" $ waitCount `shouldBe` 0
 
-    describe "doesn't wait if state is absent" $ do
+    describe "does not wait if state is absent" $ do
       let s = initState [absent]
 
       let (finalState, (_, waitCount)) = runQuery q s
       specify "correct final state" $ finalState `shouldBe` absent
       specify "wait not called" $ waitCount `shouldBe` 0
 
-    describe "doesn't wait if state is finalized" $ do
+    describe "does not wait if state is finalized" $ do
       let s = initState [finalized]
 
       let (finalState, (_, waitCount)) = runQuery q s
@@ -169,14 +169,14 @@ awaitStateTests = describe "await state" $ do
   describe "finalized state" $ do
     let q = initQuery Finalized
 
-    describe "doesn't wait if state is finalized" $ do
+    describe "does not wait if state is finalized" $ do
       let s = initState [finalized]
 
       let (finalState, (_, waitCount)) = runQuery q s
       specify "correct final state" $ finalState `shouldBe` finalized
       specify "wait not called" $ waitCount `shouldBe` 0
 
-    describe "doesn't wait if state is absent" $ do
+    describe "does not wait if state is absent" $ do
       let s = initState [absent]
 
       let (finalState, (_, waitCount)) = runQuery q s

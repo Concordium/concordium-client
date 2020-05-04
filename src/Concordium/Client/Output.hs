@@ -1,5 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-
 module Concordium.Client.Output where
 
 import qualified Concordium.Crypto.SignatureScheme as S
@@ -164,7 +162,7 @@ printTransactionStatus status =
     Received -> tell ["Transaction is pending."]
     Absent -> tell ["Transaction is absent."]
     Committed ->
-      case mapMaybe (\(k, v) -> (\x -> (k, x)) <$> v) $ sortOn fst $ HM.toList (tsrResults status) of
+      case mapMaybe (\(k, v) -> (k, ) <$> v) $ sortOn fst $ HM.toList (tsrResults status) of
         [] ->
           -- No blocks.
           tell ["Transaction is committed - no block information received (this should never happen!)."]
@@ -196,7 +194,7 @@ printTransactionStatus status =
                                     (show hash)
                                     (showOutcomeFragment outcome)
     Finalized ->
-      case mapMaybe (\(k,v) -> (\x -> (k, x)) <$> v) $ HM.toList (tsrResults status) of
+      case mapMaybe (\(k,v) -> (k,) <$> v) $ HM.toList (tsrResults status) of
         [] ->
           -- No blocks.
           tell ["Transaction is finalized - no block information received (this should never happen!)."]

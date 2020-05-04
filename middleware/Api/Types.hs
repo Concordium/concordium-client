@@ -1,10 +1,7 @@
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS_GHC -Wall #-}
 module Api.Types where
 
 import           Data.Text (Text)
@@ -33,16 +30,9 @@ data BetaIdProvisionRequest =
     { attributes :: Map Text Text
     , accountKeys :: Maybe KeyPair
     }
-  deriving (FromJSON, Generic, Show)
+  deriving (Generic, Show)
 
-
--- The BetaIdProvisionResponse is the same as what the SimpleIdClient returns for Identity Object provisioning
-data BetaIdProvisionResponse =
-  BetaIdProvisionResponse
-    { value :: Value
-    }
-  deriving (FromJSON, ToJSON, Generic, Show)
-
+instance FromJSON BetaIdProvisionRequest
 
 data BetaAccountProvisionRequest =
   BetaAccountProvisionRequest
@@ -52,8 +42,9 @@ data BetaAccountProvisionRequest =
     , revealedAttributes :: Map Text Text
     , accountNumber :: Word8
     }
-  deriving (ToJSON, Generic, Show)
+  deriving (Generic, Show)
 
+instance ToJSON BetaAccountProvisionRequest
 
 instance FromJSON BetaAccountProvisionRequest where
   parseJSON = withObject "BetaAccountProvisionRequest" $ \v -> do
@@ -72,8 +63,9 @@ data BetaAccountProvisionResponse =
     , address :: Text
     , transactionHash :: Types.TransactionHash
     }
-  deriving (ToJSON, Generic, Show)
+  deriving (Generic, Show)
 
+instance ToJSON BetaAccountProvisionResponse
 
 data AccountInfoResponse = AccountInfoResponse
   { accountAmount :: !Types.Amount
@@ -102,8 +94,9 @@ data TransferRequest =
     , to :: Types.Address
     , amount :: Types.Amount
     }
-  deriving (FromJSON, Generic, Show)
+  deriving (Generic, Show)
 
+instance FromJSON TransferRequest
 
 newtype TransferResponse =
   TransferResponse
@@ -129,8 +122,10 @@ data GetNodeStateResponse =
     , selectionVerifyKey :: Text
     , timestamp :: Int
     }
-  deriving (FromJSON, ToJSON, Generic, Show)
+  deriving (Generic, Show)
 
+instance FromJSON GetNodeStateResponse
+instance ToJSON GetNodeStateResponse
 
 data SetNodeStateRequest =
   SetNodeStateRequest
@@ -146,8 +141,10 @@ data SetNodeStateRequest =
     , isFinalizing :: Maybe Bool
     , isInFinalizingCommittee :: Maybe Bool
     }
-  deriving (FromJSON, ToJSON, Generic, Show)
+  deriving (Generic, Show)
 
+instance FromJSON SetNodeStateRequest
+instance ToJSON SetNodeStateRequest
 
 newtype SetNodeStateResponse =
   SetNodeStateResponse
@@ -248,5 +245,7 @@ data AccountTransactionsResponse =
     { transactions :: [TransactionOutcome]
     , accountAddress :: Types.AccountAddress
     }
-  deriving (ToJSON, Generic, Show)
+  deriving (Generic, Show)
+
+instance ToJSON AccountTransactionsResponse
 

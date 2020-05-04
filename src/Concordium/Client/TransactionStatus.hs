@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE LambdaCase #-}
 module Concordium.Client.TransactionStatus where
 
 import Data.Aeson
@@ -19,7 +17,7 @@ getSimpleTransactionStatus trHash = do
     return $
       eitherStatus >>= \case
         Null -> return $ object ["status" .= String "absent"]
-        Object o -> do
+        Object o ->
           parseEither (.: "status") o >>= \case
             "received" -> return $ object ["status" .= String "received"]
             "finalized" -> HM.toList <$> parseEither (.: "outcomes") o >>= \case
