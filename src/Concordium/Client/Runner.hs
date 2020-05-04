@@ -309,7 +309,7 @@ getTransactionCfg baseCfg txOpts energyCost = do
               (Just maxCost, Just c) -> promptEnergyUpdate maxCost c
 
   now <- getCurrentTimeUnix
-  expiry <- getTimestampArg "expiry" now $ toExpiration txOpts
+  expiry <- getExpiryArg "expiry" now $ toExpiration txOpts
   warnSuspiciousExpiry expiry now
 
   return TransactionConfig

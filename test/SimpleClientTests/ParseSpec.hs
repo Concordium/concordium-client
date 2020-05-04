@@ -7,10 +7,10 @@ import Test.Hspec
 
 parseSpec :: Spec
 parseSpec = describe "parse" $ do
-  parseTimestampSpec
+  parseExpirySpec
 
-parseTimestampSpec :: Spec
-parseTimestampSpec = describe "expiry" $ do
+parseExpirySpec :: Spec
+parseExpirySpec = describe "expiry" $ do
   specify "empty" $ p "" `shouldBe` Left "non-numeric prefix"
   specify "space" $ p " " `shouldBe` Left "non-numeric prefix"
   specify "literal number" $ p "1" `shouldBe` Right 1
@@ -24,4 +24,4 @@ parseTimestampSpec = describe "expiry" $ do
   specify "missing number with spaces" $ p " s " `shouldBe` Left "non-numeric prefix"
   specify "swapped number and suffix" $ p "s7" `shouldBe` Left "non-numeric prefix"
   specify "multiple components" $ p "1m7s" `shouldBe` Left "unsupported suffix 'm7s'"
-  where p = parseTimestamp 1
+  where p = parseExpiry 1
