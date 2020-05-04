@@ -22,6 +22,8 @@ if [ -z "$port" ]; then
     port=0
 fi
 
+>&2 echo "> LD_LIBRARY_PATH=deps/crypto/rust-src/target/release stack build --fast --flag 'simple-client:-middleware' --test --no-run-tests"
+LD_LIBRARY_PATH=deps/crypto/rust-src/target/release stack build --fast --flag 'simple-client:-middleware' --test --no-run-tests
 # Construct command.
->&2 echo "> LD_LIBRARY_PATH=deps/crypto/rust-src/target/release stack run concordium-client -- --grpc-ip localhost --grpc-port $port ${args[@]}"
-LD_LIBRARY_PATH=deps/crypto/rust-src/target/release stack run concordium-client -- --grpc-ip localhost --grpc-port "$port" "${args[@]}"
+>&2 echo "> stack exec concordium-client -- --grpc-ip localhost --grpc-port $port ${args[@]}"
+stack exec concordium-client -- --grpc-ip localhost --grpc-port "$port" "${args[@]}"
