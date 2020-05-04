@@ -1,20 +1,19 @@
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE RecordWildCards            #-}
-
 module Concordium.Client.Cli where
 
 import qualified Concordium.Crypto.BlockSignature as BlockSig
 import qualified Concordium.Crypto.BlsSignature as Bls
 import qualified Concordium.Crypto.VRF as VRF
-import Concordium.Client.Parse
-import Concordium.Client.Types.Transaction
-import Concordium.Client.Types.TransactionStatus
 import qualified Concordium.ID.Types as IDTypes
 import Concordium.Types
 
-import Control.Monad hiding (fail)
+import Concordium.Client.Parse
+import Concordium.Client.Types.TransactionStatus
+import Concordium.Client.Types.Transaction
+
+import Control.Monad
 import Control.Monad.IO.Class
 import Data.Aeson as AE
+import qualified Data.HashMap.Strict as Map
 import Data.List
 import qualified Data.Char as C
 import Data.Maybe
@@ -78,7 +77,8 @@ logExit msgs = logInfo msgs >> liftIO exitSuccess
 prettyMsg :: String -> String -> String
 prettyMsg punctuation = \case
   "" -> ""
-  (x:xs) -> (C.toUpper x : xs) ++ punctuation
+  (x:xs) -> (C.toUpper x : xs) ++ if Prelude.last xs `elem` p then "" else punctuation
+  where p = ".,:;?!" :: String
 
 logStr :: MonadIO m => String -> m ()
 logStr = liftIO . hPutStr stderr
@@ -276,15 +276,20 @@ instance AE.ToJSON BakerKeys where
                     , "signatureSignKey" .= bkSigSignKey v
                     , "signatureVerifyKey" .= bkSigVerifyKey v ]
 
+-- |Information about a given account sufficient to sign transactions.
 data AccountKeys =
   AccountKeys
   { akAddress :: AccountAddress
-  , akKeys :: KeyMap }
+  , akKeys :: KeyMap
+  , akThreshold :: IDTypes.SignatureThreshold }
 
 instance AE.FromJSON AccountKeys where
   parseJSON = withObject "Account keys" $ \v -> do
     akAddress <- v .: "account"
     akKeys <- v .: "keys"
+    let numKeys = Map.size akKeys
+    unless (numKeys >= 1 && numKeys <= 255) $ fail $ "Too few or too many keys: " ++ show numKeys
+    akThreshold <- v .:? "threshold" .!= fromIntegral numKeys
     return AccountKeys {..}
 
 data NamedAddress = NamedAddress { naName :: Maybe Text, naAddr :: AccountAddress }

@@ -1,5 +1,3 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-
 module SimpleClientTests.QueryTransaction where
 
 import Concordium.Client.Cli
