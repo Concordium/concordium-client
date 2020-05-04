@@ -20,7 +20,9 @@ custom-setup:
 default-extensions:
 - OverloadedStrings
 - RecordWildCards
+- GeneralizedNewtypeDeriving
 - LambdaCase
+- TupleSections
 
 # Metadata used when publishing your package
 # synopsis:            Short description of your package
@@ -84,6 +86,7 @@ library:
     - proto-lens-protobuf-types == 0.6.*
     - proto-lens-runtime == 0.6.*
     - microlens-platform
+    - transformers
     - uri-encode >= 1.5
     - concurrent-extra >= 0.7
     - async >= 2.2

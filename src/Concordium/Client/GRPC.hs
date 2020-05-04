@@ -1,5 +1,4 @@
 {-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings, DataKinds, GeneralizedNewtypeDeriving, TypeApplications, ScopedTypeVariables #-}
@@ -332,7 +331,7 @@ withUnaryCore method message k = do
       tryAgain <- liftIO $ RW.withWrite lock $ do
         readIORef clientRef >>= \case
           Nothing -> return ()
-          Just oldClient -> runExceptT (close oldClient) >> return () -- FIXME: We ignore failure closing connection here.
+          Just oldClient -> void (runExceptT (close oldClient)) -- FIXME: We ignore failure closing connection here.
         tryEstablish (retryNum + 1) >>= \case
           Nothing -> do
             atomicWriteIORef clientRef Nothing

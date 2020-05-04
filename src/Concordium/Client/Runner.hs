@@ -1,8 +1,5 @@
-{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-
 module Concordium.Client.Runner
   ( process
   , getAccountNonce
@@ -41,7 +38,9 @@ import           Concordium.Client.Types.TransactionStatus
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
+import           Concordium.Crypto.SignatureScheme   as Sig
 import qualified Concordium.Crypto.VRF               as VRF
+import           Concordium.ID.Types                 (addressFromText)
 import qualified Concordium.Types.Transactions       as Types
 import           Concordium.Types.HashableTo
 import qualified Concordium.Types.Execution          as Types
@@ -55,15 +54,17 @@ import           Control.Monad.IO.Class
 import           Control.Monad.Reader                hiding (fail)
 import           Data.IORef
 import           Data.Aeson                          as AE
+import           Data.Aeson.Types 
 import qualified Data.Aeson.Encode.Pretty            as AE
 import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
 import qualified Data.HashMap.Strict                 as Map
 import           Data.Maybe
+import           Data.List
 import qualified Data.Serialize                      as S
 import           Data.String
-import           Data.Text
+import           Data.Text                           hiding (take)
 import qualified Data.Text.IO                        as TextIO hiding (putStrLn)
 import           Data.Word
 import           Lens.Micro.Platform
@@ -71,6 +72,7 @@ import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client.Exceptions
 import           Prelude                             hiding (fail, mod, null, unlines)
 import           System.IO
+import           System.Directory
 import           Text.Printf
 
 liftContext :: Monad m => PR.Context Core.UA m a -> ClientMonad (PR.Context Core.UA m) a
@@ -115,13 +117,13 @@ getAccountAddressArg m input =
 
 process :: COM.Options -> IO ()
 process Options{optsCmd = LegacyCmd c, optsBackend = backend} = processLegacyCmd c backend
+process Options{optsCmd = ConfigCmd c,..} = processConfigCmd c optsConfigDir optsVerbose
 process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir, optsVerbose = verbose} = do
   -- Disable output buffering.
   hSetBuffering stdout NoBuffering
   -- Evaluate command.
   maybe printNoBackend (p verbose) backend
   where p = case command of
-              ConfigCmd c -> processConfigCmd c cfgDir
               TransactionCmd c -> processTransactionCmd c cfgDir
               AccountCmd c -> processAccountCmd c cfgDir
               ModuleCmd c -> processModuleCmd c
@@ -129,17 +131,91 @@ process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir
               ConsensusCmd c -> processConsensusCmd c
               BlockCmd c -> processBlockCmd c
               BakerCmd c -> processBakerCmd c cfgDir
+              ConfigCmd _ -> error "Unreachable case: ConfigCmd"
               LegacyCmd _ -> error "Unreachable case: LegacyCmd."
 
-processConfigCmd :: ConfigCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
-processConfigCmd action baseCfgDir verbose _ =
+-- |Validate an account name and fail gracefully if the given account name
+-- is invalid.
+readAccountName :: Maybe Text -> IO (Maybe Text)
+readAccountName Nothing = return Nothing
+readAccountName (Just n) =
+    case validateAccountName n of
+      Left err -> logFatal [printf "cannot parse '%s' as an address name: %s" n err]
+      Right v -> return $ Just v
+
+
+processConfigCmd :: ConfigCmd -> Maybe FilePath -> Verbose ->  IO ()
+processConfigCmd action baseCfgDir verbose =
   case action of
+    ConfigInit -> void $ initBaseConfig baseCfgDir
     ConfigShow -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose
+      baseCfg <- getBaseConfig baseCfgDir verbose True
       runPrinter $ printBaseConfig baseCfg
       putStrLn ""
       accCfgs <- getAllAccountConfigs baseCfg
       runPrinter $ printAccountConfigList accCfgs
+    ConfigAccountCmd c -> case c of
+      ConfigAccountAdd addr name -> do
+        baseCfg <- getBaseConfig baseCfgDir verbose True
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        naAddr <-
+          case addressFromText addr of
+            Left err -> logFatal [printf "cannot parse '%s' as an address: %s" addr err]
+            Right a -> return a
+        naName <- readAccountName name
+        void $ initAccountConfig baseCfg NamedAddress{..} False
+      ConfigAccountImport name file -> do
+        naName <- readAccountName name
+
+        fileExists <- doesFileExist file
+        unless fileExists $ logFatal [printf "the given file '%s' does not exist" file]
+
+        accountCfg <-
+          eitherDecodeFileStrict file >>= \case
+            Left err ->
+              logFatal [printf "cannot read JSON from file '%s': %s" file err]
+            Right val -> do
+              let accountParser = AE.withObject "Account data" $ \v -> do
+                    naAddr <- v .: "address"
+                    acKeys <- v .: "accountKeys"
+                    acThreshold <- v .:? "threshold" .!= fromIntegral (Map.size acKeys)
+                    return AccountConfig{acAddr = NamedAddress{..},..}
+              case parseEither accountParser val of
+                Left err ->
+                  logFatal [printf "cannot read JSON from file '%s': %s" file err]
+                Right x -> return x
+
+        baseCfg <- getBaseConfig baseCfgDir verbose True
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+        
+        void $ importAccountConfig baseCfg accountCfg
+
+    ConfigKeyCmd c -> case c of
+      ConfigKeyAdd addr idx sk vk -> do
+        baseCfg <- getBaseConfig baseCfgDir verbose True
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        sk' <- case parseSignKey sk of
+                 Left err -> logFatal [printf "cannot parse sign key '%s': %s" sk err]
+                 Right k -> return k
+        vk' <- case parseVerifyKey vk of
+                 Left err -> logFatal [printf "cannot parse verify key '%s': %s" vk err]
+                 Right k -> return k
+        (baseCfg', accCfg) <- getAccountConfig (Just addr) baseCfg Nothing Nothing True
+        let kp = Sig.KeyPairEd25519
+                 { Sig.signKey = sk'
+                 , Sig.verifyKey = vk' }
+            keys = insertAccountKey idx kp $ acKeys accCfg
+            accCfg' = accCfg { acKeys = keys }
+
+        writeAccountKeys baseCfg' accCfg'
 
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processTransactionCmd action baseCfgDir verbose backend =
@@ -168,7 +244,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       --      It should skip already completed steps.
       -- withClient backend $ tailTransaction hash
     TransactionSendGtu receiver amount txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose
+      baseCfg <- getBaseConfig baseCfgDir verbose True
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -184,7 +260,7 @@ processTransactionCmd action baseCfgDir verbose backend =
         tx <- startTransaction txCfg pl
         tailTransaction $ getBlockItemHash tx
 
--- Poll the transaction state continuously until it is "at least" the provided one.
+-- |Poll the transaction state continuously until it is "at least" the provided one.
 -- Note that the "absent" state is considered the "highest" state,
 -- so the loop will break if, for instance, the transaction state goes from "committed" to "absent".
 awaitState :: (TransactionStatusQuery m) => Int -> TransactionState -> Types.TransactionHash -> m TransactionStatusResult
@@ -196,11 +272,11 @@ awaitState t s hash = do
     wait t
     awaitState t s hash
 
--- Function type for computing the transaction energy cost for a given number of keys.
+-- |Function type for computing the transaction energy cost for a given number of keys.
 -- Returns Nothing if the cost cannot be computed.
 type ComputeEnergyCost = Int -> Types.Energy
 
--- Resolved configuration common to all transaction types.
+-- |Resolved configuration common to all transaction types.
 data TransactionConfig =
   TransactionConfig
   { tcAccountCfg :: AccountConfig
@@ -208,7 +284,7 @@ data TransactionConfig =
   , tcEnergy :: Types.Energy
   , tcExpiry :: Types.TransactionExpiryTime }
 
--- Resolve transaction config based on persisted config and CLI flags.
+-- |Resolve transaction config based on persisted config and CLI flags.
 -- If the energy cost function returns a value which is different from the
 -- specified energy, a warning is logged.
 -- If too low, the user is prompted to increase the energy allocation.
@@ -219,7 +295,7 @@ getTransactionCfg baseCfg txOpts energyCost = do
                Just act -> act >>= \case
                  Left err -> logFatal [printf "cannot decode keys: %s" err]
                  Right ks -> return $ Just ks
-  accCfg <- getAccountConfig (toSender txOpts) baseCfg Nothing keysArg
+  (_, accCfg) <- getAccountConfig (toSender txOpts) baseCfg Nothing keysArg False
 
   let computedCost = case energyCost of
                        Nothing -> Nothing
@@ -333,9 +409,9 @@ transferTransactionPayload ttxCfg confirm = do
 
   return Types.Transfer { tToAddress = Types.AddressAccount $ naAddr toAddress, tAmount = amount }
 
--- Convert baker add transaction config into a valid payload, optionally asking the user for confirmation.
+-- |Convert baker add transaction config into a valid payload, optionally asking the user for confirmation.
 bakerAddTransactionPayload :: BakerAddTransactionConfig -> FilePath -> Bool -> IO Types.Payload
-bakerAddTransactionPayload batxCfg f confirm = do
+bakerAddTransactionPayload batxCfg accountKeysFile confirm = do
   let BakerAddTransactionConfig
         { batcTransactionCfg = TransactionConfig
                                { tcAccountCfg = AccountConfig
@@ -345,13 +421,13 @@ bakerAddTransactionPayload batxCfg f confirm = do
         , batcBakerKeys = bakerKeys }
         = batxCfg
 
-  logSuccess [ printf "submitting transaction to add baker using keys from file '%s'" f
+  logSuccess [ printf "submitting transaction to add baker using keys from file '%s'" accountKeysFile
              , printf "allowing up to %s to be spent as transaction fee" (showNrg energy) ]
   when confirm $ do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  generateAddBakerPayload bakerKeys AccountKeys {akAddress = addr, akKeys = keys}
+  generateAddBakerPayload bakerKeys AccountKeys {akAddress = addr, akKeys = keys, akThreshold = fromIntegral (Map.size keys)}
 
 accountDelegateTransactionPayload :: AccountDelegateTransactionConfig -> Bool -> IO Types.Payload
 accountDelegateTransactionPayload adtxCfg confirm = do
@@ -380,12 +456,14 @@ startTransaction txCfg pl = do
         { tcEnergy = energy
         , tcExpiry = expiry
         , tcNonce = n
-        , tcAccountCfg = AccountConfig
+        , tcAccountCfg = accountCfg@AccountConfig
                          { acAddr = NamedAddress { naAddr = addr }
-                         , acKeys = keys } }
+                         ,..
+                         }
+        }
         = txCfg
   nonce <- getNonce addr n
-  let tx = encodeAndSignTransaction pl energy nonce expiry addr keys
+  let tx = encodeAndSignTransaction pl energy nonce expiry accountCfg
   sendTransactionToBaker tx defaultNetId >>= \case
     Left err -> fail err
     Right False -> fail "transaction not accepted by the baker"
@@ -396,7 +474,7 @@ getNonce sender nonce =
   case nonce of
     Nothing -> do
       currentNonce <- getBestBlockHash >>= getAccountNonce sender
-      nextNonce <- getNextAccountNonce (pack $ show sender) >>= getFromJson
+      nextNonce <- nanNonce <$> (getNextAccountNonce (pack $ show sender) >>= getFromJson)
       liftIO $ when (currentNonce /= nextNonce) $ do
         logWarn [ printf "there is a pending transaction with nonce %s, but last committed one has %s" (show $ nextNonce-1) (show $ currentNonce-1)
                 , printf "this transaction will have nonce %s and might hang if the pending transaction fails" (show nextNonce)
@@ -443,7 +521,7 @@ processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processAccountCmd action baseCfgDir verbose backend =
   case action of
     AccountShow address block -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose
+      baseCfg <- getBaseConfig baseCfgDir verbose True
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -457,7 +535,7 @@ processAccountCmd action baseCfgDir verbose backend =
       v <- withClientJson backend $ withBestBlockHash block getAccountList
       runPrinter $ printAccountList v
     AccountDelegate bakerId txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose
+      baseCfg <- getBaseConfig baseCfgDir verbose True
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -536,19 +614,19 @@ processBakerCmd action baseCfgDir verbose backend =
           logSuccess [ printf "keys written to file '%s'" f
                      , "DO NOT LOSE THIS FILE"
                      , printf "to add a baker to the chain using these keys, use 'baker add %s'" f ]
-    BakerAdd f txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose
+    BakerAdd accountKeysFile txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose True
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      batxCfg <- getBakerAddTransactionCfg baseCfg txOpts f
+      batxCfg <- getBakerAddTransactionCfg baseCfg txOpts accountKeysFile
       let txCfg = batcTransactionCfg batxCfg
       when verbose $ do
         runPrinter $ printAccountConfig $ tcAccountCfg txCfg
         putStrLn ""
 
-      pl <- bakerAddTransactionPayload batxCfg f True
+      pl <- bakerAddTransactionPayload batxCfg accountKeysFile True
 
       withClient backend $ do
         tx <- startTransaction txCfg pl
@@ -769,6 +847,8 @@ processTransaction source networkId =
     Left err -> fail $ "Error decoding JSON: " ++ err
     Right t  -> processTransaction_ t networkId True
 
+-- |Process a transaction with keys given explicitly.
+-- The transaction is signed with all the given keys.
 processTransaction_ ::
      (MonadFail m, MonadIO m)
   => TransactionJSON
@@ -779,6 +859,10 @@ processTransaction_ transaction networkId _verbose = do
   tx <- do
     let header = metadata transaction
         sender = thSenderAddress header
+        accountConfig = AccountConfig { acAddr = NamedAddress Nothing sender
+                                      , acKeys = CT.keys transaction
+                                      , acThreshold = fromIntegral (Map.size (CT.keys transaction))
+                                      }
     nonce <-
       case thNonce header of
         Nothing -> getBestBlockHash >>= getAccountNonce sender
@@ -789,8 +873,7 @@ processTransaction_ transaction networkId _verbose = do
       (thEnergyAmount header)
       nonce
       (thExpiry header)
-      sender
-      (CT.keys transaction)
+      accountConfig
 
   sendTransactionToBaker tx networkId >>= \case
     Left err -> fail $ show err
@@ -844,11 +927,12 @@ encodeAndSignTransaction ::
   -> Types.Energy
   -> Types.Nonce
   -> Types.TransactionExpiryTime
-  -> Types.AccountAddress
-  -> KeyMap
+  -> AccountConfig
   -> Types.BareBlockItem
-encodeAndSignTransaction txPayload energy nonce expiry sender keys = Types.NormalTransaction $
+encodeAndSignTransaction txPayload energy nonce expiry accountConfig = Types.NormalTransaction $
   let encPayload = Types.encodePayload txPayload
+      sender = acAddress accountConfig
+      threshold = acThreshold accountConfig
       header = Types.TransactionHeader{
         thSender = sender,
         thPayloadSize = Types.payloadSize encPayload,
@@ -856,4 +940,5 @@ encodeAndSignTransaction txPayload energy nonce expiry sender keys = Types.Norma
         thEnergyAmount = energy,
         thExpiry = expiry
       }
-  in Types.signTransaction (Map.toList keys) header encPayload
+      keys = take (fromIntegral threshold) . sortOn fst . Map.toList $ acKeys accountConfig
+  in Types.signTransaction keys header encPayload

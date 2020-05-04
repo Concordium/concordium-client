@@ -1,12 +1,9 @@
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE RecordWildCards            #-}
-
 module Concordium.Client.DummyDeploy where
 
 import           Concordium.Client.Commands
 import           Concordium.Client.GRPC
 import           Concordium.Client.Runner
-import           Concordium.Client.Types.Transaction as CT
+import           Concordium.Client.Config
 import qualified Concordium.Types.Transactions       as Types
 import qualified Concordium.Types.Execution          as Types
 import           Concordium.Types                    as Types
@@ -14,6 +11,7 @@ import           Concordium.Types                    as Types
 import           Acorn.Core                          as Core
 
 import           Data.Maybe
+import           Data.List
 import           Prelude                             hiding (mod)
 
 import qualified Data.HashMap.Strict as Map
@@ -32,21 +30,24 @@ topoSort nodes = snd <$> foldM (go Set.empty) (Set.empty, []) (Map.keys nodes)
                 (perm', l') <- foldM (go temp') (perm, l) (Map.lookupDefault [] node nodes)
                 Just (Set.insert node perm', node:l')
 
-helper :: CT.SenderData -> Nonce -> Energy -> Types.TransactionExpiryTime -> Types.Payload -> Types.BareBlockItem
-helper (thSender, keyMap) thNonce thEnergyAmount thExpiry payload =
+helper :: AccountConfig -> Nonce -> Energy -> Types.TransactionExpiryTime -> Types.Payload -> Types.BareBlockItem
+helper senderData thNonce thEnergyAmount thExpiry payload =
   let encPayload = Types.encodePayload payload
-      header = Types.TransactionHeader{thPayloadSize = payloadSize encPayload, ..}
-  in Types.NormalTransaction $ Types.signTransaction (Map.toList keyMap) header encPayload
+      header = Types.TransactionHeader{thPayloadSize = payloadSize encPayload, thSender = acAddress senderData, ..}
+      -- sign with the necessary number of keys
+      threshold = fromIntegral (acThreshold senderData)
+      keys = take threshold . sortOn fst . Map.toList $ acKeys senderData
+  in Types.NormalTransaction $ Types.signTransaction keys header encPayload
 
 deployModuleWithKey ::
-     CT.SenderData
+     AccountConfig
   -> Backend
   -> Maybe Nonce
   -> Energy
   -> TransactionExpiryTime
   -> [Module UA]
   -> IO [(Types.BareBlockItem, Either String (), ModuleRef)]
-deployModuleWithKey senderData@(sender, _) back mnonce energy expiry amodules = withClient back comp
+deployModuleWithKey senderData back mnonce energy expiry amodules = withClient back comp
   where
     tx nonce mhash = (helper senderData nonce energy expiry (Types.DeployModule (moduleMap Map.! mhash)), mhash)
 
@@ -55,27 +56,26 @@ deployModuleWithKey senderData@(sender, _) back mnonce energy expiry amodules = 
     -- try to topologically sort the modules.
     processedModules = topoSort . Map.map (map Core.iModule . Core.mImports) $ moduleMap
 
-    comp = do
+    comp =
       case processedModules of
         Nothing -> fail "Circular dependencies. Will not deploy."
         Just orderedMods -> do
           bestBlockHash <- getBestBlockHash
-          nonce <- flip fromMaybe mnonce . fst <$> getAccountNonceBestGuess sender
+          nonce <- flip fromMaybe mnonce . fst <$> getAccountNonceBestGuess (acAddress senderData)
           alreadyDeployed <- getModuleSet bestBlockHash
           -- TODO: technically the above two lines can fail if finalization
           -- happens to purge the currently best block. failure should be
           -- handled more gracefully by retrying
           let transactions = zipWith tx [nonce..] (filter (not . (`Set.member` alreadyDeployed)) (reverse orderedMods))
-          mapM (\(ctx, mhash) -> do
+          forM transactions $ \(ctx, mhash) ->
                    sendTransactionToBaker ctx 100 >>= \case
                      Left err -> return (ctx, Left err, mhash)
                      Right False -> return (ctx, Left "Transaction rejected.", mhash)
                      Right True -> return (ctx, Right (), mhash)
-               ) transactions
 
 
 initContractWithKey ::
-     CT.SenderData
+     AccountConfig
   -> Backend
   -> Maybe Nonce
   -> Energy
@@ -85,7 +85,7 @@ initContractWithKey ::
   -> Core.TyName
   -> Core.Expr Core.UA Core.ModuleName
   -> IO (Types.BareBlockItem, Either String ())
-initContractWithKey senderData@(sender, _) back mnonce energy expiry initAmount homeModule contractName contractFlags = withClient back comp
+initContractWithKey senderData back mnonce energy expiry initAmount homeModule contractName contractFlags = withClient back comp
   where
     tx nonce = helper senderData nonce energy expiry initContract
 
@@ -97,7 +97,7 @@ initContractWithKey senderData@(sender, _) back mnonce energy expiry initAmount 
         contractFlags
 
     comp = do
-      nonce <- flip fromMaybe mnonce . fst <$> (getAccountNonceBestGuess sender)
+      nonce <- flip fromMaybe mnonce . fst <$> (getAccountNonceBestGuess (acAddress senderData))
       let transaction = tx nonce
       sendTransactionToBaker transaction 100 >>= \case
         Left err -> return (transaction, Left err)
@@ -105,7 +105,7 @@ initContractWithKey senderData@(sender, _) back mnonce energy expiry initAmount 
         Right True -> return (transaction, Right ())
 
 updateContractWithKey ::
-     CT.SenderData
+     AccountConfig
   -> Backend
   -> Maybe Nonce
   -> Energy
@@ -114,14 +114,14 @@ updateContractWithKey ::
   -> ContractAddress
   -> Core.Expr Core.UA Core.ModuleName
   -> IO (Types.BareBlockItem, Either String ())
-updateContractWithKey senderData@(sender, _) back mnonce energy expiry transferAmount address msg = withClient back comp
+updateContractWithKey senderData back mnonce energy expiry transferAmount address msg = withClient back comp
   where
     tx nonce = helper senderData nonce energy expiry updateContract
 
     updateContract = Types.Update transferAmount address msg
 
     comp = do
-      nonce <- flip fromMaybe mnonce . fst <$> (getAccountNonceBestGuess sender)
+      nonce <- flip fromMaybe mnonce . fst <$> (getAccountNonceBestGuess (acAddress senderData))
       let transaction = tx nonce
       sendTransactionToBaker transaction 100 >>= \case
         Left err -> return (transaction, Left err)
