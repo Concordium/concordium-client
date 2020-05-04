@@ -313,11 +313,11 @@ decodeJsonArg v =
                Left err -> Left $ printf "cannot parse '%s' as JSON: %s" v err
                Right r -> Right r
 
-getTimestampArg :: String -> TransactionExpiryTime -> Maybe Text -> IO TransactionExpiryTime
-getTimestampArg name now input =
+getExpiryArg :: String -> TransactionExpiryTime -> Maybe Text -> IO TransactionExpiryTime
+getExpiryArg name now input =
   case input of
     Nothing -> return $ now + defaultExpiryDurationSecs
-    Just v -> case parseTimestamp now v of
+    Just v -> case parseExpiry now v of
                 Left err -> logFatal [printf "invalid %s '%s': %s" name v err]
                 Right e -> return e
   where defaultExpiryDurationSecs = 600 -- 10 mins
