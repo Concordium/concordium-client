@@ -176,7 +176,7 @@ processConfigCmd action baseCfgDir verbose =
         accountCfg <-
           eitherDecodeFileStrict file >>= \case
             Left err ->
-              logFatal [printf "cannot read account data: %s" err]
+              logFatal [printf "cannot read JSON from file '%s': %s" file err]
             Right val -> do
               let accountParser = AE.withObject "Account data" $ \v -> do
                     naAddr <- v .: "address"
@@ -185,7 +185,7 @@ processConfigCmd action baseCfgDir verbose =
                     return AccountConfig{acAddr = NamedAddress{..},..}
               case parseEither accountParser val of
                 Left err ->
-                  logFatal [printf "cannot read account data: %s" err]
+                  logFatal [printf "cannot read JSON from file '%s': %s" file err]
                 Right x -> return x
 
         baseCfg <- getBaseConfig baseCfgDir verbose True
