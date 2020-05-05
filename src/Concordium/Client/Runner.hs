@@ -913,7 +913,6 @@ convertTransactionPayload = \case
     return $ Types.Update updateAmount updateAddress msg
   (CT.Transfer transferTo transferAmount) ->
     return $ Types.Transfer transferTo transferAmount
-  (CT.DeployEncryptionKey encKey) -> return $ Types.DeployEncryptionKey encKey
   (CT.RemoveBaker rbid) -> return $ Types.RemoveBaker rbid
   (CT.UpdateBakerAccount ubid uba ubp) ->
     return $ Types.UpdateBakerAccount ubid uba ubp
