@@ -335,7 +335,7 @@ getTransactionCfg baseCfg txOpts energyCost = do
         logWarn [ "expiration time is in the past"
                 , "the transaction will not be committed" ]
       | e < now + 30 =
-        logWarn [ printf "expiration time is in just %s seconds" (Types.expiry $ now - e)
+        logWarn [ printf "expiration time is in just %s seconds" (show $ now - e)
                 , "this may not be enough time for the transaction to be committed" ]
       | e > now + 3600 =
         logWarn [ "expiration time is in more than one hour" ]
