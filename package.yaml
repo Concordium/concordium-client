@@ -166,6 +166,7 @@ executables:
             - globalstate
             - globalstate-types
             - http-conduit
+            - http2-client-grpc
             - iso8601-time
             - microlens-platform
             - managed
