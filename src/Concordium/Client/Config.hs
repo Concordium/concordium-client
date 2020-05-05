@@ -183,7 +183,7 @@ writeAccountKeys baseCfg accCfg = do
   let thresholdFile = accountThresholdFile accCfgDir (acAddress accCfg)
   logInfo [printf "writing file '%s'" thresholdFile]
   encodeFile thresholdFile (acThreshold accCfg)
-  
+
   logSuccess ["wrote key and threshold files"]
 
 getBaseConfig :: Maybe FilePath -> Verbose -> Bool -> IO BaseConfig
@@ -307,7 +307,11 @@ getAccountConfig account baseCfg keysDir keyMap autoInit = do
                 (guard . isDoesNotExistError)
                 (\_ -> logFatal [ printf "key directory for account '%s' not found" (show addr)
                                 , "did you forget to add the account (using 'config account add')?"])
-                (loadKeyMap dir)
+                (do km <- loadKeyMap dir
+                    let file = accountThresholdFile accCfgDir addr
+                    t <- loadThreshold file $ fromIntegral (M.size km)
+                    return (km, t))
+
         return (baseCfg, AccountConfig
                          { acAddr = namedAddr
                          , acKeys = km
@@ -358,15 +362,14 @@ getAllAccountConfigs cfg = do
     isDirectory dir f =
       doesDirectoryExist $ joinPath [dir, f]
 
-loadKeyMap :: FilePath -> IO (KeyMap, IDTypes.SignatureThreshold)
-loadKeyMap keysDir = do 
+loadKeyMap :: FilePath -> IO KeyMap
+loadKeyMap keysDir = do
   keyFilenames <- listDirectory keysDir
   let rawKeys = rawKeysFromFiles keysDir keyFilenames
   rawKeyMap <- loadRawKeyMap rawKeys
-  threshold <- loadThreshold keysDir
   case keyMapFromRaw rawKeyMap of
     Left err -> logFatal [printf "cannot load keys: %s" err]
-    Right km -> return (km, fromMaybe (fromIntegral (M.size km)) threshold)
+    Right km -> return km
 
 insertAccountKey :: Maybe KeyIndex -> S.KeyPair -> KeyMap -> KeyMap
 insertAccountKey idx kp km =
@@ -443,13 +446,12 @@ loadRawKeyMap = foldM f M.empty
           c <- readFile file
           return $ insertRawKey rk (strip $ pack c) rawKeyMap
 
-loadThreshold :: FilePath -> IO (Maybe IDTypes.SignatureThreshold)
-loadThreshold fp = 
-  handleJust (guard . isDoesNotExistError) (const (return Nothing)) $ 
-    eitherDecodeFileStrict' fp >>= \case
-      Left err ->
-        logFatal [printf "threshold file exists but is corrupt: %s" err]
-      Right x -> return (Just x)
+loadThreshold :: FilePath -> IDTypes.SignatureThreshold -> IO IDTypes.SignatureThreshold
+loadThreshold file defaultThreshold = do
+  handleJust (guard . isDoesNotExistError) (const (return defaultThreshold)) $
+    eitherDecodeFileStrict' file >>= \case
+      Left err -> logFatal [printf "corrupt threshold file '%s': %s" file err]
+      Right t -> return t
 
 safeListDirectory :: FilePath -> IO [FilePath]
 safeListDirectory dir = do

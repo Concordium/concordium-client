@@ -192,7 +192,7 @@ processConfigCmd action baseCfgDir verbose =
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
-        
+
         void $ importAccountConfig baseCfg accountCfg
 
     ConfigKeyCmd c -> case c of
