@@ -22,8 +22,13 @@ if [ -z "$port" ]; then
     port=0
 fi
 
->&2 echo "> LD_LIBRARY_PATH=deps/crypto/rust-src/target/release stack build --fast --flag 'simple-client:-middleware' --test --no-run-tests"
-LD_LIBRARY_PATH=deps/crypto/rust-src/target/release stack build --fast --flag 'simple-client:-middleware' --test --no-run-tests
-# Construct command.
->&2 echo "> stack exec concordium-client -- --grpc-ip localhost --grpc-port $port ${args[@]}"
-stack exec concordium-client -- --grpc-ip localhost --grpc-port "$port" "${args[@]}"
+# Build and run client.
+# Do stack build && stack exec instead of stack run because it doesn't accept --flag nor --fast
+# (and thus results in constant rebuilds).
+(
+    >&2 echo "> LD_LIBRARY_PATH=deps/crypto/rust-src/target/release stack build --profile --fast --flag 'simple-client:-middleware' --test --no-run-tests"
+    LD_LIBRARY_PATH=deps/crypto/rust-src/target/release stack build --profile --fast --flag 'simple-client:-middleware' --test --no-run-tests
+) && (
+    >&2 echo "> stack exec concordium-client -- --grpc-ip localhost --grpc-port $port ${args[@]}"
+    stack exec concordium-client -- --grpc-ip localhost --grpc-port "$port" "${args[@]}"
+)
