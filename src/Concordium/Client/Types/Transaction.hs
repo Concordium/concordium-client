@@ -79,9 +79,6 @@ data TransactionJSONPayload
       { toaddress :: Address
       , amount    :: Amount
       } -- ^ Transfers specific amount to the recipent
-  | DeployEncryptionKey
-      { key :: IDTypes.AccountEncryptionKey
-      }
   | RemoveBaker
       { removeId :: BakerId
       }
