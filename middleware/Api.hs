@@ -5,20 +5,25 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Api where
 
 import           Network.Wai (Application)
 import           Control.Monad.Managed (liftIO)
+import           Control.Exception (bracket)
 import qualified Data.HashMap.Strict as HM
 import           Data.Aeson (encode, decode')
 import qualified Data.Aeson as Aeson
 import           Data.Aeson.Types (FromJSON)
+import qualified Data.Aeson.Types as Aeson
+import qualified Data.Aeson.Parser
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Text.IO as TIO
 import qualified Data.ByteString.Lazy.Char8 as BS8
+import qualified Control.Exception as C
 import qualified Data.ByteString.Short as BSS
 import           Data.List.Split
 import           Data.Map
@@ -30,16 +35,21 @@ import           System.Directory
 import           System.Exit
 import           System.Environment
 import           System.IO.Error
+import           System.IO
+import           Control.Concurrent
 import           System.Process
 import           Text.Read (readMaybe)
 import           Lens.Micro.Platform ((^.))
 import           Safe (headMay)
-import NeatInterpolation
+import           Data.Time
+import           Data.Time.Clock.POSIX
+import           NeatInterpolation
 
 import qualified Acorn.Parser.Runner as PR
 import           Concordium.Client.Commands as COM
 import           Concordium.Client.GRPC
 import qualified Concordium.Client.GRPC as GRPC
+import qualified Network.GRPC.Client.Helpers as GRPC
 import           Concordium.Client.Runner
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction
@@ -52,6 +62,7 @@ import qualified Concordium.Types.Transactions as Types
 import qualified Concordium.Types.Execution as Execution
 import qualified Concordium.Client.Types.Transaction as Types
 import           Control.Monad.Except
+import           Control.Monad (forM_)
 import qualified Proto.ConcordiumP2pRpc_Fields as CF
 
 import qualified Config
@@ -128,9 +139,10 @@ data Routes r = Routes
         "v1" :> "transfer" :> ReqBody '[JSON] TransferRequest
                            :> Post '[JSON] TransferResponse
 
-    , typecheckContract :: r :-
-        "v1" :> "typecheckContract" :> ReqBody '[JSON] Text
-                                    :> Post '[JSON] Text
+    , typecheckCode :: r :-
+        "v1" :> "typecheckCode" :> ReqBody '[JSON] BuildModulesRequest
+                                    :> Post '[JSON] Aeson.Value
+
 
     , consensusStatus :: r :-
         "v1" :> "consensusStatus" :> Get '[JSON] Aeson.Value
@@ -143,6 +155,10 @@ data Routes r = Routes
         "v1" :> "blockSummary" :> Capture "blockHash" Text
                               :> Get '[JSON] Aeson.Value
 
+    , contractState :: r :-
+        "v1" :> "contractState" :> Capture "contractAddress" Text
+                              :> Get '[JSON] Aeson.Value
+
     , transactionStatus :: r :-
         "v1" :> "transactionStatus" :> Capture "hash" Text
                               :> Get '[JSON] Aeson.Value
@@ -150,6 +166,18 @@ data Routes r = Routes
     , simpleTransactionStatus :: r :-
         "v1" :> "simpleTransactionStatus" :> Capture "hash" Text
                               :> Get '[JSON] Aeson.Value
+
+    , publishCode :: r :-
+        "v1" :> "publishCode" :> ReqBody '[JSON] PublishCodeRequest
+                                  :> Post '[JSON] Aeson.Value
+
+    , createContract :: r :-
+        "v1" :> "createContract" :> ReqBody '[JSON] CreateContractRequest
+                                  :> Post '[JSON] Aeson.Value
+
+    , messageContract :: r :-
+        "v1" :> "messageContract" :> ReqBody '[JSON] MessageContractRequest
+                                  :> Post '[JSON] Aeson.Value
 
     -- Private Middleware APIs (accessible on local client instance of Middleware only)
     , getNodeState :: r :-
@@ -165,17 +193,67 @@ api :: Proxy (ToServantApi Routes)
 api = genericApi (Proxy :: Proxy Routes)
 
 
+writeSourceCodeFile :: (ModuleName, Text) -> IO String
+writeSourceCodeFile (moduleName, contents) = do
+  -- TODO Validate name is only in [a-zA-Z]*
+  let fileName = Text.unpack moduleName ++ ".midlang"
+  TIO.writeFile fileName contents
+  return fileName
+
+
+{- Creates a fresh Midlang project on disk to run an action in, then deletes
+ - the project after the action has completed, even if an exception is thrown
+ -}
+freshProjectBracket :: [(ModuleName, ModuleSourceCode)] -> ([String] -> IO a) -> IO a
+freshProjectBracket moduleSources projectAction =
+  let
+    projectFiles :: String -> IO [String]
+    projectFiles projectDir = do
+      createDirectoryIfMissing True projectDir
+
+      withCurrentDirectory projectDir $ do
+
+        _ <- readProcessWithExitCode "/bin/bash" [] "yes | mid init"
+
+        fileNames <- forM moduleSources writeSourceCodeFile
+
+        return fileNames
+
+    getFreshDir :: IO String
+    getFreshDir = do
+      time <- getCurrentTime
+      let unixTime = nominalDiffTimeToSeconds $ utcTimeToPOSIXSeconds time
+      return $ "tmp/" ++ show unixTime ++ "/"
+  in
+    do
+      freshDir <- getFreshDir
+      bracket
+        (projectFiles freshDir)
+        (\_ -> removePathForcibly freshDir)
+        (\files -> withCurrentDirectory freshDir $ projectAction files)
+
+
 servantApp :: EnvData -> Text -> Text -> Application
 servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
  where
   routesAsServer = Routes {..} :: Routes AsServer
 
 
-  typecheckContract :: Text -> Handler Text
-  typecheckContract contractCode =
-    liftIO $ do
+  -- Authority is a host and port, e.g. localhost:32000
+  nodeAuthority :: String
+  nodeAuthority =
+    let
+      nodeConfig = GRPC.config nodeBackend
+      host = GRPC._grpcClientConfigHost nodeConfig
+      port = show $ GRPC._grpcClientConfigPort nodeConfig
+    in
+      host ++ ":" ++ port
 
-      {- Rather hacky but KISS approach to "integrating" with the oak compiler
+
+  typecheckCode :: BuildModulesRequest -> Handler Aeson.Value
+  typecheckCode (BuildModulesRequest moduleContents) =
+
+      {- Rather hacky but KISS approach to "integrating" with the Midlang compiler
       In future this code will probably be directly integrated into the client
       and call the compiler in memory, avoiding filesystem entirely.
 
@@ -189,20 +267,150 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
 
       -}
 
-      createDirectoryIfMissing True "tmp/"
-      TIO.writeFile "tmp/Contract.elm" contractCode
+    liftIO $ freshProjectBracket moduleContents (\(sourceCodeFileNames) -> do
+
+      let midlangArgs = ["build"] ++ sourceCodeFileNames ++ ["--report=json"]
 
       (exitCode, stdout, stderr)
-        <- readProcessWithExitCode "oak" ["build", "tmp/Contract.elm"] []
+        <- readProcessWithExitCode "mid" midlangArgs []
 
-      case exitCode of
-        ExitSuccess ->
-          pure $ Text.pack stdout
-        ExitFailure code ->
-          if code == 1 then
-              pure $ Text.pack stderr
-          else
-              pure $ "Unexpected exit code" <> Text.pack (show code)
+      let decodedCompilerResponse =
+            case exitCode of
+              ExitSuccess ->
+                Aeson.eitherDecode' $ BS8.pack stdout
+              ExitFailure code ->
+                if code == 1 then
+                    Aeson.eitherDecode' $ BS8.pack stderr
+                else
+                    Left $ "Unexpected exit code: " <> show code
+
+      case decodedCompilerResponse of
+        Right json -> pure json
+        Left errMsg -> pure $ Aeson.String $ Text.pack errMsg -- TODO Encode a new kind of JSON error that the Elm code can understand?
+    )
+
+
+  publishCode :: PublishCodeRequest -> Handler Aeson.Value
+  publishCode (PublishCodeRequest account energyLimit moduleContents) =
+
+    liftIO $ freshProjectBracket moduleContents (\(sourceCodeFileNames) -> do
+
+      -- TODO Give credentials via the command line (needs enabling in the Midlang compiler)
+      let midlangArgs = ["deploy", nodeAuthority, show energyLimit, "--report=json" ] ++ sourceCodeFileNames
+
+      (exitCode, stdout, stderr)
+        <- readProcessWithExitCode "mid" midlangArgs []
+
+      let decodedCompilerResponse =
+            case exitCode of
+              ExitSuccess ->
+                Aeson.eitherDecode' $ BS8.pack stdout
+              ExitFailure code ->
+                if code == 1 then
+                    Aeson.eitherDecode' $ BS8.pack stderr
+                else
+                    Left $ "Unexpected exit code: " <> show code
+
+      case decodedCompilerResponse of
+        Right json -> pure json
+        Left errMsg -> pure $ Aeson.String $ Text.pack errMsg -- TODO Encode a new kind of JSON error that the Elm code can understand?
+    )
+
+
+  createContract :: CreateContractRequest -> Handler Aeson.Value
+  createContract (CreateContractRequest account creationArgs energyLimit moduleName contractName moduleContents) =
+    {-
+     - The `start-contract` initializes an Midlang contract on the Concordium Network:
+     -
+     -     mid start-contract <midlang-expression> <node> <energy> <Midlang-module-name> <Midlang-contract-name>
+     -
+     - For example:
+     -
+     -     mid start-contract Nat.Zero 127.0.0.1:32000 50 ExampleContractModule ExampleContract
+     -
+     - This tries to compile the given Midlang expression and pass that to the named
+     - contract's `init` function in order to create an instance of it via a node at
+     - socket address 127.0.0.1:32000, with an energy limit of 50.
+     -}
+
+    liftIO $ freshProjectBracket moduleContents (\(sourceCodeFileNames) -> do
+
+      -- TODO Give credentials via the command line (needs enabling in the Midlang compiler)
+      let midlangArgs = ["start-contract", Text.unpack creationArgs, nodeAuthority, show energyLimit, Text.unpack moduleName, Text.unpack contractName, "--report=json" ]
+
+      (exitCode, stdout, stderr)
+        <- readProcessWithExitCode "mid" midlangArgs []
+
+      let decodedCompilerResponse =
+            case exitCode of
+              ExitSuccess ->
+                Aeson.eitherDecode' $ BS8.pack stdout
+              ExitFailure code ->
+                if code == 1 then
+                    Aeson.eitherDecode' $ BS8.pack stderr
+                else
+                    Left $ "Unexpected exit code: " <> show code
+
+      case decodedCompilerResponse of
+        Right json -> pure json
+        Left errMsg -> pure $ Aeson.String $ Text.pack errMsg -- TODO Encode a new kind of JSON error that the Elm code can understand?
+    )
+
+
+
+  messageContract :: MessageContractRequest -> Handler Aeson.Value
+  messageContract (MessageContractRequest account amount maybeMessageContents energyLimit moduleName contractName contractAddress moduleContents) =
+    {-
+     - The `message-contract` sends a message to an Midlang contract on the Concordium
+     - Network:
+     -
+     -     mid message-contract <GTU-amount> <midlang-expression> <node> <energy> <Midlang-module-name> <Midlang-contract-name> <contract-address>
+     -
+     - For example:
+     -
+     -     mid message-contract 123 Op.Increment 127.0.0.1:32000 50 ExampleContractModule ExampleContract '{ "index" : 100, "subindex" : 1 }'
+     -}
+
+    -- If there are no message contents, this amounts to just a simple transfer to a contract, and that isn't something `mid message-contract` supports at the moment
+    case maybeMessageContents of
+
+      Nothing ->
+        error "No message given for messaging contract" -- TODO Complete a simple transfer (or equivalent for sending GTU to a contract instance) instead
+
+      Just messageArgs ->
+
+        liftIO $ freshProjectBracket moduleContents (\(sourceCodeFileNames) -> do
+
+          -- TODO Give credentials via the command line (needs enabling in the Midlang compiler)
+          let midlangArgs =
+                [ "message-contract"
+                , show amount
+                , Text.unpack messageArgs
+                , nodeAuthority
+                , show energyLimit
+                , Text.unpack moduleName
+                , Text.unpack contractName
+                , BS8.unpack $ Aeson.encode contractAddress
+                , "--report=json"
+                ]
+
+          (exitCode, stdout, stderr)
+            <- readProcessWithExitCode "mid" midlangArgs []
+
+          let decodedCompilerResponse =
+                case exitCode of
+                  ExitSuccess ->
+                    Aeson.eitherDecode' $ BS8.pack stdout
+                  ExitFailure code ->
+                    if code == 1 then
+                        Aeson.eitherDecode' $ BS8.pack stderr
+                    else
+                        Left $ "Unexpected exit code: " <> show code
+
+          case decodedCompilerResponse of
+            Right json -> pure json
+            Left errMsg -> pure $ Aeson.String $ Text.pack errMsg -- TODO Encode a new kind of JSON error that the Elm code can understand?
+        )
 
 
   betaIdProvision :: BetaIdProvisionRequest -> Handler Aeson.Value
@@ -336,12 +544,11 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
   transfer :: TransferRequest -> Handler TransferResponse
   transfer TransferRequest{..} = do
 
-    let
-      (accountAddress, keymap) = account
+    let (AccountWithKeys accountAddress keymap) = account
 
     liftIO $ putStrLn $ "✅ Sending " ++ show amount ++ " from " ++ show accountAddress ++ " to " ++ show to
 
-    transactionId <- liftIO $ runTransaction nodeBackend (Transfer { toaddress = to, amount = amount }) account
+    transactionId <- liftIO $ runTransaction nodeBackend (Transfer { toaddress = to, amount = amount }) (accountToPair account)
 
     pure $ TransferResponse { transactionId = transactionId }
 
@@ -356,6 +563,10 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
 
   blockSummary :: Text -> Handler Aeson.Value
   blockSummary blockhash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getBlockSummary blockhash)
+
+
+  contractState :: Text -> Handler Aeson.Value
+  contractState contractAddress = liftIO $ proxyGrpcCall nodeBackend (withBestBlockHash Nothing (GRPC.getInstanceInfo contractAddress))
 
 
   transactionStatus :: Text -> Handler Aeson.Value

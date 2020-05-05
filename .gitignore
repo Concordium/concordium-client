@@ -17,4 +17,4 @@ concordium.proto
 stack.yaml.lock
 .idea
 *.iml
-
+tmp/
