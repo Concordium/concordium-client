@@ -1,7 +1,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 module PerAccountTransactions where
 
-import Concordium.GlobalState.SQLiteATI
+import Concordium.GlobalState.SQL.AccountTransactionIndex
+import Concordium.GlobalState.SQL
 import Concordium.Types
 import Concordium.Types.Transactions
 import Concordium.Types.Execution
@@ -9,8 +10,6 @@ import Concordium.Types.Execution
 import Control.Monad.Logger
 import Control.Monad.Reader
 
-import Data.Serialize(encode)
-import qualified Data.Serialize as S
 import qualified Data.Aeson as AE
 import Data.Aeson.TH
 import Database.Persist
@@ -19,14 +18,13 @@ import Database.Persist.Postgresql
 import Database.Persist.Pagination
 import Data.Conduit
 import Data.Conduit.Combinators as Conduit
-import Data.Time.Clock.POSIX
 
 type PageResult m = ReaderT SqlBackend m (Maybe (Page Entry (Key Entry)))
 
 type AccountStream m = ConduitT () (Entity Entry) (ReaderT SqlBackend m) ()
 
 pageAccount :: MonadIO m => AccountAddress -> PageResult m
-pageAccount accountAddr = getPage [EntryAccount ==. encode accountAddr]
+pageAccount accountAddr = getPage [EntryAccount ==. ByteStringSerialized accountAddr]
                                   EntryId
                                   (PageSize 10)
                                   Descend
@@ -34,7 +32,7 @@ pageAccount accountAddr = getPage [EntryAccount ==. encode accountAddr]
 
 streamRawAccounts :: MonadIO m => AccountAddress -> AccountStream m
 streamRawAccounts accountAddr =
-  streamEntities [EntryAccount ==. encode accountAddr]
+  streamEntities [EntryAccount ==. ByteStringSerialized accountAddr]
                  EntryId
                  (PageSize 10)
                  Descend
@@ -56,17 +54,17 @@ data PrettyEntry = PrettyEntry{
   peAccount :: AccountAddress,
   peBlockHash :: BlockHash,
   peBlockHeight :: BlockHeight,
-  peBlockTime :: POSIXTime,
+  peBlockTime :: Timestamp,
   peTransactionSummary :: PrettySummary
   } deriving(Eq, Show)
 
 makePretty :: Entity Entry -> Either String PrettyEntry
 makePretty eentry = do
   let Entry{..} = entityVal eentry
-  peAccount <- S.decode entryAccount
-  peBlockHash <- S.decode entryBlock
+  let peAccount = unBSS entryAccount
+  let peBlockHash = unBSS entryBlock
   let peBlockHeight = fromIntegral entryBlockHeight
-  let peBlockTime = fromIntegral entryBlockTime
+  let peBlockTime = entryBlockTime
   case entryHash of
     Nothing -> do
       peTransactionSummary <- SpecialTransaction <$> AE.eitherDecodeStrict entrySummary

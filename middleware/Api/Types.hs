@@ -202,7 +202,7 @@ data TransactionOutcome = TransactionOutcome {
 outcomeFromPretty :: PrettyEntry -> TransactionOutcome
 outcomeFromPretty PrettyEntry{..} = TransactionOutcome{..}
   where toBlockHash = peBlockHash
-        toBlockTime = peBlockTime
+        toBlockTime = utcTimeToPOSIXSeconds $ Types.timestampToUTCTime $ peBlockTime
 
         toAccount = peAccount
 
