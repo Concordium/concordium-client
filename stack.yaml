@@ -40,8 +40,8 @@ packages:
 # extra-deps: []
 
 build:
-  library-profiling: true
-  executable-profiling: true
+  library-profiling: false
+  executable-profiling: false
 
 extra-deps:
 # th-utilities was removed in LTS 15.0

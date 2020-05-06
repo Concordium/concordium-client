@@ -5,7 +5,7 @@ module Concordium.Client.Parse
   , parseBlockHash
   , parseTime
   , parseCredExpiry
-  , parseTimestamp
+  , parseExpiry
   , parseSignKey
   , parseVerifyKey ) where
 
@@ -44,8 +44,8 @@ parseTime = parseTimeM False defaultTimeLocale
 parseCredExpiry :: (MonadFail m) => String -> m UTCTime
 parseCredExpiry = parseTime "%0Y%0m"
 
-parseTimestamp :: (MonadError String m) => Timestamp -> Text -> m Timestamp
-parseTimestamp now input = do
+parseExpiry :: (MonadError String m) => TransactionExpiryTime -> Text -> m TransactionExpiryTime
+parseExpiry now input = do
   (t, u) <- parseDuration input
   return $ case u of
     Nothing -> t
@@ -55,7 +55,7 @@ parseTimestamp now input = do
           Minute -> 60
           Hour -> 3600
 
-parseDuration :: (MonadError String m) => Text -> m (Timestamp, Maybe DurationUnit)
+parseDuration :: (MonadError String m) => Text -> m (TransactionExpiryTime, Maybe DurationUnit)
 parseDuration t =
   case reads $ unpack t of
     [(n, r)] -> do
