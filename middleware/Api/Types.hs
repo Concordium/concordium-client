@@ -12,6 +12,7 @@ import           Data.Aeson.TH
 import           Data.Word
 import           Data.Map (Map)
 import           GHC.Generics
+import           Data.Time.Clock.POSIX
 
 import           Concordium.Types.Utils
 import           Concordium.Client.Types.Transaction ()
@@ -199,7 +200,7 @@ data TransactionOutcome = TransactionOutcome {
   -- |Hash of the block this outcome refers to.
   toBlockHash :: !Types.BlockHash,
   -- |Unix timestamp (in seconds).
-  toBlockTime :: !Types.Timestamp,
+  toBlockTime :: !POSIXTime,
   -- |Whether the transaction is incoming or outgoing for the given account.
   -- If outgoing then this field is present and contains the fee, if incoming
   -- this field is Nothing.
@@ -213,7 +214,7 @@ data TransactionOutcome = TransactionOutcome {
 outcomeFromPretty :: PrettyEntry -> TransactionOutcome
 outcomeFromPretty PrettyEntry{..} = TransactionOutcome{..}
   where toBlockHash = peBlockHash
-        toBlockTime = peBlockTime
+        toBlockTime = utcTimeToPOSIXSeconds $ Types.timestampToUTCTime $ peBlockTime
 
         toAccount = peAccount
 
