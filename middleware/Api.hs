@@ -27,7 +27,9 @@ import qualified Control.Exception as C
 import qualified Data.ByteString.Short as BSS
 import           Data.List.Split
 import           Data.Map
+import           Data.Time.Clock (addUTCTime, UTCTime)
 import           Data.Time.Clock.POSIX
+import           Data.Time.Format (formatTime, defaultTimeLocale)
 import           Servant
 import           Servant.API.Generic
 import           Servant.Server.Generic
@@ -419,22 +421,20 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
     liftIO $ putStrLn "✅ Got the following attributes:"
     liftIO $ print attributes
 
-    creationTime :: Int <- liftIO $ round `fmap` getPOSIXTime
+    creationTime <- liftIO getCurrentTime
 
     let
-      expiryDate = creationTime + (60*60*24*365) -- Expires in 365 days from now
+      expiryDate = addUTCTime (60*60*24*365) creationTime -- Expires in 365 days from now
       idObjectRequest =
           IdObjectRequest
             { ipIdentity = 0
-            , name = "concordium-testnet-issuer"
+            , name = "Notabene"
             , attributes =
                 Attributes
-                  { chosenAttributes =
-                      (fromList
-                        [ ("CreationTime", Text.pack $ show creationTime)
-                        , ("MaxAccount", "30")
-                        ]) <> attributes
-                  , expiryDate = expiryDate
+                  { chosenAttributes = attributes
+                  , createdAt = isoTime creationTime
+                  , validTo = isoTime expiryDate
+                  , maxAccounts = 30
                   }
             , anonymityRevokers = [0,1,2]
             , threshold = 2
@@ -783,14 +783,15 @@ debugTestFullProvision = do
     Left err -> fail (show err)
     Right envData -> return envData
 
-  creationTime :: Int <- liftIO $ round `fmap` getPOSIXTime
+  creationTime <- liftIO getCurrentTime
 
   let attributesStub =
-        [ ("DateOfBirth", "2000")
-        , ("CountryOfResidence", "184") -- (GB) Great Britain
-        ]
+        fromList
+          [ ("DateOfBirth", "2000")
+          , ("CountryOfResidence", "184") -- (GB) Great Britain
+          ]
 
-      expiryDate = creationTime + (60*60*24*365) -- Expires in 365 days from now
+      expiryDate = addUTCTime (60*60*24*365) creationTime -- Expires in 365 days from now
 
       idObjectRequest =
         IdObjectRequest
@@ -798,12 +799,10 @@ debugTestFullProvision = do
           , name = "middleware-beta-debug"
           , attributes =
               Attributes
-                { chosenAttributes =
-                    fromList
-                      ([ ("CreationTime", Text.pack $ show creationTime)
-                      , ("MaxAccount", "30")
-                      ] ++ attributesStub)
-                , expiryDate = expiryDate
+                { chosenAttributes = attributesStub
+                , createdAt = isoTime creationTime
+                , validTo = isoTime expiryDate
+                , maxAccounts = 30
                 }
           , anonymityRevokers = [0,1,2]
           , threshold = 2
@@ -1008,3 +1007,8 @@ debugGrpc = do
 
     Left err ->
       error $ show err
+
+
+
+isoTime :: UTCTime -> Text
+isoTime t = Text.pack $ formatTime defaultTimeLocale "%Y%m%d" t

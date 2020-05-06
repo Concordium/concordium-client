@@ -59,7 +59,9 @@ data IdObjectRequest =
 data Attributes =
   Attributes
     { chosenAttributes :: Map Text Text
-    , expiryDate :: Int
+    , createdAt :: Text
+    , validTo :: Text
+    , maxAccounts :: Int
     }
   deriving (Generic, Show, ToJSON, FromJSON)
 
@@ -74,10 +76,11 @@ sampleIdObjectRequest =
           { chosenAttributes =
               fromList
                 [ ("DateOfBirth", "1234")
-                , ("MaxAccount", "30")
                 , ("CountryOfResidence", "386")
                 ]
-          , expiryDate = 1893456000 -- 2030/01/01
+                , createdAt = "20300101"
+                , validTo = "20310101"
+                , maxAccounts = 30
           }
     , anonymityRevokers = [0,1,2]
     , threshold = 2
