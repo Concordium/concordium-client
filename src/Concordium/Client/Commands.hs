@@ -169,6 +169,10 @@ data BakerCmd
   | BakerAdd
     { baFile :: !FilePath
     , baTransactionOpts :: !TransactionOpts }
+  | BakerUpdateAccount
+    { buaBakerId :: !BakerId
+    , buaAccountKeysFile :: !FilePath
+    , buaTransactionOpts :: !TransactionOpts }
   deriving (Show)
 
 visibleHelper :: Parser (a -> a)
@@ -561,7 +565,8 @@ bakerCmds =
       (BakerCmd <$>
         hsubparser
           (bakerGenerateKeysCmd <>
-           bakerAddCmd))
+           bakerAddCmd <>
+           bakerUpdateAccountCmd))
       (progDesc "Commands for creating and deploying baker credentials."))
 
 bakerGenerateKeysCmd :: Mod CommandFields BakerCmd
@@ -582,3 +587,15 @@ bakerAddCmd =
         strArgument (metavar "FILE" <> help "File containing the baker credentials.") <*>
         transactionOptsParser)
       (progDesc "Deploy baker credentials to the chain."))
+
+bakerUpdateAccountCmd :: Mod CommandFields BakerCmd
+bakerUpdateAccountCmd =
+  command
+    "update-account"
+    (info
+      (BakerUpdateAccount <$>
+        argument auto (metavar "BAKER-ID" <> help "ID of the baker") <*>
+        strArgument (metavar "FILE" <> help "File containing keys of the account to send rewards to") <*>
+        transactionOptsParser)
+      (progDesc "Update the account that a baker's rewards are sent to")
+    )

@@ -103,7 +103,7 @@ withClientJson b c = withClient b c >>= getFromJson
 getFromJson :: (MonadIO m, FromJSON a) => Either String Value -> m a
 getFromJson r = do
   s <- case r of
-         Left err -> logFatal [printf "RPC error: %s" err]
+         Left err -> logFatal [printf "I/O error: %s" err]
          Right v -> return v
   case fromJSON s of
     Error err -> logFatal [printf "cannot parse '%s' as JSON: %s" (show s) err]
@@ -364,6 +364,12 @@ data BakerAddTransactionConfig =
   BakerAddTransactionConfig
   { batcTransactionCfg :: TransactionConfig
   , batcBakerKeys :: BakerKeys }
+
+data BakerUpdateTransactionConfig =
+  BakerUpdateTransactionConfig
+  { butcTransactionCfg :: TransactionConfig
+  , butcBakerId :: Types.BakerId
+  , butcAccountKeys :: AccountKeys }
 
 -- Resolved configuration for an account delegation transaction.
 data AccountDelegateTransactionConfig =
@@ -631,6 +637,46 @@ processBakerCmd action baseCfgDir verbose backend =
       withClient backend $ do
         tx <- startTransaction txCfg pl
         tailTransaction $ getBlockItemHash tx
+    BakerUpdateAccount bid file txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose True
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+      butcCfg <- getBakerUpdateTransactionCfg baseCfg txOpts bid file
+      pl <- getUpdateBakerPayload butcCfg
+
+      withClient backend $ do
+        tx <- startTransaction (butcTransactionCfg butcCfg) pl
+        tailTransaction $ getBlockItemHash tx
+
+getBakerUpdateTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerUpdateTransactionConfig
+getBakerUpdateTransactionCfg baseCfg txOpts bid f = do
+  txCfg <- getTransactionCfg baseCfg txOpts $ Just nrgCost
+  accountKeys <- eitherDecodeFileStrict f >>= getFromJson
+  return BakerUpdateTransactionConfig
+    { butcTransactionCfg = txCfg
+    , butcBakerId = bid
+    , butcAccountKeys = accountKeys }
+  where
+    nrgCost = (+ 91) . simpleTransferEnergyCost
+
+getUpdateBakerChallenge :: Types.BakerId -> Types.AccountAddress -> BS.ByteString
+getUpdateBakerChallenge bid add = S.runPut (S.put bid <> S.put add)
+
+getUpdateBakerPayload :: BakerUpdateTransactionConfig -> IO Types.Payload
+getUpdateBakerPayload butcCfg = do
+  let keys = butcAccountKeys butcCfg
+  let ubaAddress = akAddress keys
+  let ubaId = butcBakerId butcCfg
+  let keyMap = akKeys keys
+  let challenge = getUpdateBakerChallenge ubaId ubaAddress
+  proofAccount <- forM keyMap (\key -> Proofs.proveDlog25519KP challenge key `except` "cannot produce account keys proof")
+  let ubaProof = Types.AccountOwnershipProof (Map.toList proofAccount)
+  return Types.UpdateBakerAccount {..}
+    where except c err = c >>= \case
+            Just x -> return x
+            Nothing -> logFatal [err]
 
 processLegacyCmd :: LegacyCmd -> Maybe Backend -> IO ()
 processLegacyCmd action backend =
