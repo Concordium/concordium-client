@@ -54,7 +54,7 @@ import           Control.Monad.IO.Class
 import           Control.Monad.Reader                hiding (fail)
 import           Data.IORef
 import           Data.Aeson                          as AE
-import           Data.Aeson.Types 
+import           Data.Aeson.Types
 import qualified Data.Aeson.Encode.Pretty            as AE
 import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Lazy                as BSL
@@ -830,13 +830,6 @@ printNodeInfo mni =
       putStrLn $ "Baker committee member: " ++ show (ni ^. CF.consensusBakerCommittee)
       putStrLn $ "Finalization committee member: " ++ show (ni ^. CF.consensusFinalizerCommittee)
 
-readModule :: MonadIO m => FilePath -> ClientMonad m (Core.Module Core.UA)
-readModule filePath = do
-  source <- liftIO $ BSL.readFile filePath
-  case S.decodeLazy source of
-    Left err  -> logFatal [err]
-    Right mod -> return mod
-
 processTransaction ::
      (MonadFail m, MonadIO m)
   => BSL.ByteString
@@ -895,10 +888,8 @@ processCredential source networkId =
            Right False -> fail "Transaction not accepted by the baker."
            Right True -> return tx
 
-convertTransactionPayload :: (MonadFail m, MonadIO m) => CT.TransactionJSONPayload -> ClientMonad (PR.Context Core.UA m) Types.Payload
+convertTransactionPayload :: (MonadFail m) => CT.TransactionJSONPayload -> ClientMonad (PR.Context Core.UA m) Types.Payload
 convertTransactionPayload = \case
-  (CT.DeployModuleFromSource fileName) ->
-    Types.DeployModule <$> readModule fileName -- deserializing is not necessary, but easiest for now.
   (CT.DeployModule mnameText) ->
     Types.DeployModule <$> liftContext (PR.getModule mnameText)
   (CT.InitContract initAmount mnameText cNameText paramExpr) -> do
