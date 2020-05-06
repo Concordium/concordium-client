@@ -13,14 +13,14 @@ import Concordium.Client.Types.Transaction
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Aeson as AE
+import qualified Data.ByteString.Char8 as BS
+import qualified Data.Char as C
 import qualified Data.HashMap.Strict as Map
 import Data.List
-import qualified Data.Char as C
 import Data.Maybe
 import Data.Text hiding (empty)
 import Data.Text.Encoding
 import qualified Data.Text.IO as T
-import qualified Data.ByteString.Char8 as BS
 import Data.Time
 import Data.Time.Clock.POSIX
 import Data.Word
