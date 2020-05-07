@@ -48,7 +48,6 @@ postIdCredentialRequest idUrl =
 data IdObjectRequest =
   IdObjectRequest
     { ipIdentity :: Int
-    , name :: Text
     , attributes :: Attributes
     , anonymityRevokers :: [Int]
     , threshold :: Int
@@ -59,7 +58,9 @@ data IdObjectRequest =
 data Attributes =
   Attributes
     { chosenAttributes :: Map Text Text
-    , expiryDate :: Int
+    , createdAt :: Text
+    , validTo :: Text
+    , maxAccounts :: Int
     }
   deriving (Generic, Show, ToJSON, FromJSON)
 
@@ -68,16 +69,16 @@ sampleIdObjectRequest :: IdObjectRequest
 sampleIdObjectRequest =
   IdObjectRequest
     { ipIdentity = 0
-    , name = "Ales"
     , attributes =
         Attributes
           { chosenAttributes =
               fromList
-                [ ("DateOfBirth", "1234")
-                , ("MaxAccount", "30")
-                , ("CountryOfResidence", "386")
+                [ ("dob", "19800101")
+                , ("countryOfResidence", "386")
                 ]
-          , expiryDate = 1893456000 -- 2030/01/01
+                , createdAt = "203001"
+                , validTo = "203101"
+                , maxAccounts = 30
           }
     , anonymityRevokers = [0,1,2]
     , threshold = 2
