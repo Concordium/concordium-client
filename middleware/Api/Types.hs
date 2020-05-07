@@ -3,6 +3,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
 module Api.Types where
 
 import           Data.Text (Text)
@@ -32,9 +33,8 @@ data BetaIdProvisionRequest =
     { attributes :: Map Text Text
     , accountKeys :: Maybe KeyPair
     }
-  deriving (Generic, Show)
+  deriving (Generic, Show, FromJSON)
 
-instance FromJSON BetaIdProvisionRequest
 
 data BetaAccountProvisionRequest =
   BetaAccountProvisionRequest
@@ -44,9 +44,7 @@ data BetaAccountProvisionRequest =
     , revealedAttributes :: Map Text Text
     , accountNumber :: Word8
     }
-  deriving (Generic, Show)
-
-instance ToJSON BetaAccountProvisionRequest
+  deriving (Generic, Show, ToJSON)
 
 instance FromJSON BetaAccountProvisionRequest where
   parseJSON = withObject "BetaAccountProvisionRequest" $ \v -> do
@@ -87,7 +85,7 @@ newtype TestnetGtuDropResponse =
   TestnetGtuDropResponse
     { transactionId :: Types.TransactionHash
     }
-  deriving (ToJSON, Generic, Show)
+  deriving newtype (ToJSON, Show)
 
 
 data AccountWithKeys =
@@ -115,7 +113,7 @@ newtype TransferResponse =
   TransferResponse
     { transactionId :: Types.TransactionHash
     }
-  deriving (ToJSON, Generic, Show)
+  deriving newtype (ToJSON, Show)
 
 
 data GetNodeStateResponse =
@@ -162,7 +160,7 @@ instance ToJSON SetNodeStateRequest
 newtype SetNodeStateResponse =
   SetNodeStateResponse
     { success :: Bool }
-  deriving (FromJSON, ToJSON, Generic, Show)
+  deriving newtype (FromJSON, ToJSON, Show)
 
 data OutcomeDetails =
   BakingReward {
@@ -199,8 +197,8 @@ data TransactionOutcome = TransactionOutcome {
   toAccount :: !Types.AccountAddress,
   -- |Hash of the block this outcome refers to.
   toBlockHash :: !Types.BlockHash,
-  -- |Unix timestamp (in seconds).
-  toBlockTime :: !POSIXTime,
+  -- |Timestamp in milliseconds.
+  toBlockTime :: !Word64,
   -- |Whether the transaction is incoming or outgoing for the given account.
   -- If outgoing then this field is present and contains the fee, if incoming
   -- this field is Nothing.
@@ -214,7 +212,7 @@ data TransactionOutcome = TransactionOutcome {
 outcomeFromPretty :: PrettyEntry -> TransactionOutcome
 outcomeFromPretty PrettyEntry{..} = TransactionOutcome{..}
   where toBlockHash = peBlockHash
-        toBlockTime = utcTimeToPOSIXSeconds $ Types.timestampToUTCTime $ peBlockTime
+        toBlockTime = Types.tsMillis peBlockTime
 
         toAccount = peAccount
 
