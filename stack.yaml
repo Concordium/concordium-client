@@ -39,10 +39,6 @@ packages:
 # (e.g., acme-missiles-0.3)
 # extra-deps: []
 
-build:
-  library-profiling: false
-  executable-profiling: false
-
 extra-deps:
 # th-utilities was removed in LTS 15.0
 - th-utilities-0.2.4.0
