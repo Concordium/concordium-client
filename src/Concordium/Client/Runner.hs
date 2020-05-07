@@ -65,6 +65,7 @@ import           Data.List
 import qualified Data.Serialize                      as S
 import           Data.String
 import           Data.Text                           hiding (take)
+import           Data.Text.Encoding
 import qualified Data.Text.IO                        as TextIO hiding (putStrLn)
 import           Data.Word
 import           Lens.Micro.Platform
@@ -501,7 +502,10 @@ tailTransaction hash = do
   committedStatus <- awaitState 2 Committed hash
   liftIO $ putStrLn ""
 
-  when (tsrState committedStatus == Absent) $ logFatal ["transaction failed before it got committed", "most likely because it was invalid"]
+  when (tsrState committedStatus == Absent) $ do
+    logFatal [ "transaction failed before it got committed"
+             , "most likely because it was invalid"
+             , "Response:\n" ++ unpack (decodeUtf8 $ BSL8.toStrict $ AE.encodePretty committedStatus) ]
 
   runPrinter $ printTransactionStatus committedStatus
 
