@@ -73,11 +73,11 @@ sampleIdObjectRequest =
         Attributes
           { chosenAttributes =
               fromList
-                [ ("DateOfBirth", "1234")
-                , ("CountryOfResidence", "386")
+                [ ("dob", "19800101")
+                , ("countryOfResidence", "386")
                 ]
-                , createdAt = "20300101"
-                , validTo = "20310101"
+                , createdAt = "203001"
+                , validTo = "203101"
                 , maxAccounts = 30
           }
     , anonymityRevokers = [0,1,2]
