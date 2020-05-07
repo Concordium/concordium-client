@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DeriveAnyClass #-}
 module Api.Types where
 
 import           Data.Text (Text)
@@ -89,9 +90,20 @@ newtype TestnetGtuDropResponse =
   deriving (ToJSON, Generic, Show)
 
 
+data AccountWithKeys =
+  AccountWithKeys
+    { address :: IDTypes.AccountAddress
+    , keys :: Types.KeyMap
+    }
+  deriving (FromJSON, Generic, Show)
+
+accountToPair :: AccountWithKeys -> (IDTypes.AccountAddress, Types.KeyMap)
+accountToPair (AccountWithKeys address keys) =
+  (address, keys)
+
 data TransferRequest =
   TransferRequest
-    { account :: (IDTypes.AccountAddress, Types.KeyMap)
+    { account :: AccountWithKeys
     , to :: Types.Address
     , amount :: Types.Amount
     }
@@ -202,7 +214,7 @@ data TransactionOutcome = TransactionOutcome {
 outcomeFromPretty :: PrettyEntry -> TransactionOutcome
 outcomeFromPretty PrettyEntry{..} = TransactionOutcome{..}
   where toBlockHash = peBlockHash
-        toBlockTime = peBlockTime
+        toBlockTime = utcTimeToPOSIXSeconds $ Types.timestampToUTCTime $ peBlockTime
 
         toAccount = peAccount
 
@@ -236,7 +248,7 @@ outcomeFromPretty PrettyEntry{..} = TransactionOutcome{..}
                         Types.TxSuccess [Types.Transferred{etTo = Types.AddressAccount odToAddress,
                                                            etFrom = Types.AddressAccount odFromAddress, ..}] <- tsResult
                             -> SimpleTransfer{odAmount = etAmount, odTransactionHash = tsHash,..}
-                        
+
                     _ -> OtherTransaction{odTransactionType = prettyType tsType, odTransactionHash = tsHash }
 
 $(deriveJSON defaultOptions{fieldLabelModifier = firstLower . drop 2 } ''TransactionOutcome)
@@ -250,3 +262,49 @@ data AccountTransactionsResponse =
 
 instance ToJSON AccountTransactionsResponse
 
+
+
+-- Smart Contracts
+
+type ModuleName = Text
+type ContractName = Text
+type ModuleSourceCode = Text
+type MidlangExpression = Text
+
+data BuildModulesRequest =
+  BuildModulesRequest
+    { code :: [(ModuleName, ModuleSourceCode)]
+    }
+  deriving (FromJSON, Generic, Show)
+
+data PublishCodeRequest =
+  PublishCodeRequest
+    { account :: AccountWithKeys
+    , energy :: Int
+    , code :: [(ModuleName, ModuleSourceCode)]
+    }
+  deriving (FromJSON, Generic, Show)
+
+data CreateContractRequest =
+  CreateContractRequest
+    { account :: AccountWithKeys
+    , creationArgs :: MidlangExpression -- Should be valid Midlang expression
+    , energy :: Int
+    , moduleName :: ModuleName
+    , contractName :: ContractName
+    , code :: [(ModuleName, ModuleSourceCode)]
+    }
+  deriving (FromJSON, Generic, Show)
+
+data MessageContractRequest =
+  MessageContractRequest
+    { account :: AccountWithKeys
+    , amount :: Int -- Can be zero
+    , message :: Maybe MidlangExpression -- Should be valid Midlang expression
+    , energy :: Int
+    , moduleName :: ModuleName
+    , contractName :: ContractName
+    , contractAddress :: Types.ContractAddress
+    , code :: [(ModuleName, ModuleSourceCode)]
+    }
+  deriving (FromJSON, Generic, Show)
