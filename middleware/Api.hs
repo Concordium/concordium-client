@@ -755,7 +755,7 @@ and being accepted baked into a block with the new account credited 100 GTU.
 debugTestFullProvision :: IO String
 debugTestFullProvision = do
 
-  nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:11104"
+  nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:32798"
   pgUrl <- Config.lookupEnvText "PG_URL" "http://localhost:9200"
   idUrl <- Config.lookupEnvText "SIMPLEID_URL" "http://localhost:8000"
 
@@ -786,8 +786,8 @@ debugTestFullProvision = do
 
   let attributesStub =
         fromList
-          [ ("DateOfBirth", "2000")
-          , ("CountryOfResidence", "184") -- (GB) Great Britain
+          [ ("dob", "19800101")
+          , ("countryOfResidence", "184") -- (GB) Great Britain
           ]
 
       expiryDate = addUTCTime (60*60*24*365) creationTime -- Expires in 365 days from now
@@ -815,7 +815,7 @@ debugTestFullProvision = do
           { ipIdentity = ipIdentity (idObjectResponse :: IdObjectResponse)
           , identityObject = identityObject (idObjectResponse :: IdObjectResponse)
           , idUseData = idUseData (idObjectResponse :: IdObjectResponse)
-          , revealedAttributes = fromList [("DateOfBirth","19800101")]
+          , revealedAttributes = fromList [("dob","19800101")]
           , accountNumber = 0
           }
 
@@ -894,7 +894,7 @@ debugTestTransactions nodeBackend selfAddress keyMap = do
 
 runDebugTestTransactions :: IO String
 runDebugTestTransactions = do
-  nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:32856"
+  nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:32798"
   pgUrl <- Config.lookupEnvText "PG_URL" "http://localhost:9200"
   idUrl <- Config.lookupEnvText "SIMPLEID_URL" "http://localhost:8000"
 
