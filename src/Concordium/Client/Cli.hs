@@ -18,7 +18,7 @@ import qualified Data.Char as C
 import qualified Data.HashMap.Strict as Map
 import Data.List
 import Data.Maybe
-import Data.Text hiding (empty)
+import Data.Text hiding (empty, lines, map, null, last)
 import Data.Text.Encoding
 import qualified Data.Text.IO as T
 import Data.Time
@@ -41,7 +41,7 @@ data Level = Info | Warn | Err deriving (Eq)
 -- (i.e. as if they had all been prefixed).
 log :: MonadIO m => Level -> Maybe Color -> [String] -> m ()
 log lvl color msgs = do
-  let doc = prefix <+> fsep (Prelude.map (text . prettyMsg ".") msgs)
+  let doc = prefix <+> fsep (expandLines $ map (prettyMsg ".") msgs)
       out = logStrLn $ renderStyle s doc
   case color of
     Nothing -> out
@@ -74,11 +74,18 @@ logFatal msgs = logError msgs >> liftIO exitFailure
 logExit :: MonadIO m => [String] -> m a
 logExit msgs = logInfo msgs >> liftIO exitSuccess
 
+-- |Expand each string into a document of the string's lines joined together using vcat.
+expandLines :: [String] -> [Doc]
+expandLines = map $ vcat . map text . lines
+
 prettyMsg :: String -> String -> String
 prettyMsg punctuation = \case
   "" -> ""
-  (x:xs) -> (C.toUpper x : xs) ++ if Prelude.last xs `elem` p then "" else punctuation
-  where p = ".,:;?!" :: String
+  (x:xs) -> let s = if null xs || last xs `elem` p
+                    then xs
+                    else xs ++ punctuation
+            in (C.toUpper x) : s
+  where p = ".,:;?!{}" :: String
 
 logStr :: MonadIO m => String -> m ()
 logStr = liftIO . hPutStr stderr
