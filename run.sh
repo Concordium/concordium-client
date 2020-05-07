@@ -47,6 +47,6 @@ fi
     log "> LD_LIBRARY_PATH=deps/crypto/rust-src/target/release stack build --profile --fast --flag 'simple-client:-middleware' --test --no-run-tests"
     LD_LIBRARY_PATH=deps/crypto/rust-src/target/release stack build --profile --fast --flag 'simple-client:-middleware' --test --no-run-tests
 ) && (
-    log "> stack exec concordium-client -- --grpc-ip localhost --grpc-port $PORT ${args[@]}"
-    stack exec concordium-client -- --grpc-ip localhost --grpc-port "$PORT" "${args[@]}"
+    log "> stack exec --profile concordium-client -- --grpc-ip localhost --grpc-port $PORT ${args[@]}"
+    stack exec --profile concordium-client -- --grpc-ip localhost --grpc-port "$PORT" "${args[@]}"
 )
