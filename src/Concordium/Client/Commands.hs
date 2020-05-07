@@ -119,14 +119,11 @@ data AccountCmd
   deriving (Show)
 
 data ModuleCmd
-  = ModuleShow
+  = ModuleShowSource
     { mssRef :: !Text
     , mssBlockHash :: !(Maybe Text) }
   | ModuleList
     { mlBlockHash :: !(Maybe Text) }
-  | ModuleDeploy
-    { mdName :: !Text
-    , mdTransactionOpts :: !TransactionOpts }
   deriving (Show)
 
 data ContractCmd
@@ -350,17 +347,16 @@ moduleCmds =
     (info
       (ModuleCmd <$>
         hsubparser
-          (moduleShowCmd <>
-           moduleListCmd <>
-           moduleDeployCmd))
+          (moduleShowSourceCmd <>
+           moduleListCmd))
       (progDesc "Commands for inspecting and deploying modules."))
 
-moduleShowCmd :: Mod CommandFields ModuleCmd
-moduleShowCmd =
+moduleShowSourceCmd :: Mod CommandFields ModuleCmd
+moduleShowSourceCmd =
   command
-    "show"
+    "show-source"
     (info
-      (ModuleShow <$>
+      (ModuleShowSource <$>
         strArgument (metavar "REF" <> help "Reference ID of the module.") <*>
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
       (progDesc "Display module source code."))
@@ -373,17 +369,6 @@ moduleListCmd =
       (ModuleList <$>
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
       (progDesc "List all modules."))
-
-moduleDeployCmd :: Mod CommandFields ModuleCmd
-moduleDeployCmd =
-  command
-    "deploy"
-    (info
-      (ModuleDeploy <$>
-        strArgument (metavar "MODLE-NAME" <> help "Name of the module to deploy.") <*>
-        transactionOptsParser
-      )
-      (progDesc "Deploy module."))
 
 contractCmds :: Mod CommandFields Cmd
 contractCmds =
