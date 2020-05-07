@@ -61,7 +61,7 @@ import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
 import qualified Data.HashMap.Strict                 as Map
 import           Data.Maybe
-import           Data.List
+import           Data.List                           as L
 import qualified Data.Serialize                      as S
 import           Data.String
 import           Data.Text                           hiding (take)
@@ -563,7 +563,30 @@ processAccountCmd action baseCfgDir verbose backend =
         tailTransaction $ getBlockItemHash tx
 
 processModuleCmd :: ModuleCmd -> Verbose -> Backend -> IO ()
-processModuleCmd action _ backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
+processModuleCmd action _ backend =
+  case action of
+    ModuleShowSource ref block -> do
+      m <- PR.evalContext emptyContextData $ withClient backend $ withBestBlockHash block $ getModuleSource ref
+      case m of
+        Left err -> logFatal [printf "RPC error: %s" err]
+        Right v -> do
+          -- Force utf8 encoding to prevent crashing on non-unicode terminals.
+          -- The special characters will be printed wrong on such terminals,
+          -- but this allows them to pipe the output to a file and read it
+          -- correctly from there.
+          -- TODO Make pretty-printer print ASCII-only by default to avoid the issue.
+          let e = show localeEncoding
+          unless (L.isPrefixOf "utf" e) $ do
+            logWarn [ "displaying module source in UTF-8 encoding"
+                    , "it appears that your terminal doesn't use a unicode encoding"
+                    , "certain characters may not be rendered correctly"
+                    , "consider redirecting the output to a file and open it in UTF-8 using an editor" ]
+          hSetEncoding stdout utf8
+          putStrLn $ show $ PP.showModule v
+          logSuccess [printf "displayed source of module '%s' in encoding '%s'" ref e]
+    ModuleList block -> do
+      v <- withClient backend $ withBestBlockHash block getModuleList >>= getFromJson
+      runPrinter $ printModuleList v
 
 processContractCmd :: ContractCmd -> Verbose -> Backend -> IO ()
 processContractCmd action _ backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
