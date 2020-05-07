@@ -96,23 +96,23 @@ data ConfigKeyCmd
 
 data TransactionCmd
   = TransactionSubmit
-    { transactionSourceFile :: !FilePath }
+    { tsFile :: !FilePath }
   | TransactionStatus
-    { transactionHash :: !Text }
+    { tsHash :: !Text }
   | TransactionSendGtu
-    { transactionToAccount :: !Text
-    , transactionAmount :: !Amount
-    , transactionOpts :: !TransactionOpts }
+    { tsgReceiver :: !Text
+    , tsgAmount :: !Amount
+    , tsgOpts :: !TransactionOpts }
   | TransactionDeployCredential
-    { transactionCredentialFile :: !FilePath }
+    { tdcFile :: !FilePath }
   deriving (Show)
 
 data AccountCmd
   = AccountShow
-    { accountAddress :: !(Maybe Text)
-    , accountBlockHash :: !(Maybe Text) }
+    { asAddress :: !(Maybe Text)
+    , asBlockHash :: !(Maybe Text) }
   | AccountList
-    { accountBlockHash :: !(Maybe Text) }
+    { alBlockHash :: !(Maybe Text) }
   | AccountDelegate
     { adBakerId :: !BakerId
     , adTransactionOpts :: !TransactionOpts }
@@ -120,26 +120,26 @@ data AccountCmd
 
 data ModuleCmd
   = ModuleShow
-    { ref :: !Text
-    , moduleBlockHash :: !(Maybe Text) }
+    { mssRef :: !Text
+    , mssBlockHash :: !(Maybe Text) }
   | ModuleList
-    { moduleBlockHash :: !(Maybe Text) }
+    { mlBlockHash :: !(Maybe Text) }
   | ModuleDeploy
-    { moduleName :: !Text
-    , moduleTransactionOpts :: !TransactionOpts }
+    { mdName :: !Text
+    , mdTransactionOpts :: !TransactionOpts }
   deriving (Show)
 
 data ContractCmd
   = ContractShow
-    { contractAddress :: !Text
-    , contractBlockHash :: !(Maybe Text) }
+    { csAddress :: !Text
+    , csBlockHash :: !(Maybe Text) }
   | ContractList
-    { contractBlockHash :: !(Maybe Text) }
+    { clBlockHash :: !(Maybe Text) }
   | ContractInit
-    { contractModuleName :: !Text
-    , contractName :: !Text
-    , contractParameter :: !Text
-    , contractTransactionOpts :: !TransactionOpts }
+    { ciModuleName :: !Text
+    , ciName :: !Text
+    , ciParameter :: !Text
+    , ciTransactionOpts :: !TransactionOpts }
   deriving (Show)
 
 data TransactionOpts =
