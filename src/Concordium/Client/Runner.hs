@@ -59,6 +59,7 @@ import qualified Data.Aeson.Encode.Pretty            as AE
 import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
+import qualified Data.Char                           as C
 import qualified Data.HashMap.Strict                 as Map
 import           Data.Maybe
 import           Data.List                           as L
@@ -575,18 +576,29 @@ processModuleCmd action _ backend =
           -- but this allows them to pipe the output to a file and read it
           -- correctly from there.
           -- TODO Make pretty-printer print ASCII-only by default to avoid the issue.
-          let e = show localeEncoding
-          unless (L.isPrefixOf "utf" e) $ do
+          let locEnc = show localeEncoding
+          enc <- ensureUtfEncoding locEnc $ do
             logWarn [ "displaying module source in UTF-8 encoding"
-                    , "it appears that your terminal doesn't use a unicode encoding"
+                    , printf "it appears that your terminal uses the non-unicode encoding '%s'" locEnc
                     , "certain characters may not be rendered correctly"
                     , "consider redirecting the output to a file and open it in UTF-8 using an editor" ]
-          hSetEncoding stdout utf8
           putStrLn $ show $ PP.showModule v
-          logSuccess [printf "displayed source of module '%s' in encoding '%s'" ref e]
+          logSuccess [printf "displayed source of module '%s' in encoding '%s'" ref enc]
     ModuleList block -> do
       v <- withClient backend $ withBestBlockHash block getModuleList >>= getFromJson
       runPrinter $ printModuleList v
+
+-- |Test if an encoding name is a flavor of unicode. If it it, return it.
+-- Otherwise, print the warning and set the encoding of stdout to UTF-8.
+ensureUtfEncoding :: String -> IO () -> IO String
+ensureUtfEncoding e printWarn =
+  if L.isPrefixOf "utf" $ Prelude.map C.toLower e then
+    printf "asdf '%s'" e >>
+    return e
+  else do
+    printWarn
+    hSetEncoding stdout utf8
+    return $ show utf8
 
 processContractCmd :: ContractCmd -> Verbose -> Backend -> IO ()
 processContractCmd action _ backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
