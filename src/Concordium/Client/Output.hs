@@ -150,6 +150,9 @@ printCred c =
 printAccountList :: [Text] -> Printer
 printAccountList = tell . map unpack
 
+printModuleList :: [Text] -> Printer
+printModuleList = printAccountList
+
 showKeyPair :: S.KeyPair -> String
 showKeyPair S.KeyPairEd25519 { S.signKey=sk, S.verifyKey=vk } =
   printf "sign=%s, verify=%s" (show sk) (show vk)
