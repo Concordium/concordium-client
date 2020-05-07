@@ -428,12 +428,11 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
       idObjectRequest =
           IdObjectRequest
             { ipIdentity = 0
-            , name = "Notabene"
             , attributes =
                 Attributes
                   { chosenAttributes = attributes
-                  , createdAt = isoTime creationTime
-                  , validTo = isoTime expiryDate
+                  , createdAt = toISOYearMonth creationTime
+                  , validTo = toISOYearMonth expiryDate
                   , maxAccounts = 30
                   }
             , anonymityRevokers = [0,1,2]
@@ -796,12 +795,11 @@ debugTestFullProvision = do
       idObjectRequest =
         IdObjectRequest
           { ipIdentity = 0
-          , name = "middleware-beta-debug"
           , attributes =
               Attributes
                 { chosenAttributes = attributesStub
-                , createdAt = isoTime creationTime
-                , validTo = isoTime expiryDate
+                , createdAt = toISOYearMonth creationTime
+                , validTo = toISOYearMonth expiryDate
                 , maxAccounts = 30
                 }
           , anonymityRevokers = [0,1,2]
@@ -1009,6 +1007,5 @@ debugGrpc = do
       error $ show err
 
 
-
-isoTime :: UTCTime -> Text
-isoTime t = Text.pack $ formatTime defaultTimeLocale "%Y%m%d" t
+toISOYearMonth :: UTCTime -> Text
+toISOYearMonth t = Text.pack $ formatTime defaultTimeLocale "%Y%m" t

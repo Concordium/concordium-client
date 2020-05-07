@@ -48,7 +48,6 @@ postIdCredentialRequest idUrl =
 data IdObjectRequest =
   IdObjectRequest
     { ipIdentity :: Int
-    , name :: Text
     , attributes :: Attributes
     , anonymityRevokers :: [Int]
     , threshold :: Int
@@ -70,7 +69,6 @@ sampleIdObjectRequest :: IdObjectRequest
 sampleIdObjectRequest =
   IdObjectRequest
     { ipIdentity = 0
-    , name = "Ales"
     , attributes =
         Attributes
           { chosenAttributes =
