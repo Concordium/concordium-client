@@ -57,10 +57,7 @@ data ModuleSource
 
 -- |Payload of a transaction
 data TransactionJSONPayload
-  = DeployModuleFromSource
-      { moduleSource :: FilePath
-      } -- ^ Read a serialized module from a file and deploy it.
-  | DeployModule
+  = DeployModule
       { moduleName :: Text
       } -- ^ Deploys a blockchain-ready version of the module, as retrieved from the Context
   | InitContract
