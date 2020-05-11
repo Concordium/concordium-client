@@ -29,6 +29,7 @@ import Text.Printf
 
 type BaseConfigDir = FilePath
 
+-- |The default location of the config root directory.
 getDefaultBaseConfigDir :: IO BaseConfigDir
 getDefaultBaseConfigDir = getXdgDirectory XdgConfig "concordium"
 
@@ -48,17 +49,24 @@ accountKeysDir accCfgDir addr = accCfgDir </> show addr
 accountThresholdFile :: FilePath -> Types.AccountAddress -> FilePath
 accountThresholdFile accCfgDir addr = accCfgDir </> show addr <.> "threshold"
 
+-- |A pair of files containing the sign- and verify components, respectively,
+-- of a single key pair.
 data KeyPairFiles = KeyPairFiles { kpfSign :: FilePath , kpfVerify :: FilePath }
 
+-- |Return file pair for the key with the given index in the provided key directory.
 accountKeyFiles :: FilePath -> KeyIndex -> KeyPairFiles
 accountKeyFiles keysDir idx = KeyPairFiles { kpfSign = addExt "sign" , kpfVerify = addExt "verify" }
   where addExt ext = keysDir </> show idx <.> ext
 
+-- |Name to use if no account name is provided.
 defaultAccountName :: Text
 defaultAccountName = "default"
 
+-- |Mapping from account name to their address.
 type AccountNameMap = M.HashMap Text Types.AccountAddress
 
+-- |Base configuration consists of the account name mapping and location of
+-- account keys to be loaded on demand.
 data BaseConfig = BaseConfig
                   { bcVerbose :: Bool
                   , bcAccountNameMap :: AccountNameMap
@@ -94,7 +102,7 @@ initBaseConfig f = do
     , bcAccountCfgDir = accCfgDir
     , bcAccountNameMap = M.empty }
 
--- |Ensure the basic account config is initialized
+-- |Ensure the basic account config is initialized.
 ensureAccountConfigInitialized :: BaseConfig -> IO ()
 ensureAccountConfigInitialized baseCfg = do
   let accCfgDir = bcAccountCfgDir baseCfg
@@ -146,11 +154,13 @@ initAccountConfig baseCfg namedAddr existFatal = do
                     , acThreshold = 1 -- minimum threshold
                     })
 
+-- |Write the provided configuration to disk in the expected formats.
 importAccountConfig :: BaseConfig -> AccountConfig -> IO ()
 importAccountConfig baseCfg accountCfg = do
   void (initAccountConfig baseCfg (acAddr accountCfg) True)
   writeAccountKeys baseCfg accountCfg
 
+-- |Write the account name map to a file in the expected format.
 writeAccountNameMap :: FilePath -> AccountNameMap -> IO ()
 writeAccountNameMap file = writeFile file . unlines . map f . sortOn fst . M.toList
   where f (name, addr) = printf "%s = %s" name (show addr)
@@ -322,12 +332,11 @@ getAccountConfig account baseCfg keysDir keyMap autoInit = do
                                 , acKeys = km
                                 , acThreshold = fromIntegral (M.size km) })
 
--- |Look up an account.
--- The second argument can be either an account address or a name of an account.
--- If it is a valid account address (in the sense that it is formatted correctly) then
--- it is assumed that the input is an address, and we try to look up whether we have it
--- stored in the config
--- Otherwise we assume the input is a local name of an account, and we try to look up its address.
+-- |Look up an account by name or address:
+-- If input is a well-formed account address, try to (reverse) look up its name in the map.
+-- If this lookup fails, return the address with name Nothing.
+-- Otherwise assume the input is a local name of an account, and try to look up its address.
+-- If this lookup fails, return Nothing.
 resolveAccountAddress :: AccountNameMap -> Text -> Maybe NamedAddress
 resolveAccountAddress m input = do
   -- Try parsing input as account address.
@@ -342,12 +351,15 @@ resolveAccountAddress m input = do
                 return (name, a)
   return NamedAddress { naName = n, naAddr = a }
 
+-- |Look up an account by name or address. See doc for resolveAccountAddress.
+-- If the lookup fails, an error is thrown.
 getAccountAddress :: (MonadError String m) => AccountNameMap -> Text -> m NamedAddress
 getAccountAddress m input =
   case resolveAccountAddress m input of
     Nothing -> throwError $ printf "the identifier '%s' is neither the address nor the name of an account" input
     Just a -> return a
 
+-- |Return all account keys from the config.
 getAllAccountConfigs :: BaseConfig -> IO [AccountConfig]
 getAllAccountConfigs cfg = do
   let dir = bcAccountCfgDir cfg
@@ -362,6 +374,7 @@ getAllAccountConfigs cfg = do
     isDirectory dir f =
       doesDirectoryExist $ joinPath [dir, f]
 
+-- |Return all key pairs from the provided directory.
 loadKeyMap :: FilePath -> IO KeyMap
 loadKeyMap keysDir = do
   keyFilenames <- listDirectory keysDir
@@ -371,6 +384,7 @@ loadKeyMap keysDir = do
     Left err -> logFatal [printf "cannot load keys: %s" err]
     Right km -> return km
 
+-- |Insert key pair on the given index. If no index is given, use the first available one.
 insertAccountKey :: Maybe KeyIndex -> S.KeyPair -> KeyMap -> KeyMap
 insertAccountKey idx kp km =
   let idx' = case idx of
@@ -378,7 +392,7 @@ insertAccountKey idx kp km =
             Just i -> i
   in M.insert idx' kp km
 
--- Compute the next index not already in use, starting from the one provided
+-- |Compute the next index not already in use, starting from the one provided
 -- (which is assumed to be less than or equal to the first element of the list).
 nextUnusedIdx :: KeyIndex -> [KeyIndex] -> KeyIndex
 nextUnusedIdx i sortedKeys = case sortedKeys of
@@ -393,12 +407,16 @@ type KeyContents = Text
 type RawKeyId = (KeyName, KeyType)
 type RawKeyMap = M.HashMap KeyName (Maybe KeyContents, Maybe KeyContents)
 
+-- |Filter the provided list of file names for key files and return them (as a tuple)
+-- as absolute path (by joining them with the keys dir) together with the key name and type.
 rawKeysFromFiles :: FilePath -> [FilePath] -> [(FilePath, RawKeyId)]
 rawKeysFromFiles keysDir = foldr f []
   where f file rks = case rawKeyIdFromFile file of
                        Nothing -> rks
                        Just k -> (joinPath [keysDir, file], k) : rks
 
+-- |Return key ID (name and type) of a key contained in a file based on the file's name.
+-- Return Nothing if the file is not a key.
 rawKeyIdFromFile :: FilePath -> Maybe RawKeyId
 rawKeyIdFromFile file = do
   let (name, ext) = splitExtension file
@@ -408,8 +426,9 @@ rawKeyIdFromFile file = do
          _ -> Nothing
   return (name, t)
 
+-- |Convert "raw" key map into a final, valid one which only contains keys where both the sign- and valid components exist.
 keyMapFromRaw :: (MonadError String m) => RawKeyMap -> m KeyMap
-keyMapFromRaw rkm = foldM f M.empty $ M.toList rkm
+keyMapFromRaw = foldM f M.empty . M.toList
   where
     f m (name, keyPair) =
       case keyPair of
@@ -434,9 +453,9 @@ keyMapFromRaw rkm = foldM f M.empty $ M.toList rkm
 
 insertRawKey :: RawKeyId -> KeyContents -> RawKeyMap -> RawKeyMap
 insertRawKey (name, t) contents m =
-  let (sk, pk) = M.lookupDefault (Nothing, Nothing) name m
+  let (sk, vk) = M.lookupDefault (Nothing, Nothing) name m
       keyPair = case t of
-               Sign -> (Just contents, pk)
+               Sign -> (Just contents, vk)
                Verify -> (sk, Just contents)
   in M.insert name keyPair m
 
@@ -446,6 +465,7 @@ loadRawKeyMap = foldM f M.empty
           c <- readFile file
           return $ insertRawKey rk (strip $ pack c) rawKeyMap
 
+-- |Load threshold from a from a file or return the provided default if the file does not exist.
 loadThreshold :: FilePath -> IDTypes.SignatureThreshold -> IO IDTypes.SignatureThreshold
 loadThreshold file defaultThreshold = do
   handleJust (guard . isDoesNotExistError) (const (return defaultThreshold)) $
@@ -453,6 +473,7 @@ loadThreshold file defaultThreshold = do
       Left err -> logFatal [printf "corrupt threshold file '%s': %s" file err]
       Right t -> return t
 
+-- |Return list of files in the directory or the empty list if it does not exist.
 safeListDirectory :: FilePath -> IO [FilePath]
 safeListDirectory dir = do
   e <- doesDirectoryExist dir
