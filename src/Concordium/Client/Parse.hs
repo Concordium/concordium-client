@@ -17,6 +17,7 @@ import Concordium.Types
 import Control.Monad.Except
 import Data.Text
 import Data.Time hiding (parseTime)
+import Data.Word
 import Text.Printf
 
 parseHash :: Text -> Maybe Hash
@@ -35,27 +36,31 @@ data DurationUnit = Second | Minute | Hour
 
 type TimeFormat = String
 
--- Parse time from a string using the provided format.
+-- |Parse time from a string using the provided format.
 -- This is a simple convenience wrapper around the more general function parseTimeM.
 parseTime :: (MonadFail m) => TimeFormat -> String -> m UTCTime
 parseTime = parseTimeM False defaultTimeLocale
 
--- Parse credential expiry time formatted as "<year (4 digits)><month (2 digits)>"
+-- |Parse credential expiry time formatted as "<year (4 digits)><month (2 digits)>"
 parseCredExpiry :: (MonadFail m) => String -> m UTCTime
 parseCredExpiry = parseTime "%0Y%0m"
 
+-- |Parse expiry time given as absolute Unix epoch or a duration string
+-- relative to the provided "now" time.
 parseExpiry :: (MonadError String m) => TransactionExpiryTime -> Text -> m TransactionExpiryTime
 parseExpiry now input = do
   (t, u) <- parseDuration input
+  let e = TransactionExpiryTime t
   return $ case u of
-    Nothing -> t
-    Just s -> now + t*multiplier s
+            Nothing -> e
+            Just s -> now + e*multiplier s
   where multiplier = \case
           Second -> 1
           Minute -> 60
           Hour -> 3600
 
-parseDuration :: (MonadError String m) => Text -> m (TransactionExpiryTime, Maybe DurationUnit)
+-- |Parse a string into an integer and an optional duration unit.
+parseDuration :: (MonadError String m) => Text -> m (Word64, Maybe DurationUnit)
 parseDuration t =
   case reads $ unpack t of
     [(n, r)] -> do

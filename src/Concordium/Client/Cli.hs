@@ -33,7 +33,7 @@ import System.IO
 
 data Level = Info | Warn | Err deriving (Eq)
 
--- Logs a list of sentences. The sentences are pretty printed (capital first letter and dot at the end),
+-- |Log a list of sentences. The sentences are pretty printed (capital first letter and dot at the end),
 -- so the input messages should only contain capital letters for names and have no dot suffix.
 -- Sentences will be joined on the same line as long as the resulting line doesn't exceed 90 chars.
 -- Depending on the log level, an appropriate prefix is added to the first line.
@@ -78,6 +78,8 @@ logExit msgs = logInfo msgs >> liftIO exitSuccess
 expandLines :: [String] -> [Doc]
 expandLines = map $ vcat . map text . lines
 
+-- |Ensure that a string is printable as a sentence by converting the first letter to upper case
+-- and, unless it already ends with "standard" punctuation, appending the provided punctionation.
 prettyMsg :: String -> String -> String
 prettyMsg punctuation = \case
   "" -> ""
@@ -93,7 +95,7 @@ logStr = liftIO . hPutStr stderr
 logStrLn :: MonadIO m => String -> m ()
 logStrLn = liftIO . hPutStrLn stderr
 
--- Ask the user to "confirm" on stdin and return the result.
+-- |Ask the user to "confirm" on stdin and return the result.
 askConfirmation :: Maybe String -> IO Bool
 askConfirmation prompt = do
   putStr $ prettyMsg " [yN]: " $ fromMaybe defaultPrompt prompt
@@ -101,6 +103,7 @@ askConfirmation prompt = do
   return $ strip (toLower input) == "y"
   where defaultPrompt = "confirm"
 
+-- |Standardized method of exiting the command because the transaction is cancelled.
 exitTransactionCancelled :: IO ()
 exitTransactionCancelled = logExit ["transaction cancelled"]
 
@@ -302,7 +305,7 @@ instance AE.FromJSON AccountKeys where
 data NamedAddress = NamedAddress { naName :: Maybe Text, naAddr :: AccountAddress }
   deriving (Show, Eq)
 
--- Hardcode network ID and hook.
+-- |Hardcoded network ID.
 defaultNetId :: Int
 defaultNetId = 100
 
