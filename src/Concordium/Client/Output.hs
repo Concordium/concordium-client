@@ -26,28 +26,30 @@ import Text.Printf
 
 -- PRINTER
 
+-- |Specialized writer for producing a list of lines.
 type Printer = Writer [String] ()
 
+-- |Print the lines of a printer.
 runPrinter :: (MonadIO m) => Printer -> m ()
-runPrinter p = liftIO $ mapM_ putStrLn $ execWriter p
+runPrinter = liftIO . mapM_ putStrLn . execWriter
 
 -- TIME
 
--- Convert time to string using the provided formatting and "default" (American) locale.
+-- |Convert time to string using the provided formatting and "default" (American) locale.
 -- Normally one of the functions below should be used instead of this one.
 showTime :: String -> UTCTime -> String
 showTime = formatTime defaultTimeLocale
 
--- Convert time to string using the RFC822 date formatting and "default" (American) locale.
+-- |Convert time to string using the RFC822 date formatting and "default" (American) locale.
 showTimeFormatted :: UTCTime -> String
 showTimeFormatted = showTime rfc822DateFormat
 
--- Convert time to string formatted as "<month (3 letters)> <year (4 digits)>".
+-- |Convert time to string formatted as "<month (3 letters)> <year (4 digits)>".
 -- This is the format used for credential expiration.
 showTimeYearMonth :: UTCTime -> String
 showTimeYearMonth = showTime "%b %0Y"
 
--- Convert time of day to string formatted as "<hour>:<minute>:<second>" (all zero-padded).
+-- |Convert time of day to string formatted as "<hour>:<minute>:<second>" (all zero-padded).
 -- This is the format used for timestamps in logging.
 showTimeOfDay :: TimeOfDay -> String
 showTimeOfDay = formatTime defaultTimeLocale "%T"
@@ -101,6 +103,7 @@ printAccountConfigList cfgs =
 
 -- ACCOUNT
 
+-- |Standardized method of displaying "no" information.
 showNone :: String
 showNone = "none"
 
@@ -284,16 +287,18 @@ printBlockInfo (Just b) =
 
 -- AMOUNT AND ENERGY
 
+-- |Standardized method of displaying an amount as GTU.
 showGtu :: Types.Amount -> String
 showGtu = printf "%.4f GTU" . (/amountPerGtu) . fromIntegral
   where amountPerGtu = 10000 :: Double
 
+-- |Standardized method of displaying energy as NRG.
 showNrg :: Types.Energy -> String
 showNrg = printf "%s NRG" . show
 
 -- UTIL
 
--- Produce a string fragment of the address and, if available, name of the account.
+-- |Produce a string fragment of the address and, if available, name of the account.
 showNamedAddress :: NamedAddress -> String
 showNamedAddress NamedAddress { naName = name, naAddr = a } =
   let addr = printf "'%s'" (show a)
@@ -301,31 +306,41 @@ showNamedAddress NamedAddress { naName = name, naAddr = a } =
     Nothing -> addr
     Just n -> printf "%s (%s)" addr n
 
+-- |Standardized method of displaying optional values.
 showMaybe :: (a -> String) -> Maybe a -> String
 showMaybe = maybe showNone
 
+-- |Standardized method of displaying optional time values.
 showMaybeUTC :: Maybe UTCTime -> String
 showMaybeUTC = showMaybe showTimeFormatted
 
+-- |Standardized method of displaying EMA/EMSD values.
 showEm :: String -> String -> String
 showEm = printf "%s (EMA), %s (EMSD)"
 
+-- |Standardized method of displaying EMA/EMSD number of seconds.
 showEmSeconds :: Double -> Double -> String
 showEmSeconds a d = showEm (showSeconds a) (showSeconds d)
 
+-- |Standardized method of displaying optional EMA/EMSD number of seconds.
 showMaybeEmSeconds :: Maybe Double -> Maybe Double -> String
 showMaybeEmSeconds a d = case (a, d) of
                     (Just a', Just d') -> showEmSeconds a' d'
                     _ -> showNone
 
+-- |Standardized method of displaying a number of seconds.
 showSeconds :: Double -> String
 showSeconds s = printf "%5d ms" (round $ 1000*s :: Int)
 
+-- |Print a line for each entry in the provided map using the provided print function.
 printMap :: ((k, v) -> String) -> [(k, v)] -> Printer
 printMap s m = forM_ m $ \(k, v) -> tell [s (k, v)]
 
+-- |Standardized method of displaying a boolean as "yes" or "no"
+-- (for True and False, respectively).
 showYesNo :: Bool -> String
 showYesNo = bool "no" "yes"
 
+-- |Convert a map to an assoc list sorted on the key.
 toSortedList :: Ord k => HM.HashMap k v -> [(k, v)]
 toSortedList = sortOn fst . HM.toList
