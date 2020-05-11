@@ -6,13 +6,9 @@ if [[ -n "$BAKER_ID" && -n "$NUM_BAKERS" ]];
 then
   ID=$(echo $BAKER_ID | cut -d'-' -f2)
 
-  if [[ "$(($ID % 10))" -eq 0 ]];
+  if [[ "$(($ID % 10))" -eq 0 && -n "$TPS" && $TPS -gt 0 ]];
   then
-    ARGS=""
-    if [ -n "$TPS" ]; 
-    then
-      ARGS="$ARGS --tps $TPS"
-    fi
+    ARGS="--tps $TPS"
 
     if [ -n "$LOGGING" ]; 
     then
@@ -35,6 +31,6 @@ then
   fi
   
 else
-  echo "Not running transactions generator due to missing BAKER_ID, NUM_BAKERS, and MAX_AMOUNT_OF_GENERATORS"
+  echo "Not running transactions generator due to missing BAKER_ID and NUM_BAKERS"
   while true; do sleep 5m; done
 fi
