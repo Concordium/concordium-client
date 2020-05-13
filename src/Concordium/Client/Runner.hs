@@ -837,7 +837,6 @@ useBackend act b =
             putStrLn $ "Retrieved module " ++ show moduleref
             putStrLn s
     GetNodeInfo -> withClient b $ getNodeInfo >>= printNodeInfo
-    GetBakerPrivateData -> withClient b $ getBakerPrivateData >>= printJSON
     GetPeerData bootstrapper -> withClient b $ getPeerData bootstrapper >>= printPeerData
     StartBaker -> withClient b $ startBaker >>= printSuccess
     StopBaker -> withClient b $ stopBaker >>= printSuccess

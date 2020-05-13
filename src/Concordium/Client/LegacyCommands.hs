@@ -65,7 +65,6 @@ data LegacyCmd
         legacyBlockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the source of a module on a specific block
   | GetNodeInfo -- ^Queries the gRPC server for the node information.
-  | GetBakerPrivateData -- ^Queries the gRPC server for the private data of the baker.
   | GetPeerData
       { legacyIncludeBootstrapper :: !Bool -- ^Whether to include bootstrapper node in the stats or not.
       } -- ^Get all data as pertaining to the node's role as a member of the P2P network.
@@ -124,7 +123,6 @@ legacyProgramOptions =
      getModuleListCommand <>
      getModuleSourceCommand <>
      getNodeInfoCommand <>
-     getBakerPrivateDataCommand <>
      getPeerDataCommand <>
      startBakerCommand <>
      stopBakerCommand <>
@@ -157,14 +155,6 @@ getNodeInfoCommand =
     (info
        (pure GetNodeInfo)
        (progDesc "Query the gRPC server for the node information."))
-
-getBakerPrivateDataCommand :: Mod CommandFields LegacyCmd
-getBakerPrivateDataCommand =
-  command
-    "GetBakerPrivateData"
-    (info
-       (pure GetBakerPrivateData)
-       (progDesc "Query the gRPC server for the private baker info."))
 
 loadModuleCommand :: Mod CommandFields LegacyCmd
 loadModuleCommand =
