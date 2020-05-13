@@ -157,9 +157,6 @@ startBaker = withUnaryNoMsg (call @"startBaker") CF.value
 stopBaker :: ClientMonad IO (Either String Bool)
 stopBaker = withUnaryNoMsg (call @"stopBaker") CF.value
 
-getBakerPrivateData :: ClientMonad IO (Either String Value)
-getBakerPrivateData = withUnaryNoMsg (call @"getBakerPrivateData") (to processJSON)
-
 sendTransactionToBaker ::
      (MonadIO m) => BareBlockItem -> Int -> ClientMonad m (Either String Bool)
 sendTransactionToBaker t nid = do
