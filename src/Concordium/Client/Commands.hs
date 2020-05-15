@@ -116,6 +116,8 @@ data AccountCmd
   | AccountDelegate
     { adBakerId :: !BakerId
     , adTransactionOpts :: !TransactionOpts }
+  | AccountUndelegate
+    { auTransactionOpts :: !TransactionOpts }
   deriving (Show)
 
 data ModuleCmd
@@ -153,6 +155,9 @@ data ConsensusCmd
   | ConsensusShowParameters
     { cspBlockHash :: !(Maybe Text)
     , cspIncludeBakers :: !Bool }
+  | ConsensusSetElectionDifficulty
+    { cseDifficulty :: !ElectionDifficulty
+    , cseTransactionOpts :: !TransactionOpts }
   deriving (Show)
 
 data BlockCmd
@@ -166,10 +171,17 @@ data BakerCmd
   | BakerAdd
     { baFile :: !FilePath
     , baTransactionOpts :: !TransactionOpts }
-  | BakerUpdateAccount
-    { buaBakerId :: !BakerId
-    , buaAccountKeysFile :: !FilePath
-    , buaTransactionOpts :: !TransactionOpts }
+  | BakerSetAccount
+    { bsaBakerId :: !BakerId
+    , bsaAccountKeysFile :: !FilePath
+    , bsaTransactionOpts :: !TransactionOpts }
+  | BakerSetKey
+    { buskBakerId :: !BakerId
+    , bsaSignatureKeysFile :: !FilePath
+    , buskTransactionOpts :: !TransactionOpts }
+  | BakerRemove
+    { brBakerId :: !BakerId
+    , brTransactionOpts :: !TransactionOpts }
   deriving (Show)
 
 visibleHelper :: Parser (a -> a)
@@ -308,7 +320,8 @@ accountCmds =
         hsubparser
           (accountShowCmd <>
            accountListCmd <>
-           accountDelegateCmd))
+           accountDelegateCmd <>
+           accountUndelegateCmd))
       (progDesc "Commands for inspecting accounts."))
 
 accountShowCmd :: Mod CommandFields AccountCmd
@@ -337,6 +350,15 @@ accountDelegateCmd =
     (info
       (AccountDelegate <$>
         option auto (long "baker" <> metavar "BAKER-ID" <> help "Baker to which the stake of the sender's account should be delegated.") <*>
+        transactionOptsParser)
+      (progDesc "Delegate stake of account to baker."))
+
+accountUndelegateCmd :: Mod CommandFields AccountCmd
+accountUndelegateCmd =
+  command
+    "undelegate"
+    (info
+      (AccountUndelegate <$>
         transactionOptsParser)
       (progDesc "Delegate stake of account to baker."))
 
@@ -502,7 +524,8 @@ consensusCmds =
       (ConsensusCmd <$>
         hsubparser
           (consensusStatusCmd <>
-           consensusShowParametersCmd))
+           consensusShowParametersCmd <>
+           consensusSetElectionDifficultyCmd))
       (progDesc "Commands for inspecting chain health (branching, finalization), block content/history (including listing transactions), election (Birk) and reward/minting parameters."))
 
 consensusStatusCmd :: Mod CommandFields ConsensusCmd
@@ -522,6 +545,16 @@ consensusShowParametersCmd =
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")) <*>
         switch (long "include-bakers" <> help "Include the \"lottery power\" of individual bakers."))
       (progDesc "Show election parameters for given block."))
+
+consensusSetElectionDifficultyCmd :: Mod CommandFields ConsensusCmd
+consensusSetElectionDifficultyCmd =
+  command
+    "set-election-difficulty"
+    (info
+      (ConsensusSetElectionDifficulty <$>
+        argument auto (metavar "DIFFICULTY" <> help "Difficulty as a decimal number between 0 (inclusive) and 1 (exclusive).") <*>
+        transactionOptsParser)
+      (progDesc "Set the election difficulty parameter."))
 
 blockCmds :: Mod CommandFields Cmd
 blockCmds =
@@ -551,7 +584,9 @@ bakerCmds =
         hsubparser
           (bakerGenerateKeysCmd <>
            bakerAddCmd <>
-           bakerUpdateAccountCmd))
+           bakerSetAccountCmd <>
+           bakerSetKeyCmd <>
+           bakerRemoveCmd))
       (progDesc "Commands for creating and deploying baker credentials."))
 
 bakerGenerateKeysCmd :: Mod CommandFields BakerCmd
@@ -573,14 +608,34 @@ bakerAddCmd =
         transactionOptsParser)
       (progDesc "Deploy baker credentials to the chain."))
 
-bakerUpdateAccountCmd :: Mod CommandFields BakerCmd
-bakerUpdateAccountCmd =
+bakerSetAccountCmd :: Mod CommandFields BakerCmd
+bakerSetAccountCmd =
   command
-    "update-account"
+    "set-account"
     (info
-      (BakerUpdateAccount <$>
-        argument auto (metavar "BAKER-ID" <> help "ID of the baker") <*>
-        strArgument (metavar "FILE" <> help "File containing keys of the account to send rewards to") <*>
+      (BakerSetAccount <$>
+        argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
+        strArgument (metavar "FILE" <> help "File containing keys of the account to send rewards to.") <*>
         transactionOptsParser)
-      (progDesc "Update the account that a baker's rewards are sent to")
-    )
+      (progDesc "Update the account that a baker's rewards are sent to."))
+
+bakerSetKeyCmd :: Mod CommandFields BakerCmd
+bakerSetKeyCmd =
+  command
+    "set-key"
+    (info
+      (BakerSetKey <$>
+        argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
+        strArgument (metavar "FILE" <> help "File containing the signature keys.") <*>
+        transactionOptsParser)
+      (progDesc "Update the signature keys of a baker."))
+
+bakerRemoveCmd :: Mod CommandFields BakerCmd
+bakerRemoveCmd =
+  command
+    "remove"
+    (info
+      (BakerRemove <$>
+        argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
+        transactionOptsParser)
+      (progDesc "Remove a baker from the chain."))
