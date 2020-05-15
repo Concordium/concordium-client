@@ -250,7 +250,7 @@ printConsensusStatus r =
 printBirkParameters :: Bool -> BirkParametersResult -> Printer
 printBirkParameters includeBakers r = do
   tell [ printf "Election nonce:      %s" (show $ bprElectionNonce r)
-       , printf "Election difficulty: %s" (show $ bprElectionDifficulty r) ]
+       , printf "Election difficulty: %f" (bprElectionDifficulty r) ]
   when includeBakers $
     case bprBakers r of
       [] ->
