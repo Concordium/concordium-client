@@ -26,12 +26,7 @@ blockSpec = describe "block" $ do
     , "Baker:                      53"
     , "Transaction count:          10"
     , "Transaction energy cost:    101 NRG"
-    , "Transactions size:          11"
-    , "Transaction execution cost: 0.0102 GTU"
-    , "Total amount:               0.0321 GTU"
-    , "Total encrypted amount:     0.0123 GTU"
-    , "Central bank amount:        0.0042 GTU"
-    , "Minted amount per slot:     0.0021 GTU" ]
+    , "Transactions size:          11" ]
   specify "without baker" $ p exampleBlockInfoWithoutBaker `shouldBe`
     [ "Hash:                       0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389"
     , "Parent block:               0f71eeca9f0a497dc4427cab0544f2bcb820b328ad97be29181e212edea708fd"
@@ -44,12 +39,7 @@ blockSpec = describe "block" $ do
     , "Baker:                      none"
     , "Transaction count:          10"
     , "Transaction energy cost:    101 NRG"
-    , "Transactions size:          11"
-    , "Transaction execution cost: 0.0102 GTU"
-    , "Total amount:               0.0321 GTU"
-    , "Total encrypted amount:     0.0123 GTU"
-    , "Central bank amount:        0.0042 GTU"
-    , "Minted amount per slot:     0.0021 GTU" ]
+    , "Transactions size:          11" ]
   where p = execWriter . printBlockInfo . Just
 
 exampleBlockInfoWithBaker :: BlockInfoResult
@@ -66,12 +56,7 @@ exampleBlockInfoWithBaker =
   , birBlockBaker = Just 53
   , birTransactionCount = 10
   , birTransactionEnergyCost = 101
-  , birTransactionsSize = 11
-  , birExecutionCost = 102
-  , birTotalAmount = 321
-  , birTotalEncryptedAmount = 123
-  , birCentralBankAmount = 42
-  , birMintedAmountPerSlot = 21 }
+  , birTransactionsSize = 11 }
 
 exampleBlockInfoWithoutBaker :: BlockInfoResult
 exampleBlockInfoWithoutBaker =
@@ -87,12 +72,7 @@ exampleBlockInfoWithoutBaker =
   , birBlockBaker = Nothing
   , birTransactionCount = 10
   , birTransactionEnergyCost = 101
-  , birTransactionsSize = 11
-  , birExecutionCost = 102
-  , birTotalAmount = 321
-  , birTotalEncryptedAmount = 123
-  , birCentralBankAmount = 42
-  , birMintedAmountPerSlot = 21 }
+  , birTransactionsSize = 11 }
 
 exampleBlockHash1 :: Types.BlockHash
 exampleBlockHash1 = read "0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389"
