@@ -122,7 +122,8 @@ data AccountInfoResult = AccountInfoResult
   { airAmount :: !Amount
   , airNonce :: !Nonce
   , airDelegation :: !(Maybe BakerId),
-    airCredentials :: ![IDTypes.CredentialDeploymentValues] }
+    airCredentials :: ![IDTypes.CredentialDeploymentValues]
+  , airInstances :: ![ContractAddress]}
   deriving (Show)
 
 instance AE.FromJSON AccountInfoResult where
@@ -131,6 +132,7 @@ instance AE.FromJSON AccountInfoResult where
     airNonce <- v .: "accountNonce"
     airDelegation <- v .: "accountDelegation"
     airCredentials <- v .: "accountCredentials"
+    airInstances <- v .: "accountInstances"
     return $ AccountInfoResult {..}
 
 data ConsensusStatusResult = ConsensusStatusResult
