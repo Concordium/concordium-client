@@ -278,12 +278,7 @@ printBlockInfo (Just b) =
        , printf "Baker:                      %s" (showMaybe show $ birBlockBaker b)
        , printf "Transaction count:          %d" (birTransactionCount b)
        , printf "Transaction energy cost:    %s" (showNrg $ birTransactionEnergyCost b)
-       , printf "Transactions size:          %d" (birTransactionsSize b)
-       , printf "Transaction execution cost: %s" (showGtu $ birExecutionCost b)
-       , printf "Total amount:               %s" (showGtu $ birTotalAmount b)
-       , printf "Total encrypted amount:     %s" (showGtu $ birTotalEncryptedAmount b)
-       , printf "Central bank amount:        %s" (showGtu $ birCentralBankAmount b)
-       , printf "Minted amount per slot:     %s" (showGtu $ birMintedAmountPerSlot b) ]
+       , printf "Transactions size:          %d" (birTransactionsSize b) ]
 
 -- AMOUNT AND ENERGY
 
