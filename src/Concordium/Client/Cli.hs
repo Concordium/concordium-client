@@ -223,12 +223,7 @@ data BlockInfoResult = BlockInfoResult
   , birFinalized :: Bool
   , birTransactionCount :: Integer
   , birTransactionEnergyCost :: Energy
-  , birTransactionsSize :: Integer
-  , birTotalAmount :: Amount
-  , birTotalEncryptedAmount :: Amount
-  , birCentralBankAmount :: Amount
-  , birMintedAmountPerSlot :: Amount
-  , birExecutionCost :: Amount }
+  , birTransactionsSize :: Integer }
 
 instance AE.FromJSON BlockInfoResult where
   parseJSON = withObject "Block info" $ \v -> do
@@ -244,11 +239,6 @@ instance AE.FromJSON BlockInfoResult where
     birTransactionCount <- v .: "transactionCount"
     birTransactionEnergyCost <- v .: "transactionEnergyCost"
     birTransactionsSize <- v .: "transactionsSize"
-    birTotalAmount <- v .: "totalAmount"
-    birTotalEncryptedAmount <- v .: "totalEncryptedAmount"
-    birCentralBankAmount <- v .: "centralBankAmount"
-    birMintedAmountPerSlot <- v .: "mintedAmountPerSlot"
-    birExecutionCost <- v .: "executionCost"
     return BlockInfoResult {..}
 
 data NextAccountNonce = NextAccountNonce
