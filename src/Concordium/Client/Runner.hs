@@ -529,7 +529,7 @@ setDifficultyTransactionPayload sdtxCfg confirm = do
         , sdtcDifficulty = d }
         = sdtxCfg
 
-  logSuccess [ printf "setting election difficulty '%s'" (show d)
+  logSuccess [ printf "setting election difficulty to '%f'" d
              , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
              , "note that only special control accounts are allowed to perform this operation"
              , "non-authorized transactions will be rejected" ]
