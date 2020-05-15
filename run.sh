@@ -11,13 +11,6 @@ function log {
     >&2 echo "$0: $*"
 }
 
-# Check that arguments were provided.
-if [ "${#args}" -eq 0 ]; then
-    log "Error: no arguments provided"
-    exit 1
-fi
-
-
 function docker_port {
     local -r node="$1"
     # Extract port of docker container running the node with the provided ID.
@@ -43,9 +36,11 @@ fi
 # Build and run client.
 # Do stack build && stack exec instead of stack run because it doesn't accept --flag nor --fast
 # (and thus results in constant rebuilds).
+log "> export LD_LIBRARY_PATH=deps/crypto/rust-src/target/release"
+export LD_LIBRARY_PATH=deps/crypto/rust-src/target/release
 (
-    log "> LD_LIBRARY_PATH=deps/crypto/rust-src/target/release stack build --profile --fast --flag 'simple-client:-middleware' --test --no-run-tests"
-    LD_LIBRARY_PATH=deps/crypto/rust-src/target/release stack build --profile --fast --flag 'simple-client:-middleware' --test --no-run-tests
+    log "> stack build --profile --fast --flag 'simple-client:-middleware' --test --no-run-tests"
+    stack build --profile --fast --flag 'simple-client:-middleware' --test --no-run-tests
 ) && (
     log "> stack exec --profile concordium-client -- --grpc-ip localhost --grpc-port $PORT ${args[@]}"
     stack exec --profile concordium-client -- --grpc-ip localhost --grpc-port "$PORT" "${args[@]}"

@@ -19,15 +19,57 @@ import           Data.Text                           hiding (length, map)
 import qualified Data.Text.Encoding                  as Text
 import           GHC.Generics                        (Generic)
 
--- |Cost of a simple transfer transaction where the sender provides n signatures.
--- This must be in sync with the cost in Concordium.Scheduler.Cost
-simpleTransferEnergyCost :: Int -> Energy
-simpleTransferEnergyCost n = fromIntegral $ 6 + (53 * n)
+-- |Cost of checking a header where the sender provides n signatures.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
+checkHeaderEnergyCost :: Int -> Energy
+checkHeaderEnergyCost = fromIntegral . (+6) . (*53)
 
--- |Cost of a stake delegation transaction where the sender provides n signatures.
--- This must be in sync with the cost in Concordium.Scheduler.Cost
-accountDelegateEnergyCost :: Int -> Energy
-accountDelegateEnergyCost = simpleTransferEnergyCost
+-- |Cost of a simple transfer transaction.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
+simpleTransferEnergyCost :: Int -> Energy
+simpleTransferEnergyCost = checkHeaderEnergyCost
+
+-- |Cost of a stake delegation transaction.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
+accountDelegateEnergyCost :: Int -> Int -> Energy
+accountDelegateEnergyCost instanceCount = (+100) . (+50*c) . checkHeaderEnergyCost
+  where c = fromIntegral instanceCount
+
+-- |Cost of a stake undelegation transaction.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
+accountUndelegateEnergyCost :: Int -> Int -> Energy
+accountUndelegateEnergyCost = accountDelegateEnergyCost
+
+-- |Cost of a baker add transaction.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
+-- The (+2) is added due to the size of the transaction.
+-- TODO Compute (+2) the correct way to take into account that it depends
+--      on the number of signatures.
+bakerAddEnergyCost :: Int -> Energy
+bakerAddEnergyCost = (+2) . (+3000) . checkHeaderEnergyCost
+
+-- |Cost of a baker set account transaction.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
+-- The (+1) is added due to the size of the transaction.
+-- TODO Compute (+1) the correct way to take into account that it depends
+--      on the number of signatures.
+bakerSetAccountEnergyCost :: Int -> Energy
+bakerSetAccountEnergyCost = (+1) . bakerSetKeyEnergyCost
+
+-- |Cost of a baker set account transaction.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
+bakerSetKeyEnergyCost :: Int -> Energy
+bakerSetKeyEnergyCost = (+ 90) . checkHeaderEnergyCost
+
+-- |Cost of a baker remove transaction.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
+bakerRemoveEnergyCost :: Int -> Energy
+bakerRemoveEnergyCost = checkHeaderEnergyCost
+
+-- |Cost of a "set election difficulty" transaction.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
+setElectionDifficultyEnergyCost :: Int -> Energy
+setElectionDifficultyEnergyCost = checkHeaderEnergyCost
 
 -- Data (serializes with `putByteString :: Bytestring -> Put`)
 instance FromJSON Types.Proof where
