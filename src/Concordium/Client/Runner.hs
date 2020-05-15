@@ -289,6 +289,9 @@ awaitState t s hash = do
 -- Returns Nothing if the cost cannot be computed.
 type ComputeEnergyCost = Int -> Types.Energy
 
+-- |Function for computing a cost function based on the resolved account config.
+type GetComputeEnergyCost = AccountConfig -> IO (Maybe ComputeEnergyCost)
+
 -- |Resolved configuration common to all transaction types.
 data TransactionConfig =
   TransactionConfig
@@ -301,8 +304,8 @@ data TransactionConfig =
 -- If an energy cost function is provided and it returns a value which
 -- is different from the specified energy allocation, a warning is logged.
 -- If the energy allocation is too low, the user is prompted to increase it.
-getTransactionCfg :: BaseConfig -> TransactionOpts -> Maybe ComputeEnergyCost -> IO TransactionConfig
-getTransactionCfg baseCfg txOpts energyCost = do
+getTransactionCfg :: BaseConfig -> TransactionOpts -> GetComputeEnergyCost -> IO TransactionConfig
+getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
   keysArg <- case toKeys txOpts >>= decodeJsonArg of
                Nothing -> return Nothing
                Just act -> act >>= \case
@@ -310,9 +313,10 @@ getTransactionCfg baseCfg txOpts energyCost = do
                  Right ks -> return $ Just ks
   (_, accCfg) <- getAccountConfig (toSender txOpts) baseCfg Nothing keysArg False
 
-  let computedCost = case energyCost of
+  energyCostFunc <- getEnergyCostFunc accCfg
+  let computedCost = case energyCostFunc of
                        Nothing -> Nothing
-                       Just ec -> Just $ ec $ Prelude.length $ acKeys accCfg
+                       Just ec -> Just $ ec (Prelude.length $ acKeys accCfg)
   energy <- case (toMaxEnergyAmount txOpts, computedCost) of
               (Nothing, Nothing) -> logFatal ["energy amount not specified"]
               (Nothing, Just c) -> do
@@ -365,7 +369,7 @@ data TransferTransactionConfig =
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
 getTransferTransactionCfg :: BaseConfig -> TransactionOpts -> Text -> Types.Amount -> IO TransferTransactionConfig
 getTransferTransactionCfg baseCfg txOpts receiver amount = do
-  txCfg <- getTransactionCfg baseCfg txOpts $ Just simpleTransferEnergyCost
+  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
 
   receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
 
@@ -373,6 +377,7 @@ getTransferTransactionCfg baseCfg txOpts receiver amount = do
     { ttcTransactionCfg = txCfg
     , ttcReceiver = receiverAddress
     , ttcAmount = amount }
+  where nrgCost _ = return $ Just simpleTransferEnergyCost
 
 -- |Resolved configuration for a 'baker add' transaction.
 data BakerAddTransactionConfig =
@@ -421,37 +426,37 @@ data SetDifficultyTransactionConfig =
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
 getBakerAddTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> IO BakerAddTransactionConfig
 getBakerAddTransactionCfg baseCfg txOpts f = do
-  txCfg <- getTransactionCfg baseCfg txOpts $ Just bakerAddEnergyCost
+  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   bakerKeys <- eitherDecodeFileStrict f >>= getFromJson
   return BakerAddTransactionConfig
     { batcTransactionCfg = txCfg
     , batcBakerKeys = bakerKeys }
+  where nrgCost _ = return $ Just bakerAddEnergyCost
 
 -- |Resolve configuration of a 'baker add' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
 getBakerRemoveTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> IO BakerRemoveTransactionConfig
 getBakerRemoveTransactionCfg baseCfg txOpts bid = do
-  txCfg <- getTransactionCfg baseCfg txOpts $ Just bakerRemoveEnergyCost
+  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return BakerRemoveTransactionConfig
     { brtcTransactionCfg = txCfg
     , brtcBakerId = bid }
+  where nrgCost _ = return $ Just bakerRemoveEnergyCost
 
 -- |Resolve configuration for an 'account delegate' transaction.
-getAccountDelegateTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> IO AccountDelegateTransactionConfig
-getAccountDelegateTransactionCfg baseCfg txOpts bakerId = do
-  txCfg <- getTransactionCfg baseCfg txOpts $ Just $ accountDelegateEnergyCost numInstances
+getAccountDelegateTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> GetComputeEnergyCost -> IO AccountDelegateTransactionConfig
+getAccountDelegateTransactionCfg baseCfg txOpts bakerId nrgCost = do
+  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return AccountDelegateTransactionConfig
     { adtcTransactionCfg = txCfg
     , adtcBakerId = bakerId }
-  where numInstances = 0 -- TODO Resolve...
 
 -- |Resolve configuration for an 'account undelegate' transaction.
-getAccountUndelegateTransactionCfg :: BaseConfig -> TransactionOpts -> IO AccountUndelegateTransactionConfig
-getAccountUndelegateTransactionCfg baseCfg txOpts = do
-  txCfg <- getTransactionCfg baseCfg txOpts $ Just $ accountUndelegateEnergyCost numInstances
+getAccountUndelegateTransactionCfg :: BaseConfig -> TransactionOpts -> GetComputeEnergyCost -> IO AccountUndelegateTransactionConfig
+getAccountUndelegateTransactionCfg baseCfg txOpts nrgCost = do
+  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return AccountUndelegateTransactionConfig
     { autcTransactionCfg = txCfg }
-  where numInstances = 0 -- TODO Resolve...
 
 -- |Convert transfer transaction config into a valid payload,
 -- optionally asking the user for confirmation.
@@ -680,7 +685,7 @@ processAccountCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      adtxCfg <- getAccountDelegateTransactionCfg baseCfg txOpts bakerId
+      adtxCfg <- getAccountDelegateTransactionCfg baseCfg txOpts bakerId getDelegateCostFunc
       let txCfg = adtcTransactionCfg adtxCfg
       when verbose $ do
         runPrinter $ printAccountConfig $ tcAccountCfg txCfg
@@ -697,7 +702,7 @@ processAccountCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      autxCfg <- getAccountUndelegateTransactionCfg baseCfg txOpts
+      autxCfg <- getAccountUndelegateTransactionCfg baseCfg txOpts getDelegateCostFunc
       let txCfg = autcTransactionCfg autxCfg
       when verbose $ do
         runPrinter $ printAccountConfig $ tcAccountCfg txCfg
@@ -707,6 +712,15 @@ processAccountCmd action baseCfgDir verbose backend =
       withClient backend $ do
         tx <- startTransaction txCfg pl
         tailTransaction $ getBlockItemHash tx
+
+  where getDelegateCostFunc acc = withClient backend $ do
+          when verbose $ logInfo ["retrieving instances"]
+          info <- getBestBlockHash >>=
+                  getAccountInfo (pack $ show $ naAddr $ acAddr acc) >>=
+                  getFromJson
+          let is = Prelude.length $ airInstances info
+          when verbose $ logInfo [printf "retrieved %d instances" is]
+          return $ Just $ accountDelegateEnergyCost is
 
 -- |Process a 'module ...' command.
 processModuleCmd :: ModuleCmd -> Verbose -> Backend -> IO ()
@@ -884,33 +898,36 @@ processBakerCmd action baseCfgDir verbose backend =
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
 getBakerSetAccountTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerSetAccountTransactionConfig
 getBakerSetAccountTransactionCfg baseCfg txOpts bid f = do
-  txCfg <- getTransactionCfg baseCfg txOpts $ Just bakerSetAccountEnergyCost
+  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   accountKeys <- eitherDecodeFileStrict f >>= getFromJson
   return BakerSetAccountTransactionConfig
     { bsatcTransactionCfg = txCfg
     , bsatcBakerId = bid
     , bsatcAccountKeys = accountKeys }
+  where nrgCost _ = return $ Just bakerSetAccountEnergyCost
 
 -- |Resolve configuration of a 'consensus set-election-difficulty' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
 getSetDifficultyTransactionCfg :: BaseConfig -> TransactionOpts -> Types.ElectionDifficulty -> IO SetDifficultyTransactionConfig
 getSetDifficultyTransactionCfg baseCfg txOpts d = do
-  txCfg <- getTransactionCfg baseCfg txOpts $ Just setElectionDifficultyEnergyCost
+  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   when (d < 0 || d >= 1) $
     logFatal ["difficulty is out of range"]
 
   return SetDifficultyTransactionConfig
     { sdtcTransactionCfg = txCfg
     , sdtcDifficulty = d }
+  where nrgCost _ = return $ Just setElectionDifficultyEnergyCost
 
 getBakerSetKeyTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerSetKeyTransactionConfig
 getBakerSetKeyTransactionCfg baseCfg txOpts bid f = do
   kp <- eitherDecodeFileStrict f >>= getFromJson
-  txCfg <- getTransactionCfg baseCfg txOpts $ Just bakerSetKeyEnergyCost
+  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return BakerSetKeyTransactionConfig
     { bsktcTransactionCfg = txCfg
     , bsktcBakerId = bid
     , bsktcKeyPair = kp }
+  where nrgCost _ = return $ Just bakerSetKeyEnergyCost
 
 generateBakerSetAccountChallenge :: Types.BakerId -> Types.AccountAddress -> BS.ByteString
 generateBakerSetAccountChallenge bid add = S.runPut (S.put bid <> S.put add)
