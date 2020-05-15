@@ -136,11 +136,11 @@ process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir
               AccountCmd c -> processAccountCmd c cfgDir
               ModuleCmd c -> processModuleCmd c
               ContractCmd c -> processContractCmd c
-              ConsensusCmd c -> processConsensusCmd c
+              ConsensusCmd c -> processConsensusCmd c cfgDir
               BlockCmd c -> processBlockCmd c
               BakerCmd c -> processBakerCmd c cfgDir
-              ConfigCmd _ -> error "Unreachable case: ConfigCmd"
-              LegacyCmd _ -> error "Unreachable case: LegacyCmd."
+              ConfigCmd _ -> error "unreachable case: ConfigCmd"
+              LegacyCmd _ -> error "unreachable case: LegacyCmd"
 
 -- |Validate an account name and fail gracefully if the given account name
 -- is invalid.
@@ -210,20 +210,24 @@ processConfigCmd action baseCfgDir verbose =
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
 
-        sk' <- case parseSignKey sk of
-                 Left err -> logFatal [printf "cannot parse sign key '%s': %s" sk err]
-                 Right k -> return k
-        vk' <- case parseVerifyKey vk of
-                 Left err -> logFatal [printf "cannot parse verify key '%s': %s" vk err]
-                 Right k -> return k
+        kp <- parseKeyPair sk vk
         (baseCfg', accCfg) <- getAccountConfig (Just addr) baseCfg Nothing Nothing True
-        let kp = Sig.KeyPairEd25519
-                 { Sig.signKey = sk'
-                 , Sig.verifyKey = vk' }
-            keys = insertAccountKey idx kp $ acKeys accCfg
+        let keys = insertAccountKey idx kp $ acKeys accCfg
             accCfg' = accCfg { acKeys = keys }
 
         writeAccountKeys baseCfg' accCfg'
+
+parseKeyPair :: Text -> Text -> IO Sig.KeyPair
+parseKeyPair sk vk = do
+  sk' <- case parseSignKey sk of
+           Left err -> logFatal [printf "cannot parse sign key '%s': %s" sk err]
+           Right k -> return k
+  vk' <- case parseVerifyKey vk of
+           Left err -> logFatal [printf "cannot parse verify key '%s': %s" vk err]
+           Right k -> return k
+  return $ Sig.KeyPairEd25519
+    { Sig.signKey = sk'
+    , Sig.verifyKey = vk' }
 
 -- |Process a 'transaction ...' command.
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -376,12 +380,25 @@ data BakerAddTransactionConfig =
   { batcTransactionCfg :: TransactionConfig
   , batcBakerKeys :: BakerKeys }
 
--- |Resolved configuration for a 'baker update' transaction.
-data BakerUpdateTransactionConfig =
-  BakerUpdateTransactionConfig
-  { butcTransactionCfg :: TransactionConfig
-  , butcBakerId :: Types.BakerId
-  , butcAccountKeys :: AccountKeys }
+-- |Resolved configuration for a 'baker remove' transaction.
+data BakerRemoveTransactionConfig =
+  BakerRemoveTransactionConfig
+  { brtcTransactionCfg :: TransactionConfig
+  , brtcBakerId :: Types.BakerId }
+
+-- |Resolved configuration for a 'baker set-account' transaction.
+data BakerSetAccountTransactionConfig =
+  BakerSetAccountTransactionConfig
+  { bsatcTransactionCfg :: TransactionConfig
+  , bsatcBakerId :: Types.BakerId
+  , bsatcAccountKeys :: AccountKeys }
+
+-- |Resolved configuration for a 'baker set-key' transaction.
+data BakerSetKeyTransactionConfig =
+  BakerSetKeyTransactionConfig
+  { bsktcTransactionCfg :: TransactionConfig
+  , bsktcBakerId :: Types.BakerId
+  , bsktcKeyPair :: BlockSig.KeyPair }
 
 -- |Resolved configuration for an account delegation transaction.
 data AccountDelegateTransactionConfig =
@@ -389,24 +406,52 @@ data AccountDelegateTransactionConfig =
   { adtcTransactionCfg :: TransactionConfig
   , adtcBakerId :: Types.BakerId }
 
+-- |Resolved configuration for an account undelegation transaction.
+data AccountUndelegateTransactionConfig =
+  AccountUndelegateTransactionConfig
+  { autcTransactionCfg :: TransactionConfig }
+
+-- |Resolved configuration for an account undelegation transaction.
+data SetDifficultyTransactionConfig =
+  SetDifficultyTransactionConfig
+  { sdtcTransactionCfg :: TransactionConfig
+  , sdtcDifficulty :: Types.ElectionDifficulty }
+
 -- |Resolve configuration of a 'baker add' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
 getBakerAddTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> IO BakerAddTransactionConfig
 getBakerAddTransactionCfg baseCfg txOpts f = do
-  txCfg <- getTransactionCfg baseCfg txOpts $ Just nrgCost
+  txCfg <- getTransactionCfg baseCfg txOpts $ Just bakerAddEnergyCost
   bakerKeys <- eitherDecodeFileStrict f >>= getFromJson
   return BakerAddTransactionConfig
     { batcTransactionCfg = txCfg
     , batcBakerKeys = bakerKeys }
-  where nrgCost _ = 3000
 
--- |Resolved configuration for an 'account delegate' transaction.
+-- |Resolve configuration of a 'baker add' transaction based on persisted config and CLI flags.
+-- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
+getBakerRemoveTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> IO BakerRemoveTransactionConfig
+getBakerRemoveTransactionCfg baseCfg txOpts bid = do
+  txCfg <- getTransactionCfg baseCfg txOpts $ Just bakerRemoveEnergyCost
+  return BakerRemoveTransactionConfig
+    { brtcTransactionCfg = txCfg
+    , brtcBakerId = bid }
+
+-- |Resolve configuration for an 'account delegate' transaction.
 getAccountDelegateTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> IO AccountDelegateTransactionConfig
 getAccountDelegateTransactionCfg baseCfg txOpts bakerId = do
-  txCfg <- getTransactionCfg baseCfg txOpts $ Just accountDelegateEnergyCost
+  txCfg <- getTransactionCfg baseCfg txOpts $ Just $ accountDelegateEnergyCost numInstances
   return AccountDelegateTransactionConfig
     { adtcTransactionCfg = txCfg
     , adtcBakerId = bakerId }
+  where numInstances = 0 -- TODO Resolve...
+
+-- |Resolve configuration for an 'account undelegate' transaction.
+getAccountUndelegateTransactionCfg :: BaseConfig -> TransactionOpts -> IO AccountUndelegateTransactionConfig
+getAccountUndelegateTransactionCfg baseCfg txOpts = do
+  txCfg <- getTransactionCfg baseCfg txOpts $ Just $ accountUndelegateEnergyCost numInstances
+  return AccountUndelegateTransactionConfig
+    { autcTransactionCfg = txCfg }
+  where numInstances = 0 -- TODO Resolve...
 
 -- |Convert transfer transaction config into a valid payload,
 -- optionally asking the user for confirmation.
@@ -451,6 +496,44 @@ bakerAddTransactionPayload batxCfg accountKeysFile confirm = do
 
   generateAddBakerPayload bakerKeys AccountKeys {akAddress = addr, akKeys = keys, akThreshold = fromIntegral (Map.size keys)}
 
+-- |Convert 'baker remove' transaction config into a valid payload,
+-- optionally asking the user for confirmation.
+bakerRemoveTransactionPayload :: BakerRemoveTransactionConfig -> Bool -> IO Types.Payload
+bakerRemoveTransactionPayload brtxCfg confirm = do
+  let BakerRemoveTransactionConfig
+        { brtcTransactionCfg = TransactionConfig
+                               { tcEnergy = energy }
+        , brtcBakerId = bid }
+        = brtxCfg
+
+  logSuccess [ printf "submitting transaction to remove baker with ID '%s'" (show bid)
+             , printf "allowing up to %s to be spent as transaction fee" (showNrg energy) ]
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  return Types.RemoveBaker { rbId = bid }
+
+-- |Convert 'consensus set-election-difficulty' transaction config into a valid payload,
+-- optionally asking the user for confirmation.
+setDifficultyTransactionPayload :: SetDifficultyTransactionConfig -> Bool -> IO Types.Payload
+setDifficultyTransactionPayload sdtxCfg confirm = do
+  let SetDifficultyTransactionConfig
+        { sdtcTransactionCfg = TransactionConfig
+                               { tcEnergy = energy }
+        , sdtcDifficulty = d }
+        = sdtxCfg
+
+  logSuccess [ printf "setting election difficulty '%s'" (show d)
+             , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+             , "note that only special control accounts are allowed to perform this operation"
+             , "non-authorized transactions will be rejected" ]
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  return Types.UpdateElectionDifficulty {uedDifficulty = d}
+
 -- |Convert 'account delegate' transaction config into a valid payload,
 -- optionally asking the user for confirmation.
 accountDelegateTransactionPayload :: AccountDelegateTransactionConfig -> Bool -> IO Types.Payload
@@ -458,20 +541,40 @@ accountDelegateTransactionPayload adtxCfg confirm = do
   let AccountDelegateTransactionConfig
         { adtcTransactionCfg = TransactionConfig
                               { tcEnergy = energy
-                              , tcExpiry = expiryTs
+                              , tcExpiry = expiry
                               , tcAccountCfg = AccountConfig { acAddr = addr } }
         , adtcBakerId = bakerId }
         = adtxCfg
 
   logInfo [ printf "delegating stake from account %s to baker %s" (showNamedAddress addr) (show bakerId)
           , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-          , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiryTs) ]
+          , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
 
   when confirm $ do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
   return Types.DelegateStake { dsID = bakerId }
+
+-- |Convert 'account undelegate' transaction config into a valid payload,
+-- optionally asking the user for confirmation.
+accountUndelegateTransactionPayload :: AccountUndelegateTransactionConfig -> Bool -> IO Types.Payload
+accountUndelegateTransactionPayload autxCfg confirm = do
+  let TransactionConfig
+        { tcEnergy = energy
+        , tcExpiry = expiry
+        , tcAccountCfg = AccountConfig { acAddr = addr } }
+        = autcTransactionCfg autxCfg
+
+  logInfo [ printf "undelegating stake from account %s" (showNamedAddress addr)
+          , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+          , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
+
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  return Types.UndelegateStake
 
 -- |Encode, sign, and send transaction off to the baker.
 startTransaction :: (MonadFail m, MonadIO m) => TransactionConfig -> Types.Payload -> ClientMonad m Types.BareBlockItem
@@ -485,6 +588,7 @@ startTransaction txCfg pl = do
         = txCfg
   nonce <- getNonce addr n
   let tx = encodeAndSignTransaction pl energy nonce expiry accountCfg
+
   sendTransactionToBaker tx defaultNetId >>= \case
     Left err -> fail err
     Right False -> fail "transaction not accepted by the baker"
@@ -505,7 +609,7 @@ getNonce sender nonce =
         logWarn [ printf "there is a pending transaction with nonce %s, but last committed one has %s" (show $ nextNonce-1) (show $ currentNonce-1)
                 , printf "this transaction will have nonce %s and might hang if the pending transaction fails" (show nextNonce)
                 , "proceed if you're confident that all currently pending transactions are valid" ]
-        confirmed <- askConfirmation $ Just "proceed?"
+        confirmed <- askConfirmation $ Just "proceed"
         unless confirmed exitTransactionCancelled
       return nextNonce
     Just v -> return v
@@ -523,8 +627,7 @@ tailTransaction hash = do
 
   when (tsrState committedStatus == Absent) $ do
     logFatal [ "transaction failed before it got committed"
-             , "most likely because it was invalid"
-             , "Response:\n" ++ unpack (decodeUtf8 $ BSL8.toStrict $ AE.encodePretty committedStatus) ]
+             , "most likely because it was invalid" ]
 
   runPrinter $ printTransactionStatus committedStatus
 
@@ -539,14 +642,18 @@ tailTransaction hash = do
   finalizedStatus <- awaitState 5 Finalized hash
   liftIO $ putStrLn ""
 
-  when (tsrState finalizedStatus == Absent) $ logFatal ["transaction failed after it was committed"]
+  when (tsrState finalizedStatus == Absent) $
+    logFatal [ "transaction failed after it was committed"
+             , "Response:\n" ++ showResponse committedStatus ]
 
   -- Print out finalized status if the outcome differs from that of the committed status.
   when (tsrResults committedStatus /= tsrResults finalizedStatus) $
     runPrinter $ printTransactionStatus finalizedStatus
 
   liftIO $ printf "[%s] Transaction completed.\n" =<< getLocalTimeOfDayFormatted
-  where getLocalTimeOfDayFormatted = showTimeOfDay <$> getLocalTimeOfDay
+  where
+    getLocalTimeOfDayFormatted = showTimeOfDay <$> getLocalTimeOfDay
+    showResponse = unpack . decodeUtf8 . BSL8.toStrict . AE.encodePretty
 
 -- |Process an 'account ...' command.
 processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -580,6 +687,23 @@ processAccountCmd action baseCfgDir verbose backend =
         putStrLn ""
 
       pl <- accountDelegateTransactionPayload adtxCfg True
+      withClient backend $ do
+        tx <- startTransaction txCfg pl
+        tailTransaction $ getBlockItemHash tx
+    AccountUndelegate txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose True
+
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+      autxCfg <- getAccountUndelegateTransactionCfg baseCfg txOpts
+      let txCfg = autcTransactionCfg autxCfg
+      when verbose $ do
+        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        putStrLn ""
+
+      pl <- accountUndelegateTransactionPayload autxCfg True
       withClient backend $ do
         tx <- startTransaction txCfg pl
         tailTransaction $ getBlockItemHash tx
@@ -627,8 +751,8 @@ processContractCmd :: ContractCmd -> Verbose -> Backend -> IO ()
 processContractCmd action _ backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
 
 -- |Process a 'consensus ...' command.
-processConsensusCmd :: ConsensusCmd -> Verbose -> Backend -> IO ()
-processConsensusCmd action _ backend =
+processConsensusCmd :: ConsensusCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
+processConsensusCmd action baseCfgDir verbose backend =
   case action of
     ConsensusStatus -> do
       v <- withClientJson backend getConsensusStatus
@@ -638,6 +762,23 @@ processConsensusCmd action _ backend =
       case v of
         Nothing -> putStrLn "Block not found."
         Just p -> runPrinter $ printBirkParameters includeBakers p
+    ConsensusSetElectionDifficulty d txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose True
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+      sdtxCfg <- getSetDifficultyTransactionCfg baseCfg txOpts d
+      let txCfg = sdtcTransactionCfg sdtxCfg
+      when verbose $ do
+        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        putStrLn ""
+
+      pl <- setDifficultyTransactionPayload sdtxCfg True
+      withClient backend $ do
+        tx <- startTransaction txCfg pl
+        tailTransaction $ getBlockItemHash tx
+
 
 -- |Process a 'block ...' command.
 processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
@@ -702,47 +843,122 @@ processBakerCmd action baseCfgDir verbose backend =
       withClient backend $ do
         tx <- startTransaction txCfg pl
         tailTransaction $ getBlockItemHash tx
-    BakerUpdateAccount bid file txOpts -> do
+    BakerSetAccount bid file txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      butcCfg <- getBakerUpdateTransactionCfg baseCfg txOpts bid file
-      pl <- bakerUpdateTransactionPayload butcCfg
+      bsatcCfg <- getBakerSetAccountTransactionCfg baseCfg txOpts bid file
+      pl <- bakerSetAccountTransactionPayload bsatcCfg
 
       withClient backend $ do
-        tx <- startTransaction (butcTransactionCfg butcCfg) pl
+        tx <- startTransaction (bsatcTransactionCfg bsatcCfg) pl
+        tailTransaction $ getBlockItemHash tx
+    BakerSetKey bid file txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose True
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+      bsktcCfg <- getBakerSetKeyTransactionCfg baseCfg txOpts bid file
+      pl <- bakerSetKeyTransactionPayload bsktcCfg True
+
+      withClient backend $ do
+        tx <- startTransaction (bsktcTransactionCfg bsktcCfg) pl
+        tailTransaction $ getBlockItemHash tx
+    BakerRemove bid txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose True
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+      brtcCfg <- getBakerRemoveTransactionCfg baseCfg txOpts bid
+      pl <- bakerRemoveTransactionPayload brtcCfg True
+
+      withClient backend $ do
+        tx <- startTransaction (brtcTransactionCfg brtcCfg) pl
         tailTransaction $ getBlockItemHash tx
 
 -- |Resolve configuration of a 'baker update' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
-getBakerUpdateTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerUpdateTransactionConfig
-getBakerUpdateTransactionCfg baseCfg txOpts bid f = do
-  txCfg <- getTransactionCfg baseCfg txOpts $ Just nrgCost
+getBakerSetAccountTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerSetAccountTransactionConfig
+getBakerSetAccountTransactionCfg baseCfg txOpts bid f = do
+  txCfg <- getTransactionCfg baseCfg txOpts $ Just bakerSetAccountEnergyCost
   accountKeys <- eitherDecodeFileStrict f >>= getFromJson
-  return BakerUpdateTransactionConfig
-    { butcTransactionCfg = txCfg
-    , butcBakerId = bid
-    , butcAccountKeys = accountKeys }
-  where
-    nrgCost = (+ 91) . simpleTransferEnergyCost
+  return BakerSetAccountTransactionConfig
+    { bsatcTransactionCfg = txCfg
+    , bsatcBakerId = bid
+    , bsatcAccountKeys = accountKeys }
 
-generateBakerUpdateChallenge :: Types.BakerId -> Types.AccountAddress -> BS.ByteString
-generateBakerUpdateChallenge bid add = S.runPut (S.put bid <> S.put add)
+-- |Resolve configuration of a 'consensus set-election-difficulty' transaction based on persisted config and CLI flags.
+-- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
+getSetDifficultyTransactionCfg :: BaseConfig -> TransactionOpts -> Types.ElectionDifficulty -> IO SetDifficultyTransactionConfig
+getSetDifficultyTransactionCfg baseCfg txOpts d = do
+  txCfg <- getTransactionCfg baseCfg txOpts $ Just setElectionDifficultyEnergyCost
+  when (d < 0 || d >= 1) $
+    logFatal ["difficulty is out of range"]
 
--- |Convert 'baker update' transaction config into a valid payload.
-bakerUpdateTransactionPayload :: BakerUpdateTransactionConfig -> IO Types.Payload
-bakerUpdateTransactionPayload butcCfg = do
-  let keys = butcAccountKeys butcCfg
+  return SetDifficultyTransactionConfig
+    { sdtcTransactionCfg = txCfg
+    , sdtcDifficulty = d }
+
+getBakerSetKeyTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerSetKeyTransactionConfig
+getBakerSetKeyTransactionCfg baseCfg txOpts bid f = do
+  kp <- eitherDecodeFileStrict f >>= getFromJson
+  txCfg <- getTransactionCfg baseCfg txOpts $ Just bakerSetKeyEnergyCost
+  return BakerSetKeyTransactionConfig
+    { bsktcTransactionCfg = txCfg
+    , bsktcBakerId = bid
+    , bsktcKeyPair = kp }
+
+generateBakerSetAccountChallenge :: Types.BakerId -> Types.AccountAddress -> BS.ByteString
+generateBakerSetAccountChallenge bid add = S.runPut (S.put bid <> S.put add)
+
+generateBakerSetKeyChallenge :: Types.BakerId -> Types.BakerSignVerifyKey -> BS.ByteString
+generateBakerSetKeyChallenge bid key= S.runPut (S.put bid <> S.put key)
+
+-- |Convert 'baker set-account' transaction config into a valid payload.
+bakerSetAccountTransactionPayload :: BakerSetAccountTransactionConfig -> IO Types.Payload
+bakerSetAccountTransactionPayload bsatcCfg = do
+  let keys = bsatcAccountKeys bsatcCfg
       ubaAddress = akAddress keys
-      ubaId = butcBakerId butcCfg
+      ubaId = bsatcBakerId bsatcCfg
       keyMap = akKeys keys
-      challenge = generateBakerUpdateChallenge ubaId ubaAddress
+      challenge = generateBakerSetAccountChallenge ubaId ubaAddress
 
   proofAccount <- forM keyMap (\key -> Proofs.proveDlog25519KP challenge key `except` "cannot produce account keys proof")
   let ubaProof = Types.AccountOwnershipProof (Map.toList proofAccount)
   return Types.UpdateBakerAccount {..}
+    where except c err = c >>= \case
+            Just x -> return x
+            Nothing -> logFatal [err]
+
+-- |Convert 'baker set-account' transaction config into a valid payload.
+bakerSetKeyTransactionPayload :: BakerSetKeyTransactionConfig -> Bool -> IO Types.Payload
+bakerSetKeyTransactionPayload bsktcCfg confirm = do
+  let BakerSetKeyTransactionConfig
+        { bsktcTransactionCfg = TransactionConfig
+                                { tcEnergy = energy
+                                , tcExpiry = expiry }
+        , bsktcBakerId = bid
+        , bsktcKeyPair = kp }
+        = bsktcCfg
+
+  logSuccess [ printf "setting key pair %s for baker %s" (show kp) (show bid)
+             , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+             , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  let ubsId = bsktcBakerId bsktcCfg
+      BlockSig.KeyPair { signKey=sk, verifyKey=ubsKey } = kp
+      challenge = generateBakerSetKeyChallenge ubsId ubsKey
+
+  ubsProof <- Proofs.proveDlog25519Block challenge (BlockSig.KeyPair sk ubsKey) `except` "cannot produce signature key proof"
+
+  return Types.UpdateBakerSignKey {..}
     where except c err = c >>= \case
             Just x -> return x
             Nothing -> logFatal [err]
