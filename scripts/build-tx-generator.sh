@@ -7,4 +7,4 @@ mkdir -p -m 0600 ~/.ssh && ssh-keyscan gitlab.com >> ~/.ssh/known_hosts
 ./build-deps.sh
 stack --version
 ./stack build --ghc-options -j4
-ls /build/.stack-work/dist/x86_64-linux/
+ls /build/.stack-work/dist/x86_64-linux-tinfo6/
