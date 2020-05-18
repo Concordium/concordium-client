@@ -28,7 +28,6 @@ data LegacyCmd
   | GetNextAccountNonce {
       legacyAddress :: !Text
       } -- ^Get non finalized transactions for a given account.
-  | NodeInfo -- ^ Queries the gRPC server for node information
   | GetConsensusInfo -- ^ Queries the gRPC server for the consensus information
   | GetBlockInfo
       { legacyEvery     :: !Bool,
