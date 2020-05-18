@@ -405,6 +405,12 @@ data BakerSetKeyTransactionConfig =
   , bsktcBakerId :: Types.BakerId
   , bsktcKeyPair :: BlockSig.KeyPair }
 
+data BakerSetAggregationKeyTransactionConfig =
+  BakerSetAggregationKeyTransactionConfig
+  { bsakTransactionCfg :: TransactionConfig
+  , bsakBakerId :: Types.BakerId
+  , bsakSecretKey :: Types.BakerAggregationPrivateKey }
+
 -- |Resolved configuration for an account delegation transaction.
 data AccountDelegateTransactionConfig =
   AccountDelegateTransactionConfig
@@ -893,6 +899,18 @@ processBakerCmd action baseCfgDir verbose backend =
       withClient backend $ do
         tx <- startTransaction (brtcTransactionCfg brtcCfg) pl
         tailTransaction $ getBlockItemHash tx
+    BakerSetAggregationKey bid file txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose True
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+      bsaktCfg <- getBakerSetAggregationKeyCfg baseCfg txOpts bid file
+      pl <- bakerSetAggregationKeyTransactionPayload bsaktCfg True
+
+      withClient backend $ do
+        tx <- startTransaction (bsakTransactionCfg bsaktCfg) pl
+        tailTransaction $ getBlockItemHash tx
 
 -- |Resolve configuration of a 'baker update' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
@@ -929,11 +947,24 @@ getBakerSetKeyTransactionCfg baseCfg txOpts bid f = do
     , bsktcKeyPair = kp }
   where nrgCost _ = return $ Just bakerSetKeyEnergyCost
 
+getBakerSetAggregationKeyCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerSetAggregationKeyTransactionConfig
+getBakerSetAggregationKeyCfg baseCfg txOpts bid file = do
+  key <- eitherDecodeFileStrict file >>= getFromJson
+  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
+  return BakerSetAggregationKeyTransactionConfig
+    { bsakTransactionCfg = txCfg
+    , bsakBakerId = bid
+    , bsakSecretKey = key }
+  where nrgCost _ = return $ Just bakerSetAggregationKeyEnergyCost
+
 generateBakerSetAccountChallenge :: Types.BakerId -> Types.AccountAddress -> BS.ByteString
 generateBakerSetAccountChallenge bid add = S.runPut (S.put bid <> S.put add)
 
 generateBakerSetKeyChallenge :: Types.BakerId -> Types.BakerSignVerifyKey -> BS.ByteString
 generateBakerSetKeyChallenge bid key= S.runPut (S.put bid <> S.put key)
+
+generateBakerSetAggregationKeyCallenge :: Types.BakerId -> Types.BakerAggregationVerifyKey -> BS.ByteString
+generateBakerSetAggregationKeyCallenge bid key = S.runPut (S.put bid <> S.put key)
 
 -- |Convert 'baker set-account' transaction config into a valid payload.
 bakerSetAccountTransactionPayload :: BakerSetAccountTransactionConfig -> IO Types.Payload
@@ -951,7 +982,7 @@ bakerSetAccountTransactionPayload bsatcCfg = do
             Just x -> return x
             Nothing -> logFatal [err]
 
--- |Convert 'baker set-account' transaction config into a valid payload.
+-- |Convert 'baker set-key' transaction config into a valid payload.
 bakerSetKeyTransactionPayload :: BakerSetKeyTransactionConfig -> Bool -> IO Types.Payload
 bakerSetKeyTransactionPayload bsktcCfg confirm = do
   let BakerSetKeyTransactionConfig
@@ -979,6 +1010,31 @@ bakerSetKeyTransactionPayload bsktcCfg confirm = do
     where except c err = c >>= \case
             Just x -> return x
             Nothing -> logFatal [err]
+
+-- |Convert 'baker set-aggregation-key' transaction config into a vali payload
+bakerSetAggregationKeyTransactionPayload :: BakerSetAggregationKeyTransactionConfig -> Bool -> IO Types.Payload
+bakerSetAggregationKeyTransactionPayload bsaktCfg confirm = do
+  let BakerSetAggregationKeyTransactionConfig
+        { bsakTransactionCfg = TransactionConfig
+                                { tcEnergy = energy
+                                , tcExpiry = expiry }
+        , bsakBakerId = bid
+        , bsakSecretKey = secretKey}
+        = bsaktCfg
+
+  logSuccess [ printf "setting key pair %s for baker %s" (show (secretKey, Bls.derivePublicKey secretKey)) (show bid)
+             , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+             , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  let ubavkId = bid
+      ubavkKey = Bls.derivePublicKey secretKey
+      challenge = generateBakerSetAggregationKeyCallenge bid ubavkKey
+      ubavkProof = Bls.proveKnowledgeOfSK challenge secretKey
+
+  return Types.UpdateBakerAggregationVerifyKey {..}
 
 -- |Process a "legacy" command.
 processLegacyCmd :: LegacyCmd -> Maybe Backend -> IO ()
