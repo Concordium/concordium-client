@@ -79,28 +79,39 @@ initBaseConfig f = do
   baseCfgDir <- getBaseConfigDir f
   logInfo [printf "initializing configuration structure in directory '%s'" baseCfgDir]
 
-  baseCfgDirExists <- doesPathExist baseCfgDir
-  when baseCfgDirExists $ logFatal [printf "path already exists"]
-
-  -- Create directories and map file.
-  -- We only explicitly handle a permission error since that is likely the most
-  -- common one.
-  handleJust (guard . isPermissionError)
-             (\_ -> logFatal [printf "cannot create directory, permission denied"])
-             (createDirectoryIfMissing True baseCfgDir)
+  baseCfgDirExists <- doesDirectoryExist baseCfgDir
+  if baseCfgDirExists then
+    logInfo [printf "skipping '%s': directory already exists" baseCfgDir]
+  else
+    -- Only explicitly handle a permission error since that is likely the most common one.
+    handleJust (guard . isPermissionError)
+               (\_ -> logFatal [printf "cannot create directory, permission denied"])
+               (createDirectoryIfMissing True baseCfgDir)
 
   let accCfgDir = accountConfigDir baseCfgDir
       mapFile = accountNameMapFile accCfgDir
 
   logInfo [printf "creating directory '%s'" accCfgDir]
-  createDirectoryIfMissing False accCfgDir
+  accCfgDirExists <- doesDirectoryExist accCfgDir
+  if accCfgDirExists then
+    logInfo [printf "skipping '%s': directory already exists" accCfgDir]
+  else
+    createDirectoryIfMissing False accCfgDir
+
   logInfo [printf "creating file '%s'" mapFile]
-  writeFile mapFile ""
+  mapFileExists <- doesFileExist mapFile
+  anm <- if mapFileExists then do
+           logInfo [printf "skipping '%s': file already exists" mapFile]
+           loadAccountNameMap mapFile
+         else do
+           writeFile mapFile ""
+           return M.empty
+
   logSuccess ["configuration initialized"]
   return BaseConfig
     { bcVerbose = False
     , bcAccountCfgDir = accCfgDir
-    , bcAccountNameMap = M.empty }
+    , bcAccountNameMap = anm }
 
 -- |Ensure the basic account config is initialized.
 ensureAccountConfigInitialized :: BaseConfig -> IO ()
