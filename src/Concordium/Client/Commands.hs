@@ -330,7 +330,7 @@ accountShowCmd =
     "show"
     (info
        (AccountShow <$>
-         optional (strArgument (metavar "ADDRESS" <> help "Address of the account.")) <*>
+         optional (strArgument (metavar "ACCOUNT" <> help "Name or address of the account.")) <*>
          optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
        (progDesc "Display account details."))
 
@@ -482,7 +482,7 @@ configAccountAddCmd =
       (ConfigAccountAdd <$>
         strArgument (metavar "ADDRESS" <> help "Address of the account.") <*>
         optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account.")))
-      (progDesc "Add account to persistent config."))
+      (progDesc "Add account address to persistent config, optionally naming the account."))
 
 configAccountImportCmd :: Mod CommandFields ConfigAccountCmd
 configAccountImportCmd =
