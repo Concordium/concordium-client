@@ -32,8 +32,10 @@ parseAccountNameMapEntrySpec = describe "parseAccountNameEntryMap" $ do
     p (printf "=%s" s) `shouldBe` Left "empty name"
   specify "missing address" $
     p "name=" `shouldBe` Left "empty address"
+  specify "name with whitespace" $
+    p (printf "na me = %s " s) `shouldBe` Right ("na me", a)
   specify "invalid name" $
-    p (printf "na me=%s" s)`shouldBe` Left "invalid name 'na me' (should consist of letters, numbers, '-', and '_' only)"
+    p (printf "n@me=%s" s)`shouldBe` Left "invalid name 'n@me' (should consist of letters, numbers, space, '.', ',', '!', '?', '-', and '_' only)"
   specify "invalid address" $
     p "name=1234" `shouldBe` Left "invalid address '1234': Base 58 checksum invalid."
   specify "empty" $
@@ -61,7 +63,7 @@ parseAccountNameMapSpec = describe "parseAccountNameMap" $ do
   specify "invalid format" $
     parseAccountNameMap ["invalid"] `shouldBe` Left "invalid mapping format 'invalid' (should be '<name> = <address>')"
   specify "invalid name" $
-    parseAccountNameMap ["n@me = " ++ s1] `shouldBe` Left "invalid name 'n@me' (should consist of letters, numbers, '-', and '_' only)"
+    parseAccountNameMap ["n@me = " ++ s1] `shouldBe` Left "invalid name 'n@me' (should consist of letters, numbers, space, '.', ',', '!', '?', '-', and '_' only)"
   where s1 = "35FtQ8HgRShXLGUer7k8wtovjKAcSQ2Ys8RQPx27KfRA7zf7i4"
         s2 = "4RDhNeQB7DUKcKNStBQfLjU6y32HYDMxsJef2ATVncKRYJWoCV"
         (Right a1) = IDTypes.addressFromText $ pack s1

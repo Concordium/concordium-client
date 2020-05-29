@@ -6,6 +6,7 @@ module Concordium.Client.Commands
   , Backend(..)
   , Cmd(..)
   , ConfigCmd(..)
+  , AccountImportFormatOpt(..)
   , ConfigAccountCmd(..)
   , ConfigKeyCmd(..)
   , TransactionOpts(..)
@@ -27,6 +28,7 @@ import Paths_simple_client (version)
 import Concordium.Client.LegacyCommands
 import Concordium.ID.Types (KeyIndex)
 import Concordium.Types
+import Text.Printf
 
 type Verbose = Bool
 
@@ -76,14 +78,17 @@ data ConfigCmd
     { configKeyCmd :: ConfigKeyCmd }
   deriving (Show)
 
+data AccountImportFormatOpt = Web | Mobile
+  deriving (Show)
+
 data ConfigAccountCmd
   = ConfigAccountAdd
     { caaAddr :: !Text
-    , caaName :: !(Maybe Text)}
+    , caaName :: !(Maybe Text) }
   | ConfigAccountImport
-    { caiName :: !(Maybe Text),
-      caiFile :: FilePath
-    }
+    { caiFile :: !FilePath
+    , caiName :: !(Maybe Text)
+    , caiFormat :: !(Maybe AccountImportFormatOpt) }
   deriving (Show)
 
 data ConfigKeyCmd
@@ -490,10 +495,17 @@ configAccountImportCmd =
     "import"
     (info
       (ConfigAccountImport <$>
-        optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account.")) <*>
-        strArgument (metavar "PATH" <> help "Account file exported from the wallet.")
+        strArgument (metavar "PATH" <> help "Account file exported from the wallet.") <*>
+        optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account. For the 'web' format, this sets the name to give the account. For the 'mobile' format (which contains multiple already named accounts), it selects which account to import.")) <*>
+        optional (option readAccountImportFormatOpt (long "format" <> metavar "FORMAT" <> help "Export format. Supported values are 'web', 'mobile'. If omitted, the format is inferred from the filename ('mobile' if the extension is \".concordiumwallet\", 'web' otherwise)."))
       )
       (progDesc "Import an account to persistent config."))
+
+readAccountImportFormatOpt :: ReadM AccountImportFormatOpt
+readAccountImportFormatOpt = str >>= \case
+  "web" -> return Web
+  "mobile" -> return Mobile
+  s -> readerError $ printf "invalid format: %s (supported values: 'web', 'mobile')" (s :: String)
 
 configKeyCmds :: Mod CommandFields ConfigCmd
 configKeyCmds =

@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 module Concordium.Client.Runner
@@ -35,6 +36,7 @@ import           Concordium.Client.Parse
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Client.Types.TransactionStatus
+import           Concordium.Client.WalletExport
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
@@ -50,8 +52,9 @@ import           Proto.ConcordiumP2pRpc
 import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 
 import           Control.Monad.Fail
-import           Control.Monad.IO.Class
+import           Control.Monad.Except
 import           Control.Monad.Reader                hiding (fail)
+import           Control.Exception
 import           Data.IORef
 import           Data.Aeson                          as AE
 import           Data.Aeson.Types
@@ -72,9 +75,10 @@ import           Data.Word
 import           Lens.Micro.Platform
 import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client.Exceptions
-import           Prelude                             hiding (fail, mod, null, unlines)
+import           Prelude                             hiding (fail, mod, unlines)
 import           System.IO
 import           System.Directory
+import           System.FilePath
 import           Text.Printf
 
 liftContext :: Monad m => PR.Context Core.UA m a -> ClientMonad (PR.Context Core.UA m) a
@@ -124,13 +128,14 @@ getAccountAddressArg m input =
 
 -- |Process CLI command.
 process :: COM.Options -> IO ()
-process Options{optsCmd = LegacyCmd c, optsBackend = backend} = processLegacyCmd c backend
-process Options{optsCmd = ConfigCmd c,..} = processConfigCmd c optsConfigDir optsVerbose
 process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir, optsVerbose = verbose} = do
   -- Disable output buffering.
   hSetBuffering stdout NoBuffering
-  -- Evaluate command.
-  maybe printNoBackend (p verbose) backend
+
+  case command of
+    LegacyCmd c -> processLegacyCmd c backend
+    ConfigCmd c -> processConfigCmd c cfgDir verbose
+    _ -> maybe printNoBackend (p verbose) backend
   where p = case command of
               TransactionCmd c -> processTransactionCmd c cfgDir
               AccountCmd c -> processAccountCmd c cfgDir
@@ -174,34 +179,22 @@ processConfigCmd action baseCfgDir verbose =
             Left err -> logFatal [printf "cannot parse '%s' as an address: %s" addr err]
             Right a -> return a
         naName <- readAccountName name
-        void $ initAccountConfig baseCfg NamedAddress{..} False
-      ConfigAccountImport name file -> do
-        naName <- readAccountName name
-
-        fileExists <- doesFileExist file
-        unless fileExists $ logFatal [printf "the given file '%s' does not exist" file]
-
-        accountCfg <-
-          eitherDecodeFileStrict file >>= \case
-            Left err ->
-              logFatal [printf "cannot read JSON from file '%s': %s" file err]
-            Right val -> do
-              let accountParser = AE.withObject "Account data" $ \v -> do
-                    naAddr <- v .: "address"
-                    acKeys <- v .: "accountKeys"
-                    acThreshold <- v .:? "threshold" .!= fromIntegral (Map.size acKeys)
-                    return AccountConfig{acAddr = NamedAddress{..},..}
-              case parseEither accountParser val of
-                Left err ->
-                  logFatal [printf "cannot read JSON from file '%s': %s" file err]
-                Right x -> return x
-
+        void $ initAccountConfig baseCfg NamedAddress{..}
+      ConfigAccountImport file name format -> do
         baseCfg <- getBaseConfig baseCfgDir verbose True
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
 
-        void $ importAccountConfig baseCfg accountCfg
+        validName <- readAccountName name
+
+        fileExists <- doesFileExist file
+        unless fileExists $ logFatal [printf "the given file '%s' does not exist" file]
+
+        importFormat <- inferAccountImportFormat format file >>= askPassword
+
+        accCfgs <- loadAccountImportFile importFormat file validName
+        mapM_ (importAccountConfig baseCfg) accCfgs
 
     ConfigKeyCmd c -> case c of
       ConfigKeyAdd addr idx sk vk -> do
@@ -216,8 +209,92 @@ processConfigCmd action baseCfgDir verbose =
             accCfg' = accCfg { acKeys = keys }
 
         writeAccountKeys baseCfg' accCfg'
+  where askPassword = \case
+          Web -> return WebFormat
+          Mobile -> do
+            putStr "Enter encryption password: "
+            mfPassword <- bracket_ (hSetEcho stdin False) (hSetEcho stdin True) BS.getLine
+            putStrLn ""
+            return MobileFormat {..}
 
-parseKeyPair :: Text -> Text -> IO Sig.KeyPair
+-- |Return the input format or infer it from the file extension if it's Nothing.
+inferAccountImportFormat :: Maybe AccountImportFormatOpt -> FilePath -> IO AccountImportFormatOpt
+inferAccountImportFormat input file =
+  case input of
+    Nothing -> case splitExtension file of
+                 (_, ".concordiumwallet") -> do
+                   logInfo ["inferred format \"mobile\" from the file extension (pass flag '--format web' to override)"]
+                   return Mobile
+                 _ -> do
+                   logInfo ["inferred format \"web\" from the file extension (pass flag '--format mobile' to override)"]
+                   return Web
+    Just f -> return f
+
+data AccountImportFormat = WebFormat | MobileFormat { mfPassword :: BS.ByteString }
+
+
+-- |Read and parse a file exported from either the web- or mobile wallet.
+-- The format specifier tells which format to expect.
+-- If the format is "mobile", the user is prompted for a password which is used to decrypt
+-- the exported data. This may result in multiple named accounts. If a name is provided,
+-- only the account with that name is being selected for import.
+-- The "web" format is not encrypted and only contains a single account which is not named.
+-- If a name is provided in this case, this will become the account name.
+loadAccountImportFile :: AccountImportFormat -> FilePath -> Maybe Text -> IO [AccountConfig]
+loadAccountImportFile format file name = do
+  contents <- BS.readFile file
+  case format of
+    MobileFormat password -> do
+      accs <- case decodeMobileFormattedAccountImport contents password of
+        Left err -> logFatal [printf "cannot load mobile formatted import: %s" err]
+        Right v -> return v
+
+      logInfo ["loaded account(s):"]
+      forM_ accs $ \a -> do
+        logInfo [printf "- %s (%s)" (show $ akAddress $ weaKeys a) (weaName a)]
+
+      let accCfgs = accountCfgsFromWalletExportAccounts accs name
+      when (Prelude.null accCfgs) $ logWarn ["no accounts welected for import"]
+      return accCfgs
+    WebFormat -> do
+     accCfg <- case decodeWebFormattedAccountImport contents name of
+       Left err -> logFatal [printf "cannot load web formatted import %s: "err]
+       Right v -> return v
+     return [accCfg]
+
+-- |Decode, decrypt and parse a mobile wallet export.
+decodeMobileFormattedAccountImport :: (MonadError String m)
+    => BS.ByteString -- ^JSON payload with encrypted accounts and identities.
+    -> BS.ByteString -- ^Password to decrypt the payload.
+    -> m [WalletExportAccount]
+decodeMobileFormattedAccountImport payload password =
+  case eitherDecodeStrict payload of
+    Left err -> throwError $ printf "cannot decode JSON: %s" err
+    Right we -> do
+      pl <- decryptWalletExport we password
+      return $ wepAccounts pl
+
+-- |Decode and parse a web wallet export into a named account config.
+decodeWebFormattedAccountImport :: (MonadError String m)
+    => BS.ByteString -- ^JSON payload with the account information.
+    -> Maybe Text -- ^Optionally, how to name the account.
+    -> m AccountConfig
+decodeWebFormattedAccountImport payload name =
+  case eitherDecodeStrict payload of
+    Left err -> throwError $ printf "cannot decode JSON: %s" err
+    Right val ->
+      case parseEither accountParser val of
+        Left err -> throwError $ printf "cannot parse JSON: %s" err
+        Right x -> return x
+  where accountParser = AE.withObject "Account data" $ \v -> do
+          addr <- v .: "address"
+          acKeys <- v .: "accountKeys"
+          acThreshold <- v .:? "threshold" .!= fromIntegral (Map.size acKeys)
+          return AccountConfig{acAddr = NamedAddress{naName = name, naAddr = addr}, ..}
+
+parseKeyPair :: Text -- ^Private key.
+             -> Text -- ^Public key
+             -> IO Sig.KeyPair
 parseKeyPair sk vk = do
   sk' <- case parseSignKey sk of
            Left err -> logFatal [printf "cannot parse sign key '%s': %s" sk err]
