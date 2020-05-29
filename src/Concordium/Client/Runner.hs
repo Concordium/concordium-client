@@ -1,6 +1,7 @@
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveGeneric #-}
 module Concordium.Client.Runner
   ( process
   , getAccountNonce
@@ -15,6 +16,8 @@ module Concordium.Client.Runner
   , generateAddBakerPayload
   , getAccountInfo
   , getModuleSet
+  , getStatusOfPeers
+  , StatusOfPeers(..)
   , ClientMonad(..)
   , withClient
   , EnvData(..)
@@ -55,6 +58,7 @@ import           Control.Monad.Fail
 import           Control.Monad.Except
 import           Control.Monad.Reader                hiding (fail)
 import           Control.Exception
+import           GHC.Generics
 import           Data.IORef
 import           Data.Aeson                          as AE
 import           Data.Aeson.Types
@@ -1257,6 +1261,37 @@ printNodeInfo mni =
       putStrLn $ "Consensus type: " ++ show (ni ^. CF.consensusType)
       putStrLn $ "Baker committee member: " ++ show (ni ^. CF.consensusBakerCommittee)
       putStrLn $ "Finalization committee member: " ++ show (ni ^. CF.consensusFinalizerCommittee)
+
+-- |FIXME: Move this some other place in refactoring.
+data StatusOfPeers = StatusOfPeers {
+  -- |How many peers we deem are up-to-date with us.
+  numUpToDate :: !Int,
+  -- |How many are in limbo, we don't know what the status is with respect to
+  -- consensus status of the both of us.
+  numPending :: !Int,
+  -- |Number of peers we are catching up with.
+  numCatchingUp :: !Int
+  } deriving(Show, Generic)
+
+instance ToJSON StatusOfPeers
+instance FromJSON StatusOfPeers
+
+-- |Get an indication of how caught up the node is in relation to its peers.
+getStatusOfPeers :: ClientMonad IO (Either String StatusOfPeers)
+getStatusOfPeers = do
+  -- False means we don't include the bootstrap nodes here, since they are not running consensus.
+  getPeerList False <&> \case
+    Left err -> (Left err)
+    Right peerList -> Right $
+      L.foldl' (\status peerElem ->
+                  case peerElem ^. CF.catchupStatus of
+                    PeerElement'UPTODATE -> status { numUpToDate = numUpToDate status + 1 }
+                    PeerElement'PENDING -> status { numPending = numPending status + 1 }
+                    PeerElement'CATCHINGUP -> status { numCatchingUp = numCatchingUp status + 1 }
+                    _ -> status -- this should not happen in well-formed responses
+               )
+          (StatusOfPeers 0 0 0)
+          (peerList ^. CF.peers)
 
 -- |Process a transaction from JSON payload given as a byte string
 -- and with keys given explicitly.
