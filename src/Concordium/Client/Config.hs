@@ -164,10 +164,12 @@ initAccountConfig baseCfg namedAddr = do
                     })
 
 -- |Write the provided configuration to disk in the expected formats.
-importAccountConfig :: BaseConfig -> AccountConfig -> IO ()
-importAccountConfig baseCfg accountCfg = do
-  void (initAccountConfig baseCfg (acAddr accountCfg))
-  writeAccountKeys baseCfg accountCfg
+importAccountConfig :: BaseConfig -> [AccountConfig] -> IO BaseConfig
+importAccountConfig baseCfg accCfgs = foldM f baseCfg accCfgs
+  where f bc ac = do
+          (bc', _) <- initAccountConfig bc (acAddr ac)
+          writeAccountKeys bc' ac
+          return bc'
 
 -- |Write the account name map to a file in the expected format.
 writeAccountNameMap :: FilePath -> AccountNameMap -> IO ()
