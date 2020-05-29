@@ -122,26 +122,26 @@ instance AE.FromJSON WalletExportAccount where
 decryptWalletExport :: (MonadError String m) => WalletExport -> ByteString -> m WalletExportPayload
 decryptWalletExport e password = do
   let md = weMetadata e
-  
+
   case (wemEncryptionMethod md, wemKeyDerivationMethod md) of
     (AES256, PBKDF2SHA256) -> do
       salt <- decodeBase64 "salt" $ wemSalt md
       initVec <- decodeBase64 "initialization vector" $ wemInitializationVector md
       cipher <- decodeBase64 "cipher" $ weCipherText e
-    
+
       iv <- case makeIV initVec of
               Nothing -> throwError "cannot make initialization vector"
               Just iv -> return iv
-    
+
       let iterations = wemIterations md
           outputLen = 32
-    
+
       let key = fastPBKDF2_SHA256 (Parameters iterations outputLen) password salt :: ByteString
-    
+
       aes <- case cipherInit key of
                CryptoFailed err -> throwError $ printf "cipher initialization failed: %s" (show err)
                CryptoPassed a -> return a
-    
+
       let unpadded = unpad (PKCS7 1) (cbcDecrypt (aes :: AES256) iv cipher :: ByteString)
       case unpadded of
         Nothing -> throwError "incorrect password"

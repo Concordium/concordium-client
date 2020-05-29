@@ -198,7 +198,7 @@ processConfigCmd action baseCfgDir verbose =
         importFormat <- inferAccountImportFormat format file >>= askPassword
 
         accCfgs <- loadAccountImportFile importFormat file validName
-        mapM_ (importAccountConfig baseCfg) accCfgs
+        void $ importAccountConfig baseCfg accCfgs
 
     ConfigKeyCmd c -> case c of
       ConfigKeyAdd addr idx sk vk -> do
@@ -249,7 +249,7 @@ loadAccountImportFile format file name = do
   contents <- BS.readFile file
   case format of
     MobileFormat password -> do
-      accs <- case decodeMobileFormattedAccountImport contents password of
+      accs <- case decodeMobileFormattedAccountExport contents password of
         Left err -> logFatal [printf "cannot load mobile formatted import: %s" err]
         Right v -> return v
 
@@ -261,17 +261,17 @@ loadAccountImportFile format file name = do
       when (Prelude.null accCfgs) $ logWarn ["no accounts welected for import"]
       return accCfgs
     WebFormat -> do
-     accCfg <- case decodeWebFormattedAccountImport contents name of
+     accCfg <- case decodeWebFormattedAccountExport contents name of
        Left err -> logFatal [printf "cannot load web formatted import %s: "err]
        Right v -> return v
      return [accCfg]
 
 -- |Decode, decrypt and parse a mobile wallet export.
-decodeMobileFormattedAccountImport :: (MonadError String m)
+decodeMobileFormattedAccountExport :: (MonadError String m)
     => BS.ByteString -- ^JSON payload with encrypted accounts and identities.
     -> BS.ByteString -- ^Password to decrypt the payload.
     -> m [WalletExportAccount]
-decodeMobileFormattedAccountImport payload password =
+decodeMobileFormattedAccountExport payload password =
   case eitherDecodeStrict payload of
     Left err -> throwError $ printf "cannot decode JSON: %s" err
     Right we -> do
@@ -279,11 +279,11 @@ decodeMobileFormattedAccountImport payload password =
       return $ wepAccounts pl
 
 -- |Decode and parse a web wallet export into a named account config.
-decodeWebFormattedAccountImport :: (MonadError String m)
+decodeWebFormattedAccountExport :: (MonadError String m)
     => BS.ByteString -- ^JSON payload with the account information.
     -> Maybe Text -- ^Optionally, how to name the account.
     -> m AccountConfig
-decodeWebFormattedAccountImport payload name =
+decodeWebFormattedAccountExport payload name =
   case eitherDecodeStrict payload of
     Left err -> throwError $ printf "cannot decode JSON: %s" err
     Right val ->
