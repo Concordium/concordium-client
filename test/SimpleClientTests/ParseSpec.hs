@@ -1,7 +1,6 @@
 module SimpleClientTests.ParseSpec where
 
 import Concordium.Client.Parse
-import Concordium.Types
 
 import Test.Hspec
 

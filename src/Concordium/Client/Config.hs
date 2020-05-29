@@ -125,10 +125,8 @@ ensureAccountConfigInitialized baseCfg = do
 -- optionally a name mapping.
 initAccountConfig :: BaseConfig
                   -> NamedAddress
-                  -> Bool
-                  -- ^Whether existence of the account in the config is fatal or not.
                   -> IO (BaseConfig, AccountConfig)
-initAccountConfig baseCfg namedAddr existFatal = do
+initAccountConfig baseCfg namedAddr = do
   let NamedAddress { naAddr = addr, naName = name } = namedAddr
   case name of
     Nothing -> logInfo [printf "adding account %s without a name" (show addr)]
@@ -143,7 +141,7 @@ initAccountConfig baseCfg namedAddr existFatal = do
   let keysDir = accountKeysDir accCfgDir addr
   keysDirExists <- doesDirectoryExist keysDir
   if keysDirExists
-    then (if existFatal then logFatal else logWarn) [printf "account is already initialized: directory '%s' exists" keysDir]
+    then logFatal [printf "account is already initialized: directory '%s' exists" keysDir]
     else do
       logInfo [printf "creating directory '%s'" keysDir]
       catch @ IOError (createDirectoryIfMissing False keysDir) $
@@ -168,7 +166,7 @@ initAccountConfig baseCfg namedAddr existFatal = do
 -- |Write the provided configuration to disk in the expected formats.
 importAccountConfig :: BaseConfig -> AccountConfig -> IO ()
 importAccountConfig baseCfg accountCfg = do
-  void (initAccountConfig baseCfg (acAddr accountCfg) True)
+  void (initAccountConfig baseCfg (acAddr accountCfg))
   writeAccountKeys baseCfg accountCfg
 
 -- |Write the account name map to a file in the expected format.
@@ -272,13 +270,14 @@ validateAccountName name =
   case strip name of
     "" -> throwError "empty name"
     n | T.all supportedChar n -> return n
-      | otherwise -> throwError $ printf "invalid name '%s' (should consist of letters, numbers, '-', and '_' only)" n
-  where supportedChar c = isAlphaNum c || c == '-' || c == '_'
+      | otherwise -> throwError $ printf "invalid name '%s' (should consist of letters, numbers, space, '.', ',', '!', '?', '-', and '_' only)" n
+  where supportedChar c = isAlphaNum c || c `elem` supportedSpecialChars
+        supportedSpecialChars = "-_,.!? " :: String
 
 data AccountConfig = AccountConfig
                      { acAddr :: !NamedAddress
                      , acKeys :: !KeyMap
-                     , acThreshold :: !IDTypes.SignatureThreshold}
+                     , acThreshold :: !IDTypes.SignatureThreshold }
 
 acAddress :: AccountConfig -> AccountAddress
 acAddress = naAddr . acAddr
@@ -321,7 +320,7 @@ getAccountConfig account baseCfg keysDir keyMap autoInit = do
                   "" -> return Nothing
                   s -> return $ Just s
         let namedAddr' = NamedAddress { naAddr = addr, naName = name }
-        initAccountConfig baseCfg namedAddr' True
+        initAccountConfig baseCfg namedAddr'
       else do
         (km, acThreshold) <-
           handleJust
