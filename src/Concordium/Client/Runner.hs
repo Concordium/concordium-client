@@ -834,7 +834,6 @@ processModuleCmd action _ backend =
 ensureUtfEncoding :: String -> IO () -> IO String
 ensureUtfEncoding e printWarn =
   if L.isPrefixOf "utf" $ Prelude.map C.toLower e then
-    printf "asdf '%s'" e >>
     return e
   else do
     printWarn
