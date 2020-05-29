@@ -555,7 +555,7 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
   consensusStatus :: Handler Aeson.Value
   consensusStatus = liftIO $ proxyGrpcCall nodeBackend (GRPC.getConsensusStatus)
 
-
+  
   blockInfo :: Text -> Handler Aeson.Value
   blockInfo blockhash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getBlockInfo blockhash)
 
@@ -619,6 +619,11 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
     let received = case receivedQuery of
                    Right x -> fromIntegral x
                    _ -> 0
+
+    peersStatusQuery <- liftIO $ runGRPC nodeBackend getStatusOfPeers
+    let peersStatus = case peersStatusQuery of
+                        Right x -> x
+                        Left _ -> StatusOfPeers 0 0 0
 
     case infoE of
       Right ni ->
@@ -984,6 +989,12 @@ debugGrpc = do
   let received = case receivedQuery of
                    Right x -> fromIntegral x
                    _ -> 0
+
+  peersStatusQuery <- withClient nodeBackend getStatusOfPeers
+  let peersStatus = case peersStatusQuery of
+                      Right x -> x
+                      Left _ -> StatusOfPeers 0 0 0
+
 
   case infoE of
     Right ni -> do

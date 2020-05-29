@@ -16,6 +16,7 @@ import           GHC.Generics
 import           Data.Time.Clock.POSIX
 
 import           Concordium.Types.Utils
+import           Concordium.Client.Runner(StatusOfPeers)
 import           Concordium.Client.Types.Transaction ()
 import           Concordium.Crypto.SignatureScheme (KeyPair(..))
 import qualified Concordium.ID.Types
@@ -132,6 +133,7 @@ data GetNodeStateResponse =
     , signatureVerifyKey :: Text
     , selectionVerifyKey :: Text
     , timestamp :: Int
+    , peersStatus :: StatusOfPeers
     }
   deriving (Generic, Show)
 
