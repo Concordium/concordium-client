@@ -139,13 +139,17 @@ process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir
   case command of
     LegacyCmd c -> processLegacyCmd c backend
     ConfigCmd c -> processConfigCmd c cfgDir verbose
-    TransactionCmd c -> processTransactionCmd c cfgDir verbose backend
-    AccountCmd c -> processAccountCmd c cfgDir verbose backend
-    ModuleCmd c -> processModuleCmd c verbose backend
-    ContractCmd c -> processContractCmd c verbose backend
-    ConsensusCmd c -> processConsensusCmd c cfgDir verbose backend
-    BlockCmd c -> processBlockCmd c verbose backend
-    BakerCmd c -> processBakerCmd c cfgDir verbose backend
+    _ -> maybe printNoBackend (p verbose) backend
+  where p = case command of
+              TransactionCmd c -> processTransactionCmd c cfgDir
+              AccountCmd c -> processAccountCmd c cfgDir
+              ModuleCmd c -> processModuleCmd c
+              ContractCmd c -> processContractCmd c
+              ConsensusCmd c -> processConsensusCmd c cfgDir
+              BlockCmd c -> processBlockCmd c
+              BakerCmd c -> processBakerCmd c cfgDir
+              ConfigCmd _ -> error "unreachable case: ConfigCmd"
+              LegacyCmd _ -> error "unreachable case: LegacyCmd"
 
 -- |Validate an account name and fail gracefully if the given account name
 -- is invalid.
@@ -1057,7 +1061,7 @@ bakerSetKeyTransactionPayload bsktcCfg confirm = do
             Nothing -> logFatal [err]
 
 -- |Process a "legacy" command.
-processLegacyCmd :: LegacyCmd -> Backend -> IO ()
+processLegacyCmd :: LegacyCmd -> Maybe Backend -> IO ()
 processLegacyCmd action backend =
   case action of
     LoadModule fname -> do
@@ -1074,64 +1078,13 @@ processLegacyCmd action backend =
       mdata <- loadContextData
       putStrLn "The following modules are in the local database.\n"
       showLocalModules mdata
+    -- The rest of the commands expect a backend to be provided
+    act ->
+      maybe printNoBackend (useBackend act) backend
 
-    -- The rest of the commands use the backend
-    SendTransaction fname nid -> do
-      mdata <- loadContextData
-      source <- BSL.readFile fname
-      t <- PR.evalContext mdata $ withClient backend $ processTransaction source nid
-      putStrLn $ "Transaction sent to the baker. Its hash is " ++
-        show (getBlockItemHash t)
-    GetConsensusInfo -> withClient backend $ getConsensusStatus >>= printJSON
-    GetBlockInfo every block -> withClient backend $ withBestBlockHash block getBlockInfo >>= if every then loop else printJSON
-    GetBlockSummary block -> withClient backend $ withBestBlockHash block getBlockSummary >>= printJSON
-    GetAccountList block -> withClient backend $ withBestBlockHash block getAccountList >>= printJSON
-    GetInstances block -> withClient backend $ withBestBlockHash block getInstances >>= printJSON
-    GetTransactionStatus txhash -> withClient backend $ getTransactionStatus txhash >>= printJSON
-    GetTransactionStatusInBlock txhash block -> withClient backend $ getTransactionStatusInBlock txhash block >>= printJSON
-    GetAccountInfo account block ->
-      withClient backend $ withBestBlockHash block (getAccountInfo account) >>= printJSON
-    GetAccountNonFinalized account ->
-      withClient backend $ getAccountNonFinalizedTransactions account >>= printJSON
-    GetNextAccountNonce account ->
-      withClient backend $ getNextAccountNonce account >>= printJSON
-    GetInstanceInfo account block ->
-      withClient backend $ withBestBlockHash block (getInstanceInfo account) >>= printJSON
-    GetRewardStatus block -> withClient backend $ withBestBlockHash block getRewardStatus >>= printJSON
-    GetBirkParameters block ->
-      withClient backend $ withBestBlockHash block getBirkParameters >>= printJSON
-    GetModuleList block -> withClient backend $ withBestBlockHash block getModuleList >>= printJSON
-    GetModuleSource moduleref block -> do
-      mdata <- loadContextData
-      modl <-
-        PR.evalContext mdata . withClient backend $ withBestBlockHash block (getModuleSource moduleref)
-      case modl of
-        Left x ->
-          print $ "Unable to get the Module from the gRPC server: " ++ show x
-        Right v ->
-          let s = show (PP.showModule v)
-          in do
-            putStrLn $ "Retrieved module " ++ show moduleref
-            putStrLn s
-    GetNodeInfo -> withClient backend $ getNodeInfo >>= printNodeInfo
-    GetPeerData bootstrapper -> withClient backend $ getPeerData bootstrapper >>= printPeerData
-    StartBaker -> withClient backend $ startBaker >>= printSuccess
-    StopBaker -> withClient backend $ stopBaker >>= printSuccess
-    PeerConnect ip port -> withClient backend $ peerConnect ip port >>= printSuccess
-    GetPeerUptime -> withClient backend $ getPeerUptime >>= (liftIO . print)
-    BanNode nodeId nodePort nodeIp -> withClient backend $ banNode nodeId nodePort nodeIp >>= printSuccess
-    UnbanNode nodeId nodePort nodeIp -> withClient backend $ unbanNode nodeId nodePort nodeIp >>= printSuccess
-    JoinNetwork netId -> withClient backend $ joinNetwork netId >>= printSuccess
-    LeaveNetwork netId -> withClient backend $ leaveNetwork netId >>= printSuccess
-    GetAncestors amount blockHash -> withClient backend $ withBestBlockHash blockHash (getAncestors amount) >>= printJSON
-    GetBranches -> withClient backend $ getBranches >>= printJSON
-    GetBannedPeers -> withClient backend $ getBannedPeers >>= (liftIO . print)
-    Shutdown -> withClient backend $ shutdown >>= printSuccess
-    DumpStart -> withClient backend $ dumpStart >>= printSuccess
-    DumpStop -> withClient backend $ dumpStop >>= printSuccess
-  where
-    printSuccess (Left x)  = liftIO . putStrLn $ x
-    printSuccess (Right x) = liftIO $ if x then putStrLn "OK" else putStrLn "FAIL"
+-- |Standardized method of printing that backend was required but not provided.
+printNoBackend :: IO ()
+printNoBackend = logError ["no backend provided"]
 
 -- |Look up block infos all the way to genesis.
 loop :: Either String Value -> ClientMonad IO ()
@@ -1153,6 +1106,69 @@ loop v =
 -- annotations in many places.
 getBlockItemHash :: Types.BareBlockItem -> Types.TransactionHash
 getBlockItemHash = getHash
+
+-- |Process a "legacy" command which uses a backend
+-- (all except for LoadModule and ListModules).
+useBackend :: LegacyCmd -> Backend -> IO ()
+useBackend act b =
+  case act of
+    SendTransaction fname nid -> do
+      mdata <- loadContextData
+      source <- BSL.readFile fname
+      t <- PR.evalContext mdata $ withClient b $ processTransaction source nid
+      putStrLn $ "Transaction sent to the baker. Its hash is " ++
+        show (getBlockItemHash t)
+    GetConsensusInfo -> withClient b $ getConsensusStatus >>= printJSON
+    GetBlockInfo every block -> withClient b $ withBestBlockHash block getBlockInfo >>= if every then loop else printJSON
+    GetBlockSummary block -> withClient b $ withBestBlockHash block getBlockSummary >>= printJSON
+    GetAccountList block -> withClient b $ withBestBlockHash block getAccountList >>= printJSON
+    GetInstances block -> withClient b $ withBestBlockHash block getInstances >>= printJSON
+    GetTransactionStatus txhash -> withClient b $ getTransactionStatus txhash >>= printJSON
+    GetTransactionStatusInBlock txhash block -> withClient b $ getTransactionStatusInBlock txhash block >>= printJSON
+    GetAccountInfo account block ->
+      withClient b $ withBestBlockHash block (getAccountInfo account) >>= printJSON
+    GetAccountNonFinalized account ->
+      withClient b $ getAccountNonFinalizedTransactions account >>= printJSON
+    GetNextAccountNonce account ->
+      withClient b $ getNextAccountNonce account >>= printJSON
+    GetInstanceInfo account block ->
+      withClient b $ withBestBlockHash block (getInstanceInfo account) >>= printJSON
+    GetRewardStatus block -> withClient b $ withBestBlockHash block getRewardStatus >>= printJSON
+    GetBirkParameters block ->
+      withClient b $ withBestBlockHash block getBirkParameters >>= printJSON
+    GetModuleList block -> withClient b $ withBestBlockHash block getModuleList >>= printJSON
+    GetModuleSource moduleref block -> do
+      mdata <- loadContextData
+      modl <-
+        PR.evalContext mdata . withClient b $ withBestBlockHash block (getModuleSource moduleref)
+      case modl of
+        Left x ->
+          print $ "Unable to get the Module from the gRPC server: " ++ show x
+        Right v ->
+          let s = show (PP.showModule v)
+          in do
+            putStrLn $ "Retrieved module " ++ show moduleref
+            putStrLn s
+    GetNodeInfo -> withClient b $ getNodeInfo >>= printNodeInfo
+    GetPeerData bootstrapper -> withClient b $ getPeerData bootstrapper >>= printPeerData
+    StartBaker -> withClient b $ startBaker >>= printSuccess
+    StopBaker -> withClient b $ stopBaker >>= printSuccess
+    PeerConnect ip port -> withClient b $ peerConnect ip port >>= printSuccess
+    GetPeerUptime -> withClient b $ getPeerUptime >>= (liftIO . print)
+    BanNode nodeId nodePort nodeIp -> withClient b $ banNode nodeId nodePort nodeIp >>= printSuccess
+    UnbanNode nodeId nodePort nodeIp -> withClient b $ unbanNode nodeId nodePort nodeIp >>= printSuccess
+    JoinNetwork netId -> withClient b $ joinNetwork netId >>= printSuccess
+    LeaveNetwork netId -> withClient b $ leaveNetwork netId >>= printSuccess
+    GetAncestors amount blockHash -> withClient b $ withBestBlockHash blockHash (getAncestors amount) >>= printJSON
+    GetBranches -> withClient b $ getBranches >>= printJSON
+    GetBannedPeers -> withClient b $ getBannedPeers >>= (liftIO . print)
+    Shutdown -> withClient b $ shutdown >>= printSuccess
+    DumpStart -> withClient b $ dumpStart >>= printSuccess
+    DumpStop -> withClient b $ dumpStop >>= printSuccess
+    _ -> undefined
+  where
+    printSuccess (Left x)  = liftIO . putStrLn $ x
+    printSuccess (Right x) = liftIO $ if x then putStrLn "OK" else putStrLn "FAIL"
 
 data PeerData = PeerData {
   totalSent     :: Word64,

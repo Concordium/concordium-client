@@ -35,7 +35,7 @@ type Verbose = Bool
 data Options =
   Options
   { optsCmd :: Cmd
-  , optsBackend :: Backend
+  , optsBackend :: Maybe Backend
   , optsConfigDir :: Maybe FilePath
   , optsVerbose :: Verbose }
   deriving (Show)
@@ -45,7 +45,7 @@ data Backend =
     { grpcHost   :: !HostName
     , grpcPort   :: !PortNumber
     , grpcTarget :: !(Maybe String)
-    , grpcRetryNum :: !Int }
+    , grpcRetryNum :: !(Maybe Int) }
   deriving (Show)
 
 data Cmd
@@ -211,20 +211,14 @@ backendParser = GRPC <$> hostParser <*> portParser <*> targetParser <*> retryNum
 hostParser :: Parser HostName
 hostParser =
   strOption
-    (long "grpc-ip" <>
-     metavar "GRPC-IP" <>
-     value "localhost" <> -- default value
-     showDefault <>
+    (long "grpc-ip" <> metavar "GRPC-IP" <>
      help "IP address on which the gRPC server is listening.")
 
 portParser :: Parser PortNumber
 portParser =
   option
     auto
-    (long "grpc-port" <>
-     metavar "GRPC-PORT" <>
-     value 10000 <> -- default value to match the node default GRPC port
-     showDefault <>
+    (long "grpc-port" <> metavar "GRPC-PORT" <>
      help "Port where the gRPC server is listening.")
 
 targetParser :: Parser (Maybe String)
@@ -236,13 +230,12 @@ targetParser =
      metavar "GRPC-TARGET" <>
      help "Target node name when using a proxy.")
 
-retryNumParser :: Parser Int
+retryNumParser :: Parser (Maybe Int)
 retryNumParser =
+  optional $
     option auto
     (hidden <>
      long "grpc-retry" <>
-     value 0 <> -- default is to only try once
-     showDefault <>
      metavar "GRPC-RETRY" <>
      help "How many times to retry the connection if it fails the first time.")
 
@@ -268,7 +261,7 @@ programOptions = Options <$>
                       blockCmds <>
                       bakerCmds
                      ) <|> LegacyCmd <$> legacyProgramOptions) <*>
-                   backendParser <*>
+                   optional backendParser <*>
                    optional (strOption (long "config" <> metavar "PATH" <> help "Path to the configuration directory.")) <*>
                    switch (hidden <> long "verbose" <> short 'v' <> help "Make output verbose.")
 
