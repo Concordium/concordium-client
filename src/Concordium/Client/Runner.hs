@@ -1229,7 +1229,14 @@ printPeerData epd =
         putStrLn $ "  Node id: " ++ unpack (pe ^. CF.nodeId . CF.value)
         putStrLn $ "    Port: " ++ show (pe ^. CF.port . CF.value)
         putStrLn $ "    IP: " ++ unpack (pe ^. CF.ip . CF.value)
+        putStrLn $ "    Catchup Status: " ++ showCatchupStatus (pe ^. CF.catchupStatus)
         putStrLn ""
+  where showCatchupStatus =
+          \case PeerElement'UPTODATE -> "Up to date"
+                PeerElement'PENDING -> "Pending"
+                PeerElement'CATCHINGUP -> "Catching up"
+                _ -> "Unknown" -- this should not happen in well-formed responses
+
 
 getPeerData :: Bool -> ClientMonad IO (Either String PeerData)
 getPeerData bootstrapper = do

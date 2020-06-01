@@ -130,6 +130,11 @@ executables:
       - -O2
       - -threaded
 
+    when:
+      - condition: flag(static)
+        ld-options:
+        - -static
+
     dependencies:
       - async
       - optparse-applicative
