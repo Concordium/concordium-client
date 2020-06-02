@@ -260,10 +260,10 @@ printBirkParameters includeBakers r = do
              , printf "                             Account                       Lottery power"
              , printf "        ----------------------------------------------------------------" ]
         tell $ f <$> bs
-  where f b = printf "%6s: %s   %s" (show $ bpbrId b) (show $ bpbrAccount b) (showLotteryPower $ bpbrLotteryPower b)
+  where f b = printf "%6s: %s  %s" (show $ bpbrId b) (show $ bpbrAccount b) (showLotteryPower $ bpbrLotteryPower b)
         showLotteryPower lp = if 0 < lp && lp < 0.000001
-                              then "<0.000001" :: String
-                              else printf " %.6f" lp
+                              then " <0.0001 %" :: String
+                              else printf "%8.4f %%" (lp*100)
 -- BLOCK
 
 printBlockInfo :: Maybe BlockInfoResult -> Printer
