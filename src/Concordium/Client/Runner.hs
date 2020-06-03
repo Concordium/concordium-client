@@ -1244,7 +1244,7 @@ printNodeInfo mni =
     Right ni -> liftIO $ do
       putStrLn $ "Node ID: " ++ show (ni ^. CF.nodeId . CF.value)
       putStrLn $ "Current local time: " ++ show (ni ^. CF.currentLocaltime)
-      putStrLn $ "Baker ID: " ++ maybe "not a baker" show (ni ^. CF.maybe'consensusBakerId)
+      putStrLn $ "Baker ID: " ++ maybe "not a baker" show (ni ^? CF.maybe'consensusBakerId . _Just . CF.value)
       putStrLn $ "Peer type: " ++ show (ni ^. CF.peerType)
       putStrLn $ "Baker running: " ++ show (ni ^. CF.consensusBakerRunning)
       putStrLn $ "Consensus running: " ++ show (ni ^. CF.consensusRunning)
