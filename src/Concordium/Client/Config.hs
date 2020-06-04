@@ -79,28 +79,39 @@ initBaseConfig f = do
   baseCfgDir <- getBaseConfigDir f
   logInfo [printf "initializing configuration structure in directory '%s'" baseCfgDir]
 
-  baseCfgDirExists <- doesPathExist baseCfgDir
-  when baseCfgDirExists $ logFatal [printf "path already exists"]
-
-  -- Create directories and map file.
-  -- We only explicitly handle a permission error since that is likely the most
-  -- common one.
-  handleJust (guard . isPermissionError)
-             (\_ -> logFatal [printf "cannot create directory, permission denied"])
-             (createDirectoryIfMissing True baseCfgDir)
+  baseCfgDirExists <- doesDirectoryExist baseCfgDir
+  if baseCfgDirExists then
+    logInfo [printf "skipping '%s': directory already exists" baseCfgDir]
+  else
+    -- Only explicitly handle a permission error since that is likely the most common one.
+    handleJust (guard . isPermissionError)
+               (\_ -> logFatal [printf "cannot create directory, permission denied"])
+               (createDirectoryIfMissing True baseCfgDir)
 
   let accCfgDir = accountConfigDir baseCfgDir
       mapFile = accountNameMapFile accCfgDir
 
   logInfo [printf "creating directory '%s'" accCfgDir]
-  createDirectoryIfMissing False accCfgDir
+  accCfgDirExists <- doesDirectoryExist accCfgDir
+  if accCfgDirExists then
+    logInfo [printf "skipping '%s': directory already exists" accCfgDir]
+  else
+    createDirectoryIfMissing False accCfgDir
+
   logInfo [printf "creating file '%s'" mapFile]
-  writeFile mapFile ""
+  mapFileExists <- doesFileExist mapFile
+  anm <- if mapFileExists then do
+           logInfo [printf "skipping '%s': file already exists" mapFile]
+           loadAccountNameMap mapFile
+         else do
+           writeFile mapFile ""
+           return M.empty
+
   logSuccess ["configuration initialized"]
   return BaseConfig
     { bcVerbose = False
     , bcAccountCfgDir = accCfgDir
-    , bcAccountNameMap = M.empty }
+    , bcAccountNameMap = anm }
 
 -- |Ensure the basic account config is initialized.
 ensureAccountConfigInitialized :: BaseConfig -> IO ()
@@ -114,10 +125,8 @@ ensureAccountConfigInitialized baseCfg = do
 -- optionally a name mapping.
 initAccountConfig :: BaseConfig
                   -> NamedAddress
-                  -> Bool
-                  -- ^Whether existence of the account in the config is fatal or not.
                   -> IO (BaseConfig, AccountConfig)
-initAccountConfig baseCfg namedAddr existFatal = do
+initAccountConfig baseCfg namedAddr = do
   let NamedAddress { naAddr = addr, naName = name } = namedAddr
   case name of
     Nothing -> logInfo [printf "adding account %s without a name" (show addr)]
@@ -132,7 +141,7 @@ initAccountConfig baseCfg namedAddr existFatal = do
   let keysDir = accountKeysDir accCfgDir addr
   keysDirExists <- doesDirectoryExist keysDir
   if keysDirExists
-    then (if existFatal then logFatal else logWarn) [printf "account is already initialized: directory '%s' exists" keysDir]
+    then logFatal [printf "account is already initialized: directory '%s' exists" keysDir]
     else do
       logInfo [printf "creating directory '%s'" keysDir]
       catch @ IOError (createDirectoryIfMissing False keysDir) $
@@ -155,10 +164,12 @@ initAccountConfig baseCfg namedAddr existFatal = do
                     })
 
 -- |Write the provided configuration to disk in the expected formats.
-importAccountConfig :: BaseConfig -> AccountConfig -> IO ()
-importAccountConfig baseCfg accountCfg = do
-  void (initAccountConfig baseCfg (acAddr accountCfg) True)
-  writeAccountKeys baseCfg accountCfg
+importAccountConfig :: BaseConfig -> [AccountConfig] -> IO BaseConfig
+importAccountConfig baseCfg accCfgs = foldM f baseCfg accCfgs
+  where f bc ac = do
+          (bc', _) <- initAccountConfig bc (acAddr ac)
+          writeAccountKeys bc' ac
+          return bc'
 
 -- |Write the account name map to a file in the expected format.
 writeAccountNameMap :: FilePath -> AccountNameMap -> IO ()
@@ -261,13 +272,14 @@ validateAccountName name =
   case strip name of
     "" -> throwError "empty name"
     n | T.all supportedChar n -> return n
-      | otherwise -> throwError $ printf "invalid name '%s' (should consist of letters, numbers, '-', and '_' only)" n
-  where supportedChar c = isAlphaNum c || c == '-' || c == '_'
+      | otherwise -> throwError $ printf "invalid name '%s' (should consist of letters, numbers, space, '.', ',', '!', '?', '-', and '_' only)" n
+  where supportedChar c = isAlphaNum c || c `elem` supportedSpecialChars
+        supportedSpecialChars = "-_,.!? " :: String
 
 data AccountConfig = AccountConfig
                      { acAddr :: !NamedAddress
                      , acKeys :: !KeyMap
-                     , acThreshold :: !IDTypes.SignatureThreshold}
+                     , acThreshold :: !IDTypes.SignatureThreshold }
 
 acAddress :: AccountConfig -> AccountAddress
 acAddress = naAddr . acAddr
@@ -310,7 +322,7 @@ getAccountConfig account baseCfg keysDir keyMap autoInit = do
                   "" -> return Nothing
                   s -> return $ Just s
         let namedAddr' = NamedAddress { naAddr = addr, naName = name }
-        initAccountConfig baseCfg namedAddr' True
+        initAccountConfig baseCfg namedAddr'
       else do
         (km, acThreshold) <-
           handleJust

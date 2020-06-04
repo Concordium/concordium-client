@@ -56,7 +56,9 @@ data GrpcConfig =
     , port   :: !PortNumber
     -- Target node, i.e. "node-0" for use with grpc-proxy.eu.test.concordium.com against testnet
     , target :: !(Maybe String)
-    , retryNum :: !(Maybe Int)
+    -- |Number of times to __retry__ to establish a connection. Thus a value of
+    -- 0 means try only once.
+    , retryNum :: !Int
     -- |Timeout of each RPC call (defaults to 5min if not given).
     , timeout :: !(Maybe Int)
     }
@@ -127,7 +129,7 @@ mkGrpcClient config mLogger =
        lock <- RW.new
        ioref <- newIORef Nothing -- don't start the connection just now
        let logger = fromMaybe (const (return ())) mLogger
-       return $! EnvData (fromMaybe 0 $ retryNum config) cfg lock ioref logger
+       return $! EnvData (retryNum config) cfg lock ioref logger
 
 getNodeInfo :: ClientMonad IO (Either String NodeInfoResponse)
 getNodeInfo = withUnaryNoMsg' (call @"nodeInfo")

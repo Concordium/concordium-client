@@ -6,6 +6,7 @@ module Concordium.Client.Commands
   , Backend(..)
   , Cmd(..)
   , ConfigCmd(..)
+  , AccountImportFormatOpt(..)
   , ConfigAccountCmd(..)
   , ConfigKeyCmd(..)
   , TransactionOpts(..)
@@ -27,13 +28,14 @@ import Paths_simple_client (version)
 import Concordium.Client.LegacyCommands
 import Concordium.ID.Types (KeyIndex)
 import Concordium.Types
+import Text.Printf
 
 type Verbose = Bool
 
 data Options =
   Options
   { optsCmd :: Cmd
-  , optsBackend :: Maybe Backend
+  , optsBackend :: Backend
   , optsConfigDir :: Maybe FilePath
   , optsVerbose :: Verbose }
   deriving (Show)
@@ -43,7 +45,7 @@ data Backend =
     { grpcHost   :: !HostName
     , grpcPort   :: !PortNumber
     , grpcTarget :: !(Maybe String)
-    , grpcRetryNum :: !(Maybe Int) }
+    , grpcRetryNum :: !Int }
   deriving (Show)
 
 data Cmd
@@ -76,14 +78,17 @@ data ConfigCmd
     { configKeyCmd :: ConfigKeyCmd }
   deriving (Show)
 
+data AccountImportFormatOpt = Web | Mobile
+  deriving (Show)
+
 data ConfigAccountCmd
   = ConfigAccountAdd
     { caaAddr :: !Text
-    , caaName :: !(Maybe Text)}
+    , caaName :: !(Maybe Text) }
   | ConfigAccountImport
-    { caiName :: !(Maybe Text),
-      caiFile :: FilePath
-    }
+    { caiFile :: !FilePath
+    , caiName :: !(Maybe Text)
+    , caiFormat :: !(Maybe AccountImportFormatOpt) }
   deriving (Show)
 
 data ConfigKeyCmd
@@ -210,14 +215,20 @@ backendParser = GRPC <$> hostParser <*> portParser <*> targetParser <*> retryNum
 hostParser :: Parser HostName
 hostParser =
   strOption
-    (long "grpc-ip" <> metavar "GRPC-IP" <>
+    (long "grpc-ip" <>
+     metavar "GRPC-IP" <>
+     value "localhost" <> -- default value
+     showDefault <>
      help "IP address on which the gRPC server is listening.")
 
 portParser :: Parser PortNumber
 portParser =
   option
     auto
-    (long "grpc-port" <> metavar "GRPC-PORT" <>
+    (long "grpc-port" <>
+     metavar "GRPC-PORT" <>
+     value 10000 <> -- default value to match the node default GRPC port
+     showDefault <>
      help "Port where the gRPC server is listening.")
 
 targetParser :: Parser (Maybe String)
@@ -229,12 +240,13 @@ targetParser =
      metavar "GRPC-TARGET" <>
      help "Target node name when using a proxy.")
 
-retryNumParser :: Parser (Maybe Int)
+retryNumParser :: Parser Int
 retryNumParser =
-  optional $
     option auto
     (hidden <>
      long "grpc-retry" <>
+     value 0 <> -- default is to only try once
+     showDefault <>
      metavar "GRPC-RETRY" <>
      help "How many times to retry the connection if it fails the first time.")
 
@@ -260,7 +272,7 @@ programOptions = Options <$>
                       blockCmds <>
                       bakerCmds
                      ) <|> LegacyCmd <$> legacyProgramOptions) <*>
-                   optional backendParser <*>
+                   backendParser <*>
                    optional (strOption (long "config" <> metavar "PATH" <> help "Path to the configuration directory.")) <*>
                    switch (hidden <> long "verbose" <> short 'v' <> help "Make output verbose.")
 
@@ -334,7 +346,7 @@ accountShowCmd =
     "show"
     (info
        (AccountShow <$>
-         optional (strArgument (metavar "ADDRESS" <> help "Address of the account.")) <*>
+         optional (strArgument (metavar "ACCOUNT" <> help "Name or address of the account.")) <*>
          optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
        (progDesc "Display account details."))
 
@@ -486,7 +498,7 @@ configAccountAddCmd =
       (ConfigAccountAdd <$>
         strArgument (metavar "ADDRESS" <> help "Address of the account.") <*>
         optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account.")))
-      (progDesc "Add account to persistent config."))
+      (progDesc "Add account address to persistent config, optionally naming the account."))
 
 configAccountImportCmd :: Mod CommandFields ConfigAccountCmd
 configAccountImportCmd =
@@ -494,10 +506,17 @@ configAccountImportCmd =
     "import"
     (info
       (ConfigAccountImport <$>
-        optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account.")) <*>
-        strArgument (metavar "PATH" <> help "Account file exported from the wallet.")
+        strArgument (metavar "PATH" <> help "Account file exported from the wallet.") <*>
+        optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account. For the 'web' format, this sets the name to give the account. For the 'mobile' format (which contains multiple already named accounts), it selects which account to import.")) <*>
+        optional (option readAccountImportFormatOpt (long "format" <> metavar "FORMAT" <> help "Export format. Supported values are 'web', 'mobile'. If omitted, the format is inferred from the filename ('mobile' if the extension is \".concordiumwallet\", 'web' otherwise)."))
       )
       (progDesc "Import an account to persistent config."))
+
+readAccountImportFormatOpt :: ReadM AccountImportFormatOpt
+readAccountImportFormatOpt = str >>= \case
+  "web" -> return Web
+  "mobile" -> return Mobile
+  s -> readerError $ printf "invalid format: %s (supported values: 'web', 'mobile')" (s :: String)
 
 configKeyCmds :: Mod CommandFields ConfigCmd
 configKeyCmds =

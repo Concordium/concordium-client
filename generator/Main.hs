@@ -26,7 +26,10 @@ data TxOptions = TxOptions {
   -- |Whether to output a log after each transaction that is sent.
   logit :: !Bool,
   -- |File with JSON encoded keys for the source account.
-  keysFile :: FilePath
+  keysFile :: !FilePath,
+  -- |Optional file with addresses to send to. If not given or empty all
+  -- transfers will be self-transfers.
+  addressesFile :: !(Maybe FilePath)
   }
 
 txOptions :: Parser TxOptions
@@ -43,7 +46,8 @@ txOptions = do
                          help "Number of transactions per second.")
   let logit = switch (long "log" <> help "Emit for each transaction sent.")
   let keys = strOption (long "keyPair" <> short 'k' <> metavar "FILENAME")
-  TxOptions . fromIntegral <$> startNonce <*> tps <*> logit <*> keys
+  let addresses = optional (strOption (long "addresses" <> short 'a' <> metavar "FILENAME"))
+  TxOptions . fromIntegral <$> startNonce <*> tps <*> logit <*> keys <*> addresses
 
 parser :: ParserInfo (Backend, TxOptions)
 parser = info (helper <*> ((,) <$> backendParser <*> txOptions))
@@ -59,15 +63,16 @@ sendTx tx =
 iterateM_ :: Monad m => (a -> m a) -> a -> m b
 iterateM_ f a = f a >>= iterateM_ f
 
-go :: Backend -> Bool -> Int -> (Nonce -> BareBlockItem) -> Nonce -> IO ()
+go :: Backend -> Bool -> Int -> (Nonce -> (Address, BareBlockItem)) -> Nonce -> IO ()
 go backend logit tps sign startNonce = do
   startTime <- getCurrentTime
   withClient backend (loop startNonce startTime)
 
   where loop nextNonce nextTime = do
-          _ <- sendTx (sign nextNonce)
+          let (addr, tx) = sign nextNonce
+          _ <- sendTx tx
           liftIO $ do
-            when logit $ putStrLn $ "Sent transaction to " ++ show (grpcTarget backend) ++ " with nonce = " ++ show nextNonce
+            when logit $ putStrLn $ "Sent transaction to " ++ show addr ++ " with nonce = " ++ show nextNonce
             ct <- getCurrentTime
             let toWait = diffUTCTime nextTime ct
             when (toWait > 0) $ threadDelay (truncate $ toWait * 1e6)
@@ -77,23 +82,38 @@ go backend logit tps sign startNonce = do
 main :: IO ()
 main = do
   (backend, txoptions) <- execParser parser
-  AE.eitherDecode <$> BSL.readFile (keysFile txoptions) >>= \case
-    Left err -> putStrLn $ "Could not read the keys because: " ++ err
-    Right v ->
-      case AE.parseEither accountKeysParser v of
-        Left err' -> putStrLn $ "Could not decode JSON because: " ++ err'
-        Right (selfAddress, keyMap) -> do
-          print $ "Using sender account = " ++ show selfAddress
-          let txBody = encodePayload (Transfer (AddressAccount selfAddress) 1) -- transfer 1 GTU to myself.
-          let txHeader nonce = TransactionHeader {
-                thSender = selfAddress,
-                thNonce = nonce,
-                thEnergyAmount = 1000,
-                thPayloadSize = payloadSize txBody,
-                thExpiry = TransactionExpiryTime maxBound
-                }
-          let sign nonce = NormalTransaction $ signTransaction (Map.toList keyMap) (txHeader nonce) txBody
-          go backend (logit txoptions) (tps txoptions) sign (startNonce txoptions)
+  
+  addresses <-
+    case addressesFile txoptions of
+      Nothing -> return Nothing
+      Just f ->
+        AE.eitherDecode <$> BSL.readFile f >>= \case
+          Left err -> die $ "Cannot read addresses file: " ++ err
+          Right [] -> return Nothing
+          Right addrs -> return (Just addrs)
+
+  v <- AE.eitherDecode <$> BSL.readFile (keysFile txoptions) >>= \case
+         Left err -> die $ "Could not read the keys because: " ++ err
+         Right v -> return v
+
+  case AE.parseEither accountKeysParser v of
+    Left err' -> putStrLn $ "Could not decode JSON because: " ++ err'
+    Right (selfAddress, keyMap) -> do
+      print $ "Using sender account = " ++ show selfAddress
+      let txRecepient (Nonce n) =
+            case addresses of
+              Just addrs -> AddressAccount (addrs !! (fromIntegral n `mod` length addrs))
+              Nothing -> AddressAccount selfAddress
+      let txBody n = encodePayload (Transfer (txRecepient n) 1)
+      let txHeader nonce = TransactionHeader {
+            thSender = selfAddress,
+            thNonce = nonce,
+            thEnergyAmount = 1000,
+            thPayloadSize = payloadSize (txBody nonce),
+            thExpiry = TransactionExpiryTime maxBound
+            }
+      let sign nonce = (txRecepient nonce, NormalTransaction $ signTransaction (Map.toList keyMap) (txHeader nonce) (txBody nonce))
+      go backend (logit txoptions) (tps txoptions) sign (startNonce txoptions)
 
   where accountKeysParser = AE.withObject "Account keys" $ \v -> do
           accountAddr <- v AE..: "address"
