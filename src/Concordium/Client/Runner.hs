@@ -949,12 +949,12 @@ getBakerSetKeyTransactionCfg baseCfg txOpts bid f = do
 
 getBakerSetAggregationKeyCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerSetAggregationKeyTransactionConfig
 getBakerSetAggregationKeyCfg baseCfg txOpts bid file = do
-  key <- eitherDecodeFileStrict file >>= getFromJson
+  keys :: BakerKeys <- eitherDecodeFileStrict file >>= getFromJson
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return BakerSetAggregationKeyTransactionConfig
     { bsakTransactionCfg = txCfg
     , bsakBakerId = bid
-    , bsakSecretKey = key }
+    , bsakSecretKey = bkAggrSignKey keys }
   where nrgCost _ = return $ Just bakerSetAggregationKeyEnergyCost
 
 generateBakerSetAccountChallenge :: Types.BakerId -> Types.AccountAddress -> BS.ByteString
@@ -1022,7 +1022,9 @@ bakerSetAggregationKeyTransactionPayload bsaktCfg confirm = do
         , bsakSecretKey = secretKey}
         = bsaktCfg
 
-  logSuccess [ printf "setting key pair %s for baker %s" (show (secretKey, Bls.derivePublicKey secretKey)) (show bid)
+  let ubavkKey = Bls.derivePublicKey secretKey
+
+  logSuccess [ printf "setting aggregation key pair %s for baker %s" (show (secretKey, ubavkKey)) (show bid)
              , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
              , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
   when confirm $ do
@@ -1030,7 +1032,6 @@ bakerSetAggregationKeyTransactionPayload bsaktCfg confirm = do
     unless confirmed exitTransactionCancelled
 
   let ubavkId = bid
-      ubavkKey = Bls.derivePublicKey secretKey
       challenge = generateBakerSetAggregationKeyCallenge bid ubavkKey
       ubavkProof = Bls.proveKnowledgeOfSK challenge secretKey
 
