@@ -734,7 +734,7 @@ servantApp nodeBackend pgUrl idUrl cfgDir dataDir = genericServe routesAsServer
 
       bakerKeys <- liftIO $ Aeson.eitherDecodeFileStrict file >>= getFromJson
 
-      pl <- liftIO $ generateAddBakerPayload bakerKeys AccountKeys {akAddress = naAddr . acAddr $ accCfg, akKeys = acKeys accCfg, akThreshold = fromIntegral (HM.size $ acKeys accCfg)}
+      pl <- liftIO $ generateBakerAddPayload bakerKeys AccountKeys {akAddress = naAddr . acAddr $ accCfg, akKeys = acKeys accCfg, akThreshold = fromIntegral (HM.size $ acKeys accCfg)}
       -- run the transaction
       res <- runClient nodeBackend $ do
         tx <- startTransaction txCfg pl
@@ -1012,9 +1012,9 @@ debugTestTransactions nodeBackend selfAddress keyMap = do
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign txDelegateStake 3) 100)
 
   bakerKeys <- generateBakerKeys
-  addBakerPayload <- Execution.encodePayload <$> generateAddBakerPayload bakerKeys AccountKeys{akAddress = selfAddress,
-                                                                                               akKeys = keyMap,
-                                                                                               akThreshold = fromIntegral (HM.size keyMap) }
+  addBakerPayload <- Execution.encodePayload <$> generateBakerAddPayload bakerKeys AccountKeys { akAddress = selfAddress,
+                                                                                                 akKeys = keyMap,
+                                                                                                 akThreshold = fromIntegral (HM.size keyMap) }
 
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign addBakerPayload 4) 100)
 
@@ -1022,7 +1022,7 @@ debugTestTransactions nodeBackend selfAddress keyMap = do
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign txDelegateStake' 5) 100)
 
   -- invalid add baker payload
-  addBakerPayload' <- Execution.encodePayload <$> generateAddBakerPayload bakerKeys AccountKeys { akAddress = selfAddress,
+  addBakerPayload' <- Execution.encodePayload <$> generateBakerAddPayload bakerKeys AccountKeys { akAddress = selfAddress,
                                                                                                   akKeys = HM.empty,
                                                                                                   akThreshold = 1 }
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign addBakerPayload' 6) 100)
