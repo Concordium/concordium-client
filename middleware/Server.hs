@@ -19,6 +19,7 @@ import           Text.Read (readMaybe)
 
 import qualified Config
 import           Concordium.Client.GRPC
+import           Concordium.Client.Config (getDefaultDataDir, getDefaultBaseConfigDir)
 import qualified Api
 
 
@@ -34,6 +35,9 @@ runHttp middlewares = do
   nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:11100"
   pgUrl <- Config.lookupEnvText "PG_URL" "host=localhost port=5432 user=concordium dbname=concordium password=concordium"
   idUrl <- Config.lookupEnvText "SIMPLEID_URL" "http://localhost:8000"
+
+  cfgDir <- T.unpack <$> (Config.lookupEnvText "CFG_DIR" . T.pack =<< getDefaultBaseConfigDir)
+  dataDir <- T.unpack <$> (Config.lookupEnvText "DATA_DIR" . T.pack =<< getDefaultDataDir)
 
   let
     (nodeHost, nodePort) =
@@ -52,7 +56,7 @@ runHttp middlewares = do
     Left err -> fail (show err) -- cannot connect to grpc server
     Right nodeBackend -> do
       let
-        waiApp = Api.servantApp nodeBackend pgUrl idUrl
+        waiApp = Api.servantApp nodeBackend pgUrl idUrl cfgDir dataDir
 
         printStatus = do
           putStrLn $ "NODE_URL: " ++ show nodeUrl
@@ -60,6 +64,8 @@ runHttp middlewares = do
           putStrLn $ "SIMPLEID_URL: " ++ show idUrl
           putStrLn $ "Environment: " ++ show env
           putStrLn $ "Server started: http://localhost:" ++ show serverPort
+          putStrLn $ "Config directory: " ++ cfgDir
+          putStrLn $ "Data directory: " ++ dataDir
 
         run = W.defaultSettings
                   & W.setBeforeMainLoop printStatus

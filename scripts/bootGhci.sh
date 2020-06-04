@@ -26,6 +26,5 @@ fi
 
 
 NODE_URL="localhost:$NODE" \
-ES_URL="http://localhost:9200" \
 SIMPLEID_URL="http://localhost:8000" \
 stack ghci

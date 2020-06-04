@@ -14,6 +14,7 @@ import           Data.Word
 import           Data.Map (Map)
 import           GHC.Generics
 import           Data.Time.Clock.POSIX
+import           Data.Word (Word64)
 
 import           Concordium.Types.Utils
 import           Concordium.Client.Runner(StatusOfPeers)
@@ -24,10 +25,10 @@ import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Types
 import qualified Concordium.Types.Transactions as Types
 import qualified Concordium.Client.Types.Transaction as Types
-import qualified Concordium.ID.Types as IDTypes
 
 import           SimpleIdClientApi
 import           PerAccountTransactions
+import Concordium.Types (ElectionDifficulty, BakerId)
 
 data BetaIdProvisionRequest =
   BetaIdProvisionRequest
@@ -91,12 +92,12 @@ newtype TestnetGtuDropResponse =
 
 data AccountWithKeys =
   AccountWithKeys
-    { address :: IDTypes.AccountAddress
+    { address :: Types.AccountAddress
     , keys :: Types.KeyMap
     }
   deriving (FromJSON, Generic, Show)
 
-accountToPair :: AccountWithKeys -> (IDTypes.AccountAddress, Types.KeyMap)
+accountToPair :: AccountWithKeys -> (Types.AccountAddress, Types.KeyMap)
 accountToPair (AccountWithKeys address keys) =
   (address, keys)
 
@@ -128,6 +129,7 @@ data GetNodeStateResponse =
     , received :: Int
     , isBaking :: Bool
     , isInBakingCommittee :: Bool
+    , bakerId :: Maybe Word64
     , isFinalizing :: Bool
     , isInFinalizingCommittee :: Bool
     , signatureVerifyKey :: Text
@@ -159,10 +161,10 @@ data SetNodeStateRequest =
 instance FromJSON SetNodeStateRequest
 instance ToJSON SetNodeStateRequest
 
-newtype SetNodeStateResponse =
+data SetNodeStateResponse =
   SetNodeStateResponse
     { success :: Bool }
-  deriving newtype (FromJSON, ToJSON, Show)
+  deriving (Generic, FromJSON, ToJSON, Show)
 
 data OutcomeDetails =
   BakingReward {
@@ -308,3 +310,61 @@ data MessageContractRequest =
     , code :: [(ModuleName, ModuleSourceCode)]
     }
   deriving (FromJSON, Generic, Show)
+
+data ImportAccountRequestExtra =
+  ExtraPassword
+    { password :: Text
+    }
+  | ExtraAlias
+    { alias :: Maybe Text
+    }
+  deriving (FromJSON, ToJSON, Generic, Show)
+
+
+data ImportAccountRequest =
+  ImportAccountRequest
+  { contents :: Text
+  , extra :: ImportAccountRequestExtra
+  }
+  deriving (FromJSON, ToJSON, Generic, Show)
+
+data ImportAccountResponse =
+  ImportAccountResponse
+  { success :: Maybe String }
+  deriving (ToJSON, Generic, Show)
+
+data GetAccountsResponse =
+  GetAccountsResponse [GetAccountsResponseItem]
+  deriving (ToJSON, Generic, Show)
+
+data GetAccountsResponseItem =
+  GetAccountsResponseItem
+  { name :: Maybe Text
+  , address :: Text }
+  deriving (ToJSON, Generic, Show)
+
+data AddBakerRequest =
+  AddBakerRequest
+  { sender :: Maybe Text }
+  deriving (FromJSON, Generic, Show)
+
+data AddBakerResponse =
+  AddBakerResponse
+  { hash :: Maybe Text }
+  deriving (ToJSON, Generic, Show)
+
+data RemoveBakerRequest =
+  RemoveBakerRequest
+  { sender :: Maybe Text
+  , bakerId :: Word64 }
+  deriving (FromJSON, Generic, Show)
+
+data RemoveBakerResponse =
+  RemoveBakerResponse
+  { hash :: Maybe Text }
+  deriving (ToJSON, Generic, Show)
+
+data GetBakersResponse =
+  GetBakersResponse
+  { bakers :: [(BakerId, Text,  ElectionDifficulty)] }
+  deriving (ToJSON, Generic, Show)
