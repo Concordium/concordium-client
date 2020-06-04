@@ -270,7 +270,7 @@ programOptions = Options <$>
                       bakerCmds
                      ) <|> LegacyCmd <$> legacyProgramOptions) <*>
                    backendParser <*>
-                   optional (strOption (long "config" <> metavar "PATH" <> help "Path to the configuration directory.")) <*>
+                   optional (strOption (long "config" <> metavar "DIR" <> help "Path to the configuration directory.")) <*>
                    switch (hidden <> long "verbose" <> short 'v' <> help "Make output verbose.")
 
 transactionCmds :: Mod CommandFields Cmd
@@ -503,7 +503,7 @@ configAccountImportCmd =
     "import"
     (info
       (ConfigAccountImport <$>
-        strArgument (metavar "PATH" <> help "Account file exported from the wallet.") <*>
+        strArgument (metavar "FILE" <> help "Account file exported from the wallet.") <*>
         optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account. For the 'web' format, this sets the name to give the account. For the 'mobile' format (which contains multiple already named accounts), it selects which account to import.")) <*>
         optional (option readAccountImportFormatOpt (long "format" <> metavar "FORMAT" <> help "Export format. Supported values are 'web', 'mobile'. If omitted, the format is inferred from the filename ('mobile' if the extension is \".concordiumwallet\", 'web' otherwise)."))
       )
