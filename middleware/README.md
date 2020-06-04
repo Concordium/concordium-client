@@ -46,8 +46,6 @@ In a new tab, open up the `simple-client` repo (this repo), and run this helper 
 This will
 - Check Docker for a locally running baker node and grab it's port
 - Assume the ID server is running on its default of 8000
-- Assum the Docker ElasticSearch image is running on its default of 9200
-
 
 ### Scenario: Manual/Production
 
@@ -55,7 +53,6 @@ After a successful `stack install`, assuming `middleware` is now on your PATH, t
 
 ```
 NODE_URL="localhost:$NODE" \
-ES_URL="http://localhost:9200" \
 SIMPLEID_URL="http://localhost:8000" \
 middleware
 ```
@@ -77,7 +74,6 @@ You can boot `ghci` with the supported ENV vars:
 
 ```
 NODE_URL="localhost:11100" \
-ES_URL="http://localhost:9200" \
 SIMPLEID_URL="http://localhost:8000" \
 stack ghci --flag "simple-client:middleware"
 ```
@@ -123,13 +119,21 @@ TransactionJSON {metadata ...
 ... etc
 ```
 
+### Configuration and data directories
 
-#### Following a transaction
+Configuration and data directories can be customized via the `CFG_DIR` and
+`DATA_DIR` environment variables. If not provided, the config directory will be
+`$XdgConfig/concordium` and the data directory will be `$XdgData/concordium`.
 
-All middleware transactions are submitted with `hookIt = True` so you can manually check it in another shell if you wish:
+The configuration directory will contain the information that will be used by
+the account management features. If not existing or not properly initialized
+(for example if existing but missing the `accounts/` subdirectory or some such)
+it will be initialized.
 
-```
-simple-client --grpc-ip=127.0.0.1 --grpc-port=11142 HookTransaction 649339ed1c0a0b19747543bf44a692ddd393d6a22b48f40c099c17b04afeaeaa
-```
+Using the key management API endpoints will use the configuration directory so
+accounts will be imported into that one and also read from there.
 
-You can keep re-running that query and watching logs until there is a resolution.
+The data directory is needed when sending the `AddBaker` transaction provided by
+the API endpoint `addBaker` in order to read the `baker-credentials.json`
+file. Such file should be manually placed there and will be used to provision
+the `AddBaker` transaction.
