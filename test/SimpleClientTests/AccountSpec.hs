@@ -125,9 +125,9 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     (execWriter $ printAccountInfo exampleAddress (exampleAccountInfoResult (Just 1) [exampleCredentials examplePolicyWithoutItems]) True) `shouldBe`
       [ "Local name: example"
       , "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-      , "Amount:     0.0001 GTU"
+      , "Balance:    0.0001 GTU"
       , "Nonce:      2"
-      , "Delegation: 1"
+      , "Delegation: baker 1"
       , ""
       , "Credentials:"
       , "{\n\
