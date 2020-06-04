@@ -123,9 +123,9 @@ printAccountInfo :: NamedAddress -> AccountInfoResult -> Verbose -> Printer
 printAccountInfo addr a verbose = do
   tell [ printf "Local name: %s" (showMaybe unpack $ naName addr)
        , printf "Address:    %s" (show $ naAddr addr)
-       , printf "Amount:     %s" (showGtu $ airAmount a)
+       , printf "Balance:    %s" (showGtu $ airAmount a)
        , printf "Nonce:      %s" (show $ airNonce a)
-       , printf "Delegation: %s" (maybe showNone show $ airDelegation a)
+       , printf "Delegation: %s" (maybe showNone (printf "baker %s" . show) $ airDelegation a)
        , "" ]
 
   case airCredentials a of

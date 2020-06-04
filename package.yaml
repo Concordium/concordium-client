@@ -59,6 +59,7 @@ library:
     - aeson
     - aeson-pretty
     - ansi-terminal
+    - ansi-wl-pprint
     - attoparsec
     - base >=4.7 && <5
     - base16-bytestring
