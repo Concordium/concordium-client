@@ -29,6 +29,7 @@ import Concordium.Client.LegacyCommands
 import Concordium.ID.Types (KeyIndex)
 import Concordium.Types
 import Text.Printf
+import qualified Text.PrettyPrint.ANSI.Leijen as P
 
 type Verbose = Bool
 
@@ -250,7 +251,7 @@ transactionOptsParser :: Parser TransactionOpts
 transactionOptsParser =
   TransactionOpts <$>
     optional (strOption (long "sender" <> metavar "SENDER" <> help "Name or address of the transaction sender.")) <*>
-    optional (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified as JSON ({<key-idx>: {<sign-key>, <verify-key>}).")) <*>
+    optional (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified as JSON ({<key-idx>: {\"signKey\": ..., \"verifyKey\": ...}).")) <*>
     optional (option auto (long "nonce" <> metavar "NONCE" <> help "Transaction nonce.")) <*>
     optional (option auto (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction. Depeding on the transaction type, this flag may be optional.")) <*>
     optional (strOption (long "expiry" <> metavar "EXPIRY" <> help "Expiration time of a transaction, specified as a relative duration (\"30s\", \"5m\", etc.) or UNIX epoch timestamp."))
@@ -615,7 +616,17 @@ bakerGenerateKeysCmd =
     (info
       (BakerGenerateKeys <$>
         optional (strArgument (metavar "FILE" <> help "Target file of generated credentials.")))
-      (progDesc "Create baker credentials and write them to a file or stdout."))
+      (progDescDoc $ Just $ P.text
+        "Create baker credentials and write them to a file or stdout. Format:\n\
+        \\n\
+        \    {\n\
+        \      \"signatureSignKey\": ...,\n\
+        \      \"signatureVerifyKey\": ...,\n\
+        \      \"aggregationSignKey\": ...,\n\
+        \      \"aggregationVerifyKey\": ...,\n\
+        \      \"electionPrivateKey\": ...,\n\
+        \      \"electionVerifyKey\": ...,\n\
+        \    }"))
 
 bakerAddCmd :: Mod CommandFields BakerCmd
 bakerAddCmd =
@@ -636,7 +647,18 @@ bakerSetAccountCmd =
         argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
         strArgument (metavar "FILE" <> help "File containing keys of the account to send rewards to.") <*>
         transactionOptsParser)
-      (progDesc "Update the account that a baker's rewards are sent to."))
+      (progDescDoc $ Just $ P.text
+        "Update the account that a baker's rewards are sent to. Expected format:\n\
+        \\n\
+        \    {\n\
+        \      \"account\": ...,\n\
+        \      \"keys\": {\n\
+        \        <key-idx>: {\n\
+        \          \"signKey\": ...,\n\
+        \          \"verifyKey\": ...\n\
+        \        }\n\
+        \      }\n\
+        \    }"))
 
 bakerSetKeyCmd :: Mod CommandFields BakerCmd
 bakerSetKeyCmd =
@@ -647,7 +669,13 @@ bakerSetKeyCmd =
         argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
         strArgument (metavar "FILE" <> help "File containing the signature keys.") <*>
         transactionOptsParser)
-      (progDesc "Update the signature keys of a baker."))
+      (progDesc
+        "Update the signature keys of a baker. Expected format:\n\
+        \\n\
+        \    {\n\
+        \      \"signatureSignKey\": <sign-key>,\n\
+        \      \"signatureVerifyKey\": <verify-key>\n\
+        \    }"))
 
 bakerRemoveCmd :: Mod CommandFields BakerCmd
 bakerRemoveCmd =
