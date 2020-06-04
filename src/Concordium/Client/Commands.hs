@@ -618,14 +618,13 @@ bakerGenerateKeysCmd =
         optional (strArgument (metavar "FILE" <> help "Target file of generated credentials.")))
       (progDescDoc $ docFromLines
         [ "Create baker credentials and write them to a file or stdout. Format:"
-        , ""
         , "    {"
         , "      \"signatureSignKey\": ...,"
         , "      \"signatureVerifyKey\": ...,"
         , "      \"aggregationSignKey\": ...,"
         , "      \"aggregationVerifyKey\": ...,"
         , "      \"electionPrivateKey\": ...,"
-        , "      \"electionVerifyKey\": ...,"
+        , "      \"electionVerifyKey\": ..."
         , "    }" ]))
 
 bakerAddCmd :: Mod CommandFields BakerCmd
@@ -649,7 +648,6 @@ bakerSetAccountCmd =
         transactionOptsParser)
       (progDescDoc $ docFromLines
         [ "Update the account that a baker's rewards are sent to. Expected format:"
-        , ""
         , "   {"
         , "     \"account\": ...,"
         , "     \"keys\": {"
@@ -671,7 +669,6 @@ bakerSetKeyCmd =
         transactionOptsParser)
       (progDescDoc $ docFromLines
         [ "Update the signature keys of a baker. Expected format:"
-        , ""
         , "   {"
         , "     \"signatureSignKey\": <sign-key>,"
         , "     \"signatureVerifyKey\": <verify-key>"
