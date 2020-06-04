@@ -20,7 +20,7 @@ module Concordium.Client.Commands
   , BakerCmd(..)
   ) where
 
-import Data.Text
+import Data.Text hiding (map)
 import Data.Version (showVersion)
 import Network.HTTP2.Client
 import Options.Applicative
@@ -616,17 +616,17 @@ bakerGenerateKeysCmd =
     (info
       (BakerGenerateKeys <$>
         optional (strArgument (metavar "FILE" <> help "Target file of generated credentials.")))
-      (progDescDoc $ Just $ P.text
-        "Create baker credentials and write them to a file or stdout. Format:\n\
-        \\n\
-        \    {\n\
-        \      \"signatureSignKey\": ...,\n\
-        \      \"signatureVerifyKey\": ...,\n\
-        \      \"aggregationSignKey\": ...,\n\
-        \      \"aggregationVerifyKey\": ...,\n\
-        \      \"electionPrivateKey\": ...,\n\
-        \      \"electionVerifyKey\": ...,\n\
-        \    }"))
+      (progDescDoc $ docFromLines
+        [ "Create baker credentials and write them to a file or stdout. Format:"
+        , ""
+        , "    {"
+        , "      \"signatureSignKey\": ...,"
+        , "      \"signatureVerifyKey\": ...,"
+        , "      \"aggregationSignKey\": ...,"
+        , "      \"aggregationVerifyKey\": ...,"
+        , "      \"electionPrivateKey\": ...,"
+        , "      \"electionVerifyKey\": ...,"
+        , "    }" ]))
 
 bakerAddCmd :: Mod CommandFields BakerCmd
 bakerAddCmd =
@@ -647,18 +647,18 @@ bakerSetAccountCmd =
         argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
         strArgument (metavar "FILE" <> help "File containing keys of the account to send rewards to.") <*>
         transactionOptsParser)
-      (progDescDoc $ Just $ P.text
-        "Update the account that a baker's rewards are sent to. Expected format:\n\
-        \\n\
-        \    {\n\
-        \      \"account\": ...,\n\
-        \      \"keys\": {\n\
-        \        <key-idx>: {\n\
-        \          \"signKey\": ...,\n\
-        \          \"verifyKey\": ...\n\
-        \        }\n\
-        \      }\n\
-        \    }"))
+      (progDescDoc $ docFromLines
+        [ "Update the account that a baker's rewards are sent to. Expected format:"
+        , ""
+        , "   {"
+        , "     \"account\": ...,"
+        , "     \"keys\": {"
+        , "       <key-idx>: {"
+        , "         \"signKey\": ...,"
+        , "         \"verifyKey\": ..."
+        , "       }"
+        , "     }"
+        , "   }" ]))
 
 bakerSetKeyCmd :: Mod CommandFields BakerCmd
 bakerSetKeyCmd =
@@ -669,13 +669,13 @@ bakerSetKeyCmd =
         argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
         strArgument (metavar "FILE" <> help "File containing the signature keys.") <*>
         transactionOptsParser)
-      (progDesc
-        "Update the signature keys of a baker. Expected format:\n\
-        \\n\
-        \    {\n\
-        \      \"signatureSignKey\": <sign-key>,\n\
-        \      \"signatureVerifyKey\": <verify-key>\n\
-        \    }"))
+      (progDescDoc $ docFromLines
+        [ "Update the signature keys of a baker. Expected format:"
+        , ""
+        , "   {"
+        , "     \"signatureSignKey\": <sign-key>,"
+        , "     \"signatureVerifyKey\": <verify-key>"
+        , "   }" ]))
 
 bakerRemoveCmd :: Mod CommandFields BakerCmd
 bakerRemoveCmd =
@@ -686,3 +686,6 @@ bakerRemoveCmd =
         argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
         transactionOptsParser)
       (progDesc "Remove a baker from the chain."))
+
+docFromLines :: [String] -> Maybe P.Doc
+docFromLines = Just . P.vsep . map P.text
