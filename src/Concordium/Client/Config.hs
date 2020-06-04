@@ -37,6 +37,10 @@ getDefaultBaseConfigDir = getXdgDirectory XdgConfig "concordium"
 accountConfigDir :: BaseConfigDir -> FilePath
 accountConfigDir baseCfgDir = baseCfgDir </> "accounts"
 
+-- |The default location of the data root directory.
+getDefaultDataDir :: IO FilePath
+getDefaultDataDir = getXdgDirectory XdgData "concordium"
+
 accountNameMapFile :: FilePath -> FilePath
 accountNameMapFile accountCfgDir = accountCfgDir </> "names.map"
 

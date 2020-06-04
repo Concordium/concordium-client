@@ -24,6 +24,24 @@ module Concordium.Client.Runner
   , GrpcConfig
   , processTransaction_
   , awaitState
+  -- * For importing support
+  , decodeWebFormattedAccountExport
+  , accountCfgsFromWalletExportAccounts
+  , decodeMobileFormattedAccountExport
+  -- * For adding baker support
+  , startTransaction
+  , tailTransaction
+  , getBlockItemHash
+  -- * For delegation support
+  , getAccountDelegateTransactionCfg
+  , adtcTransactionCfg
+  , accountDelegateTransactionPayload
+  , withClientJson
+  , getAccountUndelegateTransactionCfg
+  , autcTransactionCfg
+  , accountUndelegateTransactionPayload
+  , TransactionConfig(..)
+  , getFromJson
   ) where
 
 import qualified Acorn.Core                          as Core
@@ -45,12 +63,11 @@ import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
 import           Concordium.Crypto.SignatureScheme   as Sig
 import qualified Concordium.Crypto.VRF               as VRF
-import           Concordium.ID.Types                 (addressFromText)
 import qualified Concordium.Types.Transactions       as Types
 import           Concordium.Types.HashableTo
 import qualified Concordium.Types.Execution          as Types
 import qualified Concordium.Types                    as Types
-
+import           Concordium.ID.Types                  (addressFromText)
 import           Proto.ConcordiumP2pRpc
 import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 
@@ -195,6 +212,7 @@ processConfigCmd action baseCfgDir verbose =
 
         accCfgs <- loadAccountImportFile importFormat file validName
         void $ importAccountConfig baseCfg accCfgs
+
 
     ConfigKeyCmd c -> case c of
       ConfigKeyAdd addr idx sk vk -> do
@@ -707,7 +725,7 @@ tailTransaction hash = do
   committedStatus <- awaitState 2 Committed hash
   liftIO $ putStrLn ""
 
-  when (tsrState committedStatus == Absent) $ do
+  when (tsrState committedStatus == Absent) $
     logFatal [ "transaction failed before it got committed"
              , "most likely because it was invalid" ]
 
