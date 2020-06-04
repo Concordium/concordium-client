@@ -1,5 +1,7 @@
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveGeneric #-}
 module Concordium.Client.Runner
   ( process
   , getAccountNonce
@@ -14,6 +16,8 @@ module Concordium.Client.Runner
   , generateAddBakerPayload
   , getAccountInfo
   , getModuleSet
+  , getStatusOfPeers
+  , StatusOfPeers(..)
   , ClientMonad(..)
   , withClient
   , EnvData(..)
@@ -35,6 +39,7 @@ import           Concordium.Client.Parse
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Client.Types.TransactionStatus
+import           Concordium.Client.WalletExport
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
@@ -50,8 +55,10 @@ import           Proto.ConcordiumP2pRpc
 import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 
 import           Control.Monad.Fail
-import           Control.Monad.IO.Class
+import           Control.Monad.Except
 import           Control.Monad.Reader                hiding (fail)
+import           Control.Exception
+import           GHC.Generics
 import           Data.IORef
 import           Data.Aeson                          as AE
 import           Data.Aeson.Types
@@ -72,9 +79,10 @@ import           Data.Word
 import           Lens.Micro.Platform
 import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client.Exceptions
-import           Prelude                             hiding (fail, mod, null, unlines)
+import           Prelude                             hiding (fail, mod, unlines)
 import           System.IO
 import           System.Directory
+import           System.FilePath
 import           Text.Printf
 
 liftContext :: Monad m => PR.Context Core.UA m a -> ClientMonad (PR.Context Core.UA m) a
@@ -124,23 +132,20 @@ getAccountAddressArg m input =
 
 -- |Process CLI command.
 process :: COM.Options -> IO ()
-process Options{optsCmd = LegacyCmd c, optsBackend = backend} = processLegacyCmd c backend
-process Options{optsCmd = ConfigCmd c,..} = processConfigCmd c optsConfigDir optsVerbose
 process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir, optsVerbose = verbose} = do
   -- Disable output buffering.
   hSetBuffering stdout NoBuffering
-  -- Evaluate command.
-  maybe printNoBackend (p verbose) backend
-  where p = case command of
-              TransactionCmd c -> processTransactionCmd c cfgDir
-              AccountCmd c -> processAccountCmd c cfgDir
-              ModuleCmd c -> processModuleCmd c
-              ContractCmd c -> processContractCmd c
-              ConsensusCmd c -> processConsensusCmd c cfgDir
-              BlockCmd c -> processBlockCmd c
-              BakerCmd c -> processBakerCmd c cfgDir
-              ConfigCmd _ -> error "unreachable case: ConfigCmd"
-              LegacyCmd _ -> error "unreachable case: LegacyCmd"
+
+  case command of
+    LegacyCmd c -> processLegacyCmd c backend
+    ConfigCmd c -> processConfigCmd c cfgDir verbose
+    TransactionCmd c -> processTransactionCmd c cfgDir verbose backend
+    AccountCmd c -> processAccountCmd c cfgDir verbose backend
+    ModuleCmd c -> processModuleCmd c verbose backend
+    ContractCmd c -> processContractCmd c verbose backend
+    ConsensusCmd c -> processConsensusCmd c cfgDir verbose backend
+    BlockCmd c -> processBlockCmd c verbose backend
+    BakerCmd c -> processBakerCmd c cfgDir verbose backend
 
 -- |Validate an account name and fail gracefully if the given account name
 -- is invalid.
@@ -174,34 +179,22 @@ processConfigCmd action baseCfgDir verbose =
             Left err -> logFatal [printf "cannot parse '%s' as an address: %s" addr err]
             Right a -> return a
         naName <- readAccountName name
-        void $ initAccountConfig baseCfg NamedAddress{..} False
-      ConfigAccountImport name file -> do
-        naName <- readAccountName name
-
-        fileExists <- doesFileExist file
-        unless fileExists $ logFatal [printf "the given file '%s' does not exist" file]
-
-        accountCfg <-
-          eitherDecodeFileStrict file >>= \case
-            Left err ->
-              logFatal [printf "cannot read JSON from file '%s': %s" file err]
-            Right val -> do
-              let accountParser = AE.withObject "Account data" $ \v -> do
-                    naAddr <- v .: "address"
-                    acKeys <- v .: "accountKeys"
-                    acThreshold <- v .:? "threshold" .!= fromIntegral (Map.size acKeys)
-                    return AccountConfig{acAddr = NamedAddress{..},..}
-              case parseEither accountParser val of
-                Left err ->
-                  logFatal [printf "cannot read JSON from file '%s': %s" file err]
-                Right x -> return x
-
+        void $ initAccountConfig baseCfg NamedAddress{..}
+      ConfigAccountImport file name format -> do
         baseCfg <- getBaseConfig baseCfgDir verbose True
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
 
-        void $ importAccountConfig baseCfg accountCfg
+        validName <- readAccountName name
+
+        fileExists <- doesFileExist file
+        unless fileExists $ logFatal [printf "the given file '%s' does not exist" file]
+
+        importFormat <- inferAccountImportFormat format file >>= askPassword
+
+        accCfgs <- loadAccountImportFile importFormat file validName
+        void $ importAccountConfig baseCfg accCfgs
 
     ConfigKeyCmd c -> case c of
       ConfigKeyAdd addr idx sk vk -> do
@@ -216,8 +209,92 @@ processConfigCmd action baseCfgDir verbose =
             accCfg' = accCfg { acKeys = keys }
 
         writeAccountKeys baseCfg' accCfg'
+  where askPassword = \case
+          Web -> return WebFormat
+          Mobile -> do
+            putStr "Enter encryption password: "
+            mfPassword <- bracket_ (hSetEcho stdin False) (hSetEcho stdin True) BS.getLine
+            putStrLn ""
+            return MobileFormat {..}
 
-parseKeyPair :: Text -> Text -> IO Sig.KeyPair
+-- |Return the input format or infer it from the file extension if it's Nothing.
+inferAccountImportFormat :: Maybe AccountImportFormatOpt -> FilePath -> IO AccountImportFormatOpt
+inferAccountImportFormat input file =
+  case input of
+    Nothing -> case splitExtension file of
+                 (_, ".concordiumwallet") -> do
+                   logInfo ["inferred format \"mobile\" from the file extension (pass flag '--format web' to override)"]
+                   return Mobile
+                 _ -> do
+                   logInfo ["inferred format \"web\" from the file extension (pass flag '--format mobile' to override)"]
+                   return Web
+    Just f -> return f
+
+data AccountImportFormat = WebFormat | MobileFormat { mfPassword :: BS.ByteString }
+
+
+-- |Read and parse a file exported from either the web- or mobile wallet.
+-- The format specifier tells which format to expect.
+-- If the format is "mobile", the user is prompted for a password which is used to decrypt
+-- the exported data. This may result in multiple named accounts. If a name is provided,
+-- only the account with that name is being selected for import.
+-- The "web" format is not encrypted and only contains a single account which is not named.
+-- If a name is provided in this case, this will become the account name.
+loadAccountImportFile :: AccountImportFormat -> FilePath -> Maybe Text -> IO [AccountConfig]
+loadAccountImportFile format file name = do
+  contents <- BS.readFile file
+  case format of
+    MobileFormat password -> do
+      accs <- case decodeMobileFormattedAccountExport contents password of
+        Left err -> logFatal [printf "cannot load mobile formatted import: %s" err]
+        Right v -> return v
+
+      logInfo ["loaded account(s):"]
+      forM_ accs $ \a -> do
+        logInfo [printf "- %s (%s)" (show $ akAddress $ weaKeys a) (weaName a)]
+
+      let accCfgs = accountCfgsFromWalletExportAccounts accs name
+      when (Prelude.null accCfgs) $ logWarn ["no accounts welected for import"]
+      return accCfgs
+    WebFormat -> do
+     accCfg <- case decodeWebFormattedAccountExport contents name of
+       Left err -> logFatal [printf "cannot load web formatted import %s: "err]
+       Right v -> return v
+     return [accCfg]
+
+-- |Decode, decrypt and parse a mobile wallet export.
+decodeMobileFormattedAccountExport :: (MonadError String m)
+    => BS.ByteString -- ^JSON payload with encrypted accounts and identities.
+    -> BS.ByteString -- ^Password to decrypt the payload.
+    -> m [WalletExportAccount]
+decodeMobileFormattedAccountExport payload password =
+  case eitherDecodeStrict payload of
+    Left err -> throwError $ printf "cannot decode JSON: %s" err
+    Right we -> do
+      pl <- decryptWalletExport we password
+      return $ wepAccounts pl
+
+-- |Decode and parse a web wallet export into a named account config.
+decodeWebFormattedAccountExport :: (MonadError String m)
+    => BS.ByteString -- ^JSON payload with the account information.
+    -> Maybe Text -- ^Optionally, how to name the account.
+    -> m AccountConfig
+decodeWebFormattedAccountExport payload name =
+  case eitherDecodeStrict payload of
+    Left err -> throwError $ printf "cannot decode JSON: %s" err
+    Right val ->
+      case parseEither accountParser val of
+        Left err -> throwError $ printf "cannot parse JSON: %s" err
+        Right x -> return x
+  where accountParser = AE.withObject "Account data" $ \v -> do
+          addr <- v .: "address"
+          acKeys <- v .: "accountKeys"
+          acThreshold <- v .:? "threshold" .!= fromIntegral (Map.size acKeys)
+          return AccountConfig{acAddr = NamedAddress{naName = name, naAddr = addr}, ..}
+
+parseKeyPair :: Text -- ^Private key.
+             -> Text -- ^Public key
+             -> IO Sig.KeyPair
 parseKeyPair sk vk = do
   sk' <- case parseSignKey sk of
            Left err -> logFatal [printf "cannot parse sign key '%s': %s" sk err]
@@ -759,7 +836,6 @@ processModuleCmd action _ backend =
 ensureUtfEncoding :: String -> IO () -> IO String
 ensureUtfEncoding e printWarn =
   if L.isPrefixOf "utf" $ Prelude.map C.toLower e then
-    printf "asdf '%s'" e >>
     return e
   else do
     printWarn
@@ -1038,7 +1114,7 @@ bakerSetAggregationKeyTransactionPayload bsaktCfg confirm = do
   return Types.UpdateBakerAggregationVerifyKey {..}
 
 -- |Process a "legacy" command.
-processLegacyCmd :: LegacyCmd -> Maybe Backend -> IO ()
+processLegacyCmd :: LegacyCmd -> Backend -> IO ()
 processLegacyCmd action backend =
   case action of
     LoadModule fname -> do
@@ -1055,13 +1131,64 @@ processLegacyCmd action backend =
       mdata <- loadContextData
       putStrLn "The following modules are in the local database.\n"
       showLocalModules mdata
-    -- The rest of the commands expect a backend to be provided
-    act ->
-      maybe printNoBackend (useBackend act) backend
 
--- |Standardized method of printing that backend was required but not provided.
-printNoBackend :: IO ()
-printNoBackend = logError ["no backend provided"]
+    -- The rest of the commands use the backend
+    SendTransaction fname nid -> do
+      mdata <- loadContextData
+      source <- BSL.readFile fname
+      t <- PR.evalContext mdata $ withClient backend $ processTransaction source nid
+      putStrLn $ "Transaction sent to the baker. Its hash is " ++
+        show (getBlockItemHash t)
+    GetConsensusInfo -> withClient backend $ getConsensusStatus >>= printJSON
+    GetBlockInfo every block -> withClient backend $ withBestBlockHash block getBlockInfo >>= if every then loop else printJSON
+    GetBlockSummary block -> withClient backend $ withBestBlockHash block getBlockSummary >>= printJSON
+    GetAccountList block -> withClient backend $ withBestBlockHash block getAccountList >>= printJSON
+    GetInstances block -> withClient backend $ withBestBlockHash block getInstances >>= printJSON
+    GetTransactionStatus txhash -> withClient backend $ getTransactionStatus txhash >>= printJSON
+    GetTransactionStatusInBlock txhash block -> withClient backend $ getTransactionStatusInBlock txhash block >>= printJSON
+    GetAccountInfo account block ->
+      withClient backend $ withBestBlockHash block (getAccountInfo account) >>= printJSON
+    GetAccountNonFinalized account ->
+      withClient backend $ getAccountNonFinalizedTransactions account >>= printJSON
+    GetNextAccountNonce account ->
+      withClient backend $ getNextAccountNonce account >>= printJSON
+    GetInstanceInfo account block ->
+      withClient backend $ withBestBlockHash block (getInstanceInfo account) >>= printJSON
+    GetRewardStatus block -> withClient backend $ withBestBlockHash block getRewardStatus >>= printJSON
+    GetBirkParameters block ->
+      withClient backend $ withBestBlockHash block getBirkParameters >>= printJSON
+    GetModuleList block -> withClient backend $ withBestBlockHash block getModuleList >>= printJSON
+    GetModuleSource moduleref block -> do
+      mdata <- loadContextData
+      modl <-
+        PR.evalContext mdata . withClient backend $ withBestBlockHash block (getModuleSource moduleref)
+      case modl of
+        Left x ->
+          print $ "Unable to get the Module from the gRPC server: " ++ show x
+        Right v ->
+          let s = show (PP.showModule v)
+          in do
+            putStrLn $ "Retrieved module " ++ show moduleref
+            putStrLn s
+    GetNodeInfo -> withClient backend $ getNodeInfo >>= printNodeInfo
+    GetPeerData bootstrapper -> withClient backend $ getPeerData bootstrapper >>= printPeerData
+    StartBaker -> withClient backend $ startBaker >>= printSuccess
+    StopBaker -> withClient backend $ stopBaker >>= printSuccess
+    PeerConnect ip port -> withClient backend $ peerConnect ip port >>= printSuccess
+    GetPeerUptime -> withClient backend $ getPeerUptime >>= (liftIO . print)
+    BanNode nodeId nodePort nodeIp -> withClient backend $ banNode nodeId nodePort nodeIp >>= printSuccess
+    UnbanNode nodeId nodePort nodeIp -> withClient backend $ unbanNode nodeId nodePort nodeIp >>= printSuccess
+    JoinNetwork netId -> withClient backend $ joinNetwork netId >>= printSuccess
+    LeaveNetwork netId -> withClient backend $ leaveNetwork netId >>= printSuccess
+    GetAncestors amount blockHash -> withClient backend $ withBestBlockHash blockHash (getAncestors amount) >>= printJSON
+    GetBranches -> withClient backend $ getBranches >>= printJSON
+    GetBannedPeers -> withClient backend $ getBannedPeers >>= (liftIO . print)
+    Shutdown -> withClient backend $ shutdown >>= printSuccess
+    DumpStart -> withClient backend $ dumpStart >>= printSuccess
+    DumpStop -> withClient backend $ dumpStop >>= printSuccess
+  where
+    printSuccess (Left x)  = liftIO . putStrLn $ x
+    printSuccess (Right x) = liftIO $ if x then putStrLn "OK" else putStrLn "FAIL"
 
 -- |Look up block infos all the way to genesis.
 loop :: Either String Value -> ClientMonad IO ()
@@ -1083,69 +1210,6 @@ loop v =
 -- annotations in many places.
 getBlockItemHash :: Types.BareBlockItem -> Types.TransactionHash
 getBlockItemHash = getHash
-
--- |Process a "legacy" command which uses a backend
--- (all except for LoadModule and ListModules).
-useBackend :: LegacyCmd -> Backend -> IO ()
-useBackend act b =
-  case act of
-    SendTransaction fname nid -> do
-      mdata <- loadContextData
-      source <- BSL.readFile fname
-      t <- PR.evalContext mdata $ withClient b $ processTransaction source nid
-      putStrLn $ "Transaction sent to the baker. Its hash is " ++
-        show (getBlockItemHash t)
-    GetConsensusInfo -> withClient b $ getConsensusStatus >>= printJSON
-    GetBlockInfo every block -> withClient b $ withBestBlockHash block getBlockInfo >>= if every then loop else printJSON
-    GetBlockSummary block -> withClient b $ withBestBlockHash block getBlockSummary >>= printJSON
-    GetAccountList block -> withClient b $ withBestBlockHash block getAccountList >>= printJSON
-    GetInstances block -> withClient b $ withBestBlockHash block getInstances >>= printJSON
-    GetTransactionStatus txhash -> withClient b $ getTransactionStatus txhash >>= printJSON
-    GetTransactionStatusInBlock txhash block -> withClient b $ getTransactionStatusInBlock txhash block >>= printJSON
-    GetAccountInfo account block ->
-      withClient b $ withBestBlockHash block (getAccountInfo account) >>= printJSON
-    GetAccountNonFinalized account ->
-      withClient b $ getAccountNonFinalizedTransactions account >>= printJSON
-    GetNextAccountNonce account ->
-      withClient b $ getNextAccountNonce account >>= printJSON
-    GetInstanceInfo account block ->
-      withClient b $ withBestBlockHash block (getInstanceInfo account) >>= printJSON
-    GetRewardStatus block -> withClient b $ withBestBlockHash block getRewardStatus >>= printJSON
-    GetBirkParameters block ->
-      withClient b $ withBestBlockHash block getBirkParameters >>= printJSON
-    GetModuleList block -> withClient b $ withBestBlockHash block getModuleList >>= printJSON
-    GetModuleSource moduleref block -> do
-      mdata <- loadContextData
-      modl <-
-        PR.evalContext mdata . withClient b $ withBestBlockHash block (getModuleSource moduleref)
-      case modl of
-        Left x ->
-          print $ "Unable to get the Module from the gRPC server: " ++ show x
-        Right v ->
-          let s = show (PP.showModule v)
-          in do
-            putStrLn $ "Retrieved module " ++ show moduleref
-            putStrLn s
-    GetNodeInfo -> withClient b $ getNodeInfo >>= printNodeInfo
-    GetPeerData bootstrapper -> withClient b $ getPeerData bootstrapper >>= printPeerData
-    StartBaker -> withClient b $ startBaker >>= printSuccess
-    StopBaker -> withClient b $ stopBaker >>= printSuccess
-    PeerConnect ip port -> withClient b $ peerConnect ip port >>= printSuccess
-    GetPeerUptime -> withClient b $ getPeerUptime >>= (liftIO . print)
-    BanNode nodeId nodePort nodeIp -> withClient b $ banNode nodeId nodePort nodeIp >>= printSuccess
-    UnbanNode nodeId nodePort nodeIp -> withClient b $ unbanNode nodeId nodePort nodeIp >>= printSuccess
-    JoinNetwork netId -> withClient b $ joinNetwork netId >>= printSuccess
-    LeaveNetwork netId -> withClient b $ leaveNetwork netId >>= printSuccess
-    GetAncestors amount blockHash -> withClient b $ withBestBlockHash blockHash (getAncestors amount) >>= printJSON
-    GetBranches -> withClient b $ getBranches >>= printJSON
-    GetBannedPeers -> withClient b $ getBannedPeers >>= (liftIO . print)
-    Shutdown -> withClient b $ shutdown >>= printSuccess
-    DumpStart -> withClient b $ dumpStart >>= printSuccess
-    DumpStop -> withClient b $ dumpStop >>= printSuccess
-    _ -> undefined
-  where
-    printSuccess (Left x)  = liftIO . putStrLn $ x
-    printSuccess (Right x) = liftIO $ if x then putStrLn "OK" else putStrLn "FAIL"
 
 data PeerData = PeerData {
   totalSent     :: Word64,
@@ -1206,7 +1270,14 @@ printPeerData epd =
         putStrLn $ "  Node id: " ++ unpack (pe ^. CF.nodeId . CF.value)
         putStrLn $ "    Port: " ++ show (pe ^. CF.port . CF.value)
         putStrLn $ "    IP: " ++ unpack (pe ^. CF.ip . CF.value)
+        putStrLn $ "    Catchup Status: " ++ showCatchupStatus (pe ^. CF.catchupStatus)
         putStrLn ""
+  where showCatchupStatus =
+          \case PeerElement'UPTODATE -> "Up to date"
+                PeerElement'PENDING -> "Pending"
+                PeerElement'CATCHINGUP -> "Catching up"
+                _ -> "Unknown" -- this should not happen in well-formed responses
+
 
 getPeerData :: Bool -> ClientMonad IO (Either String PeerData)
 getPeerData bootstrapper = do
@@ -1228,14 +1299,46 @@ printNodeInfo mni =
   case mni of
     Left err -> liftIO (putStrLn err)
     Right ni -> liftIO $ do
-      putStrLn $ "Node id: " ++ show (ni ^. CF.nodeId . CF.value)
+      putStrLn $ "Node ID: " ++ show (ni ^. CF.nodeId . CF.value)
       putStrLn $ "Current local time: " ++ show (ni ^. CF.currentLocaltime)
+      putStrLn $ "Baker ID: " ++ maybe "not a baker" show (ni ^? CF.maybe'consensusBakerId . _Just . CF.value)
       putStrLn $ "Peer type: " ++ show (ni ^. CF.peerType)
       putStrLn $ "Baker running: " ++ show (ni ^. CF.consensusBakerRunning)
       putStrLn $ "Consensus running: " ++ show (ni ^. CF.consensusRunning)
       putStrLn $ "Consensus type: " ++ show (ni ^. CF.consensusType)
       putStrLn $ "Baker committee member: " ++ show (ni ^. CF.consensusBakerCommittee)
       putStrLn $ "Finalization committee member: " ++ show (ni ^. CF.consensusFinalizerCommittee)
+
+-- |FIXME: Move this some other place in refactoring.
+data StatusOfPeers = StatusOfPeers {
+  -- |How many peers we deem are up-to-date with us.
+  numUpToDate :: !Int,
+  -- |How many are in limbo, we don't know what the status is with respect to
+  -- consensus status of the both of us.
+  numPending :: !Int,
+  -- |Number of peers we are catching up with.
+  numCatchingUp :: !Int
+  } deriving(Show, Generic)
+
+instance ToJSON StatusOfPeers
+instance FromJSON StatusOfPeers
+
+-- |Get an indication of how caught up the node is in relation to its peers.
+getStatusOfPeers :: ClientMonad IO (Either String StatusOfPeers)
+getStatusOfPeers = do
+  -- False means we don't include the bootstrap nodes here, since they are not running consensus.
+  getPeerList False <&> \case
+    Left err -> (Left err)
+    Right peerList -> Right $
+      L.foldl' (\status peerElem ->
+                  case peerElem ^. CF.catchupStatus of
+                    PeerElement'UPTODATE -> status { numUpToDate = numUpToDate status + 1 }
+                    PeerElement'PENDING -> status { numPending = numPending status + 1 }
+                    PeerElement'CATCHINGUP -> status { numCatchingUp = numCatchingUp status + 1 }
+                    _ -> status -- this should not happen in well-formed responses
+               )
+          (StatusOfPeers 0 0 0)
+          (peerList ^. CF.peers)
 
 -- |Process a transaction from JSON payload given as a byte string
 -- and with keys given explicitly.

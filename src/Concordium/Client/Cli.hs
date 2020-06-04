@@ -284,6 +284,7 @@ data AccountKeys =
   { akAddress :: AccountAddress
   , akKeys :: KeyMap
   , akThreshold :: IDTypes.SignatureThreshold }
+  deriving (Show)
 
 instance AE.FromJSON AccountKeys where
   parseJSON = withObject "Account keys" $ \v -> do

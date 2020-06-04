@@ -71,12 +71,20 @@ consensusShowParametersSpec = describe "show parameters" $ do
     , "Bakers:"
     , "                             Account                       Lottery power"
     , "        ----------------------------------------------------------------"
-    , "    11: 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6    0.1000"
-    , "    12: 4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y    0.0200" ]
+    , "     1: 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6   10.0000 %"
+    , "    12: 4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y    2.0000 %"
+    , "    13: 4p2n8QQn5akq3XqAAJt2a5CsnGhDvUon6HExd2szrfkZCTD4FX   <0.0001 %" ]
   specify "including bakers (empty)" $ p True exampleBirkParametersNoBakers `shouldBe`
     [ "Election nonce:      50ab4065c5a8194fbd7f3acf06267c7d8023fce9b3b658a74f3a927599eb9322"
     , "Election difficulty: 0.12"
     , "Bakers:              none" ]
+  specify "including bakers (single one with 100% stake)" $ p True exampleBirkParametersSingleBakerWithAllStake `shouldBe`
+    [ "Election nonce:      50ab4065c5a8194fbd7f3acf06267c7d8023fce9b3b658a74f3a927599eb9322"
+    , "Election difficulty: 0.12"
+    , "Bakers:"
+    , "                             Account                       Lottery power"
+    , "        ----------------------------------------------------------------"
+    , "     1: 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6  100.0000 %" ]
   where p includeBakers = execWriter . printBirkParameters includeBakers
 
 exampleStatusWithOptionalFields :: ConsensusStatusResult
@@ -138,16 +146,28 @@ exampleBirkParameters =
   BirkParametersResult
   { bprElectionNonce = exampleNonce
   , bprElectionDifficulty = 0.12
-  , bprBakers = [BirkParametersBakerResult
-                 { bpbrId = 11
-                 , bpbrLotteryPower = 0.1
-                 , bpbrAccount = exampleAccountAddress1
-                 },
-                 BirkParametersBakerResult
-                 { bpbrId = 12
-                 , bpbrLotteryPower = 0.02
-                 , bpbrAccount = exampleAccountAddress2
-                 }] }
+  , bprBakers = [ BirkParametersBakerResult
+                  { bpbrId = 1
+                  , bpbrLotteryPower = 0.1
+                  , bpbrAccount = exampleAccountAddress1 }
+                , BirkParametersBakerResult
+                  { bpbrId = 12
+                  , bpbrLotteryPower = 0.02
+                  , bpbrAccount = exampleAccountAddress2 }
+                , BirkParametersBakerResult
+                  { bpbrId = 13
+                  , bpbrLotteryPower = 1e-9
+                  , bpbrAccount = exampleAccountAddress3 } ] }
+
+exampleBirkParametersSingleBakerWithAllStake :: BirkParametersResult
+exampleBirkParametersSingleBakerWithAllStake =
+  BirkParametersResult
+  { bprElectionNonce = exampleNonce
+  , bprElectionDifficulty = 0.12
+  , bprBakers = [ BirkParametersBakerResult
+                  { bpbrId = 1
+                  , bpbrLotteryPower = 1
+                  , bpbrAccount = exampleAccountAddress1 } ] }
 
 exampleBirkParametersNoBakers :: BirkParametersResult
 exampleBirkParametersNoBakers =
@@ -164,6 +184,9 @@ Right exampleAccountAddress1 = addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3
 
 exampleAccountAddress2 :: AccountAddress
 Right exampleAccountAddress2 = addressFromText "4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y"
+
+exampleAccountAddress3 :: AccountAddress
+Right exampleAccountAddress3 = addressFromText "4p2n8QQn5akq3XqAAJt2a5CsnGhDvUon6HExd2szrfkZCTD4FX"
 
 exampleBlockHash1 :: BlockHash
 exampleBlockHash1 = read "0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389"
