@@ -75,6 +75,7 @@ runHttp middlewares = do
           app s = serve Api.api $ hoistServer Api.api (`runReaderT` s) $ Api.server transitionChan
       -- create the state
       tmv <- atomically $ newTMVar defaultLocalState
+      outertmv <- atomically $ newTMVar defaultLocalState
       jStatus <- either (fail . show) (either (fail . show) return) =<< runClient grpc getConsensusStatus
       case fromJSON jStatus of
         Success status -> do
@@ -89,7 +90,7 @@ runHttp middlewares = do
                       Right acc -> return acc
                 )
                 ([1 .. 4] :: [Int])
-          let state = State tmv grpc delegationAccounts (durationToNominalDiffTime $ Duration (csrEpochDuration status)) (csrGenesisTime status)
+          let state = State tmv outertmv grpc delegationAccounts (durationToNominalDiffTime $ Duration (csrEpochDuration status)) (csrGenesisTime status)
           -- prepare wai app
           let waiApp = app state
               printStatus = do
