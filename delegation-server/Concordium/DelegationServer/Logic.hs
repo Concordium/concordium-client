@@ -82,7 +82,7 @@ import Concordium.Types
 import Control.Concurrent
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TMVar
-import Control.Exception (bracketOnError)
+import Control.Exception (onException)
 import Control.Monad.Except
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashPSQ as PSQ
@@ -270,16 +270,14 @@ transitionNames _ = undefined -- must not happen
 transition6to7 :: Chan (BakerId, Int) -> BakerId -> (TMVar LocalState, TMVar LocalState) -> IO ()
 transition6to7 transitionChan baker (localState, outerLocalState) = do
   currentState@LocalState {..} <- logAndTakeTMVar "transition 4" localState
-  bracketOnError
-    (pure ())
-    ( const $ do
+  (flip onException)
+    ( do
         putStrLn "IO exception raised in transition 4"
         -- put back the old state
         logAndPutTMVar "transition 4 (exception)" localState currentState
         -- trigger this same transition at some point
         writeChan transitionChan (baker, 4)
     )
-    $ const
     $ do
       putStrLn $ localStateDescription "entering transition 4" currentState
       currentState' <- do
@@ -322,16 +320,14 @@ transition6to7 transitionChan baker (localState, outerLocalState) = do
 transition5to6 :: Chan (BakerId, Int) -> UTCTime -> NominalDiffTime -> EnvData -> BakerId -> (TMVar LocalState, TMVar LocalState) -> IO ()
 transition5to6 transitionChan genesisTime epochDuration backend baker (localState, outerLocalState) = do
   currentState@LocalState {..} <- logAndTakeTMVar "transition 3" localState
-  bracketOnError
-    (pure ())
-    ( const $ do
+  (flip onException)
+    ( do
         putStrLn "IO exception raised in transition 3"
         -- put back the old state
         logAndPutTMVar "transition 3 (exception)" localState currentState
         -- trigger this same transition at some point
         writeChan transitionChan (baker, 3)
     )
-    $ const
     $ do
       putStrLn $ localStateDescription "entering transition 3" currentState
       currentState' <- do
@@ -366,16 +362,14 @@ transition5to6 transitionChan genesisTime epochDuration backend baker (localStat
 transition4to5 :: Chan (BakerId, Int) -> Chan (Maybe TransactionHash) -> EnvData -> DelegationAccounts -> BakerId -> (TMVar LocalState, TMVar LocalState) -> IO ()
 transition4to5 transitionChan loopbackChan backend cfgDir baker s@(localState, outerLocalState) = do
   currentState <- logAndTakeTMVar "transition 2" localState
-  bracketOnError
-    (pure ())
-    ( const $ do
+  (flip onException)
+    ( do
         putStrLn "IO exception raised in transition 2"
         -- put back the old state
         logAndPutTMVar "transition 2 (exception)" localState currentState
         -- trigger this same transition at some point
         writeChan transitionChan (baker, 2)
     )
-    $ const
     $ do
       putStrLn $ localStateDescription "entering transition 2" currentState
       currentState' <- do
@@ -431,16 +425,14 @@ transition4to5 transitionChan loopbackChan backend cfgDir baker s@(localState, o
 transition3to4 :: Chan (BakerId, Int) -> UTCTime -> NominalDiffTime -> EnvData -> BakerId -> (TMVar LocalState, TMVar LocalState) -> IO ()
 transition3to4 transitionChan genesisTime epochDuration backend baker (localState, outerLocalState) = do
   currentState@LocalState {..} <- logAndTakeTMVar "transition 1" localState
-  bracketOnError
-    (pure ())
-    ( const $ do
+  (flip onException)
+    ( do
         putStrLn "IO exception raised in transition 1"
         -- put back the old state
         logAndPutTMVar "transition 1 (exception)" localState currentState
         -- trigger this same transition at some point
         writeChan transitionChan (baker, 1)
     )
-    $ const
     $ do
       putStrLn $ localStateDescription "entering transition 1" currentState
       currentState' <- do
@@ -475,16 +467,14 @@ transition3to4 transitionChan genesisTime epochDuration backend baker (localStat
 transition2to3 :: Chan (BakerId, Int) -> Chan (Maybe TransactionHash) -> EnvData -> DelegationAccounts -> Bool -> BakerId -> (TMVar LocalState, TMVar LocalState) -> IO ()
 transition2to3 transitionChan loopbackChan backend cfgDir calledFromSM _ (localState, outerLocalState) = do
   currentState@LocalState {..} <- logAndTakeTMVar "transition 0" localState
-  bracketOnError
-    (pure ())
-    ( const $ do
+  (flip onException)
+    ( do
         putStrLn "IO exception raised in transition 0"
         -- put back the old state
         logAndPutTMVar "transition 0 (exception)" localState currentState
         -- trigger this same transition at some point
         writeChan transitionChan (10, 0)
     )
-    $ const
     $ do
       putStrLn $ localStateDescription "entering transtion 0" currentState
       currentState' <- do

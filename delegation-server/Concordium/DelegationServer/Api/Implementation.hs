@@ -9,7 +9,7 @@ import Concordium.Types as Types
 import Control.Concurrent.Chan
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TMVar (swapTMVar)
-import Control.Exception (IOException)
+import Control.Exception (onException, IOException)
 import Control.Exception.Base (try)
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Reader
@@ -66,24 +66,28 @@ requestDelegation :: Chan (BakerId, Int) -> RequestDelegationRequest -> AppM Req
 requestDelegation transitionChan RequestDelegationRequest {..} = do
   state <- ask
   currentState@LocalState {..} <- wrapIOError . logAndTakeTMVar ("requestDelegation (" ++ show delegateTo ++ ")") $ localState state
-  if Set.member delegateTo activeDelegations
-    then do
-      wrapIOError $ logAndPutTMVar ("requestDelegation (" ++ show delegateTo ++ ")") (localState state) currentState
-      return RequestDelegationNotAccepted
-    else do
-      let cnt = case HM.lookup delegateTo recentDelegations of
-            Just (c, _) -> c
-            Nothing -> 0
-          pendingDelegations' = PSQ.insert delegateTo cnt () pendingDelegations
-          state' =
-            currentState
-              { pendingDelegations = pendingDelegations'
-              }
-      wrapIOError $ logAndPutTMVar ("requestDelegation (" ++ show delegateTo ++ ")") (localState state) state'
-      _ <- wrapIOError $ atomically $ swapTMVar (outerLocalState state) state'
-      -- notify the state machine that it can start with transition 0
-      wrapIOError $ writeChan transitionChan (10, 0) -- the first item in the tuple is not needed so we will put 10 as a dummy value
-      RequestDelegationAccepted <$> wrapIOError (tsMillis . utcTimeToTimestamp <$> estimatedTimeAsUTC (epochDuration state) (Just delegateTo) pendingDelegations' currentDelegations)
+  wrapIOError $ (flip onException)
+    (do
+        logAndPutTMVar ("requestDelegation (" ++ show delegateTo ++ ")") (localState state) currentState)
+    (do
+        if Set.member delegateTo activeDelegations
+          then do
+          logAndPutTMVar ("requestDelegation (" ++ show delegateTo ++ ")") (localState state) currentState
+          return RequestDelegationNotAccepted
+          else do
+          let cnt = case HM.lookup delegateTo recentDelegations of
+                Just (c, _) -> c
+                Nothing -> 0
+              pendingDelegations' = PSQ.insert delegateTo cnt () pendingDelegations
+              state' =
+                currentState
+                { pendingDelegations = pendingDelegations'
+                }
+          logAndPutTMVar ("requestDelegation (" ++ show delegateTo ++ ")") (localState state) state'
+          _ <- atomically $ swapTMVar (outerLocalState state) state'
+            -- notify the state machine that it can start with transition 0
+          writeChan transitionChan (10, 0) -- the first item in the tuple is not needed so we will put 10 as a dummy value
+          RequestDelegationAccepted <$> (tsMillis . utcTimeToTimestamp <$> estimatedTimeAsUTC (epochDuration state) (Just delegateTo) pendingDelegations' currentDelegations))
 
 getDelegationStatus :: GetDelegationStatusRequest -> AppM GetDelegationStatusResponse
 getDelegationStatus GetDelegationStatusRequest {..} = do
@@ -118,5 +122,5 @@ server chan = getDelegations :<|> requestDelegation chan :<|> getDelegationStatu
 wrapIOError :: forall b. IO b -> ReaderT State Handler b
 wrapIOError f =
   (liftIO (try f :: IO (Either IOException b))) >>= \case
-    Left _ -> ReaderT $ \_ -> throwError err500
-    Right val -> ReaderT (\_ -> return val :: Handler b)
+    Left _ -> ReaderT $ const $ throwError err500
+    Right val -> ReaderT $ const $ return val
