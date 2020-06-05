@@ -18,6 +18,7 @@ import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Execution
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TMVar (TMVar, putTMVar, readTMVar, takeTMVar)
+import Control.Monad.Except (MonadError (throwError))
 import Data.Aeson
 import Data.HashMap.Strict as HM hiding (filter, mapMaybe)
 import Data.Maybe
@@ -30,18 +31,18 @@ import qualified Data.Vector as Vec
 type DelegationAccounts = Vec.Vector AccountConfig
 
 jsonAnswer ::
-  (Monad m, Show a, FromJSON t) =>
+  (Show a, FromJSON t) =>
   EnvData ->
-  ClientMonad m (Either a Value) ->
-  (t -> m b) ->
-  m b
+  ClientMonad IO (Either a Value) ->
+  (t -> IO b) ->
+  IO b
 jsonAnswer grpc f g = do
   eeValue <- runClient grpc f
   case eeValue of
-    Left e -> error $ show e
-    Right (Left e) -> error $ show e
+    Left e -> throwError . userError . show $ e
+    Right (Left e) -> throwError . userError . show $ e
     Right (Right jValue) -> case fromJSON jValue of
-      Error e -> error e
+      Error e -> throwError . userError $ "Unable to parse JSON value received from the grpc backend. \nValue: " ++ show jValue ++ "\nError: " ++ show e
       Success value -> g value
 
 -- | When checking for a transaction it might be in different states:
@@ -124,7 +125,7 @@ delegate grpc delegationAccounts bakerId idx =
             Just bid -> Execution.DelegateStake {dsID = bid}
             Nothing -> Execution.UndelegateStake
       -- send the transaction
-      either (error . show) id <$> runClient grpc (getBlockItemHash <$> startTransaction txCfg pl)
+      either (throwError . userError . show) return =<< runClient grpc (getBlockItemHash <$> startTransaction txCfg pl)
 
 in2epochs :: UTCTime -> NominalDiffTime -> UTCTime -> UTCTime
 in2epochs genesisTime epochDuration finalizationTime =
