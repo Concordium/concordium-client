@@ -8,7 +8,7 @@ import Concordium.DelegationServer.Logic
 import Concordium.Types as Types
 import Control.Concurrent.Chan
 import Control.Concurrent.STM (atomically)
-import Control.Concurrent.STM.TMVar (putTMVar)
+import Control.Concurrent.STM.TMVar (swapTMVar)
 import Control.Exception (IOException)
 import Control.Exception.Base (try)
 import Control.Monad.IO.Class
@@ -80,7 +80,7 @@ requestDelegation transitionChan RequestDelegationRequest {..} = do
               { pendingDelegations = pendingDelegations'
               }
       wrapIOError $ logAndPutTMVar ("requestDelegation (" ++ show delegateTo ++ ")") (localState state) state'
-      wrapIOError $ atomically $ putTMVar (outerLocalState state) state'
+      _ <- wrapIOError $ atomically $ swapTMVar (outerLocalState state) state'
       -- notify the state machine that it can start with transition 0
       wrapIOError $ writeChan transitionChan (10, 0) -- the first item in the tuple is not needed so we will put 10 as a dummy value
       RequestDelegationAccepted <$> wrapIOError (tsMillis . utcTimeToTimestamp <$> estimatedTimeAsUTC (epochDuration state) (Just delegateTo) pendingDelegations' currentDelegations)
