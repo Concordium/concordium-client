@@ -80,8 +80,6 @@ import Concordium.Client.GRPC
 import Concordium.DelegationServer.Helpers
 import Concordium.Types
 import Control.Concurrent
-import Control.Concurrent.STM (atomically)
-import Control.Concurrent.STM.TMVar
 import Control.Exception (onException)
 import Control.Monad.Except
 import qualified Data.HashMap.Strict as HM
@@ -176,8 +174,8 @@ defaultLocalState =
 
 data State
   = State
-      { localState :: !(TMVar LocalState),
-        outerLocalState :: !(TMVar LocalState),
+      { localState :: !(MVar LocalState),
+        outerLocalState :: !(MVar LocalState),
         backend :: EnvData,
         configDir :: DelegationAccounts,
         epochDuration :: NominalDiffTime,
@@ -192,7 +190,7 @@ data State
 -- - 4 to 5 -> 2 epochs passed
 -- - 5 to 6 -> finalization of the transction
 -- - 6 to 7 -> 2 epochs passed
-mkTransitions :: Chan (BakerId, Int) -> Chan (Maybe TransactionHash) -> UTCTime -> NominalDiffTime -> EnvData -> DelegationAccounts -> Vec.Vector (BakerId -> (TMVar LocalState, TMVar LocalState) -> IO ())
+mkTransitions :: Chan (BakerId, Int) -> Chan (Maybe TransactionHash) -> UTCTime -> NominalDiffTime -> EnvData -> DelegationAccounts -> Vec.Vector (BakerId -> (MVar LocalState, MVar LocalState) -> IO ())
 mkTransitions transitionChan loopbackChan genesisTime epochDuration backend cfgDir =
   Vec.fromList
     [ transition2to3 transitionChan loopbackChan backend cfgDir False,
@@ -251,7 +249,7 @@ runTransitionIn waitingEpochs chan timer next = do
   pure ()
 
 -- | Main loop of the state machine. Executes the transitions given through the chanToLoop channel.
-stateMachine :: (TMVar LocalState, TMVar LocalState) -> Vec.Vector (BakerId -> (TMVar LocalState, TMVar LocalState) -> IO ()) -> Chan (BakerId, Int) -> IO ()
+stateMachine :: (MVar LocalState, MVar LocalState) -> Vec.Vector (BakerId -> (MVar LocalState, MVar LocalState) -> IO ()) -> Chan (BakerId, Int) -> IO ()
 stateMachine localState transitions chanToLoop = do
   (bid, trans) <- readChan chanToLoop
   if trans == 0
@@ -267,14 +265,14 @@ transitionNames 3 = "(3) undelegate transaction was finalized, setting 2 epoch t
 transitionNames 4 = "(4) 2 epochs passed after finalized undelegate transaction, moving to recent delegations"
 transitionNames _ = undefined -- must not happen
 
-transition6to7 :: Chan (BakerId, Int) -> BakerId -> (TMVar LocalState, TMVar LocalState) -> IO ()
+transition6to7 :: Chan (BakerId, Int) -> BakerId -> (MVar LocalState, MVar LocalState) -> IO ()
 transition6to7 transitionChan baker (localState, outerLocalState) = do
-  currentState@LocalState {..} <- logAndTakeTMVar "transition 4" localState
+  currentState@LocalState {..} <- logAndTakeMVar "transition 4" localState
   (flip onException)
     ( do
         putStrLn "IO exception raised in transition 4"
         -- put back the old state
-        logAndPutTMVar "transition 4 (exception)" localState currentState
+        logAndPutMVar "transition 4 (exception)" localState currentState
         -- trigger this same transition at some point
         writeChan transitionChan (baker, 4)
     )
@@ -313,18 +311,18 @@ transition6to7 transitionChan baker (localState, outerLocalState) = do
             putStrLn $ localStateDescription "BAD STATE" currentState
             error "Delegation should exist!!"
       putStrLn $ localStateDescription "leaving transition 4" currentState'
-      logAndPutTMVar "transition 4" localState currentState'
-      _ <- atomically $ swapTMVar outerLocalState currentState'
+      logAndPutMVar "transition 4" localState currentState'
+      _ <- swapMVar outerLocalState currentState'
       pure ()
 
-transition5to6 :: Chan (BakerId, Int) -> UTCTime -> NominalDiffTime -> EnvData -> BakerId -> (TMVar LocalState, TMVar LocalState) -> IO ()
+transition5to6 :: Chan (BakerId, Int) -> UTCTime -> NominalDiffTime -> EnvData -> BakerId -> (MVar LocalState, MVar LocalState) -> IO ()
 transition5to6 transitionChan genesisTime epochDuration backend baker (localState, outerLocalState) = do
-  currentState@LocalState {..} <- logAndTakeTMVar "transition 3" localState
+  currentState@LocalState {..} <- logAndTakeMVar "transition 3" localState
   (flip onException)
     ( do
         putStrLn "IO exception raised in transition 3"
         -- put back the old state
-        logAndPutTMVar "transition 3 (exception)" localState currentState
+        logAndPutMVar "transition 3 (exception)" localState currentState
         -- trigger this same transition at some point
         writeChan transitionChan (baker, 3)
     )
@@ -355,18 +353,18 @@ transition5to6 transitionChan genesisTime epochDuration backend baker (localStat
             putStrLn $ localStateDescription "BAD STATE" currentState
             error "Delegation should exist!!"
       putStrLn $ localStateDescription "leaving transition 3" currentState'
-      logAndPutTMVar "transition 3" localState currentState'
-      _ <- atomically $ swapTMVar outerLocalState currentState'
+      logAndPutMVar "transition 3" localState currentState'
+      _ <- swapMVar outerLocalState currentState'
       pure ()
 
-transition4to5 :: Chan (BakerId, Int) -> Chan (Maybe TransactionHash) -> EnvData -> DelegationAccounts -> BakerId -> (TMVar LocalState, TMVar LocalState) -> IO ()
+transition4to5 :: Chan (BakerId, Int) -> Chan (Maybe TransactionHash) -> EnvData -> DelegationAccounts -> BakerId -> (MVar LocalState, MVar LocalState) -> IO ()
 transition4to5 transitionChan loopbackChan backend cfgDir baker s@(localState, outerLocalState) = do
-  currentState <- logAndTakeTMVar "transition 2" localState
+  currentState <- logAndTakeMVar "transition 2" localState
   (flip onException)
     ( do
         putStrLn "IO exception raised in transition 2"
         -- put back the old state
-        logAndPutTMVar "transition 2 (exception)" localState currentState
+        logAndPutMVar "transition 2 (exception)" localState currentState
         -- trigger this same transition at some point
         writeChan transitionChan (baker, 2)
     )
@@ -391,13 +389,13 @@ transition4to5 transitionChan loopbackChan backend cfgDir baker s@(localState, o
                           activeDelegations = activeDelegations',
                           currentDelegations = currentDelegations'
                         }
-                logAndPutTMVar "interleaving transition 2" localState currentState'
+                logAndPutMVar "interleaving transition 2" localState currentState'
                 -- signal that a new position is available
                 transition2to3 transitionChan loopbackChan backend cfgDir True 10 s -- the baker is not needed so we will put 10 as a dummy value
                   -- if the position was re-delegated, use that transaction hash,
                   -- else undelegate
                 mRedelegateTx <- readChan loopbackChan
-                currentState'' <- logAndTakeTMVar "interleaving transition 2" localState
+                currentState'' <- logAndTakeMVar "interleaving transition 2" localState
                 let sendThisTransaction = delegate backend cfgDir Nothing delegator
                 th <- maybe sendThisTransaction return mRedelegateTx
                 -- create listeners for finalization
@@ -418,18 +416,18 @@ transition4to5 transitionChan loopbackChan backend cfgDir baker s@(localState, o
             putStrLn $ localStateDescription "BAD STATE" currentState
             error "Delegation should exist!!"
       putStrLn $ localStateDescription "leaving transition 2" currentState'
-      logAndPutTMVar "transition 2" localState currentState'
-      _ <- atomically $ swapTMVar outerLocalState currentState'
+      logAndPutMVar "transition 2" localState currentState'
+      _ <- swapMVar outerLocalState currentState'
       pure ()
 
-transition3to4 :: Chan (BakerId, Int) -> UTCTime -> NominalDiffTime -> EnvData -> BakerId -> (TMVar LocalState, TMVar LocalState) -> IO ()
+transition3to4 :: Chan (BakerId, Int) -> UTCTime -> NominalDiffTime -> EnvData -> BakerId -> (MVar LocalState, MVar LocalState) -> IO ()
 transition3to4 transitionChan genesisTime epochDuration backend baker (localState, outerLocalState) = do
-  currentState@LocalState {..} <- logAndTakeTMVar "transition 1" localState
+  currentState@LocalState {..} <- logAndTakeMVar "transition 1" localState
   (flip onException)
     ( do
         putStrLn "IO exception raised in transition 1"
         -- put back the old state
-        logAndPutTMVar "transition 1 (exception)" localState currentState
+        logAndPutMVar "transition 1 (exception)" localState currentState
         -- trigger this same transition at some point
         writeChan transitionChan (baker, 1)
     )
@@ -460,18 +458,18 @@ transition3to4 transitionChan genesisTime epochDuration backend baker (localStat
             putStrLn $ localStateDescription "BAD STATE" currentState
             error "Delegation should exist!!"
       putStrLn $ localStateDescription "leaving transition 1" currentState'
-      logAndPutTMVar "transition 1" localState currentState'
-      _ <- atomically $ swapTMVar outerLocalState currentState'
+      logAndPutMVar "transition 1" localState currentState'
+      _ <- swapMVar outerLocalState currentState'
       pure ()
 
-transition2to3 :: Chan (BakerId, Int) -> Chan (Maybe TransactionHash) -> EnvData -> DelegationAccounts -> Bool -> BakerId -> (TMVar LocalState, TMVar LocalState) -> IO ()
+transition2to3 :: Chan (BakerId, Int) -> Chan (Maybe TransactionHash) -> EnvData -> DelegationAccounts -> Bool -> BakerId -> (MVar LocalState, MVar LocalState) -> IO ()
 transition2to3 transitionChan loopbackChan backend cfgDir calledFromSM _ (localState, outerLocalState) = do
-  currentState@LocalState {..} <- logAndTakeTMVar "transition 0" localState
+  currentState@LocalState {..} <- logAndTakeMVar "transition 0" localState
   (flip onException)
     ( do
         putStrLn "IO exception raised in transition 0"
         -- put back the old state
-        logAndPutTMVar "transition 0 (exception)" localState currentState
+        logAndPutMVar "transition 0 (exception)" localState currentState
         -- trigger this same transition at some point
         writeChan transitionChan (10, 0)
     )
@@ -514,6 +512,6 @@ transition2to3 transitionChan loopbackChan backend cfgDir calledFromSM _ (localS
                       awaitingDelegation = awaitingDelegation'
                     }
       putStrLn $ localStateDescription "leaving transition 0" currentState'
-      logAndPutTMVar "transition 0" localState currentState'
-      _ <- atomically $ swapTMVar outerLocalState currentState'
+      logAndPutMVar "transition 0" localState currentState'
+      _ <- swapMVar outerLocalState currentState'
       pure ()
