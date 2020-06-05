@@ -82,7 +82,7 @@ import Concordium.Types
 import Control.Concurrent
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TMVar
-import Control.Exception (bracket)
+import Control.Exception (bracketOnError)
 import Control.Monad.Except
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashPSQ as PSQ
@@ -270,7 +270,7 @@ transitionNames _ = undefined -- must not happen
 transition6to7 :: Chan (BakerId, Int) -> BakerId -> (TMVar LocalState, TMVar LocalState) -> IO ()
 transition6to7 transitionChan baker (localState, outerLocalState) = do
   currentState@LocalState {..} <- logAndTakeTMVar "transition 4" localState
-  bracket
+  bracketOnError
     (pure ())
     ( const $ do
         putStrLn "IO exception raised in transition 4"
@@ -316,12 +316,13 @@ transition6to7 transitionChan baker (localState, outerLocalState) = do
             error "Delegation should exist!!"
       putStrLn $ localStateDescription "leaving transition 4" currentState'
       logAndPutTMVar "transition 4" localState currentState'
-      atomically $ putTMVar outerLocalState currentState'
+      _ <- atomically $ swapTMVar outerLocalState currentState'
+      pure ()
 
 transition5to6 :: Chan (BakerId, Int) -> UTCTime -> NominalDiffTime -> EnvData -> BakerId -> (TMVar LocalState, TMVar LocalState) -> IO ()
 transition5to6 transitionChan genesisTime epochDuration backend baker (localState, outerLocalState) = do
   currentState@LocalState {..} <- logAndTakeTMVar "transition 3" localState
-  bracket
+  bracketOnError
     (pure ())
     ( const $ do
         putStrLn "IO exception raised in transition 3"
@@ -359,12 +360,13 @@ transition5to6 transitionChan genesisTime epochDuration backend baker (localStat
             error "Delegation should exist!!"
       putStrLn $ localStateDescription "leaving transition 3" currentState'
       logAndPutTMVar "transition 3" localState currentState'
-      atomically $ putTMVar outerLocalState currentState'
+      _ <- atomically $ swapTMVar outerLocalState currentState'
+      pure ()
 
 transition4to5 :: Chan (BakerId, Int) -> Chan (Maybe TransactionHash) -> EnvData -> DelegationAccounts -> BakerId -> (TMVar LocalState, TMVar LocalState) -> IO ()
 transition4to5 transitionChan loopbackChan backend cfgDir baker s@(localState, outerLocalState) = do
   currentState <- logAndTakeTMVar "transition 2" localState
-  bracket
+  bracketOnError
     (pure ())
     ( const $ do
         putStrLn "IO exception raised in transition 2"
@@ -423,12 +425,13 @@ transition4to5 transitionChan loopbackChan backend cfgDir baker s@(localState, o
             error "Delegation should exist!!"
       putStrLn $ localStateDescription "leaving transition 2" currentState'
       logAndPutTMVar "transition 2" localState currentState'
-      atomically $ putTMVar outerLocalState currentState'
+      _ <- atomically $ swapTMVar outerLocalState currentState'
+      pure ()
 
 transition3to4 :: Chan (BakerId, Int) -> UTCTime -> NominalDiffTime -> EnvData -> BakerId -> (TMVar LocalState, TMVar LocalState) -> IO ()
 transition3to4 transitionChan genesisTime epochDuration backend baker (localState, outerLocalState) = do
   currentState@LocalState {..} <- logAndTakeTMVar "transition 1" localState
-  bracket
+  bracketOnError
     (pure ())
     ( const $ do
         putStrLn "IO exception raised in transition 1"
@@ -466,15 +469,16 @@ transition3to4 transitionChan genesisTime epochDuration backend baker (localStat
             error "Delegation should exist!!"
       putStrLn $ localStateDescription "leaving transition 1" currentState'
       logAndPutTMVar "transition 1" localState currentState'
-      atomically $ putTMVar outerLocalState currentState'
+      _ <- atomically $ swapTMVar outerLocalState currentState'
+      pure ()
 
 transition2to3 :: Chan (BakerId, Int) -> Chan (Maybe TransactionHash) -> EnvData -> DelegationAccounts -> Bool -> BakerId -> (TMVar LocalState, TMVar LocalState) -> IO ()
 transition2to3 transitionChan loopbackChan backend cfgDir calledFromSM _ (localState, outerLocalState) = do
   currentState@LocalState {..} <- logAndTakeTMVar "transition 0" localState
-  bracket
+  bracketOnError
     (pure ())
     ( const $ do
-        putStrLn "IO exception raised in transition 1"
+        putStrLn "IO exception raised in transition 0"
         -- put back the old state
         logAndPutTMVar "transition 0 (exception)" localState currentState
         -- trigger this same transition at some point
@@ -521,4 +525,5 @@ transition2to3 transitionChan loopbackChan backend cfgDir calledFromSM _ (localS
                     }
       putStrLn $ localStateDescription "leaving transition 0" currentState'
       logAndPutTMVar "transition 0" localState currentState'
-      atomically $ putTMVar outerLocalState currentState'
+      _ <- atomically $ swapTMVar outerLocalState currentState'
+      pure ()
