@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+
 module Concordium.DelegationServer.Api.Implementation where
 
 import Concordium.DelegationServer.Api.Definition
@@ -6,6 +7,10 @@ import Concordium.DelegationServer.Helpers
 import Concordium.DelegationServer.Logic
 import Concordium.Types as Types
 import Control.Concurrent.Chan
+import Control.Concurrent.STM (atomically)
+import Control.Concurrent.STM.TMVar (putTMVar)
+import Control.Exception (IOException)
+import Control.Exception.Base (try)
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Reader
 import Data.HashMap.Strict as HM hiding (filter)
@@ -16,11 +21,6 @@ import qualified Data.Text as Text
 import Data.Time
 import qualified Data.Vector as Vec
 import Servant
-import Control.Concurrent.STM.TMVar (putTMVar)
-import Control.Concurrent.STM (atomically)
-import Control.Exception (IOException)
-import qualified Data.ByteString.Lazy.Char8 as BS8
-import Control.Exception.Base (try)
 
 -- | Counts the elements that satisfy the predicate stopping at the first
 -- element that doesn't satisfy it
