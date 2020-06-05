@@ -10,9 +10,8 @@ import Concordium.DelegationServer.Logic
 import Concordium.Types
 import Control.Concurrent (forkIO)
 import Control.Concurrent.Chan
-import Control.Concurrent.STM.TMVar
+import Control.Concurrent.MVar
 import Control.Monad.Except
-import Control.Monad.STM (atomically)
 import Control.Monad.Trans.Reader
 import Data.Aeson
 import Data.Aeson.Types
@@ -74,8 +73,8 @@ runHttp middlewares = do
       let app :: State -> Application
           app s = serve Api.api $ hoistServer Api.api (`runReaderT` s) $ Api.server transitionChan
       -- create the state
-      tmv <- atomically $ newTMVar defaultLocalState
-      outertmv <- atomically $ newTMVar defaultLocalState
+      tmv <- newMVar defaultLocalState
+      outertmv <- newMVar defaultLocalState
       jStatus <- either (fail . show) (either (fail . show) return) =<< runClient grpc getConsensusStatus
       case fromJSON jStatus of
         Success status -> do
