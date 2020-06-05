@@ -105,7 +105,10 @@ legacyProgramOptions :: Parser LegacyCmd
 legacyProgramOptions =
   hsubparser
     (hidden <>
-     loadModuleCommand <> listModulesCommand <> sendTransactionCommand <>
+     commandGroup "Low-level commands:" <>
+     loadModuleCommand <>
+     listModulesCommand <>
+     sendTransactionCommand <>
      getTransactionStatusCommand <>
      getTransactionStatusInBlockCommand <>
      getConsensusInfoCommand <>
