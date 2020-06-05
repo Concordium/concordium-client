@@ -129,7 +129,7 @@ delegate grpc delegationAccounts bakerId idx =
 in2epochs :: UTCTime -> NominalDiffTime -> UTCTime -> UTCTime
 in2epochs genesisTime epochDuration finalizationTime =
   -- genesis + (((finalization - genesis)/epoch + 2) * epoch)
-  addUTCTime (((diffUTCTime finalizationTime genesisTime / epochDuration) + 2) * epochDuration) genesisTime
+  addUTCTime (((fromInteger . truncate $ diffUTCTime finalizationTime genesisTime / epochDuration) + 2) * epochDuration) genesisTime
 
 microsecondsBetween :: UTCTime -> UTCTime -> Int
 microsecondsBetween a b =
