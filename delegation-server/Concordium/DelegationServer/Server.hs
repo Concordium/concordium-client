@@ -10,9 +10,8 @@ import Concordium.DelegationServer.Logic
 import Concordium.Types
 import Control.Concurrent (forkIO)
 import Control.Concurrent.Chan
-import Control.Concurrent.STM.TMVar
+import Control.Concurrent.MVar
 import Control.Monad.Except
-import Control.Monad.STM (atomically)
 import Control.Monad.Trans.Reader
 import Data.Aeson
 import Data.Aeson.Types
@@ -65,7 +64,7 @@ runHttp middlewares = do
               error $ "Could not parse port for given NODE_URL: " ++ nodePortText
           _ ->
             error $ "Could not parse host:port for given NODE_URL: " ++ T.unpack nodeUrl
-      grpcConfig = GrpcConfig {host = nodeHost, port = nodePort, target = Nothing, retryNum = 5, timeout = Nothing}
+      grpcConfig = GrpcConfig {host = nodeHost, port = nodePort, target = Nothing, retryNum = 5, timeout = Just 10}
   runExceptT (mkGrpcClient grpcConfig Nothing) >>= \case
     Left err -> fail (show err) -- cannot connect to grpc server
     Right grpc -> do
@@ -74,7 +73,8 @@ runHttp middlewares = do
       let app :: State -> Application
           app s = serve Api.api $ hoistServer Api.api (`runReaderT` s) $ Api.server transitionChan
       -- create the state
-      tmv <- atomically $ newTMVar defaultLocalState
+      tmv <- newMVar defaultLocalState
+      outertmv <- newMVar defaultLocalState
       jStatus <- either (fail . show) (either (fail . show) return) =<< runClient grpc getConsensusStatus
       case fromJSON jStatus of
         Success status -> do
@@ -89,7 +89,7 @@ runHttp middlewares = do
                       Right acc -> return acc
                 )
                 ([1 .. 4] :: [Int])
-          let state = State tmv grpc delegationAccounts (durationToNominalDiffTime $ Duration (csrEpochDuration status)) (csrGenesisTime status)
+          let state = State tmv outertmv grpc delegationAccounts (durationToNominalDiffTime $ Duration (csrEpochDuration status)) (csrGenesisTime status)
           -- prepare wai app
           let waiApp = app state
               printStatus = do
