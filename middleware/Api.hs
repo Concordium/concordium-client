@@ -6,12 +6,14 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Api where
 
 import           Network.Wai (Application)
-import           Control.Monad.Managed (liftIO)
-import           Control.Exception (bracket)
+import           Control.Monad.IO.Class (liftIO)
+import           Control.Monad.Trans.Except
+import           Control.Exception (bracket, handle)
 import qualified Data.HashMap.Strict as HM
 import           Data.Aeson (encode, decode')
 import qualified Data.Aeson as Aeson
@@ -22,16 +24,17 @@ import           Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Text.IO as TIO
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as BS8
 import qualified Control.Exception as C
 import qualified Data.ByteString.Short as BSS
 import           Data.List.Split
 import           Data.Map
 import           Data.Time.Clock (addUTCTime, UTCTime)
-import           Data.Time.Clock.POSIX
 import           Data.Time.Format (formatTime, defaultTimeLocale)
 import           Servant
 import           Servant.API.Generic
+--import           Servant.Server.Internal.ServantError (ServantError)
 import           Servant.Server.Generic
 import           System.Directory
 import           System.Exit
@@ -41,11 +44,13 @@ import           System.IO
 import           Control.Concurrent
 import           System.Process
 import           Text.Read (readMaybe)
-import           Lens.Micro.Platform ((^.))
+import           Lens.Micro.Platform ((^.), (^?), _Just)
 import           Safe (headMay)
 import           Data.Time
 import           Data.Time.Clock.POSIX
 import           NeatInterpolation
+import qualified Data.List as L
+import           System.FilePath.Posix
 
 import qualified Acorn.Parser.Runner as PR
 import           Concordium.Client.Commands as COM
@@ -56,7 +61,10 @@ import           Concordium.Client.Runner
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction
 import           Concordium.Client.Cli
+import           Concordium.Client.Config
+import           Concordium.Client.Parse
 
+import qualified Concordium.Crypto.SignatureScheme as S
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
 import           Concordium.Types.HashableTo
@@ -76,6 +84,11 @@ import           Conduit
 import           PerAccountTransactions
 import qualified Concordium.Client.TransactionStatus
 
+
+import qualified Concordium.Crypto.Ed25519Signature as Ed25519
+
+
+type Account = (IDTypes.AccountAddress, Types.KeyMap)
 
 middlewareGodAccount :: Account
 middlewareGodAccount = do
@@ -101,6 +114,7 @@ middlewareGodAccount = do
     address =
       certainDecode "\"43TULx3kDPDeQy1C1iLwBbS5EEV96cYPw5ZRdA9Dm4D23hxGZt\""
   (address, keyMap)
+
 
 
 adminAuthToken :: Text
@@ -188,6 +202,23 @@ data Routes r = Routes
     , setNodeState :: r :-
         "v1" :> "nodeState" :> ReqBody '[JSON] SetNodeStateRequest
                             :> Post '[JSON] SetNodeStateResponse
+
+    , importAccount :: r :-
+        "v1" :> "importAccount" :> ReqBody '[JSON] ImportAccountRequest
+                                :> Post '[JSON] ()
+
+    , getAccounts :: r :-
+        "v1" :> "getAccounts" :> Get '[JSON] GetAccountsResponse
+
+    , addBaker :: r :-
+        "v1" :> "addBaker" :> ReqBody '[JSON] AddBakerRequest
+                           :> Post '[JSON] AddBakerResponse
+    , removeBaker :: r :-
+        "v1" :> "removeBaker" :> ReqBody '[JSON] RemoveBakerRequest
+                              :> Post '[JSON] RemoveBakerResponse
+
+    , getBakers :: r :-
+        "v1" :> "getBakers" :> Get '[JSON] GetBakersResponse
     }
   deriving (Generic)
 
@@ -235,8 +266,8 @@ freshProjectBracket moduleSources projectAction =
         (\files -> withCurrentDirectory freshDir $ projectAction files)
 
 
-servantApp :: EnvData -> Text -> Text -> Application
-servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
+servantApp :: EnvData -> Text -> Text -> FilePath -> FilePath -> Application
+servantApp nodeBackend pgUrl idUrl cfgDir dataDir = genericServe routesAsServer
  where
   routesAsServer = Routes {..} :: Routes AsServer
 
@@ -477,7 +508,7 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
 
 
   testnetGtuDrop :: Types.Address -> Handler TestnetGtuDropResponse
-  testnetGtuDrop toAddress = do
+  testnetGtuDrop toAddress =
     case toAddress of
       Types.AddressAccount address -> do
 
@@ -526,7 +557,7 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
       toOutcome (Right p) = Just (outcomeFromPretty p)
       toOutcome _ = Nothing
 
-    outcomes <- liftIO $ processAccounts (Text.encodeUtf8 pgUrl) address $ (mapWhileC toOutcome .| sinkList)
+    outcomes <- liftIO $ processAccounts (Text.encodeUtf8 pgUrl) address (mapWhileC toOutcome .| sinkList)
 
     pure $ AccountTransactionsResponse outcomes address
 
@@ -535,7 +566,7 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
   accountNonFinalizedTransactions address = liftIO $ proxyGrpcCall nodeBackend (GRPC.getAccountNonFinalizedTransactions address)
 
   accountBestBalance :: Text -> Handler Aeson.Value
-  accountBestBalance address = do
+  accountBestBalance address =
     liftIO $ proxyGrpcCall nodeBackend
       (GRPC.withBestBlockHash Nothing (GRPC.getAccountInfo address))
 
@@ -551,11 +582,10 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
 
     pure $ TransferResponse { transactionId = transactionId }
 
-
   consensusStatus :: Handler Aeson.Value
-  consensusStatus = liftIO $ proxyGrpcCall nodeBackend (GRPC.getConsensusStatus)
+  consensusStatus = liftIO $ proxyGrpcCall nodeBackend GRPC.getConsensusStatus
 
-  
+
   blockInfo :: Text -> Handler Aeson.Value
   blockInfo blockhash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getBlockInfo blockhash)
 
@@ -586,7 +616,7 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
           Left err -> throwError $ err502 { errBody = BS8.pack $ show err }
 
       Nothing ->
-        throwError $ err400 { errBody = "Invalid transcation hash." }
+        throwError $ err400 { errBody = "Invalid transaction hash." }
 
 
   getNodeState :: Handler GetNodeStateResponse
@@ -632,6 +662,7 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
             { id = ni ^. (CF.nodeId . CF.value)
             , running = ni ^. CF.consensusRunning
             , isBaking = ni ^. CF.consensusBakerRunning
+            , bakerId = ni ^? CF.maybe'consensusBakerId . _Just . CF.value
             , isInBakingCommittee = ni ^. CF.consensusBakerCommittee
             , isFinalizing = True
             , isInFinalizingCommittee = ni ^. CF.consensusFinalizerCommittee
@@ -651,6 +682,104 @@ servantApp nodeBackend pgUrl idUrl = genericServe routesAsServer
       SetNodeStateResponse
         { success = True }
 
+  importAccount :: ImportAccountRequest -> Handler ()
+  importAccount ImportAccountRequest{..} = do
+    -- init configuration if missing
+    baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False True
+    accCfgs <- case extra of
+      ExtraPassword pass -> do
+        accs <- case decodeMobileFormattedAccountExport (Text.encodeUtf8 contents) (Text.encodeUtf8 pass) of
+                 Left err -> throwError' err400 $ Just ("Cannot load mobile formatted import: ", err)
+                 Right v -> return v
+        return $ accountCfgsFromWalletExportAccounts accs Nothing
+      ExtraAlias alias ->
+        case decodeWebFormattedAccountExport (Text.encodeUtf8 contents) alias of
+          Left err -> throwError' err400 $ Just ("Cannot load web formatted import: ", err)
+          Right v -> return [v]
+    liftIO $ void $ (importAccountConfig baseCfg) accCfgs
+
+  getAccounts :: Handler GetAccountsResponse
+  getAccounts = GetAccountsResponse <$> wrapIOError go
+   where go :: IO [GetAccountsResponseItem]
+         go = do
+             -- get base config
+             baseCfg <- getBaseConfig (Just cfgDir) False True
+             -- get all accounts
+             allAccs <- Prelude.map (naAddr . acAddr) <$> getAllAccountConfigs baseCfg
+             let named = HM.toList $ bcAccountNameMap baseCfg
+                 namedAddresses = Prelude.map snd named
+                 namedAsText = Prelude.map (\(a, b) -> GetAccountsResponseItem (Just a) (Text.pack $ show b)) named
+                 unnamedAsText = Prelude.map (\b ->  GetAccountsResponseItem Nothing (Text.pack $ show b)) (allAccs L.\\ namedAddresses)
+             return $ namedAsText ++ unnamedAsText
+
+
+  addBaker :: AddBakerRequest -> Handler AddBakerResponse
+  addBaker AddBakerRequest{..} = AddBakerResponse <$> wrapIOError (do
+      -- get base configuration
+      baseCfg <- getBaseConfig (Just cfgDir) False True
+      -- generate options for the transaction
+      accCfg' <- snd <$> getAccountConfig sender baseCfg Nothing Nothing False
+      let accCfg = accCfg' { acThreshold = fromIntegral (HM.size $ acKeys accCfg') }
+          file = dataDir </> "baker-credentials.json"
+          -- get Baker add transaction config
+          energy = bakerAddEnergyCost (HM.size $ acKeys accCfg)
+
+      expiry <- (600 +) <$> (liftIO getCurrentTimeUnix)
+
+      let txCfg = TransactionConfig
+                    { tcAccountCfg = accCfg
+                    , tcNonce = Nothing
+                    , tcEnergy = energy
+                    , tcExpiry = expiry }
+
+      bakerKeys <- liftIO $ Aeson.eitherDecodeFileStrict file >>= getFromJson
+
+      pl <- liftIO $ generateBakerAddPayload bakerKeys AccountKeys {akAddress = naAddr . acAddr $ accCfg, akKeys = acKeys accCfg, akThreshold = fromIntegral (HM.size $ acKeys accCfg)}
+      -- run the transaction
+      res <- runClient nodeBackend $ do
+        tx <- startTransaction txCfg pl
+        return $ getBlockItemHash tx
+      case res of
+        Left _ -> return Nothing
+        Right v -> return . Just . Text.pack $ show v)
+
+  removeBaker :: RemoveBakerRequest -> Handler RemoveBakerResponse
+  removeBaker RemoveBakerRequest{..} = RemoveBakerResponse <$> wrapIOError (do
+      -- get base configuration
+      baseCfg <- getBaseConfig (Just cfgDir) False True
+      -- generate options for the transaction
+      accCfg' <- snd <$> getAccountConfig sender baseCfg Nothing Nothing False
+      let accCfg = accCfg' { acThreshold = fromIntegral (HM.size $ acKeys accCfg') }
+      -- get Baker add transaction config
+      let energy = bakerRemoveEnergyCost (HM.size $ acKeys accCfg)
+
+      expiry <- (600 +) <$> getCurrentTimeUnix
+
+      let txCfg = TransactionConfig
+                    { tcAccountCfg = accCfg
+                    , tcNonce = Nothing
+                    , tcEnergy = energy
+                    , tcExpiry = expiry }
+
+      let pl = Execution.RemoveBaker $ Types.BakerId bakerId
+      -- run the transaction
+      res <- runClient nodeBackend $ do
+        tx <- startTransaction txCfg pl
+        return $ getBlockItemHash tx
+      case res of
+        Left _ -> return Nothing
+        Right v -> return . Just . Text.pack $ show v)
+
+  getBakers :: Handler GetBakersResponse
+  getBakers = GetBakersResponse <$> do
+      eeParams <- wrapIOError $ runClient nodeBackend $ withBestBlockHash Nothing getBirkParameters
+      case eeParams of
+          Right (Right jParams) -> case Aeson.fromJSON jParams of
+                                    Aeson.Success params -> return $ Prelude.map (\b -> ((bpbrId b), (Text.pack $ show $ bpbrAccount b), (bpbrLotteryPower b))) $ bprBakers params
+                                    Aeson.Error e -> wrapSerializationError jParams "birk paramaeters" (Left e)
+          Left e -> throwError' err500 (Just ("GRPC error: ", e))
+          Right (Left e) -> throwError' err500 (Just ("GRPC error: ", e))
+
 proxyGrpcCall :: EnvData -> ClientMonad IO (Either a Aeson.Value) -> IO Aeson.Value
 proxyGrpcCall nodeBackend query = do
   result <- runGRPC nodeBackend query
@@ -658,9 +787,25 @@ proxyGrpcCall nodeBackend query = do
     Right obj ->
       pure $ Aeson.toJSON obj
     _ ->
-      pure $ Aeson.Null
+      pure Aeson.Null
 
+-- IO Errors will be translated to 500 internal server error
+-- we will ignore the body as it usually comes from an exitFailure
+-- and it doesn't give much information
+wrapIOError :: forall b. IO b -> Handler b
+wrapIOError f =
+  (liftIO (C.try f :: IO (Either C.IOException b))) >>= \case
+    Left e -> throwError' err500 (Nothing :: Maybe (String, String))
+    Right val -> return val
 
+-- Serialization errors will be translated to 400 bad request
+wrapSerializationError :: (Show a) => a -> String -> Either String b -> Handler b
+wrapSerializationError value typ (Right val) = return val
+wrapSerializationError value typ (Left err) = throwError' err400 $ Just ("cannot parse '" ++ show value ++ "' as type " ++ typ ++ ": ", err)
+
+throwError' :: (Show err) => ServerError -> Maybe (String, err) -> Handler a
+throwError' e (Just (desc, err)) = throwError $ e { errBody = BS8.pack (desc ++ show err) }
+throwError' e Nothing = throwError e
 
 -- For beta, uses the middlewareGodAccount which is seeded with funds
 runGodTransaction :: EnvData -> TransactionJSONPayload -> IO Types.TransactionHash
@@ -719,10 +864,6 @@ runTransaction nodeBackend payload (address, keyMap) = do
 
   executeTransaction nodeBackend transaction
 
-
-type Account = (IDTypes.AccountAddress, Types.KeyMap)
-
-
 executeTransaction :: EnvData -> TransactionJSON -> IO Types.TransactionHash
 executeTransaction nodeBackend transaction = do
 
@@ -730,8 +871,7 @@ executeTransaction nodeBackend transaction = do
   -- The networkId is for running multiple networks that's not the same chain, but hasn't been taken into use yet
   let nid = 1000
 
-  t <- do
-    PR.evalContext mdata $ runGRPC nodeBackend $ processTransaction_ transaction nid True
+  t <- PR.evalContext mdata $ runGRPC nodeBackend $ processTransaction_ transaction nid True
 
   putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (getHash t :: Types.TransactionHash)
   print transaction
@@ -872,9 +1012,9 @@ debugTestTransactions nodeBackend selfAddress keyMap = do
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign txDelegateStake 3) 100)
 
   bakerKeys <- generateBakerKeys
-  addBakerPayload <- Execution.encodePayload <$> generateAddBakerPayload bakerKeys AccountKeys{akAddress = selfAddress,
-                                                                                               akKeys = keyMap,
-                                                                                               akThreshold = fromIntegral (HM.size keyMap) }
+  addBakerPayload <- Execution.encodePayload <$> generateBakerAddPayload bakerKeys AccountKeys { akAddress = selfAddress,
+                                                                                                 akKeys = keyMap,
+                                                                                                 akThreshold = fromIntegral (HM.size keyMap) }
 
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign addBakerPayload 4) 100)
 
@@ -882,7 +1022,7 @@ debugTestTransactions nodeBackend selfAddress keyMap = do
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign txDelegateStake' 5) 100)
 
   -- invalid add baker payload
-  addBakerPayload' <- Execution.encodePayload <$> generateAddBakerPayload bakerKeys AccountKeys { akAddress = selfAddress,
+  addBakerPayload' <- Execution.encodePayload <$> generateBakerAddPayload bakerKeys AccountKeys { akAddress = selfAddress,
                                                                                                   akKeys = HM.empty,
                                                                                                   akThreshold = 1 }
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign addBakerPayload' 6) 100)
@@ -927,7 +1067,7 @@ runDebugTestTransactions = do
     Right envData -> return envData
 
 
-  debugTestTransactions nodeBackend (fst localTestAccount) (snd localTestAccount)
+  uncurry (debugTestTransactions nodeBackend) localTestAccount
 
 
 -- If you export a clean created account from wallet (without GTU Drop) and then
@@ -936,7 +1076,7 @@ runDebugTestTransactions = do
 localTestAccount :: Account
 localTestAccount = do
   let
-    keyMap =
+    acKeys =
       certainDecode [text|
         {
           "0": {
@@ -953,10 +1093,9 @@ localTestAccount = do
           }
         }
       |]
-    address =
+    acAddr =
       certainDecode "\"43TULx3kDPDeQy1C1iLwBbS5EEV96cYPw5ZRdA9Dm4D23hxGZt\""
-  (address, keyMap)
-
+  (acKeys, acAddr)
 
 debugGrpc :: IO GetNodeStateResponse
 debugGrpc = do
@@ -1006,6 +1145,7 @@ debugGrpc = do
           , running = ni ^. CF.consensusRunning
           , isBaking = ni ^. CF.consensusBakerRunning
           , isInBakingCommittee = ni ^. CF.consensusBakerCommittee
+          , bakerId = ni ^? CF.maybe'consensusBakerId . _Just . CF.value
           , isFinalizing = True
           , isInFinalizingCommittee = ni ^. CF.consensusFinalizerCommittee
           , signatureVerifyKey = ""

@@ -1,0 +1,29 @@
+cradle:
+  stack:
+    - path: ./src
+      component: "simple-client:lib"
+    - path: ./app
+      component: "simple-client:exe:concordium-client"
+    - path: ./middleware
+      component: "simple-client:exe:middleware"
+    - path: ./generator
+      component: "simple-client:exe:tx-generator"
+    - path: ./test
+      component: "simple-client:test:simple-client-test"
+    - path: ./deps/acorn
+      component: "acorn:lib"
+    - path: ./deps/crypto
+      component: "concordium-crypto:lib"
+    - path: ./deps/globalstate-mockup
+      component: "globalstate-mockup:lib"
+    - path: ./deps/globalstate-types
+      component: "globalstate-types:lib"
+    - path: ./delegation-server
+      component: "simple-client:exe:delegation-server"
+  direct:
+    arguments:
+        - XOverloadedStrings
+        - XRecordWildCards
+        - XGeneralizedNewtypeDeriving
+        - XLambdaCase
+        - XTupleSections

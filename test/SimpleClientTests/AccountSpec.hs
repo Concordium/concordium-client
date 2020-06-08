@@ -82,7 +82,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
   specify "without delegation nor credentials" $ p exampleAddress (exampleAccountInfoResult Nothing []) `shouldBe`
     [ "Local name: example"
     , "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-    , "Amount:     0.0001 GTU"
+    , "Balance:    0.0001 GTU"
     , "Nonce:      2"
     , "Delegation: none"
     , ""
@@ -90,17 +90,17 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
   specify "with delegation" $ p exampleAddress (exampleAccountInfoResult (Just 1) []) `shouldBe`
     [ "Local name: example"
     , "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-    , "Amount:     0.0001 GTU"
+    , "Balance:    0.0001 GTU"
     , "Nonce:      2"
-    , "Delegation: 1"
+    , "Delegation: baker 1"
     , ""
     , "Credentials: none" ]
   specify "with one credential" $ p exampleAddress (exampleAccountInfoResult (Just 1) [exampleCredentials examplePolicyWithoutItems]) `shouldBe`
     [ "Local name: example"
     , "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-    , "Amount:     0.0001 GTU"
+    , "Balance:    0.0001 GTU"
     , "Nonce:      2"
-    , "Delegation: 1"
+    , "Delegation: baker 1"
     , ""
     , "Credentials:"
     , "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
@@ -110,9 +110,9 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
                                                                                        , exampleCredentials examplePolicyWithTwoItems ]) `shouldBe`
     [ "Local name: example"
     , "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-    , "Amount:     0.0001 GTU"
+    , "Balance:    0.0001 GTU"
     , "Nonce:      2"
-    , "Delegation: 1"
+    , "Delegation: baker 1"
     , ""
     , "Credentials:"
     , "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
@@ -125,9 +125,9 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     (execWriter $ printAccountInfo exampleAddress (exampleAccountInfoResult (Just 1) [exampleCredentials examplePolicyWithoutItems]) True) `shouldBe`
       [ "Local name: example"
       , "Address:    2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-      , "Amount:     0.0001 GTU"
+      , "Balance:    0.0001 GTU"
       , "Nonce:      2"
-      , "Delegation: 1"
+      , "Delegation: baker 1"
       , ""
       , "Credentials:"
       , "{\n\

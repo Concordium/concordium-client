@@ -18,19 +18,14 @@ import Control.Monad.Except
 import Data.Text
 import Data.Time hiding (parseTime)
 import Data.Word
+import Text.Read
 import Text.Printf
 
-parseHash :: Text -> Maybe Hash
-parseHash t =
-  case reads $ unpack t :: [(Hash, String)] of
-    [(h, "")] -> Just h
-    _ -> Nothing
-
-parseTransactionHash :: Text -> Maybe Hash
-parseTransactionHash = parseHash
+parseTransactionHash :: Text -> Maybe TransactionHashV0
+parseTransactionHash = readMaybe . unpack
 
 parseBlockHash :: Text -> Maybe Hash
-parseBlockHash = parseHash
+parseBlockHash = readMaybe . unpack
 
 data DurationUnit = Second | Minute | Hour
 

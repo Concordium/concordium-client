@@ -59,6 +59,7 @@ library:
     - aeson
     - aeson-pretty
     - ansi-terminal
+    - ansi-wl-pprint
     - attoparsec
     - base >=4.7 && <5
     - base16-bytestring
@@ -115,7 +116,6 @@ executables:
 
     dependencies:
       - optparse-applicative
-      - mtl
       - base
       - simple-client
 
@@ -136,17 +136,11 @@ executables:
         - -static
 
     dependencies:
-      - async
       - optparse-applicative
       - mtl
-      - acorn
       - unordered-containers
-      - text
       - base
       - simple-client
-      - random
-      - split
-      - concordium-crypto
       - globalstate-types
       - bytestring
       - aeson
@@ -163,9 +157,7 @@ executables:
           dependencies:
             - acorn
             - aeson
-            - base16-bytestring
             - bytestring
-            - cereal
             - concordium-crypto
             - containers
             - directory
@@ -174,9 +166,7 @@ executables:
             - globalstate-types
             - http-conduit
             - http2-client-grpc
-            - iso8601-time
             - microlens-platform
-            - managed
             - monad-logger
             - mtl
             - neat-interpolation
@@ -184,11 +174,8 @@ executables:
             - persistent-pagination
             - persistent-postgresql
             - process
-            - random
             - servant
-            - servant-conduit
             - servant-server
-            - silently
             - safe
             - simple-client
             - split
@@ -203,19 +190,46 @@ executables:
             - persistent >= 2.9
             - persistent-postgresql >= 2.9
             - persistent-pagination
-            - lifted-base >= 0.2.3
             - conduit >= 1.3
-            - conduit-extra == 1.3.*
-            - http-types >= 0.12
-            - network >= 2.8
-            - wai-conduit >= 3
             - mtl >= 2.2.2
             - monad-logger >= 0.3
             - cereal >= 0.5.8
+            - transformers
 
         else:
           main:             DummyMain.hs
           source-dirs:      middleware-dummy
+
+  delegation-server:
+    main:   Main.hs
+    source-dirs: delegation-server
+    ghc-options:
+      - -threaded
+      - -Wall
+    dependencies:
+      - simple-client
+      - mtl
+      - bytestring
+      - split
+      - text
+      - wai
+      - warp
+      - wai-extra
+      - wai-cors
+      - wai-middleware-static
+      - filepath
+      - aeson
+      - transformers
+      - unordered-containers
+      - containers
+      - time
+      - servant-server
+      - servant
+      - globalstate-types
+      - vector
+      - stm
+      - psqueues
+      - hashable
 
 tests:
   simple-client-test:
@@ -229,7 +243,6 @@ tests:
       - hspec >= 2.6
       - hspec-expectations >= 0.8
       - mtl >= 2.2.2
-      - QuickCheck >= 2.12
       - text
       - transformers
       - time
