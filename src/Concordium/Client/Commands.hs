@@ -698,7 +698,14 @@ bakerSetAggregationKeyCmd =
         argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
         strArgument (metavar "FILE" <> help "File containing the aggregation key.") <*>
         transactionOptsParser)
-      (progDesc "Update the aggregation key of a baker."))
+      (progDescDoc $ docFromLines
+        [ "Update the aggregation key of a baker. Expected format:"
+        , "   {"
+        , "     ..."
+        , "     \"aggregationSignKey\": ...,"
+        , "     \"aggregationVerifyKey\": ...,"
+        , "     ..."
+        , "   }" ]))
 
 docFromLines :: [String] -> Maybe P.Doc
 docFromLines = Just . P.vsep . map P.text
