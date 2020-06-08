@@ -20,7 +20,7 @@ module Concordium.Client.Commands
   , BakerCmd(..)
   ) where
 
-import Data.Text
+import Data.Text hiding (map)
 import Data.Version (showVersion)
 import Network.HTTP2.Client
 import Options.Applicative
@@ -29,6 +29,7 @@ import Concordium.Client.LegacyCommands
 import Concordium.ID.Types (KeyIndex)
 import Concordium.Types
 import Text.Printf
+import qualified Text.PrettyPrint.ANSI.Leijen as P
 
 type Verbose = Bool
 
@@ -254,7 +255,7 @@ transactionOptsParser :: Parser TransactionOpts
 transactionOptsParser =
   TransactionOpts <$>
     optional (strOption (long "sender" <> metavar "SENDER" <> help "Name or address of the transaction sender.")) <*>
-    optional (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified as JSON ({<key-idx>: {<sign-key>, <verify-key>}).")) <*>
+    optional (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified as JSON ({<key-idx>: {\"signKey\": ..., \"verifyKey\": ...}).")) <*>
     optional (option auto (long "nonce" <> metavar "NONCE" <> help "Transaction nonce.")) <*>
     optional (option auto (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction. Depeding on the transaction type, this flag may be optional.")) <*>
     optional (strOption (long "expiry" <> metavar "EXPIRY" <> help "Expiration time of a transaction, specified as a relative duration (\"30s\", \"5m\", etc.) or UNIX epoch timestamp."))
@@ -273,7 +274,7 @@ programOptions = Options <$>
                       bakerCmds
                      ) <|> LegacyCmd <$> legacyProgramOptions) <*>
                    backendParser <*>
-                   optional (strOption (long "config" <> metavar "PATH" <> help "Path to the configuration directory.")) <*>
+                   optional (strOption (long "config" <> metavar "DIR" <> help "Path to the configuration directory.")) <*>
                    switch (hidden <> long "verbose" <> short 'v' <> help "Make output verbose.")
 
 transactionCmds :: Mod CommandFields Cmd
@@ -506,7 +507,7 @@ configAccountImportCmd =
     "import"
     (info
       (ConfigAccountImport <$>
-        strArgument (metavar "PATH" <> help "Account file exported from the wallet.") <*>
+        strArgument (metavar "FILE" <> help "Account file exported from the wallet.") <*>
         optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account. For the 'web' format, this sets the name to give the account. For the 'mobile' format (which contains multiple already named accounts), it selects which account to import.")) <*>
         optional (option readAccountImportFormatOpt (long "format" <> metavar "FORMAT" <> help "Export format. Supported values are 'web', 'mobile'. If omitted, the format is inferred from the filename ('mobile' if the extension is \".concordiumwallet\", 'web' otherwise)."))
       )
@@ -620,7 +621,16 @@ bakerGenerateKeysCmd =
     (info
       (BakerGenerateKeys <$>
         optional (strArgument (metavar "FILE" <> help "Target file of generated credentials.")))
-      (progDesc "Create baker credentials and write them to a file or stdout."))
+      (progDescDoc $ docFromLines
+        [ "Create baker credentials and write them to a file or stdout. Format:"
+        , "    {"
+        , "      \"signatureSignKey\": ...,"
+        , "      \"signatureVerifyKey\": ...,"
+        , "      \"aggregationSignKey\": ...,"
+        , "      \"aggregationVerifyKey\": ...,"
+        , "      \"electionPrivateKey\": ...,"
+        , "      \"electionVerifyKey\": ..."
+        , "    }" ]))
 
 bakerAddCmd :: Mod CommandFields BakerCmd
 bakerAddCmd =
@@ -641,7 +651,17 @@ bakerSetAccountCmd =
         argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
         strArgument (metavar "FILE" <> help "File containing keys of the account to send rewards to.") <*>
         transactionOptsParser)
-      (progDesc "Update the account that a baker's rewards are sent to."))
+      (progDescDoc $ docFromLines
+        [ "Update the account that a baker's rewards are sent to. Expected format:"
+        , "   {"
+        , "     \"account\": ...,"
+        , "     \"keys\": {"
+        , "       <key-idx>: {"
+        , "         \"signKey\": ...,"
+        , "         \"verifyKey\": ..."
+        , "       }"
+        , "     }"
+        , "   }" ]))
 
 bakerSetKeyCmd :: Mod CommandFields BakerCmd
 bakerSetKeyCmd =
@@ -652,7 +672,12 @@ bakerSetKeyCmd =
         argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
         strArgument (metavar "FILE" <> help "File containing the signature keys.") <*>
         transactionOptsParser)
-      (progDesc "Update the signature keys of a baker."))
+      (progDescDoc $ docFromLines
+        [ "Update the signature keys of a baker. Expected format:"
+        , "   {"
+        , "     \"signatureSignKey\": <sign-key>,"
+        , "     \"signatureVerifyKey\": <verify-key>"
+        , "   }" ]))
 
 bakerRemoveCmd :: Mod CommandFields BakerCmd
 bakerRemoveCmd =
@@ -674,3 +699,6 @@ bakerSetAggregationKeyCmd =
         strArgument (metavar "FILE" <> help "File containing the aggregation key.") <*>
         transactionOptsParser)
       (progDesc "Update the aggregation key of a baker."))
+
+docFromLines :: [String] -> Maybe P.Doc
+docFromLines = Just . P.vsep . map P.text

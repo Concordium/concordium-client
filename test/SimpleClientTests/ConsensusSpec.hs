@@ -24,6 +24,9 @@ consensusStatusSpec = describe "status" $ do
   specify "optional fields present" $ p exampleStatusWithOptionalFields `shouldBe`
     [ "Best block:                  0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389"
     , "Genesis block:               0f71eeca9f0a497dc4427cab0544f2bcb820b328ad97be29181e212edea708fd"
+    , "Genesis time:                1970-01-12 13:46:40 UTC"
+    , "Slot duration:               100000"
+    , "Epoch duration:              100000"
     , "Last finalized block:        941c24374cd077de2120fb58732306c3115a08bb7b7cda120a04fecc412b1795"
     , "Best block height:           1"
     , "Last finalized block height: 2"
@@ -43,6 +46,9 @@ consensusStatusSpec = describe "status" $ do
   specify "optional fields absent" $ p exampleStatusWithoutOptionalFields `shouldBe`
     [ "Best block:                  0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389"
     , "Genesis block:               0f71eeca9f0a497dc4427cab0544f2bcb820b328ad97be29181e212edea708fd"
+    , "Genesis time:                1970-01-12 13:46:40 UTC"
+    , "Slot duration:               100000"
+    , "Epoch duration:              100000"
     , "Last finalized block:        941c24374cd077de2120fb58732306c3115a08bb7b7cda120a04fecc412b1795"
     , "Best block height:           1"
     , "Last finalized block height: 2"
@@ -112,7 +118,10 @@ exampleStatusWithOptionalFields =
   , csrFinalizationCount = 14
   , csrLastFinalizedTime = Just exampleTime3
   , csrFinalizationPeriodEMA = Just 100
-  , csrFinalizationPeriodEMSD = Just 200 }
+  , csrFinalizationPeriodEMSD = Just 200
+  , csrGenesisTime = exampleTime1
+  , csrSlotDuration = 100000
+  , csrEpochDuration = 100000 }
 
 exampleStatusWithoutOptionalFields :: ConsensusStatusResult
 exampleStatusWithoutOptionalFields =
@@ -139,7 +148,10 @@ exampleStatusWithoutOptionalFields =
   , csrFinalizationCount = 14
   , csrLastFinalizedTime = Nothing
   , csrFinalizationPeriodEMA = Nothing
-  , csrFinalizationPeriodEMSD = Nothing }
+  , csrFinalizationPeriodEMSD = Nothing
+  , csrGenesisTime = exampleTime1
+  , csrSlotDuration = 100000
+  , csrEpochDuration = 100000 }
 
 exampleBirkParameters :: BirkParametersResult
 exampleBirkParameters =

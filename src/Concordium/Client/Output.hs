@@ -123,9 +123,9 @@ printAccountInfo :: NamedAddress -> AccountInfoResult -> Verbose -> Printer
 printAccountInfo addr a verbose = do
   tell [ printf "Local name: %s" (showMaybe unpack $ naName addr)
        , printf "Address:    %s" (show $ naAddr addr)
-       , printf "Amount:     %s" (showGtu $ airAmount a)
+       , printf "Balance:    %s" (showGtu $ airAmount a)
        , printf "Nonce:      %s" (show $ airNonce a)
-       , printf "Delegation: %s" (maybe showNone show $ airDelegation a)
+       , printf "Delegation: %s" (maybe showNone (printf "baker %s" . show) $ airDelegation a)
        , "" ]
 
   case airCredentials a of
@@ -231,6 +231,9 @@ printConsensusStatus :: ConsensusStatusResult -> Printer
 printConsensusStatus r =
   tell [ printf "Best block:                  %s" (show $ csrBestBlock r)
        , printf "Genesis block:               %s" (show $ csrGenesisBlock r)
+       , printf "Genesis time:                %s" (show $ csrGenesisTime r)
+       , printf "Slot duration:               %s" (show $ csrSlotDuration r)
+       , printf "Epoch duration:              %s" (show $ csrEpochDuration r)
        , printf "Last finalized block:        %s" (show $ csrLastFinalizedBlock r)
        , printf "Best block height:           %s" (show $ csrBestBlockHeight r)
        , printf "Last finalized block height: %s" (show $ csrLastFinalizedBlockHeight r)

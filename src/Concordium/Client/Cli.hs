@@ -138,6 +138,9 @@ instance AE.FromJSON AccountInfoResult where
 data ConsensusStatusResult = ConsensusStatusResult
   { csrBestBlock :: BlockHash
   , csrGenesisBlock :: BlockHash
+  , csrGenesisTime :: UTCTime
+  , csrSlotDuration :: Word64
+  , csrEpochDuration :: Word64
   , csrLastFinalizedBlock :: BlockHash
   , csrBestBlockHeight :: Word64
   , csrLastFinalizedBlockHeight :: Word64
@@ -164,6 +167,9 @@ instance AE.FromJSON ConsensusStatusResult where
   parseJSON = withObject "Consensus state" $ \v -> do
     csrBestBlock <- v .: "bestBlock"
     csrGenesisBlock <- v .: "genesisBlock"
+    csrGenesisTime <- v .: "genesisTime"
+    csrSlotDuration <- v .: "slotDuration"
+    csrEpochDuration <- v .: "epochDuration"
     csrLastFinalizedBlock <- v .: "lastFinalizedBlock"
     csrBestBlockHeight <- v .: "bestBlockHeight"
     csrLastFinalizedBlockHeight <- v .: "lastFinalizedBlockHeight"
