@@ -139,6 +139,18 @@ getFromJson r = do
     Error err -> logFatal [printf "cannot parse '%s' as JSON: %s" (show s) err]
     Success v -> return v
 
+-- |Helper function for parsing a specific entry of a JSON object to any type that implements
+-- FromJSON. Useful for parsing specific keys from a Baker Keys file.
+getFromJsonObject :: (MonadIO m, FromJSON a) => Text -> Either String Value -> m a
+getFromJsonObject key r = do
+  obj <- case r of
+         Left err -> logFatal [printf "I/O error: %s" err]
+         Right (Object o) -> return o
+         Right s -> logFatal [printf "error parsing JSON, expected object but found: %s" $ show s]
+  case parse (\o -> o .: key) obj of
+    Success k -> return k
+    Error err -> logFatal [printf "I/O error: %s" err]
+
 -- |Look up account from the provided name (or defaultAcccountName if missing).
 -- Fail if it cannot be found.
 getAccountAddressArg :: AccountNameMap -> Maybe Text -> IO NamedAddress
@@ -504,7 +516,8 @@ data BakerSetAggregationKeyTransactionConfig =
   BakerSetAggregationKeyTransactionConfig
   { bsakTransactionCfg :: TransactionConfig
   , bsakBakerId :: Types.BakerId
-  , bsakSecretKey :: Types.BakerAggregationPrivateKey }
+  , bsakSecretKey :: Types.BakerAggregationPrivateKey
+  , bsakPublicKey :: Types.BakerAggregationVerifyKey }
 
 -- |Resolved configuration for an account delegation transaction.
 data AccountDelegateTransactionConfig =
@@ -1025,7 +1038,6 @@ getSetElectionDifficultyTransactionCfg baseCfg txOpts d = do
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   when (d < 0 || d >= 1) $
     logFatal ["difficulty is out of range"]
-
   return SetElectionDifficultyTransactionConfig
     { sdtcTransactionCfg = txCfg
     , sdtcDifficulty = d }
@@ -1043,12 +1055,14 @@ getBakerSetKeyTransactionCfg baseCfg txOpts bid f = do
 
 getBakerSetAggregationKeyCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerSetAggregationKeyTransactionConfig
 getBakerSetAggregationKeyCfg baseCfg txOpts bid file = do
-  keys :: BakerKeys <- eitherDecodeFileStrict file >>= getFromJson
+  sk :: Types.BakerAggregationPrivateKey <- eitherDecodeFileStrict file >>= getFromJsonObject "aggregationSignKey"
+  pk :: Types.BakerAggregationVerifyKey <- eitherDecodeFileStrict file >>= getFromJsonObject "aggregationVerifyKey"
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return BakerSetAggregationKeyTransactionConfig
     { bsakTransactionCfg = txCfg
     , bsakBakerId = bid
-    , bsakSecretKey = bkAggrSignKey keys }
+    , bsakSecretKey = sk
+    , bsakPublicKey = pk }
   where nrgCost _ = return $ Just bakerSetAggregationKeyEnergyCost
 
 generateBakerSetAccountChallenge :: Types.BakerId -> Types.AccountAddress -> BS.ByteString
@@ -1128,10 +1142,9 @@ bakerSetAggregationKeyTransactionPayload bsaktCfg confirm = do
                                 { tcEnergy = energy
                                 , tcExpiry = expiry }
         , bsakBakerId = bid
-        , bsakSecretKey = secretKey}
+        , bsakSecretKey = secretKey
+        , bsakPublicKey = ubavkKey }
         = bsaktCfg
-
-  let ubavkKey = Bls.derivePublicKey secretKey
 
   logSuccess [ printf "setting aggregation key pair %s for baker %s" (show (secretKey, ubavkKey)) (show bid)
              , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
