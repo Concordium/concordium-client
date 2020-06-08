@@ -16,8 +16,8 @@ import qualified Concordium.Client.Types.Transaction as Costs
 import Concordium.Client.Types.TransactionStatus
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Execution
-import Control.Concurrent.STM (atomically)
-import Control.Concurrent.STM.TMVar (TMVar, putTMVar, readTMVar, takeTMVar)
+import Control.Concurrent.MVar
+import Control.Monad.Except (MonadError (throwError))
 import Data.Aeson
 import Data.HashMap.Strict as HM hiding (filter, mapMaybe)
 import Data.Maybe
@@ -30,18 +30,18 @@ import qualified Data.Vector as Vec
 type DelegationAccounts = Vec.Vector AccountConfig
 
 jsonAnswer ::
-  (Monad m, Show a, FromJSON t) =>
+  (Show a, FromJSON t) =>
   EnvData ->
-  ClientMonad m (Either a Value) ->
-  (t -> m b) ->
-  m b
+  ClientMonad IO (Either a Value) ->
+  (t -> IO b) ->
+  IO b
 jsonAnswer grpc f g = do
   eeValue <- runClient grpc f
   case eeValue of
-    Left e -> error $ show e
-    Right (Left e) -> error $ show e
+    Left e -> throwError . userError . show $ e
+    Right (Left e) -> throwError . userError . show $ e
     Right (Right jValue) -> case fromJSON jValue of
-      Error e -> error e
+      Error e -> throwError . userError $ "Unable to parse JSON value received from the grpc backend. \nValue: " ++ show jValue ++ "\nError: " ++ show e
       Success value -> g value
 
 -- | When checking for a transaction it might be in different states:
@@ -124,36 +124,36 @@ delegate grpc delegationAccounts bakerId idx =
             Just bid -> Execution.DelegateStake {dsID = bid}
             Nothing -> Execution.UndelegateStake
       -- send the transaction
-      either (error . show) id <$> runClient grpc (getBlockItemHash <$> startTransaction txCfg pl)
+      either (throwError . userError . show) return =<< runClient grpc (getBlockItemHash <$> startTransaction txCfg pl)
 
 in2epochs :: UTCTime -> NominalDiffTime -> UTCTime -> UTCTime
 in2epochs genesisTime epochDuration finalizationTime =
   -- genesis + (((finalization - genesis)/epoch + 2) * epoch)
-  addUTCTime (((diffUTCTime finalizationTime genesisTime / epochDuration) + 2) * epochDuration) genesisTime
+  addUTCTime (((fromInteger . truncate $ diffUTCTime finalizationTime genesisTime / epochDuration) + 2) * epochDuration) genesisTime
 
 microsecondsBetween :: UTCTime -> UTCTime -> Int
 microsecondsBetween a b =
   truncate (10 ^ (6 :: Int) * diffUTCTime a b)
 
 -- FIXME: Consider using MonadLogger $logTrace here instead of putStrLn.
-logAndTakeTMVar :: String -> TMVar a -> IO a
-logAndTakeTMVar context v = do
+logAndTakeMVar :: String -> MVar a -> IO a
+logAndTakeMVar context v = do
   putStrLn $ "[" ++ context ++ "]: taking local state tmvar"
-  val <- atomically $ takeTMVar v
+  val <- takeMVar v
   putStrLn $ "[" ++ context ++ "]: took local state tmvar"
   return val
 
-logAndReadTMVar :: String -> TMVar a -> IO a
-logAndReadTMVar context v = do
+logAndReadMVar :: String -> MVar a -> IO a
+logAndReadMVar context v = do
   putStrLn $ "[" ++ context ++ "]: going to read local state tmvar"
-  val <- atomically $ readTMVar v
+  val <- readMVar v
   putStrLn $ "[" ++ context ++ "]: read local state tmvar"
   return val
 
-logAndPutTMVar :: String -> TMVar a -> a -> IO ()
-logAndPutTMVar context v val = do
+logAndPutMVar :: String -> MVar a -> a -> IO ()
+logAndPutMVar context v val = do
   putStrLn $ "[" ++ context ++ "]: putting local state tmvar"
-  atomically $ putTMVar v val
+  putMVar v val
   putStrLn $ "[" ++ context ++ "]: put local state tmvar"
 
 logAndDo :: String -> IO a -> IO a
