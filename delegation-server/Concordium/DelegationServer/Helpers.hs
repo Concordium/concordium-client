@@ -124,7 +124,7 @@ delegate grpc delegationAccounts bakerId idx =
             Just bid -> Execution.DelegateStake {dsID = bid}
             Nothing -> Execution.UndelegateStake
       -- send the transaction
-      either (throwError . userError . show) return =<< runClient grpc (getBlockItemHash <$> startTransaction txCfg pl)
+      either (throwError . userError . show) return =<< runClient grpc (getBlockItemHash <$> startTransaction txCfg pl False)
 
 in2epochs :: UTCTime -> NominalDiffTime -> UTCTime -> UTCTime
 in2epochs genesisTime epochDuration finalizationTime =
