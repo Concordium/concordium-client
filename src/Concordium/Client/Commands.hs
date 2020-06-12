@@ -202,6 +202,10 @@ data BakerCmd
     { bsakBakerId :: !BakerId
     , bsakBakerAggregationKeyFile :: !FilePath
     , bsakTransactionOpts :: !TransactionOpts }
+  | BakerSetElectionKey
+    { bsekBakerId :: !BakerId
+    , bsekBakerElectionKeyFile :: !FilePath
+    , bsakTransactionOps :: !TransactionOpts }
   deriving (Show)
 
 visibleHelper :: Parser (a -> a)
@@ -630,7 +634,8 @@ bakerCmds =
            bakerSetAccountCmd <>
            bakerSetKeyCmd <>
            bakerRemoveCmd <>
-           bakerSetAggregationKeyCmd))
+           bakerSetAggregationKeyCmd <>
+           bakerSetElectionKeyCmd ))
       (progDesc "Commands for creating and deploying baker credentials."))
 
 bakerGenerateKeysCmd :: Mod CommandFields BakerCmd
@@ -723,6 +728,24 @@ bakerSetAggregationKeyCmd =
         , "     ..."
         , "     \"aggregationSignKey\": ...,"
         , "     \"aggregationVerifyKey\": ...,"
+        , "     ..."
+        , "   }" ]))
+
+bakerSetElectionKeyCmd :: Mod CommandFields BakerCmd
+bakerSetElectionKeyCmd =
+  command
+    "set-election-key"
+    (info
+      (BakerSetElectionKey <$>
+        argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
+        strArgument (metavar "FILE" <> help "File containing the election key.") <*>
+        transactionOptsParser)
+      (progDescDoc $ docFromLines
+        [ "Update the election key of a baker. Expected format:"
+        , "   {"
+        , "     ..."
+        , "     \"electionPrivateKey\": ...,"
+        , "     \"electionVerifyKey\": ...,"
         , "     ..."
         , "   }" ]))
 

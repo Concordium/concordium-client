@@ -66,6 +66,12 @@ bakerSetKeyEnergyCost = (+ 90) . checkHeaderEnergyCost
 bakerSetAggregationKeyEnergyCost :: Int -> Energy
 bakerSetAggregationKeyEnergyCost = (+ 2700) . checkHeaderEnergyCost
 
+-- |Cost of a baker set-election-key transaction
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
+-- TODO: this energycost hasn't been analysed and defined yet
+bakerSetElectionKeyEnergyCost :: Int -> Energy
+bakerSetElectionKeyEnergyCost = checkHeaderEnergyCost
+
 -- |Cost of a baker remove transaction.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 bakerRemoveEnergyCost :: Int -> Energy
