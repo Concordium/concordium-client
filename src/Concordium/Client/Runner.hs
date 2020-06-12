@@ -213,7 +213,6 @@ processConfigCmd action baseCfgDir verbose =
         accCfgs <- loadAccountImportFile importFormat file validName
         void $ importAccountConfig baseCfg accCfgs
 
-
     ConfigKeyCmd c -> case c of
       ConfigKeyAdd addr idx sk vk -> do
         baseCfg <- getBaseConfig baseCfgDir verbose True
@@ -328,19 +327,29 @@ parseKeyPair sk vk = do
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processTransactionCmd action baseCfgDir verbose backend =
   case action of
-    TransactionSubmit fname -> do
+    TransactionSubmit fname intOpts -> do
       -- TODO Ensure that the "nonce" field is optional in the payload.
       mdata <- loadContextData
       source <- BSL.readFile fname
 
+      -- TODO Print transaction details and ask for confirmation if (ioConfirm intOpts)
+
       PR.evalContext mdata $ withClient backend $ do
         tx <- processTransaction source defaultNetId
-        tailTransaction $ getBlockItemHash tx
-    TransactionDeployCredential fname -> do
+        let hash = getBlockItemHash tx
+        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
+        when (ioTail intOpts) $ do
+          tailTransaction hash
+--          logSuccess [ "transaction successfully completed" ]
+    TransactionDeployCredential fname intOpts -> do
       source <- BSL.readFile fname
       withClient backend $ do
         tx <- processCredential source defaultNetId
-        tailTransaction $ getBlockItemHash tx
+        let hash = getBlockItemHash tx
+        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
+        when (ioTail intOpts) $ do
+          tailTransaction hash
+--          logSuccess [ "credential deployed successfully" ]
     TransactionStatus h -> do
       hash <- case parseTransactionHash h of
         Nothing -> logFatal [printf "invalid transaction hash '%s'" h]
@@ -363,10 +372,15 @@ processTransactionCmd action baseCfgDir verbose backend =
         runPrinter $ printAccountConfig $ tcAccountCfg txCfg
         putStrLn ""
 
-      pl <- transferTransactionPayload ttxCfg True
+      let intOpts = toInteractionOpts txOpts
+      pl <- transferTransactionPayload ttxCfg (ioConfirm intOpts)
       withClient backend $ do
-        tx <- startTransaction txCfg pl
-        tailTransaction $ getBlockItemHash tx
+        tx <- startTransaction txCfg pl (ioConfirm intOpts)
+        let hash = getBlockItemHash tx
+        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
+        when (ioTail intOpts) $ do
+          tailTransaction hash
+--          logSuccess [ "transfer successfully completed" ]
 
 -- |Poll the transaction state continuously until it is "at least" the provided one.
 -- Note that the "absent" state is considered the "highest" state,
@@ -677,8 +691,10 @@ accountUndelegateTransactionPayload autxCfg confirm = do
   return Types.UndelegateStake
 
 -- |Encode, sign, and send transaction off to the baker.
-startTransaction :: (MonadFail m, MonadIO m) => TransactionConfig -> Types.Payload -> ClientMonad m Types.BareBlockItem
-startTransaction txCfg pl = do
+-- If confirmNonce is set, the user is asked to confirm using the next nonce
+-- if there are pending transactions.
+startTransaction :: (MonadFail m, MonadIO m) => TransactionConfig -> Types.Payload -> Bool -> ClientMonad m Types.BareBlockItem
+startTransaction txCfg pl confirmNonce = do
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
@@ -686,7 +702,7 @@ startTransaction txCfg pl = do
         , tcAccountCfg = accountCfg@AccountConfig
                          { acAddr = NamedAddress { naAddr = addr } } }
         = txCfg
-  nonce <- getNonce addr n
+  nonce <- getNonce addr n confirmNonce
   let tx = encodeAndSignTransaction pl energy nonce expiry accountCfg
 
   sendTransactionToBaker tx defaultNetId >>= \case
@@ -697,29 +713,30 @@ startTransaction txCfg pl = do
 -- |Fetch next nonces relative to the account's most recently committed and
 -- pending transactions, respectively.
 -- If they match, the nonce is returned.
--- If they don't match, the user is asked to confirm proceeding with the latter nonce.
+-- If they don't match, optionally ask the user to confirm proceeding with the latter nonce.
 -- If rejected, the process is cancelled (exit with code 0).
-getNonce :: (MonadFail m, MonadIO m) => Types.AccountAddress -> Maybe Types.Nonce -> ClientMonad m Types.Nonce
-getNonce sender nonce =
+getNonce :: (MonadFail m, MonadIO m) => Types.AccountAddress -> Maybe Types.Nonce -> Bool -> ClientMonad m Types.Nonce
+getNonce sender nonce confirm =
   case nonce of
     Nothing -> do
       currentNonce <- getBestBlockHash >>= getAccountNonce sender
       nextNonce <- nanNonce <$> (getNextAccountNonce (pack $ show sender) >>= getFromJson)
       liftIO $ when (currentNonce /= nextNonce) $ do
         logWarn [ printf "there is a pending transaction with nonce %s, but last committed one has %s" (show $ nextNonce-1) (show $ currentNonce-1)
-                , printf "this transaction will have nonce %s and might hang if the pending transaction fails" (show nextNonce)
-                , "proceed if you're confident that all currently pending transactions are valid" ]
-        confirmed <- askConfirmation $ Just "proceed"
-        unless confirmed exitTransactionCancelled
+                , printf "this transaction will have nonce %s and might hang if the pending transaction fails" (show nextNonce) ]
+        when confirm $ do
+          putStrLn "Proceed if you're confident that all currently pending transactions are valid."
+          confirmed <- askConfirmation $ Just "proceed"
+          unless confirmed exitTransactionCancelled
       return nextNonce
     Just v -> return v
 
 -- |Continuously query and display transaction status until the transaction is finalized.
 tailTransaction :: (MonadIO m) => Types.TransactionHash -> ClientMonad m ()
 tailTransaction hash = do
-  logSuccess [ "transaction sent to the baker"
-             , "waiting for transaction to be committed and finalized"
-             , printf "you may skip this by interrupting this command (using Ctrl-C) - the transaction will still get processed and may be queried using 'transaction status %s'" (show hash) ]
+  logInfo [ "waiting for the transaction to be committed and finalized"
+          , "you may skip this step by interrupting the command using Ctrl-C (pass flag '--no-wait' to do this by default)"
+          , printf "the transaction will still get processed and may be queried using\n  'transaction status %s'" (show hash) ]
 
   liftIO $ printf "[%s] Waiting for the transaction to be committed..." =<< getLocalTimeOfDayFormatted
   committedStatus <- awaitState 2 Committed hash
@@ -750,7 +767,7 @@ tailTransaction hash = do
   when (tsrResults committedStatus /= tsrResults finalizedStatus) $
     runPrinter $ printTransactionStatus finalizedStatus
 
-  liftIO $ printf "[%s] Transaction completed.\n" =<< getLocalTimeOfDayFormatted
+  liftIO $ printf "[%s] Transaction finalized.\n" =<< getLocalTimeOfDayFormatted
   where
     getLocalTimeOfDayFormatted = showTimeOfDay <$> getLocalTimeOfDay
     showResponse = unpack . decodeUtf8 . BSL8.toStrict . AE.encodePretty
@@ -786,10 +803,15 @@ processAccountCmd action baseCfgDir verbose backend =
         runPrinter $ printAccountConfig $ tcAccountCfg txCfg
         putStrLn ""
 
-      pl <- accountDelegateTransactionPayload adtxCfg True
+      let intOpts = toInteractionOpts txOpts
+      pl <- accountDelegateTransactionPayload adtxCfg (ioConfirm intOpts)
       withClient backend $ do
-        tx <- startTransaction txCfg pl
-        tailTransaction $ getBlockItemHash tx
+        tx <- startTransaction txCfg pl (ioConfirm intOpts)
+        let hash = getBlockItemHash tx
+        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
+        when (ioTail intOpts) $ do
+          tailTransaction hash
+--          logSuccess [ "delegation successfully performed" ]
     AccountUndelegate txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
 
@@ -803,10 +825,15 @@ processAccountCmd action baseCfgDir verbose backend =
         runPrinter $ printAccountConfig $ tcAccountCfg txCfg
         putStrLn ""
 
-      pl <- accountUndelegateTransactionPayload autxCfg True
+      let intOpts = toInteractionOpts txOpts
+      pl <- accountUndelegateTransactionPayload autxCfg (ioConfirm intOpts)
       withClient backend $ do
-        tx <- startTransaction txCfg pl
-        tailTransaction $ getBlockItemHash tx
+        tx <- startTransaction txCfg pl (ioConfirm intOpts)
+        let hash = getBlockItemHash tx
+        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
+        when (ioTail intOpts) $ do
+          tailTransaction hash
+--          logSuccess [ "delegation successfully removed" ]
 
   where getDelegateCostFunc acc = withClient backend $ do
           when verbose $ logInfo ["retrieving instances"]
@@ -882,11 +909,15 @@ processConsensusCmd action baseCfgDir verbose backend =
         runPrinter $ printAccountConfig $ tcAccountCfg txCfg
         putStrLn ""
 
-      pl <- setElectionDifficultyTransactionPayload sdtxCfg True
+      let intOpts = toInteractionOpts txOpts
+      pl <- setElectionDifficultyTransactionPayload sdtxCfg (ioConfirm intOpts)
       withClient backend $ do
-        tx <- startTransaction txCfg pl
-        tailTransaction $ getBlockItemHash tx
-
+        tx <- startTransaction txCfg pl (ioConfirm intOpts)
+        let hash = getBlockItemHash tx
+        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
+        when (ioTail intOpts) $ do
+          tailTransaction hash
+--          logSuccess [ "election difficulty updated successfully" ]
 
 -- |Process a 'block ...' command.
 processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
@@ -946,11 +977,15 @@ processBakerCmd action baseCfgDir verbose backend =
         runPrinter $ printAccountConfig $ tcAccountCfg txCfg
         putStrLn ""
 
-      pl <- bakerAddTransactionPayload batxCfg accountKeysFile True
-
+      let intOpts = toInteractionOpts txOpts
+      pl <- bakerAddTransactionPayload batxCfg accountKeysFile (ioConfirm intOpts)
       withClient backend $ do
-        tx <- startTransaction txCfg pl
-        tailTransaction $ getBlockItemHash tx
+        tx <- startTransaction txCfg pl (ioConfirm intOpts)
+        let hash = getBlockItemHash tx
+        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
+        when (ioTail intOpts) $ do
+          tailTransaction hash
+--          logSuccess [ "baker successfully added" ]
     BakerSetAccount bid file txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
       when verbose $ do
@@ -958,11 +993,17 @@ processBakerCmd action baseCfgDir verbose backend =
         putStrLn ""
 
       bsatcCfg <- getBakerSetAccountTransactionCfg baseCfg txOpts bid file
-      pl <- bakerSetAccountTransactionPayload bsatcCfg True
+      let txCfg = bsatcTransactionCfg bsatcCfg
 
+      let intOpts = toInteractionOpts txOpts
+      pl <- bakerSetAccountTransactionPayload bsatcCfg (ioConfirm intOpts)
       withClient backend $ do
-        tx <- startTransaction (bsatcTransactionCfg bsatcCfg) pl
-        tailTransaction $ getBlockItemHash tx
+        tx <- startTransaction txCfg pl (ioConfirm intOpts)
+        let hash = getBlockItemHash tx
+        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
+        when (ioTail intOpts) $ do
+          tailTransaction hash
+--          logSuccess [ "baker reward account successfully updated" ]
     BakerSetKey bid file txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
       when verbose $ do
@@ -970,11 +1011,17 @@ processBakerCmd action baseCfgDir verbose backend =
         putStrLn ""
 
       bsktcCfg <- getBakerSetKeyTransactionCfg baseCfg txOpts bid file
-      pl <- bakerSetKeyTransactionPayload bsktcCfg True
+      let txCfg = bsktcTransactionCfg bsktcCfg
 
+      let intOpts = toInteractionOpts txOpts
+      pl <- bakerSetKeyTransactionPayload bsktcCfg (ioConfirm intOpts)
       withClient backend $ do
-        tx <- startTransaction (bsktcTransactionCfg bsktcCfg) pl
-        tailTransaction $ getBlockItemHash tx
+        tx <- startTransaction txCfg pl (ioConfirm intOpts)
+        let hash = getBlockItemHash tx
+        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
+        when (ioTail intOpts) $ do
+          tailTransaction hash
+--          logSuccess [ "baker signature key successfully updated" ]
     BakerRemove bid txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
       when verbose $ do
@@ -982,11 +1029,17 @@ processBakerCmd action baseCfgDir verbose backend =
         putStrLn ""
 
       brtcCfg <- getBakerRemoveTransactionCfg baseCfg txOpts bid
-      pl <- bakerRemoveTransactionPayload brtcCfg True
+      let txCfg = brtcTransactionCfg brtcCfg
 
+      let intOpts = toInteractionOpts txOpts
+      pl <- bakerRemoveTransactionPayload brtcCfg (ioConfirm intOpts)
       withClient backend $ do
-        tx <- startTransaction (brtcTransactionCfg brtcCfg) pl
-        tailTransaction $ getBlockItemHash tx
+        tx <- startTransaction txCfg pl (ioConfirm intOpts)
+        let hash = getBlockItemHash tx
+        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
+        when (ioTail intOpts) $ do
+          tailTransaction hash
+--          logSuccess [ "baker successfully removed" ]
 
 -- |Resolve configuration of a 'baker update' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
