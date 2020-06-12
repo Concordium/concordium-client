@@ -139,18 +139,6 @@ getFromJson r = do
     Error err -> logFatal [printf "cannot parse '%s' as JSON: %s" (show s) err]
     Success v -> return v
 
--- |Helper function for parsing a specific entry of a JSON object to any type that implements
--- FromJSON. Useful for parsing specific keys from a Baker Keys file.
-getFromJsonObject :: (MonadIO m, FromJSON a) => Text -> Either String Value -> m a
-getFromJsonObject key r = do
-  obj <- case r of
-         Left err -> logFatal [printf "I/O error: %s" err]
-         Right (Object o) -> return o
-         Right s -> logFatal [printf "error parsing JSON, expected object but found: %s" $ show s]
-  case parse (\o -> o .: key) obj of
-    Success k -> return k
-    Error err -> logFatal [printf "I/O error: %s" err]
-
 -- |Look up account from the provided name (or defaultAcccountName if missing).
 -- Fail if it cannot be found.
 getAccountAddressArg :: AccountNameMap -> Maybe Text -> IO NamedAddress
@@ -1116,14 +1104,23 @@ getBakerSetKeyTransactionCfg baseCfg txOpts bid f = do
 
 getBakerSetAggregationKeyCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerSetAggregationKeyTransactionConfig
 getBakerSetAggregationKeyCfg baseCfg txOpts bid file = do
-  sk :: Types.BakerAggregationPrivateKey <- eitherDecodeFileStrict file >>= getFromJsonObject "aggregationSignKey"
-  pk :: Types.BakerAggregationVerifyKey <- eitherDecodeFileStrict file >>= getFromJsonObject "aggregationVerifyKey"
-  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
-  return BakerSetAggregationKeyTransactionConfig
-    { bsakTransactionCfg = txCfg
-    , bsakBakerId = bid
-    , bsakSecretKey = sk
-    , bsakPublicKey = pk }
+  eitherDecodeFileStrict file >>= \case
+    Left err -> logFatal [printf "Cannot read supplied file: %s" err]
+    Right v -> do
+      let parser =
+            withObject "Baker aggregation keys:" $ \obj -> do
+              aggSignKey <- obj .: "aggregationSignKey"
+              aggVerifyKey <- obj .: "aggregationVerifyKey"
+              return (aggSignKey, aggVerifyKey)
+      case parse parser v of
+        AE.Error err -> logFatal [printf "Cannot read aggregation keys: %s" err]
+        AE.Success (bsakSecretKey, bsakPublicKey) -> do
+          txCfg <- getTransactionCfg baseCfg txOpts nrgCost
+          return BakerSetAggregationKeyTransactionConfig
+              { bsakTransactionCfg = txCfg
+              , bsakBakerId = bid
+              , ..
+              }
   where nrgCost _ = return $ Just bakerSetAggregationKeyEnergyCost
 
 generateBakerSetAccountChallenge :: Types.BakerId -> Types.AccountAddress -> BS.ByteString
