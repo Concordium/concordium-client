@@ -1195,7 +1195,7 @@ bakerSetKeyTransactionPayload bsktcCfg confirm = do
           Just x -> return x
           Nothing -> logFatal [err]
 
--- |Convert 'baker set-aggregation-key' transaction config into a vali payload
+-- |Convert 'baker set-aggregation-key' transaction config into a valid payload
 bakerSetAggregationKeyTransactionPayload :: BakerSetAggregationKeyTransactionConfig -> Bool -> IO Types.Payload
 bakerSetAggregationKeyTransactionPayload bsaktCfg confirm = do
   let BakerSetAggregationKeyTransactionConfig
