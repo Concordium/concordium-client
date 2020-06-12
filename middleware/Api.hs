@@ -734,7 +734,7 @@ servantApp nodeBackend pgUrl idUrl cfgDir dataDir = genericServe routesAsServer
 
       bakerKeys <- liftIO $ Aeson.eitherDecodeFileStrict file >>= getFromJson
 
-      pl <- liftIO $ generateBakerAddPayload bakerKeys AccountKeys { akAddress = naAddr . acAddr $ accCfg, akKeys = acKeys accCfg, akThreshold = fromIntegral (HM.size $ acKeys accCfg) }
+      pl <- liftIO $ generateBakerAddPayload bakerKeys AccountKeys {akAddress = naAddr . acAddr $ accCfg, akKeys = acKeys accCfg, akThreshold = fromIntegral (HM.size $ acKeys accCfg) }
       -- run the transaction
       res <- runClient nodeBackend $ do
         tx <- startTransaction txCfg pl False
