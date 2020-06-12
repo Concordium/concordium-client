@@ -198,6 +198,10 @@ data BakerCmd
   | BakerRemove
     { brBakerId :: !BakerId
     , brTransactionOpts :: !TransactionOpts }
+  | BakerSetAggregationKey
+    { bsakBakerId :: !BakerId
+    , bsakBakerAggregationKeyFile :: !FilePath
+    , bsakTransactionOpts :: !TransactionOpts }
   deriving (Show)
 
 visibleHelper :: Parser (a -> a)
@@ -625,7 +629,8 @@ bakerCmds =
            bakerAddCmd <>
            bakerSetAccountCmd <>
            bakerSetKeyCmd <>
-           bakerRemoveCmd))
+           bakerRemoveCmd <>
+           bakerSetAggregationKeyCmd))
       (progDesc "Commands for creating and deploying baker credentials."))
 
 bakerGenerateKeysCmd :: Mod CommandFields BakerCmd
@@ -702,6 +707,24 @@ bakerRemoveCmd =
         argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
         transactionOptsParser)
       (progDesc "Remove a baker from the chain."))
+
+bakerSetAggregationKeyCmd :: Mod CommandFields BakerCmd
+bakerSetAggregationKeyCmd =
+  command
+    "set-aggregation-key"
+    (info
+      (BakerSetAggregationKey <$>
+        argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
+        strArgument (metavar "FILE" <> help "File containing the aggregation key.") <*>
+        transactionOptsParser)
+      (progDescDoc $ docFromLines
+        [ "Update the aggregation key of a baker. Expected format:"
+        , "   {"
+        , "     ..."
+        , "     \"aggregationSignKey\": ...,"
+        , "     \"aggregationVerifyKey\": ...,"
+        , "     ..."
+        , "   }" ]))
 
 docFromLines :: [String] -> Maybe P.Doc
 docFromLines = Just . P.vsep . map P.text
