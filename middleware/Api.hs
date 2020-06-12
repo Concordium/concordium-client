@@ -709,7 +709,7 @@ servantApp nodeBackend pgUrl idUrl cfgDir dataDir = genericServe routesAsServer
              let named = HM.toList $ bcAccountNameMap baseCfg
                  namedAddresses = Prelude.map snd named
                  namedAsText = Prelude.map (\(a, b) -> GetAccountsResponseItem (Just a) (Text.pack $ show b)) named
-                 unnamedAsText = Prelude.map (\b ->  GetAccountsResponseItem Nothing (Text.pack $ show b)) (allAccs L.\\ namedAddresses)
+                 unnamedAsText = Prelude.map (\b -> GetAccountsResponseItem Nothing (Text.pack $ show b)) (allAccs L.\\ namedAddresses)
              return $ namedAsText ++ unnamedAsText
 
 
@@ -734,10 +734,10 @@ servantApp nodeBackend pgUrl idUrl cfgDir dataDir = genericServe routesAsServer
 
       bakerKeys <- liftIO $ Aeson.eitherDecodeFileStrict file >>= getFromJson
 
-      pl <- liftIO $ generateBakerAddPayload bakerKeys AccountKeys {akAddress = naAddr . acAddr $ accCfg, akKeys = acKeys accCfg, akThreshold = fromIntegral (HM.size $ acKeys accCfg)}
+      pl <- liftIO $ generateBakerAddPayload bakerKeys AccountKeys { akAddress = naAddr . acAddr $ accCfg, akKeys = acKeys accCfg, akThreshold = fromIntegral (HM.size $ acKeys accCfg) }
       -- run the transaction
       res <- runClient nodeBackend $ do
-        tx <- startTransaction txCfg pl
+        tx <- startTransaction txCfg pl False
         return $ getBlockItemHash tx
       case res of
         Left _ -> return Nothing
@@ -764,7 +764,7 @@ servantApp nodeBackend pgUrl idUrl cfgDir dataDir = genericServe routesAsServer
       let pl = Execution.RemoveBaker $ Types.BakerId bakerId
       -- run the transaction
       res <- runClient nodeBackend $ do
-        tx <- startTransaction txCfg pl
+        tx <- startTransaction txCfg pl False
         return $ getBlockItemHash tx
       case res of
         Left _ -> return Nothing
