@@ -1152,7 +1152,7 @@ processLegacyCmd action backend =
       cdata <-
         PR.execContext mdata $ do
           source <- liftIO $ TextIO.readFile fname
-          PR.processModule source
+          PR.processModule fname source
       putStrLn
         "Module processed.\nThe following modules are currently in the local database and can be deployed.\n"
       showLocalModules cdata
