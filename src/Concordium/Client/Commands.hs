@@ -10,6 +10,7 @@ module Concordium.Client.Commands
   , ConfigAccountCmd(..)
   , ConfigKeyCmd(..)
   , TransactionOpts(..)
+  , InteractionOpts(..)
   , TransactionCmd(..)
   , AccountCmd(..)
   , ModuleCmd(..)
@@ -102,7 +103,8 @@ data ConfigKeyCmd
 
 data TransactionCmd
   = TransactionSubmit
-    { tsFile :: !FilePath }
+    { tsFile :: !FilePath
+    , tsInteractionOpts :: !InteractionOpts }
   | TransactionStatus
     { tsHash :: !Text }
   | TransactionSendGtu
@@ -110,7 +112,8 @@ data TransactionCmd
     , tsgAmount :: !Amount
     , tsgOpts :: !TransactionOpts }
   | TransactionDeployCredential
-    { tdcFile :: !FilePath }
+    { tdcFile :: !FilePath
+    , tdcInteractionOpts :: !InteractionOpts }
   deriving (Show)
 
 data AccountCmd
@@ -153,7 +156,14 @@ data TransactionOpts =
   , toKeys :: !(Maybe Text)
   , toNonce :: !(Maybe Nonce)
   , toMaxEnergyAmount :: !(Maybe Energy)
-  , toExpiration :: !(Maybe Text) }
+  , toExpiration :: !(Maybe Text)
+  , toInteractionOpts :: !InteractionOpts }
+  deriving (Show)
+
+data InteractionOpts =
+  InteractionOpts
+  { ioConfirm :: !Bool
+  , ioTail :: !Bool }
   deriving (Show)
 
 data ConsensusCmd
@@ -258,7 +268,14 @@ transactionOptsParser =
     optional (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified as JSON ({<key-idx>: {\"signKey\": ..., \"verifyKey\": ...}).")) <*>
     optional (option auto (long "nonce" <> metavar "NONCE" <> help "Transaction nonce.")) <*>
     optional (option auto (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction. Depeding on the transaction type, this flag may be optional.")) <*>
-    optional (strOption (long "expiry" <> metavar "EXPIRY" <> help "Expiration time of a transaction, specified as a relative duration (\"30s\", \"5m\", etc.) or UNIX epoch timestamp."))
+    optional (strOption (long "expiry" <> metavar "EXPIRY" <> help "Expiration time of a transaction, specified as a relative duration (\"30s\", \"5m\", etc.) or UNIX epoch timestamp.")) <*>
+    interactionOptsParser
+
+interactionOptsParser :: Parser InteractionOpts
+interactionOptsParser =
+  InteractionOpts <$>
+    (not <$> switch (long "no-confirm" <> help "Do not ask for confirmation before proceeding to send the transaction.")) <*>
+    (not <$> switch (long "no-wait" <> help "Exit right after sending the transaction without waiting for it to be committed and finalized."))
 
 programOptions :: Parser Options
 programOptions = Options <$>
@@ -296,7 +313,8 @@ transactionSubmitCmd =
     "submit"
     (info
       (TransactionSubmit <$>
-        strArgument (metavar "FILE" <> help "File containing the transaction parameters in JSON format."))
+        strArgument (metavar "FILE" <> help "File containing the transaction parameters in JSON format.") <*>
+        interactionOptsParser)
       (progDesc "Parse transaction and send it to the baker."))
 
 transactionDeployCredentialCmd :: Mod CommandFields TransactionCmd
@@ -305,7 +323,8 @@ transactionDeployCredentialCmd =
     "deploy-credential"
     (info
       (TransactionDeployCredential <$>
-        strArgument (metavar "FILE" <> help "File containing the credential deployment information."))
+        strArgument (metavar "FILE" <> help "File containing the credential deployment information.") <*>
+        interactionOptsParser)
       (progDesc "Parse credential and send it to the baker."))
 
 transactionStatusCmd :: Mod CommandFields TransactionCmd
