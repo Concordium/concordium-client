@@ -139,6 +139,18 @@ getFromJson r = do
     Error err -> logFatal [printf "cannot parse '%s' as JSON: %s" (show s) err]
     Success v -> return v
 
+-- |Helper function for parsing a specific entry of a JSON object to any type that implements
+-- FromJSON. Useful for parsing specific keys from a Baker Keys file.
+getFromJsonObject :: (MonadIO m, FromJSON a) => Text -> Either String Value -> m a
+getFromJsonObject key r = do
+  obj <- case r of
+         Left err -> logFatal [printf "I/O error: %s" err]
+         Right (Object o) -> return o
+         Right s -> logFatal [printf "error parsing JSON, expected object but found: %s" $ show s]
+  case parse (\o -> o .: key) obj of
+    Success k -> return k
+    Error err -> logFatal [printf "I/O error: %s" err]
+
 -- |Look up account from the provided name (or defaultAcccountName if missing).
 -- Fail if it cannot be found.
 getAccountAddressArg :: AccountNameMap -> Maybe Text -> IO NamedAddress
@@ -212,6 +224,7 @@ processConfigCmd action baseCfgDir verbose =
 
         accCfgs <- loadAccountImportFile importFormat file validName
         void $ importAccountConfig baseCfg accCfgs
+
 
     ConfigKeyCmd c -> case c of
       ConfigKeyAdd addr idx sk vk -> do
@@ -537,6 +550,13 @@ data SetElectionDifficultyTransactionConfig =
   SetElectionDifficultyTransactionConfig
   { sdtcTransactionCfg :: TransactionConfig
   , sdtcDifficulty :: Types.ElectionDifficulty }
+
+-- |Resolved configuration for a baker set-election-key transaction
+data BakerSetElectionKeyTransactionConfig =
+  BakerSetElectionKeyTransactionConfig
+  { bsekTransactionCfg :: TransactionConfig
+  , bsekBakerId :: Types.BakerId
+  , bsekKeyPair :: VRF.KeyPair }
 
 -- |Resolve configuration of a 'baker add' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
@@ -1068,6 +1088,23 @@ processBakerCmd action baseCfgDir verbose backend =
           tailTransaction hash
 --          logSuccess [ "baker aggregation key successfully updated" ]
 
+    BakerSetElectionKey bid file txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose True
+      let intOpts = toInteractionOpts txOpts
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+      bsektCfg <- getBakerSetElectionKeyCfg baseCfg txOpts bid file
+      let txCfg = bsekTransactionCfg bsektCfg
+      pl <- bakerSetElectionKeyTransactionPayload bsektCfg (ioConfirm intOpts)
+
+      withClient backend $ do
+        tx <- startTransaction (bsekTransactionCfg bsektCfg) pl (ioConfirm intOpts)
+        tailTransaction $ getBlockItemHash tx
+--          logSuccess [ "baker election key successfully updated" ]
+
+
 -- |Resolve configuration of a 'baker update' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
 getBakerSetAccountTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerSetAccountTransactionConfig
@@ -1123,6 +1160,16 @@ getBakerSetAggregationKeyCfg baseCfg txOpts bid file = do
               }
   where nrgCost _ = return $ Just bakerSetAggregationKeyEnergyCost
 
+getBakerSetElectionKeyCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerSetElectionKeyTransactionConfig
+getBakerSetElectionKeyCfg baseCfg txOpts bid file = do
+  kp :: VRF.KeyPair <- eitherDecodeFileStrict file >>= getFromJson
+  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
+  return BakerSetElectionKeyTransactionConfig
+    { bsekTransactionCfg = txCfg
+    , bsekBakerId = bid
+    , bsekKeyPair = kp }
+  where nrgCost _ = return $ Just bakerSetElectionKeyEnergyCost
+
 generateBakerSetAccountChallenge :: Types.BakerId -> Types.AccountAddress -> BS.ByteString
 generateBakerSetAccountChallenge bid add = S.runPut (S.put bid <> S.put add)
 
@@ -1131,6 +1178,9 @@ generateBakerSetKeyChallenge bid key= S.runPut (S.put bid <> S.put key)
 
 generateBakerSetAggregationKeyCallenge :: Types.BakerId -> Types.BakerAggregationVerifyKey -> BS.ByteString
 generateBakerSetAggregationKeyCallenge bid key = S.runPut (S.put bid <> S.put key)
+
+generateBakerSetElectionKeyChallenge :: Types.BakerId -> Types.BakerElectionVerifyKey -> BS.ByteString
+generateBakerSetElectionKeyChallenge bid key = S.runPut (S.put bid <> S.put key)
 
 -- |Convert 'baker set-account' transaction config into a valid payload,
 -- optionally asking the user for confirmation.
@@ -1216,6 +1266,36 @@ bakerSetAggregationKeyTransactionPayload bsaktCfg confirm = do
       ubavkProof = Bls.proveKnowledgeOfSK challenge secretKey
 
   return Types.UpdateBakerAggregationVerifyKey {..}
+
+-- |Conver 'baker set-election-key' transaction config into a valid payload
+bakerSetElectionKeyTransactionPayload :: BakerSetElectionKeyTransactionConfig -> Bool -> IO Types.Payload
+bakerSetElectionKeyTransactionPayload bsektCfg confirm = do
+  let BakerSetElectionKeyTransactionConfig
+        { bsekTransactionCfg = TransactionConfig
+                                { tcEnergy = energy
+                                , tcExpiry = expiry }
+        , bsekBakerId = bid
+        , bsekKeyPair = kp } = bsektCfg
+
+  logSuccess [ printf "setting election key pair (private: %s, public: %s) for baker %s"
+                          (show $ VRF.privateKey kp) (show $ VRF.publicKey kp)  (show bid)
+             , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+             , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  let ubekId = bid
+      ubekKey = VRF.publicKey kp
+      challenge = generateBakerSetElectionKeyChallenge bid ubekKey
+
+  ubekProof <- Proofs.proveDlog25519VRF challenge kp `except` "cannot produce VRF key proof"
+
+  return Types.UpdateBakerElectionKey {..}
+    where
+      except c err = c >>= \case
+        Just x -> return x
+        Nothing -> logFatal [err]
 
 -- |Process a "legacy" command.
 processLegacyCmd :: LegacyCmd -> Backend -> IO ()
