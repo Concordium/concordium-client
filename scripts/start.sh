@@ -20,6 +20,11 @@ then
       tar xzf /finbench-bakers.tar.gz -C /tmp
       mv /tmp/genesis_data/baker-$ID-account.json /tx_generator_account.json
       rm -rf /tmp/genesis_data
+    elif [ -n "$TPS_NUM" ];
+    then
+      tar xzf /tps-bakers.tar.gz -C /tmp
+      mv /tmp/genesis_data/baker-$ID-account.json /tx_generator_account.json
+      rm -rf /tmp/genesis_data
     else
       tar xzf /$NUM_BAKERS-bakers.tar.gz -C /tmp
       mv /tmp/genesis_data/baker-$ID-account.json /tx_generator_account.json
