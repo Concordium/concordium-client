@@ -1,3 +1,5 @@
+{-# LANGUAGE RecordWildCards #-}
+
 module Concordium.Client.Output where
 
 import qualified Concordium.Crypto.SignatureScheme as S
@@ -162,68 +164,252 @@ showKeyPair S.KeyPairEd25519 { S.signKey=sk, S.verifyKey=vk } =
 
 -- TRANSACTION
 
+data TransactionBlockResult
+  = NoBlocks
+  | SingleBlock Types.BlockHash Types.TransactionSummary
+  | MultipleBlocksUnambiguous [Types.BlockHash] Types.TransactionSummary
+  | MultipleBlocksAmbiguous [(Types.BlockHash, Types.TransactionSummary)]
+
+parseTransactionBlockResult :: TransactionStatusResult -> TransactionBlockResult
+parseTransactionBlockResult status =
+  case sortOn fst $ HM.toList (tsrResults status) of
+    [(hash, outcome)] -> SingleBlock hash outcome
+    blocks -> case nub $ map snd blocks of
+                [] -> NoBlocks
+                [outcome] -> let hashes = map fst blocks
+                             in MultipleBlocksUnambiguous hashes outcome
+                _ -> MultipleBlocksAmbiguous blocks
+
 printTransactionStatus :: TransactionStatusResult -> Printer
 printTransactionStatus status =
   case tsrState status of
     Received -> tell ["Transaction is pending."]
     Absent -> tell ["Transaction is absent."]
     Committed ->
-      case mapMaybe (\(k, v) -> (k, ) <$> v) $ sortOn fst $ HM.toList (tsrResults status) of
-        [] ->
-          -- No blocks.
-          tell ["Transaction is committed - no block information received (this should never happen!)."]
-        [(hash, outcome)] ->
-          -- Single block.
+      case parseTransactionBlockResult status of
+        NoBlocks ->
+          tell ["Transaction is committed, but no block information was received - this should never happen!"]
+        SingleBlock hash outcome -> do
           tell [printf
-                "Transaction is committed into block %s with %s."
-                (show hash)
-                (showOutcomeFragment outcome)]
-        blocks ->
-          -- Multiple blocks.
-          case nub $ Prelude.map snd blocks of
-            [outcome] -> do
-              -- Single outcome.
-              tell [printf
-                     "Transaction is committed into the following %d blocks with %s:"
-                     (length blocks)
-                     (showOutcomeFragment outcome)]
-              tell $ blocks <&> \(hash, _) ->
-                                  printf "- %s" (show hash)
-            _ -> do
-              -- Multiple outcomes.
-              tell [printf
-                     "Transaction is committed into the following %d blocks:"
-                     (length blocks)]
-              tell $ blocks <&> \(hash, outcome) ->
-                                  printf
-                                    "- %s with %s."
-                                    (show hash)
-                                    (showOutcomeFragment outcome)
+                 "Transaction is committed into block %s with %s."
+                 (show hash)
+                 (showOutcomeFragment outcome)]
+          tell $ showOutcomeResult False $ Types.tsResult outcome
+        MultipleBlocksUnambiguous hashes outcome -> do
+          tell [printf
+                 "Transaction is committed into %d blocks with %s:"
+                 (length hashes)
+                 (showOutcomeFragment outcome)]
+          tell $ hashes <&> printf "- %s" . show
+          tell $ showOutcomeResult False $ Types.tsResult outcome
+        MultipleBlocksAmbiguous blocks -> do
+          tell [printf
+                 "Transaction is committed into %d blocks:"
+                 (length blocks)]
+          sequence_ $ blocks <&> \(hash, outcome) -> do
+            tell [ printf "- %s with %s:"
+                     (show hash)
+                     (showOutcomeFragment outcome) ]
+            tell $ (showOutcomeResult True $ Types.tsResult outcome) <&> ("  * " ++)
     Finalized ->
-      case mapMaybe (\(k,v) -> (k,) <$> v) $ HM.toList (tsrResults status) of
-        [] ->
-          -- No blocks.
-          tell ["Transaction is finalized - no block information received (this should never happen!)."]
-        [(hash, outcome)] ->
-          -- Single block.
+      case parseTransactionBlockResult status of
+        NoBlocks ->
+          tell ["Transaction is finalized, but no block information was received - this should never happen!"]
+        SingleBlock hash outcome -> do
           tell [printf
                  "Transaction is finalized into block %s with %s."
                  (show hash)
                  (showOutcomeFragment outcome)]
-        _ ->
-          -- Multiple blocks.
+          tell $ showOutcomeResult False $ Types.tsResult outcome
+        MultipleBlocksUnambiguous _ _ ->
           tell ["Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!"]
+        MultipleBlocksAmbiguous _ ->
+          tell ["Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!"]
+   where
+     showOutcomeFragment :: Types.TransactionSummary -> String
+     showOutcomeFragment outcome = printf
+                                     "status \"%s\" and cost %s"
+                                     (showOutcomeStatusFragment $ Types.tsResult outcome :: String)
+                                     (showOutcomeCost outcome)
+     showOutcomeStatusFragment = \case
+       Types.TxSuccess _ -> "success"
+       Types.TxReject _ -> "rejected"
+
+showOutcomeCost :: Types.TransactionSummary -> String
+showOutcomeCost outcome = showCost (Types.tsCost outcome) (Types.tsEnergyCost outcome)
+
+showCost :: Types.Amount -> Types.Energy -> String
+showCost gtu nrg = printf "%s (%s)" (showGtu gtu) (showNrg nrg)
+
+showOutcomeResult :: Verbose -> Types.ValidResult -> [String]
+showOutcomeResult verbose = \case
+  Types.TxSuccess es -> mapMaybe (showEvent verbose) es
+  Types.TxReject r ->
+    if verbose
+    then [showRejectReason True r]
+    else [printf "Transaction rejected: %s." (showRejectReason False r)]
+
+-- |Return string representation of outcome event if verbose or if the event includes
+-- relevant information that wasn't part of the transaction request. Otherwise return Nothing.
+-- If verbose is true, the string includes the details from the fields of the event.
+-- Otherwise, only the fields that are not known from the transaction request are included.
+-- Currently this is only the baker ID from AddBaker, which is computed by the backend.
+-- The non-verbose version is used by the transaction commands (through tailTransaction)
+-- where the input parameters have already been specified manually and repeated in a block
+-- of text that they confirmed manually.
+-- The verbose version is used by 'transaction status' and the non-trivial cases of the above
+-- where there are multiple distinct outcomes.
+showEvent :: Verbose -> Types.Event -> Maybe String
+showEvent verbose = \case
+  Types.ModuleDeployed ref->
+    verboseOrNothing $ printf "module '%s' deployed" (show ref)
+  Types.ContractInitialized{..} ->
+    verboseOrNothing $ printf "initialized contract '%s' from module '%s' with name '%s' and '%s' tokens"
+                              (show ecAddress) (show ecRef) (show ecName) (show ecAmount)
+  Types.Updated{..} ->
+    verboseOrNothing $ printf "sent message '%s' and '%s' tokens from %s to %s"
+                              (show euMessage) (show euAmount) (showAccount euInstigator) (showAccount $ Types.AddressContract euAddress)
+  Types.Transferred{..} ->
+    verboseOrNothing $ printf "transferred %s tokens from %s to %s" (show etAmount) (showAccount etFrom) (showAccount etTo)
+  Types.AccountCreated addr ->
+    verboseOrNothing $ printf "account '%s' created" (show addr)
+  Types.CredentialDeployed{..} ->
+    verboseOrNothing $ printf "credential with registration '%s' deployed onto account '%s'" (show ecdRegId) (show ecdAccount)
+  Types.BakerAdded bid ->
+    Just $ printf "baker added with ID %s" (show bid)
+  Types.BakerRemoved bid ->
+    verboseOrNothing $ printf "baker '%s' removed" (show bid)
+  Types.BakerAccountUpdated{..} ->
+    verboseOrNothing $ printf "reward account of baker '%s' updated to '%s'" (show ebauBaker) (show ebauNewAccount)
+  Types.BakerKeyUpdated{..} ->
+    verboseOrNothing $ printf "signature key of baker '%s' updated to '%s'" (show ebkuBaker) (show ebkuNewKey)
+  Types.BakerElectionKeyUpdated{..} ->
+    verboseOrNothing $ printf "election key of baker '%s' updated to '%s'" (show ebekuBaker) (show ebekuNewKey)
+  Types.BakerAggregationKeyUpdated{..} ->
+    verboseOrNothing $ printf "aggregation key of baker '%s' updated to '%s'" (show ebakuBaker) (show ebakuNewKey)
+  Types.StakeDelegated{..} ->
+    verboseOrNothing $ printf "stake of account '%s' delegated to baker '%s'" (show esdAccount) (show esdBaker)
+  Types.StakeUndelegated{..} ->
+    verboseOrNothing $ case esuBaker of
+                         Nothing -> printf "stake of account '%s' undelegated (was not previous delegated)" (show esuAccount)
+                         Just bid -> printf "stake of account '%s' undelegated from baker %s" (show esuAccount) (show bid)
+  Types.ElectionDifficultyUpdated{..} ->
+    verboseOrNothing $ printf "election difficulty updated to %f" eeduDifficulty
   where
-    showCostFragment :: Types.Amount -> Types.Energy -> String
-    showCostFragment gtu nrg = printf "%s (%s)" (showGtu gtu) (showNrg nrg)
-    showOutcomeFragment :: Types.TransactionSummary -> String
-    showOutcomeFragment outcome = printf
-                                    "status \"%s\" and cost %s"
-                                    (showOutcomeStatusFragment $ Types.tsResult outcome :: String)
-                                    (showCostFragment (Types.tsCost outcome) (Types.tsEnergyCost outcome))
-    showOutcomeStatusFragment = \case
-      Types.TxSuccess _ -> "success"
-      Types.TxReject _ -> "rejected"
+    verboseOrNothing :: String -> Maybe String
+    verboseOrNothing msg = if verbose then Just msg else Nothing
+
+    showAccount :: Types.Address -> String
+    showAccount = \case
+      Types.AddressAccount a -> printf "account '%s'" (show a)
+      Types.AddressContract a -> printf "contract '%s'" (show a)
+
+-- |Return string representation of reject reason.
+-- If verbose is true, the string includes the details from the fields of the reason.
+-- Otherwise, only the fields that are not known from the transaction request are included.
+-- Currently this is only the baker address from NotFromBakerAccount.
+-- The non-verbose version is used by the transaction commands (through tailTransaction)
+-- where the input parameters have already been specified manually and repeated in a block
+-- of text that they confirmed manually.
+-- The verbose version is used by 'transaction status' and the non-trivial cases of the above
+-- where there are multiple distinct outcomes.
+showRejectReason :: Verbose -> Types.RejectReason -> String
+showRejectReason verbose = \case
+  Types.ModuleNotWF ->
+    "typechecking error"
+  Types.MissingImports ->
+    "missing imports"
+  Types.ModuleHashAlreadyExists m ->
+    if verbose then
+      printf "module '%s' already exists" (show m)
+    else
+      "module already exists"
+  Types.MessageTypeError ->
+    "message to the receive method is not of the correct type"
+  Types.ParamsTypeError ->
+    "parameters of the init method are not of the correct types"
+  Types.InvalidAccountReference a ->
+    if verbose then
+      printf "account '%s' does not exist" (show a)
+    else
+      "account does not exist"
+  Types.InvalidContractReference m t ->
+    if verbose then
+      printf "referencing nonexistent contract '%s', '%s'" (show m) (show t)
+    else
+      "referencing non-existing contract"
+  Types.InvalidModuleReference m ->
+    if verbose then
+      printf "referencing non-existent module '%s'" (show m)
+    else
+      "referencing non-existing module"
+  Types.InvalidContractAddress c ->
+    if verbose then
+      printf "contract instance '%s' does not exist" (show c)
+    else
+      "contract instance does not exist"
+  Types.ReceiverAccountNoCredential a ->
+    if verbose then
+      printf "receiver account '%s' does not have a valid credential" (show a)
+    else
+      "receiver account does not have a valid credential"
+  Types.ReceiverContractNoCredential a ->
+    if verbose then
+      printf "receiver contract '%s' does not have a valid credential" (show a)
+    else
+      "receiver contract does not have a valid credential"
+  Types.AmountTooLarge a amount ->
+    if verbose then
+      printf "account or contract '%s' does not have enough funds to transfer %s tokens" (show a) (show amount)
+    else
+      "insufficient funds"
+  Types.SerializationFailure ->
+    "serialization failed"
+  Types.OutOfEnergy ->
+    "not enough energy"
+  Types.Rejected ->
+    "contract logic failure"
+  Types.NonExistentRewardAccount a ->
+    if verbose then
+      printf "account '%s' does not exist (tried to set baker reward account)" (show a)
+    else
+      "account does not exist"
+  Types.InvalidProof ->
+    "proof that baker owns relevant private keys is not valid"
+  Types.RemovingNonExistentBaker b ->
+    if verbose then
+      printf "baker '%s' does not exist (tried to remove baker)" (show b)
+    else
+      "baker does not exist"
+  Types.InvalidBakerRemoveSource a ->
+    if verbose then
+      printf "invalid sender account '%s' (tried to remove baker)" (show a)
+    else
+      "invalid sender account"
+  Types.UpdatingNonExistentBaker b ->
+    if verbose then
+      printf "baker '%s' does not exist (tried to update baker signature key)" (show b)
+    else
+      "baker does not exist"
+  Types.InvalidStakeDelegationTarget b ->
+    if verbose then
+      printf "invalid baker ID '%s' (tried to delegate stake)" (show b)
+    else
+      "invalid baker ID"
+  Types.DuplicateSignKey k ->
+    if verbose then
+      printf "duplicate sign key '%s'" (show k)
+    else
+      "duplicate sign key"
+  Types.DuplicateAggregationKey k ->
+    if verbose then
+      printf "duplicate aggregation key '%s'" (show k)
+    else
+      "duplicate aggregation key"
+  Types.NotFromBakerAccount fromAccount bakerAccount ->
+    printf "sender '%s' is not the baker's account ('%s' is)" (show fromAccount) (show bakerAccount)
+  Types.NotFromSpecialAccount ->
+    "sender is not allowed to perform this special type of transaction"
 
 -- CONSENSUS
 

@@ -788,7 +788,7 @@ tailTransaction hash = do
 
   when (tsrState finalizedStatus == Absent) $
     logFatal [ "transaction failed after it was committed"
-             , "Response:\n" ++ showResponse committedStatus ]
+             , "response:\n" ++ showResponse committedStatus ]
 
   -- Print out finalized status if the outcome differs from that of the committed status.
   when (tsrResults committedStatus /= tsrResults finalizedStatus) $
