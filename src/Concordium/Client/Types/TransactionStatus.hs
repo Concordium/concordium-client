@@ -14,7 +14,7 @@ data TransactionState = Received | Committed | Finalized | Absent deriving (Eq, 
 
 $(deriveJSON defaultOptions{constructorTagModifier = firstLower} ''TransactionState)
 
-type TransactionBlockResults' a = HM.HashMap BlockHash (Maybe (TransactionSummary' a))
+type TransactionBlockResults' a = HM.HashMap BlockHash (TransactionSummary' a)
 
 type TransactionBlockResults = TransactionBlockResults' ValidResult
 
