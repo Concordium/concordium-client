@@ -349,7 +349,7 @@ transactionSendGtuCmd =
         strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
         option auto (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
         transactionOptsParser)
-      (progDesc "Transfer GTU from one account to another account (sending to contracts is currently not supported with this method - use 'transaction submit')."))
+      (progDesc "Transfer GTU from one account to another (sending to contracts is currently not supported with this method - use 'transaction submit')."))
 
 accountCmds :: Mod CommandFields Cmd
 accountCmds =
@@ -631,11 +631,11 @@ bakerCmds =
         hsubparser
           (bakerGenerateKeysCmd <>
            bakerAddCmd <>
+           bakerRemoveCmd <>
            bakerSetAccountCmd <>
            bakerSetKeyCmd <>
-           bakerRemoveCmd <>
            bakerSetAggregationKeyCmd <>
-           bakerSetElectionKeyCmd ))
+           bakerSetElectionKeyCmd))
       (progDesc "Commands for creating and deploying baker credentials."))
 
 bakerGenerateKeysCmd :: Mod CommandFields BakerCmd
@@ -699,8 +699,8 @@ bakerSetKeyCmd =
       (progDescDoc $ docFromLines
         [ "Update the signature keys of a baker. Expected format:"
         , "   {"
-        , "     \"signatureSignKey\": <sign-key>,"
-        , "     \"signatureVerifyKey\": <verify-key>"
+        , "     \"signatureSignKey\": ...,"
+        , "     \"signatureVerifyKey\": ..."
         , "   }" ]))
 
 bakerRemoveCmd :: Mod CommandFields BakerCmd
@@ -725,10 +725,8 @@ bakerSetAggregationKeyCmd =
       (progDescDoc $ docFromLines
         [ "Update the aggregation key of a baker. Expected format:"
         , "   {"
-        , "     ..."
         , "     \"aggregationSignKey\": ...,"
-        , "     \"aggregationVerifyKey\": ...,"
-        , "     ..."
+        , "     \"aggregationVerifyKey\": ..."
         , "   }" ]))
 
 bakerSetElectionKeyCmd :: Mod CommandFields BakerCmd

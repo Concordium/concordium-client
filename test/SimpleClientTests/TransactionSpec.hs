@@ -16,11 +16,17 @@ import Data.Text (Text)
 
 import Test.Hspec hiding (pending)
 
-exampleAddress :: Text
-exampleAddress = "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+exampleAddress1 :: Text
+exampleAddress1 = "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
 
-exampleAccountAddr :: Types.AccountAddress
-Right exampleAccountAddr = IDTypes.addressFromText exampleAddress
+exampleAccountAddr1 :: Types.AccountAddress
+Right exampleAccountAddr1 = IDTypes.addressFromText exampleAddress1
+
+exampleAddress2 :: Text
+exampleAddress2 = "4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa"
+
+exampleAccountAddr2 :: Types.AccountAddress
+Right exampleAccountAddr2 = IDTypes.addressFromText exampleAddress2
 
 exampleTransactionHash :: Types.TransactionHash
 exampleTransactionHash = read "c20911f59cda41c116f528531e815a3b561861b96014b379e8a52f1cbbafd2e4"
@@ -37,45 +43,50 @@ exampleBlockHash3 = read "941c24374cd077de2120fb58732306c3115a08bb7b7cda120a04fe
 exampleBlockHash4 :: Types.BlockHash
 exampleBlockHash4 = read "be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93a9be7f9994"
 
+exampleEvent :: Types.Event
+exampleEvent = Types.Transferred (Types.AddressAccount exampleAccountAddr1) 10 (Types.AddressAccount exampleAccountAddr2)
+
+exampleRejectReason :: Types.RejectReason
+exampleRejectReason = Types.AmountTooLarge (Types.AddressAccount exampleAccountAddr1) 11
+
 outcomeSuccess1a :: Types.TransactionSummary
 outcomeSuccess1a = Types.TransactionSummary
-                   { Types.tsSender = Just exampleAccountAddr
+                   { Types.tsSender = Just exampleAccountAddr1
                    , Types.tsHash = exampleTransactionHash
                    , Types.tsCost = 10
                    , Types.tsEnergyCost = 10
                    , Types.tsType = Just Types.TTTransfer
-                   , Types.tsResult = Types.TxSuccess { Types.vrEvents = [] }
+                   , Types.tsResult = Types.TxSuccess { Types.vrEvents = [exampleEvent] }
                    , Types.tsIndex = Types.TransactionIndex 0 }
 
--- TODO Identical to outcomeSuccess1b now.
 outcomeSuccess1b :: Types.TransactionSummary
 outcomeSuccess1b = Types.TransactionSummary
-                   { Types.tsSender = Just exampleAccountAddr
+                   { Types.tsSender = Just exampleAccountAddr1
                    , Types.tsHash = exampleTransactionHash
                    , Types.tsCost = 10
                    , Types.tsEnergyCost = 10
                    , Types.tsType = Just Types.TTTransfer
-                   , Types.tsResult = Types.TxSuccess { Types.vrEvents = [] }
+                   , Types.tsResult = Types.TxSuccess { Types.vrEvents = [exampleEvent] }
                    , Types.tsIndex = 0 }
 
 outcomeSuccess2 :: Types.TransactionSummary
 outcomeSuccess2 = Types.TransactionSummary
-                  { Types.tsSender = Just exampleAccountAddr
+                  { Types.tsSender = Just exampleAccountAddr1
                   , Types.tsHash = exampleTransactionHash
                   , Types.tsCost = 20
                   , Types.tsEnergyCost = 20
                   , Types.tsType = Just Types.TTTransfer
-                  , Types.tsResult = Types.TxSuccess { Types.vrEvents = [] }
+                  , Types.tsResult = Types.TxSuccess { Types.vrEvents = [exampleEvent] }
                   , Types.tsIndex = 0 }
 
 outcomeFailure :: Types.TransactionSummary
 outcomeFailure = Types.TransactionSummary
-                 { Types.tsSender = Just exampleAccountAddr
+                 { Types.tsSender = Just exampleAccountAddr1
                  , Types.tsHash = exampleTransactionHash
                  , Types.tsCost = 20
                  , Types.tsEnergyCost = 20
                  , Types.tsType = Just Types.TTTransfer
-                 , Types.tsResult = Types.TxReject { Types.vrRejectReason = Types.InvalidProof }
+                 , Types.tsResult = Types.TxReject { Types.vrRejectReason = exampleRejectReason }
                  , Types.tsIndex = 0 }
 
 received :: TransactionStatusResult
@@ -91,22 +102,22 @@ finalizedWithOutcome :: TransactionBlockResults -> TransactionStatusResult
 finalizedWithOutcome rs = TransactionStatusResult { tsrState = Finalized, tsrResults = rs }
 
 committedOneSuccessfulOutcome :: TransactionStatusResult
-committedOneSuccessfulOutcome = committedWithOutcomes $ M.singleton exampleBlockHash1 $ Just outcomeSuccess1a
+committedOneSuccessfulOutcome = committedWithOutcomes $ M.singleton exampleBlockHash1 outcomeSuccess1a
 
 committedOneFailedOutcome :: TransactionStatusResult
-committedOneFailedOutcome = committedWithOutcomes $ M.singleton exampleBlockHash4 $ Just outcomeFailure
+committedOneFailedOutcome = committedWithOutcomes $ M.singleton exampleBlockHash4 outcomeFailure
 
 committedTwoIdenticalSuccessfulOutcomes :: TransactionStatusResult
-committedTwoIdenticalSuccessfulOutcomes = committedWithOutcomes $ M.fromList [(exampleBlockHash1, Just outcomeSuccess1a), (exampleBlockHash2, Just outcomeSuccess1b)]
+committedTwoIdenticalSuccessfulOutcomes = committedWithOutcomes $ M.fromList [(exampleBlockHash1, outcomeSuccess1a), (exampleBlockHash2, outcomeSuccess1b)]
 
 committedTwoDifferentSuccessfulOutcomes :: TransactionStatusResult
-committedTwoDifferentSuccessfulOutcomes = committedWithOutcomes $ M.fromList [(exampleBlockHash1, Just outcomeSuccess1a), (exampleBlockHash3, Just outcomeSuccess2)]
+committedTwoDifferentSuccessfulOutcomes = committedWithOutcomes $ M.fromList [(exampleBlockHash1, outcomeSuccess1a), (exampleBlockHash3, outcomeSuccess2)]
 
 committedSuccessfulAndFailureOutcomes :: TransactionStatusResult
-committedSuccessfulAndFailureOutcomes = committedWithOutcomes $ M.fromList [(exampleBlockHash1, Just outcomeSuccess1a), (exampleBlockHash4, Just outcomeFailure)]
+committedSuccessfulAndFailureOutcomes = committedWithOutcomes $ M.fromList [(exampleBlockHash1, outcomeSuccess1a), (exampleBlockHash4, outcomeFailure)]
 
 finalized :: TransactionStatusResult
-finalized = finalizedWithOutcome $ M.singleton exampleBlockHash1 $ Just outcomeSuccess1a
+finalized = finalizedWithOutcome $ M.singleton exampleBlockHash1 outcomeSuccess1a
 
 initQuery :: TransactionState -> TestTransactionStatusQuery TransactionStatusResult
 initQuery s = awaitState 0 s exampleTransactionHash
@@ -205,34 +216,41 @@ printTransactionStatusTests = describe "print transaction status" $ do
     specify "correct output" $
       p committedOneSuccessfulOutcome `shouldBe`
         [ "Transaction is committed into block 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.0010 GTU (10 NRG)." ]
-  describe "committed into one block with status 'failed'" $
+  describe "committed into one block with status 'rejected'" $
     specify "correct output" $
       p committedOneFailedOutcome `shouldBe`
-        [ "Transaction is committed into block be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93a9be7f9994 with status \"rejected\" and cost 0.0020 GTU (20 NRG)." ]
+        [ "Transaction is committed into block be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93a9be7f9994 with status \"rejected\" and cost 0.0020 GTU (20 NRG)."
+        , "Transaction rejected: insufficient funds." ]
   describe "committed into two blocks with same (successful) outcome" $
     specify "correct output" $
       p committedTwoIdenticalSuccessfulOutcomes `shouldBe`
-        [ "Transaction is committed into the following 2 blocks with status \"success\" and cost 0.0010 GTU (10 NRG):"
+        [ "Transaction is committed into 2 blocks with status \"success\" and cost 0.0010 GTU (10 NRG):"
         , "- 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389"
         , "- 0f71eeca9f0a497dc4427cab0544f2bcb820b328ad97be29181e212edea708fd" ]
   describe "committed into two blocks with different (successful) outcomes" $
     specify "correct output" $
       p committedTwoDifferentSuccessfulOutcomes `shouldBe`
-        [ "Transaction is committed into the following 2 blocks:"
-        , "- 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.0010 GTU (10 NRG)."
-        , "- 941c24374cd077de2120fb58732306c3115a08bb7b7cda120a04fecc412b1795 with status \"success\" and cost 0.0020 GTU (20 NRG)." ]
-  describe "committed into two blocks with different outcomes" $
+        [ "Transaction is committed into 2 blocks:"
+        , "- 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.0010 GTU (10 NRG):"
+        , "  * transferred 10 tokens from account '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' to account '4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa'"
+        , "- 941c24374cd077de2120fb58732306c3115a08bb7b7cda120a04fecc412b1795 with status \"success\" and cost 0.0020 GTU (20 NRG):"
+        , "  * transferred 10 tokens from account '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' to account '4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa'" ]
+  describe "committed into two blocks" $
     specify "correct output" $
       p committedSuccessfulAndFailureOutcomes `shouldBe`
-        [ "Transaction is committed into the following 2 blocks:"
-        , "- 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.0010 GTU (10 NRG)."
-        , "- be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93a9be7f9994 with status \"rejected\" and cost 0.0020 GTU (20 NRG)." ]
-  describe "committed into two blocks with different outcomes" $
+        [ "Transaction is committed into 2 blocks:"
+        , "- 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.0010 GTU (10 NRG):"
+        , "  * transferred 10 tokens from account '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' to account '4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa'"
+        , "- be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93a9be7f9994 with status \"rejected\" and cost 0.0020 GTU (20 NRG):"
+        , "  * account or contract '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' does not have enough funds to transfer 11 tokens"]
+  describe "committed into two blocks" $
     specify "correct output" $
       p committedSuccessfulAndFailureOutcomes `shouldBe`
-        [ "Transaction is committed into the following 2 blocks:"
-        , "- 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.0010 GTU (10 NRG)."
-        , "- be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93a9be7f9994 with status \"rejected\" and cost 0.0020 GTU (20 NRG)." ]
+        [ "Transaction is committed into 2 blocks:"
+        , "- 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.0010 GTU (10 NRG):"
+        , "  * transferred 10 tokens from account '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' to account '4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa'"
+        , "- be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93a9be7f9994 with status \"rejected\" and cost 0.0020 GTU (20 NRG):"
+        , "  * account or contract '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' does not have enough funds to transfer 11 tokens" ]
   describe "finalized with single outcome" $
     specify "correct output" $
       p finalized `shouldBe`
@@ -241,13 +259,13 @@ printTransactionStatusTests = describe "print transaction status" $ do
   describe "committed with no outcomes" $
     specify "correct output" $
       p TransactionStatusResult { tsrState = Committed, tsrResults = M.empty } `shouldBe`
-        [ "Transaction is committed - no block information received (this should never happen!)." ]
+        [ "Transaction is committed, but no block information was received - this should never happen!" ]
   describe "finalized with no outcomes" $
     specify "correct output" $
       p TransactionStatusResult { tsrState = Finalized, tsrResults = M.empty } `shouldBe`
-        [ "Transaction is finalized - no block information received (this should never happen!)." ]
+        [ "Transaction is finalized, but no block information was received - this should never happen!" ]
   describe "finalized with multiple outcomes" $
     specify "correct output" $
-      p TransactionStatusResult { tsrState = Finalized, tsrResults = M.fromList [(exampleBlockHash1, Just outcomeSuccess1a), (exampleBlockHash2, Just outcomeSuccess1b)]} `shouldBe`
+      p TransactionStatusResult { tsrState = Finalized, tsrResults = M.fromList [(exampleBlockHash1, outcomeSuccess1a), (exampleBlockHash2, outcomeSuccess1b)]} `shouldBe`
         [ "Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!" ]
   where p = execWriter . printTransactionStatus
