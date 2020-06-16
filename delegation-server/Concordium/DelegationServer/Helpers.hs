@@ -20,7 +20,6 @@ import Control.Concurrent.MVar
 import Control.Monad.Except (MonadError (throwError))
 import Data.Aeson
 import Data.HashMap.Strict as HM hiding (filter, mapMaybe)
-import Data.Maybe
 import qualified Data.Text as Text
 import Data.Time
 import qualified Data.Vector as Vec
@@ -62,7 +61,7 @@ queryTransactionState grpc th = do
       g :: TransactionStatusResult -> IO TxState
       g status = return $ case tsrState status of
         Absent -> TxAbsent
-        Finalized -> case mapMaybe (\(k, v) -> (k,) <$> v) $ HM.toList (tsrResults status) of
+        Finalized -> case HM.toList (tsrResults status) of
           [(_, Execution.TransactionSummary {..})] ->
             case tsResult of
               Execution.TxSuccess _ -> TxAccepted
@@ -78,7 +77,7 @@ compute2epochsSinceFinalization genesisTime epochDuration grpc th = do
   -- get block in which the transaction is finalized
   let f = getTransactionStatus (Text.pack $ show th)
       g :: TransactionStatusResult -> IO Types.BlockHash
-      g status = case mapMaybe (\(k, v) -> (k,) <$> v) $ HM.toList (tsrResults status) of
+      g status = case HM.toList (tsrResults status) of
         [(hash, _)] -> return hash
         _ -> error "Should not happen, the tx was finalized!"
       -- compute the time based on the slot time of the block
