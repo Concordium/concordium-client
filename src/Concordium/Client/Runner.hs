@@ -51,6 +51,7 @@ import qualified Acorn.Parser.Runner                 as PR
 import           Concordium.Client.Cli
 import           Concordium.Client.Config
 import           Concordium.Client.Commands          as COM
+import           Concordium.Client.Encryption(Password,askPassword)
 import           Concordium.Client.GRPC
 import           Concordium.Client.Output
 import           Concordium.Client.Parse
@@ -220,7 +221,7 @@ processConfigCmd action baseCfgDir verbose =
         fileExists <- doesFileExist file
         unless fileExists $ logFatal [printf "the given file '%s' does not exist" file]
 
-        importFormat <- inferAccountImportFormat format file >>= askPassword
+        importFormat <- inferAccountImportFormatOpt format file
 
         accCfgs <- loadAccountImportFile importFormat file validName
         void $ importAccountConfig baseCfg accCfgs
@@ -239,17 +240,10 @@ processConfigCmd action baseCfgDir verbose =
             accCfg' = accCfg { acKeys = keys }
 
         writeAccountKeys baseCfg' accCfg'
-  where askPassword = \case
-          Web -> return WebFormat
-          Mobile -> do
-            putStr "Enter encryption password: "
-            mfPassword <- bracket_ (hSetEcho stdin False) (hSetEcho stdin True) BS.getLine
-            putStrLn ""
-            return MobileFormat {..}
 
 -- |Return the input format or infer it from the file extension if it's Nothing.
-inferAccountImportFormat :: Maybe AccountImportFormatOpt -> FilePath -> IO AccountImportFormatOpt
-inferAccountImportFormat input file =
+inferAccountImportFormatOpt :: Maybe AccountImportFormatOpt -> FilePath -> IO AccountImportFormatOpt
+inferAccountImportFormatOpt input file =
   case input of
     Nothing -> case splitExtension file of
                  (_, ".concordiumwallet") -> do
@@ -260,9 +254,6 @@ inferAccountImportFormat input file =
                    return Web
     Just f -> return f
 
-data AccountImportFormat = WebFormat | MobileFormat { mfPassword :: BS.ByteString }
-
-
 -- |Read and parse a file exported from either the web- or mobile wallet.
 -- The format specifier tells which format to expect.
 -- If the format is "mobile", the user is prompted for a password which is used to decrypt
@@ -270,11 +261,12 @@ data AccountImportFormat = WebFormat | MobileFormat { mfPassword :: BS.ByteStrin
 -- only the account with that name is being selected for import.
 -- The "web" format is not encrypted and only contains a single account which is not named.
 -- If a name is provided in this case, this will become the account name.
-loadAccountImportFile :: AccountImportFormat -> FilePath -> Maybe Text -> IO [AccountConfig]
+loadAccountImportFile :: AccountImportFormatOpt -> FilePath -> Maybe Text -> IO [AccountConfig]
 loadAccountImportFile format file name = do
   contents <- BS.readFile file
   case format of
-    MobileFormat password -> do
+    Mobile -> do
+      password <- askPassword "Enter encryption password: "
       accs <- case decodeMobileFormattedAccountExport contents password of
         Left err -> logFatal [printf "cannot load mobile formatted import: %s" err]
         Right v -> return v
@@ -286,7 +278,7 @@ loadAccountImportFile format file name = do
       let accCfgs = accountCfgsFromWalletExportAccounts accs name
       when (Prelude.null accCfgs) $ logWarn ["no accounts welected for import"]
       return accCfgs
-    WebFormat -> do
+    Web -> do
      accCfg <- case decodeWebFormattedAccountExport contents name of
        Left err -> logFatal [printf "cannot load web formatted import %s: "err]
        Right v -> return v
@@ -295,13 +287,15 @@ loadAccountImportFile format file name = do
 -- |Decode, decrypt and parse a mobile wallet export.
 decodeMobileFormattedAccountExport :: (MonadError String m)
     => BS.ByteString -- ^JSON payload with encrypted accounts and identities.
-    -> BS.ByteString -- ^Password to decrypt the payload.
+    -> Password -- ^Password to decrypt the payload.
     -> m [WalletExportAccount]
 decodeMobileFormattedAccountExport payload password =
   case eitherDecodeStrict payload of
     Left err -> throwError $ printf "cannot decode JSON: %s" err
     Right we -> do
-      pl <- decryptWalletExport we password
+      pl <- runExceptT (decryptWalletExport we password) >>= \case
+        Left err -> throwError $ displayException err
+        Right p -> return p
       return $ wepAccounts pl
 
 -- |Decode and parse a web wallet export into a named account config.

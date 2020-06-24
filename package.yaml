@@ -239,9 +239,11 @@ tests:
       - simple-client
       - concordium-crypto
       - globalstate-types
+      - bytestring
       - containers
       - hspec >= 2.6
       - hspec-expectations >= 0.8
+      - QuickCheck >= 2.13
       - mtl >= 2.2.2
       - text
       - transformers
