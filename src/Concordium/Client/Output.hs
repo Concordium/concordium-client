@@ -2,6 +2,7 @@
 
 module Concordium.Client.Output where
 
+import Concordium.Common.Version
 import qualified Concordium.Crypto.SignatureScheme as S
 import Concordium.Client.Cli
 import Concordium.Client.Commands (Verbose)
@@ -137,7 +138,12 @@ printAccountInfo addr a verbose = do
         if verbose then
           tell $ creds <&> (unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty)
         else
-          forM_ creds printCred
+          forM_ creds printVersionedCred
+
+printVersionedCred :: (Versioned IDTypes.CredentialDeploymentValues) -> Printer
+printVersionedCred vc = printCred c
+  where
+    c = vValue vc
 
 printCred :: IDTypes.CredentialDeploymentValues -> Printer
 printCred c =
