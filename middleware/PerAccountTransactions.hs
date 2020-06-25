@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
 module PerAccountTransactions where
 
 import Concordium.GlobalState.SQL.AccountTransactionIndex
@@ -21,7 +22,7 @@ import Data.Conduit.Combinators as Conduit
 
 type PageResult m = ReaderT SqlBackend m (Maybe (Page Entry (Key Entry)))
 
-type AccountStream m = ConduitT () (Entity Entry) (ReaderT SqlBackend m) ()
+type AccountStream m = ConduitT () (Entity Entry, Entity Summary) (ReaderT SqlBackend m) ()
 
 pageAccount :: MonadIO m => AccountAddress -> PageResult m
 pageAccount accountAddr = getPage [EntryAccount ==. ByteStringSerialized accountAddr]
@@ -32,11 +33,16 @@ pageAccount accountAddr = getPage [EntryAccount ==. ByteStringSerialized account
 
 streamRawAccounts :: MonadIO m => AccountAddress -> AccountStream m
 streamRawAccounts accountAddr =
-  streamEntities [EntryAccount ==. ByteStringSerialized accountAddr]
-                 EntryId
-                 (PageSize 10)
-                 Descend
-                 (Range Nothing Nothing)
+  let
+    entries =
+      streamEntities [EntryAccount ==. ByteStringSerialized accountAddr]
+                     EntryId
+                     (PageSize 10)
+                     Descend
+                     (Range Nothing Nothing)
+    zipWithSummary v@(Entity _ Entry{..}) = ((v,) . Prelude.head <$> selectList [SummaryId ==. entrySummary] [])
+  in
+    entries .| Conduit.mapM zipWithSummary
 
 data PrettySummary =
   SpecialTransaction !SpecialTransactionOutcome
@@ -58,20 +64,18 @@ data PrettyEntry = PrettyEntry{
   peTransactionSummary :: PrettySummary
   } deriving(Eq, Show)
 
-makePretty :: Entity Entry -> Either String PrettyEntry
-makePretty eentry = do
-  let Entry{..} = entityVal eentry
+makePretty :: (Entity Entry, Entity Summary) -> Either String PrettyEntry
+makePretty (Entity _ Entry{..}, Entity _ Summary{..}) = do
   let peAccount = unBSS entryAccount
-  let peBlockHash = unBSS entryBlock
-  let peBlockHeight = fromIntegral entryBlockHeight
-  let peBlockTime = entryBlockTime
-  case entryHash of
-    Nothing -> do
-      peTransactionSummary <- SpecialTransaction <$> AE.eitherDecodeStrict entrySummary
-      return $ PrettyEntry{..}
-    Just _txHash -> do
-      peTransactionSummary <- BlockTransaction <$> AE.eitherDecodeStrict entrySummary
-      return $ PrettyEntry{..}
+      peBlockHash = unBSS summaryBlock
+      peBlockHeight = fromIntegral summaryHeight
+      peBlockTime = summaryTimestamp
+  peTransactionSummary <- case AE.fromJSON summarySummary of
+    AE.Error _ -> case AE.fromJSON summarySummary of
+      AE.Error e ->  Left e
+      AE.Success v -> Right $ SpecialTransaction v
+    AE.Success v -> Right $ BlockTransaction v
+  return $ PrettyEntry{..}
 
 streamAccounts :: (MonadIO m)
                   => AccountAddress -- ^Account address to query.
