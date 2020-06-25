@@ -1619,16 +1619,17 @@ encodeAndSignTransaction ::
   -> Types.TransactionExpiryTime
   -> AccountConfig
   -> Types.BareBlockItem
-encodeAndSignTransaction txPayload energy nonce expiry accountConfig = Types.NormalTransaction $
-  let encPayload = Types.encodePayload txPayload
-      sender = acAddress accountConfig
-      threshold = acThreshold accountConfig
-      header = Types.TransactionHeader{
-        thSender = sender,
-        thPayloadSize = Types.payloadSize encPayload,
-        thNonce = nonce,
-        thEnergyAmount = energy,
-        thExpiry = expiry
-      }
-      keys = take (fromIntegral threshold) . sortOn fst . Map.toList $ acKeys accountConfig
-  in Types.signTransaction keys header encPayload
+encodeAndSignTransaction txPayload energy nonce expiry accountConfig = 
+  Types.NormalTransaction $
+    let encPayload = Types.encodePayload txPayload
+        sender = acAddress accountConfig
+        threshold = acThreshold accountConfig
+        header = Types.TransactionHeader{
+          thSender = sender,
+          thPayloadSize = Types.payloadSize encPayload,
+          thNonce = nonce,
+          thEnergyAmount = energy,
+          thExpiry = expiry
+        }
+        keys = take (fromIntegral threshold) . sortOn fst . Map.toList $ acKeys accountConfig
+    in Types.signTransaction keys header encPayload
