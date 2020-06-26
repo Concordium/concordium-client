@@ -239,6 +239,7 @@ tests:
       - simple-client
       - concordium-crypto
       - globalstate-types
+      - aeson
       - bytestring
       - containers
       - hspec >= 2.6

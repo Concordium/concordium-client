@@ -11,7 +11,7 @@ import Control.Exception
 import qualified System.IO as IO
 
 import qualified Data.Aeson as AE
-import Data.Aeson ((.:))
+import Data.Aeson ((.:),(.=))
 import Data.ByteString(ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base64 as Base64
@@ -39,8 +39,14 @@ instance AE.FromJSON SupportedEncryptionMethod where
     if t == "AES-256" then return AES256
     else fail $ "Unsupported encryption method: " ++ T.unpack t
 
+instance AE.ToJSON SupportedEncryptionMethod where
+  toJSON AES256 = AE.String "AES-256"
+
 data SupportedKeyDerivationMethod = PBKDF2SHA256
   deriving(Show)
+
+instance AE.ToJSON SupportedKeyDerivationMethod where
+  toJSON PBKDF2SHA256 = AE.String "PBKDF2WithHmacSHA256"
 
 instance AE.FromJSON SupportedKeyDerivationMethod where
   parseJSON = AE.withText "Key derivation method" $ \t ->
@@ -56,6 +62,17 @@ data EncryptionMetadata = EncryptionMetadata
   , emInitializationVector :: !Text
   }
   deriving (Show)
+
+instance AE.ToJSON EncryptionMetadata where
+  toJSON EncryptionMetadata{..} =
+    case (emEncryptionMethod, emKeyDerivationMethod) of
+      (AES256, PBKDF2SHA256) ->
+        AE.object [ "encryptionMethod" .= emEncryptionMethod
+                  , "keyDerivationMethod" .= emKeyDerivationMethod
+                  , "iterations" .= emIterations
+                  , "salt" .= emSalt
+                  , "initializationVector" .= emInitializationVector
+                  ]
 
 instance AE.FromJSON EncryptionMetadata where
   parseJSON = AE.withObject "EncryptionMetadata" $ \v -> do
@@ -73,6 +90,12 @@ data EncryptedText = EncryptedText
   { etMetadata :: !EncryptionMetadata
   , etCipherText :: !Text
   }
+
+instance AE.ToJSON EncryptedText where
+  toJSON EncryptedText{..} =
+    AE.object [ "metadata" .= etMetadata
+              , "cipherText" .= etCipherText
+              ]
 
 instance AE.FromJSON EncryptedText where
   parseJSON = AE.withObject "EncryptedText" $ \v -> do
