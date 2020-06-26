@@ -5,6 +5,7 @@ module SimpleClientTests.EncryptionSpec where
 
 import qualified Data.ByteString as BS
 import Data.ByteString(ByteString)
+import qualified Data.Aeson as AE
 
 import Control.Monad
 import Control.Exception hiding (assert)
@@ -37,6 +38,16 @@ testEncryptionDecryption size = do
       decrypted <- run $ either (fail . displayException) return $ decryptText encrypted pwd
       assert $ decrypted == text
 
+testToFromJSON :: Int -> Spec
+testToFromJSON size = do
+  specify (show size) $
+    forAll (resize size $ genEncryptionInput) $ \(text, pwd) -> monadicIO $ do
+      encrypted <- run $ encryptText AES256 PBKDF2SHA256 text pwd
+      let json = AE.toJSON encrypted
+      let encryptedFromJSON = AE.fromJSON json
+      case encryptedFromJSON of
+        AE.Success res -> assert $ json == res
+        AE.Error err -> fail err
 
 tests :: Spec
 tests = do
@@ -46,4 +57,6 @@ tests = do
     -- the average for one of the 40 encryption/decryption tests takes already around 0.1s.
     describe "Encryption and decryption of a random ByteString of length ..." $
       modifyMaxSuccess (const 5) $ forM_ sizes $ testEncryptionDecryption
+    describe "Conversion of an EncryptedText of a ByteString of length ... to/from JSON" $
+      modifyMaxSuccess (const 5) $ forM_ sizes $ testToFromJSON
 
