@@ -32,7 +32,7 @@ import Crypto.Error
 newtype Password = Password { getPassword :: ByteString }
 
 data SupportedEncryptionMethod = AES256
-  deriving(Show)
+  deriving (Eq, Show)
 
 instance AE.FromJSON SupportedEncryptionMethod where
   parseJSON = AE.withText "Encryption method" $ \t ->
@@ -43,7 +43,7 @@ instance AE.ToJSON SupportedEncryptionMethod where
   toJSON AES256 = AE.String "AES-256"
 
 data SupportedKeyDerivationMethod = PBKDF2SHA256
-  deriving(Show)
+  deriving (Eq, Show)
 
 instance AE.ToJSON SupportedKeyDerivationMethod where
   toJSON PBKDF2SHA256 = AE.String "PBKDF2WithHmacSHA256"
@@ -61,7 +61,7 @@ data EncryptionMetadata = EncryptionMetadata
   , emSalt :: !Text
   , emInitializationVector :: !Text
   }
-  deriving (Show)
+  deriving (Eq, Show)
 
 instance AE.ToJSON EncryptionMetadata where
   toJSON EncryptionMetadata{..} =
@@ -89,7 +89,7 @@ instance AE.FromJSON EncryptionMetadata where
 data EncryptedText = EncryptedText
   { etMetadata :: !EncryptionMetadata
   , etCipherText :: !Text
-  }
+  } deriving (Eq, Show)
 
 instance AE.ToJSON EncryptedText where
   toJSON EncryptedText{..} =

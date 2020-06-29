@@ -14,47 +14,56 @@ import Test.QuickCheck
 import Test.QuickCheck.Monadic
 import Test.Hspec
 import Test.Hspec.QuickCheck
+import Test.HUnit
 
 import Concordium.Client.Encryption
 
 -- Needed for QuickCheck only.
 deriving instance Show Password
 
-genByteString :: Gen ByteString
-genByteString = sized $ \n -> BS.pack <$> vector n
+genByteString :: Int -> Gen ByteString
+genByteString n = BS.pack <$> vector n
 
-genEncryptionInput :: Gen (ByteString, Password)
-genEncryptionInput = sized $ \n -> do
-  text <- resize n $ genByteString
+genEncryptionInput :: Int -> Gen (ByteString, Password)
+genEncryptionInput n = do
+  text <- genByteString n
   pwdLen :: Int <- elements [1..100]
-  pwd <- resize pwdLen $ genByteString
+  pwd <- genByteString pwdLen
   return (text, Password pwd)
 
+-- | Test that composing decryption and encryption function with the same password
+-- results in the identity function.
 testEncryptionDecryption :: Int -> Spec
 testEncryptionDecryption size = do
   specify (show size) $
-    forAll (resize size $ genEncryptionInput) $ \(text, pwd) -> monadicIO $ do
+    forAll (genEncryptionInput size) $ \(text, pwd) -> monadicIO $ do
       encrypted <- run $ encryptText AES256 PBKDF2SHA256 text pwd
-      decrypted <- run $ either (fail . displayException) return $ decryptText encrypted pwd
-      assert $ decrypted == text
+      case decryptText encrypted pwd of
+        Left err -> run $ assertFailure $ displayException err
+        Right decrypted -> run $ assertEqual "Decryption does not recover plaintext: " decrypted text
 
+-- | Test JSON serialization and deserialization of 'EncryptedText' by encrypting a random text
+-- of the given size and checking that applying `AE.toJSON` and then `AE.fromJSON` to it
+-- results in the same `EncryptedText` object.
 testToFromJSON :: Int -> Spec
 testToFromJSON size = do
   specify (show size) $
-    forAll (resize size $ genEncryptionInput) $ \(text, pwd) -> monadicIO $ do
+    forAll (genEncryptionInput size) $ \(text, pwd) -> monadicIO $ do
       encrypted <- run $ encryptText AES256 PBKDF2SHA256 text pwd
       let json = AE.toJSON encrypted
-      let encryptedFromJSON = AE.fromJSON json
+      let encryptedFromJSON :: AE.Result EncryptedText = AE.fromJSON json
       case encryptedFromJSON of
-        AE.Success res -> assert $ json == res
-        AE.Error err -> fail err
+        AE.Success res -> run $ assertEqual "toJSON/fromJSON does not preserve EncryptedText: " res encrypted
+        AE.Error err -> run $ assertFailure $ "Error in JSON parsing: " ++ err
 
 tests :: Spec
 tests = do
-  let sizes = [1,7,63,64,65,200,444,5000]
+  -- Example byte lengths for strings to encrypt. These are some smaller and bigger ones,
+  -- as well as some around the block size of AES (16 bytes).
+  let sizes = [1,7,15,16,17,63,64,65,200,900,5000]
   describe "Encryption" $ do
     -- NB: With the current iteartion count of 100000 for key derivation,
-    -- the average for one of the 40 encryption/decryption tests takes already around 0.1s.
+    -- the average for one of 40 encryption/decryption tests takes already around 0.1s.
     describe "Encryption and decryption of a random ByteString of length ..." $
       modifyMaxSuccess (const 5) $ forM_ sizes $ testEncryptionDecryption
     describe "Conversion of an EncryptedText of a ByteString of length ... to/from JSON" $
