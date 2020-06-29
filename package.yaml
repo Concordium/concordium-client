@@ -244,6 +244,7 @@ tests:
       - containers
       - hspec >= 2.6
       - hspec-expectations >= 0.8
+      - HUnit >= 1.6
       - QuickCheck >= 2.13
       - mtl >= 2.2.2
       - text
