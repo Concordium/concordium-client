@@ -91,7 +91,7 @@ decryptWalletExport walletExport password = do
   AE.eitherDecodeStrict payloadJSON `embedErr` IncorrectJSON
 
 -- |Convert one or all wallet export accounts to regular account configs.
--- If name is provided, only the account with mathing name (if any) is converted.
+-- If name is provided, only the account with matching name (if any) is converted.
 -- Otherwise they all are.
 accountCfgsFromWalletExportAccounts :: [WalletExportAccount] -> Maybe Text -> [AccountConfig]
 accountCfgsFromWalletExportAccounts weas name = case name of
