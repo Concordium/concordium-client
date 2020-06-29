@@ -114,8 +114,8 @@ data DecryptionFailure
   -- | Creating the initialization vector in the cryptonite library failed.
   -- This happens when it does not have the right length (16 bytes for AES).
   | MakingInitializationVectorFailed
-  -- | Cypher initialization in the cryptonite library failed.
-  | CypherInitializationFailed CryptoError
+  -- | Cipher initialization in the cryptonite library failed.
+  | CipherInitializationFailed CryptoError
   -- | Unpadding after decryption failed. If there is no data corruption, this indicates that a wrong password was given.
   | UnpaddingFailed
   deriving Show
@@ -125,7 +125,7 @@ instance Exception DecryptionFailure where
     case e of
       DecodeError field err -> "cannot decode " ++ field ++ ": " ++ err
       MakingInitializationVectorFailed -> "making initialization vector failed"
-      CypherInitializationFailed err -> "cypher initialization failed: " ++ show err
+      CipherInitializationFailed err -> "cipher initialization failed: " ++ show err
       UnpaddingFailed -> "wrong password"
 
 
@@ -160,7 +160,7 @@ decryptText EncryptedText{etMetadata=EncryptionMetadata{..},..} pwd = do
       -- NB: fromIntegral is safe to do as too large Word values will result in negative Int values, which should be rejected.
       let key = fastPBKDF2_SHA256 (Parameters (fromIntegral emIterations) keyLen) (getPassword pwd) salt :: ByteString
       (aes :: AES256) <- case cipherInit key of
-                           CryptoFailed err -> throwError $ CypherInitializationFailed err
+                           CryptoFailed err -> throwError $ CipherInitializationFailed err
                            CryptoPassed a -> return a
 
       let decrypted = cbcDecrypt aes iv cipher :: ByteString
@@ -211,7 +211,7 @@ encryptText emEncryptionMethod emKeyDerivationMethod text pwd =
 
       (aes :: AES256) <- case cipherInit key of
                            -- NB: This should not happen.
-                           CryptoFailed err -> fail $ "Encryption error: cypher initialization failed: " ++ show err
+                           CryptoFailed err -> fail $ "Encryption error: cipher initialization failed: " ++ show err
                            CryptoPassed a -> return a
 
       -- Padding for 16 byte block size.
