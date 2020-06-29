@@ -1,72 +1,20 @@
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Concordium.Client.WalletExport where
 
+import Concordium.Client.Utils
 import Concordium.Client.Cli
 import Concordium.Client.Config
+import Concordium.Client.Encryption
 
 import Control.Monad.Except
-import Crypto.Cipher.AES
-import Crypto.Cipher.Types
-import Crypto.Data.Padding
-import Crypto.KDF.PBKDF2
-import Crypto.Error
+import Control.Exception
 import Data.Aeson as AE
 import Data.Text as T
-import Data.Text.Encoding
-import qualified Data.ByteString.Base64 as Base64
-import Data.ByteString(ByteString)
 import Text.Printf
 
-data WalletExport =
-  WalletExport
-  { weMetadata :: !WalletExportMetadata
-  , weCipherText :: !Text }
-  deriving (Show)
-
-instance AE.FromJSON WalletExport where
-  parseJSON = withObject "Wallet Export" $ \v -> do
-    weMetadata <- v .: "metadata"
-    weCipherText <- v .: "cipherText"
-    return WalletExport {..}
-
-data SupportedEncryptionMethod = AES256
-    deriving(Show)
-
-data SupportedKeyDerivationMethod = PBKDF2SHA256
-    deriving(Show)
-
-instance FromJSON SupportedEncryptionMethod where
-  parseJSON = withText "Encryption method" $ \t ->
-    if t == "AES-256" then return AES256
-    else fail $ "Unsupported encryption method: " ++ T.unpack t
-
-instance FromJSON SupportedKeyDerivationMethod where
-  parseJSON = withText "Key derivation method" $ \t ->
-    if t == "PBKDF2WithHmacSHA256" then return PBKDF2SHA256
-    else fail $ "Unsupported key derivation method: " ++ T.unpack t
-
-data WalletExportMetadata =
-  WalletExportMetadata
-  { wemEncryptionMethod :: !SupportedEncryptionMethod
-  , wemKeyDerivationMethod :: !SupportedKeyDerivationMethod
-  , wemIterations :: !Int
-  , wemSalt :: !Text
-  , wemInitializationVector :: !Text }
-  deriving (Show)
-
-instance AE.FromJSON WalletExportMetadata where
-  parseJSON = withObject "Wallet Export Metadata" $ \v -> do
-    wemEncryptionMethod <- v .: "encryptionMethod"
-    wemKeyDerivationMethod <- v .: "keyDerivationMethod"
-    case (wemEncryptionMethod, wemKeyDerivationMethod) of
-      (AES256, PBKDF2SHA256) -> do
-        wemIterations <- v .: "iterations"
-        wemSalt <- v .: "salt"
-        wemInitializationVector <- v .: "initializationVector"
-        return WalletExportMetadata {..}
+type WalletExport = EncryptedText
 
 data WalletExportPayload =
   WalletExportPayload
@@ -118,42 +66,32 @@ instance AE.FromJSON WalletExportAccount where
                   , akKeys = keys
                   , akThreshold = th } }
 
+data DecryptWalletExportFailure
+  -- | Decryption failed.
+  = DecryptionFailure DecryptionFailure
+  -- | The decrypted export is not a valid JSON object. If there is no data corruption, this indicates that a wrong password was given.
+  | IncorrectJSON String
+  deriving Show
+
+instance Exception DecryptWalletExportFailure where
+  displayException e = "cannot decrypt wallet export: " ++
+    case e of
+      DecryptionFailure df -> displayException df
+      IncorrectJSON err -> "cannot parse JSON: " ++ err
+
+
 -- |Using the provided password, decrypt the payload from the export according to the parameters in the accompanying metadata.
-decryptWalletExport :: (MonadError String m) => WalletExport -> ByteString -> m WalletExportPayload
-decryptWalletExport e password = do
-  let md = weMetadata e
-
-  case (wemEncryptionMethod md, wemKeyDerivationMethod md) of
-    (AES256, PBKDF2SHA256) -> do
-      salt <- decodeBase64 "salt" $ wemSalt md
-      initVec <- decodeBase64 "initialization vector" $ wemInitializationVector md
-      cipher <- decodeBase64 "cipher" $ weCipherText e
-
-      iv <- case makeIV initVec of
-              Nothing -> throwError "cannot make initialization vector"
-              Just iv -> return iv
-
-      let iterations = wemIterations md
-          outputLen = 32
-
-      let key = fastPBKDF2_SHA256 (Parameters iterations outputLen) password salt :: ByteString
-
-      aes <- case cipherInit key of
-               CryptoFailed err -> throwError $ printf "cipher initialization failed: %s" (show err)
-               CryptoPassed a -> return a
-
-      let unpadded = unpad (PKCS7 1) (cbcDecrypt (aes :: AES256) iv cipher :: ByteString)
-      case unpadded of
-        Nothing -> throwError "incorrect password"
-        Just v -> case eitherDecodeStrict v of
-                    Left err -> throwError err
-                    Right p -> return p
-  where decodeBase64 name s = case Base64.decode $ encodeUtf8 s of
-          Left err -> throwError $ printf "cannot decode '%s': %s" (name :: String) err
-          Right v -> return v
+decryptWalletExport
+  :: (MonadError DecryptWalletExportFailure m)
+  => WalletExport
+  -> Password
+  -> m WalletExportPayload
+decryptWalletExport walletExport password = do
+  payloadJSON <- decryptText walletExport password `embedErr` DecryptionFailure
+  AE.eitherDecodeStrict payloadJSON `embedErr` IncorrectJSON
 
 -- |Convert one or all wallet export accounts to regular account configs.
--- If name is provided, only the account with mathing name (if any) is converted.
+-- If name is provided, only the account with matching name (if any) is converted.
 -- Otherwise they all are.
 accountCfgsFromWalletExportAccounts :: [WalletExportAccount] -> Maybe Text -> [AccountConfig]
 accountCfgsFromWalletExportAccounts weas name = case name of
