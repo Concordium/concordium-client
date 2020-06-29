@@ -171,7 +171,7 @@ decryptText EncryptedText{etMetadata=EncryptionMetadata{..},..} pwd = do
         Just text -> return text
 
   where decodeBase64 :: MonadError DecryptionFailure m => String -> Text -> m ByteString
-        -- Decoding fails if the input is no valid base64.
+        -- Decoding fails if the input is not valid base64.
         decodeBase64 name s = case Base64.decode $ T.encodeUtf8 s of
           Left err -> throwError $ DecodeError name err
           Right v -> return v
@@ -195,7 +195,7 @@ encryptText emEncryptionMethod emKeyDerivationMethod text pwd =
       -- NOTE: The initialization vector should only be used once for the same key.
       initVec <- getRandomBytes 16 -- Length must be block size, which is 128bit for AES.
       iv :: IV AES256 <- case makeIV initVec of
-              -- NB: This should not happen.
+              -- NB: This should not happen because we generate a valid initialization vector above.
               Nothing -> fail "Encryption error: making initialization vector failed."
               Just iv -> return iv
       -- RFC2898 section 4.2 recommends minimum 1000 iterations; NIST as many as feasible;
@@ -210,7 +210,7 @@ encryptText emEncryptionMethod emKeyDerivationMethod text pwd =
       let key = fastPBKDF2_SHA256 (Parameters (fromIntegral emIterations) keyLen) (getPassword pwd) salt :: ByteString
 
       (aes :: AES256) <- case cipherInit key of
-                           -- NB: This should not happen.
+                           -- NB: This should not happen because we generate a valid key above.
                            CryptoFailed err -> fail $ "Encryption error: cipher initialization failed: " ++ show err
                            CryptoPassed a -> return a
 
