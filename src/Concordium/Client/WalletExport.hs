@@ -67,16 +67,16 @@ instance AE.FromJSON WalletExportAccount where
 
 data DecryptWalletExportFailure
   -- | Decryption failed.
-  = WEDecryptionFailure DecryptionFailure
+  = DecryptionFailure DecryptionFailure
   -- | The decrypted export is not a valid JSON object. If there is no data corruption, this indicates that a wrong password was given.
-  | WEIncorrectJSON String
+  | IncorrectJSON String
   deriving Show
 
 instance Exception DecryptWalletExportFailure where
   displayException e = "cannot decrypt wallet export: " ++
     case e of
-      WEDecryptionFailure df -> displayException df
-      WEIncorrectJSON err -> "cannot parse JSON: " ++ err
+      DecryptionFailure df -> displayException df
+      IncorrectJSON err -> "cannot parse JSON: " ++ err
 
 
 -- |Using the provided password, decrypt the payload from the export according to the parameters in the accompanying metadata.
@@ -86,8 +86,8 @@ decryptWalletExport
   -> Password
   -> m WalletExportPayload
 decryptWalletExport walletExport password = do
-  payloadJSON <- either (throwError . WEDecryptionFailure) return $ decryptText walletExport password
-  either (throwError . WEIncorrectJSON) return $ AE.eitherDecodeStrict payloadJSON
+  payloadJSON <- either (throwError . DecryptionFailure) return $ decryptText walletExport password
+  either (throwError . IncorrectJSON) return $ AE.eitherDecodeStrict payloadJSON
 
 -- |Convert one or all wallet export accounts to regular account configs.
 -- If name is provided, only the account with mathing name (if any) is converted.
