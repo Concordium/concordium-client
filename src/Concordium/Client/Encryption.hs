@@ -57,7 +57,7 @@ instance AE.FromJSON SupportedKeyDerivationMethod where
 data EncryptionMetadata = EncryptionMetadata
   { emEncryptionMethod :: !SupportedEncryptionMethod
   , emKeyDerivationMethod :: !SupportedKeyDerivationMethod
-  , emIterations :: !Int
+  , emIterations :: !Word
   , emSalt :: !Text
   , emInitializationVector :: !Text
   }
@@ -105,9 +105,16 @@ instance AE.FromJSON EncryptedText where
 
 -- | Possible decryption failures for 'AES256' with 'PBKDF2SHA256'.
 data DecryptionFailure
-  -- | Base64 decoding failed. The first argument is the parameter for which decoding failed, the second the decoding error.
-  = DecodeError String String
+  -- | Base64 decoding failed.
+  = DecodeError { -- | Parameter for which decoding failed.
+                  deParam :: String
+                  -- | The decoding error.
+                , deErr :: String
+                }
+  -- | Creating the initialization vector in the cryptonite library failed.
+  -- This happens when it does not have the right length (16 bytes for AES).
   | MakingInitializationVectorFailed
+  -- | Cypher initialization in the cryptonite library failed.
   | CypherInitializationFailed CryptoError
   -- | Unpadding after decryption failed. If there is no data corruption, this indicates that a wrong password was given.
   | UnpaddingFailed
@@ -150,7 +157,8 @@ decryptText EncryptedText{etMetadata=EncryptionMetadata{..},..} pwd = do
               Just iv -> return iv
       let keyLen = 32
 
-      let key = fastPBKDF2_SHA256 (Parameters emIterations keyLen) (getPassword pwd) salt :: ByteString
+      -- NB: fromIntegral is safe to do as too large Word values will result in negative Int values, which should be rejected.
+      let key = fastPBKDF2_SHA256 (Parameters (fromIntegral emIterations) keyLen) (getPassword pwd) salt :: ByteString
       (aes :: AES256) <- case cipherInit key of
                            CryptoFailed err -> throwError $ CypherInitializationFailed err
                            CryptoPassed a -> return a
@@ -198,7 +206,8 @@ encryptText emEncryptionMethod emKeyDerivationMethod text pwd =
       salt <- getRandomBytes 16
       let keyLen = 32
 
-      let key = fastPBKDF2_SHA256 (Parameters emIterations keyLen) (getPassword pwd) salt :: ByteString
+            -- NB: fromIntegral is safe to do as too large Word values will result in negative Int values, which should be rejected.
+      let key = fastPBKDF2_SHA256 (Parameters (fromIntegral emIterations) keyLen) (getPassword pwd) salt :: ByteString
 
       (aes :: AES256) <- case cipherInit key of
                            -- NB: This should not happen.
