@@ -3,6 +3,7 @@
 
 module Concordium.Client.WalletExport where
 
+import Concordium.Client.Utils
 import Concordium.Client.Cli
 import Concordium.Client.Config
 import Concordium.Client.Encryption
@@ -86,8 +87,8 @@ decryptWalletExport
   -> Password
   -> m WalletExportPayload
 decryptWalletExport walletExport password = do
-  payloadJSON <- either (throwError . DecryptionFailure) return $ decryptText walletExport password
-  either (throwError . IncorrectJSON) return $ AE.eitherDecodeStrict payloadJSON
+  payloadJSON <- decryptText walletExport password `embedErr` DecryptionFailure
+  AE.eitherDecodeStrict payloadJSON `embedErr` IncorrectJSON
 
 -- |Convert one or all wallet export accounts to regular account configs.
 -- If name is provided, only the account with mathing name (if any) is converted.

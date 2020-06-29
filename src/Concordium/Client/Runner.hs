@@ -48,6 +48,7 @@ import qualified Acorn.Core                          as Core
 import qualified Acorn.Core.PrettyPrint              as PP
 import qualified Acorn.Parser.Runner                 as PR
 
+import           Concordium.Client.Utils
 import           Concordium.Client.Cli
 import           Concordium.Client.Config
 import           Concordium.Client.Commands          as COM
@@ -293,9 +294,7 @@ decodeMobileFormattedAccountExport payload password =
   case eitherDecodeStrict payload of
     Left err -> throwError $ printf "cannot decode JSON: %s" err
     Right we -> do
-      pl <- runExceptT (decryptWalletExport we password) >>= \case
-        Left err -> throwError $ displayException err
-        Right p -> return p
+      pl <- decryptWalletExport we password `embedErr` displayException
       return $ wepAccounts pl
 
 -- |Decode and parse a web wallet export into a named account config.
