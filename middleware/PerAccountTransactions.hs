@@ -19,6 +19,7 @@ import Database.Persist.Postgresql
 import Database.Persist.Pagination
 import Data.Conduit
 import Data.Conduit.Combinators as Conduit
+import qualified Data.HashMap.Strict as HM
 
 type PageResult m = ReaderT SqlBackend m (Maybe (Page Entry (Key Entry)))
 
@@ -78,11 +79,13 @@ makePretty (Entity _ Entry{..}, Entity _ Summary{..}) = do
       peBlockHash = unBSS summaryBlock
       peBlockHeight = summaryHeight
       peBlockTime = summaryTimestamp
-  peTransactionSummary <- case AE.fromJSON summarySummary :: AE.Result TransactionSummary of
-    AE.Error _ -> case AE.fromJSON summarySummary :: AE.Result SpecialTransactionOutcome of
-      AE.Error e ->  Left e
-      AE.Success v -> Right $ SpecialTransaction v
-    AE.Success v -> Right $ BlockTransaction v
+      -- split the stored json in (tag) and (rest)
+      (Just tag, summary) =
+        (\(AE.Object o) -> (HM.lookup "tag" o, AE.Object $ HM.delete "tag" o)) summarySummary
+  peTransactionSummary <- case tag of
+    "SpecialTransaction" ->  (\(AE.Success v) -> Right $ SpecialTransaction v) (AE.fromJSON summary)
+    -- "BlockTransaction" but we don't want non-exhaustive matches
+    _ ->  (\(AE.Success v) -> Right $ BlockTransaction v) (AE.fromJSON summary)
   return $ PrettyEntry{..}
 
 streamAccounts :: (MonadIO m)
