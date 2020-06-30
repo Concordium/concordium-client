@@ -486,9 +486,9 @@ servantApp nodeBackend dropAccount pgUrl idUrl cfgDir dataDir = genericServe rou
             nonce <- liftIO $ fst <$> runGRPC nodeBackend (getAccountNonceBestGuess (fst dropAccountData))
 
             case accountResult of
+              Right Aeson.Null -> throwError $ err409 { errBody = "Account is not yet on the network." }
               Right accountJson -> do
-                let (accountR :: Aeson.Result AccountInfoResponse) = Aeson.fromJSON accountJson
-                case accountR of
+                case Aeson.fromJSON accountJson of
                   Aeson.Success account ->
                     if nonce == Types.minNonce && accountAmount account == 0
                       then do
@@ -500,13 +500,11 @@ servantApp nodeBackend dropAccount pgUrl idUrl cfgDir dataDir = genericServe rou
                         throwError $ err403 { errBody = "GTU drop can only be used once per account." }
 
                   Aeson.Error err ->
-                    if err == "parsing Account info failed, expected Object, but encountered Null" then
-                      throwError $ err409 { errBody = "Account is not yet on the network." }
-                    else
                       throwError $ err502 { errBody = "JSON error: " <> BS8.pack err }
 
               Left err ->
                 throwError $ err502 { errBody = "GRPC error: " <> BS8.pack err }
+
           Nothing ->
             throwError $ err502 { errBody = "Can't do GTU drop - missing keys" }
       _ ->
@@ -867,7 +865,7 @@ accountParser = Aeson.withObject "Account keys" $ \v -> do
 
 -- Helper function to read the keyfile and bail if not possible
 getGtuDropKeys :: Maybe Text -> IO (Maybe Account)
-getGtuDropKeys keyFileLocation = 
+getGtuDropKeys keyFileLocation =
   case keyFileLocation of
     Just keyFile -> do
       keyFileData <- LBS.readFile (Text.unpack keyFile)
