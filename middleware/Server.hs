@@ -3,6 +3,10 @@ module Server (module Server, addHeaders) where
 import           Control.Concurrent (forkIO)
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Aeson as AE
+import qualified Data.Aeson.Types as AE
+import qualified Data.HashMap.Strict as HM
 import           Data.Function ((&))
 import           Data.List.Split
 import qualified Data.Text as T
@@ -16,7 +20,6 @@ import           Network.Wai.Middleware.HttpAuth (basicAuth)
 import           Network.Wai.Middleware.Static (staticPolicy, policy, Policy)
 import           System.FilePath ((</>))
 import           Text.Read (readMaybe)
-
 import qualified Config
 import           Concordium.Client.GRPC
 import           Concordium.Client.Config (getDefaultDataDir, getDefaultBaseConfigDir)
@@ -33,8 +36,11 @@ runHttp middlewares = do
   env  <- Config.lookupEnv "ENV" Config.Development
 
   nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:11100"
+  grpcAdminToken <- Config.lookupEnvText "RPC_PASSWORD" "rpcadmin"
   pgUrl <- Config.lookupEnvText "PG_URL" "host=localhost port=5432 user=concordium dbname=concordium password=concordium"
   idUrl <- Config.lookupEnvText "SIMPLEID_URL" "http://localhost:8000"
+  gtuDropAccountKeyfile <- Config.lookupEnvTextWithoutDefault "GTU_DROP_KEYFILE"
+  gtuDropAccountData <- Api.getGtuDropKeys gtuDropAccountKeyfile
 
   cfgDir <- T.unpack <$> (Config.lookupEnvText "CFG_DIR" . T.pack =<< getDefaultBaseConfigDir)
   dataDir <- T.unpack <$> (Config.lookupEnvText "DATA_DIR" . T.pack =<< getDefaultDataDir)
@@ -50,22 +56,29 @@ runHttp middlewares = do
         _ ->
           error $ "Could not parse host:port for given NODE_URL: " ++ T.unpack nodeUrl
 
-    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, target = Nothing, retryNum = 5, timeout = Nothing }
+    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, grpcAuthenticationToken = (T.unpack grpcAdminToken), target = Nothing, retryNum = 5, timeout = Nothing }
 
   runExceptT (mkGrpcClient grpcConfig Nothing) >>= \case
     Left err -> fail (show err) -- cannot connect to grpc server
     Right nodeBackend -> do
       let
-        waiApp = Api.servantApp nodeBackend pgUrl idUrl cfgDir dataDir
+        waiApp = Api.servantApp nodeBackend gtuDropAccountData pgUrl idUrl cfgDir dataDir
 
         printStatus = do
           putStrLn $ "NODE_URL: " ++ show nodeUrl
+          putStrLn $ "gRPC authentication token: " ++ show grpcAdminToken
           putStrLn $ "PG_URL: " ++ show pgUrl
           putStrLn $ "SIMPLEID_URL: " ++ show idUrl
           putStrLn $ "Environment: " ++ show env
           putStrLn $ "Server started: http://localhost:" ++ show serverPort
           putStrLn $ "Config directory: " ++ cfgDir
           putStrLn $ "Data directory: " ++ dataDir
+          case gtuDropAccountData of 
+            Just v -> do
+              putStrLn $ "GTU Drop account address: " ++ show (fst v)
+              putStrLn $ "GTU Drop account key count: " ++ show (HM.size (snd v))
+            _ -> do
+              putStrLn $ "Not enabling GTU drop functionality due to missing keys"
 
         run = W.defaultSettings
                   & W.setBeforeMainLoop printStatus
@@ -75,7 +88,6 @@ runHttp middlewares = do
       _ <- forkIO $ run $ Config.logger env . middlewares $ waiApp
 
       pure ()
-
 
 -- Middlewares
 --

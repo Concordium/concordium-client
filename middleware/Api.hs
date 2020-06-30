@@ -25,9 +25,11 @@ import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Text.IO as TIO
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as BS8
 import qualified Control.Exception as C
 import qualified Data.ByteString.Short as BSS
+import           Data.Maybe (fromJust)
 import           Data.List.Split
 import           Data.Map
 import           Data.Time.Clock (addUTCTime, UTCTime)
@@ -76,6 +78,7 @@ import           Control.Monad.Except
 import           Control.Monad (forM_)
 import qualified Proto.ConcordiumP2pRpc_Fields as CF
 
+
 import qualified Config
 import           SimpleIdClientApi
 import           Api.Types
@@ -87,41 +90,6 @@ import qualified Concordium.Client.TransactionStatus
 
 
 import qualified Concordium.Crypto.Ed25519Signature as Ed25519
-
-
-type Account = (IDTypes.AccountAddress, Types.KeyMap)
-
-middlewareGodAccount :: Account
-middlewareGodAccount = do
-  -- https://gitlab.com/Concordium/genesis-data/-/blob/master/beta_accounts/beta-account-0.json
-  let
-    keyMap =
-      certainDecode [text|
-        {
-          "0": {
-            "signKey": "2b691fa23b44587db2530aa72167c8c129405fe0997d92aa57b56c5cffa7be3f",
-            "verifyKey": "bb22fbf84e0dfd58e0e66f44828cfbba1e345fef34e0d3b84c2d0d9820c1cc2e"
-          },
-          "1": {
-            "signKey": "8cce05dbb16fa77e9ea17b7ad76a037ec9d01bc0bc5729e751b6c324f392a3d8",
-            "verifyKey": "28ab64e9ce014e8fc1f78c06e1f68a5b31f42a9192f439d1474d090c073ba7d7"
-          },
-          "2": {
-            "signKey": "d958933b532d2bc39cfd20ecec6a2351e531115d68ab1c3a6e0fff565de4051a",
-            "verifyKey": "538baa3460dcd92aa2a0ef8b80977ae03f6074e885b08822cb6c8b1a7acc003f"
-          }
-        }
-      |]
-    address =
-      certainDecode "\"43TULx3kDPDeQy1C1iLwBbS5EEV96cYPw5ZRdA9Dm4D23hxGZt\""
-  (address, keyMap)
-
-
-
-adminAuthToken :: Text
-adminAuthToken = "47434137412923191713117532"
-
-
 
 data Routes r = Routes
     -- Public Middleware APIs
@@ -226,7 +194,6 @@ data Routes r = Routes
 api :: Proxy (ToServantApi Routes)
 api = genericApi (Proxy :: Proxy Routes)
 
-
 writeSourceCodeFile :: (ModuleName, Text) -> IO String
 writeSourceCodeFile (moduleName, contents) = do
   -- TODO Validate name is only in [a-zA-Z]*
@@ -266,9 +233,10 @@ freshProjectBracket moduleSources projectAction =
         (\_ -> removePathForcibly freshDir)
         (\files -> withCurrentDirectory freshDir $ projectAction files)
 
+type Account = (IDTypes.AccountAddress, Types.KeyMap)
 
-servantApp :: EnvData -> Text -> Text -> FilePath -> FilePath -> Application
-servantApp nodeBackend pgUrl idUrl cfgDir dataDir = genericServe routesAsServer
+servantApp :: EnvData -> Maybe Account -> Text -> Text -> FilePath -> FilePath -> Application
+servantApp nodeBackend dropAccount pgUrl idUrl cfgDir dataDir = genericServe routesAsServer
  where
   routesAsServer = Routes {..} :: Routes AsServer
 
@@ -512,32 +480,33 @@ servantApp nodeBackend pgUrl idUrl cfgDir dataDir = genericServe routesAsServer
   testnetGtuDrop toAddress =
     case toAddress of
       Types.AddressAccount address -> do
+        case dropAccount of
+          Just dropAccountData -> do
+            accountResult <- liftIO $ runGRPC nodeBackend (withBestBlockHash Nothing (getAccountInfo $ Text.pack . show $ address))
+            nonce <- liftIO $ fst <$> runGRPC nodeBackend (getAccountNonceBestGuess (fst dropAccountData))
 
-        accountResult <- liftIO $ runGRPC nodeBackend (withBestBlockHash Nothing (getAccountInfo $ Text.pack . show $ address))
-        nonce <- liftIO $ fst <$> runGRPC nodeBackend (getAccountNonceBestGuess address)
+            case accountResult of
+              Right Aeson.Null -> throwError $ err409 { errBody = "Account is not yet on the network." }
+              Right accountJson -> do
+                case Aeson.fromJSON accountJson of
+                  Aeson.Success account ->
+                    if nonce == Types.minNonce && accountAmount account == 0
+                      then do
+                        liftIO $ putStrLn $ "✅ Requesting GTU Drop for " ++ show toAddress
+                        transactionId <- liftIO $ runGodTransaction nodeBackend dropAccountData $ Transfer { toaddress = toAddress, amount = 1000000 }
+                        pure $ TestnetGtuDropResponse { transactionId = transactionId }
 
-        case accountResult of
-          Right accountJson -> do
-            let (accountR :: Aeson.Result AccountInfoResponse) = Aeson.fromJSON accountJson
-            case accountR of
-              Aeson.Success account ->
-                if nonce == Types.minNonce && accountAmount account == 0
-                  then do
-                    liftIO $ putStrLn $ "✅ Requesting GTU Drop for " ++ show toAddress
-                    transactionId <- liftIO $ runGodTransaction nodeBackend $ Transfer { toaddress = toAddress, amount = 1000000 }
-                    pure $ TestnetGtuDropResponse { transactionId = transactionId }
+                      else
+                        throwError $ err403 { errBody = "GTU drop can only be used once per account." }
 
-                  else
-                    throwError $ err403 { errBody = "GTU drop can only be used once per account." }
+                  Aeson.Error err ->
+                      throwError $ err502 { errBody = "JSON error: " <> BS8.pack err }
 
-              Aeson.Error err ->
-                if err == "parsing Account info failed, expected Object, but encountered Null" then
-                  throwError $ err409 { errBody = "Account is not yet on the network." }
-                else
-                  throwError $ err502 { errBody = "JSON error: " <> BS8.pack err }
+              Left err ->
+                throwError $ err502 { errBody = "GRPC error: " <> BS8.pack err }
 
-          Left err ->
-            throwError $ err502 { errBody = "GRPC error: " <> BS8.pack err }
+          Nothing ->
+            throwError $ err502 { errBody = "Can't do GTU drop - missing keys" }
       _ ->
         throwError $ err403 { errBody = "GTU drop can only be used for Account addresses." }
 
@@ -809,8 +778,8 @@ throwError' e (Just (desc, err)) = throwError $ e { errBody = BS8.pack (desc ++ 
 throwError' e Nothing = throwError e
 
 -- For beta, uses the middlewareGodAccount which is seeded with funds
-runGodTransaction :: EnvData -> TransactionJSONPayload -> IO Types.TransactionHash
-runGodTransaction nodeBackend payload =
+runGodTransaction :: EnvData -> Account -> TransactionJSONPayload -> IO Types.TransactionHash
+runGodTransaction nodeBackend middlewareGodAccount payload =
   runTransaction nodeBackend payload middlewareGodAccount
 
 
@@ -886,7 +855,23 @@ certainDecode t =
     Just v -> v
     Nothing -> error $ "Well... not so certain now huh! certainDecode failed on:\n\n" ++ Text.unpack t
 
+-- Simple helper to parse key files
+accountParser :: Aeson.Value -> Aeson.Parser (IDTypes.AccountAddress, Types.KeyMap)
+accountParser = Aeson.withObject "Account keys" $ \v -> do
+          accountAddr <- v Aeson..: "address"
+          accountData <- v Aeson..: "accountData"
+          keyMap <- accountData Aeson..: "keys"
+          return (accountAddr, keyMap)
 
+-- Helper function to read the keyfile and bail if not possible
+getGtuDropKeys :: Maybe Text -> IO (Maybe Account)
+getGtuDropKeys keyFileLocation =
+  case keyFileLocation of
+    Just keyFile -> do
+      keyFileData <- LBS.readFile (Text.unpack keyFile)
+      let getKeys = Aeson.eitherDecode' keyFileData >>= Aeson.parseEither accountParser
+      return $ either (const Nothing) Just getKeys
+    _ -> return $ Nothing
 {--
 
 This chains together the full process that is split into seperate APIs above so
@@ -897,6 +882,9 @@ Once proven together, relevant parts are integrated into the APIs above.
 Currently, this seems to work all the way through to submitting onto the chain
 and being accepted baked into a block with the new account credited 100 GTU.
 
+NOTE: Remember to point the environment variable `GTU_DROP_KEYFILE` to a valid
+keyfile (otherwise it'll not have any drop account to use to send GTUs from)
+
 --}
 debugTestFullProvision :: IO String
 debugTestFullProvision = do
@@ -904,10 +892,12 @@ debugTestFullProvision = do
   nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:32798"
   pgUrl <- Config.lookupEnvText "PG_URL" "http://localhost:9200"
   idUrl <- Config.lookupEnvText "SIMPLEID_URL" "http://localhost:8000"
+  rpcAdminToken <- Config.lookupEnvText "RPC_PASSWORD" "rpcadmin"
 
   putStrLn $ "✅ nodeUrl = " ++ Text.unpack nodeUrl
   putStrLn $ "✅ pgUrl = " ++ Text.unpack pgUrl
   putStrLn $ "✅ idUrl = " ++ Text.unpack idUrl
+  putStrLn $ "✅ rpcAdminToken = " ++ Text.unpack rpcAdminToken
 
   putStrLn "➡️  Submitting IdObjectRequest"
 
@@ -922,7 +912,7 @@ debugTestFullProvision = do
         _ ->
           error $ "Could not parse host:port for given NODE_URL: " ++ Text.unpack nodeUrl
 
-    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, target = Nothing, retryNum = 5, timeout = Nothing }
+    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, grpcAuthenticationToken = Text.unpack rpcAdminToken, target = Nothing, retryNum = 5, timeout = Nothing }
 
   nodeBackend <- runExceptT (mkGrpcClient grpcConfig Nothing) >>= \case
     Left err -> fail (show err)
@@ -985,13 +975,14 @@ debugTestFullProvision = do
 
   debugTestTransactions nodeBackend selfAddress keyMap
 
-
 debugTestTransactions :: EnvData -> Types.AccountAddress -> Types.KeyMap -> IO String
 debugTestTransactions nodeBackend selfAddress keyMap = do
 
+  gtuDropAccountFile <- Config.lookupEnvTextWithoutDefault "GTU_DROP_KEYFILE"
+  gtuDropAccount <- getGtuDropKeys gtuDropAccountFile
   putStrLn $ "✅ Requesting GTU Drop for: " ++ show selfAddress
 
-  _ <- runGodTransaction nodeBackend $ Transfer { toaddress = Types.AddressAccount selfAddress, amount = 1000000 }
+  _ <- runGodTransaction nodeBackend (fromJust gtuDropAccount) $ Transfer { toaddress = Types.AddressAccount selfAddress, amount = 1000000 }
 
   let txHeader txBody nonce = Types.TransactionHeader {
     thSender = selfAddress,
@@ -1043,10 +1034,13 @@ runDebugTestTransactions = do
   nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:32798"
   pgUrl <- Config.lookupEnvText "PG_URL" "http://localhost:9200"
   idUrl <- Config.lookupEnvText "SIMPLEID_URL" "http://localhost:8000"
+  rpcPassword <- Config.lookupEnvText "RPC_PASSWORD" "rpcadmin"
+
 
   putStrLn $ "✅ nodeUrl = " ++ Text.unpack nodeUrl
   putStrLn $ "✅ pgUrl = " ++ Text.unpack pgUrl
   putStrLn $ "✅ idUrl = " ++ Text.unpack idUrl
+  putStrLn $ "✅ rpcPassword = " ++ Text.unpack rpcPassword
 
   putStrLn "➡️  Submitting IdObjectRequest"
 
@@ -1061,7 +1055,7 @@ runDebugTestTransactions = do
         _ ->
           error $ "Could not parse host:port for given NODE_URL: " ++ Text.unpack nodeUrl
 
-    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, target = Nothing, retryNum = 5, timeout = Nothing }
+    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, grpcAuthenticationToken = Text.unpack rpcPassword, target = Nothing, retryNum = 5, timeout = Nothing }
 
   nodeBackend <- runExceptT (mkGrpcClient grpcConfig Nothing) >>= \case
     Left err -> fail (show err)
@@ -1100,7 +1094,7 @@ localTestAccount = do
 
 debugGrpc :: IO GetNodeStateResponse
 debugGrpc = do
-  let nodeBackend = COM.GRPC { grpcHost = "localhost", grpcPort = 11103, grpcTarget = Nothing, grpcRetryNum = 5 }
+  let nodeBackend = COM.GRPC { grpcHost = "localhost", grpcPort = 11103, grpcAuthenticationToken = "rpcadmin", grpcTarget = Nothing, grpcRetryNum = 5 }
 
   infoE <- withClient nodeBackend getNodeInfo
 

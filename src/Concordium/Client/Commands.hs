@@ -46,6 +46,7 @@ data Backend =
   GRPC
     { grpcHost   :: !HostName
     , grpcPort   :: !PortNumber
+    , grpcAuthenticationToken :: !String
     , grpcTarget :: !(Maybe String)
     , grpcRetryNum :: !Int }
   deriving (Show)
@@ -225,7 +226,7 @@ versionOption =
   infoOption (showVersion version) (hidden <> long "version" <> help "Show version.")
 
 backendParser :: Parser Backend
-backendParser = GRPC <$> hostParser <*> portParser <*> targetParser <*> retryNumParser
+backendParser = GRPC <$> hostParser <*> portParser <*> grpcAuthenticationTokenParser <*> targetParser <*> retryNumParser
 
 hostParser :: Parser HostName
 hostParser =
@@ -245,6 +246,15 @@ portParser =
      value 10000 <> -- default value to match the node default GRPC port
      showDefault <>
      help "Port where the gRPC server is listening.")
+
+grpcAuthenticationTokenParser :: Parser String
+grpcAuthenticationTokenParser =
+  strOption
+    (long "grpc-authentication-token" <>
+     metavar "GRPC-AUTHENTICATION-TOKEN" <>
+     value "rpcadmin" <> -- default value matches the default value for the node
+     showDefault <>
+     help "gRPC authentication token used to talk to the node")
 
 targetParser :: Parser (Maybe String)
 targetParser =
