@@ -904,10 +904,12 @@ debugTestFullProvision = do
   nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:32798"
   pgUrl <- Config.lookupEnvText "PG_URL" "http://localhost:9200"
   idUrl <- Config.lookupEnvText "SIMPLEID_URL" "http://localhost:8000"
+  rpcAdminToken <- Config.lookupEnvText "RPC_PASSWORD" "rpcadmin"
 
   putStrLn $ "✅ nodeUrl = " ++ Text.unpack nodeUrl
   putStrLn $ "✅ pgUrl = " ++ Text.unpack pgUrl
   putStrLn $ "✅ idUrl = " ++ Text.unpack idUrl
+  putStrLn $ "✅ rpcAdminToken = " ++ Text.unpack rpcAdminToken
 
   putStrLn "➡️  Submitting IdObjectRequest"
 
@@ -922,7 +924,7 @@ debugTestFullProvision = do
         _ ->
           error $ "Could not parse host:port for given NODE_URL: " ++ Text.unpack nodeUrl
 
-    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, target = Nothing, retryNum = 5, timeout = Nothing }
+    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, grpcAuthenticationToken = (Text.unpack rpcAdminToken), target = Nothing, retryNum = 5, timeout = Nothing }
 
   nodeBackend <- runExceptT (mkGrpcClient grpcConfig Nothing) >>= \case
     Left err -> fail (show err)
@@ -1043,10 +1045,12 @@ runDebugTestTransactions = do
   nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:32798"
   pgUrl <- Config.lookupEnvText "PG_URL" "http://localhost:9200"
   idUrl <- Config.lookupEnvText "SIMPLEID_URL" "http://localhost:8000"
+  rpcPassword <- Config.lookupEnvText "RPC_PASSWORD" "rpcadmin"
 
   putStrLn $ "✅ nodeUrl = " ++ Text.unpack nodeUrl
   putStrLn $ "✅ pgUrl = " ++ Text.unpack pgUrl
   putStrLn $ "✅ idUrl = " ++ Text.unpack idUrl
+  putStrLn $ "✅ rpcPassword = " ++ Text.unpack rpcPassword
 
   putStrLn "➡️  Submitting IdObjectRequest"
 
@@ -1061,7 +1065,7 @@ runDebugTestTransactions = do
         _ ->
           error $ "Could not parse host:port for given NODE_URL: " ++ Text.unpack nodeUrl
 
-    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, target = Nothing, retryNum = 5, timeout = Nothing }
+    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, grpcAuthenticationToken = (Text.unpack rpcPassword), target = Nothing, retryNum = 5, timeout = Nothing }
 
   nodeBackend <- runExceptT (mkGrpcClient grpcConfig Nothing) >>= \case
     Left err -> fail (show err)
@@ -1100,7 +1104,7 @@ localTestAccount = do
 
 debugGrpc :: IO GetNodeStateResponse
 debugGrpc = do
-  let nodeBackend = COM.GRPC { grpcHost = "localhost", grpcPort = 11103, grpcTarget = Nothing, grpcRetryNum = 5 }
+  let nodeBackend = COM.GRPC { grpcHost = "localhost", grpcPort = 11103, grpcAuthenticationToken = "rpcadmin", grpcTarget = Nothing, grpcRetryNum = 5 }
 
   infoE <- withClient nodeBackend getNodeInfo
 

@@ -117,7 +117,7 @@ liftClientIOToM comp = do
 withClient :: MonadIO m => Backend -> ClientMonad m a -> m a
 withClient bkend comp = do
   r <- runExceptT $! do
-    let config = GrpcConfig (COM.grpcHost bkend) (COM.grpcPort bkend) (COM.grpcTarget bkend) (COM.grpcRetryNum bkend) Nothing
+    let config = GrpcConfig (COM.grpcHost bkend) (COM.grpcPort bkend) (COM.grpcAuthenticationToken bkend) (COM.grpcTarget bkend) (COM.grpcRetryNum bkend) Nothing
     client <- liftClientIOToM (mkGrpcClient config Nothing)
     ret <- (runReaderT . _runClientMonad) comp $! client
     liftClientIOToM (maybe (return ()) close =<< (liftIO . readIORef $ grpc client))
