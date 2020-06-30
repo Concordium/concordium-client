@@ -3,6 +3,10 @@ module Server (module Server, addHeaders) where
 import           Control.Concurrent (forkIO)
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Aeson as AE
+import qualified Data.Aeson.Types as AE
+import qualified Data.HashMap.Strict as HM
 import           Data.Function ((&))
 import           Data.List.Split
 import qualified Data.Text as T
@@ -16,7 +20,7 @@ import           Network.Wai.Middleware.HttpAuth (basicAuth)
 import           Network.Wai.Middleware.Static (staticPolicy, policy, Policy)
 import           System.FilePath ((</>))
 import           Text.Read (readMaybe)
-
+import System.Exit(die)
 import qualified Config
 import           Concordium.Client.GRPC
 import           Concordium.Client.Config (getDefaultDataDir, getDefaultBaseConfigDir)
@@ -36,6 +40,7 @@ runHttp middlewares = do
   grpcAdminToken <- Config.lookupEnvText "RPC_PASSWORD" "rpcadmin"
   pgUrl <- Config.lookupEnvText "PG_URL" "host=localhost port=5432 user=concordium dbname=concordium password=concordium"
   idUrl <- Config.lookupEnvText "SIMPLEID_URL" "http://localhost:8000"
+  gtuDropAccountFile <- Config.lookupEnvText "GTU_DROP_KEYFILE" "gtu-drop-account.json"
 
   cfgDir <- T.unpack <$> (Config.lookupEnvText "CFG_DIR" . T.pack =<< getDefaultBaseConfigDir)
   dataDir <- T.unpack <$> (Config.lookupEnvText "DATA_DIR" . T.pack =<< getDefaultDataDir)
@@ -53,31 +58,37 @@ runHttp middlewares = do
 
     grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, grpcAuthenticationToken = (T.unpack grpcAdminToken), target = Nothing, retryNum = 5, timeout = Nothing }
 
-  runExceptT (mkGrpcClient grpcConfig Nothing) >>= \case
-    Left err -> fail (show err) -- cannot connect to grpc server
-    Right nodeBackend -> do
-      let
-        waiApp = Api.servantApp nodeBackend pgUrl idUrl cfgDir dataDir
+  keyFile <- LBS.readFile (T.unpack gtuDropAccountFile)
+  let getKeys = AE.eitherDecode' keyFile >>= AE.parseEither Api.accountParser
+  case getKeys of
+    Left err -> die $ "Cannot parse account keys: " ++ show err
+    Right (dropAccount, dropKeys) ->
+      runExceptT (mkGrpcClient grpcConfig Nothing) >>= \case
+        Left err -> fail (show err) -- cannot connect to grpc server
+        Right nodeBackend -> do
+          let
+            waiApp = Api.servantApp nodeBackend (dropAccount,dropKeys) pgUrl idUrl cfgDir dataDir
 
-        printStatus = do
-          putStrLn $ "NODE_URL: " ++ show nodeUrl
-          putStrLn $ "gRPC authentication token: " ++ show grpcAdminToken
-          putStrLn $ "PG_URL: " ++ show pgUrl
-          putStrLn $ "SIMPLEID_URL: " ++ show idUrl
-          putStrLn $ "Environment: " ++ show env
-          putStrLn $ "Server started: http://localhost:" ++ show serverPort
-          putStrLn $ "Config directory: " ++ cfgDir
-          putStrLn $ "Data directory: " ++ dataDir
+            printStatus = do
+              putStrLn $ "NODE_URL: " ++ show nodeUrl
+              putStrLn $ "gRPC authentication token: " ++ show grpcAdminToken
+              putStrLn $ "PG_URL: " ++ show pgUrl
+              putStrLn $ "SIMPLEID_URL: " ++ show idUrl
+              putStrLn $ "Environment: " ++ show env
+              putStrLn $ "Server started: http://localhost:" ++ show serverPort
+              putStrLn $ "Config directory: " ++ cfgDir
+              putStrLn $ "Data directory: " ++ dataDir
+              putStrLn $ "GTU Drop account address: " ++ show dropAccount
+              putStrLn $ "GTU Drop account key count: " ++ show (HM.size dropKeys)
 
-        run = W.defaultSettings
-                  & W.setBeforeMainLoop printStatus
-                  & W.setPort serverPort
-                  & W.runSettings
+            run = W.defaultSettings
+                      & W.setBeforeMainLoop printStatus
+                      & W.setPort serverPort
+                      & W.runSettings
 
-      _ <- forkIO $ run $ Config.logger env . middlewares $ waiApp
+          _ <- forkIO $ run $ Config.logger env . middlewares $ waiApp
 
-      pure ()
-
+          pure ()
 
 -- Middlewares
 --
