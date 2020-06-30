@@ -33,6 +33,7 @@ runHttp middlewares = do
   env  <- Config.lookupEnv "ENV" Config.Development
 
   nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:11100"
+  grpcAdminToken <- Config.lookupEnvText "RPC_PASSWORD" "rpcadmin"
   pgUrl <- Config.lookupEnvText "PG_URL" "host=localhost port=5432 user=concordium dbname=concordium password=concordium"
   idUrl <- Config.lookupEnvText "SIMPLEID_URL" "http://localhost:8000"
 
@@ -50,7 +51,7 @@ runHttp middlewares = do
         _ ->
           error $ "Could not parse host:port for given NODE_URL: " ++ T.unpack nodeUrl
 
-    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, target = Nothing, retryNum = 5, timeout = Nothing }
+    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, grpcAuthenticationToken = (T.unpack grpcAdminToken), target = Nothing, retryNum = 5, timeout = Nothing }
 
   runExceptT (mkGrpcClient grpcConfig Nothing) >>= \case
     Left err -> fail (show err) -- cannot connect to grpc server
@@ -60,6 +61,7 @@ runHttp middlewares = do
 
         printStatus = do
           putStrLn $ "NODE_URL: " ++ show nodeUrl
+          putStrLn $ "gRPC authentication token: " ++ show grpcAdminToken
           putStrLn $ "PG_URL: " ++ show pgUrl
           putStrLn $ "SIMPLEID_URL: " ++ show idUrl
           putStrLn $ "Environment: " ++ show env
