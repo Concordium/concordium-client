@@ -79,13 +79,10 @@ makePretty (Entity _ Entry{..}, Entity _ Summary{..}) = do
       peBlockHash = unBSS summaryBlock
       peBlockHeight = summaryHeight
       peBlockTime = summaryTimestamp
-      -- split the stored json in (tag) and (rest)
-      (Just tag, summary) =
-        (\(AE.Object o) -> (HM.lookup "tag" o, AE.Object $ HM.delete "tag" o)) summarySummary
-  peTransactionSummary <- case tag of
-    "SpecialTransaction" ->  (\(AE.Success v) -> Right $ SpecialTransaction v) (AE.fromJSON summary)
-    -- "BlockTransaction" but we don't want non-exhaustive matches
-    _ ->  (\(AE.Success v) -> Right $ BlockTransaction v) (AE.fromJSON summary)
+  peTransactionSummary <- case AE.fromJSON summarySummary of
+    AE.Success (Right v) ->  Right $ SpecialTransaction v
+    AE.Success (Left v) ->  Right $ BlockTransaction v
+    AE.Error e -> Left e
   return $ PrettyEntry{..}
 
 streamAccounts :: (MonadIO m)
