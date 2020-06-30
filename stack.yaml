@@ -87,3 +87,6 @@ extra-lib-dirs:
 flags:
   simple-client:
     middleware: true
+
+nix:
+  shell-file: shell-stack.nix
