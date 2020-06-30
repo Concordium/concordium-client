@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
 module PerAccountTransactions where
 
 import Concordium.GlobalState.SQL.AccountTransactionIndex
@@ -18,10 +19,11 @@ import Database.Persist.Postgresql
 import Database.Persist.Pagination
 import Data.Conduit
 import Data.Conduit.Combinators as Conduit
+import qualified Data.HashMap.Strict as HM
 
 type PageResult m = ReaderT SqlBackend m (Maybe (Page Entry (Key Entry)))
 
-type AccountStream m = ConduitT () (Entity Entry) (ReaderT SqlBackend m) ()
+type AccountStream m = ConduitT () (Entity Entry, Entity Summary) (ReaderT SqlBackend m) ()
 
 pageAccount :: MonadIO m => AccountAddress -> PageResult m
 pageAccount accountAddr = getPage [EntryAccount ==. ByteStringSerialized accountAddr]
@@ -32,11 +34,24 @@ pageAccount accountAddr = getPage [EntryAccount ==. ByteStringSerialized account
 
 streamRawAccounts :: MonadIO m => AccountAddress -> AccountStream m
 streamRawAccounts accountAddr =
-  streamEntities [EntryAccount ==. ByteStringSerialized accountAddr]
-                 EntryId
-                 (PageSize 10)
-                 Descend
-                 (Range Nothing Nothing)
+  let
+    -- entries will hold the stream of `Entry`s that correspond
+    -- to the requested address.
+    entries =
+      streamEntities [EntryAccount ==. ByteStringSerialized accountAddr]
+                     EntryId
+                     (PageSize 10)
+                     Descend
+                     (Range Nothing Nothing)
+    -- zipWithSummary gets the associated `Summary` for each `Entry` and zips it
+    -- together with the `Entry`. We never delete elements from the database and the
+    -- `entrySummary` field has a foreign key constraint and *MUST* exist on the
+    -- `Summaries` table and be unique, so we can use `Prelude.head` safely.
+    zipWithSummary v@(Entity _ Entry{..}) = ((v,) . Prelude.head <$> selectList [SummaryId ==. entrySummary] [])
+  in
+    -- we are chaining the stream of entries with the zipping with the associated summary
+    -- to generate in the end a `Conduit () (Entity Entry, Entity Summary) ...`
+    entries .| Conduit.mapM zipWithSummary
 
 data PrettySummary =
   SpecialTransaction !SpecialTransactionOutcome
@@ -58,26 +73,22 @@ data PrettyEntry = PrettyEntry{
   peTransactionSummary :: PrettySummary
   } deriving(Eq, Show)
 
-makePretty :: Entity Entry -> Either String PrettyEntry
-makePretty eentry = do
-  let Entry{..} = entityVal eentry
+makePretty :: (Entity Entry, Entity Summary) -> Either String PrettyEntry
+makePretty (Entity _ Entry{..}, Entity _ Summary{..}) = do
   let peAccount = unBSS entryAccount
-  let peBlockHash = unBSS entryBlock
-  let peBlockHeight = fromIntegral entryBlockHeight
-  let peBlockTime = entryBlockTime
-  case entryHash of
-    Nothing -> do
-      peTransactionSummary <- SpecialTransaction <$> AE.eitherDecodeStrict entrySummary
-      return $ PrettyEntry{..}
-    Just _txHash -> do
-      peTransactionSummary <- BlockTransaction <$> AE.eitherDecodeStrict entrySummary
-      return $ PrettyEntry{..}
+      peBlockHash = unBSS summaryBlock
+      peBlockHeight = summaryHeight
+      peBlockTime = summaryTimestamp
+  peTransactionSummary <- case AE.fromJSON summarySummary of
+    AE.Success (Right v) ->  Right $ SpecialTransaction v
+    AE.Success (Left v) ->  Right $ BlockTransaction v
+    AE.Error e -> Left e
+  return $ PrettyEntry{..}
 
 streamAccounts :: (MonadIO m)
                   => AccountAddress -- ^Account address to query.
                   -> ConduitM () (Either String PrettyEntry) (ReaderT SqlBackend m) ()
 streamAccounts addr = streamRawAccounts addr .| Conduit.map makePretty
-
 
 -- |Stream transactions affecting a given account, starting from the most recent one.
 -- Starts a new database connection. For more flexiblity use 'streamAccounts' directly.
