@@ -6,6 +6,8 @@ Encryption utilities.
 -}
 module Concordium.Client.Encryption where
 
+import Concordium.Client.Utils
+
 import Control.Monad.Except
 import Control.Exception
 import qualified System.IO as IO
@@ -14,6 +16,7 @@ import qualified Data.Aeson as AE
 import Data.Aeson ((.:),(.=))
 import Data.ByteString(ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as LazyBS
 import qualified Data.ByteString.Base64 as Base64
 import Data.Text(Text)
 import qualified Data.Text as T
@@ -229,3 +232,39 @@ encryptText emEncryptionMethod emKeyDerivationMethod text pwd =
         -- NB: T.decodeUtf8 expects valid UTF8 and will throw an exception otherwise;
         -- the base64 encoding however produces valid UTF8.
         encodeBase64 = T.decodeUtf8 . Base64.encode
+
+-- | An encrypted value of the given type, serialized as JSON.
+newtype EncryptedJSON a = EncryptedJSON EncryptedText
+  deriving (AE.FromJSON, AE.ToJSON)
+
+-- | Failures that can occur when decrypting an 'EncryptedJSON'.
+data DecryptJSONFailure
+  -- | Decryption failed.
+  = DecryptionFailure DecryptionFailure
+  -- | The decrypted export is not a valid JSON object. If there is no data corruption, this indicates that a wrong password was given.
+  | IncorrectJSON String
+  deriving Show
+
+instance Exception DecryptJSONFailure where
+  displayException (DecryptionFailure df) = displayException df
+  displayException (IncorrectJSON err) = "cannot parse JSON: " ++ err
+
+-- | Decrypt and deserialize an 'EncryptedJSON'.
+decryptJSON :: (MonadError DecryptJSONFailure m, AE.FromJSON a)
+  => EncryptedJSON a
+  -> Password
+  -> m a
+decryptJSON (EncryptedJSON encryptedText) pwd = do
+  decrypted <- decryptText encryptedText pwd `embedErr` DecryptionFailure
+  AE.eitherDecodeStrict decrypted `embedErr` IncorrectJSON
+
+-- | Encrypt a JSON-serializable value.
+encryptJSON :: (AE.ToJSON a)
+  => SupportedEncryptionMethod
+  -> SupportedKeyDerivationMethod
+  -> a
+  -> Password
+  -> IO (EncryptedJSON a)
+encryptJSON encryptionMethod keyDerivationMethod value pwd =
+  let json = LazyBS.toStrict $ AE.encode value in
+    EncryptedJSON <$> encryptText encryptionMethod keyDerivationMethod json pwd
