@@ -134,7 +134,7 @@ instance Exception DecryptionFailure where
 
 -- | Ask for a password on standard input not showing what is typed.
 askPassword
-  :: Text
+  :: Text -- ^ A text to display after which the password is typed (nothing is appended to this).
   -> IO Password
 askPassword text = do
   T.putStr text
@@ -241,7 +241,8 @@ newtype EncryptedJSON a = EncryptedJSON EncryptedText
 data DecryptJSONFailure
   -- | Decryption failed.
   = DecryptionFailure DecryptionFailure
-  -- | The decrypted export is not a valid JSON object. If there is no data corruption, this indicates that a wrong password was given.
+  -- | The decrypted 'ByteString' is not a valid JSON object.
+  -- If there is no data corruption, this indicates that a wrong password was given.
   | IncorrectJSON String
   deriving Show
 
