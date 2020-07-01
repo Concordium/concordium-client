@@ -233,7 +233,7 @@ encryptText emEncryptionMethod emKeyDerivationMethod text pwd =
         -- the base64 encoding however produces valid UTF8.
         encodeBase64 = T.decodeUtf8 . Base64.encode
 
--- | An encrypted value of the given type, serialized as JSON.
+-- | An encrypted JSON serialization of a value of the given type.
 newtype EncryptedJSON a = EncryptedJSON EncryptedText
   deriving (AE.FromJSON, AE.ToJSON)
 
@@ -248,7 +248,7 @@ data DecryptJSONFailure
 
 instance Exception DecryptJSONFailure where
   displayException (DecryptionFailure df) = displayException df
-  displayException (IncorrectJSON err) = "cannot parse JSON: " ++ err
+  displayException (IncorrectJSON err) = "cannot decode JSON: " ++ err
 
 -- | Decrypt and deserialize an 'EncryptedJSON'.
 decryptJSON :: (MonadError DecryptJSONFailure m, AE.FromJSON a)
