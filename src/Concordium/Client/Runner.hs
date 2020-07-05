@@ -52,7 +52,7 @@ import           Concordium.Client.Utils
 import           Concordium.Client.Cli
 import           Concordium.Client.Config
 import           Concordium.Client.Commands          as COM
-import           Concordium.Client.Encryption(Password,askPassword)
+import           Concordium.Client.Encryption
 import           Concordium.Client.GRPC
 import           Concordium.Client.Output
 import           Concordium.Client.Parse
@@ -287,14 +287,15 @@ loadAccountImportFile format file name = do
 
 -- |Decode, decrypt and parse a mobile wallet export.
 decodeMobileFormattedAccountExport :: (MonadError String m)
-    => BS.ByteString -- ^JSON payload with encrypted accounts and identities.
+    => BS.ByteString -- ^JSON payload with encrypted accounts and identities,
+                     -- which must include the fields of an 'EncryptedJSON WalletExport'.
     -> Password -- ^Password to decrypt the payload.
     -> m [WalletExportAccount]
 decodeMobileFormattedAccountExport payload password =
   case eitherDecodeStrict payload of
     Left err -> throwError $ printf "cannot decode JSON: %s" err
-    Right we -> do
-      pl <- decryptWalletExport we password `embedErr` displayException
+    Right (we :: EncryptedJSON WalletExport) -> do
+      pl <- decryptJSON we password `embedErr` (("cannot decrypt wallet export: " ++) . displayException)
       return $ wepAccounts pl
 
 -- |Decode and parse a web wallet export into a named account config.

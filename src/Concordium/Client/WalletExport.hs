@@ -3,25 +3,20 @@
 
 module Concordium.Client.WalletExport where
 
-import Concordium.Client.Utils
 import Concordium.Client.Cli
 import Concordium.Client.Config
-import Concordium.Client.Encryption
 
 import Control.Monad.Except
-import Control.Exception
 import Data.Aeson as AE
 import Data.Text as T
 import Text.Printf
 
-type WalletExport = EncryptedText
-
-data WalletExportPayload =
-  WalletExportPayload
+data WalletExport =
+  WalletExport
   { wepAccounts :: ![WalletExportAccount] }
   deriving (Show)
 
-instance AE.FromJSON WalletExportPayload where
+instance AE.FromJSON WalletExport where
   parseJSON = withObject "Wallet Export Payload" $ \v -> do
     -- Validate type and version.
     t <- v .: "type"
@@ -33,8 +28,9 @@ instance AE.FromJSON WalletExportPayload where
 
     val <- v .: "value"
     ids <- val .: "identities"
-    return WalletExportPayload { wepAccounts = join $ weiAccounts <$> ids }
+    return WalletExport { wepAccounts = join $ weiAccounts <$> ids }
 
+-- | Used for parsing 'WalletExport'.
 newtype WalletExportIdentity =
   WalletExportIdentity
   { weiAccounts :: [WalletExportAccount] }
@@ -65,30 +61,6 @@ instance AE.FromJSON WalletExportAccount where
                   { akAddress = addr
                   , akKeys = keys
                   , akThreshold = th } }
-
-data DecryptWalletExportFailure
-  -- | Decryption failed.
-  = DecryptionFailure DecryptionFailure
-  -- | The decrypted export is not a valid JSON object. If there is no data corruption, this indicates that a wrong password was given.
-  | IncorrectJSON String
-  deriving Show
-
-instance Exception DecryptWalletExportFailure where
-  displayException e = "cannot decrypt wallet export: " ++
-    case e of
-      DecryptionFailure df -> displayException df
-      IncorrectJSON err -> "cannot parse JSON: " ++ err
-
-
--- |Using the provided password, decrypt the payload from the export according to the parameters in the accompanying metadata.
-decryptWalletExport
-  :: (MonadError DecryptWalletExportFailure m)
-  => WalletExport
-  -> Password
-  -> m WalletExportPayload
-decryptWalletExport walletExport password = do
-  payloadJSON <- decryptText walletExport password `embedErr` DecryptionFailure
-  AE.eitherDecodeStrict payloadJSON `embedErr` IncorrectJSON
 
 -- |Convert one or all wallet export accounts to regular account configs.
 -- If name is provided, only the account with matching name (if any) is converted.
