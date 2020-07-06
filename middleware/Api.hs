@@ -54,6 +54,7 @@ import           System.FilePath.Posix
 
 import qualified Acorn.Parser.Runner as PR
 import           Concordium.Client.Commands as COM
+import           Concordium.Client.Encryption (Password(..))
 import           Concordium.Client.GRPC
 import qualified Concordium.Client.GRPC as GRPC
 import qualified Network.GRPC.Client.Helpers as GRPC
@@ -688,7 +689,7 @@ servantApp nodeBackend pgUrl idUrl cfgDir dataDir = genericServe routesAsServer
     baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False True
     accCfgs <- case extra of
       ExtraPassword pass -> do
-        accs <- case decodeMobileFormattedAccountExport (Text.encodeUtf8 contents) (Text.encodeUtf8 pass) of
+        accs <- case decodeMobileFormattedAccountExport (Text.encodeUtf8 contents) (Password (Text.encodeUtf8 pass)) of
                  Left err -> throwError' err400 $ Just ("Cannot load mobile formatted import: ", err)
                  Right v -> return v
         return $ accountCfgsFromWalletExportAccounts accs Nothing
