@@ -11,10 +11,9 @@ import qualified Data.Text as Text
 import           Data.Aeson
 import           Data.Aeson.TH
 import           Data.Word
+import           Data.Word (Word64)
 import           Data.Map (Map)
 import           GHC.Generics
-import           Data.Time.Clock.POSIX
-import           Data.Word (Word64)
 
 import           Concordium.Types.Utils
 import           Concordium.Client.Runner(StatusOfPeers)
@@ -264,52 +263,6 @@ data AccountTransactionsResponse =
 
 instance ToJSON AccountTransactionsResponse
 
-
-
--- Smart Contracts
-
-type ModuleName = Text
-type ContractName = Text
-type ModuleSourceCode = Text
-type MidlangExpression = Text
-
-data BuildModulesRequest =
-  BuildModulesRequest
-    { code :: [(ModuleName, ModuleSourceCode)]
-    }
-  deriving (FromJSON, Generic, Show)
-
-data PublishCodeRequest =
-  PublishCodeRequest
-    { account :: AccountWithKeys
-    , energy :: Int
-    , code :: [(ModuleName, ModuleSourceCode)]
-    }
-  deriving (FromJSON, Generic, Show)
-
-data CreateContractRequest =
-  CreateContractRequest
-    { account :: AccountWithKeys
-    , creationArgs :: MidlangExpression -- Should be valid Midlang expression
-    , energy :: Int
-    , moduleName :: ModuleName
-    , contractName :: ContractName
-    , code :: [(ModuleName, ModuleSourceCode)]
-    }
-  deriving (FromJSON, Generic, Show)
-
-data MessageContractRequest =
-  MessageContractRequest
-    { account :: AccountWithKeys
-    , amount :: Int -- Can be zero
-    , message :: Maybe MidlangExpression -- Should be valid Midlang expression
-    , energy :: Int
-    , moduleName :: ModuleName
-    , contractName :: ContractName
-    , contractAddress :: Types.ContractAddress
-    , code :: [(ModuleName, ModuleSourceCode)]
-    }
-  deriving (FromJSON, Generic, Show)
 
 data ImportAccountRequestExtra =
   ExtraPassword
