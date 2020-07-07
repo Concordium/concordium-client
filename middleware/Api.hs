@@ -124,11 +124,6 @@ data Routes r = Routes
         "v1" :> "transfer" :> ReqBody '[JSON] TransferRequest
                            :> Post '[JSON] TransferResponse
 
-    , typecheckCode :: r :-
-        "v1" :> "typecheckCode" :> ReqBody '[JSON] BuildModulesRequest
-                                    :> Post '[JSON] Aeson.Value
-
-
     , consensusStatus :: r :-
         "v1" :> "consensusStatus" :> Get '[JSON] Aeson.Value
 
@@ -140,10 +135,6 @@ data Routes r = Routes
         "v1" :> "blockSummary" :> Capture "blockHash" Text
                               :> Get '[JSON] Aeson.Value
 
-    , contractState :: r :-
-        "v1" :> "contractState" :> Capture "contractAddress" Text
-                              :> Get '[JSON] Aeson.Value
-
     , transactionStatus :: r :-
         "v1" :> "transactionStatus" :> Capture "hash" Text
                               :> Get '[JSON] Aeson.Value
@@ -151,18 +142,6 @@ data Routes r = Routes
     , simpleTransactionStatus :: r :-
         "v1" :> "simpleTransactionStatus" :> Capture "hash" Text
                               :> Get '[JSON] Aeson.Value
-
-    , publishCode :: r :-
-        "v1" :> "publishCode" :> ReqBody '[JSON] PublishCodeRequest
-                                  :> Post '[JSON] Aeson.Value
-
-    , createContract :: r :-
-        "v1" :> "createContract" :> ReqBody '[JSON] CreateContractRequest
-                                  :> Post '[JSON] Aeson.Value
-
-    , messageContract :: r :-
-        "v1" :> "messageContract" :> ReqBody '[JSON] MessageContractRequest
-                                  :> Post '[JSON] Aeson.Value
 
     -- Private Middleware APIs (accessible on local client instance of Middleware only)
     , getNodeState :: r :-
@@ -194,45 +173,6 @@ data Routes r = Routes
 api :: Proxy (ToServantApi Routes)
 api = genericApi (Proxy :: Proxy Routes)
 
-writeSourceCodeFile :: (ModuleName, Text) -> IO String
-writeSourceCodeFile (moduleName, contents) = do
-  -- TODO Validate name is only in [a-zA-Z]*
-  let fileName = Text.unpack moduleName ++ ".midlang"
-  TIO.writeFile fileName contents
-  return fileName
-
-
-{- Creates a fresh Midlang project on disk to run an action in, then deletes
- - the project after the action has completed, even if an exception is thrown
- -}
-freshProjectBracket :: [(ModuleName, ModuleSourceCode)] -> ([String] -> IO a) -> IO a
-freshProjectBracket moduleSources projectAction =
-  let
-    projectFiles :: String -> IO [String]
-    projectFiles projectDir = do
-      createDirectoryIfMissing True projectDir
-
-      withCurrentDirectory projectDir $ do
-
-        _ <- readProcessWithExitCode "/bin/bash" [] "yes | mid init"
-
-        fileNames <- forM moduleSources writeSourceCodeFile
-
-        return fileNames
-
-    getFreshDir :: IO String
-    getFreshDir = do
-      time <- getCurrentTime
-      let unixTime = nominalDiffTimeToSeconds $ utcTimeToPOSIXSeconds time
-      return $ "tmp/" ++ show unixTime ++ "/"
-  in
-    do
-      freshDir <- getFreshDir
-      bracket
-        (projectFiles freshDir)
-        (\_ -> removePathForcibly freshDir)
-        (\files -> withCurrentDirectory freshDir $ projectAction files)
-
 type Account = (IDTypes.AccountAddress, Types.KeyMap)
 
 servantApp :: EnvData -> Maybe Account -> Text -> Text -> FilePath -> FilePath -> Application
@@ -252,167 +192,6 @@ servantApp nodeBackend dropAccount pgUrl idUrl cfgDir dataDir = genericServe rou
       host ++ ":" ++ port
 
 
-  typecheckCode :: BuildModulesRequest -> Handler Aeson.Value
-  typecheckCode (BuildModulesRequest moduleContents) =
-
-      {- Rather hacky but KISS approach to "integrating" with the Midlang compiler
-      In future this code will probably be directly integrated into the client
-      and call the compiler in memory, avoiding filesystem entirely.
-
-      Known issues (some quick fixes ahead of proper future integration):
-
-      - Not thread-safe, if we get two contracts compiling at the same time it'll overwrite and cause issues
-        - Fix by using proper temp file system for target + compilation
-      - elm.json required to be manually placed in project / folder
-        - Fix by inlining it and ensuring it's written before compilation
-      - Fairly dodgy string based status mapping between FE/BE
-
-      -}
-
-    liftIO $ freshProjectBracket moduleContents (\(sourceCodeFileNames) -> do
-
-      let midlangArgs = ["build"] ++ sourceCodeFileNames ++ ["--report=json"]
-
-      (exitCode, stdout, stderr)
-        <- readProcessWithExitCode "mid" midlangArgs []
-
-      let decodedCompilerResponse =
-            case exitCode of
-              ExitSuccess ->
-                Aeson.eitherDecode' $ BS8.pack stdout
-              ExitFailure code ->
-                if code == 1 then
-                    Aeson.eitherDecode' $ BS8.pack stderr
-                else
-                    Left $ "Unexpected exit code: " <> show code
-
-      case decodedCompilerResponse of
-        Right json -> pure json
-        Left errMsg -> pure $ Aeson.String $ Text.pack errMsg -- TODO Encode a new kind of JSON error that the Elm code can understand?
-    )
-
-
-  publishCode :: PublishCodeRequest -> Handler Aeson.Value
-  publishCode (PublishCodeRequest account energyLimit moduleContents) =
-
-    liftIO $ freshProjectBracket moduleContents (\(sourceCodeFileNames) -> do
-
-      -- TODO Give credentials via the command line (needs enabling in the Midlang compiler)
-      let midlangArgs = ["deploy", nodeAuthority, show energyLimit, "--report=json" ] ++ sourceCodeFileNames
-
-      (exitCode, stdout, stderr)
-        <- readProcessWithExitCode "mid" midlangArgs []
-
-      let decodedCompilerResponse =
-            case exitCode of
-              ExitSuccess ->
-                Aeson.eitherDecode' $ BS8.pack stdout
-              ExitFailure code ->
-                if code == 1 then
-                    Aeson.eitherDecode' $ BS8.pack stderr
-                else
-                    Left $ "Unexpected exit code: " <> show code
-
-      case decodedCompilerResponse of
-        Right json -> pure json
-        Left errMsg -> pure $ Aeson.String $ Text.pack errMsg -- TODO Encode a new kind of JSON error that the Elm code can understand?
-    )
-
-
-  createContract :: CreateContractRequest -> Handler Aeson.Value
-  createContract (CreateContractRequest account creationArgs energyLimit moduleName contractName moduleContents) =
-    {-
-     - The `start-contract` initializes an Midlang contract on the Concordium Network:
-     -
-     -     mid start-contract <midlang-expression> <node> <energy> <Midlang-module-name> <Midlang-contract-name>
-     -
-     - For example:
-     -
-     -     mid start-contract Nat.Zero 127.0.0.1:32000 50 ExampleContractModule ExampleContract
-     -
-     - This tries to compile the given Midlang expression and pass that to the named
-     - contract's `init` function in order to create an instance of it via a node at
-     - socket address 127.0.0.1:32000, with an energy limit of 50.
-     -}
-
-    liftIO $ freshProjectBracket moduleContents (\(sourceCodeFileNames) -> do
-
-      -- TODO Give credentials via the command line (needs enabling in the Midlang compiler)
-      let midlangArgs = ["start-contract", Text.unpack creationArgs, nodeAuthority, show energyLimit, Text.unpack moduleName, Text.unpack contractName, "--report=json" ]
-
-      (exitCode, stdout, stderr)
-        <- readProcessWithExitCode "mid" midlangArgs []
-
-      let decodedCompilerResponse =
-            case exitCode of
-              ExitSuccess ->
-                Aeson.eitherDecode' $ BS8.pack stdout
-              ExitFailure code ->
-                if code == 1 then
-                    Aeson.eitherDecode' $ BS8.pack stderr
-                else
-                    Left $ "Unexpected exit code: " <> show code
-
-      case decodedCompilerResponse of
-        Right json -> pure json
-        Left errMsg -> pure $ Aeson.String $ Text.pack errMsg -- TODO Encode a new kind of JSON error that the Elm code can understand?
-    )
-
-
-
-  messageContract :: MessageContractRequest -> Handler Aeson.Value
-  messageContract (MessageContractRequest account amount maybeMessageContents energyLimit moduleName contractName contractAddress moduleContents) =
-    {-
-     - The `message-contract` sends a message to an Midlang contract on the Concordium
-     - Network:
-     -
-     -     mid message-contract <GTU-amount> <midlang-expression> <node> <energy> <Midlang-module-name> <Midlang-contract-name> <contract-address>
-     -
-     - For example:
-     -
-     -     mid message-contract 123 Op.Increment 127.0.0.1:32000 50 ExampleContractModule ExampleContract '{ "index" : 100, "subindex" : 1 }'
-     -}
-
-    -- If there are no message contents, this amounts to just a simple transfer to a contract, and that isn't something `mid message-contract` supports at the moment
-    case maybeMessageContents of
-
-      Nothing ->
-        error "No message given for messaging contract" -- TODO Complete a simple transfer (or equivalent for sending GTU to a contract instance) instead
-
-      Just messageArgs ->
-
-        liftIO $ freshProjectBracket moduleContents (\(sourceCodeFileNames) -> do
-
-          -- TODO Give credentials via the command line (needs enabling in the Midlang compiler)
-          let midlangArgs =
-                [ "message-contract"
-                , show amount
-                , Text.unpack messageArgs
-                , nodeAuthority
-                , show energyLimit
-                , Text.unpack moduleName
-                , Text.unpack contractName
-                , BS8.unpack $ Aeson.encode contractAddress
-                , "--report=json"
-                ]
-
-          (exitCode, stdout, stderr)
-            <- readProcessWithExitCode "mid" midlangArgs []
-
-          let decodedCompilerResponse =
-                case exitCode of
-                  ExitSuccess ->
-                    Aeson.eitherDecode' $ BS8.pack stdout
-                  ExitFailure code ->
-                    if code == 1 then
-                        Aeson.eitherDecode' $ BS8.pack stderr
-                    else
-                        Left $ "Unexpected exit code: " <> show code
-
-          case decodedCompilerResponse of
-            Right json -> pure json
-            Left errMsg -> pure $ Aeson.String $ Text.pack errMsg -- TODO Encode a new kind of JSON error that the Elm code can understand?
-        )
 
 
   betaIdProvision :: BetaIdProvisionRequest -> Handler Aeson.Value
