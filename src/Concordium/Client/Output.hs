@@ -25,6 +25,7 @@ import Data.Text (Text, pack, unpack)
 import Data.Text.Encoding
 import Data.Time
 import Text.Printf
+import qualified Data.Aeson as AE
 
 -- PRINTER
 
@@ -470,6 +471,32 @@ printBlockInfo (Just b) =
        , printf "Transaction count:          %d" (birTransactionCount b)
        , printf "Transaction energy cost:    %s" (showNrg $ birTransactionEnergyCost b)
        , printf "Transactions size:          %d" (birTransactionsSize b) ]
+
+printIdentityProviders :: [AE.Value] -> Printer
+printIdentityProviders vals = do
+  tell [ printf "Identity providers"
+       , printf "------------------" ]
+  tell $ concatMap printSingleIdentityProvider vals
+ where printSingleIdentityProvider (AE.Object val) =
+         let AE.String ident = val HM.! "ip_identity"
+             AE.String desc = val HM.! "ip_description"
+         in
+          [ printf "Identifier:     %s" ident
+          , printf "Description:    %s" desc ]
+       printSingleIdentityProvider _ = [ "Couldn't find a JSON object when printing an IpInfo value." ]
+
+printAnonymityRevokers :: [AE.Value] -> Printer
+printAnonymityRevokers vals = do
+  tell [ printf "Anonymity revokers"
+       , printf "------------------" ]
+  tell $ concatMap printSingleAnonymityRevoker vals
+ where printSingleAnonymityRevoker (AE.Object val) =
+         let AE.String ident = val HM.! "ar_identity"
+             AE.String desc = val HM.! "ar_description"
+         in
+          [ printf "Identifier:     %s" ident
+          , printf "Description:    %s" desc ]
+       printSingleAnonymityRevoker _ = [ "Couldn't find a JSON object when printing an IpInfo value." ]
 
 -- AMOUNT AND ENERGY
 

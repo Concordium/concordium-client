@@ -16,7 +16,6 @@ module Concordium.Client.Runner
   , generateBakerAddPayload
   , getAccountInfo
   , getModuleSet
-  , getStatusOfPeers
   , StatusOfPeers(..)
   , ClientMonad(..)
   , withClient
@@ -177,6 +176,7 @@ process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir
     ConsensusCmd c -> processConsensusCmd c cfgDir verbose backend
     BlockCmd c -> processBlockCmd c verbose backend
     BakerCmd c -> processBakerCmd c cfgDir verbose backend
+    IdentityCmd c -> processIdentityCmd c backend
 
 -- |Validate an account name and fail gracefully if the given account name
 -- is invalid.
@@ -1291,6 +1291,25 @@ bakerSetElectionKeyTransactionPayload bsektCfg confirm = do
         Just x -> return x
         Nothing -> logFatal [err]
 
+processIdentityCmd :: IdentityCmd -> Backend -> IO ()
+processIdentityCmd action backend =
+  case action of
+    IdentityShow c -> processIdentityShowCmd c backend
+
+processIdentityShowCmd :: IdentityShowCmd -> Backend -> IO ()
+processIdentityShowCmd action backend =
+  case action of
+    IdentityShowIPs block -> do
+      v <- withClientJson backend $ withBestBlockHash block $ getIdentityProviders
+      case v of
+        Nothing -> putStrLn "Account not found."
+        Just a -> runPrinter $ printIdentityProviders a
+    IdentityShowARs block -> do
+      v <- withClientJson backend $ withBestBlockHash block $ getIdentityProviders
+      case v of
+        Nothing -> putStrLn "Account not found."
+        Just a -> runPrinter $ printAnonymityRevokers a
+
 -- |Process a "legacy" command.
 processLegacyCmd :: LegacyCmd -> Backend -> IO ()
 processLegacyCmd action backend =
@@ -1364,6 +1383,8 @@ processLegacyCmd action backend =
     Shutdown -> withClient backend $ shutdown >>= printSuccess
     DumpStart -> withClient backend $ dumpStart >>= printSuccess
     DumpStop -> withClient backend $ dumpStop >>= printSuccess
+    GetIdentityProviders block -> withClient backend $ withBestBlockHash block getIdentityProviders >>= printJSON
+    GetAnonymityRevokers block -> withClient backend $ withBestBlockHash block getAnonymityRevokers >>= printJSON
   where
     printSuccess (Left x)  = liftIO . putStrLn $ x
     printSuccess (Right x) = liftIO $ if x then putStrLn "OK" else putStrLn "FAIL"
@@ -1448,14 +1469,7 @@ printPeerData epd =
         putStrLn $ "  Node id: " ++ unpack (pe ^. CF.nodeId . CF.value)
         putStrLn $ "    Port: " ++ show (pe ^. CF.port . CF.value)
         putStrLn $ "    IP: " ++ unpack (pe ^. CF.ip . CF.value)
-        putStrLn $ "    Catchup Status: " ++ showCatchupStatus (pe ^. CF.catchupStatus)
         putStrLn ""
-  where showCatchupStatus =
-          \case PeerElement'UPTODATE -> "Up to date"
-                PeerElement'PENDING -> "Pending"
-                PeerElement'CATCHINGUP -> "Catching up"
-                _ -> "Unknown" -- this should not happen in well-formed responses
-
 
 getPeerData :: Bool -> ClientMonad IO (Either String PeerData)
 getPeerData bootstrapper = do
@@ -1500,23 +1514,6 @@ data StatusOfPeers = StatusOfPeers {
 
 instance ToJSON StatusOfPeers
 instance FromJSON StatusOfPeers
-
--- |Get an indication of how caught up the node is in relation to its peers.
-getStatusOfPeers :: ClientMonad IO (Either String StatusOfPeers)
-getStatusOfPeers = do
-  -- False means we don't include the bootstrap nodes here, since they are not running consensus.
-  getPeerList False <&> \case
-    Left err -> (Left err)
-    Right peerList -> Right $
-      L.foldl' (\status peerElem ->
-                  case peerElem ^. CF.catchupStatus of
-                    PeerElement'UPTODATE -> status { numUpToDate = numUpToDate status + 1 }
-                    PeerElement'PENDING -> status { numPending = numPending status + 1 }
-                    PeerElement'CATCHINGUP -> status { numCatchingUp = numCatchingUp status + 1 }
-                    _ -> status -- this should not happen in well-formed responses
-               )
-          (StatusOfPeers 0 0 0)
-          (peerList ^. CF.peers)
 
 -- |Process a transaction from JSON payload given as a byte string
 -- and with keys given explicitly.

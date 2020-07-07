@@ -279,6 +279,14 @@ dumpStart = withUnaryNoMsg (call @"dumpStart") CF.value
 dumpStop :: ClientMonad IO (Either String Bool)
 dumpStop = withUnaryNoMsg (call @"dumpStop") CF.value
 
+getIdentityProviders :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
+getIdentityProviders hash = withUnary (call @"getIdentityProviders") msg (to processJSON)
+  where msg = defMessage & CF.blockHash .~ hash
+
+getAnonymityRevokers :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
+getAnonymityRevokers hash = withUnary (call @"getAnonymityRevokers") msg (to processJSON)
+  where msg = defMessage & CF.blockHash .~ hash
+
 -- | Setup the GRPC client and run a rawUnary call with the provided message to the provided method,
 -- the output is interpreted using the function given in the third parameter.
 withUnaryCore :: forall m n b. (HasMethod P2P m, MonadIO n)
