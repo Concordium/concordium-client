@@ -11,7 +11,6 @@ import qualified Data.Text as Text
 import           Data.Aeson
 import           Data.Aeson.TH
 import           Data.Word
-import           Data.Word (Word64)
 import           Data.Map (Map)
 import           GHC.Generics
 
