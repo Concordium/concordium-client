@@ -141,18 +141,6 @@ getFromJson r = do
     Error err -> logFatal [printf "cannot parse '%s' as JSON: %s" (show s) err]
     Success v -> return v
 
--- |Helper function for parsing a specific entry of a JSON object to any type that implements
--- FromJSON. Useful for parsing specific keys from a Baker Keys file.
-getFromJsonObject :: (MonadIO m, FromJSON a) => Text -> Either String Value -> m a
-getFromJsonObject key r = do
-  obj <- case r of
-         Left err -> logFatal [printf "I/O error: %s" err]
-         Right (Object o) -> return o
-         Right s -> logFatal [printf "error parsing JSON, expected object but found: %s" $ show s]
-  case parse (\o -> o .: key) obj of
-    Success k -> return k
-    Error err -> logFatal [printf "I/O error: %s" err]
-
 -- |Look up account from the provided name (or defaultAcccountName if missing).
 -- Fail if it cannot be found.
 getAccountAddressArg :: AccountNameMap -> Maybe Text -> IO NamedAddress
@@ -1090,7 +1078,6 @@ processBakerCmd action baseCfgDir verbose backend =
         putStrLn ""
 
       bsektCfg <- getBakerSetElectionKeyCfg baseCfg txOpts bid file
-      let txCfg = bsekTransactionCfg bsektCfg
       pl <- bakerSetElectionKeyTransactionPayload bsektCfg (ioConfirm intOpts)
 
       withClient backend $ do
