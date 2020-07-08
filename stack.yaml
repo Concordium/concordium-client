@@ -54,7 +54,6 @@ extra-deps:
 - ./deps/crypto
 - ./deps/globalstate-types
 - ./deps/globalstate-mockup/globalstate
-- ./deps/globalstate-mockup/deps/lmdb-simple-cereal
 - ./deps/globalstate-mockup/deps/haskell-lmdb
 
 
