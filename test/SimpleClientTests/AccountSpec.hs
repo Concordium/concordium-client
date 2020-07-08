@@ -36,10 +36,8 @@ exampleCredentials p = IDTypes.CredentialDeploymentValues
                        , IDTypes.cdvRegId = regId
                        , IDTypes.cdvIpId = IDTypes.IP_ID 21
                        , IDTypes.cdvThreshold = IDTypes.Threshold 1
-                       , IDTypes.cdvArData = [IDTypes.ChainArData
-                                              { IDTypes.ardName = IDTypes.ARName 0
-                                              , IDTypes.ardIdCredPubShare = share
-                                              , IDTypes.ardIdCredPubShareNumber = IDTypes.ShareNumber 0 }]
+                       , IDTypes.cdvArData = Map.singleton (IDTypes.ArIdentity 0) (IDTypes.ChainArData
+                                                            { IDTypes.ardIdCredPubShare = share })
                        , IDTypes.cdvPolicy = p }
   where acc = naAddr exampleAddress
         (Just regId) = BSH.deserializeBase16 "a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f"
@@ -133,13 +131,11 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
       , "{\n\
         \    \"ipIdentity\": 21,\n\
         \    \"regId\": \"a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f\",\n\
-        \    \"arData\": [\n\
-        \        {\n\
-        \            \"idCredPubShareNumber\": 0,\n\
-        \            \"encIdCredPubShare\": \"a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46fa1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f\",\n\
-        \            \"arIdentity\": 0\n\
+        \    \"arData\": {\n\
+        \        \"0\": {\n\
+        \            \"encIdCredPubShare\": \"a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46fa1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f\"\n\
         \        }\n\
-        \    ],\n\
+        \    },\n\
         \    \"account\": \"2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6\",\n\
         \    \"revocationThreshold\": 1,\n\
         \    \"policy\": {\n\
