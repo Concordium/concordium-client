@@ -135,6 +135,7 @@ data GetNodeStateResponse =
     , signatureVerifyKey :: Text
     , selectionVerifyKey :: Text
     , timestamp :: Int
+    , peersStatus :: StatusOfPeers
     }
   deriving (Generic, Show)
 
