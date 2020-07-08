@@ -29,6 +29,10 @@ lookupEnvText name defaultVal = do
   param <- E.lookupEnv (unpack name)
   pure $ maybe defaultVal pack param
 
+lookupEnvTextWithoutDefault :: Text  -> IO (Maybe Text)
+lookupEnvTextWithoutDefault name = do
+  param <- E.lookupEnv (unpack name)
+  pure $ pack <$> param
 
 logger :: Environment -> Middleware
 logger Test        = id

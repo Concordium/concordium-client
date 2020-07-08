@@ -54,6 +54,7 @@ runHttp middlewares = do
   serverPort <- Config.lookupEnv "PORT" 8081
   env <- Config.lookupEnv "ENV" Config.Development
   nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:11100"
+  rpcPassword <- Config.lookupEnvText "RPC_PASSWORD" "rpcadmin"
   cfgDir <- T.unpack <$> (Config.lookupEnvText "ACC_DIR" . T.pack =<< getDefaultBaseConfigDir)
   let (nodeHost, nodePort) =
         case splitOn ":" (T.unpack nodeUrl) of
@@ -64,7 +65,7 @@ runHttp middlewares = do
               error $ "Could not parse port for given NODE_URL: " ++ nodePortText
           _ ->
             error $ "Could not parse host:port for given NODE_URL: " ++ T.unpack nodeUrl
-      grpcConfig = GrpcConfig {host = nodeHost, port = nodePort, target = Nothing, retryNum = 5, timeout = Just 10}
+      grpcConfig = GrpcConfig {host = nodeHost, port = nodePort, grpcAuthenticationToken = T.unpack rpcPassword, target = Nothing, retryNum = 5, timeout = Just 10}
   runExceptT (mkGrpcClient grpcConfig Nothing) >>= \case
     Left err -> fail (show err) -- cannot connect to grpc server
     Right grpc -> do
