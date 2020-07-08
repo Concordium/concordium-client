@@ -16,6 +16,7 @@ module Concordium.Client.Runner
   , generateBakerAddPayload
   , getAccountInfo
   , getModuleSet
+  , getStatusOfPeers
   , StatusOfPeers(..)
   , ClientMonad(..)
   , withClient
@@ -1302,12 +1303,12 @@ processIdentityShowCmd action backend =
     IdentityShowIPs block -> do
       v <- withClientJson backend $ withBestBlockHash block $ getIdentityProviders
       case v of
-        Nothing -> putStrLn "Account not found."
+        Nothing -> putStrLn "No response received from the gRPC server."
         Just a -> runPrinter $ printIdentityProviders a
     IdentityShowARs block -> do
       v <- withClientJson backend $ withBestBlockHash block $ getIdentityProviders
       case v of
-        Nothing -> putStrLn "Account not found."
+        Nothing -> putStrLn "No response received from the gRPC server."
         Just a -> runPrinter $ printAnonymityRevokers a
 
 -- |Process a "legacy" command.
@@ -1469,7 +1470,14 @@ printPeerData epd =
         putStrLn $ "  Node id: " ++ unpack (pe ^. CF.nodeId . CF.value)
         putStrLn $ "    Port: " ++ show (pe ^. CF.port . CF.value)
         putStrLn $ "    IP: " ++ unpack (pe ^. CF.ip . CF.value)
+        putStrLn $ "    Catchup Status: " ++ showCatchupStatus (pe ^. CF.catchupStatus)
         putStrLn ""
+  where showCatchupStatus =
+          \case PeerElement'UPTODATE -> "Up to date"
+                PeerElement'PENDING -> "Pending"
+                PeerElement'CATCHINGUP -> "Catching up"
+                _ -> "Unknown" -- this should not happen in well-formed responses
+
 
 getPeerData :: Bool -> ClientMonad IO (Either String PeerData)
 getPeerData bootstrapper = do
@@ -1514,6 +1522,24 @@ data StatusOfPeers = StatusOfPeers {
 
 instance ToJSON StatusOfPeers
 instance FromJSON StatusOfPeers
+
+-- |Get an indication of how caught up the node is in relation to its peers.
+getStatusOfPeers :: ClientMonad IO (Either String StatusOfPeers)
+getStatusOfPeers = do
+  -- False means we don't include the bootstrap nodes here, since they are not running consensus.
+  getPeerList False <&> \case
+    Left err -> (Left err)
+    Right peerList -> Right $
+      L.foldl' (\status peerElem ->
+                  case peerElem ^. CF.catchupStatus of
+                    PeerElement'UPTODATE -> status { numUpToDate = numUpToDate status + 1 }
+                    PeerElement'PENDING -> status { numPending = numPending status + 1 }
+                    PeerElement'CATCHINGUP -> status { numCatchingUp = numCatchingUp status + 1 }
+                    _ -> status -- this should not happen in well-formed responses
+               )
+          (StatusOfPeers 0 0 0)
+          (peerList ^. CF.peers)
+
 
 -- |Process a transaction from JSON payload given as a byte string
 -- and with keys given explicitly.

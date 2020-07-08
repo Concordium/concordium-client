@@ -620,6 +620,11 @@ servantApp nodeBackend dropAccount pgUrl idUrl cfgDir dataDir = genericServe rou
                    Right x -> fromIntegral x
                    _ -> 0
 
+    peersStatusQuery <- liftIO $ runGRPC nodeBackend getStatusOfPeers
+    let peersStatus = case peersStatusQuery of
+                        Right x -> x
+                        Left _ -> StatusOfPeers 0 0 0
+
     case infoE of
       Right ni ->
         pure $
@@ -1118,6 +1123,11 @@ debugGrpc = do
   let received = case receivedQuery of
                    Right x -> fromIntegral x
                    _ -> 0
+
+  peersStatusQuery <- withClient nodeBackend getStatusOfPeers
+  let peersStatus = case peersStatusQuery of
+                      Right x -> x
+                      Left _ -> StatusOfPeers 0 0 0
 
   case infoE of
     Right ni -> do
