@@ -512,8 +512,8 @@ printAnonymityRevokers vals = do
   tell $ concatMap printSingleAnonymityRevoker vals
  where parseResponse :: AE.Value -> AE.Parser (Word32, (String, String, String))
        parseResponse = AE.withObject "IpInfo" $ \obj -> do
-         ipId <- obj AE..: "ipIdentity"
-         descriptionVal <- obj AE..: "ipDescription"
+         ipId <- obj AE..: "arIdentity"
+         descriptionVal <- obj AE..: "arDescription"
          description <- parseDescription descriptionVal
          return (ipId, description)
        printSingleAnonymityRevoker val =
