@@ -55,6 +55,7 @@ data GrpcConfig =
   GrpcConfig
     { host   :: !HostName
     , port   :: !PortNumber
+    , grpcAuthenticationToken :: !String
     -- Target node, i.e. "node-0" for use with grpc-proxy.eu.test.concordium.com against testnet
     , target :: !(Maybe String)
     -- |Number of times to __retry__ to establish a connection. Thus a value of
@@ -116,7 +117,7 @@ runClient config comp = runExceptT $ runReaderT (_runClientMonad comp) config
 
 mkGrpcClient :: GrpcConfig -> Maybe LoggerMethod -> ClientIO EnvData
 mkGrpcClient config mLogger =
-  let auth = ("authentication", "rpcadmin")
+  let auth = ("authentication", BS8.pack $ grpcAuthenticationToken config)
       header =
         case target config of
           Just t  -> [auth, ("target", BS8.pack t)]
