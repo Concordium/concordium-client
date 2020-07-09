@@ -10,21 +10,15 @@
 
 module Api where
 
-import           Network.Wai (Application)
-import           Control.Monad.IO.Class (liftIO)
 import           Control.Monad.Trans.Except
-import           Control.Exception (bracket, handle)
 import qualified Data.HashMap.Strict as HM
 import           Data.Aeson (encode, decode')
 import qualified Data.Aeson as Aeson
 import           Data.Aeson.Types (FromJSON)
 import qualified Data.Aeson.Types as Aeson
-import qualified Data.Aeson.Parser
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
-import qualified Data.Text.IO as TIO
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as BS8
 import qualified Control.Exception as C
@@ -32,22 +26,13 @@ import qualified Data.ByteString.Short as BSS
 import           Data.Maybe (fromJust)
 import           Data.List.Split
 import           Data.Map
-import           Data.Time.Clock (addUTCTime, UTCTime)
-import           Data.Time.Format (formatTime, defaultTimeLocale)
 import           Servant
 import           Servant.API.Generic
---import           Servant.Server.Internal.ServantError (ServantError)
 import           Servant.Server.Generic
-import           System.Directory
-import           System.Exit
 import           System.Environment
 import           System.IO.Error
-import           System.IO
-import           Control.Concurrent
-import           System.Process
 import           Text.Read (readMaybe)
 import           Lens.Micro.Platform ((^.), (^?), _Just)
-import           Safe (headMay)
 import           Data.Time
 import           Data.Time.Clock.POSIX
 import           NeatInterpolation
@@ -59,15 +44,12 @@ import           Concordium.Client.Commands as COM
 import           Concordium.Client.Encryption (Password(..))
 import           Concordium.Client.GRPC
 import qualified Concordium.Client.GRPC as GRPC
-import qualified Network.GRPC.Client.Helpers as GRPC
 import           Concordium.Client.Runner
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction
 import           Concordium.Client.Cli
 import           Concordium.Client.Config
-import           Concordium.Client.Parse
 
-import qualified Concordium.Crypto.SignatureScheme as S
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
 import           Concordium.Types.HashableTo
@@ -75,7 +57,6 @@ import qualified Concordium.Types.Transactions as Types
 import qualified Concordium.Types.Execution as Execution
 import qualified Concordium.Client.Types.Transaction as Types
 import           Control.Monad.Except
-import           Control.Monad (forM_)
 import qualified Proto.ConcordiumP2pRpc_Fields as CF
 
 
@@ -87,9 +68,6 @@ import           Api.Types
 import           Conduit
 import           PerAccountTransactions
 import qualified Concordium.Client.TransactionStatus
-
-
-import qualified Concordium.Crypto.Ed25519Signature as Ed25519
 
 data Routes r = Routes
     -- Public Middleware APIs
@@ -179,20 +157,6 @@ servantApp :: EnvData -> Maybe Account -> Text -> Text -> FilePath -> FilePath -
 servantApp nodeBackend dropAccount pgUrl idUrl cfgDir dataDir = genericServe routesAsServer
  where
   routesAsServer = Routes {..} :: Routes AsServer
-
-
-  -- Authority is a host and port, e.g. localhost:32000
-  nodeAuthority :: String
-  nodeAuthority =
-    let
-      nodeConfig = GRPC.config nodeBackend
-      host = GRPC._grpcClientConfigHost nodeConfig
-      port = show $ GRPC._grpcClientConfigPort nodeConfig
-    in
-      host ++ ":" ++ port
-
-
-
 
   betaIdProvision :: BetaIdProvisionRequest -> Handler Aeson.Value
   betaIdProvision BetaIdProvisionRequest{..} = do
@@ -292,19 +256,8 @@ servantApp nodeBackend dropAccount pgUrl idUrl cfgDir dataDir = genericServe rou
 
   accountTransactions :: Types.AccountAddress -> Handler AccountTransactionsResponse
   accountTransactions address = do
-    let
-      accountAddress address =
-        case address of
-          Types.AddressAccount a -> Just a
-          _ -> Nothing
-
-      contractAddress address =
-        case address of
-          Types.AddressContract a -> Just a
-          _ -> Nothing
-
-      toOutcome (Right p) = Just (outcomeFromPretty p)
-      toOutcome _ = Nothing
+    let toOutcome (Right p) = Just (outcomeFromPretty p)
+        toOutcome _ = Nothing
 
     outcomes <- liftIO $ processAccounts (Text.encodeUtf8 pgUrl) address (mapWhileC toOutcome .| sinkList)
 
@@ -323,7 +276,7 @@ servantApp nodeBackend dropAccount pgUrl idUrl cfgDir dataDir = genericServe rou
   transfer :: TransferRequest -> Handler TransferResponse
   transfer TransferRequest{..} = do
 
-    let (AccountWithKeys accountAddress keymap) = account
+    let (AccountWithKeys accountAddress _) = account
 
     liftIO $ putStrLn $ "✅ Sending " ++ show amount ++ " from " ++ show accountAddress ++ " to " ++ show to
 
@@ -341,10 +294,6 @@ servantApp nodeBackend dropAccount pgUrl idUrl cfgDir dataDir = genericServe rou
 
   blockSummary :: Text -> Handler Aeson.Value
   blockSummary blockhash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getBlockSummary blockhash)
-
-
-  contractState :: Text -> Handler Aeson.Value
-  contractState contractAddress = liftIO $ proxyGrpcCall nodeBackend (withBestBlockHash Nothing (GRPC.getInstanceInfo contractAddress))
 
 
   transactionStatus :: Text -> Handler Aeson.Value
@@ -544,12 +493,12 @@ proxyGrpcCall nodeBackend query = do
 wrapIOError :: forall b. IO b -> Handler b
 wrapIOError f =
   (liftIO (C.try f :: IO (Either C.IOException b))) >>= \case
-    Left e -> throwError' err500 (Nothing :: Maybe (String, String))
+    Left _ -> throwError' err500 (Nothing :: Maybe (String, String))
     Right val -> return val
 
 -- Serialization errors will be translated to 400 bad request
 wrapSerializationError :: (Show a) => a -> String -> Either String b -> Handler b
-wrapSerializationError value typ (Right val) = return val
+wrapSerializationError _ _ (Right val) = return val
 wrapSerializationError value typ (Left err) = throwError' err400 $ Just ("cannot parse '" ++ show value ++ "' as type " ++ typ ++ ": ", err)
 
 throwError' :: (Show err) => ServerError -> Maybe (String, err) -> Handler a
@@ -684,8 +633,8 @@ debugTestFullProvision = do
     (nodeHost, nodePort) =
       case splitOn ":" $ Text.unpack nodeUrl of
         nodeHostText:nodePortText:_ -> case readMaybe nodePortText of
-          Just nodePortText ->
-            (nodeHostText, nodePortText)
+          Just nodePortText' ->
+            (nodeHostText, nodePortText')
           Nothing ->
             error $ "Could not parse port for given NODE_URL: " ++ nodePortText
         _ ->
@@ -779,7 +728,6 @@ debugTestTransactions nodeBackend selfAddress keyMap = do
   let txDelegateStake = Execution.encodePayload (Execution.DelegateStake 0) -- assuming baker 0 exists
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign txDelegateStake 2) 100)
 
-  let txUndelegateStake = Execution.encodePayload Execution.UndelegateStake
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign txDelegateStake 3) 100)
 
   bakerKeys <- generateBakerKeys
@@ -827,8 +775,8 @@ runDebugTestTransactions = do
     (nodeHost, nodePort) =
       case splitOn ":" $ Text.unpack nodeUrl of
         nodeHostText:nodePortText:_ -> case readMaybe nodePortText of
-          Just nodePortText ->
-            (nodeHostText, nodePortText)
+          Just nodePortText' ->
+            (nodeHostText, nodePortText')
           Nothing ->
             error $ "Could not parse port for given NODE_URL: " ++ nodePortText
         _ ->
@@ -907,7 +855,6 @@ debugGrpc = do
   let peersStatus = case peersStatusQuery of
                       Right x -> x
                       Left _ -> StatusOfPeers 0 0 0
-
 
   case infoE of
     Right ni -> do

@@ -3,11 +3,11 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module SimpleIdClientApi where
 
 import           Data.Aeson (Value(..), (.=))
-import qualified Data.Aeson as Aeson
 import           Data.Aeson.Types (ToJSON(..), FromJSON)
 import qualified Data.HashMap.Strict as DMS (fromList)
 import           Data.Map
@@ -15,10 +15,8 @@ import           Data.Word
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Servant.API.Generic
-import qualified Data.HashMap.Strict as Map
 
 import           Http
-import           Concordium.Crypto.SignatureScheme (KeyPair(..))
 import           Concordium.ID.Types (CredentialDeploymentInformation(..))
 import qualified Concordium.Client.Types.Transaction as Types
 import qualified Concordium.ID.Types as IDTypes

@@ -26,6 +26,9 @@ import Data.Text (Text, pack, unpack)
 import Data.Text.Encoding
 import Data.Time
 import Text.Printf
+import qualified Data.Aeson as AE
+import qualified Data.Aeson.Types as AE
+import Data.Word
 
 -- PRINTER
 
@@ -476,6 +479,58 @@ printBlockInfo (Just b) =
        , printf "Transaction count:          %d" (birTransactionCount b)
        , printf "Transaction energy cost:    %s" (showNrg $ birTransactionEnergyCost b)
        , printf "Transactions size:          %d" (birTransactionsSize b) ]
+
+
+-- ID LAYER
+
+parseDescription :: AE.Value -> AE.Parser (String, String, String)
+parseDescription = AE.withObject "Description" $ \obj -> do
+  name <- obj AE..: "name"
+  url <- obj AE..: "url"
+  description <- obj AE..: "description"
+  return (name, url, description)
+
+printIdentityProviders :: [AE.Value] -> Printer
+printIdentityProviders vals = do
+  tell [ printf "Identity providers"
+       , printf "------------------" ]
+  tell $ concatMap printSingleIdentityProvider vals
+ where parseResponse :: AE.Value -> AE.Parser (Word32, (String, String, String))
+       parseResponse = AE.withObject "IpInfo" $ \obj -> do
+         ipId <- obj AE..: "ipIdentity"
+         descriptionVal <- obj AE..: "arDescription"
+         description <- parseDescription descriptionVal
+         return (ipId, description)
+       printSingleIdentityProvider val =
+         let mresult = AE.parse parseResponse val in
+           case mresult of
+             AE.Success (ident, (name, url, description)) ->
+               [ printf "Identifier:     %s" ident
+               , printf "Description:    NAME %s" name
+               , printf "                URL %s" url
+               , printf "                %s" description ]
+             AE.Error e -> [ "Error encountered while parsing IpInfo: " ++ show e ]
+
+printAnonymityRevokers :: [AE.Value] -> Printer
+printAnonymityRevokers vals = do
+  tell [ printf "Anonymity revokers"
+       , printf "------------------" ]
+  tell $ concatMap printSingleAnonymityRevoker vals
+ where parseResponse :: AE.Value -> AE.Parser (Word32, (String, String, String))
+       parseResponse = AE.withObject "IpInfo" $ \obj -> do
+         ipId <- obj AE..: "arIdentity"
+         descriptionVal <- obj AE..: "arDescription"
+         description <- parseDescription descriptionVal
+         return (ipId, description)
+       printSingleAnonymityRevoker val =
+         let mresult = AE.parse parseResponse val in
+           case mresult of
+             AE.Success (ident, (name, url, description)) ->
+               [ printf "Identifier:     %s" ident
+               , printf "Description:    NAME %s" name
+               , printf "                URL %s" url
+               , printf "                %s" description ]
+             AE.Error e -> [ "Error encountered while parsing ArInfo: " ++ show e ]
 
 -- AMOUNT AND ENERGY
 
