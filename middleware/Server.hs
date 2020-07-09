@@ -3,9 +3,6 @@ module Server (module Server, addHeaders) where
 import           Control.Concurrent (forkIO)
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)
-import qualified Data.ByteString.Lazy as LBS
-import qualified Data.Aeson as AE
-import qualified Data.Aeson.Types as AE
 import qualified Data.HashMap.Strict as HM
 import           Data.Function ((&))
 import           Data.List.Split
@@ -73,7 +70,7 @@ runHttp middlewares = do
           putStrLn $ "Server started: http://localhost:" ++ show serverPort
           putStrLn $ "Config directory: " ++ cfgDir
           putStrLn $ "Data directory: " ++ dataDir
-          case gtuDropAccountData of 
+          case gtuDropAccountData of
             Just v -> do
               putStrLn $ "GTU Drop account address: " ++ show (fst v)
               putStrLn $ "GTU Drop account key count: " ++ show (HM.size (snd v))
