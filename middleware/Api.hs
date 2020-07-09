@@ -856,7 +856,6 @@ debugGrpc = do
                       Right x -> x
                       Left _ -> StatusOfPeers 0 0 0
 
-
   case infoE of
     Right ni -> do
       print ni
