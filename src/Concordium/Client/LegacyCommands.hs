@@ -99,6 +99,10 @@ data LegacyCmd
   | Shutdown
   | DumpStart
   | DumpStop
+  | GetIdentityProviders
+    { legacyBlockHash :: !(Maybe Text) }
+  | GetAnonymityRevokers
+    { legacyBlockHash :: !(Maybe Text) }
   deriving (Show)
 
 legacyProgramOptions :: Parser LegacyCmd
@@ -139,7 +143,9 @@ legacyProgramOptions =
      getBannedPeersCommand <>
      shutdownCommand <>
      dumpStartCommand <>
-     dumpStopCommand
+     dumpStopCommand <>
+     getIdentityProvidersCommand <>
+     getAnonymityRevokersCommand
     )
 
 getPeerDataCommand :: Mod CommandFields LegacyCmd
@@ -211,7 +217,7 @@ getTransactionStatusInBlockCommand =
     (info
        (GetTransactionStatusInBlock <$>
         strArgument
-          (metavar "TX-HASH" <> help "Hash of the transaction to query for") <*> 
+          (metavar "TX-HASH" <> help "Hash of the transaction to query for") <*>
         strArgument
           (metavar "BLOCK-HASH" <> help "Hash of the block.")
        )
@@ -273,7 +279,7 @@ getAccountInfoCommand =
     "GetAccountInfo"
     (info
        (GetAccountInfo <$>
-        strArgument (metavar "ACCOUNT" <> help "Account to be queried about") <*> 
+        strArgument (metavar "ACCOUNT" <> help "Account to be queried about") <*>
         optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block in which to do the query"))
        )
        (progDesc "Query the gRPC server for the information of an account."))
@@ -485,3 +491,24 @@ dumpStopCommand =
     (info
        (pure DumpStop)
        (progDesc "Stop dumping the packages."))
+
+
+getIdentityProvidersCommand :: Mod CommandFields LegacyCmd
+getIdentityProvidersCommand =
+    command
+    "GetIdentityProviders"
+    (info
+     (GetIdentityProviders <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+       )
+       (progDesc "Query the gRPC server for the identity providers on a specific block."))
+
+getAnonymityRevokersCommand :: Mod CommandFields LegacyCmd
+getAnonymityRevokersCommand =
+    command
+    "GetAnonymityRevokers"
+    (info
+     (GetAnonymityRevokers <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+       )
+       (progDesc "Query the gRPC server for the anonymity revokers on a specific block."))

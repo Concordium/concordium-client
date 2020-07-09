@@ -19,7 +19,6 @@ import Database.Persist.Postgresql
 import Database.Persist.Pagination
 import Data.Conduit
 import Data.Conduit.Combinators as Conduit
-import qualified Data.HashMap.Strict as HM
 
 type PageResult m = ReaderT SqlBackend m (Maybe (Page Entry (Key Entry)))
 

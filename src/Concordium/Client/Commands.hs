@@ -19,6 +19,8 @@ module Concordium.Client.Commands
   , ConsensusCmd(..)
   , BlockCmd(..)
   , BakerCmd(..)
+  , IdentityCmd(..)
+  , IdentityShowCmd(..)
   ) where
 
 import Data.Text hiding (map)
@@ -70,6 +72,8 @@ data Cmd
     { blockCmd :: BlockCmd }
   | BakerCmd
     { bakerCmd :: BakerCmd }
+  | IdentityCmd
+    { identityCmd :: IdentityCmd }
   deriving (Show)
 
 data ConfigCmd
@@ -209,6 +213,18 @@ data BakerCmd
     , bsakTransactionOps :: !TransactionOpts }
   deriving (Show)
 
+data IdentityCmd
+  = IdentityShow
+    { identityShow :: IdentityShowCmd } -- groups `identity show` commands
+  deriving (Show)
+
+data IdentityShowCmd
+  = IdentityShowIPs
+    { isipsBlockHash :: !(Maybe Text) }
+  | IdentityShowARs
+    { isarsBlockHash :: !(Maybe Text) }
+  deriving (Show)
+
 visibleHelper :: Parser (a -> a)
 visibleHelper = abortOption ShowHelpText $ mconcat
   [ long "help"
@@ -302,7 +318,8 @@ programOptions = Options <$>
                       configCmds <>
                       consensusCmds <>
                       blockCmds <>
-                      bakerCmds
+                      bakerCmds <>
+                      identityCmds
                      ) <|> LegacyCmd <$> legacyProgramOptions) <*>
                    backendParser <*>
                    optional (strOption (long "config" <> metavar "DIR" <> help "Path to the configuration directory.")) <*>
@@ -756,6 +773,46 @@ bakerSetElectionKeyCmd =
         , "     \"electionVerifyKey\": ...,"
         , "     ..."
         , "   }" ]))
+
+identityCmds :: Mod CommandFields Cmd
+identityCmds =
+  command
+    "identity"
+    (info
+      (IdentityCmd <$>
+        hsubparser
+          (identityShowCmd))
+      (progDesc "Commands for interacting with the ID layer."))
+
+
+identityShowCmd :: Mod CommandFields IdentityCmd
+identityShowCmd=
+  command
+    "show"
+    (info
+      (IdentityShow <$>
+        hsubparser
+         (identityShowIPsCmd <>
+          identityShowARsCmd))
+      (progDesc "Show ID layer values at a given block."))
+
+identityShowIPsCmd :: Mod CommandFields IdentityShowCmd
+identityShowIPsCmd =
+  command
+    "identity-providers"
+    (info
+      (IdentityShowIPs <$>
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+    (progDesc "Show identity providers at a given block."))
+
+identityShowARsCmd :: Mod CommandFields IdentityShowCmd
+identityShowARsCmd =
+  command
+    "anonymity-revokers"
+    (info
+      (IdentityShowARs <$>
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+      (progDesc "Show anonymity revokers at a given block."))
 
 docFromLines :: [String] -> Maybe P.Doc
 docFromLines = Just . P.vsep . map P.text

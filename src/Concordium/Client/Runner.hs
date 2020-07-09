@@ -141,18 +141,6 @@ getFromJson r = do
     Error err -> logFatal [printf "cannot parse '%s' as JSON: %s" (show s) err]
     Success v -> return v
 
--- |Helper function for parsing a specific entry of a JSON object to any type that implements
--- FromJSON. Useful for parsing specific keys from a Baker Keys file.
-getFromJsonObject :: (MonadIO m, FromJSON a) => Text -> Either String Value -> m a
-getFromJsonObject key r = do
-  obj <- case r of
-         Left err -> logFatal [printf "I/O error: %s" err]
-         Right (Object o) -> return o
-         Right s -> logFatal [printf "error parsing JSON, expected object but found: %s" $ show s]
-  case parse (\o -> o .: key) obj of
-    Success k -> return k
-    Error err -> logFatal [printf "I/O error: %s" err]
-
 -- |Look up account from the provided name (or defaultAcccountName if missing).
 -- Fail if it cannot be found.
 getAccountAddressArg :: AccountNameMap -> Maybe Text -> IO NamedAddress
@@ -177,6 +165,7 @@ process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir
     ConsensusCmd c -> processConsensusCmd c cfgDir verbose backend
     BlockCmd c -> processBlockCmd c verbose backend
     BakerCmd c -> processBakerCmd c cfgDir verbose backend
+    IdentityCmd c -> processIdentityCmd c backend
 
 -- |Validate an account name and fail gracefully if the given account name
 -- is invalid.
@@ -1090,7 +1079,6 @@ processBakerCmd action baseCfgDir verbose backend =
         putStrLn ""
 
       bsektCfg <- getBakerSetElectionKeyCfg baseCfg txOpts bid file
-      let txCfg = bsekTransactionCfg bsektCfg
       pl <- bakerSetElectionKeyTransactionPayload bsektCfg (ioConfirm intOpts)
 
       withClient backend $ do
@@ -1291,6 +1279,25 @@ bakerSetElectionKeyTransactionPayload bsektCfg confirm = do
         Just x -> return x
         Nothing -> logFatal [err]
 
+processIdentityCmd :: IdentityCmd -> Backend -> IO ()
+processIdentityCmd action backend =
+  case action of
+    IdentityShow c -> processIdentityShowCmd c backend
+
+processIdentityShowCmd :: IdentityShowCmd -> Backend -> IO ()
+processIdentityShowCmd action backend =
+  case action of
+    IdentityShowIPs block -> do
+      v <- withClientJson backend $ withBestBlockHash block $ getIdentityProviders
+      case v of
+        Nothing -> putStrLn "No response received from the gRPC server."
+        Just a -> runPrinter $ printIdentityProviders a
+    IdentityShowARs block -> do
+      v <- withClientJson backend $ withBestBlockHash block $ getIdentityProviders
+      case v of
+        Nothing -> putStrLn "No response received from the gRPC server."
+        Just a -> runPrinter $ printAnonymityRevokers a
+
 -- |Process a "legacy" command.
 processLegacyCmd :: LegacyCmd -> Backend -> IO ()
 processLegacyCmd action backend =
@@ -1364,6 +1371,8 @@ processLegacyCmd action backend =
     Shutdown -> withClient backend $ shutdown >>= printSuccess
     DumpStart -> withClient backend $ dumpStart >>= printSuccess
     DumpStop -> withClient backend $ dumpStop >>= printSuccess
+    GetIdentityProviders block -> withClient backend $ withBestBlockHash block getIdentityProviders >>= printJSON
+    GetAnonymityRevokers block -> withClient backend $ withBestBlockHash block getAnonymityRevokers >>= printJSON
   where
     printSuccess (Left x)  = liftIO . putStrLn $ x
     printSuccess (Right x) = liftIO $ if x then putStrLn "OK" else putStrLn "FAIL"
@@ -1517,6 +1526,7 @@ getStatusOfPeers = do
                )
           (StatusOfPeers 0 0 0)
           (peerList ^. CF.peers)
+
 
 -- |Process a transaction from JSON payload given as a byte string
 -- and with keys given explicitly.
