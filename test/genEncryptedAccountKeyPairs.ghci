@@ -1,0 +1,23 @@
+import Concordium.Client.Encryption
+import Concordium.Client.Types.Account
+import qualified Concordium.Crypto.ByteStringHelpers as BSH
+import qualified Concordium.Crypto.SignatureScheme as S
+import qualified Data.Text.Encoding as Text
+
+let s1 = "6d00a10ccac23d2fd0bea163756487288fd19ff3810e1d3f73b686e60d801915"
+let v1 = "c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027"
+let s2 = "9b301aa72d991d720750935de632983f1854d701ada3e5b763215d0802d5541c"
+let v2 = "f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213"
+let (Just sk1) = BSH.deserializeBase16 s1
+let (Just vk1) = BSH.deserializeBase16 v1
+let (Just sk2) = BSH.deserializeBase16 s2
+let (Just vk2) = BSH.deserializeBase16 v2
+let k1= S.KeyPairEd25519 { S.signKey=sk1, S.verifyKey=vk1 }
+let k2= S.KeyPairEd25519 { S.signKey=sk2, S.verifyKey=vk2 }
+
+let passwordFromText text = Password (Text.encodeUtf8 text)
+let pwd = passwordFromText "helloworld"
+e1 <- encryptAccountKeyPair pwd k1
+e2 <- encryptAccountKeyPair pwd k2
+print $ encryptedSignKey e1
+print $ encryptedSignKey e2

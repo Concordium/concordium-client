@@ -6,9 +6,8 @@ module Concordium.Client.Commands
   , Backend(..)
   , Cmd(..)
   , ConfigCmd(..)
-  , AccountImportFormatOpt(..)
+  , AccountExportFormat(..)
   , ConfigAccountCmd(..)
-  , ConfigKeyCmd(..)
   , TransactionOpts(..)
   , InteractionOpts(..)
   , TransactionCmd(..)
@@ -29,7 +28,7 @@ import Network.HTTP2.Client
 import Options.Applicative
 import Paths_simple_client (version)
 import Concordium.Client.LegacyCommands
-import Concordium.ID.Types (KeyIndex)
+import Concordium.Client.Types.Account
 import Concordium.Types
 import Text.Printf
 import qualified Text.PrettyPrint.ANSI.Leijen as P
@@ -81,11 +80,6 @@ data ConfigCmd
   | ConfigShow
   | ConfigAccountCmd -- groups 'config account' commands
     { configAccountCmd :: ConfigAccountCmd }
-  | ConfigKeyCmd -- groups 'config key' commands
-    { configKeyCmd :: ConfigKeyCmd }
-  deriving (Show)
-
-data AccountImportFormatOpt = Web | Mobile
   deriving (Show)
 
 data ConfigAccountCmd
@@ -95,15 +89,10 @@ data ConfigAccountCmd
   | ConfigAccountImport
     { caiFile :: !FilePath
     , caiName :: !(Maybe Text)
-    , caiFormat :: !(Maybe AccountImportFormatOpt) }
-  deriving (Show)
-
-data ConfigKeyCmd
-  = ConfigKeyAdd
-    { ckaAddr :: !Text
-    , ckaIdx :: !(Maybe KeyIndex)
-    , ckaSignKey :: !Text
-    , ckaVerifyKey :: !Text }
+    , caiFormat :: !(Maybe AccountExportFormat) }
+  | ConfigAccountAddKeys
+    { caakAddr :: !Text
+    , caakKeysFile :: !FilePath }
   deriving (Show)
 
 data TransactionCmd
@@ -158,7 +147,7 @@ data ContractCmd
 data TransactionOpts =
   TransactionOpts
   { toSender :: !(Maybe Text)
-  , toKeys :: !(Maybe Text)
+  , toKeys :: !(Maybe FilePath)
   , toNonce :: !(Maybe Nonce)
   , toMaxEnergyAmount :: !(Maybe Energy)
   , toExpiration :: !(Maybe Text)
@@ -194,7 +183,7 @@ data BakerCmd
     , baTransactionOpts :: !TransactionOpts }
   | BakerSetAccount
     { bsaBakerId :: !BakerId
-    , bsaAccountKeysFile :: !FilePath
+    , bsaAccountRef :: !Text
     , bsaTransactionOpts :: !TransactionOpts }
   | BakerSetKey
     { buskBakerId :: !BakerId
@@ -295,7 +284,9 @@ transactionOptsParser :: Parser TransactionOpts
 transactionOptsParser =
   TransactionOpts <$>
     optional (strOption (long "sender" <> metavar "SENDER" <> help "Name or address of the transaction sender.")) <*>
-    optional (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified as JSON ({<key-idx>: {\"signKey\": ..., \"verifyKey\": ...}).")) <*>
+    -- TODO Specify / refer to format of JSON file when new commands (e.g. account add-keys) that accept same format are
+    -- added.
+    optional (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file.")) <*>
     optional (option auto (long "nonce" <> metavar "NONCE" <> help "Transaction nonce.")) <*>
     optional (option auto (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction. Depeding on the transaction type, this flag may be optional.")) <*>
     optional (strOption (long "expiry" <> metavar "EXPIRY" <> help "Expiration time of a transaction, specified as a relative duration (\"30s\", \"5m\", etc.) or UNIX epoch timestamp.")) <*>
@@ -511,8 +502,7 @@ configCmds =
         hsubparser
           (configInitCmd <>
            configShowCmd <>
-           configAccountCmds <>
-           configKeyCmds))
+           configAccountCmds))
       (progDesc "Commands for inspecting and changing local configuration."))
 
 configInitCmd :: Mod CommandFields ConfigCmd
@@ -538,7 +528,9 @@ configAccountCmds =
     (info
       (ConfigAccountCmd <$>
         hsubparser
-          (configAccountAddCmd <> configAccountImportCmd))
+          (configAccountAddCmd <>
+           configAccountImportCmd <>
+           configAccountAddKeysCmd))
       (progDesc "Commands for inspecting and changing account-specific configuration."))
 
 configAccountAddCmd :: Mod CommandFields ConfigAccountCmd
@@ -558,38 +550,27 @@ configAccountImportCmd =
     (info
       (ConfigAccountImport <$>
         strArgument (metavar "FILE" <> help "Account file exported from the wallet.") <*>
-        optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account. For the 'web' format, this sets the name to give the account. For the 'mobile' format (which contains multiple already named accounts), it selects which account to import.")) <*>
-        optional (option readAccountImportFormatOpt (long "format" <> metavar "FORMAT" <> help "Export format. Supported values are 'web', 'mobile'. If omitted, the format is inferred from the filename ('mobile' if the extension is \".concordiumwallet\", 'web' otherwise)."))
+        optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account. For the 'web' format, this sets the name to assign to the account. For the 'mobile' format (which contains multiple already named accounts), it selects which account to import.")) <*>
+        optional (option readAccountExportFormat (long "format" <> metavar "FORMAT" <> help "Export format. Supported values are 'web', 'mobile'. If omitted, the format is inferred from the filename ('mobile' if the extension is \".concordiumwallet\", 'web' otherwise)."))
       )
       (progDesc "Import an account to persistent config."))
 
-readAccountImportFormatOpt :: ReadM AccountImportFormatOpt
-readAccountImportFormatOpt = str >>= \case
-  "web" -> return Web
-  "mobile" -> return Mobile
+configAccountAddKeysCmd :: Mod CommandFields ConfigAccountCmd
+configAccountAddKeysCmd =
+  command
+    "add-keys"
+    (info
+      (ConfigAccountAddKeys <$>
+        strOption (long "account" <> metavar "ACCOUNT" <> help "Name or address of the account.") <*>
+        strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file."))
+      (progDesc "Add key pairs specified in a JSON file to a specific account configuration. This does not register the keys on the chain."))
+
+readAccountExportFormat :: ReadM AccountExportFormat
+readAccountExportFormat = str >>= \case
+  "web" -> return FormatWeb
+  "mobile" -> return FormatMobile
   s -> readerError $ printf "invalid format: %s (supported values: 'web', 'mobile')" (s :: String)
 
-configKeyCmds :: Mod CommandFields ConfigCmd
-configKeyCmds =
-  command
-    "key"
-    (info
-      (ConfigKeyCmd <$>
-        hsubparser
-          configKeyAddCmd)
-      (progDesc "Commands for adding and removing keys of an account."))
-
-configKeyAddCmd :: Mod CommandFields ConfigKeyCmd
-configKeyAddCmd =
-  command
-    "add"
-    (info
-      (ConfigKeyAdd <$>
-        strOption (long "account" <> metavar "ACCOUNT" <> help "Name or address of the account.") <*>
-        optional (option auto (long "index" <> metavar "INDEX" <> help "Index of the key.")) <*>
-        strOption (long "sign" <> metavar "KEY" <> help "Sign (private) key.") <*>
-        strOption (long "verify" <> metavar "KEY" <> help "Verify (public) key."))
-      (progDesc "Add key pair of specific account, optionally on a specific index."))
 consensusCmds :: Mod CommandFields Cmd
 consensusCmds =
   command
@@ -700,19 +681,10 @@ bakerSetAccountCmd =
     (info
       (BakerSetAccount <$>
         argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
-        strArgument (metavar "FILE" <> help "File containing keys of the account to send rewards to.") <*>
+        strArgument (metavar "ACCOUNT" <> help "Name or address of the account to send rewards to.") <*>
         transactionOptsParser)
       (progDescDoc $ docFromLines
-        [ "Update the account that a baker's rewards are sent to. Expected format:"
-        , "   {"
-        , "     \"account\": ...,"
-        , "     \"keys\": {"
-        , "       <key-idx>: {"
-        , "         \"signKey\": ...,"
-        , "         \"verifyKey\": ..."
-        , "       }"
-        , "     }"
-        , "   }" ]))
+        [ "Update the account that a baker's rewards are sent to." ]))
 
 bakerSetKeyCmd :: Mod CommandFields BakerCmd
 bakerSetKeyCmd =
