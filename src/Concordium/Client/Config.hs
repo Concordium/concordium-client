@@ -1,21 +1,21 @@
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Concordium.Client.Config where
 
-import qualified Concordium.Crypto.SignatureScheme as S
 import Concordium.Types as Types
 import Concordium.ID.Types (addressFromText, KeyIndex)
 import qualified Concordium.ID.Types as IDTypes
 import Concordium.Client.Cli
 import Concordium.Client.Commands
-import Concordium.Client.Parse
-import Concordium.Client.Types.Transaction
+import Concordium.Client.Types.Account
 
 import Control.Exception
 import Control.Monad.Except
 import Control.Monad.Trans.Except
 import Data.Maybe
-import Data.Aeson
+import qualified Data.Aeson as AE
+
 import Data.Char
 import Data.List as L
 import Data.List.Split
@@ -26,6 +26,7 @@ import System.Directory
 import System.IO.Error
 import System.FilePath
 import Text.Printf
+import Text.Read(readMaybe)
 
 type BaseConfigDir = FilePath
 
@@ -53,14 +54,24 @@ accountKeysDir accCfgDir addr = accCfgDir </> show addr
 accountThresholdFile :: FilePath -> Types.AccountAddress -> FilePath
 accountThresholdFile accCfgDir addr = accCfgDir </> show addr <.> "threshold"
 
--- |A pair of files containing the sign- and verify components, respectively,
--- of a single key pair.
-data KeyPairFiles = KeyPairFiles { kpfSign :: FilePath , kpfVerify :: FilePath }
 
--- |Return file pair for the key with the given index in the provided key directory.
-accountKeyFiles :: FilePath -> KeyIndex -> KeyPairFiles
-accountKeyFiles keysDir idx = KeyPairFiles { kpfSign = addExt "sign" , kpfVerify = addExt "verify" }
-  where addExt ext = keysDir </> show idx <.> ext
+accountKeyFileExt :: String
+accountKeyFileExt = "json"
+
+accountKeyFilePrefix :: String
+accountKeyFilePrefix = "keypair"
+
+-- |Return file path of the key with the given index in the provided key directory.
+accountKeyFile :: FilePath -> KeyIndex -> FilePath
+accountKeyFile keysDir idx = keysDir </> accountKeyFilePrefix ++ show idx <.> accountKeyFileExt
+
+-- |For a filename (without directory but with extension) determine whether it is a valid name
+-- of an account key file (as it would be produced by 'accountKeyFile').
+parseAccountKeyFileName :: FilePath -> Maybe KeyIndex
+parseAccountKeyFileName fileName =
+  if takeExtension fileName == "." ++ accountKeyFileExt
+  then readMaybe (drop (length accountKeyFilePrefix) $ takeBaseName fileName)
+  else Nothing
 
 -- |Name to use if no account name is provided.
 defaultAccountName :: Text
@@ -181,7 +192,8 @@ writeAccountNameMap file = writeFile file . unlines . map f . sortOn fst . M.toL
   where f (name, addr) = printf "%s = %s" name (show addr)
 
 -- |Write the account keys structure into the directory of the given account.
--- Each key pair is written into two separate files.
+-- Each 'EncryptedAccountKeyPair' is written to a JSON file the name of which is determined
+-- by 'accountKeyFile'.
 writeAccountKeys :: BaseConfig -> AccountConfig -> IO ()
 writeAccountKeys baseCfg accCfg = do
   let accCfgDir = bcAccountCfgDir baseCfg
@@ -195,19 +207,16 @@ writeAccountKeys baseCfg accCfg = do
   -- TODO Don't write unchanged files.
 
   forM_ (M.toList $ acKeys accCfg) $ \(idx, kp) -> do
-    let KeyPairFiles {..} = accountKeyFiles keysDir idx
-        sk = S.signKey kp
-        vk = S.verifyKey kp
-    logInfo [printf "writing file '%s'" kpfSign]
-    writeFile kpfSign $ show sk ++ "\n"
-    logInfo [printf "writing file '%s'" kpfVerify]
-    writeFile kpfVerify $ show vk ++ "\n"
+    let file = accountKeyFile keysDir idx
+    logInfo [printf "writing file '%s'" file]
+    AE.encodeFile file kp
 
   -- Write the threshold as a JSON value. Since it is a simple numeric
   -- value this should look as expected.
   let thresholdFile = accountThresholdFile accCfgDir (acAddress accCfg)
   logInfo [printf "writing file '%s'" thresholdFile]
-  encodeFile thresholdFile (acThreshold accCfg)
+  -- NOTE: This writes the JSON in a compact way. If we want human-readable JSON, we should use pretty encoding.
+  AE.encodeFile thresholdFile (acThreshold accCfg)
 
   logSuccess ["wrote key and threshold files"]
 
@@ -280,29 +289,38 @@ validateAccountName name =
   where supportedChar c = isAlphaNum c || c `elem` supportedSpecialChars
         supportedSpecialChars = "-_,.!? " :: String
 
-data AccountConfig = AccountConfig
-                     { acAddr :: !NamedAddress
-                     , acKeys :: !KeyMap
-                     , acThreshold :: !IDTypes.SignatureThreshold }
+data AccountConfig =
+  AccountConfig
+  { acAddr :: !NamedAddress
+  , acKeys :: EncryptedAccountKeyMap
+  , acThreshold :: !IDTypes.SignatureThreshold }
 
 acAddress :: AccountConfig -> AccountAddress
 acAddress = naAddr . acAddr
 
+accountSigningDataFromConfig :: AccountConfig -> AccountKeyMap -> AccountSigningData
+accountSigningDataFromConfig AccountConfig{..} keys =
+  AccountSigningData { asdAddress = naAddr acAddr
+                     , asdKeys = keys
+                     , asdThreshold = acThreshold
+                     }
+
 getAccountConfig :: Maybe Text
-                 -- ^Name of the account, defaulting to 'defaultAccountName' if not present.
+                 -- ^Name or address of the account, defaulting to 'defaultAccountName' if not present.
                  -> BaseConfig
                  -- ^Configuration settings.
                  -> Maybe FilePath
                  -- ^Optional path to the key directory. Defaulting to directory derived from
                  -- 'BaseConfig' if absent.
-                 -> Maybe KeyMap
+                 -> Maybe EncryptedAccountKeyMap
                  -- ^Explicit keys. If provided they take precedence over other parameters,
                  -- otherwise the function attempts to lookup them up from the key directory.
-                 -- If explicit keys are provided it is assume that the
+                 -- If explicit keys are provided it is assumed that the
                  -- signature threshold for the account is less than the amount
                  -- of keys provided and all keys will be used to, e.g., sign the transaction.
                  -> Bool
-                 -- ^Whether to auto initialize the base config directory or not.
+                 -- ^Whether to initialize the account config when it does not exist.
+                 -- This will also ask the user for an optional name mapping.
                  -> IO (BaseConfig, AccountConfig)
 getAccountConfig account baseCfg keysDir keyMap autoInit = do
   account' <- case account of
@@ -367,7 +385,7 @@ resolveAccountAddress m input = do
                 return (name, a)
   return NamedAddress { naName = n, naAddr = a }
 
--- |Look up an account by name or address. See doc for resolveAccountAddress.
+-- |Look up an account by name or address. See doc for 'resolveAccountAddress'.
 -- If the lookup fails, an error is thrown.
 getAccountAddress :: (MonadError String m) => AccountNameMap -> Text -> m NamedAddress
 getAccountAddress m input =
@@ -375,7 +393,7 @@ getAccountAddress m input =
     Nothing -> throwError $ printf "the identifier '%s' is neither the address nor the name of an account" input
     Just a -> return a
 
--- |Return all account keys from the config.
+-- |Return all 'AccountConfig's from the config.
 getAllAccountConfigs :: BaseConfig -> IO [AccountConfig]
 getAllAccountConfigs cfg = do
   let dir = bcAccountCfgDir cfg
@@ -391,18 +409,19 @@ getAllAccountConfigs cfg = do
       doesDirectoryExist $ joinPath [dir, f]
 
 -- |Return all key pairs from the provided directory.
-loadKeyMap :: FilePath -> IO KeyMap
+loadKeyMap :: FilePath -> IO EncryptedAccountKeyMap
 loadKeyMap keysDir = do
-  keyFilenames <- listDirectory keysDir
-  let rawKeys = rawKeysFromFiles keysDir keyFilenames
-  rawKeyMap <- loadRawKeyMap rawKeys
-  case keyMapFromRaw rawKeyMap of
-    Left err -> logFatal [printf "cannot load keys: %s" err]
-    Right km -> return km
+  filesInKeyDir <- listDirectory keysDir
+  let keyIdxs = mapMaybe parseAccountKeyFileName filesInKeyDir
+  keys :: [(Maybe KeyIndex, EncryptedAccountKeyPair)] <- forM keyIdxs $ \idx -> do
+    let file = accountKeyFile keysDir idx
+    kp <- AE.eitherDecodeFileStrict' file `withLogFatalIO` (("cannot load key file " ++ file ++ " ") ++)
+    return (Just idx, kp)
+  return $ foldl' insertAccountKey M.empty keys
 
 -- |Insert key pair on the given index. If no index is given, use the first available one.
-insertAccountKey :: Maybe KeyIndex -> S.KeyPair -> KeyMap -> KeyMap
-insertAccountKey idx kp km =
+insertAccountKey :: EncryptedAccountKeyMap -> (Maybe KeyIndex, EncryptedAccountKeyPair) -> EncryptedAccountKeyMap
+insertAccountKey km (idx,kp) =
   let idx' = case idx of
             Nothing -> nextUnusedIdx 1 (sort $ M.keys km)
             Just i -> i
@@ -420,72 +439,11 @@ type KeyName = String
 data KeyType = Sign | Verify deriving (Eq, Show)
 type KeyContents = Text
 
-type RawKeyId = (KeyName, KeyType)
-type RawKeyMap = M.HashMap KeyName (Maybe KeyContents, Maybe KeyContents)
-
--- |Filter the provided list of file names for key files and return them (as a tuple)
--- as absolute path (by joining them with the keys dir) together with the key name and type.
-rawKeysFromFiles :: FilePath -> [FilePath] -> [(FilePath, RawKeyId)]
-rawKeysFromFiles keysDir = foldr f []
-  where f file rks = case rawKeyIdFromFile file of
-                       Nothing -> rks
-                       Just k -> (joinPath [keysDir, file], k) : rks
-
--- |Return key ID (name and type) of a key contained in a file based on the file's name.
--- Return Nothing if the file is not a key.
-rawKeyIdFromFile :: FilePath -> Maybe RawKeyId
-rawKeyIdFromFile file = do
-  let (name, ext) = splitExtension file
-  t <- case ext of
-         ".sign" -> Just Sign
-         ".verify" -> Just Verify
-         _ -> Nothing
-  return (name, t)
-
--- |Convert "raw" key map into a final, valid one which only contains keys where both the sign- and valid components exist.
-keyMapFromRaw :: (MonadError String m) => RawKeyMap -> m KeyMap
-keyMapFromRaw = foldM f M.empty . M.toList
-  where
-    f m (name, keyPair) =
-      case keyPair of
-        (Just rsk, Just rvk) -> do
-          -- Both sign and verify keys exist.
-          n <- case reads name of
-                 [(n, "")] -> return n
-                 _ -> throwError $ printf "invalid key index '%s'" name
-          sk <- parseSignKey rsk
-          vk <- parseVerifyKey rvk
-          let kp = S.KeyPairEd25519
-                   { S.signKey = sk
-                   , S.verifyKey = vk }
-          return $ M.insert n kp m
-        (Nothing, Just _) ->
-          throwError $ printf "incomplete key pair '%s': sign key is missing" name
-        (Just _, Nothing) ->
-          throwError $ printf "incomplete key pair '%s': verify key is missing" name
-        (Nothing, Nothing) ->
-          -- Never happens the way keys are currently loaded.
-          throwError $ printf "missing key pair '%s'" name
-
-insertRawKey :: RawKeyId -> KeyContents -> RawKeyMap -> RawKeyMap
-insertRawKey (name, t) contents m =
-  let (sk, vk) = M.lookupDefault (Nothing, Nothing) name m
-      keyPair = case t of
-               Sign -> (Just contents, vk)
-               Verify -> (sk, Just contents)
-  in M.insert name keyPair m
-
-loadRawKeyMap :: [(FilePath, RawKeyId)] -> IO RawKeyMap
-loadRawKeyMap = foldM f M.empty
-  where f rawKeyMap (file, rk) = do
-          c <- readFile file
-          return $ insertRawKey rk (strip $ pack c) rawKeyMap
-
--- |Load threshold from a from a file or return the provided default if the file does not exist.
+-- |Load threshold from a file or return the provided default if the file does not exist.
 loadThreshold :: FilePath -> IDTypes.SignatureThreshold -> IO IDTypes.SignatureThreshold
 loadThreshold file defaultThreshold = do
   handleJust (guard . isDoesNotExistError) (const (return defaultThreshold)) $
-    eitherDecodeFileStrict' file >>= \case
+    AE.eitherDecodeFileStrict' file >>= \case
       Left err -> logFatal [printf "corrupt threshold file '%s': %s" file err]
       Right t -> return t
 

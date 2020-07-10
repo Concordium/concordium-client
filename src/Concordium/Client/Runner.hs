@@ -30,6 +30,7 @@ module Concordium.Client.Runner
   , decodeMobileFormattedAccountExport
   -- * For adding baker support
   , startTransaction
+  , encodeAndSignTransaction
   , tailTransaction
   , getBlockItemHash
   -- * For delegation support
@@ -52,31 +53,29 @@ import           Concordium.Client.Utils
 import           Concordium.Client.Cli
 import           Concordium.Client.Config
 import           Concordium.Client.Commands          as COM
-import           Concordium.Client.Encryption
 import           Concordium.Client.GRPC
 import           Concordium.Client.Output
 import           Concordium.Client.Parse
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Client.Types.TransactionStatus
-import           Concordium.Client.WalletExport
+import           Concordium.Client.Types.Account
+import           Concordium.Client.Export
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
-import           Concordium.Crypto.SignatureScheme   as Sig
 import qualified Concordium.Crypto.VRF               as VRF
 import qualified Concordium.Types.Transactions       as Types
 import           Concordium.Types.HashableTo
 import qualified Concordium.Types.Execution          as Types
 import qualified Concordium.Types                    as Types
-import           Concordium.ID.Types                  (addressFromText)
+import qualified Concordium.ID.Types                 as ID
 import           Proto.ConcordiumP2pRpc
 import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 
 import           Control.Monad.Fail
 import           Control.Monad.Except
 import           Control.Monad.Reader                hiding (fail)
-import           Control.Exception
 import           GHC.Generics
 import           Data.IORef
 import           Data.Aeson                          as AE
@@ -141,8 +140,20 @@ getFromJson r = do
     Error err -> logFatal [printf "cannot parse '%s' as JSON: %s" (show s) err]
     Success v -> return v
 
--- |Look up account from the provided name (or defaultAcccountName if missing).
--- Fail if it cannot be found.
+-- |Helper function for parsing a specific entry of a JSON object to any type that implements
+-- FromJSON. Useful for parsing specific keys from a Baker Keys file.
+getFromJsonObject :: (MonadIO m, FromJSON a) => Text -> Either String Value -> m a
+getFromJsonObject key r = do
+  obj <- case r of
+         Left err -> logFatal [printf "I/O error: %s" err]
+         Right (Object o) -> return o
+         Right s -> logFatal [printf "error parsing JSON, expected object but found: %s" $ show s]
+  case parse (\o -> o .: key) obj of
+    Success k -> return k
+    Error err -> logFatal [printf "I/O error: %s" err]
+
+-- |Look up account from the provided name or address. If 'Nothing' is given, use the defaultAcccountName.
+-- Fail if the name or address cannot be found.
 getAccountAddressArg :: AccountNameMap -> Maybe Text -> IO NamedAddress
 getAccountAddressArg m input =
   case getAccountAddress m $ fromMaybe defaultAccountName input of
@@ -195,7 +206,7 @@ processConfigCmd action baseCfgDir verbose =
           putStrLn ""
 
         naAddr <-
-          case addressFromText addr of
+          case ID.addressFromText addr of
             Left err -> logFatal [printf "cannot parse '%s' as an address: %s" addr err]
             Right a -> return a
         naName <- readAccountName name
@@ -211,37 +222,38 @@ processConfigCmd action baseCfgDir verbose =
         fileExists <- doesFileExist file
         unless fileExists $ logFatal [printf "the given file '%s' does not exist" file]
 
-        importFormat <- inferAccountImportFormatOpt format file
+        importFormat <- inferAccountExportFormat format file
 
         accCfgs <- loadAccountImportFile importFormat file validName
         void $ importAccountConfig baseCfg accCfgs
-
-
-    ConfigKeyCmd c -> case c of
-      ConfigKeyAdd addr idx sk vk -> do
+      ConfigAccountAddKeys addr keysFile -> do
         baseCfg <- getBaseConfig baseCfgDir verbose True
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
 
-        kp <- parseKeyPair sk vk
+        keyMapInput :: EncryptedAccountKeyMap <- AE.eitherDecodeFileStrict keysFile `withLogFatalIO` ("cannot decode keys: " ++)
         (baseCfg', accCfg) <- getAccountConfig (Just addr) baseCfg Nothing Nothing True
-        let keys = insertAccountKey idx kp $ acKeys accCfg
-            accCfg' = accCfg { acKeys = keys }
+
+        let keyMapCurrent = acKeys accCfg
+        let keyMapNew = Map.difference keyMapInput keyMapCurrent
+        let accCfg' = accCfg { acKeys = Map.union keyMapCurrent keyMapNew}
+        -- TODO warn about keys not added because index already exists
 
         writeAccountKeys baseCfg' accCfg'
 
+
 -- |Return the input format or infer it from the file extension if it's Nothing.
-inferAccountImportFormatOpt :: Maybe AccountImportFormatOpt -> FilePath -> IO AccountImportFormatOpt
-inferAccountImportFormatOpt input file =
+inferAccountExportFormat :: Maybe AccountExportFormat -> FilePath -> IO AccountExportFormat
+inferAccountExportFormat input file =
   case input of
     Nothing -> case splitExtension file of
                  (_, ".concordiumwallet") -> do
                    logInfo ["inferred format \"mobile\" from the file extension (pass flag '--format web' to override)"]
-                   return Mobile
+                   return FormatMobile
                  _ -> do
                    logInfo ["inferred format \"web\" from the file extension (pass flag '--format mobile' to override)"]
-                   return Web
+                   return FormatWeb
     Just f -> return f
 
 -- |Read and parse a file exported from either the web- or mobile wallet.
@@ -251,73 +263,25 @@ inferAccountImportFormatOpt input file =
 -- only the account with that name is being selected for import.
 -- The "web" format is not encrypted and only contains a single account which is not named.
 -- If a name is provided in this case, this will become the account name.
-loadAccountImportFile :: AccountImportFormatOpt -> FilePath -> Maybe Text -> IO [AccountConfig]
+loadAccountImportFile :: AccountExportFormat -> FilePath -> Maybe Text -> IO [AccountConfig]
 loadAccountImportFile format file name = do
   contents <- BS.readFile file
   case format of
-    Mobile -> do
-      password <- askPassword "Enter encryption password: "
-      accs <- case decodeMobileFormattedAccountExport contents password of
-        Left err -> logFatal [printf "cannot load mobile formatted import: %s" err]
-        Right v -> return v
+    FormatMobile -> do
+      pwd <- askPassword "Enter encryption password: "
+      accCfgs <- decodeMobileFormattedAccountExport contents name pwd `withLogFatalIO` ("cannot import accounts: " ++)
 
       logInfo ["loaded account(s):"]
-      forM_ accs $ \a -> do
-        logInfo [printf "- %s (%s)" (show $ akAddress $ weaKeys a) (weaName a)]
+      forM_ accCfgs $ \AccountConfig{acAddr=NamedAddress{..}} -> logInfo [printf "- %s (%s)" (show naAddr) (maybe "-" show naName)]
+      logInfo ["all signing keys have been encrypted with the password used for this import."]
 
-      let accCfgs = accountCfgsFromWalletExportAccounts accs name
-      when (Prelude.null accCfgs) $ logWarn ["no accounts welected for import"]
+      when (Prelude.null accCfgs) $ logWarn ["no accounts selected for import"]
       return accCfgs
-    Web -> do
-     accCfg <- case decodeWebFormattedAccountExport contents name of
-       Left err -> logFatal [printf "cannot load web formatted import %s: "err]
-       Right v -> return v
+    FormatWeb -> do
+     pwd <- createPasswordInteractive (Just "encrypt all signing keys with") `withLogFatalIO` id
+     accCfg <- decodeWebFormattedAccountExport contents name pwd `withLogFatalIO` ("cannot import account: " ++)
      return [accCfg]
 
--- |Decode, decrypt and parse a mobile wallet export.
-decodeMobileFormattedAccountExport :: (MonadError String m)
-    => BS.ByteString -- ^JSON payload with encrypted accounts and identities,
-                     -- which must include the fields of an 'EncryptedJSON WalletExport'.
-    -> Password -- ^Password to decrypt the payload.
-    -> m [WalletExportAccount]
-decodeMobileFormattedAccountExport payload password =
-  case eitherDecodeStrict payload of
-    Left err -> throwError $ printf "cannot decode JSON: %s" err
-    Right (we :: EncryptedJSON WalletExport) -> do
-      pl <- decryptJSON we password `embedErr` (("cannot decrypt wallet export: " ++) . displayException)
-      return $ wepAccounts pl
-
--- |Decode and parse a web wallet export into a named account config.
-decodeWebFormattedAccountExport :: (MonadError String m)
-    => BS.ByteString -- ^JSON payload with the account information.
-    -> Maybe Text -- ^Optionally, how to name the account.
-    -> m AccountConfig
-decodeWebFormattedAccountExport payload name =
-  case eitherDecodeStrict payload of
-    Left err -> throwError $ printf "cannot decode JSON: %s" err
-    Right val ->
-      case parseEither accountParser val of
-        Left err -> throwError $ printf "cannot parse JSON: %s" err
-        Right x -> return x
-  where accountParser = AE.withObject "Account data" $ \v -> do
-          addr <- v .: "address"
-          acKeys <- v .: "accountKeys"
-          acThreshold <- v .:? "threshold" .!= fromIntegral (Map.size acKeys)
-          return AccountConfig{acAddr = NamedAddress{naName = name, naAddr = addr}, ..}
-
-parseKeyPair :: Text -- ^Private key.
-             -> Text -- ^Public key
-             -> IO Sig.KeyPair
-parseKeyPair sk vk = do
-  sk' <- case parseSignKey sk of
-           Left err -> logFatal [printf "cannot parse sign key '%s': %s" sk err]
-           Right k -> return k
-  vk' <- case parseVerifyKey vk of
-           Left err -> logFatal [printf "cannot parse verify key '%s': %s" vk err]
-           Right k -> return k
-  return $ Sig.KeyPairEd25519
-    { Sig.signKey = sk'
-    , Sig.verifyKey = vk' }
 
 -- |Process a 'transaction ...' command.
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -371,7 +335,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       let intOpts = toInteractionOpts txOpts
       pl <- transferTransactionPayload ttxCfg (ioConfirm intOpts)
       withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts)
+        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
@@ -411,11 +375,9 @@ data TransactionConfig =
 -- If the energy allocation is too low, the user is prompted to increase it.
 getTransactionCfg :: BaseConfig -> TransactionOpts -> GetComputeEnergyCost -> IO TransactionConfig
 getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
-  keysArg <- case toKeys txOpts >>= decodeJsonArg of
+  keysArg <- case toKeys txOpts of
                Nothing -> return Nothing
-               Just act -> act >>= \case
-                 Left err -> logFatal [printf "cannot decode keys: %s" err]
-                 Right ks -> return $ Just ks
+               Just filePath -> AE.eitherDecodeFileStrict filePath `withLogFatalIO` ("cannot decode keys: " ++)
   (_, accCfg) <- getAccountConfig (toSender txOpts) baseCfg Nothing keysArg False
 
   energyCostFunc <- getEnergyCostFunc accCfg
@@ -501,7 +463,7 @@ data BakerSetAccountTransactionConfig =
   BakerSetAccountTransactionConfig
   { bsatcTransactionCfg :: TransactionConfig
   , bsatcBakerId :: Types.BakerId
-  , bsatcAccountKeys :: AccountKeys }
+  , bsatcAccountSigningData :: AccountSigningData }
 
 -- |Resolved configuration for a 'baker set-key' transaction.
 data BakerSetKeyTransactionConfig =
@@ -601,24 +563,20 @@ transferTransactionPayload ttxCfg confirm = do
 
 -- |Convert 'baker add' transaction config into a valid payload,
 -- optionally asking the user for confirmation.
-bakerAddTransactionPayload :: BakerAddTransactionConfig -> FilePath -> Bool -> IO Types.Payload
-bakerAddTransactionPayload batxCfg accountKeysFile confirm = do
+bakerAddTransactionPayload :: BakerAddTransactionConfig -> FilePath -> Bool -> AccountKeyMap -> IO Types.Payload
+bakerAddTransactionPayload batxCfg accountKeysFile confirm accKeys = do
   let BakerAddTransactionConfig
-        { batcTransactionCfg = TransactionConfig
-                               { tcAccountCfg = AccountConfig
-                                                { acAddr = NamedAddress { naAddr = addr }
-                                                , acKeys = keys }
-                               , tcEnergy = energy }
+        { batcTransactionCfg = TransactionConfig{..}
         , batcBakerKeys = bakerKeys }
         = batxCfg
 
   logSuccess [ printf "submitting transaction to add baker using keys from file '%s'" accountKeysFile
-             , printf "allowing up to %s to be spent as transaction fee" (showNrg energy) ]
+             , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy) ]
   when confirm $ do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  generateBakerAddPayload bakerKeys AccountKeys {akAddress = addr, akKeys = keys, akThreshold = fromIntegral (Map.size keys)}
+  generateBakerAddPayload bakerKeys $ accountSigningDataFromConfig tcAccountCfg accKeys
 
 -- |Convert 'baker remove' transaction config into a valid payload,
 -- optionally asking the user for confirmation.
@@ -703,17 +661,26 @@ accountUndelegateTransactionPayload autxCfg confirm = do
 -- |Encode, sign, and send transaction off to the baker.
 -- If confirmNonce is set, the user is asked to confirm using the next nonce
 -- if there are pending transactions.
-startTransaction :: (MonadFail m, MonadIO m) => TransactionConfig -> Types.Payload -> Bool -> ClientMonad m Types.BareBlockItem
-startTransaction txCfg pl confirmNonce = do
+startTransaction :: (MonadFail m, MonadIO m)
+  => TransactionConfig
+  -> Types.Payload
+  -> Bool
+  -> Maybe AccountKeyMap -- ^ The decrypted account signing keys. If not provided, the encrypted keys
+                         -- from the 'TransactionConfig' will be used, and for each the password will be queried.
+  -> ClientMonad m Types.BareBlockItem
+startTransaction txCfg pl confirmNonce maybeAccKeys = do
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
         , tcNonce = n
-        , tcAccountCfg = accountCfg@AccountConfig
-                         { acAddr = NamedAddress { naAddr = addr } } }
-        = txCfg
-  nonce <- getNonce addr n confirmNonce
-  let tx = encodeAndSignTransaction pl energy nonce expiry accountCfg
+        , tcAccountCfg = AccountConfig { acAddr = NamedAddress { .. }, .. }
+        , ..
+        } = txCfg
+  nonce <- getNonce naAddr n confirmNonce
+  accountKeyMap <- case maybeAccKeys of
+                     Just acKeys' -> return acKeys'
+                     Nothing -> liftIO $ decryptAccountKeyMapInteractive acKeys Nothing `embedErrIOM` id
+  let tx = encodeAndSignTransaction pl naAddr energy nonce expiry accountKeyMap acThreshold
 
   sendTransactionToBaker tx defaultNetId >>= \case
     Left err -> fail err
@@ -816,7 +783,7 @@ processAccountCmd action baseCfgDir verbose backend =
       let intOpts = toInteractionOpts txOpts
       pl <- accountDelegateTransactionPayload adtxCfg (ioConfirm intOpts)
       withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts)
+        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
@@ -838,7 +805,7 @@ processAccountCmd action baseCfgDir verbose backend =
       let intOpts = toInteractionOpts txOpts
       pl <- accountUndelegateTransactionPayload autxCfg (ioConfirm intOpts)
       withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts)
+        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
@@ -922,7 +889,7 @@ processConsensusCmd action baseCfgDir verbose backend =
       let intOpts = toInteractionOpts txOpts
       pl <- setElectionDifficultyTransactionPayload sdtxCfg (ioConfirm intOpts)
       withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts)
+        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
@@ -987,28 +954,39 @@ processBakerCmd action baseCfgDir verbose backend =
         runPrinter $ printAccountConfig $ tcAccountCfg txCfg
         putStrLn ""
 
+      -- We already need the account keys to construct the proofs to be included in the transaction.
+      accountKeys <- decryptAccountKeyMapInteractive (acKeys $ tcAccountCfg txCfg) Nothing `embedErrIOM` id
+
       let intOpts = toInteractionOpts txOpts
-      pl <- bakerAddTransactionPayload batxCfg accountKeysFile (ioConfirm intOpts)
+      pl <- bakerAddTransactionPayload batxCfg accountKeysFile (ioConfirm intOpts) accountKeys
       withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts)
+        tx <- startTransaction txCfg pl (ioConfirm intOpts) (Just accountKeys)
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
           tailTransaction hash
 --          logSuccess [ "baker successfully added" ]
-    BakerSetAccount bid file txOpts -> do
+    BakerSetAccount bid accRef txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
+      (_, rewardAccCfg) <- getAccountConfig (Just accRef) baseCfg Nothing Nothing False
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      bsatcCfg <- getBakerSetAccountTransactionCfg baseCfg txOpts bid file
+      rewardAccountKeys <- decryptAccountKeyMapInteractive (acKeys rewardAccCfg) (Just "reward account") `embedErrIOM` id
+      let rewardAccountSigningData = accountSigningDataFromConfig rewardAccCfg rewardAccountKeys
+
+      bsatcCfg <- getBakerSetAccountTransactionCfg baseCfg txOpts bid rewardAccountSigningData
       let txCfg = bsatcTransactionCfg bsatcCfg
 
+
       let intOpts = toInteractionOpts txOpts
-      pl <- bakerSetAccountTransactionPayload bsatcCfg (ioConfirm intOpts)
+      pl <- bakerSetAccountTransactionPayload bsatcCfg (ioConfirm intOpts) rewardAccountKeys
       withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts)
+        -- We still have to ask for the password of the account keys for signing the transaction.
+        -- Possible improvement: check if reward account and transaction signing account are the same,
+        -- and in that case do not ask twice.
+        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
@@ -1026,7 +1004,7 @@ processBakerCmd action baseCfgDir verbose backend =
       let intOpts = toInteractionOpts txOpts
       pl <- bakerSetKeyTransactionPayload bsktcCfg (ioConfirm intOpts)
       withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts)
+        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
@@ -1044,7 +1022,7 @@ processBakerCmd action baseCfgDir verbose backend =
       let intOpts = toInteractionOpts txOpts
       pl <- bakerRemoveTransactionPayload brtcCfg (ioConfirm intOpts)
       withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts)
+        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
@@ -1064,7 +1042,7 @@ processBakerCmd action baseCfgDir verbose backend =
       pl <- bakerSetAggregationKeyTransactionPayload bsaktCfg (ioConfirm intOpts)
 
       withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts)
+        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
@@ -1082,21 +1060,20 @@ processBakerCmd action baseCfgDir verbose backend =
       pl <- bakerSetElectionKeyTransactionPayload bsektCfg (ioConfirm intOpts)
 
       withClient backend $ do
-        tx <- startTransaction (bsekTransactionCfg bsektCfg) pl (ioConfirm intOpts)
+        tx <- startTransaction (bsekTransactionCfg bsektCfg) pl (ioConfirm intOpts) Nothing
         tailTransaction $ getBlockItemHash tx
 --          logSuccess [ "baker election key successfully updated" ]
 
 
 -- |Resolve configuration of a 'baker update' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
-getBakerSetAccountTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerSetAccountTransactionConfig
-getBakerSetAccountTransactionCfg baseCfg txOpts bid f = do
+getBakerSetAccountTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> AccountSigningData -> IO BakerSetAccountTransactionConfig
+getBakerSetAccountTransactionCfg baseCfg txOpts bid asd = do
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
-  accountKeys <- eitherDecodeFileStrict f >>= getFromJson
   return BakerSetAccountTransactionConfig
     { bsatcTransactionCfg = txCfg
     , bsatcBakerId = bid
-    , bsatcAccountKeys = accountKeys }
+    , bsatcAccountSigningData = asd }
   where nrgCost _ = return $ Just bakerSetAccountEnergyCost
 
 -- |Resolve configuration of a 'consensus set-election-difficulty' transaction based on persisted config and CLI flags.
@@ -1166,30 +1143,28 @@ generateBakerSetElectionKeyChallenge bid key = S.runPut (S.put bid <> S.put key)
 
 -- |Convert 'baker set-account' transaction config into a valid payload,
 -- optionally asking the user for confirmation.
-bakerSetAccountTransactionPayload :: BakerSetAccountTransactionConfig -> Bool -> IO Types.Payload
-bakerSetAccountTransactionPayload bsatcCfg confirm = do
+bakerSetAccountTransactionPayload :: BakerSetAccountTransactionConfig -> Bool -> AccountKeyMap -> IO Types.Payload
+bakerSetAccountTransactionPayload bsatcCfg confirm accKeys = do
   let BakerSetAccountTransactionConfig
         { bsatcTransactionCfg = TransactionConfig
                                 { tcEnergy = energy
                                 , tcExpiry = expiry }
-        , bsatcAccountKeys = AccountKeys
-                             { akAddress = address
-                             , akKeys = keys }
+        , bsatcAccountSigningData = AccountSigningData{..}
         , bsatcBakerId = bid }
         = bsatcCfg
-      challenge = generateBakerSetAccountChallenge bid address
+      challenge = generateBakerSetAccountChallenge bid asdAddress
 
-  logSuccess [ printf "setting reward account for baker %s to '%s'"  (show bid) (show address)
+  logSuccess [ printf "setting reward account for baker %s to '%s'"  (show bid) (show asdAddress)
              , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
              , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
   when confirm $ do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  proofAccount <- forM keys (\key -> Proofs.proveDlog25519KP challenge key `except` "cannot produce account keys proof")
+  proofAccount <- forM accKeys (\key -> Proofs.proveDlog25519KP challenge key `except` "cannot produce account keys proof")
   return Types.UpdateBakerAccount
     { ubaId = bid
-    , ubaAddress = address
+    , ubaAddress = asdAddress
     , ubaProof = Types.AccountOwnershipProof (Map.toList proofAccount) }
   where except c err = c >>= \case
           Just x -> return x
@@ -1410,8 +1385,9 @@ generateBakerAddChallenge :: Types.BakerElectionVerifyKey -> Types.BakerSignVeri
 generateBakerAddChallenge electionVerifyKey sigVerifyKey aggrVerifyKey accountAddr =
   S.runPut (S.put electionVerifyKey <> S.put sigVerifyKey <> S.put aggrVerifyKey <> S.put accountAddr)
 
-generateBakerAddPayload :: BakerKeys -> AccountKeys -> IO Types.Payload
-generateBakerAddPayload bk ak = do
+-- | Generate a 'Types.AddBaker' payload. This needs the account keys to create proofs.
+generateBakerAddPayload :: BakerKeys -> AccountSigningData -> IO Types.Payload
+generateBakerAddPayload bk AccountSigningData{..} = do
   let electionSignKey = bkElectionSignKey bk
       signatureSignKey = bkSigSignKey bk
       aggrSignKey = bkAggrSignKey bk
@@ -1420,8 +1396,8 @@ generateBakerAddPayload bk ak = do
       abSignatureVerifyKey = bkSigVerifyKey bk
       abAggregationVerifyKey = bkAggrVerifyKey bk
 
-  let abAccount = akAddress ak
-      keyMap = akKeys ak
+  let abAccount = asdAddress
+      keyMap = asdKeys
 
   let challenge = generateBakerAddChallenge abElectionVerifyKey abSignatureVerifyKey abAggregationVerifyKey abAccount
   abProofElection <- Proofs.proveDlog25519VRF challenge (VRF.KeyPair electionSignKey abElectionVerifyKey) `except` "cannot produce VRF key proof"
@@ -1541,8 +1517,9 @@ processTransaction source networkId =
     Left err -> fail $ "Error decoding JSON: " ++ err
     Right t  -> processTransaction_ t networkId True
 
--- |Process a transaction with keys given explicitly.
+-- |Process a transaction with unencrypted keys given explicitly.
 -- The transaction is signed with all the provided keys.
+-- This is only for testing purposes and currently used by the middleware.
 processTransaction_ ::
      (MonadFail m, MonadIO m)
   => TransactionJSON
@@ -1550,13 +1527,11 @@ processTransaction_ ::
   -> Verbose
   -> ClientMonad (PR.Context Core.UA m) Types.BareBlockItem
 processTransaction_ transaction networkId _verbose = do
+  let accountKeys = CT.keys transaction
   tx <- do
     let header = metadata transaction
         sender = thSenderAddress header
-        accountConfig = AccountConfig { acAddr = NamedAddress Nothing sender
-                                      , acKeys = CT.keys transaction
-                                      , acThreshold = fromIntegral (Map.size (CT.keys transaction))
-                                      }
+        threshold = fromIntegral $ Map.size accountKeys
     nonce <-
       case thNonce header of
         Nothing -> getBestBlockHash >>= getAccountNonce sender
@@ -1564,10 +1539,12 @@ processTransaction_ transaction networkId _verbose = do
     txPayload <- convertTransactionJsonPayload $ payload transaction
     return $ encodeAndSignTransaction
       txPayload
+      sender
       (thEnergyAmount header)
       nonce
       (thExpiry header)
-      accountConfig
+      accountKeys
+      threshold
 
   sendTransactionToBaker tx networkId >>= \case
     Left err -> fail $ show err
@@ -1618,15 +1595,15 @@ convertTransactionJsonPayload = \case
 -- which is ready to be sent.
 encodeAndSignTransaction ::
      Types.Payload
+  -> Types.AccountAddress
   -> Types.Energy
   -> Types.Nonce
   -> Types.TransactionExpiryTime
-  -> AccountConfig
+  -> AccountKeyMap
+  -> ID.SignatureThreshold
   -> Types.BareBlockItem
-encodeAndSignTransaction txPayload energy nonce expiry accountConfig = Types.NormalTransaction $
+encodeAndSignTransaction txPayload sender energy nonce expiry accKeys threshold = Types.NormalTransaction $
   let encPayload = Types.encodePayload txPayload
-      sender = acAddress accountConfig
-      threshold = acThreshold accountConfig
       header = Types.TransactionHeader{
         thSender = sender,
         thPayloadSize = Types.payloadSize encPayload,
@@ -1634,5 +1611,5 @@ encodeAndSignTransaction txPayload energy nonce expiry accountConfig = Types.Nor
         thEnergyAmount = energy,
         thExpiry = expiry
       }
-      keys = take (fromIntegral threshold) . sortOn fst . Map.toList $ acKeys accountConfig
+      keys = take (fromIntegral threshold) . sortOn fst . Map.toList $ accKeys
   in Types.signTransaction keys header encPayload

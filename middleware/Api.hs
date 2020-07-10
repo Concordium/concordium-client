@@ -49,13 +49,14 @@ import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction
 import           Concordium.Client.Cli
 import           Concordium.Client.Config
+import           Concordium.Client.Utils
 
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
 import           Concordium.Types.HashableTo
 import qualified Concordium.Types.Transactions as Types
 import qualified Concordium.Types.Execution as Execution
-import qualified Concordium.Client.Types.Transaction as Types
+import           Concordium.Client.Types.Account
 import           Control.Monad.Except
 import qualified Proto.ConcordiumP2pRpc_Fields as CF
 
@@ -151,7 +152,7 @@ data Routes r = Routes
 api :: Proxy (ToServantApi Routes)
 api = genericApi (Proxy :: Proxy Routes)
 
-type Account = (IDTypes.AccountAddress, Types.KeyMap)
+type Account = (IDTypes.AccountAddress, AccountKeyMap)
 
 servantApp :: EnvData -> Maybe Account -> Text -> Text -> FilePath -> FilePath -> Application
 servantApp nodeBackend dropAccount pgUrl idUrl cfgDir dataDir = genericServe routesAsServer
@@ -381,19 +382,17 @@ servantApp nodeBackend dropAccount pgUrl idUrl cfgDir dataDir = genericServe rou
         { success = True }
 
   importAccount :: ImportAccountRequest -> Handler ()
-  importAccount ImportAccountRequest{..} = do
+  importAccount request = do
     -- init configuration if missing
     baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False True
-    accCfgs <- case extra of
-      ExtraPassword pass -> do
-        accs <- case decodeMobileFormattedAccountExport (Text.encodeUtf8 contents) (Password (Text.encodeUtf8 pass)) of
-                 Left err -> throwError' err400 $ Just ("Cannot load mobile formatted import: ", err)
-                 Right v -> return v
-        return $ accountCfgsFromWalletExportAccounts accs Nothing
-      ExtraAlias alias ->
-        case decodeWebFormattedAccountExport (Text.encodeUtf8 contents) alias of
-          Left err -> throwError' err400 $ Just ("Cannot load web formatted import: ", err)
-          Right v -> return [v]
+    accCfgs <- case request of
+      ImportAccountRequestMobile{..} -> do
+        ((liftIO $ decodeMobileFormattedAccountExport (Text.encodeUtf8 contents) Nothing (passwordFromText password))
+          `embedServerErrM` err400) Just
+      ImportAccountRequestWeb{..} -> do
+        accCfg <- ((liftIO $ decodeWebFormattedAccountExport (Text.encodeUtf8 contents) alias (passwordFromText password))
+                   `embedServerErrM` err400) Just
+        return [accCfg]
     liftIO $ void $ (importAccountConfig baseCfg) accCfgs
 
   getAccounts :: Handler GetAccountsResponse
@@ -424,18 +423,18 @@ servantApp nodeBackend dropAccount pgUrl idUrl cfgDir dataDir = genericServe rou
 
       expiry <- (600 +) <$> (liftIO getCurrentTimeUnix)
 
-      let txCfg = TransactionConfig
-                    { tcAccountCfg = accCfg
-                    , tcNonce = Nothing
-                    , tcEnergy = energy
-                    , tcExpiry = expiry }
+      let AccountConfig{..} = accCfg
+      let senderAddr = naAddr acAddr
 
       bakerKeys <- liftIO $ Aeson.eitherDecodeFileStrict file >>= getFromJson
 
-      pl <- liftIO $ generateBakerAddPayload bakerKeys AccountKeys {akAddress = naAddr . acAddr $ accCfg, akKeys = acKeys accCfg, akThreshold = fromIntegral (HM.size $ acKeys accCfg) }
+      accountKeys <- liftIO (decryptAccountKeyMap acKeys (passwordFromText password)) `embedErrIOM` Prelude.id
+
+      pl <- liftIO $ generateBakerAddPayload bakerKeys $ accountSigningDataFromConfig accCfg accountKeys
       -- run the transaction
       res <- runClient nodeBackend $ do
-        tx <- startTransaction txCfg pl False
+        currentNonce <- getBestBlockHash >>= getAccountNonce senderAddr
+        let tx = encodeAndSignTransaction pl senderAddr energy currentNonce expiry accountKeys acThreshold
         return $ getBlockItemHash tx
       case res of
         Left _ -> return Nothing
@@ -453,16 +452,16 @@ servantApp nodeBackend dropAccount pgUrl idUrl cfgDir dataDir = genericServe rou
 
       expiry <- (600 +) <$> getCurrentTimeUnix
 
-      let txCfg = TransactionConfig
-                    { tcAccountCfg = accCfg
-                    , tcNonce = Nothing
-                    , tcEnergy = energy
-                    , tcExpiry = expiry }
+      let AccountConfig{..} = accCfg
+      let senderAddr = naAddr acAddr
+
+      accountKeys <- (liftIO $ decryptAccountKeyMap acKeys (passwordFromText password)) `embedErrIOM` Prelude.id
 
       let pl = Execution.RemoveBaker $ Types.BakerId bakerId
       -- run the transaction
       res <- runClient nodeBackend $ do
-        tx <- startTransaction txCfg pl False
+        currentNonce <- getBestBlockHash >>= getAccountNonce senderAddr
+        let tx = encodeAndSignTransaction pl senderAddr energy currentNonce expiry accountKeys acThreshold
         return $ getBlockItemHash tx
       case res of
         Left _ -> return Nothing
@@ -487,6 +486,10 @@ proxyGrpcCall nodeBackend query = do
     _ ->
       pure Aeson.Null
 
+-- | Encode a password received over the network as 'Text' into a 'Password'.
+passwordFromText :: Text -> Password
+passwordFromText txt = Password (Text.encodeUtf8 txt)
+
 -- IO Errors will be translated to 500 internal server error
 -- we will ignore the body as it usually comes from an exitFailure
 -- and it doesn't give much information
@@ -504,6 +507,22 @@ wrapSerializationError value typ (Left err) = throwError' err400 $ Just ("cannot
 throwError' :: (Show err) => ServerError -> Maybe (String, err) -> Handler a
 throwError' e (Just (desc, err)) = throwError $ e { errBody = BS8.pack (desc ++ show err) }
 throwError' e Nothing = throwError e
+
+-- | In the 'Left' case of an 'Either', transform the error using the given function and
+-- throw the given 'ServerError' with the resulting error message.
+embedServerErr :: (Show err) => Either e' a -> ServerError -> (e' -> Maybe err) -> Handler a
+embedServerErr eitherV serverErr f =
+  case eitherV of
+    Left err' -> throwError $ case f err' of
+                                Nothing -> serverErr
+                                Just body -> serverErr { errBody = BS8.pack $ show body }
+    Right v -> return v
+
+-- | Like 'embedServerErr' but where the value is a 'Handler' action.
+embedServerErrM :: (Show err) => Handler (Either e' a) -> ServerError -> (e' -> Maybe err) -> Handler a
+embedServerErrM action serverErr f = do
+  v <- action
+  (v `embedServerErr` serverErr) f
 
 -- For beta, uses the middlewareGodAccount which is seeded with funds
 runGodTransaction :: EnvData -> Account -> TransactionJSONPayload -> IO Types.TransactionHash
@@ -584,7 +603,7 @@ certainDecode t =
     Nothing -> error $ "Well... not so certain now huh! certainDecode failed on:\n\n" ++ Text.unpack t
 
 -- Simple helper to parse key files
-accountParser :: Aeson.Value -> Aeson.Parser (IDTypes.AccountAddress, Types.KeyMap)
+accountParser :: Aeson.Value -> Aeson.Parser (IDTypes.AccountAddress, AccountKeyMap)
 accountParser = Aeson.withObject "Account keys" $ \v -> do
           accountAddr <- v Aeson..: "address"
           accountData <- v Aeson..: "accountData"
@@ -703,7 +722,8 @@ debugTestFullProvision = do
 
   debugTestTransactions nodeBackend selfAddress keyMap
 
-debugTestTransactions :: EnvData -> Types.AccountAddress -> Types.KeyMap -> IO String
+
+debugTestTransactions :: EnvData -> Types.AccountAddress -> AccountKeyMap -> IO String
 debugTestTransactions nodeBackend selfAddress keyMap = do
 
   gtuDropAccountFile <- Config.lookupEnvTextWithoutDefault "GTU_DROP_KEYFILE"
@@ -731,9 +751,9 @@ debugTestTransactions nodeBackend selfAddress keyMap = do
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign txDelegateStake 3) 100)
 
   bakerKeys <- generateBakerKeys
-  addBakerPayload <- Execution.encodePayload <$> generateBakerAddPayload bakerKeys AccountKeys { akAddress = selfAddress,
-                                                                                                 akKeys = keyMap,
-                                                                                                 akThreshold = fromIntegral (HM.size keyMap) }
+  addBakerPayload <- Execution.encodePayload <$> generateBakerAddPayload bakerKeys AccountSigningData { asdAddress = selfAddress
+                                                                                                      , asdKeys = keyMap
+                                                                                                      , asdThreshold = fromIntegral (HM.size keyMap) }
 
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign addBakerPayload 4) 100)
 
@@ -741,9 +761,9 @@ debugTestTransactions nodeBackend selfAddress keyMap = do
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign txDelegateStake' 5) 100)
 
   -- invalid add baker payload
-  addBakerPayload' <- Execution.encodePayload <$> generateBakerAddPayload bakerKeys AccountKeys { akAddress = selfAddress,
-                                                                                                  akKeys = HM.empty,
-                                                                                                  akThreshold = 1 }
+  addBakerPayload' <- Execution.encodePayload <$> generateBakerAddPayload bakerKeys AccountSigningData { asdAddress = selfAddress
+                                                                                                       , asdKeys = HM.empty
+                                                                                                       , asdThreshold = 1 }
   _ <- runGRPC nodeBackend (sendTransactionToBaker (sign addBakerPayload' 6) 100)
 
   -- garbage payload

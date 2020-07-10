@@ -8,18 +8,22 @@ import Concordium.Types
 
 import Concordium.Client.Parse
 import Concordium.Client.Types.TransactionStatus
-import Concordium.Client.Types.Transaction
+import Concordium.Client.Types.Account
+import Concordium.Client.Encryption
 
 import Control.Monad
 import Control.Monad.IO.Class
+import Control.Monad.Except
+import Control.Exception
+
 import Data.Aeson as AE
-import qualified Data.ByteString.Char8 as BS
 import qualified Data.Char as C
-import qualified Data.HashMap.Strict as Map
 import Data.List
+import qualified Data.HashMap.Strict as Map
 import Data.Maybe
-import Data.Text hiding (empty, lines, map, null, last)
-import Data.Text.Encoding
+import Data.Text(Text)
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
 import Data.Time
 import Data.Time.Clock.POSIX
@@ -71,6 +75,15 @@ logError = log Err $ Just Red
 logFatal :: MonadIO m => [String] -> m a
 logFatal msgs = logError msgs >> liftIO exitFailure
 
+withLogFatal :: Either e' a -> (e' -> String) -> IO a
+withLogFatal (Left x) f = logFatal [f x]
+withLogFatal (Right x) _ = return x
+
+withLogFatalIO :: IO (Either e' a) -> (e' -> String) -> IO a
+withLogFatalIO action f = do
+  v <- action
+  v `withLogFatal` f
+
 logExit :: MonadIO m => [String] -> m a
 logExit msgs = logInfo msgs >> liftIO exitSuccess
 
@@ -100,8 +113,54 @@ askConfirmation :: Maybe String -> IO Bool
 askConfirmation prompt = do
   putStr $ prettyMsg " [yN]: " $ fromMaybe defaultPrompt prompt
   input <- T.getLine
-  return $ strip (toLower input) == "y"
+  return $ T.strip (T.toLower input) == "y"
   where defaultPrompt = "confirm"
+
+-- | Ask for a password on standard input not showing what is typed.
+askPassword
+  :: String -- ^ A text to display after which the password is typed (nothing is appended to this).
+  -> IO Password
+askPassword descr = do
+  putStr descr
+  -- Get the password from command line, not showing what is typed by temporarily disabling echo.
+  passwordInput <- bracket_ (hSetEcho stdin False) (hSetEcho stdin True) T.getLine
+  let password = T.encodeUtf8 passwordInput
+  putStrLn ""
+  return (Password password)
+
+-- | Ask the user to create a new password, requiring to retype the password for confirmation.
+createPasswordInteractive
+  :: Maybe String -- ^ An optional description of the password, will be displayed after "... a new password to ".
+  -> IO (Either String Password) -- ^ The password entered by the user or an error message on failure.
+createPasswordInteractive descr = runExceptT $ do
+  pwd <- liftIO $ askPassword $ "Please enter a new password" ++ maybe "" (" to " ++) descr ++ ": "
+  pwd' <- liftIO $ askPassword "Please retype the password: "
+  unless (pwd' == pwd) $ throwError "the passwords do not match"
+  return pwd
+
+-- | Decrypt the given encrypted account keys. For each key, this asks for the respective password
+-- presenting the key index to the user.
+decryptAccountKeyMapInteractive
+  :: EncryptedAccountKeyMap
+  -> Maybe String -- ^ Optional text describing the account of which to decrypt keys. Will be shown in the format
+                  -- "Enter password for %s signing key"
+  -> IO (Either String AccountKeyMap) -- ^ The decrypted 'AccountKeyMap' or an error message on failure.
+decryptAccountKeyMapInteractive encryptedKeyMap accDescr = runExceptT $ do
+  let accText = maybe " " (\s -> " " ++ s ++ " ") accDescr
+  let queryText keyIndex =
+        if Map.size encryptedKeyMap <= 1
+        then "Enter password for" ++ accText ++ "signing key: "
+        else case accDescr of
+               Nothing -> "Enter password for signing key with index " ++ show keyIndex ++ ": "
+               Just descr -> "Enter password for signing key of " ++ descr ++ " with index " ++ show keyIndex ++ ": "
+  sequence $ Map.mapWithKey (\keyIndex eKp -> do
+                                pwd <- liftIO $ askPassword $ queryText keyIndex
+                                -- TODO When this fails, we get an IO exception instead of returning
+                                -- the error string at the top-level.
+                                decryptAccountKeyPair pwd keyIndex eKp
+                            ) encryptedKeyMap
+
+
 
 -- |Standardized method of exiting the command because the transaction is cancelled.
 exitTransactionCancelled :: IO ()
@@ -284,42 +343,21 @@ instance AE.ToJSON BakerKeys where
                     , "signatureSignKey" .= bkSigSignKey v
                     , "signatureVerifyKey" .= bkSigVerifyKey v ]
 
--- |Information about a given account sufficient to sign transactions.
-data AccountKeys =
-  AccountKeys
-  { akAddress :: AccountAddress
-  , akKeys :: KeyMap
-  , akThreshold :: IDTypes.SignatureThreshold }
-  deriving (Show)
-
-instance AE.FromJSON AccountKeys where
-  parseJSON = withObject "Account keys" $ \v -> do
-    akAddress <- v .: "account"
-    akKeys <- v .: "keys"
-    let numKeys = Map.size akKeys
-    unless (numKeys >= 1 && numKeys <= 255) $ fail $ "Too few or too many keys: " ++ show numKeys
-    akThreshold <- v .:? "threshold" .!= fromIntegral numKeys
-    return AccountKeys {..}
-
-data NamedAddress = NamedAddress { naName :: Maybe Text, naAddr :: AccountAddress }
-  deriving (Show, Eq)
-
 -- |Hardcoded network ID.
 defaultNetId :: Int
 defaultNetId = 100
 
 -- |If the string starts with @ we assume the remaining characters are a file name
 -- and we try to read the contents of that file.
-decodeJsonArg :: FromJSON a => Text -> Maybe (IO (Either String a))
-decodeJsonArg v =
+decodeJsonArg :: FromJSON a => String -> Maybe (IO (Either String a))
+decodeJsonArg s =
   Just $ do
-    let bs = encodeUtf8 v
-    res <- case BS.uncons bs of
+    res <- case uncons s of
              Just ('@', rest) ->
-               AE.eitherDecodeFileStrict (BS.unpack rest)
-             _ -> return $ AE.eitherDecodeStrict bs
+               AE.eitherDecodeFileStrict rest
+             _ -> return $ AE.eitherDecodeStrict $ T.encodeUtf8 $ T.pack s
     return $ case res of
-               Left err -> Left $ printf "cannot parse '%s' as JSON: %s" v err
+               Left err -> Left $ printf "cannot parse '%s' as JSON: %s" s err
                Right r -> Right r
 
 getExpiryArg :: String -> TransactionExpiryTime -> Maybe Text -> IO TransactionExpiryTime

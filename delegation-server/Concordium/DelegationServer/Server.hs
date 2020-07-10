@@ -1,7 +1,8 @@
 module Concordium.DelegationServer.Server (module Concordium.DelegationServer.Server, addHeaders) where
 
+import Concordium.DelegationServer.Helpers (DelegationAccount(..))
 import Concordium.Client.Cli
-import Concordium.Client.Config (AccountConfig (..), getDefaultBaseConfigDir)
+import Concordium.Client.Config (getDefaultBaseConfigDir)
 import Concordium.Client.GRPC
 import qualified Concordium.DelegationServer.Api.Definition as Api
 import qualified Concordium.DelegationServer.Api.Implementation as Api
@@ -36,16 +37,13 @@ import Text.Read (readMaybe)
 
 type Middlewares = (Network.Wai.Application -> Network.Wai.Application)
 
-accountParser :: Value -> Parser AccountConfig
+accountParser :: Value -> Parser DelegationAccount
 accountParser = withObject "Account keys" $ \v -> do
-  accountAddr <- v .: "address"
+  daAddr <- v .: "address"
   accountData <- v .: "accountData"
-  keyMap <- accountData .: "keys"
-  return $
-    AccountConfig
-      (NamedAddress Nothing accountAddr)
-      keyMap
-      (fromIntegral $ HM.size keyMap)
+  daKeys <- accountData .: "keys"
+  let daThreshold = fromIntegral $ HM.size daKeys
+  return $ DelegationAccount{..}
 
 {- Fork a thread and boot the http server as a Wai app on Warp -}
 runHttp :: Middlewares -> IO ()

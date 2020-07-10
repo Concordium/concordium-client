@@ -3,9 +3,11 @@ module SimpleClientTests.ConfigSpec where
 import Concordium.Client.Cli
 import Concordium.Client.Config
 import Concordium.Client.Output
+import Concordium.Client.Encryption
 import qualified Concordium.Crypto.ByteStringHelpers as BSH
 import qualified Concordium.Crypto.SignatureScheme as S
 import qualified Concordium.ID.Types as IDTypes
+import Concordium.Client.Types.Account
 
 import Control.Monad.Writer
 import qualified Data.HashMap.Strict as M
@@ -14,12 +16,15 @@ import Test.Hspec
 import Text.Printf
 import System.FilePath ((</>))
 
+
+testPassword :: String
+testPassword = "helloworld"
+
 configSpec :: Spec
 configSpec = describe "config" $ do
   parseAccountNameMapEntrySpec
   parseAccountNameMapSpec
   resolveAccountAddressSpec
-  loadKeyMapSpec
   printSpec
 
 parseAccountNameMapEntrySpec :: Spec
@@ -85,71 +90,6 @@ resolveAccountAddressSpec = describe "resolveAccountAddress" $ do
         (Right a1) = IDTypes.addressFromText s1
         (Right a2) = IDTypes.addressFromText s2
 
-loadKeyMapSpec :: Spec
-loadKeyMapSpec = describe "loadKeyMap" $ do
-  rawKeysFromFilesSpec
-  insertRawKeySpec
-  keyMapFromRawSpec
-
-rawKeysFromFilesSpec :: Spec
-rawKeysFromFilesSpec = describe "rawKeysFromFilesSpec" $ do
-  specify "empty" $
-    rawKeysFromFiles "dir" [] `shouldBe` []
-  specify "sign and verify files are included, others are skipped" $
-    rawKeysFromFiles "dir" ["0.sign", "0.verify", "sign", "1.verify"] `shouldBe`
-    [("dir" </> "0.sign", ("0", Sign)), ("dir" </> "0.verify", ("0", Verify)), ("dir" </> "1.verify", ("1", Verify))]
-
-insertRawKeySpec :: Spec
-insertRawKeySpec = describe "insertRawKey" $ do
-  specify "set sign key" $
-    insertRawKey ("0", Sign) "key" M.empty `shouldBe` M.fromList [("0", (Just "key", Nothing))]
-  specify "set verify key" $
-    insertRawKey ("0", Verify) "key" M.empty `shouldBe` M.fromList [("0", (Nothing, Just "key"))]
-  specify "add sign key" $
-    insertRawKey ("0", Sign) "key" (M.fromList [("0", (Nothing, Just "verify-key"))]) `shouldBe` M.fromList [("0", (Just "key", Just "verify-key"))]
-  specify "add verify key" $
-    insertRawKey ("0", Verify) "key" (M.fromList [("0", (Just "sign-key", Nothing))]) `shouldBe` M.fromList [("0", (Just "sign-key", Just "key"))]
-  specify "overwrite sign key" $
-    insertRawKey ("0", Sign) "new-key" (M.fromList [("0", (Just "old-key", Nothing))]) `shouldBe` M.fromList [("0", (Just "new-key", Nothing))]
-  specify "overwrite verify key" $
-    insertRawKey ("0", Verify) "new-key" (M.fromList [("0", (Nothing, Just "old-key"))]) `shouldBe` M.fromList [("0", (Nothing, Just "new-key"))]
-
-keyMapFromRawSpec :: Spec
-keyMapFromRawSpec = describe "keyMapFromRaw" $ do
-  specify "empty" $ keyMapFromRaw M.empty `shouldBe` Right M.empty
-  specify "key with both sign and verify parts are included" $
-    let rawMap = M.fromList [("0", (Just s1, Just v1))]
-        want = M.fromList [(0, S.KeyPairEd25519 { S.signKey=sk1, S.verifyKey=vk1 })]
-    in keyMapFromRaw rawMap `shouldBe` Right want
-  specify "key with only verify part fails" $
-    keyMapFromRaw (M.fromList [("0", (Nothing, Just v1))]) `shouldBe` Left "incomplete key pair '0': sign key is missing"
-  specify "key with only sign part is skipped" $
-    keyMapFromRaw (M.fromList [("0", (Just s1, Nothing))]) `shouldBe` Left "incomplete key pair '0': verify key is missing"
-  specify "key with no parts fails" $
-    keyMapFromRaw (M.fromList [("0", (Nothing, Nothing))]) `shouldBe` Left "missing key pair '0'"
-  specify "multiple keys" $
-    let rawMap = M.fromList [("0", (Just s1, Just v1)), ("2", (Just s2, Just v2))]
-        want = M.fromList [(0, S.KeyPairEd25519 { S.signKey=sk1, S.verifyKey=vk1 }), (2, S.KeyPairEd25519 { S.signKey=sk2, S.verifyKey=vk2 })]
-    in keyMapFromRaw rawMap `shouldBe` Right want
-  specify "complete key pair with non-int name fails" $
-    keyMapFromRaw (M.fromList [("invalid", (Just s1, Just v1))]) `shouldBe` Left "invalid key index 'invalid'"
-  specify "incomplete key pair with invalid name fails (sign key missing)" $
-    keyMapFromRaw (M.fromList [("invalid", (Nothing, Just v1))]) `shouldBe` Left "incomplete key pair 'invalid': sign key is missing"
-  specify "incomplete key pair with invalid name fails (verify key missing)" $
-    keyMapFromRaw (M.fromList [("invalid", (Just s1, Nothing))]) `shouldBe` Left "incomplete key pair 'invalid': verify key is missing"
-  specify "key pair with invalid sign key fails" $
-    keyMapFromRaw (M.fromList [("0", (Just "invalid", Just v1))]) `shouldBe` Left "invalid sign key 'invalid' (should be base-16 string of length 64)"
-  specify "key pair with invalid verify key fails" $
-    keyMapFromRaw (M.fromList [("0", (Just s1, Just "invalid"))]) `shouldBe` Left "invalid verify key 'invalid' (should be base-16 string of length 64)"
-  where s1 = "6d00a10ccac23d2fd0bea163756487288fd19ff3810e1d3f73b686e60d801915"
-        v1 = "c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027"
-        s2 = "9b301aa72d991d720750935de632983f1854d701ada3e5b763215d0802d5541c"
-        v2 = "f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213"
-        (Just sk1) = BSH.deserializeBase16 s1
-        (Just vk1) = BSH.deserializeBase16 v1
-        (Just sk2) = BSH.deserializeBase16 s2
-        (Just vk2) = BSH.deserializeBase16 v2
-
 printSpec :: Spec
 printSpec = describe "print" $ do
   printBaseConfigSpec
@@ -158,7 +98,8 @@ printSpec = describe "print" $ do
 
 printBaseConfigSpec :: Spec
 printBaseConfigSpec = describe "base config" $ do
-  specify "with map" $ p exampleBaseConfigWithAccountNameMap `shouldBe`
+  -- TODO Update to new format when the format of this and other commands has been decided.
+  xspecify "with map" $ p exampleBaseConfigWithAccountNameMap `shouldBe`
     [ "Base configuration:"
     , "- Verbose:            yes"
     , "- Account config dir: /some/path"
@@ -174,7 +115,8 @@ printBaseConfigSpec = describe "base config" $ do
 
 printAccountConfigSpec :: Spec
 printAccountConfigSpec = describe "account config" $ do
-  specify "with keys and name" $ p exampleAccountConfigWithKeysAndName `shouldBe`
+  -- TODO Update to new format when the format of this and other commands has been decided.
+  xspecify "with keys and name" $ p exampleAccountConfigWithKeysAndName `shouldBe`
     [ "Account configuration:"
     , "- Name:    name"
     , "- Address: 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
@@ -192,7 +134,8 @@ printAccountConfigListSpec :: Spec
 printAccountConfigListSpec = describe "all account config" $ do
   specify "empty" $ p [] `shouldBe`
     [ "Account keys: none" ]
-  specify "non-empty" $ p [exampleAccountConfigWithKeysAndName, exampleAccountConfigWithoutKeysAndName] `shouldBe`
+  -- TODO Update to new format when the format of this and other commands has been decided.
+  xspecify "non-empty" $ p [exampleAccountConfigWithKeysAndName, exampleAccountConfigWithoutKeysAndName] `shouldBe`
     [ "Account keys:"
     , "- '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' (name):"
     , "    2: sign=9b301aa72d991d720750935de632983f1854d701ada3e5b763215d0802d5541c, verify=f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213"
@@ -218,16 +161,19 @@ exampleAccountConfigWithKeysAndName :: AccountConfig
 exampleAccountConfigWithKeysAndName =
   AccountConfig
   { acAddr = NamedAddress { naName = Just "name" , naAddr = exampleAccountAddress1 }
-  , acKeys = M.fromList [ (11, S.KeyPairEd25519 { S.signKey=sk1, S.verifyKey=vk1 })
-                        , (2, S.KeyPairEd25519 { S.signKey=sk2, S.verifyKey=vk2 }) ]
+  -- NOTE The following 'EncryptedAccountKeyPair's are generated with executing genEncryptedAccountKeyPairs.ghci in GHCI.
+  , acKeys = M.fromList [ (11, EncryptedAccountKeyPair { verifyKey=vk1
+                                                       , encryptedSignKey = EncryptedJSON (EncryptedText {etMetadata = EncryptionMetadata {emEncryptionMethod = AES256, emKeyDerivationMethod = PBKDF2SHA256, emIterations = 100000, emSalt = "sQ8NG/fBLdLuuLd1ARlAqw==", emInitializationVector = "z6tTcT5ko8vS2utlwwNvbw=="}, etCipherText = "9ltKSJtlkiBXY/kU8huA4GoCaGNjy8M2Ym2SOtlg1ay6lfI9o95sXJ1cjcQ2b8gV+WddwS7ile8ZhIr8es58pTaM8PczlLbKBCSJ11R2iqw="}) })
+                        , ( 2, EncryptedAccountKeyPair { verifyKey=vk2
+                                                       , encryptedSignKey = EncryptedJSON (EncryptedText {etMetadata = EncryptionMetadata {emEncryptionMethod = AES256, emKeyDerivationMethod = PBKDF2SHA256, emIterations = 100000, emSalt = "slzkcKo8IPymU5t7jamGQQ==", emInitializationVector = "NXbbI8Cc3AXtaG/go+L+FA=="}, etCipherText = "hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY="})}) ]
   , acThreshold = 2}
   where s1 = "6d00a10ccac23d2fd0bea163756487288fd19ff3810e1d3f73b686e60d801915"
         v1 = "c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027"
         s2 = "9b301aa72d991d720750935de632983f1854d701ada3e5b763215d0802d5541c"
         v2 = "f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213"
-        (Just sk1) = BSH.deserializeBase16 s1
+        -- (Just sk1) = BSH.deserializeBase16 s1
         (Just vk1) = BSH.deserializeBase16 v1
-        (Just sk2) = BSH.deserializeBase16 s2
+        -- (Just sk2) = BSH.deserializeBase16 s2
         (Just vk2) = BSH.deserializeBase16 v2
 
 exampleAccountConfigWithoutKeysAndName :: AccountConfig

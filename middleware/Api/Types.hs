@@ -15,6 +15,8 @@ import           Data.Map (Map)
 import           GHC.Generics
 
 import           Concordium.Types.Utils
+import           Concordium.Client.Types.Account
+import           Concordium.Client.Encryption
 import           Concordium.Client.Runner(StatusOfPeers)
 import           Concordium.Client.Types.Transaction ()
 import           Concordium.Crypto.SignatureScheme (KeyPair(..))
@@ -22,7 +24,6 @@ import qualified Concordium.ID.Types
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Types
 import qualified Concordium.Types.Transactions as Types
-import qualified Concordium.Client.Types.Transaction as Types
 
 import           SimpleIdClientApi
 import           PerAccountTransactions
@@ -31,7 +32,7 @@ import Concordium.Types (ElectionDifficulty, BakerId)
 data BetaIdProvisionRequest =
   BetaIdProvisionRequest
     { attributes :: Map Text Text
-    , accountKeys :: Maybe KeyPair
+    , accountKeys :: Maybe AccountKeyPair
     }
   deriving (Generic, Show, FromJSON)
 
@@ -56,9 +57,10 @@ instance FromJSON BetaAccountProvisionRequest where
     return BetaAccountProvisionRequest{..}
 
 
+-- NOTE: This will be removed.
 data BetaAccountProvisionResponse =
   BetaAccountProvisionResponse
-    { accountKeys :: Types.KeyMap
+    { accountKeys :: AccountKeyMap
     , spio :: Concordium.ID.Types.CredentialDeploymentInformation
     , address :: Text
     , transactionHash :: Types.TransactionHash
@@ -91,11 +93,11 @@ newtype TestnetGtuDropResponse =
 data AccountWithKeys =
   AccountWithKeys
     { address :: Types.AccountAddress
-    , keys :: Types.KeyMap
+    , keys :: AccountKeyMap
     }
   deriving (FromJSON, Generic, Show)
 
-accountToPair :: AccountWithKeys -> (Types.AccountAddress, Types.KeyMap)
+accountToPair :: AccountWithKeys -> (Types.AccountAddress, AccountKeyMap)
 accountToPair (AccountWithKeys address keys) =
   (address, keys)
 
@@ -262,23 +264,25 @@ data AccountTransactionsResponse =
 
 instance ToJSON AccountTransactionsResponse
 
-
-data ImportAccountRequestExtra =
-  ExtraPassword
-    { password :: Text
+data ImportAccountRequest
+  = ImportAccountRequestWeb
+    { -- | The unencrypted web-formatted export.
+      contents :: Text
+      -- | An optional name for the to-be-imported account.
+    , alias :: Maybe Text
+      -- | The password to encrypt the signing keys with.
+      -- It must be UTF-8 encoded.
+    , password :: Text
     }
-  | ExtraAlias
-    { alias :: Maybe Text
+  | ImportAccountRequestMobile
+    { -- | The encrypted mobile-formatted export.
+      contents :: Text
+      -- | The password to decrypt the export and to encrypt the signing keys with.
+      -- It must be UTF-8 encoded.
+    , password :: Text
     }
   deriving (FromJSON, ToJSON, Generic, Show)
 
-
-data ImportAccountRequest =
-  ImportAccountRequest
-  { contents :: Text
-  , extra :: ImportAccountRequestExtra
-  }
-  deriving (FromJSON, ToJSON, Generic, Show)
 
 data ImportAccountResponse =
   ImportAccountResponse
@@ -297,7 +301,10 @@ data GetAccountsResponseItem =
 
 data AddBakerRequest =
   AddBakerRequest
-  { sender :: Maybe Text }
+  { sender :: Maybe Text
+  -- | The password to decrypt the account signing keys.
+  -- It must be UTF-8 encoded.
+  , password :: Text }
   deriving (FromJSON, Generic, Show)
 
 data AddBakerResponse =
@@ -308,7 +315,10 @@ data AddBakerResponse =
 data RemoveBakerRequest =
   RemoveBakerRequest
   { sender :: Maybe Text
-  , bakerId :: Word64 }
+  , bakerId :: Word64
+  -- | The password to decrypt the account signing keys.
+  -- It must be UTF-8 encoded.
+  , password :: Text }
   deriving (FromJSON, Generic, Show)
 
 data RemoveBakerResponse =
