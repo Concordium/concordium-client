@@ -14,6 +14,8 @@ import Concordium.Client.GRPC (getBirkParameters, getBlockInfo, getTransactionSt
 import Concordium.Client.Runner
 import qualified Concordium.Client.Types.Transaction as Costs
 import Concordium.Client.Types.TransactionStatus
+import Concordium.Client.Utils
+
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Execution
 import qualified Concordium.ID.Types as ID
@@ -29,13 +31,19 @@ import qualified Data.Vector as Vec
 
 data DelegationAccount =
   DelegationAccount
-  { daAddr :: Types.AccountAddress
-  , daKeys :: AccountKeyMap
+  { daAddr :: !Types.AccountAddress
+  , daKeys :: !AccountKeyMap
   , daThreshold :: !ID.SignatureThreshold
   }
 
 type DelegationAccounts = Vec.Vector DelegationAccount
 
+-- |Parse a response, raising an error in case of any failure.
+-- Failure can occur in three ways.
+--
+-- - failure establishing connection to the GRPC server when running the supplied action
+-- - failure of the GRPC call
+-- - failure to parse the response with a provided JSON parser.
 jsonAnswer ::
   (Show a, FromJSON t) =>
   EnvData ->
@@ -45,8 +53,8 @@ jsonAnswer ::
 jsonAnswer grpc f g = do
   eeValue <- runClient grpc f
   case eeValue of
-    Left e -> throwError . userError . show $ e
-    Right (Left e) -> throwError . userError . show $ e
+    Left e -> throwError . userError $ "GRPC connection error: " ++ show e
+    Right (Left e) -> throwError . userError $ "GRPC call failed: " ++ show e
     Right (Right jValue) -> case fromJSON jValue of
       Error e -> throwError . userError $ "Unable to parse JSON value received from the grpc backend. \nValue: " ++ show jValue ++ "\nError: " ++ show e
       Success value -> g value
@@ -125,11 +133,12 @@ delegate grpc delegationAccounts bakerId idx =
           pl = case bakerId of
             Just bid -> Execution.DelegateStake {dsID = bid}
             Nothing -> Execution.UndelegateStake
-      -- send the transaction
-      either (throwError . userError . show) return =<<
-        runClient grpc (getBlockItemHash <$> do
-                           currentNonce <- getBestBlockHash >>= getAccountNonce daAddr
-                           return $ encodeAndSignTransaction pl daAddr energy currentNonce expiry daKeys daThreshold)
+      -- action to send the transaction
+      let sender = do
+            currentNonce <- getBestBlockHash >>= getAccountNonce daAddr
+            return $ encodeAndSignTransaction pl daAddr energy currentNonce expiry daKeys daThreshold
+      -- try to send, and in case of failure throw an exception.
+      runClient grpc (getBlockItemHash <$> sender) `failWith` (userError . show)
 
 in2epochs :: UTCTime -> NominalDiffTime -> UTCTime -> UTCTime
 in2epochs genesisTime epochDuration finalizationTime =

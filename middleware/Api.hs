@@ -428,7 +428,7 @@ servantApp nodeBackend dropAccount pgUrl idUrl cfgDir dataDir = genericServe rou
 
       bakerKeys <- liftIO $ Aeson.eitherDecodeFileStrict file >>= getFromJson
 
-      accountKeys <- liftIO (decryptAccountKeyMap acKeys (passwordFromText password)) `embedErrIOM` Prelude.id
+      accountKeys <- liftIO (failOnError $ decryptAccountKeyMap acKeys (passwordFromText password))
 
       pl <- liftIO $ generateBakerAddPayload bakerKeys $ accountSigningDataFromConfig accCfg accountKeys
       -- run the transaction
@@ -455,7 +455,7 @@ servantApp nodeBackend dropAccount pgUrl idUrl cfgDir dataDir = genericServe rou
       let AccountConfig{..} = accCfg
       let senderAddr = naAddr acAddr
 
-      accountKeys <- (liftIO $ decryptAccountKeyMap acKeys (passwordFromText password)) `embedErrIOM` Prelude.id
+      accountKeys <- liftIO $ failOnError $ decryptAccountKeyMap acKeys (passwordFromText password)
 
       let pl = Execution.RemoveBaker $ Types.BakerId bakerId
       -- run the transaction
@@ -508,21 +508,12 @@ throwError' :: (Show err) => ServerError -> Maybe (String, err) -> Handler a
 throwError' e (Just (desc, err)) = throwError $ e { errBody = BS8.pack (desc ++ show err) }
 throwError' e Nothing = throwError e
 
--- | In the 'Left' case of an 'Either', transform the error using the given function and
--- throw the given 'ServerError' with the resulting error message.
-embedServerErr :: (Show err) => Either e' a -> ServerError -> (e' -> Maybe err) -> Handler a
-embedServerErr eitherV serverErr f =
-  case eitherV of
-    Left err' -> throwError $ case f err' of
-                                Nothing -> serverErr
-                                Just body -> serverErr { errBody = BS8.pack $ show body }
-    Right v -> return v
-
--- | Like 'embedServerErr' but where the value is a 'Handler' action.
+-- |A wrapper around 'throwError'' to reduce the amount of case analysis on use-sites.
 embedServerErrM :: (Show err) => Handler (Either e' a) -> ServerError -> (e' -> Maybe err) -> Handler a
 embedServerErrM action serverErr f = do
-  v <- action
-  (v `embedServerErr` serverErr) f
+  action >>= \case
+    Left err' -> throwError' serverErr (("",) <$> f err')
+    Right v -> return v
 
 -- For beta, uses the middlewareGodAccount which is seeded with funds
 runGodTransaction :: EnvData -> Account -> TransactionJSONPayload -> IO Types.TransactionHash

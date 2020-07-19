@@ -161,11 +161,33 @@ exampleAccountConfigWithKeysAndName :: AccountConfig
 exampleAccountConfigWithKeysAndName =
   AccountConfig
   { acAddr = NamedAddress { naName = Just "name" , naAddr = exampleAccountAddress1 }
-  -- NOTE The following 'EncryptedAccountKeyPair's are generated with executing genEncryptedAccountKeyPairs.ghci in GHCI.
-  , acKeys = M.fromList [ (11, EncryptedAccountKeyPair { verifyKey=vk1
-                                                       , encryptedSignKey = EncryptedJSON (EncryptedText {etMetadata = EncryptionMetadata {emEncryptionMethod = AES256, emKeyDerivationMethod = PBKDF2SHA256, emIterations = 100000, emSalt = "sQ8NG/fBLdLuuLd1ARlAqw==", emInitializationVector = "z6tTcT5ko8vS2utlwwNvbw=="}, etCipherText = "9ltKSJtlkiBXY/kU8huA4GoCaGNjy8M2Ym2SOtlg1ay6lfI9o95sXJ1cjcQ2b8gV+WddwS7ile8ZhIr8es58pTaM8PczlLbKBCSJ11R2iqw="}) })
-                        , ( 2, EncryptedAccountKeyPair { verifyKey=vk2
-                                                       , encryptedSignKey = EncryptedJSON (EncryptedText {etMetadata = EncryptionMetadata {emEncryptionMethod = AES256, emKeyDerivationMethod = PBKDF2SHA256, emIterations = 100000, emSalt = "slzkcKo8IPymU5t7jamGQQ==", emInitializationVector = "NXbbI8Cc3AXtaG/go+L+FA=="}, etCipherText = "hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY="})}) ]
+  -- test keypairs can either be generated with
+  -- randomEd25519KeyPair from Concordium.Crypto.DummyData if determinism is required, or
+  -- with newKeyPair from Concordium.Crypto.SignatureScheme is determinism is not important.
+  , acKeys = M.fromList [ (11,
+                           EncryptedAccountKeyPairEd25519 {
+                              verifyKey=vk1
+                              , encryptedSignKey = EncryptedJSON (EncryptedText {
+                                                                     etMetadata = EncryptionMetadata {
+                                                                         emEncryptionMethod = AES256,
+                                                                           emKeyDerivationMethod = PBKDF2SHA256,
+                                                                           emIterations = 100000,
+                                                                           emSalt = "sQ8NG/fBLdLuuLd1ARlAqw==",
+                                                                           emInitializationVector = "z6tTcT5ko8vS2utlwwNvbw=="},
+                                                                       etCipherText = "9ltKSJtlkiBXY/kU8huA4GoCaGNjy8M2Ym2SOtlg1ay6lfI9o95sXJ1cjcQ2b8gV+WddwS7ile8ZhIr8es58pTaM8PczlLbKBCSJ11R2iqw="})
+                              })
+                        , ( 2,
+                            EncryptedAccountKeyPairEd25519 {
+                              verifyKey=vk2
+                              , encryptedSignKey = EncryptedJSON (EncryptedText {
+                                                                     etMetadata = EncryptionMetadata {
+                                                                         emEncryptionMethod = AES256,
+                                                                         emKeyDerivationMethod = PBKDF2SHA256,
+                                                                         emIterations = 100000,
+                                                                         emSalt = "slzkcKo8IPymU5t7jamGQQ==",
+                                                                         emInitializationVector = "NXbbI8Cc3AXtaG/go+L+FA=="},
+                                                                     etCipherText = "hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY="})
+                              })]
   , acThreshold = 2}
   where s1 = "6d00a10ccac23d2fd0bea163756487288fd19ff3810e1d3f73b686e60d801915"
         v1 = "c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027"

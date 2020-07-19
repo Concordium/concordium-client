@@ -10,7 +10,7 @@ import Control.Exception
 import qualified Data.HashMap.Strict as Map
 import Data.Text (Text)
 import qualified Data.Aeson as AE
-import Data.Aeson ((.=),(.:),(.:?))
+import Data.Aeson ((.=),(.:),(.:?), (.!=))
 
 import Concordium.Client.Utils
 import Concordium.Client.Encryption
@@ -33,55 +33,52 @@ data NamedAddress = NamedAddress { naName :: Maybe Text, naAddr :: ID.AccountAdd
 type AccountKeyPair = SigScheme.KeyPair
 
 data EncryptedAccountKeyPair
-  = EncryptedAccountKeyPair
+  = EncryptedAccountKeyPairEd25519
     { verifyKey :: !Ed25519.VerifyKey
     , encryptedSignKey :: !(EncryptedJSON Ed25519.SignKey)
     }
 
 instance AE.ToJSON EncryptedAccountKeyPair where
-  toJSON EncryptedAccountKeyPair{..} =
+  toJSON EncryptedAccountKeyPairEd25519{..} =
     AE.object [ "schemeId" .= SigScheme.Ed25519
               , "verifyKey" .= verifyKey
               , "encryptedSignKey" .= encryptedSignKey
               ]
 
+
 instance AE.FromJSON EncryptedAccountKeyPair where
   parseJSON = AE.withObject "EncryptedAccountKeyPair" $ \v -> do
     verifyKey <- v .: "verifyKey"
     encryptedSignKey <- v .: "encryptedSignKey"
-    maybeSchemeId <- v .:? "schemeId"
-    -- NB: Currently there is no need for the signature scheme to be part of 'EncryptedAccountKeyPair'
-    -- because we only support one. We check however that if a signature scheme is specified it
-    -- is the only allowed value (see 'FromJSON' for 'SigScheme.SchemeId').
-    case maybeSchemeId of
-      Just SigScheme.Ed25519 -> return ()
-      Nothing -> return ()
-    return EncryptedAccountKeyPair{..}
+    schemeId <- v .:? "schemeId" .!= SigScheme.Ed25519
+    case schemeId of
+      SigScheme.Ed25519 -> return EncryptedAccountKeyPairEd25519{..}
 
 type AccountKeyMap = Map.HashMap ID.KeyIndex AccountKeyPair
 type EncryptedAccountKeyMap = Map.HashMap ID.KeyIndex EncryptedAccountKeyPair
-
 
 -- |Information about a given account sufficient to sign transactions.
 -- This includes the plain signing keys.
 data AccountSigningData =
   AccountSigningData
-  { asdAddress :: Types.AccountAddress
-  , asdKeys :: AccountKeyMap
-  , asdThreshold :: ID.SignatureThreshold }
+  { asdAddress :: !Types.AccountAddress
+  , asdKeys :: !AccountKeyMap
+  , asdThreshold :: !ID.SignatureThreshold }
   deriving (Show)
 
--- | Test whether the givin key pair is valid by encrypting and decrypting a test value.
--- TODO implement
+-- | Test whether the given keypair passes a basic sanity check, signing and
+-- verifying the signature with the keypair should succeed.
 checkAccountKeyPair :: AccountKeyPair -> IO Bool
-checkAccountKeyPair SigScheme.KeyPairEd25519{..} = return True
+checkAccountKeyPair kp = do
+  let sgn = SigScheme.sign kp "challenge"
+  return $ SigScheme.verify (SigScheme.correspondingVerifyKey kp) "challenge" sgn
 
 decryptAccountKeyPair
   :: Password
   -> ID.KeyIndex -- ^ The key index that belongs to the key pair, only used in error message.
   -> EncryptedAccountKeyPair
   -> ExceptT String IO AccountKeyPair -- ^ The decrypted 'AccountKeyPair' or an error message on failure.
-decryptAccountKeyPair pwd keyIndex EncryptedAccountKeyPair{..} = do
+decryptAccountKeyPair pwd keyIndex EncryptedAccountKeyPairEd25519{..} = do
   signKey <- decryptJSON encryptedSignKey pwd `embedErr`
     ((("cannot decrypt signing key with index " ++ show keyIndex ++ ": ") ++ ) . displayException)
   let kp :: AccountKeyPair = SigScheme.KeyPairEd25519{..}
@@ -94,11 +91,10 @@ decryptAccountKeyPair pwd keyIndex EncryptedAccountKeyPair{..} = do
 encryptAccountKeyPair :: Password -> AccountKeyPair -> IO EncryptedAccountKeyPair
 encryptAccountKeyPair pwd SigScheme.KeyPairEd25519{..} = do
   encryptedSignKey <- encryptJSON AES256 PBKDF2SHA256 signKey pwd
-  return EncryptedAccountKeyPair{..}
+  return EncryptedAccountKeyPairEd25519{..}
 
-encryptAccountKeyMap :: AccountKeyMap -> Password -> IO EncryptedAccountKeyMap
-encryptAccountKeyMap keyMap pwd = forM keyMap $ encryptAccountKeyPair pwd
-
+encryptAccountKeyMap :: Password -> AccountKeyMap -> IO EncryptedAccountKeyMap
+encryptAccountKeyMap pwd = mapM (encryptAccountKeyPair pwd)
 
 -- | Decrypt the given encrypted account keys using the same password for each key.
 decryptAccountKeyMap
