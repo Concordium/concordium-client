@@ -140,18 +140,6 @@ getFromJson r = do
     Error err -> logFatal [printf "cannot parse '%s' as JSON: %s" (show s) err]
     Success v -> return v
 
--- |Helper function for parsing a specific entry of a JSON object to any type that implements
--- FromJSON. Useful for parsing specific keys from a Baker Keys file.
-getFromJsonObject :: (MonadIO m, FromJSON a) => Text -> Either String Value -> m a
-getFromJsonObject key r = do
-  obj <- case r of
-         Left err -> logFatal [printf "I/O error: %s" err]
-         Right (Object o) -> return o
-         Right s -> logFatal [printf "error parsing JSON, expected object but found: %s" $ show s]
-  case parse (\o -> o .: key) obj of
-    Success k -> return k
-    Error err -> logFatal [printf "I/O error: %s" err]
-
 -- |Look up account from the provided name or address. If 'Nothing' is given, use the defaultAcccountName.
 -- Fail if the name or address cannot be found.
 getAccountAddressArg :: AccountNameMap -> Maybe Text -> IO NamedAddress
@@ -679,7 +667,7 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
   nonce <- getNonce naAddr n confirmNonce
   accountKeyMap <- case maybeAccKeys of
                      Just acKeys' -> return acKeys'
-                     Nothing -> liftIO $ decryptAccountKeyMapInteractive acKeys Nothing `embedErrIOM` id
+                     Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive acKeys Nothing
   let tx = encodeAndSignTransaction pl naAddr energy nonce expiry accountKeyMap acThreshold
 
   sendTransactionToBaker tx defaultNetId >>= \case
@@ -955,7 +943,7 @@ processBakerCmd action baseCfgDir verbose backend =
         putStrLn ""
 
       -- We already need the account keys to construct the proofs to be included in the transaction.
-      accountKeys <- decryptAccountKeyMapInteractive (acKeys $ tcAccountCfg txCfg) Nothing `embedErrIOM` id
+      accountKeys <- failOnError $ decryptAccountKeyMapInteractive (acKeys $ tcAccountCfg txCfg) Nothing
 
       let intOpts = toInteractionOpts txOpts
       pl <- bakerAddTransactionPayload batxCfg accountKeysFile (ioConfirm intOpts) accountKeys
@@ -973,7 +961,7 @@ processBakerCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      rewardAccountKeys <- decryptAccountKeyMapInteractive (acKeys rewardAccCfg) (Just "reward account") `embedErrIOM` id
+      rewardAccountKeys <- failOnError $ decryptAccountKeyMapInteractive (acKeys rewardAccCfg) (Just "reward account")
       let rewardAccountSigningData = accountSigningDataFromConfig rewardAccCfg rewardAccountKeys
 
       bsatcCfg <- getBakerSetAccountTransactionCfg baseCfg txOpts bid rewardAccountSigningData

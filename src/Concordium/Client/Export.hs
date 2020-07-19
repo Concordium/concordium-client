@@ -100,7 +100,7 @@ accountCfgsFromWalletExportAccounts weas name pwd =
 -- This encrypts all signing keys with the provided password.
 accountCfgFromWalletExportAccount :: Password -> WalletExportAccount -> IO AccountConfig
 accountCfgFromWalletExportAccount pwd WalletExportAccount { weaKeys = AccountSigningData{..}, ..} = do
-  acKeys <- encryptAccountKeyMap asdKeys pwd
+  acKeys <- encryptAccountKeyMap pwd asdKeys
   return AccountConfig
     { acAddr = NamedAddress {naName = Just weaName, naAddr = asdAddress }
     , acThreshold = asdThreshold
@@ -123,5 +123,5 @@ decodeWebFormattedAccountExport payload name pwd = runExceptT $ do
           accKeyMap <- v .: "accountKeys"
           acThreshold <- v .:? "threshold" .!= fromIntegral (Map.size accKeyMap)
           return $ do
-            acKeys <- encryptAccountKeyMap accKeyMap pwd
+            acKeys <- encryptAccountKeyMap pwd accKeyMap
             return AccountConfig{acAddr = NamedAddress{naName = name, naAddr = addr}, ..}
