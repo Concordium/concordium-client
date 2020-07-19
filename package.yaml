@@ -162,7 +162,6 @@ executables:
             - containers
             - directory
             - filepath
-            - globalstate
             - globalstate-types
             - http-conduit
             - http2-client-grpc

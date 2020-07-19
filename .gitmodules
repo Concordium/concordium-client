@@ -10,6 +10,3 @@
 [submodule "deps/grpc-api"]
 	path = deps/grpc-api
 	url = ../../grpc-api.git
-[submodule "deps/globalstate-mockup"]
-	path = deps/globalstate-mockup
-	url = ../globalstate-mockup
