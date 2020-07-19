@@ -10,17 +10,14 @@ import Concordium.Client.Utils
 
 import Control.Monad.Except
 import Control.Exception
-import qualified System.IO as IO
 
 import qualified Data.Aeson as AE
 import Data.Aeson ((.:),(.=))
 import Data.ByteString(ByteString)
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LazyBS
 import qualified Data.ByteString.Base64 as Base64
 import Data.Text(Text)
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
 import qualified Data.Text.Encoding as T
 
 import Crypto.Random
@@ -33,6 +30,10 @@ import Crypto.Error
 -- | A wrapper for 'ByteString' to be used for passwords.
 -- Using this dedicated type is supposed to reduce the risk of accidentally exposing passwords.
 newtype Password = Password { getPassword :: ByteString }
+  deriving Eq
+
+makeRandomPassword :: IO Password
+makeRandomPassword = Password <$> getRandomBytes 16
 
 data SupportedEncryptionMethod = AES256
   deriving (Eq, Show)
@@ -132,17 +133,6 @@ instance Exception DecryptionFailure where
       UnpaddingFailed -> "wrong password"
 
 
--- | Ask for a password on standard input not showing what is typed.
-askPassword
-  :: Text -- ^ A text to display after which the password is typed (nothing is appended to this).
-  -> IO Password
-askPassword text = do
-  T.putStr text
-  -- Get the password from command line, not showing what is typed by temporarily disabling echo.
-  password <- bracket_ (IO.hSetEcho IO.stdin False) (IO.hSetEcho IO.stdin True) BS.getLine
-  putStrLn ""
-  return (Password password)
-
 -- | Decrypt an 'EncryptedText' where cipher, initialization vector and salt are Base64-encoded.
 decryptText :: (MonadError DecryptionFailure m)
  => EncryptedText
@@ -235,7 +225,7 @@ encryptText emEncryptionMethod emKeyDerivationMethod text pwd =
 
 -- | An encrypted JSON serialization of a value of the given type.
 newtype EncryptedJSON a = EncryptedJSON EncryptedText
-  deriving (AE.FromJSON, AE.ToJSON)
+  deriving (AE.FromJSON, AE.ToJSON, Show)
 
 -- | Failures that can occur when decrypting an 'EncryptedJSON'.
 data DecryptJSONFailure

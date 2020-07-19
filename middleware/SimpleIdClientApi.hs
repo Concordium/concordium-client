@@ -18,7 +18,7 @@ import           Servant.API.Generic
 
 import           Http
 import           Concordium.ID.Types (CredentialDeploymentInformation(..))
-import qualified Concordium.Client.Types.Transaction as Types
+import qualified Concordium.Client.Types.Account as Types
 import qualified Concordium.ID.Types as IDTypes
 
 
@@ -177,7 +177,7 @@ data IdCredentialResponse =
 
 data AccountDataKeys =
   AccountDataKeys
-    { keys :: Types.KeyMap
+    { keys :: Types.AccountKeyMap
   }
   deriving (Generic, Show, FromJSON, ToJSON)
 
