@@ -202,6 +202,7 @@ executables:
       - -threaded
       - -Wall
     dependencies:
+      - concordium-crypto
       - simple-client
       - mtl
       - bytestring
