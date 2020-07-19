@@ -53,8 +53,6 @@ extra-deps:
 - ./deps/acorn
 - ./deps/crypto
 - ./deps/globalstate-types
-- ./deps/globalstate-mockup/globalstate
-- ./deps/globalstate-mockup/deps/haskell-lmdb
 
 
 # Override default flag values for local packages and extra-deps
