@@ -3,7 +3,6 @@ module Server (module Server, addHeaders) where
 import           Control.Concurrent (forkIO)
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)
-import qualified Data.HashMap.Strict as HM
 import           Data.Function ((&))
 import           Data.List.Split
 import qualified Data.Text as T
@@ -34,10 +33,6 @@ runHttp middlewares = do
 
   nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:11100"
   grpcAdminToken <- Config.lookupEnvText "RPC_PASSWORD" "rpcadmin"
-  pgUrl <- Config.lookupEnvText "PG_URL" "host=localhost port=5432 user=concordium dbname=concordium password=concordium"
-  idUrl <- Config.lookupEnvText "SIMPLEID_URL" "http://localhost:8000"
-  gtuDropAccountKeyfile <- Config.lookupEnvTextWithoutDefault "GTU_DROP_KEYFILE"
-  gtuDropAccountData <- Api.getGtuDropKeys gtuDropAccountKeyfile
 
   cfgDir <- T.unpack <$> (Config.lookupEnvText "CFG_DIR" . T.pack =<< getDefaultBaseConfigDir)
   dataDir <- T.unpack <$> (Config.lookupEnvText "DATA_DIR" . T.pack =<< getDefaultDataDir)
@@ -59,23 +54,15 @@ runHttp middlewares = do
     Left err -> fail (show err) -- cannot connect to grpc server
     Right nodeBackend -> do
       let
-        waiApp = Api.servantApp nodeBackend gtuDropAccountData pgUrl idUrl cfgDir dataDir
+        waiApp = Api.servantApp nodeBackend cfgDir dataDir
 
         printStatus = do
           putStrLn $ "NODE_URL: " ++ show nodeUrl
           putStrLn $ "gRPC authentication token: " ++ show grpcAdminToken
-          putStrLn $ "PG_URL: " ++ show pgUrl
-          putStrLn $ "SIMPLEID_URL: " ++ show idUrl
           putStrLn $ "Environment: " ++ show env
           putStrLn $ "Server started: http://localhost:" ++ show serverPort
           putStrLn $ "Config directory: " ++ cfgDir
           putStrLn $ "Data directory: " ++ dataDir
-          case gtuDropAccountData of
-            Just v -> do
-              putStrLn $ "GTU Drop account address: " ++ show (fst v)
-              putStrLn $ "GTU Drop account key count: " ++ show (HM.size (snd v))
-            _ -> do
-              putStrLn $ "Not enabling GTU drop functionality due to missing keys"
 
         run = W.defaultSettings
                   & W.setBeforeMainLoop printStatus

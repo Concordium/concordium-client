@@ -24,6 +24,8 @@ default-extensions:
 - LambdaCase
 - TupleSections
 
+ghc-options: -Wall
+
 # Metadata used when publishing your package
 # synopsis:            Short description of your package
 # category:            Web
@@ -168,7 +170,6 @@ executables:
             - microlens-platform
             - monad-logger
             - mtl
-            - neat-interpolation
             - persistent
             - persistent-pagination
             - persistent-postgresql

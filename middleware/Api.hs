@@ -10,9 +10,8 @@
 
 module Api where
 
-import           Control.Monad.Trans.Except
 import qualified Data.HashMap.Strict as HM
-import           Data.Aeson (encode, decode')
+import           Data.Aeson (decode')
 import qualified Data.Aeson as Aeson
 import           Data.Aeson.Types (FromJSON)
 import qualified Data.Aeson.Types as Aeson
@@ -22,20 +21,13 @@ import qualified Data.Text.Encoding as Text
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as BS8
 import qualified Control.Exception as C
-import qualified Data.ByteString.Short as BSS
-import           Data.Maybe (fromJust)
-import           Data.List.Split
-import           Data.Map
 import           Servant
 import           Servant.API.Generic
 import           Servant.Server.Generic
 import           System.Environment
 import           System.IO.Error
-import           Text.Read (readMaybe)
 import           Lens.Micro.Platform ((^.), (^?), _Just)
-import           Data.Time
 import           Data.Time.Clock.POSIX
-import           NeatInterpolation
 import qualified Data.List as L
 import           System.FilePath.Posix
 
@@ -59,69 +51,45 @@ import qualified Concordium.Types.Execution as Execution
 import           Concordium.Client.Types.Account
 import           Control.Monad.Except
 import qualified Proto.ConcordiumP2pRpc_Fields as CF
-
-
-import qualified Config
-import           SimpleIdClientApi
 import           Api.Types
-
--- Account transactions
-import           Conduit
-import qualified Concordium.Client.TransactionStatus
 
 data Routes r = Routes
     -- Public Middleware APIs
-    { accountNonFinalizedTransactions :: r :-
-        "v1" :> "accountNonFinalizedTransactions" :> ReqBody '[JSON] Text
-                                      :> Post '[JSON] Aeson.Value
-
-    , accountBestBalance :: r :-
-        "v1" :> "accountBestBalance" :> ReqBody '[JSON] Text
-                                     :> Post '[JSON] Aeson.Value
-
-    , consensusStatus :: r :-
-        "v1" :> "consensusStatus" :> Get '[JSON] Aeson.Value
+    { consensusStatus :: r :-
+        "v1" :> "consensusStatus" :> Get '[JSON] Aeson.Value --
 
     , blockInfo :: r :-
         "v1" :> "blockInfo" :> Capture "blockHash" Text
-                              :> Get '[JSON] Aeson.Value
-
-    , blockSummary :: r :-
-        "v1" :> "blockSummary" :> Capture "blockHash" Text
-                              :> Get '[JSON] Aeson.Value
+                              :> Get '[JSON] Aeson.Value --
 
     , transactionStatus :: r :-
         "v1" :> "transactionStatus" :> Capture "hash" Text
-                              :> Get '[JSON] Aeson.Value
-
-    , simpleTransactionStatus :: r :-
-        "v1" :> "simpleTransactionStatus" :> Capture "hash" Text
-                              :> Get '[JSON] Aeson.Value
+                              :> Get '[JSON] Aeson.Value --
 
     -- Private Middleware APIs (accessible on local client instance of Middleware only)
     , getNodeState :: r :-
-        "v1" :> "nodeState" :> Get '[JSON] GetNodeStateResponse
+        "v1" :> "nodeState" :> Get '[JSON] GetNodeStateResponse --
 
     , setNodeState :: r :-
         "v1" :> "nodeState" :> ReqBody '[JSON] SetNodeStateRequest
-                            :> Post '[JSON] SetNodeStateResponse
+                            :> Post '[JSON] SetNodeStateResponse --
 
     , importAccount :: r :-
         "v1" :> "importAccount" :> ReqBody '[JSON] ImportAccountRequest
-                                :> Post '[JSON] ()
+                                :> Post '[JSON] () --
 
     , getAccounts :: r :-
-        "v1" :> "getAccounts" :> Get '[JSON] GetAccountsResponse
+        "v1" :> "getAccounts" :> Get '[JSON] GetAccountsResponse --
 
     , addBaker :: r :-
         "v1" :> "addBaker" :> ReqBody '[JSON] AddBakerRequest
-                           :> Post '[JSON] AddBakerResponse
+                           :> Post '[JSON] AddBakerResponse --
     , removeBaker :: r :-
         "v1" :> "removeBaker" :> ReqBody '[JSON] RemoveBakerRequest
-                              :> Post '[JSON] RemoveBakerResponse
+                              :> Post '[JSON] RemoveBakerResponse --
 
     , getBakers :: r :-
-        "v1" :> "getBakers" :> Get '[JSON] GetBakersResponse
+        "v1" :> "getBakers" :> Get '[JSON] GetBakersResponse --
     }
   deriving (Generic)
 
@@ -130,18 +98,10 @@ api = genericApi (Proxy :: Proxy Routes)
 
 type Account = (IDTypes.AccountAddress, AccountKeyMap)
 
-servantApp :: EnvData -> Maybe Account -> Text -> Text -> FilePath -> FilePath -> Application
-servantApp nodeBackend dropAccount pgUrl idUrl cfgDir dataDir = genericServe routesAsServer
+servantApp :: EnvData -> FilePath -> FilePath -> Application
+servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
  where
   routesAsServer = Routes {..} :: Routes AsServer
-
-  accountNonFinalizedTransactions :: Text -> Handler Aeson.Value
-  accountNonFinalizedTransactions address = liftIO $ proxyGrpcCall nodeBackend (GRPC.getAccountNonFinalizedTransactions address)
-
-  accountBestBalance :: Text -> Handler Aeson.Value
-  accountBestBalance address =
-    liftIO $ proxyGrpcCall nodeBackend
-      (GRPC.withBestBlockHash Nothing (GRPC.getAccountInfo address))
 
   consensusStatus :: Handler Aeson.Value
   consensusStatus = liftIO $ proxyGrpcCall nodeBackend GRPC.getConsensusStatus
@@ -150,31 +110,8 @@ servantApp nodeBackend dropAccount pgUrl idUrl cfgDir dataDir = genericServe rou
   blockInfo :: Text -> Handler Aeson.Value
   blockInfo blockhash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getBlockInfo blockhash)
 
-
-  blockSummary :: Text -> Handler Aeson.Value
-  blockSummary blockhash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getBlockSummary blockhash)
-
-
   transactionStatus :: Text -> Handler Aeson.Value
   transactionStatus hash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getTransactionStatus hash)
-
-
-  simpleTransactionStatus :: Text -> Handler Aeson.Value
-  simpleTransactionStatus hashRaw = do
-
-    -- @TODO why does using TransactionHash instead of Text in args cause `No instance for (FromHttpApiData SHA256.Hash)`?
-    let hash_ = readMaybe (Text.unpack hashRaw)
-
-    case hash_ of
-      Just hash -> do
-        res <- liftIO $ runGRPC nodeBackend $ Concordium.Client.TransactionStatus.getSimpleTransactionStatus hash
-        case res of
-          Right status -> pure status
-          Left err -> throwError $ err502 { errBody = BS8.pack $ show err }
-
-      Nothing ->
-        throwError $ err400 { errBody = "Invalid transaction hash." }
-
 
   getNodeState :: Handler GetNodeStateResponse
   getNodeState = do
