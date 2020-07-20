@@ -56,40 +56,44 @@ import           Api.Types
 data Routes r = Routes
     -- Public Middleware APIs
     { consensusStatus :: r :-
-        "v1" :> "consensusStatus" :> Get '[JSON] Aeson.Value --
+        "v1" :> "consensusStatus" :> Get '[JSON] Aeson.Value
+
+    , blockSummary :: r :-
+        "v1" :> "blockSummary" :> Capture "blockHash" Text
+                              :> Get '[JSON] Aeson.Value
 
     , blockInfo :: r :-
         "v1" :> "blockInfo" :> Capture "blockHash" Text
-                              :> Get '[JSON] Aeson.Value --
+                              :> Get '[JSON] Aeson.Value
 
     , transactionStatus :: r :-
         "v1" :> "transactionStatus" :> Capture "hash" Text
-                              :> Get '[JSON] Aeson.Value --
+                              :> Get '[JSON] Aeson.Value
 
     -- Private Middleware APIs (accessible on local client instance of Middleware only)
     , getNodeState :: r :-
-        "v1" :> "nodeState" :> Get '[JSON] GetNodeStateResponse --
+        "v1" :> "nodeState" :> Get '[JSON] GetNodeStateResponse
 
     , setNodeState :: r :-
         "v1" :> "nodeState" :> ReqBody '[JSON] SetNodeStateRequest
-                            :> Post '[JSON] SetNodeStateResponse --
+                            :> Post '[JSON] SetNodeStateResponse
 
     , importAccount :: r :-
         "v1" :> "importAccount" :> ReqBody '[JSON] ImportAccountRequest
-                                :> Post '[JSON] () --
+                                :> Post '[JSON] ()
 
     , getAccounts :: r :-
-        "v1" :> "getAccounts" :> Get '[JSON] GetAccountsResponse --
+        "v1" :> "getAccounts" :> Get '[JSON] GetAccountsResponse
 
     , addBaker :: r :-
         "v1" :> "addBaker" :> ReqBody '[JSON] AddBakerRequest
-                           :> Post '[JSON] AddBakerResponse --
+                           :> Post '[JSON] AddBakerResponse
     , removeBaker :: r :-
         "v1" :> "removeBaker" :> ReqBody '[JSON] RemoveBakerRequest
-                              :> Post '[JSON] RemoveBakerResponse --
+                              :> Post '[JSON] RemoveBakerResponse
 
     , getBakers :: r :-
-        "v1" :> "getBakers" :> Get '[JSON] GetBakersResponse --
+        "v1" :> "getBakers" :> Get '[JSON] GetBakersResponse
     }
   deriving (Generic)
 
@@ -106,6 +110,8 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
   consensusStatus :: Handler Aeson.Value
   consensusStatus = liftIO $ proxyGrpcCall nodeBackend GRPC.getConsensusStatus
 
+  blockSummary :: Text -> Handler Aeson.Value
+  blockSummary blockhash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getBlockSummary blockhash)
 
   blockInfo :: Text -> Handler Aeson.Value
   blockInfo blockhash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getBlockInfo blockhash)

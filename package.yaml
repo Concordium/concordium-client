@@ -170,9 +170,6 @@ executables:
             - microlens-platform
             - monad-logger
             - mtl
-            - persistent
-            - persistent-pagination
-            - persistent-postgresql
             - process
             - servant
             - servant-server
@@ -186,7 +183,6 @@ executables:
             - wai-extra
             - wai-middleware-static
             - warp
-            - conduit >= 1.3
             - mtl >= 2.2.2
             - cereal >= 0.5.8
             - transformers
