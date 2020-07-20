@@ -7,25 +7,17 @@
 module Api.Types where
 
 import           Data.Text (Text)
-import qualified Data.Text as Text
 import           Data.Aeson
 import           Data.Aeson.TH
 import           Data.Word
-import           Data.Map (Map)
 import           GHC.Generics
 
 import           Concordium.Types.Utils
 import           Concordium.Client.Types.Account
-import           Concordium.Client.Encryption
 import           Concordium.Client.Runner(StatusOfPeers)
 import           Concordium.Client.Types.Transaction ()
-import           Concordium.Crypto.SignatureScheme (KeyPair(..))
-import qualified Concordium.ID.Types
 import qualified Concordium.Types as Types
-import qualified Concordium.Types.Execution as Types
-import qualified Concordium.Types.Transactions as Types
 
-import           SimpleIdClientApi
 import Concordium.Types (ElectionDifficulty, BakerId)
 
 data AccountInfoResponse = AccountInfoResponse
