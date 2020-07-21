@@ -209,13 +209,13 @@ writeAccountKeys baseCfg accCfg = do
   forM_ (M.toList $ acKeys accCfg) $ \(idx, kp) -> do
     let file = accountKeyFile keysDir idx
     logInfo [printf "writing file '%s'" file]
+    -- NOTE: This writes the JSON in a compact way. If we want human-readable JSON, we should use pretty encoding.
     AE.encodeFile file kp
 
   -- Write the threshold as a JSON value. Since it is a simple numeric
   -- value this should look as expected.
   let thresholdFile = accountThresholdFile accCfgDir (acAddress accCfg)
   logInfo [printf "writing file '%s'" thresholdFile]
-  -- NOTE: This writes the JSON in a compact way. If we want human-readable JSON, we should use pretty encoding.
   AE.encodeFile thresholdFile (acThreshold accCfg)
 
   logSuccess ["wrote key and threshold files"]
