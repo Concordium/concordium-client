@@ -32,9 +32,6 @@ import Crypto.Error
 newtype Password = Password { getPassword :: ByteString }
   deriving Eq
 
-makeRandomPassword :: IO Password
-makeRandomPassword = Password <$> getRandomBytes 16
-
 data SupportedEncryptionMethod = AES256
   deriving (Eq, Show)
 
