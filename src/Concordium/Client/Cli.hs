@@ -155,8 +155,6 @@ decryptAccountKeyMapInteractive encryptedKeyMap accDescr = runExceptT $ do
                Just descr -> "Enter password for signing key of " ++ descr ++ " with index " ++ show keyIndex ++ ": "
   sequence $ Map.mapWithKey (\keyIndex eKp -> do
                                 pwd <- liftIO $ askPassword $ queryText keyIndex
-                                -- TODO When this fails, we get an IO exception instead of returning
-                                -- the error string at the top-level.
                                 decryptAccountKeyPair pwd keyIndex eKp
                             ) encryptedKeyMap
 
