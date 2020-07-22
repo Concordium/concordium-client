@@ -16,6 +16,7 @@ import           Concordium.Types.Execution          as Types
 import           Data.Aeson                          as AE
 import qualified Data.Aeson.TH                       as AETH
 import qualified Data.ByteString.Base16              as BS16
+import qualified Data.ByteString                     as BS
 import           Data.Text                           hiding (length, map)
 import qualified Data.Text.Encoding                  as Text
 import           GHC.Generics                        (Generic)
