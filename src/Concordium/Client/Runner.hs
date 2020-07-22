@@ -166,15 +166,6 @@ process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir
     BakerCmd c -> processBakerCmd c cfgDir verbose backend
     IdentityCmd c -> processIdentityCmd c backend
 
--- |Validate an account name and fail gracefully if the given account name
--- is invalid.
-readAccountName :: Maybe Text -> IO (Maybe Text)
-readAccountName Nothing = return Nothing
-readAccountName (Just n) =
-    case validateAccountName n of
-      Left err -> logFatal [printf "cannot parse '%s' as an address name: %s" n err]
-      Right v -> return $ Just v
-
 -- |Process a 'config ...' command.
 processConfigCmd :: ConfigCmd -> Maybe FilePath -> Verbose ->  IO ()
 processConfigCmd action baseCfgDir verbose =
@@ -187,7 +178,7 @@ processConfigCmd action baseCfgDir verbose =
       accCfgs <- getAllAccountConfigs baseCfg
       runPrinter $ printAccountConfigList accCfgs
     ConfigAccountCmd c -> case c of
-      ConfigAccountAdd addr name -> do
+      ConfigAccountAdd addr naName -> do
         baseCfg <- getBaseConfig baseCfgDir verbose True
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
@@ -197,7 +188,7 @@ processConfigCmd action baseCfgDir verbose =
           case ID.addressFromText addr of
             Left err -> logFatal [printf "cannot parse '%s' as an address: %s" addr err]
             Right a -> return a
-        naName <- readAccountName name
+        whenJust naName $ logFatalOnError . validateAccountName
         void $ initAccountConfig baseCfg NamedAddress{..}
       ConfigAccountImport file name format -> do
         baseCfg <- getBaseConfig baseCfgDir verbose True
@@ -205,14 +196,13 @@ processConfigCmd action baseCfgDir verbose =
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
 
-        validName <- readAccountName name
-
         fileExists <- doesFileExist file
         unless fileExists $ logFatal [printf "the given file '%s' does not exist" file]
 
         importFormat <- inferAccountExportFormat format file
 
-        accCfgs <- loadAccountImportFile importFormat file validName
+        -- NB: This also checks whether the name is valid if provided.
+        accCfgs <- loadAccountImportFile importFormat file name
         void $ importAccountConfig baseCfg accCfgs
       ConfigAccountAddKeys addr keysFile -> do
         baseCfg <- getBaseConfig baseCfgDir verbose True

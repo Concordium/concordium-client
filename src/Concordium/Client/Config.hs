@@ -14,14 +14,16 @@ import Control.Exception
 import Control.Monad.Except
 import Control.Monad.Trans.Except
 import Data.Maybe
+import Data.Either
 import qualified Data.Aeson as AE
 
 import Data.Char
 import Data.List as L
 import Data.List.Split
 import qualified Data.HashMap.Strict as M
-import Data.Text as T (Text, pack, strip, all)
+import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import Data.Text (Text, pack, strip)
 import System.Directory
 import System.IO.Error
 import System.FilePath
@@ -267,11 +269,14 @@ parseAccountNameMap :: (MonadError String m) => [String] -> m AccountNameMap
 parseAccountNameMap ls = M.fromList <$> mapM parseAccountNameMapEntry ls'
   where ls' = filter (not . L.all isSpace) ls
 
+-- | Parse a line representing a single name-account mapping of the format "<name> = <address>".
+-- Leading and trailing whitespaces around name and address are ignored.
 parseAccountNameMapEntry :: (MonadError String m) => String -> m (Text, Types.AccountAddress)
 parseAccountNameMapEntry line =
   case splitOn "=" line of
     [k, v] -> do
-      name <- validateAccountName $ pack k
+      let name = strip $ pack k
+      validateAccountName name
       addr <- case strip $ pack v of
                 "" -> throwError "empty address"
                 addr -> case addressFromText addr of
@@ -280,14 +285,17 @@ parseAccountNameMapEntry line =
       return (name, addr)
     _ -> throwError $ printf "invalid mapping format '%s' (should be '<name> = <address>')" line
 
-validateAccountName :: (MonadError String m) => Text -> m Text
-validateAccountName name =
-  case strip name of
-    "" -> throwError "empty name"
-    n | T.all supportedChar n -> return n
-      | otherwise -> throwError $ printf "invalid name '%s' (should consist of letters, numbers, space, '.', ',', '!', '?', '-', and '_' only)" n
+-- | Check whether the given text is a valid account name.
+isValidAccountName :: Text -> Bool
+isValidAccountName n = not (T.null n) && not (isSpace $ T.head n) && not (isSpace $ T.last n) && T.all supportedChar n
   where supportedChar c = isAlphaNum c || c `elem` supportedSpecialChars
         supportedSpecialChars = "-_,.!? " :: String
+
+-- | Check whether the given text is a valid account name and fail with an error message if not.
+validateAccountName :: (MonadError String m) => Text -> m ()
+validateAccountName name =
+  unless (isValidAccountName name) $
+  throwError $ printf "invalid account name '%s' (should not be empty or start/end with whitespace and consist of letters, numbers, space, '.', ',', '!', '?', '-', and '_' only)" name
 
 data AccountConfig =
   AccountConfig
@@ -398,13 +406,10 @@ getAllAccountConfigs :: BaseConfig -> IO [AccountConfig]
 getAllAccountConfigs cfg = do
   let dir = bcAccountCfgDir cfg
   fs <- safeListDirectory dir
-  fs' <- filterM (isDirectory dir) $ filter isValidAccountName fs
+  fs' <- filterM (isDirectory dir) $ filter isValidAccountAddress fs
   forM fs' $ \f -> snd <$> getAccountConfig (Just $ pack f) cfg Nothing Nothing False
   where
-    isValidAccountName a =
-      case addressFromText $ pack a of
-        Left _ -> False
-        Right _ -> True
+    isValidAccountAddress = isRight . addressFromText . pack
     isDirectory dir f =
       doesDirectoryExist $ joinPath [dir, f]
 

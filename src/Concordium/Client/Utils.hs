@@ -30,3 +30,8 @@ embedErrIOM :: IO (Either e' a) -> (e' -> String) -> IO a
 embedErrIOM action f = do
   v <- action
   v `embedErrIO` f
+
+-- | When the given value is a 'Just', apply the given action, otherwise do nothing.
+whenJust :: Monad m => Maybe a -> (a -> m ()) -> m ()
+whenJust (Just v) f = f v
+whenJust Nothing _ = return ()
