@@ -3,12 +3,12 @@
 module Concordium.Client.Output where
 
 import Concordium.Common.Version
-import qualified Concordium.Crypto.SignatureScheme as S
 import Concordium.Client.Cli
 import Concordium.Client.Commands (Verbose)
 import Concordium.Client.Config
 import Concordium.Client.Parse
 import Concordium.Client.Types.TransactionStatus
+import Concordium.Client.Types.Account
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Types
 import qualified Concordium.ID.Types as IDTypes
@@ -38,6 +38,12 @@ type Printer = Writer [String] ()
 -- |Print the lines of a printer.
 runPrinter :: (MonadIO m) => Printer -> m ()
 runPrinter = liftIO . mapM_ putStrLn . execWriter
+
+-- HELPERS
+
+-- | Serialize to JSON and pretty-print.
+showPrettyJSON :: AE.ToJSON a => a -> String
+showPrettyJSON = unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty
 
 -- TIME
 
@@ -89,7 +95,7 @@ printAccountConfig cfg = do
             tell [ "- Keys:" ]
             printMap showEntry $ toSortedList m
         showEntry (n, kp) =
-          printf "    %s: %s" (show n) (showKeyPair kp)
+          printf "    %s: %s" (show n) (showAccountKeyPair kp)
 
 printAccountConfigList :: [AccountConfig] -> Printer
 printAccountConfigList cfgs =
@@ -105,7 +111,7 @@ printAccountConfigList cfgs =
         tell [ printf "- %s:" (showNamedAddress $ acAddr cfg)]
         printMap showEntry $ toSortedList keys
   where showEntry (n, kp) =
-          printf "    %s: %s" (show n) (showKeyPair kp)
+          printf "    %s: %s" (show n) (showAccountKeyPair kp)
 
 -- ACCOUNT
 
@@ -139,7 +145,7 @@ printAccountInfo addr a verbose = do
       creds -> do
         tell ["Credentials:"]
         if verbose then
-          tell $ creds <&> (unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty)
+          tell $ creds <&> showPrettyJSON
         else
           forM_ creds printVersionedCred
 
@@ -167,9 +173,12 @@ printAccountList = tell . map unpack
 printModuleList :: [Text] -> Printer
 printModuleList = printAccountList
 
-showKeyPair :: S.KeyPair -> String
-showKeyPair S.KeyPairEd25519 { S.signKey=sk, S.verifyKey=vk } =
-  printf "sign=%s, verify=%s" (show sk) (show vk)
+showAccountKeyPair :: EncryptedAccountKeyPair -> String
+-- TODO Make it respect indenting if this will be the final output format.
+-- An alternative is not to print the encrypted key here, but rather have that
+-- as part of an export command.
+showAccountKeyPair = showPrettyJSON
+
 
 -- TRANSACTION
 

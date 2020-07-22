@@ -3,6 +3,7 @@ module SimpleClientTests.AccountSpec where
 import Concordium.Common.Version
 import Concordium.Client.Cli
 import Concordium.Client.Output
+import Concordium.Client.Types.Account
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
 import qualified Concordium.Crypto.ByteStringHelpers as BSH
