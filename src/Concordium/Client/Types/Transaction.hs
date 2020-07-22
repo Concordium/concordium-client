@@ -6,16 +6,16 @@
 
 module Concordium.Client.Types.Transaction where
 
-import           Concordium.Crypto.SignatureScheme   (KeyPair(..))
+import Concordium.Client.Types.Account
+
 import           Concordium.Crypto.Proofs
 import qualified Concordium.ID.Types                 as IDTypes
 import           Concordium.Types
 import           Concordium.Types.Execution          as Types
+
 import           Data.Aeson                          as AE
 import qualified Data.Aeson.TH                       as AETH
 import qualified Data.ByteString.Base16              as BS16
-import qualified Data.ByteString                     as BS
-import qualified Data.HashMap.Strict                 as Map
 import           Data.Text                           hiding (length, map)
 import qualified Data.Text.Encoding                  as Text
 import           GHC.Generics                        (Generic)
@@ -160,14 +160,13 @@ AETH.deriveFromJSON
      {AETH.sumEncoding = AETH.TaggedObject "transactionType" "contents"})
   ''TransactionJSONPayload
 
-type KeyMap = Map.HashMap IDTypes.KeyIndex KeyPair
 
 -- |Transaction as retrieved from a JSON object
 data TransactionJSON =
   TransactionJSON
     { metadata :: TransactionJSONHeader
     , payload  :: TransactionJSONPayload
-    , keys     :: KeyMap
+    , keys     :: AccountKeyMap
     }
   deriving (Generic, Show)
 

@@ -24,6 +24,8 @@ default-extensions:
 - LambdaCase
 - TupleSections
 
+ghc-options: -Wall
+
 # Metadata used when publishing your package
 # synopsis:            Short description of your package
 # category:            Web
@@ -47,7 +49,6 @@ dependencies:
 
 library:
   ghc-options:
-    - -Wall
     - -Wcompat
     - -Werror=missing-fields
     - -Wredundant-constraints
@@ -103,7 +104,6 @@ executables:
     source-dirs:      app
 
     ghc-options:
-      - -Wall
       - -Wcompat
       - -Werror=missing-fields
       - -Wredundant-constraints
@@ -123,7 +123,6 @@ executables:
     main:            Main.hs
     source-dirs:     generator
     ghc-options:
-      - -Wall
       - -Wcompat
       - -Werror=missing-fields
       - -Wredundant-constraints
@@ -162,17 +161,12 @@ executables:
             - containers
             - directory
             - filepath
-            - globalstate
             - globalstate-types
             - http-conduit
             - http2-client-grpc
             - microlens-platform
             - monad-logger
             - mtl
-            - neat-interpolation
-            - persistent
-            - persistent-pagination
-            - persistent-postgresql
             - process
             - servant
             - servant-server
@@ -186,7 +180,6 @@ executables:
             - wai-extra
             - wai-middleware-static
             - warp
-            - conduit >= 1.3
             - mtl >= 2.2.2
             - cereal >= 0.5.8
             - transformers
@@ -200,8 +193,8 @@ executables:
     source-dirs: delegation-server
     ghc-options:
       - -threaded
-      - -Wall
     dependencies:
+      - concordium-crypto
       - simple-client
       - mtl
       - bytestring
