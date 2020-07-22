@@ -117,7 +117,7 @@ decodeWebFormattedAccountExport
   -> Password -- ^ Password to encrypt the signing keys with.
   -> IO (Either String AccountConfig) -- ^ The resulting 'AccountConfig' or an error message on failure.
 decodeWebFormattedAccountExport payload name pwd = runExceptT $ do
-  whenJust name validateAccountName
+  mapM_ validateAccountName name
   val <- AE.eitherDecodeStrict payload `embedErr` printf "cannot decode wallet export JSON: %s"
   action <- AE.parseEither accountParser val `embedErr` printf "cannot parse JSON: %s"
   liftIO action
