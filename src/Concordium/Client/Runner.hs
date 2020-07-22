@@ -188,7 +188,7 @@ processConfigCmd action baseCfgDir verbose =
           case ID.addressFromText addr of
             Left err -> logFatal [printf "cannot parse '%s' as an address: %s" addr err]
             Right a -> return a
-        whenJust naName $ logFatalOnError . validateAccountName
+        forM_ naName $ logFatalOnError . validateAccountName
         void $ initAccountConfig baseCfg NamedAddress{..}
       ConfigAccountImport file name format -> do
         baseCfg <- getBaseConfig baseCfgDir verbose True
