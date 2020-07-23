@@ -81,14 +81,14 @@ decodeMobileFormattedAccountExport
 decodeMobileFormattedAccountExport json accountName password = runExceptT $ do
   we :: EncryptedJSON WalletExport <- AE.eitherDecodeStrict json `embedErr` printf "cannot decode wallet export JSON: %s"
   WalletExport{..} <- decryptJSON we password `embedErr` (("cannot decrypt wallet export: " ++) . displayException)
-  liftIO $ accountCfgsFromWalletExportAccounts wepAccounts accountName password
+  accountCfgsFromWalletExportAccounts wepAccounts accountName password
 
 
 -- | Convert one or all wallet export accounts to regular account configs.
 -- This encrypts all signing keys with the provided password.
 -- If name is provided, only the account with matching name (if any) is converted.
--- Otherwise they all are.
-accountCfgsFromWalletExportAccounts :: [WalletExportAccount] -> Maybe Text -> Password -> IO [AccountConfig]
+-- Otherwise they all are. Names to be imported are checked to be valid.
+accountCfgsFromWalletExportAccounts :: [WalletExportAccount] -> Maybe Text -> Password -> ExceptT String IO [AccountConfig]
 accountCfgsFromWalletExportAccounts weas name pwd =
   let selectedAccounts =
         case name of
@@ -97,11 +97,13 @@ accountCfgsFromWalletExportAccounts weas name pwd =
   in forM selectedAccounts $ accountCfgFromWalletExportAccount pwd
 
 -- |Convert a wallet export account to a regular account config.
+-- This checks whether the name provided by the export is a valid account name.
 -- This encrypts all signing keys with the provided password.
-accountCfgFromWalletExportAccount :: Password -> WalletExportAccount -> IO AccountConfig
+accountCfgFromWalletExportAccount :: Password -> WalletExportAccount -> ExceptT String IO AccountConfig
 accountCfgFromWalletExportAccount pwd WalletExportAccount { weaKeys = AccountSigningData{..}, ..} = do
-  acKeys <- encryptAccountKeyMap pwd asdKeys
-  return AccountConfig
+  validateAccountName weaName
+  acKeys <- liftIO $ encryptAccountKeyMap pwd asdKeys
+  return $ AccountConfig
     { acAddr = NamedAddress {naName = Just weaName, naAddr = asdAddress }
     , acThreshold = asdThreshold
     , ..
@@ -111,10 +113,11 @@ accountCfgFromWalletExportAccount pwd WalletExportAccount { weaKeys = AccountSig
 -- All signing keys are encrypted with the given password.
 decodeWebFormattedAccountExport
   :: BS.ByteString -- ^ JSON with the account information.
-  -> Maybe Text -- ^ Optionally, how to name the account.
+  -> Maybe Text -- ^ Optionally, how to name the account. It is checked whether the name is valid.
   -> Password -- ^ Password to encrypt the signing keys with.
   -> IO (Either String AccountConfig) -- ^ The resulting 'AccountConfig' or an error message on failure.
 decodeWebFormattedAccountExport payload name pwd = runExceptT $ do
+  mapM_ validateAccountName name
   val <- AE.eitherDecodeStrict payload `embedErr` printf "cannot decode wallet export JSON: %s"
   action <- AE.parseEither accountParser val `embedErr` printf "cannot parse JSON: %s"
   liftIO action
