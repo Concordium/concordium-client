@@ -79,6 +79,9 @@ withLogFatal :: Either e' a -> (e' -> String) -> IO a
 withLogFatal (Left x) f = logFatal [f x]
 withLogFatal (Right x) _ = return x
 
+logFatalOnError :: Either String a -> IO a
+logFatalOnError x = x `withLogFatal` id
+
 withLogFatalIO :: IO (Either e' a) -> (e' -> String) -> IO a
 withLogFatalIO action f = do
   v <- action

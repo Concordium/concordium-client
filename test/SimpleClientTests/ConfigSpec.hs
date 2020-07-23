@@ -1,6 +1,5 @@
 module SimpleClientTests.ConfigSpec where
 
-import Concordium.Client.Cli
 import Concordium.Client.Config
 import Concordium.Client.Output
 import Concordium.Client.Encryption
@@ -14,7 +13,6 @@ import qualified Data.HashMap.Strict as M
 import Data.Text
 import Test.Hspec
 import Text.Printf
-import System.FilePath ((</>))
 
 
 testPassword :: String
@@ -27,6 +25,9 @@ configSpec = describe "config" $ do
   resolveAccountAddressSpec
   printSpec
 
+invalidNameMsg :: String -> String
+invalidNameMsg n = "invalid account name '" ++ n ++ "' (should not be empty or start/end with whitespace and consist of letters, numbers, space, '.', ',', '!', '?', '-', and '_' only)"
+
 parseAccountNameMapEntrySpec :: Spec
 parseAccountNameMapEntrySpec = describe "parseAccountNameEntryMap" $ do
   specify "without whitespace" $
@@ -34,13 +35,13 @@ parseAccountNameMapEntrySpec = describe "parseAccountNameEntryMap" $ do
   specify "with whitespace" $
     p (printf " name = %s " s) `shouldBe` Right ("name", a)
   specify "missing name" $
-    p (printf "=%s" s) `shouldBe` Left "empty name"
+    p (printf "=%s" s) `shouldBe` Left (invalidNameMsg "")
   specify "missing address" $
     p "name=" `shouldBe` Left "empty address"
   specify "name with whitespace" $
     p (printf "na me = %s " s) `shouldBe` Right ("na me", a)
   specify "invalid name" $
-    p (printf "n@me=%s" s)`shouldBe` Left "invalid name 'n@me' (should consist of letters, numbers, space, '.', ',', '!', '?', '-', and '_' only)"
+    p (printf "n@me=%s" s)`shouldBe` Left (invalidNameMsg "n@me")
   specify "invalid address" $
     p "name=1234" `shouldBe` Left "invalid address '1234': Base 58 checksum invalid."
   specify "empty" $
@@ -68,7 +69,7 @@ parseAccountNameMapSpec = describe "parseAccountNameMap" $ do
   specify "invalid format" $
     parseAccountNameMap ["invalid"] `shouldBe` Left "invalid mapping format 'invalid' (should be '<name> = <address>')"
   specify "invalid name" $
-    parseAccountNameMap ["n@me = " ++ s1] `shouldBe` Left "invalid name 'n@me' (should consist of letters, numbers, space, '.', ',', '!', '?', '-', and '_' only)"
+    parseAccountNameMap ["n@me = " ++ s1] `shouldBe` Left (invalidNameMsg "n@me")
   where s1 = "35FtQ8HgRShXLGUer7k8wtovjKAcSQ2Ys8RQPx27KfRA7zf7i4"
         s2 = "4RDhNeQB7DUKcKNStBQfLjU6y32HYDMxsJef2ATVncKRYJWoCV"
         (Right a1) = IDTypes.addressFromText $ pack s1
@@ -161,9 +162,10 @@ exampleAccountConfigWithKeysAndName :: AccountConfig
 exampleAccountConfigWithKeysAndName =
   AccountConfig
   { acAddr = NamedAddress { naName = Just "name" , naAddr = exampleAccountAddress1 }
-  -- test keypairs can either be generated with
+  -- TODO Generate testdata instead of hard-coding (generate key pairs, encrypt).
+  -- Test keypairs can either be generated with
   -- randomEd25519KeyPair from Concordium.Crypto.DummyData if determinism is required, or
-  -- with newKeyPair from Concordium.Crypto.SignatureScheme is determinism is not important.
+  -- with newKeyPair from Concordium.Crypto.SignatureScheme if determinism is not important.
   , acKeys = M.fromList [ (11,
                            EncryptedAccountKeyPairEd25519 {
                               verifyKey=vk1
