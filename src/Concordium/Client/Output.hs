@@ -150,9 +150,7 @@ printAccountInfo addr a verbose = do
           forM_ creds printVersionedCred
 
 printVersionedCred :: (Versioned IDTypes.CredentialDeploymentValues) -> Printer
-printVersionedCred vc = printCred c
-  where
-    c = vValue vc
+printVersionedCred vc = printCred (vValue vc)
 
 printCred :: IDTypes.CredentialDeploymentValues -> Printer
 printCred c =
