@@ -108,9 +108,13 @@ printAccountConfigList cfgs =
         tell [ printf "- %s: %s" (showNamedAddress $ acAddr cfg) showNone]
       else do
         tell [ printf "- %s:" (showNamedAddress $ acAddr cfg)]
-        printMap showEntry $ toSortedList keys
-  where showEntry (n, kp) =
-          printf "    %s: %s" (show n) (showAccountKeyPair kp)
+        -- NB: While we do not have proper account exports or dedicated commands to print
+        -- the full account key map, this command should print the account key map in the
+        -- JSON format that can be used for importing and "account add-keys".
+        tell [ showPrettyJSON keys ]
+        -- printMap showEntry $ toSortedList keys
+  -- where showEntry (n, kp) =
+  --         printf "    %s: %s" (show n) (showAccountKeyPair kp)
 
 -- ACCOUNT
 
