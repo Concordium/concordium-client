@@ -61,6 +61,7 @@ import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Client.Types.TransactionStatus
 import           Concordium.Client.Types.Account
 import           Concordium.Client.Export
+import           Concordium.Common.Version
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
@@ -1539,6 +1540,7 @@ processTransaction_ transaction networkId _verbose = do
     Right False -> fail "Transaction not accepted by the baker."
     Right True -> return tx
 
+-- |Read a versioned credential from the bytestring, failing if any errors occur.
 processCredential ::
      (MonadFail m, MonadIO m)
   => BSL.ByteString
@@ -1547,12 +1549,18 @@ processCredential ::
 processCredential source networkId =
   case AE.eitherDecode source of
     Left err -> fail $ "Error decoding JSON: " ++ err
-    Right cred ->
-      let tx = Types.CredentialDeployment cred
-      in sendTransactionToBaker tx networkId >>= \case
-           Left err -> fail err
-           Right False -> fail "Transaction not accepted by the baker."
-           Right True -> return tx
+    Right vCred
+        | vVersion vCred == 0 ->
+            case fromJSON (vValue vCred) of
+              AE.Success cred -> 
+                let tx = Types.CredentialDeployment cred
+                in sendTransactionToBaker tx networkId >>= \case
+                  Left err -> fail err
+                  Right False -> fail "Transaction not accepted by the baker."
+                  Right True -> return tx
+              AE.Error err -> fail $ "Cannot parse credential according to V0: " ++ err
+        | otherwise ->
+          fail $ "Unsupported credential version: " ++ show (vVersion vCred)
 
 -- |Convert JSON-based transaction type to one which is ready to be encoded, signed and sent.
 convertTransactionJsonPayload :: (MonadFail m) => CT.TransactionJSONPayload -> ClientMonad (PR.Context Core.UA m) Types.Payload
