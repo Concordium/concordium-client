@@ -1,5 +1,6 @@
 module SimpleClientTests.AccountSpec where
 
+import Concordium.Common.Version
 import Concordium.Client.Cli
 import Concordium.Client.Output
 import Concordium.Client.Types.Account
@@ -8,7 +9,7 @@ import qualified Concordium.Types as Types
 import qualified Concordium.Crypto.ByteStringHelpers as BSH
 
 import Control.Monad.Writer
-import Data.Map.Strict as Map
+import qualified Data.Map.Strict as Map
 import Data.Text (pack)
 
 import Test.Hspec
@@ -28,7 +29,7 @@ exampleAccountInfoResult d cs = AccountInfoResult
                                 { airAmount = Types.Amount 1
                                 , airNonce = Types.Nonce 2
                                 , airDelegation = d
-                                , airCredentials = cs
+                                , airCredentials = map (Versioned 0) cs
                                 , airInstances = [] }
 
 exampleCredentials :: IDTypes.Policy -> IDTypes.CredentialDeploymentValues
@@ -130,20 +131,23 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
       , ""
       , "Credentials:"
       , "{\n\
-        \    \"ipIdentity\": 21,\n\
-        \    \"regId\": \"a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f\",\n\
-        \    \"arData\": {\n\
-        \        \"0\": {\n\
-        \            \"encIdCredPubShare\": \"a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46fa1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f\"\n\
+        \    \"value\": {\n\
+        \        \"ipIdentity\": 21,\n\
+        \        \"regId\": \"a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f\",\n\
+        \        \"arData\": {\n\
+        \            \"0\": {\n\
+        \                \"encIdCredPubShare\": \"a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46fa1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f\"\n\
+        \            }\n\
+        \        },\n\
+        \        \"account\": \"2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6\",\n\
+        \        \"revocationThreshold\": 1,\n\
+        \        \"policy\": {\n\
+        \            \"revealedAttributes\": {},\n\
+        \            \"createdAt\": \"202004\",\n\
+        \            \"validTo\": \"202104\"\n\
         \        }\n\
         \    },\n\
-        \    \"account\": \"2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6\",\n\
-        \    \"revocationThreshold\": 1,\n\
-        \    \"policy\": {\n\
-        \        \"revealedAttributes\": {},\n\
-        \        \"createdAt\": \"202004\",\n\
-        \        \"validTo\": \"202104\"\n\
-        \    }\n\
+        \    \"v\": 0\n\
         \}" ]
   where p addr res = execWriter $ printAccountInfo addr res False
 
