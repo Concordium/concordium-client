@@ -149,9 +149,12 @@ printAccountInfo addr a verbose = do
         else
           forM_ creds printVersionedCred
 
+-- |Print a versioned credential. This only prints the credential value, and not the
+-- associated version.
 printVersionedCred :: (Versioned IDTypes.CredentialDeploymentValues) -> Printer
 printVersionedCred vc = printCred (vValue vc)
 
+-- |Print the registration id, expiry date, and revealed attributes of a credential.
 printCred :: IDTypes.CredentialDeploymentValues -> Printer
 printCred c =
   tell [ printf "* %s:" (show $ IDTypes.cdvRegId c)
