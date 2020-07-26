@@ -21,9 +21,8 @@ import qualified Acorn.Core                          as Core
 import qualified Acorn.Parser.Runner                 as PR
 import           Concordium.Client.Runner.Helper
 
-import           Concordium.Common.Version
 import           Concordium.Client.Cli
-import           Concordium.Types.Transactions(BareBlockItem)
+import           Concordium.Types.Transactions(BareBlockItem, putVersionedBareBlockItemV0)
 import           Concordium.Types as Types
 import           Concordium.ID.Types as IDTypes
 
@@ -164,7 +163,7 @@ stopBaker = withUnaryNoMsg (call @"stopBaker") CF.value
 sendTransactionToBaker ::
      (MonadIO m) => BareBlockItem -> Int -> ClientMonad m (Either String Bool)
 sendTransactionToBaker t nid = do
-  let msg = defMessage & CF.networkId .~ fromIntegral nid & CF.payload .~ S.encode (Versioned versionBareBlockItem t)
+  let msg = defMessage & CF.networkId .~ fromIntegral nid & CF.payload .~ S.runPut (putVersionedBareBlockItemV0 t)
   withUnary (call @"sendTransaction") msg CF.value
 
 getTransactionStatus :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
