@@ -4,7 +4,6 @@ import Concordium.Client.Config
 import Concordium.Client.Output
 import Concordium.Client.Encryption
 import qualified Concordium.Crypto.ByteStringHelpers as BSH
-import qualified Concordium.Crypto.SignatureScheme as S
 import qualified Concordium.ID.Types as IDTypes
 import Concordium.Client.Types.Account
 
@@ -191,9 +190,9 @@ exampleAccountConfigWithKeysAndName =
                                                                      etCipherText = "hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY="})
                               })]
   , acThreshold = 2}
-  where s1 = "6d00a10ccac23d2fd0bea163756487288fd19ff3810e1d3f73b686e60d801915"
+  where -- s1 = "6d00a10ccac23d2fd0bea163756487288fd19ff3810e1d3f73b686e60d801915"
         v1 = "c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027"
-        s2 = "9b301aa72d991d720750935de632983f1854d701ada3e5b763215d0802d5541c"
+        -- s2 = "9b301aa72d991d720750935de632983f1854d701ada3e5b763215d0802d5541c"
         v2 = "f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213"
         -- (Just sk1) = BSH.deserializeBase16 s1
         (Just vk1) = BSH.deserializeBase16 v1

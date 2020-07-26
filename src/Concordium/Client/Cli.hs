@@ -1,5 +1,6 @@
 module Concordium.Client.Cli where
 
+import Concordium.Common.Version
 import qualified Concordium.Crypto.BlockSignature as BlockSig
 import qualified Concordium.Crypto.BlsSignature as Bls
 import qualified Concordium.Crypto.VRF as VRF
@@ -182,7 +183,7 @@ data AccountInfoResult = AccountInfoResult
   { airAmount :: !Amount
   , airNonce :: !Nonce
   , airDelegation :: !(Maybe BakerId),
-    airCredentials :: ![IDTypes.CredentialDeploymentValues]
+    airCredentials :: ![(Versioned IDTypes.CredentialDeploymentValues)]
   , airInstances :: ![ContractAddress]}
   deriving (Show)
 
