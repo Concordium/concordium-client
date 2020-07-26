@@ -29,7 +29,7 @@ exampleAccountInfoResult d cs = AccountInfoResult
                                 { airAmount = Types.Amount 1
                                 , airNonce = Types.Nonce 2
                                 , airDelegation = d
-                                , airCredentials = map (Versioned versionCredential) cs
+                                , airCredentials = map (Versioned 0) cs
                                 , airInstances = [] }
 
 exampleCredentials :: IDTypes.Policy -> IDTypes.CredentialDeploymentValues
