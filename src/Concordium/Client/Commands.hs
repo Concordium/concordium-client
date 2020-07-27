@@ -73,6 +73,8 @@ data Cmd
     { bakerCmd :: BakerCmd }
   | IdentityCmd
     { identityCmd :: IdentityCmd }
+  | RawCmd
+    { rawCmd :: LegacyCmd }
   deriving (Show)
 
 data ConfigCmd
@@ -310,11 +312,20 @@ programOptions = Options <$>
                       consensusCmds <>
                       blockCmds <>
                       bakerCmds <>
-                      identityCmds
-                     ) <|> LegacyCmd <$> legacyProgramOptions) <*>
+                      identityCmds <>
+                      rawCmds
+                     )) <*>
                    backendParser <*>
                    optional (strOption (long "config" <> metavar "DIR" <> help "Path to the configuration directory.")) <*>
                    switch (hidden <> long "verbose" <> short 'v' <> help "Make output verbose.")
+
+rawCmds :: Mod CommandFields Cmd
+rawCmds =
+  command
+    "raw"
+    (info
+      (LegacyCmd <$> legacyProgramOptions)
+      (progDesc "Raw GRPC commands"))
 
 transactionCmds :: Mod CommandFields Cmd
 transactionCmds =
