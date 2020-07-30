@@ -325,7 +325,7 @@ rawCmds =
     "raw"
     (info
       (LegacyCmd <$> legacyProgramOptions)
-      (progDesc "Raw commands for interacting with the GRPC server."))
+      (progDesc "Commands that directly expose the node's GRPC interface."))
 
 transactionCmds :: Mod CommandFields Cmd
 transactionCmds =
