@@ -236,9 +236,12 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
       res <- runClient nodeBackend $ do
         currentNonce <- getBestBlockHash >>= getAccountNonce senderAddr
         let tx = encodeAndSignTransaction pl senderAddr energy currentNonce expiry accountKeys acThreshold
-        return $ getBlockItemHash tx
+        sendTransactionToBaker tx defaultNetId >>= \case
+          Left err -> fail err
+          Right False -> fail "transaction not accepted by the baker"
+          Right True -> return $ getBlockItemHash tx
       case res of
-        Left _ -> return Nothing
+        Left err -> fail $ show err
         Right v -> return . Just . Text.pack $ show v)
 
   removeBaker :: RemoveBakerRequest -> Handler RemoveBakerResponse
@@ -263,9 +266,13 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
       res <- runClient nodeBackend $ do
         currentNonce <- getBestBlockHash >>= getAccountNonce senderAddr
         let tx = encodeAndSignTransaction pl senderAddr energy currentNonce expiry accountKeys acThreshold
-        return $ getBlockItemHash tx
+        sendTransactionToBaker tx defaultNetId >>= \case
+          Left err -> fail err
+          Right False -> fail "transaction not accepted by the baker"
+          Right True -> return $ getBlockItemHash tx
+
       case res of
-        Left _ -> return Nothing
+        Left err -> fail $ show err
         Right v -> return . Just . Text.pack $ show v)
 
   getBakers :: Handler GetBakersResponse
