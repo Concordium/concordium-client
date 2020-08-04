@@ -4,7 +4,7 @@
 # WARNING:
 #   If you get this URL wrong, you'll find you job gets stuck as "pending"
 #   forever as it tries to look for a running with an image it will never find!
-image: 192549843005.dkr.ecr.eu-west-1.amazonaws.com/concordium/base-haskell:0.12
+image: 192549843005.dkr.ecr.eu-west-1.amazonaws.com/concordium/base-haskell:0.14
 
 variables:
   STACK_ROOT: "${CI_PROJECT_DIR}/.stack"
