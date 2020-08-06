@@ -574,7 +574,44 @@ configAccountAddKeysCmd =
       (ConfigAccountAddKeys <$>
         strOption (long "account" <> metavar "ACCOUNT" <> help "Name or address of the account.") <*>
         strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file."))
-      (progDesc "Add key pairs specified in a JSON file to a specific account configuration. This does not register the keys on the chain."))
+      (progDescDoc $ docFromLines
+       [ "Add key pairs specified in a JSON file to a specific account configuration. This does not register the keys on the chain. Expected format:"
+       , "   {"
+       , "     \"idx1\": {"
+       , "       ..."
+       , "       \"encryptedSignKey\": {"
+       , "         \"metadata\": {"
+       , "           \"encryptionMethod\": \"AES-256\","
+       , "           \"iterations\": ...,"
+       , "           \"salt\": \"...\","
+       , "           \"initializationVector\": \"...\","
+       , "           \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\""
+       , "         },"
+       , "         \"cipherText\": \"...\""
+       , "       },"
+       , "       \"verifyKey\": \"...\","
+       , "       \"schemeId\": \"Ed25519\""
+       , "     },"
+       , "     \"idx2\": {"
+       , "       ..."
+       , "       \"encryptedSignKey\": {"
+       , "         \"metadata\": {"
+       , "           \"encryptionMethod\": \"AES-256\","
+       , "           \"iterations\": ...,"
+       , "           \"salt\": \"...\","
+       , "           \"initializationVector\": \"...\","
+       , "           \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\""
+       , "         },"
+       , "         \"cipherText\": \"...\""
+       , "       },"
+       , "       \"verifyKey\": \"...\","
+       , "       \"schemeId\": \"Ed25519\""
+       , "     }"
+       , "     ..."
+       , "   }"
+       , "where idx1, idx2 etc. are the indices associated with the respective keys."
+       ]
+      ))
 
 readAccountExportFormat :: ReadM AccountExportFormat
 readAccountExportFormat = str >>= \case
