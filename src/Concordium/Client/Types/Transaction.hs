@@ -6,8 +6,7 @@
 
 module Concordium.Client.Types.Transaction where
 
-import Concordium.Client.Types.Account
-
+import           Concordium.Client.Types.Account
 import           Concordium.Crypto.Proofs
 import qualified Concordium.ID.Types                 as IDTypes
 import           Concordium.Types
@@ -88,8 +87,9 @@ setElectionDifficultyEnergyCost = checkHeaderEnergyCost
 instance FromJSON Types.Proof where
   parseJSON v = do
     hex <- parseJSON v
-    let (bs, rest) = BS16.decode . Text.encodeUtf8 $ hex
-    if (BS.null rest) then fail "Could not decode hexadecimal proof"
+    let (bs, rest) = BS16.decode $ Text.encodeUtf8 hex
+    if BS.null rest
+    then fail "Could not decode hexadecimal proof"
     else return bs
 
 -- |Transaction header type
@@ -160,7 +160,6 @@ AETH.deriveFromJSON
   (AETH.defaultOptions
      {AETH.sumEncoding = AETH.TaggedObject "transactionType" "contents"})
   ''TransactionJSONPayload
-
 
 -- |Transaction as retrieved from a JSON object
 data TransactionJSON =

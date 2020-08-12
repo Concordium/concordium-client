@@ -16,7 +16,6 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Except
 import Control.Exception
-
 import Data.Aeson as AE
 import qualified Data.Char as C
 import Data.List

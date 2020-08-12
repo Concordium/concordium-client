@@ -73,8 +73,6 @@ data Cmd
     { bakerCmd :: BakerCmd }
   | IdentityCmd
     { identityCmd :: IdentityCmd }
-  | RawCmd
-    { rawCmd :: LegacyCmd }
   deriving (Show)
 
 data ConfigCmd
