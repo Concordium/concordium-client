@@ -13,7 +13,6 @@ import Data.Text
 import Test.Hspec
 import Text.Printf
 
-
 testPassword :: String
 testPassword = "helloworld"
 
