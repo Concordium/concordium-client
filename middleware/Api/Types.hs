@@ -13,8 +13,8 @@ import           Data.Word
 import           GHC.Generics
 
 import           Concordium.Types.Utils
-import           Concordium.Client.Types.Account
 import           Concordium.Client.Runner(StatusOfPeers)
+import           Concordium.Client.Types.Account
 import           Concordium.Client.Types.Transaction ()
 import qualified Concordium.Types as Types
 

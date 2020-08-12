@@ -318,6 +318,11 @@ showEvent verbose = \case
                          Just bid -> printf "stake of account '%s' undelegated from baker %s" (show esuAccount) (show bid)
   Types.ElectionDifficultyUpdated{..} ->
     verboseOrNothing $ printf "election difficulty updated to %f" eeduDifficulty
+  Types.AccountKeysUpdated -> verboseOrNothing $ "account keys updated"
+  Types.AccountKeysAdded -> verboseOrNothing $ "account keys added"
+  Types.AccountKeysRemoved -> verboseOrNothing $ "account keys removed"
+  Types.AccountKeysSignThresholdUpdated -> verboseOrNothing $ "account signature threshold updated"
+
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
@@ -433,6 +438,12 @@ showRejectReason verbose = \case
     printf "sender '%s' is not the baker's account ('%s' is)" (show fromAccount) (show bakerAccount)
   Types.NotFromSpecialAccount ->
     "sender is not allowed to perform this special type of transaction"
+  Types.NonExistentAccountKey ->
+    "encountered key index to which no key belongs"
+  Types.KeyIndexAlreadyInUse ->
+    "encountered a key index that is already in use"
+  Types.InvalidAccountKeySignThreshold ->
+    "signature threshold exceeds the number of keys"
 
 -- CONSENSUS
 

@@ -29,6 +29,7 @@ import Options.Applicative
 import Paths_simple_client (version)
 import Concordium.Client.LegacyCommands
 import Concordium.Client.Types.Account
+import Concordium.ID.Types (KeyIndex, SignatureThreshold)
 import Concordium.Types
 import Text.Printf
 import qualified Text.PrettyPrint.ANSI.Leijen as P
@@ -121,6 +122,17 @@ data AccountCmd
     , adTransactionOpts :: !TransactionOpts }
   | AccountUndelegate
     { auTransactionOpts :: !TransactionOpts }
+  | AccountUpdateKeys
+    { aukKeys :: !FilePath
+    , aukTransactionOpts :: !TransactionOpts }
+  | AccountAddKeys
+    { aakKeys :: !FilePath
+    , aakThreshold :: !(Maybe SignatureThreshold)
+    , aakTransactionOpts :: !TransactionOpts }
+  | AccountRemoveKeys
+    { arkKeys :: ![KeyIndex]
+    , aakThreshold :: !(Maybe SignatureThreshold)
+    , arkTransactionOpts :: !TransactionOpts }
   deriving (Show)
 
 data ModuleCmd
@@ -388,7 +400,10 @@ accountCmds =
           (accountShowCmd <>
            accountListCmd <>
            accountDelegateCmd <>
-           accountUndelegateCmd))
+           accountUndelegateCmd <>
+           accountUpdateKeysCmd <>
+           accountAddKeysCmd <>
+           accountRemoveKeysCmd))
       (progDesc "Commands for inspecting accounts."))
 
 accountShowCmd :: Mod CommandFields AccountCmd
@@ -428,6 +443,57 @@ accountUndelegateCmd =
       (AccountUndelegate <$>
         transactionOptsParser)
       (progDesc "Delegate stake of account to baker."))
+
+accountUpdateKeysCmd :: Mod CommandFields AccountCmd
+accountUpdateKeysCmd =
+  command
+    "update-keys"
+    (info
+      (AccountUpdateKeys <$>
+        strArgument (metavar "FILE" <> help "File containing the new account keys.") <*>
+        transactionOptsParser)
+      (progDescDoc $ docFromLines
+        [ "Update one or several keys of an account. Expected format of the key file:"
+        , "   {"
+        , "     idx: {"
+        , "       \"verifyKey\": ...,"
+        , "     },"
+        , "     ..."
+        , "   }"
+        , "where idx is the key index associated to the corresponding verify key." ]))
+
+accountAddKeysCmd :: Mod CommandFields AccountCmd
+accountAddKeysCmd =
+  command
+    "add-keys"
+    (info
+      (AccountAddKeys <$>
+        strArgument (metavar "FILE" <> help "File containing the account keys.") <*>
+        optional (option auto (long "threshold" <> metavar "THRESHOLD" <>
+            help "Update the signature threshold to this value. If not set, no changes are made to the threshold.")) <*>
+        transactionOptsParser)
+      (progDescDoc $ docFromLines
+        [ "Adds one or several additional keys to an account. Expected format of the key file:"
+        , "   {"
+        , "     idx: {"
+        , "       \"verifyKey\": ..."
+        , "     },"
+        , "     ..."
+        , "   }"
+        , "where idx is the key index associated to the corresponding verify key. The --threshold option may be used to update the signature threshold." ]))
+
+accountRemoveKeysCmd :: Mod CommandFields AccountCmd
+accountRemoveKeysCmd =
+  command
+    "remove-keys"
+    (info
+      (AccountRemoveKeys <$>
+        some (argument auto (metavar "KEYINDICES" <> help "space-separated list of indices of the keys to remove.")) <*>
+        optional (option auto (long "threshold" <> metavar "THRESHOLD" <>
+            help "Update the signature threshold to this value. If not set, no changes are made to the threshold.")) <*>
+        transactionOptsParser)
+      (progDescDoc $ docFromLines
+        [ "Removes the keys from the account at the specified indices. The --threshold option may be used to update the signature threshold." ]))
 
 moduleCmds :: Mod CommandFields Cmd
 moduleCmds =
@@ -573,41 +639,25 @@ configAccountAddKeysCmd =
         strOption (long "account" <> metavar "ACCOUNT" <> help "Name or address of the account.") <*>
         strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file."))
       (progDescDoc $ docFromLines
-       [ "Add key pairs specified in a JSON file to a specific account configuration. This does not register the keys on the chain. Expected format:"
+       [ "Add one or several key pairs to a specific account configuration. This does not register the keys on the chain. Expected format of the key file:"
        , "   {"
-       , "     \"idx1\": {"
-       , "       ..."
+       , "     idx: {"
        , "       \"encryptedSignKey\": {"
        , "         \"metadata\": {"
        , "           \"encryptionMethod\": \"AES-256\","
        , "           \"iterations\": ...,"
-       , "           \"salt\": \"...\","
-       , "           \"initializationVector\": \"...\","
+       , "           \"salt\": ...,"
+       , "           \"initializationVector\": ...,"
        , "           \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\""
        , "         },"
-       , "         \"cipherText\": \"...\""
+       , "         \"cipherText\": ..."
        , "       },"
-       , "       \"verifyKey\": \"...\","
+       , "       \"verifyKey\": ...,"
        , "       \"schemeId\": \"Ed25519\""
        , "     },"
-       , "     \"idx2\": {"
-       , "       ..."
-       , "       \"encryptedSignKey\": {"
-       , "         \"metadata\": {"
-       , "           \"encryptionMethod\": \"AES-256\","
-       , "           \"iterations\": ...,"
-       , "           \"salt\": \"...\","
-       , "           \"initializationVector\": \"...\","
-       , "           \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\""
-       , "         },"
-       , "         \"cipherText\": \"...\""
-       , "       },"
-       , "       \"verifyKey\": \"...\","
-       , "       \"schemeId\": \"Ed25519\""
-       , "     }"
        , "     ..."
        , "   }"
-       , "where idx1, idx2 etc. are the indices associated with the respective keys."
+       , "where idx is the index of the respective key pair."
        ]
       ))
 
@@ -742,7 +792,7 @@ bakerSetKeyCmd =
         strArgument (metavar "FILE" <> help "File containing the signature keys.") <*>
         transactionOptsParser)
       (progDescDoc $ docFromLines
-        [ "Update the signature keys of a baker. Expected format:"
+        [ "Update the signature keys of a baker. Expected format of the key file:"
         , "   {"
         , "     \"signatureSignKey\": ...,"
         , "     \"signatureVerifyKey\": ..."
@@ -768,7 +818,7 @@ bakerSetAggregationKeyCmd =
         strArgument (metavar "FILE" <> help "File containing the aggregation key.") <*>
         transactionOptsParser)
       (progDescDoc $ docFromLines
-        [ "Update the aggregation key of a baker. Expected format:"
+        [ "Update the aggregation key of a baker. Expected format of the key file:"
         , "   {"
         , "     \"aggregationSignKey\": ...,"
         , "     \"aggregationVerifyKey\": ..."
@@ -784,7 +834,7 @@ bakerSetElectionKeyCmd =
         strArgument (metavar "FILE" <> help "File containing the election key.") <*>
         transactionOptsParser)
       (progDescDoc $ docFromLines
-        [ "Update the election key of a baker. Expected format:"
+        [ "Update the election key of a baker. Expected format of the key file:"
         , "   {"
         , "     ..."
         , "     \"electionPrivateKey\": ...,"
