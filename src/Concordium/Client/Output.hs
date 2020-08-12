@@ -2,13 +2,13 @@
 
 module Concordium.Client.Output where
 
-import Concordium.Common.Version
 import Concordium.Client.Cli
 import Concordium.Client.Commands (Verbose)
 import Concordium.Client.Config
 import Concordium.Client.Parse
-import Concordium.Client.Types.TransactionStatus
 import Concordium.Client.Types.Account
+import Concordium.Client.Types.TransactionStatus
+import Concordium.Common.Version
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Types
 import qualified Concordium.ID.Types as IDTypes

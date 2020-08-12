@@ -53,14 +53,14 @@ import           Concordium.Client.Utils
 import           Concordium.Client.Cli
 import           Concordium.Client.Config
 import           Concordium.Client.Commands          as COM
+import           Concordium.Client.Export
 import           Concordium.Client.GRPC
 import           Concordium.Client.Output
 import           Concordium.Client.Parse
 import           Concordium.Client.Runner.Helper
+import           Concordium.Client.Types.Account
 import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Client.Types.TransactionStatus
-import           Concordium.Client.Types.Account
-import           Concordium.Client.Export
 import           Concordium.Common.Version
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
@@ -220,7 +220,6 @@ processConfigCmd action baseCfgDir verbose =
         -- TODO warn about keys not added because index already exists
 
         writeAccountKeys baseCfg' accCfg'
-
 
 -- |Return the input format or infer it from the file extension if it's Nothing.
 inferAccountExportFormat :: Maybe AccountExportFormat -> FilePath -> IO AccountExportFormat
@@ -958,7 +957,6 @@ processBakerCmd action baseCfgDir verbose backend =
       bsatcCfg <- getBakerSetAccountTransactionCfg baseCfg txOpts bid rewardAccountSigningData
       let txCfg = bsatcTransactionCfg bsatcCfg
 
-
       let intOpts = toInteractionOpts txOpts
       pl <- bakerSetAccountTransactionPayload bsatcCfg (ioConfirm intOpts) rewardAccountKeys
       withClient backend $ do
@@ -1542,7 +1540,7 @@ processCredential source networkId =
     Right vCred
         | vVersion vCred == 0 ->
             case fromJSON (vValue vCred) of
-              AE.Success cred -> 
+              AE.Success cred ->
                 let tx = Types.CredentialDeployment cred
                 in sendTransactionToBaker tx networkId >>= \case
                   Left err -> fail err
