@@ -15,10 +15,9 @@ import Concordium.Client.Runner
 import qualified Concordium.Client.Types.Transaction as Costs
 import Concordium.Client.Types.TransactionStatus
 import Concordium.Client.Utils
-
+import qualified Concordium.ID.Types as ID
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Execution
-import qualified Concordium.ID.Types as ID
 import Control.Concurrent.MVar
 import Control.Monad.Except (MonadError (throwError))
 import Data.Aeson
