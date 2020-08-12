@@ -65,6 +65,7 @@ import           Concordium.Common.Version
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
+import qualified Concordium.Crypto.SignatureScheme   as SigScheme
 import qualified Concordium.Crypto.VRF               as VRF
 import qualified Concordium.Types.Transactions       as Types
 import           Concordium.Types.HashableTo
@@ -87,11 +88,13 @@ import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
 import qualified Data.Char                           as C
 import qualified Data.HashMap.Strict                 as Map
+import qualified Data.Map                            as OrdMap
 import           Data.Maybe
 import           Data.List                           as L
 import qualified Data.Serialize                      as S
+import qualified Data.Set                            as Set
 import           Data.String
-import           Data.Text                           hiding (take)
+import           Data.Text                           hiding (length, map, null, take)
 import           Data.Text.Encoding
 import qualified Data.Text.IO                        as TextIO hiding (putStrLn)
 import           Data.Word
@@ -253,7 +256,7 @@ loadAccountImportFile format file name = do
       forM_ accCfgs $ \AccountConfig{acAddr=NamedAddress{..}} -> logInfo [printf "- %s (%s)" (show naAddr) (maybe "-" show naName)]
       logInfo ["all signing keys have been encrypted with the password used for this import."]
 
-      when (Prelude.null accCfgs) $ logWarn ["no accounts selected for import"]
+      when (null accCfgs) $ logWarn ["no accounts selected for import"]
       return accCfgs
     FormatWeb -> do
      pwd <- createPasswordInteractive (Just "encrypt all signing keys with") `withLogFatalIO` id
@@ -361,7 +364,7 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
   energyCostFunc <- getEnergyCostFunc accCfg
   let computedCost = case energyCostFunc of
                        Nothing -> Nothing
-                       Just ec -> Just $ ec (Prelude.length $ acKeys accCfg)
+                       Just ec -> Just $ ec (length $ acKeys accCfg)
   energy <- case (toMaxEnergyAmount txOpts, computedCost) of
               (Nothing, Nothing) -> logFatal ["energy amount not specified"]
               (Nothing, Just c) -> do
@@ -468,6 +471,23 @@ data AccountUndelegateTransactionConfig =
   AccountUndelegateTransactionConfig
   { autcTransactionCfg :: TransactionConfig }
 
+data AccountUpdateKeysTransactionCfg =
+  AccountUpdateKeysTransactionCfg
+  { auktcTransactionCfg :: TransactionConfig
+  , auktcKeys :: OrdMap.Map ID.KeyIndex Types.AccountVerificationKey }
+
+data AccountAddKeysTransactionCfg =
+  AccountAddKeysTransactionCfg
+  { aaktcTransactionCfg :: TransactionConfig
+  , aaktcKeys :: OrdMap.Map ID.KeyIndex Types.AccountVerificationKey
+  , aaktcThreshold :: Maybe ID.SignatureThreshold }
+
+data AccountRemoveKeysTransactionCfg =
+  AccountRemoveKeysTransactionCfg
+  { arktcTransactionCfg :: TransactionConfig
+  , arktcIndices :: Set.Set ID.KeyIndex
+  , arktcThreshold :: Maybe ID.SignatureThreshold }
+
 -- |Resolved configuration for an account undelegation transaction.
 data SetElectionDifficultyTransactionConfig =
   SetElectionDifficultyTransactionConfig
@@ -516,6 +536,29 @@ getAccountUndelegateTransactionCfg baseCfg txOpts nrgCost = do
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return AccountUndelegateTransactionConfig
     { autcTransactionCfg = txCfg }
+
+-- |Resolve configuration for an 'update keys' transaction
+getAccountUpdateKeysTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> IO AccountUpdateKeysTransactionCfg
+getAccountUpdateKeysTransactionCfg baseCfg txOpts f = do
+  keys <- getFromJson =<< eitherDecodeFileStrict f
+  txCfg <- getTransactionCfg baseCfg txOpts (nrgCost $ length keys)
+  return $ AccountUpdateKeysTransactionCfg txCfg keys
+  where nrgCost numKeys _ = return $ Just $ accountUpdateKeysEnergyCost numKeys
+
+getAccountAddKeysTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> Maybe ID.SignatureThreshold -> IO AccountAddKeysTransactionCfg
+getAccountAddKeysTransactionCfg baseCfg txOps f threshold = do
+  keys <- getFromJson =<< eitherDecodeFileStrict f
+  txCfg <- getTransactionCfg baseCfg txOps (nrgCost $ length keys)
+  return $ AccountAddKeysTransactionCfg txCfg keys threshold
+  where nrgCost numKeys _ = return $ Just $ accountAddKeysEnergyCost numKeys
+
+getAccountRemoveKeysTransactionCfg :: BaseConfig -> TransactionOpts -> [ID.KeyIndex] -> Maybe ID.SignatureThreshold -> IO AccountRemoveKeysTransactionCfg
+getAccountRemoveKeysTransactionCfg baseCfg txOpts idxs threshold = do
+  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
+  indexSet <- Types.safeSetFromAscList $ L.sort idxs
+  return $ AccountRemoveKeysTransactionCfg txCfg indexSet threshold
+  where
+      nrgCost _ = return $ Just accountRemoveKeysEnergyCost
 
 -- |Convert transfer transaction config into a valid payload,
 -- optionally asking the user for confirmation.
@@ -635,6 +678,79 @@ accountUndelegateTransactionPayload autxCfg confirm = do
     unless confirmed exitTransactionCancelled
 
   return Types.UndelegateStake
+
+accountUpdateKeysTransactionPayload :: AccountUpdateKeysTransactionCfg -> Bool -> IO Types.Payload
+accountUpdateKeysTransactionPayload AccountUpdateKeysTransactionCfg{..} confirm = do
+  let TransactionConfig
+        { tcEnergy = energy
+        , tcExpiry = expiry
+        , tcAccountCfg = AccountConfig { acAddr = addr } }
+        = auktcTransactionCfg
+
+  let logKeyChanges = OrdMap.foldrWithKey (\idx (SigScheme.VerifyKeyEd25519 key) l -> (printf "\t%s: %s" (show idx) (show key)) : l) [] auktcKeys
+
+  logInfo $
+    [ printf "updating the following keys for account %s:" (showNamedAddress addr) ] ++
+    logKeyChanges ++
+    [ printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+    , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
+
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  return $ Types.UpdateAccountKeys auktcKeys
+
+
+accountAddKeysTransactionPayload :: AccountAddKeysTransactionCfg -> Bool -> IO Types.Payload
+accountAddKeysTransactionPayload AccountAddKeysTransactionCfg{..} confirm = do
+  let TransactionConfig
+        { tcEnergy = energy
+        , tcExpiry = expiry
+        , tcAccountCfg = AccountConfig { acAddr = addr } }
+        = aaktcTransactionCfg
+
+  let logKeyChanges = OrdMap.foldrWithKey (\idx (SigScheme.VerifyKeyEd25519 key) l -> (printf "\t%s: %s" (show idx) (show key)) : l) [] aaktcKeys
+      logThresholdChange = case aaktcThreshold of
+          Nothing -> []
+          Just v -> [ printf "updating signature threshold for account to %d" (toInteger v) ]
+
+  logInfo $
+    [ printf "adding the following keys to account %s:" (showNamedAddress addr) ] ++
+    logKeyChanges ++
+    logThresholdChange ++
+    [ printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+    , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
+
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  return $ Types.AddAccountKeys aaktcKeys aaktcThreshold
+
+accountRemoveKeysTransactionPayload :: AccountRemoveKeysTransactionCfg -> Bool -> IO Types.Payload
+accountRemoveKeysTransactionPayload AccountRemoveKeysTransactionCfg{..} confirm = do
+  let TransactionConfig
+        { tcEnergy = energy
+        , tcExpiry = expiry
+        , tcAccountCfg = AccountConfig { acAddr = addr } }
+        = arktcTransactionCfg
+
+  let logThresholdChange = case arktcThreshold of
+        Nothing -> []
+        Just v -> [ printf "updating signature threshold for account to %d" (toInteger v) ]
+
+  logInfo $
+    [ printf "removing keys at indices %s from account %s" (show $ Set.toList arktcIndices) (showNamedAddress addr) ] ++
+    logThresholdChange ++
+    [ printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+    , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
+
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  return $ Types.RemoveAccountKeys arktcIndices arktcThreshold
 
 -- |Encode, sign, and send transaction off to the baker.
 -- If confirmNonce is set, the user is asked to confirm using the next nonce
@@ -789,13 +905,77 @@ processAccountCmd action baseCfgDir verbose backend =
         when (ioTail intOpts) $ do
           tailTransaction hash
 --          logSuccess [ "delegation successfully removed" ]
+    AccountUpdateKeys f txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose True
+
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+      aukCfg <- getAccountUpdateKeysTransactionCfg baseCfg txOpts f
+      let txCfg = auktcTransactionCfg aukCfg
+      when verbose $ do
+        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        putStrLn ""
+
+      let intOpts = toInteractionOpts txOpts
+      pl <- accountUpdateKeysTransactionPayload aukCfg (ioConfirm intOpts)
+      withClient backend $ do
+        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
+        let hash = getBlockItemHash tx
+        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
+        when (ioTail intOpts) $ do
+          tailTransaction hash
+    AccountAddKeys f thresh txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose True
+
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+      aakCfg <- getAccountAddKeysTransactionCfg baseCfg txOpts f thresh
+      let txCfg = aaktcTransactionCfg aakCfg
+      when verbose $ do
+        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        putStrLn ""
+
+      let intOpts = toInteractionOpts txOpts
+      pl <- accountAddKeysTransactionPayload aakCfg (ioConfirm intOpts)
+      withClient backend $ do
+        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
+        let hash = getBlockItemHash tx
+        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
+        when (ioTail intOpts) $ do
+          tailTransaction hash
+    AccountRemoveKeys idxs thresh txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose True
+
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+      arkCfg <- getAccountRemoveKeysTransactionCfg baseCfg txOpts idxs thresh
+      let txCfg = arktcTransactionCfg arkCfg
+      when verbose $ do
+        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        putStrLn ""
+
+      let intOpts = toInteractionOpts txOpts
+      pl <- accountRemoveKeysTransactionPayload arkCfg (ioConfirm intOpts)
+      withClient backend $ do
+        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
+        let hash = getBlockItemHash tx
+        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
+        when (ioTail intOpts) $ do
+          tailTransaction hash
+
 
   where getDelegateCostFunc acc = withClient backend $ do
           when verbose $ logInfo ["retrieving instances"]
           info <- getBestBlockHash >>=
                   getAccountInfo (pack $ show $ naAddr $ acAddr acc) >>=
                   getFromJson
-          let is = Prelude.length $ airInstances info
+          let is = length $ airInstances info
           when verbose $ logInfo [printf "retrieved %d instances" is]
           return $ Just $ accountDelegateEnergyCost is
 
@@ -829,7 +1009,7 @@ processModuleCmd action _ backend =
 -- Otherwise, print the warning and set the encoding of stdout to UTF-8.
 ensureUtfEncoding :: String -> IO () -> IO String
 ensureUtfEncoding e printWarn =
-  if L.isPrefixOf "utf" $ Prelude.map C.toLower e then
+  if L.isPrefixOf "utf" $ map C.toLower e then
     return e
   else do
     printWarn

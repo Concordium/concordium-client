@@ -1,12 +1,12 @@
 module Concordium.DelegationServer.Server (module Concordium.DelegationServer.Server, addHeaders) where
 
-import Concordium.DelegationServer.Helpers (DelegationAccount(..))
 import Concordium.Client.Cli
 import Concordium.Client.Config (getDefaultBaseConfigDir)
 import Concordium.Client.GRPC
 import qualified Concordium.DelegationServer.Api.Definition as Api
 import qualified Concordium.DelegationServer.Api.Implementation as Api
 import qualified Concordium.DelegationServer.Config as Config
+import Concordium.DelegationServer.Helpers (DelegationAccount(..))
 import Concordium.DelegationServer.Logic
 import Concordium.Types
 import Control.Concurrent (forkIO)
