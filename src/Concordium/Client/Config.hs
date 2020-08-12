@@ -28,7 +28,7 @@ import System.Directory
 import System.IO.Error
 import System.FilePath
 import Text.Printf
-import Text.Read(readMaybe)
+import Text.Read (readMaybe)
 
 type BaseConfigDir = FilePath
 
@@ -55,7 +55,6 @@ accountKeysDir accCfgDir addr = accCfgDir </> show addr
 -- signatures needed to sign a transaction.
 accountThresholdFile :: FilePath -> Types.AccountAddress -> FilePath
 accountThresholdFile accCfgDir addr = accCfgDir </> show addr <.> "threshold"
-
 
 accountKeyFileExt :: String
 accountKeyFileExt = "json"
