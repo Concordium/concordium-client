@@ -41,6 +41,22 @@ accountDelegateEnergyCost instanceCount = (+100) . (+50*c) . checkHeaderEnergyCo
 accountUndelegateEnergyCost :: Int -> Int -> Energy
 accountUndelegateEnergyCost = accountDelegateEnergyCost
 
+-- |Cost of updating the account keys.
+-- This must be kept in sync with Concordium.Scheduler.Cost
+accountUpdateKeysEnergyCost :: Int -> Int -> Energy
+accountUpdateKeysEnergyCost keyCount = (+5*c) . checkHeaderEnergyCost
+  where c = fromIntegral keyCount
+
+-- |Cost of updating the account keys.
+-- This must be kept in sync with Concordium.Scheduler.Cost
+accountAddKeysEnergyCost :: Int -> Int -> Energy
+accountAddKeysEnergyCost = accountUpdateKeysEnergyCost
+
+-- |Cost of updating the account keys.
+-- This must be kept in sync with Concordium.Scheduler.Cost
+accountRemoveKeysEnergyCost :: Int -> Energy
+accountRemoveKeysEnergyCost = checkHeaderEnergyCost
+
 -- |Cost of a baker add transaction.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 -- The (+2) is added due to the size of the transaction.
