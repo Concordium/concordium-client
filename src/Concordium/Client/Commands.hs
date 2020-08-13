@@ -453,7 +453,7 @@ accountUpdateKeysCmd =
         [ "Update one or several keys of an account. Expected format of the key file:"
         , "   {"
         , "     idx: {"
-        , "       \"verifyKey\": ...,"
+        , "       \"verifyKey\": ..."
         , "     },"
         , "     ..."
         , "   }"

@@ -570,7 +570,7 @@ transferTransactionPayload ttxCfg confirm = do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  return Types.Transfer { tToAddress = Types.AddressAccount $ naAddr toAddress, tAmount = amount }
+  return Types.Transfer { tToAddress = naAddr toAddress, tAmount = amount }
 
 -- |Convert 'baker add' transaction config into a valid payload,
 -- optionally asking the user for confirmation.
