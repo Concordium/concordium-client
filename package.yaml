@@ -56,7 +56,6 @@ library:
   source-dirs:
       src
   dependencies:
-    - acorn
     - aeson
     - aeson-pretty
     - ansi-terminal
@@ -154,7 +153,6 @@ executables:
           ghc-options:
             - -threaded
           dependencies:
-            - acorn
             - aeson
             - bytestring
             - concordium-crypto

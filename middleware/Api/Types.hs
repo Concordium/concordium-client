@@ -134,7 +134,7 @@ data OutcomeDetails =
 $(deriveJSON defaultOptions{sumEncoding=TaggedObject{
                                tagFieldName = "detailsKind",
                                contentsFieldName = "details"},
-                             fieldLabelModifier = firstLower . drop 2
+                            fieldLabelModifier = firstLower . drop 2
                            }
    ''OutcomeDetails
   )

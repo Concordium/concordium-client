@@ -31,13 +31,11 @@ import           Data.Time.Clock.POSIX
 import qualified Data.List as L
 import           System.FilePath.Posix
 
-import qualified Acorn.Parser.Runner as PR
 import           Concordium.Client.Commands as COM
 import           Concordium.Client.Encryption (Password(..))
 import           Concordium.Client.GRPC
 import qualified Concordium.Client.GRPC as GRPC
 import           Concordium.Client.Runner
-import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Transaction
 import           Concordium.Client.Cli
 import           Concordium.Client.Config
@@ -382,12 +380,10 @@ runTransaction nodeBackend payload (address, keyMap) = do
 
 executeTransaction :: EnvData -> TransactionJSON -> IO Types.TransactionHash
 executeTransaction nodeBackend transaction = do
-
-  mdata <- loadContextData
   -- The networkId is for running multiple networks that's not the same chain, but hasn't been taken into use yet
   let nid = 1000
 
-  t <- PR.evalContext mdata $ runGRPC nodeBackend $ processTransaction_ transaction nid True
+  t <- runGRPC nodeBackend $ processTransaction_ transaction nid True
 
   putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (getHash t :: Types.TransactionHash)
   print transaction
