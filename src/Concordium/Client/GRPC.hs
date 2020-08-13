@@ -17,8 +17,6 @@ import qualified Data.ProtoLens.Field                as Field
 import           Proto.ConcordiumP2pRpc
 import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 
-import qualified Acorn.Core                          as Core
-import qualified Acorn.Parser.Runner                 as PR
 import           Concordium.Client.Runner.Helper
 
 import           Concordium.Client.Cli
@@ -213,17 +211,6 @@ getBirkParameters hash = withUnaryBlock (call @"getBirkParameters") hash (to pro
 
 getModuleList :: Text -> ClientMonad IO (Either String Value)
 getModuleList hash = withUnaryBlock (call @"getModuleList") hash (to processJSON)
-
-getModuleSource ::
-     (MonadIO m)
-  => Text
-  -> Text
-  -> ClientMonad (PR.Context Core.UA m) (Either String (Core.Module Core.UA))
-getModuleSource moduleref hash = withUnaryCore (call @"getModuleSource") msg k
-  where msg = defMessage
-              & (CF.blockHash .~ hash)
-              & CF.moduleRef .~ moduleref
-        k ret = ret >>= S.decode . (^. CF.value)
 
 peerConnect :: Text -> Int -> ClientMonad IO (Either String Bool)
 peerConnect ip peerPort = withUnary (call @"peerConnect") msg CF.value

@@ -136,10 +136,7 @@ data AccountCmd
   deriving (Show)
 
 data ModuleCmd
-  = ModuleShowSource
-    { mssRef :: !Text
-    , mssBlockHash :: !(Maybe Text) }
-  | ModuleList
+  = ModuleList
     { mlBlockHash :: !(Maybe Text) }
   deriving (Show)
 
@@ -502,19 +499,8 @@ moduleCmds =
     (info
       (ModuleCmd <$>
         hsubparser
-          (moduleShowSourceCmd <>
-           moduleListCmd))
+          moduleListCmd)
       (progDesc "Commands for inspecting and deploying modules."))
-
-moduleShowSourceCmd :: Mod CommandFields ModuleCmd
-moduleShowSourceCmd =
-  command
-    "show-source"
-    (info
-      (ModuleShowSource <$>
-        strArgument (metavar "REF" <> help "Reference ID of the module.") <*>
-        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
-      (progDesc "Display module source code."))
 
 moduleListCmd :: Mod CommandFields ModuleCmd
 moduleListCmd =

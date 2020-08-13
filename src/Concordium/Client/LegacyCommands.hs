@@ -7,11 +7,7 @@ import Data.Text
 import Options.Applicative
 
 data LegacyCmd
-  = LoadModule
-      { legacySourceFile :: !FilePath
-      } -- ^ Loads a module into the local database
-  | ListModules -- ^ List the local available modules
-  | SendTransaction
+  = SendTransaction
       { legacySourceFile :: !FilePath
       , legacyNetworkId  :: !Int
       } -- ^ Loads a transaction in the context of the local database and sends it to the specified RPC server
@@ -59,10 +55,6 @@ data LegacyCmd
   | GetModuleList
       { legacyBlockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the list of modules on a specific block
-  | GetModuleSource
-      { legacyModuleRef :: !Text,
-        legacyBlockHash :: !(Maybe Text)
-      } -- ^ Queries the gRPC server for the source of a module on a specific block
   | GetNodeInfo -- ^Queries the gRPC server for the node information.
   | GetPeerData
       { legacyIncludeBootstrapper :: !Bool -- ^Whether to include bootstrapper node in the stats or not.
@@ -108,9 +100,7 @@ data LegacyCmd
 legacyProgramOptions :: Parser LegacyCmd
 legacyProgramOptions =
   hsubparser
-    (loadModuleCommand <>
-     listModulesCommand <>
-     sendTransactionCommand <>
+    (sendTransactionCommand <>
      getTransactionStatusCommand <>
      getTransactionStatusInBlockCommand <>
      getConsensusInfoCommand <>
@@ -125,7 +115,6 @@ legacyProgramOptions =
      getRewardStatusCommand <>
      getBirkParametersCommand <>
      getModuleListCommand <>
-     getModuleSourceCommand <>
      getNodeInfoCommand <>
      getPeerDataCommand <>
      startBakerCommand <>
@@ -161,24 +150,6 @@ getNodeInfoCommand =
     (info
        (pure GetNodeInfo)
        (progDesc "Query the gRPC server for the node information."))
-
-loadModuleCommand :: Mod CommandFields LegacyCmd
-loadModuleCommand =
-  command
-    "LoadModule"
-    (info
-       (LoadModule <$>
-        strArgument
-          (metavar "MODULE-SOURCE" <> help "File with the Acorn source code"))
-       (progDesc "Parse module and add it to the local database."))
-
-listModulesCommand :: Mod CommandFields LegacyCmd
-listModulesCommand =
-  command
-    "ListModules"
-    (info
-       (pure ListModules)
-       (progDesc "List local modules and deployed modules."))
 
 sendTransactionCommand :: Mod CommandFields LegacyCmd
 sendTransactionCommand =
@@ -341,16 +312,6 @@ getModuleListCommand =
        (GetModuleList <$>
         optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
        (progDesc "Query the gRPC server for the list of modules."))
-
-getModuleSourceCommand :: Mod CommandFields LegacyCmd
-getModuleSourceCommand =
-  command
-    "GetModuleSource"
-    (info
-       (GetModuleSource <$>
-        strArgument (metavar "MODULE-REF" <> help "Reference of the module") <*>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
-       (progDesc "Query the gRPC server for the source of a module."))
 
 startBakerCommand :: Mod CommandFields LegacyCmd
 startBakerCommand =
