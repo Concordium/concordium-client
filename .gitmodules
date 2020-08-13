@@ -1,6 +1,3 @@
-[submodule "deps/acorn"]
-	path = deps/acorn
-	url = ../../oak/acorn.git
 [submodule "deps/crypto"]
 	path = deps/crypto
 	url = ../../crypto.git

@@ -10,8 +10,6 @@ cradle:
       component: "simple-client:exe:tx-generator"
     - path: ./test
       component: "simple-client:test:simple-client-test"
-    - path: ./deps/acorn
-      component: "acorn:lib"
     - path: ./deps/crypto
       component: "concordium-crypto:lib"
     - path: ./deps/globalstate-mockup

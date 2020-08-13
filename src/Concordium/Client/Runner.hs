@@ -45,10 +45,6 @@ module Concordium.Client.Runner
   , getFromJson
   ) where
 
-import qualified Acorn.Core                          as Core
-import qualified Acorn.Core.PrettyPrint              as PP
-import qualified Acorn.Parser.Runner                 as PR
-
 import           Concordium.Client.Utils
 import           Concordium.Client.Cli
 import           Concordium.Client.Config
@@ -86,7 +82,6 @@ import qualified Data.Aeson.Encode.Pretty            as AE
 import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
-import qualified Data.Char                           as C
 import qualified Data.HashMap.Strict                 as Map
 import qualified Data.Map                            as OrdMap
 import           Data.Maybe
@@ -96,7 +91,6 @@ import qualified Data.Set                            as Set
 import           Data.String
 import           Data.Text                           hiding (length, map, null, take)
 import           Data.Text.Encoding
-import qualified Data.Text.IO                        as TextIO hiding (putStrLn)
 import           Data.Word
 import           Lens.Micro.Platform
 import           Network.GRPC.Client.Helpers
@@ -106,9 +100,6 @@ import           System.IO
 import           System.Directory
 import           System.FilePath
 import           Text.Printf
-
-liftContext :: Monad m => PR.Context Core.UA m a -> ClientMonad (PR.Context Core.UA m) a
-liftContext comp = ClientMonad {_runClientMonad = ReaderT (lift . const comp)}
 
 liftClientIOToM :: MonadIO m => ClientIO a -> ExceptT ClientError m a
 liftClientIOToM comp = do
@@ -270,12 +261,11 @@ processTransactionCmd action baseCfgDir verbose backend =
   case action of
     TransactionSubmit fname intOpts -> do
       -- TODO Ensure that the "nonce" field is optional in the payload.
-      mdata <- loadContextData
       source <- BSL.readFile fname
 
       -- TODO Print transaction details and ask for confirmation if (ioConfirm intOpts)
 
-      PR.evalContext mdata $ withClient backend $ do
+      withClient backend $ do
         tx <- processTransaction source defaultNetId
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
@@ -983,38 +973,9 @@ processAccountCmd action baseCfgDir verbose backend =
 processModuleCmd :: ModuleCmd -> Verbose -> Backend -> IO ()
 processModuleCmd action _ backend =
   case action of
-    ModuleShowSource ref block -> do
-      m <- PR.evalContext emptyContextData $ withClient backend $ withBestBlockHash block $ getModuleSource ref
-      case m of
-        Left err -> logFatal [printf "RPC error: %s" err]
-        Right v -> do
-          -- Force utf8 encoding to prevent crashing on non-unicode terminals.
-          -- The special characters will be printed wrong on such terminals,
-          -- but this allows them to pipe the output to a file and read it
-          -- correctly from there.
-          -- TODO Make pretty-printer print ASCII-only by default to avoid the issue.
-          let locEnc = show localeEncoding
-          enc <- ensureUtfEncoding locEnc $ do
-            logWarn [ "displaying module source in UTF-8 encoding"
-                    , printf "it appears that your terminal uses the non-unicode encoding '%s'" locEnc
-                    , "certain characters may not be rendered correctly"
-                    , "consider redirecting the output to a file and open it in UTF-8 using an editor" ]
-          putStrLn $ show $ PP.showModule v
-          logSuccess [printf "displayed source of module '%s' in encoding '%s'" ref enc]
     ModuleList block -> do
       v <- withClient backend $ withBestBlockHash block getModuleList >>= getFromJson
       runPrinter $ printModuleList v
-
--- |Test if an encoding name is a flavor of unicode. If it it, return it.
--- Otherwise, print the warning and set the encoding of stdout to UTF-8.
-ensureUtfEncoding :: String -> IO () -> IO String
-ensureUtfEncoding e printWarn =
-  if L.isPrefixOf "utf" $ map C.toLower e then
-    return e
-  else do
-    printWarn
-    hSetEncoding stdout utf8
-    return $ show utf8
 
 -- |Process a 'contract ...' command.
 processContractCmd :: ContractCmd -> Verbose -> Backend -> IO ()
@@ -1434,26 +1395,9 @@ processIdentityShowCmd action backend =
 processLegacyCmd :: LegacyCmd -> Backend -> IO ()
 processLegacyCmd action backend =
   case action of
-    LoadModule fname -> do
-      mdata <- loadContextData
-      cdata <-
-        PR.execContext mdata $ do
-          source <- liftIO $ TextIO.readFile fname
-          PR.processModule fname source
-      putStrLn
-        "Module processed.\nThe following modules are currently in the local database and can be deployed.\n"
-      showLocalModules cdata
-      writeContextData cdata
-    ListModules -> do
-      mdata <- loadContextData
-      putStrLn "The following modules are in the local database.\n"
-      showLocalModules mdata
-
-    -- The rest of the commands use the backend
     SendTransaction fname nid -> do
-      mdata <- loadContextData
       source <- BSL.readFile fname
-      t <- PR.evalContext mdata $ withClient backend $ processTransaction source nid
+      t <- withClient backend $ processTransaction source nid
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (getBlockItemHash t)
     GetConsensusInfo -> withClient backend $ getConsensusStatus >>= printJSON
@@ -1475,18 +1419,6 @@ processLegacyCmd action backend =
     GetBirkParameters block ->
       withClient backend $ withBestBlockHash block getBirkParameters >>= printJSON
     GetModuleList block -> withClient backend $ withBestBlockHash block getModuleList >>= printJSON
-    GetModuleSource moduleref block -> do
-      mdata <- loadContextData
-      modl <-
-        PR.evalContext mdata . withClient backend $ withBestBlockHash block (getModuleSource moduleref)
-      case modl of
-        Left x ->
-          print $ "Unable to get the Module from the gRPC server: " ++ show x
-        Right v ->
-          let s = show (PP.showModule v)
-          in do
-            putStrLn $ "Retrieved module " ++ show moduleref
-            putStrLn s
     GetNodeInfo -> withClient backend $ getNodeInfo >>= printNodeInfo
     GetPeerData bootstrapper -> withClient backend $ getPeerData bootstrapper >>= printPeerData
     StartBaker -> withClient backend $ startBaker >>= printSuccess
@@ -1668,7 +1600,7 @@ processTransaction ::
      (MonadFail m, MonadIO m)
   => BSL.ByteString
   -> Int
-  -> ClientMonad (PR.Context Core.UA m) Types.BareBlockItem
+  -> ClientMonad m Types.BareBlockItem
 processTransaction source networkId =
   case AE.eitherDecode source of
     Left err -> fail $ "Error decoding JSON: " ++ err
@@ -1682,7 +1614,7 @@ processTransaction_ ::
   => TransactionJSON
   -> Int
   -> Verbose
-  -> ClientMonad (PR.Context Core.UA m) Types.BareBlockItem
+  -> ClientMonad m Types.BareBlockItem
 processTransaction_ transaction networkId _verbose = do
   let accountKeys = CT.keys transaction
   tx <- do
@@ -1731,20 +1663,14 @@ processCredential source networkId =
           fail $ "Unsupported credential version: " ++ show (vVersion vCred)
 
 -- |Convert JSON-based transaction type to one which is ready to be encoded, signed and sent.
-convertTransactionJsonPayload :: (MonadFail m) => CT.TransactionJSONPayload -> ClientMonad (PR.Context Core.UA m) Types.Payload
+convertTransactionJsonPayload :: (MonadFail m) => CT.TransactionJSONPayload -> ClientMonad m Types.Payload
 convertTransactionJsonPayload = \case
-  (CT.DeployModule mnameText) ->
-    Types.DeployModule <$> liftContext (PR.getModule mnameText)
-  (CT.InitContract initAmount mnameText cNameText paramExpr) -> do
-    (mref, _, tys) <- liftContext $ PR.getModuleTmsTys mnameText
-    case Map.lookup cNameText tys of
-      Just contName -> do
-        params <- liftContext $ PR.processTmInCtx mnameText paramExpr
-        return $ Types.InitContract initAmount mref contName params
-      Nothing -> error (show cNameText)
-  (CT.Update mnameText updateAmount updateAddress msgText) -> do
-    msg <- liftContext $ PR.processTmInCtx mnameText msgText
-    return $ Types.Update updateAmount updateAddress msg
+  (CT.DeployModule _) ->
+    fail "DeployModule is not implemented"
+  (CT.InitContract _ _ _ _) ->
+    fail "InitContract is not implemented"
+  (CT.Update _ _ _ _) ->
+    fail "Update is not implemented"
   (CT.Transfer transferTo transferAmount) ->
     return $ Types.Transfer transferTo transferAmount
   (CT.RemoveBaker rbid) -> return $ Types.RemoveBaker rbid
