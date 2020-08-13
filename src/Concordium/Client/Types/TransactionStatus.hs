@@ -8,7 +8,7 @@ import Data.Aeson.TH
 
 import Concordium.Types.Execution
 import Concordium.Types
-import Concordium.Types.Utils
+import Concordium.Utils
 
 data TransactionState = Received | Committed | Finalized | Absent deriving (Eq, Ord, Show)
 
