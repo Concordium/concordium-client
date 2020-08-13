@@ -14,10 +14,7 @@ import           Concordium.Types.Execution          as Types
 
 import           Data.Aeson                          as AE
 import qualified Data.Aeson.TH                       as AETH
-import qualified Data.ByteString.Base16              as BS16
-import qualified Data.ByteString                     as BS
 import           Data.Text                           hiding (length, map)
-import qualified Data.Text.Encoding                  as Text
 import           GHC.Generics                        (Generic)
 
 -- |Cost of checking a header where the sender provides n signatures.
@@ -99,15 +96,6 @@ bakerRemoveEnergyCost = checkHeaderEnergyCost
 setElectionDifficultyEnergyCost :: Int -> Energy
 setElectionDifficultyEnergyCost = checkHeaderEnergyCost
 
--- Data (serializes with `putByteString :: Bytestring -> Put`)
-instance FromJSON Types.Proof where
-  parseJSON v = do
-    hex <- parseJSON v
-    let (bs, rest) = BS16.decode $ Text.encodeUtf8 hex
-    if BS.null rest
-    then fail "Could not decode hexadecimal proof"
-    else return bs
-
 -- |Transaction header type
 -- To be populated when deserializing a JSON object.
 data TransactionJSONHeader =
@@ -148,7 +136,7 @@ data TransactionJSONPayload
       , message    :: Text
       } -- ^ Sends a specific message to a Contract
   | Transfer
-      { toaddress :: Address
+      { toaddress :: IDTypes.AccountAddress
       , amount    :: Amount
       } -- ^ Transfers specific amount to the recipent
   | RemoveBaker

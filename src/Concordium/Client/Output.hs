@@ -287,8 +287,8 @@ showEvent verbose = \case
   Types.ModuleDeployed ref->
     verboseOrNothing $ printf "module '%s' deployed" (show ref)
   Types.ContractInitialized{..} ->
-    verboseOrNothing $ printf "initialized contract '%s' from module '%s' with name '%s' and '%s' tokens"
-                              (show ecAddress) (show ecRef) (show ecName) (show ecAmount)
+    verboseOrNothing $ printf "initialized contract '%s' from module '%s' with '%s' tokens"
+                              (show ecAddress) (show ecRef) (show ecAmount)
   Types.Updated{..} ->
     verboseOrNothing $ printf "sent message '%s' and '%s' tokens from %s to %s"
                               (show euMessage) (show euAmount) (showAccount euInstigator) (showAccount $ Types.AddressContract euAddress)
@@ -345,27 +345,26 @@ showRejectReason :: Verbose -> Types.RejectReason -> String
 showRejectReason verbose = \case
   Types.ModuleNotWF ->
     "typechecking error"
-  Types.MissingImports ->
-    "missing imports"
   Types.ModuleHashAlreadyExists m ->
     if verbose then
       printf "module '%s' already exists" (show m)
     else
       "module already exists"
-  Types.MessageTypeError ->
-    "message to the receive method is not of the correct type"
-  Types.ParamsTypeError ->
-    "parameters of the init method are not of the correct types"
   Types.InvalidAccountReference a ->
     if verbose then
       printf "account '%s' does not exist" (show a)
     else
       "account does not exist"
-  Types.InvalidContractReference m t ->
+  Types.InvalidInitMethod m name ->
     if verbose then
-      printf "referencing nonexistent contract '%s', '%s'" (show m) (show t)
+      printf "invalid init method '%s' of module '%s'" (show name) (show m)
     else
-      "referencing non-existing contract"
+      "invalid init method"
+  Types.InvalidReceiveMethod m name ->
+    if verbose then
+      printf "invalid receive method '%s' of module '%s'" (show name) (show m)
+    else
+      "invalid receive method"
   Types.InvalidModuleReference m ->
     if verbose then
       printf "referencing non-existent module '%s'" (show m)
@@ -376,6 +375,8 @@ showRejectReason verbose = \case
       printf "contract instance '%s' does not exist" (show c)
     else
       "contract instance does not exist"
+  Types.RuntimeFailure ->
+    "runtime failure"
   Types.ReceiverAccountNoCredential a ->
     if verbose then
       printf "receiver account '%s' does not have a valid credential" (show a)
