@@ -63,7 +63,7 @@ sendTx tx =
 iterateM_ :: Monad m => (a -> m a) -> a -> m b
 iterateM_ f a = f a >>= iterateM_ f
 
-go :: Backend -> Bool -> Int -> (Nonce -> (Address, BareBlockItem)) -> Nonce -> IO ()
+go :: Backend -> Bool -> Int -> (Nonce -> (AccountAddress, BareBlockItem)) -> Nonce -> IO ()
 go backend logit tps sign startNonce = do
   startTime <- getCurrentTime
   withClient backend (loop startNonce startTime)
@@ -82,7 +82,7 @@ go backend logit tps sign startNonce = do
 main :: IO ()
 main = do
   (backend, txoptions) <- execParser parser
-  
+
   addresses <-
     case addressesFile txoptions of
       Nothing -> return Nothing
@@ -102,8 +102,8 @@ main = do
       print $ "Using sender account = " ++ show selfAddress
       let txRecepient (Nonce n) =
             case addresses of
-              Just addrs -> AddressAccount (addrs !! (fromIntegral n `mod` length addrs))
-              Nothing -> AddressAccount selfAddress
+              Just addrs -> addrs !! (fromIntegral n `mod` length addrs)
+              Nothing -> selfAddress
       let txBody n = encodePayload (Transfer (txRecepient n) 1)
       let txHeader nonce = TransactionHeader {
             thSender = selfAddress,
