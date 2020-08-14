@@ -1403,6 +1403,7 @@ processLegacyCmd action backend =
     GetConsensusInfo -> withClient backend $ getConsensusStatus >>= printJSON
     GetBlockInfo every block -> withClient backend $ withBestBlockHash block getBlockInfo >>= if every then loop else printJSON
     GetBlockSummary block -> withClient backend $ withBestBlockHash block getBlockSummary >>= printJSON
+    GetBlocksAtHeight height -> withClient backend $ getBlocksAtHeight height >>= printJSON
     GetAccountList block -> withClient backend $ withBestBlockHash block getAccountList >>= printJSON
     GetInstances block -> withClient backend $ withBestBlockHash block getInstances >>= printJSON
     GetTransactionStatus txhash -> withClient backend $ getTransactionStatus txhash >>= printJSON
