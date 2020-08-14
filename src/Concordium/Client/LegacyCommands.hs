@@ -3,6 +3,7 @@ module Concordium.Client.LegacyCommands
   , legacyProgramOptions
   ) where
 
+import Concordium.Types
 import Data.Text
 import Options.Applicative
 
@@ -32,6 +33,9 @@ data LegacyCmd
   | GetBlockSummary
       { legacyBlockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the information of a specific block and its transactions.
+  | GetBlocksAtHeight
+      { legacyBlockHeight :: !BlockHeight
+      } -- ^ Queries the gRPC server for the list of blocks with a given height.
   | GetAccountList
       { legacyBlockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the list of accounts on a specific block
@@ -106,6 +110,7 @@ legacyProgramOptions =
      getConsensusInfoCommand <>
      getBlockInfoCommand <>
      getBlockSummaryCommand <>
+     getBlocksAtHeightCommand <>
      getAccountListCommand <>
      getInstancesCommand <>
      getAccountInfoCommand <>
@@ -223,6 +228,15 @@ getBlockSummaryCommand =
        )
        (progDesc "Query the gRPC server for a specific block and its transactions."))
 
+getBlocksAtHeightCommand :: Mod CommandFields LegacyCmd
+getBlocksAtHeightCommand =
+  command
+    "GetBlocksAtHeight"
+    (info
+      (GetBlocksAtHeight <$>
+       argument auto (metavar "HEIGHT" <> help "Height of the blocks to query.")
+      )
+      (progDesc "Query the gRPC server for all blocks at the given height."))
 
 getAccountListCommand :: Mod CommandFields LegacyCmd
 getAccountListCommand =

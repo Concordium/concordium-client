@@ -48,6 +48,7 @@ import qualified Concordium.Types.Transactions as Types
 import qualified Concordium.Types.Execution as Execution
 import           Concordium.Client.Types.Account
 import           Control.Monad.Except
+import           Data.Word
 import qualified Proto.ConcordiumP2pRpc_Fields as CF
 import           Api.Types
 
@@ -58,15 +59,19 @@ data Routes r = Routes
 
     , blockSummary :: r :-
         "v1" :> "blockSummary" :> Capture "blockHash" Text
-                              :> Get '[JSON] Aeson.Value
+                               :> Get '[JSON] Aeson.Value
 
     , blockInfo :: r :-
         "v1" :> "blockInfo" :> Capture "blockHash" Text
-                              :> Get '[JSON] Aeson.Value
+                            :> Get '[JSON] Aeson.Value
+
+    , blocksByHeight :: r :-
+        "v1" :> "blocksByHeight" :> Capture "blockHeight" Word64
+                                 :> Get '[JSON] Aeson.Value
 
     , transactionStatus :: r :-
         "v1" :> "transactionStatus" :> Capture "hash" Text
-                              :> Get '[JSON] Aeson.Value
+                                    :> Get '[JSON] Aeson.Value
 
     -- Private Middleware APIs (accessible on local client instance of Middleware only)
     , getNodeState :: r :-
@@ -113,6 +118,10 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
 
   blockInfo :: Text -> Handler Aeson.Value
   blockInfo blockhash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getBlockInfo blockhash)
+
+  blocksByHeight :: Word64 -> Handler Aeson.Value
+  blocksByHeight height = liftIO $
+    proxyGrpcCall nodeBackend (GRPC.getBlocksAtHeight Types.BlockHeight {theBlockHeight = height})
 
   transactionStatus :: Text -> Handler Aeson.Value
   transactionStatus hash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getTransactionStatus hash)

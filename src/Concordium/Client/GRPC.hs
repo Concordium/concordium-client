@@ -248,11 +248,16 @@ leaveNetwork net = withUnary (call @"leaveNetwork") msg CF.value
 getAncestors :: Int -> Text -> ClientMonad IO (Either String Value)
 getAncestors amount blockHash = withUnary (call @"getAncestors") msg (to processJSON)
   where msg = defMessage &
-            CF.blockHash .~ blockHash &
-            CF.amount .~ fromIntegral amount
+              CF.blockHash .~ blockHash &
+              CF.amount .~ fromIntegral amount
 
 getBranches :: ClientMonad IO (Either String Value)
 getBranches = withUnaryNoMsg (call @"getBranches") (to processJSON)
+
+getBlocksAtHeight :: Types.BlockHeight -> ClientMonad IO (Either String Value)
+getBlocksAtHeight height = withUnary (call @"getBlocksAtHeight") msg (to processJSON)
+  where msg = defMessage &
+              CF.blockHeight .~ fromIntegral height
 
 getBannedPeers :: ClientMonad IO (Either String PeerListResponse)
 getBannedPeers = withUnaryNoMsg' (call @"getBannedPeers")
