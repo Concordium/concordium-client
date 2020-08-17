@@ -15,7 +15,8 @@ $> stack --nix build --flag simple-client:static \
 	--flag hashable:-integer-gmp \
 	--flag scientific:integer-simple \
 	--flag integer-logarithms:-integer-gmp \
-	--flag cryptonite:-integer-gmp
+	--flag cryptonite:-integer-gmp \
+	--extra-lib-dirs deps/crypto/rust-src/target/x86_64-unknown-linux-musl/release
 ```
 ## Final binary
 ```bash
