@@ -524,7 +524,7 @@ printIdentityProviders vals = do
  where parseResponse :: AE.Value -> AE.Parser (Word32, (String, String, String))
        parseResponse = AE.withObject "IpInfo" $ \obj -> do
          ipId <- obj AE..: "ipIdentity"
-         descriptionVal <- obj AE..: "arDescription"
+         descriptionVal <- obj AE..: "ipDescription"
          description <- parseDescription descriptionVal
          return (ipId, description)
        printSingleIdentityProvider val =
