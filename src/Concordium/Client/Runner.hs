@@ -1386,7 +1386,7 @@ processIdentityShowCmd action backend =
         Nothing -> putStrLn "No response received from the gRPC server."
         Just a -> runPrinter $ printIdentityProviders a
     IdentityShowARs block -> do
-      v <- withClientJson backend $ withBestBlockHash block $ getIdentityProviders
+      v <- withClientJson backend $ withBestBlockHash block $ getAnonymityRevokers
       case v of
         Nothing -> putStrLn "No response received from the gRPC server."
         Just a -> runPrinter $ printAnonymityRevokers a
