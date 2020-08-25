@@ -27,6 +27,9 @@ checkHeaderEnergyCost = fromIntegral . (+6) . (*53)
 simpleTransferEnergyCost :: Int -> Energy
 simpleTransferEnergyCost = checkHeaderEnergyCost
 
+encryptedTransferEnergyCost :: Int -> Energy
+encryptedTransferEnergyCost = (+10000) . checkHeaderEnergyCost
+
 -- |Cost of a stake delegation transaction.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 accountDelegateEnergyCost :: Int -> Int -> Energy
