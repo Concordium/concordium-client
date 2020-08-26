@@ -71,7 +71,7 @@ extra-deps:
 # Extra directories used by stack for building
 # extra-include-dirs: [/path/to/dir]
 extra-lib-dirs:
-- ./deps/crypto/rust-src/target/release
+- ./deps/crypto/libs
 #
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
