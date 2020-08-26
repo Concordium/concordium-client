@@ -12,7 +12,7 @@ $> echo "BUILD_SPHINX_PDF=NO" >> mk/build.mk
 $> PATH="/usr/local/opt/ghc@8.6/bin:$PATH" ./configure
 $> PATH="/usr/local/opt/ghc@8.6/bin:$PATH" make -j8 install
 $> brew uninstall ghc@8.6
-````
+```
 
 ## Build the partially static binaries
 ```bash
