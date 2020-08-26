@@ -1,10 +1,27 @@
 # OSX build procedure
 ## Setup environment
-TBD
+Stack can't work with a custom GHC for OSX, so it has to be installed globally. For the steps below we'll assume homebrew and Xcode Command Line Tools are both installed and usable.
+```bash
+$> brew install ghc@8.6 haskell-stack wget protobuf
+$> wget https://downloads.haskell.org/~ghc/8.8.3/ghc-8.8.3-src.tar.xz
+$> tar xJf ghc-8.8.3-src.tar.xv
+$> cd ghc-8.8.3
+$> cp mk/build.mk.sample mk/build.mk
+$> echo "INTEGER_LIBRARY=integer-simple" >> mk/build.mk
+$> echo "BUILD_SPHINX_PDF=NO" >> mk/build.mk
+$> PATH="/usr/local/opt/ghc@8.6/bin:$PATH" ./configure
+$> PATH="/usr/local/opt/ghc@8.6/bin:$PATH" make -j8 install
+$> brew uninstall ghc@8.6
+````
 
 ## Build the partially static binaries
 ```bash
 $> stack build --flag concordium-crypto:forced-static-linking \
+    --flag hashable:-integer-gmp \
+    --flag scientific:integer-simple \
+    --flag integer-logarithms:-integer-gmp \
+    --flag cryptonite:-integer-gmp \
+    --system-ghc \
 	--force-dirty
 ```
 ## Final binary
