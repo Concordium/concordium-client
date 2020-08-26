@@ -28,6 +28,8 @@ haskell.lib.buildStackProject {
     pkgconfig
     pkgsMusl.zlib.dev
     pkgsMusl.zlib.static
+    git
+    cacert
   ];
   PROTOC = "${pkgs.protobuf}/bin/protoc";
   CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
