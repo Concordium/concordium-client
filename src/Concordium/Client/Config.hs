@@ -133,9 +133,7 @@ initBaseConfig f = do
 ensureAccountConfigInitialized :: BaseConfig -> IO ()
 ensureAccountConfigInitialized baseCfg = do
   let accCfgDir = bcAccountCfgDir baseCfg
-  ex <- doesDirectoryExist accCfgDir
-  unless ex $ logFatal [ printf "account directory '%s' does not exist" accCfgDir
-                       , "did you run 'config init' yet?" ]
+  createDirectoryIfMissing True accCfgDir
 
 -- |Add an account to the configuration by creating its key directory and
 -- optionally a name mapping.
