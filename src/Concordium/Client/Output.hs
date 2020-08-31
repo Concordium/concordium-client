@@ -562,8 +562,7 @@ printAnonymityRevokers vals = do
 
 -- |Standardized method of displaying an amount as GTU.
 showGtu :: Types.Amount -> String
-showGtu = printf "%.4f GTU" . (/amountPerGtu) . fromIntegral
-  where amountPerGtu = 10000 :: Double
+showGtu = printf "%s GTU" . Types.amountToString
 
 -- |Standardized method of displaying energy as NRG.
 showNrg :: Types.Energy -> String
