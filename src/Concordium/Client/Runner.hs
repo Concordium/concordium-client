@@ -291,12 +291,14 @@ processTransactionCmd action baseCfgDir verbose backend =
       -- TODO This works but output doesn't make sense if transaction is already committed/finalized.
       --      It should skip already completed steps.
       -- withClient backend $ tailTransaction hash
-    TransactionSendGtu receiver amount txOpts -> do
+    TransactionSendGtu receiver amountstr txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
-
+      amount <- case Types.amountFromString (unpack amountstr) of
+        Nothing -> logFatal [printf "invalid amount '%s'" amountstr]
+        Just a -> return a
       ttxCfg <- getTransferTransactionCfg baseCfg txOpts receiver amount
       let txCfg = ttcTransactionCfg ttxCfg
       when verbose $ do

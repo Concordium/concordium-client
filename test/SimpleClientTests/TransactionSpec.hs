@@ -215,46 +215,46 @@ printTransactionStatusTests = describe "print transaction status" $ do
   describe "committed into one block with status 'success'" $
     specify "correct output" $
       p committedOneSuccessfulOutcome `shouldBe`
-        [ "Transaction is committed into block 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.0010 GTU (10 NRG)." ]
+        [ "Transaction is committed into block 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.000010 GTU (10 NRG)." ]
   describe "committed into one block with status 'rejected'" $
     specify "correct output" $
       p committedOneFailedOutcome `shouldBe`
-        [ "Transaction is committed into block be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93a9be7f9994 with status \"rejected\" and cost 0.0020 GTU (20 NRG)."
+        [ "Transaction is committed into block be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93a9be7f9994 with status \"rejected\" and cost 0.000020 GTU (20 NRG)."
         , "Transaction rejected: insufficient funds." ]
   describe "committed into two blocks with same (successful) outcome" $
     specify "correct output" $
       p committedTwoIdenticalSuccessfulOutcomes `shouldBe`
-        [ "Transaction is committed into 2 blocks with status \"success\" and cost 0.0010 GTU (10 NRG):"
+        [ "Transaction is committed into 2 blocks with status \"success\" and cost 0.000010 GTU (10 NRG):"
         , "- 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389"
         , "- 0f71eeca9f0a497dc4427cab0544f2bcb820b328ad97be29181e212edea708fd" ]
   describe "committed into two blocks with different (successful) outcomes" $
     specify "correct output" $
       p committedTwoDifferentSuccessfulOutcomes `shouldBe`
         [ "Transaction is committed into 2 blocks:"
-        , "- 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.0010 GTU (10 NRG):"
+        , "- 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.000010 GTU (10 NRG):"
         , "  * transferred 10 tokens from account '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' to account '4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa'"
-        , "- 941c24374cd077de2120fb58732306c3115a08bb7b7cda120a04fecc412b1795 with status \"success\" and cost 0.0020 GTU (20 NRG):"
+        , "- 941c24374cd077de2120fb58732306c3115a08bb7b7cda120a04fecc412b1795 with status \"success\" and cost 0.000020 GTU (20 NRG):"
         , "  * transferred 10 tokens from account '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' to account '4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa'" ]
   describe "committed into two blocks" $
     specify "correct output" $
       p committedSuccessfulAndFailureOutcomes `shouldBe`
         [ "Transaction is committed into 2 blocks:"
-        , "- 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.0010 GTU (10 NRG):"
+        , "- 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.000010 GTU (10 NRG):"
         , "  * transferred 10 tokens from account '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' to account '4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa'"
-        , "- be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93a9be7f9994 with status \"rejected\" and cost 0.0020 GTU (20 NRG):"
+        , "- be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93a9be7f9994 with status \"rejected\" and cost 0.000020 GTU (20 NRG):"
         , "  * account or contract '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' does not have enough funds to transfer 11 tokens"]
   describe "committed into two blocks" $
     specify "correct output" $
       p committedSuccessfulAndFailureOutcomes `shouldBe`
         [ "Transaction is committed into 2 blocks:"
-        , "- 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.0010 GTU (10 NRG):"
+        , "- 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.000010 GTU (10 NRG):"
         , "  * transferred 10 tokens from account '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' to account '4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa'"
-        , "- be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93a9be7f9994 with status \"rejected\" and cost 0.0020 GTU (20 NRG):"
+        , "- be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93a9be7f9994 with status \"rejected\" and cost 0.000020 GTU (20 NRG):"
         , "  * account or contract '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' does not have enough funds to transfer 11 tokens" ]
   describe "finalized with single outcome" $
     specify "correct output" $
       p finalized `shouldBe`
-        [ "Transaction is finalized into block 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.0010 GTU (10 NRG)." ]
+        [ "Transaction is finalized into block 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.000010 GTU (10 NRG)." ]
   -- Unexpected cases.
   describe "committed with no outcomes" $
     specify "correct output" $

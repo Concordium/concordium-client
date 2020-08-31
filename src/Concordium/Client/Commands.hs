@@ -104,7 +104,7 @@ data TransactionCmd
     { tsHash :: !Text }
   | TransactionSendGtu
     { tsgReceiver :: !Text
-    , tsgAmount :: !Amount
+    , tsgAmount :: !Text
     , tsgOpts :: !TransactionOpts }
   | TransactionDeployCredential
     { tdcFile :: !FilePath
@@ -383,7 +383,7 @@ transactionSendGtuCmd =
     (info
       (TransactionSendGtu <$>
         strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
-        option auto (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
+        strOption (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
         transactionOptsParser)
       (progDesc "Transfer GTU from one account to another (sending to contracts is currently not supported with this method - use 'transaction submit')."))
 
