@@ -453,6 +453,8 @@ showRejectReason verbose = \case
     "the proof for the encrypted transfer doesn't validate"
   Types.EncryptedAmountSelfTransfer acc ->
     printf "attempted to make an encrypted transfer to the same account '%s'" (show acc)
+  Types.InvalidTransferToPublicProof ->
+    "the proof for the secret to public transfer doesn't validate"
 
 -- CONSENSUS
 
