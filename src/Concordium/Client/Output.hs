@@ -322,6 +322,10 @@ showEvent verbose = \case
   Types.AccountKeysAdded -> verboseOrNothing $ "account keys added"
   Types.AccountKeysRemoved -> verboseOrNothing $ "account keys removed"
   Types.AccountKeysSignThresholdUpdated -> verboseOrNothing $ "account signature threshold updated"
+  Types.NewEncryptedAmount{..} -> verboseOrNothing $ printf "encrypted amount received on account '%s' with index '%s'" (show neaAccount) (show neaNewIndex)
+  Types.EncryptedAmountsRemoved{..} -> verboseOrNothing $ printf "encrypted amounts removed on account '%s' up to index '%s' with a resulting self encrypted amount of '%s'" (show earAccount) (show earUpToIndex) (show earNewAmount)
+  Types.AmountAddedByDecryption{..} -> verboseOrNothing $ printf "transferred '%s' tokens from the shielded balance to the public balance on account '%s'" (show aabdAmount) (show aabdAccount)
+  Types.EncryptedSelfAmountAdded{..} -> verboseOrNothing $ printf "transferred '%s' tokens from the public balance to the shielded balance on account '%s' with a resulting self encrypted balance of '%s'" (show eaaAmount) (show eaaAccount) (show eaaNewAmount)
 
   where
     verboseOrNothing :: String -> Maybe String
@@ -445,6 +449,10 @@ showRejectReason verbose = \case
     "encountered a key index that is already in use"
   Types.InvalidAccountKeySignThreshold ->
     "signature threshold exceeds the number of keys"
+  Types.InvalidEncryptedAmountTransferProof ->
+    "the proof for the encrypted transfer doesn't validate"
+  Types.EncryptedAmountSelfTransfer acc ->
+    printf "attempted to make an encrypted transfer to the same account '%s'" (show acc)
 
 -- CONSENSUS
 
