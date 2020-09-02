@@ -288,7 +288,7 @@ isValidAccountName n = not (T.null n) && not (isSpace $ T.head n) && not (isSpac
   where supportedChar c = isAlphaNum c || c `elem` supportedSpecialChars
         supportedSpecialChars = "-_,.!? " :: String
 
--- | Check whether the given text is a valid account name and fail with an error message if not.
+-- | Check whether the given text is a valid account name and fail with an error message if it is not.
 validateAccountName :: (MonadError String m) => Text -> m ()
 validateAccountName name =
   unless (isValidAccountName name) $

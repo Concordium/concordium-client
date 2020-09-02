@@ -100,31 +100,32 @@ accountCfgsFromWalletExportAccounts weas name pwd =
 -- This checks whether the name provided by the export is a valid account name.
 -- This encrypts all signing keys with the provided password.
 accountCfgFromWalletExportAccount :: Password -> WalletExportAccount -> ExceptT String IO AccountConfig
-accountCfgFromWalletExportAccount pwd WalletExportAccount { weaKeys = AccountSigningData{..}, ..} = do
+accountCfgFromWalletExportAccount pwd WalletExportAccount { weaKeys = AccountSigningData{..}, .. } = do
   validateAccountName weaName
   acKeys <- liftIO $ encryptAccountKeyMap pwd asdKeys
   return $ AccountConfig
-    { acAddr = NamedAddress {naName = Just weaName, naAddr = asdAddress }
+    { acAddr = NamedAddress { naName = Just weaName, naAddr = asdAddress }
     , acThreshold = asdThreshold
     , ..
     }
 
--- |Decode and parse a web wallet export into a named account config.
+-- |Decode and parse a genesis account into a named account config.
 -- All signing keys are encrypted with the given password.
-decodeWebFormattedAccountExport
+decodeGenesisFormattedAccountExport
   :: BS.ByteString -- ^ JSON with the account information.
   -> Maybe Text -- ^ Optionally, how to name the account. It is checked whether the name is valid.
   -> Password -- ^ Password to encrypt the signing keys with.
   -> IO (Either String AccountConfig) -- ^ The resulting 'AccountConfig' or an error message on failure.
-decodeWebFormattedAccountExport payload name pwd = runExceptT $ do
+decodeGenesisFormattedAccountExport payload name pwd = runExceptT $ do
   mapM_ validateAccountName name
   val <- AE.eitherDecodeStrict payload `embedErr` printf "cannot decode wallet export JSON: %s"
   action <- AE.parseEither accountParser val `embedErr` printf "cannot parse JSON: %s"
   liftIO action
   where accountParser = AE.withObject "Account data" $ \v -> do
           addr <- v .: "address"
-          accKeyMap <- v .: "accountKeys"
-          acThreshold <- v .:? "threshold" .!= fromIntegral (Map.size accKeyMap)
+          ad <- v .: "accountData"
+          accKeyMap <- ad .: "keys"
+          acThreshold <- ad .:? "threshold" .!= fromIntegral (Map.size accKeyMap)
           return $ do
             acKeys <- encryptAccountKeyMap pwd accKeyMap
-            return AccountConfig{acAddr = NamedAddress{naName = name, naAddr = addr}, ..}
+            return AccountConfig { acAddr = NamedAddress{naName = name, naAddr = addr}, .. }
