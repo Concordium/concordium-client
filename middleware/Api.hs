@@ -190,17 +190,11 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
         { success = True }
 
   importAccount :: ImportAccountRequest -> Handler ()
-  importAccount request = do
+  importAccount ImportAccountRequestMobile{..} = do
     -- init configuration if missing
     baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False True
-    accCfgs <- case request of
-      ImportAccountRequestMobile{..} -> do
-        ((liftIO $ decodeMobileFormattedAccountExport (Text.encodeUtf8 contents) Nothing (passwordFromText password))
-          `embedServerErrM` err400) Just
-      ImportAccountRequestWeb{..} -> do
-        accCfg <- ((liftIO $ decodeWebFormattedAccountExport (Text.encodeUtf8 contents) alias (passwordFromText password))
-                   `embedServerErrM` err400) Just
-        return [accCfg]
+    accCfgs <- ((liftIO $ decodeMobileFormattedAccountExport (Text.encodeUtf8 contents) Nothing (passwordFromText password))
+                 `embedServerErrM` err400) Just
     liftIO $ void $ (importAccountConfig baseCfg) accCfgs
 
   getAccounts :: Handler GetAccountsResponse

@@ -90,7 +90,7 @@ data ConfigAccountCmd
   | ConfigAccountImport
     { caiFile :: !FilePath
     , caiName :: !(Maybe Text)
-    , caiFormat :: !(Maybe AccountExportFormat) }
+    , caiFormat :: !AccountExportFormat }
   | ConfigAccountAddKeys
     { caakAddr :: !Text
     , caakKeysFile :: !FilePath }
@@ -223,17 +223,23 @@ data IdentityShowCmd
     { isarsBlockHash :: !(Maybe Text) }
   deriving (Show)
 
+type ShowAllOpts = Bool
+
+internalUnless :: ShowAllOpts -> Mod f a
+internalUnless showAllOpts = if showAllOpts then idm else internal
+
 visibleHelper :: Parser (a -> a)
 visibleHelper = abortOption ShowHelpText $ mconcat
   [ long "help"
   , short 'h'
   , help "Show detailed help text." ]
 
-optsParser :: ParserInfo Options
-optsParser = info
-               (programOptions <**> versionOption <**> visibleHelper)
-               (fullDesc <> progDesc "Concordium Client CLI." <>
-                header "concordium-client - a client to interact with the concordium network.")
+optsParser :: ShowAllOpts -> ParserInfo Options
+optsParser showAllOpts =
+  info
+    (programOptions showAllOpts <**> versionOption <**> visibleHelper)
+    (fullDesc <> progDesc "Concordium Client CLI." <>
+     header "concordium-client - a client to interact with the concordium network.")
 
 versionOption :: Parser (a -> a)
 versionOption =
@@ -307,24 +313,25 @@ interactionOptsParser =
     (not <$> switch (long "no-confirm" <> help "Do not ask for confirmation before proceeding to send the transaction.")) <*>
     (not <$> switch (long "no-wait" <> help "Exit right after sending the transaction without waiting for it to be committed and finalized."))
 
-programOptions :: Parser Options
-programOptions = Options <$>
-                   (hsubparser
-                     (metavar "command" <>
-                      transactionCmds <>
-                      accountCmds <>
-                      moduleCmds <>
-                      contractCmds <>
-                      configCmds <>
-                      consensusCmds <>
-                      blockCmds <>
-                      bakerCmds <>
-                      identityCmds <>
-                      rawCmds
-                     )) <*>
-                   backendParser <*>
-                   optional (strOption (long "config" <> metavar "DIR" <> help "Path to the configuration directory.")) <*>
-                   switch (hidden <> long "verbose" <> short 'v' <> help "Make output verbose.")
+programOptions :: ShowAllOpts -> Parser Options
+programOptions showAllOpts =
+  Options <$>
+    (hsubparser
+     (metavar "command" <>
+      transactionCmds <>
+      accountCmds <>
+      moduleCmds <>
+      contractCmds <>
+      configCmds showAllOpts <>
+      consensusCmds <>
+      blockCmds <>
+      bakerCmds <>
+      identityCmds <>
+      rawCmds
+     )) <*>
+    backendParser <*>
+    optional (strOption (long "config" <> metavar "DIR" <> help "Path to the configuration directory.")) <*>
+    switch (hidden <> long "verbose" <> short 'v' <> help "Make output verbose.")
 
 rawCmds :: Mod CommandFields Cmd
 rawCmds =
@@ -554,8 +561,8 @@ contractInitCmd =
         transactionOptsParser)
       (progDesc "Initialize contract from already deployed module."))
 
-configCmds :: Mod CommandFields Cmd
-configCmds =
+configCmds :: ShowAllOpts -> Mod CommandFields Cmd
+configCmds showAllOpts =
   command
     "config"
     (info
@@ -563,7 +570,7 @@ configCmds =
         hsubparser
           (configInitCmd <>
            configShowCmd <>
-           configAccountCmds))
+           configAccountCmds showAllOpts))
       (progDesc "Commands for inspecting and changing local configuration."))
 
 configInitCmd :: Mod CommandFields ConfigCmd
@@ -582,15 +589,15 @@ configShowCmd =
       (pure ConfigShow)
       (progDesc "Show configuration."))
 
-configAccountCmds :: Mod CommandFields ConfigCmd
-configAccountCmds =
+configAccountCmds :: ShowAllOpts -> Mod CommandFields ConfigCmd
+configAccountCmds showAllOpts =
   command
     "account"
     (info
       (ConfigAccountCmd <$>
         hsubparser
           (configAccountAddCmd <>
-           configAccountImportCmd <>
+           configAccountImportCmd showAllOpts <>
            configAccountAddKeysCmd))
       (progDesc "Commands for inspecting and changing account-specific configuration."))
 
@@ -604,17 +611,22 @@ configAccountAddCmd =
         optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account.")))
       (progDesc "Add account address to persistent config, optionally naming the account."))
 
-configAccountImportCmd :: Mod CommandFields ConfigAccountCmd
-configAccountImportCmd =
+configAccountImportCmd :: ShowAllOpts -> Mod CommandFields ConfigAccountCmd
+configAccountImportCmd showAllOpts =
   command
     "import"
     (info
       (ConfigAccountImport <$>
         strArgument (metavar "FILE" <> help "Account file exported from the wallet.") <*>
-        optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account. For the 'web' format, this sets the name to assign to the account. For the 'mobile' format (which contains multiple already named accounts), it selects which account to import.")) <*>
-        optional (option readAccountExportFormat (long "format" <> metavar "FORMAT" <> help "Export format. Supported values are 'web', 'mobile'. If omitted, the format is inferred from the filename ('mobile' if the extension is \".concordiumwallet\", 'web' otherwise)."))
+        optional (strOption (long "name" <> metavar "NAME" <> help nameOptionHelp)) <*>
+        option readAccountExportFormat (internalUnless showAllOpts <> long "format" <> metavar "FORMAT" <> value FormatMobile <> help "Export format. Supported values are 'mobile' and 'genesis' (default: 'mobile').")
       )
       (progDesc "Import an account to persistent config."))
+  where nameOptionHelp =
+          if showAllOpts then
+             "Name of the account. For the 'genesis' format, this sets the name to assign to the account. For the 'mobile' format (which contains multiple already named accounts), it selects which account to import."
+          else
+             "Name of the account."
 
 configAccountAddKeysCmd :: Mod CommandFields ConfigAccountCmd
 configAccountAddKeysCmd =
@@ -649,9 +661,9 @@ configAccountAddKeysCmd =
 
 readAccountExportFormat :: ReadM AccountExportFormat
 readAccountExportFormat = str >>= \case
-  "web" -> return FormatWeb
   "mobile" -> return FormatMobile
-  s -> readerError $ printf "invalid format: %s (supported values: 'web', 'mobile')" (s :: String)
+  "genesis" -> return FormatGenesis
+  s -> readerError $ printf "invalid format: %s (supported values: 'mobile' and 'genesis')" (s :: String)
 
 consensusCmds :: Mod CommandFields Cmd
 consensusCmds =
