@@ -106,5 +106,5 @@ decryptAccountKeyMap encryptedKeyMap pwd =
 
 -- * Account exports
 
-data AccountExportFormat = FormatMobile | FormatWeb
+data AccountExportFormat = FormatMobile | FormatGenesis
   deriving (Show)

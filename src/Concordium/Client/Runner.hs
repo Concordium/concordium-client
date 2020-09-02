@@ -25,7 +25,7 @@ module Concordium.Client.Runner
   , processTransaction_
   , awaitState
   -- * For importing support
-  , decodeWebFormattedAccountExport
+  , decodeGenesisFormattedAccountExport
   , accountCfgsFromWalletExportAccounts
   , decodeMobileFormattedAccountExport
   -- * For adding baker support
@@ -98,7 +98,6 @@ import           Network.HTTP2.Client.Exceptions
 import           Prelude                             hiding (fail, mod, unlines)
 import           System.IO
 import           System.Directory
-import           System.FilePath
 import           Text.Printf
 
 liftClientIOToM :: MonadIO m => ClientIO a -> ExceptT ClientError m a
@@ -185,7 +184,7 @@ processConfigCmd action baseCfgDir verbose =
             Right a -> return a
         forM_ naName $ logFatalOnError . validateAccountName
         void $ initAccountConfig baseCfg NamedAddress{..}
-      ConfigAccountImport file name format -> do
+      ConfigAccountImport file name importFormat -> do
         baseCfg <- getBaseConfig baseCfgDir verbose True
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
@@ -193,8 +192,6 @@ processConfigCmd action baseCfgDir verbose =
 
         fileExists <- doesFileExist file
         unless fileExists $ logFatal [printf "the given file '%s' does not exist" file]
-
-        importFormat <- inferAccountExportFormat format file
 
         -- NB: This also checks whether the name is valid if provided.
         accCfgs <- loadAccountImportFile importFormat file name
@@ -215,25 +212,12 @@ processConfigCmd action baseCfgDir verbose =
 
         writeAccountKeys baseCfg' accCfg'
 
--- |Return the input format or infer it from the file extension if it's Nothing.
-inferAccountExportFormat :: Maybe AccountExportFormat -> FilePath -> IO AccountExportFormat
-inferAccountExportFormat input file =
-  case input of
-    Nothing -> case splitExtension file of
-                 (_, ".concordiumwallet") -> do
-                   logInfo ["inferred format \"mobile\" from the file extension (pass flag '--format web' to override)"]
-                   return FormatMobile
-                 _ -> do
-                   logInfo ["inferred format \"web\" from the file extension (pass flag '--format mobile' to override)"]
-                   return FormatWeb
-    Just f -> return f
-
--- |Read and parse a file exported from either the web- or mobile wallet.
+-- |Read and parse a file exported from either genesis data or mobile wallet.
 -- The format specifier tells which format to expect.
 -- If the format is "mobile", the user is prompted for a password which is used to decrypt
 -- the exported data. This may result in multiple named accounts. If a name is provided,
 -- only the account with that name is being selected for import.
--- The "web" format is not encrypted and only contains a single account which is not named.
+-- The "genesis" format is not encrypted and only contains a single account which is not named.
 -- If a name is provided in this case, this will become the account name.
 loadAccountImportFile :: AccountExportFormat -> FilePath -> Maybe Text -> IO [AccountConfig]
 loadAccountImportFile format file name = do
@@ -249,9 +233,9 @@ loadAccountImportFile format file name = do
 
       when (null accCfgs) $ logWarn ["no accounts selected for import"]
       return accCfgs
-    FormatWeb -> do
+    FormatGenesis -> do
      pwd <- createPasswordInteractive (Just "encrypt all signing keys with") `withLogFatalIO` id
-     accCfg <- decodeWebFormattedAccountExport contents name pwd `withLogFatalIO` ("cannot import account: " ++)
+     accCfg <- decodeGenesisFormattedAccountExport contents name pwd `withLogFatalIO` ("cannot import account: " ++)
      return [accCfg]
 
 

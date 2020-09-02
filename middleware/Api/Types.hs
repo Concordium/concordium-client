@@ -140,16 +140,7 @@ $(deriveJSON defaultOptions{sumEncoding=TaggedObject{
   )
 
 data ImportAccountRequest
-  = ImportAccountRequestWeb
-    { -- | The unencrypted web-formatted export.
-      contents :: Text
-      -- | An optional name for the to-be-imported account.
-    , alias :: Maybe Text
-      -- | The password to encrypt the signing keys with.
-      -- It must be UTF-8 encoded.
-    , password :: Text
-    }
-  | ImportAccountRequestMobile
+  = ImportAccountRequestMobile
     { -- | The encrypted mobile-formatted export.
       contents :: Text
       -- | The password to decrypt the export and to encrypt the signing keys with.
