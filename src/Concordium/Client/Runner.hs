@@ -464,7 +464,7 @@ data AccountRemoveKeysTransactionCfg =
   , arktcIndices :: Set.Set ID.KeyIndex
   , arktcThreshold :: Maybe ID.SignatureThreshold }
 
--- |Resolved configuration for an account undelegation transaction.
+-- |Resolved configuration for setting election difficuntly transaction.
 data SetElectionDifficultyTransactionConfig =
   SetElectionDifficultyTransactionConfig
   { sdtcTransactionCfg :: TransactionConfig
@@ -476,6 +476,14 @@ data BakerSetElectionKeyTransactionConfig =
   { bsekTransactionCfg :: TransactionConfig
   , bsekBakerId :: Types.BakerId
   , bsekKeyPair :: VRF.KeyPair }
+
+-- |Resolved configuration for encrypting the amount.
+data AccountEncryptTransactionConfig =
+  AccountEncryptTransactionConfig
+  { aeTransactionCfg :: TransactionConfig,
+    aeAmount :: Types.Amount
+  }
+
 
 -- |Resolve configuration of a 'baker add' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
@@ -535,6 +543,14 @@ getAccountRemoveKeysTransactionCfg baseCfg txOpts idxs threshold = do
   return $ AccountRemoveKeysTransactionCfg txCfg indexSet threshold
   where
       nrgCost _ = return $ Just accountRemoveKeysEnergyCost
+
+-- |Resolve configuration for transferring an amount from public to encrypted
+-- balance of an account.
+getAccountEncryptTransactionCfg :: BaseConfig -> TransactionOpts -> Types.Amount -> IO AccountEncryptTransactionConfig
+getAccountEncryptTransactionCfg baseCfg txOpts aeAmount = do
+  aeTransactionCfg <- getTransactionCfg baseCfg txOpts nrgCost
+  return AccountEncryptTransactionConfig{..}
+  where nrgCost _ = return $ Just accountEncryptEnergyCost
 
 -- |Convert transfer transaction config into a valid payload,
 -- optionally asking the user for confirmation.
@@ -727,6 +743,27 @@ accountRemoveKeysTransactionPayload AccountRemoveKeysTransactionCfg{..} confirm 
     unless confirmed exitTransactionCancelled
 
   return $ Types.RemoveAccountKeys arktcIndices arktcThreshold
+
+accountEncryptTransactionPayload :: AccountEncryptTransactionConfig -> Bool -> IO Types.Payload
+accountEncryptTransactionPayload AccountEncryptTransactionConfig{..} confirm = do
+  let TransactionConfig
+        { tcEnergy = energy
+        , tcExpiry = expiry
+        , tcAccountCfg = AccountConfig { acAddr = addr } }
+        = aeTransactionCfg
+
+
+  logInfo $
+    [ printf "transferring %s GTU from public to encrypted balance of account %s" (Types.amountToString aeAmount) (showNamedAddress addr)
+    , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+    , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
+
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  return $ Types.TransferToEncrypted aeAmount
+
 
 -- |Encode, sign, and send transaction off to the baker.
 -- If confirmNonce is set, the user is asked to confirm using the next nonce
@@ -944,7 +981,26 @@ processAccountCmd action baseCfgDir verbose backend =
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
           tailTransaction hash
+    AccountEncrypt{..} -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose True
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
 
+      aetxCfg <- getAccountEncryptTransactionCfg baseCfg aeTransactionOpts aeAmount
+      let txCfg = aeTransactionCfg aetxCfg
+      when verbose $ do
+        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        putStrLn ""
+
+      let intOpts = toInteractionOpts aeTransactionOpts
+      pl <- accountEncryptTransactionPayload aetxCfg (ioConfirm intOpts)
+      withClient backend $ do
+        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
+        let hash = getBlockItemHash tx
+        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
+        when (ioTail intOpts) $
+          tailTransaction hash
 
   where getDelegateCostFunc acc = withClient backend $ do
           when verbose $ logInfo ["retrieving instances"]
@@ -1667,6 +1723,7 @@ convertTransactionJsonPayload = \case
     return $ Types.UpdateBakerSignKey ubsid ubsk ubsp
   (CT.DelegateStake dsid) -> return $ Types.DelegateStake dsid
   (CT.UpdateElectionDifficulty d) -> return $ Types.UpdateElectionDifficulty d
+  CT.TransferToEncrypted{..} -> return $ Types.TransferToEncrypted{..}
 
 -- |Sign a transaction payload and configuration into a "normal" transaction,
 -- which is ready to be sent.
