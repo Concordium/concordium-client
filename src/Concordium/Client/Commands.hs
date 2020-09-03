@@ -133,6 +133,12 @@ data AccountCmd
     { arkKeys :: ![KeyIndex]
     , aakThreshold :: !(Maybe SignatureThreshold)
     , arkTransactionOpts :: !TransactionOpts }
+  -- |Transfer part of the public balance to the encrypted balance of the
+  -- account.
+  | AccountEncrypt
+    { aeTransactionOpts :: !TransactionOpts,
+      aeAmount :: !Amount
+    }
   deriving (Show)
 
 data ModuleCmd
@@ -407,8 +413,9 @@ accountCmds =
            accountUndelegateCmd <>
            accountUpdateKeysCmd <>
            accountAddKeysCmd <>
-           accountRemoveKeysCmd))
-      (progDesc "Commands for inspecting accounts."))
+           accountRemoveKeysCmd <>
+           accountEncryptCmd))
+      (progDesc "Commands for inspecting and modifying accounts."))
 
 accountShowCmd :: Mod CommandFields AccountCmd
 accountShowCmd =
@@ -447,6 +454,17 @@ accountUndelegateCmd =
       (AccountUndelegate <$>
         transactionOptsParser)
       (progDesc "Delegate stake of account to baker."))
+
+accountEncryptCmd :: Mod CommandFields AccountCmd
+accountEncryptCmd =
+  command
+    "encrypt"
+    (info
+      (AccountEncrypt <$>
+        transactionOptsParser <*>
+        option (maybeReader amountFromString) (long "amount" <> metavar "GTU-AMOUNT" <> help "The amount to transfer."))
+      (progDesc "Transfer an amount from public to encrypted balance of the account."))
+
 
 accountUpdateKeysCmd :: Mod CommandFields AccountCmd
 accountUpdateKeysCmd =

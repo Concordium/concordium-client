@@ -99,6 +99,12 @@ bakerRemoveEnergyCost = checkHeaderEnergyCost
 setElectionDifficultyEnergyCost :: Int -> Energy
 setElectionDifficultyEnergyCost = checkHeaderEnergyCost
 
+-- |Cost of moving funds from public to encrypted amount of an account.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
+accountEncryptEnergyCost :: Int -> Energy
+accountEncryptEnergyCost = (+100) . checkHeaderEnergyCost
+
+
 -- |Transaction header type
 -- To be populated when deserializing a JSON object.
 data TransactionJSONHeader =
@@ -124,42 +130,46 @@ data ModuleSource
 -- |Payload of a transaction
 data TransactionJSONPayload
   = DeployModule
-      { moduleName :: Text
+      { moduleName :: !Text
       } -- ^ Deploys a blockchain-ready version of the module, as retrieved from the Context
   | InitContract
-      { amount       :: Amount
-      , moduleName   :: Text
-      , contractName :: Text
-      , parameter    :: Text
+      { amount       :: !Amount
+      , moduleName   :: !Text
+      , contractName :: !Text
+      , parameter    :: !Text
       } -- ^ Initializes a specific Contract in a Module
   | Update
-      { moduleName :: Text
-      , amount     :: Amount
-      , address    :: ContractAddress
-      , message    :: Text
+      { moduleName :: !Text
+      , amount     :: !Amount
+      , address    :: !ContractAddress
+      , message    :: !Text
       } -- ^ Sends a specific message to a Contract
   | Transfer
-      { toaddress :: IDTypes.AccountAddress
-      , amount    :: Amount
+      { toaddress :: !IDTypes.AccountAddress
+      , amount    :: !Amount
       } -- ^ Transfers specific amount to the recipent
   | RemoveBaker
-      { removeId :: BakerId
+      { removeId :: !BakerId
       }
   | UpdateBakerAccount
-      { bakerId        :: BakerId
-      , accountAddress :: AccountAddress
-      , proofBa        :: AccountOwnershipProof
+      { bakerId        :: !BakerId
+      , accountAddress :: !AccountAddress
+      , proofBa        :: !AccountOwnershipProof
       }
   | UpdateBakerSignKey
-      { bakerId    :: BakerId
-      , newSignKey :: BakerSignVerifyKey
-      , proofBs    :: Dlog25519Proof
+      { bakerId    :: !BakerId
+      , newSignKey :: !BakerSignVerifyKey
+      , proofBs    :: !Dlog25519Proof
       }
   | DelegateStake
-      { bakerId :: BakerId
+      { bakerId :: !BakerId
       }
   | UpdateElectionDifficulty
       { difficulty :: !ElectionDifficulty
+      }
+  | TransferToEncrypted{
+      -- |Amount to transfer from public to encrypted balance of the account.
+      tteAmount :: !Amount
       }
   deriving (Show, Generic)
 
