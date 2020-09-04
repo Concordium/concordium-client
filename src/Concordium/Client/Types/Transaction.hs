@@ -104,6 +104,10 @@ setElectionDifficultyEnergyCost = checkHeaderEnergyCost
 accountEncryptEnergyCost :: Int -> Energy
 accountEncryptEnergyCost = (+100) . checkHeaderEnergyCost
 
+-- |Cost of moving funds from encrypted to public balance of an account.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
+accountDecryptEnergyCost :: Int -> Energy
+accountDecryptEnergyCost = (+16000) . checkHeaderEnergyCost
 
 -- |Transaction header type
 -- To be populated when deserializing a JSON object.
@@ -170,6 +174,10 @@ data TransactionJSONPayload
   | TransferToEncrypted{
       -- |Amount to transfer from public to encrypted balance of the account.
       tteAmount :: !Amount
+      }
+  | TransferToPublic {
+      -- |Amount the user wishes to transfer to the public balance.
+      ttpAmount :: !Amount
       }
   deriving (Show, Generic)
 

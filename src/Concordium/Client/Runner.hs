@@ -58,6 +58,7 @@ import           Concordium.Client.Types.Account
 import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Client.Types.TransactionStatus
 import           Concordium.Common.Version
+import qualified Concordium.Crypto.EncryptedTransfers as Enc
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
@@ -68,6 +69,7 @@ import           Concordium.Types.HashableTo
 import qualified Concordium.Types.Execution          as Types
 import qualified Concordium.Types                    as Types
 import qualified Concordium.ID.Types                 as ID
+import           Concordium.ID.Parameters
 import           Proto.ConcordiumP2pRpc
 import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 
@@ -76,6 +78,7 @@ import           Control.Monad.Except
 import           Control.Monad.Reader                hiding (fail)
 import           GHC.Generics
 import           Data.IORef
+import           Data.Foldable
 import           Data.Aeson                          as AE
 import           Data.Aeson.Types
 import qualified Data.Aeson.Encode.Pretty            as AE
@@ -88,8 +91,10 @@ import           Data.Maybe
 import           Data.List                           as L
 import qualified Data.Serialize                      as S
 import qualified Data.Set                            as Set
+import qualified Data.Sequence                       as Seq
 import           Data.String
-import           Data.Text                           hiding (length, map, null, take)
+import           Data.Text(Text)
+import qualified Data.Text                           as Text
 import           Data.Text.Encoding
 import           Data.Word
 import           Lens.Micro.Platform
@@ -275,14 +280,11 @@ processTransactionCmd action baseCfgDir verbose backend =
       -- TODO This works but output doesn't make sense if transaction is already committed/finalized.
       --      It should skip already completed steps.
       -- withClient backend $ tailTransaction hash
-    TransactionSendGtu receiver amountstr txOpts -> do
+    TransactionSendGtu receiver amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
-      amount <- case Types.amountFromString (unpack amountstr) of
-        Nothing -> logFatal [printf "invalid amount '%s'" amountstr]
-        Just a -> return a
       ttxCfg <- getTransferTransactionCfg baseCfg txOpts receiver amount
       let txCfg = ttcTransactionCfg ttxCfg
       when verbose $ do
@@ -291,7 +293,7 @@ processTransactionCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- transferTransactionPayload ttxCfg (ioConfirm intOpts)
-      sendAndTailTransaction backend txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
 -- |Poll the transaction state continuously until it is "at least" the provided one.
 -- Note that the "absent" state is considered the "highest" state,
@@ -471,13 +473,19 @@ data BakerSetElectionKeyTransactionConfig =
   , bsekBakerId :: Types.BakerId
   , bsekKeyPair :: VRF.KeyPair }
 
--- |Resolved configuration for encrypting the amount.
+-- |Resolved configuration for transferring from public to encrypted balance.
 data AccountEncryptTransactionConfig =
   AccountEncryptTransactionConfig
   { aeTransactionCfg :: TransactionConfig,
     aeAmount :: Types.Amount
   }
 
+-- |Resolved configuration for transferring from encrypted to public balance.
+data AccountDecryptTransactionConfig =
+  AccountDecryptTransactionConfig
+  { adTransactionCfg :: TransactionConfig,
+    adTransferData :: Enc.SecToPubAmountTransferData
+  }
 
 -- |Resolve configuration of a 'baker add' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
@@ -545,6 +553,36 @@ getAccountEncryptTransactionCfg baseCfg txOpts aeAmount = do
   aeTransactionCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return AccountEncryptTransactionConfig{..}
   where nrgCost _ = return $ Just accountEncryptEnergyCost
+
+-- |Resolve configuration for transferring an amount from encrypted to public
+-- balance of an account.
+getAccountDecryptTransactionCfg :: BaseConfig -> TransactionOpts -> Types.Amount -> ClientMonad IO AccountDecryptTransactionConfig
+getAccountDecryptTransactionCfg baseCfg txOpts adAmount = do
+  adTransactionCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
+  let senderAddr = acAddress . tcAccountCfg $ adTransactionCfg
+  infoValue <- logFatalOnError =<< (withBestBlockHash Nothing $ getAccountInfo (Text.pack . show $ senderAddr))
+  case AE.fromJSON infoValue of
+    AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
+    AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
+    AE.Success (Just AccountInfoResult{airEncryptedAmount=Types.AccountEncryptedAmount{..},..}) -> do
+      -- precomputed table for speeding up decryption
+      let table = Enc.computeTable globalContext (2^(16::Int))
+      let secretKey = acEncryptionKey . tcAccountCfg $ adTransactionCfg
+      let decoder = Enc.decryptAmount table secretKey
+      let selfDecrypted = decoder _selfAmount
+      -- aggregation of all encrypted amounts
+      let aggAmounts = foldl' (<>) _selfAmount _incomingEncryptedAmounts
+      let totalEncryptedAmount = foldl' (+) selfDecrypted $ fmap decoder _incomingEncryptedAmounts
+      unless (totalEncryptedAmount >= adAmount) $
+        logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (show adAmount) (show totalEncryptedAmount)]
+      -- index indicating which encrypted amounts we used as input
+      let aggIndex = Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (Seq.length _incomingEncryptedAmounts))
+      let aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
+      liftIO $ Enc.makeSecToPubAmountTransferData globalContext secretKey aggAmount adAmount >>= \case
+        Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
+        Just adTransferData -> return AccountDecryptTransactionConfig{..}
+  where nrgCost _ = return $ Just accountDecryptEnergyCost
+
 
 -- |Convert transfer transaction config into a valid payload,
 -- optionally asking the user for confirmation.
@@ -758,6 +796,25 @@ accountEncryptTransactionPayload AccountEncryptTransactionConfig{..} confirm = d
 
   return $ Types.TransferToEncrypted aeAmount
 
+accountDecryptTransactionPayload :: MonadIO m => AccountDecryptTransactionConfig -> Bool -> m Types.Payload
+accountDecryptTransactionPayload AccountDecryptTransactionConfig{..} confirm = do
+  let TransactionConfig
+        { tcEnergy = energy
+        , tcExpiry = expiry
+        , tcAccountCfg = AccountConfig { acAddr = addr } }
+        = adTransactionCfg
+
+  logInfo $
+    [ printf "transferring %s GTU from encrypted to public balance of account %s" (Types.amountToString (Enc.stpatdTransferAmount adTransferData)) (showNamedAddress addr)
+    , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+    , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
+
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  return $ Types.TransferToPublic adTransferData
+
 
 -- |Encode, sign, and send transaction off to the baker.
 -- If confirmNonce is set, the user is asked to confirm using the next nonce
@@ -798,7 +855,7 @@ getNonce sender nonce confirm =
   case nonce of
     Nothing -> do
       currentNonce <- getBestBlockHash >>= getAccountNonce sender
-      nextNonce <- nanNonce <$> (getNextAccountNonce (pack $ show sender) >>= getFromJson)
+      nextNonce <- nanNonce <$> (getNextAccountNonce (Text.pack $ show sender) >>= getFromJson)
       liftIO $ when (currentNonce /= nextNonce) $ do
         logWarn [ printf "there is a pending transaction with nonce %s, but last committed one has %s" (show $ nextNonce-1) (show $ currentNonce-1)
                 , printf "this transaction will have nonce %s and might hang if the pending transaction fails" (show nextNonce) ]
@@ -811,18 +868,16 @@ getNonce sender nonce confirm =
 
 -- |Send a transaction and optionally tail it (see 'tailTransaction' below).
 sendAndTailTransaction :: (MonadIO m, MonadFail m)
-    => Backend -- ^ The GRPC backend to use.
-    -> TransactionConfig -- ^ Information about the sender, and the context of transaction
+    => TransactionConfig -- ^ Information about the sender, and the context of transaction
     -> Types.Payload -- ^ Payload of the transaction to send
     -> InteractionOpts -- ^ How interactive should sending and tailing be
-    -> m ()
-sendAndTailTransaction backend txCfg pl intOpts = do
-  withClient backend $ do
-    tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
-    let hash = getBlockItemHash tx
-    logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
-    when (ioTail intOpts) $
-        tailTransaction hash
+    -> ClientMonad m ()
+sendAndTailTransaction txCfg pl intOpts = do
+  tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
+  let hash = getBlockItemHash tx
+  logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
+  when (ioTail intOpts) $
+    tailTransaction hash
 
 -- |Continuously query and display transaction status until the transaction is finalized.
 tailTransaction :: (MonadIO m) => Types.TransactionHash -> ClientMonad m ()
@@ -863,7 +918,7 @@ tailTransaction hash = do
   liftIO $ printf "[%s] Transaction finalized.\n" =<< getLocalTimeOfDayFormatted
   where
     getLocalTimeOfDayFormatted = showTimeOfDay <$> getLocalTimeOfDay
-    showResponse = unpack . decodeUtf8 . BSL8.toStrict . AE.encodePretty
+    showResponse = Text.unpack . decodeUtf8 . BSL8.toStrict . AE.encodePretty
 
 -- |Process an 'account ...' command.
 processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -876,7 +931,7 @@ processAccountCmd action baseCfgDir verbose backend =
         putStrLn ""
 
       na <- getAccountAddressArg (bcAccountNameMap baseCfg) address
-      v <- withClientJson backend $ withBestBlockHash block $ getAccountInfo (pack $ show $ naAddr na)
+      v <- withClientJson backend $ withBestBlockHash block $ getAccountInfo (Text.pack $ show $ naAddr na)
       case v of
         Nothing -> putStrLn "Account not found."
         Just a -> runPrinter $ printAccountInfo na a verbose
@@ -898,7 +953,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountDelegateTransactionPayload adtxCfg (ioConfirm intOpts)
-      sendAndTailTransaction backend txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     AccountUndelegate txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
@@ -915,7 +970,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountUndelegateTransactionPayload autxCfg (ioConfirm intOpts)
-      sendAndTailTransaction backend txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     AccountUpdateKeys f txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
@@ -932,7 +987,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountUpdateKeysTransactionPayload aukCfg (ioConfirm intOpts)
-      sendAndTailTransaction backend txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     AccountAddKeys f thresh txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
@@ -949,7 +1004,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountAddKeysTransactionPayload aakCfg (ioConfirm intOpts)
-      sendAndTailTransaction backend txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     AccountRemoveKeys idxs thresh txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
@@ -966,7 +1021,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountRemoveKeysTransactionPayload arkCfg (ioConfirm intOpts)
-      sendAndTailTransaction backend txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     AccountEncrypt{..} -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
@@ -982,12 +1037,29 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts aeTransactionOpts
       pl <- accountEncryptTransactionPayload aetxCfg (ioConfirm intOpts)
-      sendAndTailTransaction backend txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+
+    AccountDecrypt{..} -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose True
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+      withClient backend $ do
+        adtxCfg <- getAccountDecryptTransactionCfg baseCfg adTransactionOpts adAmount
+        let txCfg = adTransactionCfg adtxCfg
+        when verbose $ do
+          runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+          liftIO $ putStrLn ""
+
+        let intOpts = toInteractionOpts adTransactionOpts
+        pl <- accountDecryptTransactionPayload adtxCfg (ioConfirm intOpts)
+        sendAndTailTransaction txCfg pl intOpts
+
 
   where getDelegateCostFunc acc = withClient backend $ do
           when verbose $ logInfo ["retrieving instances"]
           info <- getBestBlockHash >>=
-                  getAccountInfo (pack $ show $ naAddr $ acAddr acc) >>=
+                  getAccountInfo (Text.pack $ show $ naAddr $ acAddr acc) >>=
                   getFromJson
           let is = length $ airInstances info
           when verbose $ logInfo [printf "retrieved %d instances" is]
@@ -1031,7 +1103,7 @@ processConsensusCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- setElectionDifficultyTransactionPayload sdtxCfg (ioConfirm intOpts)
-      sendAndTailTransaction backend txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
 -- |Process a 'block ...' command.
 processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
@@ -1139,7 +1211,7 @@ processBakerCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- bakerSetKeyTransactionPayload bsktcCfg (ioConfirm intOpts)
-      sendAndTailTransaction backend txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     BakerRemove bid txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
@@ -1152,7 +1224,7 @@ processBakerCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- bakerRemoveTransactionPayload brtcCfg (ioConfirm intOpts)
-      sendAndTailTransaction backend txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     BakerSetAggregationKey bid file txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
@@ -1165,7 +1237,7 @@ processBakerCmd action baseCfgDir verbose backend =
       let txCfg = bsakTransactionCfg bsaktCfg
 
       pl <- bakerSetAggregationKeyTransactionPayload bsaktCfg (ioConfirm intOpts)
-      sendAndTailTransaction backend txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     BakerSetElectionKey bid file txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
@@ -1508,21 +1580,21 @@ printPeerData epd =
     Right PeerData{..} -> liftIO $ do
       putStrLn $ "Total packets sent: " ++ show totalSent
       putStrLn $ "Total packets received: " ++ show totalReceived
-      putStrLn $ "Peer version: " ++ unpack version
+      putStrLn $ "Peer version: " ++ Text.unpack version
       putStrLn "Peer stats:"
       forM_ (peerStats ^. CF.peerstats) $ \ps -> do
-        putStrLn $ "  Peer: " ++ unpack (ps ^. CF.nodeId)
+        putStrLn $ "  Peer: " ++ Text.unpack (ps ^. CF.nodeId)
         putStrLn $ "    Packets sent: " ++ show (ps ^. CF.packetsSent)
         putStrLn $ "    Packets received: " ++ show (ps ^. CF.packetsReceived)
         putStrLn $ "    Latency: " ++ show (ps ^. CF.latency)
         putStrLn ""
 
-      putStrLn $ "Peer type: " ++ unpack (peerList ^. CF.peerType)
+      putStrLn $ "Peer type: " ++ Text.unpack (peerList ^. CF.peerType)
       putStrLn "Peers:"
       forM_ (peerList ^. CF.peers) $ \pe -> do
-        putStrLn $ "  Node id: " ++ unpack (pe ^. CF.nodeId . CF.value)
+        putStrLn $ "  Node id: " ++ Text.unpack (pe ^. CF.nodeId . CF.value)
         putStrLn $ "    Port: " ++ show (pe ^. CF.port . CF.value)
-        putStrLn $ "    IP: " ++ unpack (pe ^. CF.ip . CF.value)
+        putStrLn $ "    IP: " ++ Text.unpack (pe ^. CF.ip . CF.value)
         putStrLn $ "    Catchup Status: " ++ showCatchupStatus (pe ^. CF.catchupStatus)
         putStrLn ""
   where showCatchupStatus =

@@ -106,6 +106,7 @@ accountCfgFromWalletExportAccount pwd WalletExportAccount { weaKeys = AccountSig
   return $ AccountConfig
     { acAddr = NamedAddress { naName = Just weaName, naAddr = asdAddress }
     , acThreshold = asdThreshold
+    , acEncryptionKey = error "Unimplemented."
     , ..
     }
 
@@ -128,4 +129,6 @@ decodeGenesisFormattedAccountExport payload name pwd = runExceptT $ do
           acThreshold <- ad .:? "threshold" .!= fromIntegral (Map.size accKeyMap)
           return $ do
             acKeys <- encryptAccountKeyMap pwd accKeyMap
-            return AccountConfig { acAddr = NamedAddress{naName = name, naAddr = addr}, .. }
+            return AccountConfig { acAddr = NamedAddress{naName = name, naAddr = addr}
+                                 , acEncryptionKey = error "Unimplemented."
+                                 , .. }

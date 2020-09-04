@@ -29,6 +29,7 @@ import Options.Applicative
 import Paths_simple_client (version)
 import Concordium.Client.LegacyCommands
 import Concordium.Client.Types.Account
+import Concordium.Client.Utils
 import Concordium.ID.Types (KeyIndex, SignatureThreshold)
 import Concordium.Types
 import Text.Printf
@@ -104,7 +105,7 @@ data TransactionCmd
     { tsHash :: !Text }
   | TransactionSendGtu
     { tsgReceiver :: !Text
-    , tsgAmount :: !Text
+    , tsgAmount :: !Amount
     , tsgOpts :: !TransactionOpts }
   | TransactionDeployCredential
     { tdcFile :: !FilePath
@@ -138,6 +139,12 @@ data AccountCmd
   | AccountEncrypt
     { aeTransactionOpts :: !TransactionOpts,
       aeAmount :: !Amount
+    }
+  -- |Transfer part of the encrypted balance to the public balance of the
+  -- account.
+  | AccountDecrypt
+    { adTransactionOpts :: !TransactionOpts,
+      adAmount :: !Amount
     }
   deriving (Show)
 
@@ -396,7 +403,7 @@ transactionSendGtuCmd =
     (info
       (TransactionSendGtu <$>
         strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
-        strOption (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
+        option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
         transactionOptsParser)
       (progDesc "Transfer GTU from one account to another (sending to contracts is currently not supported with this method - use 'transaction submit')."))
 
@@ -414,7 +421,8 @@ accountCmds =
            accountUpdateKeysCmd <>
            accountAddKeysCmd <>
            accountRemoveKeysCmd <>
-           accountEncryptCmd))
+           accountEncryptCmd <>
+           accountDecryptCmd))
       (progDesc "Commands for inspecting and modifying accounts."))
 
 accountShowCmd :: Mod CommandFields AccountCmd
@@ -462,9 +470,18 @@ accountEncryptCmd =
     (info
       (AccountEncrypt <$>
         transactionOptsParser <*>
-        option (maybeReader amountFromString) (long "amount" <> metavar "GTU-AMOUNT" <> help "The amount to transfer."))
+        option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "The amount to transfer to encrypted balance."))
       (progDesc "Transfer an amount from public to encrypted balance of the account."))
 
+accountDecryptCmd :: Mod CommandFields AccountCmd
+accountDecryptCmd =
+  command
+    "decrypt"
+    (info
+      (AccountDecrypt <$>
+        transactionOptsParser <*>
+        option (maybeReader amountFromString) (long "amount" <> metavar "GTU-AMOUNT" <> help "The amount to transfer to public balance."))
+      (progDesc "Transfer an amount from encrypted to public balance of the account."))
 
 accountUpdateKeysCmd :: Mod CommandFields AccountCmd
 accountUpdateKeysCmd =
