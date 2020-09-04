@@ -6,6 +6,7 @@ module Concordium.Client.Config where
 import Concordium.Types as Types
 import Concordium.ID.Types (addressFromText, KeyIndex)
 import qualified Concordium.ID.Types as IDTypes
+import qualified Concordium.Crypto.FFIDataTypes as IDTypes
 import Concordium.Client.Cli
 import Concordium.Client.Commands
 import Concordium.Client.Types.Account
@@ -175,6 +176,7 @@ initAccountConfig baseCfg namedAddr = do
                     { acAddr = namedAddr
                     , acKeys = M.empty
                     , acThreshold = 1 -- minimum threshold
+                    , acEncryptionKey = error "Unimplemented."
                     })
 
 -- |Write the provided configuration to disk in the expected formats.
@@ -298,7 +300,9 @@ data AccountConfig =
   AccountConfig
   { acAddr :: !NamedAddress
   , acKeys :: EncryptedAccountKeyMap
-  , acThreshold :: !IDTypes.SignatureThreshold }
+  , acThreshold :: !IDTypes.SignatureThreshold
+  , acEncryptionKey :: !IDTypes.ElgamalSecretKey
+  }
 
 acAddress :: AccountConfig -> AccountAddress
 acAddress = naAddr . acAddr
@@ -364,12 +368,14 @@ getAccountConfig account baseCfg keysDir keyMap autoInit = do
         return (baseCfg, AccountConfig
                          { acAddr = namedAddr
                          , acKeys = km
+                         , acEncryptionKey = error "Unimplemented."
                          ,..})
 
     Just km -> return (baseCfg, AccountConfig
                                 { acAddr = namedAddr
                                 , acKeys = km
-                                , acThreshold = fromIntegral (M.size km) })
+                                , acThreshold = fromIntegral (M.size km)
+                                , acEncryptionKey = error "Unimplemented." })
 
 -- |Look up an account by name or address:
 -- If input is a well-formed account address, try to (reverse) look up its name in the map.
