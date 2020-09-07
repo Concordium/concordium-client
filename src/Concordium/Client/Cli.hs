@@ -161,7 +161,12 @@ decryptAccountKeyMapInteractive encryptedKeyMap accDescr = runExceptT $ do
                                 decryptAccountKeyPair pwd keyIndex eKp
                             ) encryptedKeyMap
 
-
+decryptAccountEncryptionSecretKeyInteractive
+  :: EncryptedAccountEncryptionSecretKey
+  -> IO (Either String ElgamalSecretKey)
+decryptAccountEncryptionSecretKeyInteractive secret = do
+  pwd <- liftIO $ askPassword $ "Enter password for decrypting the secret encryption key: "
+  decryptAccountEncryptionSecretKey pwd secret
 
 -- |Standardized method of exiting the command because the transaction is cancelled.
 exitTransactionCancelled :: MonadIO m => m ()

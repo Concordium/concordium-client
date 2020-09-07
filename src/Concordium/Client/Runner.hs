@@ -208,7 +208,7 @@ processConfigCmd action baseCfgDir verbose =
           putStrLn ""
 
         keyMapInput :: EncryptedAccountKeyMap <- AE.eitherDecodeFileStrict keysFile `withLogFatalIO` ("cannot decode keys: " ++)
-        (baseCfg', accCfg) <- getAccountConfig (Just addr) baseCfg Nothing Nothing True
+        (baseCfg', accCfg) <- getAccountConfig (Just addr) baseCfg Nothing Nothing Nothing True
 
         let keyMapCurrent = acKeys accCfg
         let keyMapNew = Map.difference keyMapInput keyMapCurrent
@@ -295,6 +295,28 @@ processTransactionCmd action baseCfgDir verbose backend =
       pl <- transferTransactionPayload ttxCfg (ioConfirm intOpts)
       withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
+    TransactionEncryptedTransfer txOpts receiver amount index -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose True
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+      let nrgCost _ = return $ Just encryptedTransferEnergyCost
+      txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
+
+      encryptedSecretKey <- maybe (logFatal ["Missing account encryption secret key for account: " ++ show (acAddr . tcAccountCfg $ txCfg)]) return (acEncryptionKey . tcAccountCfg $ txCfg)
+      secretKey <- either (\e -> logFatal ["Couldn't decrypt account encryption secret key: " ++ e]) return =<< decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey
+
+      withClient backend $ do
+        ttxCfg <- getEncryptedTransferTransactionCfg baseCfg txCfg receiver amount index secretKey
+        liftIO $ when verbose $ do
+          runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+          putStrLn ""
+
+        let intOpts = toInteractionOpts txOpts
+        pl <- encryptedTransferTransactionPayload ttxCfg (ioConfirm intOpts)
+        sendAndTailTransaction txCfg pl intOpts
+
 -- |Poll the transaction state continuously until it is "at least" the provided one.
 -- Note that the "absent" state is considered the "highest" state,
 -- so the loop will break if, for instance, the transaction state goes from "committed" to "absent".
@@ -331,7 +353,7 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
   keysArg <- case toKeys txOpts of
                Nothing -> return Nothing
                Just filePath -> AE.eitherDecodeFileStrict filePath `withLogFatalIO` ("cannot decode keys: " ++)
-  (_, accCfg) <- getAccountConfig (toSender txOpts) baseCfg Nothing keysArg False
+  (_, accCfg) <- getAccountConfig (toSender txOpts) baseCfg Nothing keysArg Nothing False
 
   energyCostFunc <- getEnergyCostFunc accCfg
   let computedCost = case energyCostFunc of
@@ -398,6 +420,52 @@ getTransferTransactionCfg baseCfg txOpts receiver amount = do
     , ttcReceiver = receiverAddress
     , ttcAmount = amount }
   where nrgCost _ = return $ Just simpleTransferEnergyCost
+
+data EncryptedTransferTransactionConfig =
+  EncryptedTransferTransactionConfig
+  { ettTransactionCfg :: TransactionConfig
+  , ettReceiver :: NamedAddress
+  , ettAmount :: Types.Amount
+  , ettTransferData :: !Enc.EncryptedAmountTransferData }
+
+getEncryptedTransferTransactionCfg :: BaseConfig -> TransactionConfig -> Text -> Types.Amount -> Maybe Int -> ElgamalSecretKey -> ClientMonad IO EncryptedTransferTransactionConfig
+getEncryptedTransferTransactionCfg baseCfg ettTransactionCfg receiver ettAmount idx secretKey = do
+  let senderAddr = acAddress . tcAccountCfg $ ettTransactionCfg
+
+  -- get encrypted amounts for the sender
+  infoValue <- logFatalOnError =<< (withBestBlockHash Nothing $ getAccountInfo (Text.pack . show $ senderAddr))
+  case AE.fromJSON infoValue of
+    AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
+    AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
+    AE.Success (Just AccountInfoResult{airEncryptedAmount=Types.AccountEncryptedAmount{..}}) -> do
+      -- get receiver's public encryption key
+      infoValueReceiver <- logFatalOnError =<< (withBestBlockHash Nothing $ getAccountInfo receiver)
+      case AE.fromJSON infoValueReceiver of
+        AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
+        AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
+        AE.Success (Just air) -> do
+          let receiverPk = ID._elgamalPublicKey $ airEncryptionKey air
+          -- precomputed table for speeding up decryption
+          let table = Enc.computeTable globalContext (2^(16::Int))
+              decoder = Enc.decryptAmount table secretKey
+              selfDecrypted = decoder _selfAmount
+          -- aggregation of idx encrypted amounts
+              taker = case idx of
+                Nothing -> id
+                Just v -> Seq.take v
+              inputEncAmounts = taker _incomingEncryptedAmounts
+              aggAmounts = foldl' (<>) _selfAmount inputEncAmounts
+              totalEncryptedAmount = foldl' (+) selfDecrypted $ fmap decoder inputEncAmounts
+          unless (totalEncryptedAmount >= ettAmount) $
+            logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (show ettAmount) (show totalEncryptedAmount)]
+          -- index indicating which encrypted amounts we used as input
+          let aggIndex = Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (fromMaybe (Seq.length _incomingEncryptedAmounts) idx))
+          let aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
+          ettReceiver <- liftIO $ getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
+          liftIO $ Enc.makeEncryptedAmountTransferData globalContext receiverPk secretKey aggAmount ettAmount >>= \case
+            Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
+            Just ettTransferData -> return EncryptedTransferTransactionConfig{..}
+  where
 
 -- |Resolved configuration for a 'baker add' transaction.
 data BakerAddTransactionConfig =
@@ -556,9 +624,8 @@ getAccountEncryptTransactionCfg baseCfg txOpts aeAmount = do
 
 -- |Resolve configuration for transferring an amount from encrypted to public
 -- balance of an account.
-getAccountDecryptTransactionCfg :: BaseConfig -> TransactionOpts -> Types.Amount -> ClientMonad IO AccountDecryptTransactionConfig
-getAccountDecryptTransactionCfg baseCfg txOpts adAmount = do
-  adTransactionCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
+getAccountDecryptTransactionCfg :: TransactionConfig -> Types.Amount -> ElgamalSecretKey -> ClientMonad IO AccountDecryptTransactionConfig
+getAccountDecryptTransactionCfg adTransactionCfg adAmount secretKey = do
   let senderAddr = acAddress . tcAccountCfg $ adTransactionCfg
   infoValue <- logFatalOnError =<< (withBestBlockHash Nothing $ getAccountInfo (Text.pack . show $ senderAddr))
   case AE.fromJSON infoValue of
@@ -567,7 +634,6 @@ getAccountDecryptTransactionCfg baseCfg txOpts adAmount = do
     AE.Success (Just AccountInfoResult{airEncryptedAmount=Types.AccountEncryptedAmount{..},..}) -> do
       -- precomputed table for speeding up decryption
       let table = Enc.computeTable globalContext (2^(16::Int))
-      let secretKey = acEncryptionKey . tcAccountCfg $ adTransactionCfg
       let decoder = Enc.decryptAmount table secretKey
       let selfDecrypted = decoder _selfAmount
       -- aggregation of all encrypted amounts
@@ -581,7 +647,6 @@ getAccountDecryptTransactionCfg baseCfg txOpts adAmount = do
       liftIO $ Enc.makeSecToPubAmountTransferData globalContext secretKey aggAmount adAmount >>= \case
         Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
         Just adTransferData -> return AccountDecryptTransactionConfig{..}
-  where nrgCost _ = return $ Just accountDecryptEnergyCost
 
 
 -- |Convert transfer transaction config into a valid payload,
@@ -605,6 +670,25 @@ transferTransactionPayload ttxCfg confirm = do
     unless confirmed exitTransactionCancelled
 
   return Types.Transfer { tToAddress = naAddr toAddress, tAmount = amount }
+
+encryptedTransferTransactionPayload :: MonadIO m => EncryptedTransferTransactionConfig -> Bool -> m Types.Payload
+encryptedTransferTransactionPayload EncryptedTransferTransactionConfig{..} confirm = do
+  let TransactionConfig
+        { tcEnergy = energy
+        , tcExpiry = expiry
+        , tcAccountCfg = AccountConfig { acAddr = addr } }
+        = ettTransactionCfg
+
+  logInfo $
+    [ printf "transferring %s GTU from encrypted balance of account %s to %s" (Types.amountToString ettAmount) (showNamedAddress addr) (showNamedAddress ettReceiver)
+    , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+    , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
+
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  return $ Types.EncryptedAmountTransfer (naAddr ettReceiver) ettTransferData
 
 -- |Convert 'baker add' transaction config into a valid payload,
 -- optionally asking the user for confirmation.
@@ -1044,9 +1128,15 @@ processAccountCmd action baseCfgDir verbose backend =
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
+
+      let nrgCost _ = return $ Just accountDecryptEnergyCost
+      txCfg <- liftIO (getTransactionCfg baseCfg adTransactionOpts nrgCost)
+
+      encryptedSecretKey <- maybe (logFatal ["Missing account encryption secret key for account: " ++ show (acAddr . tcAccountCfg $ txCfg)]) return (acEncryptionKey . tcAccountCfg $ txCfg)
+      secretKey <- either (\e -> logFatal ["Couldn't decrypt account encryption secret key: " ++ e]) return =<< decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey
+
       withClient backend $ do
-        adtxCfg <- getAccountDecryptTransactionCfg baseCfg adTransactionOpts adAmount
-        let txCfg = adTransactionCfg adtxCfg
+        adtxCfg <- getAccountDecryptTransactionCfg txCfg adAmount secretKey
         when verbose $ do
           runPrinter $ printAccountConfig $ tcAccountCfg txCfg
           liftIO $ putStrLn ""
@@ -1177,7 +1267,7 @@ processBakerCmd action baseCfgDir verbose backend =
 --          logSuccess [ "baker successfully added" ]
     BakerSetAccount bid accRef txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
-      (_, rewardAccCfg) <- getAccountConfig (Just accRef) baseCfg Nothing Nothing False
+      (_, rewardAccCfg) <- getAccountConfig (Just accRef) baseCfg Nothing Nothing Nothing False
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1754,6 +1844,8 @@ convertTransactionJsonPayload = \case
   (CT.DelegateStake dsid) -> return $ Types.DelegateStake dsid
   (CT.UpdateElectionDifficulty d) -> return $ Types.UpdateElectionDifficulty d
   CT.TransferToEncrypted{..} -> return $ Types.TransferToEncrypted{..}
+  CT.TransferToPublic{..} -> return $ Types.TransferToPublic{..}
+  CT.EncryptedAmountTransfer{..} -> return Types.EncryptedAmountTransfer{..}
 
 -- |Sign a transaction payload and configuration into a "normal" transaction,
 -- which is ready to be sent.
