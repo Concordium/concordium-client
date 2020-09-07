@@ -1,7 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Concordium.Client.Types.Account where
+module Concordium.Client.Types.Account (
+  module Concordium.Client.Types.Account,
+  CryptoFFI.ElgamalSecretKey
+  ) where
 
 import Control.Monad
 import Control.Monad.Except
@@ -15,10 +18,14 @@ import Data.Aeson ((.=),(.:),(.:?), (.!=))
 import Concordium.Client.Utils
 import Concordium.Client.Encryption
 
+import qualified Concordium.Crypto.FFIDataTypes as CryptoFFI
 import qualified Concordium.ID.Types as ID
 import qualified Concordium.Types as Types
 import qualified Concordium.Crypto.SignatureScheme as SigScheme
 import qualified Concordium.Crypto.Ed25519Signature as Ed25519
+import Data.Serialize (encode)
+import Data.Serialize (decode)
+import Data.ByteString (ByteString)
 
 
 -- * Accounts
@@ -56,6 +63,7 @@ instance AE.FromJSON EncryptedAccountKeyPair where
 
 type AccountKeyMap = Map.HashMap ID.KeyIndex AccountKeyPair
 type EncryptedAccountKeyMap = Map.HashMap ID.KeyIndex EncryptedAccountKeyPair
+type EncryptedAccountEncryptionSecretKey = EncryptedText
 
 -- |Information about a given account sufficient to sign transactions.
 -- This includes the plain signing keys.
@@ -103,6 +111,13 @@ decryptAccountKeyMap
   -> IO (Either String AccountKeyMap)
 decryptAccountKeyMap encryptedKeyMap pwd =
   runExceptT $ sequence $ Map.mapWithKey (decryptAccountKeyPair pwd) encryptedKeyMap
+
+encryptAccountEncryptionSecretKey :: Password -> CryptoFFI.ElgamalSecretKey -> IO EncryptedAccountEncryptionSecretKey
+encryptAccountEncryptionSecretKey pwd secret = encryptText AES256 PBKDF2SHA256 (encode secret) pwd
+
+decryptAccountEncryptionSecretKey :: Password -> EncryptedAccountEncryptionSecretKey -> IO (Either String CryptoFFI.ElgamalSecretKey)
+decryptAccountEncryptionSecretKey pwd secret =
+  either (Left . displayException) decode <$> runExceptT (decryptText secret pwd :: ExceptT DecryptionFailure IO ByteString)
 
 -- * Account exports
 

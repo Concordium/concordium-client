@@ -217,7 +217,7 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
       -- get base configuration
       baseCfg <- getBaseConfig (Just cfgDir) False True
       -- generate options for the transaction
-      accCfg' <- snd <$> getAccountConfig sender baseCfg Nothing Nothing False
+      accCfg' <- snd <$> getAccountConfig sender baseCfg Nothing Nothing Nothing False
       let accCfg = accCfg' { acThreshold = fromIntegral (HM.size $ acKeys accCfg') }
           file = dataDir </> "baker-credentials.json"
           -- get Baker add transaction config
@@ -250,7 +250,7 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
       -- get base configuration
       baseCfg <- getBaseConfig (Just cfgDir) False True
       -- generate options for the transaction
-      accCfg' <- snd <$> getAccountConfig sender baseCfg Nothing Nothing False
+      accCfg' <- snd <$> getAccountConfig sender baseCfg Nothing Nothing Nothing False
       let accCfg = accCfg' { acThreshold = fromIntegral (HM.size $ acKeys accCfg') }
       -- get Baker add transaction config
       let energy = bakerRemoveEnergyCost (HM.size $ acKeys accCfg)

@@ -110,6 +110,11 @@ data TransactionCmd
   | TransactionDeployCredential
     { tdcFile :: !FilePath
     , tdcInteractionOpts :: !InteractionOpts }
+  | TransactionEncryptedTransfer
+    { tetTransactionOpts :: !TransactionOpts,
+      tetReceiver :: !Text,
+      tetAmount :: !Amount,
+      tetIndex :: !(Maybe Int) }
   deriving (Show)
 
 data AccountCmd
@@ -144,7 +149,8 @@ data AccountCmd
   -- account.
   | AccountDecrypt
     { adTransactionOpts :: !TransactionOpts,
-      adAmount :: !Amount
+      adAmount :: !Amount,
+      adIndex :: !(Maybe Int)
     }
   deriving (Show)
 
@@ -364,7 +370,8 @@ transactionCmds =
           (transactionSubmitCmd <>
            transactionStatusCmd <>
            transactionSendGtuCmd <>
-           transactionDeployCredentialCmd))
+           transactionDeployCredentialCmd <>
+           transactionEncryptedTransferCmd))
       (progDesc "Commands for submitting and inspecting transactions."))
 
 transactionSubmitCmd :: Mod CommandFields TransactionCmd
@@ -406,6 +413,18 @@ transactionSendGtuCmd =
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
         transactionOptsParser)
       (progDesc "Transfer GTU from one account to another (sending to contracts is currently not supported with this method - use 'transaction submit')."))
+
+transactionEncryptedTransferCmd :: Mod CommandFields TransactionCmd
+transactionEncryptedTransferCmd =
+  command
+    "encrypted-transfer"
+    (info
+      (TransactionEncryptedTransfer <$>
+         transactionOptsParser <*>
+         strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
+         option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
+         optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which encrypted amounts should be combined.")))
+      (progDesc "Make an encrypted transfer to another account."))
 
 accountCmds :: Mod CommandFields Cmd
 accountCmds =
@@ -480,7 +499,8 @@ accountDecryptCmd =
     (info
       (AccountDecrypt <$>
         transactionOptsParser <*>
-        option (maybeReader amountFromString) (long "amount" <> metavar "GTU-AMOUNT" <> help "The amount to transfer to public balance."))
+        option (maybeReader amountFromString) (long "amount" <> metavar "GTU-AMOUNT" <> help "The amount to transfer to public balance.") <*>
+        optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which encrypted amounts should be combined.")))
       (progDesc "Transfer an amount from encrypted to public balance of the account."))
 
 accountUpdateKeysCmd :: Mod CommandFields AccountCmd

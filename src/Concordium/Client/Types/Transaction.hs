@@ -2,7 +2,6 @@
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE TemplateHaskell      #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Concordium.Client.Types.Transaction where
 
@@ -11,6 +10,7 @@ import           Concordium.Crypto.Proofs
 import qualified Concordium.ID.Types                 as IDTypes
 import           Concordium.Types
 import           Concordium.Types.Execution          as Types
+import           Concordium.Crypto.EncryptedTransfers
 
 import           Data.Aeson                          as AE
 import qualified Data.Aeson.TH                       as AETH
@@ -177,7 +177,11 @@ data TransactionJSONPayload
       }
   | TransferToPublic {
       -- |Amount the user wishes to transfer to the public balance.
-      ttpAmount :: !Amount
+      ttpData :: !SecToPubAmountTransferData
+      }
+  | EncryptedAmountTransfer {
+      eatTo :: !AccountAddress,
+      eatData :: !EncryptedAmountTransferData
       }
   deriving (Show, Generic)
 
