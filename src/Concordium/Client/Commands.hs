@@ -120,7 +120,9 @@ data TransactionCmd
 data AccountCmd
   = AccountShow
     { asAddress :: !(Maybe Text)
-    , asBlockHash :: !(Maybe Text) }
+    , asBlockHash :: !(Maybe Text)
+    , asShowEncryptedBalance :: !Bool
+    , asDecryptEncryptedBalance :: !Bool }
   | AccountList
     { alBlockHash :: !(Maybe Text) }
   | AccountDelegate
@@ -451,7 +453,9 @@ accountShowCmd =
     (info
        (AccountShow <$>
          optional (strArgument (metavar "ACCOUNT" <> help "Name or address of the account.")) <*>
-         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")) <*>
+         switch (long "encrypted" <> help "Show encrypted balance") <*>
+         switch (long "decrypt-encrypted" <> help "Show the decrypted encrypted balance"))
        (progDesc "Display account details."))
 
 accountListCmd :: Mod CommandFields AccountCmd
