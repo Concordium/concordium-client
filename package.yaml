@@ -21,6 +21,7 @@ default-extensions:
 - OverloadedStrings
 - RecordWildCards
 - GeneralizedNewtypeDeriving
+- FlexibleContexts
 - LambdaCase
 - TupleSections
 
@@ -219,6 +220,11 @@ executables:
 
 tests:
   simple-client-test:
+    ghc-options:
+      - -Wcompat
+      - -Werror=missing-fields
+      - -Wredundant-constraints
+      - -O2
     main:             Spec.hs
     source-dirs:      test
     dependencies:

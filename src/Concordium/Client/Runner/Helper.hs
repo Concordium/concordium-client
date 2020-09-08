@@ -1,6 +1,4 @@
 {-# LANGUAGE DataKinds        #-}
-{-# LANGUAGE FlexibleContexts #-}
-
 module Concordium.Client.Runner.Helper
   ( outputGRPC
   , outputGRPC'

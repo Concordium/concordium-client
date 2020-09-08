@@ -1,6 +1,4 @@
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE RecordWildCards #-}
 
 module Concordium.Client.Export where
 
@@ -53,13 +51,15 @@ instance AE.FromJSON WalletExportIdentity where
 data WalletExportAccount =
   WalletExportAccount
   { weaName :: !Text
-  , weaKeys :: !AccountSigningData }
+  , weaKeys :: !AccountSigningData
+  , weaEncryptionKey :: !ElgamalSecretKey }
   deriving (Show)
 
 instance AE.FromJSON WalletExportAccount where
   parseJSON = AE.withObject "Account" $ \v -> do
     name <- v .: "name"
     addr <- v .: "address"
+    e <- v .: "encryptionSecretKey"
     (keys, th) <- v .: "accountData" >>= AE.withObject "Account data" (\w -> do
       keys <- w .: "keys"
       th <- w .: "threshold"
@@ -69,7 +69,8 @@ instance AE.FromJSON WalletExportAccount where
       , weaKeys = AccountSigningData
                   { asdAddress = addr
                   , asdKeys = keys
-                  , asdThreshold = th } }
+                  , asdThreshold = th }
+      , weaEncryptionKey = e }
 
 -- | Decode, decrypt and parse a mobile wallet export, reencrypting the singing keys with the same password.
 decodeMobileFormattedAccountExport
@@ -103,6 +104,7 @@ accountCfgFromWalletExportAccount :: Password -> WalletExportAccount -> ExceptT 
 accountCfgFromWalletExportAccount pwd WalletExportAccount { weaKeys = AccountSigningData{..}, .. } = do
   validateAccountName weaName
   acKeys <- liftIO $ encryptAccountKeyMap pwd asdKeys
+  acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd weaEncryptionKey)
   return $ AccountConfig
     { acAddr = NamedAddress { naName = Just weaName, naAddr = asdAddress }
     , acThreshold = asdThreshold
@@ -125,7 +127,10 @@ decodeGenesisFormattedAccountExport payload name pwd = runExceptT $ do
           addr <- v .: "address"
           ad <- v .: "accountData"
           accKeyMap <- ad .: "keys"
+          accEncryptionKey <- v .: "encryptionSecretKey"
           acThreshold <- ad .:? "threshold" .!= fromIntegral (Map.size accKeyMap)
           return $ do
             acKeys <- encryptAccountKeyMap pwd accKeyMap
-            return AccountConfig { acAddr = NamedAddress{naName = name, naAddr = addr}, .. }
+            acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd accEncryptionKey)
+            return AccountConfig { acAddr = NamedAddress{naName = name, naAddr = addr}
+                                 , .. }

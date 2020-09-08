@@ -1,6 +1,5 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE FlexibleContexts #-}
 module Concordium.Client.Config where
 
 import Concordium.Types as Types
@@ -30,6 +29,27 @@ import System.FilePath
 import Text.Printf
 import Text.Read (readMaybe)
 
+{- |
+The layout of the config directory is shown in this example:
+
+@
+  <baseConfigDir>
+  └── accounts
+      ├── names.map
+      ├── <account1>
+      │   └── keypair1.json
+      │   └── keypair2.json
+      │   ...
+      │   └── encSecretKey.json
+      ├── <account1>.threshold
+      ├── <account2>
+      │   └── keypair1.json
+      │   └── keypair2.json
+      │   ...
+      │   └── encSecretKey.json
+      └── <account2>.threshold
+@
+-}
 type BaseConfigDir = FilePath
 
 -- |The default location of the config root directory.
@@ -66,6 +86,10 @@ accountKeyFilePrefix = "keypair"
 accountKeyFile :: FilePath -> KeyIndex -> FilePath
 accountKeyFile keysDir idx = keysDir </> accountKeyFilePrefix ++ show idx <.> accountKeyFileExt
 
+-- |Return file path of the decryption key for encrypted amounts in the provided key directory.
+accountEncryptionSecretKeyFile :: FilePath -> FilePath
+accountEncryptionSecretKeyFile keysDir = keysDir </> "encSecretKey.json"
+
 -- |For a filename (without directory but with extension) determine whether it is a valid name
 -- of an account key file (as it would be produced by 'accountKeyFile').
 parseAccountKeyFileName :: FilePath -> Maybe KeyIndex
@@ -86,7 +110,7 @@ type AccountNameMap = M.HashMap Text Types.AccountAddress
 data BaseConfig = BaseConfig
                   { bcVerbose :: Bool
                   , bcAccountNameMap :: AccountNameMap
-                  , bcAccountCfgDir :: FilePath }
+                  , bcAccountCfgDir :: BaseConfigDir }
                 deriving (Show)
 
 -- |Initialize an empty config structure and returns the corresponding base config.
@@ -175,6 +199,7 @@ initAccountConfig baseCfg namedAddr = do
                     { acAddr = namedAddr
                     , acKeys = M.empty
                     , acThreshold = 1 -- minimum threshold
+                    , acEncryptionKey = Nothing
                     })
 
 -- |Write the provided configuration to disk in the expected formats.
@@ -211,6 +236,13 @@ writeAccountKeys baseCfg accCfg = do
     -- NOTE: This writes the JSON in a compact way. If we want human-readable JSON, we should use pretty encoding.
     AE.encodeFile file kp
 
+  case acEncryptionKey accCfg of
+    Just k -> do
+      let encKeyFile = accountEncryptionSecretKeyFile keysDir
+      logInfo [printf "writing file '%s'" encKeyFile]
+      AE.encodeFile encKeyFile k
+    Nothing -> logFatal [ printf "importing account without a secret encryption key provided" ]
+
   -- Write the threshold as a JSON value. Since it is a simple numeric
   -- value this should look as expected.
   let thresholdFile = accountThresholdFile accCfgDir (acAddress accCfg)
@@ -219,14 +251,14 @@ writeAccountKeys baseCfg accCfg = do
 
   logSuccess ["wrote key and threshold files"]
 
-getBaseConfig :: Maybe FilePath -> Verbose -> Bool -> IO BaseConfig
+getBaseConfig :: Maybe FilePath -> Verbose -> AutoInit -> IO BaseConfig
 getBaseConfig f verbose autoInit = do
   cfgDir <- getBaseConfigDir f
   let accCfgDir = accountConfigDir cfgDir
       mapFile = accountNameMapFile accCfgDir
 
   cfgDirExists <- doesDirectoryExist cfgDir
-  if not cfgDirExists && autoInit then
+  if not cfgDirExists && autoInit == AutoInit then
     initBaseConfig f
   else do
     m <- runExceptT $ do
@@ -298,7 +330,18 @@ data AccountConfig =
   AccountConfig
   { acAddr :: !NamedAddress
   , acKeys :: EncryptedAccountKeyMap
-  , acThreshold :: !IDTypes.SignatureThreshold }
+  , acThreshold :: !IDTypes.SignatureThreshold
+  -- | FIXME: This is a Maybe because the setup with account init being a
+  -- special thing is such that we need to be able to initialize a dummy config.
+  -- However this makes no practical sense, and that should be reworked so that
+  -- you just import an account and don't initialize a dummy config first. But
+  -- that is for the future, and for now we just have to deal with null pointers.
+  , acEncryptionKey :: !(Maybe EncryptedAccountEncryptionSecretKey)
+  }
+
+-- | Whether to automatically initialize the account configuration or not.
+data AutoInit = AutoInit | AssumeInitialized
+    deriving(Eq, Show)
 
 acAddress :: AccountConfig -> AccountAddress
 acAddress = naAddr . acAddr
@@ -323,11 +366,14 @@ getAccountConfig :: Maybe Text
                  -- If explicit keys are provided it is assumed that the
                  -- signature threshold for the account is less than the amount
                  -- of keys provided and all keys will be used to, e.g., sign the transaction.
-                 -> Bool
+                 -> Maybe EncryptedAccountEncryptionSecretKey
+                 -- ^Explicit secret encryption key. If provided it takes precedence over other
+                 -- parameters, otherwise the function attemps to lookup it ip from the key directory.
+                 -> AutoInit
                  -- ^Whether to initialize the account config when it does not exist.
                  -- This will also ask the user for an optional name mapping.
                  -> IO (BaseConfig, AccountConfig)
-getAccountConfig account baseCfg keysDir keyMap autoInit = do
+getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
   account' <- case account of
     Nothing -> do
       logInfo [printf "account reference not provided; using \"%s\"" defaultAccountName]
@@ -336,40 +382,65 @@ getAccountConfig account baseCfg keysDir keyMap autoInit = do
   namedAddr <- case getAccountAddress (bcAccountNameMap baseCfg) account' of
                  Left err -> logFatal [err]
                  Right v -> return v
-  case keyMap of
-    Nothing -> do
-      let accCfgDir = bcAccountCfgDir baseCfg
-          addr = naAddr namedAddr
-          dir = fromMaybe (accountKeysDir accCfgDir addr) keysDir
-      dirExists <- doesDirectoryExist dir
-      if not dirExists && autoInit then do
-        printf "Account '%s' is not yet initialized.\n" (show addr)
-        printf "Enter name of account or leave empty to initialize without a name (use ^C to cancel): "
-        name <- strip <$> T.getLine >>= \case
-                  "" -> return Nothing
-                  s -> return $ Just s
-        let namedAddr' = NamedAddress { naAddr = addr, naName = name }
-        initAccountConfig baseCfg namedAddr'
-      else do
-        (km, acThreshold) <-
-          handleJust
-                (guard . isDoesNotExistError)
-                (\_ -> logFatal [ printf "key directory for account '%s' not found" (show addr)
-                                , "did you forget to add the account (using 'config account add')?"])
-                (do km <- loadKeyMap dir
-                    let file = accountThresholdFile accCfgDir addr
-                    t <- loadThreshold file $ fromIntegral (M.size km)
-                    return (km, t))
 
-        return (baseCfg, AccountConfig
-                         { acAddr = namedAddr
-                         , acKeys = km
-                         ,..})
+  (bc, km, t) <-
+    case keyMap of
+      Nothing -> do
+        let accCfgDir = bcAccountCfgDir baseCfg
+            addr = naAddr namedAddr
+            dir = fromMaybe (accountKeysDir accCfgDir addr) keysDir
+        m <- autoinit baseCfg dir addr
+        case m of
+          Just b -> return (b, M.empty, 1)
+          Nothing -> do
+            (km, acThreshold) <-
+              handleJust
+              (guard . isDoesNotExistError)
+              (\_ -> logFatal [ printf "key directory for account '%s' not found" (show addr)
+                             , "did you forget to add the account (using 'config account add')?"])
+              (do km <- loadKeyMap dir
+                  let file = accountThresholdFile accCfgDir addr
+                  t <- loadThreshold file $ fromIntegral (M.size km)
+                  return (km, t))
 
-    Just km -> return (baseCfg, AccountConfig
-                                { acAddr = namedAddr
-                                , acKeys = km
-                                , acThreshold = fromIntegral (M.size km) })
+            return (baseCfg, km, acThreshold)
+
+      Just km -> return (baseCfg, km, fromIntegral (M.size km))
+
+  (bc', enc) <-
+    case encKey of
+      Nothing -> do
+        let accCfgDir = bcAccountCfgDir baseCfg
+            addr = naAddr namedAddr
+            dir = fromMaybe (accountKeysDir accCfgDir addr) keysDir
+        m <- autoinit bc dir addr
+        case m of
+          Just b -> return (b, Nothing)
+          Nothing -> (bc,) . Just <$> loadEncryptionSecretKey dir
+      e@(Just _) -> return (bc, e)
+
+  return (bc', AccountConfig {
+    acAddr = namedAddr,
+    acKeys = km,
+    acThreshold = t,
+    acEncryptionKey = enc
+    })
+
+ where
+   autoinit :: BaseConfig -> FilePath -> AccountAddress -> IO (Maybe BaseConfig)
+   autoinit cfg dir addr = do
+     dirExists <- doesDirectoryExist dir
+     if not dirExists && autoInit == AutoInit
+       then do
+         printf "Account '%s' is not yet initialized.\n" (show addr)
+         printf "Enter name of account or leave empty to initialize without a name (use ^C to cancel): "
+         name <- strip <$> T.getLine >>= \case
+           "" -> return Nothing
+           s -> return $ Just s
+         let namedAddr' = NamedAddress { naAddr = addr, naName = name }
+         Just . fst <$> initAccountConfig cfg namedAddr'
+       else do
+         return Nothing
 
 -- |Look up an account by name or address:
 -- If input is a well-formed account address, try to (reverse) look up its name in the map.
@@ -404,7 +475,7 @@ getAllAccountConfigs cfg = do
   let dir = bcAccountCfgDir cfg
   fs <- safeListDirectory dir
   fs' <- filterM (isDirectory dir) $ filter isValidAccountAddress fs
-  forM fs' $ \f -> snd <$> getAccountConfig (Just $ pack f) cfg Nothing Nothing False
+  forM fs' $ \f -> snd <$> getAccountConfig (Just $ pack f) cfg Nothing Nothing Nothing AssumeInitialized
   where
     isValidAccountAddress = isRight . addressFromText . pack
     isDirectory dir f =
@@ -417,9 +488,14 @@ loadKeyMap keysDir = do
   let keyIdxs = mapMaybe parseAccountKeyFileName filesInKeyDir
   keys :: [(Maybe KeyIndex, EncryptedAccountKeyPair)] <- forM keyIdxs $ \idx -> do
     let file = accountKeyFile keysDir idx
-    kp <- AE.eitherDecodeFileStrict' file `withLogFatalIO` (("cannot load key file " ++ file ++ " ") ++)
+    kp <- AE.eitherDecodeFileStrict' file `withLogFatalIO` (\e -> "cannot load key file " ++ file ++ " " ++ e)
     return (Just idx, kp)
   return $ foldl' insertAccountKey M.empty keys
+
+loadEncryptionSecretKey :: FilePath -> IO EncryptedAccountEncryptionSecretKey
+loadEncryptionSecretKey keysDir = do
+  let file = accountEncryptionSecretKeyFile keysDir
+  AE.eitherDecodeFileStrict' file `withLogFatalIO` (\e -> "cannot load encryption secret key file " ++ file ++ " " ++ e)
 
 -- |Insert key pair on the given index. If no index is given, use the first available one.
 insertAccountKey :: EncryptedAccountKeyMap -> (Maybe KeyIndex, EncryptedAccountKeyPair) -> EncryptedAccountKeyMap

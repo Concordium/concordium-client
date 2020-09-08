@@ -29,6 +29,7 @@ import Options.Applicative
 import Paths_simple_client (version)
 import Concordium.Client.LegacyCommands
 import Concordium.Client.Types.Account
+import Concordium.Client.Utils
 import Concordium.ID.Types (KeyIndex, SignatureThreshold)
 import Concordium.Types
 import Text.Printf
@@ -104,17 +105,28 @@ data TransactionCmd
     { tsHash :: !Text }
   | TransactionSendGtu
     { tsgReceiver :: !Text
-    , tsgAmount :: !Text
+    , tsgAmount :: !Amount
     , tsgOpts :: !TransactionOpts }
   | TransactionDeployCredential
     { tdcFile :: !FilePath
     , tdcInteractionOpts :: !InteractionOpts }
+  | TransactionEncryptedTransfer
+    { tetTransactionOpts :: !TransactionOpts,
+      -- | Address of the receiver.
+      tetReceiver :: !Text,
+      -- | Amount to send.
+      tetAmount :: !Amount,
+      -- | Which indices to use as inputs to the encrypted amount transfer.
+      -- If none are provided all existing ones will be used.
+      tetIndex :: !(Maybe Int) }
   deriving (Show)
 
 data AccountCmd
   = AccountShow
     { asAddress :: !(Maybe Text)
-    , asBlockHash :: !(Maybe Text) }
+    , asBlockHash :: !(Maybe Text)
+    , asShowEncryptedBalance :: !Bool
+    , asDecryptEncryptedBalance :: !Bool }
   | AccountList
     { alBlockHash :: !(Maybe Text) }
   | AccountDelegate
@@ -133,6 +145,23 @@ data AccountCmd
     { arkKeys :: ![KeyIndex]
     , aakThreshold :: !(Maybe SignatureThreshold)
     , arkTransactionOpts :: !TransactionOpts }
+  -- |Transfer part of the public balance to the encrypted balance of the
+  -- account.
+  | AccountEncrypt
+    { aeTransactionOpts :: !TransactionOpts,
+      -- | Amount to transfer from public to encrypted balance.
+      aeAmount :: !Amount
+    }
+  -- |Transfer part of the encrypted balance to the public balance of the
+  -- account.
+  | AccountDecrypt
+    { adTransactionOpts :: !TransactionOpts,
+      -- |Amount to transfer from encrypted to public balance.
+      adAmount :: !Amount,
+      -- | Which indices of incoming amounts to use as inputs.
+      -- If none are provided all existing ones will be used.
+      adIndex :: !(Maybe Int)
+    }
   deriving (Show)
 
 data ModuleCmd
@@ -351,7 +380,8 @@ transactionCmds =
           (transactionSubmitCmd <>
            transactionStatusCmd <>
            transactionSendGtuCmd <>
-           transactionDeployCredentialCmd))
+           transactionDeployCredentialCmd <>
+           transactionEncryptedTransferCmd))
       (progDesc "Commands for submitting and inspecting transactions."))
 
 transactionSubmitCmd :: Mod CommandFields TransactionCmd
@@ -390,9 +420,21 @@ transactionSendGtuCmd =
     (info
       (TransactionSendGtu <$>
         strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
-        strOption (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
+        option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
         transactionOptsParser)
       (progDesc "Transfer GTU from one account to another (sending to contracts is currently not supported with this method - use 'transaction submit')."))
+
+transactionEncryptedTransferCmd :: Mod CommandFields TransactionCmd
+transactionEncryptedTransferCmd =
+  command
+    "send-gtu-encrypted"
+    (info
+      (TransactionEncryptedTransfer <$>
+         transactionOptsParser <*>
+         strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
+         option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
+         optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which incoming encrypted amounts should be used.")))
+      (progDesc "Transfer GTU from the encrypted balance of the account to the encrypted balance of another account."))
 
 accountCmds :: Mod CommandFields Cmd
 accountCmds =
@@ -407,8 +449,10 @@ accountCmds =
            accountUndelegateCmd <>
            accountUpdateKeysCmd <>
            accountAddKeysCmd <>
-           accountRemoveKeysCmd))
-      (progDesc "Commands for inspecting accounts."))
+           accountRemoveKeysCmd <>
+           accountEncryptCmd <>
+           accountDecryptCmd))
+      (progDesc "Commands for inspecting and modifying accounts."))
 
 accountShowCmd :: Mod CommandFields AccountCmd
 accountShowCmd =
@@ -417,7 +461,9 @@ accountShowCmd =
     (info
        (AccountShow <$>
          optional (strArgument (metavar "ACCOUNT" <> help "Name or address of the account.")) <*>
-         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")) <*>
+         switch (long "encrypted" <> help "Show encrypted balance") <*>
+         switch (long "decrypt-encrypted" <> help "Show the encrypted balance, but also decrypt all the amounts (potentially slow)."))
        (progDesc "Display account details."))
 
 accountListCmd :: Mod CommandFields AccountCmd
@@ -447,6 +493,27 @@ accountUndelegateCmd =
       (AccountUndelegate <$>
         transactionOptsParser)
       (progDesc "Delegate stake of account to baker."))
+
+accountEncryptCmd :: Mod CommandFields AccountCmd
+accountEncryptCmd =
+  command
+    "encrypt"
+    (info
+      (AccountEncrypt <$>
+        transactionOptsParser <*>
+        option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "The amount to transfer to encrypted balance."))
+      (progDesc "Transfer an amount from public to encrypted balance of the account."))
+
+accountDecryptCmd :: Mod CommandFields AccountCmd
+accountDecryptCmd =
+  command
+    "decrypt"
+    (info
+      (AccountDecrypt <$>
+        transactionOptsParser <*>
+        option (maybeReader amountFromString) (long "amount" <> metavar "GTU-AMOUNT" <> help "The amount to transfer to public balance.") <*>
+        optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which encrypted amounts should be combined.")))
+      (progDesc "Transfer an amount from encrypted to public balance of the account."))
 
 accountUpdateKeysCmd :: Mod CommandFields AccountCmd
 accountUpdateKeysCmd =
