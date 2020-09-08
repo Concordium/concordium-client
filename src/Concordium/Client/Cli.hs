@@ -87,6 +87,13 @@ withLogFatalIO action f = do
   v <- action
   v `withLogFatal` f
 
+withLogFatalIO' :: String -> IO (Maybe a) -> IO a
+withLogFatalIO' e action =
+  action >>= \case
+    Nothing -> logFatal [e]
+    Just x -> return x
+
+
 logExit :: MonadIO m => [String] -> m a
 logExit msgs = logInfo msgs >> liftIO exitSuccess
 

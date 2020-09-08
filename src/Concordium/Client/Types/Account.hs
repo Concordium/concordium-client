@@ -112,9 +112,11 @@ decryptAccountKeyMap
 decryptAccountKeyMap encryptedKeyMap pwd =
   runExceptT $ sequence $ Map.mapWithKey (decryptAccountKeyPair pwd) encryptedKeyMap
 
+-- |Encrypt, with the given password, the secret key for decrypting encrypted amounts
 encryptAccountEncryptionSecretKey :: Password -> CryptoFFI.ElgamalSecretKey -> IO EncryptedAccountEncryptionSecretKey
 encryptAccountEncryptionSecretKey pwd secret = encryptText AES256 PBKDF2SHA256 (encode secret) pwd
 
+-- |Attempt to decrypt, with the given password, the secret key for decrypting encrypted amounts
 decryptAccountEncryptionSecretKey :: Password -> EncryptedAccountEncryptionSecretKey -> IO (Either String CryptoFFI.ElgamalSecretKey)
 decryptAccountEncryptionSecretKey pwd secret =
   either (Left . displayException) decode <$> runExceptT (decryptText secret pwd :: ExceptT DecryptionFailure IO ByteString)
