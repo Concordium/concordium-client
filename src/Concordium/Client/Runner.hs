@@ -441,7 +441,7 @@ getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx s
     AE.Success (Just AccountInfoResult{airEncryptedAmount=Types.AccountEncryptedAmount{..}}) -> do
       taker <- case idx of
                     Nothing -> return id
-                    Just v -> if v < (fromIntegral _startIndex) then logFatal ["The index provided must be at least the index of the first incoming amount on the account"]
+                    Just v -> if v < (fromIntegral _startIndex) || v > (fromIntegral _startIndex) + Seq.length _incomingEncryptedAmounts then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
                              else return $ Seq.take (v - (fromIntegral _startIndex))
       -- get receiver's public encryption key
       infoValueReceiver <- logFatalOnError =<< (withBestBlockHash Nothing $ getAccountInfo (Text.pack . show $ naAddr ettReceiver))
@@ -634,7 +634,7 @@ getAccountDecryptTransactionCfg adTransactionCfg adAmount secretKey idx = do
     AE.Success (Just AccountInfoResult{airEncryptedAmount=Types.AccountEncryptedAmount{..},..}) -> do
       taker <- case idx of
                     Nothing -> return id
-                    Just v -> if v < (fromIntegral _startIndex) then logFatal ["The index provided must be at least the index of the first incoming amount on the account"]
+                    Just v -> if v < (fromIntegral _startIndex) || v > (fromIntegral _startIndex) + Seq.length _incomingEncryptedAmounts then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
                              else return $ Seq.take (v - (fromIntegral _startIndex))
       -- precomputed table for speeding up decryption
       let table = Enc.computeTable globalContext (2^(16::Int))
