@@ -307,8 +307,10 @@ processTransactionCmd action baseCfgDir verbose backend =
       encryptedSecretKey <- maybe (logFatal ["Missing account encryption secret key for account: " ++ show (acAddr . tcAccountCfg $ txCfg)]) return (acEncryptionKey . tcAccountCfg $ txCfg)
       secretKey <- either (\e -> logFatal ["Couldn't decrypt account encryption secret key: " ++ e]) return =<< decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey
 
+      receiverAcc <- getAccountAddressArg (bcAccountNameMap baseCfg) (Just receiver)
+
       withClient backend $ do
-        ttxCfg <- getEncryptedTransferTransactionCfg baseCfg txCfg receiver amount index secretKey
+        ttxCfg <- getEncryptedTransferTransactionCfg txCfg receiverAcc amount index secretKey
         liftIO $ when verbose $ do
           runPrinter $ printAccountConfig $ tcAccountCfg txCfg
           putStrLn ""
@@ -428,8 +430,8 @@ data EncryptedTransferTransactionConfig =
   , ettAmount :: Types.Amount
   , ettTransferData :: !Enc.EncryptedAmountTransferData }
 
-getEncryptedTransferTransactionCfg :: BaseConfig -> TransactionConfig -> Text -> Types.Amount -> Maybe Int -> ElgamalSecretKey -> ClientMonad IO EncryptedTransferTransactionConfig
-getEncryptedTransferTransactionCfg baseCfg ettTransactionCfg receiver ettAmount idx secretKey = do
+getEncryptedTransferTransactionCfg :: TransactionConfig -> NamedAddress -> Types.Amount -> Maybe Int -> ElgamalSecretKey -> ClientMonad IO EncryptedTransferTransactionConfig
+getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx secretKey = do
   let senderAddr = acAddress . tcAccountCfg $ ettTransactionCfg
 
   -- get encrypted amounts for the sender
@@ -439,10 +441,10 @@ getEncryptedTransferTransactionCfg baseCfg ettTransactionCfg receiver ettAmount 
     AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
     AE.Success (Just AccountInfoResult{airEncryptedAmount=Types.AccountEncryptedAmount{..}}) -> do
       -- get receiver's public encryption key
-      infoValueReceiver <- logFatalOnError =<< (withBestBlockHash Nothing $ getAccountInfo receiver)
+      infoValueReceiver <- logFatalOnError =<< (withBestBlockHash Nothing $ getAccountInfo (Text.pack . show $ naAddr ettReceiver))
       case AE.fromJSON infoValueReceiver of
         AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
-        AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
+        AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show $ naAddr ettReceiver]
         AE.Success (Just air) -> do
           let receiverPk = ID._elgamalPublicKey $ airEncryptionKey air
           -- precomputed table for speeding up decryption
@@ -461,7 +463,6 @@ getEncryptedTransferTransactionCfg baseCfg ettTransactionCfg receiver ettAmount 
           -- index indicating which encrypted amounts we used as input
           let aggIndex = Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (fromMaybe (Seq.length _incomingEncryptedAmounts) idx))
           let aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
-          ettReceiver <- liftIO $ getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
           liftIO $ Enc.makeEncryptedAmountTransferData globalContext receiverPk secretKey aggAmount ettAmount >>= \case
             Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
             Just ettTransferData -> return EncryptedTransferTransactionConfig{..}
@@ -1007,17 +1008,31 @@ tailTransaction hash = do
 processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processAccountCmd action baseCfgDir verbose backend =
   case action of
-    AccountShow address block -> do
+    AccountShow address block showEncrypted showDecrypted -> do
       baseCfg <- getBaseConfig baseCfgDir verbose True
+
+      na <- getAccountAddressArg (bcAccountNameMap baseCfg) address
+      encKey <-
+        if showDecrypted
+        then do
+          encKeys <- (\l -> [ acEncryptionKey v | v <- l, acAddr v == na, isJust (acEncryptionKey v) ] ) <$> getAllAccountConfigs baseCfg
+          case encKeys of
+            [Just enc] -> do
+              decrypted <- decryptAccountEncryptionSecretKeyInteractive enc
+              case decrypted of
+                Right v -> return (Just v)
+                _ -> logFatal [printf "Couldn't decrypt encryption key for account '%s' with the provided password" (show $ naAddr na)]
+            _ -> logFatal [printf "Tried to decrypt balance of account '%s' but this account is not present on the local store" (show $ naAddr na)]
+        else return Nothing
+
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      na <- getAccountAddressArg (bcAccountNameMap baseCfg) address
       v <- withClientJson backend $ withBestBlockHash block $ getAccountInfo (Text.pack $ show $ naAddr na)
       case v of
         Nothing -> putStrLn "Account not found."
-        Just a -> runPrinter $ printAccountInfo na a verbose
+        Just a -> runPrinter $ printAccountInfo na a verbose (showEncrypted || showDecrypted) encKey
     AccountList block -> do
       v <- withClientJson backend $ withBestBlockHash block getAccountList
       runPrinter $ printAccountList v

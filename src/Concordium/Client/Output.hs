@@ -12,6 +12,8 @@ import Concordium.Common.Version
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Types
 import qualified Concordium.ID.Types as IDTypes
+import qualified Concordium.Crypto.EncryptedTransfers as Enc
+import Concordium.ID.Parameters (globalContext)
 
 import Control.Monad.Writer
 import qualified Data.Aeson.Encode.Pretty as AE
@@ -135,14 +137,33 @@ showRevealedAttributes as =
                   Just k -> unpack k
     showAttr (t, IDTypes.AttributeValue v) = printf "%s=%s" (showTag t) (show v)
 
-printAccountInfo :: NamedAddress -> AccountInfoResult -> Verbose -> Printer
-printAccountInfo addr a verbose = do
-  tell [ printf "Local name: %s" (showMaybe unpack $ naName addr)
-       , printf "Address:    %s" (show $ naAddr addr)
-       , printf "Balance:    %s" (showGtu $ airAmount a)
-       , printf "Nonce:      %s" (show $ airNonce a)
-       , printf "Delegation: %s" (maybe showNone (printf "baker %s" . show) $ airDelegation a)
+printAccountInfo :: NamedAddress -> AccountInfoResult -> Verbose -> Bool -> Maybe ElgamalSecretKey -> Printer
+printAccountInfo addr a verbose showEncrypted mEncKey= do
+  tell [ printf "Local name:            %s" (showMaybe unpack $ naName addr)
+       , printf "Address:               %s" (show $ naAddr addr)
+       , printf "Balance:               %s" (showGtu $ airAmount a)
+       , printf "Nonce:                 %s" (show $ airNonce a)
+       , printf "Delegation:            %s" (maybe showNone (printf "baker %s" . show) $ airDelegation a)
+       , printf "Encryption public key: %s" (show $ airEncryptionKey a)
        , "" ]
+
+  if showEncrypted
+    then let showEncryptedAmount = if verbose then show else \v -> (take 20 $ show v) ++ "..."
+             showEncryptedBalance amms self = do
+               let (_, balances) = foldl (\(idx, strings) v -> (idx + 1, strings <> [printf "    %s: %s" (show idx) v])) (Types._startIndex $ airEncryptedAmount a, []) amms
+               tell $ ["Encrypted balance:"] <> (case balances of [] -> ["  Incoming amounts: []"]; _ -> ["  Incoming amounts:"] <> balances) <> [printf "  Self balance: %s" self]
+         in
+          case mEncKey of
+           Nothing -> showEncryptedBalance (fmap showEncryptedAmount $ Types._incomingEncryptedAmounts $ airEncryptedAmount a) (showEncryptedAmount $ Types._selfAmount $ airEncryptedAmount a)
+           Just encKey -> do
+             let table = Enc.computeTable globalContext (2^(16::Int))
+                 decoder = Enc.decryptAmount table encKey
+                 selfDecrypted = decoder (Types._selfAmount $ airEncryptedAmount a)
+             showEncryptedBalance (fmap (\x -> let decoded = decoder x in
+                                                "(" ++ showGtu decoded ++ ") " ++ showEncryptedAmount x) $ Types._incomingEncryptedAmounts $ airEncryptedAmount a) ("(" ++ showGtu selfDecrypted ++ ") " ++ showEncryptedAmount (Types._selfAmount $ airEncryptedAmount a))
+    else return ()
+
+  tell [ "" ]
 
   case airCredentials a of
       [] -> tell ["Credentials: " ++ showNone]
