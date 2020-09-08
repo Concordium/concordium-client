@@ -465,7 +465,6 @@ getEncryptedTransferTransactionCfg baseCfg ettTransactionCfg receiver ettAmount 
           liftIO $ Enc.makeEncryptedAmountTransferData globalContext receiverPk secretKey aggAmount ettAmount >>= \case
             Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
             Just ettTransferData -> return EncryptedTransferTransactionConfig{..}
-  where
 
 -- |Resolved configuration for a 'baker add' transaction.
 data BakerAddTransactionConfig =

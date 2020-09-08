@@ -61,11 +61,11 @@ instance AE.FromJSON WalletExportAccount where
   parseJSON = AE.withObject "Account" $ \v -> do
     name <- v .: "name"
     addr <- v .: "address"
-    (keys, th, e) <- v .: "accountData" >>= AE.withObject "Account data" (\w -> do
+    e <- v .: "encryptionSecretKey"
+    (keys, th) <- v .: "accountData" >>= AE.withObject "Account data" (\w -> do
       keys <- w .: "keys"
       th <- w .: "threshold"
-      e <- w .: "encryptionKey"
-      return (keys, th, e))
+      return (keys, th))
     return WalletExportAccount
       { weaName = name
       , weaKeys = AccountSigningData
