@@ -439,6 +439,10 @@ getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx s
     AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
     AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
     AE.Success (Just AccountInfoResult{airEncryptedAmount=Types.AccountEncryptedAmount{..}}) -> do
+      taker <- case idx of
+                    Nothing -> return id
+                    Just v -> if v < (fromIntegral _startIndex) then logFatal ["The index provided must be at least the index of the first incoming amount on the account"]
+                             else return $ Seq.take (v - (fromIntegral _startIndex))
       -- get receiver's public encryption key
       infoValueReceiver <- logFatalOnError =<< (withBestBlockHash Nothing $ getAccountInfo (Text.pack . show $ naAddr ettReceiver))
       case AE.fromJSON infoValueReceiver of
@@ -451,17 +455,14 @@ getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx s
               decoder = Enc.decryptAmount table secretKey
               selfDecrypted = decoder _selfAmount
           -- aggregation of idx encrypted amounts
-              taker = case idx of
-                Nothing -> id
-                Just v -> Seq.take v
               inputEncAmounts = taker _incomingEncryptedAmounts
               aggAmounts = foldl' (<>) _selfAmount inputEncAmounts
               totalEncryptedAmount = foldl' (+) selfDecrypted $ fmap decoder inputEncAmounts
           unless (totalEncryptedAmount >= ettAmount) $
             logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (show ettAmount) (show totalEncryptedAmount)]
           -- index indicating which encrypted amounts we used as input
-          let aggIndex = Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (fromMaybe (Seq.length _incomingEncryptedAmounts) idx))
-          let aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
+          let aggIndex = Enc.EncryptedAmountAggIndex (fromMaybe (Enc.theAggIndex _startIndex + fromIntegral (Seq.length _incomingEncryptedAmounts)) (fmap fromIntegral idx))
+              aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
           liftIO $ Enc.makeEncryptedAmountTransferData globalContext receiverPk secretKey aggAmount ettAmount >>= \case
             Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
             Just ettTransferData -> return EncryptedTransferTransactionConfig{..}
@@ -623,26 +624,31 @@ getAccountEncryptTransactionCfg baseCfg txOpts aeAmount = do
 
 -- |Resolve configuration for transferring an amount from encrypted to public
 -- balance of an account.
-getAccountDecryptTransactionCfg :: TransactionConfig -> Types.Amount -> ElgamalSecretKey -> ClientMonad IO AccountDecryptTransactionConfig
-getAccountDecryptTransactionCfg adTransactionCfg adAmount secretKey = do
+getAccountDecryptTransactionCfg :: TransactionConfig -> Types.Amount -> ElgamalSecretKey -> Maybe Int -> ClientMonad IO AccountDecryptTransactionConfig
+getAccountDecryptTransactionCfg adTransactionCfg adAmount secretKey idx = do
   let senderAddr = acAddress . tcAccountCfg $ adTransactionCfg
   infoValue <- logFatalOnError =<< (withBestBlockHash Nothing $ getAccountInfo (Text.pack . show $ senderAddr))
   case AE.fromJSON infoValue of
     AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
     AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
     AE.Success (Just AccountInfoResult{airEncryptedAmount=Types.AccountEncryptedAmount{..},..}) -> do
+      taker <- case idx of
+                    Nothing -> return id
+                    Just v -> if v < (fromIntegral _startIndex) then logFatal ["The index provided must be at least the index of the first incoming amount on the account"]
+                             else return $ Seq.take (v - (fromIntegral _startIndex))
       -- precomputed table for speeding up decryption
       let table = Enc.computeTable globalContext (2^(16::Int))
-      let decoder = Enc.decryptAmount table secretKey
-      let selfDecrypted = decoder _selfAmount
+          decoder = Enc.decryptAmount table secretKey
+          selfDecrypted = decoder _selfAmount
       -- aggregation of all encrypted amounts
-      let aggAmounts = foldl' (<>) _selfAmount _incomingEncryptedAmounts
-      let totalEncryptedAmount = foldl' (+) selfDecrypted $ fmap decoder _incomingEncryptedAmounts
+          inputEncAmounts = taker _incomingEncryptedAmounts
+          aggAmounts = foldl' (<>) _selfAmount inputEncAmounts
+          totalEncryptedAmount = foldl' (+) selfDecrypted $ fmap decoder inputEncAmounts
       unless (totalEncryptedAmount >= adAmount) $
         logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (show adAmount) (show totalEncryptedAmount)]
       -- index indicating which encrypted amounts we used as input
-      let aggIndex = Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (Seq.length _incomingEncryptedAmounts))
-      let aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
+      let aggIndex = Enc.EncryptedAmountAggIndex (fromMaybe (Enc.theAggIndex _startIndex + fromIntegral (Seq.length _incomingEncryptedAmounts)) (fmap fromIntegral idx))
+          aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
       liftIO $ Enc.makeSecToPubAmountTransferData globalContext secretKey aggAmount adAmount >>= \case
         Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
         Just adTransferData -> return AccountDecryptTransactionConfig{..}
@@ -1149,7 +1155,7 @@ processAccountCmd action baseCfgDir verbose backend =
       secretKey <- either (\e -> logFatal ["Couldn't decrypt account encryption secret key: " ++ e]) return =<< decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey
 
       withClient backend $ do
-        adtxCfg <- getAccountDecryptTransactionCfg txCfg adAmount secretKey
+        adtxCfg <- getAccountDecryptTransactionCfg txCfg adAmount secretKey adIndex
         when verbose $ do
           runPrinter $ printAccountConfig $ tcAccountCfg txCfg
           liftIO $ putStrLn ""
