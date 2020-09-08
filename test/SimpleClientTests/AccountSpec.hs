@@ -8,9 +8,7 @@ import Concordium.Common.Version
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
 import qualified Concordium.Crypto.ByteStringHelpers as BSH
-import Concordium.Crypto.FFIDataTypes
 import Concordium.Crypto.EncryptedTransfers
-import Concordium.ID.DummyData
 
 import Control.Monad.Writer
 import qualified Data.Map.Strict as Map

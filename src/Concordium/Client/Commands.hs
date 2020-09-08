@@ -112,8 +112,12 @@ data TransactionCmd
     , tdcInteractionOpts :: !InteractionOpts }
   | TransactionEncryptedTransfer
     { tetTransactionOpts :: !TransactionOpts,
+      -- | Address of the receiver.
       tetReceiver :: !Text,
+      -- | Amount to send.
       tetAmount :: !Amount,
+      -- | Which indices to use as inputs to the encrypted amount transfer.
+      -- If none are provided all existing ones will be used.
       tetIndex :: !(Maybe Int) }
   deriving (Show)
 
@@ -145,13 +149,17 @@ data AccountCmd
   -- account.
   | AccountEncrypt
     { aeTransactionOpts :: !TransactionOpts,
+      -- | Amount to transfer from public to encrypted balance.
       aeAmount :: !Amount
     }
   -- |Transfer part of the encrypted balance to the public balance of the
   -- account.
   | AccountDecrypt
     { adTransactionOpts :: !TransactionOpts,
+      -- |Amount to transfer from encrypted to public balance.
       adAmount :: !Amount,
+      -- | Which indices of incoming amounts to use as inputs.
+      -- If none are provided all existing ones will be used.
       adIndex :: !(Maybe Int)
     }
   deriving (Show)
@@ -419,14 +427,14 @@ transactionSendGtuCmd =
 transactionEncryptedTransferCmd :: Mod CommandFields TransactionCmd
 transactionEncryptedTransferCmd =
   command
-    "encrypted-transfer"
+    "send-gtu-encrypted"
     (info
       (TransactionEncryptedTransfer <$>
          transactionOptsParser <*>
          strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
          option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
-         optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which encrypted amounts should be combined.")))
-      (progDesc "Make an encrypted transfer to another account."))
+         optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which incoming encrypted amounts should be used.")))
+      (progDesc "Transfer GTU from the encrypted balance of the account to the encrypted balance of another account."))
 
 accountCmds :: Mod CommandFields Cmd
 accountCmds =
@@ -455,7 +463,7 @@ accountShowCmd =
          optional (strArgument (metavar "ACCOUNT" <> help "Name or address of the account.")) <*>
          optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")) <*>
          switch (long "encrypted" <> help "Show encrypted balance") <*>
-         switch (long "decrypt-encrypted" <> help "Show the decrypted encrypted balance"))
+         switch (long "decrypt-encrypted" <> help "Show the encrypted balance, but also decrypt all the amounts (potentially slow)."))
        (progDesc "Display account details."))
 
 accountListCmd :: Mod CommandFields AccountCmd

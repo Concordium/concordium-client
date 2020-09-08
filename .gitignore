@@ -19,3 +19,4 @@ stack.yaml.lock
 *.iml
 tmp/
 gtu-drop-account.json
+hie.yaml

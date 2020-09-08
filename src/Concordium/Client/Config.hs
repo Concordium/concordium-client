@@ -40,13 +40,13 @@ The layout of the config directory is shown in this example:
       │   └── keypair1.json
       │   └── keypair2.json
       │   ...
-      │   └── encSecretKey
+      │   └── encSecretKey.json
       ├── <account1>.threshold
       ├── <account2>
       │   └── keypair1.json
       │   └── keypair2.json
       │   ...
-      │   └── encSecretKey
+      │   └── encSecretKey.json
       └── <account2>.threshold
 @
 -}
@@ -86,8 +86,9 @@ accountKeyFilePrefix = "keypair"
 accountKeyFile :: FilePath -> KeyIndex -> FilePath
 accountKeyFile keysDir idx = keysDir </> accountKeyFilePrefix ++ show idx <.> accountKeyFileExt
 
+-- |Return file path of the decryption key for encrypted amounts in the provided key directory.
 accountEncryptionSecretKeyFile :: FilePath -> FilePath
-accountEncryptionSecretKeyFile keysDir = keysDir </> "encSecretKey"
+accountEncryptionSecretKeyFile keysDir = keysDir </> "encSecretKey.json"
 
 -- |For a filename (without directory but with extension) determine whether it is a valid name
 -- of an account key file (as it would be produced by 'accountKeyFile').
@@ -250,14 +251,14 @@ writeAccountKeys baseCfg accCfg = do
 
   logSuccess ["wrote key and threshold files"]
 
-getBaseConfig :: Maybe FilePath -> Verbose -> Bool -> IO BaseConfig
+getBaseConfig :: Maybe FilePath -> Verbose -> AutoInit -> IO BaseConfig
 getBaseConfig f verbose autoInit = do
   cfgDir <- getBaseConfigDir f
   let accCfgDir = accountConfigDir cfgDir
       mapFile = accountNameMapFile accCfgDir
 
   cfgDirExists <- doesDirectoryExist cfgDir
-  if not cfgDirExists && autoInit then
+  if not cfgDirExists && autoInit == AutoInit then
     initBaseConfig f
   else do
     m <- runExceptT $ do
@@ -330,8 +331,17 @@ data AccountConfig =
   { acAddr :: !NamedAddress
   , acKeys :: EncryptedAccountKeyMap
   , acThreshold :: !IDTypes.SignatureThreshold
+  -- | FIXME: This is a Maybe because the setup with account init being a
+  -- special thing is such that we need to be able to initialize a dummy config.
+  -- However this makes no practical sense, and that should be reworked so that
+  -- you just import an account and don't initialize a dummy config first. But
+  -- that is for the future, and for now we just have to deal with null pointers.
   , acEncryptionKey :: !(Maybe EncryptedAccountEncryptionSecretKey)
   }
+
+-- | Whether to automatically initialize the account configuration or not.
+data AutoInit = AutoInit | AssumeInitialized
+    deriving(Eq, Show)
 
 acAddress :: AccountConfig -> AccountAddress
 acAddress = naAddr . acAddr
@@ -357,9 +367,9 @@ getAccountConfig :: Maybe Text
                  -- signature threshold for the account is less than the amount
                  -- of keys provided and all keys will be used to, e.g., sign the transaction.
                  -> Maybe EncryptedAccountEncryptionSecretKey
-                 -- ^Explicit secret encryption key. If provided it itakes precedence over other
+                 -- ^Explicit secret encryption key. If provided it takes precedence over other
                  -- parameters, otherwise the function attemps to lookup it ip from the key directory.
-                 -> Bool
+                 -> AutoInit
                  -- ^Whether to initialize the account config when it does not exist.
                  -- This will also ask the user for an optional name mapping.
                  -> IO (BaseConfig, AccountConfig)
@@ -420,7 +430,7 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
    autoinit :: BaseConfig -> FilePath -> AccountAddress -> IO (Maybe BaseConfig)
    autoinit cfg dir addr = do
      dirExists <- doesDirectoryExist dir
-     if not dirExists && autoInit
+     if not dirExists && autoInit == AutoInit
        then do
          printf "Account '%s' is not yet initialized.\n" (show addr)
          printf "Enter name of account or leave empty to initialize without a name (use ^C to cancel): "
@@ -465,7 +475,7 @@ getAllAccountConfigs cfg = do
   let dir = bcAccountCfgDir cfg
   fs <- safeListDirectory dir
   fs' <- filterM (isDirectory dir) $ filter isValidAccountAddress fs
-  forM fs' $ \f -> snd <$> getAccountConfig (Just $ pack f) cfg Nothing Nothing Nothing False
+  forM fs' $ \f -> snd <$> getAccountConfig (Just $ pack f) cfg Nothing Nothing Nothing AssumeInitialized
   where
     isValidAccountAddress = isRight . addressFromText . pack
     isDirectory dir f =

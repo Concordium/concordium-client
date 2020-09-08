@@ -31,6 +31,7 @@ import Text.Printf
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import Data.Word
+import Lens.Micro.Platform
 
 -- PRINTER
 
@@ -108,19 +109,17 @@ printAccountConfigList cfgs =
     forM_ cfgs $ \cfg -> do
       let keys = acKeys cfg
       if null keys then
-        tell [ printf "- %s: %s" (showNamedAddress $ acAddr cfg) showNone]
+        tell [ printf "- %s: %s" (namedAddress cfg) showNone]
       else do
-        tell [ printf "- %s:" (showNamedAddress $ acAddr cfg)]
+        tell [ printf "- %s:" (namedAddress cfg)]
         -- NB: While we do not have proper account exports or dedicated commands to print
         -- the full account key map, this command should print the account key map in the
         -- JSON format that can be used for importing and "account add-keys".
         tell [ showPrettyJSON keys ]
-        -- printMap showEntry $ toSortedList keys
     tell ["Encryption secret keys:" ]
     forM_ cfgs $ \cfg -> do
-      tell [ (printf "- %s: " (showNamedAddress $ acAddr cfg)) ++ (maybe showNone showPrettyJSON (acEncryptionKey cfg))]
-  -- where showEntry (n, kp) =
-  --         printf "    %s: %s" (show n) (showAccountKeyPair kp)
+      tell [ printf "- %s: %s" (namedAddress cfg) (maybe showNone showPrettyJSON (acEncryptionKey cfg))]
+  where namedAddress cfg = showNamedAddress $ acAddr cfg
 
 -- ACCOUNT
 
@@ -150,15 +149,26 @@ printAccountInfo addr a verbose showEncrypted mEncKey= do
        , printf "Encryption public key: %s" (show $ airEncryptionKey a)
        , "" ]
 
-  if showEncrypted
-    then let showEncryptedAmount = if verbose then show else \v -> (take 20 $ show v) ++ "..."
-             showEncryptedBalance amms self = do
-               let (_, balances) = foldl (\(idx, strings) v -> (idx + 1, strings <> [printf "    %s: %s" (show idx) v])) (Types._startIndex $ airEncryptedAmount a, []) amms
-               tell $ ["Encrypted balance:"] <> (case balances of [] -> ["  Incoming amounts: []"]; _ -> ["  Incoming amounts:"] <> balances) <> [printf "  Self balance: %s" self]
-         in
-          case mEncKey of
-           Nothing -> showEncryptedBalance (fmap showEncryptedAmount $ Types._incomingEncryptedAmounts $ airEncryptedAmount a) (showEncryptedAmount $ Types._selfAmount $ airEncryptedAmount a)
-           Just encKey -> do
+  if showEncrypted then
+    let
+      -- since encryption keys are quite long we only print 20 characters by default
+      showEncryptedAmount = if verbose then show else \v -> (take 20 $ show v) ++ "..."
+      showEncryptedBalance amms self = do
+        let (_, balances) = foldl' (\(idx, strings) v -> (idx + 1, strings <> [printf "    %s: %s" (show idx) v]))
+                                   (Types._startIndex $ airEncryptedAmount a, [])
+                                   amms
+        tell ["Encrypted balance:"]
+        tell $ case balances of
+                 [] -> ["  Incoming amounts: []"]
+                 _ -> ["  Incoming amounts:"] <> balances
+        tell [printf "  Self balance: %s" self]
+    in
+      case mEncKey of
+        Nothing ->
+          let incomingAmounts = fmap showEncryptedAmount $ airEncryptedAmount a ^. Types.incomingEncryptedAmounts
+              selfAmount = showEncryptedAmount $ airEncryptedAmount a ^. Types.selfAmount
+          in showEncryptedBalance incomingAmounts selfAmount
+        Just encKey -> do
              let table = Enc.computeTable globalContext (2^(16::Int))
                  decoder = Enc.decryptAmount table encKey
                  selfDecrypted = decoder (Types._selfAmount $ airEncryptedAmount a)

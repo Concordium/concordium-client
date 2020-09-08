@@ -170,14 +170,14 @@ processConfigCmd action baseCfgDir verbose =
   case action of
     ConfigInit -> void $ initBaseConfig baseCfgDir
     ConfigShow -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       runPrinter $ printBaseConfig baseCfg
       putStrLn ""
       accCfgs <- getAllAccountConfigs baseCfg
       runPrinter $ printAccountConfigList accCfgs
     ConfigAccountCmd c -> case c of
       ConfigAccountAdd addr naName -> do
-        baseCfg <- getBaseConfig baseCfgDir verbose True
+        baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
@@ -189,7 +189,7 @@ processConfigCmd action baseCfgDir verbose =
         forM_ naName $ logFatalOnError . validateAccountName
         void $ initAccountConfig baseCfg NamedAddress{..}
       ConfigAccountImport file name importFormat -> do
-        baseCfg <- getBaseConfig baseCfgDir verbose True
+        baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
@@ -201,13 +201,13 @@ processConfigCmd action baseCfgDir verbose =
         accCfgs <- loadAccountImportFile importFormat file name
         void $ importAccountConfig baseCfg accCfgs
       ConfigAccountAddKeys addr keysFile -> do
-        baseCfg <- getBaseConfig baseCfgDir verbose True
+        baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
 
         keyMapInput :: EncryptedAccountKeyMap <- AE.eitherDecodeFileStrict keysFile `withLogFatalIO` ("cannot decode keys: " ++)
-        (baseCfg', accCfg) <- getAccountConfig (Just addr) baseCfg Nothing Nothing Nothing True
+        (baseCfg', accCfg) <- getAccountConfig (Just addr) baseCfg Nothing Nothing Nothing AutoInit
 
         let keyMapCurrent = acKeys accCfg
         let keyMapNew = Map.difference keyMapInput keyMapCurrent
@@ -280,7 +280,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       --      It should skip already completed steps.
       -- withClient backend $ tailTransaction hash
     TransactionSendGtu receiver amount txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -295,7 +295,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     TransactionEncryptedTransfer txOpts receiver amount index -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -303,8 +303,12 @@ processTransactionCmd action baseCfgDir verbose backend =
       let nrgCost _ = return $ Just encryptedTransferEnergyCost
       txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
 
-      encryptedSecretKey <- maybe (logFatal ["Missing account encryption secret key for account: " ++ show (acAddr . tcAccountCfg $ txCfg)]) return (acEncryptionKey . tcAccountCfg $ txCfg)
-      secretKey <- either (\e -> logFatal ["Couldn't decrypt account encryption secret key: " ++ e]) return =<< decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey
+      encryptedSecretKey <-
+          case acEncryptionKey . tcAccountCfg $ txCfg of
+            Nothing -> 
+              logFatal ["Missing account encryption secret key for account: " ++ show (acAddr . tcAccountCfg $ txCfg)]
+            Just x -> return x
+      secretKey <- decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey `withLogFatalIO` ("Couldn't decrypt account encryption secret key: " ++)
 
       receiverAcc <- getAccountAddressArg (bcAccountNameMap baseCfg) (Just receiver)
 
@@ -354,7 +358,7 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
   keysArg <- case toKeys txOpts of
                Nothing -> return Nothing
                Just filePath -> AE.eitherDecodeFileStrict filePath `withLogFatalIO` ("cannot decode keys: " ++)
-  (_, accCfg) <- getAccountConfig (toSender txOpts) baseCfg Nothing keysArg Nothing False
+  (_, accCfg) <- getAccountConfig (toSender txOpts) baseCfg Nothing keysArg Nothing AssumeInitialized
 
   energyCostFunc <- getEnergyCostFunc accCfg
   let computedCost = case energyCostFunc of
@@ -440,9 +444,12 @@ getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx s
     AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
     AE.Success (Just AccountInfoResult{airEncryptedAmount=Types.AccountEncryptedAmount{..}}) -> do
       taker <- case idx of
-                    Nothing -> return id
-                    Just v -> if v < (fromIntegral _startIndex) || v > (fromIntegral _startIndex) + Seq.length _incomingEncryptedAmounts then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
-                             else return $ Seq.take (v - (fromIntegral _startIndex))
+                Nothing -> return id
+                Just v ->
+                  if v < fromIntegral _startIndex 
+                     || v > (fromIntegral _startIndex) + Seq.length _incomingEncryptedAmounts
+                  then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
+                  else return $ Seq.take (v - (fromIntegral _startIndex))
       -- get receiver's public encryption key
       infoValueReceiver <- logFatalOnError =<< (withBestBlockHash Nothing $ getAccountInfo (Text.pack . show $ naAddr ettReceiver))
       case AE.fromJSON infoValueReceiver of
@@ -461,7 +468,10 @@ getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx s
           unless (totalEncryptedAmount >= ettAmount) $
             logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (show ettAmount) (show totalEncryptedAmount)]
           -- index indicating which encrypted amounts we used as input
-          let aggIndex = Enc.EncryptedAmountAggIndex (fromMaybe (Enc.theAggIndex _startIndex + fromIntegral (Seq.length _incomingEncryptedAmounts)) (fmap fromIntegral idx))
+          let aggIndex = case idx of
+                Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (Seq.length _incomingEncryptedAmounts))
+                Just idx' -> Enc.EncryptedAmountAggIndex (fromIntegral idx')
+                -- ^ we use the supplied index if given. We already checked above that it is within bounds.
               aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
           liftIO $ Enc.makeEncryptedAmountTransferData globalContext receiverPk secretKey aggAmount ettAmount >>= \case
             Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
@@ -633,9 +643,11 @@ getAccountDecryptTransactionCfg adTransactionCfg adAmount secretKey idx = do
     AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
     AE.Success (Just AccountInfoResult{airEncryptedAmount=Types.AccountEncryptedAmount{..},..}) -> do
       taker <- case idx of
-                    Nothing -> return id
-                    Just v -> if v < (fromIntegral _startIndex) || v > (fromIntegral _startIndex) + Seq.length _incomingEncryptedAmounts then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
-                             else return $ Seq.take (v - (fromIntegral _startIndex))
+        Nothing -> return id
+        Just v -> if v < (fromIntegral _startIndex)
+                    || v > (fromIntegral _startIndex) + Seq.length _incomingEncryptedAmounts
+                 then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
+                 else return $ Seq.take (v - (fromIntegral _startIndex))
       -- precomputed table for speeding up decryption
       let table = Enc.computeTable globalContext (2^(16::Int))
           decoder = Enc.decryptAmount table secretKey
@@ -647,7 +659,9 @@ getAccountDecryptTransactionCfg adTransactionCfg adAmount secretKey idx = do
       unless (totalEncryptedAmount >= adAmount) $
         logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (show adAmount) (show totalEncryptedAmount)]
       -- index indicating which encrypted amounts we used as input
-      let aggIndex = Enc.EncryptedAmountAggIndex (fromMaybe (Enc.theAggIndex _startIndex + fromIntegral (Seq.length _incomingEncryptedAmounts)) (fmap fromIntegral idx))
+      let aggIndex = case idx of
+            Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (Seq.length _incomingEncryptedAmounts))
+            Just idx' -> Enc.EncryptedAmountAggIndex (fromIntegral idx')
           aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
       liftIO $ Enc.makeSecToPubAmountTransferData globalContext secretKey aggAmount adAmount >>= \case
         Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
@@ -1014,7 +1028,7 @@ processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processAccountCmd action baseCfgDir verbose backend =
   case action of
     AccountShow address block showEncrypted showDecrypted -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
 
       na <- getAccountAddressArg (bcAccountNameMap baseCfg) address
       encKey <-
@@ -1042,7 +1056,7 @@ processAccountCmd action baseCfgDir verbose backend =
       v <- withClientJson backend $ withBestBlockHash block getAccountList
       runPrinter $ printAccountList v
     AccountDelegate bakerId txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -1059,7 +1073,7 @@ processAccountCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     AccountUndelegate txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -1076,7 +1090,7 @@ processAccountCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     AccountUpdateKeys f txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -1093,7 +1107,7 @@ processAccountCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     AccountAddKeys f thresh txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -1110,7 +1124,7 @@ processAccountCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     AccountRemoveKeys idxs thresh txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -1127,7 +1141,7 @@ processAccountCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     AccountEncrypt{..} -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1143,7 +1157,7 @@ processAccountCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     AccountDecrypt{..} -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1199,7 +1213,7 @@ processConsensusCmd action baseCfgDir verbose backend =
         Nothing -> putStrLn "Block not found."
         Just p -> runPrinter $ printBirkParameters includeBakers p
     ConsensusSetElectionDifficulty d txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1261,7 +1275,7 @@ processBakerCmd action baseCfgDir verbose backend =
                      , "DO NOT LOSE THIS FILE"
                      , printf "to add a baker to the chain using these keys, use 'baker add %s'" f ]
     BakerAdd accountKeysFile txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1285,8 +1299,8 @@ processBakerCmd action baseCfgDir verbose backend =
           tailTransaction hash
 --          logSuccess [ "baker successfully added" ]
     BakerSetAccount bid accRef txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
-      (_, rewardAccCfg) <- getAccountConfig (Just accRef) baseCfg Nothing Nothing Nothing False
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      (_, rewardAccCfg) <- getAccountConfig (Just accRef) baseCfg Nothing Nothing Nothing AssumeInitialized
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1310,7 +1324,7 @@ processBakerCmd action baseCfgDir verbose backend =
           tailTransaction hash
 --          logSuccess [ "baker reward account successfully updated" ]
     BakerSetKey bid file txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1323,7 +1337,7 @@ processBakerCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     BakerRemove bid txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1336,7 +1350,7 @@ processBakerCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     BakerSetAggregationKey bid file txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1349,7 +1363,7 @@ processBakerCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     BakerSetElectionKey bid file txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       let intOpts = toInteractionOpts txOpts
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -1862,8 +1876,11 @@ convertTransactionJsonPayload = \case
     return $ Types.UpdateBakerSignKey ubsid ubsk ubsp
   (CT.DelegateStake dsid) -> return $ Types.DelegateStake dsid
   (CT.UpdateElectionDifficulty d) -> return $ Types.UpdateElectionDifficulty d
-  CT.TransferToEncrypted{..} -> return $ Types.TransferToEncrypted{..}
   CT.TransferToPublic{..} -> return $ Types.TransferToPublic{..}
+  -- FIXME: The following two should have the inputs changed so that they are usable.
+  -- They should only specify the amount and the index, and possibly the input encrypted amounts,
+  -- but the proofs should be automatically generated here.
+  CT.TransferToEncrypted{..} -> return $ Types.TransferToEncrypted{..}
   CT.EncryptedAmountTransfer{..} -> return Types.EncryptedAmountTransfer{..}
 
 -- |Sign a transaction payload and configuration into a "normal" transaction,
