@@ -129,7 +129,7 @@ decodeGenesisFormattedAccountExport payload name pwd = runExceptT $ do
           addr <- v .: "address"
           ad <- v .: "accountData"
           accKeyMap <- ad .: "keys"
-          accEncryptionKey <- ad .: "encryptionKey"
+          accEncryptionKey <- v .: "encryptionSecretKey"
           acThreshold <- ad .:? "threshold" .!= fromIntegral (Map.size accKeyMap)
           return $ do
             acKeys <- encryptAccountKeyMap pwd accKeyMap
