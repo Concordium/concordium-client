@@ -1,5 +1,3 @@
-{-# LANGUAGE RecordWildCards #-}
-
 module Concordium.Client.Output where
 
 import Concordium.Client.Cli

@@ -21,6 +21,7 @@ default-extensions:
 - OverloadedStrings
 - RecordWildCards
 - GeneralizedNewtypeDeriving
+- FlexibleContexts
 - LambdaCase
 - TupleSections
 

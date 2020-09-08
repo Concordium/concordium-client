@@ -1,7 +1,6 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE OverloadedStrings, DataKinds, GeneralizedNewtypeDeriving, TypeApplications, ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings, DataKinds, TypeApplications, ScopedTypeVariables #-}
 
 module Concordium.Client.GRPC where
 
