@@ -1,3 +1,5 @@
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Concordium.Client.Output where
 
 import Concordium.Client.Cli
@@ -114,6 +116,9 @@ printAccountConfigList cfgs =
         -- JSON format that can be used for importing and "account add-keys".
         tell [ showPrettyJSON keys ]
         -- printMap showEntry $ toSortedList keys
+    tell ["Encryption secret keys:" ]
+    forM_ cfgs $ \cfg -> do
+      tell [ (printf "- %s: " (showNamedAddress $ acAddr cfg)) ++ (maybe showNone showPrettyJSON (acEncryptionKey cfg))]
   -- where showEntry (n, kp) =
   --         printf "    %s: %s" (show n) (showAccountKeyPair kp)
 
