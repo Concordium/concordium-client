@@ -479,6 +479,8 @@ showRejectReason verbose = \case
     printf "attempted to make an encrypted transfer to the same account '%s'" (show acc)
   Types.InvalidTransferToPublicProof ->
     "the proof for the secret to public transfer doesn't validate"
+  Types.InvalidIndexOnEncryptedTransfer ->
+    "the provided index is below the start index or above `startIndex + length incomingAmounts`"
 
 -- CONSENSUS
 
