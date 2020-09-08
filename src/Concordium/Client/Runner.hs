@@ -1,4 +1,3 @@
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -58,6 +57,7 @@ import           Concordium.Client.Types.Account
 import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Client.Types.TransactionStatus
 import           Concordium.Common.Version
+import qualified Concordium.Crypto.EncryptedTransfers as Enc
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
@@ -68,6 +68,7 @@ import           Concordium.Types.HashableTo
 import qualified Concordium.Types.Execution          as Types
 import qualified Concordium.Types                    as Types
 import qualified Concordium.ID.Types                 as ID
+import           Concordium.ID.Parameters
 import           Proto.ConcordiumP2pRpc
 import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 
@@ -76,6 +77,7 @@ import           Control.Monad.Except
 import           Control.Monad.Reader                hiding (fail)
 import           GHC.Generics
 import           Data.IORef
+import           Data.Foldable
 import           Data.Aeson                          as AE
 import           Data.Aeson.Types
 import qualified Data.Aeson.Encode.Pretty            as AE
@@ -88,8 +90,10 @@ import           Data.Maybe
 import           Data.List                           as L
 import qualified Data.Serialize                      as S
 import qualified Data.Set                            as Set
+import qualified Data.Sequence                       as Seq
 import           Data.String
-import           Data.Text                           hiding (length, map, null, take)
+import           Data.Text(Text)
+import qualified Data.Text                           as Text
 import           Data.Text.Encoding
 import           Data.Word
 import           Lens.Micro.Platform
@@ -166,14 +170,14 @@ processConfigCmd action baseCfgDir verbose =
   case action of
     ConfigInit -> void $ initBaseConfig baseCfgDir
     ConfigShow -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       runPrinter $ printBaseConfig baseCfg
       putStrLn ""
       accCfgs <- getAllAccountConfigs baseCfg
       runPrinter $ printAccountConfigList accCfgs
     ConfigAccountCmd c -> case c of
       ConfigAccountAdd addr naName -> do
-        baseCfg <- getBaseConfig baseCfgDir verbose True
+        baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
@@ -185,7 +189,7 @@ processConfigCmd action baseCfgDir verbose =
         forM_ naName $ logFatalOnError . validateAccountName
         void $ initAccountConfig baseCfg NamedAddress{..}
       ConfigAccountImport file name importFormat -> do
-        baseCfg <- getBaseConfig baseCfgDir verbose True
+        baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
@@ -197,13 +201,13 @@ processConfigCmd action baseCfgDir verbose =
         accCfgs <- loadAccountImportFile importFormat file name
         void $ importAccountConfig baseCfg accCfgs
       ConfigAccountAddKeys addr keysFile -> do
-        baseCfg <- getBaseConfig baseCfgDir verbose True
+        baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
 
         keyMapInput :: EncryptedAccountKeyMap <- AE.eitherDecodeFileStrict keysFile `withLogFatalIO` ("cannot decode keys: " ++)
-        (baseCfg', accCfg) <- getAccountConfig (Just addr) baseCfg Nothing Nothing True
+        (baseCfg', accCfg) <- getAccountConfig (Just addr) baseCfg Nothing Nothing Nothing AutoInit
 
         let keyMapCurrent = acKeys accCfg
         let keyMapNew = Map.difference keyMapInput keyMapCurrent
@@ -275,14 +279,11 @@ processTransactionCmd action baseCfgDir verbose backend =
       -- TODO This works but output doesn't make sense if transaction is already committed/finalized.
       --      It should skip already completed steps.
       -- withClient backend $ tailTransaction hash
-    TransactionSendGtu receiver amountstr txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+    TransactionSendGtu receiver amount txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
-      amount <- case Types.amountFromString (unpack amountstr) of
-        Nothing -> logFatal [printf "invalid amount '%s'" amountstr]
-        Just a -> return a
       ttxCfg <- getTransferTransactionCfg baseCfg txOpts receiver amount
       let txCfg = ttcTransactionCfg ttxCfg
       when verbose $ do
@@ -291,13 +292,35 @@ processTransactionCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- transferTransactionPayload ttxCfg (ioConfirm intOpts)
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+
+    TransactionEncryptedTransfer txOpts receiver amount index -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+      let nrgCost _ = return $ Just encryptedTransferEnergyCost
+      txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
+
+      encryptedSecretKey <-
+          case acEncryptionKey . tcAccountCfg $ txCfg of
+            Nothing -> 
+              logFatal ["Missing account encryption secret key for account: " ++ show (acAddr . tcAccountCfg $ txCfg)]
+            Just x -> return x
+      secretKey <- decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey `withLogFatalIO` ("Couldn't decrypt account encryption secret key: " ++)
+
+      receiverAcc <- getAccountAddressArg (bcAccountNameMap baseCfg) (Just receiver)
+
       withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
-        let hash = getBlockItemHash tx
-        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
-        when (ioTail intOpts) $ do
-          tailTransaction hash
---          logSuccess [ "transfer successfully completed" ]
+        ttxCfg <- getEncryptedTransferTransactionCfg txCfg receiverAcc amount index secretKey
+        liftIO $ when verbose $ do
+          runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+          putStrLn ""
+
+        let intOpts = toInteractionOpts txOpts
+        pl <- encryptedTransferTransactionPayload ttxCfg (ioConfirm intOpts)
+        sendAndTailTransaction txCfg pl intOpts
 
 -- |Poll the transaction state continuously until it is "at least" the provided one.
 -- Note that the "absent" state is considered the "highest" state,
@@ -335,7 +358,7 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
   keysArg <- case toKeys txOpts of
                Nothing -> return Nothing
                Just filePath -> AE.eitherDecodeFileStrict filePath `withLogFatalIO` ("cannot decode keys: " ++)
-  (_, accCfg) <- getAccountConfig (toSender txOpts) baseCfg Nothing keysArg False
+  (_, accCfg) <- getAccountConfig (toSender txOpts) baseCfg Nothing keysArg Nothing AssumeInitialized
 
   energyCostFunc <- getEnergyCostFunc accCfg
   let computedCost = case energyCostFunc of
@@ -403,6 +426,57 @@ getTransferTransactionCfg baseCfg txOpts receiver amount = do
     , ttcAmount = amount }
   where nrgCost _ = return $ Just simpleTransferEnergyCost
 
+data EncryptedTransferTransactionConfig =
+  EncryptedTransferTransactionConfig
+  { ettTransactionCfg :: TransactionConfig
+  , ettReceiver :: NamedAddress
+  , ettAmount :: Types.Amount
+  , ettTransferData :: !Enc.EncryptedAmountTransferData }
+
+getEncryptedTransferTransactionCfg :: TransactionConfig -> NamedAddress -> Types.Amount -> Maybe Int -> ElgamalSecretKey -> ClientMonad IO EncryptedTransferTransactionConfig
+getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx secretKey = do
+  let senderAddr = acAddress . tcAccountCfg $ ettTransactionCfg
+
+  -- get encrypted amounts for the sender
+  infoValue <- logFatalOnError =<< (withBestBlockHash Nothing $ getAccountInfo (Text.pack . show $ senderAddr))
+  case AE.fromJSON infoValue of
+    AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
+    AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
+    AE.Success (Just AccountInfoResult{airEncryptedAmount=Types.AccountEncryptedAmount{..}}) -> do
+      taker <- case idx of
+                Nothing -> return id
+                Just v ->
+                  if v < fromIntegral _startIndex 
+                     || v > (fromIntegral _startIndex) + Seq.length _incomingEncryptedAmounts
+                  then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
+                  else return $ Seq.take (v - (fromIntegral _startIndex))
+      -- get receiver's public encryption key
+      infoValueReceiver <- logFatalOnError =<< (withBestBlockHash Nothing $ getAccountInfo (Text.pack . show $ naAddr ettReceiver))
+      case AE.fromJSON infoValueReceiver of
+        AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
+        AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show $ naAddr ettReceiver]
+        AE.Success (Just air) -> do
+          let receiverPk = ID._elgamalPublicKey $ airEncryptionKey air
+          -- precomputed table for speeding up decryption
+          let table = Enc.computeTable globalContext (2^(16::Int))
+              decoder = Enc.decryptAmount table secretKey
+              selfDecrypted = decoder _selfAmount
+          -- aggregation of idx encrypted amounts
+              inputEncAmounts = taker _incomingEncryptedAmounts
+              aggAmounts = foldl' (<>) _selfAmount inputEncAmounts
+              totalEncryptedAmount = foldl' (+) selfDecrypted $ fmap decoder inputEncAmounts
+          unless (totalEncryptedAmount >= ettAmount) $
+            logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (show ettAmount) (show totalEncryptedAmount)]
+          -- index indicating which encrypted amounts we used as input
+          let aggIndex = case idx of
+                Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (Seq.length _incomingEncryptedAmounts))
+                Just idx' -> Enc.EncryptedAmountAggIndex (fromIntegral idx')
+                -- ^ we use the supplied index if given. We already checked above that it is within bounds.
+              aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
+          liftIO $ Enc.makeEncryptedAmountTransferData globalContext receiverPk secretKey aggAmount ettAmount >>= \case
+            Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
+            Just ettTransferData -> return EncryptedTransferTransactionConfig{..}
+
 -- |Resolved configuration for a 'baker add' transaction.
 data BakerAddTransactionConfig =
   BakerAddTransactionConfig
@@ -464,7 +538,7 @@ data AccountRemoveKeysTransactionCfg =
   , arktcIndices :: Set.Set ID.KeyIndex
   , arktcThreshold :: Maybe ID.SignatureThreshold }
 
--- |Resolved configuration for an account undelegation transaction.
+-- |Resolved configuration for setting election difficuntly transaction.
 data SetElectionDifficultyTransactionConfig =
   SetElectionDifficultyTransactionConfig
   { sdtcTransactionCfg :: TransactionConfig
@@ -476,6 +550,20 @@ data BakerSetElectionKeyTransactionConfig =
   { bsekTransactionCfg :: TransactionConfig
   , bsekBakerId :: Types.BakerId
   , bsekKeyPair :: VRF.KeyPair }
+
+-- |Resolved configuration for transferring from public to encrypted balance.
+data AccountEncryptTransactionConfig =
+  AccountEncryptTransactionConfig
+  { aeTransactionCfg :: TransactionConfig,
+    aeAmount :: Types.Amount
+  }
+
+-- |Resolved configuration for transferring from encrypted to public balance.
+data AccountDecryptTransactionConfig =
+  AccountDecryptTransactionConfig
+  { adTransactionCfg :: TransactionConfig,
+    adTransferData :: Enc.SecToPubAmountTransferData
+  }
 
 -- |Resolve configuration of a 'baker add' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
@@ -536,6 +624,50 @@ getAccountRemoveKeysTransactionCfg baseCfg txOpts idxs threshold = do
   where
       nrgCost _ = return $ Just accountRemoveKeysEnergyCost
 
+-- |Resolve configuration for transferring an amount from public to encrypted
+-- balance of an account.
+getAccountEncryptTransactionCfg :: BaseConfig -> TransactionOpts -> Types.Amount -> IO AccountEncryptTransactionConfig
+getAccountEncryptTransactionCfg baseCfg txOpts aeAmount = do
+  aeTransactionCfg <- getTransactionCfg baseCfg txOpts nrgCost
+  return AccountEncryptTransactionConfig{..}
+  where nrgCost _ = return $ Just accountEncryptEnergyCost
+
+-- |Resolve configuration for transferring an amount from encrypted to public
+-- balance of an account.
+getAccountDecryptTransactionCfg :: TransactionConfig -> Types.Amount -> ElgamalSecretKey -> Maybe Int -> ClientMonad IO AccountDecryptTransactionConfig
+getAccountDecryptTransactionCfg adTransactionCfg adAmount secretKey idx = do
+  let senderAddr = acAddress . tcAccountCfg $ adTransactionCfg
+  infoValue <- logFatalOnError =<< (withBestBlockHash Nothing $ getAccountInfo (Text.pack . show $ senderAddr))
+  case AE.fromJSON infoValue of
+    AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
+    AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
+    AE.Success (Just AccountInfoResult{airEncryptedAmount=Types.AccountEncryptedAmount{..},..}) -> do
+      taker <- case idx of
+        Nothing -> return id
+        Just v -> if v < (fromIntegral _startIndex)
+                    || v > (fromIntegral _startIndex) + Seq.length _incomingEncryptedAmounts
+                 then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
+                 else return $ Seq.take (v - (fromIntegral _startIndex))
+      -- precomputed table for speeding up decryption
+      let table = Enc.computeTable globalContext (2^(16::Int))
+          decoder = Enc.decryptAmount table secretKey
+          selfDecrypted = decoder _selfAmount
+      -- aggregation of all encrypted amounts
+          inputEncAmounts = taker _incomingEncryptedAmounts
+          aggAmounts = foldl' (<>) _selfAmount inputEncAmounts
+          totalEncryptedAmount = foldl' (+) selfDecrypted $ fmap decoder inputEncAmounts
+      unless (totalEncryptedAmount >= adAmount) $
+        logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (show adAmount) (show totalEncryptedAmount)]
+      -- index indicating which encrypted amounts we used as input
+      let aggIndex = case idx of
+            Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (Seq.length _incomingEncryptedAmounts))
+            Just idx' -> Enc.EncryptedAmountAggIndex (fromIntegral idx')
+          aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
+      liftIO $ Enc.makeSecToPubAmountTransferData globalContext secretKey aggAmount adAmount >>= \case
+        Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
+        Just adTransferData -> return AccountDecryptTransactionConfig{..}
+
+
 -- |Convert transfer transaction config into a valid payload,
 -- optionally asking the user for confirmation.
 transferTransactionPayload :: TransferTransactionConfig -> Bool -> IO Types.Payload
@@ -557,6 +689,25 @@ transferTransactionPayload ttxCfg confirm = do
     unless confirmed exitTransactionCancelled
 
   return Types.Transfer { tToAddress = naAddr toAddress, tAmount = amount }
+
+encryptedTransferTransactionPayload :: MonadIO m => EncryptedTransferTransactionConfig -> Bool -> m Types.Payload
+encryptedTransferTransactionPayload EncryptedTransferTransactionConfig{..} confirm = do
+  let TransactionConfig
+        { tcEnergy = energy
+        , tcExpiry = expiry
+        , tcAccountCfg = AccountConfig { acAddr = addr } }
+        = ettTransactionCfg
+
+  logInfo $
+    [ printf "transferring %s GTU from encrypted balance of account %s to %s" (Types.amountToString ettAmount) (showNamedAddress addr) (showNamedAddress ettReceiver)
+    , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+    , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
+
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  return $ Types.EncryptedAmountTransfer (naAddr ettReceiver) ettTransferData
 
 -- |Convert 'baker add' transaction config into a valid payload,
 -- optionally asking the user for confirmation.
@@ -728,6 +879,46 @@ accountRemoveKeysTransactionPayload AccountRemoveKeysTransactionCfg{..} confirm 
 
   return $ Types.RemoveAccountKeys arktcIndices arktcThreshold
 
+accountEncryptTransactionPayload :: AccountEncryptTransactionConfig -> Bool -> IO Types.Payload
+accountEncryptTransactionPayload AccountEncryptTransactionConfig{..} confirm = do
+  let TransactionConfig
+        { tcEnergy = energy
+        , tcExpiry = expiry
+        , tcAccountCfg = AccountConfig { acAddr = addr } }
+        = aeTransactionCfg
+
+
+  logInfo $
+    [ printf "transferring %s GTU from public to encrypted balance of account %s" (Types.amountToString aeAmount) (showNamedAddress addr)
+    , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+    , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
+
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  return $ Types.TransferToEncrypted aeAmount
+
+accountDecryptTransactionPayload :: MonadIO m => AccountDecryptTransactionConfig -> Bool -> m Types.Payload
+accountDecryptTransactionPayload AccountDecryptTransactionConfig{..} confirm = do
+  let TransactionConfig
+        { tcEnergy = energy
+        , tcExpiry = expiry
+        , tcAccountCfg = AccountConfig { acAddr = addr } }
+        = adTransactionCfg
+
+  logInfo $
+    [ printf "transferring %s GTU from encrypted to public balance of account %s" (Types.amountToString (Enc.stpatdTransferAmount adTransferData)) (showNamedAddress addr)
+    , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+    , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
+
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  return $ Types.TransferToPublic adTransferData
+
+
 -- |Encode, sign, and send transaction off to the baker.
 -- If confirmNonce is set, the user is asked to confirm using the next nonce
 -- if there are pending transactions.
@@ -767,7 +958,7 @@ getNonce sender nonce confirm =
   case nonce of
     Nothing -> do
       currentNonce <- getBestBlockHash >>= getAccountNonce sender
-      nextNonce <- nanNonce <$> (getNextAccountNonce (pack $ show sender) >>= getFromJson)
+      nextNonce <- nanNonce <$> (getNextAccountNonce (Text.pack $ show sender) >>= getFromJson)
       liftIO $ when (currentNonce /= nextNonce) $ do
         logWarn [ printf "there is a pending transaction with nonce %s, but last committed one has %s" (show $ nextNonce-1) (show $ currentNonce-1)
                 , printf "this transaction will have nonce %s and might hang if the pending transaction fails" (show nextNonce) ]
@@ -777,6 +968,19 @@ getNonce sender nonce confirm =
           unless confirmed exitTransactionCancelled
       return nextNonce
     Just v -> return v
+
+-- |Send a transaction and optionally tail it (see 'tailTransaction' below).
+sendAndTailTransaction :: (MonadIO m, MonadFail m)
+    => TransactionConfig -- ^ Information about the sender, and the context of transaction
+    -> Types.Payload -- ^ Payload of the transaction to send
+    -> InteractionOpts -- ^ How interactive should sending and tailing be
+    -> ClientMonad m ()
+sendAndTailTransaction txCfg pl intOpts = do
+  tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
+  let hash = getBlockItemHash tx
+  logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
+  when (ioTail intOpts) $
+    tailTransaction hash
 
 -- |Continuously query and display transaction status until the transaction is finalized.
 tailTransaction :: (MonadIO m) => Types.TransactionHash -> ClientMonad m ()
@@ -817,28 +1021,42 @@ tailTransaction hash = do
   liftIO $ printf "[%s] Transaction finalized.\n" =<< getLocalTimeOfDayFormatted
   where
     getLocalTimeOfDayFormatted = showTimeOfDay <$> getLocalTimeOfDay
-    showResponse = unpack . decodeUtf8 . BSL8.toStrict . AE.encodePretty
+    showResponse = Text.unpack . decodeUtf8 . BSL8.toStrict . AE.encodePretty
 
 -- |Process an 'account ...' command.
 processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processAccountCmd action baseCfgDir verbose backend =
   case action of
-    AccountShow address block -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+    AccountShow address block showEncrypted showDecrypted -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+
+      na <- getAccountAddressArg (bcAccountNameMap baseCfg) address
+      encKey <-
+        if showDecrypted
+        then do
+          encKeys <- (\l -> [ acEncryptionKey v | v <- l, acAddr v == na, isJust (acEncryptionKey v) ] ) <$> getAllAccountConfigs baseCfg
+          case encKeys of
+            [Just enc] -> do
+              decrypted <- decryptAccountEncryptionSecretKeyInteractive enc
+              case decrypted of
+                Right v -> return (Just v)
+                _ -> logFatal [printf "Couldn't decrypt encryption key for account '%s' with the provided password" (show $ naAddr na)]
+            _ -> logFatal [printf "Tried to decrypt balance of account '%s' but this account is not present on the local store" (show $ naAddr na)]
+        else return Nothing
+
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      na <- getAccountAddressArg (bcAccountNameMap baseCfg) address
-      v <- withClientJson backend $ withBestBlockHash block $ getAccountInfo (pack $ show $ naAddr na)
+      v <- withClientJson backend $ withBestBlockHash block $ getAccountInfo (Text.pack $ show $ naAddr na)
       case v of
         Nothing -> putStrLn "Account not found."
-        Just a -> runPrinter $ printAccountInfo na a verbose
+        Just a -> runPrinter $ printAccountInfo na a verbose (showEncrypted || showDecrypted) encKey
     AccountList block -> do
       v <- withClientJson backend $ withBestBlockHash block getAccountList
       runPrinter $ printAccountList v
     AccountDelegate bakerId txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -852,15 +1070,10 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountDelegateTransactionPayload adtxCfg (ioConfirm intOpts)
-      withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
-        let hash = getBlockItemHash tx
-        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
-        when (ioTail intOpts) $ do
-          tailTransaction hash
---          logSuccess [ "delegation successfully performed" ]
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+
     AccountUndelegate txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -874,15 +1087,10 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountUndelegateTransactionPayload autxCfg (ioConfirm intOpts)
-      withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
-        let hash = getBlockItemHash tx
-        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
-        when (ioTail intOpts) $ do
-          tailTransaction hash
---          logSuccess [ "delegation successfully removed" ]
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+
     AccountUpdateKeys f txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -896,14 +1104,10 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountUpdateKeysTransactionPayload aukCfg (ioConfirm intOpts)
-      withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
-        let hash = getBlockItemHash tx
-        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
-        when (ioTail intOpts) $ do
-          tailTransaction hash
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+
     AccountAddKeys f thresh txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -917,14 +1121,10 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountAddKeysTransactionPayload aakCfg (ioConfirm intOpts)
-      withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
-        let hash = getBlockItemHash tx
-        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
-        when (ioTail intOpts) $ do
-          tailTransaction hash
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+
     AccountRemoveKeys idxs thresh txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -938,18 +1138,51 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountRemoveKeysTransactionPayload arkCfg (ioConfirm intOpts)
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+
+    AccountEncrypt{..} -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+      aetxCfg <- getAccountEncryptTransactionCfg baseCfg aeTransactionOpts aeAmount
+      let txCfg = aeTransactionCfg aetxCfg
+      when verbose $ do
+        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        putStrLn ""
+
+      let intOpts = toInteractionOpts aeTransactionOpts
+      pl <- accountEncryptTransactionPayload aetxCfg (ioConfirm intOpts)
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+
+    AccountDecrypt{..} -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+      let nrgCost _ = return $ Just accountDecryptEnergyCost
+      txCfg <- liftIO (getTransactionCfg baseCfg adTransactionOpts nrgCost)
+
+      encryptedSecretKey <- maybe (logFatal ["Missing account encryption secret key for account: " ++ show (acAddr . tcAccountCfg $ txCfg)]) return (acEncryptionKey . tcAccountCfg $ txCfg)
+      secretKey <- either (\e -> logFatal ["Couldn't decrypt account encryption secret key: " ++ e]) return =<< decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey
+
       withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
-        let hash = getBlockItemHash tx
-        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
-        when (ioTail intOpts) $ do
-          tailTransaction hash
+        adtxCfg <- getAccountDecryptTransactionCfg txCfg adAmount secretKey adIndex
+        when verbose $ do
+          runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+          liftIO $ putStrLn ""
+
+        let intOpts = toInteractionOpts adTransactionOpts
+        pl <- accountDecryptTransactionPayload adtxCfg (ioConfirm intOpts)
+        sendAndTailTransaction txCfg pl intOpts
 
 
   where getDelegateCostFunc acc = withClient backend $ do
           when verbose $ logInfo ["retrieving instances"]
           info <- getBestBlockHash >>=
-                  getAccountInfo (pack $ show $ naAddr $ acAddr acc) >>=
+                  getAccountInfo (Text.pack $ show $ naAddr $ acAddr acc) >>=
                   getFromJson
           let is = length $ airInstances info
           when verbose $ logInfo [printf "retrieved %d instances" is]
@@ -980,7 +1213,7 @@ processConsensusCmd action baseCfgDir verbose backend =
         Nothing -> putStrLn "Block not found."
         Just p -> runPrinter $ printBirkParameters includeBakers p
     ConsensusSetElectionDifficulty d txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -993,13 +1226,7 @@ processConsensusCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- setElectionDifficultyTransactionPayload sdtxCfg (ioConfirm intOpts)
-      withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
-        let hash = getBlockItemHash tx
-        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
-        when (ioTail intOpts) $ do
-          tailTransaction hash
---          logSuccess [ "election difficulty updated successfully" ]
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
 -- |Process a 'block ...' command.
 processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
@@ -1048,7 +1275,7 @@ processBakerCmd action baseCfgDir verbose backend =
                      , "DO NOT LOSE THIS FILE"
                      , printf "to add a baker to the chain using these keys, use 'baker add %s'" f ]
     BakerAdd accountKeysFile txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1072,8 +1299,8 @@ processBakerCmd action baseCfgDir verbose backend =
           tailTransaction hash
 --          logSuccess [ "baker successfully added" ]
     BakerSetAccount bid accRef txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
-      (_, rewardAccCfg) <- getAccountConfig (Just accRef) baseCfg Nothing Nothing False
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      (_, rewardAccCfg) <- getAccountConfig (Just accRef) baseCfg Nothing Nothing Nothing AssumeInitialized
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1097,7 +1324,7 @@ processBakerCmd action baseCfgDir verbose backend =
           tailTransaction hash
 --          logSuccess [ "baker reward account successfully updated" ]
     BakerSetKey bid file txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1107,15 +1334,10 @@ processBakerCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- bakerSetKeyTransactionPayload bsktcCfg (ioConfirm intOpts)
-      withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
-        let hash = getBlockItemHash tx
-        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
-        when (ioTail intOpts) $ do
-          tailTransaction hash
---          logSuccess [ "baker signature key successfully updated" ]
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+
     BakerRemove bid txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1125,16 +1347,10 @@ processBakerCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- bakerRemoveTransactionPayload brtcCfg (ioConfirm intOpts)
-      withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
-        let hash = getBlockItemHash tx
-        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
-        when (ioTail intOpts) $ do
-          tailTransaction hash
---          logSuccess [ "baker successfully removed" ]
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     BakerSetAggregationKey bid file txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1144,17 +1360,10 @@ processBakerCmd action baseCfgDir verbose backend =
       let txCfg = bsakTransactionCfg bsaktCfg
 
       pl <- bakerSetAggregationKeyTransactionPayload bsaktCfg (ioConfirm intOpts)
-
-      withClient backend $ do
-        tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
-        let hash = getBlockItemHash tx
-        logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
-        when (ioTail intOpts) $ do
-          tailTransaction hash
---          logSuccess [ "baker aggregation key successfully updated" ]
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
     BakerSetElectionKey bid file txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose True
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       let intOpts = toInteractionOpts txOpts
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -1494,21 +1703,21 @@ printPeerData epd =
     Right PeerData{..} -> liftIO $ do
       putStrLn $ "Total packets sent: " ++ show totalSent
       putStrLn $ "Total packets received: " ++ show totalReceived
-      putStrLn $ "Peer version: " ++ unpack version
+      putStrLn $ "Peer version: " ++ Text.unpack version
       putStrLn "Peer stats:"
       forM_ (peerStats ^. CF.peerstats) $ \ps -> do
-        putStrLn $ "  Peer: " ++ unpack (ps ^. CF.nodeId)
+        putStrLn $ "  Peer: " ++ Text.unpack (ps ^. CF.nodeId)
         putStrLn $ "    Packets sent: " ++ show (ps ^. CF.packetsSent)
         putStrLn $ "    Packets received: " ++ show (ps ^. CF.packetsReceived)
         putStrLn $ "    Latency: " ++ show (ps ^. CF.latency)
         putStrLn ""
 
-      putStrLn $ "Peer type: " ++ unpack (peerList ^. CF.peerType)
+      putStrLn $ "Peer type: " ++ Text.unpack (peerList ^. CF.peerType)
       putStrLn "Peers:"
       forM_ (peerList ^. CF.peers) $ \pe -> do
-        putStrLn $ "  Node id: " ++ unpack (pe ^. CF.nodeId . CF.value)
+        putStrLn $ "  Node id: " ++ Text.unpack (pe ^. CF.nodeId . CF.value)
         putStrLn $ "    Port: " ++ show (pe ^. CF.port . CF.value)
-        putStrLn $ "    IP: " ++ unpack (pe ^. CF.ip . CF.value)
+        putStrLn $ "    IP: " ++ Text.unpack (pe ^. CF.ip . CF.value)
         putStrLn $ "    Catchup Status: " ++ showCatchupStatus (pe ^. CF.catchupStatus)
         putStrLn ""
   where showCatchupStatus =
@@ -1667,6 +1876,12 @@ convertTransactionJsonPayload = \case
     return $ Types.UpdateBakerSignKey ubsid ubsk ubsp
   (CT.DelegateStake dsid) -> return $ Types.DelegateStake dsid
   (CT.UpdateElectionDifficulty d) -> return $ Types.UpdateElectionDifficulty d
+  CT.TransferToPublic{..} -> return $ Types.TransferToPublic{..}
+  -- FIXME: The following two should have the inputs changed so that they are usable.
+  -- They should only specify the amount and the index, and possibly the input encrypted amounts,
+  -- but the proofs should be automatically generated here.
+  CT.TransferToEncrypted{..} -> return $ Types.TransferToEncrypted{..}
+  CT.EncryptedAmountTransfer{..} -> return Types.EncryptedAmountTransfer{..}
 
 -- |Sign a transaction payload and configuration into a "normal" transaction,
 -- which is ready to be sent.

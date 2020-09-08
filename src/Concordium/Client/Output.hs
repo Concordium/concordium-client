@@ -1,5 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
-
+{-# LANGUAGE FlexibleContexts #-}
 module Concordium.Client.Output where
 
 import Concordium.Client.Cli
@@ -12,6 +12,8 @@ import Concordium.Common.Version
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Types
 import qualified Concordium.ID.Types as IDTypes
+import qualified Concordium.Crypto.EncryptedTransfers as Enc
+import Concordium.ID.Parameters (globalContext)
 
 import Control.Monad.Writer
 import qualified Data.Aeson.Encode.Pretty as AE
@@ -29,6 +31,7 @@ import Text.Printf
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import Data.Word
+import Lens.Micro.Platform
 
 -- PRINTER
 
@@ -106,16 +109,17 @@ printAccountConfigList cfgs =
     forM_ cfgs $ \cfg -> do
       let keys = acKeys cfg
       if null keys then
-        tell [ printf "- %s: %s" (showNamedAddress $ acAddr cfg) showNone]
+        tell [ printf "- %s: %s" (namedAddress cfg) showNone]
       else do
-        tell [ printf "- %s:" (showNamedAddress $ acAddr cfg)]
+        tell [ printf "- %s:" (namedAddress cfg)]
         -- NB: While we do not have proper account exports or dedicated commands to print
         -- the full account key map, this command should print the account key map in the
         -- JSON format that can be used for importing and "account add-keys".
         tell [ showPrettyJSON keys ]
-        -- printMap showEntry $ toSortedList keys
-  -- where showEntry (n, kp) =
-  --         printf "    %s: %s" (show n) (showAccountKeyPair kp)
+    tell ["Encryption secret keys:" ]
+    forM_ cfgs $ \cfg -> do
+      tell [ printf "- %s: %s" (namedAddress cfg) (maybe showNone showPrettyJSON (acEncryptionKey cfg))]
+  where namedAddress cfg = showNamedAddress $ acAddr cfg
 
 -- ACCOUNT
 
@@ -135,14 +139,44 @@ showRevealedAttributes as =
                   Just k -> unpack k
     showAttr (t, IDTypes.AttributeValue v) = printf "%s=%s" (showTag t) (show v)
 
-printAccountInfo :: NamedAddress -> AccountInfoResult -> Verbose -> Printer
-printAccountInfo addr a verbose = do
-  tell [ printf "Local name: %s" (showMaybe unpack $ naName addr)
-       , printf "Address:    %s" (show $ naAddr addr)
-       , printf "Balance:    %s" (showGtu $ airAmount a)
-       , printf "Nonce:      %s" (show $ airNonce a)
-       , printf "Delegation: %s" (maybe showNone (printf "baker %s" . show) $ airDelegation a)
+printAccountInfo :: NamedAddress -> AccountInfoResult -> Verbose -> Bool -> Maybe ElgamalSecretKey -> Printer
+printAccountInfo addr a verbose showEncrypted mEncKey= do
+  tell [ printf "Local name:            %s" (showMaybe unpack $ naName addr)
+       , printf "Address:               %s" (show $ naAddr addr)
+       , printf "Balance:               %s" (showGtu $ airAmount a)
+       , printf "Nonce:                 %s" (show $ airNonce a)
+       , printf "Delegation:            %s" (maybe showNone (printf "baker %s" . show) $ airDelegation a)
+       , printf "Encryption public key: %s" (show $ airEncryptionKey a)
        , "" ]
+
+  if showEncrypted then
+    let
+      -- since encryption keys are quite long we only print 20 characters by default
+      showEncryptedAmount = if verbose then show else \v -> (take 20 $ show v) ++ "..."
+      showEncryptedBalance amms self = do
+        let (_, balances) = foldl' (\(idx, strings) v -> (idx + 1, strings <> [printf "    %s: %s" (show idx) v]))
+                                   (Types._startIndex $ airEncryptedAmount a, [])
+                                   amms
+        tell ["Encrypted balance:"]
+        tell $ case balances of
+                 [] -> ["  Incoming amounts: []"]
+                 _ -> ["  Incoming amounts:"] <> balances
+        tell [printf "  Self balance: %s" self]
+    in
+      case mEncKey of
+        Nothing ->
+          let incomingAmounts = fmap showEncryptedAmount $ airEncryptedAmount a ^. Types.incomingEncryptedAmounts
+              selfAmount = showEncryptedAmount $ airEncryptedAmount a ^. Types.selfAmount
+          in showEncryptedBalance incomingAmounts selfAmount
+        Just encKey -> do
+             let table = Enc.computeTable globalContext (2^(16::Int))
+                 decoder = Enc.decryptAmount table encKey
+                 selfDecrypted = decoder (Types._selfAmount $ airEncryptedAmount a)
+             showEncryptedBalance (fmap (\x -> let decoded = decoder x in
+                                                "(" ++ showGtu decoded ++ ") " ++ showEncryptedAmount x) $ Types._incomingEncryptedAmounts $ airEncryptedAmount a) ("(" ++ showGtu selfDecrypted ++ ") " ++ showEncryptedAmount (Types._selfAmount $ airEncryptedAmount a))
+    else return ()
+
+  tell [ "" ]
 
   case airCredentials a of
       [] -> tell ["Credentials: " ++ showNone]
@@ -322,6 +356,10 @@ showEvent verbose = \case
   Types.AccountKeysAdded -> verboseOrNothing $ "account keys added"
   Types.AccountKeysRemoved -> verboseOrNothing $ "account keys removed"
   Types.AccountKeysSignThresholdUpdated -> verboseOrNothing $ "account signature threshold updated"
+  Types.NewEncryptedAmount{..} -> verboseOrNothing $ printf "encrypted amount received on account '%s' with index '%s'" (show neaAccount) (show neaNewIndex)
+  Types.EncryptedAmountsRemoved{..} -> verboseOrNothing $ printf "encrypted amounts removed on account '%s' up to index '%s' with a resulting self encrypted amount of '%s'" (show earAccount) (show earUpToIndex) (show earNewAmount)
+  Types.AmountAddedByDecryption{..} -> verboseOrNothing $ printf "transferred '%s' tokens from the shielded balance to the public balance on account '%s'" (show aabdAmount) (show aabdAccount)
+  Types.EncryptedSelfAmountAdded{..} -> verboseOrNothing $ printf "transferred '%s' tokens from the public balance to the shielded balance on account '%s' with a resulting self encrypted balance of '%s'" (show eaaAmount) (show eaaAccount) (show eaaNewAmount)
 
   where
     verboseOrNothing :: String -> Maybe String
@@ -445,6 +483,14 @@ showRejectReason verbose = \case
     "encountered a key index that is already in use"
   Types.InvalidAccountKeySignThreshold ->
     "signature threshold exceeds the number of keys"
+  Types.InvalidEncryptedAmountTransferProof ->
+    "the proof for the encrypted transfer doesn't validate"
+  Types.EncryptedAmountSelfTransfer acc ->
+    printf "attempted to make an encrypted transfer to the same account '%s'" (show acc)
+  Types.InvalidTransferToPublicProof ->
+    "the proof for the secret to public transfer doesn't validate"
+  Types.InvalidIndexOnEncryptedTransfer ->
+    "the provided index is below the start index or above `startIndex + length incomingAmounts`"
 
 -- CONSENSUS
 

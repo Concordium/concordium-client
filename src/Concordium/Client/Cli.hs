@@ -75,17 +75,24 @@ logError = log Err $ Just Red
 logFatal :: MonadIO m => [String] -> m a
 logFatal msgs = logError msgs >> liftIO exitFailure
 
-withLogFatal :: Either e' a -> (e' -> String) -> IO a
+withLogFatal :: MonadIO m => Either e' a -> (e' -> String) -> m a
 withLogFatal (Left x) f = logFatal [f x]
 withLogFatal (Right x) _ = return x
 
-logFatalOnError :: Either String a -> IO a
+logFatalOnError :: MonadIO m => Either String a -> m a
 logFatalOnError x = x `withLogFatal` id
 
 withLogFatalIO :: IO (Either e' a) -> (e' -> String) -> IO a
 withLogFatalIO action f = do
   v <- action
   v `withLogFatal` f
+
+withLogFatalIO' :: String -> IO (Maybe a) -> IO a
+withLogFatalIO' e action =
+  action >>= \case
+    Nothing -> logFatal [e]
+    Just x -> return x
+
 
 logExit :: MonadIO m => [String] -> m a
 logExit msgs = logInfo msgs >> liftIO exitSuccess
@@ -112,8 +119,8 @@ logStrLn :: MonadIO m => String -> m ()
 logStrLn = liftIO . hPutStrLn stderr
 
 -- |Ask the user to "confirm" on stdin and return the result.
-askConfirmation :: Maybe String -> IO Bool
-askConfirmation prompt = do
+askConfirmation :: MonadIO m => Maybe String -> m Bool
+askConfirmation prompt = liftIO $ do
   putStr $ prettyMsg " [yN]: " $ fromMaybe defaultPrompt prompt
   input <- T.getLine
   return $ T.strip (T.toLower input) == "y"
@@ -161,11 +168,16 @@ decryptAccountKeyMapInteractive encryptedKeyMap accDescr = runExceptT $ do
                                 decryptAccountKeyPair pwd keyIndex eKp
                             ) encryptedKeyMap
 
-
+decryptAccountEncryptionSecretKeyInteractive
+  :: EncryptedAccountEncryptionSecretKey
+  -> IO (Either String ElgamalSecretKey)
+decryptAccountEncryptionSecretKeyInteractive secret = do
+  pwd <- liftIO $ askPassword $ "Enter password for decrypting the secret encryption key: "
+  decryptAccountEncryptionSecretKey pwd secret
 
 -- |Standardized method of exiting the command because the transaction is cancelled.
-exitTransactionCancelled :: IO ()
-exitTransactionCancelled = logExit ["transaction cancelled"]
+exitTransactionCancelled :: MonadIO m => m ()
+exitTransactionCancelled = liftIO $ logExit ["transaction cancelled"]
 
 getLocalTimeOfDay :: IO TimeOfDay
 getLocalTimeOfDay = do
@@ -178,12 +190,24 @@ getCurrentTimeUnix = TransactionExpiryTime . round <$> getPOSIXTime
 timeFromTransactionExpiryTime :: TransactionExpiryTime -> UTCTime
 timeFromTransactionExpiryTime = posixSecondsToUTCTime . fromIntegral . expiry
 
+-- | Expected result of the 'getAccountInfo' endpoint, when non-null.
 data AccountInfoResult = AccountInfoResult
-  { airAmount :: !Amount
+  {
+    -- | Public amount on the account
+    airAmount :: !Amount
+    -- | Nonce the next transaction must use.
   , airNonce :: !Nonce
-  , airDelegation :: !(Maybe BakerId),
-    airCredentials :: ![(Versioned IDTypes.CredentialDeploymentValues)]
-  , airInstances :: ![ContractAddress]}
+    -- |Which baker, if any, this account delegates to.
+  , airDelegation :: !(Maybe BakerId)
+    -- | List of credentials on the account, latest first.
+  , airCredentials :: ![(Versioned IDTypes.CredentialDeploymentValues)]
+    -- | List of smart contract instances created by this account.
+  , airInstances :: ![ContractAddress]
+    -- | Account's encrypted amount.
+  , airEncryptedAmount :: !AccountEncryptedAmount
+    -- | The public key to use when sending encrypted transfers to the account.
+  , airEncryptionKey :: !IDTypes.AccountEncryptionKey
+  }
   deriving (Show)
 
 instance AE.FromJSON AccountInfoResult where
@@ -193,6 +217,8 @@ instance AE.FromJSON AccountInfoResult where
     airDelegation <- v .: "accountDelegation"
     airCredentials <- v .: "accountCredentials"
     airInstances <- v .: "accountInstances"
+    airEncryptedAmount <- v .: "accountEncryptedAmount"
+    airEncryptionKey <- v .: "accountEncryptionKey"
     return $ AccountInfoResult {..}
 
 data ConsensusStatusResult = ConsensusStatusResult

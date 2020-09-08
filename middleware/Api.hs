@@ -192,7 +192,7 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
   importAccount :: ImportAccountRequest -> Handler ()
   importAccount ImportAccountRequestMobile{..} = do
     -- init configuration if missing
-    baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False True
+    baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False AutoInit
     accCfgs <- ((liftIO $ decodeMobileFormattedAccountExport (Text.encodeUtf8 contents) Nothing (passwordFromText password))
                  `embedServerErrM` err400) Just
     liftIO $ void $ (importAccountConfig baseCfg) accCfgs
@@ -202,7 +202,7 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
    where go :: IO [GetAccountsResponseItem]
          go = do
              -- get base config
-             baseCfg <- getBaseConfig (Just cfgDir) False True
+             baseCfg <- getBaseConfig (Just cfgDir) False AutoInit
              -- get all accounts
              allAccs <- Prelude.map (naAddr . acAddr) <$> getAllAccountConfigs baseCfg
              let named = HM.toList $ bcAccountNameMap baseCfg
@@ -215,9 +215,9 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
   addBaker :: AddBakerRequest -> Handler AddBakerResponse
   addBaker AddBakerRequest{..} = AddBakerResponse <$> wrapIOError (do
       -- get base configuration
-      baseCfg <- getBaseConfig (Just cfgDir) False True
+      baseCfg <- getBaseConfig (Just cfgDir) False AutoInit
       -- generate options for the transaction
-      accCfg' <- snd <$> getAccountConfig sender baseCfg Nothing Nothing False
+      accCfg' <- snd <$> getAccountConfig sender baseCfg Nothing Nothing Nothing AssumeInitialized
       let accCfg = accCfg' { acThreshold = fromIntegral (HM.size $ acKeys accCfg') }
           file = dataDir </> "baker-credentials.json"
           -- get Baker add transaction config
@@ -248,9 +248,9 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
   removeBaker :: RemoveBakerRequest -> Handler RemoveBakerResponse
   removeBaker RemoveBakerRequest{..} = RemoveBakerResponse <$> wrapIOError (do
       -- get base configuration
-      baseCfg <- getBaseConfig (Just cfgDir) False True
+      baseCfg <- getBaseConfig (Just cfgDir) False AutoInit
       -- generate options for the transaction
-      accCfg' <- snd <$> getAccountConfig sender baseCfg Nothing Nothing False
+      accCfg' <- snd <$> getAccountConfig sender baseCfg Nothing Nothing Nothing AssumeInitialized
       let accCfg = accCfg' { acThreshold = fromIntegral (HM.size $ acKeys accCfg') }
       -- get Baker add transaction config
       let energy = bakerRemoveEnergyCost (HM.size $ acKeys accCfg)
