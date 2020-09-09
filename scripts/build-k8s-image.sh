@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -e
+
 if [ ! -z "$JENKINS_HOME" ]; then
   if [[ $# -ge 1 ]]; then
     scripts/download_genesis_data.sh $1
