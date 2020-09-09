@@ -152,10 +152,11 @@ createPasswordInteractive descr = runExceptT $ do
 -- presenting the key index to the user.
 decryptAccountKeyMapInteractive
   :: EncryptedAccountKeyMap
+  -> Maybe IDTypes.SignatureThreshold
   -> Maybe String -- ^ Optional text describing the account of which to decrypt keys. Will be shown in the format
                   -- "Enter password for %s signing key"
   -> IO (Either String AccountKeyMap) -- ^ The decrypted 'AccountKeyMap' or an error message on failure.
-decryptAccountKeyMapInteractive encryptedKeyMap accDescr = runExceptT $ do
+decryptAccountKeyMapInteractive encryptedKeyMap threshold accDescr = runExceptT $ do
   let accText = maybe " " (\s -> " " ++ s ++ " ") accDescr
   let queryText keyIndex =
         if Map.size encryptedKeyMap <= 1
@@ -166,7 +167,7 @@ decryptAccountKeyMapInteractive encryptedKeyMap accDescr = runExceptT $ do
   sequence $ Map.mapWithKey (\keyIndex eKp -> do
                                 pwd <- liftIO $ askPassword $ queryText keyIndex
                                 decryptAccountKeyPair pwd keyIndex eKp
-                            ) encryptedKeyMap
+                            ) $ maybe encryptedKeyMap (\t -> Map.fromList . take (fromIntegral t) . sortOn fst . Map.toList $ encryptedKeyMap) threshold
 
 decryptAccountEncryptionSecretKeyInteractive
   :: EncryptedAccountEncryptionSecretKey
