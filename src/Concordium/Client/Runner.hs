@@ -300,7 +300,8 @@ processTransactionCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      let nrgCost _ = return $ Just encryptedTransferEnergyCost
+      -- the 11+ is because the size of the transfer is 2584 bytes (+ header)
+      let nrgCost _ = return $ Just $ (11+) . encryptedTransferEnergyCost
       txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
 
       encryptedSecretKey <-
@@ -1162,7 +1163,9 @@ processAccountCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      let nrgCost _ = return $ Just accountDecryptEnergyCost
+      -- The (6+) is because the size of the transaction is 1404 bytes (+header size)
+      -- and we need to account for transaction size since we charge for it.
+      let nrgCost _ = return $ Just $ (6+) . accountDecryptEnergyCost
       txCfg <- liftIO (getTransactionCfg baseCfg adTransactionOpts nrgCost)
 
       encryptedSecretKey <- maybe (logFatal ["Missing account encryption secret key for account: " ++ show (acAddr . tcAccountCfg $ txCfg)]) return (acEncryptionKey . tcAccountCfg $ txCfg)
