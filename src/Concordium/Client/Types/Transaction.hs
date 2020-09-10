@@ -19,6 +19,7 @@ import           GHC.Generics                        (Generic)
 
 -- |Cost of checking a header where the sender provides n signatures.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
+-- This function does not account for the size of the transaction payload.
 checkHeaderEnergyCost :: Int -> Energy
 checkHeaderEnergyCost = fromIntegral . (+6) . (*53)
 
