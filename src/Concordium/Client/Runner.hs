@@ -306,7 +306,7 @@ processTransactionCmd action baseCfgDir verbose backend =
 
       encryptedSecretKey <-
           case acEncryptionKey . tcAccountCfg $ txCfg of
-            Nothing -> 
+            Nothing ->
               logFatal ["Missing account encryption secret key for account: " ++ show (acAddr . tcAccountCfg $ txCfg)]
             Just x -> return x
       secretKey <- decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey `withLogFatalIO` ("Couldn't decrypt account encryption secret key: " ++)
@@ -447,7 +447,7 @@ getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx s
       taker <- case idx of
                 Nothing -> return id
                 Just v ->
-                  if v < fromIntegral _startIndex 
+                  if v < fromIntegral _startIndex
                      || v > (fromIntegral _startIndex) + Seq.length _incomingEncryptedAmounts
                   then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
                   else return $ Seq.take (v - (fromIntegral _startIndex))
@@ -941,7 +941,7 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
   nonce <- getNonce naAddr n confirmNonce
   accountKeyMap <- case maybeAccKeys of
                      Just acKeys' -> return acKeys'
-                     Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive acKeys Nothing
+                     Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive acKeys (Just acThreshold) Nothing
   let tx = encodeAndSignTransaction pl naAddr energy nonce expiry accountKeyMap acThreshold
 
   sendTransactionToBaker tx defaultNetId >>= \case
@@ -1290,7 +1290,7 @@ processBakerCmd action baseCfgDir verbose backend =
         putStrLn ""
 
       -- We already need the account keys to construct the proofs to be included in the transaction.
-      accountKeys <- failOnError $ decryptAccountKeyMapInteractive (acKeys $ tcAccountCfg txCfg) Nothing
+      accountKeys <- failOnError $ decryptAccountKeyMapInteractive (acKeys $ tcAccountCfg txCfg) Nothing Nothing
 
       let intOpts = toInteractionOpts txOpts
       pl <- bakerAddTransactionPayload batxCfg accountKeysFile (ioConfirm intOpts) accountKeys
@@ -1308,7 +1308,7 @@ processBakerCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      rewardAccountKeys <- failOnError $ decryptAccountKeyMapInteractive (acKeys rewardAccCfg) (Just "reward account")
+      rewardAccountKeys <- failOnError $ decryptAccountKeyMapInteractive (acKeys rewardAccCfg) Nothing (Just "reward account")
       let rewardAccountSigningData = accountSigningDataFromConfig rewardAccCfg rewardAccountKeys
 
       bsatcCfg <- getBakerSetAccountTransactionCfg baseCfg txOpts bid rewardAccountSigningData
