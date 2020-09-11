@@ -164,10 +164,18 @@ decryptAccountKeyMapInteractive encryptedKeyMap threshold accDescr = runExceptT 
         else case accDescr of
                Nothing -> "Enter password for signing key with index " ++ show keyIndex ++ ": "
                Just descr -> "Enter password for signing key of " ++ descr ++ " with index " ++ show keyIndex ++ ": "
+  -- In order to request passwords only for `threshold` number of accounts, we will map over the sub-map of the wanted size
+  let inputMap = case threshold of
+        Nothing -> encryptedKeyMap -- no threshold provided, use the full map
+        Just t ->
+          -- encryptedKeyMap is a hashmap and as such it is not sorted. The way we choose the
+          -- keys for signing is by sorting on the index, and as we want to still return a hashmap
+          -- we just take `threshold` elements and recreate the submap.
+          Map.fromList . take (fromIntegral t) . sortOn fst . Map.toList $ encryptedKeyMap
   sequence $ Map.mapWithKey (\keyIndex eKp -> do
                                 pwd <- liftIO $ askPassword $ queryText keyIndex
                                 decryptAccountKeyPair pwd keyIndex eKp
-                            ) $ maybe encryptedKeyMap (\t -> Map.fromList . take (fromIntegral t) . sortOn fst . Map.toList $ encryptedKeyMap) threshold
+                            ) inputMap
 
 decryptAccountEncryptionSecretKeyInteractive
   :: EncryptedAccountEncryptionSecretKey
