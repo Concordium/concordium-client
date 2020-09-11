@@ -152,10 +152,11 @@ createPasswordInteractive descr = runExceptT $ do
 -- presenting the key index to the user.
 decryptAccountKeyMapInteractive
   :: EncryptedAccountKeyMap
+  -> Maybe IDTypes.SignatureThreshold
   -> Maybe String -- ^ Optional text describing the account of which to decrypt keys. Will be shown in the format
                   -- "Enter password for %s signing key"
   -> IO (Either String AccountKeyMap) -- ^ The decrypted 'AccountKeyMap' or an error message on failure.
-decryptAccountKeyMapInteractive encryptedKeyMap accDescr = runExceptT $ do
+decryptAccountKeyMapInteractive encryptedKeyMap threshold accDescr = runExceptT $ do
   let accText = maybe " " (\s -> " " ++ s ++ " ") accDescr
   let queryText keyIndex =
         if Map.size encryptedKeyMap <= 1
@@ -163,10 +164,18 @@ decryptAccountKeyMapInteractive encryptedKeyMap accDescr = runExceptT $ do
         else case accDescr of
                Nothing -> "Enter password for signing key with index " ++ show keyIndex ++ ": "
                Just descr -> "Enter password for signing key of " ++ descr ++ " with index " ++ show keyIndex ++ ": "
+  -- In order to request passwords only for `threshold` number of accounts, we will map over the sub-map of the wanted size
+  let inputMap = case threshold of
+        Nothing -> encryptedKeyMap -- no threshold provided, use the full map
+        Just t ->
+          -- encryptedKeyMap is a hashmap and as such it is not sorted. The way we choose the
+          -- keys for signing is by sorting on the index, and as we want to still return a hashmap
+          -- we just take `threshold` elements and recreate the submap.
+          Map.fromList . take (fromIntegral t) . sortOn fst . Map.toList $ encryptedKeyMap
   sequence $ Map.mapWithKey (\keyIndex eKp -> do
                                 pwd <- liftIO $ askPassword $ queryText keyIndex
                                 decryptAccountKeyPair pwd keyIndex eKp
-                            ) encryptedKeyMap
+                            ) inputMap
 
 decryptAccountEncryptionSecretKeyInteractive
   :: EncryptedAccountEncryptionSecretKey
