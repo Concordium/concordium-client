@@ -203,9 +203,11 @@ data ConsensusCmd
   | ConsensusShowParameters
     { cspBlockHash :: !(Maybe Text)
     , cspIncludeBakers :: !Bool }
-  | ConsensusSetElectionDifficulty
-    { cseDifficulty :: !ElectionDifficulty
-    , cseTransactionOpts :: !TransactionOpts }
+  | ConsensusChainUpdate
+    { ccuUpdate :: !FilePath
+    , ccuAuthorizations :: !FilePath
+    , ccuKeys :: ![FilePath]
+    , ccuInteractionOpts :: !InteractionOpts }
   deriving (Show)
 
 data BlockCmd
@@ -738,10 +740,11 @@ consensusCmds =
     "consensus"
     (info
       (ConsensusCmd <$>
-        hsubparser
+        (hsubparser
           (consensusStatusCmd <>
-           consensusShowParametersCmd <>
-           consensusSetElectionDifficultyCmd))
+           consensusShowParametersCmd) <|>
+        hsubparser
+          (commandGroup "internal" <> consensusChainUpdateCmd <> internal)))
       (progDesc "Commands for inspecting chain health (branching, finalization), block content/history (including listing transactions), election (Birk) and reward/minting parameters."))
 
 consensusStatusCmd :: Mod CommandFields ConsensusCmd
@@ -762,15 +765,18 @@ consensusShowParametersCmd =
         switch (long "include-bakers" <> help "Include the \"lottery power\" of individual bakers."))
       (progDesc "Show election parameters for given block."))
 
-consensusSetElectionDifficultyCmd :: Mod CommandFields ConsensusCmd
-consensusSetElectionDifficultyCmd =
+consensusChainUpdateCmd :: Mod CommandFields ConsensusCmd
+consensusChainUpdateCmd =
   command
-    "set-election-difficulty"
+    "chain-update"
     (info
-      (ConsensusSetElectionDifficulty <$>
-        argument auto (metavar "DIFFICULTY" <> help "Difficulty as a decimal number between 0 (inclusive) and 1 (exclusive).") <*>
-        transactionOptsParser)
-      (progDesc "Set the election difficulty parameter."))
+      (ConsensusChainUpdate <$>
+        strArgument (metavar "UPDATE" <> help "File containing the update command in JSON format.") <*>
+        strOption (long "authorizations" <> metavar "FILE" <> help "File containing the public update authorizations.") <*>
+        some (strOption (long "key" <> metavar "FILE" <> help "File containing key-pair to sign the update command. This option can be provided multiple times, once for each key-pair to use.")) <*>
+        interactionOptsParser
+        )
+      (progDesc "Send a chain-update command to the chain."))
 
 blockCmds :: Mod CommandFields Cmd
 blockCmds =

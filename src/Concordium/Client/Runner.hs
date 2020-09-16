@@ -63,6 +63,7 @@ import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.SignatureScheme   as SigScheme
 import qualified Concordium.Crypto.VRF               as VRF
+import qualified Concordium.Types.Updates            as Updates
 import qualified Concordium.Types.Transactions       as Types
 import           Concordium.Types.HashableTo
 import qualified Concordium.Types.Execution          as Types
@@ -95,6 +96,7 @@ import           Data.String
 import           Data.Text(Text)
 import qualified Data.Text                           as Text
 import           Data.Text.Encoding
+import qualified Data.Vector                         as Vec
 import           Data.Word
 import           Lens.Micro.Platform
 import           Network.GRPC.Client.Helpers
@@ -539,12 +541,6 @@ data AccountRemoveKeysTransactionCfg =
   , arktcIndices :: Set.Set ID.KeyIndex
   , arktcThreshold :: Maybe ID.SignatureThreshold }
 
--- |Resolved configuration for setting election difficuntly transaction.
-data SetElectionDifficultyTransactionConfig =
-  SetElectionDifficultyTransactionConfig
-  { sdtcTransactionCfg :: TransactionConfig
-  , sdtcDifficulty :: Types.ElectionDifficulty }
-
 -- |Resolved configuration for a baker set-election-key transaction
 data BakerSetElectionKeyTransactionConfig =
   BakerSetElectionKeyTransactionConfig
@@ -744,26 +740,6 @@ bakerRemoveTransactionPayload brtxCfg confirm = do
     unless confirmed exitTransactionCancelled
 
   return Types.RemoveBaker { rbId = bid }
-
--- |Convert 'consensus set-election-difficulty' transaction config into a valid payload,
--- optionally asking the user for confirmation.
-setElectionDifficultyTransactionPayload :: SetElectionDifficultyTransactionConfig -> Bool -> IO Types.Payload
-setElectionDifficultyTransactionPayload sdtxCfg confirm = do
-  let SetElectionDifficultyTransactionConfig
-        { sdtcTransactionCfg = TransactionConfig
-                               { tcEnergy = energy }
-        , sdtcDifficulty = d }
-        = sdtxCfg
-
-  logSuccess [ printf "setting election difficulty to '%f'" d
-             , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-             , "note that only special control accounts are allowed to perform this operation"
-             , "non-authorized transactions will be rejected" ]
-  when confirm $ do
-    confirmed <- askConfirmation Nothing
-    unless confirmed exitTransactionCancelled
-
-  return Types.UpdateElectionDifficulty {uedDifficulty = d}
 
 -- |Convert 'account delegate' transaction config into a valid payload,
 -- optionally asking the user for confirmation.
@@ -1205,7 +1181,7 @@ processContractCmd action _ backend = putStrLn $ "Not yet implemented: " ++ show
 
 -- |Process a 'consensus ...' command.
 processConsensusCmd :: ConsensusCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
-processConsensusCmd action baseCfgDir verbose backend =
+processConsensusCmd action _baseCfgDir verbose backend =
   case action of
     ConsensusStatus -> do
       v <- withClientJson backend getConsensusStatus
@@ -1215,21 +1191,56 @@ processConsensusCmd action baseCfgDir verbose backend =
       case v of
         Nothing -> putStrLn "Block not found."
         Just p -> runPrinter $ printBirkParameters includeBakers p
-    ConsensusSetElectionDifficulty d txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
-      when verbose $ do
-        runPrinter $ printBaseConfig baseCfg
-        putStrLn ""
-
-      sdtxCfg <- getSetElectionDifficultyTransactionCfg baseCfg txOpts d
-      let txCfg = sdtcTransactionCfg sdtxCfg
-      when verbose $ do
-        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
-        putStrLn ""
-
-      let intOpts = toInteractionOpts txOpts
-      pl <- setElectionDifficultyTransactionPayload sdtxCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+    ConsensusChainUpdate rawUpdateFile authsFile keysFiles intOpts -> do
+      let
+        loadJSON :: (FromJSON a) => FilePath -> IO a
+        loadJSON fn = AE.eitherDecodeFileStrict fn >>= \case
+          Left err -> logFatal [fn ++ ": " ++ err]
+          Right r -> return r
+      rawUpdate@Updates.RawUpdateInstruction{..} <- loadJSON rawUpdateFile
+      auths <- loadJSON authsFile
+      keys <- mapM loadJSON keysFiles
+      let
+        keySet = Updates.accessPublicKeys $ (case ruiPayload of
+            Updates.AuthorizationUpdatePayload{} -> Updates.asAuthorization
+            Updates.ProtocolUpdatePayload{} -> Updates.asProtocol
+            Updates.ElectionDifficultyUpdatePayload{} -> Updates.asParamElectionDifficulty
+            Updates.EuroPerEnergyUpdatePayload{} -> Updates.asParamEuroPerEnergy
+            Updates.MicroGTUPerEuroUpdatePayload{} -> Updates.asParamMicroGTUPerEuro)
+          auths
+        keyLU key = let vk = SigScheme.correspondingVerifyKey key in
+          case vk `Vec.elemIndex` Updates.asKeys auths of
+            Nothing -> logFatal [printf "Authorizations file does not contain public key '%s'" (show vk)]
+            Just i -> do
+              unless (fromIntegral i `Set.member` keySet) $
+                logWarn [printf "Key with index %u (%s) is not authorized to perform this update type." i (show vk)]
+              return (fromIntegral i, key)
+      keyMap <- OrdMap.fromList <$> mapM keyLU keys
+      let ui = Updates.makeUpdateInstruction rawUpdate keyMap
+      when verbose $ logInfo ["Generated update instruction:", show ui]
+      now <- getCurrentTimeUnix
+      let expiryOK = ruiTimeout > now
+      unless expiryOK $
+        logWarn [printf "Update timeout (%s) has already expired" (showTimeFormatted $ timeFromTransactionExpiryTime ruiTimeout)]
+      let effectiveTimeOK = ruiEffectiveTime == 0 || ruiEffectiveTime > ruiTimeout
+      unless effectiveTimeOK $
+        logWarn [printf "Update effective time (%s) is not later than expiry time (%s)" (showTimeFormatted $ timeFromTransactionExpiryTime ruiEffectiveTime) (showTimeFormatted $ timeFromTransactionExpiryTime ruiTimeout)]
+      let authorized = Updates.checkAuthorizedUpdate auths ui
+      unless authorized $ do
+        logWarn ["The update instruction is not authorized by the keys used to sign it."]
+      when (ioConfirm intOpts) $ unless (expiryOK && effectiveTimeOK && authorized) $ do
+        confirmed <- askConfirmation $ Just "Proceed anyway [yN]?"
+        unless confirmed exitTransactionCancelled
+      withClient backend $ do
+        let
+          tx = Types.ChainUpdate ui
+          hash = getBlockItemHash tx
+        sendTransactionToBaker tx defaultNetId >>= \case
+          Left err -> fail err
+          Right False -> fail "update instruction not accepted by the node"
+          Right True -> logSuccess [printf "update instruction '%s' sent to the baker" (show hash)]
+        when (ioTail intOpts) $
+          tailTransaction hash
 
 -- |Process a 'block ...' command.
 processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
@@ -1391,18 +1402,6 @@ getBakerSetAccountTransactionCfg baseCfg txOpts bid asd = do
     , bsatcBakerId = bid
     , bsatcAccountSigningData = asd }
   where nrgCost _ = return $ Just bakerSetAccountEnergyCost
-
--- |Resolve configuration of a 'consensus set-election-difficulty' transaction based on persisted config and CLI flags.
--- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
-getSetElectionDifficultyTransactionCfg :: BaseConfig -> TransactionOpts -> Types.ElectionDifficulty -> IO SetElectionDifficultyTransactionConfig
-getSetElectionDifficultyTransactionCfg baseCfg txOpts d = do
-  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
-  when (d < 0 || d >= 1) $
-    logFatal ["difficulty is out of range"]
-  return SetElectionDifficultyTransactionConfig
-    { sdtcTransactionCfg = txCfg
-    , sdtcDifficulty = d }
-  where nrgCost _ = return $ Just setElectionDifficultyEnergyCost
 
 getBakerSetKeyTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerSetKeyTransactionConfig
 getBakerSetKeyTransactionCfg baseCfg txOpts bid f = do
@@ -1878,7 +1877,6 @@ convertTransactionJsonPayload = \case
   (CT.UpdateBakerSignKey ubsid ubsk ubsp) ->
     return $ Types.UpdateBakerSignKey ubsid ubsk ubsp
   (CT.DelegateStake dsid) -> return $ Types.DelegateStake dsid
-  (CT.UpdateElectionDifficulty d) -> return $ Types.UpdateElectionDifficulty d
   CT.TransferToPublic{..} -> return $ Types.TransferToPublic{..}
   -- FIXME: The following two should have the inputs changed so that they are usable.
   -- They should only specify the amount and the index, and possibly the input encrypted amounts,
