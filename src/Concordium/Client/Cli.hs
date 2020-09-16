@@ -194,10 +194,10 @@ getLocalTimeOfDay = do
   localTimeOfDay . utcToLocalTime tz <$> getCurrentTime
 
 getCurrentTimeUnix :: IO TransactionExpiryTime
-getCurrentTimeUnix = TransactionExpiryTime . round <$> getPOSIXTime
+getCurrentTimeUnix = TransactionTime . round <$> getPOSIXTime
 
 timeFromTransactionExpiryTime :: TransactionExpiryTime -> UTCTime
-timeFromTransactionExpiryTime = posixSecondsToUTCTime . fromIntegral . expiry
+timeFromTransactionExpiryTime = posixSecondsToUTCTime . fromIntegral . ttsSeconds
 
 -- | Expected result of the 'getAccountInfo' endpoint, when non-null.
 data AccountInfoResult = AccountInfoResult
@@ -290,19 +290,19 @@ instance AE.FromJSON ConsensusStatusResult where
 
 data BirkParametersResult = BirkParametersResult
   { bprElectionNonce :: LeadershipElectionNonce
-  , bprElectionDifficulty :: ElectionDifficulty
+  -- , bprElectionDifficulty :: ElectionDifficulty
   , bprBakers :: [BirkParametersBakerResult] }
 
 instance AE.FromJSON BirkParametersResult where
   parseJSON = withObject "Birk parameters" $ \v -> do
     bprElectionNonce <- v .: "electionNonce"
-    bprElectionDifficulty <- v .: "electionDifficulty"
+    -- bprElectionDifficulty <- v .: "electionDifficulty"
     bprBakers <- v .: "bakers"
     return $ BirkParametersResult {..}
 
 data BirkParametersBakerResult = BirkParametersBakerResult
   { bpbrId :: BakerId
-  , bpbrLotteryPower :: ElectionDifficulty
+  , bpbrLotteryPower :: Double
   , bpbrAccount :: IDTypes.AccountAddress }
 
 instance AE.FromJSON BirkParametersBakerResult where

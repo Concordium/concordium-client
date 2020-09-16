@@ -376,7 +376,7 @@ runTransaction nodeBackend payload (address, keyMap) = do
             { thSenderAddress = address
             , thNonce = Just nonce
             , thEnergyAmount = energyAmount
-            , thExpiry = Types.TransactionExpiryTime transactionExpiry
+            , thExpiry = Types.TransactionTime transactionExpiry
             }
 
   executeTransaction nodeBackend transaction

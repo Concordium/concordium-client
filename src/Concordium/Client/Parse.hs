@@ -40,7 +40,7 @@ parseCredExpiry = parseTime "%0Y%0m"
 parseExpiry :: (MonadError String m) => TransactionExpiryTime -> Text -> m TransactionExpiryTime
 parseExpiry now input = do
   (t, u) <- parseDuration input
-  let e = TransactionExpiryTime t
+  let e = TransactionTime t
   return $ case u of
             Nothing -> e
             Just s -> now + e*multiplier s

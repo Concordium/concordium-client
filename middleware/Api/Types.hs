@@ -18,7 +18,7 @@ import           Concordium.Client.Types.Transaction ()
 import qualified Concordium.Types as Types
 import           Concordium.Utils
 
-import Concordium.Types (ElectionDifficulty, BakerId)
+import Concordium.Types (BakerId)
 
 data AccountInfoResponse = AccountInfoResponse
   { accountAmount :: !Types.Amount
@@ -194,5 +194,5 @@ data RemoveBakerResponse =
 
 data GetBakersResponse =
   GetBakersResponse
-  { bakers :: [(BakerId, Text,  ElectionDifficulty)] }
+  { bakers :: [(BakerId, Text, Double)] }
   deriving (ToJSON, Generic, Show)
