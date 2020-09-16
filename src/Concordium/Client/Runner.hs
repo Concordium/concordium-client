@@ -741,28 +741,6 @@ bakerRemoveTransactionPayload brtxCfg confirm = do
 
   return Types.RemoveBaker { rbId = bid }
 
-{-
--- |Convert 'consensus set-election-difficulty' transaction config into a valid payload,
--- optionally asking the user for confirmation.
-setElectionDifficultyTransactionPayload :: SetElectionDifficultyTransactionConfig -> Bool -> IO Types.Payload
-setElectionDifficultyTransactionPayload sdtxCfg confirm = do
-  let SetElectionDifficultyTransactionConfig
-        { sdtcTransactionCfg = TransactionConfig
-                               { tcEnergy = energy }
-        , sdtcDifficulty = d }
-        = sdtxCfg
-
-  logSuccess [ printf "setting election difficulty to '%f'" d
-             , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-             , "note that only special control accounts are allowed to perform this operation"
-             , "non-authorized transactions will be rejected" ]
-  when confirm $ do
-    confirmed <- askConfirmation Nothing
-    unless confirmed exitTransactionCancelled
-
-  return Types.UpdateElectionDifficulty {uedDifficulty = d}
--}
-
 -- |Convert 'account delegate' transaction config into a valid payload,
 -- optionally asking the user for confirmation.
 accountDelegateTransactionPayload :: AccountDelegateTransactionConfig -> Bool -> IO Types.Payload
