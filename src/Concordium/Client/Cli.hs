@@ -290,13 +290,13 @@ instance AE.FromJSON ConsensusStatusResult where
 
 data BirkParametersResult = BirkParametersResult
   { bprElectionNonce :: LeadershipElectionNonce
-  , bprElectionDifficulty :: ElectionDifficulty
+  -- , bprElectionDifficulty :: ElectionDifficulty
   , bprBakers :: [BirkParametersBakerResult] }
 
 instance AE.FromJSON BirkParametersResult where
   parseJSON = withObject "Birk parameters" $ \v -> do
     bprElectionNonce <- v .: "electionNonce"
-    bprElectionDifficulty <- v .: "electionDifficulty"
+    -- bprElectionDifficulty <- v .: "electionDifficulty"
     bprBakers <- v .: "bakers"
     return $ BirkParametersResult {..}
 
