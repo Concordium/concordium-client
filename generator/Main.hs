@@ -110,7 +110,7 @@ main = do
             thNonce = nonce,
             thEnergyAmount = 1000,
             thPayloadSize = payloadSize (txBody nonce),
-            thExpiry = TransactionExpiryTime maxBound
+            thExpiry = TransactionTime maxBound
             }
       let sign nonce = (txRecepient nonce, NormalTransaction $ signTransaction (Map.toList keyMap) (txHeader nonce) (txBody nonce))
       go backend (logit txoptions) (tps txoptions) sign (startNonce txoptions)
