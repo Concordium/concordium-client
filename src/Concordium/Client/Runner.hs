@@ -1238,7 +1238,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
         sendTransactionToBaker tx defaultNetId >>= \case
           Left err -> fail err
           Right False -> fail "update instruction not accepted by the node"
-          Right True -> logSuccess [printf "transaction '%s' sent to the baker" (show hash)]
+          Right True -> logSuccess [printf "update instruction '%s' sent to the baker" (show hash)]
         when (ioTail intOpts) $
           tailTransaction hash
 
