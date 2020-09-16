@@ -350,8 +350,6 @@ showEvent verbose = \case
     verboseOrNothing $ case esuBaker of
                          Nothing -> printf "stake of account '%s' undelegated (was not previous delegated)" (show esuAccount)
                          Just bid -> printf "stake of account '%s' undelegated from baker %s" (show esuAccount) (show bid)
-  Types.ElectionDifficultyUpdated{..} ->
-    verboseOrNothing $ printf "election difficulty updated to %f" eeduDifficulty
   Types.AccountKeysUpdated -> verboseOrNothing $ "account keys updated"
   Types.AccountKeysAdded -> verboseOrNothing $ "account keys added"
   Types.AccountKeysRemoved -> verboseOrNothing $ "account keys removed"
@@ -360,6 +358,8 @@ showEvent verbose = \case
   Types.EncryptedAmountsRemoved{..} -> verboseOrNothing $ printf "encrypted amounts removed on account '%s' up to index '%s' with a resulting self encrypted amount of '%s'" (show earAccount) (show earUpToIndex) (show earNewAmount)
   Types.AmountAddedByDecryption{..} -> verboseOrNothing $ printf "transferred '%s' tokens from the shielded balance to the public balance on account '%s'" (show aabdAmount) (show aabdAccount)
   Types.EncryptedSelfAmountAdded{..} -> verboseOrNothing $ printf "transferred '%s' tokens from the public balance to the shielded balance on account '%s' with a resulting self encrypted balance of '%s'" (show eaaAmount) (show eaaAccount) (show eaaNewAmount)
+  Types.UpdateEnqueued{..} ->
+    verboseOrNothing $ printf "Enqueued chain update, effective at %s:\n%s" (showTimeFormatted (timeFromTransactionExpiryTime ueEffectiveTime)) (show uePayload)
 
   where
     verboseOrNothing :: String -> Maybe String
@@ -520,7 +520,7 @@ printConsensusStatus r =
 printBirkParameters :: Bool -> BirkParametersResult -> Printer
 printBirkParameters includeBakers r = do
   tell [ printf "Election nonce:      %s" (show $ bprElectionNonce r)
-       , printf "Election difficulty: %f" (bprElectionDifficulty r) ]
+       , printf "Election difficulty: %f" (Types.electionDifficulty $ bprElectionDifficulty r) ]
   when includeBakers $
     case bprBakers r of
       [] ->

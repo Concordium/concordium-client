@@ -169,9 +169,6 @@ data TransactionJSONPayload
   | DelegateStake
       { bakerId :: !BakerId
       }
-  | UpdateElectionDifficulty
-      { difficulty :: !ElectionDifficulty
-      }
   | TransferToEncrypted{
       -- |Amount to transfer from public to encrypted balance of the account.
       tteAmount :: !Amount
