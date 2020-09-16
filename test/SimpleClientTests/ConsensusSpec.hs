@@ -67,10 +67,10 @@ consensusShowParametersSpec :: Spec
 consensusShowParametersSpec = describe "show parameters" $ do
   specify "not including bakers" $ p False exampleBirkParameters `shouldBe`
     [ "Election nonce:      50ab4065c5a8194fbd7f3acf06267c7d8023fce9b3b658a74f3a927599eb9322"
-    , "Election difficulty: 0.12" ]
+    ] -- , "Election difficulty: 0.12" ]
   specify "including bakers" $ p True exampleBirkParameters `shouldBe`
     [ "Election nonce:      50ab4065c5a8194fbd7f3acf06267c7d8023fce9b3b658a74f3a927599eb9322"
-    , "Election difficulty: 0.12"
+    -- , "Election difficulty: 0.12"
     , "Bakers:"
     , "                             Account                       Lottery power"
     , "        ----------------------------------------------------------------"
@@ -79,11 +79,11 @@ consensusShowParametersSpec = describe "show parameters" $ do
     , "    13: 4p2n8QQn5akq3XqAAJt2a5CsnGhDvUon6HExd2szrfkZCTD4FX   <0.0001 %" ]
   specify "including bakers (empty)" $ p True exampleBirkParametersNoBakers `shouldBe`
     [ "Election nonce:      50ab4065c5a8194fbd7f3acf06267c7d8023fce9b3b658a74f3a927599eb9322"
-    , "Election difficulty: 0.12"
+    -- , "Election difficulty: 0.12"
     , "Bakers:              none" ]
   specify "including bakers (single one with 100% stake)" $ p True exampleBirkParametersSingleBakerWithAllStake `shouldBe`
     [ "Election nonce:      50ab4065c5a8194fbd7f3acf06267c7d8023fce9b3b658a74f3a927599eb9322"
-    , "Election difficulty: 0.12"
+    -- , "Election difficulty: 0.12"
     , "Bakers:"
     , "                             Account                       Lottery power"
     , "        ----------------------------------------------------------------"
@@ -154,7 +154,7 @@ exampleBirkParameters :: BirkParametersResult
 exampleBirkParameters =
   BirkParametersResult
   { bprElectionNonce = exampleNonce
-  , bprElectionDifficulty = 0.12
+  -- , bprElectionDifficulty = 0.12
   , bprBakers = [ BirkParametersBakerResult
                   { bpbrId = 1
                   , bpbrLotteryPower = 0.1
@@ -172,7 +172,7 @@ exampleBirkParametersSingleBakerWithAllStake :: BirkParametersResult
 exampleBirkParametersSingleBakerWithAllStake =
   BirkParametersResult
   { bprElectionNonce = exampleNonce
-  , bprElectionDifficulty = 0.12
+  -- , bprElectionDifficulty = 0.12
   , bprBakers = [ BirkParametersBakerResult
                   { bpbrId = 1
                   , bpbrLotteryPower = 1
@@ -182,7 +182,7 @@ exampleBirkParametersNoBakers :: BirkParametersResult
 exampleBirkParametersNoBakers =
   BirkParametersResult
   { bprElectionNonce = exampleNonce
-  , bprElectionDifficulty = 0.12
+  -- , bprElectionDifficulty = 0.12
   , bprBakers = [] }
 
 exampleNonce :: LeadershipElectionNonce
