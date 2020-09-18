@@ -30,7 +30,6 @@ import Data.Time
 import Text.Printf
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
-import Data.Word
 import Lens.Micro.Platform
 
 -- PRINTER
@@ -567,7 +566,7 @@ printIdentityProviders vals = do
   tell [ printf "Identity providers"
        , printf "------------------" ]
   tell $ concatMap printSingleIdentityProvider vals
- where parseResponse :: AE.Value -> AE.Parser (Word32, (String, String, String))
+ where parseResponse :: AE.Value -> AE.Parser (IDTypes.IdentityProviderIdentity, (String, String, String))
        parseResponse = AE.withObject "IpInfo" $ \obj -> do
          ipId <- obj AE..: "ipIdentity"
          descriptionVal <- obj AE..: "ipDescription"
@@ -577,7 +576,7 @@ printIdentityProviders vals = do
          let mresult = AE.parse parseResponse val in
            case mresult of
              AE.Success (ident, (name, url, description)) ->
-               [ printf "Identifier:     %s" ident
+               [ printf "Identifier:     %s" $ show ident
                , printf "Description:    NAME %s" name
                , printf "                URL %s" url
                , printf "                %s" description ]
@@ -588,7 +587,7 @@ printAnonymityRevokers vals = do
   tell [ printf "Anonymity revokers"
        , printf "------------------" ]
   tell $ concatMap printSingleAnonymityRevoker vals
- where parseResponse :: AE.Value -> AE.Parser (Word32, (String, String, String))
+ where parseResponse :: AE.Value -> AE.Parser (IDTypes.ArIdentity, (String, String, String))
        parseResponse = AE.withObject "IpInfo" $ \obj -> do
          ipId <- obj AE..: "arIdentity"
          descriptionVal <- obj AE..: "arDescription"
@@ -598,7 +597,7 @@ printAnonymityRevokers vals = do
          let mresult = AE.parse parseResponse val in
            case mresult of
              AE.Success (ident, (name, url, description)) ->
-               [ printf "Identifier:     %s" ident
+               [ printf "Identifier:     %s" $ show ident
                , printf "Description:    NAME %s" name
                , printf "                URL %s" url
                , printf "                %s" description ]
