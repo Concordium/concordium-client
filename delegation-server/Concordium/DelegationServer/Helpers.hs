@@ -133,9 +133,13 @@ delegate grpc delegationAccounts bakerId idx =
       -- action to send the transaction
       let sender = do
             currentNonce <- getBestBlockHash >>= getAccountNonce daAddr
-            return $ encodeAndSignTransaction pl daAddr energy currentNonce expiry daKeys daThreshold
+            let tx = encodeAndSignTransaction pl daAddr energy currentNonce expiry daKeys daThreshold
+            sendTransactionToBaker tx defaultNetId >>= \case
+              Left err -> fail err
+              Right False -> fail "Transaction not accepted by the baker."
+              Right True -> return (getBlockItemHash tx)
       -- try to send, and in case of failure throw an exception.
-      runClient grpc (getBlockItemHash <$> sender) `failWith` (userError . show)
+      runClient grpc sender `failWith` (userError . show)
 
 in2epochs :: UTCTime -> NominalDiffTime -> UTCTime -> UTCTime
 in2epochs genesisTime epochDuration finalizationTime =
