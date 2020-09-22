@@ -192,7 +192,13 @@ data RemoveBakerResponse =
   { hash :: Maybe Text }
   deriving (ToJSON, Generic, Show)
 
+data Baker = Baker {
+  bakerId :: BakerId,
+  account :: Text,
+  lotteryPower :: Double
+} deriving (ToJSON, Generic, Show)
+
 data GetBakersResponse =
   GetBakersResponse
-  { bakers :: [(BakerId, Text, Double)] }
+  { bakers :: [Baker] }
   deriving (ToJSON, Generic, Show)
