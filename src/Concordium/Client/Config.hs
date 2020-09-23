@@ -189,15 +189,15 @@ initAccountConfigEither baseCfg namedAddr = runExceptT $ do
 
   -- Add name mapping.
   baseCfg' <- case name of
-    Nothing -> ExceptT $ return $ Right baseCfg
+    Nothing -> return baseCfg
     Just n -> do
       let m = M.insert n addr $ bcAccountNameMap baseCfg
       logInfo [printf "writing file '%s'" mapFile]
       tryE $ writeAccountNameMap mapFile m
       logSuccess ["added name mapping"]
-      ExceptT $ return $ Right baseCfg { bcAccountNameMap = m }
+      return baseCfg { bcAccountNameMap = m }
   
-  ExceptT $ return $ Right (baseCfg', AccountConfig
+  return (baseCfg', AccountConfig
                     { acAddr = namedAddr
                     , acKeys = M.empty
                     , acThreshold = 1 -- minimum threshold
