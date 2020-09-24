@@ -281,7 +281,10 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
       eeParams <- wrapIOError $ runClient nodeBackend $ withBestBlockHash Nothing getBirkParameters
       case eeParams of
           Right (Right jParams) -> case Aeson.fromJSON jParams of
-                                    Aeson.Success params -> return $ Prelude.map (\b -> ((bpbrId b), (Text.pack $ show $ bpbrAccount b), (bpbrLotteryPower b))) $ bprBakers params
+                                    Aeson.Success params -> return $ Prelude.map (\b -> 
+                                      Baker { bakerId = bpbrId b
+                                            , account = Text.pack $ show $ bpbrAccount b
+                                            , lotteryPower = bpbrLotteryPower b }) $ bprBakers params
                                     Aeson.Error e -> wrapSerializationError jParams "birk paramaeters" (Left e)
           Left e -> throwError' err500 (Just ("GRPC error: ", e))
           Right (Left e) -> throwError' err500 (Just ("GRPC error: ", e))
