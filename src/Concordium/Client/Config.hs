@@ -159,31 +159,31 @@ ensureAccountConfigInitialized baseCfg = do
   let accCfgDir = bcAccountCfgDir baseCfg
   createDirectoryIfMissing True accCfgDir
 
--- |Add an account to the configuration by creating its key directory and
--- optionally a name mapping.
-initAccountConfig :: BaseConfig
-                  -> NamedAddress
-                  -> IO (BaseConfig, AccountConfig)
-initAccountConfig baseCfg namedAddr = do
+
+
+
+initAccountConfigEither :: BaseConfig
+                        -> NamedAddress
+                        -> IO (Either String (BaseConfig, AccountConfig))
+initAccountConfigEither baseCfg namedAddr = runExceptT $ do
   let NamedAddress { naAddr = addr, naName = name } = namedAddr
   case name of
     Nothing -> logInfo [printf "adding account %s without a name" (show addr)]
     Just n -> logInfo [printf "adding account %s with name '%s'" (show addr) n]
-
+  
   -- Check if config has been initialized.
   let accCfgDir = bcAccountCfgDir baseCfg
       mapFile = accountNameMapFile accCfgDir
-  ensureAccountConfigInitialized baseCfg
+  liftIO $ ensureAccountConfigInitialized baseCfg
 
   -- Create keys directory.
   let keysDir = accountKeysDir accCfgDir addr
-  keysDirExists <- doesDirectoryExist keysDir
+  keysDirExists <- liftIO $ doesDirectoryExist keysDir
   if keysDirExists
-    then logFatal [printf "account is already initialized: directory '%s' exists" keysDir]
-    else do
+    then throwE $ printf "account is already initialized: directory '%s' exists" keysDir
+    else liftIO $ do
       logInfo [printf "creating directory '%s'" keysDir]
-      catch @ IOError (createDirectoryIfMissing False keysDir) $
-          \e -> logFatal [printf "cannot create account directory: %s" (show e)]
+      createDirectoryIfMissing False keysDir
       logSuccess ["created key directory"]
 
   -- Add name mapping.
@@ -192,15 +192,35 @@ initAccountConfig baseCfg namedAddr = do
     Just n -> do
       let m = M.insert n addr $ bcAccountNameMap baseCfg
       logInfo [printf "writing file '%s'" mapFile]
-      writeAccountNameMap mapFile m
+      liftIO $ writeAccountNameMap mapFile m
       logSuccess ["added name mapping"]
       return baseCfg { bcAccountNameMap = m }
+  
   return (baseCfg', AccountConfig
                     { acAddr = namedAddr
                     , acKeys = M.empty
                     , acThreshold = 1 -- minimum threshold
                     , acEncryptionKey = Nothing
                     })
+
+-- |Add an account to the configuration by creating its key directory and
+-- optionally a name mapping.
+initAccountConfig :: BaseConfig
+                  -> NamedAddress
+                  -> IO (BaseConfig, AccountConfig)
+initAccountConfig baseCfg namedAddr = do
+  res <- initAccountConfigEither baseCfg namedAddr
+  case res of 
+    Left err -> logFatal [err]
+    Right config -> return config
+
+-- |Write the provided configuration to disk in the expected formats.
+importAccountConfigEither :: BaseConfig -> [AccountConfig] -> IO (Either String BaseConfig)
+importAccountConfigEither baseCfg accCfgs = runExceptT $ foldM f baseCfg accCfgs
+  where f bc ac = do
+          (bc', _) <- ExceptT $ initAccountConfigEither bc (acAddr ac)
+          liftIO $ writeAccountKeys bc' ac
+          return bc'
 
 -- |Write the provided configuration to disk in the expected formats.
 importAccountConfig :: BaseConfig -> [AccountConfig] -> IO BaseConfig
