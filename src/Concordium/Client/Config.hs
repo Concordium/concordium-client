@@ -174,17 +174,16 @@ initAccountConfigEither baseCfg namedAddr = runExceptT $ do
   -- Check if config has been initialized.
   let accCfgDir = bcAccountCfgDir baseCfg
       mapFile = accountNameMapFile accCfgDir
-  tryE $ ensureAccountConfigInitialized baseCfg
+  liftIO $ ensureAccountConfigInitialized baseCfg
 
   -- Create keys directory.
   let keysDir = accountKeysDir accCfgDir addr
-  keysDirExists <- tryE $ doesDirectoryExist keysDir
+  keysDirExists <- liftIO $ doesDirectoryExist keysDir
   if keysDirExists
     then throwE $ printf "account is already initialized: directory '%s' exists" keysDir
-    else do
+    else liftIO $ do
       logInfo [printf "creating directory '%s'" keysDir]
-      catchE (tryE $ createDirectoryIfMissing False keysDir) $
-          \e -> throwE $ printf "cannot create account directory: %s" (show e)
+      createDirectoryIfMissing False keysDir
       logSuccess ["created key directory"]
 
   -- Add name mapping.
@@ -193,7 +192,7 @@ initAccountConfigEither baseCfg namedAddr = runExceptT $ do
     Just n -> do
       let m = M.insert n addr $ bcAccountNameMap baseCfg
       logInfo [printf "writing file '%s'" mapFile]
-      tryE $ writeAccountNameMap mapFile m
+      liftIO $ writeAccountNameMap mapFile m
       logSuccess ["added name mapping"]
       return baseCfg { bcAccountNameMap = m }
   
@@ -203,7 +202,6 @@ initAccountConfigEither baseCfg namedAddr = runExceptT $ do
                     , acThreshold = 1 -- minimum threshold
                     , acEncryptionKey = Nothing
                     })
-  where tryE io = withExceptT show $ ExceptT $ try @IOError io
 
 -- |Add an account to the configuration by creating its key directory and
 -- optionally a name mapping.
@@ -221,7 +219,7 @@ importAccountConfigEither :: BaseConfig -> [AccountConfig] -> IO (Either String 
 importAccountConfigEither baseCfg accCfgs = runExceptT $ foldM f baseCfg accCfgs
   where f bc ac = do
           (bc', _) <- ExceptT $ initAccountConfigEither bc (acAddr ac)
-          withExceptT show $ ExceptT $ try @IOError $ writeAccountKeys bc' ac
+          liftIO $ writeAccountKeys bc' ac
           return bc'
 
 -- |Write the provided configuration to disk in the expected formats.
