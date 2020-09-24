@@ -2,19 +2,21 @@
 
 module Concordium.Client.Export where
 
-import Concordium.Client.Utils
+import Concordium.Client.Cli
 import Concordium.Client.Config
 import Concordium.Client.Encryption
 import Concordium.Client.Types.Account
+import Concordium.Client.Utils
 
-import Control.Monad.Except
 import Control.Exception
+import Control.Monad.Except
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import Data.Aeson ((.:),(.:?),(.!=))
-import Data.Text as T
 import qualified Data.ByteString as BS
 import qualified Data.HashMap.Strict as Map
+import Data.Text as T
+import qualified Data.Text.IO as T
 import Text.Printf
 
 -- | An export format used by wallets including accounts and identities.
@@ -102,14 +104,22 @@ accountCfgsFromWalletExportAccounts weas name pwd =
 -- This encrypts all signing keys with the provided password.
 accountCfgFromWalletExportAccount :: Password -> WalletExportAccount -> ExceptT String IO AccountConfig
 accountCfgFromWalletExportAccount pwd WalletExportAccount { weaKeys = AccountSigningData{..}, .. } = do
-  validateAccountName weaName
+  name <- liftIO $ ensureValidName weaName
   acKeys <- liftIO $ encryptAccountKeyMap pwd asdKeys
   acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd weaEncryptionKey)
   return $ AccountConfig
-    { acAddr = NamedAddress { naName = Just weaName, naAddr = asdAddress }
+    { acAddr = NamedAddress { naName = Just name, naAddr = asdAddress }
     , acThreshold = asdThreshold
     , ..
     }
+  where
+    ensureValidName name =
+      case validateAccountName name of
+        Left err -> do
+          logError [err]
+          putStr "Input valid replacement name: "
+          T.getLine >>= ensureValidName
+        Right () -> return name
 
 -- |Decode and parse a genesis account into a named account config.
 -- All signing keys are encrypted with the given password.
