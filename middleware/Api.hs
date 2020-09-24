@@ -213,11 +213,11 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
 
 
   addBaker :: AddBakerRequest -> Handler AddBakerResponse
-  addBaker AddBakerRequest{..} = AddBakerResponse <$> wrapIOError (do
+  addBaker AddBakerRequest{..} = do
       -- get base configuration
-      baseCfg <- getBaseConfig (Just cfgDir) False AutoInit
+      baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False AutoInit
       -- generate options for the transaction
-      accCfg' <- snd <$> getAccountConfig sender baseCfg Nothing Nothing Nothing AssumeInitialized
+      accCfg' <- wrapIOError $ snd <$> getAccountConfig sender baseCfg Nothing Nothing Nothing AssumeInitialized
       let accCfg = accCfg' { acThreshold = fromIntegral (HM.size $ acKeys accCfg') }
           file = dataDir </> "baker-credentials.json"
           -- get Baker add transaction config
@@ -230,11 +230,15 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
 
       bakerKeys <- liftIO $ Aeson.eitherDecodeFileStrict file >>= getFromJson
 
-      accountKeys <- liftIO (failOnError $ decryptAccountKeyMap acKeys (passwordFromText password))
+      accountKeysRes <- liftIO (decryptAccountKeyMap acKeys (passwordFromText password))
+      
+      accountKeys <- (case accountKeysRes of 
+        Left err -> throwError' err401 $ Just ("", err)
+        Right acc -> liftIO $ return acc)
 
       pl <- liftIO $ generateBakerAddPayload bakerKeys $ accountSigningDataFromConfig accCfg accountKeys
       -- run the transaction
-      res <- runClient nodeBackend $ do
+      res <- liftIO $ runClient nodeBackend $ do
         currentNonce <- getBestBlockHash >>= getAccountNonce senderAddr
         let tx = encodeAndSignTransaction pl senderAddr energy currentNonce expiry accountKeys acThreshold
         sendTransactionToBaker tx defaultNetId >>= \case
@@ -242,8 +246,8 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
           Right False -> fail "transaction not accepted by the baker"
           Right True -> return $ getBlockItemHash tx
       case res of
-        Left err -> fail $ show err
-        Right v -> return . Just . Text.pack $ show v)
+        Left err -> throwError' err409 $ Just ("", err)
+        Right v -> return . AddBakerResponse . Just . Text.pack $ show v
 
   removeBaker :: RemoveBakerRequest -> Handler RemoveBakerResponse
   removeBaker RemoveBakerRequest{..} = RemoveBakerResponse <$> wrapIOError (do
