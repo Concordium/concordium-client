@@ -69,7 +69,8 @@ requestDelegation transitionChan RequestDelegationRequest {..} = do
     (do
         logAndPutMVar ("requestDelegation (" ++ show delegateTo ++ ")") (localState state) currentState)
     (do
-        if Set.member delegateTo activeDelegations
+        bakerExists <- checkBakerExists (backend state) delegateTo
+        if Set.member delegateTo activeDelegations && not bakerExists
           then do
           logAndPutMVar ("requestDelegation (" ++ show delegateTo ++ ")") (localState state) currentState
           return RequestDelegationNotAccepted
