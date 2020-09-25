@@ -2,6 +2,8 @@ module Concordium.Client.Utils where
 
 import Control.Monad.Except
 import Concordium.Types
+import qualified Concordium.ID.Types as IDTypes
+import Text.Read
 
 -- | In the 'Left' case of an 'Either', transform the error using the given function and
 -- "rethrow" it in the current 'MonadError'.
@@ -40,4 +42,12 @@ amountFromStringInform s =
   case amountFromString s of
     Just a -> Right a
     Nothing -> Left $ "Invalid GTU amount '" ++ s ++ "'. Amounts must be of the form n[.m] where m, if present,\n must have at least one and at most 6 digits."
+
+-- |Try to parse the amount a signature threshold from string.
+thresholdFromStringInform :: String -> Either String IDTypes.SignatureThreshold
+thresholdFromStringInform s =
+  case readMaybe s :: Maybe Integer of
+    Just a -> if a >= 1 && a <= 255 then Right (IDTypes.SignatureThreshold (fromIntegral a)) else Left errString
+    Nothing -> Left errString
+  where errString = "Invalid signature threshold. A signature threshold must be an integer between 1 and 255 inclusive."
 

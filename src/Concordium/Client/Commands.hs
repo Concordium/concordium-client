@@ -542,7 +542,7 @@ accountAddKeysCmd =
     (info
       (AccountAddKeys <$>
         strArgument (metavar "FILE" <> help "File containing the account keys.") <*>
-        optional (option auto (long "threshold" <> metavar "THRESHOLD" <>
+        optional (option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <>
             help "Update the signature threshold to this value. If not set, no changes are made to the threshold.")) <*>
         transactionOptsParser)
       (progDescDoc $ docFromLines
@@ -562,7 +562,7 @@ accountRemoveKeysCmd =
     (info
       (AccountRemoveKeys <$>
         some (argument auto (metavar "KEYINDICES" <> help "space-separated list of indices of the keys to remove.")) <*>
-        optional (option auto (long "threshold" <> metavar "THRESHOLD" <>
+        optional (option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <>
             help "Update the signature threshold to this value. If not set, no changes are made to the threshold.")) <*>
         transactionOptsParser)
       (progDescDoc $ docFromLines
