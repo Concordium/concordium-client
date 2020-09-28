@@ -474,7 +474,7 @@ getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx s
           let aggIndex = case idx of
                 Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (Seq.length _incomingEncryptedAmounts))
                 Just idx' -> Enc.EncryptedAmountAggIndex (fromIntegral idx')
-                -- ^ we use the supplied index if given. We already checked above that it is within bounds.
+                -- we use the supplied index if given. We already checked above that it is within bounds.
               aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
           liftIO $ Enc.makeEncryptedAmountTransferData globalContext receiverPk secretKey aggAmount ettAmount >>= \case
             Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]

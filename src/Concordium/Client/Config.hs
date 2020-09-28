@@ -159,18 +159,15 @@ ensureAccountConfigInitialized baseCfg = do
   let accCfgDir = bcAccountCfgDir baseCfg
   createDirectoryIfMissing True accCfgDir
 
-
-
-
 initAccountConfigEither :: BaseConfig
                         -> NamedAddress
-                        -> IO (Either String (BaseConfig, AccountConfig))
+                        -> IO (Either String (BaseConfig, AccountConfig, Bool))
 initAccountConfigEither baseCfg namedAddr = runExceptT $ do
   let NamedAddress { naAddr = addr, naName = name } = namedAddr
   case name of
     Nothing -> logInfo [printf "adding account %s without a name" (show addr)]
     Just n -> logInfo [printf "adding account %s with name '%s'" (show addr) n]
-  
+
   -- Check if config has been initialized.
   let accCfgDir = bcAccountCfgDir baseCfg
       mapFile = accountNameMapFile accCfgDir
@@ -179,15 +176,28 @@ initAccountConfigEither baseCfg namedAddr = runExceptT $ do
   -- Create keys directory.
   let keysDir = accountKeysDir accCfgDir addr
   keysDirExists <- liftIO $ doesDirectoryExist keysDir
-  if keysDirExists
-    then throwE $ printf "account is already initialized: directory '%s' exists" keysDir
-    else liftIO $ do
+  written <- if keysDirExists
+    then do
+      logWarn [printf "account is already initialized: directory '%s' exists, would you like to overwrite it?" keysDir]
+      ovwt <- liftIO $ askConfirmation Nothing
+      if ovwt
+        then do
+        liftIO $ removePathForcibly keysDir
+        logInfo [printf "overwriting directory '%s'" keysDir]
+        liftIO $ createDirectoryIfMissing False keysDir
+        logSuccess ["overwrote key directory"]
+        return True
+        else do
+        liftIO $ logInfo [printf "Account '%s' will not be imported" (show addr)]
+        return False
+    else do
       logInfo [printf "creating directory '%s'" keysDir]
-      createDirectoryIfMissing False keysDir
+      liftIO $ createDirectoryIfMissing False keysDir
       logSuccess ["created key directory"]
+      return True
 
   -- Add name mapping.
-  baseCfg' <- case name of
+  baseCfg' <- if not written then return baseCfg else case name of
     Nothing -> return baseCfg
     Just n -> do
       let m = M.insert n addr $ bcAccountNameMap baseCfg
@@ -195,22 +205,22 @@ initAccountConfigEither baseCfg namedAddr = runExceptT $ do
       liftIO $ writeAccountNameMap mapFile m
       logSuccess ["added name mapping"]
       return baseCfg { bcAccountNameMap = m }
-  
+
   return (baseCfg', AccountConfig
                     { acAddr = namedAddr
                     , acKeys = M.empty
                     , acThreshold = 1 -- minimum threshold
                     , acEncryptionKey = Nothing
-                    })
+                    }, written)
 
 -- |Add an account to the configuration by creating its key directory and
 -- optionally a name mapping.
 initAccountConfig :: BaseConfig
                   -> NamedAddress
-                  -> IO (BaseConfig, AccountConfig)
+                  -> IO (BaseConfig, AccountConfig, Bool)
 initAccountConfig baseCfg namedAddr = do
   res <- initAccountConfigEither baseCfg namedAddr
-  case res of 
+  case res of
     Left err -> logFatal [err]
     Right config -> return config
 
@@ -218,16 +228,16 @@ initAccountConfig baseCfg namedAddr = do
 importAccountConfigEither :: BaseConfig -> [AccountConfig] -> IO (Either String BaseConfig)
 importAccountConfigEither baseCfg accCfgs = runExceptT $ foldM f baseCfg accCfgs
   where f bc ac = do
-          (bc', _) <- ExceptT $ initAccountConfigEither bc (acAddr ac)
-          liftIO $ writeAccountKeys bc' ac
+          (bc', _, t) <- ExceptT $ initAccountConfigEither bc (acAddr ac)
+          liftIO $ when t $ writeAccountKeys bc' ac
           return bc'
 
 -- |Write the provided configuration to disk in the expected formats.
 importAccountConfig :: BaseConfig -> [AccountConfig] -> IO BaseConfig
-importAccountConfig baseCfg accCfgs = foldM f baseCfg accCfgs
+importAccountConfig = foldM f
   where f bc ac = do
-          (bc', _) <- initAccountConfig bc (acAddr ac)
-          writeAccountKeys bc' ac
+          (bc', _, t) <- initAccountConfig bc (acAddr ac)
+          when t $ writeAccountKeys bc' ac
           return bc'
 
 -- |Write the account name map to a file in the expected format.
@@ -458,7 +468,8 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
            "" -> return Nothing
            s -> return $ Just s
          let namedAddr' = NamedAddress { naAddr = addr, naName = name }
-         Just . fst <$> initAccountConfig cfg namedAddr'
+         (a, _, _) <- initAccountConfig cfg namedAddr'
+         return . Just $ a
        else do
          return Nothing
 
