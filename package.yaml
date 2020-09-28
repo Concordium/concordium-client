@@ -156,6 +156,7 @@ executables:
             - -threaded
           dependencies:
             - aeson
+            - wai-logger
             - bytestring
             - concordium-crypto
             - containers

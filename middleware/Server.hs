@@ -14,6 +14,7 @@ import qualified Network.Wai.Middleware.ForceSSL as M (forceSSL)
 import           Network.Wai.Middleware.Gzip (gzip, def)
 import           Network.Wai.Middleware.HttpAuth (basicAuth)
 import           Network.Wai.Middleware.Static (staticPolicy, policy, Policy)
+import           Network.Wai.Logger
 import           System.FilePath ((</>))
 import           Text.Read (readMaybe)
 import qualified Config
@@ -29,7 +30,6 @@ runHttp :: Middlewares -> IO ()
 runHttp middlewares = do
 
   serverPort <- Config.lookupEnv "PORT" 8081
-  env  <- Config.lookupEnv "ENV" Config.Development
 
   nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:11100"
   grpcAdminToken <- Config.lookupEnvText "RPC_PASSWORD" "rpcadmin"
@@ -59,17 +59,17 @@ runHttp middlewares = do
         printStatus = do
           putStrLn $ "NODE_URL: " ++ show nodeUrl
           putStrLn $ "gRPC authentication token: " ++ show grpcAdminToken
-          putStrLn $ "Environment: " ++ show env
           putStrLn $ "Server started: http://localhost:" ++ show serverPort
           putStrLn $ "Config directory: " ++ cfgDir
           putStrLn $ "Data directory: " ++ dataDir
 
-        run = W.defaultSettings
+        run l = W.defaultSettings
                   & W.setBeforeMainLoop printStatus
                   & W.setPort serverPort
+                  & W.setLogger l
                   & W.runSettings
 
-      _ <- forkIO $ run $ Config.logger env . middlewares $ waiApp
+      _ <- forkIO $ withStdoutLogger $ \lg -> run lg $ middlewares waiApp
 
       pure ()
 
