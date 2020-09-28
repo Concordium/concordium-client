@@ -48,7 +48,7 @@ exampleAccountInfoResult d cs = AccountInfoResult
                                     _startIndex = 3,
                                     _incomingEncryptedAmounts = Seq.fromList [encAmount1, encAmount2],
                                     _selfAmount = encAmount2,
-                                    _numAggregated = Nothing
+                                    _aggregatedAmount = Nothing
                                     }
                                 , airEncryptionKey = dummyEncryptionPublicKey }
 
