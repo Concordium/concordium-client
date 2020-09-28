@@ -161,8 +161,9 @@ ensureAccountConfigInitialized baseCfg = do
 
 initAccountConfigEither :: BaseConfig
                         -> NamedAddress
+                        -> Bool -- ^ True if we are in a cli environment
                         -> IO (Either String (BaseConfig, AccountConfig, Bool))
-initAccountConfigEither baseCfg namedAddr = runExceptT $ do
+initAccountConfigEither baseCfg namedAddr inCLI = runExceptT $ do
   let NamedAddress { naAddr = addr, naName = name } = namedAddr
   case name of
     Nothing -> logInfo [printf "adding account %s without a name" (show addr)]
@@ -177,19 +178,25 @@ initAccountConfigEither baseCfg namedAddr = runExceptT $ do
   let keysDir = accountKeysDir accCfgDir addr
   keysDirExists <- liftIO $ doesDirectoryExist keysDir
   written <- if keysDirExists
-    then do
-      logWarn [printf "account is already initialized: directory '%s' exists, would you like to overwrite it?" keysDir]
-      ovwt <- liftIO $ askConfirmation Nothing
-      if ovwt
-        then do
-        liftIO $ removePathForcibly keysDir
-        logInfo [printf "overwriting directory '%s'" keysDir]
-        liftIO $ createDirectoryIfMissing False keysDir
-        logSuccess ["overwrote key directory"]
-        return True
-        else do
-        liftIO $ logInfo [printf "Account '%s' will not be imported" (show addr)]
-        return False
+    then
+      if inCLI then do
+        logWarn [printf "account is already initialized: directory '%s' exists." keysDir
+                , "overwriting the directory would erase all the currently stored keys"
+                , "This is a destructive operation and cannot be undone"
+                , "Are you certain that you want to proceed with this operation?"]
+        ovwt <- liftIO $ askConfirmation Nothing
+        if ovwt
+          then do
+          liftIO $ removePathForcibly keysDir
+          logInfo [printf "overwriting directory '%s'" keysDir]
+          liftIO $ createDirectoryIfMissing False keysDir
+          logSuccess ["overwrote key directory"]
+          return True
+          else do
+          liftIO $ logInfo [printf "Account '%s' will not be imported" (show addr)]
+          return False
+      else do
+        throwE $ printf "account is already initialized: directory '%s' exists, retry using the CLI for more options" keysDir
     else do
       logInfo [printf "creating directory '%s'" keysDir]
       liftIO $ createDirectoryIfMissing False keysDir
@@ -217,9 +224,10 @@ initAccountConfigEither baseCfg namedAddr = runExceptT $ do
 -- optionally a name mapping.
 initAccountConfig :: BaseConfig
                   -> NamedAddress
+                  -> Bool -- ^ True if we are in a cli environment
                   -> IO (BaseConfig, AccountConfig, Bool)
-initAccountConfig baseCfg namedAddr = do
-  res <- initAccountConfigEither baseCfg namedAddr
+initAccountConfig baseCfg namedAddr inCLI = do
+  res <- initAccountConfigEither baseCfg namedAddr inCLI
   case res of
     Left err -> logFatal [err]
     Right config -> return config
@@ -228,7 +236,7 @@ initAccountConfig baseCfg namedAddr = do
 importAccountConfigEither :: BaseConfig -> [AccountConfig] -> IO (Either String BaseConfig)
 importAccountConfigEither baseCfg accCfgs = runExceptT $ foldM f baseCfg accCfgs
   where f bc ac = do
-          (bc', _, t) <- ExceptT $ initAccountConfigEither bc (acAddr ac)
+          (bc', _, t) <- ExceptT $ initAccountConfigEither bc (acAddr ac) False
           liftIO $ when t $ writeAccountKeys bc' ac
           return bc'
 
@@ -236,7 +244,7 @@ importAccountConfigEither baseCfg accCfgs = runExceptT $ foldM f baseCfg accCfgs
 importAccountConfig :: BaseConfig -> [AccountConfig] -> IO BaseConfig
 importAccountConfig = foldM f
   where f bc ac = do
-          (bc', _, t) <- initAccountConfig bc (acAddr ac)
+          (bc', _, t) <- initAccountConfig bc (acAddr ac) True
           when t $ writeAccountKeys bc' ac
           return bc'
 
@@ -468,7 +476,7 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
            "" -> return Nothing
            s -> return $ Just s
          let namedAddr' = NamedAddress { naAddr = addr, naName = name }
-         (a, _, _) <- initAccountConfig cfg namedAddr'
+         (a, _, _) <- initAccountConfig cfg namedAddr' False
          return . Just $ a
        else do
          return Nothing
