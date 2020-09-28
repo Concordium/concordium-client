@@ -100,19 +100,24 @@ compute2epochsSinceFinalization genesisTime epochDuration grpc th = do
   hash <- jsonAnswer grpc f g
   jsonAnswer grpc (f' hash) g'
 
+-- | Checks if the given baker exists in the best block
+checkBakerExists :: EnvData -> Types.BakerId -> IO Bool
+checkBakerExists grpc bakerId = do
+  let f = withBestBlockHash Nothing getBirkParameters
+      g :: BirkParametersResult -> IO Bool
+      g birkParams =
+        let mBakerInfo = filter ((== bakerId) . bpbrId) $ bprBakers birkParams
+          in case mBakerInfo of
+              [_] -> return True
+              _ -> return False
+  jsonAnswer grpc f g
+
 -- | Depending on whether the bakerId is present, will delegate or undelegate to it.
 delegate :: EnvData -> DelegationAccounts -> Maybe Types.BakerId -> Int -> IO Types.TransactionHash
 delegate grpc delegationAccounts bakerId idx =
   case bakerId of
-    Just bid -> do
-      let f = withBestBlockHash Nothing getBirkParameters
-          g :: BirkParametersResult -> IO Bool
-          g birkParams =
-            let mBakerInfo = filter ((== bid) . bpbrId) $ bprBakers birkParams
-             in case mBakerInfo of
-                  [_] -> return True
-                  _ -> return False
-      bakerIdExists <- jsonAnswer grpc f g
+    Just bid -> do      
+      bakerIdExists <- checkBakerExists grpc bid
       if bakerIdExists
         then doDelegation
         else error "Baker Id non existent!!"
