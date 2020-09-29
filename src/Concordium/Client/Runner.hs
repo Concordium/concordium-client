@@ -441,20 +441,23 @@ getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx s
   let senderAddr = acAddress . tcAccountCfg $ ettTransactionCfg
 
   -- get encrypted amounts for the sender
-  infoValue <- logFatalOnError =<< (withBestBlockHash Nothing $ getAccountInfo (Text.pack . show $ senderAddr))
+  infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getAccountInfo (Text.pack . show $ senderAddr))
   case AE.fromJSON infoValue of
     AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
     AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
     AE.Success (Just AccountInfoResult{airEncryptedAmount=Types.AccountEncryptedAmount{..}}) -> do
+      let listOfEncryptedAmounts = case _aggregatedAmount of
+                                     Nothing -> _incomingEncryptedAmounts
+                                     Just (e, _) -> e Seq.:<| _incomingEncryptedAmounts
       taker <- case idx of
                 Nothing -> return id
                 Just v ->
                   if v < fromIntegral _startIndex
-                     || v > (fromIntegral _startIndex) + Seq.length _incomingEncryptedAmounts
+                     || v > fromIntegral _startIndex + Seq.length listOfEncryptedAmounts
                   then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
-                  else return $ Seq.take (v - (fromIntegral _startIndex))
+                  else return $ Seq.take (v - fromIntegral _startIndex)
       -- get receiver's public encryption key
-      infoValueReceiver <- logFatalOnError =<< (withBestBlockHash Nothing $ getAccountInfo (Text.pack . show $ naAddr ettReceiver))
+      infoValueReceiver <- logFatalOnError =<< withBestBlockHash Nothing (getAccountInfo (Text.pack . show $ naAddr ettReceiver))
       case AE.fromJSON infoValueReceiver of
         AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
         AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show $ naAddr ettReceiver]
@@ -465,14 +468,14 @@ getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx s
               decoder = Enc.decryptAmount table secretKey
               selfDecrypted = decoder _selfAmount
           -- aggregation of idx encrypted amounts
-              inputEncAmounts = taker _incomingEncryptedAmounts
+              inputEncAmounts = taker listOfEncryptedAmounts
               aggAmounts = foldl' (<>) _selfAmount inputEncAmounts
               totalEncryptedAmount = foldl' (+) selfDecrypted $ fmap decoder inputEncAmounts
           unless (totalEncryptedAmount >= ettAmount) $
             logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (show ettAmount) (show totalEncryptedAmount)]
           -- index indicating which encrypted amounts we used as input
           let aggIndex = case idx of
-                Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (Seq.length _incomingEncryptedAmounts))
+                Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (Seq.length listOfEncryptedAmounts))
                 Just idx' -> Enc.EncryptedAmountAggIndex (fromIntegral idx')
                 -- we use the supplied index if given. We already checked above that it is within bounds.
               aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
