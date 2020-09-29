@@ -31,6 +31,7 @@ import Text.Printf
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import Lens.Micro.Platform
+import qualified Data.Sequence as Seq
 
 -- PRINTER
 
@@ -151,7 +152,7 @@ printAccountInfo addr a verbose showEncrypted mEncKey= do
   if showEncrypted then
     let
       -- since encryption keys are quite long we only print 20 characters by default
-      showEncryptedAmount = if verbose then show else \v -> (take 20 $ show v) ++ "..."
+      showEncryptedAmount = if verbose then show else \v -> take 20 (show v) ++ "..."
       showEncryptedBalance amms self = do
         let (_, balances) = foldl' (\(idx, strings) v -> (idx + 1, strings <> [printf "    %s: %s" (show idx) v]))
                                    (Types._startIndex $ airEncryptedAmount a, [])
@@ -164,15 +165,21 @@ printAccountInfo addr a verbose showEncrypted mEncKey= do
     in
       case mEncKey of
         Nothing ->
-          let incomingAmounts = fmap showEncryptedAmount $ airEncryptedAmount a ^. Types.incomingEncryptedAmounts
+          let incomingAmounts = showEncryptedAmount <$> case airEncryptedAmount a ^. Types.aggregatedAmount of
+                                                          Nothing -> airEncryptedAmount a ^. Types.incomingEncryptedAmounts
+                                                          Just (e, _) -> e Seq.:<| airEncryptedAmount a ^. Types.incomingEncryptedAmounts
               selfAmount = showEncryptedAmount $ airEncryptedAmount a ^. Types.selfAmount
           in showEncryptedBalance incomingAmounts selfAmount
         Just encKey -> do
              let table = Enc.computeTable globalContext (2^(16::Int))
                  decoder = Enc.decryptAmount table encKey
-                 selfDecrypted = decoder (Types._selfAmount $ airEncryptedAmount a)
-             showEncryptedBalance (fmap (\x -> let decoded = decoder x in
-                                                "(" ++ showGtu decoded ++ ") " ++ showEncryptedAmount x) $ Types._incomingEncryptedAmounts $ airEncryptedAmount a) ("(" ++ showGtu selfDecrypted ++ ") " ++ showEncryptedAmount (Types._selfAmount $ airEncryptedAmount a))
+                 printer x = let decoded = decoder x in "(" ++ showGtu decoded ++ ") " ++ showEncryptedAmount x
+                 showableSelfDecryptedAmount = printer (Types._selfAmount $ airEncryptedAmount a)
+                 incomingAmountsList = case airEncryptedAmount a ^. Types.aggregatedAmount of
+                                         Nothing -> airEncryptedAmount a ^. Types.incomingEncryptedAmounts
+                                         Just (e, _) -> e Seq.:<| airEncryptedAmount a ^. Types.incomingEncryptedAmounts
+                 showableIncomingAmountsList =  printer <$>  incomingAmountsList
+             showEncryptedBalance showableIncomingAmountsList showableSelfDecryptedAmount
     else return ()
 
   tell [ "" ]
