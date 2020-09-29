@@ -189,7 +189,7 @@ processConfigCmd action baseCfgDir verbose =
             Left err -> logFatal [printf "cannot parse '%s' as an address: %s" addr err]
             Right a -> return a
         forM_ naName $ logFatalOnError . validateAccountName
-        void $ initAccountConfig baseCfg NamedAddress{..}
+        void $ initAccountConfig baseCfg NamedAddress{..} True
       ConfigAccountImport file name importFormat -> do
         baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
         when verbose $ do
@@ -474,7 +474,7 @@ getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx s
           let aggIndex = case idx of
                 Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (Seq.length _incomingEncryptedAmounts))
                 Just idx' -> Enc.EncryptedAmountAggIndex (fromIntegral idx')
-                -- ^ we use the supplied index if given. We already checked above that it is within bounds.
+                -- we use the supplied index if given. We already checked above that it is within bounds.
               aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
           liftIO $ Enc.makeEncryptedAmountTransferData globalContext receiverPk secretKey aggAmount ettAmount >>= \case
             Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
