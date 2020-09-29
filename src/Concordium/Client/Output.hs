@@ -31,7 +31,6 @@ import Text.Printf
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import Lens.Micro.Platform
-import qualified Data.Sequence as Seq
 
 -- PRINTER
 
@@ -165,9 +164,7 @@ printAccountInfo addr a verbose showEncrypted mEncKey= do
     in
       case mEncKey of
         Nothing ->
-          let incomingAmounts = showEncryptedAmount <$> case airEncryptedAmount a ^. Types.aggregatedAmount of
-                                                          Nothing -> airEncryptedAmount a ^. Types.incomingEncryptedAmounts
-                                                          Just (e, _) -> e Seq.:<| airEncryptedAmount a ^. Types.incomingEncryptedAmounts
+          let incomingAmounts = showEncryptedAmount <$> Types.getIncomingAmountsList (airEncryptedAmount a)
               selfAmount = showEncryptedAmount $ airEncryptedAmount a ^. Types.selfAmount
           in showEncryptedBalance incomingAmounts selfAmount
         Just encKey -> do
@@ -175,9 +172,7 @@ printAccountInfo addr a verbose showEncrypted mEncKey= do
                  decoder = Enc.decryptAmount table encKey
                  printer x = let decoded = decoder x in "(" ++ showGtu decoded ++ ") " ++ showEncryptedAmount x
                  showableSelfDecryptedAmount = printer (Types._selfAmount $ airEncryptedAmount a)
-                 incomingAmountsList = case airEncryptedAmount a ^. Types.aggregatedAmount of
-                                         Nothing -> airEncryptedAmount a ^. Types.incomingEncryptedAmounts
-                                         Just (e, _) -> e Seq.:<| airEncryptedAmount a ^. Types.incomingEncryptedAmounts
+                 incomingAmountsList = Types.getIncomingAmountsList $ airEncryptedAmount a
                  showableIncomingAmountsList =  printer <$>  incomingAmountsList
              showEncryptedBalance showableIncomingAmountsList showableSelfDecryptedAmount
     else return ()

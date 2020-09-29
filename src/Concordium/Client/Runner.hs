@@ -91,7 +91,6 @@ import           Data.Maybe
 import           Data.List                           as L
 import qualified Data.Serialize                      as S
 import qualified Data.Set                            as Set
-import qualified Data.Sequence                       as Seq
 import           Data.String
 import           Data.Text(Text)
 import qualified Data.Text                           as Text
@@ -445,17 +444,15 @@ getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx s
   case AE.fromJSON infoValue of
     AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
     AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
-    AE.Success (Just AccountInfoResult{airEncryptedAmount=Types.AccountEncryptedAmount{..}}) -> do
-      let listOfEncryptedAmounts = case _aggregatedAmount of
-                                     Nothing -> _incomingEncryptedAmounts
-                                     Just (e, _) -> e Seq.:<| _incomingEncryptedAmounts
+    AE.Success (Just AccountInfoResult{airEncryptedAmount=a@Types.AccountEncryptedAmount{..}}) -> do
+      let listOfEncryptedAmounts = Types.getIncomingAmountsList a
       taker <- case idx of
                 Nothing -> return id
                 Just v ->
                   if v < fromIntegral _startIndex
-                     || v > fromIntegral _startIndex + Seq.length listOfEncryptedAmounts
+                     || v > fromIntegral _startIndex + length listOfEncryptedAmounts
                   then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
-                  else return $ Seq.take (v - fromIntegral _startIndex)
+                  else return $ take (v - fromIntegral _startIndex)
       -- get receiver's public encryption key
       infoValueReceiver <- logFatalOnError =<< withBestBlockHash Nothing (getAccountInfo (Text.pack . show $ naAddr ettReceiver))
       case AE.fromJSON infoValueReceiver of
@@ -475,7 +472,7 @@ getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx s
             logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (show ettAmount) (show totalEncryptedAmount)]
           -- index indicating which encrypted amounts we used as input
           let aggIndex = case idx of
-                Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (Seq.length listOfEncryptedAmounts))
+                Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (length listOfEncryptedAmounts))
                 Just idx' -> Enc.EncryptedAmountAggIndex (fromIntegral idx')
                 -- we use the supplied index if given. We already checked above that it is within bounds.
               aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
@@ -641,16 +638,14 @@ getAccountDecryptTransactionCfg adTransactionCfg adAmount secretKey idx = do
   case AE.fromJSON infoValue of
     AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
     AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
-    AE.Success (Just AccountInfoResult{airEncryptedAmount=Types.AccountEncryptedAmount{..},..}) -> do
-      let listOfEncryptedAmounts = case _aggregatedAmount of
-                                     Nothing -> _incomingEncryptedAmounts
-                                     Just (e, _) -> e Seq.:<| _incomingEncryptedAmounts
+    AE.Success (Just AccountInfoResult{airEncryptedAmount=a@Types.AccountEncryptedAmount{..}}) -> do
+      let listOfEncryptedAmounts = Types.getIncomingAmountsList a
       taker <- case idx of
         Nothing -> return id
         Just v -> if v < fromIntegral _startIndex
-                    || v > fromIntegral _startIndex + Seq.length listOfEncryptedAmounts
+                    || v > fromIntegral _startIndex + length listOfEncryptedAmounts
                  then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
-                 else return $ Seq.take (v - fromIntegral _startIndex)
+                 else return $ take (v - fromIntegral _startIndex)
       -- precomputed table for speeding up decryption
       let table = Enc.computeTable globalContext (2^(16::Int))
           decoder = Enc.decryptAmount table secretKey
@@ -663,7 +658,7 @@ getAccountDecryptTransactionCfg adTransactionCfg adAmount secretKey idx = do
         logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (show adAmount) (show totalEncryptedAmount)]
       -- index indicating which encrypted amounts we used as input
       let aggIndex = case idx of
-            Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (Seq.length listOfEncryptedAmounts))
+            Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (length listOfEncryptedAmounts))
             Just idx' -> Enc.EncryptedAmountAggIndex (fromIntegral idx')
           aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
       liftIO $ Enc.makeSecToPubAmountTransferData globalContext secretKey aggAmount adAmount >>= \case
