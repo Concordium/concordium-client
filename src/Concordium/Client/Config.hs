@@ -233,19 +233,19 @@ initAccountConfig baseCfg namedAddr inCLI = do
     Right config -> return config
 
 -- |Write the provided configuration to disk in the expected formats.
-importAccountConfigEither :: BaseConfig -> [AccountConfig] -> IO (Either String BaseConfig)
-importAccountConfigEither baseCfg accCfgs = runExceptT $ foldM f baseCfg accCfgs
+importAccountConfigEither :: BaseConfig -> [AccountConfig] -> Verbose -> IO (Either String BaseConfig)
+importAccountConfigEither baseCfg accCfgs verbose = runExceptT $ foldM f baseCfg accCfgs
   where f bc ac = do
           (bc', _, t) <- ExceptT $ initAccountConfigEither bc (acAddr ac) False
-          liftIO $ when t $ writeAccountKeys bc' ac
+          liftIO $ when t $ writeAccountKeys bc' ac verbose
           return bc'
 
 -- |Write the provided configuration to disk in the expected formats.
-importAccountConfig :: BaseConfig -> [AccountConfig] -> IO BaseConfig
-importAccountConfig = foldM f
+importAccountConfig :: BaseConfig -> [AccountConfig] -> Verbose -> IO BaseConfig
+importAccountConfig baseCfg accCfgs verbose = foldM f baseCfg accCfgs
   where f bc ac = do
           (bc', _, t) <- initAccountConfig bc (acAddr ac) True
-          when t $ writeAccountKeys bc' ac
+          when t $ writeAccountKeys bc' ac verbose
           return bc'
 
 -- |Write the account name map to a file in the expected format.
@@ -254,40 +254,38 @@ writeAccountNameMap file = writeFile file . unlines . map f . sortOn fst . M.toL
   where f (name, addr) = printf "%s = %s" name (show addr)
 
 -- |Write the account keys structure into the directory of the given account.
--- Each 'EncryptedAccountKeyPair' is written to a JSON file the name of which is determined
--- by 'accountKeyFile'.
-writeAccountKeys :: BaseConfig -> AccountConfig -> IO ()
-writeAccountKeys baseCfg accCfg = do
+-- Each 'EncryptedAccountKeyPair' is written to a JSON file (unless it already exists)
+-- the name of which is determined by 'accountKeyFile'.
+writeAccountKeys :: BaseConfig -> AccountConfig -> Verbose -> IO ()
+writeAccountKeys baseCfg accCfg verbose = do
   let accCfgDir = bcAccountCfgDir baseCfg
       keysDir = accountKeysDir accCfgDir $ acAddress accCfg
   keysDirExists <- doesDirectoryExist keysDir
   unless keysDirExists $ logFatal [ printf "account keys directory '%s' does not exist" keysDir
                                   , "did you run 'config account add ...' yet?" ]
 
-  -- TODO Check for duplicates and print warning.
-  -- TODO Reject overwrite: Require key to be removed first.
-  -- TODO Don't write unchanged files.
-
   forM_ (M.toList $ acKeys accCfg) $ \(idx, kp) -> do
     let file = accountKeyFile keysDir idx
-    logInfo [printf "writing file '%s'" file]
-    -- NOTE: This writes the JSON in a compact way. If we want human-readable JSON, we should use pretty encoding.
-    AE.encodeFile file kp
+    fileAlreadyExists <- doesFileExist file
+    unless fileAlreadyExists $ do
+      when verbose $ logInfo [printf "writing file '%s'" file]
+      -- NOTE: This writes the JSON in a compact way. If we want human-readable JSON, we should use pretty encoding.
+      AE.encodeFile file kp
 
   case acEncryptionKey accCfg of
     Just k -> do
       let encKeyFile = accountEncryptionSecretKeyFile keysDir
-      logInfo [printf "writing file '%s'" encKeyFile]
+      when verbose $ logInfo [printf "writing file '%s'" encKeyFile]
       AE.encodeFile encKeyFile k
     Nothing -> logFatal [ printf "importing account without a secret encryption key provided" ]
 
   -- Write the threshold as a JSON value. Since it is a simple numeric
   -- value this should look as expected.
   let thresholdFile = accountThresholdFile accCfgDir (acAddress accCfg)
-  logInfo [printf "writing file '%s'" thresholdFile]
+  when verbose $ logInfo [printf "writing file '%s'" thresholdFile]
   AE.encodeFile thresholdFile (acThreshold accCfg)
 
-  logSuccess ["wrote key and threshold files"]
+  logSuccess ["the keys were successfully added and written to disk"]
 
 getBaseConfig :: Maybe FilePath -> Verbose -> AutoInit -> IO BaseConfig
 getBaseConfig f verbose autoInit = do

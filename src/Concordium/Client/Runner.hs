@@ -200,7 +200,7 @@ processConfigCmd action baseCfgDir verbose =
 
         -- NB: This also checks whether the name is valid if provided.
         accCfgs <- loadAccountImportFile importFormat file name
-        void $ importAccountConfig baseCfg accCfgs
+        void $ importAccountConfig baseCfg accCfgs verbose
       ConfigAccountAddKeys addr keysFile -> do
         baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
         when verbose $ do
@@ -212,10 +212,23 @@ processConfigCmd action baseCfgDir verbose =
 
         let keyMapCurrent = acKeys accCfg
         let keyMapNew = Map.difference keyMapInput keyMapCurrent
-        let accCfg' = accCfg { acKeys = Map.union keyMapCurrent keyMapNew}
-        -- TODO warn about keys not added because index already exists
+        let keyMapDuplicates = Map.difference keyMapInput keyMapNew
 
-        writeAccountKeys baseCfg' accCfg'
+        unless (Map.null keyMapDuplicates) $ logWarn
+                              ["the keys with ids "
+                               ++ showIds keyMapDuplicates
+                               ++ " could not be added because they already exist",
+                               "Use 'config account update-keys' if you want to override them."]
+
+        -- Only write account keys if any non-duplicated keys are added
+        unless (Map.null keyMapNew) $ do
+          logInfo ["the keys with ids "
+                   ++ showIds keyMapNew
+                   ++ " will be added to account " ++ Text.unpack addr]
+          let accCfg' = accCfg { acKeys = Map.union keyMapCurrent keyMapNew}
+          writeAccountKeys baseCfg' accCfg' verbose
+
+  where showIds = L.intercalate ", " . map show . L.sort . Map.keys
 
 -- |Read and parse a file exported from either genesis data or mobile wallet.
 -- The format specifier tells which format to expect.
