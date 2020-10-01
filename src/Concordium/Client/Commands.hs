@@ -711,7 +711,7 @@ configAccountAddKeysCmd =
         strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file."))
       (progDescDoc $ docFromLines $
        [ "Add one or several key pairs to a specific account configuration."
-       , "This does not register the keys on the chain. Expected format of the key file:"
+       , "Expected format of the key file:"
        ] ++ expectedAddOrUpdateKeysFileFormat))
 
 configAccountUpdateKeysCmd :: Mod CommandFields ConfigAccountCmd
@@ -725,7 +725,7 @@ configAccountUpdateKeysCmd =
 
       (progDescDoc $ docFromLines $
        [ "Update one or several key pairs to a specific account configuration."
-       , "This does not register the keys on the chain. Expected format of the key file:"
+       , "Expected format of the key file:"
        ] ++ expectedAddOrUpdateKeysFileFormat))
 
 expectedAddOrUpdateKeysFileFormat :: [String]
