@@ -207,7 +207,7 @@ processConfigCmd action baseCfgDir verbose =
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
 
-        keyMapInput :: EncryptedAccountKeyMap <- AE.eitherDecodeFileStrict keysFile `withLogFatalIO` ("cannot decode keys: " ++)
+        keyMapInput <- getKeyMapInput keysFile
         (baseCfg', accCfg) <- getAccountConfig (Just addr) baseCfg Nothing Nothing Nothing AutoInit
 
         let keyMapCurrent = acKeys accCfg
@@ -218,7 +218,7 @@ processConfigCmd action baseCfgDir verbose =
                               ["the keys with ids "
                                ++ showIds keyMapDuplicates
                                ++ " could not be added because they already exist",
-                               "Use 'config account update-keys' if you want to override them."]
+                               "Use 'config account update-keys' if you want to overwrite them."]
 
         -- Only write account keys if any non-duplicated keys are added
         unless (Map.null keyMapNew) $ do
@@ -227,8 +227,38 @@ processConfigCmd action baseCfgDir verbose =
                    ++ " will be added to account " ++ Text.unpack addr]
           let accCfg' = accCfg { acKeys = Map.union keyMapCurrent keyMapNew}
           writeAccountKeys baseCfg' accCfg' verbose
+      ConfigAccountUpdateKeys addr keysFile -> do
+        baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        keyMapInput <- getKeyMapInput keysFile
+        (baseCfg', accCfg) <- getAccountConfig (Just addr) baseCfg Nothing Nothing Nothing AutoInit
+
+        let keyMapCurrent = acKeys accCfg
+        let keyMapNew = Map.difference keyMapInput keyMapCurrent
+        let keyMapDuplicates = Map.difference keyMapInput keyMapNew
+
+        unless (Map.null keyMapDuplicates) $ do
+          logWarn [ "the keys with ids "
+                   ++ showIds keyMapDuplicates
+                   ++ " will be overwritten and can NOT be recovered"]
+
+        updateConfirmed <- askConfirmation $ Just "confirm that you want to update the keys"
+
+        when updateConfirmed $ do
+          logInfo ["the keys with ids "
+                   ++ showIds (keyMapNew <> keyMapDuplicates)
+                   ++ " will be updated on account " ++ Text.unpack addr]
+          -- Notice order of union; it is biased towards left operand
+          let accCfg' = accCfg { acKeys = Map.union keyMapInput keyMapCurrent }
+          writeAccountKeys baseCfg' accCfg' verbose
 
   where showIds = L.intercalate ", " . map show . L.sort . Map.keys
+ 
+        getKeyMapInput :: FilePath -> IO EncryptedAccountKeyMap
+        getKeyMapInput keysFile = AE.eitherDecodeFileStrict keysFile `withLogFatalIO` ("cannot decode keys: " ++)
 
 -- |Read and parse a file exported from either genesis data or mobile wallet.
 -- The format specifier tells which format to expect.
