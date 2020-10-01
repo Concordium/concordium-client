@@ -254,8 +254,8 @@ writeAccountNameMap file = writeFile file . unlines . map f . sortOn fst . M.toL
   where f (name, addr) = printf "%s = %s" name (show addr)
 
 -- |Write the account keys structure into the directory of the given account.
--- Each 'EncryptedAccountKeyPair' is written to a JSON file (unless it already exists)
--- the name of which is determined by 'accountKeyFile'.
+-- Each 'EncryptedAccountKeyPair' is written to a JSON file the name of which
+-- is determined by 'accountKeyFile'.
 writeAccountKeys :: BaseConfig -> AccountConfig -> Verbose -> IO ()
 writeAccountKeys baseCfg accCfg verbose = do
   let accCfgDir = bcAccountCfgDir baseCfg
@@ -266,11 +266,9 @@ writeAccountKeys baseCfg accCfg verbose = do
 
   forM_ (M.toList $ acKeys accCfg) $ \(idx, kp) -> do
     let file = accountKeyFile keysDir idx
-    fileAlreadyExists <- doesFileExist file
-    unless fileAlreadyExists $ do
-      when verbose $ logInfo [printf "writing file '%s'" file]
-      -- NOTE: This writes the JSON in a compact way. If we want human-readable JSON, we should use pretty encoding.
-      AE.encodeFile file kp
+    when verbose $ logInfo [printf "writing file '%s'" file]
+    -- NOTE: This writes the JSON in a compact way. If we want human-readable JSON, we should use pretty encoding.
+    AE.encodeFile file kp
 
   case acEncryptionKey accCfg of
     Just k -> do
@@ -285,7 +283,7 @@ writeAccountKeys baseCfg accCfg verbose = do
   when verbose $ logInfo [printf "writing file '%s'" thresholdFile]
   AE.encodeFile thresholdFile (acThreshold accCfg)
 
-  logSuccess ["the keys were successfully added and written to disk"]
+  logSuccess ["the keys were successfully written to disk"]
 
 getBaseConfig :: Maybe FilePath -> Verbose -> AutoInit -> IO BaseConfig
 getBaseConfig f verbose autoInit = do

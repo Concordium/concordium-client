@@ -95,6 +95,9 @@ data ConfigAccountCmd
   | ConfigAccountAddKeys
     { caakAddr :: !Text
     , caakKeysFile :: !FilePath }
+  | ConfigAccountUpdateKeys
+    { caukAddr :: !Text
+    , caukKeysFile :: !FilePath }
   deriving (Show)
 
 data TransactionCmd
@@ -667,7 +670,8 @@ configAccountCmds showAllOpts =
         hsubparser
           (configAccountAddCmd <>
            configAccountImportCmd showAllOpts <>
-           configAccountAddKeysCmd))
+           configAccountAddKeysCmd <>
+           configAccountUpdateKeysCmd))
       (progDesc "Commands for inspecting and changing account-specific configuration."))
 
 configAccountAddCmd :: Mod CommandFields ConfigAccountCmd
@@ -705,28 +709,46 @@ configAccountAddKeysCmd =
       (ConfigAccountAddKeys <$>
         strOption (long "account" <> metavar "ACCOUNT" <> help "Name or address of the account.") <*>
         strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file."))
-      (progDescDoc $ docFromLines
-       [ "Add one or several key pairs to a specific account configuration. This does not register the keys on the chain. Expected format of the key file:"
-       , "   {"
-       , "     idx: {"
-       , "       \"encryptedSignKey\": {"
-       , "         \"metadata\": {"
-       , "           \"encryptionMethod\": \"AES-256\","
-       , "           \"iterations\": ...,"
-       , "           \"salt\": ...,"
-       , "           \"initializationVector\": ...,"
-       , "           \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\""
-       , "         },"
-       , "         \"cipherText\": ..."
-       , "       },"
-       , "       \"verifyKey\": ...,"
-       , "       \"schemeId\": \"Ed25519\""
-       , "     },"
-       , "     ..."
-       , "   }"
-       , "where idx is the index of the respective key pair."
-       ]
-      ))
+      (progDescDoc $ docFromLines $
+       [ "Add one or several key pairs to a specific account configuration."
+       , "This does not register the keys on the chain. Expected format of the key file:"
+       ] ++ expectedAddOrUpdateKeysFileFormat))
+
+configAccountUpdateKeysCmd :: Mod CommandFields ConfigAccountCmd
+configAccountUpdateKeysCmd =
+  command
+    "update-keys"
+    (info
+      (ConfigAccountUpdateKeys <$>
+        strOption (long "account" <> metavar "ACCOUNT" <> help "Name or address of the account.") <*>
+        strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file."))
+
+      (progDescDoc $ docFromLines $
+       [ "Update one or several key pairs to a specific account configuration."
+       , "This does not register the keys on the chain. Expected format of the key file:"
+       ] ++ expectedAddOrUpdateKeysFileFormat))
+
+expectedAddOrUpdateKeysFileFormat :: [String]
+expectedAddOrUpdateKeysFileFormat =
+  ["   {"
+  , "     idx: {"
+  , "       \"encryptedSignKey\": {"
+  , "         \"metadata\": {"
+  , "           \"encryptionMethod\": \"AES-256\","
+  , "           \"iterations\": ...,"
+  , "           \"salt\": ...,"
+  , "           \"initializationVector\": ...,"
+  , "           \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\""
+  , "         },"
+  , "         \"cipherText\": ..."
+  , "       },"
+  , "       \"verifyKey\": ...,"
+  , "       \"schemeId\": \"Ed25519\""
+  , "     },"
+  , "     ..."
+  , "   }"
+  , "where idx is the index of the respective key pair."
+  ]
 
 readAccountExportFormat :: ReadM AccountExportFormat
 readAccountExportFormat = str >>= \case
