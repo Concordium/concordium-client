@@ -270,6 +270,8 @@ writeAccountKeys baseCfg accCfg verbose = do
     -- NOTE: This writes the JSON in a compact way. If we want human-readable JSON, we should use pretty encoding.
     AE.encodeFile file kp
 
+  -- TODO: Avoid writing encryptionKey and threshold files when unaltered.
+
   case acEncryptionKey accCfg of
     Just k -> do
       let encKeyFile = accountEncryptionSecretKeyFile keysDir
