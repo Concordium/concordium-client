@@ -212,21 +212,23 @@ processConfigCmd action baseCfgDir verbose =
 
         let keyMapCurrent = acKeys accCfg
         let keyMapNew = Map.difference keyMapInput keyMapCurrent
-        let keyMapDuplicates = Map.difference keyMapInput keyMapNew
+        let keyMapDuplicates = Map.intersection keyMapCurrent keyMapInput
 
         unless (Map.null keyMapDuplicates) $ logWarn
                               ["the keys with ids "
                                ++ showIds keyMapDuplicates
-                               ++ " could not be added because they already exist",
-                               "Use 'config account update-keys' if you want to overwrite them."]
+                               ++ " can not be added because they already exist",
+                               "Use 'config account update-keys' if you want to update them."]
 
         -- Only write account keys if any non-duplicated keys are added
-        unless (Map.null keyMapNew) $ do
-          logInfo ["the keys with ids "
-                   ++ showIds keyMapNew
-                   ++ " will be added to account " ++ Text.unpack addr]
-          let accCfg' = accCfg { acKeys = keyMapNew}
-          writeAccountKeys baseCfg' accCfg' verbose
+        case Map.null keyMapNew of
+          True -> logInfo ["no new keys were be added"]
+          False -> do
+            logInfo ["the keys with ids "
+                     ++ showIds keyMapNew
+                     ++ " will be added to account " ++ Text.unpack addr]
+            let accCfg' = accCfg { acKeys = keyMapNew }
+            writeAccountKeys baseCfg' accCfg' verbose
       ConfigAccountUpdateKeys addr keysFile -> do
         baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
         when verbose $ do
@@ -238,21 +240,29 @@ processConfigCmd action baseCfgDir verbose =
 
         let keyMapCurrent = acKeys accCfg
         let keyMapNew = Map.difference keyMapInput keyMapCurrent
-        let keyMapDuplicates = Map.difference keyMapInput keyMapNew
+        let keyMapDuplicates = Map.intersection keyMapCurrent keyMapInput
 
-        unless (Map.null keyMapDuplicates) $ do
-          logWarn [ "the keys with ids "
-                   ++ showIds keyMapDuplicates
-                   ++ " will be overwritten and can NOT be recovered"]
+        unless (Map.null keyMapNew) $ logWarn
+                              ["the keys with ids "
+                               ++ showIds keyMapNew
+                               ++ " can not be updated because they do not match existing keys",
+                               "Use 'config account add-keys' if you want to add them."]
 
-        updateConfirmed <- askConfirmation $ Just "confirm that you want to update the keys"
+        case Map.null keyMapDuplicates of
+          True -> logInfo ["no keys were be updated"]
+          False -> do
+            logWarn [ "the keys with ids "
+                      ++ showIds keyMapDuplicates
+                      ++ " will be updated and can NOT be recovered"]
 
-        when updateConfirmed $ do
-          logInfo ["the keys with ids "
-                   ++ showIds keyMapInput
-                   ++ " will be updated on account " ++ Text.unpack addr]
-          let accCfg' = accCfg { acKeys = keyMapInput }
-          writeAccountKeys baseCfg' accCfg' verbose
+            updateConfirmed <- askConfirmation $ Just "confirm that you want to update the keys"
+
+            when updateConfirmed $ do
+              logInfo ["the keys with ids "
+                       ++ showIds keyMapDuplicates
+                       ++ " will be updated on account " ++ Text.unpack addr]
+              let accCfg' = accCfg { acKeys = keyMapDuplicates }
+              writeAccountKeys baseCfg' accCfg' verbose
 
   where showIds = L.intercalate ", " . map show . L.sort . Map.keys
  
