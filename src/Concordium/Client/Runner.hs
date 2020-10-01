@@ -225,7 +225,7 @@ processConfigCmd action baseCfgDir verbose =
           logInfo ["the keys with ids "
                    ++ showIds keyMapNew
                    ++ " will be added to account " ++ Text.unpack addr]
-          let accCfg' = accCfg { acKeys = Map.union keyMapCurrent keyMapNew}
+          let accCfg' = accCfg { acKeys = keyMapNew}
           writeAccountKeys baseCfg' accCfg' verbose
       ConfigAccountUpdateKeys addr keysFile -> do
         baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -249,10 +249,9 @@ processConfigCmd action baseCfgDir verbose =
 
         when updateConfirmed $ do
           logInfo ["the keys with ids "
-                   ++ showIds (keyMapNew <> keyMapDuplicates)
+                   ++ showIds keyMapInput
                    ++ " will be updated on account " ++ Text.unpack addr]
-          -- Notice order of union; it is biased towards left operand
-          let accCfg' = accCfg { acKeys = Map.union keyMapInput keyMapCurrent }
+          let accCfg' = accCfg { acKeys = keyMapInput }
           writeAccountKeys baseCfg' accCfg' verbose
 
   where showIds = L.intercalate ", " . map show . L.sort . Map.keys
