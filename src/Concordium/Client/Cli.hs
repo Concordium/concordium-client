@@ -320,6 +320,7 @@ data BlockInfoResult = BlockInfoResult
   , birBlockArriveTime :: UTCTime
   , birBlockSlot :: Word64
   , birBlockSlotTime :: UTCTime
+  , birBlockHeight :: BlockHeight
   , birBlockBaker :: Maybe BakerId
   , birFinalized :: Bool
   , birTransactionCount :: Integer
@@ -335,6 +336,7 @@ instance AE.FromJSON BlockInfoResult where
     birBlockArriveTime <- v .: "blockArriveTime"
     birBlockSlot <- v .: "blockSlot"
     birBlockSlotTime <- v .: "blockSlotTime"
+    birBlockHeight <- v .: "blockHeight"
     birBlockBaker <- v .: "blockBaker"
     birFinalized <- v .: "finalized"
     birTransactionCount <- v .: "transactionCount"
