@@ -98,6 +98,10 @@ data ConfigAccountCmd
   | ConfigAccountUpdateKeys
     { caukAddr :: !Text
     , caukKeysFile :: !FilePath }
+  | ConfigAccountRemoveKeys
+    { carkAddr :: !Text
+    , carkKeys :: ![KeyIndex]
+    , carkThreshold :: !(Maybe SignatureThreshold) }
   deriving (Show)
 
 data TransactionCmd
@@ -146,7 +150,7 @@ data AccountCmd
     , aakTransactionOpts :: !TransactionOpts }
   | AccountRemoveKeys
     { arkKeys :: ![KeyIndex]
-    , aakThreshold :: !(Maybe SignatureThreshold)
+    , arkThreshold :: !(Maybe SignatureThreshold)
     , arkTransactionOpts :: !TransactionOpts }
   -- |Transfer part of the public balance to the encrypted balance of the
   -- account.
@@ -671,7 +675,8 @@ configAccountCmds showAllOpts =
           (configAccountAddCmd <>
            configAccountImportCmd showAllOpts <>
            configAccountAddKeysCmd <>
-           configAccountUpdateKeysCmd))
+           configAccountUpdateKeysCmd <>
+           configAccountRemoveKeysCmd))
       (progDesc "Commands for inspecting and changing account-specific configuration."))
 
 configAccountAddCmd :: Mod CommandFields ConfigAccountCmd
@@ -749,6 +754,19 @@ expectedAddOrUpdateKeysFileFormat =
   , "   }"
   , "where idx is the index of the respective key pair."
   ]
+
+configAccountRemoveKeysCmd :: Mod CommandFields ConfigAccountCmd
+configAccountRemoveKeysCmd =
+  command
+    "remove-keys"
+    (info
+      (ConfigAccountRemoveKeys <$>
+        strOption (long "account" <> metavar "ACCOUNT" <> help "Name or address of the account.") <*>
+        some (argument auto (metavar "KEYINDICES" <> help "space-separated list of indices of the keys to remove.")) <*>
+        optional (option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <>
+            help "Update the signature threshold to this value. If not set, no changes are made to the threshold.")))
+      (progDescDoc $ docFromLines
+        [ "Removes the keys from the account at the specified indices. The --threshold option may be used to update the signature threshold." ]))
 
 readAccountExportFormat :: ReadM AccountExportFormat
 readAccountExportFormat = str >>= \case

@@ -86,6 +86,7 @@ import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
 import qualified Data.HashMap.Strict                 as Map
+import qualified Data.HashSet                        as HSet
 import qualified Data.Map                            as OrdMap
 import           Data.Maybe
 import           Data.List                           as L
@@ -208,24 +209,24 @@ processConfigCmd action baseCfgDir verbose =
           putStrLn ""
 
         keyMapInput <- getKeyMapInput keysFile
-        (baseCfg', accCfg) <- getAccountConfig (Just addr) baseCfg Nothing Nothing Nothing AutoInit
+        (baseCfg', accCfg) <- getAccountConfigFromAddr addr baseCfg
 
         let keyMapCurrent = acKeys accCfg
         let keyMapNew = Map.difference keyMapInput keyMapCurrent
         let keyMapDuplicates = Map.intersection keyMapCurrent keyMapInput
 
         unless (Map.null keyMapDuplicates) $ logWarn
-                              ["the keys with ids "
-                               ++ showIds keyMapDuplicates
-                               ++ " can not be added because they already exist",
-                               "Use 'config account update-keys' if you want to update them."]
+                              [ "the keys with indices "
+                                ++ showMapIdxs keyMapDuplicates
+                                ++ " can not be added because they already exist",
+                                "Use 'config account update-keys' if you want to update them."]
 
         -- Only write account keys if any non-duplicated keys are added
         case Map.null keyMapNew of
-          True -> logInfo ["no new keys were be added"]
+          True -> logInfo ["no keys were added"]
           False -> do
-            logInfo ["the keys with ids "
-                     ++ showIds keyMapNew
+            logInfo ["the keys with indices "
+                     ++ showMapIdxs keyMapNew
                      ++ " will be added to account " ++ Text.unpack addr]
             let accCfg' = accCfg { acKeys = keyMapNew }
             writeAccountKeys baseCfg' accCfg' verbose
@@ -236,38 +237,78 @@ processConfigCmd action baseCfgDir verbose =
           putStrLn ""
 
         keyMapInput <- getKeyMapInput keysFile
-        (baseCfg', accCfg) <- getAccountConfig (Just addr) baseCfg Nothing Nothing Nothing AutoInit
+        (baseCfg', accCfg) <- getAccountConfigFromAddr addr baseCfg
 
         let keyMapCurrent = acKeys accCfg
         let keyMapNew = Map.difference keyMapInput keyMapCurrent
         let keyMapDuplicates = Map.intersection keyMapCurrent keyMapInput
 
         unless (Map.null keyMapNew) $ logWarn
-                              ["the keys with ids "
-                               ++ showIds keyMapNew
-                               ++ " can not be updated because they do not match existing keys",
-                               "Use 'config account add-keys' if you want to add them."]
+                              [ "the keys with indices "
+                                ++ showMapIdxs keyMapNew
+                                ++ " can not be updated because they do not match existing keys",
+                                "Use 'config account add-keys' if you want to add them."]
 
         case Map.null keyMapDuplicates of
-          True -> logInfo ["no keys were be updated"]
+          True -> logInfo ["no keys were updated"]
           False -> do
-            logWarn [ "the keys with ids "
-                      ++ showIds keyMapDuplicates
+            logWarn [ "the keys with indices "
+                      ++ showMapIdxs keyMapDuplicates
                       ++ " will be updated and can NOT be recovered"]
 
             updateConfirmed <- askConfirmation $ Just "confirm that you want to update the keys"
 
             when updateConfirmed $ do
-              logInfo ["the keys with ids "
-                       ++ showIds keyMapDuplicates
-                       ++ " will be updated on account " ++ Text.unpack addr]
+              logInfo [ "the keys with indices "
+                        ++ showMapIdxs keyMapDuplicates
+                        ++ " will be updated on account " ++ Text.unpack addr]
               let accCfg' = accCfg { acKeys = keyMapDuplicates }
               writeAccountKeys baseCfg' accCfg' verbose
+      ConfigAccountRemoveKeys addr idxs threshold -> do
+        baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
 
-  where showIds = L.intercalate ", " . map show . L.sort . Map.keys
- 
+        (_, accCfg) <- getAccountConfigFromAddr addr baseCfg
+
+        let idxsInput = HSet.fromList idxs
+        let idxsCurrent = Map.keysSet . acKeys $ accCfg
+
+        let idxsToRemove = HSet.intersection idxsCurrent idxsInput
+        let idxsNotFound = HSet.difference idxsInput idxsToRemove
+
+        unless (HSet.null idxsNotFound) $ logWarn
+                              ["keys with indices "
+                               ++ showHSetIdxs idxsNotFound
+                               ++ " do not exist and can therefore not be removed"]
+
+        case HSet.null idxsToRemove of
+          True -> logInfo ["no keys were removed"]
+          False -> do
+            logWarn [ "the keys with indices "
+                      ++ showHSetIdxs idxsToRemove
+                      ++ " will be removed and can NOT be recovered"]
+
+            updateConfirmed <- askConfirmation $ Just "confirm that you want to remove the keys"
+
+            when updateConfirmed $ do
+              logInfo [ "the keys with indices "
+                        ++ showHSetIdxs idxsToRemove
+                        ++ " will be removed from account " ++ Text.unpack addr]
+
+              let accCfg' = accCfg { acThreshold = fromMaybe (acThreshold accCfg) threshold }
+              removeAccountKeys baseCfg accCfg' (HSet.toList idxsToRemove) verbose
+
+  where showMapIdxs = showIdxs . Map.keys
+        showHSetIdxs = showIdxs . HSet.toList
+        showIdxs = L.intercalate ", " . map show . L.sort
+
         getKeyMapInput :: FilePath -> IO EncryptedAccountKeyMap
         getKeyMapInput keysFile = AE.eitherDecodeFileStrict keysFile `withLogFatalIO` ("cannot decode keys: " ++)
+
+        getAccountConfigFromAddr :: Text -> BaseConfig -> IO (BaseConfig, AccountConfig)
+        getAccountConfigFromAddr addr baseCfg = getAccountConfig (Just addr) baseCfg Nothing Nothing Nothing AutoInit
 
 -- |Read and parse a file exported from either genesis data or mobile wallet.
 -- The format specifier tells which format to expect.
