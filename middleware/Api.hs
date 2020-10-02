@@ -195,7 +195,7 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
     baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False AutoInit
     accCfgs <- ((liftIO $ decodeMobileFormattedAccountExport (Text.encodeUtf8 contents) Nothing (passwordFromText password))
                  `embedServerErrM` err400) Just
-    void $ ((liftIO $ importAccountConfigEither baseCfg accCfgs) `embedServerErrM` err400) Just
+    void $ ((liftIO $ importAccountConfigEither baseCfg accCfgs False) `embedServerErrM` err400) Just
 
   getAccounts :: Handler GetAccountsResponse
   getAccounts = GetAccountsResponse <$> wrapIOError go
