@@ -39,7 +39,6 @@ import           Concordium.Client.Runner
 import           Concordium.Client.Types.Transaction
 import           Concordium.Client.Cli
 import           Concordium.Client.Config
-import           Concordium.Client.Utils
 
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
@@ -231,10 +230,10 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
       bakerKeys <- liftIO $ Aeson.eitherDecodeFileStrict file >>= getFromJson
 
       accountKeysRes <- liftIO (decryptAccountKeyMap acKeys (passwordFromText password))
-      
-      accountKeys <- (case accountKeysRes of 
+
+      accountKeys <- (case accountKeysRes of
         Left err -> throwError' err401 $ Just ("", err)
-        Right acc -> liftIO $ return acc)
+        Right acc -> return acc)
 
       pl <- liftIO $ generateBakerAddPayload bakerKeys $ accountSigningDataFromConfig accCfg accountKeys
       -- run the transaction
@@ -250,25 +249,29 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
         Right v -> return . AddBakerResponse . Just . Text.pack $ show v
 
   removeBaker :: RemoveBakerRequest -> Handler RemoveBakerResponse
-  removeBaker RemoveBakerRequest{..} = RemoveBakerResponse <$> wrapIOError (do
+  removeBaker RemoveBakerRequest{..} = do
       -- get base configuration
-      baseCfg <- getBaseConfig (Just cfgDir) False AutoInit
+      baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False AutoInit
       -- generate options for the transaction
-      accCfg' <- snd <$> getAccountConfig sender baseCfg Nothing Nothing Nothing AssumeInitialized
+      accCfg' <- wrapIOError $ snd <$> getAccountConfig sender baseCfg Nothing Nothing Nothing AssumeInitialized
       let accCfg = accCfg' { acThreshold = fromIntegral (HM.size $ acKeys accCfg') }
       -- get Baker add transaction config
       let energy = bakerRemoveEnergyCost (HM.size $ acKeys accCfg)
 
-      expiry <- (600 +) <$> getCurrentTimeUnix
+      expiry <- wrapIOError $ (600 +) <$> getCurrentTimeUnix
 
       let AccountConfig{..} = accCfg
       let senderAddr = naAddr acAddr
 
-      accountKeys <- liftIO $ failOnError $ decryptAccountKeyMap acKeys (passwordFromText password)
+      accountKeysRes <- liftIO $ decryptAccountKeyMap acKeys (passwordFromText password)
+      accountKeys <- (case accountKeysRes of
+        Left err -> throwError' err401 $ Just ("", err)
+        Right acc -> return acc)
+
 
       let pl = Execution.RemoveBaker $ Types.BakerId bakerId
       -- run the transaction
-      res <- runClient nodeBackend $ do
+      res <- liftIO $ runClient nodeBackend $ do
         currentNonce <- getBestBlockHash >>= getAccountNonce senderAddr
         let tx = encodeAndSignTransaction pl senderAddr energy currentNonce expiry accountKeys acThreshold
         sendTransactionToBaker tx defaultNetId >>= \case
@@ -277,15 +280,15 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
           Right True -> return $ getBlockItemHash tx
 
       case res of
-        Left err -> fail $ show err
-        Right v -> return . Just . Text.pack $ show v)
+        Left err -> throwError' err409 $ Just ("", err)
+        Right v -> return . RemoveBakerResponse . Just . Text.pack $ show v
 
   getBakers :: Handler GetBakersResponse
   getBakers = GetBakersResponse <$> do
       eeParams <- wrapIOError $ runClient nodeBackend $ withBestBlockHash Nothing getBirkParameters
       case eeParams of
           Right (Right jParams) -> case Aeson.fromJSON jParams of
-                                    Aeson.Success params -> return $ Prelude.map (\b -> 
+                                    Aeson.Success params -> return $ Prelude.map (\b ->
                                       Baker { bakerId = bpbrId b
                                             , account = Text.pack $ show $ bpbrAccount b
                                             , lotteryPower = bpbrLotteryPower b }) $ bprBakers params
