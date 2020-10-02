@@ -279,13 +279,32 @@ writeAccountKeys baseCfg accCfg verbose = do
       AE.encodeFile encKeyFile k
     Nothing -> logFatal [ printf "importing account without a secret encryption key provided" ]
 
+  writeThresholdFile accCfgDir accCfg verbose
+  logSuccess ["the keys were successfully written to disk"]
+
+removeAccountKeys :: BaseConfig -> AccountConfig -> [KeyIndex] -> Verbose -> IO ()
+removeAccountKeys baseCfg accCfg idxs verbose = do
+  let accCfgDir = bcAccountCfgDir baseCfg
+      keysDir = accountKeysDir accCfgDir $ acAddress accCfg
+  keysDirExists <- doesDirectoryExist keysDir
+  unless keysDirExists $ logFatal [ printf "account keys directory '%s' does not exist" keysDir
+                                  , "did you run 'config account add ...' yet?" ]
+
+  forM_ idxs $ \idx -> do
+    let file = accountKeyFile keysDir idx
+    when verbose $ logInfo ["removing file '" ++ show file ++ "'"]
+    removeFile file
+
+  writeThresholdFile accCfgDir accCfg verbose
+  logSuccess ["the keys were successfully removed from disk"]
+
+writeThresholdFile :: BaseConfigDir -> AccountConfig -> Verbose -> IO ()
+writeThresholdFile accCfgDir accCfg verbose = do
   -- Write the threshold as a JSON value. Since it is a simple numeric
   -- value this should look as expected.
   let thresholdFile = accountThresholdFile accCfgDir (acAddress accCfg)
   when verbose $ logInfo [printf "writing file '%s'" thresholdFile]
   AE.encodeFile thresholdFile (acThreshold accCfg)
-
-  logSuccess ["the keys were successfully written to disk"]
 
 getBaseConfig :: Maybe FilePath -> Verbose -> AutoInit -> IO BaseConfig
 getBaseConfig f verbose autoInit = do
