@@ -260,13 +260,11 @@ writeAccountKeys :: BaseConfig -> AccountConfig -> Verbose -> IO ()
 writeAccountKeys baseCfg accCfg verbose = do
   let accCfgDir = bcAccountCfgDir baseCfg
       keysDir = accountKeysDir accCfgDir $ acAddress accCfg
-  keysDirExists <- doesDirectoryExist keysDir
-  unless keysDirExists $ logFatal [ printf "account keys directory '%s' does not exist" keysDir
-                                  , "did you run 'config account add ...' yet?" ]
+  logFatalIfKeysDirMissing keysDir
 
   forM_ (M.toList $ acKeys accCfg) $ \(idx, kp) -> do
     let file = accountKeyFile keysDir idx
-    when verbose $ logInfo [printf "writing file '%s'" file]
+    when verbose $ logInfo ["writing file '" ++ file ++ "'"]
     -- NOTE: This writes the JSON in a compact way. If we want human-readable JSON, we should use pretty encoding.
     AE.encodeFile file kp
 
@@ -275,36 +273,43 @@ writeAccountKeys baseCfg accCfg verbose = do
   case acEncryptionKey accCfg of
     Just k -> do
       let encKeyFile = accountEncryptionSecretKeyFile keysDir
-      when verbose $ logInfo [printf "writing file '%s'" encKeyFile]
+      when verbose $ logInfo ["writing file '" ++ encKeyFile ++ "'"]
       AE.encodeFile encKeyFile k
     Nothing -> logFatal [ printf "importing account without a secret encryption key provided" ]
 
   writeThresholdFile accCfgDir accCfg verbose
   logSuccess ["the keys were successfully written to disk"]
 
+-- |Remove the account keys, i.e. keypair{idx}.json files, with the provided indices.
 removeAccountKeys :: BaseConfig -> AccountConfig -> [KeyIndex] -> Verbose -> IO ()
 removeAccountKeys baseCfg accCfg idxs verbose = do
   let accCfgDir = bcAccountCfgDir baseCfg
       keysDir = accountKeysDir accCfgDir $ acAddress accCfg
-  keysDirExists <- doesDirectoryExist keysDir
-  unless keysDirExists $ logFatal [ printf "account keys directory '%s' does not exist" keysDir
-                                  , "did you run 'config account add ...' yet?" ]
+  logFatalIfKeysDirMissing keysDir
 
   forM_ idxs $ \idx -> do
     let file = accountKeyFile keysDir idx
-    when verbose $ logInfo ["removing file '" ++ show file ++ "'"]
+    when verbose $ logInfo ["removing file '" ++ file ++ "'"]
     removeFile file
 
   writeThresholdFile accCfgDir accCfg verbose
   logSuccess ["the keys were successfully removed from disk"]
 
+-- |Write the threshold as a JSON value to the file {accountName}.threshold.
 writeThresholdFile :: BaseConfigDir -> AccountConfig -> Verbose -> IO ()
 writeThresholdFile accCfgDir accCfg verbose = do
   -- Write the threshold as a JSON value. Since it is a simple numeric
   -- value this should look as expected.
   let thresholdFile = accountThresholdFile accCfgDir (acAddress accCfg)
-  when verbose $ logInfo [printf "writing file '%s'" thresholdFile]
+  when verbose $ logInfo ["writing file '" ++ thresholdFile ++ "'"]
   AE.encodeFile thresholdFile (acThreshold accCfg)
+
+-- |Check if the account keys directory exists and log a fatal message if not.
+logFatalIfKeysDirMissing :: FilePath -> IO ()
+logFatalIfKeysDirMissing keysDir = do
+  keysDirExists <- doesDirectoryExist keysDir
+  unless keysDirExists $ logFatal [ "account keys directory '" ++ keysDir ++ "' does not exist"
+                                  , "did you run 'config account add ...' yet?" ]
 
 getBaseConfig :: Maybe FilePath -> Verbose -> AutoInit -> IO BaseConfig
 getBaseConfig f verbose autoInit = do
