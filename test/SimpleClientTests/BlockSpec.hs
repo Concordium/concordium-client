@@ -21,6 +21,7 @@ blockSpec = describe "block" $ do
     , "Arrive time:                Thu, 15 Jan 1970 06:56:07 UTC"
     , "Slot:                       1337"
     , "Slot time:                  Sat, 24 Jan 1970 03:33:20 UTC"
+    , "Height:                     121"
     , "Baker:                      53"
     , "Transaction count:          10"
     , "Transaction energy cost:    101 NRG"
@@ -34,6 +35,7 @@ blockSpec = describe "block" $ do
     , "Arrive time:                Thu, 15 Jan 1970 06:56:07 UTC"
     , "Slot:                       1337"
     , "Slot time:                  Sat, 24 Jan 1970 03:33:20 UTC"
+    , "Height:                     121"
     , "Baker:                      none"
     , "Transaction count:          10"
     , "Transaction energy cost:    101 NRG"
@@ -50,6 +52,7 @@ exampleBlockInfoWithBaker =
   , birBlockReceiveTime = exampleTime1
   , birBlockArriveTime = exampleTime2
   , birBlockSlot = 1337
+  , birBlockHeight = 121
   , birBlockSlotTime = exampleTime3
   , birBlockBaker = Just 53
   , birTransactionCount = 10
@@ -67,6 +70,7 @@ exampleBlockInfoWithoutBaker =
   , birBlockArriveTime = exampleTime2
   , birBlockSlot = 1337
   , birBlockSlotTime = exampleTime3
+  , birBlockHeight = 121
   , birBlockBaker = Nothing
   , birTransactionCount = 10
   , birTransactionEnergyCost = 101

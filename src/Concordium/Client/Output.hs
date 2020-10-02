@@ -548,6 +548,7 @@ printBlockInfo (Just b) =
        , printf "Arrive time:                %s" (showTimeFormatted $ birBlockArriveTime b)
        , printf "Slot:                       %s" (show $ birBlockSlot b)
        , printf "Slot time:                  %s" (showTimeFormatted $ birBlockSlotTime b)
+       , printf "Height:                     %s" (show $ birBlockHeight b)
        , printf "Baker:                      %s" (showMaybe show $ birBlockBaker b)
        , printf "Transaction count:          %d" (birTransactionCount b)
        , printf "Transaction energy cost:    %s" (showNrg $ birTransactionEnergyCost b)
