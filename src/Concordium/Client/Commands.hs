@@ -172,7 +172,15 @@ data AccountCmd
   deriving (Show)
 
 data ModuleCmd
-  = ModuleList
+  -- |Deploy the provided smart contract module on chain.
+  = ModuleDeploy
+    -- |Path to the module.
+    { mdModPath :: !FilePath
+    , mdTransactionOpts :: !TransactionOpts
+    }
+  -- |List all modules.
+  | ModuleList
+    -- |Hash of the block (default "best").
     { mlBlockHash :: !(Maybe Text) }
   deriving (Show)
 
@@ -582,8 +590,19 @@ moduleCmds =
     (info
       (ModuleCmd <$>
         hsubparser
-          moduleListCmd)
+          (moduleDeployCmd <>
+           moduleListCmd))
       (progDesc "Commands for inspecting and deploying modules."))
+
+moduleDeployCmd :: Mod CommandFields ModuleCmd
+moduleDeployCmd =
+  command
+    "deploy"
+    (info
+      (ModuleDeploy <$>
+        strArgument (metavar "MODULE" <> help "Path to the smart contract module.") <*>
+        transactionOptsParser)
+      (progDesc "Deploy a smart contract module on the chain."))
 
 moduleListCmd :: Mod CommandFields ModuleCmd
 moduleListCmd =

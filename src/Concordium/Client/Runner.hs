@@ -70,6 +70,7 @@ import qualified Concordium.Types.Execution          as Types
 import qualified Concordium.Types                    as Types
 import qualified Concordium.ID.Types                 as ID
 import           Concordium.ID.Parameters
+import qualified Concordium.Wasm                     as Wasm
 import           Proto.ConcordiumP2pRpc
 import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 
@@ -159,7 +160,7 @@ process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir
     ConfigCmd c -> processConfigCmd c cfgDir verbose
     TransactionCmd c -> processTransactionCmd c cfgDir verbose backend
     AccountCmd c -> processAccountCmd c cfgDir verbose backend
-    ModuleCmd c -> processModuleCmd c verbose backend
+    ModuleCmd c -> processModuleCmd c cfgDir verbose backend
     ContractCmd c -> processContractCmd c verbose backend
     ConsensusCmd c -> processConsensusCmd c cfgDir verbose backend
     BlockCmd c -> processBlockCmd c verbose backend
@@ -1262,12 +1263,38 @@ processAccountCmd action baseCfgDir verbose backend =
           return $ Just $ accountDelegateEnergyCost is
 
 -- |Process a 'module ...' command.
-processModuleCmd :: ModuleCmd -> Verbose -> Backend -> IO ()
-processModuleCmd action _ backend =
+processModuleCmd :: ModuleCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
+processModuleCmd action baseCfgDir verbose backend =
   case action of
+    ModuleDeploy modPath txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+
+      mdCfg <- getModuleDeployTransactionCfg baseCfg txOpts modPath
+      let txCfg = mdtcTransactionCfg mdCfg
+
+      let intOpts = toInteractionOpts txOpts
+      pl <- moduleDeployTransactionPayload mdCfg
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+
     ModuleList block -> do
       v <- withClient backend $ withBestBlockHash block getModuleList >>= getFromJson
       runPrinter $ printModuleList v
+
+getModuleDeployTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> IO ModuleDeployTransactionCfg
+getModuleDeployTransactionCfg baseCfg txOpts modPath = do
+  wasmMod <- Wasm.WasmModule 1 <$> BS.readFile modPath
+  txCfg <- getTransactionCfg baseCfg txOpts (nrgCost . BS.length . Wasm.wasmSource $ wasmMod) -- TODO: figure out correct cost
+  return $ ModuleDeployTransactionCfg txCfg wasmMod
+  where nrgCost modLen _ = return $ Just $ accountUpdateKeysEnergyCost modLen -- TODO: figure out correct cost
+
+data ModuleDeployTransactionCfg =
+  ModuleDeployTransactionCfg
+  { mdtcTransactionCfg :: TransactionConfig
+  -- |The WASM module to deploy.
+  , mdtcMod :: Wasm.WasmModule } -- TODO: Should this be strict?
+
+moduleDeployTransactionPayload :: ModuleDeployTransactionCfg -> IO Types.Payload
+moduleDeployTransactionPayload ModuleDeployTransactionCfg {..} = return $ Types.DeployModule mdtcMod
 
 -- |Process a 'contract ...' command.
 processContractCmd :: ContractCmd -> Verbose -> Backend -> IO ()
@@ -1958,7 +1985,7 @@ processCredential source networkId =
 convertTransactionJsonPayload :: (MonadFail m) => CT.TransactionJSONPayload -> ClientMonad m Types.Payload
 convertTransactionJsonPayload = \case
   (CT.DeployModule _) ->
-    fail "DeployModule is not implemented"
+    fail "DeployModule is not implemented" --TODO: Should this be implemented as well?
   (CT.InitContract _ _ _ _) ->
     fail "InitContract is not implemented"
   (CT.Update _ _ _ _) ->
