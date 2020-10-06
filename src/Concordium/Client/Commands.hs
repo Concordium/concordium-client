@@ -182,6 +182,15 @@ data ModuleCmd
   | ModuleList
     -- |Hash of the block (default "best").
     { mlBlockHash :: !(Maybe Text) }
+  -- |Output the binary source code of the module to the provided file.
+  | ModuleShow
+    -- |Reference to the module.
+    { msModuleReference :: !Text
+    -- |Output the module to this file.
+    -- Use '-' to output to stdout.
+    , msOutFile :: !FilePath
+    -- |Hash of the block (default "best").
+    , mlBlockHash :: !(Maybe Text) }
   deriving (Show)
 
 data ContractCmd
@@ -591,7 +600,8 @@ moduleCmds =
       (ModuleCmd <$>
         hsubparser
           (moduleDeployCmd <>
-           moduleListCmd))
+           moduleListCmd <>
+           moduleShowCmd))
       (progDesc "Commands for inspecting and deploying modules."))
 
 moduleDeployCmd :: Mod CommandFields ModuleCmd
@@ -610,6 +620,17 @@ moduleListCmd =
     "list"
     (info
       (ModuleList <$>
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+      (progDesc "List all modules."))
+
+moduleShowCmd :: Mod CommandFields ModuleCmd
+moduleShowCmd =
+  command
+    "show"
+    (info
+      (ModuleShow <$>
+        strArgument (metavar "MODULE-REFERENCE" <> help "Reference to the module (use 'module list' to find it).") <*>
+        strArgument (metavar "FILE" <> help "File to output the source code to (use '-' for stdout).") <*>
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
       (progDesc "List all modules."))
 

@@ -1278,7 +1278,22 @@ processModuleCmd action baseCfgDir verbose backend =
 
     ModuleList block -> do
       v <- withClient backend $ withBestBlockHash block getModuleList >>= getFromJson
-      runPrinter $ printModuleList v
+
+      case null v of
+        True -> logInfo ["No modules were found."]
+        False -> runPrinter $ printModuleList v
+
+    ModuleShow modRef outPath block -> do
+      v <- withClient backend $ withBestBlockHash block (getModuleSource modRef)
+
+      case v of
+        Left errMsg -> logFatal [errMsg]
+        Right modSource ->
+          case outPath of
+            -- Write to stdout
+            "-" -> BS.putStr modSource
+            -- Write to file
+            _   -> BS.writeFile outPath modSource
 
 getModuleDeployTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> IO ModuleDeployTransactionCfg
 getModuleDeployTransactionCfg baseCfg txOpts modPath = do
