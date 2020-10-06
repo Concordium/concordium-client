@@ -211,6 +211,10 @@ getBirkParameters hash = withUnaryBlock (call @"getBirkParameters") hash (to pro
 getModuleList :: Text -> ClientMonad IO (Either String Value)
 getModuleList hash = withUnaryBlock (call @"getModuleList") hash (to processJSON)
 
+getModuleSource :: Text -> Text -> ClientMonad IO (Either String BS8.ByteString)
+getModuleSource modRef hash = withUnary (call @"getModuleSource") msg CF.value
+  where msg = defMessage & CF.blockHash .~ hash & CF.moduleRef .~ modRef
+
 peerConnect :: Text -> Int -> ClientMonad IO (Either String Bool)
 peerConnect ip peerPort = withUnary (call @"peerConnect") msg CF.value
   where msg = defMessage &
