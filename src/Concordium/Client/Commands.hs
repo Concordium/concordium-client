@@ -175,7 +175,7 @@ data ModuleCmd
   -- |Deploy the provided smart contract module on chain.
   = ModuleDeploy
     -- |Path to the module.
-    { mdModPath :: !FilePath
+    { mdModuleFile :: !FilePath
     , mdTransactionOpts :: !TransactionOpts
     }
   -- |List all modules.
@@ -194,15 +194,27 @@ data ModuleCmd
   deriving (Show)
 
 data ContractCmd
+  -- |Show the state of specified contract.
   = ContractShow
+    -- |Address of contract on chain.
     { csAddress :: !Text
+    -- |Hash of the block (default "best").
     , csBlockHash :: !(Maybe Text) }
+  -- |List all contracts on chain.
   | ContractList
+    -- |Hash of the block (default "best").
     { clBlockHash :: !(Maybe Text) }
+  -- |Initialize a contract from a module on chain.
   | ContractInit
-    { ciModuleName :: !Text
-    , ciName :: !Text
-    , ciParameter :: !Text
+    -- |Path to the module. The module reference is calculated by hashing this module.
+    { ciModuleFile :: !FilePath
+    -- |Name of the init method to use.
+    , ciInitName :: !Text
+    -- |Path to a binary file containing parameters for init method.
+    , ciParameterFile :: !FilePath
+    -- |Amount to be send to contract.
+    , ciAmount :: !(Maybe Amount)
+    -- |Options for transaction.
     , ciTransactionOpts :: !TransactionOpts }
   deriving (Show)
 
@@ -671,8 +683,9 @@ contractInitCmd =
     "init"
     (info
       (ContractInit <$>
-        strOption (long "module" <> metavar "MODULE" <> help "Module containing the contract.") <*>
-        strOption (long "name" <> metavar "NAME" <> help "Name of the contract in the module.") <*>
+        strArgument (metavar "MODULE" <> help "Path to the smart contract module.") <*>
+        strArgument (metavar "INIT-NAME" <> help "Name of the specific init function in the module.") <*>
+        strArgument (metavar "FILE" <> help "Binary file with parameters for init function.") <*>
         option auto (long "amount" <> metavar "AMOUNT" <> help "Amount of GTU to transfer to the contract.") <*>
         transactionOptsParser)
       (progDesc "Initialize contract from already deployed module."))
