@@ -209,9 +209,16 @@ printCred c =
 
 printAccountList :: [Text] -> Printer
 printAccountList = tell . map unpack
+-- printAccountList lst = tell xs
+--   where
+--     xs = (map unpack lst)
+--     x = [ "Accounts:"
+--         ,"                     Account Address                Account Name"
+--         ,"----------------------------------------------------------------" ]
+--     xss = x:xs
 
 printModuleList :: [Text] -> Printer
-printModuleList = printAccountList
+printModuleList = tell . map unpack
 
 showAccountKeyPair :: EncryptedAccountKeyPair -> String
 -- TODO Make it respect indenting if this will be the final output format.
@@ -518,23 +525,28 @@ printConsensusStatus r =
        , printf "Last finalized time:         %s" (showMaybeUTC $ csrLastFinalizedTime r)
        , printf "Finalization period:         %s" (showMaybeEmSeconds (csrFinalizationPeriodEMA r) (csrFinalizationPeriodEMSD r)) ]
 
-printBirkParameters :: Bool -> BirkParametersResult -> Printer
-printBirkParameters includeBakers r = do
+printBirkParameters :: Bool -> BirkParametersResult -> [String] -> Printer
+printBirkParameters includeBakers r bs = do
   tell [ printf "Election nonce:      %s" (show $ bprElectionNonce r)
        ] -- , printf "Election difficulty: %f" (Types.electionDifficulty $ bprElectionDifficulty r) ]
   when includeBakers $
-    case bprBakers r of
+    case bs of
       [] ->
          tell [ "Bakers:              " ++ showNone ]
-      bs -> do
+      b -> do
         tell [ "Bakers:"
              , printf "                             Account                       Lottery power"
              , printf "        ----------------------------------------------------------------" ]
-        tell $ f <$> bs
-  where f b = printf "%6s: %s  %s" (show $ bpbrId b) (show $ bpbrAccount b) (showLotteryPower $ bpbrLotteryPower b)
-        showLotteryPower lp = if 0 < lp && lp < 0.000001
-                              then " <0.0001 %" :: String
-                              else printf "%8.4f %%" (lp*100)
+        tell b
+  --     bs -> do
+  --       tell [ "Bakers:"
+  --            , printf "                             Account                       Lottery power"
+  --            , printf "        ----------------------------------------------------------------" ]
+  --       tell $ f <$> bs
+  -- where f b = printf "%6s: %s  %s" (show $ bpbrId b) (show $ bpbrAccount b) (showLotteryPower $ bpbrLotteryPower b)
+  --       showLotteryPower lp = if 0 < lp && lp < 0.000001
+  --                             then " <0.0001 %" :: String
+  --                             else printf "%8.4f %%" (lp*100)
 -- BLOCK
 
 printBlockInfo :: Maybe BlockInfoResult -> Printer
