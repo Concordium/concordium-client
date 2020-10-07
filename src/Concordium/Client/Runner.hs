@@ -1293,7 +1293,19 @@ processConsensusCmd action _baseCfgDir verbose backend =
       v <- withClientJson backend $ withBestBlockHash b getBirkParameters
       case v of
         Nothing -> putStrLn "Block not found."
-        Just p -> runPrinter $ printBirkParameters includeBakers p
+        Just p -> runPrinter $ case bprBakers p of 
+                                [] -> printBirkParameters includeBakers p []
+                                bs -> printBirkParameters includeBakers p (mapM f bs)
+                                  where f b' = printf "%6s: %s  %s  %s" (show $ bpbrId b') (show $ bpbrAccount b') (showLotteryPower $ bpbrLotteryPower b') (accountName $ show $ bpbrAccount b')
+                                        showLotteryPower lp = if 0 < lp && lp < 0.000001
+                                                              then " <0.0001 %" :: String
+                                                              else printf "%8.4f %%" (lp*100)
+                                        accountName b = do
+                                          baseCfg <- getBaseConfig _baseCfgDir verbose AutoInit
+                                          na <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just (Text.pack b)
+                                          return $ fromMaybe (Text.pack "*") . naName $ na
+                                         
+                                          
     ConsensusChainUpdate rawUpdateFile authsFile keysFiles intOpts -> do
       let
         loadJSON :: (FromJSON a) => FilePath -> IO a
