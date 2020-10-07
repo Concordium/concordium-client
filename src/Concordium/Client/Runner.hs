@@ -1123,9 +1123,18 @@ processAccountCmd action baseCfgDir verbose backend =
       case v of
         Nothing -> putStrLn "Account not found."
         Just a -> runPrinter $ printAccountInfo na a verbose (showEncrypted || showDecrypted) encKey
+    
     AccountList block -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       v <- withClientJson backend $ withBestBlockHash block getAccountList
-      runPrinter $ printAccountList v
+      let addname :: Text -> IO Text
+          addname addr = do 
+            na <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just addr
+            -- Print addresses, followed by name or *, seperated by 5 spaces
+            return $ Text.append addr (Text.append (Text.pack "     ") . fromMaybe (Text.pack "*") . naName $ na)
+      namedv <- mapM addname v
+      runPrinter $ printAccountList namedv
+    
     AccountDelegate bakerId txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
 
