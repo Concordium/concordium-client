@@ -213,6 +213,9 @@ printAccountList = tell . map unpack
 printModuleList :: [Text] -> Printer
 printModuleList = printAccountList
 
+printContractList :: [Text] -> Printer
+printContractList = printAccountList
+
 showAccountKeyPair :: EncryptedAccountKeyPair -> String
 -- TODO Make it respect indenting if this will be the final output format.
 -- An alternative is not to print the encrypted key here, but rather have that
