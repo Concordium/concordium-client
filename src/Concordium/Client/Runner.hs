@@ -86,6 +86,7 @@ import qualified Data.Aeson.Encode.Pretty            as AE
 import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
+import qualified Data.ByteString.Short               as BS (toShort)
 import qualified Data.HashMap.Strict                 as Map
 import qualified Data.HashSet                        as HSet
 import qualified Data.Map                            as OrdMap
@@ -161,7 +162,7 @@ process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir
     TransactionCmd c -> processTransactionCmd c cfgDir verbose backend
     AccountCmd c -> processAccountCmd c cfgDir verbose backend
     ModuleCmd c -> processModuleCmd c cfgDir verbose backend
-    ContractCmd c -> processContractCmd c verbose backend
+    ContractCmd c -> processContractCmd c cfgDir verbose backend
     ConsensusCmd c -> processConsensusCmd c cfgDir verbose backend
     BlockCmd c -> processBlockCmd c verbose backend
     BakerCmd c -> processBakerCmd c cfgDir verbose backend
@@ -1266,10 +1267,10 @@ processAccountCmd action baseCfgDir verbose backend =
 processModuleCmd :: ModuleCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processModuleCmd action baseCfgDir verbose backend =
   case action of
-    ModuleDeploy modPath txOpts -> do
+    ModuleDeploy moduleFile txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
 
-      mdCfg <- getModuleDeployTransactionCfg baseCfg txOpts modPath
+      mdCfg <- getModuleDeployTransactionCfg baseCfg txOpts moduleFile
       let txCfg = mdtcTransactionCfg mdCfg
 
       let intOpts = toInteractionOpts txOpts
@@ -1283,38 +1284,37 @@ processModuleCmd action baseCfgDir verbose backend =
         True -> logInfo ["No modules were found."]
         False -> runPrinter $ printModuleList v
 
-    ModuleShow modRef outPath block -> do
-      v <- withClient backend $ withBestBlockHash block (getModuleSource modRef)
+    ModuleShow moduleRef outFile block -> do
+      v <- withClient backend $ withBestBlockHash block (getModuleSource moduleRef)
 
       case v of
         Left errMsg -> logFatal ["could not show module:", errMsg]
-        Right modSource ->
-          case outPath of
+        Right moduleSource ->
+          case outFile of
             -- Write to stdout
-            "-" -> BS.putStr modSource
+            "-" -> BS.putStr moduleSource
             -- Write to file
-            _   -> BS.writeFile outPath modSource
+            _   -> BS.writeFile outFile moduleSource
 
 getModuleDeployTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> IO ModuleDeployTransactionCfg
-getModuleDeployTransactionCfg baseCfg txOpts modPath = do
-  wasmMod <- Wasm.WasmModule 1 <$> BS.readFile modPath
-  txCfg <- getTransactionCfg baseCfg txOpts (nrgCost . BS.length . Wasm.wasmSource $ wasmMod) -- TODO: figure out correct cost
-  return $ ModuleDeployTransactionCfg txCfg wasmMod
-  where nrgCost modLen _ = return $ Just $ accountUpdateKeysEnergyCost modLen -- TODO: figure out correct cost
+getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
+  wasmModule <- getWasmModuleFromFile moduleFile
+  txCfg <- getTransactionCfg baseCfg txOpts (nrgCost . BS.length . Wasm.wasmSource $ wasmModule) -- TODO: figure out correct cost
+  return $ ModuleDeployTransactionCfg txCfg wasmModule
+  where nrgCost moduleLen _ = return $ Just $ accountUpdateKeysEnergyCost moduleLen -- TODO: figure out correct cost
 
 data ModuleDeployTransactionCfg =
   ModuleDeployTransactionCfg
   { mdtcTransactionCfg :: TransactionConfig
   -- |The WASM module to deploy.
-  , mdtcMod :: Wasm.WasmModule } -- TODO: Should this be strict?
+  , mdtcModule :: Wasm.WasmModule } -- TODO: Should this be strict?
 
 moduleDeployTransactionPayload :: ModuleDeployTransactionCfg -> IO Types.Payload
-moduleDeployTransactionPayload ModuleDeployTransactionCfg {..} = return $ Types.DeployModule mdtcMod
+moduleDeployTransactionPayload ModuleDeployTransactionCfg {..} = return $ Types.DeployModule mdtcModule
 
 -- |Process a 'contract ...' command.
-processContractCmd :: ContractCmd -> Verbose -> Backend -> IO ()
-processContractCmd action _ backend =
-  -- use instanceList already defined in gRPC
+processContractCmd :: ContractCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
+processContractCmd action baseCfgDir verbose backend =
   case action of
     ContractList block -> do
       v <- withClient backend $ withBestBlockHash block getInstances >>= getFromJson
@@ -1322,14 +1322,57 @@ processContractCmd action _ backend =
       case null v of
         True -> logInfo ["no contracts were found"]
         False -> runPrinter $ printContractList v
+
     ContractShow contrAddr block -> do
       v <- withClient backend $ withBestBlockHash block (getInstanceInfo contrAddr)
       case v of
         Left errMsg -> logFatal ["could not show contract:", errMsg]
         Right AE.Null -> logInfo ["the contract could not be found."] -- TODO: Should AE.Null really be returned?
         Right contrInfo -> print contrInfo
-    ContractInit modPath contrName amouunt txOpts -> do
-      logFatal ["TODO: not implemented yet"]
+
+    ContractInit moduleFile initName paramsFile amount txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+
+      ciCfg <- getContractInitTransactionCfg baseCfg txOpts moduleFile initName paramsFile amount
+      let txCfg = citcTransactionCfg ciCfg
+
+      let intOpts = toInteractionOpts txOpts
+      pl <- contractInitTransactionPayload ciCfg
+      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+
+getContractInitTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> Text
+                              -> FilePath -> Maybe Types.Amount -> IO ContractInitTransactionCfg
+getContractInitTransactionCfg baseCfg txOpts moduleFile initName paramsFile amount = do
+  moduleRef <- Types.ModuleRef . getHash <$> getWasmModuleFromFile moduleFile
+  txCfg <- getTransactionCfg baseCfg txOpts contractInitEnergyCost
+  params <- Wasm.Parameter . BS.toShort <$> BS.readFile paramsFile
+  let amount' = fromMaybe (Types.Amount 0) amount
+  let initName' = Wasm.InitName initName
+  return $ ContractInitTransactionCfg txCfg amount' moduleRef initName' params
+  where contractInitEnergyCost :: AccountConfig -> IO (Maybe (Int -> Types.Energy))
+        contractInitEnergyCost _ = pure . Just . const . Types.Energy $ 100 -- TODO: Figure out correct cost
+
+data ContractInitTransactionCfg =
+  ContractInitTransactionCfg
+  { citcTransactionCfg :: TransactionConfig
+  -- |Initial amount on the contract's account.
+  , citcAmount :: Types.Amount
+  -- |Reference of the module (on-chain) in which the contract exist.
+  , citcModuleRef :: Types.ModuleRef
+  -- |Name of the init function to call in that module.
+  , citcInitName :: Wasm.InitName
+  -- |Parameters to the init method.
+  , citcParams :: Wasm.Parameter
+  } -- TODO: Strict?
+
+
+contractInitTransactionPayload :: ContractInitTransactionCfg -> IO Types.Payload
+contractInitTransactionPayload ContractInitTransactionCfg {..} =
+  return $ Types.InitContract citcAmount citcModuleRef citcInitName citcParams
+
+-- |Load a WasmModule from the specified file path.
+getWasmModuleFromFile :: FilePath -> IO Wasm.WasmModule
+getWasmModuleFromFile moduleFile = Wasm.WasmModule 0 <$> BS.readFile moduleFile
 
 -- |Process a 'consensus ...' command.
 processConsensusCmd :: ConsensusCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
