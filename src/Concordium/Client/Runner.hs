@@ -1287,7 +1287,7 @@ processModuleCmd action baseCfgDir verbose backend =
       v <- withClient backend $ withBestBlockHash block (getModuleSource modRef)
 
       case v of
-        Left errMsg -> logFatal [errMsg]
+        Left errMsg -> logFatal ["could not show module:", errMsg]
         Right modSource ->
           case outPath of
             -- Write to stdout
@@ -1313,7 +1313,23 @@ moduleDeployTransactionPayload ModuleDeployTransactionCfg {..} = return $ Types.
 
 -- |Process a 'contract ...' command.
 processContractCmd :: ContractCmd -> Verbose -> Backend -> IO ()
-processContractCmd action _ backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
+processContractCmd action _ backend =
+  -- use instanceList already defined in gRPC
+  case action of
+    ContractList block -> do
+      v <- withClient backend $ withBestBlockHash block getInstances >>= getFromJson
+
+      case null v of
+        True -> logInfo ["no contracts were found"]
+        False -> runPrinter $ printContractList v
+    ContractShow contrAddr block -> do
+      v <- withClient backend $ withBestBlockHash block (getInstanceInfo contrAddr)
+      case v of
+        Left errMsg -> logFatal ["could not show contract:", errMsg]
+        Right AE.Null -> logInfo ["the contract could not be found."] -- TODO: Should AE.Null really be returned?
+        Right contrInfo -> print contrInfo
+    ContractInit modPath contrName amouunt txOpts -> do
+      logFatal ["TODO: not implemented yet"]
 
 -- |Process a 'consensus ...' command.
 processConsensusCmd :: ConsensusCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
