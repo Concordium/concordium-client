@@ -1299,9 +1299,10 @@ processModuleCmd action baseCfgDir verbose backend =
 getModuleDeployTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> IO ModuleDeployTransactionCfg
 getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
   wasmModule <- getWasmModuleFromFile moduleFile
-  txCfg <- getTransactionCfg baseCfg txOpts (nrgCost . BS.length . Wasm.wasmSource $ wasmModule) -- TODO: figure out correct cost
+  txCfg <- getTransactionCfg baseCfg txOpts moduleDeployEnergyCost
   return $ ModuleDeployTransactionCfg txCfg wasmModule
-  where nrgCost moduleLen _ = return $ Just $ accountUpdateKeysEnergyCost moduleLen -- TODO: figure out correct cost
+  where moduleDeployEnergyCost :: AccountConfig -> IO (Maybe (Int -> Types.Energy))
+        moduleDeployEnergyCost _ = pure . Just . const . Types.Energy $ 10000 -- TODO: Figure out correct cost
 
 data ModuleDeployTransactionCfg =
   ModuleDeployTransactionCfg
@@ -1323,8 +1324,9 @@ processContractCmd action baseCfgDir verbose backend =
         True -> logInfo ["no contracts were found"]
         False -> runPrinter $ printContractList v
 
-    ContractShow contrAddr block -> do
-      v <- withClient backend $ withBestBlockHash block (getInstanceInfo contrAddr)
+    ContractShow contrAddrIndex contrAddrSubindex block -> do
+      let contrAddr = mkContractAddress contrAddrIndex contrAddrSubindex
+      v <- withClient backend $ withBestBlockHash block $ getInstanceInfo . Text.pack . show $ contrAddr
       case v of
         Left errMsg -> logFatal ["could not show contract:", errMsg]
         Right AE.Null -> logInfo ["the contract could not be found."] -- TODO: Should AE.Null really be returned?
@@ -1354,7 +1356,7 @@ getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts -> Types.Contra
                                 -> Text -> FilePath -> Maybe Types.Amount -> IO ContractUpdateTransactionCfg
 getContractUpdateTransactionCfg baseCfg txOpts contrAddrIndex contrAddrSubindex receiveName paramsFile amount = do
   txCfg <- getTransactionCfg baseCfg txOpts contractUpdateEnergyCost
-  let contrAddr = Types.ContractAddress contrAddrIndex $ fromMaybe (Types.ContractSubindex 0) contrAddrSubindex
+  let contrAddr = mkContractAddress contrAddrIndex contrAddrSubindex
   let receiveName' = Wasm.ReceiveName receiveName
   params <- getWasmParameterFromFile paramsFile
   let amount' = fromMaybe (Types.Amount 0) amount
@@ -1417,6 +1419,10 @@ getWasmModuleFromFile moduleFile = Wasm.WasmModule 0 <$> BS.readFile moduleFile
 -- |Load Wasm Parameters from a binary file.
 getWasmParameterFromFile :: FilePath -> IO Wasm.Parameter
 getWasmParameterFromFile paramsFile = Wasm.Parameter . BS.toShort <$> BS.readFile paramsFile
+
+-- |Construct a Contract Address from an index and optional subindex (which defaults to 0).
+mkContractAddress :: Types.ContractIndex -> (Maybe Types.ContractSubindex) -> Types.ContractAddress
+mkContractAddress index subindex = Types.ContractAddress index $ fromMaybe (Types.ContractSubindex 0) subindex
 
 -- |Process a 'consensus ...' command.
 processConsensusCmd :: ConsensusCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
