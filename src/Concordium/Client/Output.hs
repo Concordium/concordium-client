@@ -213,8 +213,8 @@ printAccountList = tell . map unpack
 printModuleList :: [Text] -> Printer
 printModuleList = printAccountList
 
-printContractList :: [Text] -> Printer
-printContractList = printAccountList
+printContractList :: [Types.ContractAddress] -> Printer
+printContractList = tell . map showPrettyJSON
 
 showAccountKeyPair :: EncryptedAccountKeyPair -> String
 -- TODO Make it respect indenting if this will be the final output format.
