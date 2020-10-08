@@ -102,22 +102,22 @@ data LocalState
 
         -- | Baker IDs that have been issued a delegating transaction and are
         -- waiting for it to finalize. INVARIANT: size < 5.
-        awaitingDelegation :: !(HM.HashMap BakerId (Delegator, TransactionHash)),
+        awaitingDelegation :: !(HM.HashMap BakerId (Delegator, MVar TransactionHash)),
         -- State 4
 
         -- | Baker IDs that are in the 2 epoch time slice for
         -- delegation. INVARIANT: size < 5.
-        waitingDelegationEpochs :: !(HM.HashMap BakerId (Delegator, TransactionHash, UTCTime)),
+        waitingDelegationEpochs :: !(HM.HashMap BakerId (Delegator, MVar TransactionHash, UTCTime)),
         -- State 5
 
         -- | Baker IDs that have been issued an undelegating transaction and are
         -- waiting for it to finalize. INVARIANT: size < 5.
-        awaitingUndelegation :: !(HM.HashMap BakerId (Delegator, TransactionHash)),
+        awaitingUndelegation :: !(HM.HashMap BakerId (Delegator, MVar TransactionHash)),
         -- State 6
 
         -- | Baker IDs that are in the 2 epoch time slice for
         -- undelegation. INVARIANT: size < 5.
-        waitingUndelegationEpochs :: !(HM.HashMap BakerId (Delegator, TransactionHash, UTCTime)),
+        waitingUndelegationEpochs :: !(HM.HashMap BakerId (Delegator, MVar TransactionHash, UTCTime)),
         -- State 7
 
         -- | Set of BakerIDs that have been recently delegated to with the
@@ -209,16 +209,17 @@ forkStateMachine State {..} transitionChan = do
   pure ()
 
 -- | Runs the specified transition when the given transaction shows up as finalized
-finalizationListener :: EnvData -> Chan (BakerId, Int) -> TransactionHash -> (BakerId, Int) -> IO TransactionHash -> IO ()
+finalizationListener :: EnvData -> Chan (BakerId, Int) -> TransactionHash -> (BakerId, Int) -> IO TransactionHash -> IO (MVar TransactionHash)
 finalizationListener backend chan txHash next fallback = do
-  let loop = do
+  txHashMVar <- newMVar txHash
+  let loop th = do
         putStrLn $ lpi ++ "[finalizationListener]: Checking transaction status of " ++ show txHash
         txState <- queryTransactionState backend txHash
         case txState of
           TxAccepted -> do
             putStrLn $ lpi ++ "[finalizationListener]: The transaction " ++ show txHash ++ " is finalized and accepted."
             writeChan chan next
-          TxPending -> threadDelay 5000000 >> loop -- 5 seconds
+          TxPending -> threadDelay 5000000 >> (loop th) -- 5 seconds
           _ -> do
             case txState of
               TxError ->
@@ -230,12 +231,13 @@ finalizationListener backend chan txHash next fallback = do
                 -- complicated to revert it keeping everything in sync, for now
                 -- this same loop will try to resend the transaction with refreshed
                 -- nonce and all.
-            th <- fallback
+            th' <- fallback
+            _ <- swapMVar txHashMVar th'
             putStrLn $ lpi ++ "[finalizationListener]: Sending a new transaction " ++ show th ++ " superseding " ++ show txHash
             -- watch the new transaction
-            finalizationListener backend chan th next fallback
-  _ <- forkIO loop
-  pure ()
+            loop th'
+  _ <- forkIO (loop txHash)
+  pure txHashMVar
 
 -- | Runs the specified transition when the timer has expired
 runTransitionIn :: Bool -> Chan (BakerId, Int) -> Int -> (BakerId, Int) -> IO ()
@@ -399,9 +401,9 @@ transition4to5 transitionChan loopbackChan backend cfgDir baker s@(localState, o
                 let sendThisTransaction = delegate backend cfgDir Nothing delegator
                 th <- maybe sendThisTransaction return mRedelegateTx
                 -- create listeners for finalization
-                finalizationListener backend transitionChan th (baker, 3) sendThisTransaction
+                thMVar <- finalizationListener backend transitionChan th (baker, 3) sendThisTransaction
                 -- move to next collection
-                let awaitingUndelegation' = HM.insert baker (delegator, th) (awaitingUndelegation currentState'')
+                let awaitingUndelegation' = HM.insert baker (delegator, thMVar) (awaitingUndelegation currentState'')
                 return $
                   currentState''
                     { awaitingUndelegation = awaitingUndelegation'
@@ -474,7 +476,7 @@ transition2to3 transitionChan loopbackChan backend cfgDir calledFromSM _ (localS
         writeChan transitionChan (10, 0)
     )
     $ do
-      putStrLn $ localStateDescription "entering transtion 0" currentState
+      putStrLn $ localStateDescription "entering transition 0" currentState
       currentState' <- do
         -- if we don't have pending requests, do nothing
         let mMinElem = PSQ.findMin pendingDelegations
@@ -500,10 +502,10 @@ transition2to3 transitionChan loopbackChan backend cfgDir calledFromSM _ (localS
                 -- if needed, give this hash to the step-4 transition
                 when calledFromSM $ writeChan loopbackChan (Just th)
                 -- set a timer for next step
-                finalizationListener backend transitionChan th (baker, 1) sendThisTransaction
+                thMVar <- finalizationListener backend transitionChan th (baker, 1) sendThisTransaction
                 let activeDelegations' = Set.insert baker activeDelegations
                     currentDelegations' = currentDelegations Vec.// [(delegator, Just baker)]
-                    awaitingDelegation' = HM.insert baker (delegator, th) awaitingDelegation
+                    awaitingDelegation' = HM.insert baker (delegator, thMVar) awaitingDelegation
                 return $
                   currentState
                     { pendingDelegations = pendingDelegations',
