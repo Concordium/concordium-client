@@ -149,7 +149,8 @@ logHash = toLogStr . show
 localStateDescription :: String -> LocalState -> LogStr
 localStateDescription description LocalState {..} = toLogStr $ 
   unlines
-    [ lpi ++ "==============================================",
+    [ "",
+      lpi ++ "==============================================",
       lpi ++ "Local State (" ++ description ++ ")",
       lpi ++ "----------------------------------------------",
       lpi ++ "Pending delegations: " ++ show pd,
@@ -222,19 +223,19 @@ finalizationListener :: Logger -> EnvData -> Chan (BakerId, Int) -> TransactionH
 finalizationListener logger backend chan txHash next fallback = do
   txHashMVar <- newMVar txHash
   let loop th = do
-        logger LLDebug $ lpi <> "[finalizationListener]: Checking transaction status of " <> toLogStr (show txHash)
+        logger LLDebug $ "[finalizationListener]: Checking transaction status of " <> toLogStr (show txHash)
         txState <- queryTransactionState backend txHash
         case txState of
           TxAccepted -> do
-            logger LLInfo $ lpi <> "[finalizationListener]: The transaction " <> toLogStr (show txHash) <> " is finalized and accepted."
+            logger LLInfo $ "[finalizationListener]: The transaction " <> toLogStr (show txHash) <> " is finalized and accepted."
             writeChan chan next
           TxPending -> threadDelay 5000000 >> (loop th) -- 5 seconds
           _ -> do
             case txState of
               TxError ->
-                logger LLWarning $ lpi <> "[finalizationListener]: The transaction status returned TxError. Please check the transaction hash: " <> logHash txHash
-              TxRejected -> logger LLWarning $ lpi <> "[finalizationListener]: The transaction status shows the transaction was rejected. Please check the transaction hash: " <> logHash txHash
-              TxAbsent -> logger LLWarning $ lpi <> "[finalizationListener]: The transaction status shows the transaction is absent. Please check the transaction hash: " <> logHash txHash
+                logger LLWarning $ "[finalizationListener]: The transaction status returned TxError. Please check the transaction hash: " <> logHash txHash
+              TxRejected -> logger LLWarning $ "[finalizationListener]: The transaction status shows the transaction was rejected. Please check the transaction hash: " <> logHash txHash
+              TxAbsent -> logger LLWarning $ "[finalizationListener]: The transaction status shows the transaction is absent. Please check the transaction hash: " <> logHash txHash
               _ -> undefined -- impossible case
                 -- as the state has already changed, it would be
                 -- complicated to revert it keeping everything in sync, for now
@@ -242,7 +243,7 @@ finalizationListener logger backend chan txHash next fallback = do
                 -- nonce and all.
             th' <- fallback
             _ <- swapMVar txHashMVar th'
-            logger LLInfo $ lpi <> "[finalizationListener]: Sending a new transaction " <> logHash th <> " superseding " <> logHash txHash
+            logger LLInfo $ "[finalizationListener]: Sending a new transaction " <> logHash th <> " superseding " <> logHash txHash
             -- watch the new transaction
             loop th'
   _ <- forkIO (loop txHash)
@@ -253,8 +254,8 @@ runTransitionIn :: Logger -> Bool -> Chan (BakerId, Int) -> Int -> (BakerId, Int
 runTransitionIn logger waitingEpochs chan timer next = do
   _ <- forkIO $ do
     if waitingEpochs
-      then logger LLTrace $ lpi <> "[runTransitionIn]: setting a timer for " <> toLogStr (show (timer `div` 1000000)) <> " seconds for a two epoch waiting time."
-      else logger LLTrace $ lpi <> "[runTransitionIn]: setting a timer for " <> toLogStr ((timer `div` 1000000)) <> " seconds because the delegation didn't expire yet (this is likely not going to happen)."
+      then logger LLTrace $ "[runTransitionIn]: setting a timer for " <> toLogStr (show (timer `div` 1000000)) <> " seconds for a two epoch waiting time."
+      else logger LLTrace $ "[runTransitionIn]: setting a timer for " <> toLogStr ((timer `div` 1000000)) <> " seconds because the delegation didn't expire yet (this is likely not going to happen)."
     threadDelay timer
     writeChan chan next
   pure ()
@@ -265,8 +266,8 @@ stateMachine logger localState transitions chanToLoop = loop
   where loop = do
           (bid, trans) <- readChan chanToLoop
           if trans == 0
-            then logger LLDebug $ lpi <> "[stateMachine]: going to promote a request from the queue (transition 0)."
-            else logger LLDebug $ lpi <> "[stateMachine]: going to move the baker " <> toLogStr (show bid) <> " in transition " <> transitionNames trans
+            then logger LLDebug $ "[stateMachine]: going to promote a request from the queue (transition 0)."
+            else logger LLDebug $ "[stateMachine]: going to move the baker " <> toLogStr (show bid) <> " in transition " <> transitionNames trans
           (transitions Vec.! trans) bid localState `catches`
             [Handler (\(ex :: ErrorCall) -> logger LLError (toLogStr (displayException ex)))
             ,Handler (\(ex :: IOException) -> logger LLError (toLogStr (displayException ex)) )
