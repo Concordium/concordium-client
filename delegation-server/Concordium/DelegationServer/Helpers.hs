@@ -85,8 +85,9 @@ queryTransactionState grpc th = do
 
 -- | This function will only be executed if the output from
 -- `queryTransactionState` is @TxAccepted@.
-compute2epochsSinceFinalization :: UTCTime -> NominalDiffTime -> EnvData -> Types.TransactionHash -> IO UTCTime
-compute2epochsSinceFinalization genesisTime epochDuration grpc th = do
+compute2epochsSinceFinalization :: UTCTime -> NominalDiffTime -> EnvData -> MVar Types.TransactionHash -> IO UTCTime
+compute2epochsSinceFinalization genesisTime epochDuration grpc thMVar = do
+  th <- readMVar thMVar
   -- get block in which the transaction is finalized
   let f = getTransactionStatus (Text.pack $ show th)
       g :: TransactionStatusResult -> IO Types.BlockHash
@@ -124,7 +125,7 @@ delegate grpc delegationAccounts bakerId idx =
     Nothing -> doDelegation
   where
     doDelegation = do
-      -- get account instances for computing the cost of the delegating trnasaction
+      -- get account instances for computing the cost of the delegating transaction
       let f' = getBestBlockHash >>= getAccountInfo (Text.pack . show . daAddr $ delegationAccounts Vec.! idx)
           g' :: AccountInfoResult -> IO Types.Energy
           g' info = return $ Costs.accountDelegateEnergyCost (length . airInstances $ info) (HM.size $ daKeys $ delegationAccounts Vec.! idx)

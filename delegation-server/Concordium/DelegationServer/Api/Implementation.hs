@@ -98,16 +98,24 @@ getDelegationStatus GetDelegationStatusRequest {..} = do
       DelegationInQueue <$> wrapIOError (tsMillis . utcTimeToTimestamp <$> estimatedTimeAsUTC (epochDuration state) (Just delegateTo) pendingDelegations currentDelegations)
     else case HM.lookup delegateTo awaitingDelegation of
       -- State 3
-      Just (_, th) -> return $ DelegationPending (Text.pack $ show th) Nothing
+      Just (_, thMVar) -> do
+        th <- liftIO $ readMVar thMVar
+        return $ DelegationPending (Text.pack $ show th) Nothing
       Nothing -> case HM.lookup delegateTo waitingDelegationEpochs of
         -- State 4
-        Just (_, th, expectedTime) -> return $ DelegationPending (Text.pack $ show th) (Just (tsMillis . utcTimeToTimestamp $ expectedTime))
+        Just (_, thMVar, expectedTime) -> do
+          th <- liftIO $ readMVar thMVar
+          return $ DelegationPending (Text.pack $ show th) (Just (tsMillis . utcTimeToTimestamp $ expectedTime))
         Nothing -> case HM.lookup delegateTo awaitingUndelegation of
           -- State 5
-          Just (_, th) -> return $ DelegationAssigned (Text.pack $ show th) Nothing
+          Just (_, thMVar) -> do
+            th <- liftIO $ readMVar thMVar
+            return $ DelegationAssigned (Text.pack $ show th) Nothing
           Nothing -> case HM.lookup delegateTo waitingUndelegationEpochs of
             -- State 6
-            Just (_, th, expectedTime) -> return $ DelegationAssigned (Text.pack $ show th) (Just (tsMillis . utcTimeToTimestamp $ expectedTime))
+            Just (_, thMVar, expectedTime) -> do
+              th <- liftIO $ readMVar thMVar
+              return $ DelegationAssigned (Text.pack $ show th) (Just (tsMillis . utcTimeToTimestamp $ expectedTime))
             Nothing -> case HM.lookup delegateTo recentDelegations of
               -- State 7
               Just (_, expired) -> DelegationFinished (tsMillis . utcTimeToTimestamp $ expired) <$> wrapIOError (tsMillis . utcTimeToTimestamp <$> estimatedTimeAsUTC (epochDuration state) (Just delegateTo) pendingDelegations currentDelegations)
