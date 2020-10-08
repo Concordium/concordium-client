@@ -196,8 +196,10 @@ data ModuleCmd
 data ContractCmd
   -- |Show the state of specified contract.
   = ContractShow
-    -- |Address of contract on chain.
-    { csAddress :: !Text
+    -- |Index of the address for the contract.
+    { cuAddressIndex :: !ContractIndex
+    -- |Subindex of the address for the contract (default: 0).
+    , cuAddressSubindex :: !(Maybe ContractSubindex)
     -- |Hash of the block (default "best").
     , csBlockHash :: !(Maybe Text) }
   -- |List all contracts on chain.
@@ -679,7 +681,9 @@ contractShowCmd =
     "show"
     (info
       (ContractShow <$>
-        strArgument (metavar "ADDRESS" <> help "Address of the contract.") <*>
+        argument auto (metavar "INDEX" <> help "Index of address for the contract on chain.") <*>
+        optional (option auto (long "subindex" <> metavar "SUBINDEX" <>
+                     help "Subindex of address for the contract on chain (default: 0)")) <*>
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
       (progDesc "Display contract state at given block."))
 
@@ -701,7 +705,7 @@ contractInitCmd =
         strArgument (metavar "MODULE" <> help "Path to the smart contract module.") <*>
         strArgument (metavar "INIT-NAME" <> help "Name of the specific init method in the module.") <*>
         strArgument (metavar "FILE" <> help "Binary file with parameters for init function.") <*>
-        option auto (long "amount" <> metavar "AMOUNT" <> help "Amount of GTU to transfer to the contract.") <*>
+        optional (option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTU to transfer to the contract.")) <*>
         transactionOptsParser)
       (progDesc "Initialize contract from already deployed module."))
 
@@ -711,12 +715,12 @@ contractUpdateCmd =
     "update"
     (info
       (ContractUpdate <$>
-        argument auto (metavar "ADDRESS-INDEX" <> help "Index of address for the contract on chain.") <*>
+        argument auto (metavar "INDEX" <> help "Index of address for the contract on chain.") <*>
         strArgument (metavar "RECEIVE-NAME" <> help "Name of the specific receive method in the module.") <*>
         strArgument (metavar "FILE" <> help "Binary file with parameters for init function.") <*>
-        option auto (long "amount" <> metavar "AMOUNT" <> help "Amount of GTU to transfer to the contract.") <*>
-        option auto (long "address-subindex" <> metavar "ADDRESS-SUBINDEX" <>
-                     help "Subindex of address for the contract on chain (default: 0)") <*>
+        optional (option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTU to transfer to the contract.")) <*>
+        optional (option auto (long "subindex" <> metavar "SUBINDEX" <>
+                     help "Subindex of address for the contract on chain (default: 0)")) <*>
         transactionOptsParser)
       (progDesc "Update an existing contract."))
 
