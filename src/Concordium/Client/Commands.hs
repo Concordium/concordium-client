@@ -210,12 +210,26 @@ data ContractCmd
     { ciModuleFile :: !FilePath
     -- |Name of the init method to use.
     , ciInitName :: !Text
-    -- |Path to a binary file containing parameters for init method.
+    -- |Path to a binary file containing parameters for the init method.
     , ciParameterFile :: !FilePath
     -- |Amount to be send to contract.
-    , ciAmount :: !(Maybe Amount)
+    , ciAmount :: !(Maybe Amount) -- TODO: Should this be a required param?
     -- |Options for transaction.
     , ciTransactionOpts :: !TransactionOpts }
+  -- |Update an existing contract.
+  | ContractUpdate
+    -- |Index of the address for the contract to invoke.
+    { cuAddressIndex :: !ContractIndex
+    -- |Name of the receive method to use.
+    , cuReceiveName :: !Text
+    -- |Path to a binary file containing paramaters for the receive method.
+    , cuParameterFile :: !FilePath
+    -- |Amount to call the receive method with.
+    , cuAmount :: !(Maybe Amount) -- TODO: Should this be a required param?
+    -- |Subindex of the address for the contract to invoke (default: 0).
+    , cuAddressSubindex :: !(Maybe ContractSubindex)
+    -- |Options for transaction.
+    , cuTransactionOpts :: !TransactionOpts }
   deriving (Show)
 
 data TransactionOpts =
@@ -655,7 +669,8 @@ contractCmds =
         hsubparser
           (contractShowCmd <>
            contractListCmd <>
-           contractInitCmd))
+           contractInitCmd <>
+           contractUpdateCmd))
       (progDesc "Commands for inspecting and initializing smart contracts."))
 
 contractShowCmd :: Mod CommandFields ContractCmd
@@ -684,11 +699,26 @@ contractInitCmd =
     (info
       (ContractInit <$>
         strArgument (metavar "MODULE" <> help "Path to the smart contract module.") <*>
-        strArgument (metavar "INIT-NAME" <> help "Name of the specific init function in the module.") <*>
+        strArgument (metavar "INIT-NAME" <> help "Name of the specific init method in the module.") <*>
         strArgument (metavar "FILE" <> help "Binary file with parameters for init function.") <*>
         option auto (long "amount" <> metavar "AMOUNT" <> help "Amount of GTU to transfer to the contract.") <*>
         transactionOptsParser)
       (progDesc "Initialize contract from already deployed module."))
+
+contractUpdateCmd :: Mod CommandFields ContractCmd
+contractUpdateCmd =
+  command
+    "update"
+    (info
+      (ContractUpdate <$>
+        argument auto (metavar "ADDRESS-INDEX" <> help "Index of address for the contract on chain.") <*>
+        strArgument (metavar "RECEIVE-NAME" <> help "Name of the specific receive method in the module.") <*>
+        strArgument (metavar "FILE" <> help "Binary file with parameters for init function.") <*>
+        option auto (long "amount" <> metavar "AMOUNT" <> help "Amount of GTU to transfer to the contract.") <*>
+        option auto (long "address-subindex" <> metavar "ADDRESS-SUBINDEX" <>
+                     help "Subindex of address for the contract on chain (default: 0)") <*>
+        transactionOptsParser)
+      (progDesc "Update an existing contract."))
 
 configCmds :: ShowAllOpts -> Mod CommandFields Cmd
 configCmds showAllOpts =
