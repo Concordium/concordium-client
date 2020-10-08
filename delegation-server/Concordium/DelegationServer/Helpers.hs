@@ -23,8 +23,13 @@ import Data.HashMap.Strict as HM hiding (filter, mapMaybe)
 import qualified Data.Text as Text
 import Data.Time
 import qualified Data.Vector as Vec
+import System.Log.FastLogger
+import Concordium.Logger
+import Control.Monad.IO.Class
 
 -- Helpers
+
+type Logger = LogLevel -> FastLogger
 
 data DelegationAccount =
   DelegationAccount
@@ -114,8 +119,8 @@ checkBakerExists grpc bakerId = do
   jsonAnswer grpc f g
 
 -- | Depending on whether the bakerId is present, will delegate or undelegate to it.
-delegate :: EnvData -> DelegationAccounts -> Maybe Types.BakerId -> Int -> IO Types.TransactionHash
-delegate grpc delegationAccounts bakerId idx =
+delegate :: Logger -> EnvData -> DelegationAccounts -> Maybe Types.BakerId -> Int -> IO Types.TransactionHash
+delegate logger grpc delegationAccounts bakerId idx =
   case bakerId of
     Just bid -> do      
       bakerIdExists <- checkBakerExists grpc bid
@@ -143,7 +148,9 @@ delegate grpc delegationAccounts bakerId idx =
             sendTransactionToBaker tx defaultNetId >>= \case
               Left err -> fail err
               Right False -> fail "Transaction not accepted by the baker."
-              Right True -> return (getBlockItemHash tx)
+              Right True -> do
+                liftIO (logger LLInfo $ "Transaction with hash " <> toLogStr (show (getBlockItemHash tx)) <> ", delegating to baker " <> toLogStr (show bakerId) <> " accepted by the baker.")
+                return (getBlockItemHash tx)
       -- try to send, and in case of failure throw an exception.
       runClient grpc sender `failWith` (userError . show)
 
@@ -156,28 +163,22 @@ microsecondsBetween :: UTCTime -> UTCTime -> Int
 microsecondsBetween a b =
   truncate (10 ^ (6 :: Int) * diffUTCTime a b)
 
--- FIXME: Consider using MonadLogger $logTrace here instead of putStrLn.
-logAndTakeMVar :: String -> MVar a -> IO a
-logAndTakeMVar context v = do
-  putStrLn $ "[" ++ context ++ "]: taking local state tmvar"
+logAndTakeMVar :: Logger -> LogStr -> MVar a -> IO a
+logAndTakeMVar logger context v = do
+  logger LLTrace $ "[" <> context <> "]: taking local state tmvar"
   val <- takeMVar v
-  putStrLn $ "[" ++ context ++ "]: took local state tmvar"
+  logger LLTrace $ "[" <> context <> "]: took local state tmvar"
   return val
 
-logAndReadMVar :: String -> MVar a -> IO a
-logAndReadMVar context v = do
-  putStrLn $ "[" ++ context ++ "]: going to read local state tmvar"
+logAndReadMVar :: Logger -> LogStr -> MVar a -> IO a
+logAndReadMVar logger context v = do
+  logger LLTrace $ "["  <> context <> "]: going to read local state tmvar"
   val <- readMVar v
-  putStrLn $ "[" ++ context ++ "]: read local state tmvar"
+  logger LLTrace $ "[" <> context <> "]: read local state tmvar"
   return val
 
-logAndPutMVar :: String -> MVar a -> a -> IO ()
-logAndPutMVar context v val = do
-  putStrLn $ "[" ++ context ++ "]: putting local state tmvar"
+logAndPutMVar :: Logger -> LogStr -> MVar a -> a -> IO ()
+logAndPutMVar logger context v val = do
+  logger LLTrace $ "[" <> context <> "]: putting local state tmvar"
   putMVar v val
-  putStrLn $ "[" ++ context ++ "]: put local state tmvar"
-
-logAndDo :: String -> IO a -> IO a
-logAndDo s f = do
-  putStrLn s
-  f
+  logger LLTrace $ "[" <> context <> "]: put local state tmvar"

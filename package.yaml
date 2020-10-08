@@ -219,6 +219,7 @@ executables:
       - stm
       - psqueues
       - hashable
+      - fast-logger
 
 tests:
   simple-client-test:
