@@ -97,7 +97,6 @@ import qualified Data.Set                            as Set
 import           Data.String
 import           Data.Text(Text)
 import qualified Data.Text                           as Text
-import           Data.Text.Encoding
 import qualified Data.Vector                         as Vec
 import           Data.Word
 import           Lens.Micro.Platform
@@ -1085,7 +1084,7 @@ tailTransaction hash = do
 
   when (tsrState finalizedStatus == Absent) $
     logFatal [ "transaction failed after it was committed"
-             , "response:\n" ++ showResponse committedStatus ]
+             , "response:\n" ++ showPrettyJSON committedStatus ]
 
   -- Print out finalized status if the outcome differs from that of the committed status.
   when (tsrResults committedStatus /= tsrResults finalizedStatus) $
@@ -1094,7 +1093,6 @@ tailTransaction hash = do
   liftIO $ printf "[%s] Transaction finalized.\n" =<< getLocalTimeOfDayFormatted
   where
     getLocalTimeOfDayFormatted = showTimeOfDay <$> getLocalTimeOfDay
-    showResponse = Text.unpack . decodeUtf8 . BSL8.toStrict . AE.encodePretty
 
 -- |Process an 'account ...' command.
 processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -1325,12 +1323,12 @@ processContractCmd action baseCfgDir verbose backend =
         False -> runPrinter $ printContractList v
 
     ContractShow contrAddrIndex contrAddrSubindex block -> do
-      let contrAddr = mkContractAddress contrAddrIndex contrAddrSubindex
-      v <- withClient backend $ withBestBlockHash block $ getInstanceInfo . Text.pack . show $ contrAddr
+      let contrAddr = showPrettyJSON $ mkContractAddress contrAddrIndex contrAddrSubindex
+      v <- withClient backend . withBestBlockHash block . getInstanceInfo . Text.pack $ contrAddr
       case v of
         Left errMsg -> logFatal ["could not show contract:", errMsg]
-        Right AE.Null -> logInfo ["the contract could not be found."] -- TODO: Should AE.Null really be returned?
-        Right contrInfo -> print contrInfo
+        Right AE.Null -> logInfo ["the contract following contract could not be found:", contrAddr]
+        Right contrInfo -> putStr . showPrettyJSON $ contrInfo
 
     ContractInit moduleFile initName paramsFile amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
