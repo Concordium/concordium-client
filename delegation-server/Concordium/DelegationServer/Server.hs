@@ -31,7 +31,14 @@ import qualified Network.Wai.Middleware.ForceSSL as M (forceSSL)
 import Network.Wai.Middleware.Gzip (def, gzip)
 import Network.Wai.Middleware.HttpAuth (basicAuth)
 import Network.Wai.Middleware.Static (Policy, policy, staticPolicy)
-import Servant
+import System.Log.FastLogger
+    ( ToLogStr(toLogStr),
+      newTimedFastLogger,
+      newTimeCache,
+      simpleTimeFormat,
+      defaultBufSize,
+      LogType'(LogStdout) )
+import Servant( hoistServer, serve )
 import System.FilePath ((</>))
 import Text.Read (readMaybe)
 
@@ -88,8 +95,12 @@ runHttp middlewares = do
                       Right acc -> return acc
                 )
                 ([1 .. 4] :: [Int])
-          let state = State tmv outertmv grpc delegationAccounts (durationToNominalDiffTime $ Duration (csrEpochDuration status)) (csrGenesisTime status)
+          timeCache <- newTimeCache simpleTimeFormat
+          -- we don't expect the server to shut-down, so we ignore the finalizer for the logger (second return value)
+          (timedLogger, _) <- newTimedFastLogger timeCache (LogStdout defaultBufSize)
+          let logger level msg = timedLogger (\time -> toLogStr (show time) <> ": " <> toLogStr (show level) <> ": " <> msg <> "\n")
           -- prepare wai app
+          let state = State tmv outertmv grpc delegationAccounts (durationToNominalDiffTime $ Duration (csrEpochDuration status)) (csrGenesisTime status) logger
           let waiApp = app state
               printStatus = do
                 putStrLn $ "NODE_URL: " ++ show nodeUrl

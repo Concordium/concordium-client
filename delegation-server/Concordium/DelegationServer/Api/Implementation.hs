@@ -20,6 +20,7 @@ import qualified Data.Text as Text
 import Data.Time
 import qualified Data.Vector as Vec
 import Servant
+import System.Log.FastLogger
 
 -- | Counts the elements that satisfy the predicate stopping at the first
 -- element that doesn't satisfy it
@@ -58,21 +59,20 @@ type AppM = ReaderT State Handler
 getDelegations :: AppM CurrentDelegations
 getDelegations = do
   state <- ask
-  currentState <- wrapIOError . logAndReadMVar "getDelegations" $ outerLocalState state
+  currentState <- wrapIOError . logAndReadMVar (serviceLogger state) "getDelegations" $ outerLocalState state
   return . CurrentDelegations . Vec.toList . currentDelegations $ currentState
 
 requestDelegation :: Chan (BakerId, Int) -> RequestDelegationRequest -> AppM RequestDelegationResponse
 requestDelegation transitionChan RequestDelegationRequest {..} = do
   state <- ask
-  currentState@LocalState {..} <- wrapIOError . logAndTakeMVar ("requestDelegation (" ++ show delegateTo ++ ")") $ localState state
+  currentState@LocalState {..} <- wrapIOError . logAndTakeMVar (serviceLogger state) ("requestDelegation (" <> toLogStr (show delegateTo) <> ")") $ localState state
   wrapIOError $ (flip onException)
-    (do
-        logAndPutMVar ("requestDelegation (" ++ show delegateTo ++ ")") (localState state) currentState)
+    (logAndPutMVar (serviceLogger state) ("requestDelegation (" <> toLogStr (show delegateTo) <> ")") (localState state) currentState)
     (do
         bakerExists <- checkBakerExists (backend state) delegateTo
         if not bakerExists || Set.member delegateTo activeDelegations
           then do
-          logAndPutMVar ("requestDelegation (" ++ show delegateTo ++ ")") (localState state) currentState
+          logAndPutMVar (serviceLogger state) ("requestDelegation (" <> toLogStr (show delegateTo) <> ")") (localState state) currentState
           return RequestDelegationNotAccepted
           else do
           let cnt = case HM.lookup delegateTo recentDelegations of
@@ -83,7 +83,7 @@ requestDelegation transitionChan RequestDelegationRequest {..} = do
                 currentState
                 { pendingDelegations = pendingDelegations'
                 }
-          logAndPutMVar ("requestDelegation (" ++ show delegateTo ++ ")") (localState state) state'
+          logAndPutMVar (serviceLogger state) ("requestDelegation (" <> toLogStr (show delegateTo) <> ")") (localState state) state'
           _ <- swapMVar (outerLocalState state) state'
             -- notify the state machine that it can start with transition 0
           writeChan transitionChan (10, 0) -- the first item in the tuple is not needed so we will put 10 as a dummy value
@@ -92,22 +92,30 @@ requestDelegation transitionChan RequestDelegationRequest {..} = do
 getDelegationStatus :: GetDelegationStatusRequest -> AppM GetDelegationStatusResponse
 getDelegationStatus GetDelegationStatusRequest {..} = do
   state <- ask
-  LocalState {..} <- wrapIOError . logAndReadMVar ("getDelegationStatus (" ++ show delegateTo ++ ")") $ outerLocalState state
+  LocalState {..} <- wrapIOError . logAndReadMVar (serviceLogger state) ("getDelegationStatus (" <> toLogStr (show delegateTo) <> ")") $ outerLocalState state
   if PSQ.member delegateTo pendingDelegations
     then-- State 2
       DelegationInQueue <$> wrapIOError (tsMillis . utcTimeToTimestamp <$> estimatedTimeAsUTC (epochDuration state) (Just delegateTo) pendingDelegations currentDelegations)
     else case HM.lookup delegateTo awaitingDelegation of
       -- State 3
-      Just (_, th) -> return $ DelegationPending (Text.pack $ show th) Nothing
+      Just (_, thMVar) -> do
+        th <- liftIO $ readMVar thMVar
+        return $ DelegationPending (Text.pack $ show th) Nothing
       Nothing -> case HM.lookup delegateTo waitingDelegationEpochs of
         -- State 4
-        Just (_, th, expectedTime) -> return $ DelegationPending (Text.pack $ show th) (Just (tsMillis . utcTimeToTimestamp $ expectedTime))
+        Just (_, thMVar, expectedTime) -> do
+          th <- liftIO $ readMVar thMVar
+          return $ DelegationPending (Text.pack $ show th) (Just (tsMillis . utcTimeToTimestamp $ expectedTime))
         Nothing -> case HM.lookup delegateTo awaitingUndelegation of
           -- State 5
-          Just (_, th) -> return $ DelegationAssigned (Text.pack $ show th) Nothing
+          Just (_, thMVar) -> do
+            th <- liftIO $ readMVar thMVar
+            return $ DelegationAssigned (Text.pack $ show th) Nothing
           Nothing -> case HM.lookup delegateTo waitingUndelegationEpochs of
             -- State 6
-            Just (_, th, expectedTime) -> return $ DelegationAssigned (Text.pack $ show th) (Just (tsMillis . utcTimeToTimestamp $ expectedTime))
+            Just (_, thMVar, expectedTime) -> do
+              th <- liftIO $ readMVar thMVar
+              return $ DelegationAssigned (Text.pack $ show th) (Just (tsMillis . utcTimeToTimestamp $ expectedTime))
             Nothing -> case HM.lookup delegateTo recentDelegations of
               -- State 7
               Just (_, expired) -> DelegationFinished (tsMillis . utcTimeToTimestamp $ expired) <$> wrapIOError (tsMillis . utcTimeToTimestamp <$> estimatedTimeAsUTC (epochDuration state) (Just delegateTo) pendingDelegations currentDelegations)
