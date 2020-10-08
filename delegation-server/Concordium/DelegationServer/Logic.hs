@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 -- |
 -- The server logic that will cleanup the expired delegations issuing new ones
 -- when possible.
@@ -80,16 +81,20 @@ import Concordium.Client.GRPC
 import Concordium.DelegationServer.Helpers
 import Concordium.Types
 import Control.Concurrent
-import Control.Exception (onException)
+import Control.Exception (displayException, onException, ErrorCall, IOException, Handler(..), catches)
 import Control.Monad.Except
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashPSQ as PSQ
 import qualified Data.Set as Set
 import Data.Time.Clock
 import qualified Data.Vector as Vec
+import System.Log.FastLogger
+import Data.String
+import Concordium.Logger
 
 -- | Only will be 0-3. Represents the 4 delegators.
 type Delegator = Int
+
 
 -- | State shared between requests.
 data LocalState
@@ -102,22 +107,22 @@ data LocalState
 
         -- | Baker IDs that have been issued a delegating transaction and are
         -- waiting for it to finalize. INVARIANT: size < 5.
-        awaitingDelegation :: !(HM.HashMap BakerId (Delegator, TransactionHash)),
+        awaitingDelegation :: !(HM.HashMap BakerId (Delegator, MVar TransactionHash)),
         -- State 4
 
         -- | Baker IDs that are in the 2 epoch time slice for
         -- delegation. INVARIANT: size < 5.
-        waitingDelegationEpochs :: !(HM.HashMap BakerId (Delegator, TransactionHash, UTCTime)),
+        waitingDelegationEpochs :: !(HM.HashMap BakerId (Delegator, MVar TransactionHash, UTCTime)),
         -- State 5
 
         -- | Baker IDs that have been issued an undelegating transaction and are
         -- waiting for it to finalize. INVARIANT: size < 5.
-        awaitingUndelegation :: !(HM.HashMap BakerId (Delegator, TransactionHash)),
+        awaitingUndelegation :: !(HM.HashMap BakerId (Delegator, MVar TransactionHash)),
         -- State 6
 
         -- | Baker IDs that are in the 2 epoch time slice for
         -- undelegation. INVARIANT: size < 5.
-        waitingUndelegationEpochs :: !(HM.HashMap BakerId (Delegator, TransactionHash, UTCTime)),
+        waitingUndelegationEpochs :: !(HM.HashMap BakerId (Delegator, MVar TransactionHash, UTCTime)),
         -- State 7
 
         -- | Set of BakerIDs that have been recently delegated to with the
@@ -135,11 +140,14 @@ data LocalState
       }
 
 -- the indentiation for the local prints. It will give us more readability.
-lpi :: String
-lpi = replicate 20 ' '
+lpi :: IsString a => a
+lpi = fromString (replicate 20 ' ')
 
-localStateDescription :: String -> LocalState -> String
-localStateDescription description LocalState {..} =
+logHash :: TransactionHash -> LogStr
+logHash = toLogStr . show
+
+localStateDescription :: String -> LocalState -> LogStr
+localStateDescription description LocalState {..} = toLogStr $ 
   unlines
     [ lpi ++ "==============================================",
       lpi ++ "Local State (" ++ description ++ ")",
@@ -179,7 +187,8 @@ data State
         backend :: EnvData,
         configDir :: DelegationAccounts,
         epochDuration :: NominalDiffTime,
-        genesisTime :: UTCTime
+        genesisTime :: UTCTime,
+        serviceLogger :: Logger
       }
 
 -- | Creates the vector with the transitions that are executed in the state machine.
@@ -190,94 +199,100 @@ data State
 -- - 4 to 5 -> 2 epochs passed
 -- - 5 to 6 -> finalization of the transction
 -- - 6 to 7 -> 2 epochs passed
-mkTransitions :: Chan (BakerId, Int) -> Chan (Maybe TransactionHash) -> UTCTime -> NominalDiffTime -> EnvData -> DelegationAccounts -> Vec.Vector (BakerId -> (MVar LocalState, MVar LocalState) -> IO ())
-mkTransitions transitionChan loopbackChan genesisTime epochDuration backend cfgDir =
+mkTransitions :: Logger -> Chan (BakerId, Int) -> Chan (Maybe TransactionHash) -> UTCTime -> NominalDiffTime -> EnvData -> DelegationAccounts -> Vec.Vector (BakerId -> (MVar LocalState, MVar LocalState) -> IO ())
+mkTransitions logger transitionChan loopbackChan genesisTime epochDuration backend cfgDir =
   Vec.fromList
-    [ transition2to3 transitionChan loopbackChan backend cfgDir False,
-      transition3to4 transitionChan genesisTime epochDuration backend,
-      transition4to5 transitionChan loopbackChan backend cfgDir,
-      transition5to6 transitionChan genesisTime epochDuration backend,
-      transition6to7 transitionChan
+    [ transition2to3 logger transitionChan loopbackChan backend cfgDir False,
+      transition3to4 logger transitionChan genesisTime epochDuration backend,
+      transition4to5 logger transitionChan loopbackChan backend cfgDir,
+      transition5to6 logger transitionChan genesisTime epochDuration backend,
+      transition6to7 logger transitionChan
     ]
 
 -- | Main entry point. It creates the state machine and the channels that will communicate the threads.
 forkStateMachine :: State -> Chan (BakerId, Int) -> IO ()
 forkStateMachine State {..} transitionChan = do
   loopbackChan <- newChan
-  let transitions = mkTransitions transitionChan loopbackChan genesisTime epochDuration backend configDir
-  _ <- forkIO $ stateMachine (localState, outerLocalState) transitions transitionChan
+  let transitions = mkTransitions serviceLogger transitionChan loopbackChan genesisTime epochDuration backend configDir
+  _ <- forkIO $ stateMachine serviceLogger (localState, outerLocalState) transitions transitionChan
   pure ()
 
 -- | Runs the specified transition when the given transaction shows up as finalized
-finalizationListener :: EnvData -> Chan (BakerId, Int) -> TransactionHash -> (BakerId, Int) -> IO TransactionHash -> IO ()
-finalizationListener backend chan txHash next fallback = do
-  let loop = do
-        putStrLn $ lpi ++ "[finalizationListener]: Checking transaction status of " ++ show txHash
+finalizationListener :: Logger -> EnvData -> Chan (BakerId, Int) -> TransactionHash -> (BakerId, Int) -> IO TransactionHash -> IO (MVar TransactionHash)
+finalizationListener logger backend chan txHash next fallback = do
+  txHashMVar <- newMVar txHash
+  let loop th = do
+        logger LLDebug $ lpi <> "[finalizationListener]: Checking transaction status of " <> toLogStr (show txHash)
         txState <- queryTransactionState backend txHash
         case txState of
           TxAccepted -> do
-            putStrLn $ lpi ++ "[finalizationListener]: The transaction " ++ show txHash ++ " is finalized and accepted."
+            logger LLInfo $ lpi <> "[finalizationListener]: The transaction " <> toLogStr (show txHash) <> " is finalized and accepted."
             writeChan chan next
-          TxPending -> threadDelay 5000000 >> loop -- 5 seconds
+          TxPending -> threadDelay 5000000 >> (loop th) -- 5 seconds
           _ -> do
             case txState of
               TxError ->
-                putStrLn $ lpi ++ "[finalizationListener]: The transaction status returned TxError. Please check the transaction hash: " ++ show txHash
-              TxRejected -> putStrLn $ lpi ++ "[finalizationListener]: The transaction status shows the transaction was rejected. Please check the transaction hash: " ++ show txHash
-              TxAbsent -> putStrLn $ lpi ++ "[finalizationListener]: The transaction status shows the transaction is absent. Please check the transaction hash: " ++ show txHash
+                logger LLWarning $ lpi <> "[finalizationListener]: The transaction status returned TxError. Please check the transaction hash: " <> logHash txHash
+              TxRejected -> logger LLWarning $ lpi <> "[finalizationListener]: The transaction status shows the transaction was rejected. Please check the transaction hash: " <> logHash txHash
+              TxAbsent -> logger LLWarning $ lpi <> "[finalizationListener]: The transaction status shows the transaction is absent. Please check the transaction hash: " <> logHash txHash
               _ -> undefined -- impossible case
                 -- as the state has already changed, it would be
                 -- complicated to revert it keeping everything in sync, for now
                 -- this same loop will try to resend the transaction with refreshed
                 -- nonce and all.
-            th <- fallback
-            putStrLn $ lpi ++ "[finalizationListener]: Sending a new transaction " ++ show th ++ " superseding " ++ show txHash
+            th' <- fallback
+            _ <- swapMVar txHashMVar th'
+            logger LLInfo $ lpi <> "[finalizationListener]: Sending a new transaction " <> logHash th <> " superseding " <> logHash txHash
             -- watch the new transaction
-            finalizationListener backend chan th next fallback
-  _ <- forkIO loop
-  pure ()
+            loop th'
+  _ <- forkIO (loop txHash)
+  pure txHashMVar
 
 -- | Runs the specified transition when the timer has expired
-runTransitionIn :: Bool -> Chan (BakerId, Int) -> Int -> (BakerId, Int) -> IO ()
-runTransitionIn waitingEpochs chan timer next = do
+runTransitionIn :: Logger -> Bool -> Chan (BakerId, Int) -> Int -> (BakerId, Int) -> IO ()
+runTransitionIn logger waitingEpochs chan timer next = do
   _ <- forkIO $ do
     if waitingEpochs
-      then putStrLn $ lpi ++ "[runTransitionIn]: setting a timer for " ++ show (timer `div` 1000000) ++ " seconds for a two epoch waiting time."
-      else putStrLn $ lpi ++ "[runTransitionIn]: setting a timer for " ++ show (timer `div` 1000000) ++ " seconds because the delegation didn't expire yet (this is likely not going to happen)."
+      then logger LLTrace $ lpi <> "[runTransitionIn]: setting a timer for " <> toLogStr (show (timer `div` 1000000)) <> " seconds for a two epoch waiting time."
+      else logger LLTrace $ lpi <> "[runTransitionIn]: setting a timer for " <> toLogStr ((timer `div` 1000000)) <> " seconds because the delegation didn't expire yet (this is likely not going to happen)."
     threadDelay timer
     writeChan chan next
   pure ()
 
 -- | Main loop of the state machine. Executes the transitions given through the chanToLoop channel.
-stateMachine :: (MVar LocalState, MVar LocalState) -> Vec.Vector (BakerId -> (MVar LocalState, MVar LocalState) -> IO ()) -> Chan (BakerId, Int) -> IO ()
-stateMachine localState transitions chanToLoop = do
-  (bid, trans) <- readChan chanToLoop
-  if trans == 0
-    then putStrLn $ lpi ++ "[stateMachine]: going to promote a request from the queue (transition 0)."
-    else putStrLn $ lpi ++ "[stateMachine]: going to move the baker " ++ show bid ++ " in transition " ++ transitionNames trans
-  (transitions Vec.! trans) bid localState
-  stateMachine localState transitions chanToLoop
+stateMachine :: Logger -> (MVar LocalState, MVar LocalState) -> Vec.Vector (BakerId -> (MVar LocalState, MVar LocalState) -> IO ()) -> Chan (BakerId, Int) -> IO ()
+stateMachine logger localState transitions chanToLoop = loop
+  where loop = do
+          (bid, trans) <- readChan chanToLoop
+          if trans == 0
+            then logger LLDebug $ lpi <> "[stateMachine]: going to promote a request from the queue (transition 0)."
+            else logger LLDebug $ lpi <> "[stateMachine]: going to move the baker " <> toLogStr (show bid) <> " in transition " <> transitionNames trans
+          (transitions Vec.! trans) bid localState `catches`
+            [Handler (\(ex :: ErrorCall) -> logger LLError (toLogStr (displayException ex)))
+            ,Handler (\(ex :: IOException) -> logger LLError (toLogStr (displayException ex)) )
+            ]
+          loop
 
-transitionNames :: Int -> String
+transitionNames :: Int -> LogStr
 transitionNames 1 = "(1) delegate transaction was finalized, setting 2 epoch timer."
 transitionNames 2 = "(2) 2 epochs passed after finalized delegate transaction, sending undelegate/redelegate transaction."
 transitionNames 3 = "(3) undelegate transaction was finalized, setting 2 epoch timer."
 transitionNames 4 = "(4) 2 epochs passed after finalized undelegate transaction, moving to recent delegations"
 transitionNames _ = undefined -- must not happen
 
-transition6to7 :: Chan (BakerId, Int) -> BakerId -> (MVar LocalState, MVar LocalState) -> IO ()
-transition6to7 transitionChan baker (localState, outerLocalState) = do
-  currentState@LocalState {..} <- logAndTakeMVar "transition 4" localState
+transition6to7 :: Logger -> Chan (BakerId, Int) -> BakerId -> (MVar LocalState, MVar LocalState) -> IO ()
+transition6to7 logger transitionChan baker (localState, outerLocalState) = do
+  currentState@LocalState {..} <- logAndTakeMVar logger "transition 4" localState
   (flip onException)
     ( do
-        putStrLn "IO exception raised in transition 4"
+        logger LLError "IO exception raised in transition 4"
         -- put back the old state
-        logAndPutMVar "transition 4 (exception)" localState currentState
+        logAndPutMVar logger "transition 4 (exception)" localState currentState
         -- trigger this same transition at some point
         writeChan transitionChan (baker, 4)
     )
     $ do
-      putStrLn $ localStateDescription "entering transition 4" currentState
+      logger LLTrace $ localStateDescription "entering transition 4" currentState
       currentState' <- do
         now <- getCurrentTime
         -- Get expired item
@@ -303,31 +318,30 @@ transition6to7 transitionChan baker (localState, outerLocalState) = do
                     }
               else do
                 -- if not expired yet, retry this in some time (this should not happen)
-                runTransitionIn False transitionChan 5000000 (baker, 4)
+                runTransitionIn logger False transitionChan 5000000 (baker, 4)
                 return currentState
           Nothing -> do
-            putStrLn "================================================== (ERROR) =================================================="
-            putStrLn $ "Invariant broken, triggering transition 4 for baker " ++ show baker ++ " but it doesn't seem to be in the correct state:"
-            putStrLn $ localStateDescription "BAD STATE" currentState
+            logger LLError $ "Invariant violation, triggering transition 4 for baker " <> toLogStr (show baker) <> " but it doesn't seem to be in the correct state:"
+            logger LLError $ localStateDescription "BAD STATE" currentState
             error "Delegation should exist!!"
-      putStrLn $ localStateDescription "leaving transition 4" currentState'
-      logAndPutMVar "transition 4" localState currentState'
+      logger LLTrace $ localStateDescription "leaving transition 4" currentState'
+      logAndPutMVar logger "transition 4" localState currentState'
       _ <- swapMVar outerLocalState currentState'
       pure ()
 
-transition5to6 :: Chan (BakerId, Int) -> UTCTime -> NominalDiffTime -> EnvData -> BakerId -> (MVar LocalState, MVar LocalState) -> IO ()
-transition5to6 transitionChan genesisTime epochDuration backend baker (localState, outerLocalState) = do
-  currentState@LocalState {..} <- logAndTakeMVar "transition 3" localState
+transition5to6 :: Logger -> Chan (BakerId, Int) -> UTCTime -> NominalDiffTime -> EnvData -> BakerId -> (MVar LocalState, MVar LocalState) -> IO ()
+transition5to6 logger transitionChan genesisTime epochDuration backend baker (localState, outerLocalState) = do
+  currentState@LocalState {..} <- logAndTakeMVar logger "transition 3" localState
   (flip onException)
     ( do
-        putStrLn "IO exception raised in transition 3"
+        logger LLError "IO exception raised in transition 3"
         -- put back the old state
-        logAndPutMVar "transition 3 (exception)" localState currentState
+        logAndPutMVar logger "transition 3 (exception)" localState currentState
         -- trigger this same transition at some point
         writeChan transitionChan (baker, 3)
     )
     $ do
-      putStrLn $ localStateDescription "entering transition 3" currentState
+      logger LLTrace $ localStateDescription "entering transition 3" currentState
       currentState' <- do
         -- Get finalized item
         let mItem = HM.lookup baker awaitingUndelegation
@@ -341,35 +355,34 @@ transition5to6 transitionChan genesisTime epochDuration backend baker (localStat
             let waitingUndelegationEpochs' = HM.insert baker (delegator, txHash, ex) waitingUndelegationEpochs
             -- set a timer for next step
             waitingTime <- microsecondsBetween ex <$> getCurrentTime
-            runTransitionIn True transitionChan waitingTime (baker, 4)
+            runTransitionIn logger True transitionChan waitingTime (baker, 4)
             return $
               currentState
                 { waitingUndelegationEpochs = waitingUndelegationEpochs',
                   awaitingUndelegation = awaitingUndelegation'
                 }
           Nothing -> do
-            putStrLn "================================================== (ERROR) =================================================="
-            putStrLn $ "Invariant broken, triggering transition 3 for baker " ++ show baker ++ " but it doesn't seem to be in the correct state:"
-            putStrLn $ localStateDescription "BAD STATE" currentState
+            logger LLError $ "Invariant broken, triggering transition 3 for baker " <> toLogStr (show baker) <> " but it doesn't seem to be in the correct state:"
+            logger LLError $ localStateDescription "BAD STATE" currentState
             error "Delegation should exist!!"
-      putStrLn $ localStateDescription "leaving transition 3" currentState'
-      logAndPutMVar "transition 3" localState currentState'
+      logger LLTrace $ localStateDescription "leaving transition 3" currentState'
+      logAndPutMVar logger "transition 3" localState currentState'
       _ <- swapMVar outerLocalState currentState'
       pure ()
 
-transition4to5 :: Chan (BakerId, Int) -> Chan (Maybe TransactionHash) -> EnvData -> DelegationAccounts -> BakerId -> (MVar LocalState, MVar LocalState) -> IO ()
-transition4to5 transitionChan loopbackChan backend cfgDir baker s@(localState, outerLocalState) = do
-  currentState <- logAndTakeMVar "transition 2" localState
+transition4to5 :: Logger -> Chan (BakerId, Int) -> Chan (Maybe TransactionHash) -> EnvData -> DelegationAccounts -> BakerId -> (MVar LocalState, MVar LocalState) -> IO ()
+transition4to5 logger transitionChan loopbackChan backend cfgDir baker s@(localState, outerLocalState) = do
+  currentState <- logAndTakeMVar logger "transition 2" localState
   (flip onException)
     ( do
-        putStrLn "IO exception raised in transition 2"
+        logger LLError "IO exception raised in transition 2"
         -- put back the old state
-        logAndPutMVar "transition 2 (exception)" localState currentState
+        logAndPutMVar logger "transition 2 (exception)" localState currentState
         -- trigger this same transition at some point
         writeChan transitionChan (baker, 2)
     )
     $ do
-      putStrLn $ localStateDescription "entering transition 2" currentState
+      logger LLTrace $ localStateDescription "entering transition 2" currentState
       currentState' <- do
         now <- getCurrentTime
         -- Get expired item
@@ -389,50 +402,49 @@ transition4to5 transitionChan loopbackChan backend cfgDir baker s@(localState, o
                           activeDelegations = activeDelegations',
                           currentDelegations = currentDelegations'
                         }
-                logAndPutMVar "interleaving transition 2" localState currentState'
+                logAndPutMVar logger "interleaving transition 2" localState currentState'
                 -- signal that a new position is available
-                transition2to3 transitionChan loopbackChan backend cfgDir True 10 s -- the baker is not needed so we will put 10 as a dummy value
+                transition2to3 logger transitionChan loopbackChan backend cfgDir True 10 s -- the baker is not needed so we will put 10 as a dummy value
                   -- if the position was re-delegated, use that transaction hash,
                   -- else undelegate
                 mRedelegateTx <- readChan loopbackChan
-                currentState'' <- logAndTakeMVar "interleaving transition 2" localState
-                let sendThisTransaction = delegate backend cfgDir Nothing delegator
+                currentState'' <- logAndTakeMVar logger "interleaving transition 2" localState
+                let sendThisTransaction = delegate logger backend cfgDir Nothing delegator
                 th <- maybe sendThisTransaction return mRedelegateTx
                 -- create listeners for finalization
-                finalizationListener backend transitionChan th (baker, 3) sendThisTransaction
+                thMVar <- finalizationListener logger backend transitionChan th (baker, 3) sendThisTransaction
                 -- move to next collection
-                let awaitingUndelegation' = HM.insert baker (delegator, th) (awaitingUndelegation currentState'')
+                let awaitingUndelegation' = HM.insert baker (delegator, thMVar) (awaitingUndelegation currentState'')
                 return $
                   currentState''
                     { awaitingUndelegation = awaitingUndelegation'
                     }
               else do
                 -- if not expired yet, retry this in some time (this should not happen)
-                runTransitionIn False transitionChan 5000000 (baker, 2)
+                runTransitionIn logger False transitionChan 5000000 (baker, 2)
                 return currentState
           Nothing -> do
-            putStrLn "================================================== (ERROR) =================================================="
-            putStrLn $ "Invariant broken, triggering transition 2 for baker " ++ show baker ++ " but it doesn't seem to be in the correct state:"
-            putStrLn $ localStateDescription "BAD STATE" currentState
+            logger LLError $ "Invariant broken, triggering transition 2 for baker " <> toLogStr (show baker) <> " but it doesn't seem to be in the correct state:"
+            logger LLError $ localStateDescription "BAD STATE" currentState
             error "Delegation should exist!!"
-      putStrLn $ localStateDescription "leaving transition 2" currentState'
-      logAndPutMVar "transition 2" localState currentState'
+      logger LLTrace $ localStateDescription "leaving transition 2" currentState'
+      logAndPutMVar logger "transition 2" localState currentState'
       _ <- swapMVar outerLocalState currentState'
       pure ()
 
-transition3to4 :: Chan (BakerId, Int) -> UTCTime -> NominalDiffTime -> EnvData -> BakerId -> (MVar LocalState, MVar LocalState) -> IO ()
-transition3to4 transitionChan genesisTime epochDuration backend baker (localState, outerLocalState) = do
-  currentState@LocalState {..} <- logAndTakeMVar "transition 1" localState
+transition3to4 :: Logger -> Chan (BakerId, Int) -> UTCTime -> NominalDiffTime -> EnvData -> BakerId -> (MVar LocalState, MVar LocalState) -> IO ()
+transition3to4 logger transitionChan genesisTime epochDuration backend baker (localState, outerLocalState) = do
+  currentState@LocalState {..} <- logAndTakeMVar logger "transition 1" localState
   (flip onException)
     ( do
-        putStrLn "IO exception raised in transition 1"
+        logger LLError "IO exception raised in transition 1"
         -- put back the old state
-        logAndPutMVar "transition 1 (exception)" localState currentState
+        logAndPutMVar logger "transition 1 (exception)" localState currentState
         -- trigger this same transition at some point
         writeChan transitionChan (baker, 1)
     )
     $ do
-      putStrLn $ localStateDescription "entering transition 1" currentState
+      logger LLTrace $ localStateDescription "entering transition 1" currentState
       currentState' <- do
         -- Get finalized item
         let mItem = HM.lookup baker awaitingDelegation
@@ -446,35 +458,34 @@ transition3to4 transitionChan genesisTime epochDuration backend baker (localStat
             let waitingDelegationEpochs' = HM.insert baker (delegator, txHash, ex) waitingDelegationEpochs
             -- set a timer for next step
             waitingTime <- microsecondsBetween ex <$> getCurrentTime
-            runTransitionIn True transitionChan waitingTime (baker, 2)
+            runTransitionIn logger True transitionChan waitingTime (baker, 2)
             return $
               currentState
                 { waitingDelegationEpochs = waitingDelegationEpochs',
                   awaitingDelegation = awaitingDelegation'
                 }
           Nothing -> do
-            putStrLn "================================================== (ERROR) =================================================="
-            putStrLn $ "Invariant broken, triggering transition 1 for baker " ++ show baker ++ " but it doesn't seem to be in the correct state:"
-            putStrLn $ localStateDescription "BAD STATE" currentState
+            logger LLError $ "Invariant broken, triggering transition 1 for baker " <> toLogStr (show baker) <> " but it doesn't seem to be in the correct state:"
+            logger LLError $ localStateDescription "BAD STATE" currentState
             error "Delegation should exist!!"
-      putStrLn $ localStateDescription "leaving transition 1" currentState'
-      logAndPutMVar "transition 1" localState currentState'
+      logger LLTrace $ localStateDescription "leaving transition 1" currentState'
+      logAndPutMVar logger "transition 1" localState currentState'
       _ <- swapMVar outerLocalState currentState'
       pure ()
 
-transition2to3 :: Chan (BakerId, Int) -> Chan (Maybe TransactionHash) -> EnvData -> DelegationAccounts -> Bool -> BakerId -> (MVar LocalState, MVar LocalState) -> IO ()
-transition2to3 transitionChan loopbackChan backend cfgDir calledFromSM _ (localState, outerLocalState) = do
-  currentState@LocalState {..} <- logAndTakeMVar "transition 0" localState
+transition2to3 :: Logger -> Chan (BakerId, Int) -> Chan (Maybe TransactionHash) -> EnvData -> DelegationAccounts -> Bool -> BakerId -> (MVar LocalState, MVar LocalState) -> IO ()
+transition2to3 logger transitionChan loopbackChan backend cfgDir calledFromSM _ (localState, outerLocalState) = do
+  currentState@LocalState {..} <- logAndTakeMVar logger "transition 0" localState
   (flip onException)
     ( do
-        putStrLn "IO exception raised in transition 0"
+        logger LLError "IO exception raised in transition 0"
         -- put back the old state
-        logAndPutMVar "transition 0 (exception)" localState currentState
+        logAndPutMVar logger "transition 0 (exception)" localState currentState
         -- trigger this same transition at some point
         writeChan transitionChan (10, 0)
     )
     $ do
-      putStrLn $ localStateDescription "entering transtion 0" currentState
+      logger LLTrace $ localStateDescription "entering transition 0" currentState
       currentState' <- do
         -- if we don't have pending requests, do nothing
         let mMinElem = PSQ.findMin pendingDelegations
@@ -494,16 +505,16 @@ transition2to3 transitionChan loopbackChan backend cfgDir calledFromSM _ (localS
               Just delegator -> do
                 -- remove the item
                 let pendingDelegations' = PSQ.deleteMin pendingDelegations
-                    sendThisTransaction = delegate backend cfgDir (Just baker) delegator
+                    sendThisTransaction = delegate logger backend cfgDir (Just baker) delegator
                 -- send delegating transaction
                 th <- sendThisTransaction
                 -- if needed, give this hash to the step-4 transition
                 when calledFromSM $ writeChan loopbackChan (Just th)
                 -- set a timer for next step
-                finalizationListener backend transitionChan th (baker, 1) sendThisTransaction
+                thMVar <- finalizationListener logger backend transitionChan th (baker, 1) sendThisTransaction
                 let activeDelegations' = Set.insert baker activeDelegations
                     currentDelegations' = currentDelegations Vec.// [(delegator, Just baker)]
-                    awaitingDelegation' = HM.insert baker (delegator, th) awaitingDelegation
+                    awaitingDelegation' = HM.insert baker (delegator, thMVar) awaitingDelegation
                 return $
                   currentState
                     { pendingDelegations = pendingDelegations',
@@ -511,7 +522,7 @@ transition2to3 transitionChan loopbackChan backend cfgDir calledFromSM _ (localS
                       currentDelegations = currentDelegations',
                       awaitingDelegation = awaitingDelegation'
                     }
-      putStrLn $ localStateDescription "leaving transition 0" currentState'
-      logAndPutMVar "transition 0" localState currentState'
+      logger LLTrace $ localStateDescription "leaving transition 0" currentState'
+      logAndPutMVar logger "transition 0" localState currentState'
       _ <- swapMVar outerLocalState currentState'
       pure ()

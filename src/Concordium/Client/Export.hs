@@ -37,7 +37,7 @@ instance AE.FromJSON WalletExport where
 
     val <- v .: "value"
     ids <- val .: "identities"
-    return WalletExport { wepAccounts = join $ weiAccounts <$> ids }
+    return WalletExport { wepAccounts = weiAccounts =<< ids }
 
 -- | Used for parsing 'WalletExport'.
 newtype WalletExportIdentity =
