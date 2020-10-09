@@ -1273,7 +1273,10 @@ processModuleCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       let pl = moduleDeployTransactionPayload mdCfg
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ do
+        sendAndTailTransaction txCfg pl intOpts
+        let moduleRef = show . Types.ModuleRef . getHash . mdtcModule $ mdCfg
+        logStrLn $ "If the transaction succeeded, the module-reference is:\n" ++ moduleRef
 
     ModuleList block -> do
       v <- withClient backend $ withBestBlockHash block getModuleList >>= getFromJson
@@ -1304,6 +1307,7 @@ getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
 
 data ModuleDeployTransactionCfg =
   ModuleDeployTransactionCfg
+  -- |Configuration for the transaction.
   { mdtcTransactionCfg :: TransactionConfig
   -- |The WASM module to deploy.
   , mdtcModule :: Wasm.WasmModule } -- TODO: Should this be strict?
@@ -1327,7 +1331,7 @@ processContractCmd action baseCfgDir verbose backend =
       v <- withClient backend . withBestBlockHash block . getInstanceInfo . Text.pack $ contrAddr
       case v of
         Left errMsg -> logFatal ["could not show contract:", errMsg]
-        Right AE.Null -> logInfo ["the contract following contract could not be found:", contrAddr]
+        Right AE.Null -> logInfo ["the following contract could not be found:", contrAddr]
         Right contrInfo -> putStr . showPrettyJSON $ contrInfo
 
     ContractInit moduleFile initName paramsFile amount txOpts -> do
@@ -1350,7 +1354,7 @@ processContractCmd action baseCfgDir verbose backend =
       let pl = contractUpdateTransactionPayload cuCfg
       withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
-getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts -> Types.ContractIndex -> (Maybe Types.ContractSubindex)
+getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts -> Types.ContractIndex -> Maybe Types.ContractSubindex
                                 -> Text -> FilePath -> Maybe Types.Amount -> IO ContractUpdateTransactionCfg
 getContractUpdateTransactionCfg baseCfg txOpts contrAddrIndex contrAddrSubindex receiveName paramsFile amount = do
   txCfg <- getTransactionCfg baseCfg txOpts contractUpdateEnergyCost
@@ -1395,6 +1399,7 @@ getContractInitTransactionCfg baseCfg txOpts moduleFile initName paramsFile amou
 
 data ContractInitTransactionCfg =
   ContractInitTransactionCfg
+  -- |Configuration for the transaction.
   { citcTransactionCfg :: TransactionConfig
   -- |Initial amount on the contract's account.
   , citcAmount :: Types.Amount
@@ -1419,7 +1424,7 @@ getWasmParameterFromFile :: FilePath -> IO Wasm.Parameter
 getWasmParameterFromFile paramsFile = Wasm.Parameter . BS.toShort <$> BS.readFile paramsFile
 
 -- |Construct a Contract Address from an index and optional subindex (which defaults to 0).
-mkContractAddress :: Types.ContractIndex -> (Maybe Types.ContractSubindex) -> Types.ContractAddress
+mkContractAddress :: Types.ContractIndex -> Maybe Types.ContractSubindex -> Types.ContractAddress
 mkContractAddress index subindex = Types.ContractAddress index $ fromMaybe (Types.ContractSubindex 0) subindex
 
 -- |Process a 'consensus ...' command.
