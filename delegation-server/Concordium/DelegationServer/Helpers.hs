@@ -120,16 +120,7 @@ checkBakerExists grpc bakerId = do
 
 -- | Depending on whether the bakerId is present, will delegate or undelegate to it.
 delegate :: Logger -> EnvData -> DelegationAccounts -> Maybe Types.BakerId -> Int -> IO Types.TransactionHash
-delegate logger grpc delegationAccounts bakerId idx =
-  case bakerId of
-    Just bid -> do      
-      bakerIdExists <- checkBakerExists grpc bid
-      if bakerIdExists
-        then doDelegation
-        else error "Baker Id non existent!!"
-    Nothing -> doDelegation
-  where
-    doDelegation = do
+delegate logger grpc delegationAccounts bakerId idx = do
       -- get account instances for computing the cost of the delegating transaction
       let f' = getBestBlockHash >>= getAccountInfo (Text.pack . show . daAddr $ delegationAccounts Vec.! idx)
           g' :: AccountInfoResult -> IO Types.Energy
