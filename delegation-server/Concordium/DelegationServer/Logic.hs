@@ -147,7 +147,7 @@ logHash :: TransactionHash -> LogStr
 logHash = toLogStr . show
 
 localStateDescription :: String -> LocalState -> LogStr
-localStateDescription description LocalState {..} = toLogStr $ 
+localStateDescription description LocalState {..} = toLogStr $
   unlines
     [ "",
       lpi ++ "==============================================",
@@ -218,8 +218,10 @@ forkStateMachine State {..} transitionChan = do
   _ <- forkIO $ stateMachine serviceLogger (localState, outerLocalState) transitions transitionChan
   pure ()
 
+type Rollback = (BakerId, Delegator, (MVar LocalState, MVar LocalState))
+
 -- | Runs the specified transition when the given transaction shows up as finalized
-finalizationListener :: Logger -> EnvData -> Chan (BakerId, Int) -> TransactionHash -> (BakerId, Int) -> IO TransactionHash -> IO (MVar TransactionHash)
+finalizationListener :: Logger -> EnvData -> Chan (BakerId, Int) -> TransactionHash -> (BakerId, Int) -> Either Rollback (IO TransactionHash) -> IO (MVar TransactionHash)
 finalizationListener logger backend chan txHash next fallback = do
   txHashMVar <- newMVar txHash
   let loop th = do
@@ -241,11 +243,30 @@ finalizationListener logger backend chan txHash next fallback = do
                 -- complicated to revert it keeping everything in sync, for now
                 -- this same loop will try to resend the transaction with refreshed
                 -- nonce and all.
-            th' <- fallback
-            _ <- swapMVar txHashMVar th'
-            logger LLInfo $ "[finalizationListener]: Sending a new transaction " <> logHash th <> " superseding " <> logHash txHash
-            -- watch the new transaction
-            loop th'
+            case fallback of
+              Right newTransaction -> do
+                th' <- newTransaction
+                _ <- swapMVar txHashMVar th'
+                logger LLInfo $ "[finalizationListener]: Sending a new transaction " <> logHash th <> " superseding " <> logHash txHash
+                threadDelay 5000000
+                -- watch the new transaction
+                loop th'
+              Left (baker, delegator, (localState, outerLocalState)) -> do
+                -- we rollback the state update to the local state that was made pre-emptively
+                currentState@LocalState{..} <- logAndTakeMVar logger "Finalization listener" localState
+                -- We were trying to delegate, but the transaction failed. The most likely cause of this is the user
+                -- removed themselves from the committee.
+                let activeDelegations' = Set.delete baker activeDelegations
+                    currentDelegations' = currentDelegations Vec.// [(delegator, Nothing)]
+                    awaitingDelegation' = HM.delete baker awaitingDelegation
+                let currentState' = currentState {
+                      activeDelegations = activeDelegations',
+                      currentDelegations = currentDelegations',
+                      awaitingDelegation = awaitingDelegation'
+                    }
+                logAndPutMVar logger "Finalization listener" localState currentState'
+                () <$ swapMVar outerLocalState currentState'
+                -- at this point the state machine should pick-up on the new state transition that was registered by `requestDelegation`
   _ <- forkIO (loop txHash)
   pure txHashMVar
 
@@ -413,7 +434,12 @@ transition4to5 logger transitionChan loopbackChan backend cfgDir baker s@(localS
                 let sendThisTransaction = delegate logger backend cfgDir Nothing delegator
                 th <- maybe sendThisTransaction return mRedelegateTx
                 -- create listeners for finalization
-                thMVar <- finalizationListener logger backend transitionChan th (baker, 3) sendThisTransaction
+                -- in case mRedelegateTx was Just, then the transition2to3 already set up a listener for the transaction it sent.
+                -- If that transaction failed then the state will be rolled-back correctly for that transaction.
+                -- Here we register a new listener which will, if the transaction fails, not touch the state, but
+                -- instead keep trying to resend the undelegate transaction. This can only fail if our account keys are wrong,
+                -- which will cause many other problems, so retrying in this case is acceptable.
+                thMVar <- finalizationListener logger backend transitionChan th (baker, 3) (Right sendThisTransaction) -- undelegate transaction should not fail, so retry
                 -- move to next collection
                 let awaitingUndelegation' = HM.insert baker (delegator, thMVar) (awaitingUndelegation currentState'')
                 return $
@@ -475,7 +501,7 @@ transition3to4 logger transitionChan genesisTime epochDuration backend baker (lo
       pure ()
 
 transition2to3 :: Logger -> Chan (BakerId, Int) -> Chan (Maybe TransactionHash) -> EnvData -> DelegationAccounts -> Bool -> BakerId -> (MVar LocalState, MVar LocalState) -> IO ()
-transition2to3 logger transitionChan loopbackChan backend cfgDir calledFromSM _ (localState, outerLocalState) = do
+transition2to3 logger transitionChan loopbackChan backend cfgDir calledFromSM _ state@(localState, outerLocalState) = do
   currentState@LocalState {..} <- logAndTakeMVar logger "transition 0" localState
   (flip onException)
     ( do
@@ -512,7 +538,7 @@ transition2to3 logger transitionChan loopbackChan backend cfgDir calledFromSM _ 
                 -- if needed, give this hash to the step-4 transition
                 when calledFromSM $ writeChan loopbackChan (Just th)
                 -- set a timer for next step
-                thMVar <- finalizationListener logger backend transitionChan th (baker, 1) sendThisTransaction
+                thMVar <- finalizationListener logger backend transitionChan th (baker, 1) (Left (baker, delegator, state))
                 let activeDelegations' = Set.insert baker activeDelegations
                     currentDelegations' = currentDelegations Vec.// [(delegator, Just baker)]
                     awaitingDelegation' = HM.insert baker (delegator, thMVar) awaitingDelegation
