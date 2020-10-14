@@ -265,6 +265,7 @@ finalizationListener logger backend chan txHash next fallback = do
                       awaitingDelegation = awaitingDelegation'
                     }
                 logAndPutMVar logger "Finalization listener" localState currentState'
+                logger LLTrace $ localStateDescription "Rolled-back state" currentState'
                 () <$ swapMVar outerLocalState currentState'
                 -- at this point the state machine should pick-up on the new state transition that was registered by `requestDelegation`
   _ <- forkIO (loop txHash)
