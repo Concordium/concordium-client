@@ -92,7 +92,7 @@ import System.Log.FastLogger
 import Data.String
 import Concordium.Logger
 
--- | Only will be 0-3. Represents the 4 delegators.
+-- | Only will be 0-numDelegators. Represents the delegators.
 type Delegator = Int
 
 
@@ -168,8 +168,8 @@ localStateDescription description LocalState {..} = toLogStr $
     au = HM.keys awaitingUndelegation
     wu = HM.keys waitingUndelegationEpochs
 
-defaultLocalState :: LocalState
-defaultLocalState =
+defaultLocalState :: Int -> LocalState
+defaultLocalState numDelegators =
   LocalState
     { pendingDelegations = PSQ.empty,
       awaitingDelegation = HM.empty,
@@ -178,12 +178,13 @@ defaultLocalState =
       waitingUndelegationEpochs = HM.empty,
       recentDelegations = HM.empty,
       activeDelegations = Set.empty,
-      currentDelegations = Vec.replicate 4 Nothing
+      currentDelegations = Vec.replicate numDelegators Nothing
     }
 
 data State
   = State
-      { localState :: !(MVar LocalState),
+      { numDelegators :: Int,
+        localState :: !(MVar LocalState),
         outerLocalState :: !(MVar LocalState),
         backend :: EnvData,
         configDir :: DelegationAccounts,
