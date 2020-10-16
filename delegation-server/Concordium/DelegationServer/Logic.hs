@@ -227,18 +227,18 @@ finalizationListener logger backend chan txHash next fallback = do
   txHashMVar <- newMVar txHash
   let loop th = do
         logger LLDebug $ "[finalizationListener]: Checking transaction status of " <> toLogStr (show txHash)
-        txState <- queryTransactionState backend txHash
+        txState <- queryTransactionState backend th
         case txState of
           TxAccepted -> do
-            logger LLInfo $ "[finalizationListener]: The transaction " <> toLogStr (show txHash) <> " is finalized and accepted."
+            logger LLInfo $ "[finalizationListener]: The transaction " <> toLogStr (show th) <> " is finalized and accepted."
             writeChan chan next
           TxPending -> threadDelay 5000000 >> (loop th) -- 5 seconds
           _ -> do
             case txState of
               TxError ->
-                logger LLWarning $ "[finalizationListener]: The transaction status returned TxError. Please check the transaction hash: " <> logHash txHash
-              TxRejected -> logger LLWarning $ "[finalizationListener]: The transaction status shows the transaction was rejected. Please check the transaction hash: " <> logHash txHash
-              TxAbsent -> logger LLWarning $ "[finalizationListener]: The transaction status shows the transaction is absent. Please check the transaction hash: " <> logHash txHash
+                logger LLWarning $ "[finalizationListener]: The transaction status returned TxError. Please check the transaction hash: " <> logHash th
+              TxRejected -> logger LLWarning $ "[finalizationListener]: The transaction status shows the transaction was rejected. Please check the transaction hash: " <> logHash th
+              TxAbsent -> logger LLWarning $ "[finalizationListener]: The transaction status shows the transaction is absent. Please check the transaction hash: " <> logHash th
               _ -> undefined -- impossible case
                 -- as the state has already changed, it would be
                 -- complicated to revert it keeping everything in sync, for now
@@ -248,7 +248,7 @@ finalizationListener logger backend chan txHash next fallback = do
               Right newTransaction -> do
                 th' <- newTransaction
                 _ <- swapMVar txHashMVar th'
-                logger LLInfo $ "[finalizationListener]: Sending a new transaction " <> logHash th <> " superseding " <> logHash txHash
+                logger LLInfo $ "[finalizationListener]: Sending a new transaction " <> logHash th' <> " superseding " <> logHash th
                 threadDelay 5000000
                 -- watch the new transaction
                 loop th'
