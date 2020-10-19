@@ -215,7 +215,7 @@ data ContractCmd
     -- |Path to a binary file containing parameters for the init method.
     , ciParameterFile :: !(Maybe FilePath)
     -- |Amount to be send to contract.
-    , ciAmount :: !(Maybe Amount) -- TODO: Should this be a required param?
+    , ciAmount :: !(Maybe Amount)
     -- |Options for transaction.
     , ciTransactionOpts :: !TransactionOpts }
   -- |Update an existing contract.
@@ -227,7 +227,7 @@ data ContractCmd
     -- |Path to a binary file containing paramaters for the receive method.
     , cuParameterFile :: !(Maybe FilePath)
     -- |Amount to call the receive method with.
-    , cuAmount :: !(Maybe Amount) -- TODO: Should this be a required param?
+    , cuAmount :: !(Maybe Amount)
     -- |Subindex of the address for the contract to invoke (default: 0).
     , cuAddressSubindex :: !(Maybe ContractSubindex)
     -- |Options for transaction.
