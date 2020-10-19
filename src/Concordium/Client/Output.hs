@@ -43,9 +43,14 @@ runPrinter = liftIO . mapM_ putStrLn . execWriter
 
 -- HELPERS
 
--- | Serialize to JSON and pretty-print.
+-- |Serialize to JSON and pretty-print.
 showPrettyJSON :: AE.ToJSON a => a -> String
 showPrettyJSON = unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty
+
+-- |Serialize to JSON, order by keys, and pretty-print without whitespace.
+showCompactPrettyJSON :: AE.ToJSON a => a -> String
+showCompactPrettyJSON = unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty' config
+  where config = AE.defConfig { AE.confIndent = AE.Spaces 0, AE.confCompare = compare }
 
 -- TIME
 
@@ -214,7 +219,7 @@ printModuleList :: [Text] -> Printer
 printModuleList = printAccountList
 
 printContractList :: [Types.ContractAddress] -> Printer
-printContractList = tell . map showPrettyJSON
+printContractList = tell . map showCompactPrettyJSON
 
 showAccountKeyPair :: EncryptedAccountKeyPair -> String
 -- TODO Make it respect indenting if this will be the final output format.
