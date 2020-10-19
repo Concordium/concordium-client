@@ -1308,9 +1308,9 @@ getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
 data ModuleDeployTransactionCfg =
   ModuleDeployTransactionCfg
   -- |Configuration for the transaction.
-  { mdtcTransactionCfg :: TransactionConfig
+  { mdtcTransactionCfg :: !TransactionConfig
   -- |The WASM module to deploy.
-  , mdtcModule :: Wasm.WasmModule } -- TODO: Should this be strict?
+  , mdtcModule :: !Wasm.WasmModule }
 
 moduleDeployTransactionPayload :: ModuleDeployTransactionCfg -> Types.Payload
 moduleDeployTransactionPayload ModuleDeployTransactionCfg {..} = Types.DeployModule mdtcModule
@@ -1373,17 +1373,16 @@ contractUpdateTransactionPayload ContractUpdateTransactionCfg {..} =
 data ContractUpdateTransactionCfg =
   ContractUpdateTransactionCfg
   -- |Configuration for the transaction.
-  { cutcTransactionCfg :: TransactionConfig
+  { cutcTransactionCfg :: !TransactionConfig
   -- |The address of the contract to invoke.
-  , cutcAddress :: Types.ContractAddress
+  , cutcAddress :: !Types.ContractAddress
   -- |Name of the receive method to invoke.
-  , cutcReceiveName :: Wasm.ReceiveName
+  , cutcReceiveName :: !Wasm.ReceiveName
   -- |Parameters to the receive method.
-  , cutcParams :: Wasm.Parameter
+  , cutcParams :: !Wasm.Parameter
   -- |Amount to transfer to the contract.
-  , cutcAmount :: Types.Amount
-  } -- TODO: Strict?
-
+  , cutcAmount :: !Types.Amount
+  }
 
 getContractInitTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> Maybe Text
                               -> Maybe FilePath -> Maybe Types.Amount -> IO ContractInitTransactionCfg
@@ -1400,16 +1399,16 @@ getContractInitTransactionCfg baseCfg txOpts moduleFile initName paramsFile amou
 data ContractInitTransactionCfg =
   ContractInitTransactionCfg
   -- |Configuration for the transaction.
-  { citcTransactionCfg :: TransactionConfig
+  { citcTransactionCfg :: !TransactionConfig
   -- |Initial amount on the contract's account.
-  , citcAmount :: Types.Amount
+  , citcAmount :: !Types.Amount
   -- |Reference of the module (on-chain) in which the contract exist.
-  , citcModuleRef :: Types.ModuleRef
+  , citcModuleRef :: !Types.ModuleRef
   -- |Name of the init method to invoke in that module.
-  , citcInitName :: Wasm.InitName
+  , citcInitName :: !Wasm.InitName
   -- |Parameters to the init method.
-  , citcParams :: Wasm.Parameter
-  } -- TODO: Strict?
+  , citcParams :: !Wasm.Parameter
+  }
 
 contractInitTransactionPayload :: ContractInitTransactionCfg -> Types.Payload
 contractInitTransactionPayload ContractInitTransactionCfg {..} =
@@ -2114,11 +2113,11 @@ processCredential source networkId =
 convertTransactionJsonPayload :: (MonadFail m) => CT.TransactionJSONPayload -> ClientMonad m Types.Payload
 convertTransactionJsonPayload = \case
   (CT.DeployModule _) ->
-    fail "DeployModule is not implemented" --TODO: Should this be implemented as well?
+    fail "Use 'module deploy' instead."
   (CT.InitContract _ _ _ _) ->
-    fail "InitContract is not implemented"
+    fail "Use 'contract init' instead."
   (CT.Update _ _ _ _) ->
-    fail "Update is not implemented"
+    fail "Use 'contract update' instead."
   (CT.Transfer transferTo transferAmount) ->
     return $ Types.Transfer transferTo transferAmount
   (CT.RemoveBaker rbid) -> return $ Types.RemoveBaker rbid
