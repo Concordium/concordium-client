@@ -1300,10 +1300,27 @@ processModuleCmd action baseCfgDir verbose backend =
 getModuleDeployTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> IO ModuleDeployTransactionCfg
 getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
   wasmModule <- getWasmModuleFromFile moduleFile
-  txCfg <- getTransactionCfg baseCfg txOpts moduleDeployEnergyCost
+  txCfg <- getTransactionCfg baseCfg txOpts $ moduleDeployEnergyCost wasmModule
   return $ ModuleDeployTransactionCfg txCfg wasmModule
-  where moduleDeployEnergyCost :: AccountConfig -> IO (Maybe (Int -> Types.Energy))
-        moduleDeployEnergyCost _ = pure . Just . const . Types.Energy $ 10000 -- TODO: Figure out correct cost
+
+moduleDeployEnergyCost :: Wasm.WasmModule -> AccountConfig -> IO (Maybe (Int -> Types.Energy))
+moduleDeployEnergyCost wasmMod accCfg = pure . Just . const $
+  deployModuleCost payloadSize + headerCost signatureCount payloadSize
+  where
+        -- Ad hoc cost implementation from Concordium.Scheduler.Cost
+        headerCost :: Int -> Int -> Types.Energy
+        headerCost signatureCnt psize = Types.Energy . fromIntegral $ 6 + ((psize + headerSize) `div` 232) + signatureCnt * 53
+
+        -- Ad hoc cost implementation from Concordium.Scheduler.Cost
+        deployModuleCost :: Int -> Types.Energy
+        deployModuleCost psize = Types.Energy . fromIntegral $
+                                  psize * 3 -- typeCheck
+                                  + (5 + (((2 * psize) + 99) `div` 100) * 50) -- storeBytes
+
+        signatureCount = fromIntegral . acThreshold $ accCfg
+        payloadSize = (+ tagSize) . BS.length . S.encode . Wasm.wasmSource $ wasmMod
+        headerSize = 60
+        tagSize = 1
 
 data ModuleDeployTransactionCfg =
   ModuleDeployTransactionCfg
