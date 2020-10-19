@@ -1355,12 +1355,12 @@ processContractCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
 getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts -> Types.ContractIndex -> Maybe Types.ContractSubindex
-                                -> Text -> FilePath -> Maybe Types.Amount -> IO ContractUpdateTransactionCfg
+                                -> Maybe Text -> Maybe FilePath -> Maybe Types.Amount -> IO ContractUpdateTransactionCfg
 getContractUpdateTransactionCfg baseCfg txOpts contrAddrIndex contrAddrSubindex receiveName paramsFile amount = do
   txCfg <- getTransactionCfg baseCfg txOpts contractUpdateEnergyCost
   let contrAddr = mkContractAddress contrAddrIndex contrAddrSubindex
-  let receiveName' = Wasm.ReceiveName receiveName
-  params <- getWasmParameterFromFile paramsFile
+  let receiveName' = Wasm.ReceiveName $ fromMaybe "receive" receiveName
+  params <- getWasmParameterFromFileOrDefault paramsFile
   let amount' = fromMaybe (Types.Amount 0) amount
   return $ ContractUpdateTransactionCfg txCfg contrAddr receiveName' params amount'
   where contractUpdateEnergyCost :: AccountConfig -> IO (Maybe (Int -> Types.Energy))
@@ -1382,16 +1382,16 @@ data ContractUpdateTransactionCfg =
   , cutcParams :: Wasm.Parameter
   -- |Amount to transfer to the contract.
   , cutcAmount :: Types.Amount
-  } -- TOOD: Strict?
+  } -- TODO: Strict?
 
 
-getContractInitTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> Text
-                              -> FilePath -> Maybe Types.Amount -> IO ContractInitTransactionCfg
+getContractInitTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> Maybe Text
+                              -> Maybe FilePath -> Maybe Types.Amount -> IO ContractInitTransactionCfg
 getContractInitTransactionCfg baseCfg txOpts moduleFile initName paramsFile amount = do
   moduleRef <- Types.ModuleRef . getHash <$> getWasmModuleFromFile moduleFile
   txCfg <- getTransactionCfg baseCfg txOpts contractInitEnergyCost
-  let initName' = Wasm.InitName initName
-  params <- getWasmParameterFromFile paramsFile
+  let initName' = Wasm.InitName $ fromMaybe "init" initName
+  params <- getWasmParameterFromFileOrDefault paramsFile
   let amount' = fromMaybe (Types.Amount 0) amount
   return $ ContractInitTransactionCfg txCfg amount' moduleRef initName' params
   where contractInitEnergyCost :: AccountConfig -> IO (Maybe (Int -> Types.Energy))
@@ -1419,9 +1419,11 @@ contractInitTransactionPayload ContractInitTransactionCfg {..} =
 getWasmModuleFromFile :: FilePath -> IO Wasm.WasmModule
 getWasmModuleFromFile moduleFile = Wasm.WasmModule 0 <$> BS.readFile moduleFile
 
--- |Load Wasm Parameters from a binary file.
-getWasmParameterFromFile :: FilePath -> IO Wasm.Parameter
-getWasmParameterFromFile paramsFile = Wasm.Parameter . BS.toShort <$> BS.readFile paramsFile
+-- |Load Wasm Parameters from a binary file if Just, otherwise return mempty.
+getWasmParameterFromFileOrDefault :: Maybe FilePath -> IO Wasm.Parameter
+getWasmParameterFromFileOrDefault paramsFile = case paramsFile of
+  Nothing -> pure mempty
+  Just file -> Wasm.Parameter . BS.toShort <$> BS.readFile file
 
 -- |Construct a Contract Address from an index and optional subindex (which defaults to 0).
 mkContractAddress :: Types.ContractIndex -> Maybe Types.ContractSubindex -> Types.ContractAddress
