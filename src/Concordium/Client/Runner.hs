@@ -1374,14 +1374,12 @@ processContractCmd action baseCfgDir verbose backend =
 getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts -> Types.ContractIndex -> Maybe Types.ContractSubindex
                                 -> Maybe Text -> Maybe FilePath -> Maybe Types.Amount -> IO ContractUpdateTransactionCfg
 getContractUpdateTransactionCfg baseCfg txOpts contrAddrIndex contrAddrSubindex receiveName paramsFile amount = do
-  txCfg <- getTransactionCfg baseCfg txOpts contractUpdateEnergyCost
+  txCfg <- getTransactionCfg baseCfg txOpts noDefaultEnergyCost
   let contrAddr = mkContractAddress contrAddrIndex contrAddrSubindex
   let receiveName' = Wasm.ReceiveName $ fromMaybe "receive" receiveName
   params <- getWasmParameterFromFileOrDefault paramsFile
   let amount' = fromMaybe (Types.Amount 0) amount
   return $ ContractUpdateTransactionCfg txCfg contrAddr receiveName' params amount'
-  where contractUpdateEnergyCost :: AccountConfig -> IO (Maybe (Int -> Types.Energy))
-        contractUpdateEnergyCost _ = pure . Just . const . Types.Energy $ 100 -- TODO: Figure out correct cost
 
 contractUpdateTransactionPayload :: ContractUpdateTransactionCfg -> Types.Payload
 contractUpdateTransactionPayload ContractUpdateTransactionCfg {..} =
@@ -1405,13 +1403,11 @@ getContractInitTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> Ma
                               -> Maybe FilePath -> Maybe Types.Amount -> IO ContractInitTransactionCfg
 getContractInitTransactionCfg baseCfg txOpts moduleFile initName paramsFile amount = do
   moduleRef <- Types.ModuleRef . getHash <$> getWasmModuleFromFile moduleFile
-  txCfg <- getTransactionCfg baseCfg txOpts contractInitEnergyCost
+  txCfg <- getTransactionCfg baseCfg txOpts noDefaultEnergyCost
   let initName' = Wasm.InitName $ fromMaybe "init" initName
   params <- getWasmParameterFromFileOrDefault paramsFile
   let amount' = fromMaybe (Types.Amount 0) amount
   return $ ContractInitTransactionCfg txCfg amount' moduleRef initName' params
-  where contractInitEnergyCost :: AccountConfig -> IO (Maybe (Int -> Types.Energy))
-        contractInitEnergyCost _ = pure . Just . const . Types.Energy $ 100 -- TODO: Figure out correct cost
 
 data ContractInitTransactionCfg =
   ContractInitTransactionCfg
@@ -1444,6 +1440,10 @@ getWasmParameterFromFileOrDefault paramsFile = case paramsFile of
 -- |Construct a Contract Address from an index and optional subindex (which defaults to 0).
 mkContractAddress :: Types.ContractIndex -> Maybe Types.ContractSubindex -> Types.ContractAddress
 mkContractAddress index subindex = Types.ContractAddress index $ fromMaybe (Types.ContractSubindex 0) subindex
+
+-- |When used with getTransactionCfg it forces the user to specify a max energy cost.
+noDefaultEnergyCost :: GetComputeEnergyCost
+noDefaultEnergyCost = const $ pure Nothing
 
 -- |Process a 'consensus ...' command.
 processConsensusCmd :: ConsensusCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
