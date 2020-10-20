@@ -175,63 +175,66 @@ data AccountCmd
 data ModuleCmd
   -- |Deploy the provided smart contract module on chain.
   = ModuleDeploy
-    -- |Path to the module.
-    { mdModuleFile :: !FilePath
+    { -- |Path to the module.
+      mdModuleFile :: !FilePath
+      -- |Options for transaction.
     , mdTransactionOpts :: !TransactionOpts
     }
   -- |List all modules.
   | ModuleList
-    -- |Hash of the block (default "best").
-    { mlBlockHash :: !(Maybe Text) }
+    { -- |Hash of the block (default "best").
+      mlBlockHash :: !(Maybe Text)
+    }
   -- |Output the binary source code of the module to the provided file.
   | ModuleShow
-    -- |Reference to the module.
-    { msModuleReference :: !Text
-    -- |Output the module to this file.
-    -- Use '-' to output to stdout.
+    { -- |Reference to the module.
+      msModuleReference :: !Text
+      -- |Output the module to this file.
+      -- Use '-' to output to stdout.
     , msOutFile :: !FilePath
-    -- |Hash of the block (default "best").
+      -- |Hash of the block (default "best").
     , mlBlockHash :: !(Maybe Text) }
   deriving (Show)
 
 data ContractCmd
   -- |Show the state of specified contract.
   = ContractShow
-    -- |Index of the address for the contract.
-    { cuAddressIndex :: !Word64
-    -- |Subindex of the address for the contract (default: 0).
+    { -- |Index of the address for the contract.
+      cuAddressIndex :: !Word64
+      -- |Subindex of the address for the contract (default: 0).
     , cuAddressSubindex :: !(Maybe Word64)
-    -- |Hash of the block (default "best").
+      -- |Hash of the block (default "best").
     , csBlockHash :: !(Maybe Text) }
   -- |List all contracts on chain.
   | ContractList
-    -- |Hash of the block (default "best").
-    { clBlockHash :: !(Maybe Text) }
+    { -- |Hash of the block (default "best").
+      clBlockHash :: !(Maybe Text)
+    }
   -- |Initialize a contract from a module on chain.
   | ContractInit
-    -- |Path to the module. The module reference is calculated by hashing this module.
-    { ciModuleFile :: !FilePath
-    -- |Name of the init method to use.
+    { -- |Path to the module. The module reference is calculated by hashing this module.
+      ciModuleFile :: !FilePath
+      -- |Name of the init method to use.
     , ciInitName :: !(Maybe Text)
-    -- |Path to a binary file containing parameters for the init method.
+      -- |Path to a binary file containing parameters for the init method.
     , ciParameterFile :: !(Maybe FilePath)
-    -- |Amount to be send to contract.
+      -- |Amount to be send to contract.
     , ciAmount :: !(Maybe Amount)
-    -- |Options for transaction.
+      -- |Options for transaction.
     , ciTransactionOpts :: !TransactionOpts }
   -- |Update an existing contract.
   | ContractUpdate
-    -- |Index of the address for the contract to invoke.
-    { cuAddressIndex :: !Word64
-    -- |Name of the receive method to use.
+    { -- |Index of the address for the contract to invoke.
+      cuAddressIndex :: !Word64
+      -- |Name of the receive method to use.
     , cuReceiveName :: !(Maybe Text)
-    -- |Path to a binary file containing paramaters for the receive method.
+      -- |Path to a binary file containing paramaters for the receive method.
     , cuParameterFile :: !(Maybe FilePath)
-    -- |Amount to call the receive method with.
+      -- |Amount to call the receive method with.
     , cuAmount :: !(Maybe Amount)
-    -- |Subindex of the address for the contract to invoke (default: 0).
+      -- |Subindex of the address for the contract to invoke (default: 0).
     , cuAddressSubindex :: !(Maybe Word64)
-    -- |Options for transaction.
+      -- |Options for transaction.
     , cuTransactionOpts :: !TransactionOpts }
   deriving (Show)
 
