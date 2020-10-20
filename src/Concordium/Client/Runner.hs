@@ -87,6 +87,7 @@ import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
 import qualified Data.ByteString.Short               as BS (toShort)
+import qualified Data.ByteString.Short               as BSS
 import qualified Data.HashMap.Strict                 as Map
 import qualified Data.HashSet                        as HSet
 import qualified Data.Map                            as OrdMap
@@ -1371,7 +1372,7 @@ processContractCmd action baseCfgDir verbose backend =
       let pl = contractUpdateTransactionPayload cuCfg
       withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
-getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts -> Types.ContractIndex -> Maybe Types.ContractSubindex
+getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts -> Word64 -> Maybe Word64
                                 -> Maybe Text -> Maybe FilePath -> Maybe Types.Amount -> IO ContractUpdateTransactionCfg
 getContractUpdateTransactionCfg baseCfg txOpts contrAddrIndex contrAddrSubindex receiveName paramsFile amount = do
   txCfg <- getTransactionCfg baseCfg txOpts noDefaultEnergyCost
@@ -1434,12 +1435,14 @@ getWasmModuleFromFile moduleFile = Wasm.WasmModule 0 <$> BS.readFile moduleFile
 -- |Load Wasm Parameters from a binary file if Just, otherwise return mempty.
 getWasmParameterFromFileOrDefault :: Maybe FilePath -> IO Wasm.Parameter
 getWasmParameterFromFileOrDefault paramsFile = case paramsFile of
-  Nothing -> pure mempty
+  Nothing -> pure . Wasm.Parameter $ BSS.empty
   Just file -> Wasm.Parameter . BS.toShort <$> BS.readFile file
 
 -- |Construct a Contract Address from an index and optional subindex (which defaults to 0).
-mkContractAddress :: Types.ContractIndex -> Maybe Types.ContractSubindex -> Types.ContractAddress
-mkContractAddress index subindex = Types.ContractAddress index $ fromMaybe (Types.ContractSubindex 0) subindex
+mkContractAddress :: Word64 -> Maybe Word64 -> Types.ContractAddress
+mkContractAddress index subindex = Types.ContractAddress index' subindex'
+  where index' = Types.ContractIndex index
+        subindex' = Types.ContractSubindex . fromMaybe 0 $ subindex
 
 -- |When used with getTransactionCfg it forces the user to specify a max energy cost.
 noDefaultEnergyCost :: GetComputeEnergyCost
