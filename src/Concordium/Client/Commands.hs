@@ -24,6 +24,7 @@ module Concordium.Client.Commands
 
 import Data.Text hiding (map)
 import Data.Version (showVersion)
+import Data.Word (Word64)
 import Network.HTTP2.Client
 import Options.Applicative
 import Paths_simple_client (version)
@@ -197,9 +198,9 @@ data ContractCmd
   -- |Show the state of specified contract.
   = ContractShow
     -- |Index of the address for the contract.
-    { cuAddressIndex :: !ContractIndex
+    { cuAddressIndex :: !Word64
     -- |Subindex of the address for the contract (default: 0).
-    , cuAddressSubindex :: !(Maybe ContractSubindex)
+    , cuAddressSubindex :: !(Maybe Word64)
     -- |Hash of the block (default "best").
     , csBlockHash :: !(Maybe Text) }
   -- |List all contracts on chain.
@@ -221,7 +222,7 @@ data ContractCmd
   -- |Update an existing contract.
   | ContractUpdate
     -- |Index of the address for the contract to invoke.
-    { cuAddressIndex :: !ContractIndex
+    { cuAddressIndex :: !Word64
     -- |Name of the receive method to use.
     , cuReceiveName :: !(Maybe Text)
     -- |Path to a binary file containing paramaters for the receive method.
@@ -229,7 +230,7 @@ data ContractCmd
     -- |Amount to call the receive method with.
     , cuAmount :: !(Maybe Amount)
     -- |Subindex of the address for the contract to invoke (default: 0).
-    , cuAddressSubindex :: !(Maybe ContractSubindex)
+    , cuAddressSubindex :: !(Maybe Word64)
     -- |Options for transaction.
     , cuTransactionOpts :: !TransactionOpts }
   deriving (Show)
