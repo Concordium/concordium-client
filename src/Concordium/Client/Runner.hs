@@ -105,6 +105,7 @@ import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client.Exceptions
 import           Prelude                             hiding (fail, mod, unlines)
 import           System.IO
+import qualified System.IO.Error                    as Err
 import           System.Directory
 import           Text.Printf
 
@@ -1282,21 +1283,36 @@ processModuleCmd action baseCfgDir verbose backend =
     ModuleList block -> do
       v <- withClient backend $ withBestBlockHash block getModuleList >>= getFromJson
 
-      case null v of
-        True -> logInfo ["No modules were found."]
-        False -> runPrinter $ printModuleList v
+      if null v
+      then logInfo ["No modules were found."]
+      else runPrinter $ printModuleList v
 
     ModuleShow moduleRef outFile block -> do
       v <- withClient backend $ withBestBlockHash block (getModuleSource moduleRef)
 
       case v of
-        Left errMsg -> logFatal ["could not show module:", errMsg]
+        Left errMsg -> logFatal ["could not retrieve module:", errMsg]
         Right moduleSource ->
           case outFile of
             -- Write to stdout
             "-" -> BS.putStr moduleSource
             -- Write to file
-            _   -> BS.writeFile outFile moduleSource
+            _   -> handleWriteModuleToFile outFile moduleSource
+
+-- |Writes module to file and asks user to confirm if file already exists.
+-- Relevant IOErrors are caught.
+handleWriteModuleToFile :: FilePath -> BS.ByteString -> IO ()
+handleWriteModuleToFile fileName contents = do
+  fileExists <- doesFileExist fileName
+  confirmed  <- if fileExists
+                then logWarn [fileNameQuoted ++ " already exists."] >> askConfirmation (Just "overwrite it")
+                else pure True
+  when confirmed $
+    Err.catchIOError (BS.writeFile fileName contents >> logSuccess ["successfully wrote the module to " ++ fileNameQuoted]) $
+      \e -> do
+        when (Err.isDoesNotExistError e) $ logError [fileNameQuoted ++ " does not exist and cannot be created"]
+        when (Err.isPermissionError e)   $ logError ["you do not have permissions to write to " ++ fileNameQuoted]
+  where fileNameQuoted = "'" ++ fileName ++ "'"
 
 getModuleDeployTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> IO ModuleDeployTransactionCfg
 getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
@@ -1338,18 +1354,21 @@ processContractCmd :: ContractCmd -> Maybe FilePath -> Verbose -> Backend -> IO 
 processContractCmd action baseCfgDir verbose backend =
   case action of
     ContractList block -> do
-      v <- withClient backend $ withBestBlockHash block getInstances >>= getFromJson
+      (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getInstances bb
+      v <- getFromJson res
 
-      case null v of
-        True -> logInfo ["no contracts were found"]
-        False -> runPrinter $ printContractList v
+      if null v
+      then logInfo ["there are no contract instances in block " ++ Text.unpack bestBlock]
+      else runPrinter $ printContractList v
 
     ContractShow contrAddrIndex contrAddrSubindex block -> do
-      let contrAddr = showPrettyJSON $ mkContractAddress contrAddrIndex contrAddrSubindex
-      v <- withClient backend . withBestBlockHash block . getInstanceInfo . Text.pack $ contrAddr
-      case v of
-        Left errMsg -> logFatal ["could not show contract:", errMsg]
-        Right AE.Null -> logInfo ["the following contract could not be found:", contrAddr]
+      let contrAddr = showCompactPrettyJSON $ mkContractAddress contrAddrIndex contrAddrSubindex
+      (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getInstanceInfo (Text.pack contrAddr) bb
+
+      case res of
+        Left errMsg -> logFatal ["could not retrieve contract:", errMsg]
+        Right AE.Null -> logInfo ["the contract instance at address " ++ contrAddr
+                      ++ " does not exist in block " ++ Text.unpack bestBlock]
         Right contrInfo -> putStr . showPrettyJSON $ contrInfo
 
     ContractInit moduleFile initName paramsFile amount txOpts -> do
@@ -1425,6 +1444,8 @@ contractInitTransactionPayload ContractInitTransactionCfg {..} =
   Types.InitContract citcAmount citcModuleRef citcInitName citcParams
 
 -- |Load a WasmModule from the specified file path.
+-- It defaults to our internal wasmVersion of 0, which essentially is the
+-- on-chain API version.
 getWasmModuleFromFile :: FilePath -> IO Wasm.WasmModule
 getWasmModuleFromFile moduleFile = Wasm.WasmModule 0 <$> BS.readFile moduleFile
 
