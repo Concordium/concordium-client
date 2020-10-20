@@ -1362,7 +1362,7 @@ processContractCmd action baseCfgDir verbose backend =
       let pl = contractInitTransactionPayload ciCfg
       withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
-    ContractUpdate contrAddrIndex receiveName paramsFile amount contrAddrSubindex txOpts -> do
+    ContractUpdate contrAddrIndex contrAddrSubindex receiveName paramsFile amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
 
       cuCfg <- getContractUpdateTransactionCfg baseCfg txOpts contrAddrIndex contrAddrSubindex receiveName paramsFile amount
@@ -1372,15 +1372,13 @@ processContractCmd action baseCfgDir verbose backend =
       let pl = contractUpdateTransactionPayload cuCfg
       withClient backend $ sendAndTailTransaction txCfg pl intOpts
 
-getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts -> Word64 -> Maybe Word64
-                                -> Maybe Text -> Maybe FilePath -> Maybe Types.Amount -> IO ContractUpdateTransactionCfg
+getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts -> Word64 -> Word64
+                                -> Text -> Maybe FilePath -> Types.Amount -> IO ContractUpdateTransactionCfg
 getContractUpdateTransactionCfg baseCfg txOpts contrAddrIndex contrAddrSubindex receiveName paramsFile amount = do
   txCfg <- getTransactionCfg baseCfg txOpts noDefaultEnergyCost
   let contrAddr = mkContractAddress contrAddrIndex contrAddrSubindex
-  let receiveName' = Wasm.ReceiveName $ fromMaybe "receive" receiveName
   params <- getWasmParameterFromFileOrDefault paramsFile
-  let amount' = fromMaybe (Types.Amount 0) amount
-  return $ ContractUpdateTransactionCfg txCfg contrAddr receiveName' params amount'
+  return $ ContractUpdateTransactionCfg txCfg contrAddr (Wasm.ReceiveName receiveName) params amount
 
 contractUpdateTransactionPayload :: ContractUpdateTransactionCfg -> Types.Payload
 contractUpdateTransactionPayload ContractUpdateTransactionCfg {..} =
@@ -1400,15 +1398,13 @@ data ContractUpdateTransactionCfg =
   , cutcAmount :: !Types.Amount
   }
 
-getContractInitTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> Maybe Text
-                              -> Maybe FilePath -> Maybe Types.Amount -> IO ContractInitTransactionCfg
+getContractInitTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> Text
+                              -> Maybe FilePath -> Types.Amount -> IO ContractInitTransactionCfg
 getContractInitTransactionCfg baseCfg txOpts moduleFile initName paramsFile amount = do
   moduleRef <- Types.ModuleRef . getHash <$> getWasmModuleFromFile moduleFile
   txCfg <- getTransactionCfg baseCfg txOpts noDefaultEnergyCost
-  let initName' = Wasm.InitName $ fromMaybe "init" initName
   params <- getWasmParameterFromFileOrDefault paramsFile
-  let amount' = fromMaybe (Types.Amount 0) amount
-  return $ ContractInitTransactionCfg txCfg amount' moduleRef initName' params
+  return $ ContractInitTransactionCfg txCfg amount moduleRef (Wasm.InitName initName) params
 
 data ContractInitTransactionCfg =
   ContractInitTransactionCfg
@@ -1438,11 +1434,9 @@ getWasmParameterFromFileOrDefault paramsFile = case paramsFile of
   Nothing -> pure . Wasm.Parameter $ BSS.empty
   Just file -> Wasm.Parameter . BS.toShort <$> BS.readFile file
 
--- |Construct a Contract Address from an index and optional subindex (which defaults to 0).
-mkContractAddress :: Word64 -> Maybe Word64 -> Types.ContractAddress
-mkContractAddress index subindex = Types.ContractAddress index' subindex'
-  where index' = Types.ContractIndex index
-        subindex' = Types.ContractSubindex . fromMaybe 0 $ subindex
+-- |Construct a Contract Address from an index and a subindex.
+mkContractAddress :: Word64 -> Word64 -> Types.ContractAddress
+mkContractAddress index subindex = Types.ContractAddress (Types.ContractIndex index) (Types.ContractSubindex subindex)
 
 -- |When used with getTransactionCfg it forces the user to specify a max energy cost.
 noDefaultEnergyCost :: GetComputeEnergyCost
