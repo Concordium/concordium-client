@@ -1325,9 +1325,9 @@ moduleDeployEnergyCost wasmMod accCfg = pure . Just . const $
 
 data ModuleDeployTransactionCfg =
   ModuleDeployTransactionCfg
-  -- |Configuration for the transaction.
-  { mdtcTransactionCfg :: !TransactionConfig
-  -- |The WASM module to deploy.
+  { -- |Configuration for the transaction.
+    mdtcTransactionCfg :: !TransactionConfig
+    -- |The WASM module to deploy.
   , mdtcModule :: !Wasm.WasmModule }
 
 moduleDeployTransactionPayload :: ModuleDeployTransactionCfg -> Types.Payload
@@ -1388,15 +1388,15 @@ contractUpdateTransactionPayload ContractUpdateTransactionCfg {..} =
 
 data ContractUpdateTransactionCfg =
   ContractUpdateTransactionCfg
-  -- |Configuration for the transaction.
-  { cutcTransactionCfg :: !TransactionConfig
-  -- |The address of the contract to invoke.
+  { -- |Configuration for the transaction.
+    cutcTransactionCfg :: !TransactionConfig
+    -- |The address of the contract to invoke.
   , cutcAddress :: !Types.ContractAddress
-  -- |Name of the receive method to invoke.
+    -- |Name of the receive method to invoke.
   , cutcReceiveName :: !Wasm.ReceiveName
-  -- |Parameters to the receive method.
+    -- |Parameters to the receive method.
   , cutcParams :: !Wasm.Parameter
-  -- |Amount to transfer to the contract.
+    -- |Amount to transfer to the contract.
   , cutcAmount :: !Types.Amount
   }
 
@@ -1412,15 +1412,15 @@ getContractInitTransactionCfg baseCfg txOpts moduleFile initName paramsFile amou
 
 data ContractInitTransactionCfg =
   ContractInitTransactionCfg
-  -- |Configuration for the transaction.
-  { citcTransactionCfg :: !TransactionConfig
-  -- |Initial amount on the contract's account.
+  { -- |Configuration for the transaction.
+    citcTransactionCfg :: !TransactionConfig
+    -- |Initial amount on the contract's account.
   , citcAmount :: !Types.Amount
-  -- |Reference of the module (on-chain) in which the contract exist.
+    -- |Reference of the module (on-chain) in which the contract exist.
   , citcModuleRef :: !Types.ModuleRef
-  -- |Name of the init method to invoke in that module.
+    -- |Name of the init method to invoke in that module.
   , citcInitName :: !Wasm.InitName
-  -- |Parameters to the init method.
+    -- |Parameters to the init method.
   , citcParams :: !Wasm.Parameter
   }
 
