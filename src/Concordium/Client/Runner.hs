@@ -1127,13 +1127,13 @@ processAccountCmd action baseCfgDir verbose backend =
     AccountList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       v <- withClientJson backend $ withBestBlockHash block getAccountList
-      let addname :: Text -> IO Text
-          addname addr = do 
-            na <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just addr
-            -- Print addresses, followed by name or *, seperated by 5 spaces
-            return $ Text.append addr (Text.append (Text.pack "     ") . fromMaybe (Text.pack "*") . naName $ na)
-      namedv <- mapM addname v
-      runPrinter $ printAccountList namedv
+      let addname :: Text -> Text
+          addname addr = Text.append addr (Text.append (Text.pack "     ") . fromMaybe (Text.pack "*") $ na)
+            where
+              na = (case getAccountAddress (bcAccountNameMap baseCfg) addr of 
+                      Left _ -> Nothing
+                      Right val -> naName val)
+      runPrinter $ printAccountList (map addname v)
     
     AccountDelegate bakerId txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1290,20 +1290,22 @@ processConsensusCmd action _baseCfgDir verbose backend =
       v <- withClientJson backend getConsensusStatus
       runPrinter $ printConsensusStatus v
     ConsensusShowParameters b includeBakers -> do
+      baseCfg <- getBaseConfig _baseCfgDir verbose AutoInit
       v <- withClientJson backend $ withBestBlockHash b getBirkParameters
       case v of
         Nothing -> putStrLn "Block not found."
         Just p -> runPrinter $ case bprBakers p of 
-                                [] -> printBirkParameters includeBakers p []
-                                bs -> printBirkParameters includeBakers p (mapM f bs)
-                                  where f b' = printf "%6s: %s  %s  %s" (show $ bpbrId b') (show $ bpbrAccount b') (showLotteryPower $ bpbrLotteryPower b') (accountName $ show $ bpbrAccount b')
-                                        showLotteryPower lp = if 0 < lp && lp < 0.000001
-                                                              then " <0.0001 %" :: String
-                                                              else printf "%8.4f %%" (lp*100)
-                                        accountName b = do
-                                          baseCfg <- getBaseConfig _baseCfgDir verbose AutoInit
-                                          na <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just (Text.pack b)
-                                          return $ fromMaybe (Text.pack "*") . naName $ na
+                    [] -> printBirkParameters includeBakers p Nothing
+                    bs -> printBirkParameters includeBakers p (Just (map f bs))
+                      where 
+                        f b' = printf "%6s: %s  %s  %s" (show $ bpbrId b') (show $ bpbrAccount b') (showLotteryPower $ bpbrLotteryPower b') (accountName $ show $ bpbrAccount b')
+                        showLotteryPower lp = if 0 < lp && lp < 0.000001
+                                              then " <0.0001 %" :: String
+                                              else printf "%8.4f %%" (lp*100)
+                        accountName :: String -> Text
+                        accountName bkr = fromMaybe (Text.pack "*") (case getAccountAddress (bcAccountNameMap baseCfg) (Text.pack bkr) of 
+                                                  Left _ -> Nothing
+                                                  Right val -> naName val)
                                          
                                           
     ConsensusChainUpdate rawUpdateFile authsFile keysFiles intOpts -> do
