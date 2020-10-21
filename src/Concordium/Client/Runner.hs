@@ -138,6 +138,8 @@ getFromJson :: (MonadIO m, FromJSON a) => Either String Value -> m a
 getFromJson = getFromJsonAndHandleInvalid onInvalidJson
   where onInvalidJson val err = logFatal ["cannot parse '" ++ show val ++ "' as JSON: " ++ err]
 
+-- |Helper function for parsing JSON Value, logFatal if the Either is Left,
+-- and use the provided function to handle invalid JSON.
 getFromJsonAndHandleInvalid :: (MonadIO m, FromJSON a) => (Value -> String -> m a) -> Either String Value -> m a
 getFromJsonAndHandleInvalid handleInvalid r = do
   s <- case r of
