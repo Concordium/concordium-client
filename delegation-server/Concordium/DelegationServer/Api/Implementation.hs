@@ -58,7 +58,7 @@ estimatedTimeAsUTC :: NominalDiffTime
 estimatedTimeAsUTC epochDuration numDelegators delegateTo pendingDelegations currentDelegations =
   addUTCTime (epochDuration * fromInteger (fromIntegral (calculateEstimatedWaitingEpochs numDelegators delegateTo pendingDelegations currentDelegations))) <$> getCurrentTime
 
-type AppM = ReaderT State Handler
+type AppM = ReaderT ServerState Handler
 
 getDelegations :: AppM CurrentDelegations
 getDelegations = do
@@ -69,7 +69,7 @@ getDelegations = do
 requestDelegation :: Chan (BakerId, Int) -> RequestDelegationRequest -> AppM RequestDelegationResponse
 requestDelegation transitionChan RequestDelegationRequest {..} = do
   state <- ask
-  currentState@LocalState {..} <- wrapIOError . logAndTakeMVar (serviceLogger state) ("requestDelegation (" <> toLogStr (show delegateTo) <> ")") $ localState state
+  currentState@DelegationsState {..} <- wrapIOError . logAndTakeMVar (serviceLogger state) ("requestDelegation (" <> toLogStr (show delegateTo) <> ")") $ localState state
   wrapIOError $ (flip onException)
     (logAndPutMVar (serviceLogger state) ("requestDelegation (" <> toLogStr (show delegateTo) <> ")") (localState state) currentState)
     (do
@@ -96,7 +96,7 @@ requestDelegation transitionChan RequestDelegationRequest {..} = do
 getDelegationStatus :: GetDelegationStatusRequest -> AppM GetDelegationStatusResponse
 getDelegationStatus GetDelegationStatusRequest {..} = do
   state <- ask
-  LocalState {..} <- wrapIOError . logAndReadMVar (serviceLogger state) ("getDelegationStatus (" <> toLogStr (show delegateTo) <> ")") $ outerLocalState state
+  DelegationsState {..} <- wrapIOError . logAndReadMVar (serviceLogger state) ("getDelegationStatus (" <> toLogStr (show delegateTo) <> ")") $ outerLocalState state
   if PSQ.member delegateTo pendingDelegations
     then-- State 2
       DelegationInQueue <$> wrapIOError (tsMillis . utcTimeToTimestamp <$> estimatedTimeAsUTC (epochDuration state) (numDelegators state)  (Just delegateTo) pendingDelegations currentDelegations)
@@ -131,7 +131,7 @@ server chan = getDelegations :<|> requestDelegation chan :<|> getDelegationStatu
 
 -- IO Errors will be translated to 500 internal server error
 -- we will ignore the body as it usually doesn't give much information
-wrapIOError :: forall b. IO b -> ReaderT State Handler b
+wrapIOError :: forall b. IO b -> ReaderT ServerState Handler b
 wrapIOError f =
   (liftIO (try f :: IO (Either IOException b))) >>= \case
     Left _ -> ReaderT $ const $ throwError err500
