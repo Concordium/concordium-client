@@ -662,7 +662,7 @@ moduleShowCmd =
     (info
       (ModuleShow <$>
         strArgument (metavar "MODULE-REFERENCE" <> help "Reference to the module (use 'module list' to find it).") <*>
-        strArgument (metavar "FILE" <> help "File to output the source code to (use '-' for stdout).") <*>
+        strOption (long "out" <> metavar "FILE" <> help "File to output the source code to (use '-' for stdout).") <*>
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
       (progDesc "List all modules."))
 
