@@ -320,7 +320,7 @@ showOutcomeResult verbose = \case
 -- If verbose is true, the string includes the details from the fields of the event.
 -- Otherwise, only the fields that are not known from the transaction request are included.
 -- Currently this is only the baker ID from AddBaker, which is computed by the backend.
--- The non-verbose version is used by the transaction commands (through tailTransaction)
+-- The non-verbose version is used by the transaction commands (through tailTransaction_)
 -- where the input parameters have already been specified manually and repeated in a block
 -- of text that they confirmed manually.
 -- The verbose version is used by 'transaction status' and the non-trivial cases of the above
@@ -383,7 +383,7 @@ showEvent verbose = \case
 -- If verbose is true, the string includes the details from the fields of the reason.
 -- Otherwise, only the fields that are not known from the transaction request are included.
 -- Currently this is only the baker address from NotFromBakerAccount.
--- The non-verbose version is used by the transaction commands (through tailTransaction)
+-- The non-verbose version is used by the transaction commands (through tailTransaction_)
 -- where the input parameters have already been specified manually and repeated in a block
 -- of text that they confirmed manually.
 -- The verbose version is used by 'transaction status' and the non-trivial cases of the above
