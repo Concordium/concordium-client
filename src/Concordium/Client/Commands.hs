@@ -212,8 +212,8 @@ data ContractCmd
     }
   -- |Initialize a contract from a module on chain.
   | ContractInit
-    { -- |Path to the module. The module reference is calculated by hashing this module.
-      ciModuleFile :: !FilePath
+    { -- |Module reference OR path to the module (reference then calculated by hashing).
+      ciModule :: !String
       -- |Name of the init function to use (default: "init").
     , ciInitName :: !Text
       -- |Path to a binary file containing parameters for the init function.
@@ -706,7 +706,7 @@ contractInitCmd =
     "init"
     (info
       (ContractInit <$>
-        strArgument (metavar "FILE" <> help "Path to the smart contract module.") <*>
+        strArgument (metavar "MODULE" <> help "Module reference OR path to the module.") <*>
         strOption (long "func" <> metavar "INIT-NAME" <> value "init"
                              <> help "Name of the specific init function in the module (default: \"init\").") <*>
         optional (strOption (long "params" <> metavar "FILE"

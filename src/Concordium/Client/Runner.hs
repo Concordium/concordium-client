@@ -109,6 +109,7 @@ import           System.IO
 import qualified System.IO.Error                    as Err
 import           System.Directory
 import           Text.Printf
+import           Text.Read (readMaybe)
 
 liftClientIOToM :: MonadIO m => ClientIO a -> ExceptT ClientError m a
 liftClientIOToM comp = do
@@ -1416,10 +1417,10 @@ processContractCmd action baseCfgDir verbose backend =
                       ++ " does not exist in block " ++ Text.unpack bestBlock]
         Right contrInfo -> putStr . showPrettyJSON $ contrInfo
 
-    ContractInit moduleFile initName paramsFile amount txOpts -> do
+    ContractInit moduleRefOrFile initName paramsFile amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
 
-      ciCfg <- getContractInitTransactionCfg baseCfg txOpts moduleFile initName paramsFile amount
+      ciCfg <- getContractInitTransactionCfg baseCfg txOpts moduleRefOrFile initName paramsFile amount
       let txCfg = citcTransactionCfg ciCfg
 
       let intOpts = toInteractionOpts txOpts
@@ -1462,10 +1463,12 @@ data ContractUpdateTransactionCfg =
   , cutcAmount :: !Types.Amount
   }
 
-getContractInitTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> Text
+getContractInitTransactionCfg :: BaseConfig -> TransactionOpts -> String -> Text
                               -> Maybe FilePath -> Types.Amount -> IO ContractInitTransactionCfg
-getContractInitTransactionCfg baseCfg txOpts moduleFile initName paramsFile amount = do
-  moduleRef <- Types.ModuleRef . getHash <$> getWasmModuleFromFile moduleFile
+getContractInitTransactionCfg baseCfg txOpts moduleRefOrFile initName paramsFile amount = do
+  moduleRef <- case readMaybe moduleRefOrFile of
+                 Just modRef -> pure modRef
+                 Nothing -> Types.ModuleRef . getHash <$> getWasmModuleFromFile moduleRefOrFile
   txCfg <- getTransactionCfg baseCfg txOpts noDefaultEnergyCost
   params <- getWasmParameterFromFileOrDefault paramsFile
   return $ ContractInitTransactionCfg txCfg amount moduleRef (Wasm.InitName initName) params
