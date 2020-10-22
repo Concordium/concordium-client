@@ -1,7 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
 module Concordium.DelegationServer.Helpers where
@@ -71,7 +70,10 @@ jsonAnswer grpc f g = do
 -- - TxPending: The transaction is not yet finalized, keep watching it.
 -- - TxError: Serious error in the chain as the transaction is finalized but in
 --   no blocks or in more than one block.
-data TxState = TxAbsent | TxPending | TxAccepted | TxRejected | TxError
+--
+-- - CaughtException: when we need to return something from the handle of
+--   the call but we don't want to do any more processing, just abort.
+data TxState = TxAbsent | TxPending | TxAccepted | TxRejected | TxError | CaughtException String
 
 queryTransactionState :: EnvData -> Types.TransactionHash -> IO TxState
 queryTransactionState grpc th = do
