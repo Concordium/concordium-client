@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE NamedFieldPuns #-}
 module Concordium.Client.Runner
   ( process
   , getAccountNonce
@@ -30,7 +31,7 @@ module Concordium.Client.Runner
   -- * For adding baker support
   , startTransaction
   , encodeAndSignTransaction
-  , tailTransaction
+  , tailTransaction_
   , getBlockItemHash
   -- * For delegation support
   , getAccountDelegateTransactionCfg
@@ -361,7 +362,7 @@ processTransactionCmd action baseCfgDir verbose backend =
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
-          tailTransaction hash
+          tailTransaction_ hash
 --          logSuccess [ "transaction successfully completed" ]
     TransactionDeployCredential fname intOpts -> do
       source <- BSL.readFile fname
@@ -370,7 +371,7 @@ processTransactionCmd action baseCfgDir verbose backend =
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
-          tailTransaction hash
+          tailTransaction_ hash
 --          logSuccess [ "credential deployed successfully" ]
     TransactionStatus h -> do
       hash <- case parseTransactionHash h of
@@ -381,7 +382,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       runPrinter $ printTransactionStatus status
       -- TODO This works but output doesn't make sense if transaction is already committed/finalized.
       --      It should skip already completed steps.
-      -- withClient backend $ tailTransaction hash
+      -- withClient backend $ tailTransaction_ hash
     TransactionSendGtu receiver amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       when verbose $ do
@@ -395,7 +396,7 @@ processTransactionCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- transferTransactionPayload ttxCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     TransactionEncryptedTransfer txOpts receiver amount index -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -424,7 +425,7 @@ processTransactionCmd action baseCfgDir verbose backend =
 
         let intOpts = toInteractionOpts txOpts
         pl <- encryptedTransferTransactionPayload ttxCfg (ioConfirm intOpts)
-        sendAndTailTransaction txCfg pl intOpts
+        sendAndTailTransaction_ txCfg pl intOpts
 
 -- |Poll the transaction state continuously until it is "at least" the provided one.
 -- Note that the "absent" state is considered the "highest" state,
@@ -1050,20 +1051,35 @@ getNonce sender nonce confirm =
     Just v -> return v
 
 -- |Send a transaction and optionally tail it (see 'tailTransaction' below).
-sendAndTailTransaction :: (MonadIO m, MonadFail m)
+sendAndTailTransaction_ :: (MonadIO m, MonadFail m)
     => TransactionConfig -- ^ Information about the sender, and the context of transaction
     -> Types.Payload -- ^ Payload of the transaction to send
     -> InteractionOpts -- ^ How interactive should sending and tailing be
     -> ClientMonad m ()
+sendAndTailTransaction_ txCfg pl intOpts = void $ sendAndTailTransaction txCfg pl intOpts
+
+-- |Send a transaction and optionally tail it (see 'tailTransaction' below).
+-- If tailed, it returns the TransactionStatusResult of the _committed_ status.
+sendAndTailTransaction :: (MonadIO m, MonadFail m)
+    => TransactionConfig -- ^ Information about the sender, and the context of transaction
+    -> Types.Payload -- ^ Payload of the transaction to send
+    -> InteractionOpts -- ^ How interactive should sending and tailing be
+    -> ClientMonad m (Maybe TransactionStatusResult)
 sendAndTailTransaction txCfg pl intOpts = do
   tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
   let hash = getBlockItemHash tx
   logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
-  when (ioTail intOpts) $
-    tailTransaction hash
+  if ioTail intOpts
+  then Just <$> tailTransaction hash
+  else return Nothing
 
 -- |Continuously query and display transaction status until the transaction is finalized.
-tailTransaction :: (MonadIO m) => Types.TransactionHash -> ClientMonad m ()
+tailTransaction_ :: (MonadIO m) => Types.TransactionHash -> ClientMonad m ()
+tailTransaction_ hash = void $ tailTransaction hash
+
+-- |Continuously query and display transaction status until the transaction is finalized.
+-- Returns the TransactionStatusResult of the _committed_ status as finalization might take a while.
+tailTransaction :: (MonadIO m) => Types.TransactionHash -> ClientMonad m TransactionStatusResult
 tailTransaction hash = do
   logInfo [ "waiting for the transaction to be committed and finalized"
           , "you may skip this step by interrupting the command using Ctrl-C (pass flag '--no-wait' to do this by default)"
@@ -1099,6 +1115,8 @@ tailTransaction hash = do
     runPrinter $ printTransactionStatus finalizedStatus
 
   liftIO $ printf "[%s] Transaction finalized.\n" =<< getLocalTimeOfDayFormatted
+
+  return committedStatus
   where
     getLocalTimeOfDayFormatted = showTimeOfDay <$> getLocalTimeOfDay
 
@@ -1149,7 +1167,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountDelegateTransactionPayload adtxCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountUndelegate txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1166,7 +1184,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountUndelegateTransactionPayload autxCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountUpdateKeys f txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1183,7 +1201,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountUpdateKeysTransactionPayload aukCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountAddKeys f thresh txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1200,7 +1218,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountAddKeysTransactionPayload aakCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountRemoveKeys idxs thresh txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1217,7 +1235,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountRemoveKeysTransactionPayload arkCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountEncrypt{..} -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1233,7 +1251,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts aeTransactionOpts
       pl <- accountEncryptTransactionPayload aetxCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountDecrypt{..} -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1257,7 +1275,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
         let intOpts = toInteractionOpts adTransactionOpts
         pl <- accountDecryptTransactionPayload adtxCfg (ioConfirm intOpts)
-        sendAndTailTransaction txCfg pl intOpts
+        sendAndTailTransaction_ txCfg pl intOpts
 
 
   where getDelegateCostFunc acc = withClient backend $ do
@@ -1282,9 +1300,11 @@ processModuleCmd action baseCfgDir verbose backend =
       let intOpts = toInteractionOpts txOpts
       let pl = moduleDeployTransactionPayload mdCfg
       withClient backend $ do
-        sendAndTailTransaction txCfg pl intOpts
-        let moduleRef = show . Types.ModuleRef . getHash . mdtcModule $ mdCfg
-        logStrLn $ "If the transaction succeeded, the module-reference is:\n" ++ moduleRef
+        mTsr <- sendAndTailTransaction txCfg pl intOpts
+        case extractModRef mTsr of
+          Nothing -> return () -- TODO: What to do here? i.e. when: ioTail == False ||
+                             -- tsr /= SingleBlock || ModuleDeployed not in [Event] || TxRejected
+          Just modRef -> logSuccess ["module successfully deployed with reference:", show modRef]
 
     ModuleList block -> do
       (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getModuleList bb
@@ -1308,6 +1328,20 @@ processModuleCmd action baseCfgDir verbose backend =
             "-" -> BS.putStr moduleSource
             -- Write to file
             _   -> handleWriteModuleToFile outFile moduleSource
+  where
+    extractModRef :: Maybe TransactionStatusResult -> Maybe Types.ModuleRef
+    extractModRef Nothing = Nothing
+    extractModRef (Just tsr) = case parseTransactionBlockResult tsr of
+      SingleBlock _ tSummary -> getEvents tSummary >>= findModRef
+      _ -> Nothing
+      where
+        getEvents tSum = case Types.tsResult tSum of
+                    Types.TxSuccess {vrEvents} -> Just vrEvents
+                    _                          -> Nothing
+        findModRef = foldr (\e _ -> case e of
+                              Types.ModuleDeployed modRef -> Just modRef
+                              _ -> Nothing) Nothing
+
 
 -- |Writes module to file and asks user to confirm if file already exists.
 -- Relevant IOErrors are caught.
@@ -1390,7 +1424,7 @@ processContractCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       let pl = contractInitTransactionPayload ciCfg
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     ContractUpdate contrAddrIndex contrAddrSubindex receiveName paramsFile amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1400,7 +1434,7 @@ processContractCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       let pl = contractUpdateTransactionPayload cuCfg
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
 getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts -> Word64 -> Word64
                                 -> Text -> Maybe FilePath -> Types.Amount -> IO ContractUpdateTransactionCfg
@@ -1535,7 +1569,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
           Right False -> fail "update instruction not accepted by the node"
           Right True -> logSuccess [printf "update instruction '%s' sent to the baker" (show hash)]
         when (ioTail intOpts) $
-          tailTransaction hash
+          tailTransaction_ hash
 
 -- |Process a 'block ...' command.
 processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
@@ -1605,7 +1639,7 @@ processBakerCmd action baseCfgDir verbose backend =
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
-          tailTransaction hash
+          tailTransaction_ hash
 --          logSuccess [ "baker successfully added" ]
     BakerSetAccount bid accRef txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1630,7 +1664,7 @@ processBakerCmd action baseCfgDir verbose backend =
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
-          tailTransaction hash
+          tailTransaction_ hash
 --          logSuccess [ "baker reward account successfully updated" ]
     BakerSetKey bid file txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1643,7 +1677,7 @@ processBakerCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- bakerSetKeyTransactionPayload bsktcCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     BakerRemove bid txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1656,7 +1690,7 @@ processBakerCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- bakerRemoveTransactionPayload brtcCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     BakerSetAggregationKey bid file txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1669,7 +1703,7 @@ processBakerCmd action baseCfgDir verbose backend =
       let txCfg = bsakTransactionCfg bsaktCfg
 
       pl <- bakerSetAggregationKeyTransactionPayload bsaktCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     BakerSetElectionKey bid file txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1683,7 +1717,7 @@ processBakerCmd action baseCfgDir verbose backend =
 
       withClient backend $ do
         tx <- startTransaction (bsekTransactionCfg bsektCfg) pl (ioConfirm intOpts) Nothing
-        tailTransaction $ getBlockItemHash tx
+        tailTransaction_ $ getBlockItemHash tx
 --          logSuccess [ "baker election key successfully updated" ]
 
 
