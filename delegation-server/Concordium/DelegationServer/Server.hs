@@ -77,7 +77,7 @@ runHttp middlewares = do
     Right grpc -> do
       transitionChan <- newChan
       -- prepare servant app
-      let app :: State -> Application
+      let app :: ServerState -> Application
           app s = serve Api.api $ hoistServer Api.api (`runReaderT` s) $ Api.server transitionChan
       -- create the state
       tmv <- newMVar (defaultLocalState numDelegators)
@@ -101,7 +101,7 @@ runHttp middlewares = do
           (timedLogger, _) <- newTimedFastLogger timeCache (LogStdout defaultBufSize)
           let logger level msg = timedLogger (\time -> toLogStr (show time) <> ": " <> toLogStr (show level) <> ": " <> msg <> "\n")
           -- prepare wai app
-          let state = State numDelegators tmv outertmv grpc delegationAccounts (durationToNominalDiffTime $ Duration (csrEpochDuration status)) (csrGenesisTime status) logger
+          let state = ServerState numDelegators tmv outertmv grpc delegationAccounts (durationToNominalDiffTime $ Duration (csrEpochDuration status)) (csrGenesisTime status) logger
           let waiApp = app state
               printStatus = do
                 putStrLn $ "NODE_URL: " ++ show nodeUrl
