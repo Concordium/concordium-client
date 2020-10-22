@@ -7,12 +7,12 @@
 ```
 concordium-client module deploy <module-name>.wasm
 ```
+  - If successful, the module reference is printed, which should be used in next step.
 3. **Initialise an instance of the contract:**
 ```
-concordium-client contract init <module-name>.wasm --energy <max-energy> [--func <init-name>] [--params <binary-file>]
+concordium-client contract init <module-ref-or-file>.wasm --energy <max-energy> [--func <init-name>] [--params <binary-file>]
 ```
-
-  - The actual transaction needs a `ModuleReference`, which can be seen using `concordium-client module list`, but it can also be computed from the wasm module itself, as it is the hash thereof. Using the module file itself was deemed the best option as the module list doesn't provide names of the modules.
+  - The `<module-ref-or-file>` should be either a module reference OR a path to the module file (of which the reference then is calculated using hashing).
   - The maximum energy should be specified manually with the `--energy` flag.
   - By default the `"init"` function is used, but a different init function can be specified using the `--func` flag.
   - If the init function takes parameter, they should be specified in a binary file with little endian encoding and provided
@@ -37,7 +37,7 @@ concordium-client module list
 ```
 **Get binary source of module:**
 ```
-concordium-client <module-reference> <out-file>
+concordium-client <module-reference> --out <out-file>
 ```
   - The `<module-reference>` is printed when a contract is deployed, but can also be found using `concordium-client module list`.
   - `<out-file>` is the file to output the source code to (use `-` for stdout).
