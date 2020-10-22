@@ -133,22 +133,25 @@ withClient bkend comp = do
 withClientJson :: (MonadIO m, FromJSON a) => Backend -> ClientMonad m (Either String Value) -> m a
 withClientJson b c = withClient b c >>= getFromJson
 
--- |Helper function for parsing JSON Value or fail if the value is missing or not valid JSON.
+-- |Helper function for parsing JSON Value or fail if the value is missing or cannot be converted correctly.
 -- The parameter has the same type as the one returned by e.g. eitherDecode or processJSON,
 -- which many of the GRPC commands use.
 getFromJson :: (MonadIO m, FromJSON a) => Either String Value -> m a
-getFromJson = getFromJsonAndHandleInvalid onInvalidJson
-  where onInvalidJson val err = logFatal ["cannot parse '" ++ show val ++ "' as JSON: " ++ err]
+getFromJson = getFromJsonAndHandleError onError
+  where onError val err = logFatal ["cannot convert '" ++ show val ++ "': " ++ err]
 
 -- |Helper function for parsing JSON Value, logFatal if the Either is Left,
--- and use the provided function to handle invalid JSON.
-getFromJsonAndHandleInvalid :: (MonadIO m, FromJSON a) => (Value -> String -> m a) -> Either String Value -> m a
-getFromJsonAndHandleInvalid handleInvalid r = do
+-- and use the provided function to handle Error in fromJSON.
+getFromJsonAndHandleError :: (MonadIO m, FromJSON a) =>
+                         (Value -> String -> m a) -- ^ Takes the JSON being converted and the err string from (Error err) if fromJSON fails.
+                         -> Either String Value
+                         -> m a
+getFromJsonAndHandleError handleError r = do
   s <- case r of
          Left err -> logFatal [printf "I/O error: %s" err]
          Right v -> return v
   case fromJSON s of
-    Error err -> handleInvalid s err
+    Error err -> handleError s err
     Success v -> return v
 
 -- |Look up account from the provided name or address. If 'Nothing' is given, use the defaultAcccountName.
@@ -1309,12 +1312,13 @@ processModuleCmd action baseCfgDir verbose backend =
 
     ModuleList block -> do
       (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getModuleList bb
-      v <- getFromJsonAndHandleInvalid (\_ _ -> logFatal ["could not retrieve the list of modules",
-                                   "the provided block hash does not exist or is invalid:", Text.unpack bestBlock]) res
-
-      if null v
-      then logInfo ["there are no modules in block " ++ Text.unpack bestBlock]
-      else runPrinter $ printModuleList v
+      v <- getFromJsonAndHandleError (\_ _ -> logFatal ["could not retrieve the list of modules",
+                                   "the provided block hash is invalid:", Text.unpack bestBlock]) res
+      case v of
+        Nothing -> logFatal ["could not retrieve the list of modules",
+                               "the provided block does not exist:", Text.unpack bestBlock]
+        Just [] -> logInfo ["there are no modules in block " ++ Text.unpack bestBlock]
+        Just xs -> runPrinter $ printModuleList xs
 
     ModuleShow moduleRef outFile block -> do
       (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getModuleSource moduleRef bb
@@ -1400,12 +1404,13 @@ processContractCmd action baseCfgDir verbose backend =
   case action of
     ContractList block -> do
       (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getInstances bb
-      v <- getFromJsonAndHandleInvalid (\_ _ -> logFatal ["could not retrieve the list of contracts",
-                                   "the provided block hash does not exist or is invalid:", Text.unpack bestBlock]) res
-
-      if null v
-      then logInfo ["there are no contract instances in block " ++ Text.unpack bestBlock]
-      else runPrinter $ printContractList v
+      v <- getFromJsonAndHandleError (\_ _ -> logFatal ["could not retrieve the list of contracts",
+                                   "the provided block hash is invalid:", Text.unpack bestBlock]) res
+      case v of
+        Nothing -> logFatal ["could not retrieve the list of contracts",
+                               "the provided block does not exist:", Text.unpack bestBlock]
+        Just [] -> logInfo ["there are no contract instances in block " ++ Text.unpack bestBlock]
+        Just xs -> runPrinter $ printContractList xs
 
     ContractShow contrAddrIndex contrAddrSubindex block -> do
       let contrAddr = showCompactPrettyJSON $ mkContractAddress contrAddrIndex contrAddrSubindex
@@ -1413,6 +1418,7 @@ processContractCmd action baseCfgDir verbose backend =
 
       case res of
         Left err -> logFatal ["could not retrieve contract:", err]
+        -- TODO: Handle invalid block hashes and nonexisting blocks separately from nonexisting contracts.
         Right AE.Null -> logInfo ["the contract instance at address " ++ contrAddr
                       ++ " does not exist in block " ++ Text.unpack bestBlock]
         Right contrInfo -> putStr . showPrettyJSON $ contrInfo
