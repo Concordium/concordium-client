@@ -2,6 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE LambdaCase #-}
 module Concordium.Client.Runner
   ( process
   , getAccountNonce
@@ -1355,22 +1356,9 @@ processModuleCmd action baseCfgDir verbose backend =
             "-" -> BS.putStr moduleSource
             -- Write to file
             _   -> handleWriteModuleToFile outFile moduleSource
-  where
-    extractModRef :: Maybe TransactionStatusResult -> Either String Types.ModuleRef
-    extractModRef Nothing = Left "ioTail disabled" -- occurs when ioTail is disabled.
-    extractModRef (Just tsr) = case parseTransactionBlockResult tsr of
-      SingleBlock _ tSummary -> getEvents tSummary >>= findModRef
-      NoBlocks -> Left "transaction not included in any blocks"
-      _ -> Left "internal server: Finalized chain has split"
-      where
-        getEvents tSum = case Types.tsResult tSum of
-                    Types.TxSuccess {vrEvents}      -> Right vrEvents
-                    Types.TxReject {vrRejectReason} -> Left $ showRejectReason True vrRejectReason
-        findModRef = foldr (\e _ -> case e of
-                              Types.ModuleDeployed modRef -> Right modRef
-                              _ -> notIncludedLeft) notIncludedLeft
-        notIncludedLeft = Left "transaction not included in any blocks"
-
+  where extractModRef = extractFromTsr (\case
+                                           Types.ModuleDeployed modRef -> Just modRef
+                                           _ -> Nothing)
 
 -- |Writes module to file and asks user to confirm if file already exists.
 -- Relevant IOErrors are caught.
@@ -1455,7 +1443,12 @@ processContractCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       let pl = contractInitTransactionPayload ciCfg
-      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+      withClient backend $ do
+        mTsr <- sendAndTailTransaction txCfg pl intOpts
+        case extractContractAddress mTsr of
+          Left "ioTail disabled" -> return ()
+          Left err -> logFatal ["contract initialisation failed:", err]
+          Right contrAddr -> logSuccess ["contract successfully initialized with address:", showCompactPrettyJSON contrAddr]
 
     ContractUpdate contrAddrIndex contrAddrSubindex receiveName paramsFile amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1466,6 +1459,9 @@ processContractCmd action baseCfgDir verbose backend =
       let intOpts = toInteractionOpts txOpts
       let pl = contractUpdateTransactionPayload cuCfg
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+  where extractContractAddress = extractFromTsr (\case
+                                                 Types.ContractInitialized {..} -> Just ecAddress
+                                                 _ -> Nothing)
 
 getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> Word64 -> Word64
                                 -> Text -> Maybe FilePath -> Types.Amount -> IO ContractUpdateTransactionCfg
@@ -1536,6 +1532,23 @@ getWasmParameterFromFileOrDefault paramsFile = case paramsFile of
 -- |Construct a Contract Address from an index and a subindex.
 mkContractAddress :: Word64 -> Word64 -> Types.ContractAddress
 mkContractAddress index subindex = Types.ContractAddress (Types.ContractIndex index) (Types.ContractSubindex subindex)
+
+-- |Try to extract event information from a TransactionStatusResult.
+-- The Maybe returned by the supplied function is mapped to Either with an error message.
+extractFromTsr :: (Types.Event -> Maybe a) -> Maybe TransactionStatusResult -> Either String a
+extractFromTsr _ Nothing = Left "ioTail disabled" -- occurs when ioTail is disabled.
+extractFromTsr eventMatcher (Just tsr) = case parseTransactionBlockResult tsr of
+  SingleBlock _ tSummary -> getEvents tSummary >>= maybeToRight "transaction not included in any blocks" . findModRef
+  NoBlocks -> Left "transaction not included in any blocks"
+  _ -> Left "internal server: Finalized chain has split"
+  where
+    getEvents tSum = case Types.tsResult tSum of
+                Types.TxSuccess {vrEvents}      -> Right vrEvents
+                Types.TxReject {vrRejectReason} -> Left $ showRejectReason True vrRejectReason
+    findModRef = foldr (\e _ -> eventMatcher e) Nothing
+
+    maybeToRight _ (Just x) = Right x
+    maybeToRight y Nothing  = Left y
 
 -- |Process a 'consensus ...' command.
 processConsensusCmd :: ConsensusCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
