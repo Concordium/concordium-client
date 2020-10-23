@@ -462,13 +462,9 @@ data TransactionConfig =
 -- If an energy cost function is provided and it returns a value which
 -- is different from the specified energy allocation, a warning is logged.
 -- If the energy allocation is too low, the user is prompted to increase it.
-getTransactionCfg :: BaseConfig -> TransactionOpts -> GetComputeEnergyCost -> IO TransactionConfig
+getTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> GetComputeEnergyCost -> IO TransactionConfig
 getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
-  keysArg <- case toKeys txOpts of
-               Nothing -> return Nothing
-               Just filePath -> AE.eitherDecodeFileStrict filePath `withLogFatalIO` ("cannot decode keys: " ++)
-  (_, accCfg) <- getAccountConfig (toSender txOpts) baseCfg Nothing keysArg Nothing AssumeInitialized
-
+  accCfg <- getAccountCfgFromTxOpts baseCfg txOpts
   energyCostFunc <- getEnergyCostFunc accCfg
   let computedCost = case energyCostFunc of
                        Nothing -> Nothing
@@ -501,18 +497,44 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
           logInfo [printf "%s allocated to the transaction, but only %s is needed" (showNrg energy) (showNrg actualFee)]
           return energy
       | otherwise = return energy
-    -- Warn if expiry is in the past or very near or distant future.
-    -- As the timestamps are unsigned, taking the simple difference might cause underflow.
-    warnSuspiciousExpiry e now
-      | e < now =
-        logWarn [ "expiration time is in the past"
-                , "the transaction will not be committed" ]
-      | e < now + 30 =
-        logWarn [ printf "expiration time is in just %s seconds" (show $ now - e)
-                , "this may not be enough time for the transaction to be committed" ]
-      | e > now + 3600 =
-        logWarn [ "expiration time is in more than one hour" ]
-      | otherwise = return ()
+
+-- |Resolve transaction config based on persisted config and CLI flags.
+-- Used for transactions where a specification of maxEnergy is required.
+getRequiredEnergyTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> IO TransactionConfig
+getRequiredEnergyTransactionCfg baseCfg txOpts = do
+  accCfg <- getAccountCfgFromTxOpts baseCfg txOpts
+  let energy = toMaxEnergyAmount txOpts
+  now <- getCurrentTimeUnix
+  expiry <- getExpiryArg "expiry" now $ toExpiration txOpts
+  warnSuspiciousExpiry expiry now
+
+  return TransactionConfig
+    { tcAccountCfg = accCfg
+    , tcNonce = toNonce txOpts
+    , tcEnergy = energy
+    , tcExpiry = expiry }
+
+-- |Warn if expiry is in the past or very near or distant future.
+-- As the timestamps are unsigned, taking the simple difference might cause underflow.
+warnSuspiciousExpiry :: Types.TransactionExpiryTime -> Types.TransactionExpiryTime -> IO ()
+warnSuspiciousExpiry expiryArg now
+  | expiryArg < now =
+    logWarn [ "expiration time is in the past"
+            , "the transaction will not be committed" ]
+  | expiryArg < now + 30 =
+    logWarn [ printf "expiration time is in just %s seconds" (show $ now - expiryArg)
+            , "this may not be enough time for the transaction to be committed" ]
+  | expiryArg > now + 3600 =
+    logWarn [ "expiration time is in more than one hour" ]
+  | otherwise = return ()
+
+-- |Get accountCfg from the config folder or logFatal if the keys are not provided in txOpts.
+getAccountCfgFromTxOpts :: BaseConfig -> TransactionOpts energyOrMaybe -> IO AccountConfig
+getAccountCfgFromTxOpts baseCfg txOpts = do
+  keysArg <- case toKeys txOpts of
+               Nothing -> return Nothing
+               Just filePath -> AE.eitherDecodeFileStrict filePath `withLogFatalIO` ("cannot decode keys: " ++)
+  snd <$> getAccountConfig (toSender txOpts) baseCfg Nothing keysArg Nothing AssumeInitialized
 
 -- |Resolved configuration for a transfer transaction.
 data TransferTransactionConfig =
@@ -523,7 +545,7 @@ data TransferTransactionConfig =
 
 -- |Resolve configuration of a transfer transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
-getTransferTransactionCfg :: BaseConfig -> TransactionOpts -> Text -> Types.Amount -> IO TransferTransactionConfig
+getTransferTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Text -> Types.Amount -> IO TransferTransactionConfig
 getTransferTransactionCfg baseCfg txOpts receiver amount = do
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
 
@@ -671,7 +693,7 @@ data AccountDecryptTransactionConfig =
 
 -- |Resolve configuration of a 'baker add' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
-getBakerAddTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> IO BakerAddTransactionConfig
+getBakerAddTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> IO BakerAddTransactionConfig
 getBakerAddTransactionCfg baseCfg txOpts f = do
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   bakerKeys <- eitherDecodeFileStrict f >>= getFromJson
@@ -682,7 +704,7 @@ getBakerAddTransactionCfg baseCfg txOpts f = do
 
 -- |Resolve configuration of a 'baker add' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
-getBakerRemoveTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> IO BakerRemoveTransactionConfig
+getBakerRemoveTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.BakerId -> IO BakerRemoveTransactionConfig
 getBakerRemoveTransactionCfg baseCfg txOpts bid = do
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return BakerRemoveTransactionConfig
@@ -691,7 +713,7 @@ getBakerRemoveTransactionCfg baseCfg txOpts bid = do
   where nrgCost _ = return $ Just bakerRemoveEnergyCost
 
 -- |Resolve configuration for an 'account delegate' transaction.
-getAccountDelegateTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> GetComputeEnergyCost -> IO AccountDelegateTransactionConfig
+getAccountDelegateTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.BakerId -> GetComputeEnergyCost -> IO AccountDelegateTransactionConfig
 getAccountDelegateTransactionCfg baseCfg txOpts bakerId nrgCost = do
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return AccountDelegateTransactionConfig
@@ -699,28 +721,28 @@ getAccountDelegateTransactionCfg baseCfg txOpts bakerId nrgCost = do
     , adtcBakerId = bakerId }
 
 -- |Resolve configuration for an 'account undelegate' transaction.
-getAccountUndelegateTransactionCfg :: BaseConfig -> TransactionOpts -> GetComputeEnergyCost -> IO AccountUndelegateTransactionConfig
+getAccountUndelegateTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> GetComputeEnergyCost -> IO AccountUndelegateTransactionConfig
 getAccountUndelegateTransactionCfg baseCfg txOpts nrgCost = do
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return AccountUndelegateTransactionConfig
     { autcTransactionCfg = txCfg }
 
 -- |Resolve configuration for an 'update keys' transaction
-getAccountUpdateKeysTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> IO AccountUpdateKeysTransactionCfg
+getAccountUpdateKeysTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> IO AccountUpdateKeysTransactionCfg
 getAccountUpdateKeysTransactionCfg baseCfg txOpts f = do
   keys <- getFromJson =<< eitherDecodeFileStrict f
   txCfg <- getTransactionCfg baseCfg txOpts (nrgCost $ length keys)
   return $ AccountUpdateKeysTransactionCfg txCfg keys
   where nrgCost numKeys _ = return $ Just $ accountUpdateKeysEnergyCost numKeys
 
-getAccountAddKeysTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> Maybe ID.SignatureThreshold -> IO AccountAddKeysTransactionCfg
+getAccountAddKeysTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> Maybe ID.SignatureThreshold -> IO AccountAddKeysTransactionCfg
 getAccountAddKeysTransactionCfg baseCfg txOps f threshold = do
   keys <- getFromJson =<< eitherDecodeFileStrict f
   txCfg <- getTransactionCfg baseCfg txOps (nrgCost $ length keys)
   return $ AccountAddKeysTransactionCfg txCfg keys threshold
   where nrgCost numKeys _ = return $ Just $ accountAddKeysEnergyCost numKeys
 
-getAccountRemoveKeysTransactionCfg :: BaseConfig -> TransactionOpts -> [ID.KeyIndex] -> Maybe ID.SignatureThreshold -> IO AccountRemoveKeysTransactionCfg
+getAccountRemoveKeysTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> [ID.KeyIndex] -> Maybe ID.SignatureThreshold -> IO AccountRemoveKeysTransactionCfg
 getAccountRemoveKeysTransactionCfg baseCfg txOpts idxs threshold = do
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   indexSet <- Types.safeSetFromAscList $ L.sort idxs
@@ -730,7 +752,7 @@ getAccountRemoveKeysTransactionCfg baseCfg txOpts idxs threshold = do
 
 -- |Resolve configuration for transferring an amount from public to encrypted
 -- balance of an account.
-getAccountEncryptTransactionCfg :: BaseConfig -> TransactionOpts -> Types.Amount -> IO AccountEncryptTransactionConfig
+getAccountEncryptTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.Amount -> IO AccountEncryptTransactionConfig
 getAccountEncryptTransactionCfg baseCfg txOpts aeAmount = do
   aeTransactionCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return AccountEncryptTransactionConfig{..}
@@ -1365,7 +1387,7 @@ handleWriteModuleToFile fileName contents = do
         when (Err.isPermissionError e)   $ logError ["you do not have permissions to write to " ++ fileNameQuoted]
   where fileNameQuoted = "'" ++ fileName ++ "'"
 
-getModuleDeployTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> IO ModuleDeployTransactionCfg
+getModuleDeployTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> IO ModuleDeployTransactionCfg
 getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
   wasmModule <- getWasmModuleFromFile moduleFile
   txCfg <- getTransactionCfg baseCfg txOpts $ moduleDeployEnergyCost wasmModule
@@ -1445,10 +1467,10 @@ processContractCmd action baseCfgDir verbose backend =
       let pl = contractUpdateTransactionPayload cuCfg
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
-getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts -> Word64 -> Word64
+getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> Word64 -> Word64
                                 -> Text -> Maybe FilePath -> Types.Amount -> IO ContractUpdateTransactionCfg
 getContractUpdateTransactionCfg baseCfg txOpts contrAddrIndex contrAddrSubindex receiveName paramsFile amount = do
-  txCfg <- getTransactionCfg baseCfg txOpts noDefaultEnergyCost
+  txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   let contrAddr = mkContractAddress contrAddrIndex contrAddrSubindex
   params <- getWasmParameterFromFileOrDefault paramsFile
   return $ ContractUpdateTransactionCfg txCfg contrAddr (Wasm.ReceiveName receiveName) params amount
@@ -1471,13 +1493,13 @@ data ContractUpdateTransactionCfg =
   , cutcAmount :: !Types.Amount
   }
 
-getContractInitTransactionCfg :: BaseConfig -> TransactionOpts -> String -> Text
+getContractInitTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> String -> Text
                               -> Maybe FilePath -> Types.Amount -> IO ContractInitTransactionCfg
 getContractInitTransactionCfg baseCfg txOpts moduleRefOrFile initName paramsFile amount = do
   moduleRef <- case readMaybe moduleRefOrFile of
                  Just modRef -> pure modRef
                  Nothing -> Types.ModuleRef . getHash <$> getWasmModuleFromFile moduleRefOrFile
-  txCfg <- getTransactionCfg baseCfg txOpts noDefaultEnergyCost
+  txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   params <- getWasmParameterFromFileOrDefault paramsFile
   return $ ContractInitTransactionCfg txCfg amount moduleRef (Wasm.InitName initName) params
 
@@ -1514,10 +1536,6 @@ getWasmParameterFromFileOrDefault paramsFile = case paramsFile of
 -- |Construct a Contract Address from an index and a subindex.
 mkContractAddress :: Word64 -> Word64 -> Types.ContractAddress
 mkContractAddress index subindex = Types.ContractAddress (Types.ContractIndex index) (Types.ContractSubindex subindex)
-
--- |When used with getTransactionCfg it forces the user to specify a max energy cost.
-noDefaultEnergyCost :: GetComputeEnergyCost
-noDefaultEnergyCost = const $ pure Nothing
 
 -- |Process a 'consensus ...' command.
 processConsensusCmd :: ConsensusCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -1734,7 +1752,7 @@ processBakerCmd action baseCfgDir verbose backend =
 
 -- |Resolve configuration of a 'baker update' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
-getBakerSetAccountTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> AccountSigningData -> IO BakerSetAccountTransactionConfig
+getBakerSetAccountTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.BakerId -> AccountSigningData -> IO BakerSetAccountTransactionConfig
 getBakerSetAccountTransactionCfg baseCfg txOpts bid asd = do
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return BakerSetAccountTransactionConfig
@@ -1743,7 +1761,7 @@ getBakerSetAccountTransactionCfg baseCfg txOpts bid asd = do
     , bsatcAccountSigningData = asd }
   where nrgCost _ = return $ Just bakerSetAccountEnergyCost
 
-getBakerSetKeyTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerSetKeyTransactionConfig
+getBakerSetKeyTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.BakerId -> FilePath -> IO BakerSetKeyTransactionConfig
 getBakerSetKeyTransactionCfg baseCfg txOpts bid f = do
   kp <- eitherDecodeFileStrict f >>= getFromJson
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
@@ -1753,7 +1771,7 @@ getBakerSetKeyTransactionCfg baseCfg txOpts bid f = do
     , bsktcKeyPair = kp }
   where nrgCost _ = return $ Just bakerSetKeyEnergyCost
 
-getBakerSetAggregationKeyCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerSetAggregationKeyTransactionConfig
+getBakerSetAggregationKeyCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.BakerId -> FilePath -> IO BakerSetAggregationKeyTransactionConfig
 getBakerSetAggregationKeyCfg baseCfg txOpts bid file = do
   eitherDecodeFileStrict file >>= \case
     Left err -> logFatal [printf "Cannot read supplied file: %s" err]
@@ -1774,7 +1792,7 @@ getBakerSetAggregationKeyCfg baseCfg txOpts bid file = do
               }
   where nrgCost _ = return $ Just bakerSetAggregationKeyEnergyCost
 
-getBakerSetElectionKeyCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerSetElectionKeyTransactionConfig
+getBakerSetElectionKeyCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.BakerId -> FilePath -> IO BakerSetElectionKeyTransactionConfig
 getBakerSetElectionKeyCfg baseCfg txOpts bid file = do
   kp :: VRF.KeyPair <- eitherDecodeFileStrict file >>= getFromJson
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
