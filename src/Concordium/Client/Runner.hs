@@ -1063,7 +1063,7 @@ sendAndTailTransaction_ :: (MonadIO m, MonadFail m)
 sendAndTailTransaction_ txCfg pl intOpts = void $ sendAndTailTransaction txCfg pl intOpts
 
 -- |Send a transaction and optionally tail it (see 'tailTransaction' below).
--- If tailed, it returns the TransactionStatusResult of the _committed_ status.
+-- If tailed, it returns the TransactionStatusResult of the finalized status.
 sendAndTailTransaction :: (MonadIO m, MonadFail m)
     => TransactionConfig -- ^ Information about the sender, and the context of transaction
     -> Types.Payload -- ^ Payload of the transaction to send
@@ -1082,7 +1082,7 @@ tailTransaction_ :: (MonadIO m) => Types.TransactionHash -> ClientMonad m ()
 tailTransaction_ hash = void $ tailTransaction hash
 
 -- |Continuously query and display transaction status until the transaction is finalized.
--- Returns the TransactionStatusResult of the _committed_ status as finalization might take a while.
+-- Returns the TransactionStatusResult of the finalized status.
 tailTransaction :: (MonadIO m) => Types.TransactionHash -> ClientMonad m TransactionStatusResult
 tailTransaction hash = do
   logInfo [ "waiting for the transaction to be committed and finalized"
@@ -1120,7 +1120,7 @@ tailTransaction hash = do
 
   liftIO $ printf "[%s] Transaction finalized.\n" =<< getLocalTimeOfDayFormatted
 
-  return committedStatus
+  return finalizedStatus
   where
     getLocalTimeOfDayFormatted = showTimeOfDay <$> getLocalTimeOfDay
 
@@ -1306,9 +1306,9 @@ processModuleCmd action baseCfgDir verbose backend =
       withClient backend $ do
         mTsr <- sendAndTailTransaction txCfg pl intOpts
         case extractModRef mTsr of
-          Nothing -> return () -- TODO: What to do here? i.e. when: ioTail == False ||
-                             -- tsr /= SingleBlock || ModuleDeployed not in [Event] || TxRejected
-          Just modRef -> logSuccess ["module successfully deployed with reference:", show modRef]
+          Left "ioTail disabled" -> return ()
+          Left err -> logFatal ["module deployment failed:", err]
+          Right modRef -> logSuccess ["module successfully deployed with reference:", show modRef]
 
     ModuleList block -> do
       (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getModuleList bb
@@ -1334,18 +1334,20 @@ processModuleCmd action baseCfgDir verbose backend =
             -- Write to file
             _   -> handleWriteModuleToFile outFile moduleSource
   where
-    extractModRef :: Maybe TransactionStatusResult -> Maybe Types.ModuleRef
-    extractModRef Nothing = Nothing
+    extractModRef :: Maybe TransactionStatusResult -> Either String Types.ModuleRef
+    extractModRef Nothing = Left "ioTail disabled" -- occurs when ioTail is disabled.
     extractModRef (Just tsr) = case parseTransactionBlockResult tsr of
       SingleBlock _ tSummary -> getEvents tSummary >>= findModRef
-      _ -> Nothing
+      NoBlocks -> Left "transaction not included in any blocks"
+      _ -> Left "internal server: Finalized chain has split"
       where
         getEvents tSum = case Types.tsResult tSum of
-                    Types.TxSuccess {vrEvents} -> Just vrEvents
-                    _                          -> Nothing
+                    Types.TxSuccess {vrEvents}      -> Right vrEvents
+                    Types.TxReject {vrRejectReason} -> Left $ showRejectReason True vrRejectReason
         findModRef = foldr (\e _ -> case e of
-                              Types.ModuleDeployed modRef -> Just modRef
-                              _ -> Nothing) Nothing
+                              Types.ModuleDeployed modRef -> Right modRef
+                              _ -> notIncludedLeft) notIncludedLeft
+        notIncludedLeft = Left "transaction not included in any blocks"
 
 
 -- |Writes module to file and asks user to confirm if file already exists.
