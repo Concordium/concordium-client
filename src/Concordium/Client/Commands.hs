@@ -114,12 +114,12 @@ data TransactionCmd
   | TransactionSendGtu
     { tsgReceiver :: !Text
     , tsgAmount :: !Amount
-    , tsgOpts :: !TransactionOpts }
+    , tsgOpts :: !(TransactionOpts (Maybe Energy)) }
   | TransactionDeployCredential
     { tdcFile :: !FilePath
     , tdcInteractionOpts :: !InteractionOpts }
   | TransactionEncryptedTransfer
-    { tetTransactionOpts :: !TransactionOpts,
+    { tetTransactionOpts :: !(TransactionOpts (Maybe Energy)),
       -- | Address of the receiver.
       tetReceiver :: !Text,
       -- | Amount to send.
@@ -139,31 +139,31 @@ data AccountCmd
     { alBlockHash :: !(Maybe Text) }
   | AccountDelegate
     { adBakerId :: !BakerId
-    , adTransactionOpts :: !TransactionOpts }
+    , adTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | AccountUndelegate
-    { auTransactionOpts :: !TransactionOpts }
+    { auTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | AccountUpdateKeys
     { aukKeys :: !FilePath
-    , aukTransactionOpts :: !TransactionOpts }
+    , aukTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | AccountAddKeys
     { aakKeys :: !FilePath
     , aakThreshold :: !(Maybe SignatureThreshold)
-    , aakTransactionOpts :: !TransactionOpts }
+    , aakTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | AccountRemoveKeys
     { arkKeys :: ![KeyIndex]
     , arkThreshold :: !(Maybe SignatureThreshold)
-    , arkTransactionOpts :: !TransactionOpts }
+    , arkTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   -- |Transfer part of the public balance to the encrypted balance of the
   -- account.
   | AccountEncrypt
-    { aeTransactionOpts :: !TransactionOpts,
+    { aeTransactionOpts :: !(TransactionOpts (Maybe Energy)),
       -- | Amount to transfer from public to encrypted balance.
       aeAmount :: !Amount
     }
   -- |Transfer part of the encrypted balance to the public balance of the
   -- account.
   | AccountDecrypt
-    { adTransactionOpts :: !TransactionOpts,
+    { adTransactionOpts :: !(TransactionOpts (Maybe Energy)),
       -- |Amount to transfer from encrypted to public balance.
       adAmount :: !Amount,
       -- | Which indices of incoming amounts to use as inputs.
@@ -178,7 +178,7 @@ data ModuleCmd
     { -- |Path to the module.
       mdModuleFile :: !FilePath
       -- |Options for transaction.
-    , mdTransactionOpts :: !TransactionOpts
+    , mdTransactionOpts :: !(TransactionOpts (Maybe Energy))
     }
   -- |List all modules.
   | ModuleList
@@ -221,7 +221,7 @@ data ContractCmd
       -- |Amount to be send to contract (default: 0).
     , ciAmount :: !Amount
       -- |Options for transaction.
-    , ciTransactionOpts :: !TransactionOpts }
+    , ciTransactionOpts :: !(TransactionOpts Energy) }
   -- |Update an existing contract, i.e. invoke a receive function.
   | ContractUpdate
     { -- |Index of the address for the contract to invoke.
@@ -235,15 +235,16 @@ data ContractCmd
       -- |Amount to invoke the receive function with (default: 0).
     , cuAmount :: !Amount
       -- |Options for transaction.
-    , cuTransactionOpts :: !TransactionOpts }
+    , cuTransactionOpts :: !(TransactionOpts Energy) }
   deriving (Show)
 
-data TransactionOpts =
+-- | The type parameter 'energyOrMaybe' should be Energy or Maybe Energy.
+data TransactionOpts energyOrMaybe =
   TransactionOpts
   { toSender :: !(Maybe Text)
   , toKeys :: !(Maybe FilePath)
   , toNonce :: !(Maybe Nonce)
-  , toMaxEnergyAmount :: !(Maybe Energy)
+  , toMaxEnergyAmount :: !energyOrMaybe
   , toExpiration :: !(Maybe Text)
   , toInteractionOpts :: !InteractionOpts }
   deriving (Show)
@@ -276,26 +277,26 @@ data BakerCmd
     { bgkFile :: !(Maybe FilePath) }
   | BakerAdd
     { baFile :: !FilePath
-    , baTransactionOpts :: !TransactionOpts }
+    , baTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | BakerSetAccount
     { bsaBakerId :: !BakerId
     , bsaAccountRef :: !Text
-    , bsaTransactionOpts :: !TransactionOpts }
+    , bsaTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | BakerSetKey
     { buskBakerId :: !BakerId
     , bsaSignatureKeysFile :: !FilePath
-    , buskTransactionOpts :: !TransactionOpts }
+    , buskTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | BakerRemove
     { brBakerId :: !BakerId
-    , brTransactionOpts :: !TransactionOpts }
+    , brTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | BakerSetAggregationKey
     { bsakBakerId :: !BakerId
     , bsakBakerAggregationKeyFile :: !FilePath
-    , bsakTransactionOpts :: !TransactionOpts }
+    , bsakTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | BakerSetElectionKey
     { bsekBakerId :: !BakerId
     , bsekBakerElectionKeyFile :: !FilePath
-    , bsakTransactionOps :: !TransactionOpts }
+    , bsakTransactionOps :: !(TransactionOpts (Maybe Energy)) }
   deriving (Show)
 
 data IdentityCmd
@@ -382,15 +383,26 @@ retryNumParser =
      metavar "GRPC-RETRY" <>
      help "How many times to retry the connection if it fails the first time.")
 
-transactionOptsParser :: Parser TransactionOpts
-transactionOptsParser =
+-- |Parse transactionOpts with an optional energy flag
+transactionOptsParser :: Parser (TransactionOpts (Maybe Energy))
+transactionOptsParser = transactionOptsParserBuilder $
+    optional (option auto (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction."))
+
+-- |Parse transactionOpts with a required energy flag
+requiredEnergyTransactionOptsParser :: Parser (TransactionOpts Energy)
+requiredEnergyTransactionOptsParser = transactionOptsParserBuilder $
+    option auto (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction.")
+
+-- |Helper function to build an transactionOptsParser with or without a required energy flag
+transactionOptsParserBuilder :: Parser energyOrMaybe -> Parser (TransactionOpts energyOrMaybe)
+transactionOptsParserBuilder energyOrMaybeParser =
   TransactionOpts <$>
     optional (strOption (long "sender" <> metavar "SENDER" <> help "Name or address of the transaction sender.")) <*>
     -- TODO Specify / refer to format of JSON file when new commands (e.g. account add-keys) that accept same format are
     -- added.
     optional (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file.")) <*>
     optional (option auto (long "nonce" <> metavar "NONCE" <> help "Transaction nonce.")) <*>
-    optional (option auto (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction. Depeding on the transaction type, this flag may be optional.")) <*>
+    energyOrMaybeParser <*>
     optional (strOption (long "expiry" <> metavar "EXPIRY" <> help "Expiration time of a transaction, specified as a relative duration (\"30s\", \"5m\", etc.) or UNIX epoch timestamp.")) <*>
     interactionOptsParser
 
@@ -713,7 +725,7 @@ contractInitCmd =
                              <> help "Binary file with parameters for init function (default: no parameters).")) <*>
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> value 0
                                                                 <> help "Amount of GTU to transfer to the contract.") <*>
-        transactionOptsParser)
+        requiredEnergyTransactionOptsParser)
       (progDesc "Initialize contract from already deployed module."))
 
 contractUpdateCmd :: Mod CommandFields ContractCmd
@@ -731,7 +743,7 @@ contractUpdateCmd =
                              <> help "Binary file with parameters for init function (default: no parameters).")) <*>
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> value 0
                                                                 <> help "Amount of GTU to transfer to the contract.") <*>
-        transactionOptsParser)
+        requiredEnergyTransactionOptsParser)
       (progDesc "Update an existing contract."))
 
 configCmds :: ShowAllOpts -> Mod CommandFields Cmd
