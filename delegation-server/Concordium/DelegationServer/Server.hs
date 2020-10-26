@@ -31,7 +31,14 @@ import qualified Network.Wai.Middleware.ForceSSL as M (forceSSL)
 import Network.Wai.Middleware.Gzip (def, gzip)
 import Network.Wai.Middleware.HttpAuth (basicAuth)
 import Network.Wai.Middleware.Static (Policy, policy, staticPolicy)
-import Servant
+import System.Log.FastLogger
+    ( ToLogStr(toLogStr),
+      newTimedFastLogger,
+      newTimeCache,
+      simpleTimeFormat,
+      defaultBufSize,
+      LogType'(LogStdout) )
+import Servant( hoistServer, serve )
 import System.FilePath ((</>))
 import Text.Read (readMaybe)
 
@@ -53,6 +60,7 @@ runHttp middlewares = do
   env <- Config.lookupEnv "ENV" Config.Development
   nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:11100"
   rpcPassword <- Config.lookupEnvText "RPC_PASSWORD" "rpcadmin"
+  numDelegators <- Config.lookupEnv "NUM_DELEGATORS" 4
   cfgDir <- T.unpack <$> (Config.lookupEnvText "ACC_DIR" . T.pack =<< getDefaultBaseConfigDir)
   let (nodeHost, nodePort) =
         case splitOn ":" (T.unpack nodeUrl) of
@@ -69,11 +77,11 @@ runHttp middlewares = do
     Right grpc -> do
       transitionChan <- newChan
       -- prepare servant app
-      let app :: State -> Application
+      let app :: ServerState -> Application
           app s = serve Api.api $ hoistServer Api.api (`runReaderT` s) $ Api.server transitionChan
       -- create the state
-      tmv <- newMVar defaultLocalState
-      outertmv <- newMVar defaultLocalState
+      tmv <- newMVar (defaultLocalState numDelegators)
+      outertmv <- newMVar (defaultLocalState numDelegators)
       jStatus <- either (fail . show) (either (fail . show) return) =<< runClient grpc getConsensusStatus
       case fromJSON jStatus of
         Success status -> do
@@ -87,9 +95,13 @@ runHttp middlewares = do
                       Left err -> fail err
                       Right acc -> return acc
                 )
-                ([1 .. 4] :: [Int])
-          let state = State tmv outertmv grpc delegationAccounts (durationToNominalDiffTime $ Duration (csrEpochDuration status)) (csrGenesisTime status)
+                ([1 .. numDelegators] :: [Int])
+          timeCache <- newTimeCache simpleTimeFormat
+          -- we don't expect the server to shut-down, so we ignore the finalizer for the logger (second return value)
+          (timedLogger, _) <- newTimedFastLogger timeCache (LogStdout defaultBufSize)
+          let logger level msg = timedLogger (\time -> toLogStr (show time) <> ": " <> toLogStr (show level) <> ": " <> msg <> "\n")
           -- prepare wai app
+          let state = ServerState numDelegators tmv outertmv grpc delegationAccounts (durationToNominalDiffTime $ Duration (csrEpochDuration status)) (csrGenesisTime status) logger
           let waiApp = app state
               printStatus = do
                 putStrLn $ "NODE_URL: " ++ show nodeUrl
