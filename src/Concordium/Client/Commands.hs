@@ -24,6 +24,7 @@ module Concordium.Client.Commands
 
 import Data.Text hiding (map)
 import Data.Version (showVersion)
+import Data.Word (Word64)
 import Network.HTTP2.Client
 import Options.Applicative
 import Paths_simple_client (version)
@@ -113,12 +114,12 @@ data TransactionCmd
   | TransactionSendGtu
     { tsgReceiver :: !Text
     , tsgAmount :: !Amount
-    , tsgOpts :: !TransactionOpts }
+    , tsgOpts :: !(TransactionOpts (Maybe Energy)) }
   | TransactionDeployCredential
     { tdcFile :: !FilePath
     , tdcInteractionOpts :: !InteractionOpts }
   | TransactionEncryptedTransfer
-    { tetTransactionOpts :: !TransactionOpts,
+    { tetTransactionOpts :: !(TransactionOpts (Maybe Energy)),
       -- | Address of the receiver.
       tetReceiver :: !Text,
       -- | Amount to send.
@@ -138,31 +139,31 @@ data AccountCmd
     { alBlockHash :: !(Maybe Text) }
   | AccountDelegate
     { adBakerId :: !BakerId
-    , adTransactionOpts :: !TransactionOpts }
+    , adTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | AccountUndelegate
-    { auTransactionOpts :: !TransactionOpts }
+    { auTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | AccountUpdateKeys
     { aukKeys :: !FilePath
-    , aukTransactionOpts :: !TransactionOpts }
+    , aukTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | AccountAddKeys
     { aakKeys :: !FilePath
     , aakThreshold :: !(Maybe SignatureThreshold)
-    , aakTransactionOpts :: !TransactionOpts }
+    , aakTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | AccountRemoveKeys
     { arkKeys :: ![KeyIndex]
     , arkThreshold :: !(Maybe SignatureThreshold)
-    , arkTransactionOpts :: !TransactionOpts }
+    , arkTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   -- |Transfer part of the public balance to the encrypted balance of the
   -- account.
   | AccountEncrypt
-    { aeTransactionOpts :: !TransactionOpts,
+    { aeTransactionOpts :: !(TransactionOpts (Maybe Energy)),
       -- | Amount to transfer from public to encrypted balance.
       aeAmount :: !Amount
     }
   -- |Transfer part of the encrypted balance to the public balance of the
   -- account.
   | AccountDecrypt
-    { adTransactionOpts :: !TransactionOpts,
+    { adTransactionOpts :: !(TransactionOpts (Maybe Energy)),
       -- |Amount to transfer from encrypted to public balance.
       adAmount :: !Amount,
       -- | Which indices of incoming amounts to use as inputs.
@@ -172,29 +173,78 @@ data AccountCmd
   deriving (Show)
 
 data ModuleCmd
-  = ModuleList
-    { mlBlockHash :: !(Maybe Text) }
+  -- |Deploy the provided smart contract module on chain.
+  = ModuleDeploy
+    { -- |Path to the module.
+      mdModuleFile :: !FilePath
+      -- |Options for transaction.
+    , mdTransactionOpts :: !(TransactionOpts (Maybe Energy))
+    }
+  -- |List all modules.
+  | ModuleList
+    { -- |Hash of the block (default "best").
+      mlBlockHash :: !(Maybe Text)
+    }
+  -- |Output the binary source code of the module to the provided file.
+  | ModuleShow
+    { -- |Reference to the module.
+      msModuleReference :: !Text
+      -- |Output the module to this file.
+      -- Use '-' to output to stdout.
+    , msOutFile :: !FilePath
+      -- |Hash of the block (default "best").
+    , mlBlockHash :: !(Maybe Text) }
   deriving (Show)
 
 data ContractCmd
+  -- |Show the state of specified contract.
   = ContractShow
-    { csAddress :: !Text
+    { -- |Index of the address for the contract.
+      cuAddressIndex :: !Word64
+      -- |Subindex of the address for the contract (default: 0).
+    , cuAddressSubindex :: !Word64
+      -- |Hash of the block (default "best").
     , csBlockHash :: !(Maybe Text) }
+  -- |List all contracts on chain.
   | ContractList
-    { clBlockHash :: !(Maybe Text) }
+    { -- |Hash of the block (default "best").
+      clBlockHash :: !(Maybe Text)
+    }
+  -- |Initialize a contract from a module on chain.
   | ContractInit
-    { ciModuleName :: !Text
-    , ciName :: !Text
-    , ciParameter :: !Text
-    , ciTransactionOpts :: !TransactionOpts }
+    { -- |Module reference OR path to the module (reference then calculated by hashing).
+      ciModule :: !String
+      -- |Name of the init function to use (default: "init").
+    , ciInitName :: !Text
+      -- |Path to a binary file containing parameters for the init function.
+    , ciParameterFile :: !(Maybe FilePath)
+      -- |Amount to be send to contract (default: 0).
+    , ciAmount :: !Amount
+      -- |Options for transaction.
+    , ciTransactionOpts :: !(TransactionOpts Energy) }
+  -- |Update an existing contract, i.e. invoke a receive function.
+  | ContractUpdate
+    { -- |Index of the address for the contract to invoke.
+      cuAddressIndex :: !Word64
+      -- |Subindex of the address for the contract to invoke (default: 0).
+    , cuAddressSubindex :: !Word64
+      -- |Name of the receive function to use (default: "receive").
+    , cuReceiveName :: !Text
+      -- |Path to a binary file containing paramaters for the receive method.
+    , cuParameterFile :: !(Maybe FilePath)
+      -- |Amount to invoke the receive function with (default: 0).
+    , cuAmount :: !Amount
+      -- |Options for transaction.
+    , cuTransactionOpts :: !(TransactionOpts Energy) }
   deriving (Show)
 
-data TransactionOpts =
+-- | The type parameter 'energyOrMaybe' should be Energy or Maybe Energy.
+data TransactionOpts energyOrMaybe =
   TransactionOpts
   { toSender :: !(Maybe Text)
   , toKeys :: !(Maybe FilePath)
   , toNonce :: !(Maybe Nonce)
-  , toMaxEnergyAmount :: !(Maybe Energy)
+  , toMaxEnergyAmount :: !energyOrMaybe
   , toExpiration :: !(Maybe Text)
   , toInteractionOpts :: !InteractionOpts }
   deriving (Show)
@@ -227,26 +277,26 @@ data BakerCmd
     { bgkFile :: !(Maybe FilePath) }
   | BakerAdd
     { baFile :: !FilePath
-    , baTransactionOpts :: !TransactionOpts }
+    , baTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | BakerSetAccount
     { bsaBakerId :: !BakerId
     , bsaAccountRef :: !Text
-    , bsaTransactionOpts :: !TransactionOpts }
+    , bsaTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | BakerSetKey
     { buskBakerId :: !BakerId
     , bsaSignatureKeysFile :: !FilePath
-    , buskTransactionOpts :: !TransactionOpts }
+    , buskTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | BakerRemove
     { brBakerId :: !BakerId
-    , brTransactionOpts :: !TransactionOpts }
+    , brTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | BakerSetAggregationKey
     { bsakBakerId :: !BakerId
     , bsakBakerAggregationKeyFile :: !FilePath
-    , bsakTransactionOpts :: !TransactionOpts }
+    , bsakTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | BakerSetElectionKey
     { bsekBakerId :: !BakerId
     , bsekBakerElectionKeyFile :: !FilePath
-    , bsakTransactionOps :: !TransactionOpts }
+    , bsakTransactionOps :: !(TransactionOpts (Maybe Energy)) }
   deriving (Show)
 
 data IdentityCmd
@@ -333,15 +383,26 @@ retryNumParser =
      metavar "GRPC-RETRY" <>
      help "How many times to retry the connection if it fails the first time.")
 
-transactionOptsParser :: Parser TransactionOpts
-transactionOptsParser =
+-- |Parse transactionOpts with an optional energy flag
+transactionOptsParser :: Parser (TransactionOpts (Maybe Energy))
+transactionOptsParser = transactionOptsParserBuilder $
+    optional (option auto (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction."))
+
+-- |Parse transactionOpts with a required energy flag
+requiredEnergyTransactionOptsParser :: Parser (TransactionOpts Energy)
+requiredEnergyTransactionOptsParser = transactionOptsParserBuilder $
+    option auto (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction.")
+
+-- |Helper function to build an transactionOptsParser with or without a required energy flag
+transactionOptsParserBuilder :: Parser energyOrMaybe -> Parser (TransactionOpts energyOrMaybe)
+transactionOptsParserBuilder energyOrMaybeParser =
   TransactionOpts <$>
     optional (strOption (long "sender" <> metavar "SENDER" <> help "Name or address of the transaction sender.")) <*>
     -- TODO Specify / refer to format of JSON file when new commands (e.g. account add-keys) that accept same format are
     -- added.
     optional (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file.")) <*>
     optional (option auto (long "nonce" <> metavar "NONCE" <> help "Transaction nonce.")) <*>
-    optional (option auto (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction. Depeding on the transaction type, this flag may be optional.")) <*>
+    energyOrMaybeParser <*>
     optional (strOption (long "expiry" <> metavar "EXPIRY" <> help "Expiration time of a transaction, specified as a relative duration (\"30s\", \"5m\", etc.) or UNIX epoch timestamp.")) <*>
     interactionOptsParser
 
@@ -582,8 +643,20 @@ moduleCmds =
     (info
       (ModuleCmd <$>
         hsubparser
-          moduleListCmd)
+          (moduleDeployCmd <>
+           moduleListCmd <>
+           moduleShowCmd))
       (progDesc "Commands for inspecting and deploying modules."))
+
+moduleDeployCmd :: Mod CommandFields ModuleCmd
+moduleDeployCmd =
+  command
+    "deploy"
+    (info
+      (ModuleDeploy <$>
+        strArgument (metavar "FILE" <> help "Path to the smart contract module.") <*>
+        transactionOptsParser)
+      (progDesc "Deploy a smart contract module on the chain."))
 
 moduleListCmd :: Mod CommandFields ModuleCmd
 moduleListCmd =
@@ -591,6 +664,17 @@ moduleListCmd =
     "list"
     (info
       (ModuleList <$>
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+      (progDesc "List all modules."))
+
+moduleShowCmd :: Mod CommandFields ModuleCmd
+moduleShowCmd =
+  command
+    "show"
+    (info
+      (ModuleShow <$>
+        strArgument (metavar "MODULE-REFERENCE" <> help "Reference to the module (use 'module list' to find it).") <*>
+        strOption (long "out" <> metavar "FILE" <> help "File to output the source code to (use '-' for stdout).") <*>
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
       (progDesc "List all modules."))
 
@@ -603,7 +687,8 @@ contractCmds =
         hsubparser
           (contractShowCmd <>
            contractListCmd <>
-           contractInitCmd))
+           contractInitCmd <>
+           contractUpdateCmd))
       (progDesc "Commands for inspecting and initializing smart contracts."))
 
 contractShowCmd :: Mod CommandFields ContractCmd
@@ -612,7 +697,9 @@ contractShowCmd =
     "show"
     (info
       (ContractShow <$>
-        strArgument (metavar "ADDRESS" <> help "Address of the contract.") <*>
+        argument auto (metavar "INDEX" <> help "Index of address for the contract on chain.") <*>
+        option auto (long "subindex" <> metavar "SUBINDEX" <> value 0
+                            <> help "Subindex of address for the contract on chain (default: 0)") <*>
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
       (progDesc "Display contract state at given block."))
 
@@ -631,11 +718,33 @@ contractInitCmd =
     "init"
     (info
       (ContractInit <$>
-        strOption (long "module" <> metavar "MODULE" <> help "Module containing the contract.") <*>
-        strOption (long "name" <> metavar "NAME" <> help "Name of the contract in the module.") <*>
-        option auto (long "amount" <> metavar "AMOUNT" <> help "Amount of GTU to transfer to the contract.") <*>
-        transactionOptsParser)
+        strArgument (metavar "MODULE" <> help "Module reference OR path to the module.") <*>
+        strOption (long "func" <> metavar "INIT-NAME" <> value "init"
+                             <> help "Name of the specific init function in the module (default: \"init\").") <*>
+        optional (strOption (long "params" <> metavar "FILE"
+                             <> help "Binary file with parameters for init function (default: no parameters).")) <*>
+        option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> value 0
+                                                                <> help "Amount of GTU to transfer to the contract.") <*>
+        requiredEnergyTransactionOptsParser)
       (progDesc "Initialize contract from already deployed module."))
+
+contractUpdateCmd :: Mod CommandFields ContractCmd
+contractUpdateCmd =
+  command
+    "update"
+    (info
+      (ContractUpdate <$>
+        argument auto (metavar "INDEX" <> help "Index of address for the contract on chain.") <*>
+        option auto (long "subindex" <> metavar "SUBINDEX" <> value 0 <>
+                     help "Subindex of address for the contract on chain (default: 0)") <*>
+        strOption (long "func" <> metavar "RECEIVE-NAME" <> value "receive"
+                             <> help "Name of the specific receive function in the module (default: \"receive\").") <*>
+        optional (strOption (long "params" <> metavar "FILE"
+                             <> help "Binary file with parameters for init function (default: no parameters).")) <*>
+        option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> value 0
+                                                                <> help "Amount of GTU to transfer to the contract.") <*>
+        requiredEnergyTransactionOptsParser)
+      (progDesc "Update an existing contract."))
 
 configCmds :: ShowAllOpts -> Mod CommandFields Cmd
 configCmds showAllOpts =
