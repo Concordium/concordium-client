@@ -58,6 +58,10 @@ accountAddKeysEnergyCost = accountUpdateKeysEnergyCost
 accountRemoveKeysEnergyCost :: Int -> Energy
 accountRemoveKeysEnergyCost = checkHeaderEnergyCost
 
+-- |Cost of updating the account threshold
+accountUpdateThresholdEnergyCost :: Int -> Energy
+accountUpdateThresholdEnergyCost = checkHeaderEnergyCost -- todo simon what should the cost be???
+
 -- |Cost of a baker add transaction.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 -- The (+2) is added due to the size of the transaction.
