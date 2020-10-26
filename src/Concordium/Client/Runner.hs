@@ -1,8 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE LambdaCase #-}
 module Concordium.Client.Runner
   ( process
   , getAccountNonce
@@ -1086,7 +1084,8 @@ sendAndTailTransaction_ :: (MonadIO m, MonadFail m)
 sendAndTailTransaction_ txCfg pl intOpts = void $ sendAndTailTransaction txCfg pl intOpts
 
 -- |Send a transaction and optionally tail it (see 'tailTransaction' below).
--- If tailed, it returns the TransactionStatusResult of the finalized status.
+-- If tailed, it returns the TransactionStatusResult of the finalized status,
+-- otherwise the return value is `Nothing`.
 sendAndTailTransaction :: (MonadIO m, MonadFail m)
     => TransactionConfig -- ^ Information about the sender, and the context of transaction
     -> Types.Payload -- ^ Payload of the transaction to send
@@ -1543,8 +1542,8 @@ extractFromTsr eventMatcher (Just tsr) = case parseTransactionBlockResult tsr of
   _ -> Left "internal server: Finalized chain has split"
   where
     getEvents tSum = case Types.tsResult tSum of
-                Types.TxSuccess {vrEvents}      -> Right vrEvents
-                Types.TxReject {vrRejectReason} -> Left $ showRejectReason True vrRejectReason
+                Types.TxSuccess {..} -> Right vrEvents
+                Types.TxReject {..}  -> Left $ showRejectReason True vrRejectReason
     findModRef = foldr (\e _ -> eventMatcher e) Nothing
 
     maybeToRight _ (Just x) = Right x
