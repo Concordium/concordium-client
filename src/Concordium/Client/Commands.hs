@@ -102,6 +102,9 @@ data ConfigAccountCmd
     { carkAddr :: !Text
     , carkKeys :: ![KeyIndex]
     , carkThreshold :: !(Maybe SignatureThreshold) }
+  | ConfigAccountUpdateThreshold
+    { cuatAddr :: !Text
+    , cuatThreshold :: !SignatureThreshold }
   deriving (Show)
 
 data TransactionCmd
@@ -152,6 +155,9 @@ data AccountCmd
     { arkKeys :: ![KeyIndex]
     , arkThreshold :: !(Maybe SignatureThreshold)
     , arkTransactionOpts :: !TransactionOpts }
+  | AccountUpdateThreshold
+    { autThreshold :: !SignatureThreshold
+    , autTransactionOtps :: !TransactionOpts } --todo simon what does this do
   -- |Transfer part of the public balance to the encrypted balance of the
   -- account.
   | AccountEncrypt
@@ -459,6 +465,7 @@ accountCmds =
            accountUpdateKeysCmd <>
            accountAddKeysCmd <>
            accountRemoveKeysCmd <>
+           accountUpdateThresholdCmd <>
            accountEncryptCmd <>
            accountDecryptCmd))
       (progDesc "Commands for inspecting and modifying accounts."))
@@ -575,6 +582,18 @@ accountRemoveKeysCmd =
       (progDescDoc $ docFromLines
         [ "Removes the keys from the account at the specified indices. The --threshold option may be used to update the signature threshold." ]))
 
+accountUpdateThresholdCmd :: Mod CommandFields AccountCmd
+accountUpdateThresholdCmd = 
+  command
+    "update-threshold"
+    (info
+      (AccountUpdateThreshold <$>
+        (option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <> 
+        help "Update the signature threshold to this value.")) <*>
+        transactionOptsParser)
+      (progDescDoc $ docFromLines
+        [ "Updates the signature threshold of the account to the specified value." ]))
+
 moduleCmds :: Mod CommandFields Cmd
 moduleCmds =
   command
@@ -676,6 +695,7 @@ configAccountCmds showAllOpts =
            configAccountImportCmd showAllOpts <>
            configAccountAddKeysCmd <>
            configAccountUpdateKeysCmd <>
+           configAccountUpdateThresholdCmd <>
            configAccountRemoveKeysCmd))
       (progDesc "Commands for inspecting and changing account-specific configuration."))
 
@@ -767,6 +787,18 @@ configAccountRemoveKeysCmd =
             help "Update the signature threshold to this value. If not set, no changes are made to the threshold.")))
       (progDescDoc $ docFromLines
         [ "Removes the keys from the account at the specified indices. The --threshold option may be used to update the signature threshold." ]))
+
+configAccountUpdateThresholdCmd :: Mod CommandFields ConfigAccountCmd
+configAccountUpdateThresholdCmd =
+  command
+    "update-threshold"
+    (info
+      (ConfigAccountUpdateThreshold <$>
+        strOption (long "account" <> metavar "ACCOUNT" <> help "Name or address of the account.") <*>
+        (option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <>
+            help "Update the signature threshold to this value.")))-- todo simon
+      (progDescDoc $ docFromLines
+        [ "Updates the signature threshold of the account to the specified value."]))
 
 readAccountExportFormat :: ReadM AccountExportFormat
 readAccountExportFormat = str >>= \case
