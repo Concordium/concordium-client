@@ -12,7 +12,7 @@ import Concordium.Crypto.EncryptedTransfers
 
 import Control.Monad.Writer
 import qualified Data.Map.Strict as Map
-import Data.Text (pack)
+-- import Data.Text (pack)
 import qualified Data.Aeson as AE
 import Test.Hspec
 import Data.Maybe
@@ -92,9 +92,12 @@ examplePolicyWithItemOutOfRange = IDTypes.Policy
 
 printAccountListSpec :: Spec
 printAccountListSpec = describe "printAccountList" $ do
-  specify "empty" $ p [] `shouldBe` []
-  specify "single" $ p [pack $ show $ naAddr exampleAddress] `shouldBe`
-    ["2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"]
+  specify "empty" $ p [] `shouldBe` ["Accounts:none"]
+  specify "single" $ p [exampleAddress] `shouldBe`
+    ["Accounts:"
+      , "                     Account Address                Account Name"
+      , "----------------------------------------------------------------"
+      ,"2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6     example"]
   where p = execWriter . printAccountList
 
 printAccountInfoSpec :: Spec
