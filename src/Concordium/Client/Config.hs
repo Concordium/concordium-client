@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE QuasiQuotes #-}
 module Concordium.Client.Config where
 
 import Concordium.Types as Types
@@ -20,14 +21,15 @@ import Data.Char
 import Data.List as L
 import Data.List.Split
 import qualified Data.HashMap.Strict as M
+import Data.String.Interpolate (i, iii)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import Data.Text (Text, pack, strip)
+import Data.Text (Text, pack, strip, unpack)
 import System.Directory
 import System.IO.Error
 import System.FilePath
 import Text.Printf
-import Text.Read (readMaybe)
+import Text.Read (readMaybe, readEither)
 
 {- |
 The layout of the config directory is shown in this example:
@@ -51,29 +53,31 @@ The layout of the config directory is shown in this example:
 @
 -}
 type BaseConfigDir = FilePath
+type AccountConfigDir = FilePath
+type ContractConfigDir = FilePath
 
 -- |The default location of the config root directory.
 getDefaultBaseConfigDir :: IO BaseConfigDir
 getDefaultBaseConfigDir = getXdgDirectory XdgConfig "concordium"
 
 -- ** Helper functions to construct paths to account keys storage.
-accountConfigDir :: BaseConfigDir -> FilePath
+accountConfigDir :: BaseConfigDir -> AccountConfigDir
 accountConfigDir baseCfgDir = baseCfgDir </> "accounts"
 
 -- |The default location of the data root directory.
 getDefaultDataDir :: IO FilePath
 getDefaultDataDir = getXdgDirectory XdgData "concordium"
 
-accountNameMapFile :: FilePath -> FilePath
+accountNameMapFile :: AccountConfigDir -> FilePath
 accountNameMapFile accountCfgDir = accountCfgDir </> "names.map"
 
 -- |Get the name of the directory with keys of an account.
-accountKeysDir :: FilePath -> Types.AccountAddress -> FilePath
+accountKeysDir :: AccountConfigDir -> Types.AccountAddress -> FilePath
 accountKeysDir accCfgDir addr = accCfgDir </> show addr
 
 -- |Get the name of the file which contains the threshold for the amount of
 -- signatures needed to sign a transaction.
-accountThresholdFile :: FilePath -> Types.AccountAddress -> FilePath
+accountThresholdFile :: AccountConfigDir -> Types.AccountAddress -> FilePath
 accountThresholdFile accCfgDir addr = accCfgDir </> show addr <.> "threshold"
 
 accountKeyFileExt :: String
@@ -102,15 +106,39 @@ parseAccountKeyFileName fileName =
 defaultAccountName :: Text
 defaultAccountName = "default"
 
+-- |Get path to contracts config directory from the base config.
+contractConfigDir :: BaseConfigDir -> ContractConfigDir
+contractConfigDir = (</> "contracts")
+
+-- |Get path to contractNames.map file.
+contractNameMapFile :: ContractConfigDir -> FilePath
+contractNameMapFile = (</> "contractNames.map")
+
+-- |Get path to moduleNames.map file.
+moduleNameMapFile :: ContractConfigDir -> FilePath
+moduleNameMapFile = (</> "moduleNames.map")
+
+-- |Mapping builder from a name to a provided type.
+type NameMap = M.HashMap Text
+
 -- |Mapping from account name to their address.
-type AccountNameMap = M.HashMap Text Types.AccountAddress
+type AccountNameMap = NameMap Types.AccountAddress
+
+-- |Mapping from contract name to their address.
+type ContractNameMap = NameMap Types.ContractAddress
+
+-- |Mapping from module name to their reference.
+type ModuleNameMap = NameMap Types.ModuleRef
 
 -- |Base configuration consists of the account name mapping and location of
 -- account keys to be loaded on demand.
 data BaseConfig = BaseConfig
                   { bcVerbose :: Bool
                   , bcAccountNameMap :: AccountNameMap
-                  , bcAccountCfgDir :: BaseConfigDir }
+                  , bcAccountCfgDir :: AccountConfigDir
+                  , bcContractNameMap :: ContractNameMap
+                  , bcModuleNameMap :: ModuleNameMap
+                  , bcContractCfgDir :: ContractConfigDir}
                 deriving (Show)
 
 -- |Initialize an empty config structure and returns the corresponding base config.
@@ -125,39 +153,58 @@ initBaseConfig f = do
   else
     -- Only explicitly handle a permission error since that is likely the most common one.
     handleJust (guard . isPermissionError)
-               (\_ -> logFatal [printf "cannot create directory, permission denied"])
+               (\_ -> logFatal ["cannot create directory, permission denied"])
                (createDirectoryIfMissing True baseCfgDir)
 
   let accCfgDir = accountConfigDir baseCfgDir
-      mapFile = accountNameMapFile accCfgDir
+      accMapFile = accountNameMapFile accCfgDir
 
-  logInfo [printf "creating directory '%s'" accCfgDir]
-  accCfgDirExists <- doesDirectoryExist accCfgDir
-  if accCfgDirExists then
-    logInfo [printf "skipping '%s': directory already exists" accCfgDir]
-  else
-    createDirectoryIfMissing False accCfgDir
+      contrCfgDir = contractConfigDir baseCfgDir
+      contrMapFile = contractNameMapFile contrCfgDir
+      moduleMapFile = moduleNameMapFile contrCfgDir
 
-  logInfo [printf "creating file '%s'" mapFile]
-  mapFileExists <- doesFileExist mapFile
-  anm <- if mapFileExists then do
-           logInfo [printf "skipping '%s': file already exists" mapFile]
-           loadAccountNameMap mapFile
-         else do
-           writeFile mapFile ""
-           return M.empty
+  -- Ensure config folders are created
+  mapM_ (ensureDirCreated True) [accCfgDir, contrCfgDir]
+
+  -- Ensure namemaps are created
+  accNameMap <- ensureNameMapCreatedAndLoad accMapFile loadAccountNameMap
+  contrNameMap <- ensureNameMapCreatedAndLoad contrMapFile loadContractNameMap
+  moduleNameMap <- ensureNameMapCreatedAndLoad moduleMapFile loadModuleNameMap
 
   logSuccess ["configuration initialized"]
   return BaseConfig
     { bcVerbose = False
     , bcAccountCfgDir = accCfgDir
-    , bcAccountNameMap = anm }
+    , bcAccountNameMap = accNameMap
+    , bcContractCfgDir = contrCfgDir
+    , bcContractNameMap = contrNameMap
+    , bcModuleNameMap = moduleNameMap }
 
 -- |Ensure the basic account config is initialized.
 ensureAccountConfigInitialized :: BaseConfig -> IO ()
 ensureAccountConfigInitialized baseCfg = do
   let accCfgDir = bcAccountCfgDir baseCfg
-  createDirectoryIfMissing True accCfgDir
+  ensureDirCreated False accCfgDir
+
+-- |Ensure a directory is created and, if Verbose, logInfo actions.
+ensureDirCreated :: Verbose -> FilePath -> IO ()
+ensureDirCreated verbose dir = do
+  when verbose $ logInfo [[i|creating directory '#{dir}'|]]
+  dirExists <- doesDirectoryExist dir
+  if dirExists then
+    when verbose $ logInfo [[i|skipping '#{dir}': directory already exists|]]
+  else
+    createDirectoryIfMissing True dir --TODO: Is True okay here? It was False at first.
+
+ensureNameMapCreatedAndLoad :: FilePath -> (FilePath -> IO (NameMap v)) -> IO (NameMap v)
+ensureNameMapCreatedAndLoad mapFile loadNM = do
+  mapFileExists <- doesFileExist mapFile
+  if mapFileExists then do
+    logInfo [[i|skipping '#{mapFile}': directory already exists|]]
+    loadNM mapFile
+  else do
+    writeFile mapFile ""
+    return M.empty
 
 initAccountConfigEither :: BaseConfig
                         -> NamedAddress
@@ -209,7 +256,7 @@ initAccountConfigEither baseCfg namedAddr inCLI = runExceptT $ do
     Just n -> do
       let m = M.insert n addr $ bcAccountNameMap baseCfg
       logInfo [printf "writing file '%s'" mapFile]
-      liftIO $ writeAccountNameMap mapFile m
+      liftIO $ writeNameMap mapFile m
       logSuccess ["added name mapping"]
       return baseCfg { bcAccountNameMap = m }
 
@@ -248,10 +295,11 @@ importAccountConfig baseCfg accCfgs verbose = foldM f baseCfg accCfgs
           when t $ writeAccountKeys bc' ac verbose
           return bc'
 
--- |Write the account name map to a file in the expected format.
-writeAccountNameMap :: FilePath -> AccountNameMap -> IO ()
-writeAccountNameMap file = writeFile file . unlines . map f . sortOn fst . M.toList
-  where f (name, addr) = printf "%s = %s" name (show addr)
+-- |Write the name map to a file in the expected format.
+-- TODO: Will throw error if folder(s) not created.
+writeNameMap :: Show v => FilePath -> NameMap v -> IO ()
+writeNameMap file = writeFile file . unlines . map f . sortOn fst . M.toList
+  where f (name, val) = printf "%s = %s" name (show val)
 
 -- |Write the account keys structure into the directory of the given account.
 -- Each 'EncryptedAccountKeyPair' is written to a JSON file the name of which
@@ -315,32 +363,43 @@ getBaseConfig :: Maybe FilePath -> Verbose -> AutoInit -> IO BaseConfig
 getBaseConfig f verbose autoInit = do
   cfgDir <- getBaseConfigDir f
   let accCfgDir = accountConfigDir cfgDir
-      mapFile = accountNameMapFile accCfgDir
+      accMapFile = accountNameMapFile accCfgDir
+
+      contrCfgDir = contractConfigDir cfgDir
+      contrMapFile = contractNameMapFile contrCfgDir
+      moduleMapFile = moduleNameMapFile contrCfgDir
 
   cfgDirExists <- doesDirectoryExist cfgDir
   if not cfgDirExists && autoInit == AutoInit then
     initBaseConfig f
   else do
-    m <- runExceptT $ do
-      unless cfgDirExists $ throwE [ printf "config directory '%s' not found" cfgDir
-                                   , "run 'config init' to remove this warning" ]
+    nameMaps <- runExceptT $ do
+      unless cfgDirExists $ throwE [i|config directory '#{cfgDir}' not found. Run 'config init' to remove this warning|]
 
       accCfgDirExists <- liftIO $ doesDirectoryExist accCfgDir
-      unless accCfgDirExists $ throwE [printf "account config directory '%s' not found" accCfgDir]
+      unless accCfgDirExists $ throwE [i|account config directory '#{accCfgDir}' not found|]
 
-      mapFileExists <- liftIO $ doesFileExist mapFile
-      unless mapFileExists $ throwE [printf "account name map file '%s' not found" mapFile]
+      -- TODO: Warn only if Verbose, otherwise ensure created. Warnings only occur if you have a config folder without the correct files.
+      mapM_ checkIfNameMapExistsAndWarn [(accMapFile, Account), (contrMapFile, Contract), (moduleMapFile, Module)]
 
-      liftIO $ loadAccountNameMap mapFile
+      liftIO $ sequenceT (loadAccountNameMap accMapFile, loadContractNameMap contrMapFile, loadModuleNameMap moduleMapFile)
 
     let baseCfg = BaseConfig
                   { bcVerbose = verbose
                   , bcAccountCfgDir = accCfgDir
-                  , bcAccountNameMap = M.empty }
+                  , bcAccountNameMap = M.empty
+                  , bcContractCfgDir = contrCfgDir
+                  , bcContractNameMap = M.empty
+                  , bcModuleNameMap = M.empty }
+    case nameMaps of
+      Right (anm, cnm, mnm) -> return baseCfg { bcAccountNameMap = anm, bcContractNameMap = cnm, bcModuleNameMap = mnm }
+      Left warns -> logWarn [warns] >> return baseCfg
+  where checkIfNameMapExistsAndWarn (mapFile, variant) = do
+          fileExists <- liftIO $ doesFileExist mapFile
+          unless fileExists $ throwE [i|#{variant} name map file '#{mapFile}' not found|]
 
-    case m of
-      Left warns -> logWarn warns >> return baseCfg
-      Right m' -> return baseCfg { bcAccountNameMap = m' }
+        sequenceT :: Monad m => (m a1, m a2, m a3) -> m (a1, a2, a3)
+        sequenceT (a1, a2, a3) = return (,,) `ap` a1 `ap` a2 `ap` a3
 
 getBaseConfigDir :: Maybe FilePath -> IO FilePath
 getBaseConfigDir = \case
@@ -348,43 +407,71 @@ getBaseConfigDir = \case
   Just p -> return p
 
 loadAccountNameMap :: FilePath -> IO AccountNameMap
-loadAccountNameMap f = do
-  c <- readFile f
-  case parseAccountNameMap $ lines c of
-    Left err -> logFatal [printf "cannot parse account name map file '%s': %s" f err]
-    Right m -> return m
+loadAccountNameMap = loadNameMap Account (addressFromText :: Text -> Either String Types.AccountAddress)
+
+loadContractNameMap :: FilePath -> IO ContractNameMap
+loadContractNameMap = loadNameMap Contract (readEither . unpack)
+
+loadModuleNameMap :: FilePath -> IO ModuleNameMap
+loadModuleNameMap = loadNameMap Module (readEither . unpack)
+
+data NameMapVariant = Account | Contract | Module deriving Eq
+
+instance Show NameMapVariant where
+  show Account  = "account"
+  show Contract = "contract"
+  show Module   = "module"
+
+loadNameMap :: NameMapVariant -> (Text -> Either String v) -> FilePath -> IO (NameMap v)
+loadNameMap valueVariant valueFromText mapFile = do
+  fileExists <- doesFileExist mapFile
+  if not fileExists
+  -- TODO: Should this just be warn or nothing?
+  -- Should only happen if cfg dir exists, but files manually deleted (or upgrade to this new version)
+  then logFatal [[i|file '#{mapFile}' does not exist.|]]
+  else do
+    content <- readFile mapFile
+    case parseNameMap valueVariant valueFromText $ lines content of
+      Left err -> logFatal [[i|cannot parse #{valueVariant} name map file '#{content}': #{err}|]]
+      Right m -> return m
 
 parseAccountNameMap :: (MonadError String m) => [String] -> m AccountNameMap
-parseAccountNameMap ls = M.fromList <$> mapM parseAccountNameMapEntry ls'
+parseAccountNameMap = parseNameMap Account addressFromText
+
+parseNameMap :: (MonadError String m) => NameMapVariant -> (Text -> m v) -> [String] -> m (NameMap v)
+parseNameMap valueVariant valueFromText ls = M.fromList <$> mapM (parseNameMapEntry valueVariant valueFromText) ls'
   where ls' = filter (not . L.all isSpace) ls
 
--- | Parse a line representing a single name-account mapping of the format "<name> = <address>".
--- Leading and trailing whitespaces around name and address are ignored.
-parseAccountNameMapEntry :: (MonadError String m) => String -> m (Text, Types.AccountAddress)
-parseAccountNameMapEntry line =
+parseAccountNameMapEntry :: (MonadError String m) => String -> m (Text, AccountAddress)
+parseAccountNameMapEntry = parseNameMapEntry Account addressFromText
+
+-- | Parse a line representing a single name mapping of the format "<name> = <value>".
+-- Leading and trailing whitespaces around name and value are ignored.
+parseNameMapEntry :: (MonadError String m) => NameMapVariant -> (Text -> m v) -> String -> m (Text, v)
+parseNameMapEntry valueVariant valueFromText line =
   case splitOn "=" line of
     [k, v] -> do
       let name = strip $ pack k
-      validateAccountName name
-      addr <- case strip $ pack v of
-                "" -> throwError "empty address"
-                addr -> case addressFromText addr of
-                          Left err -> throwError $ printf "invalid address '%s': %s" addr err
-                          Right a -> return a
-      return (name, addr)
-    _ -> throwError $ printf "invalid mapping format '%s' (should be '<name> = <address>')" line
+      validateName name
+      val <- case strip $ pack v of
+                "" -> throwError [i|empty #{valueVariant}|]
+                addr -> valueFromText addr `catchError` (\err -> throwError [i|invalid address '#{addr}': #{err}|])
+      return (name, val)
+    _ -> throwError [i|invalid mapping format '#{line}' (should be '<name> = <#{valueVariant}>')|]
 
--- | Check whether the given text is a valid account name.
-isValidAccountName :: Text -> Bool
-isValidAccountName n = not (T.null n) && not (isSpace $ T.head n) && not (isSpace $ T.last n) && T.all supportedChar n
+-- | Check whether the given text is a valid name.
+isValidName :: Text -> Bool
+isValidName n = not (T.null n) && not (isSpace $ T.head n) && not (isSpace $ T.last n) && T.all supportedChar n
   where supportedChar c = isAlphaNum c || c `elem` supportedSpecialChars
         supportedSpecialChars = "-_,.!? " :: String
 
--- | Check whether the given text is a valid account name and fail with an error message if it is not.
-validateAccountName :: (MonadError String m) => Text -> m ()
-validateAccountName name =
-  unless (isValidAccountName name) $
-  throwError $ printf "invalid account name '%s' (should not be empty or start/end with whitespace and consist of letters, numbers, space, '.', ',', '!', '?', '-', and '_' only)" name
+-- | Check whether the given text is a valid name and fail with an error message if it is not.
+validateName :: (MonadError String m) => Text -> m ()
+validateName name =
+  unless (isValidName name) $
+  throwError [iii|invalid name '#{name}' (should not be empty or start/end with whitespace
+                  and consist of letters, numbers, space, '.', ',', '!',
+                  '?', '-', and '_' only)"|]
 
 data AccountConfig =
   AccountConfig
@@ -563,16 +650,16 @@ insertAccountKey :: EncryptedAccountKeyMap -> (Maybe KeyIndex, EncryptedAccountK
 insertAccountKey km (idx,kp) =
   let idx' = case idx of
             Nothing -> nextUnusedIdx 1 (sort $ M.keys km)
-            Just i -> i
+            Just id' -> id'
   in M.insert idx' kp km
 
 -- |Compute the next index not already in use, starting from the one provided
 -- (which is assumed to be less than or equal to the first element of the list).
 nextUnusedIdx :: KeyIndex -> [KeyIndex] -> KeyIndex
-nextUnusedIdx i sortedKeys = case sortedKeys of
-                               [] -> i
-                               k:ks | k==i -> nextUnusedIdx (i+1) ks
-                                    | otherwise -> i
+nextUnusedIdx id' sortedKeys = case sortedKeys of
+                               [] -> id'
+                               k:ks | k==id' -> nextUnusedIdx (id'+1) ks
+                                    | otherwise -> id'
 
 type KeyName = String
 data KeyType = Sign | Verify deriving (Eq, Show)
