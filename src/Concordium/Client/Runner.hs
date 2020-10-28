@@ -1295,13 +1295,6 @@ processConsensusCmd action _baseCfgDir verbose backend =
         Just p -> runPrinter $ printBirkParameters includeBakers p addrmap
                     where
                       addrmap = Map.fromList . map Tuple.swap . Map.toList $ (bcAccountNameMap baseCfg) 
-        -- Just p -> runPrinter $ case bprBakers p of 
-        --             [] -> printBirkParameters includeBakers p Nothing
-        --             bs -> printBirkParameters includeBakers p (Just (addrmap, bs))
-        --               where
-        --                 addrmap = Map.fromList . map Tuple.swap . Map.toList $ (bcAccountNameMap baseCfg) 
-
-                                         
                                           
     ConsensusChainUpdate rawUpdateFile authsFile keysFiles intOpts -> do
       let
