@@ -18,7 +18,7 @@ Smart contracts consist of:
 The `init` and `receive` functions are invoked when the contract is initialized and "invoked", respectively.
 Both functions may update `model` and/or perform transactions to change `amount`.
 
-The functions of the smart contract are defined in an Acorn module.
+The functions of the smart contract are defined in a Rust module.
 Such a module may define multiple contracts and also types and other functions used by the contracts.
 
 Smart contracts are deployed and instantiated (with some initial state) using the special transaction types
@@ -141,10 +141,13 @@ Writing '/home/testuser/.config/concordium/accounts/4DY7Kq5vXsNDhEAnj969Fd86g9eg
 
 ## Prerequisites
 
-* Install the [protoc](https://github.com/google/proto-lens/blob/master/docs/installing-protoc.md) tool for generating protobuf files
-  (`sudo apt install protobuf-compiler` on Ubuntu 19.10).
+* Install the [protoc](https://github.com/google/proto-lens/blob/master/docs/installing-protoc.md) tool for generating protobuf files:
+   * MacOS: `brew install protobuf`
+   * Ubuntu 19.10: `sudo apt install protobuf-compiler`
 
-* Install development libraries for PostgreSQL and LMDB (`sudo apt install libpq-dev postgresql-common liblmdb-dev` on Ubuntu 19.10).
+* Install development libraries for PostgreSQL and LMDB:
+   * MacOS: `brew install postgresql lmdb`
+   * Ubuntu 19.10: `sudo apt install libpq-dev postgresql-common liblmdb-dev` 
 
 * Initialize submodule dependencies after cloning (`git submodule update --init --recursive`).
 
