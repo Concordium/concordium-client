@@ -213,7 +213,7 @@ printAccountList accs =
     [] -> tell ["Accounts:" ++ showNone]
     _ -> do 
       let formatText :: NamedAddress -> Text
-          formatText na = (pack (show (naAddr na))) <>  "     " <> fromMaybe "*"  (naName na)
+          formatText na = (pack (show (naAddr na))) <>  "     " <> fromMaybe " "  (naName na)
       tell [ "Accounts:"
             , printf "                     Account Address                Account Name"
             , printf "----------------------------------------------------------------" ]
@@ -545,7 +545,7 @@ printBirkParameters includeBakers r addrmap = do
           showLotteryPower lp = if 0 < lp && lp < 0.000001
                                 then " <0.0001 %" :: String
                                 else printf "%8.4f %%" (lp*100)
-          accountName bkr = fromMaybe (pack "*") $ HM.lookup bkr addrmap
+          accountName bkr = fromMaybe (pack " ") $ HM.lookup bkr addrmap
         
         
 -- BLOCK

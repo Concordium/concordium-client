@@ -77,7 +77,7 @@ consensusShowParametersSpec = describe "show parameters" $ do
     , "                             Account                       Lottery power  Account Name"
     , "        ------------------------------------------------------------------------------"
     , "     1: 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6   10.0000 %  account1"
-    , "    12: 4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y    2.0000 %  *"
+    , "    12: 4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y    2.0000 %   "
     , "    13: 4p2n8QQn5akq3XqAAJt2a5CsnGhDvUon6HExd2szrfkZCTD4FX   <0.0001 %  account2" ]
   specify "including bakers (empty)" $ p True exampleBirkParametersNoBakers addrmap `shouldBe`
     [ "Election nonce:      50ab4065c5a8194fbd7f3acf06267c7d8023fce9b3b658a74f3a927599eb9322"
