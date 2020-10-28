@@ -208,13 +208,16 @@ printCred c =
                Just t -> showTimeYearMonth t
 
 printAccountList :: [NamedAddress] -> Printer
-printAccountList accs = do 
-  let formatText :: NamedAddress -> Text
-      formatText na = (pack (show (naAddr na))) <>  "     " <> fromMaybe "*"  (naName na)
-  tell [ "Accounts:"
-        , printf "                     Account Address                Account Name"
-        , printf "----------------------------------------------------------------" ]
-  tell (map unpack (map formatText accs))
+printAccountList accs = 
+  case accs of 
+    [] -> tell ["Accounts:" ++ showNone]
+    _ -> do 
+      let formatText :: NamedAddress -> Text
+          formatText na = (pack (show (naAddr na))) <>  "     " <> fromMaybe "*"  (naName na)
+      tell [ "Accounts:"
+            , printf "                     Account Address                Account Name"
+            , printf "----------------------------------------------------------------" ]
+      tell (map unpack (map formatText accs))
 
 printModuleList :: [Text] -> Printer
 printModuleList = tell . map unpack
