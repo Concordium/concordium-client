@@ -43,9 +43,14 @@ runPrinter = liftIO . mapM_ putStrLn . execWriter
 
 -- HELPERS
 
--- | Serialize to JSON and pretty-print.
+-- |Serialize to JSON and pretty-print.
 showPrettyJSON :: AE.ToJSON a => a -> String
 showPrettyJSON = unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty
+
+-- |Serialize to JSON, order by keys, and pretty-print without whitespace.
+showCompactPrettyJSON :: AE.ToJSON a => a -> String
+showCompactPrettyJSON = unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty' config
+  where config = AE.defConfig { AE.confIndent = AE.Spaces 0, AE.confCompare = compare }
 
 -- TIME
 
@@ -220,6 +225,9 @@ printAccountList = tell . map unpack
 printModuleList :: [Text] -> Printer
 printModuleList = tell . map unpack
 
+printContractList :: [Types.ContractAddress] -> Printer
+printContractList = tell . map showCompactPrettyJSON
+
 showAccountKeyPair :: EncryptedAccountKeyPair -> String
 -- TODO Make it respect indenting if this will be the final output format.
 -- An alternative is not to print the encrypted key here, but rather have that
@@ -319,7 +327,7 @@ showOutcomeResult verbose = \case
 -- If verbose is true, the string includes the details from the fields of the event.
 -- Otherwise, only the fields that are not known from the transaction request are included.
 -- Currently this is only the baker ID from AddBaker, which is computed by the backend.
--- The non-verbose version is used by the transaction commands (through tailTransaction)
+-- The non-verbose version is used by the transaction commands (through tailTransaction_)
 -- where the input parameters have already been specified manually and repeated in a block
 -- of text that they confirmed manually.
 -- The verbose version is used by 'transaction status' and the non-trivial cases of the above
@@ -382,7 +390,7 @@ showEvent verbose = \case
 -- If verbose is true, the string includes the details from the fields of the reason.
 -- Otherwise, only the fields that are not known from the transaction request are included.
 -- Currently this is only the baker address from NotFromBakerAccount.
--- The non-verbose version is used by the transaction commands (through tailTransaction)
+-- The non-verbose version is used by the transaction commands (through tailTransaction_)
 -- where the input parameters have already been specified manually and repeated in a block
 -- of text that they confirmed manually.
 -- The verbose version is used by 'transaction status' and the non-trivial cases of the above
