@@ -97,6 +97,7 @@ import qualified Data.Serialize                      as S
 import qualified Data.Set                            as Set
 import           Data.String
 import           Data.Text(Text)
+import qualified Data.Tuple                          as Tuple
 import qualified Data.Text                           as Text
 import qualified Data.Vector                         as Vec
 import           Data.Word
@@ -1179,13 +1180,10 @@ processAccountCmd action baseCfgDir verbose backend =
     AccountList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       v <- withClientJson backend $ withBestBlockHash block getAccountList
-      let addname :: Text -> IO Text
-          addname addr = do 
-            na <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just addr
-            -- Print addresses, followed by name or *, seperated by 5 spaces
-            return $ Text.append addr (Text.append (Text.pack "     ") . fromMaybe (Text.pack "*") . naName $ na)
-      namedv <- mapM addname v
-      runPrinter $ printAccountList namedv
+      let addrmap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
+      let addname :: ID.AccountAddress -> NamedAddress
+          addname addr = NamedAddress (Map.lookup addr addrmap) addr
+      runPrinter $ printAccountList (map addname v)
     
     AccountDelegate bakerId txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1566,21 +1564,13 @@ processConsensusCmd action _baseCfgDir verbose backend =
       v <- withClientJson backend getConsensusStatus
       runPrinter $ printConsensusStatus v
     ConsensusShowParameters b includeBakers -> do
+      baseCfg <- getBaseConfig _baseCfgDir verbose AutoInit
       v <- withClientJson backend $ withBestBlockHash b getBirkParameters
       case v of
         Nothing -> putStrLn "Block not found."
-        Just p -> runPrinter $ case bprBakers p of 
-                                [] -> printBirkParameters includeBakers p []
-                                bs -> printBirkParameters includeBakers p (mapM f bs)
-                                  where f b' = printf "%6s: %s  %s  %s" (show $ bpbrId b') (show $ bpbrAccount b') (showLotteryPower $ bpbrLotteryPower b') (accountName $ show $ bpbrAccount b')
-                                        showLotteryPower lp = if 0 < lp && lp < 0.000001
-                                                              then " <0.0001 %" :: String
-                                                              else printf "%8.4f %%" (lp*100)
-                                        accountName b = do
-                                          baseCfg <- getBaseConfig _baseCfgDir verbose AutoInit
-                                          na <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just (Text.pack b)
-                                          return $ fromMaybe (Text.pack "*") . naName $ na
-                                         
+        Just p -> runPrinter $ printBirkParameters includeBakers p addrmap
+                    where
+                      addrmap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
                                           
     ConsensusChainUpdate rawUpdateFile authsFile keysFiles intOpts -> do
       let
