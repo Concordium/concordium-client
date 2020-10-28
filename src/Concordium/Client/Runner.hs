@@ -1128,7 +1128,7 @@ processAccountCmd action baseCfgDir verbose backend =
     AccountList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       v <- withClientJson backend $ withBestBlockHash block getAccountList
-      let addrmap = Map.fromList . map Tuple.swap . Map.toList $ (bcAccountNameMap baseCfg)
+      let addrmap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
       let addname :: ID.AccountAddress -> NamedAddress
           addname addr = NamedAddress (Map.lookup addr addrmap) addr
       runPrinter $ printAccountList (map addname v)
@@ -1294,7 +1294,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
         Nothing -> putStrLn "Block not found."
         Just p -> runPrinter $ printBirkParameters includeBakers p addrmap
                     where
-                      addrmap = Map.fromList . map Tuple.swap . Map.toList $ (bcAccountNameMap baseCfg) 
+                      addrmap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
                                           
     ConsensusChainUpdate rawUpdateFile authsFile keysFiles intOpts -> do
       let
