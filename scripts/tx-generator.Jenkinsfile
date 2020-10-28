@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'SHA', defaultValue: '', description: 'Genesis SHA')
+        string(name: 'SHA', defaultValue: '', description: 'Genesis SHA - must be SHA, not ref!')
     }
 
     stages {
