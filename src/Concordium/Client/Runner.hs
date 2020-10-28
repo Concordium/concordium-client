@@ -1292,16 +1292,15 @@ processConsensusCmd action _baseCfgDir verbose backend =
       v <- withClientJson backend $ withBestBlockHash b getBirkParameters
       case v of
         Nothing -> putStrLn "Block not found."
-        Just p -> runPrinter $ case bprBakers p of 
-                    [] -> printBirkParameters includeBakers p Nothing
-                    bs -> printBirkParameters includeBakers p (Just (map f bs))
-                      where
-                        addrmap = Map.fromList . map Tuple.swap . Map.toList $ (bcAccountNameMap baseCfg) 
-                        f b' = printf "%6s: %s  %s  %s" (show $ bpbrId b') (show $ bpbrAccount b') (showLotteryPower $ bpbrLotteryPower b') (accountName $ bpbrAccount b')
-                        showLotteryPower lp = if 0 < lp && lp < 0.000001
-                                              then " <0.0001 %" :: String
-                                              else printf "%8.4f %%" (lp*100)
-                        accountName bkr = fromMaybe (Text.pack "*") $ Map.lookup bkr addrmap
+        Just p -> runPrinter $ printBirkParameters includeBakers p addrmap
+                    where
+                      addrmap = Map.fromList . map Tuple.swap . Map.toList $ (bcAccountNameMap baseCfg) 
+        -- Just p -> runPrinter $ case bprBakers p of 
+        --             [] -> printBirkParameters includeBakers p Nothing
+        --             bs -> printBirkParameters includeBakers p (Just (addrmap, bs))
+        --               where
+        --                 addrmap = Map.fromList . map Tuple.swap . Map.toList $ (bcAccountNameMap baseCfg) 
+
                                          
                                           
     ConsensusChainUpdate rawUpdateFile authsFile keysFiles intOpts -> do
