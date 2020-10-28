@@ -536,9 +536,8 @@ printBirkParameters includeBakers r addrmap = do
         tell [ "Bakers:"
              , printf "                             Account                       Lottery power  Account Name"
              , printf "        ------------------------------------------------------------------------------" ]
-        tell b
+        tell (map f bakers)
         where
-          b = (map f bakers)
           f b' = printf "%6s: %s  %s  %s" (show $ bpbrId b') (show $ bpbrAccount b') (showLotteryPower $ bpbrLotteryPower b') (accountName $ bpbrAccount b')
           showLotteryPower lp = if 0 < lp && lp < 0.000001
                                 then " <0.0001 %" :: String
