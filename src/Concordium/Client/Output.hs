@@ -212,15 +212,17 @@ printCred c =
                Nothing -> printf "invalid expiration time '%s'" e
                Just t -> showTimeYearMonth t
 
-printAccountList :: [Text] -> Printer
-printAccountList = tell . map unpack
--- printAccountList lst = tell xs
---   where
---     xs = (map unpack lst)
---     x = [ "Accounts:"
---         ,"                     Account Address                Account Name"
---         ,"----------------------------------------------------------------" ]
---     xss = x:xs
+printAccountList :: [NamedAddress] -> Printer
+printAccountList accs = 
+  case accs of 
+    [] -> tell ["Accounts:" ++ showNone]
+    _ -> do 
+      let formatText :: NamedAddress -> Text
+          formatText na = (pack (show (naAddr na))) <>  "     " <> fromMaybe " "  (naName na)
+      tell [ "Accounts:"
+            , printf "                     Account Address                Account Name"
+            , printf "----------------------------------------------------------------" ]
+      tell (map unpack (map formatText accs))
 
 printModuleList :: [Text] -> Printer
 printModuleList = tell . map unpack
@@ -533,28 +535,27 @@ printConsensusStatus r =
        , printf "Last finalized time:         %s" (showMaybeUTC $ csrLastFinalizedTime r)
        , printf "Finalization period:         %s" (showMaybeEmSeconds (csrFinalizationPeriodEMA r) (csrFinalizationPeriodEMSD r)) ]
 
-printBirkParameters :: Bool -> BirkParametersResult -> [String] -> Printer
-printBirkParameters includeBakers r bs = do
+printBirkParameters :: Bool -> BirkParametersResult -> HM.HashMap IDTypes.AccountAddress Text -> Printer
+printBirkParameters includeBakers r addrmap = do
   tell [ printf "Election nonce:      %s" (show $ bprElectionNonce r)
-       ] -- , printf "Election difficulty: %f" (Types.electionDifficulty $ bprElectionDifficulty r) ]
+      ] --, printf "Election difficulty: %f" (Types.electionDifficulty $ bprElectionDifficulty r) ]
   when includeBakers $
-    case bs of
+    case bprBakers r of
       [] ->
          tell [ "Bakers:              " ++ showNone ]
-      b -> do
+      bakers -> do
         tell [ "Bakers:"
-             , printf "                             Account                       Lottery power"
-             , printf "        ----------------------------------------------------------------" ]
-        tell b
-  --     bs -> do
-  --       tell [ "Bakers:"
-  --            , printf "                             Account                       Lottery power"
-  --            , printf "        ----------------------------------------------------------------" ]
-  --       tell $ f <$> bs
-  -- where f b = printf "%6s: %s  %s" (show $ bpbrId b) (show $ bpbrAccount b) (showLotteryPower $ bpbrLotteryPower b)
-  --       showLotteryPower lp = if 0 < lp && lp < 0.000001
-  --                             then " <0.0001 %" :: String
-  --                             else printf "%8.4f %%" (lp*100)
+             , printf "                             Account                       Lottery power  Account Name"
+             , printf "        ------------------------------------------------------------------------------" ]
+        tell (map f bakers)
+        where
+          f b' = printf "%6s: %s  %s  %s" (show $ bpbrId b') (show $ bpbrAccount b') (showLotteryPower $ bpbrLotteryPower b') (accountName $ bpbrAccount b')
+          showLotteryPower lp = if 0 < lp && lp < 0.000001
+                                then " <0.0001 %" :: String
+                                else printf "%8.4f %%" (lp*100)
+          accountName bkr = fromMaybe " " $ HM.lookup bkr addrmap
+        
+        
 -- BLOCK
 
 printBlockInfo :: Maybe BlockInfoResult -> Printer
