@@ -524,19 +524,27 @@ printConsensusStatus r =
        , printf "Last finalized time:         %s" (showMaybeUTC $ csrLastFinalizedTime r)
        , printf "Finalization period:         %s" (showMaybeEmSeconds (csrFinalizationPeriodEMA r) (csrFinalizationPeriodEMSD r)) ]
 
-printBirkParameters :: Bool -> BirkParametersResult -> Maybe [String] -> Printer
-printBirkParameters includeBakers r bs = do
+printBirkParameters :: Bool -> BirkParametersResult -> HM.HashMap IDTypes.AccountAddress Text -> Printer
+printBirkParameters includeBakers r addrmap = do
   tell [ printf "Election nonce:      %s" (show $ bprElectionNonce r)
       ] --, printf "Election difficulty: %f" (Types.electionDifficulty $ bprElectionDifficulty r) ]
   when includeBakers $
-    case bs of
-      Nothing ->
+    case bprBakers r of
+      [] ->
          tell [ "Bakers:              " ++ showNone ]
-      Just b -> do
+      bakers -> do
         tell [ "Bakers:"
              , printf "                             Account                       Lottery power  Account Name"
              , printf "        ------------------------------------------------------------------------------" ]
         tell b
+        where
+          b = (map f bakers)
+          f b' = printf "%6s: %s  %s  %s" (show $ bpbrId b') (show $ bpbrAccount b') (showLotteryPower $ bpbrLotteryPower b') (accountName $ bpbrAccount b')
+          showLotteryPower lp = if 0 < lp && lp < 0.000001
+                                then " <0.0001 %" :: String
+                                else printf "%8.4f %%" (lp*100)
+          accountName bkr = fromMaybe (pack "*") $ HM.lookup bkr addrmap
+        
         
 -- BLOCK
 
