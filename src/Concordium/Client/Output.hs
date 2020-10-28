@@ -207,13 +207,14 @@ printCred c =
                Nothing -> printf "invalid expiration time '%s'" e
                Just t -> showTimeYearMonth t
 
-printAccountList :: [Text] -> Printer
--- printAccountList = tell . map unpack
+printAccountList :: [NamedAddress] -> Printer
 printAccountList accs = do 
+  let formatText :: NamedAddress -> Text
+      formatText na = (pack (show (naAddr na))) <>  "     " <> fromMaybe "*"  (naName na)
   tell [ "Accounts:"
         , printf "                     Account Address                Account Name"
         , printf "----------------------------------------------------------------" ]
-  tell (map unpack accs)
+  tell (map unpack (map formatText accs))
 
 printModuleList :: [Text] -> Printer
 printModuleList = tell . map unpack

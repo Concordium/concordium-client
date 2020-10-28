@@ -94,6 +94,7 @@ import qualified Data.Serialize                      as S
 import qualified Data.Set                            as Set
 import           Data.String
 import           Data.Text(Text)
+import qualified Data.Tuple                          as Tuple
 import qualified Data.Text                           as Text
 import           Data.Text.Encoding
 import qualified Data.Vector                         as Vec
@@ -1127,12 +1128,9 @@ processAccountCmd action baseCfgDir verbose backend =
     AccountList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       v <- withClientJson backend $ withBestBlockHash block getAccountList
-      let addname :: Text -> Text
-          addname addr = Text.append addr (Text.append (Text.pack "     ") . fromMaybe (Text.pack "*") $ na)
-            where
-              na = (case getAccountAddress (bcAccountNameMap baseCfg) addr of 
-                      Left _ -> Nothing
-                      Right val -> naName val)
+      let addrmap = Map.fromList . map Tuple.swap . Map.toList $ (bcAccountNameMap baseCfg)
+      let addname :: ID.AccountAddress -> NamedAddress
+          addname addr = NamedAddress (Map.lookup addr addrmap) addr
       runPrinter $ printAccountList (map addname v)
     
     AccountDelegate bakerId txOpts -> do
@@ -1297,15 +1295,13 @@ processConsensusCmd action _baseCfgDir verbose backend =
         Just p -> runPrinter $ case bprBakers p of 
                     [] -> printBirkParameters includeBakers p Nothing
                     bs -> printBirkParameters includeBakers p (Just (map f bs))
-                      where 
-                        f b' = printf "%6s: %s  %s  %s" (show $ bpbrId b') (show $ bpbrAccount b') (showLotteryPower $ bpbrLotteryPower b') (accountName $ show $ bpbrAccount b')
+                      where
+                        addrmap = Map.fromList . map Tuple.swap . Map.toList $ (bcAccountNameMap baseCfg) 
+                        f b' = printf "%6s: %s  %s  %s" (show $ bpbrId b') (show $ bpbrAccount b') (showLotteryPower $ bpbrLotteryPower b') (accountName $ bpbrAccount b')
                         showLotteryPower lp = if 0 < lp && lp < 0.000001
                                               then " <0.0001 %" :: String
                                               else printf "%8.4f %%" (lp*100)
-                        accountName :: String -> Text
-                        accountName bkr = fromMaybe (Text.pack "*") (case getAccountAddress (bcAccountNameMap baseCfg) (Text.pack bkr) of 
-                                                  Left _ -> Nothing
-                                                  Right val -> naName val)
+                        accountName bkr = fromMaybe (Text.pack "*") $ Map.lookup bkr addrmap
                                          
                                           
     ConsensusChainUpdate rawUpdateFile authsFile keysFiles intOpts -> do
