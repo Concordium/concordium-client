@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE QuasiQuotes #-}
 module Concordium.Client.Runner
   ( process
   , getAccountNonce
@@ -96,6 +97,7 @@ import           Data.List                           as L
 import qualified Data.Serialize                      as S
 import qualified Data.Set                            as Set
 import           Data.String
+import           Data.String.Interpolate (i)
 import           Data.Text(Text)
 import qualified Data.Text                           as Text
 import qualified Data.Vector                         as Vec
@@ -201,7 +203,7 @@ processConfigCmd action baseCfgDir verbose =
           case ID.addressFromText addr of
             Left err -> logFatal [printf "cannot parse '%s' as an address: %s" addr err]
             Right a -> return a
-        forM_ naName $ logFatalOnError . validateAccountName
+        forM_ naName $ logFatalOnError . validateName
         void $ initAccountConfig baseCfg NamedAddress{..} True
       ConfigAccountImport file name importFormat -> do
         baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1434,7 +1436,7 @@ processContractCmd action baseCfgDir verbose backend =
                       ++ " does not exist in block " ++ Text.unpack bestBlock]
         Right contrInfo -> putStr . showPrettyJSON $ contrInfo
 
-    ContractInit moduleRefOrFile initName paramsFile amount txOpts -> do
+    ContractInit moduleRefOrFile initName paramsFile contrName amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
 
       ciCfg <- getContractInitTransactionCfg baseCfg txOpts moduleRefOrFile initName paramsFile amount
@@ -1447,7 +1449,14 @@ processContractCmd action baseCfgDir verbose backend =
         case extractContractAddress mTsr of
           Left "ioTail disabled" -> return ()
           Left err -> logFatal ["contract initialisation failed:", err]
-          Right contrAddr -> logSuccess ["contract successfully initialized with address:", showCompactPrettyJSON contrAddr]
+          Right contrAddr -> do
+            case contrName of
+              Nothing -> return ()
+              Just contrName' -> do
+                --TODO: Map.insert overwrites old value
+                liftIO $ writeNameMap (contractNameMapFile $ bcContractCfgDir baseCfg) (Map.insert contrName' contrAddr (bcContractNameMap baseCfg))
+                logSuccess ["contract successfully initialized with address (and name):",
+                        [i|#{showCompactPrettyJSON contrAddr} (#{maybe "-" show contrName})|]]
 
     ContractUpdate contrAddrIndex contrAddrSubindex receiveName paramsFile amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit

@@ -86,15 +86,16 @@ library:
     - unordered-containers
     - hashable >= 1.2
     - pretty
-    - proto-lens == 0.6.*
-    - proto-lens-protobuf-types == 0.6.*
-    - proto-lens-runtime == 0.6.*
+    - proto-lens == 0.7.*
+    - proto-lens-protobuf-types == 0.7.*
+    - proto-lens-runtime == 0.7.*
     - microlens-platform
     - transformers
     - uri-encode >= 1.5
     - concurrent-extra >= 0.7
     - async >= 2.2
     - vector >= 0.12
+    - string-interpolate
   generated-exposed-modules:
     Proto.ConcordiumP2pRpc
     Proto.ConcordiumP2pRpc_Fields

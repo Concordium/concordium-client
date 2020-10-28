@@ -218,6 +218,8 @@ data ContractCmd
     , ciInitName :: !Text
       -- |Path to a binary file containing parameters for the init function.
     , ciParameterFile :: !(Maybe FilePath)
+      -- |Local alias for the contract address.
+    , ciName :: !(Maybe Text)
       -- |Amount to be send to contract (default: 0).
     , ciAmount :: !Amount
       -- |Options for transaction.
@@ -723,10 +725,11 @@ contractInitCmd =
                              <> help "Name of the specific init function in the module (default: \"init\").") <*>
         optional (strOption (long "params" <> metavar "FILE"
                              <> help "Binary file with parameters for init function (default: no parameters).")) <*>
+        optional (strOption (long "name" <> metavar "NAME" <> help "Name of the contract.")) <*>
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> value 0
                                                                 <> help "Amount of GTU to transfer to the contract.") <*>
         requiredEnergyTransactionOptsParser)
-      (progDesc "Initialize contract from already deployed module."))
+      (progDesc "Initialize contract from already deployed module, optionally naming the contract."))
 
 contractUpdateCmd :: Mod CommandFields ContractCmd
 contractUpdateCmd =

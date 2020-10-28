@@ -156,14 +156,20 @@ exampleBaseConfigWithAccountNameMap =
   BaseConfig
   { bcVerbose = True
   , bcAccountNameMap = M.fromList [("name1", exampleAccountAddress1), ("name2", exampleAccountAddress2)]
-  , bcAccountCfgDir = "/some/path" }
+  , bcAccountCfgDir = "/some/path"
+  , bcContractNameMap = M.empty
+  , bcModuleNameMap = M.empty
+  , bcContractCfgDir = "/some/path"}
 
 exampleBaseConfigWithoutAccountNameMap :: BaseConfig
 exampleBaseConfigWithoutAccountNameMap =
   BaseConfig
   { bcVerbose = False
   , bcAccountNameMap = M.empty
-  , bcAccountCfgDir = "/some/other/path"}
+  , bcAccountCfgDir = "/some/other/path"
+  , bcContractNameMap = M.empty
+  , bcModuleNameMap = M.empty
+  , bcContractCfgDir = "/some/other/path"}
 
 
 dummyEncryptionSecretKey :: ElgamalSecretKey
