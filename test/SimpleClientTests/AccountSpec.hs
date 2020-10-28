@@ -12,7 +12,6 @@ import Concordium.Crypto.EncryptedTransfers
 
 import Control.Monad.Writer
 import qualified Data.Map.Strict as Map
--- import Data.Text (pack)
 import qualified Data.Aeson as AE
 import Test.Hspec
 import Data.Maybe
