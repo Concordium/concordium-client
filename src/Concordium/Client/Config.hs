@@ -77,6 +77,7 @@ accountConfigDir baseCfgDir = baseCfgDir </> "accounts"
 getDefaultDataDir :: IO FilePath
 getDefaultDataDir = getXdgDirectory XdgData "concordium"
 
+-- |Get the path to the account names map file.
 accountNameMapFile :: AccountConfigDir -> FilePath
 accountNameMapFile accountCfgDir = accountCfgDir </> "names.map"
 

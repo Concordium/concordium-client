@@ -199,10 +199,10 @@ data ModuleCmd
 data ContractCmd
   -- |Show the state of specified contract.
   = ContractShow
-    { -- |Index of the address for the contract.
-      cuAddressIndex :: !Word64
+    { -- |Index of the contract address OR a contract name.
+      cuAddressIndexOrName :: !Text
       -- |Subindex of the address for the contract (default: 0).
-    , cuAddressSubindex :: !Word64
+    , cuAddressSubindex :: !(Maybe Word64)
       -- |Hash of the block (default "best").
     , csBlockHash :: !(Maybe Text) }
   -- |List all contracts on chain.
@@ -226,10 +226,10 @@ data ContractCmd
     , ciTransactionOpts :: !(TransactionOpts Energy) }
   -- |Update an existing contract, i.e. invoke a receive function.
   | ContractUpdate
-    { -- |Index of the address for the contract to invoke.
-      cuAddressIndex :: !Word64
+    { -- |Index of the contract address OR a contract name.
+      cuAddressIndexOrName :: !Text
       -- |Subindex of the address for the contract to invoke (default: 0).
-    , cuAddressSubindex :: !Word64
+    , cuAddressSubindex :: !(Maybe Word64)
       -- |Name of the receive function to use (default: "receive").
     , cuReceiveName :: !Text
       -- |Path to a binary file containing paramaters for the receive method.
@@ -699,9 +699,9 @@ contractShowCmd =
     "show"
     (info
       (ContractShow <$>
-        argument auto (metavar "INDEX" <> help "Index of address for the contract on chain.") <*>
-        option auto (long "subindex" <> metavar "SUBINDEX" <> value 0
-                            <> help "Subindex of address for the contract on chain (default: 0)") <*>
+        strArgument (metavar "INDEX-OR-NAME" <> help "Index of the contract address OR a contract name.") <*>
+        optional (option auto (long "subindex" <> metavar "SUBINDEX"
+                            <> help "Subindex of address for the contract (default: 0)")) <*>
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
       (progDesc "Display contract state at given block."))
 
@@ -737,9 +737,9 @@ contractUpdateCmd =
     "update"
     (info
       (ContractUpdate <$>
-        argument auto (metavar "INDEX" <> help "Index of address for the contract on chain.") <*>
-        option auto (long "subindex" <> metavar "SUBINDEX" <> value 0 <>
-                     help "Subindex of address for the contract on chain (default: 0)") <*>
+        strArgument (metavar "INDEX-OR-NAME" <> help "Index of the contract address OR a contract name.") <*>
+        optional (option auto (long "subindex" <> metavar "SUBINDEX" <>
+                     help "Subindex of address for the contract on chain (default: 0)")) <*>
         strOption (long "func" <> metavar "RECEIVE-NAME" <> value "receive"
                              <> help "Name of the specific receive function in the module (default: \"receive\").") <*>
         optional (strOption (long "params" <> metavar "FILE"
