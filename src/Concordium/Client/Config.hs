@@ -13,9 +13,11 @@ import Concordium.Client.Types.Account
 import Control.Exception
 import Control.Monad.Except
 import Control.Monad.Trans.Except
+import qualified Data.Aeson as AE
+import qualified Data.Aeson.Encode.Pretty as AE
+import qualified Data.ByteString.Lazy as BSL
 import Data.Maybe
 import Data.Either
-import qualified Data.Aeson as AE
 
 import Data.Char
 import Data.List as L
@@ -25,11 +27,12 @@ import Data.String.Interpolate (i, iii)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import Data.Text (Text, pack, strip, unpack)
+import Data.Text.Encoding (decodeUtf8)
 import System.Directory
 import System.IO.Error
 import System.FilePath
 import Text.Printf
-import Text.Read (readMaybe, readEither)
+import Text.Read (readMaybe)
 
 {- |
 The layout of the config directory is shown in this example:
@@ -55,6 +58,12 @@ The layout of the config directory is shown in this example:
 type BaseConfigDir = FilePath
 type AccountConfigDir = FilePath
 type ContractConfigDir = FilePath
+
+-- TODO: Figure out where this should be. It's in here because of circular dependency with Output.hs.
+-- |Serialize to JSON and pretty-print.
+showPrettyJSON :: AE.ToJSON a => a -> String
+showPrettyJSON = unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty' config
+  where config = AE.defConfig { AE.confCompare = compare }
 
 -- |The default location of the config root directory.
 getDefaultBaseConfigDir :: IO BaseConfigDir
@@ -167,9 +176,9 @@ initBaseConfig f = do
   mapM_ (ensureDirCreated True) [accCfgDir, contrCfgDir]
 
   -- Ensure namemaps are created
-  accNameMap <- ensureNameMapCreatedAndLoad accMapFile loadAccountNameMap
-  contrNameMap <- ensureNameMapCreatedAndLoad contrMapFile loadContractNameMap
-  moduleNameMap <- ensureNameMapCreatedAndLoad moduleMapFile loadModuleNameMap
+  accNameMap <- ensureAccountNameMapCreatedAndLoad accMapFile loadAccountNameMap
+  contrNameMap <- ensureJSONNameMapCreatedAndLoad contrMapFile loadNameMapFromJSON
+  moduleNameMap <- ensureJSONNameMapCreatedAndLoad moduleMapFile loadNameMapFromJSON
 
   logSuccess ["configuration initialized"]
   return BaseConfig
@@ -194,16 +203,22 @@ ensureDirCreated verbose dir = do
   if dirExists then
     when verbose $ logInfo [[i|skipping '#{dir}': directory already exists|]]
   else
-    createDirectoryIfMissing True dir --TODO: Is True okay here? It was False at first.
+    createDirectoryIfMissing True dir
 
-ensureNameMapCreatedAndLoad :: FilePath -> (FilePath -> IO (NameMap v)) -> IO (NameMap v)
-ensureNameMapCreatedAndLoad mapFile loadNM = do
+ensureAccountNameMapCreatedAndLoad :: FilePath -> (FilePath -> IO AccountNameMap) -> IO AccountNameMap
+ensureAccountNameMapCreatedAndLoad = ensureNameMapCreatedAndLoad ""
+
+ensureJSONNameMapCreatedAndLoad :: FilePath -> (FilePath -> IO (NameMap v)) -> IO (NameMap v)
+ensureJSONNameMapCreatedAndLoad = ensureNameMapCreatedAndLoad "{}" -- this is simply an empty Map
+
+ensureNameMapCreatedAndLoad :: String -> FilePath -> (FilePath -> IO (NameMap v)) -> IO (NameMap v)
+ensureNameMapCreatedAndLoad emptyContent mapFile loadNM = do
   mapFileExists <- doesFileExist mapFile
   if mapFileExists then do
     logInfo [[i|skipping '#{mapFile}': directory already exists|]]
     loadNM mapFile
   else do
-    writeFile mapFile ""
+    writeFile mapFile emptyContent
     return M.empty
 
 initAccountConfigEither :: BaseConfig
@@ -295,6 +310,10 @@ importAccountConfig baseCfg accCfgs verbose = foldM f baseCfg accCfgs
           when t $ writeAccountKeys bc' ac verbose
           return bc'
 
+-- |Write the name map to a file in a pretty JSON format.
+writeNameMapAsJSON :: AE.ToJSON v => FilePath -> NameMap v -> IO ()
+writeNameMapAsJSON file = writeFile file . showPrettyJSON
+
 -- |Write the name map to a file in the expected format.
 -- TODO: Will throw error if folder(s) not created.
 writeNameMap :: Show v => FilePath -> NameMap v -> IO ()
@@ -380,9 +399,9 @@ getBaseConfig f verbose autoInit = do
       unless accCfgDirExists $ throwE [i|account config directory '#{accCfgDir}' not found|]
 
       -- TODO: Warn only if Verbose, otherwise ensure created. Warnings only occur if you have a config folder without the correct files.
-      mapM_ checkIfNameMapExistsAndWarn [(accMapFile, Account), (contrMapFile, Contract), (moduleMapFile, Module)]
+      mapM_ checkIfNameMapExistsAndWarn [accMapFile, contrMapFile, moduleMapFile]
 
-      liftIO $ sequenceT (loadAccountNameMap accMapFile, loadContractNameMap contrMapFile, loadModuleNameMap moduleMapFile)
+      liftIO $ sequenceT (loadAccountNameMap accMapFile, loadNameMapFromJSON contrMapFile, loadNameMapFromJSON moduleMapFile)
 
     let baseCfg = BaseConfig
                   { bcVerbose = verbose
@@ -394,9 +413,9 @@ getBaseConfig f verbose autoInit = do
     case nameMaps of
       Right (anm, cnm, mnm) -> return baseCfg { bcAccountNameMap = anm, bcContractNameMap = cnm, bcModuleNameMap = mnm }
       Left warns -> logWarn [warns] >> return baseCfg
-  where checkIfNameMapExistsAndWarn (mapFile, variant) = do
+  where checkIfNameMapExistsAndWarn mapFile = do
           fileExists <- liftIO $ doesFileExist mapFile
-          unless fileExists $ throwE [i|#{variant} name map file '#{mapFile}' not found|]
+          unless fileExists $ throwE [i|name map file '#{mapFile}' not found|]
 
         sequenceT :: Monad m => (m a1, m a2, m a3) -> m (a1, a2, a3)
         sequenceT (a1, a2, a3) = return (,,) `ap` a1 `ap` a2 `ap` a3
@@ -406,24 +425,24 @@ getBaseConfigDir = \case
   Nothing -> getDefaultBaseConfigDir
   Just p -> return p
 
+-- |Load a NameMap from a file in JSON format, or logFatal if file is missing or has invalid format.
+loadNameMapFromJSON :: AE.FromJSON v => FilePath -> IO (NameMap v)
+loadNameMapFromJSON mapFile = do
+  fileExists <- doesFileExist mapFile
+  if not fileExists
+  -- TODO: Should this just be warn or nothing?
+  -- Should only happen if cfg dir exists, but files manually deleted (or upgrade to this new version)
+  then logFatal [[i|file '#{mapFile}' does not exist.|]]
+  else do
+    content <- BSL.readFile mapFile
+    case AE.eitherDecode content of
+      Left err -> logFatal [[i|cannot parse name map file '#{mapFile}' as JSON: #{err}|]]
+      Right nm -> return nm
+
+-- |Load an AccountNameMAp from a file in the format specified by `parseAccountNameMap`.
+-- LogFatal if file is missing or the format is invalid.
 loadAccountNameMap :: FilePath -> IO AccountNameMap
-loadAccountNameMap = loadNameMap Account (addressFromText :: Text -> Either String Types.AccountAddress)
-
-loadContractNameMap :: FilePath -> IO ContractNameMap
-loadContractNameMap = loadNameMap Contract (readEither . unpack)
-
-loadModuleNameMap :: FilePath -> IO ModuleNameMap
-loadModuleNameMap = loadNameMap Module (readEither . unpack)
-
-data NameMapVariant = Account | Contract | Module deriving Eq
-
-instance Show NameMapVariant where
-  show Account  = "account"
-  show Contract = "contract"
-  show Module   = "module"
-
-loadNameMap :: NameMapVariant -> (Text -> Either String v) -> FilePath -> IO (NameMap v)
-loadNameMap valueVariant valueFromText mapFile = do
+loadAccountNameMap mapFile = do
   fileExists <- doesFileExist mapFile
   if not fileExists
   -- TODO: Should this just be warn or nothing?
@@ -431,33 +450,30 @@ loadNameMap valueVariant valueFromText mapFile = do
   then logFatal [[i|file '#{mapFile}' does not exist.|]]
   else do
     content <- readFile mapFile
-    case parseNameMap valueVariant valueFromText $ lines content of
-      Left err -> logFatal [[i|cannot parse #{valueVariant} name map file '#{content}': #{err}|]]
+    case parseAccountNameMap $ lines content of
+      Left err -> logFatal [[i|cannot parse account name map file '#{content}': #{err}|]]
       Right m -> return m
 
+-- |Parse an AccountNamepMap from zero or more entries, as specificied in `parseAccoutNameMapEntry`.
 parseAccountNameMap :: (MonadError String m) => [String] -> m AccountNameMap
-parseAccountNameMap = parseNameMap Account addressFromText
-
-parseNameMap :: (MonadError String m) => NameMapVariant -> (Text -> m v) -> [String] -> m (NameMap v)
-parseNameMap valueVariant valueFromText ls = M.fromList <$> mapM (parseNameMapEntry valueVariant valueFromText) ls'
+parseAccountNameMap ls = M.fromList <$> mapM parseAccountNameMapEntry ls'
   where ls' = filter (not . L.all isSpace) ls
 
-parseAccountNameMapEntry :: (MonadError String m) => String -> m (Text, AccountAddress)
-parseAccountNameMapEntry = parseNameMapEntry Account addressFromText
-
--- | Parse a line representing a single name mapping of the format "<name> = <value>".
--- Leading and trailing whitespaces around name and value are ignored.
-parseNameMapEntry :: (MonadError String m) => NameMapVariant -> (Text -> m v) -> String -> m (Text, v)
-parseNameMapEntry valueVariant valueFromText line =
+-- | Parse a line representing a single name-account mapping of the format "<name> = <address>".
+-- Leading and trailing whitespaces around name and address are ignored.
+parseAccountNameMapEntry :: (MonadError String m) => String -> m (Text, Types.AccountAddress)
+parseAccountNameMapEntry line =
   case splitOn "=" line of
     [k, v] -> do
       let name = strip $ pack k
       validateName name
-      val <- case strip $ pack v of
-                "" -> throwError [i|empty #{valueVariant}|]
-                addr -> valueFromText addr `catchError` (\err -> throwError [i|invalid address '#{addr}': #{err}|])
-      return (name, val)
-    _ -> throwError [i|invalid mapping format '#{line}' (should be '<name> = <#{valueVariant}>')|]
+      addr <- case strip $ pack v of
+                "" -> throwError "empty address"
+                addr -> case addressFromText addr of
+                          Left err -> throwError $ printf "invalid address '%s': %s" addr err
+                          Right a -> return a
+      return (name, addr)
+    _ -> throwError $ printf "invalid mapping format '%s' (should be '<name> = <address>')" line
 
 -- | Check whether the given text is a valid name.
 isValidName :: Text -> Bool
@@ -650,16 +666,16 @@ insertAccountKey :: EncryptedAccountKeyMap -> (Maybe KeyIndex, EncryptedAccountK
 insertAccountKey km (idx,kp) =
   let idx' = case idx of
             Nothing -> nextUnusedIdx 1 (sort $ M.keys km)
-            Just id' -> id'
+            Just idx'' -> idx''
   in M.insert idx' kp km
 
 -- |Compute the next index not already in use, starting from the one provided
 -- (which is assumed to be less than or equal to the first element of the list).
 nextUnusedIdx :: KeyIndex -> [KeyIndex] -> KeyIndex
-nextUnusedIdx id' sortedKeys = case sortedKeys of
-                               [] -> id'
-                               k:ks | k==id' -> nextUnusedIdx (id'+1) ks
-                                    | otherwise -> id'
+nextUnusedIdx idx sortedKeys = case sortedKeys of
+                               [] -> idx
+                               k:ks | k==idx -> nextUnusedIdx (idx+1) ks
+                                    | otherwise -> idx
 
 type KeyName = String
 data KeyType = Sign | Verify deriving (Eq, Show)

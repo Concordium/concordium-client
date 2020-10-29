@@ -16,21 +16,21 @@ import qualified Concordium.Crypto.EncryptedTransfers as Enc
 import Concordium.ID.Parameters (globalContext)
 
 import Control.Monad.Writer
+import qualified Data.Aeson as AE
 import qualified Data.Aeson.Encode.Pretty as AE
-import qualified Data.ByteString.Lazy as BSL
-import Data.Maybe
-import Data.Functor
-import Data.List
-import qualified Data.HashMap.Strict as HM
-import qualified Data.Map.Strict as M
+import qualified Data.Aeson.Types as AE
 import Data.Bool
+import qualified Data.ByteString.Lazy as BSL
+import Data.Functor
+import qualified Data.HashMap.Strict as HM
+import Data.List
+import Data.Maybe
+import qualified Data.Map.Strict as M
 import Data.Text (Text, pack, unpack)
 import Data.Text.Encoding
 import Data.Time
-import Text.Printf
-import qualified Data.Aeson as AE
-import qualified Data.Aeson.Types as AE
 import Lens.Micro.Platform
+import Text.Printf
 
 -- PRINTER
 
@@ -42,10 +42,6 @@ runPrinter :: (MonadIO m) => Printer -> m ()
 runPrinter = liftIO . mapM_ putStrLn . execWriter
 
 -- HELPERS
-
--- |Serialize to JSON and pretty-print.
-showPrettyJSON :: AE.ToJSON a => a -> String
-showPrettyJSON = unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty
 
 -- |Serialize to JSON, order by keys, and pretty-print without whitespace.
 showCompactPrettyJSON :: AE.ToJSON a => a -> String
