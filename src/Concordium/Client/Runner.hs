@@ -1454,7 +1454,7 @@ processContractCmd action baseCfgDir verbose backend =
               Nothing -> return ()
               Just contrName' -> do
                 --TODO: Map.insert overwrites old value
-                liftIO $ writeNameMap (contractNameMapFile $ bcContractCfgDir baseCfg) (Map.insert contrName' contrAddr (bcContractNameMap baseCfg))
+                liftIO $ writeNameMapAsJSON (contractNameMapFile $ bcContractCfgDir baseCfg) (Map.insert contrName' contrAddr (bcContractNameMap baseCfg))
                 logSuccess ["contract successfully initialized with address (and name):",
                         [i|#{showCompactPrettyJSON contrAddr} (#{maybe "-" show contrName})|]]
 
@@ -1590,10 +1590,10 @@ processConsensusCmd action _baseCfgDir verbose backend =
         keyLU key = let vk = SigScheme.correspondingVerifyKey key in
           case vk `Vec.elemIndex` Updates.asKeys auths of
             Nothing -> logFatal [printf "Authorizations file does not contain public key '%s'" (show vk)]
-            Just i -> do
-              unless (fromIntegral i `Set.member` keySet) $
-                logWarn [printf "Key with index %u (%s) is not authorized to perform this update type." i (show vk)]
-              return (fromIntegral i, key)
+            Just idx -> do
+              unless (fromIntegral idx `Set.member` keySet) $
+                logWarn [printf "Key with index %u (%s) is not authorized to perform this update type." idx (show vk)]
+              return (fromIntegral idx, key)
       keyMap <- OrdMap.fromList <$> mapM keyLU keys
       let ui = Updates.makeUpdateInstruction rawUpdate keyMap
       when verbose $ logInfo ["Generated update instruction:", show ui]
