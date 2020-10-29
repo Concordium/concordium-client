@@ -1557,13 +1557,14 @@ getNamedContractAddress cnm indexOrName subindex = case readMaybe $ Text.unpack 
 -- |Primarily used to show contract addresses along with their names in a consistent manner.
 data NamedContractAddress =
   NamedContractAddress { ncaAddr :: Types.ContractAddress -- ^ The contract address.
-                       , ncaName :: Maybe Text            -- ^ The optional contract name (Nothing is shown as "-").
+                       , ncaName :: Maybe Text            -- ^ The optional contract name.
                        }
 
 instance Show NamedContractAddress where
-  show NamedContractAddress{..} = [i|#{ncaAddr'} (#{ncaName'})|]
+  show NamedContractAddress{..} = case ncaName of
+    Just ncaName' -> [i|#{ncaAddr'} (#{ncaName'})|]
+    Nothing -> ncaAddr'
     where ncaAddr' = showCompactPrettyJSON ncaAddr
-          ncaName' = fromMaybe "-" ncaName
 
 -- |Try to extract event information from a TransactionStatusResult.
 -- The Maybe returned by the supplied function is mapped to Either with an error message.
