@@ -177,23 +177,31 @@ data ModuleCmd
   = ModuleDeploy
     { -- |Path to the module.
       mdModuleFile :: !FilePath
+      -- |Local alias for the module reference.
+    , mdName :: !(Maybe Text)
       -- |Options for transaction.
-    , mdTransactionOpts :: !(TransactionOpts (Maybe Energy))
-    }
+    , mdTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   -- |List all modules.
   | ModuleList
     { -- |Hash of the block (default "best").
-      mlBlockHash :: !(Maybe Text)
-    }
+      mlBlockHash :: !(Maybe Text) }
   -- |Output the binary source code of the module to the provided file.
   | ModuleShow
-    { -- |Reference to the module.
-      msModuleReference :: !Text
+    { -- |Reference to the module OR a module name.
+      msModuleRefOrName :: !Text
       -- |Output the module to this file.
       -- Use '-' to output to stdout.
     , msOutFile :: !FilePath
       -- |Hash of the block (default "best").
     , mlBlockHash :: !(Maybe Text) }
+  -- |Add a local name to a module.
+  | ModuleName
+    { -- |Module reference OR path to the module (reference then calculated by hashing).
+      mnModule :: !String
+      -- |Name for the module.
+    , mnName :: !Text
+      -- |Hash of the block (default "best").
+    , mnBlockHash :: !(Maybe Text) }
   deriving (Show)
 
 data ContractCmd
@@ -656,7 +664,8 @@ moduleCmds =
         hsubparser
           (moduleDeployCmd <>
            moduleListCmd <>
-           moduleShowCmd))
+           moduleShowCmd <>
+           moduleNameCmd))
       (progDesc "Commands for inspecting and deploying modules."))
 
 moduleDeployCmd :: Mod CommandFields ModuleCmd
@@ -666,8 +675,9 @@ moduleDeployCmd =
     (info
       (ModuleDeploy <$>
         strArgument (metavar "FILE" <> help "Path to the smart contract module.") <*>
+        optional (strOption (long "name" <> metavar "NAME" <> help "Name for the module.")) <*>
         transactionOptsParser)
-      (progDesc "Deploy a smart contract module on the chain."))
+      (progDesc "Deploy a smart contract module on the chain, optionally naming the module."))
 
 moduleListCmd :: Mod CommandFields ModuleCmd
 moduleListCmd =
@@ -684,10 +694,21 @@ moduleShowCmd =
     "show"
     (info
       (ModuleShow <$>
-        strArgument (metavar "MODULE-REFERENCE" <> help "Reference to the module (use 'module list' to find it).") <*>
+        strArgument (metavar "MODULE-OR-NAME" <> help "Module reference OR a module name.") <*>
         strOption (long "out" <> metavar "FILE" <> help "File to output the source code to (use '-' for stdout).") <*>
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
-      (progDesc "List all modules."))
+      (progDesc "Get the source code for a module."))
+
+moduleNameCmd :: Mod CommandFields ModuleCmd
+moduleNameCmd =
+  command
+    "name"
+    (info
+      (ModuleName <$>
+        strArgument (metavar "MODULE" <> help "Module reference OR path to the module.") <*>
+        strOption (long "name" <> metavar "NAME" <> help "Name for the module.") <*>
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+      (progDesc "Name a module."))
 
 contractCmds :: Mod CommandFields Cmd
 contractCmds =
@@ -735,7 +756,7 @@ contractInitCmd =
                              <> help "Name of the specific init function in the module (default: \"init\").") <*>
         optional (strOption (long "params" <> metavar "FILE"
                              <> help "Binary file with parameters for init function (default: no parameters).")) <*>
-        optional (strOption (long "name" <> metavar "NAME" <> help "Name of the contract.")) <*>
+        optional (strOption (long "name" <> metavar "NAME" <> help "Name for the contract.")) <*>
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> value 0
                                                                 <> help "Amount of GTU to transfer to the contract.") <*>
         requiredEnergyTransactionOptsParser)
@@ -770,7 +791,7 @@ contractNameCmd =
                             <> help "Subindex of contract address to be named (default: 0)")) <*>
         strOption (long "name" <> metavar "NAME" <> help "Name for the contract.") <*>
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
-      (progDesc "List all modules."))
+      (progDesc "Name a contract."))
 
 configCmds :: ShowAllOpts -> Mod CommandFields Cmd
 configCmds showAllOpts =

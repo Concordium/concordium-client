@@ -1319,10 +1319,10 @@ processAccountCmd action baseCfgDir verbose backend =
 processModuleCmd :: ModuleCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processModuleCmd action baseCfgDir verbose backend =
   case action of
-    ModuleDeploy moduleFile txOpts -> do
+    ModuleDeploy modFile modName txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
 
-      mdCfg <- getModuleDeployTransactionCfg baseCfg txOpts moduleFile
+      mdCfg <- getModuleDeployTransactionCfg baseCfg txOpts modFile
       let txCfg = mdtcTransactionCfg mdCfg
 
       let intOpts = toInteractionOpts txOpts
@@ -1332,9 +1332,15 @@ processModuleCmd action baseCfgDir verbose backend =
         case extractModRef mTsr of
           Left "ioTail disabled" -> return ()
           Left err -> logFatal ["module deployment failed:", err]
-          Right modRef -> logSuccess ["module successfully deployed with reference:", show modRef]
+          Right modRef -> do
+            case modName of
+              Nothing -> return ()
+              Just modName' -> addModuleNameAndWrite baseCfg modName' modRef
+            let namedModRef = NamedModuleRef {nmrRef = modRef, nmrName = modName}
+            logSuccess [[i|module successfully deployed with reference: #{namedModRef}|]]
 
     ModuleList block -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getModuleList bb
       v <- getFromJsonAndHandleError (\_ _ -> logFatal ["could not retrieve the list of modules",
                                    "the provided block hash is invalid:", Text.unpack bestBlock]) res
@@ -1342,24 +1348,39 @@ processModuleCmd action baseCfgDir verbose backend =
         Nothing -> logFatal ["could not retrieve the list of modules",
                                "the provided block does not exist:", Text.unpack bestBlock]
         Just [] -> logInfo ["there are no modules in block " ++ Text.unpack bestBlock]
-        Just xs -> runPrinter $ printModuleList xs
+        Just xs -> runPrinter $ printModuleList (bcModuleNameMap baseCfg) xs
 
-    ModuleShow moduleRef outFile block -> do
-      (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getModuleSource moduleRef bb
+    ModuleShow modRefOrName outFile block -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      namedModRef <- getNamedModuleRef (bcModuleNameMap baseCfg) modRefOrName
+      (bestBlock, res) <- withClient backend $ withBestBlockHash block $
+        \bb -> (bb,) <$> getModuleSource (showText $ nmrRef namedModRef) bb
 
       case res of
-        Left err -> logFatal ["I/O error: " ++ err]
-        Right "" -> logInfo ["module with reference " ++ Text.unpack moduleRef
-                            ++ " does not exist in block " ++ Text.unpack bestBlock]
-        Right moduleSource ->
+        Left err -> logFatal ["I/O error:", err]
+        Right "" -> logInfo [[i|the module reference #{namedModRef} does not exist in block #{bestBlock}|]]
+        Right modSource ->
           case outFile of
             -- Write to stdout
-            "-" -> BS.putStr moduleSource
+            "-" -> BS.putStr modSource
             -- Write to file
-            _   -> handleWriteModuleToFile outFile moduleSource
+            _   -> handleWriteModuleToFile outFile modSource
+    ModuleName modRefOrFile modName block -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      modRef <- getModuleRefFromRefOrFile modRefOrFile
+      (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getModuleSource (showText modRef) bb
+
+      case res of
+        Left err -> logFatal ["I/O error:", err]
+        -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
+        Right "" -> logInfo [[i|the module reference #{modRef} does not exist in block #{bestBlock}|]]
+        Right _ -> do
+          addModuleNameAndWrite baseCfg modName modRef
+          logSuccess [[i|module reference #{modRef} was successfully named '#{modName}'|]]
   where extractModRef = extractFromTsr (\case
                                            Types.ModuleDeployed modRef -> Just modRef
                                            _ -> Nothing)
+        showText = Text.pack . show
 
 -- |Writes module to file and asks user to confirm if file already exists.
 -- Relevant IOErrors are caught.
@@ -1433,7 +1454,7 @@ processContractCmd action baseCfgDir verbose backend =
         \bb -> (bb,) <$> getInstanceInfo (Text.pack . showCompactPrettyJSON . ncaAddr $ namedContrAddr) bb
 
       case res of
-        Left err -> logFatal ["could not retrieve contract:", err]
+        Left err -> logFatal ["I/O error:", err]
         -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
         Right AE.Null -> logInfo [[i|the contract instance #{namedContrAddr} does not exist in block #{bestBlock}|]]
         Right contrInfo -> putStr . showPrettyJSON $ contrInfo
@@ -1474,7 +1495,7 @@ processContractCmd action baseCfgDir verbose backend =
         \bb -> (bb,) <$> getInstanceInfo (Text.pack . showCompactPrettyJSON $ contrAddr) bb
 
       case res of
-        Left err -> logFatal ["could not retrieve contract", err]
+        Left err -> logFatal ["I/O error:", err]
         -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
         Right AE.Null -> logInfo [[i|the contract instance #{showCompactPrettyJSON contrAddr} does not exist in block #{bestBlock}|]]
         Right _ -> do
@@ -1513,9 +1534,7 @@ data ContractUpdateTransactionCfg =
 getContractInitTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> String -> Text
                               -> Maybe FilePath -> Types.Amount -> IO ContractInitTransactionCfg
 getContractInitTransactionCfg baseCfg txOpts moduleRefOrFile initName paramsFile amount = do
-  moduleRef <- case readMaybe moduleRefOrFile of
-                 Just modRef -> pure modRef
-                 Nothing -> Types.ModuleRef . getHash <$> getWasmModuleFromFile moduleRefOrFile
+  moduleRef <- getModuleRefFromRefOrFile moduleRefOrFile
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   params <- getWasmParameterFromFileOrDefault paramsFile
   return $ ContractInitTransactionCfg txCfg amount moduleRef (Wasm.InitName initName) params
@@ -1550,17 +1569,33 @@ getWasmParameterFromFileOrDefault paramsFile = case paramsFile of
   Nothing -> pure . Wasm.Parameter $ BSS.empty
   Just file -> Wasm.Parameter . BS.toShort <$> BS.readFile file
 
+-- |Try to parse the input as a module reference and assume it is a path if it fails.
+-- Then load the module file and compute its hash, which is the reference.
+getModuleRefFromRefOrFile :: String -> IO Types.ModuleRef
+getModuleRefFromRefOrFile moduleRefOrFile = case readMaybe moduleRefOrFile of
+  Just modRef -> pure modRef
+  Nothing -> Types.ModuleRef . getHash <$> getWasmModuleFromFile moduleRefOrFile
+
 -- |Get a NamedContractAddress from either a name or index and an optional subindex.
 -- LogWarn if subindex is provided with a contract name.
--- LogFatal if it is neither an index or a contract name.
+-- LogFatal if it is neither an index nor a contract name.
 getNamedContractAddress :: MonadIO m => ContractNameMap -> Text -> Maybe Word64 -> m NamedContractAddress
-getNamedContractAddress cnm indexOrName subindex = case readMaybe $ Text.unpack indexOrName of
+getNamedContractAddress nameMap indexOrName subindex = case readMaybe $ Text.unpack indexOrName of
   Just index -> return $ NamedContractAddress {ncaAddr = mkContractAddress index subindex, ncaName = Nothing}
   Nothing -> do
     when (isJust subindex) $ logWarn ["ignoring the --subindex as it should not be used in combination with a contract name"]
-    case Map.lookup indexOrName cnm of
+    case Map.lookup indexOrName nameMap of
       Just addr -> return $ NamedContractAddress {ncaAddr = addr, ncaName = Just indexOrName}
       Nothing -> logFatal [[i|'#{indexOrName}' is neither the address index nor the name of a contract|]]
+
+-- |Get a NamedModuleRef from either a name or a module reference.
+-- LogFatal if it is neither a module reference nor a module name.
+getNamedModuleRef :: MonadIO m => ModuleNameMap -> Text -> m NamedModuleRef
+getNamedModuleRef nameMap modRefOrName = case readMaybe $ Text.unpack modRefOrName of
+  Just modRef -> return $ NamedModuleRef {nmrRef = modRef, nmrName = Nothing}
+  Nothing -> case Map.lookup modRefOrName nameMap of
+    Just modRef -> return $ NamedModuleRef {nmrRef = modRef, nmrName = Just modRefOrName}
+    Nothing -> logFatal [[i|'#{modRefOrName}' is neither the reference nor the name of a module|]]
 
 -- |Make a contract address from an index and an optional subindex (default: 0).
 mkContractAddress :: Word64 -> Maybe Word64 -> Types.ContractAddress
