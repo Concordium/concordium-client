@@ -209,7 +209,7 @@ data AccountInfoResult = AccountInfoResult
     -- |Which baker, if any, this account delegates to.
   , airDelegation :: !(Maybe BakerId)
     -- | List of credentials on the account, latest first.
-  , airCredentials :: ![(Versioned IDTypes.CredentialDeploymentValues)]
+  , airCredentials :: ![(Versioned IDTypes.AccountCredential)]
     -- | List of smart contract instances created by this account.
   , airInstances :: ![ContractAddress]
     -- | Account's encrypted amount.
