@@ -43,6 +43,7 @@ exampleAccountInfoResult d cs = AccountInfoResult
                                 , airDelegation = d
                                 , airCredentials = map (Versioned 0) cs
                                 , airInstances = []
+                                , airReleaseSchedule = AccountInfoReleaseSchedule 0 []
                                 , airEncryptedAmount = Types.AccountEncryptedAmount {
                                     _startIndex = 3,
                                     _incomingEncryptedAmounts = Seq.fromList [encAmount1, encAmount2],
@@ -115,6 +116,25 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     [ "Local name:            example"
     , "Address:               2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
     , "Balance:               0.000001 GTU"
+    , "Nonce:                 2"
+    , "Delegation:            baker 1"
+    , "Encryption public key: a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
+    , ""
+    , ""
+    , "Credentials: none" ]
+  specify "with release schedule" $ p exampleAddress ((exampleAccountInfoResult (Just 1) []) { airReleaseSchedule = AccountInfoReleaseSchedule {
+                                                                                                 totalRelease = 100,
+                                                                                                 releaseSchedule = [(1604417302000, 33),
+                                                                                                                    (1604417342000, 33),
+                                                                                                                    (1604417382000, 34)]
+                                                                                                 } }) `shouldBe`
+    [ "Local name:            example"
+    , "Address:               2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+    , "Balance:               0.000001 GTU"
+    , "Release schedule:      total 0.000100 GTU"
+    , "   Tue,  3 Nov 2020 15:28:22 UTC:               0.000033 GTU"
+    , "   Tue,  3 Nov 2020 15:29:02 UTC:               0.000033 GTU"
+    , "   Tue,  3 Nov 2020 15:29:42 UTC:               0.000034 GTU"
     , "Nonce:                 2"
     , "Delegation:            baker 1"
     , "Encryption public key: a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"

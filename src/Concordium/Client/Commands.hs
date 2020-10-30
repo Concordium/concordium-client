@@ -9,6 +9,7 @@ module Concordium.Client.Commands
   , AccountExportFormat(..)
   , ConfigAccountCmd(..)
   , TransactionOpts(..)
+  , Interval(..)
   , InteractionOpts(..)
   , TransactionCmd(..)
   , AccountCmd(..)
@@ -105,6 +106,14 @@ data ConfigAccountCmd
     , carkThreshold :: !(Maybe SignatureThreshold) }
   deriving (Show)
 
+data Interval = Minute -- 60 secs
+              | Hour -- 60 mins
+              | Day -- 24 hours
+              | Week -- 7 days
+              | Month -- 30 days
+              | Year -- 365 days
+              deriving (Show, Read)
+
 data TransactionCmd
   = TransactionSubmit
     { tsFile :: !FilePath
@@ -115,6 +124,10 @@ data TransactionCmd
     { tsgReceiver :: !Text
     , tsgAmount :: !Amount
     , tsgOpts :: !(TransactionOpts (Maybe Energy)) }
+  | TransactionSendWithSchedule
+    { twsReceiver :: !Text
+    , twsSchedule :: !(Either (Amount, Interval, Int, Timestamp) [(Timestamp, Amount)]) -- ^Eiher total amount, interval, number of intervals and starting time or a raw list of timestamps and amounts.
+    , twsOpts :: !(TransactionOpts (Maybe Energy)) }
   | TransactionDeployCredential
     { tdcFile :: !FilePath
     , tdcInteractionOpts :: !InteractionOpts }
@@ -471,6 +484,7 @@ transactionCmds =
           (transactionSubmitCmd <>
            transactionStatusCmd <>
            transactionSendGtuCmd <>
+           transactionWithScheduleCmd <>
            transactionDeployCredentialCmd <>
            transactionEncryptedTransferCmd))
       (progDesc "Commands for submitting and inspecting transactions."))
@@ -510,10 +524,27 @@ transactionSendGtuCmd =
     "send-gtu"
     (info
       (TransactionSendGtu <$>
-        strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
-        option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
-        transactionOptsParser)
+       strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
+       option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
+       transactionOptsParser)
       (progDesc "Transfer GTU from one account to another (sending to contracts is currently not supported with this method - use 'transaction submit')."))
+
+transactionWithScheduleCmd :: Mod CommandFields TransactionCmd
+transactionWithScheduleCmd =
+  command
+   "send-gtu-scheduled"
+   (info
+     (let implicit = (\a b c d -> Left (a, b, c, d)) <$>
+                     option (eitherReader amountFromStringInform) (long "amount" <> metavar "amount" <> help "amount") <*>
+                     option auto (long "every" <> metavar "Interval" <> help "interval") <*>
+                     option auto (long "for" <> metavar "numItems" <> help "numIntems") <*>
+                     option auto (long "starting" <> metavar "starting" <> help "starting")
+          explicit = Right <$>
+                     (some (option auto (long "schedule" <> metavar "schedule" <> help "schedule")))
+       in
+         TransactionSendWithSchedule <$>
+         strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*> (implicit <|> explicit) <*> transactionOptsParser)
+     (progDesc "Transfer GTU from one account to another with the provided schedule of releases."))
 
 transactionEncryptedTransferCmd :: Mod CommandFields TransactionCmd
 transactionEncryptedTransferCmd =

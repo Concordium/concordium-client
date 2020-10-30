@@ -141,13 +141,22 @@ showRevealedAttributes as =
 
 printAccountInfo :: NamedAddress -> AccountInfoResult -> Verbose -> Bool -> Maybe ElgamalSecretKey -> Printer
 printAccountInfo addr a verbose showEncrypted mEncKey= do
-  tell [ printf "Local name:            %s" (showMaybe unpack $ naName addr)
+  tell ([ printf "Local name:            %s" (showMaybe unpack $ naName addr)
        , printf "Address:               %s" (show $ naAddr addr)
        , printf "Balance:               %s" (showGtu $ airAmount a)
-       , printf "Nonce:                 %s" (show $ airNonce a)
-       , printf "Delegation:            %s" (maybe showNone (printf "baker %s" . show) $ airDelegation a)
-       , printf "Encryption public key: %s" (show $ airEncryptionKey a)
-       , "" ]
+       ] ++
+       case totalRelease $ airReleaseSchedule a of
+         0 -> []
+         tot -> (printf "Release schedule:      total %s" (showGtu tot)) :
+               (map (\(timestamp, (amount, hashes)) -> printf "   %s:               %s scheduled by the transactions: %s."
+                                                         (showTimeFormatted (Types.timestampToUTCTime timestamp))
+                                                         (showGtu amount)
+                                                         (intercalate ", " $ map show hashes))
+                 (releaseSchedule $ airReleaseSchedule a))
+       ++ [printf "Nonce:                 %s" (show $ airNonce a)
+          , printf "Delegation:            %s" (maybe showNone (printf "baker %s" . show) $ airDelegation a)
+          , printf "Encryption public key: %s" (show $ airEncryptionKey a)
+          , "" ])
 
   if showEncrypted then
     let
@@ -410,7 +419,8 @@ showEvent verbose = \case
   Types.EncryptedSelfAmountAdded{..} -> verboseOrNothing $ printf "transferred '%s' tokens from the public balance to the shielded balance on account '%s' with a resulting self encrypted balance of '%s'" (show eaaAmount) (show eaaAccount) (show eaaNewAmount)
   Types.UpdateEnqueued{..} ->
     verboseOrNothing $ printf "Enqueued chain update, effective at %s:\n%s" (showTimeFormatted (timeFromTransactionExpiryTime ueEffectiveTime)) (show uePayload)
-
+  Types.TransferredWithSchedule{..} ->
+    verboseOrNothing $ printf "Sent transfer with schedule %s" (intercalate ", " . map (\(a, b) -> showTimeFormatted (Types.timestampToUTCTime a) ++ ": " ++ showGtu b) $ etwsAmount)
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
@@ -541,6 +551,12 @@ showRejectReason verbose = \case
     "the proof for the secret to public transfer doesn't validate"
   Types.InvalidIndexOnEncryptedTransfer ->
     "the provided index is below the start index or above `startIndex + length incomingAmounts`"
+  Types.ZeroScheduledAmount -> "the total amount or some of the releases scheduled would be equal to zero"
+  Types.NonIncreasingSchedule -> "the releases were not sorted on the timestamp"
+  Types.FirstScheduledReleaseExpired -> "the first release has already expired"
+  Types.ScheduledSelfTransfer acc ->
+    printf "attempted to make an scheduled transfer to the same account '%s'" (show acc)
+
 
 -- CONSENSUS
 
@@ -586,8 +602,8 @@ printBirkParameters includeBakers r addrmap = do
                                 then " <0.0001 %" :: String
                                 else printf "%8.4f %%" (lp*100)
           accountName bkr = fromMaybe " " $ HM.lookup bkr addrmap
-        
-        
+
+
 -- BLOCK
 
 printBlockInfo :: Maybe BlockInfoResult -> Printer
