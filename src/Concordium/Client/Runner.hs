@@ -1416,6 +1416,7 @@ processContractCmd :: ContractCmd -> Maybe FilePath -> Verbose -> Backend -> IO 
 processContractCmd action baseCfgDir verbose backend =
   case action of
     ContractList block -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getInstances bb
       v <- getFromJsonAndHandleError (\_ _ -> logFatal ["could not retrieve the list of contracts",
                                    "the provided block hash is invalid:", Text.unpack bestBlock]) res
@@ -1423,7 +1424,7 @@ processContractCmd action baseCfgDir verbose backend =
         Nothing -> logFatal ["could not retrieve the list of contracts",
                                "the provided block does not exist:", Text.unpack bestBlock]
         Just [] -> logInfo ["there are no contract instances in block " ++ Text.unpack bestBlock]
-        Just xs -> runPrinter $ printContractList xs
+        Just xs -> runPrinter $ printContractList (bcContractNameMap baseCfg) xs
 
     ContractShow indexOrName subindex block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1565,18 +1566,6 @@ getNamedContractAddress cnm indexOrName subindex = case readMaybe $ Text.unpack 
 mkContractAddress :: Word64 -> Maybe Word64 -> Types.ContractAddress
 mkContractAddress index subindex = Types.ContractAddress (Types.ContractIndex index) (Types.ContractSubindex subindex')
   where subindex' = fromMaybe 0 subindex
-
--- |Primarily used to show contract addresses along with their names in a consistent manner.
-data NamedContractAddress =
-  NamedContractAddress { ncaAddr :: Types.ContractAddress -- ^ The contract address.
-                       , ncaName :: Maybe Text            -- ^ The optional contract name.
-                       }
-
-instance Show NamedContractAddress where
-  show NamedContractAddress{..} = case ncaName of
-    Just ncaName' -> [i|#{ncaAddr'} (#{ncaName'})|]
-    Nothing -> ncaAddr'
-    where ncaAddr' = showCompactPrettyJSON ncaAddr
 
 -- |Try to extract event information from a TransactionStatusResult.
 -- The Maybe returned by the supplied function is mapped to Either with an error message.

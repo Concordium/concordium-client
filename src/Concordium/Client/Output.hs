@@ -204,8 +204,12 @@ printAccountList = tell . map unpack
 printModuleList :: [Text] -> Printer
 printModuleList = printAccountList
 
-printContractList :: [Types.ContractAddress] -> Printer
-printContractList = tell . map showCompactPrettyJSON
+-- |Print a list of contracts (along with optional names) using Show from NameContractAddress.
+printContractList :: ContractNameMap -> [Types.ContractAddress] -> Printer
+printContractList cnm addrs = tell . map show $ namedContrAddrs
+  where namedContrAddrs = map (\addr -> NamedContractAddress {ncaAddr = addr, ncaName = HM.lookup addr cnmInv}) addrs
+        cnmInv = invert cnm
+        invert m = HM.fromList [(v, k) | (k, v) <- HM.toList m]
 
 showAccountKeyPair :: EncryptedAccountKeyPair -> String
 -- TODO Make it respect indenting if this will be the final output format.
