@@ -17,17 +17,14 @@ import Concordium.ID.Parameters (globalContext)
 
 import Control.Monad.Writer
 import qualified Data.Aeson as AE
-import qualified Data.Aeson.Encode.Pretty as AE
 import qualified Data.Aeson.Types as AE
 import Data.Bool
-import qualified Data.ByteString.Lazy as BSL
 import Data.Functor
 import qualified Data.HashMap.Strict as HM
 import Data.List
 import Data.Maybe
 import qualified Data.Map.Strict as M
 import Data.Text (Text, pack, unpack)
-import Data.Text.Encoding
 import Data.Time
 import Lens.Micro.Platform
 import Text.Printf
@@ -40,13 +37,6 @@ type Printer = Writer [String] ()
 -- |Print the lines of a printer.
 runPrinter :: (MonadIO m) => Printer -> m ()
 runPrinter = liftIO . mapM_ putStrLn . execWriter
-
--- HELPERS
-
--- |Serialize to JSON, order by keys, and pretty-print without whitespace.
-showCompactPrettyJSON :: AE.ToJSON a => a -> String
-showCompactPrettyJSON = unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty' config
-  where config = AE.defConfig { AE.confIndent = AE.Spaces 0, AE.confCompare = compare }
 
 -- TIME
 

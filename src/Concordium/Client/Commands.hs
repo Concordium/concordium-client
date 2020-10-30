@@ -208,8 +208,7 @@ data ContractCmd
   -- |List all contracts on chain.
   | ContractList
     { -- |Hash of the block (default "best").
-      clBlockHash :: !(Maybe Text)
-    }
+      clBlockHash :: !(Maybe Text) }
   -- |Initialize a contract from a module on chain.
   | ContractInit
     { -- |Module reference OR path to the module (reference then calculated by hashing).
@@ -238,6 +237,16 @@ data ContractCmd
     , cuAmount :: !Amount
       -- |Options for transaction.
     , cuTransactionOpts :: !(TransactionOpts Energy) }
+  -- |Add a local name to a contract
+  | ContractName
+    { -- |Index of the address for the contract.
+      cnAddressIndex :: !Word64
+      -- |Subindex of the address for the contract (default: 0).
+    , cnAddressSubindex :: !(Maybe Word64)
+      -- |Name for the contract.
+    , cnName :: !Text
+      -- |Hash of the block (default "best").
+    , cnBlockHash :: !(Maybe Text) }
   deriving (Show)
 
 -- | The type parameter 'energyOrMaybe' should be Energy or Maybe Energy.
@@ -690,7 +699,8 @@ contractCmds =
           (contractShowCmd <>
            contractListCmd <>
            contractInitCmd <>
-           contractUpdateCmd))
+           contractUpdateCmd <>
+           contractNameCmd))
       (progDesc "Commands for inspecting and initializing smart contracts."))
 
 contractShowCmd :: Mod CommandFields ContractCmd
@@ -748,6 +758,19 @@ contractUpdateCmd =
                                                                 <> help "Amount of GTU to transfer to the contract.") <*>
         requiredEnergyTransactionOptsParser)
       (progDesc "Update an existing contract."))
+
+contractNameCmd :: Mod CommandFields ContractCmd
+contractNameCmd =
+  command
+    "name"
+    (info
+      (ContractName <$>
+        argument auto (metavar "INDEX" <> help "Index of the contract address to be named.") <*>
+        optional (option auto (long "subindex" <> metavar "SUBINDEX"
+                            <> help "Subindex of contract address to be named (default: 0)")) <*>
+        strOption (long "name" <> metavar "NAME" <> help "Name for the contract.") <*>
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+      (progDesc "List all modules."))
 
 configCmds :: ShowAllOpts -> Mod CommandFields Cmd
 configCmds showAllOpts =
