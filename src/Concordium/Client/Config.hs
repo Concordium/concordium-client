@@ -330,6 +330,18 @@ addContractNameAndWrite baseCfg name addr = case validateName name of
     liftIO $ writeNameMapAsJSON mapFile cnm'
   where mapFile = contractNameMapFile . bcContractCfgDir $ baseCfg
 
+-- |Primarily used to show contract addresses along with their names in a consistent manner.
+data NamedContractAddress =
+  NamedContractAddress { ncaAddr :: Types.ContractAddress -- ^ The contract address.
+                       , ncaName :: Maybe Text            -- ^ The optional contract name.
+                       }
+
+instance Show NamedContractAddress where
+  show NamedContractAddress{..} = case ncaName of
+    Just ncaName' -> [i|#{ncaAddr'} (#{ncaName'})|]
+    Nothing -> ncaAddr'
+    where ncaAddr' = showCompactPrettyJSON ncaAddr
+
 -- |Write the name map to a file in a pretty JSON format.
 writeNameMapAsJSON :: AE.ToJSON v => FilePath -> NameMap v -> IO ()
 writeNameMapAsJSON file = writeFile file . showPrettyJSON
