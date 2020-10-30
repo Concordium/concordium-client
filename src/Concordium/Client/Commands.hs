@@ -237,7 +237,7 @@ data ContractCmd
     , cuAmount :: !Amount
       -- |Options for transaction.
     , cuTransactionOpts :: !(TransactionOpts Energy) }
-  -- |Add a local name to a contract
+  -- |Add a local name to a contract.
   | ContractName
     { -- |Index of the address for the contract.
       cnAddressIndex :: !Word64

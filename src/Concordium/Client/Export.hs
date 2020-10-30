@@ -114,7 +114,7 @@ accountCfgFromWalletExportAccount pwd WalletExportAccount { weaKeys = AccountSig
     }
   where
     ensureValidName name =
-      case validateName name of
+      case validateAccountName name of
         Left err -> do
           logError [err]
           putStr "Input valid replacement name: "
@@ -129,7 +129,7 @@ decodeGenesisFormattedAccountExport
   -> Password -- ^ Password to encrypt the signing keys with.
   -> IO (Either String AccountConfig) -- ^ The resulting 'AccountConfig' or an error message on failure.
 decodeGenesisFormattedAccountExport payload name pwd = runExceptT $ do
-  mapM_ validateName name
+  mapM_ validateAccountName name
   val <- AE.eitherDecodeStrict payload `embedErr` printf "cannot decode wallet export JSON: %s"
   action <- AE.parseEither accountParser val `embedErr` printf "cannot parse JSON: %s"
   liftIO action

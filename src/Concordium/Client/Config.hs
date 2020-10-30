@@ -319,7 +319,7 @@ importAccountConfig baseCfg accCfgs verbose = foldM f baseCfg accCfgs
           return bc'
 
 addContractNameAndWrite :: MonadIO m => BaseConfig -> Text -> ContractAddress -> m ()
-addContractNameAndWrite baseCfg name addr = case validateName name of
+addContractNameAndWrite baseCfg name addr = case validateContractOrModuleName name of
   Left err -> logFatal [err]
   Right _ -> do
     let cnm = bcContractNameMap baseCfg
@@ -491,14 +491,14 @@ parseAccountNameMap :: (MonadError String m) => [String] -> m AccountNameMap
 parseAccountNameMap ls = M.fromList <$> mapM parseAccountNameMapEntry ls'
   where ls' = filter (not . L.all isSpace) ls
 
--- | Parse a line representing a single name-account mapping of the format "<name> = <address>".
+-- |Parse a line representing a single name-account mapping of the format "<name> = <address>".
 -- Leading and trailing whitespaces around name and address are ignored.
 parseAccountNameMapEntry :: (MonadError String m) => String -> m (Text, Types.AccountAddress)
 parseAccountNameMapEntry line =
   case splitOn "=" line of
     [k, v] -> do
       let name = strip $ pack k
-      validateName name
+      validateAccountName name
       addr <- case strip $ pack v of
                 "" -> throwError "empty address"
                 addr -> case addressFromText addr of
@@ -507,18 +507,34 @@ parseAccountNameMapEntry line =
       return (name, addr)
     _ -> throwError $ printf "invalid mapping format '%s' (should be '<name> = <address>')" line
 
--- | Check whether the given text is a valid name.
-isValidName :: Text -> Bool
-isValidName n = not (T.null n) && not (isSpace $ T.head n) && not (isSpace $ T.last n) && T.all supportedChar n
+-- |Check whether the given text is a valid name.
+isValidAccountName :: Text -> Bool
+isValidAccountName n = not (T.null n) && not (isSpace $ T.head n) && not (isSpace $ T.last n) && T.all supportedChar n
   where supportedChar c = isAlphaNum c || c `elem` supportedSpecialChars
         supportedSpecialChars = "-_,.!? " :: String
 
--- | Check whether the given text is a valid name and fail with an error message if it is not.
-validateName :: (MonadError String m) => Text -> m ()
-validateName name =
-  unless (isValidName name) $
+-- |Check whether the given text is a valid contract or module name.
+-- Is different from account names in that it must start with a letter.
+isValidContractOrModuleName :: Text -> Bool
+isValidContractOrModuleName n = not (T.null n) && not (isSpace $ T.head n) && isAlpha (T.head n) &&
+                                not (isSpace $ T.last n) && T.all supportedChar n
+  where supportedChar c = isAlphaNum c || c `elem` supportedSpecialChars
+        supportedSpecialChars = "-_,.!? " :: String
+
+-- |Check whether the given text is a valid name and fail with an error message if it is not.
+validateAccountName :: (MonadError String m) => Text -> m ()
+validateAccountName name =
+  unless (isValidAccountName name) $
   throwError [iii|invalid name '#{name}' (should not be empty or start/end with whitespace
                   and consist of letters, numbers, space, '.', ',', '!',
+                  '?', '-', and '_' only)"|]
+
+-- |Check whether the given text is a valid contract or module name and fail with an error message if it is not.
+validateContractOrModuleName :: (MonadError String m) => Text -> m ()
+validateContractOrModuleName name =
+  unless (isValidContractOrModuleName name) $
+  throwError [iii|invalid name '#{name}' (should start with a letter and not end with whitespace
+                  and should otherwise consist of letters, numbers, space, '.', ',', '!',
                   '?', '-', and '_' only)"|]
 
 data AccountConfig =
