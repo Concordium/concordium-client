@@ -59,11 +59,18 @@ type BaseConfigDir = FilePath
 type AccountConfigDir = FilePath
 type ContractConfigDir = FilePath
 
--- TODO: Figure out where this should be. It's in here because of circular dependency with Output.hs.
+-- JSON HELPERS
+
 -- |Serialize to JSON and pretty-print.
 showPrettyJSON :: AE.ToJSON a => a -> String
 showPrettyJSON = unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty' config
   where config = AE.defConfig { AE.confCompare = compare }
+
+-- |Serialize to JSON, order by keys, and pretty-print without whitespace.
+showCompactPrettyJSON :: AE.ToJSON a => a -> String
+showCompactPrettyJSON = unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty' config
+  where config = AE.defConfig { AE.confIndent = AE.Spaces 0, AE.confCompare = compare }
+
 
 -- |The default location of the config root directory.
 getDefaultBaseConfigDir :: IO BaseConfigDir
@@ -131,13 +138,13 @@ moduleNameMapFile = (</> "moduleNames.map")
 -- |Mapping builder from a name to a provided type.
 type NameMap = M.HashMap Text
 
--- |Mapping from account name to their address.
+-- |Mapping from account names to their addresses.
 type AccountNameMap = NameMap Types.AccountAddress
 
--- |Mapping from contract name to their address.
+-- |Mapping from contract names to their addresses.
 type ContractNameMap = NameMap Types.ContractAddress
 
--- |Mapping from module name to their reference.
+-- |Mapping from module names to their references.
 type ModuleNameMap = NameMap Types.ModuleRef
 
 -- |Base configuration consists of the account name mapping and location of
@@ -310,6 +317,18 @@ importAccountConfig baseCfg accCfgs verbose = foldM f baseCfg accCfgs
           (bc', _, t) <- initAccountConfig bc (acAddr ac) True
           when t $ writeAccountKeys bc' ac verbose
           return bc'
+
+addContractNameAndWrite :: MonadIO m => BaseConfig -> Text -> ContractAddress -> m ()
+addContractNameAndWrite baseCfg name addr = case validateName name of
+  Left err -> logFatal [err]
+  Right _ -> do
+    let cnm = bcContractNameMap baseCfg
+    cnm' <- case (M.member name cnm, addr `elem` M.elems cnm) of
+      (True, _) -> logFatal [[i|the name '#{name}' is already in use|]]
+      (_, True) -> logFatal [[i|the address '#{showCompactPrettyJSON addr}' is already named|]]
+      _ -> return $ M.insert name addr cnm
+    liftIO $ writeNameMapAsJSON mapFile cnm'
+  where mapFile = contractNameMapFile . bcContractCfgDir $ baseCfg
 
 -- |Write the name map to a file in a pretty JSON format.
 writeNameMapAsJSON :: AE.ToJSON v => FilePath -> NameMap v -> IO ()

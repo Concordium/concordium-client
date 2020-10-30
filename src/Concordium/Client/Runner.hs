@@ -1433,7 +1433,7 @@ processContractCmd action baseCfgDir verbose backend =
 
       case res of
         Left err -> logFatal ["could not retrieve contract:", err]
-        -- TODO: Handle invalid block hashes and nonexisting blocks separately from nonexisting contracts.
+        -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
         Right AE.Null -> logInfo [[i|the contract instance #{namedContrAddr} does not exist in block #{bestBlock}|]]
         Right contrInfo -> putStr . showPrettyJSON $ contrInfo
 
@@ -1453,11 +1453,9 @@ processContractCmd action baseCfgDir verbose backend =
           Right contrAddr -> do
             case contrName of
               Nothing -> return ()
-              Just contrName' -> do
-                --TODO: Map.insert overwrites old value
-                liftIO $ writeNameMapAsJSON (contractNameMapFile $ bcContractCfgDir baseCfg) (Map.insert contrName' contrAddr (bcContractNameMap baseCfg))
-                logSuccess ["contract successfully initialized with address (and name):",
-                        [i|#{showCompactPrettyJSON contrAddr} (#{maybe "-" show contrName})|]]
+              Just contrName' -> addContractNameAndWrite baseCfg contrName' contrAddr
+            let namedContrAddr = NamedContractAddress {ncaAddr = contrAddr, ncaName = contrName}
+            logSuccess [[i|contract successfully initialized with address: #{namedContrAddr}|]]
 
     ContractUpdate indexOrName subindex receiveName paramsFile amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1467,6 +1465,20 @@ processContractCmd action baseCfgDir verbose backend =
       let intOpts = toInteractionOpts txOpts
       let pl = contractUpdateTransactionPayload cuCfg
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+
+    ContractName index subindex contrName block -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      let contrAddr = mkContractAddress index subindex
+      (bestBlock, res) <- withClient backend $ withBestBlockHash block $
+        \bb -> (bb,) <$> getInstanceInfo (Text.pack . showCompactPrettyJSON $ contrAddr) bb
+
+      case res of
+        Left err -> logFatal ["could not retrieve contract", err]
+        -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
+        Right AE.Null -> logInfo [[i|the contract instance #{showCompactPrettyJSON contrAddr} does not exist in block #{bestBlock}|]]
+        Right _ -> do
+          addContractNameAndWrite baseCfg contrName contrAddr
+          logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{contrName}'|]]
   where extractContractAddress = extractFromTsr (\case
                                                  Types.ContractInitialized {..} -> Just ecAddress
                                                  _ -> Nothing)
@@ -1537,22 +1549,22 @@ getWasmParameterFromFileOrDefault paramsFile = case paramsFile of
   Nothing -> pure . Wasm.Parameter $ BSS.empty
   Just file -> Wasm.Parameter . BS.toShort <$> BS.readFile file
 
--- |Get a NamedContractAddress from either a name or index (+ subindex).
+-- |Get a NamedContractAddress from either a name or index and an optional subindex.
 -- LogWarn if subindex is provided with a contract name.
 -- LogFatal if it is neither an index or a contract name.
 getNamedContractAddress :: MonadIO m => ContractNameMap -> Text -> Maybe Word64 -> m NamedContractAddress
 getNamedContractAddress cnm indexOrName subindex = case readMaybe $ Text.unpack indexOrName of
-  Just index -> return $ mkNamedContractAddress index subindex
+  Just index -> return $ NamedContractAddress {ncaAddr = mkContractAddress index subindex, ncaName = Nothing}
   Nothing -> do
     when (isJust subindex) $ logWarn ["ignoring the --subindex as it should not be used in combination with a contract name"]
     case Map.lookup indexOrName cnm of
       Just addr -> return $ NamedContractAddress {ncaAddr = addr, ncaName = Just indexOrName}
       Nothing -> logFatal [[i|'#{indexOrName}' is neither the address index nor the name of a contract|]]
-  where
-    mkNamedContractAddress idx subidx = NamedContractAddress {..}
-      where ncaAddr = Types.ContractAddress (Types.ContractIndex idx) (Types.ContractSubindex subidx')
-            ncaName = Nothing
-            subidx' = fromMaybe 0 subidx
+
+-- |Make a contract address from an index and an optional subindex (default: 0).
+mkContractAddress :: Word64 -> Maybe Word64 -> Types.ContractAddress
+mkContractAddress index subindex = Types.ContractAddress (Types.ContractIndex index) (Types.ContractSubindex subindex')
+  where subindex' = fromMaybe 0 subindex
 
 -- |Primarily used to show contract addresses along with their names in a consistent manner.
 data NamedContractAddress =
