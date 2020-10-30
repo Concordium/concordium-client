@@ -20,6 +20,7 @@ import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import Data.Bool
 import Data.Functor
+import Data.Hashable (Hashable)
 import qualified Data.HashMap.Strict as HM
 import Data.List
 import Data.Maybe
@@ -201,15 +202,20 @@ printCred c =
 printAccountList :: [Text] -> Printer
 printAccountList = tell . map unpack
 
-printModuleList :: [Text] -> Printer
-printModuleList = printAccountList
+printModuleList :: ModuleNameMap -> [Types.ModuleRef] -> Printer
+printModuleList nameMap refs = tell . map show $ namedModRefs
+  where namedModRefs = map (\ref -> NamedModuleRef {nmrRef = ref, nmrName = HM.lookup ref nameMapInv}) refs
+        nameMapInv = invertHashMap nameMap
 
 -- |Print a list of contracts (along with optional names) using Show from NameContractAddress.
 printContractList :: ContractNameMap -> [Types.ContractAddress] -> Printer
-printContractList cnm addrs = tell . map show $ namedContrAddrs
-  where namedContrAddrs = map (\addr -> NamedContractAddress {ncaAddr = addr, ncaName = HM.lookup addr cnmInv}) addrs
-        cnmInv = invert cnm
-        invert m = HM.fromList [(v, k) | (k, v) <- HM.toList m]
+printContractList nameMap addrs = tell . map show $ namedContrAddrs
+  where namedContrAddrs = map (\addr -> NamedContractAddress {ncaAddr = addr, ncaName = HM.lookup addr nameMapInv}) addrs
+        nameMapInv = invertHashMap nameMap
+
+-- |Invert a hash map. Note that if any `v` is duplicated, then the _last_ one is used.
+invertHashMap :: (Eq v, Hashable v) => HM.HashMap k v -> HM.HashMap v k
+invertHashMap m = HM.fromList [(v, k) | (k, v) <- HM.toList m]
 
 showAccountKeyPair :: EncryptedAccountKeyPair -> String
 -- TODO Make it respect indenting if this will be the final output format.

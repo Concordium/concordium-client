@@ -29,6 +29,7 @@ import qualified Data.Text.IO as T
 import Data.Text (Text, pack, strip, unpack)
 import Data.Text.Encoding (decodeUtf8)
 import System.Directory
+import System.Exit (exitFailure)
 import System.IO.Error
 import System.FilePath
 import Text.Printf
@@ -318,17 +319,33 @@ importAccountConfig baseCfg accCfgs verbose = foldM f baseCfg accCfgs
           when t $ writeAccountKeys bc' ac verbose
           return bc'
 
+-- |Add a contract name and write it to 'contractNames.map'
 addContractNameAndWrite :: MonadIO m => BaseConfig -> Text -> ContractAddress -> m ()
-addContractNameAndWrite baseCfg name addr = case validateContractOrModuleName name of
-  Left err -> logFatal [err]
-  Right _ -> do
-    let cnm = bcContractNameMap baseCfg
-    cnm' <- case (M.member name cnm, addr `elem` M.elems cnm) of
-      (True, _) -> logFatal [[i|the name '#{name}' is already in use|]]
-      (_, True) -> logFatal [[i|the address '#{showCompactPrettyJSON addr}' is already named|]]
-      _ -> return $ M.insert name addr cnm
-    liftIO $ writeNameMapAsJSON mapFile cnm'
+addContractNameAndWrite baseCfg = addContractOrModuleNameAndWrite mapFile nameMap showCompactPrettyJSON
   where mapFile = contractNameMapFile . bcContractCfgDir $ baseCfg
+        nameMap = bcContractNameMap baseCfg
+
+-- |Add a module name and write it to 'moduleNames.map'
+addModuleNameAndWrite :: MonadIO m => BaseConfig -> Text -> ModuleRef -> m ()
+addModuleNameAndWrite baseCfg = addContractOrModuleNameAndWrite mapFile nameMap show
+  where mapFile = moduleNameMapFile . bcContractCfgDir $ baseCfg
+        nameMap = bcModuleNameMap baseCfg
+
+-- |Add a contract or module name and write it to the appropriate map file.
+-- Warn if name already in use or value already named.
+addContractOrModuleNameAndWrite :: (AE.ToJSON v, Eq v, MonadIO m) => FilePath ->
+                                    NameMap v -> (v -> String) -> Text -> v -> m ()
+addContractOrModuleNameAndWrite mapFile nameMap showVal name val = case validateContractOrModuleName name of
+  -- TODO: return whether it succeded instead of exitFailure, this would allow for logging
+  -- "nameWarning + module deployed with ref..", or similar situations.
+  Left err -> logWarn [namingError, err] >> liftIO exitFailure
+  Right _ -> do
+    nameMap' <- case (M.member name nameMap, val `elem` M.elems nameMap) of
+      (True, _) -> logWarn [namingError, [i|the name '#{name}' is already in use|]] >> liftIO exitFailure
+      (_, True) -> logWarn [namingError, [i|'#{showVal val}' is already named|]] >> liftIO exitFailure
+      _ -> return $ M.insert name val nameMap
+    liftIO $ writeNameMapAsJSON mapFile nameMap'
+  where namingError = "Name was not added:"
 
 -- |Primarily used to show contract addresses along with their names in a consistent manner.
 data NamedContractAddress =
@@ -341,6 +358,17 @@ instance Show NamedContractAddress where
     Just ncaName' -> [i|#{ncaAddr'} (#{ncaName'})|]
     Nothing -> ncaAddr'
     where ncaAddr' = showCompactPrettyJSON ncaAddr
+
+-- |Primarily used to show module references along with their names in a consistent manner.
+data NamedModuleRef =
+  NamedModuleRef { nmrRef  :: Types.ModuleRef -- ^ The module reference.
+                 , nmrName :: Maybe Text      -- ^ The optional contract name.
+                 }
+
+instance Show NamedModuleRef where
+  show NamedModuleRef {..} = case nmrName of
+    Just nmrName' -> [i|#{nmrRef} (#{nmrName'})|]
+    Nothing -> show nmrRef
 
 -- |Write the name map to a file in a pretty JSON format.
 writeNameMapAsJSON :: AE.ToJSON v => FilePath -> NameMap v -> IO ()
