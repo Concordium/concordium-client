@@ -106,7 +106,7 @@ import           Data.Word
 import           Lens.Micro.Platform
 import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client.Exceptions
-import           Prelude                             hiding (fail, mod, unlines)
+import           Prelude                             hiding (fail, unlines)
 import           System.IO
 import           System.Directory
 import           Text.Printf
@@ -403,6 +403,21 @@ processTransactionCmd action baseCfgDir verbose backend =
       pl <- transferTransactionPayload ttxCfg (ioConfirm intOpts)
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
+    TransactionSendWithSchedule receiver schedule txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+      ttxCfg <- getTransferWithScheduleTransactionCfg baseCfg txOpts receiver schedule
+      let txCfg = twstcTransactionCfg ttxCfg
+      when verbose $ do
+        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        putStrLn ""
+
+      let intOpts = toInteractionOpts txOpts
+      pl <- transferWithScheduleTransactionPayload ttxCfg (ioConfirm intOpts)
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+
     TransactionEncryptedTransfer txOpts receiver amount index -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
@@ -557,6 +572,42 @@ getTransferTransactionCfg baseCfg txOpts receiver amount = do
     , ttcReceiver = receiverAddress
     , ttcAmount = amount }
   where nrgCost _ = return $ Just simpleTransferEnergyCost
+
+-- |Resolved configuration for a transfer transaction.
+data TransferWithScheduleTransactionConfig =
+  TransferWithScheduleTransactionConfig
+  { twstcTransactionCfg :: TransactionConfig
+  , twstcReceiver :: NamedAddress
+  , twstcSchedule :: [(Types.Timestamp, Types.Amount)]}
+
+-- |Resolve configuration of a transfer with schedule transaction based on persisted config and CLI flags.
+-- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
+getTransferWithScheduleTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Text -> Either (Types.Amount, COM.Interval, Int, Types.Timestamp) [(Types.Timestamp, Types.Amount)] -> IO TransferWithScheduleTransactionConfig
+getTransferWithScheduleTransactionCfg baseCfg txOpts receiver preSchedule = do
+  let realSchedule = case preSchedule of
+                       Right val -> val
+                       Left (total, interval, numIntervals, start) ->
+                         let chunks = total `div` fromIntegral numIntervals
+                             lastChunk = total `mod` fromIntegral numIntervals
+                             diff = case interval of
+                               COM.Minute -> 60 * 1000
+                               COM.Hour -> 60 * 60 * 1000
+                               COM.Day -> 24 * 60 * 60 * 1000
+                               COM.Week -> 7 * 24 * 60 * 60 * 1000
+                               COM.Month -> 30 * 24 * 60 * 60 * 1000
+                               COM.Year -> 365 * 24 * 60 * 60 * 1000
+                         in
+                           zip (iterate (+ diff) start) (replicate (numIntervals - 1) chunks ++ [chunks + lastChunk])
+  let nrgCost _ = return $ Just $ transferWithScheduleEnergyCost (length realSchedule)
+  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
+
+  receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
+
+  return TransferWithScheduleTransactionConfig
+    { twstcTransactionCfg = txCfg
+    , twstcReceiver = receiverAddress
+    , twstcSchedule = realSchedule }
+  where
 
 data EncryptedTransferTransactionConfig =
   EncryptedTransferTransactionConfig
@@ -817,6 +868,29 @@ transferTransactionPayload ttxCfg confirm = do
     unless confirmed exitTransactionCancelled
 
   return Types.Transfer { tToAddress = naAddr toAddress, tAmount = amount }
+
+-- |Convert transfer transaction config into a valid payload,
+-- optionally asking the user for confirmation.
+transferWithScheduleTransactionPayload :: TransferWithScheduleTransactionConfig -> Bool -> IO Types.Payload
+transferWithScheduleTransactionPayload ttxCfg confirm = do
+  let TransferWithScheduleTransactionConfig
+        { twstcTransactionCfg = TransactionConfig
+                              { tcEnergy = energy
+                              , tcExpiry = expiryTs
+                              , tcAccountCfg = AccountConfig { acAddr = fromAddress } }
+        , twstcSchedule = schedule
+        , twstcReceiver = toAddress }
+        = ttxCfg
+
+  logSuccess [ printf "sending GTUs from %s to %s" (showNamedAddress fromAddress) (showNamedAddress toAddress)
+             , printf "with the following release schedule:\n%swith a total amount of %s" (unlines $ map (\(a, b) -> showTimeFormatted (Types.timestampToUTCTime a) ++ ": " ++ showGtu b) schedule) (showGtu $ foldl' (\acc (_, x) -> acc + x) 0 schedule)
+             , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+             , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiryTs) ]
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  return Types.TransferWithSchedule { twsTo = naAddr toAddress, twsSchedule = schedule }
 
 encryptedTransferTransactionPayload :: MonadIO m => EncryptedTransferTransactionConfig -> Bool -> m Types.Payload
 encryptedTransferTransactionPayload EncryptedTransferTransactionConfig{..} confirm = do
@@ -1177,7 +1251,7 @@ processAccountCmd action baseCfgDir verbose backend =
       case v of
         Nothing -> putStrLn "Account not found."
         Just a -> runPrinter $ printAccountInfo na a verbose (showEncrypted || showDecrypted) encKey
-    
+
     AccountList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       v <- withClientJson backend $ withBestBlockHash block getAccountList
@@ -1185,7 +1259,7 @@ processAccountCmd action baseCfgDir verbose backend =
       let addname :: ID.AccountAddress -> NamedAddress
           addname addr = NamedAddress (Map.lookup addr addrmap) addr
       runPrinter $ printAccountList (map addname v)
-    
+
     AccountDelegate bakerId txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
 
@@ -1630,7 +1704,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
         Just p -> runPrinter $ printBirkParameters includeBakers p addrmap
                     where
                       addrmap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
-                                          
+
     ConsensusChainUpdate rawUpdateFile authsFile keysFiles intOpts -> do
       let
         loadJSON :: (FromJSON a) => FilePath -> IO a
