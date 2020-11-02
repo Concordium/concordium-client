@@ -372,13 +372,47 @@ instance Show NamedModuleRef where
 
 -- |Write the name map to a file in a pretty JSON format.
 writeNameMapAsJSON :: AE.ToJSON v => FilePath -> NameMap v -> IO ()
-writeNameMapAsJSON file = writeFile file . showPrettyJSON
+writeNameMapAsJSON file =  handledWriteFile file . showPrettyJSON
+  where handledWriteFile = handleWriteFile writeFile AllowOverwrite
 
 -- |Write the name map to a file in the expected format.
 -- TODO: Will throw error if folder(s) not created.
 writeNameMap :: Show v => FilePath -> NameMap v -> IO ()
-writeNameMap file = writeFile file . unlines . map f . sortOn fst . M.toList
+writeNameMap file = handledWriteFile file . unlines . map f . sortOn fst . M.toList
   where f (name, val) = printf "%s = %s" name (show val)
+        handledWriteFile = handleWriteFile writeFile AllowOverwrite
+
+-- Used in `handleWriteFile` to determine how already exisiting files should be handled.
+data OverwriteSetting =
+    PromptBeforeOverwrite -- ^ The user should be prompted to confirm before overwriting.
+  | AllowOverwrite        -- ^ Simply overwrite the file.
+  deriving Eq
+
+-- |Write to a file with the provided function and handle IO errors with an appropriate logging of errors.
+-- If `OverwriteSetting == PromptBeforeOverwrite` then the user is prompted to confirm.
+handleWriteFile :: (FilePath -> s -> IO ()) -> OverwriteSetting -> FilePath -> s -> IO ()
+handleWriteFile wrtFile overwriteSetting file contents = do
+  writeConfirmed <- case overwriteSetting of
+    AllowOverwrite -> return True
+    PromptBeforeOverwrite -> do
+      fileExists <- doesFileExist file
+      if fileExists
+        then logWarn [[i|'#{file}' already exists.|]] >> askConfirmation (Just "overwrite it")
+        else return True
+  when writeConfirmed $ do
+    catchIOError (wrtFile file contents >> logSuccess [[i|successfully wrote to '#{file}'|]]) logFatalOnErrors
+  where logFatalOnErrors e
+          | isDoesNotExistError e = logFatal [[i|'#{file}' does not exist and cannot be created|]]
+          | isPermissionError e   = logFatal [[i|you do not have permissions to write to the file '#{file}'|]]
+          | otherwise             = logFatal [[i|'something went wrong while writing to the file #{file}'|]]
+
+-- |Read a file with the provided function and handle IO errors with an appropriate logging of errors.
+handleReadFile :: (FilePath -> IO s) -> FilePath -> IO s
+handleReadFile rdFile file = catchIOError (rdFile file) logFatalOnErrors
+  where logFatalOnErrors e
+          | isDoesNotExistError e = logFatal [[i|'#{file}' does not exist and cannot be read|]]
+          | isPermissionError e   = logFatal [[i|you do not have permissions to read the file '#{file}'|]]
+          | otherwise             = logFatal [[i|something went wrong while reading the file '#{file}'|]]
 
 -- |Write the account keys structure into the directory of the given account.
 -- Each 'EncryptedAccountKeyPair' is written to a JSON file the name of which

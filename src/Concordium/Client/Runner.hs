@@ -75,7 +75,6 @@ import qualified Concordium.Wasm                     as Wasm
 import           Proto.ConcordiumP2pRpc
 import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 
-import           Control.Exception (catch)
 import           Control.Monad.Fail
 import           Control.Monad.Except
 import           Control.Monad.Reader                hiding (fail)
@@ -108,7 +107,6 @@ import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client.Exceptions
 import           Prelude                             hiding (fail, mod, unlines)
 import           System.IO
-import qualified System.IO.Error                    as Err
 import           System.Directory
 import           Text.Printf
 import           Text.Read (readMaybe)
@@ -335,7 +333,7 @@ processConfigCmd action baseCfgDir verbose =
 -- If a name is provided in this case, this will become the account name.
 loadAccountImportFile :: AccountExportFormat -> FilePath -> Maybe Text -> IO [AccountConfig]
 loadAccountImportFile format file name = do
-  contents <- BS.readFile file
+  contents <- handleReadFile BS.readFile file
   case format of
     FormatMobile -> do
       pwd <- askPassword "Enter encryption password: "
@@ -359,7 +357,7 @@ processTransactionCmd action baseCfgDir verbose backend =
   case action of
     TransactionSubmit fname intOpts -> do
       -- TODO Ensure that the "nonce" field is optional in the payload.
-      source <- BSL.readFile fname
+      source <- handleReadFile BSL.readFile fname
 
       -- TODO Print transaction details and ask for confirmation if (ioConfirm intOpts)
 
@@ -371,7 +369,7 @@ processTransactionCmd action baseCfgDir verbose backend =
           tailTransaction_ hash
 --          logSuccess [ "transaction successfully completed" ]
     TransactionDeployCredential fname intOpts -> do
-      source <- BSL.readFile fname
+      source <- handleReadFile BSL.readFile fname
       withClient backend $ do
         tx <- processCredential source defaultNetId
         let hash = getBlockItemHash tx
@@ -1365,7 +1363,7 @@ processModuleCmd action baseCfgDir verbose backend =
             -- Write to stdout
             "-" -> BS.putStr modSource
             -- Write to file
-            _   -> handleWriteModuleToFile outFile modSource
+            _   -> handleWriteFile BS.writeFile PromptBeforeOverwrite outFile modSource
     ModuleName modRefOrFile modName block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       modRef <- getModuleRefFromRefOrFile modRefOrFile
@@ -1382,21 +1380,6 @@ processModuleCmd action baseCfgDir verbose backend =
                                            Types.ModuleDeployed modRef -> Just modRef
                                            _ -> Nothing)
         showText = Text.pack . show
-
--- |Writes module to file and asks user to confirm if file already exists.
--- Relevant IOErrors are caught.
-handleWriteModuleToFile :: FilePath -> BS.ByteString -> IO ()
-handleWriteModuleToFile fileName contents = do
-  fileExists <- doesFileExist fileName
-  confirmed  <- if fileExists
-                then logWarn [fileNameQuoted ++ " already exists."] >> askConfirmation (Just "overwrite it")
-                else pure True
-  when confirmed $
-    Err.catchIOError (BS.writeFile fileName contents >> logSuccess ["successfully wrote the module to " ++ fileNameQuoted]) $
-      \e -> do
-        when (Err.isDoesNotExistError e) $ logError [fileNameQuoted ++ " does not exist and cannot be created"]
-        when (Err.isPermissionError e)   $ logError ["you do not have permissions to write to " ++ fileNameQuoted]
-  where fileNameQuoted = "'" ++ fileName ++ "'"
 
 getModuleDeployTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> IO ModuleDeployTransactionCfg
 getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
@@ -1564,19 +1547,13 @@ contractInitTransactionPayload ContractInitTransactionCfg {..} =
 -- It defaults to our internal wasmVersion of 0, which essentially is the
 -- on-chain API version.
 getWasmModuleFromFile :: FilePath -> IO Wasm.WasmModule
-getWasmModuleFromFile moduleFile = (Wasm.WasmModule 0 <$> BS.readFile moduleFile) `catch` readFileHandler moduleFile
+getWasmModuleFromFile moduleFile = (Wasm.WasmModule 0 <$> handleReadFile BS.readFile moduleFile)
 
 -- |Load Wasm Parameters from a binary file if Just, otherwise return mempty.
 getWasmParameterFromFileOrDefault :: Maybe FilePath -> IO Wasm.Parameter
 getWasmParameterFromFileOrDefault paramsFile = case paramsFile of
   Nothing -> pure . Wasm.Parameter $ BSS.empty
-  Just file -> (Wasm.Parameter . BS.toShort <$> BS.readFile file) `catch` readFileHandler file
-
--- |LogFatal with an appropriate message if reading fails.
-readFileHandler :: FilePath -> IOError -> IO a
-readFileHandler file e
-  | Err.isDoesNotExistError e = logFatal [[i|the file '#{file}' does not exist|]]
-  | otherwise = logFatal [[i|something went wrong while reading the file '#{file}'|]]
+  Just file -> (Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile file)
 
 -- |Try to parse the input as a module reference and assume it is a path if it fails.
 getModuleRefFromRefOrFile :: String -> IO Types.ModuleRef
@@ -2045,7 +2022,7 @@ processLegacyCmd :: LegacyCmd -> Backend -> IO ()
 processLegacyCmd action backend =
   case action of
     SendTransaction fname nid -> do
-      source <- BSL.readFile fname
+      source <- handleReadFile BSL.readFile fname
       t <- withClient backend $ processTransaction source nid
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (getBlockItemHash t)
