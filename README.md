@@ -18,7 +18,7 @@ Smart contracts consist of:
 The `init` and `receive` functions are invoked when the contract is initialized and "invoked", respectively.
 Both functions may update `model` and/or perform transactions to change `amount`.
 
-The functions of the smart contract are defined in an Acorn module.
+The functions of the smart contract are defined in a Rust module.
 Such a module may define multiple contracts and also types and other functions used by the contracts.
 
 Smart contracts are deployed and instantiated (with some initial state) using the special transaction types
