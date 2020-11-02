@@ -158,7 +158,7 @@ data AccountCmd
     , arkTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | AccountUpdateThreshold
     { autThreshold :: !SignatureThreshold
-    , autTransactionOtps :: !TransactionOpts } --todo simon what does this do
+    , autTransactionOtps :: !(TransactionOpts (Maybe Energy)) }
   -- |Transfer part of the public balance to the encrypted balance of the
   -- account.
   | AccountEncrypt

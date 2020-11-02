@@ -755,7 +755,7 @@ getAccountRemoveKeysTransactionCfg baseCfg txOpts idxs threshold = do
   where
       nrgCost _ = return $ Just accountRemoveKeysEnergyCost
 
-getAccountUpdateThresholdTranactionCfg :: BaseConfig -> TransactionOpts -> ID.SignatureThreshold -> IO AccountUpdateThresholdTransactionCfg
+getAccountUpdateThresholdTranactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> ID.SignatureThreshold -> IO AccountUpdateThresholdTransactionCfg
 getAccountUpdateThresholdTranactionCfg baseCfg txOpts threshold = do -- todo simon what exactly does/should this do?
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return $ AccountUpdateThresholdTransactionCfg txCfg threshold
