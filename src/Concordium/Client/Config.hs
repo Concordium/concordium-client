@@ -23,6 +23,7 @@ import Data.Char
 import Data.List as L
 import Data.List.Split
 import qualified Data.HashMap.Strict as M
+import Data.String (IsString)
 import Data.String.Interpolate (i, iii)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -40,20 +41,23 @@ The layout of the config directory is shown in this example:
 
 @
   <baseConfigDir>
-  └── accounts
-      ├── names.map
-      ├── <account1>
-      │   └── keypair1.json
-      │   └── keypair2.json
-      │   ...
-      │   └── encSecretKey.json
-      ├── <account1>.threshold
-      ├── <account2>
-      │   └── keypair1.json
-      │   └── keypair2.json
-      │   ...
-      │   └── encSecretKey.json
-      └── <account2>.threshold
+  ├── accounts
+  │   ├── names.map
+  │   ├── <account1>
+  │   │   └── keypair0.json
+  │   │   └── keypair1.json
+  │   │   ...
+  │   │   └── encSecretKey.json
+  │   ├── <account1>.threshold
+  │   ├── <account2>
+  │   │   └── keypair0.json
+  │   │   └── keypair1.json
+  │   │   ...
+  │   │   └── encSecretKey.json
+  │   └── <account2>.threshold
+  └── contracts
+      ├── contractNames.map
+      └── moduleNames.map
 @
 -}
 type BaseConfigDir = FilePath
@@ -71,7 +75,6 @@ showPrettyJSON = unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty' config
 showCompactPrettyJSON :: AE.ToJSON a => a -> String
 showCompactPrettyJSON = unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty' config
   where config = AE.defConfig { AE.confIndent = AE.Spaces 0, AE.confCompare = compare }
-
 
 -- |The default location of the config root directory.
 getDefaultBaseConfigDir :: IO BaseConfigDir
@@ -160,14 +163,14 @@ data BaseConfig = BaseConfig
                 deriving (Show)
 
 -- |Initialize an empty config structure and returns the corresponding base config.
-initBaseConfig :: Maybe FilePath -> IO BaseConfig
-initBaseConfig f = do
+initBaseConfig :: Maybe FilePath -> Verbose -> IO BaseConfig
+initBaseConfig f verbose = do
   baseCfgDir <- getBaseConfigDir f
-  logInfo [printf "initializing configuration structure in directory '%s'" baseCfgDir]
+  when verbose $ logInfo [[i|initializing configuration structure in directory '#{baseCfgDir}'|]]
 
   baseCfgDirExists <- doesDirectoryExist baseCfgDir
   if baseCfgDirExists then
-    logInfo [printf "skipping '%s': directory already exists" baseCfgDir]
+    when verbose $ logInfo [[i|skipping '#{baseCfgDir}': directory already exists|]]
   else
     -- Only explicitly handle a permission error since that is likely the most common one.
     handleJust (guard . isPermissionError)
@@ -181,13 +184,13 @@ initBaseConfig f = do
       contrMapFile = contractNameMapFile contrCfgDir
       moduleMapFile = moduleNameMapFile contrCfgDir
 
-  -- Ensure config folders are created
-  mapM_ (ensureDirCreated True) [accCfgDir, contrCfgDir]
+  -- Create all map files
+  mapM_ (uncurry $ handleWriteFile writeFile AllowOverwrite verbose)
+    [(accMapFile, mempty), (contrMapFile, emptyMapContentJSON), (moduleMapFile, emptyMapContentJSON)]
 
-  -- Ensure namemaps are created
-  accNameMap <- ensureAccountNameMapCreatedAndLoad accMapFile loadAccountNameMap
-  contrNameMap <- ensureJSONNameMapCreatedAndLoad contrMapFile loadNameMapFromJSON
-  moduleNameMap <- ensureJSONNameMapCreatedAndLoad moduleMapFile loadNameMapFromJSON
+  accNameMap <- loadAccountNameMap accMapFile
+  contrNameMap <- loadNameMapFromJSON contrMapFile
+  moduleNameMap <- loadNameMapFromJSON moduleMapFile
 
   logSuccess ["configuration initialized"]
   return BaseConfig
@@ -213,22 +216,6 @@ ensureDirCreated verbose dir = do
     when verbose $ logInfo [[i|skipping '#{dir}': directory already exists|]]
   else
     createDirectoryIfMissing True dir
-
-ensureAccountNameMapCreatedAndLoad :: FilePath -> (FilePath -> IO AccountNameMap) -> IO AccountNameMap
-ensureAccountNameMapCreatedAndLoad = ensureNameMapCreatedAndLoad ""
-
-ensureJSONNameMapCreatedAndLoad :: FilePath -> (FilePath -> IO (NameMap v)) -> IO (NameMap v)
-ensureJSONNameMapCreatedAndLoad = ensureNameMapCreatedAndLoad "{}" -- this is simply an empty Map
-
-ensureNameMapCreatedAndLoad :: String -> FilePath -> (FilePath -> IO (NameMap v)) -> IO (NameMap v)
-ensureNameMapCreatedAndLoad emptyContent mapFile loadNM = do
-  mapFileExists <- doesFileExist mapFile
-  if mapFileExists then do
-    logInfo [[i|skipping '#{mapFile}': directory already exists|]]
-    loadNM mapFile
-  else do
-    writeFile mapFile emptyContent
-    return M.empty
 
 initAccountConfigEither :: BaseConfig
                         -> NamedAddress
@@ -279,8 +266,7 @@ initAccountConfigEither baseCfg namedAddr inCLI = runExceptT $ do
     Nothing -> return baseCfg
     Just n -> do
       let m = M.insert n addr $ bcAccountNameMap baseCfg
-      logInfo [printf "writing file '%s'" mapFile]
-      liftIO $ writeNameMap mapFile m
+      liftIO $ writeNameMap True mapFile m
       logSuccess ["added name mapping"]
       return baseCfg { bcAccountNameMap = m }
 
@@ -320,22 +306,22 @@ importAccountConfig baseCfg accCfgs verbose = foldM f baseCfg accCfgs
           return bc'
 
 -- |Add a contract name and write it to 'contractNames.map'
-addContractNameAndWrite :: MonadIO m => BaseConfig -> Text -> ContractAddress -> m ()
-addContractNameAndWrite baseCfg = addContractOrModuleNameAndWrite mapFile nameMap showCompactPrettyJSON
+addContractNameAndWrite :: MonadIO m => Verbose -> BaseConfig -> Text -> ContractAddress -> m ()
+addContractNameAndWrite verbose baseCfg = addContractOrModuleNameAndWrite verbose mapFile nameMap showCompactPrettyJSON
   where mapFile = contractNameMapFile . bcContractCfgDir $ baseCfg
         nameMap = bcContractNameMap baseCfg
 
 -- |Add a module name and write it to 'moduleNames.map'
-addModuleNameAndWrite :: MonadIO m => BaseConfig -> Text -> ModuleRef -> m ()
-addModuleNameAndWrite baseCfg = addContractOrModuleNameAndWrite mapFile nameMap show
+addModuleNameAndWrite :: MonadIO m => Verbose -> BaseConfig -> Text -> ModuleRef -> m ()
+addModuleNameAndWrite verbose baseCfg = addContractOrModuleNameAndWrite verbose mapFile nameMap show
   where mapFile = moduleNameMapFile . bcContractCfgDir $ baseCfg
         nameMap = bcModuleNameMap baseCfg
 
 -- |Add a contract or module name and write it to the appropriate map file.
 -- Warn if name already in use or value already named.
-addContractOrModuleNameAndWrite :: (AE.ToJSON v, Eq v, MonadIO m) => FilePath ->
-                                    NameMap v -> (v -> String) -> Text -> v -> m ()
-addContractOrModuleNameAndWrite mapFile nameMap showVal name val = case validateContractOrModuleName name of
+addContractOrModuleNameAndWrite :: (AE.ToJSON v, Eq v, MonadIO m) => Verbose -> FilePath -> NameMap v ->
+                                   (v -> String) -> Text -> v -> m ()
+addContractOrModuleNameAndWrite verbose mapFile nameMap showVal name val = case validateContractOrModuleName name of
   -- TODO: return whether it succeded instead of exitFailure, this would allow for logging
   -- "nameWarning + module deployed with ref..", or similar situations.
   Left err -> logWarn [namingError, err] >> liftIO exitFailure
@@ -344,7 +330,7 @@ addContractOrModuleNameAndWrite mapFile nameMap showVal name val = case validate
       (True, _) -> logWarn [namingError, [i|the name '#{name}' is already in use|]] >> liftIO exitFailure
       (_, True) -> logWarn [namingError, [i|'#{showVal val}' is already named|]] >> liftIO exitFailure
       _ -> return $ M.insert name val nameMap
-    liftIO $ writeNameMapAsJSON mapFile nameMap'
+    liftIO $ writeNameMapAsJSON verbose mapFile nameMap'
   where namingError = "Name was not added:"
 
 -- |Primarily used to show contract addresses along with their names in a consistent manner.
@@ -371,16 +357,15 @@ instance Show NamedModuleRef where
     Nothing -> show nmrRef
 
 -- |Write the name map to a file in a pretty JSON format.
-writeNameMapAsJSON :: AE.ToJSON v => FilePath -> NameMap v -> IO ()
-writeNameMapAsJSON file =  handledWriteFile file . showPrettyJSON
-  where handledWriteFile = handleWriteFile writeFile AllowOverwrite
+writeNameMapAsJSON :: AE.ToJSON v => Verbose -> FilePath -> NameMap v -> IO ()
+writeNameMapAsJSON verbose file =  handledWriteFile file . showPrettyJSON
+  where handledWriteFile = handleWriteFile writeFile AllowOverwrite verbose
 
 -- |Write the name map to a file in the expected format.
--- TODO: Will throw error if folder(s) not created.
-writeNameMap :: Show v => FilePath -> NameMap v -> IO ()
-writeNameMap file = handledWriteFile file . unlines . map f . sortOn fst . M.toList
+writeNameMap :: Show v => Verbose -> FilePath -> NameMap v -> IO ()
+writeNameMap verbose file = handledWriteFile file . unlines . map f . sortOn fst . M.toList
   where f (name, val) = printf "%s = %s" name (show val)
-        handledWriteFile = handleWriteFile writeFile AllowOverwrite
+        handledWriteFile = handleWriteFile writeFile AllowOverwrite verbose
 
 -- Used in `handleWriteFile` to determine how already exisiting files should be handled.
 data OverwriteSetting =
@@ -389,9 +374,10 @@ data OverwriteSetting =
   deriving Eq
 
 -- |Write to a file with the provided function and handle IO errors with an appropriate logging of errors.
+-- Also ensures that the parent folders are created if missing.
 -- If `OverwriteSetting == PromptBeforeOverwrite` then the user is prompted to confirm.
-handleWriteFile :: (FilePath -> s -> IO ()) -> OverwriteSetting -> FilePath -> s -> IO ()
-handleWriteFile wrtFile overwriteSetting file contents = do
+handleWriteFile :: (FilePath -> s -> IO ()) -> OverwriteSetting -> Verbose -> FilePath -> s -> IO ()
+handleWriteFile wrtFile overwriteSetting verbose file contents = do
   writeConfirmed <- case overwriteSetting of
     AllowOverwrite -> return True
     PromptBeforeOverwrite -> do
@@ -400,7 +386,10 @@ handleWriteFile wrtFile overwriteSetting file contents = do
         then logWarn [[i|'#{file}' already exists.|]] >> askConfirmation (Just "overwrite it")
         else return True
   when writeConfirmed $ do
-    catchIOError (wrtFile file contents >> logSuccess [[i|successfully wrote to '#{file}'|]]) logFatalOnErrors
+    catchIOError (do
+      createDirectoryIfMissing True $ takeDirectory file
+      when verbose $ logInfo [[i|writing file '#{file}'|]]
+      wrtFile file contents) logFatalOnErrors
   where logFatalOnErrors e
           | isDoesNotExistError e = logFatal [[i|'#{file}' does not exist and cannot be created|]]
           | isPermissionError e   = logFatal [[i|you do not have permissions to write to the file '#{file}'|]]
@@ -421,21 +410,17 @@ writeAccountKeys :: BaseConfig -> AccountConfig -> Verbose -> IO ()
 writeAccountKeys baseCfg accCfg verbose = do
   let accCfgDir = bcAccountCfgDir baseCfg
       keysDir = accountKeysDir accCfgDir $ acAddress accCfg
-  logFatalIfKeysDirMissing keysDir
-
   forM_ (M.toList $ acKeys accCfg) $ \(idx, kp) -> do
     let file = accountKeyFile keysDir idx
-    when verbose $ logInfo ["writing file '" ++ file ++ "'"]
     -- NOTE: This writes the JSON in a compact way. If we want human-readable JSON, we should use pretty encoding.
-    AE.encodeFile file kp
+    handleWriteFile AE.encodeFile AllowOverwrite verbose file kp
 
   -- TODO: Avoid writing encryptionKey and threshold files when unaltered.
 
   case acEncryptionKey accCfg of
     Just k -> do
       let encKeyFile = accountEncryptionSecretKeyFile keysDir
-      when verbose $ logInfo ["writing file '" ++ encKeyFile ++ "'"]
-      AE.encodeFile encKeyFile k
+      handleWriteFile AE.encodeFile AllowOverwrite verbose encKeyFile k
     Nothing -> logFatal [ printf "importing account without a secret encryption key provided" ]
 
   writeThresholdFile accCfgDir accCfg verbose
@@ -446,8 +431,6 @@ removeAccountKeys :: BaseConfig -> AccountConfig -> [KeyIndex] -> Verbose -> IO 
 removeAccountKeys baseCfg accCfg idxs verbose = do
   let accCfgDir = bcAccountCfgDir baseCfg
       keysDir = accountKeysDir accCfgDir $ acAddress accCfg
-  logFatalIfKeysDirMissing keysDir
-
   forM_ idxs $ \idx -> do
     let file = accountKeyFile keysDir idx
     when verbose $ logInfo ["removing file '" ++ file ++ "'"]
@@ -462,18 +445,10 @@ writeThresholdFile accCfgDir accCfg verbose = do
   -- Write the threshold as a JSON value. Since it is a simple numeric
   -- value this should look as expected.
   let thresholdFile = accountThresholdFile accCfgDir (acAddress accCfg)
-  when verbose $ logInfo ["writing file '" ++ thresholdFile ++ "'"]
-  AE.encodeFile thresholdFile (acThreshold accCfg)
+  handleWriteFile AE.encodeFile AllowOverwrite verbose thresholdFile (acThreshold accCfg)
 
--- |Check if the account keys directory exists and log a fatal message if not.
-logFatalIfKeysDirMissing :: FilePath -> IO ()
-logFatalIfKeysDirMissing keysDir = do
-  keysDirExists <- doesDirectoryExist keysDir
-  unless keysDirExists $ logFatal [ "account keys directory '" ++ keysDir ++ "' does not exist"
-                                  , "did you run 'config account add ...' yet?" ]
-
-getBaseConfig :: Maybe FilePath -> Verbose -> AutoInit -> IO BaseConfig
-getBaseConfig f verbose autoInit = do
+getBaseConfig :: Maybe FilePath -> Verbose -> IO BaseConfig
+getBaseConfig f verbose = do
   cfgDir <- getBaseConfigDir f
   let accCfgDir = accountConfigDir cfgDir
       accMapFile = accountNameMapFile accCfgDir
@@ -482,71 +457,45 @@ getBaseConfig f verbose autoInit = do
       contrMapFile = contractNameMapFile contrCfgDir
       moduleMapFile = moduleNameMapFile contrCfgDir
 
-  cfgDirExists <- doesDirectoryExist cfgDir
-  if not cfgDirExists && autoInit == AutoInit then
-    initBaseConfig f
-  else do
-    nameMaps <- runExceptT $ do
-      unless cfgDirExists $ throwE [i|config directory '#{cfgDir}' not found. Run 'config init' to remove this warning|]
+  anm <- loadAccountNameMap accMapFile
+  cnm <- loadNameMapFromJSON contrMapFile
+  mnm <- loadNameMapFromJSON moduleMapFile
 
-      accCfgDirExists <- liftIO $ doesDirectoryExist accCfgDir
-      unless accCfgDirExists $ throwE [i|account config directory '#{accCfgDir}' not found|]
-
-      -- TODO: Warn only if Verbose, otherwise ensure created. Warnings only occur if you have a config folder without the correct files.
-      mapM_ checkIfNameMapExistsAndWarn [accMapFile, contrMapFile, moduleMapFile]
-
-      liftIO $ sequenceT (loadAccountNameMap accMapFile, loadNameMapFromJSON contrMapFile, loadNameMapFromJSON moduleMapFile)
-
-    let baseCfg = BaseConfig
-                  { bcVerbose = verbose
-                  , bcAccountCfgDir = accCfgDir
-                  , bcAccountNameMap = M.empty
-                  , bcContractCfgDir = contrCfgDir
-                  , bcContractNameMap = M.empty
-                  , bcModuleNameMap = M.empty }
-    case nameMaps of
-      Right (anm, cnm, mnm) -> return baseCfg { bcAccountNameMap = anm, bcContractNameMap = cnm, bcModuleNameMap = mnm }
-      Left warns -> logWarn [warns] >> return baseCfg
-  where checkIfNameMapExistsAndWarn mapFile = do
-          fileExists <- liftIO $ doesFileExist mapFile
-          unless fileExists $ throwE [i|name map file '#{mapFile}' not found|]
-
-        sequenceT :: Monad m => (m a1, m a2, m a3) -> m (a1, a2, a3)
-        sequenceT (a1, a2, a3) = return (,,) `ap` a1 `ap` a2 `ap` a3
+  return BaseConfig
+      { bcVerbose = verbose
+      , bcAccountCfgDir = accCfgDir
+      , bcAccountNameMap = anm
+      , bcContractCfgDir = contrCfgDir
+      , bcContractNameMap = cnm
+      , bcModuleNameMap = mnm }
 
 getBaseConfigDir :: Maybe FilePath -> IO FilePath
 getBaseConfigDir = \case
   Nothing -> getDefaultBaseConfigDir
   Just p -> return p
 
--- |Load a NameMap from a file in JSON format, or logFatal if file is missing or has invalid format.
+-- |Load a NameMap from a file in JSON format, or logFatal if file has invalid format.
 loadNameMapFromJSON :: AE.FromJSON v => FilePath -> IO (NameMap v)
 loadNameMapFromJSON mapFile = do
-  fileExists <- doesFileExist mapFile
-  if not fileExists
-  -- TODO: Should this just be warn or nothing?
-  -- Should only happen if cfg dir exists, but files manually deleted (or upgrade to this new version)
-  then logFatal [[i|file '#{mapFile}' does not exist.|]]
-  else do
-    content <- BSL.readFile mapFile
-    case AE.eitherDecode content of
-      Left err -> logFatal [[i|cannot parse name map file '#{mapFile}' as JSON: #{err}|]]
-      Right nm -> return nm
+  -- Simply use an empty map if the reading fails
+  content <- BSL.readFile mapFile `catch` (\(_ :: SomeException) -> return emptyMapContentJSON)
+  case AE.eitherDecode content of
+    Left err -> logFatal [[i|cannot parse name map file '#{mapFile}' as JSON: #{err}|]]
+    Right nm -> return nm
 
--- |Load an AccountNameMAp from a file in the format specified by `parseAccountNameMap`.
--- LogFatal if file is missing or the format is invalid.
+-- |A string representing an empty hashmap in JSON format.
+emptyMapContentJSON :: IsString s => s
+emptyMapContentJSON = "{}"
+
+-- |Load an AccountNameMap from a file in the format specified by `parseAccountNameMap`.
+-- LogFatal if the file format is invalid.
 loadAccountNameMap :: FilePath -> IO AccountNameMap
 loadAccountNameMap mapFile = do
-  fileExists <- doesFileExist mapFile
-  if not fileExists
-  -- TODO: Should this just be warn or nothing?
-  -- Should only happen if cfg dir exists, but files manually deleted (or upgrade to this new version)
-  then logFatal [[i|file '#{mapFile}' does not exist.|]]
-  else do
-    content <- readFile mapFile
-    case parseAccountNameMap $ lines content of
-      Left err -> logFatal [[i|cannot parse account name map file '#{content}': #{err}|]]
-      Right m -> return m
+  -- Simply use an empty map if the reading fails
+  content <- readFile mapFile `catch` (\(_ :: SomeException) -> return mempty)
+  case parseAccountNameMap $ lines content of
+    Left err -> logFatal [[i|cannot parse account name map file '#{content}': #{err}|]]
+    Right m -> return m
 
 -- |Parse an AccountNamepMap from zero or more entries, as specificied in `parseAccoutNameMapEntry`.
 parseAccountNameMap :: (MonadError String m) => [String] -> m AccountNameMap
