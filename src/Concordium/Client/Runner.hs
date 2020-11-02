@@ -313,6 +313,20 @@ processConfigCmd action baseCfgDir verbose =
 
               let accCfg' = accCfg { acThreshold = fromMaybe (acThreshold accCfg) threshold }
               removeAccountKeys baseCfg accCfg' (HSet.toList idxsToRemove) verbose
+      ConfigAccountUpdateThreshold addr threshold -> do
+        baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        let accCfgDir = bcAccountCfgDir baseCfg
+
+        (_, accCfg) <- getAccountConfigFromAddr addr baseCfg
+
+        let accCfg' = accCfg { acThreshold = threshold }
+
+        writeThresholdFile accCfgDir accCfg' verbose -- todo simon more logging?
+
 
   where showMapIdxs = showIdxs . Map.keys
         showHSetIdxs = showIdxs . HSet.toList
@@ -670,11 +684,6 @@ data AccountRemoveKeysTransactionCfg =
   , arktcIndices :: Set.Set ID.KeyIndex
   , arktcThreshold :: Maybe ID.SignatureThreshold }
 
-data AccountUpdateThresholdTransactionCfg =
-  AccountUpdateThresholdTransactionCfg
-  { auttcTransactionCfg :: TransactionConfig
-  , auttcThreshold :: ID.SignatureThreshold }
-
 -- |Resolved configuration for a baker set-election-key transaction
 data BakerSetElectionKeyTransactionConfig =
   BakerSetElectionKeyTransactionConfig
@@ -754,13 +763,6 @@ getAccountRemoveKeysTransactionCfg baseCfg txOpts idxs threshold = do
   return $ AccountRemoveKeysTransactionCfg txCfg indexSet threshold
   where
       nrgCost _ = return $ Just accountRemoveKeysEnergyCost
-
-getAccountUpdateThresholdTranactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> ID.SignatureThreshold -> IO AccountUpdateThresholdTransactionCfg
-getAccountUpdateThresholdTranactionCfg baseCfg txOpts threshold = do -- todo simon what exactly does/should this do?
-  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
-  return $ AccountUpdateThresholdTransactionCfg txCfg threshold
-  where
-      nrgCost _ = return $ Just accountUpdateThresholdEnergyCost
 
 -- |Resolve configuration for transferring an amount from public to encrypted
 -- balance of an account.
@@ -997,23 +999,6 @@ accountRemoveKeysTransactionPayload AccountRemoveKeysTransactionCfg{..} confirm 
     unless confirmed exitTransactionCancelled
 
   return $ Types.RemoveAccountKeys arktcIndices arktcThreshold
-
-accountUpdateThresholdTransactionPayload :: AccountUpdateThresholdTransactionCfg -> Bool -> IO Types.Payload
-accountUpdateThresholdTransactionPayload AccountUpdateThresholdTransactionCfg{..} confirm = do
-  let TransactionConfig
-        { tcEnergy = energy
-        , tcExpiry = expiry
-        , tcAccountCfg = AccountConfig { acAddr = addr } }
-        = auttcTransactionCfg
-
-  logInfo $ [ printf "updating signature threshold for account to %d" (toInteger auttcThreshold) ]
-
-  when confirm $ do
-    confirmed <- askConfirmation Nothing -- todo simon what is this?
-    unless confirmed exitTransactionCancelled
-  
-  return $ Types.UpdateAccountThreshold auttcThreshold
-
 
 accountEncryptTransactionPayload :: AccountEncryptTransactionConfig -> Bool -> IO Types.Payload
 accountEncryptTransactionPayload AccountEncryptTransactionConfig{..} confirm = do

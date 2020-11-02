@@ -156,9 +156,6 @@ data AccountCmd
     { arkKeys :: ![KeyIndex]
     , arkThreshold :: !(Maybe SignatureThreshold)
     , arkTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
-  | AccountUpdateThreshold
-    { autThreshold :: !SignatureThreshold
-    , autTransactionOtps :: !(TransactionOpts (Maybe Energy)) }
   -- |Transfer part of the public balance to the encrypted balance of the
   -- account.
   | AccountEncrypt
@@ -526,7 +523,6 @@ accountCmds =
            accountUpdateKeysCmd <>
            accountAddKeysCmd <>
            accountRemoveKeysCmd <>
-           accountUpdateThresholdCmd <>
            accountEncryptCmd <>
            accountDecryptCmd))
       (progDesc "Commands for inspecting and modifying accounts."))
@@ -642,18 +638,6 @@ accountRemoveKeysCmd =
         transactionOptsParser)
       (progDescDoc $ docFromLines
         [ "Removes the keys from the account at the specified indices. The --threshold option may be used to update the signature threshold." ]))
-
-accountUpdateThresholdCmd :: Mod CommandFields AccountCmd
-accountUpdateThresholdCmd = 
-  command
-    "update-threshold"
-    (info
-      (AccountUpdateThreshold <$>
-        (option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <> 
-        help "Update the signature threshold to this value.")) <*>
-        transactionOptsParser)
-      (progDescDoc $ docFromLines
-        [ "Updates the signature threshold of the account to the specified value." ]))
 
 moduleCmds :: Mod CommandFields Cmd
 moduleCmds =
