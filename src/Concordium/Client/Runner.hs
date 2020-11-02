@@ -75,6 +75,7 @@ import qualified Concordium.Wasm                     as Wasm
 import           Proto.ConcordiumP2pRpc
 import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 
+import           Control.Exception (catch)
 import           Control.Monad.Fail
 import           Control.Monad.Except
 import           Control.Monad.Reader                hiding (fail)
@@ -1403,6 +1404,7 @@ getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
   txCfg <- getTransactionCfg baseCfg txOpts $ moduleDeployEnergyCost wasmModule
   return $ ModuleDeployTransactionCfg txCfg wasmModule
 
+-- |Calcuate the energy cost of deploying a module. Uses an ad hoc implementation from Concordium.Scheduler.Cost.
 moduleDeployEnergyCost :: Wasm.WasmModule -> AccountConfig -> IO (Maybe (Int -> Types.Energy))
 moduleDeployEnergyCost wasmMod accCfg = pure . Just . const $
   deployModuleCost payloadSize + headerCost signatureCount payloadSize
@@ -1459,10 +1461,9 @@ processContractCmd action baseCfgDir verbose backend =
         Right AE.Null -> logInfo [[i|the contract instance #{namedContrAddr} does not exist in block #{bestBlock}|]]
         Right contrInfo -> putStr . showPrettyJSON $ contrInfo
 
-    ContractInit moduleRefOrFile initName paramsFile contrName amount txOpts -> do
+    ContractInit modTBD initName paramsFile contrName isPath amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
-
-      ciCfg <- getContractInitTransactionCfg baseCfg txOpts moduleRefOrFile initName paramsFile amount
+      ciCfg <- getContractInitTransactionCfg baseCfg txOpts modTBD isPath initName paramsFile amount
       let txCfg = citcTransactionCfg ciCfg
 
       let intOpts = toInteractionOpts txOpts
@@ -1531,13 +1532,15 @@ data ContractUpdateTransactionCfg =
   , cutcAmount :: !Types.Amount
   }
 
-getContractInitTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> String -> Text
+getContractInitTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> String -> Bool -> Text
                               -> Maybe FilePath -> Types.Amount -> IO ContractInitTransactionCfg
-getContractInitTransactionCfg baseCfg txOpts moduleRefOrFile initName paramsFile amount = do
-  moduleRef <- getModuleRefFromRefOrFile moduleRefOrFile
+getContractInitTransactionCfg baseCfg txOpts modTBD isPath initName paramsFile amount = do
+  modRef <- if isPath
+            then getModuleRefFromFile modTBD
+            else nmrRef <$> getNamedModuleRef (bcModuleNameMap baseCfg) (Text.pack modTBD)
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   params <- getWasmParameterFromFileOrDefault paramsFile
-  return $ ContractInitTransactionCfg txCfg amount moduleRef (Wasm.InitName initName) params
+  return $ ContractInitTransactionCfg txCfg amount modRef (Wasm.InitName initName) params
 
 data ContractInitTransactionCfg =
   ContractInitTransactionCfg
@@ -1569,18 +1572,21 @@ getWasmParameterFromFileOrDefault paramsFile = case paramsFile of
   Nothing -> pure . Wasm.Parameter $ BSS.empty
   Just file -> (Wasm.Parameter . BS.toShort <$> BS.readFile file) `catch` readFileHandler file
 
--- |LogFatal if reading fails with an appropriate message.
+-- |LogFatal with an appropriate message if reading fails.
 readFileHandler :: FilePath -> IOError -> IO a
 readFileHandler file e
   | Err.isDoesNotExistError e = logFatal [[i|the file '#{file}' does not exist|]]
   | otherwise = logFatal [[i|something went wrong while reading the file '#{file}'|]]
 
 -- |Try to parse the input as a module reference and assume it is a path if it fails.
--- Then load the module file and compute its hash, which is the reference.
 getModuleRefFromRefOrFile :: String -> IO Types.ModuleRef
-getModuleRefFromRefOrFile moduleRefOrFile = case readMaybe moduleRefOrFile of
+getModuleRefFromRefOrFile modRefOrFile = case readMaybe modRefOrFile of
   Just modRef -> pure modRef
-  Nothing -> Types.ModuleRef . getHash <$> getWasmModuleFromFile moduleRefOrFile
+  Nothing -> getModuleRefFromFile modRefOrFile
+
+-- |Load the module file and compute its hash, which is the reference.
+getModuleRefFromFile :: String -> IO Types.ModuleRef
+getModuleRefFromFile file = Types.ModuleRef . getHash <$> getWasmModuleFromFile file
 
 -- |Get a NamedContractAddress from either a name or index and an optional subindex.
 -- LogWarn if subindex is provided with a contract name.

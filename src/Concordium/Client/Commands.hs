@@ -219,7 +219,7 @@ data ContractCmd
       clBlockHash :: !(Maybe Text) }
   -- |Initialize a contract from a module on chain.
   | ContractInit
-    { -- |Module reference OR path to the module (reference then calculated by hashing).
+    { -- |Module reference OR module name OR (if ciPath == True) path to the module (reference then calculated by hashing).
       ciModule :: !String
       -- |Name of the init function to use (default: "init").
     , ciInitName :: !Text
@@ -227,6 +227,8 @@ data ContractCmd
     , ciParameterFile :: !(Maybe FilePath)
       -- |Local alias for the contract address.
     , ciName :: !(Maybe Text)
+      -- |Determines whether ciModule should be interpreted as a path.
+    , ciPath :: !Bool
       -- |Amount to be send to contract (default: 0).
     , ciAmount :: !Amount
       -- |Options for transaction.
@@ -751,12 +753,13 @@ contractInitCmd =
     "init"
     (info
       (ContractInit <$>
-        strArgument (metavar "MODULE" <> help "Module reference OR path to the module.") <*>
+        strArgument (metavar "MODULE" <> help "Module reference OR module name OR (if --path is used) path to a module.") <*>
         strOption (long "func" <> metavar "INIT-NAME" <> value "init"
                              <> help "Name of the specific init function in the module (default: \"init\").") <*>
         optional (strOption (long "params" <> metavar "FILE"
                              <> help "Binary file with parameters for init function (default: no parameters).")) <*>
         optional (strOption (long "name" <> metavar "NAME" <> help "Name for the contract.")) <*>
+        switch (long "path" <> help "Use when MODULE is a path to a module file.") <*>
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> value 0
                                                                 <> help "Amount of GTU to transfer to the contract.") <*>
         requiredEnergyTransactionOptsParser)
