@@ -30,7 +30,7 @@ module Concordium.Client.Runner
   -- * For adding baker support
   , startTransaction
   , encodeAndSignTransaction
-  , tailTransaction
+  , tailTransaction_
   , getBlockItemHash
   -- * For delegation support
   , getAccountDelegateTransactionCfg
@@ -70,6 +70,7 @@ import qualified Concordium.Types.Execution          as Types
 import qualified Concordium.Types                    as Types
 import qualified Concordium.ID.Types                 as ID
 import           Concordium.ID.Parameters
+import qualified Concordium.Wasm                     as Wasm
 import           Proto.ConcordiumP2pRpc
 import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 
@@ -85,6 +86,8 @@ import qualified Data.Aeson.Encode.Pretty            as AE
 import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
+import qualified Data.ByteString.Short               as BS (toShort)
+import qualified Data.ByteString.Short               as BSS
 import qualified Data.HashMap.Strict                 as Map
 import qualified Data.HashSet                        as HSet
 import qualified Data.Map                            as OrdMap
@@ -94,8 +97,8 @@ import qualified Data.Serialize                      as S
 import qualified Data.Set                            as Set
 import           Data.String
 import           Data.Text(Text)
+import qualified Data.Tuple                          as Tuple
 import qualified Data.Text                           as Text
-import           Data.Text.Encoding
 import qualified Data.Vector                         as Vec
 import           Data.Word
 import           Lens.Micro.Platform
@@ -103,8 +106,10 @@ import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client.Exceptions
 import           Prelude                             hiding (fail, mod, unlines)
 import           System.IO
+import qualified System.IO.Error                    as Err
 import           System.Directory
 import           Text.Printf
+import           Text.Read (readMaybe)
 
 liftClientIOToM :: MonadIO m => ClientIO a -> ExceptT ClientError m a
 liftClientIOToM comp = do
@@ -128,16 +133,25 @@ withClient bkend comp = do
 withClientJson :: (MonadIO m, FromJSON a) => Backend -> ClientMonad m (Either String Value) -> m a
 withClientJson b c = withClient b c >>= getFromJson
 
--- |Helper function for parsing JSON Value or fail if the value is missing or not valid JSON.
+-- |Helper function for parsing JSON Value or fail if the value is missing or cannot be converted correctly.
 -- The parameter has the same type as the one returned by e.g. eitherDecode or processJSON,
 -- which many of the GRPC commands use.
 getFromJson :: (MonadIO m, FromJSON a) => Either String Value -> m a
-getFromJson r = do
+getFromJson = getFromJsonAndHandleError onError
+  where onError val err = logFatal ["cannot convert '" ++ show val ++ "': " ++ err]
+
+-- |Helper function for parsing JSON Value, logFatal if the Either is Left,
+-- and use the provided function to handle Error in fromJSON.
+getFromJsonAndHandleError :: (MonadIO m, FromJSON a) =>
+                         (Value -> String -> m a) -- ^ Takes the JSON being converted and the err string from (Error err) if fromJSON fails.
+                         -> Either String Value
+                         -> m a
+getFromJsonAndHandleError handleError r = do
   s <- case r of
          Left err -> logFatal [printf "I/O error: %s" err]
          Right v -> return v
   case fromJSON s of
-    Error err -> logFatal [printf "cannot parse '%s' as JSON: %s" (show s) err]
+    Error err -> handleError s err
     Success v -> return v
 
 -- |Look up account from the provided name or address. If 'Nothing' is given, use the defaultAcccountName.
@@ -159,8 +173,8 @@ process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir
     ConfigCmd c -> processConfigCmd c cfgDir verbose
     TransactionCmd c -> processTransactionCmd c cfgDir verbose backend
     AccountCmd c -> processAccountCmd c cfgDir verbose backend
-    ModuleCmd c -> processModuleCmd c verbose backend
-    ContractCmd c -> processContractCmd c verbose backend
+    ModuleCmd c -> processModuleCmd c cfgDir verbose backend
+    ContractCmd c -> processContractCmd c cfgDir verbose backend
     ConsensusCmd c -> processConsensusCmd c cfgDir verbose backend
     BlockCmd c -> processBlockCmd c verbose backend
     BakerCmd c -> processBakerCmd c cfgDir verbose backend
@@ -352,7 +366,7 @@ processTransactionCmd action baseCfgDir verbose backend =
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
-          tailTransaction hash
+          tailTransaction_ hash
 --          logSuccess [ "transaction successfully completed" ]
     TransactionDeployCredential fname intOpts -> do
       source <- BSL.readFile fname
@@ -361,7 +375,7 @@ processTransactionCmd action baseCfgDir verbose backend =
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
-          tailTransaction hash
+          tailTransaction_ hash
 --          logSuccess [ "credential deployed successfully" ]
     TransactionStatus h -> do
       hash <- case parseTransactionHash h of
@@ -372,7 +386,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       runPrinter $ printTransactionStatus status
       -- TODO This works but output doesn't make sense if transaction is already committed/finalized.
       --      It should skip already completed steps.
-      -- withClient backend $ tailTransaction hash
+      -- withClient backend $ tailTransaction_ hash
     TransactionSendGtu receiver amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       when verbose $ do
@@ -386,7 +400,7 @@ processTransactionCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- transferTransactionPayload ttxCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     TransactionEncryptedTransfer txOpts receiver amount index -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -415,7 +429,7 @@ processTransactionCmd action baseCfgDir verbose backend =
 
         let intOpts = toInteractionOpts txOpts
         pl <- encryptedTransferTransactionPayload ttxCfg (ioConfirm intOpts)
-        sendAndTailTransaction txCfg pl intOpts
+        sendAndTailTransaction_ txCfg pl intOpts
 
 -- |Poll the transaction state continuously until it is "at least" the provided one.
 -- Note that the "absent" state is considered the "highest" state,
@@ -448,13 +462,9 @@ data TransactionConfig =
 -- If an energy cost function is provided and it returns a value which
 -- is different from the specified energy allocation, a warning is logged.
 -- If the energy allocation is too low, the user is prompted to increase it.
-getTransactionCfg :: BaseConfig -> TransactionOpts -> GetComputeEnergyCost -> IO TransactionConfig
+getTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> GetComputeEnergyCost -> IO TransactionConfig
 getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
-  keysArg <- case toKeys txOpts of
-               Nothing -> return Nothing
-               Just filePath -> AE.eitherDecodeFileStrict filePath `withLogFatalIO` ("cannot decode keys: " ++)
-  (_, accCfg) <- getAccountConfig (toSender txOpts) baseCfg Nothing keysArg Nothing AssumeInitialized
-
+  accCfg <- getAccountCfgFromTxOpts baseCfg txOpts
   energyCostFunc <- getEnergyCostFunc accCfg
   let computedCost = case energyCostFunc of
                        Nothing -> Nothing
@@ -487,18 +497,44 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
           logInfo [printf "%s allocated to the transaction, but only %s is needed" (showNrg energy) (showNrg actualFee)]
           return energy
       | otherwise = return energy
-    -- Warn if expiry is in the past or very near or distant future.
-    -- As the timestamps are unsigned, taking the simple difference might cause underflow.
-    warnSuspiciousExpiry e now
-      | e < now =
-        logWarn [ "expiration time is in the past"
-                , "the transaction will not be committed" ]
-      | e < now + 30 =
-        logWarn [ printf "expiration time is in just %s seconds" (show $ now - e)
-                , "this may not be enough time for the transaction to be committed" ]
-      | e > now + 3600 =
-        logWarn [ "expiration time is in more than one hour" ]
-      | otherwise = return ()
+
+-- |Resolve transaction config based on persisted config and CLI flags.
+-- Used for transactions where a specification of maxEnergy is required.
+getRequiredEnergyTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> IO TransactionConfig
+getRequiredEnergyTransactionCfg baseCfg txOpts = do
+  accCfg <- getAccountCfgFromTxOpts baseCfg txOpts
+  let energy = toMaxEnergyAmount txOpts
+  now <- getCurrentTimeUnix
+  expiry <- getExpiryArg "expiry" now $ toExpiration txOpts
+  warnSuspiciousExpiry expiry now
+
+  return TransactionConfig
+    { tcAccountCfg = accCfg
+    , tcNonce = toNonce txOpts
+    , tcEnergy = energy
+    , tcExpiry = expiry }
+
+-- |Warn if expiry is in the past or very near or distant future.
+-- As the timestamps are unsigned, taking the simple difference might cause underflow.
+warnSuspiciousExpiry :: Types.TransactionExpiryTime -> Types.TransactionExpiryTime -> IO ()
+warnSuspiciousExpiry expiryArg now
+  | expiryArg < now =
+    logWarn [ "expiration time is in the past"
+            , "the transaction will not be committed" ]
+  | expiryArg < now + 30 =
+    logWarn [ printf "expiration time is in just %s seconds" (show $ now - expiryArg)
+            , "this may not be enough time for the transaction to be committed" ]
+  | expiryArg > now + 3600 =
+    logWarn [ "expiration time is in more than one hour" ]
+  | otherwise = return ()
+
+-- |Get accountCfg from the config folder or logFatal if the keys are not provided in txOpts.
+getAccountCfgFromTxOpts :: BaseConfig -> TransactionOpts energyOrMaybe -> IO AccountConfig
+getAccountCfgFromTxOpts baseCfg txOpts = do
+  keysArg <- case toKeys txOpts of
+               Nothing -> return Nothing
+               Just filePath -> AE.eitherDecodeFileStrict filePath `withLogFatalIO` ("cannot decode keys: " ++)
+  snd <$> getAccountConfig (toSender txOpts) baseCfg Nothing keysArg Nothing AssumeInitialized
 
 -- |Resolved configuration for a transfer transaction.
 data TransferTransactionConfig =
@@ -509,7 +545,7 @@ data TransferTransactionConfig =
 
 -- |Resolve configuration of a transfer transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
-getTransferTransactionCfg :: BaseConfig -> TransactionOpts -> Text -> Types.Amount -> IO TransferTransactionConfig
+getTransferTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Text -> Types.Amount -> IO TransferTransactionConfig
 getTransferTransactionCfg baseCfg txOpts receiver amount = do
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
 
@@ -662,7 +698,7 @@ data AccountDecryptTransactionConfig =
 
 -- |Resolve configuration of a 'baker add' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
-getBakerAddTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> IO BakerAddTransactionConfig
+getBakerAddTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> IO BakerAddTransactionConfig
 getBakerAddTransactionCfg baseCfg txOpts f = do
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   bakerKeys <- eitherDecodeFileStrict f >>= getFromJson
@@ -673,7 +709,7 @@ getBakerAddTransactionCfg baseCfg txOpts f = do
 
 -- |Resolve configuration of a 'baker add' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
-getBakerRemoveTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> IO BakerRemoveTransactionConfig
+getBakerRemoveTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.BakerId -> IO BakerRemoveTransactionConfig
 getBakerRemoveTransactionCfg baseCfg txOpts bid = do
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return BakerRemoveTransactionConfig
@@ -682,7 +718,7 @@ getBakerRemoveTransactionCfg baseCfg txOpts bid = do
   where nrgCost _ = return $ Just bakerRemoveEnergyCost
 
 -- |Resolve configuration for an 'account delegate' transaction.
-getAccountDelegateTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> GetComputeEnergyCost -> IO AccountDelegateTransactionConfig
+getAccountDelegateTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.BakerId -> GetComputeEnergyCost -> IO AccountDelegateTransactionConfig
 getAccountDelegateTransactionCfg baseCfg txOpts bakerId nrgCost = do
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return AccountDelegateTransactionConfig
@@ -690,28 +726,28 @@ getAccountDelegateTransactionCfg baseCfg txOpts bakerId nrgCost = do
     , adtcBakerId = bakerId }
 
 -- |Resolve configuration for an 'account undelegate' transaction.
-getAccountUndelegateTransactionCfg :: BaseConfig -> TransactionOpts -> GetComputeEnergyCost -> IO AccountUndelegateTransactionConfig
+getAccountUndelegateTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> GetComputeEnergyCost -> IO AccountUndelegateTransactionConfig
 getAccountUndelegateTransactionCfg baseCfg txOpts nrgCost = do
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return AccountUndelegateTransactionConfig
     { autcTransactionCfg = txCfg }
 
 -- |Resolve configuration for an 'update keys' transaction
-getAccountUpdateKeysTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> IO AccountUpdateKeysTransactionCfg
+getAccountUpdateKeysTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> IO AccountUpdateKeysTransactionCfg
 getAccountUpdateKeysTransactionCfg baseCfg txOpts f = do
   keys <- getFromJson =<< eitherDecodeFileStrict f
   txCfg <- getTransactionCfg baseCfg txOpts (nrgCost $ length keys)
   return $ AccountUpdateKeysTransactionCfg txCfg keys
   where nrgCost numKeys _ = return $ Just $ accountUpdateKeysEnergyCost numKeys
 
-getAccountAddKeysTransactionCfg :: BaseConfig -> TransactionOpts -> FilePath -> Maybe ID.SignatureThreshold -> IO AccountAddKeysTransactionCfg
+getAccountAddKeysTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> Maybe ID.SignatureThreshold -> IO AccountAddKeysTransactionCfg
 getAccountAddKeysTransactionCfg baseCfg txOps f threshold = do
   keys <- getFromJson =<< eitherDecodeFileStrict f
   txCfg <- getTransactionCfg baseCfg txOps (nrgCost $ length keys)
   return $ AccountAddKeysTransactionCfg txCfg keys threshold
   where nrgCost numKeys _ = return $ Just $ accountAddKeysEnergyCost numKeys
 
-getAccountRemoveKeysTransactionCfg :: BaseConfig -> TransactionOpts -> [ID.KeyIndex] -> Maybe ID.SignatureThreshold -> IO AccountRemoveKeysTransactionCfg
+getAccountRemoveKeysTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> [ID.KeyIndex] -> Maybe ID.SignatureThreshold -> IO AccountRemoveKeysTransactionCfg
 getAccountRemoveKeysTransactionCfg baseCfg txOpts idxs threshold = do
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   indexSet <- Types.safeSetFromAscList $ L.sort idxs
@@ -728,7 +764,7 @@ getAccountUpdateThresholdTranactionCfg baseCfg txOpts threshold = do -- todo sim
 
 -- |Resolve configuration for transferring an amount from public to encrypted
 -- balance of an account.
-getAccountEncryptTransactionCfg :: BaseConfig -> TransactionOpts -> Types.Amount -> IO AccountEncryptTransactionConfig
+getAccountEncryptTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.Amount -> IO AccountEncryptTransactionConfig
 getAccountEncryptTransactionCfg baseCfg txOpts aeAmount = do
   aeTransactionCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return AccountEncryptTransactionConfig{..}
@@ -1070,20 +1106,36 @@ getNonce sender nonce confirm =
     Just v -> return v
 
 -- |Send a transaction and optionally tail it (see 'tailTransaction' below).
-sendAndTailTransaction :: (MonadIO m, MonadFail m)
+sendAndTailTransaction_ :: (MonadIO m, MonadFail m)
     => TransactionConfig -- ^ Information about the sender, and the context of transaction
     -> Types.Payload -- ^ Payload of the transaction to send
     -> InteractionOpts -- ^ How interactive should sending and tailing be
     -> ClientMonad m ()
+sendAndTailTransaction_ txCfg pl intOpts = void $ sendAndTailTransaction txCfg pl intOpts
+
+-- |Send a transaction and optionally tail it (see 'tailTransaction' below).
+-- If tailed, it returns the TransactionStatusResult of the finalized status,
+-- otherwise the return value is `Nothing`.
+sendAndTailTransaction :: (MonadIO m, MonadFail m)
+    => TransactionConfig -- ^ Information about the sender, and the context of transaction
+    -> Types.Payload -- ^ Payload of the transaction to send
+    -> InteractionOpts -- ^ How interactive should sending and tailing be
+    -> ClientMonad m (Maybe TransactionStatusResult)
 sendAndTailTransaction txCfg pl intOpts = do
   tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
   let hash = getBlockItemHash tx
   logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
-  when (ioTail intOpts) $
-    tailTransaction hash
+  if ioTail intOpts
+  then Just <$> tailTransaction hash
+  else return Nothing
 
 -- |Continuously query and display transaction status until the transaction is finalized.
-tailTransaction :: (MonadIO m) => Types.TransactionHash -> ClientMonad m ()
+tailTransaction_ :: (MonadIO m) => Types.TransactionHash -> ClientMonad m ()
+tailTransaction_ hash = void $ tailTransaction hash
+
+-- |Continuously query and display transaction status until the transaction is finalized.
+-- Returns the TransactionStatusResult of the finalized status.
+tailTransaction :: (MonadIO m) => Types.TransactionHash -> ClientMonad m TransactionStatusResult
 tailTransaction hash = do
   logInfo [ "waiting for the transaction to be committed and finalized"
           , "you may skip this step by interrupting the command using Ctrl-C (pass flag '--no-wait' to do this by default)"
@@ -1112,16 +1164,17 @@ tailTransaction hash = do
 
   when (tsrState finalizedStatus == Absent) $
     logFatal [ "transaction failed after it was committed"
-             , "response:\n" ++ showResponse committedStatus ]
+             , "response:\n" ++ showPrettyJSON committedStatus ]
 
   -- Print out finalized status if the outcome differs from that of the committed status.
   when (tsrResults committedStatus /= tsrResults finalizedStatus) $
     runPrinter $ printTransactionStatus finalizedStatus
 
   liftIO $ printf "[%s] Transaction finalized.\n" =<< getLocalTimeOfDayFormatted
+
+  return finalizedStatus
   where
     getLocalTimeOfDayFormatted = showTimeOfDay <$> getLocalTimeOfDay
-    showResponse = Text.unpack . decodeUtf8 . BSL8.toStrict . AE.encodePretty
 
 -- |Process an 'account ...' command.
 processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -1152,9 +1205,15 @@ processAccountCmd action baseCfgDir verbose backend =
       case v of
         Nothing -> putStrLn "Account not found."
         Just a -> runPrinter $ printAccountInfo na a verbose (showEncrypted || showDecrypted) encKey
+    
     AccountList block -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
       v <- withClientJson backend $ withBestBlockHash block getAccountList
-      runPrinter $ printAccountList v
+      let addrmap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
+      let addname :: ID.AccountAddress -> NamedAddress
+          addname addr = NamedAddress (Map.lookup addr addrmap) addr
+      runPrinter $ printAccountList (map addname v)
+    
     AccountDelegate bakerId txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
 
@@ -1170,7 +1229,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountDelegateTransactionPayload adtxCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountUndelegate txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1187,7 +1246,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountUndelegateTransactionPayload autxCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountUpdateKeys f txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1204,7 +1263,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountUpdateKeysTransactionPayload aukCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountAddKeys f thresh txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1221,7 +1280,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountAddKeysTransactionPayload aakCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountRemoveKeys idxs thresh txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1238,7 +1297,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- accountRemoveKeysTransactionPayload arkCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountEncrypt{..} -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1254,7 +1313,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts aeTransactionOpts
       pl <- accountEncryptTransactionPayload aetxCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountDecrypt{..} -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1278,7 +1337,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
         let intOpts = toInteractionOpts adTransactionOpts
         pl <- accountDecryptTransactionPayload adtxCfg (ioConfirm intOpts)
-        sendAndTailTransaction txCfg pl intOpts
+        sendAndTailTransaction_ txCfg pl intOpts
 
 
   where getDelegateCostFunc acc = withClient backend $ do
@@ -1291,16 +1350,240 @@ processAccountCmd action baseCfgDir verbose backend =
           return $ Just $ accountDelegateEnergyCost is
 
 -- |Process a 'module ...' command.
-processModuleCmd :: ModuleCmd -> Verbose -> Backend -> IO ()
-processModuleCmd action _ backend =
+processModuleCmd :: ModuleCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
+processModuleCmd action baseCfgDir verbose backend =
   case action of
+    ModuleDeploy moduleFile txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+
+      mdCfg <- getModuleDeployTransactionCfg baseCfg txOpts moduleFile
+      let txCfg = mdtcTransactionCfg mdCfg
+
+      let intOpts = toInteractionOpts txOpts
+      let pl = moduleDeployTransactionPayload mdCfg
+      withClient backend $ do
+        mTsr <- sendAndTailTransaction txCfg pl intOpts
+        case extractModRef mTsr of
+          Left "ioTail disabled" -> return ()
+          Left err -> logFatal ["module deployment failed:", err]
+          Right modRef -> logSuccess ["module successfully deployed with reference:", show modRef]
+
     ModuleList block -> do
-      v <- withClient backend $ withBestBlockHash block getModuleList >>= getFromJson
-      runPrinter $ printModuleList v
+      (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getModuleList bb
+      v <- getFromJsonAndHandleError (\_ _ -> logFatal ["could not retrieve the list of modules",
+                                   "the provided block hash is invalid:", Text.unpack bestBlock]) res
+      case v of
+        Nothing -> logFatal ["could not retrieve the list of modules",
+                               "the provided block does not exist:", Text.unpack bestBlock]
+        Just [] -> logInfo ["there are no modules in block " ++ Text.unpack bestBlock]
+        Just xs -> runPrinter $ printModuleList xs
+
+    ModuleShow moduleRef outFile block -> do
+      (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getModuleSource moduleRef bb
+
+      case res of
+        Left err -> logFatal ["I/O error: " ++ err]
+        Right "" -> logInfo ["module with reference " ++ Text.unpack moduleRef
+                            ++ " does not exist in block " ++ Text.unpack bestBlock]
+        Right moduleSource ->
+          case outFile of
+            -- Write to stdout
+            "-" -> BS.putStr moduleSource
+            -- Write to file
+            _   -> handleWriteModuleToFile outFile moduleSource
+  where extractModRef = extractFromTsr (\case
+                                           Types.ModuleDeployed modRef -> Just modRef
+                                           _ -> Nothing)
+
+-- |Writes module to file and asks user to confirm if file already exists.
+-- Relevant IOErrors are caught.
+handleWriteModuleToFile :: FilePath -> BS.ByteString -> IO ()
+handleWriteModuleToFile fileName contents = do
+  fileExists <- doesFileExist fileName
+  confirmed  <- if fileExists
+                then logWarn [fileNameQuoted ++ " already exists."] >> askConfirmation (Just "overwrite it")
+                else pure True
+  when confirmed $
+    Err.catchIOError (BS.writeFile fileName contents >> logSuccess ["successfully wrote the module to " ++ fileNameQuoted]) $
+      \e -> do
+        when (Err.isDoesNotExistError e) $ logError [fileNameQuoted ++ " does not exist and cannot be created"]
+        when (Err.isPermissionError e)   $ logError ["you do not have permissions to write to " ++ fileNameQuoted]
+  where fileNameQuoted = "'" ++ fileName ++ "'"
+
+getModuleDeployTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> IO ModuleDeployTransactionCfg
+getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
+  wasmModule <- getWasmModuleFromFile moduleFile
+  txCfg <- getTransactionCfg baseCfg txOpts $ moduleDeployEnergyCost wasmModule
+  return $ ModuleDeployTransactionCfg txCfg wasmModule
+
+moduleDeployEnergyCost :: Wasm.WasmModule -> AccountConfig -> IO (Maybe (Int -> Types.Energy))
+moduleDeployEnergyCost wasmMod accCfg = pure . Just . const $
+  deployModuleCost payloadSize + headerCost signatureCount payloadSize
+  where
+        -- Ad hoc cost implementation from Concordium.Scheduler.Cost
+        headerCost :: Int -> Int -> Types.Energy
+        headerCost signatureCnt psize = Types.Energy . fromIntegral $ 6 + ((psize + headerSize) `div` 232) + signatureCnt * 53
+
+        -- Ad hoc cost implementation from Concordium.Scheduler.Cost
+        deployModuleCost :: Int -> Types.Energy
+        deployModuleCost psize = Types.Energy . fromIntegral $
+                                  psize * 3 -- typeCheck
+                                  + (5 + (((2 * psize) + 99) `div` 100) * 50) -- storeBytes
+
+        signatureCount = fromIntegral . acThreshold $ accCfg
+        payloadSize = (+ tagSize) . BS.length . S.encode . Wasm.wasmSource $ wasmMod
+        headerSize = 60
+        tagSize = 1
+
+data ModuleDeployTransactionCfg =
+  ModuleDeployTransactionCfg
+  { -- |Configuration for the transaction.
+    mdtcTransactionCfg :: !TransactionConfig
+    -- |The WASM module to deploy.
+  , mdtcModule :: !Wasm.WasmModule }
+
+moduleDeployTransactionPayload :: ModuleDeployTransactionCfg -> Types.Payload
+moduleDeployTransactionPayload ModuleDeployTransactionCfg {..} = Types.DeployModule mdtcModule
 
 -- |Process a 'contract ...' command.
-processContractCmd :: ContractCmd -> Verbose -> Backend -> IO ()
-processContractCmd action _ backend = putStrLn $ "Not yet implemented: " ++ show action ++ ", " ++ show backend
+processContractCmd :: ContractCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
+processContractCmd action baseCfgDir verbose backend =
+  case action of
+    ContractList block -> do
+      (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getInstances bb
+      v <- getFromJsonAndHandleError (\_ _ -> logFatal ["could not retrieve the list of contracts",
+                                   "the provided block hash is invalid:", Text.unpack bestBlock]) res
+      case v of
+        Nothing -> logFatal ["could not retrieve the list of contracts",
+                               "the provided block does not exist:", Text.unpack bestBlock]
+        Just [] -> logInfo ["there are no contract instances in block " ++ Text.unpack bestBlock]
+        Just xs -> runPrinter $ printContractList xs
+
+    ContractShow contrAddrIndex contrAddrSubindex block -> do
+      let contrAddr = showCompactPrettyJSON $ mkContractAddress contrAddrIndex contrAddrSubindex
+      (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getInstanceInfo (Text.pack contrAddr) bb
+
+      case res of
+        Left err -> logFatal ["could not retrieve contract:", err]
+        -- TODO: Handle invalid block hashes and nonexisting blocks separately from nonexisting contracts.
+        Right AE.Null -> logInfo ["the contract instance at address " ++ contrAddr
+                      ++ " does not exist in block " ++ Text.unpack bestBlock]
+        Right contrInfo -> putStr . showPrettyJSON $ contrInfo
+
+    ContractInit moduleRefOrFile initName paramsFile amount txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+
+      ciCfg <- getContractInitTransactionCfg baseCfg txOpts moduleRefOrFile initName paramsFile amount
+      let txCfg = citcTransactionCfg ciCfg
+
+      let intOpts = toInteractionOpts txOpts
+      let pl = contractInitTransactionPayload ciCfg
+      withClient backend $ do
+        mTsr <- sendAndTailTransaction txCfg pl intOpts
+        case extractContractAddress mTsr of
+          Left "ioTail disabled" -> return ()
+          Left err -> logFatal ["contract initialisation failed:", err]
+          Right contrAddr -> logSuccess ["contract successfully initialized with address:", showCompactPrettyJSON contrAddr]
+
+    ContractUpdate contrAddrIndex contrAddrSubindex receiveName paramsFile amount txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+
+      cuCfg <- getContractUpdateTransactionCfg baseCfg txOpts contrAddrIndex contrAddrSubindex receiveName paramsFile amount
+      let txCfg = cutcTransactionCfg cuCfg
+
+      let intOpts = toInteractionOpts txOpts
+      let pl = contractUpdateTransactionPayload cuCfg
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+  where extractContractAddress = extractFromTsr (\case
+                                                 Types.ContractInitialized {..} -> Just ecAddress
+                                                 _ -> Nothing)
+
+getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> Word64 -> Word64
+                                -> Text -> Maybe FilePath -> Types.Amount -> IO ContractUpdateTransactionCfg
+getContractUpdateTransactionCfg baseCfg txOpts contrAddrIndex contrAddrSubindex receiveName paramsFile amount = do
+  txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
+  let contrAddr = mkContractAddress contrAddrIndex contrAddrSubindex
+  params <- getWasmParameterFromFileOrDefault paramsFile
+  return $ ContractUpdateTransactionCfg txCfg contrAddr (Wasm.ReceiveName receiveName) params amount
+
+contractUpdateTransactionPayload :: ContractUpdateTransactionCfg -> Types.Payload
+contractUpdateTransactionPayload ContractUpdateTransactionCfg {..} =
+  Types.Update cutcAmount cutcAddress cutcReceiveName cutcParams
+
+data ContractUpdateTransactionCfg =
+  ContractUpdateTransactionCfg
+  { -- |Configuration for the transaction.
+    cutcTransactionCfg :: !TransactionConfig
+    -- |The address of the contract to invoke.
+  , cutcAddress :: !Types.ContractAddress
+    -- |Name of the receive method to invoke.
+  , cutcReceiveName :: !Wasm.ReceiveName
+    -- |Parameters to the receive method.
+  , cutcParams :: !Wasm.Parameter
+    -- |Amount to transfer to the contract.
+  , cutcAmount :: !Types.Amount
+  }
+
+getContractInitTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> String -> Text
+                              -> Maybe FilePath -> Types.Amount -> IO ContractInitTransactionCfg
+getContractInitTransactionCfg baseCfg txOpts moduleRefOrFile initName paramsFile amount = do
+  moduleRef <- case readMaybe moduleRefOrFile of
+                 Just modRef -> pure modRef
+                 Nothing -> Types.ModuleRef . getHash <$> getWasmModuleFromFile moduleRefOrFile
+  txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
+  params <- getWasmParameterFromFileOrDefault paramsFile
+  return $ ContractInitTransactionCfg txCfg amount moduleRef (Wasm.InitName initName) params
+
+data ContractInitTransactionCfg =
+  ContractInitTransactionCfg
+  { -- |Configuration for the transaction.
+    citcTransactionCfg :: !TransactionConfig
+    -- |Initial amount on the contract's account.
+  , citcAmount :: !Types.Amount
+    -- |Reference of the module (on-chain) in which the contract exist.
+  , citcModuleRef :: !Types.ModuleRef
+    -- |Name of the init method to invoke in that module.
+  , citcInitName :: !Wasm.InitName
+    -- |Parameters to the init method.
+  , citcParams :: !Wasm.Parameter
+  }
+
+contractInitTransactionPayload :: ContractInitTransactionCfg -> Types.Payload
+contractInitTransactionPayload ContractInitTransactionCfg {..} =
+  Types.InitContract citcAmount citcModuleRef citcInitName citcParams
+
+-- |Load a WasmModule from the specified file path.
+-- It defaults to our internal wasmVersion of 0, which essentially is the
+-- on-chain API version.
+getWasmModuleFromFile :: FilePath -> IO Wasm.WasmModule
+getWasmModuleFromFile moduleFile = Wasm.WasmModule 0 <$> BS.readFile moduleFile
+
+-- |Load Wasm Parameters from a binary file if Just, otherwise return mempty.
+getWasmParameterFromFileOrDefault :: Maybe FilePath -> IO Wasm.Parameter
+getWasmParameterFromFileOrDefault paramsFile = case paramsFile of
+  Nothing -> pure . Wasm.Parameter $ BSS.empty
+  Just file -> Wasm.Parameter . BS.toShort <$> BS.readFile file
+
+-- |Construct a Contract Address from an index and a subindex.
+mkContractAddress :: Word64 -> Word64 -> Types.ContractAddress
+mkContractAddress index subindex = Types.ContractAddress (Types.ContractIndex index) (Types.ContractSubindex subindex)
+
+-- |Try to extract event information from a TransactionStatusResult.
+-- The Maybe returned by the supplied function is mapped to Either with an error message.
+extractFromTsr :: (Types.Event -> Maybe a) -> Maybe TransactionStatusResult -> Either String a
+extractFromTsr _ Nothing = Left "ioTail disabled" -- occurs when ioTail is disabled.
+extractFromTsr eventMatcher (Just tsr) = case parseTransactionBlockResult tsr of
+  SingleBlock _ tSummary -> getEvents tSummary >>= maybeToRight "transaction not included in any blocks" . findModRef
+  NoBlocks -> Left "transaction not included in any blocks"
+  _ -> Left "internal server: Finalized chain has split"
+  where
+    getEvents tSum = case Types.tsResult tSum of
+                Types.TxSuccess {..} -> Right vrEvents
+                Types.TxReject {..}  -> Left $ showRejectReason True vrRejectReason
+    findModRef = foldr (\e _ -> eventMatcher e) Nothing
+
+    maybeToRight _ (Just x) = Right x
+    maybeToRight y Nothing  = Left y
 
 -- |Process a 'consensus ...' command.
 processConsensusCmd :: ConsensusCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -1310,10 +1593,14 @@ processConsensusCmd action _baseCfgDir verbose backend =
       v <- withClientJson backend getConsensusStatus
       runPrinter $ printConsensusStatus v
     ConsensusShowParameters b includeBakers -> do
+      baseCfg <- getBaseConfig _baseCfgDir verbose AutoInit
       v <- withClientJson backend $ withBestBlockHash b getBirkParameters
       case v of
         Nothing -> putStrLn "Block not found."
-        Just p -> runPrinter $ printBirkParameters includeBakers p
+        Just p -> runPrinter $ printBirkParameters includeBakers p addrmap
+                    where
+                      addrmap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
+                                          
     ConsensusChainUpdate rawUpdateFile authsFile keysFiles intOpts -> do
       let
         loadJSON :: (FromJSON a) => FilePath -> IO a
@@ -1363,7 +1650,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
           Right False -> fail "update instruction not accepted by the node"
           Right True -> logSuccess [printf "update instruction '%s' sent to the baker" (show hash)]
         when (ioTail intOpts) $
-          tailTransaction hash
+          tailTransaction_ hash
 
 -- |Process a 'block ...' command.
 processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
@@ -1433,7 +1720,7 @@ processBakerCmd action baseCfgDir verbose backend =
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
-          tailTransaction hash
+          tailTransaction_ hash
 --          logSuccess [ "baker successfully added" ]
     BakerSetAccount bid accRef txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1458,7 +1745,7 @@ processBakerCmd action baseCfgDir verbose backend =
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
-          tailTransaction hash
+          tailTransaction_ hash
 --          logSuccess [ "baker reward account successfully updated" ]
     BakerSetKey bid file txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1471,7 +1758,7 @@ processBakerCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- bakerSetKeyTransactionPayload bsktcCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     BakerRemove bid txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1484,7 +1771,7 @@ processBakerCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       pl <- bakerRemoveTransactionPayload brtcCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     BakerSetAggregationKey bid file txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1497,7 +1784,7 @@ processBakerCmd action baseCfgDir verbose backend =
       let txCfg = bsakTransactionCfg bsaktCfg
 
       pl <- bakerSetAggregationKeyTransactionPayload bsaktCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     BakerSetElectionKey bid file txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -1511,13 +1798,13 @@ processBakerCmd action baseCfgDir verbose backend =
 
       withClient backend $ do
         tx <- startTransaction (bsekTransactionCfg bsektCfg) pl (ioConfirm intOpts) Nothing
-        tailTransaction $ getBlockItemHash tx
+        tailTransaction_ $ getBlockItemHash tx
 --          logSuccess [ "baker election key successfully updated" ]
 
 
 -- |Resolve configuration of a 'baker update' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
-getBakerSetAccountTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> AccountSigningData -> IO BakerSetAccountTransactionConfig
+getBakerSetAccountTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.BakerId -> AccountSigningData -> IO BakerSetAccountTransactionConfig
 getBakerSetAccountTransactionCfg baseCfg txOpts bid asd = do
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return BakerSetAccountTransactionConfig
@@ -1526,7 +1813,7 @@ getBakerSetAccountTransactionCfg baseCfg txOpts bid asd = do
     , bsatcAccountSigningData = asd }
   where nrgCost _ = return $ Just bakerSetAccountEnergyCost
 
-getBakerSetKeyTransactionCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerSetKeyTransactionConfig
+getBakerSetKeyTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.BakerId -> FilePath -> IO BakerSetKeyTransactionConfig
 getBakerSetKeyTransactionCfg baseCfg txOpts bid f = do
   kp <- eitherDecodeFileStrict f >>= getFromJson
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
@@ -1536,7 +1823,7 @@ getBakerSetKeyTransactionCfg baseCfg txOpts bid f = do
     , bsktcKeyPair = kp }
   where nrgCost _ = return $ Just bakerSetKeyEnergyCost
 
-getBakerSetAggregationKeyCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerSetAggregationKeyTransactionConfig
+getBakerSetAggregationKeyCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.BakerId -> FilePath -> IO BakerSetAggregationKeyTransactionConfig
 getBakerSetAggregationKeyCfg baseCfg txOpts bid file = do
   eitherDecodeFileStrict file >>= \case
     Left err -> logFatal [printf "Cannot read supplied file: %s" err]
@@ -1557,7 +1844,7 @@ getBakerSetAggregationKeyCfg baseCfg txOpts bid file = do
               }
   where nrgCost _ = return $ Just bakerSetAggregationKeyEnergyCost
 
-getBakerSetElectionKeyCfg :: BaseConfig -> TransactionOpts -> Types.BakerId -> FilePath -> IO BakerSetElectionKeyTransactionConfig
+getBakerSetElectionKeyCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.BakerId -> FilePath -> IO BakerSetElectionKeyTransactionConfig
 getBakerSetElectionKeyCfg baseCfg txOpts bid file = do
   kp :: VRF.KeyPair <- eitherDecodeFileStrict file >>= getFromJson
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
@@ -1987,11 +2274,11 @@ processCredential source networkId =
 convertTransactionJsonPayload :: (MonadFail m) => CT.TransactionJSONPayload -> ClientMonad m Types.Payload
 convertTransactionJsonPayload = \case
   (CT.DeployModule _) ->
-    fail "DeployModule is not implemented"
+    fail "Use 'module deploy' instead."
   (CT.InitContract _ _ _ _) ->
-    fail "InitContract is not implemented"
+    fail "Use 'contract init' instead."
   (CT.Update _ _ _ _) ->
-    fail "Update is not implemented"
+    fail "Use 'contract update' instead."
   (CT.Transfer transferTo transferAmount) ->
     return $ Types.Transfer transferTo transferAmount
   (CT.RemoveBaker rbid) -> return $ Types.RemoveBaker rbid
