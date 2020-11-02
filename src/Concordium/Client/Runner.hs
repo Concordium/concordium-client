@@ -313,7 +313,7 @@ processConfigCmd action baseCfgDir verbose =
 
               let accCfg' = accCfg { acThreshold = fromMaybe (acThreshold accCfg) threshold }
               removeAccountKeys baseCfg accCfg' (HSet.toList idxsToRemove) verbose
-      ConfigAccountUpdateThreshold addr threshold -> do
+      ConfigAccountSetThreshold addr threshold -> do
         baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
