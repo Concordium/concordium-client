@@ -5,6 +5,8 @@ import Concordium.ID.Types
 import Concordium.Client.Output
 import Concordium.Types
 
+import qualified Data.HashMap.Strict as HM
+
 import Control.Monad.Writer
 import Data.Time.Clock
 import Data.Time.Format
@@ -65,30 +67,34 @@ consensusStatusSpec = describe "status" $ do
 
 consensusShowParametersSpec :: Spec
 consensusShowParametersSpec = describe "show parameters" $ do
-  specify "not including bakers" $ p False exampleBirkParameters `shouldBe`
+  specify "not including bakers" $ p False exampleBirkParameters addrmap `shouldBe`
     [ "Election nonce:      50ab4065c5a8194fbd7f3acf06267c7d8023fce9b3b658a74f3a927599eb9322"
     ] -- , "Election difficulty: 0.12" ]
-  specify "including bakers" $ p True exampleBirkParameters `shouldBe`
+  specify "including bakers" $ p True exampleBirkParameters addrmap `shouldBe`
     [ "Election nonce:      50ab4065c5a8194fbd7f3acf06267c7d8023fce9b3b658a74f3a927599eb9322"
     -- , "Election difficulty: 0.12"
     , "Bakers:"
-    , "                             Account                       Lottery power"
-    , "        ----------------------------------------------------------------"
-    , "     1: 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6   10.0000 %"
-    , "    12: 4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y    2.0000 %"
-    , "    13: 4p2n8QQn5akq3XqAAJt2a5CsnGhDvUon6HExd2szrfkZCTD4FX   <0.0001 %" ]
-  specify "including bakers (empty)" $ p True exampleBirkParametersNoBakers `shouldBe`
+    , "                             Account                       Lottery power  Account Name"
+    , "        ------------------------------------------------------------------------------"
+    , "     1: 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6   10.0000 %  account1"
+    , "    12: 4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y    2.0000 %   "
+    , "    13: 4p2n8QQn5akq3XqAAJt2a5CsnGhDvUon6HExd2szrfkZCTD4FX   <0.0001 %  account2" ]
+  specify "including bakers (empty)" $ p True exampleBirkParametersNoBakers addrmap `shouldBe`
     [ "Election nonce:      50ab4065c5a8194fbd7f3acf06267c7d8023fce9b3b658a74f3a927599eb9322"
     -- , "Election difficulty: 0.12"
     , "Bakers:              none" ]
-  specify "including bakers (single one with 100% stake)" $ p True exampleBirkParametersSingleBakerWithAllStake `shouldBe`
+  specify "including bakers (single one with 100% stake)" $ p True exampleBirkParametersSingleBakerWithAllStake addrmap `shouldBe`
     [ "Election nonce:      50ab4065c5a8194fbd7f3acf06267c7d8023fce9b3b658a74f3a927599eb9322"
     -- , "Election difficulty: 0.12"
     , "Bakers:"
-    , "                             Account                       Lottery power"
-    , "        ----------------------------------------------------------------"
-    , "     1: 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6  100.0000 %" ]
-  where p includeBakers = execWriter . printBirkParameters includeBakers
+    , "                             Account                       Lottery power  Account Name"
+    , "        ------------------------------------------------------------------------------"
+    , "     1: 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6  100.0000 %  account1" ]
+  where 
+    p includeBakers bparams = execWriter . printBirkParameters includeBakers bparams
+    addrmap = HM.fromList [(acc1, "account1"), (acc2, "account2")]
+    Right acc1 = addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+    Right acc2 = addressFromText "4p2n8QQn5akq3XqAAJt2a5CsnGhDvUon6HExd2szrfkZCTD4FX"
 
 exampleStatusWithOptionalFields :: ConsensusStatusResult
 exampleStatusWithOptionalFields =
