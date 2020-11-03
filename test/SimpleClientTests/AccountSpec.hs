@@ -91,12 +91,12 @@ examplePolicyWithItemOutOfRange = IDTypes.Policy
 
 printAccountListSpec :: Spec
 printAccountListSpec = describe "printAccountList" $ do
-  specify "empty" $ p [] `shouldBe` ["Accounts:none"]
+  specify "empty" $ p [] `shouldBe` ["Accounts: none"]
   specify "single" $ p [exampleAddress] `shouldBe`
     ["Accounts:"
-      , "                     Account Address                Account Name"
-      , "----------------------------------------------------------------"
-      ,"2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6     example"]
+      , "                 Account Address                     Account Name"
+      , "-------------------------------------------------------------------"
+      , "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6   example"]
   where p = execWriter . printAccountList
 
 printAccountInfoSpec :: Spec

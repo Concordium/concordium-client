@@ -81,8 +81,9 @@ printBaseConfig cfg = do
       else do
         tell [[i|- #{variantName} name map:|]]
         printMap (showEntry showVal) $ toSortedList m
-    showEntry :: Show k => (v -> String) -> (k, v) -> String
-    showEntry showVal (n, a) = [i|    #{show n} -> #{showVal a}|]
+    showEntry :: (v -> String) -> (Text, v) -> String
+    showEntry showVal (n, a) = [i|    #{n} -> #{a'}|] :: String
+      where a' = showVal a
 
 printAccountConfig :: AccountConfig -> Printer
 printAccountConfig cfg = do

@@ -68,7 +68,11 @@ type ContractConfigDir = FilePath
 
 -- |Serialize to JSON and pretty-print.
 showPrettyJSON :: AE.ToJSON a => a -> String
-showPrettyJSON = unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty' config
+showPrettyJSON = unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty
+
+-- |Serialize to JSON, order by keys, and pretty-print.
+showSortedPrettyJSON :: AE.ToJSON a => a -> String
+showSortedPrettyJSON = unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty' config
   where config = AE.defConfig { AE.confCompare = compare }
 
 -- |Serialize to JSON, order by keys, and pretty-print without whitespace.
@@ -359,7 +363,7 @@ instance Show NamedModuleRef where
 
 -- |Write the name map to a file in a pretty JSON format.
 writeNameMapAsJSON :: AE.ToJSON v => Verbose -> FilePath -> NameMap v -> IO ()
-writeNameMapAsJSON verbose file =  handledWriteFile file . showPrettyJSON
+writeNameMapAsJSON verbose file =  handledWriteFile file . showSortedPrettyJSON
   where handledWriteFile = handleWriteFile writeFile AllowOverwrite verbose
 
 -- |Write the name map to a file in the expected format.
@@ -539,7 +543,7 @@ validateAccountName name =
   unless (isValidAccountName name) $
   throwError [iii|invalid name '#{name}' (should not be empty or start/end with whitespace
                   and consist of letters, numbers, space, '.', ',', '!',
-                  '?', '-', and '_' only)"|]
+                  '?', '-', and '_' only)|]
 
 -- |Check whether the given text is a valid contract or module name and fail with an error message if it is not.
 validateContractOrModuleName :: (MonadError String m) => Text -> m ()
@@ -547,7 +551,7 @@ validateContractOrModuleName name =
   unless (isValidContractOrModuleName name) $
   throwError [iii|invalid name '#{name}' (should start with a letter and not end with whitespace
                   and should otherwise consist of letters, numbers, space, '.', ',', '!',
-                  '?', '-', and '_' only)"|]
+                  '?', '-', and '_' only)|]
 
 data AccountConfig =
   AccountConfig
