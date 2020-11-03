@@ -1554,13 +1554,13 @@ contractInitTransactionPayload ContractInitTransactionCfg {..} =
 -- It defaults to our internal wasmVersion of 0, which essentially is the
 -- on-chain API version.
 getWasmModuleFromFile :: FilePath -> IO Wasm.WasmModule
-getWasmModuleFromFile moduleFile = (Wasm.WasmModule 0 <$> handleReadFile BS.readFile moduleFile)
+getWasmModuleFromFile moduleFile = Wasm.WasmModule 0 <$> handleReadFile BS.readFile moduleFile
 
 -- |Load Wasm Parameters from a binary file if Just, otherwise return mempty.
 getWasmParameterFromFileOrDefault :: Maybe FilePath -> IO Wasm.Parameter
 getWasmParameterFromFileOrDefault paramsFile = case paramsFile of
   Nothing -> pure . Wasm.Parameter $ BSS.empty
-  Just file -> (Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile file)
+  Just file -> Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile file
 
 -- |Try to parse the input as a module reference and assume it is a path if it fails.
 getModuleRefFromRefOrFile :: String -> IO Types.ModuleRef

@@ -1,18 +1,21 @@
 module SimpleClientTests.ConfigSpec where
 
 import Concordium.Client.Config
-import Concordium.Client.Output
 import Concordium.Client.Encryption
-import qualified Concordium.Crypto.ByteStringHelpers as BSH
-import qualified Concordium.ID.Types as IDTypes
+import Concordium.Client.Output
 import Concordium.Client.Types.Account
+import qualified Concordium.ID.Types as IDTypes
+import qualified Concordium.Crypto.ByteStringHelpers as BSH
+import qualified Concordium.Types as Types
+import Concordium.Types.HashableTo (getHash)
 
 import Control.Monad.Writer
+import qualified Data.Aeson as AE
+import qualified Data.ByteString as BS
 import qualified Data.HashMap.Strict as M
+import Data.Maybe
 import Data.Text
 import Test.Hspec
-import qualified Data.Aeson as AE
-import Data.Maybe
 import Text.Printf
 
 testPassword :: String
@@ -26,7 +29,7 @@ configSpec = describe "config" $ do
   printSpec
 
 invalidNameMsg :: String -> String
-invalidNameMsg n = "invalid account name '" ++ n ++ "' (should not be empty or start/end with whitespace and consist of letters, numbers, space, '.', ',', '!', '?', '-', and '_' only)"
+invalidNameMsg n = "invalid name '" ++ n ++ "' (should not be empty or start/end with whitespace and consist of letters, numbers, space, '.', ',', '!', '?', '-', and '_' only)"
 
 parseAccountNameMapEntrySpec :: Spec
 parseAccountNameMapEntrySpec = describe "parseAccountNameEntryMap" $ do
@@ -104,14 +107,24 @@ printBaseConfigSpec = describe "base config" $ do
     [ "Base configuration:"
     , "- Verbose:            yes"
     , "- Account config dir: /some/path"
+    , "- Contract config dir: /some/path"
     , "- Account name map:"
-    , "    name1 -> 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-    , "    name2 -> 4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y" ]
-  specify "without map" $ p exampleBaseConfigWithoutAccountNameMap `shouldBe`
+    , "    accName1 -> 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+    , "    accName2 -> 4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y"
+    , "- Contract name map:"
+    , "    contrName1 -> {\"index\":0,\"subindex\":0}"
+    , "    contrName2 -> {\"index\":1,\"subindex\":0}"
+    , "- Module name map:"
+    , "    modName1 -> de0cd794099a5e03c2131d662d423164111d3b78d5122970197cd7e1937ed0e4"
+    , "    modName2 -> 3bdc9752a50026c173ce5e1e344b09bc131b04ba15e9f870e23c53490a51b840"]
+  specify "without map" $ p exampleBaseConfigWithoutNameMaps `shouldBe`
     [ "Base configuration:"
     , "- Verbose:            no"
     , "- Account config dir: /some/other/path"
-    , "- Account name map:   none" ]
+    , "- Contract config dir: /some/other/path"
+    , "- Account name map:   none"
+    , "- Contract name map:   none"
+    , "- Module name map:   none" ]
   where p = execWriter . printBaseConfig
 
 printAccountConfigSpec :: Spec
@@ -155,14 +168,14 @@ exampleBaseConfigWithAccountNameMap :: BaseConfig
 exampleBaseConfigWithAccountNameMap =
   BaseConfig
   { bcVerbose = True
-  , bcAccountNameMap = M.fromList [("name1", exampleAccountAddress1), ("name2", exampleAccountAddress2)]
+  , bcAccountNameMap = M.fromList [("accName1", exampleAccountAddress1), ("accName2", exampleAccountAddress2)]
   , bcAccountCfgDir = "/some/path"
-  , bcContractNameMap = M.empty
-  , bcModuleNameMap = M.empty
+  , bcContractNameMap = M.fromList [("contrName1", exampleContractAddress1), ("contrName2", exampleContractAddress2)]
+  , bcModuleNameMap = M.fromList [("modName1", exampleModuleRef1), ("modName2", exampleModuleRef2)]
   , bcContractCfgDir = "/some/path"}
 
-exampleBaseConfigWithoutAccountNameMap :: BaseConfig
-exampleBaseConfigWithoutAccountNameMap =
+exampleBaseConfigWithoutNameMaps :: BaseConfig
+exampleBaseConfigWithoutNameMaps =
   BaseConfig
   { bcVerbose = False
   , bcAccountNameMap = M.empty
@@ -242,3 +255,15 @@ Right exampleAccountAddress1 = IDTypes.addressFromText "2zR4h351M1bqhrL9UywsbHrP
 
 exampleAccountAddress2 :: IDTypes.AccountAddress
 Right exampleAccountAddress2 = IDTypes.addressFromText "4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y"
+
+exampleContractAddress1 :: Types.ContractAddress
+exampleContractAddress1 = Types.ContractAddress (Types.ContractIndex 0) (Types.ContractSubindex 0)
+
+exampleContractAddress2 :: Types.ContractAddress
+exampleContractAddress2 = Types.ContractAddress (Types.ContractIndex 1) (Types.ContractSubindex 0)
+
+exampleModuleRef1 :: Types.ModuleRef
+exampleModuleRef1 = Types.ModuleRef $ getHash ("ref1" :: BS.ByteString) -- Hash: de0cd794099a5e03c2131d662d423164111d3b78d5122970197cd7e1937ed0e4
+
+exampleModuleRef2 :: Types.ModuleRef
+exampleModuleRef2 = Types.ModuleRef $ getHash ("ref2" :: BS.ByteString) -- Hash: 3bdc9752a50026c173ce5e1e344b09bc131b04ba15e9f870e23c53490a51b840

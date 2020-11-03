@@ -191,7 +191,7 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
   importAccount :: ImportAccountRequest -> Handler ()
   importAccount ImportAccountRequestMobile{..} = do
     -- init configuration if missing
-    baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False AutoInit
+    baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False
     accCfgs <- ((liftIO $ decodeMobileFormattedAccountExport (Text.encodeUtf8 contents) Nothing (passwordFromText password))
                  `embedServerErrM` err400) Just
     void $ ((liftIO $ importAccountConfigEither baseCfg accCfgs False) `embedServerErrM` err400) Just
@@ -201,7 +201,7 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
    where go :: IO [GetAccountsResponseItem]
          go = do
              -- get base config
-             baseCfg <- getBaseConfig (Just cfgDir) False AutoInit
+             baseCfg <- getBaseConfig (Just cfgDir) False
              -- get all accounts
              allAccs <- Prelude.map (naAddr . acAddr) <$> getAllAccountConfigs baseCfg
              let named = HM.toList $ bcAccountNameMap baseCfg
@@ -214,7 +214,7 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
   addBaker :: AddBakerRequest -> Handler AddBakerResponse
   addBaker AddBakerRequest{..} = do
       -- get base configuration
-      baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False AutoInit
+      baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False
       -- generate options for the transaction
       accCfg' <- wrapIOError $ snd <$> getAccountConfig sender baseCfg Nothing Nothing Nothing AssumeInitialized
       let accCfg = accCfg' { acThreshold = fromIntegral (HM.size $ acKeys accCfg') }
@@ -251,7 +251,7 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
   removeBaker :: RemoveBakerRequest -> Handler RemoveBakerResponse
   removeBaker RemoveBakerRequest{..} = do
       -- get base configuration
-      baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False AutoInit
+      baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False
       -- generate options for the transaction
       accCfg' <- wrapIOError $ snd <$> getAccountConfig sender baseCfg Nothing Nothing Nothing AssumeInitialized
       let accCfg = accCfg' { acThreshold = fromIntegral (HM.size $ acKeys accCfg') }
