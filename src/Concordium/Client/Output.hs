@@ -1,5 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE QuasiQuotes #-}
 module Concordium.Client.Output where
 
 import Concordium.Client.Cli
@@ -25,6 +26,7 @@ import qualified Data.HashMap.Strict as HM
 import Data.List
 import Data.Maybe
 import qualified Data.Map.Strict as M
+import Data.String.Interpolate (i)
 import Data.Text (Text, pack, unpack)
 import Data.Time
 import Lens.Micro.Platform
@@ -64,17 +66,23 @@ showTimeOfDay = formatTime defaultTimeLocale "%T"
 
 printBaseConfig :: BaseConfig -> Printer
 printBaseConfig cfg = do
-  tell [ printf "Base configuration:"
-       , printf "- Verbose:            %s" (showYesNo $ bcVerbose cfg)
-       , printf "- Account config dir: %s" (bcAccountCfgDir cfg) ]
-  printAccountNameMap $ bcAccountNameMap cfg
-  where printAccountNameMap m =
-          if null m then
-            tell [ "- Account name map:   " ++ showNone ]
-          else do
-            tell [ "- Account name map:"]
-            printMap showEntry $ toSortedList m
-        showEntry (n, a) = printf "    %s -> %s" n (show a)
+  tell [ "Base configuration:"
+       , [i|- Verbose:            #{showYesNo $ bcVerbose cfg}|]
+       , [i|- Account config dir: #{bcAccountCfgDir cfg}|]
+       , [i|- Contract config dir: #{bcContractCfgDir cfg}|]]
+  printNameMap "Account" show $ bcAccountNameMap cfg
+  printNameMap "Contract" showCompactPrettyJSON $ bcContractNameMap cfg
+  printNameMap "Module" show $ bcModuleNameMap cfg
+  where
+    printNameMap :: String -> (v -> String) -> NameMap v -> Printer
+    printNameMap variantName showVal m =
+      if null m then
+        tell [[i|- #{variantName} name map:   #{showNone}|]]
+      else do
+        tell [[i|- #{variantName} name map:|]]
+        printMap (showEntry showVal) $ toSortedList m
+    showEntry :: Show k => (v -> String) -> (k, v) -> String
+    showEntry showVal (n, a) = [i|    #{show n} -> #{showVal a}|]
 
 printAccountConfig :: AccountConfig -> Printer
 printAccountConfig cfg = do
