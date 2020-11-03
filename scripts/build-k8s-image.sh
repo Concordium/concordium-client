@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -e
+set -ex
 
 if [ ! -z "$JENKINS_HOME" ]; then
   if [[ $# -ge 1 ]]; then

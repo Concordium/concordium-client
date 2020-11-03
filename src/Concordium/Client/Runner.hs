@@ -99,6 +99,7 @@ import qualified Data.Set                            as Set
 import           Data.String
 import           Data.String.Interpolate (i)
 import           Data.Text(Text)
+import qualified Data.Tuple                          as Tuple
 import qualified Data.Text                           as Text
 import qualified Data.Vector                         as Vec
 import           Data.Word
@@ -1176,9 +1177,15 @@ processAccountCmd action baseCfgDir verbose backend =
       case v of
         Nothing -> putStrLn "Account not found."
         Just a -> runPrinter $ printAccountInfo na a verbose (showEncrypted || showDecrypted) encKey
+    
     AccountList block -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
       v <- withClientJson backend $ withBestBlockHash block getAccountList
-      runPrinter $ printAccountList v
+      let addrmap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
+      let addname :: ID.AccountAddress -> NamedAddress
+          addname addr = NamedAddress (Map.lookup addr addrmap) addr
+      runPrinter $ printAccountList (map addname v)
+    
     AccountDelegate bakerId txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
 
@@ -1616,10 +1623,14 @@ processConsensusCmd action _baseCfgDir verbose backend =
       v <- withClientJson backend getConsensusStatus
       runPrinter $ printConsensusStatus v
     ConsensusShowParameters b includeBakers -> do
+      baseCfg <- getBaseConfig _baseCfgDir verbose
       v <- withClientJson backend $ withBestBlockHash b getBirkParameters
       case v of
         Nothing -> putStrLn "Block not found."
-        Just p -> runPrinter $ printBirkParameters includeBakers p
+        Just p -> runPrinter $ printBirkParameters includeBakers p addrmap
+                    where
+                      addrmap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
+                                          
     ConsensusChainUpdate rawUpdateFile authsFile keysFiles intOpts -> do
       let
         loadJSON :: (FromJSON a) => FilePath -> IO a
