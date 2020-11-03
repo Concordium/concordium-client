@@ -207,28 +207,50 @@ printCred c =
                Nothing -> printf "invalid expiration time '%s'" e
                Just t -> showTimeYearMonth t
 
+-- |Print a list of accounts along with optional names.
 printAccountList :: [NamedAddress] -> Printer
-printAccountList accs = 
-  case accs of 
-    [] -> tell ["Accounts:" ++ showNone]
-    _ -> do 
-      let formatText :: NamedAddress -> Text
-          formatText na = (pack (show (naAddr na))) <>  "     " <> fromMaybe " "  (naName na)
-      tell [ "Accounts:"
-            , printf "                     Account Address                Account Name"
-            , printf "----------------------------------------------------------------" ]
-      tell (map unpack (map formatText accs))
+printAccountList = printNameList "Accounts" header format
+  where header = [ "Accounts:"
+                 , "                 Account Address                     Account Name"
+                 , "-------------------------------------------------------------------" ]
+        format NamedAddress{..} = [i|#{naAddr}   #{name}|]
+          where name = fromMaybe " " naName
 
+-- |Print a list of modules along with optional names.
 printModuleList :: ModuleNameMap -> [Types.ModuleRef] -> Printer
-printModuleList nameMap refs = tell . map show $ namedModRefs
+printModuleList nameMap refs = printNameList "Modules" header format namedModRefs
   where namedModRefs = map (\ref -> NamedModuleRef {nmrRef = ref, nmrName = HM.lookup ref nameMapInv}) refs
         nameMapInv = invertHashMap nameMap
+        header = [ "Modules:"
+                 , "                        Module Reference                           Module Name"
+                 , "--------------------------------------------------------------------------------" ]
+        format NamedModuleRef{..} = [i|#{nmrRef}   #{name}|]
+          where name = fromMaybe " " nmrName
 
--- |Print a list of contracts (along with optional names) using Show from NameContractAddress.
+-- |Print a list of contracts along with optional names.
 printContractList :: ContractNameMap -> [Types.ContractAddress] -> Printer
-printContractList nameMap addrs = tell . map show $ namedContrAddrs
+printContractList nameMap addrs = printNameList "Contracts" header format namedContrAddrs
   where namedContrAddrs = map (\addr -> NamedContractAddress {ncaAddr = addr, ncaName = HM.lookup addr nameMapInv}) addrs
         nameMapInv = invertHashMap nameMap
+        header = [ "Contracts:"
+                 , "    Contract Address       Contract Name"
+                 , "------------------------------------------" ]
+        format NamedContractAddress{..} = [i|#{addr}   #{name}|]
+          where addr = showCompactPrettyJSON ncaAddr
+                name = fromMaybe " " ncaName
+
+-- |Print a header and a list of named items in the provided format.
+printNameList :: String -> [String] -> (a -> String) -> [a] -> Printer
+printNameList variantName header format xs =
+  case xs of
+    [] -> tell [[i|#{variantName}: #{showNone}|]]
+    _  -> do
+      -- TODO: Use a proper formatter tool.
+      tell header
+      tell $ map format xs
+
+nameSpacing :: Text
+nameSpacing = pack $ replicate 10 ' '
 
 -- |Invert a hash map. Note that if any `v` is duplicated, then the _last_ one is used.
 invertHashMap :: (Eq v, Hashable v) => HM.HashMap k v -> HM.HashMap v k

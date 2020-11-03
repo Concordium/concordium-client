@@ -333,7 +333,7 @@ addContractOrModuleNameAndWrite verbose mapFile nameMap showVal name val = case 
     liftIO $ writeNameMapAsJSON verbose mapFile nameMap'
   where namingError = "Name was not added:"
 
--- |Primarily used to show contract addresses along with their names in a consistent manner.
+-- |A contract address along with an optional name.
 data NamedContractAddress =
   NamedContractAddress { ncaAddr :: Types.ContractAddress -- ^ The contract address.
                        , ncaName :: Maybe Text            -- ^ The optional contract name.
@@ -345,7 +345,8 @@ instance Show NamedContractAddress where
     Nothing -> ncaAddr'
     where ncaAddr' = showCompactPrettyJSON ncaAddr
 
--- |Primarily used to show module references along with their names in a consistent manner.
+
+-- |A module reference along with an optional name.
 data NamedModuleRef =
   NamedModuleRef { nmrRef  :: Types.ModuleRef -- ^ The module reference.
                  , nmrName :: Maybe Text      -- ^ The optional contract name.
