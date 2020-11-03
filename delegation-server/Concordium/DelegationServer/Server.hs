@@ -60,7 +60,7 @@ runHttp middlewares = do
   env <- Config.lookupEnv "ENV" Config.Development
   nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:11100"
   rpcPassword <- Config.lookupEnvText "RPC_PASSWORD" "rpcadmin"
-  numDelegators <- Config.lookupEnv "NUM_DELEGATORS" 4
+  numDelegators <- Config.lookupEnv "NUM_DELEGATORS" 3
   cfgDir <- T.unpack <$> (Config.lookupEnvText "ACC_DIR" . T.pack =<< getDefaultBaseConfigDir)
   let (nodeHost, nodePort) =
         case splitOn ":" (T.unpack nodeUrl) of
