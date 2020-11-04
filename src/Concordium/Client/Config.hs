@@ -44,14 +44,14 @@ The layout of the config directory is shown in this example:
   ├── accounts
   │   ├── names.map
   │   ├── <account1>
-  │   │   └── keypair0.json
-  │   │   └── keypair1.json
+  │   │   ├── keypair0.json
+  │   │   ├── keypair1.json
   │   │   ...
   │   │   └── encSecretKey.json
   │   ├── <account1>.threshold
   │   ├── <account2>
-  │   │   └── keypair0.json
-  │   │   └── keypair1.json
+  │   │   ├── keypair0.json
+  │   │   ├── keypair1.json
   │   │   ...
   │   │   └── encSecretKey.json
   │   └── <account2>.threshold
