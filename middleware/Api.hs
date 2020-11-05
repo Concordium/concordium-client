@@ -43,7 +43,6 @@ import           Concordium.Client.Config
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
 import           Concordium.Types.HashableTo
-import qualified Concordium.Types.Transactions as Types
 import qualified Concordium.Types.Execution as Execution
 import           Concordium.Client.Types.Account
 import           Control.Monad.Except
@@ -345,17 +344,6 @@ runGRPC envData c =
   runClient envData c >>= \case
     Left err -> liftIO $ fail (show err)
     Right x -> return x
-
-
-deployCredential :: EnvData -> IDTypes.CredentialDeploymentInformation -> IO Types.TransactionHash
-deployCredential nodeBackend cdi = do
-  let toDeploy = Types.CredentialDeployment cdi
-  let cdiHash = getHash toDeploy :: Types.TransactionHash
-
-  putStrLn $ "✅ Credentials sent to the baker and hooked: " ++ show cdiHash
-
-  runGRPC nodeBackend (cdiHash <$ sendTransactionToBaker toDeploy 100)
-
 
 runTransaction :: EnvData -> TransactionJSONPayload -> Account -> IO Types.TransactionHash
 runTransaction nodeBackend payload (address, keyMap) = do
