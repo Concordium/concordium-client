@@ -191,18 +191,23 @@ printAccountInfo addr a verbose showEncrypted mEncKey= do
 
 -- |Print a versioned credential. This only prints the credential value, and not the
 -- associated version.
-printVersionedCred :: (Versioned IDTypes.CredentialDeploymentValues) -> Printer
+printVersionedCred :: (Versioned IDTypes.AccountCredential) -> Printer
 printVersionedCred vc = printCred (vValue vc)
 
 -- |Print the registration id, expiry date, and revealed attributes of a credential.
-printCred :: IDTypes.CredentialDeploymentValues -> Printer
+printCred :: IDTypes.AccountCredential -> Printer
 printCred c =
-  tell [ printf "* %s:" (show $ IDTypes.cdvRegId c)
+  tell [ printf "* %s:" (show $ IDTypes.regId c)
        , printf "  - Expiration: %s" expiry
+       , printf "  - Type: %s" credType
        , printf "  - Revealed attributes: %s" (showRevealedAttributes attrs) ]
   where
-    p = IDTypes.cdvPolicy c
-    e = show $ IDTypes.pValidTo p
+    p = IDTypes.policy c
+    e = show $ IDTypes.validTo c
+    credType :: String =
+      case IDTypes.credentialType c of
+        IDTypes.Initial -> "initial"
+        IDTypes.Normal -> "normal"
     attrs = IDTypes.pItems p
     expiry = case parseCredExpiry e of
                Nothing -> printf "invalid expiration time '%s'" e

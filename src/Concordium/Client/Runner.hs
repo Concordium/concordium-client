@@ -341,7 +341,7 @@ loadAccountImportFile format file name = do
       accCfgs <- decodeMobileFormattedAccountExport contents name pwd `withLogFatalIO` ("cannot import accounts: " ++)
 
       logInfo ["loaded account(s):"]
-      forM_ accCfgs $ \AccountConfig{acAddr=NamedAddress{..}} -> logInfo [printf "- %s (%s)" (show naAddr) (maybe "-" show naName)]
+      forM_ accCfgs $ \AccountConfig{acAddr=NamedAddress{..}} -> logInfo [printf "- %s (%s)" (show naAddr) (fromMaybe (Text.pack "-") naName)]
       logInfo ["all signing keys have been encrypted with the password used for this import."]
 
       when (null accCfgs) $ logWarn ["no accounts selected for import"]
