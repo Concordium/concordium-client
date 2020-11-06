@@ -36,6 +36,11 @@ encAmount1 = fromJust $ AE.decode "\"b15c03d419e05b657257c6016b92788d3cc1cb48ad2
 encAmount2 :: EncryptedAmount
 encAmount2 = fromJust $ AE.decode "\"9450b8ace9ad5a22e8eea743244bf929e69de3d2c8445d34278d23c6c72dfbf2c1a6fc7fabd4eb3bd7752a0765255ea0963748ddc6bc87040627533b1a3ce76318734cf3cc9dd9b05fd8dfe5c31f51addc68f41b43f764a36f03097c1d1dda12926b233d1f2efdd8f1c143c7a63c5575e1a9f5fac7e265d33ba769f6396db6c91da16e9ddf85b1ec7fc0cbcb4afbd9e491a755540bdf8a42cb46e32f9de7c8986e77a6d111e9fac32524183415cce14ddff3ca5795b5abdc1ad0a1397853a4a3\""
 
+dummyTransactionHash1 :: Types.TransactionHash
+dummyTransactionHash1 = fromJust . AE.decode $ "\"f26a45adbb7d5cbefd9430d1eac665bd225fb3d8e04efb288d99a0347f0b8868\""
+dummyTransactionHash2 :: Types.TransactionHash
+dummyTransactionHash2 = fromJust . AE.decode $ "\"b041315fe35a8bdf836647037c24c8e87402547c82aea568c66ee18aa3091326\""
+
 exampleAccountInfoResult :: Maybe Types.BakerId -> [IDTypes.AccountCredential] -> AccountInfoResult
 exampleAccountInfoResult d cs = AccountInfoResult
                                 { airAmount = Types.Amount 1
@@ -43,6 +48,7 @@ exampleAccountInfoResult d cs = AccountInfoResult
                                 , airDelegation = d
                                 , airCredentials = map (Versioned 0) cs
                                 , airInstances = []
+                                , airReleaseSchedule = AccountInfoReleaseSchedule 0 []
                                 , airEncryptedAmount = Types.AccountEncryptedAmount {
                                     _startIndex = 3,
                                     _incomingEncryptedAmounts = Seq.fromList [encAmount1, encAmount2],
@@ -115,6 +121,25 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     [ "Local name:            example"
     , "Address:               2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
     , "Balance:               0.000001 GTU"
+    , "Nonce:                 2"
+    , "Delegation:            baker 1"
+    , "Encryption public key: a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
+    , ""
+    , ""
+    , "Credentials: none" ]
+  specify "with release schedule" $ p exampleAddress ((exampleAccountInfoResult (Just 1) []) { airReleaseSchedule = AccountInfoReleaseSchedule {
+                                                                                                 totalRelease = 100,
+                                                                                                 releaseSchedule = [(1604417302000, (33, [dummyTransactionHash1, dummyTransactionHash2])),
+                                                                                                                    (1604417342000, (33, [dummyTransactionHash1])),
+                                                                                                                    (1604417382000, (34, [dummyTransactionHash2]))]
+                                                                                                 } }) `shouldBe`
+    [ "Local name:            example"
+    , "Address:               2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+    , "Balance:               0.000001 GTU"
+    , "Release schedule:      total 0.000100 GTU"
+    , "   Tue,  3 Nov 2020 15:28:22 UTC:               0.000033 GTU scheduled by the transactions: f26a45adbb7d5cbefd9430d1eac665bd225fb3d8e04efb288d99a0347f0b8868, b041315fe35a8bdf836647037c24c8e87402547c82aea568c66ee18aa3091326."
+    , "   Tue,  3 Nov 2020 15:29:02 UTC:               0.000033 GTU scheduled by the transactions: f26a45adbb7d5cbefd9430d1eac665bd225fb3d8e04efb288d99a0347f0b8868."
+    , "   Tue,  3 Nov 2020 15:29:42 UTC:               0.000034 GTU scheduled by the transactions: b041315fe35a8bdf836647037c24c8e87402547c82aea568c66ee18aa3091326."
     , "Nonce:                 2"
     , "Delegation:            baker 1"
     , "Encryption public key: a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
