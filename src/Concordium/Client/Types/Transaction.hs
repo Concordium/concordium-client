@@ -109,6 +109,9 @@ accountEncryptEnergyCost = (+100) . checkHeaderEnergyCost
 accountDecryptEnergyCost :: Int -> Energy
 accountDecryptEnergyCost = (+16000) . checkHeaderEnergyCost
 
+transferWithScheduleEnergyCost :: Int -> Int -> Energy
+transferWithScheduleEnergyCost numRels = (+ (100 * fromIntegral numRels)) . checkHeaderEnergyCost
+
 -- |Transaction header type
 -- To be populated when deserializing a JSON object.
 data TransactionJSONHeader =
