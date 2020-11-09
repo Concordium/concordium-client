@@ -323,9 +323,18 @@ processConfigCmd action baseCfgDir verbose =
 
         (_, accCfg) <- getAccountConfigFromAddr addr baseCfg
 
-        let accCfg' = accCfg { acThreshold = threshold }
+        -- A valid threshold is between 1 and the number of keys, both inclusive.
+        -- The parser checks that the threshold is at least 1.
+        -- Check that the new threshold is at most the amount of keys:
+        let numberOfKeys = Map.size (acKeys accCfg)
+        case (numberOfKeys < (fromIntegral threshold)) of
+          True -> logWarn ["the threshold can at most be the number of keys: " ++ (show numberOfKeys)] -- todo simon should we use logError as the operation should not succeed?
+          False -> do 
+            logInfo ["the threshold will be set to " ++ (show threshold)]
 
-        writeThresholdFile accCfgDir accCfg' verbose -- todo simon more logging?
+            let accCfg' = accCfg { acThreshold = threshold }
+
+            writeThresholdFile accCfgDir accCfg' verbose
 
 
   where showMapIdxs = showIdxs . Map.keys
@@ -951,7 +960,7 @@ accountUpdateKeysTransactionPayload AccountUpdateKeysTransactionCfg{..} confirm 
 
 
 accountAddKeysTransactionPayload :: AccountAddKeysTransactionCfg -> Bool -> IO Types.Payload
-accountAddKeysTransactionPayload AccountAddKeysTransactionCfg{..} confirm = do
+accountAddKeysTransactionPayload AccountAddKeysTransactionCfg{..} confirm = do -- todo simon could this cause threshold to be greater than number of keys?
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
@@ -977,7 +986,7 @@ accountAddKeysTransactionPayload AccountAddKeysTransactionCfg{..} confirm = do
   return $ Types.AddAccountKeys aaktcKeys aaktcThreshold
 
 accountRemoveKeysTransactionPayload :: AccountRemoveKeysTransactionCfg -> Bool -> IO Types.Payload
-accountRemoveKeysTransactionPayload AccountRemoveKeysTransactionCfg{..} confirm = do
+accountRemoveKeysTransactionPayload AccountRemoveKeysTransactionCfg{..} confirm = do -- todo simon could this cause threshold to be greater than number of keys?
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
