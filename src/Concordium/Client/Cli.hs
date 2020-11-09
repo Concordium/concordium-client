@@ -199,6 +199,18 @@ getCurrentTimeUnix = TransactionTime . round <$> getPOSIXTime
 timeFromTransactionExpiryTime :: TransactionExpiryTime -> UTCTime
 timeFromTransactionExpiryTime = posixSecondsToUTCTime . fromIntegral . ttsSeconds
 
+data AccountInfoReleaseSchedule = AccountInfoReleaseSchedule {
+  totalRelease :: !Amount,
+  releaseSchedule :: ![(Timestamp, (Amount, [TransactionHash]))]
+  }
+  deriving (Show)
+
+instance AE.FromJSON AccountInfoReleaseSchedule where
+  parseJSON = withObject "Account release schedule" $ \v -> do
+    totalRelease <- v .: "total"
+    releaseSchedule <- v .: "schedule"
+    return $ AccountInfoReleaseSchedule{..}
+
 -- | Expected result of the 'getAccountInfo' endpoint, when non-null.
 data AccountInfoResult = AccountInfoResult
   {
@@ -209,13 +221,14 @@ data AccountInfoResult = AccountInfoResult
     -- |Which baker, if any, this account delegates to.
   , airDelegation :: !(Maybe BakerId)
     -- | List of credentials on the account, latest first.
-  , airCredentials :: ![(Versioned IDTypes.CredentialDeploymentValues)]
+  , airCredentials :: ![(Versioned IDTypes.AccountCredential)]
     -- | List of smart contract instances created by this account.
   , airInstances :: ![ContractAddress]
     -- | Account's encrypted amount.
   , airEncryptedAmount :: !AccountEncryptedAmount
     -- | The public key to use when sending encrypted transfers to the account.
   , airEncryptionKey :: !IDTypes.AccountEncryptionKey
+  , airReleaseSchedule :: !AccountInfoReleaseSchedule
   }
   deriving (Show)
 
@@ -228,6 +241,7 @@ instance AE.FromJSON AccountInfoResult where
     airInstances <- v .: "accountInstances"
     airEncryptedAmount <- v .: "accountEncryptedAmount"
     airEncryptionKey <- v .: "accountEncryptionKey"
+    airReleaseSchedule <- v .: "accountReleaseSchedule"
     return $ AccountInfoResult {..}
 
 data ConsensusStatusResult = ConsensusStatusResult

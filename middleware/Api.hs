@@ -43,7 +43,6 @@ import           Concordium.Client.Config
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
 import           Concordium.Types.HashableTo
-import qualified Concordium.Types.Transactions as Types
 import qualified Concordium.Types.Execution as Execution
 import           Concordium.Client.Types.Account
 import           Control.Monad.Except
@@ -191,7 +190,7 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
   importAccount :: ImportAccountRequest -> Handler ()
   importAccount ImportAccountRequestMobile{..} = do
     -- init configuration if missing
-    baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False AutoInit
+    baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False
     accCfgs <- ((liftIO $ decodeMobileFormattedAccountExport (Text.encodeUtf8 contents) Nothing (passwordFromText password))
                  `embedServerErrM` err400) Just
     void $ ((liftIO $ importAccountConfigEither baseCfg accCfgs False) `embedServerErrM` err400) Just
@@ -201,7 +200,7 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
    where go :: IO [GetAccountsResponseItem]
          go = do
              -- get base config
-             baseCfg <- getBaseConfig (Just cfgDir) False AutoInit
+             baseCfg <- getBaseConfig (Just cfgDir) False
              -- get all accounts
              allAccs <- Prelude.map (naAddr . acAddr) <$> getAllAccountConfigs baseCfg
              let named = HM.toList $ bcAccountNameMap baseCfg
@@ -214,7 +213,7 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
   addBaker :: AddBakerRequest -> Handler AddBakerResponse
   addBaker AddBakerRequest{..} = do
       -- get base configuration
-      baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False AutoInit
+      baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False
       -- generate options for the transaction
       accCfg' <- wrapIOError $ snd <$> getAccountConfig sender baseCfg Nothing Nothing Nothing AssumeInitialized
       let accCfg = accCfg' { acThreshold = fromIntegral (HM.size $ acKeys accCfg') }
@@ -251,7 +250,7 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
   removeBaker :: RemoveBakerRequest -> Handler RemoveBakerResponse
   removeBaker RemoveBakerRequest{..} = do
       -- get base configuration
-      baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False AutoInit
+      baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False
       -- generate options for the transaction
       accCfg' <- wrapIOError $ snd <$> getAccountConfig sender baseCfg Nothing Nothing Nothing AssumeInitialized
       let accCfg = accCfg' { acThreshold = fromIntegral (HM.size $ acKeys accCfg') }
@@ -345,17 +344,6 @@ runGRPC envData c =
   runClient envData c >>= \case
     Left err -> liftIO $ fail (show err)
     Right x -> return x
-
-
-deployCredential :: EnvData -> IDTypes.CredentialDeploymentInformation -> IO Types.TransactionHash
-deployCredential nodeBackend cdi = do
-  let toDeploy = Types.CredentialDeployment cdi
-  let cdiHash = getHash toDeploy :: Types.TransactionHash
-
-  putStrLn $ "✅ Credentials sent to the baker and hooked: " ++ show cdiHash
-
-  runGRPC nodeBackend (cdiHash <$ sendTransactionToBaker toDeploy 100)
-
 
 runTransaction :: EnvData -> TransactionJSONPayload -> Account -> IO Types.TransactionHash
 runTransaction nodeBackend payload (address, keyMap) = do
