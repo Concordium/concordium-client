@@ -351,11 +351,12 @@ processConfigCmd action baseCfgDir verbose =
         case (numberOfKeys < (fromIntegral threshold)) of
           True -> logWarn ["the threshold can at most be the number of keys: " ++ (show numberOfKeys)]
           False -> do 
-            logInfo ["the threshold will be set to " ++ (show threshold)]
+            logWarn ["the threshold will be set to " ++ (show threshold)]
 
             let accCfg' = accCfg { acThreshold = threshold }
+            updateConfirmed <- askConfirmation $ Just "confirm that you want change the threshold"
 
-            writeThresholdFile accCfgDir accCfg' verbose
+            when updateConfirmed (writeThresholdFile accCfgDir accCfg' verbose)
 
 
   where showMapIdxs = showIdxs . Map.keys
