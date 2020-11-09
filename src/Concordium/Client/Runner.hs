@@ -349,7 +349,7 @@ processConfigCmd action baseCfgDir verbose =
         -- Check that the new threshold is at most the amount of keys:
         let numberOfKeys = Map.size (acKeys accCfg)
         case (numberOfKeys < (fromIntegral threshold)) of
-          True -> logWarn ["the threshold can at most be the number of keys: " ++ (show numberOfKeys)] -- todo simon should we use logError as the operation should not succeed?
+          True -> logWarn ["the threshold can at most be the number of keys: " ++ (show numberOfKeys)]
           False -> do 
             logInfo ["the threshold will be set to " ++ (show threshold)]
 
@@ -1055,7 +1055,7 @@ accountUpdateKeysTransactionPayload AccountUpdateKeysTransactionCfg{..} confirm 
 
 
 accountAddKeysTransactionPayload :: AccountAddKeysTransactionCfg -> Bool -> IO Types.Payload
-accountAddKeysTransactionPayload AccountAddKeysTransactionCfg{..} confirm = do -- todo simon could this cause threshold to be greater than number of keys?
+accountAddKeysTransactionPayload AccountAddKeysTransactionCfg{..} confirm = do
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
@@ -1081,7 +1081,7 @@ accountAddKeysTransactionPayload AccountAddKeysTransactionCfg{..} confirm = do -
   return $ Types.AddAccountKeys aaktcKeys aaktcThreshold
 
 accountRemoveKeysTransactionPayload :: AccountRemoveKeysTransactionCfg -> Bool -> IO Types.Payload
-accountRemoveKeysTransactionPayload AccountRemoveKeysTransactionCfg{..} confirm = do -- todo simon could this cause threshold to be greater than number of keys?
+accountRemoveKeysTransactionPayload AccountRemoveKeysTransactionCfg{..} confirm = do
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
