@@ -96,6 +96,7 @@ library:
     - concurrent-extra >= 0.7
     - async >= 2.2
     - vector >= 0.12
+    - string-interpolate
   generated-exposed-modules:
     Proto.ConcordiumP2pRpc
     Proto.ConcordiumP2pRpc_Fields

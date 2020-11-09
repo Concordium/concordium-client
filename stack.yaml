@@ -55,7 +55,6 @@ extra-deps:
 - ./deps/crypto
 - ./deps/globalstate-types
 
-
 # Override default flag values for local packages and extra-deps
 # flags: {}
 
