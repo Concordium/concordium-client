@@ -13,12 +13,12 @@ contractSpec = describe "contract" $ do
   printDecodeSpec
 
 printDecodeSpec :: Spec
-printDecodeSpec = describe "decode" $ do
-  it "is inverse to encode" $ withMaxSuccess 50 $
-    forAll (sized genContract) $ \c -> (decode . encode) c === Right c
+printDecodeSpec = describe "decodeSchema" $ do
+  it "is inverse to encodeSchema" $ withMaxSuccess 50 $
+    forAll (sized genSchema) $ \c -> (decodeSchema . encodeSchema) c === Right c
 
-genContract :: Int -> Gen Contract
-genContract n = Contract <$> genState <*> (HM.fromList <$> listOf (genTwoOf genText (genRsType n')))
+genSchema :: Int -> Gen Schema
+genSchema n = Schema <$> genState <*> (HM.fromList <$> listOf (genTwoOf genText (genRsType n')))
   where genState = case n of
           0 -> pure Nothing
           _ -> frequency [ (9, Just <$> genRsType n')

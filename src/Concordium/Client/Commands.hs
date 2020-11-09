@@ -224,6 +224,8 @@ data ContractCmd
       cuAddressIndexOrName :: !Text
       -- |Subindex of the address for the contract (default: 0).
     , cuAddressSubindex :: !(Maybe Word64)
+      -- |Path to a contract schema, used to display the contract info.
+    , cuSchema :: !(Maybe FilePath)
       -- |Hash of the block (default "best").
     , csBlockHash :: !(Maybe Text) }
   -- |List all contracts on chain.
@@ -766,6 +768,7 @@ contractShowCmd =
         strArgument (metavar "INDEX-OR-NAME" <> help "Index of the contract address OR a contract name.") <*>
         optional (option auto (long "subindex" <> metavar "SUBINDEX"
                             <> help "Subindex of address for the contract (default: 0)")) <*>
+        optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to display the contract info.")) <*>
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
       (progDesc "Display contract state at given block."))
 
