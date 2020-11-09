@@ -55,6 +55,7 @@ import           Concordium.Client.Output
 import           Concordium.Client.Parse
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Account
+import qualified Concordium.Client.Types.Contract as Contract
 import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Client.Types.TransactionStatus
 import           Concordium.Common.Version
@@ -1513,7 +1514,7 @@ processContractCmd action baseCfgDir verbose backend =
         Just [] -> logInfo ["there are no contract instances in block " ++ Text.unpack bestBlock]
         Just xs -> runPrinter $ printContractList (bcContractNameMap baseCfg) xs
 
-    ContractShow indexOrName subindex block -> do
+    ContractShow indexOrName subindex schemaFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
       (bestBlock, res) <- withClient backend $ withBestBlockHash block $
@@ -1523,7 +1524,7 @@ processContractCmd action baseCfgDir verbose backend =
         Left err -> logFatal ["I/O error:", err]
         -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
         Right AE.Null -> logInfo [[i|the contract instance #{namedContrAddr} does not exist in block #{bestBlock}|]]
-        Right contrInfo -> putStr . showPrettyJSON $ contrInfo
+        Right contrInfo -> displayContractInfo schemaFile contrInfo
 
     ContractInit modTBD initName paramsFile contrName isPath amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1569,6 +1570,20 @@ processContractCmd action baseCfgDir verbose backend =
   where extractContractAddress = extractFromTsr (\case
                                                  Types.ContractInitialized {..} -> Just ecAddress
                                                  _ -> Nothing)
+
+-- |Display contract info, optionally using a schema to decode the contract state.
+displayContractInfo :: Maybe FilePath -> AE.Value -> IO ()
+displayContractInfo schemaFile contrInfo = case schemaFile of
+  Nothing -> putStr . showPrettyJSON $ contrInfo
+  Just schemaFile' -> do
+    schema <- Contract.decodeSchema <$> handleReadFile BS.readFile schemaFile'
+    case schema of
+      Left err' -> logFatal ["Decoding the contract schema failed:", err']
+      Right schema' -> case AE.fromJSON contrInfo of
+        Error err -> logFatal ["Could not decode contract info:", err]
+        Success info -> case Contract.addSchemaToInfo info schema' of
+          Left err'' -> logFatal ["Parsing the contract model failed:", err'']
+          Right infoWithSchema -> putStr . showPrettyJSON $ infoWithSchema
 
 getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> Text -> Maybe Word64
                                 -> Text -> Maybe FilePath -> Types.Amount -> IO ContractUpdateTransactionCfg

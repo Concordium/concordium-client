@@ -396,15 +396,15 @@ handleWriteFile wrtFile overwriteSetting verbose file contents = do
       when verbose $ logInfo [[i|writing file '#{file}'|]]
       wrtFile file contents) logFatalOnErrors
   where logFatalOnErrors e
-          | isDoesNotExistError e = logFatal [[i|'#{file}' does not exist and cannot be created|]]
+          | isDoesNotExistError e = logFatal [[i|the file '#{file}' does not exist and cannot be created|]]
           | isPermissionError e   = logFatal [[i|you do not have permissions to write to the file '#{file}'|]]
-          | otherwise             = logFatal [[i|'something went wrong while writing to the file #{file}'|]]
+          | otherwise             = logFatal [[i|something went wrong while writing to the file '#{file}'|]]
 
 -- |Read a file with the provided function and handle IO errors with an appropriate logging of errors.
 handleReadFile :: (FilePath -> IO s) -> FilePath -> IO s
 handleReadFile rdFile file = catchIOError (rdFile file) logFatalOnErrors
   where logFatalOnErrors e
-          | isDoesNotExistError e = logFatal [[i|'#{file}' does not exist and cannot be read|]]
+          | isDoesNotExistError e = logFatal [[i|the file '#{file}' does not exist and cannot be read|]]
           | isPermissionError e   = logFatal [[i|you do not have permissions to read the file '#{file}'|]]
           | otherwise             = logFatal [[i|something went wrong while reading the file '#{file}'|]]
 
