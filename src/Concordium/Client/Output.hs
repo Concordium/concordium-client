@@ -1,5 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE QuasiQuotes #-}
 module Concordium.Client.Output where
 
 import Concordium.Client.Cli
@@ -16,21 +17,20 @@ import qualified Concordium.Crypto.EncryptedTransfers as Enc
 import Concordium.ID.Parameters (globalContext)
 
 import Control.Monad.Writer
-import qualified Data.Aeson.Encode.Pretty as AE
-import qualified Data.ByteString.Lazy as BSL
-import Data.Maybe
-import Data.Functor
-import Data.List
-import qualified Data.HashMap.Strict as HM
-import qualified Data.Map.Strict as M
-import Data.Bool
-import Data.Text (Text, pack, unpack)
-import Data.Text.Encoding
-import Data.Time
-import Text.Printf
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
+import Data.Bool
+import Data.Functor
+import Data.Hashable (Hashable)
+import qualified Data.HashMap.Strict as HM
+import Data.List
+import Data.Maybe
+import qualified Data.Map.Strict as M
+import Data.String.Interpolate (i)
+import Data.Text (Text, pack, unpack)
+import Data.Time
 import Lens.Micro.Platform
+import Text.Printf
 
 -- PRINTER
 
@@ -40,17 +40,6 @@ type Printer = Writer [String] ()
 -- |Print the lines of a printer.
 runPrinter :: (MonadIO m) => Printer -> m ()
 runPrinter = liftIO . mapM_ putStrLn . execWriter
-
--- HELPERS
-
--- |Serialize to JSON and pretty-print.
-showPrettyJSON :: AE.ToJSON a => a -> String
-showPrettyJSON = unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty
-
--- |Serialize to JSON, order by keys, and pretty-print without whitespace.
-showCompactPrettyJSON :: AE.ToJSON a => a -> String
-showCompactPrettyJSON = unpack . decodeUtf8 . BSL.toStrict . AE.encodePretty' config
-  where config = AE.defConfig { AE.confIndent = AE.Spaces 0, AE.confCompare = compare }
 
 -- TIME
 
@@ -77,17 +66,24 @@ showTimeOfDay = formatTime defaultTimeLocale "%T"
 
 printBaseConfig :: BaseConfig -> Printer
 printBaseConfig cfg = do
-  tell [ printf "Base configuration:"
-       , printf "- Verbose:            %s" (showYesNo $ bcVerbose cfg)
-       , printf "- Account config dir: %s" (bcAccountCfgDir cfg) ]
-  printAccountNameMap $ bcAccountNameMap cfg
-  where printAccountNameMap m =
-          if null m then
-            tell [ "- Account name map:   " ++ showNone ]
-          else do
-            tell [ "- Account name map:"]
-            printMap showEntry $ toSortedList m
-        showEntry (n, a) = printf "    %s -> %s" n (show a)
+  tell [ "Base configuration:"
+       , [i|- Verbose:            #{showYesNo $ bcVerbose cfg}|]
+       , [i|- Account config dir: #{bcAccountCfgDir cfg}|]
+       , [i|- Contract config dir: #{bcContractCfgDir cfg}|]]
+  printNameMap "Account" show $ bcAccountNameMap cfg
+  printNameMap "Contract" showCompactPrettyJSON $ bcContractNameMap cfg
+  printNameMap "Module" show $ bcModuleNameMap cfg
+  where
+    printNameMap :: String -> (v -> String) -> NameMap v -> Printer
+    printNameMap variantName showVal m =
+      if null m then
+        tell [[i|- #{variantName} name map:   #{showNone}|]]
+      else do
+        tell [[i|- #{variantName} name map:|]]
+        printMap (showEntry showVal) $ toSortedList m
+    showEntry :: (v -> String) -> (Text, v) -> String
+    showEntry showVal (n, a) = [i|    #{n} -> #{a'}|] :: String
+      where a' = showVal a
 
 printAccountConfig :: AccountConfig -> Printer
 printAccountConfig cfg = do
@@ -145,13 +141,22 @@ showRevealedAttributes as =
 
 printAccountInfo :: NamedAddress -> AccountInfoResult -> Verbose -> Bool -> Maybe ElgamalSecretKey -> Printer
 printAccountInfo addr a verbose showEncrypted mEncKey= do
-  tell [ printf "Local name:            %s" (showMaybe unpack $ naName addr)
+  tell ([ printf "Local name:            %s" (showMaybe unpack $ naName addr)
        , printf "Address:               %s" (show $ naAddr addr)
        , printf "Balance:               %s" (showGtu $ airAmount a)
-       , printf "Nonce:                 %s" (show $ airNonce a)
-       , printf "Delegation:            %s" (maybe showNone (printf "baker %s" . show) $ airDelegation a)
-       , printf "Encryption public key: %s" (show $ airEncryptionKey a)
-       , "" ]
+       ] ++
+       case totalRelease $ airReleaseSchedule a of
+         0 -> []
+         tot -> (printf "Release schedule:      total %s" (showGtu tot)) :
+               (map (\(timestamp, (amount, hashes)) -> printf "   %s:               %s scheduled by the transactions: %s."
+                                                         (showTimeFormatted (Types.timestampToUTCTime timestamp))
+                                                         (showGtu amount)
+                                                         (intercalate ", " $ map show hashes))
+                 (releaseSchedule $ airReleaseSchedule a))
+       ++ [printf "Nonce:                 %s" (show $ airNonce a)
+          , printf "Delegation:            %s" (maybe showNone (printf "baker %s" . show) $ airDelegation a)
+          , printf "Encryption public key: %s" (show $ airEncryptionKey a)
+          , "" ])
 
   if showEncrypted then
     let
@@ -217,23 +222,54 @@ printCred c =
                Nothing -> printf "invalid expiration time '%s'" e
                Just t -> showTimeYearMonth t
 
+-- |Print a list of accounts along with optional names.
 printAccountList :: [NamedAddress] -> Printer
-printAccountList accs = 
-  case accs of 
-    [] -> tell ["Accounts:" ++ showNone]
-    _ -> do 
-      let formatText :: NamedAddress -> Text
-          formatText na = (pack (show (naAddr na))) <>  "     " <> fromMaybe " "  (naName na)
-      tell [ "Accounts:"
-            , printf "                     Account Address                Account Name"
-            , printf "----------------------------------------------------------------" ]
-      tell (map unpack (map formatText accs))
+printAccountList = printNameList "Accounts" header format
+  where header = [ "Accounts:"
+                 , "                 Account Address                     Account Name"
+                 , "-------------------------------------------------------------------" ]
+        format NamedAddress{..} = [i|#{naAddr}   #{name}|]
+          where name = fromMaybe " " naName
 
-printModuleList :: [Text] -> Printer
-printModuleList = tell . map unpack
+-- |Print a list of modules along with optional names.
+printModuleList :: ModuleNameMap -> [Types.ModuleRef] -> Printer
+printModuleList nameMap refs = printNameList "Modules" header format namedModRefs
+  where namedModRefs = map (\ref -> NamedModuleRef {nmrRef = ref, nmrName = HM.lookup ref nameMapInv}) refs
+        nameMapInv = invertHashMap nameMap
+        header = [ "Modules:"
+                 , "                        Module Reference                           Module Name"
+                 , "--------------------------------------------------------------------------------" ]
+        format NamedModuleRef{..} = [i|#{nmrRef}   #{name}|]
+          where name = fromMaybe " " nmrName
 
-printContractList :: [Types.ContractAddress] -> Printer
-printContractList = tell . map showCompactPrettyJSON
+-- |Print a list of contracts along with optional names.
+printContractList :: ContractNameMap -> [Types.ContractAddress] -> Printer
+printContractList nameMap addrs = printNameList "Contracts" header format namedContrAddrs
+  where namedContrAddrs = map (\addr -> NamedContractAddress {ncaAddr = addr, ncaName = HM.lookup addr nameMapInv}) addrs
+        nameMapInv = invertHashMap nameMap
+        header = [ "Contracts:"
+                 , "    Contract Address       Contract Name"
+                 , "------------------------------------------" ]
+        format NamedContractAddress{..} = [i|#{addr}   #{name}|]
+          where addr = showCompactPrettyJSON ncaAddr
+                name = fromMaybe " " ncaName
+
+-- |Print a header and a list of named items in the provided format.
+printNameList :: String -> [String] -> (a -> String) -> [a] -> Printer
+printNameList variantName header format xs =
+  case xs of
+    [] -> tell [[i|#{variantName}: #{showNone}|]]
+    _  -> do
+      -- TODO: Use a proper formatter tool.
+      tell header
+      tell $ map format xs
+
+nameSpacing :: Text
+nameSpacing = pack $ replicate 10 ' '
+
+-- |Invert a hash map. Note that if any `v` is duplicated, then the _last_ one is used.
+invertHashMap :: (Eq v, Hashable v) => HM.HashMap k v -> HM.HashMap v k
+invertHashMap m = HM.fromList [(v, k) | (k, v) <- HM.toList m]
 
 showAccountKeyPair :: EncryptedAccountKeyPair -> String
 -- TODO Make it respect indenting if this will be the final output format.
@@ -383,7 +419,8 @@ showEvent verbose = \case
   Types.EncryptedSelfAmountAdded{..} -> verboseOrNothing $ printf "transferred '%s' tokens from the public balance to the shielded balance on account '%s' with a resulting self encrypted balance of '%s'" (show eaaAmount) (show eaaAccount) (show eaaNewAmount)
   Types.UpdateEnqueued{..} ->
     verboseOrNothing $ printf "Enqueued chain update, effective at %s:\n%s" (showTimeFormatted (timeFromTransactionExpiryTime ueEffectiveTime)) (show uePayload)
-
+  Types.TransferredWithSchedule{..} ->
+    verboseOrNothing $ printf "Sent transfer with schedule %s" (intercalate ", " . map (\(a, b) -> showTimeFormatted (Types.timestampToUTCTime a) ++ ": " ++ showGtu b) $ etwsAmount)
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
@@ -514,6 +551,12 @@ showRejectReason verbose = \case
     "the proof for the secret to public transfer doesn't validate"
   Types.InvalidIndexOnEncryptedTransfer ->
     "the provided index is below the start index or above `startIndex + length incomingAmounts`"
+  Types.ZeroScheduledAmount -> "the total amount or some of the releases scheduled would be equal to zero"
+  Types.NonIncreasingSchedule -> "the releases were not sorted on the timestamp"
+  Types.FirstScheduledReleaseExpired -> "the first release has already expired"
+  Types.ScheduledSelfTransfer acc ->
+    printf "attempted to make an scheduled transfer to the same account '%s'" (show acc)
+
 
 -- CONSENSUS
 
@@ -559,8 +602,8 @@ printBirkParameters includeBakers r addrmap = do
                                 then " <0.0001 %" :: String
                                 else printf "%8.4f %%" (lp*100)
           accountName bkr = fromMaybe " " $ HM.lookup bkr addrmap
-        
-        
+
+
 -- BLOCK
 
 printBlockInfo :: Maybe BlockInfoResult -> Printer
