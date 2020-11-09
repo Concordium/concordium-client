@@ -205,6 +205,26 @@ processConfigCmd action baseCfgDir verbose =
             Right a -> return a
         forM_ naName $ logFatalOnError . validateAccountName
         void $ initAccountConfig baseCfg NamedAddress{..} True
+      ConfigAccountRemove account -> do
+        baseCfg <- getBaseConfig baseCfgDir verbose
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        nameAddr@NamedAddress{..} <- getAccountAddressArg (bcAccountNameMap baseCfg) (Just account)
+
+        let descriptor = case naName of
+              Nothing -> "the account with adress " ++ (show naAddr)
+              Just name -> "the account " ++ (show name) ++ " with adress " ++ (show naAddr)
+
+        logWarn [descriptor ++ " will be removed and can NOT be recovered"]
+
+        updateConfirmed <- askConfirmation $ Just "confirm that you want to remove the account"
+
+        when updateConfirmed $ do
+          logInfo[ descriptor ++ " will be removed"]
+          void $ removeAccountConfig baseCfg nameAddr
+
       ConfigAccountImport file name importFormat -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do

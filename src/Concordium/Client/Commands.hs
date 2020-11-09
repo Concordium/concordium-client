@@ -90,6 +90,8 @@ data ConfigAccountCmd
   = ConfigAccountAdd
     { caaAddr :: !Text
     , caaName :: !(Maybe Text) }
+  | ConfigAccountRemove
+    { carAddr :: !(Text) }
   | ConfigAccountImport
     { caiFile :: !FilePath
     , caiName :: !(Maybe Text)
@@ -866,6 +868,7 @@ configAccountCmds showAllOpts =
       (ConfigAccountCmd <$>
         hsubparser
           (configAccountAddCmd <>
+           configAccountRemove <>
            configAccountImportCmd showAllOpts <>
            configAccountAddKeysCmd <>
            configAccountUpdateKeysCmd <>
@@ -882,6 +885,15 @@ configAccountAddCmd =
         strArgument (metavar "ADDRESS" <> help "Address of the account.") <*>
         optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account.")))
       (progDesc "Add account address to persistent config, optionally naming the account."))
+
+configAccountRemove :: Mod CommandFields ConfigAccountCmd
+configAccountRemove =
+  command
+    "remove"
+    (info
+      (ConfigAccountRemove <$>
+        strArgument (metavar "ACCOUNT" <> help "Name or address of the account."))
+      (progDesc "Remove the account from the persistent config."))
 
 configAccountImportCmd :: ShowAllOpts -> Mod CommandFields ConfigAccountCmd
 configAccountImportCmd showAllOpts =
