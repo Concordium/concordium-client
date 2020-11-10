@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE QuasiQuotes #-}
 module Concordium.Client.Types.Contract where
 
 import Concordium.Types (AccountAddress, Amount, ContractAddress)
@@ -7,6 +8,7 @@ import Data.Aeson (FromJSON, ToJSON, object, (.=), (.:))
 import qualified Data.Aeson as AE
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Base16 as BS16
 import Data.Hashable (Hashable)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
@@ -14,6 +16,7 @@ import Data.Serialize (Get, Putter, Serialize, get, getInt8, getInt16le, getInt3
                        getTwoOf, getWord8, getWord16le, getWord32le, getWord64le, put, putTwoOf,
                        putWord8, putWord32le)
 import qualified Data.Serialize as S
+import Data.String.Interpolate (i)
 import Data.Text (Text)
 import qualified Data.Text.Encoding as Text
 import Data.Word (Word32)
@@ -53,7 +56,7 @@ instance Serialize Fields where
       0 -> Named <$> getListOfWith32leLen (getTwoOf getText get)
       1 -> Unnamed <$> getListOfWith32leLen get
       2 -> pure Unit
-      x -> fail $ "Invalid Fields tag: " ++ show x
+      x -> fail [i|Invalid Fields tag: #{x}|]
 
   put schema = case schema of
     Named pairs -> putWord8 0 *> putListOfWith32leLen (putTwoOf putText put) pairs
@@ -164,8 +167,8 @@ instance FromJSON Info where
 instance ToJSON Info where
   toJSON Info {..} = object
     [ "amount" .= ciAmount
-    , "owner" .= ciOwner
-    , "model" .= ciModel ]
+    , "owner"  .= ciOwner
+    , "model"  .= ciModel ]
 
 data Model =
     WithSchema AE.Value -- ^ The decoded contract state.
@@ -174,12 +177,17 @@ data Model =
 
 instance ToJSON Model where
   toJSON (WithSchema val) = val
-  toJSON (JustBytes bs) = AE.String $ Text.decodeUtf8 bs
+  toJSON (JustBytes bs) = AE.String . Text.decodeUtf8 . BS16.encode $ bs
 
 instance FromJSON Model where
-  parseJSON (AE.String s) = pure . JustBytes . Text.encodeUtf8 $ s
+  parseJSON (AE.String s) = JustBytes <$> decodeBase16 s
+    where decodeBase16 xs =
+            let (parsed, remaining) = BS16.decode . Text.encodeUtf8 $ xs in
+              if BS.null remaining
+              then pure parsed
+              else fail [i|Invalid model. Parsed: '#{parsed}', but failed on the remaining: '#{remaining}'|]
   parseJSON obj@(AE.Object _) = pure $ WithSchema obj
-  parseJSON invalid = fail $ "Invalid model. Should be either a ByteString or a JSON obj: " ++ show invalid
+  parseJSON invalid = fail [i|Invalid model. Should be either a ByteString or a JSON obj: #{invalid}|]
 
 addSchemaToInfo :: Info -> Schema -> Either String Info
 addSchemaToInfo info@Info{..} schema = case ciModel of
@@ -206,7 +214,7 @@ getFields :: Fields -> Get AE.Value
 getFields fields = case fields of
   Named pairs -> mkTypedUnaryObj "named" <$> traverse (\(k, v) -> mkNamedUnaryObj k <$> getRsValue v) pairs
   Unnamed xs  -> mkTypedUnaryObj "unnamed" <$> traverse getRsValue xs
-  Unit        -> return $ mkTypedUnaryObj "unit" AE.Null -- TODO: is this correct?
+  Unit        -> return $ mkTypedUnaryObj "unit" $ AE.Array mempty
 
 getRsValue :: RsType -> Get AE.Value
 getRsValue rsType = case rsType of
@@ -229,7 +237,7 @@ getRsValue rsType = case rsType of
            else fromIntegral <$> getWord32le
     (name, fields) <- case variants !? idx of
                       Just v -> return v
-                      Nothing -> fail $ "Variant with index " ++ show idx ++ " does not index for Enum."
+                      Nothing -> fail [i|Variant with index #{idx} does not exist for Enum.|]
     fields' <- getFields fields
     return $ object [mkType "variant", "name" .= name, "fields" .= fields']
   RsList elemType -> mkTypedUnaryObj "list" <$> getListOfWith32leLen (getRsValue elemType)
@@ -270,8 +278,8 @@ getListOfWithKnownLen :: Integral len => len -> Get a -> Get [a]
 getListOfWithKnownLen len ga = go [] len
   where
     go as 0 = return $! reverse as
-    go as i = do x <- ga
-                 x `seq` go (x:as) (i - 1)
+    go as l = do x <- ga
+                 x `seq` go (x:as) (l - 1)
 
 getListOfWith32leLen :: Get a -> Get [a]
 getListOfWith32leLen ga = getWord32le >>= \len -> getListOfWithKnownLen len ga

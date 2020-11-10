@@ -1578,9 +1578,9 @@ displayContractInfo schemaFile contrInfo = case schemaFile of
   Just schemaFile' -> do
     schema <- Contract.decodeSchema <$> handleReadFile BS.readFile schemaFile'
     case schema of
-      Left err' -> logFatal ["Decoding the contract schema failed:", err']
+      Left err -> logFatal ["Decoding the contract schema failed:", err]
       Right schema' -> case AE.fromJSON contrInfo of
-        Error err -> logFatal ["Could not decode contract info:", err]
+        Error err' -> logFatal ["Could not decode contract info:", err']
         Success info -> case Contract.addSchemaToInfo info schema' of
           Left err'' -> logFatal ["Parsing the contract model failed:", err'']
           Right infoWithSchema -> putStr . showPrettyJSON $ infoWithSchema

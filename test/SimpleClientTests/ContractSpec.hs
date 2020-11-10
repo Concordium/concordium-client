@@ -2,20 +2,36 @@ module SimpleClientTests.ContractSpec where
 
 import Concordium.Client.Types.Contract
 
+import qualified Data.Aeson as AE
+import qualified Data.ByteString as BS
 import qualified Data.HashMap.Strict as HM
 import Data.Text (Text)
 import qualified Data.Text as Text
+import Data.Word (Word8)
 import Test.Hspec
 import Test.QuickCheck
 
 contractSpec :: Spec
 contractSpec = describe "contract" $ do
-  printDecodeSpec
+  printSchemaSpec
+  printInfoSpec
 
-printDecodeSpec :: Spec
-printDecodeSpec = describe "decodeSchema" $ do
-  it "is inverse to encodeSchema" $ withMaxSuccess 50 $
+printSchemaSpec :: Spec
+printSchemaSpec = describe "serialize Schema" $ do
+  it "decodeSchema is inverse of encodeSchema" $ withMaxSuccess 50 $
     forAll (sized genSchema) $ \c -> (decodeSchema . encodeSchema) c === Right c
+
+printInfoSpec :: Spec
+printInfoSpec = describe "serialize Info" $ do
+  it "fromJSON is inverse of toJSON for Info" $ do
+    pending
+
+  it "fromJSON is inverse of toJSON for Model" $ withMaxSuccess 100 $
+    forAll genModel $ \m -> (AE.fromJSON . AE.toJSON) m === AE.Success m
+
+
+genModel :: Gen Model
+genModel = JustBytes . BS.pack <$> listOf (arbitrary :: Gen Word8)
 
 genSchema :: Int -> Gen Schema
 genSchema n = Schema <$> genState <*> (HM.fromList <$> listOf (genTwoOf genText (genRsType n')))
