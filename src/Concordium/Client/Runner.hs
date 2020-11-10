@@ -1526,9 +1526,9 @@ processContractCmd action baseCfgDir verbose backend =
         Right AE.Null -> logInfo [[i|the contract instance #{namedContrAddr} does not exist in block #{bestBlock}|]]
         Right contrInfo -> displayContractInfo schemaFile contrInfo
 
-    ContractInit modTBD initName paramsFile contrName isPath amount txOpts -> do
+    ContractInit modTBD initName paramsFile schemaFile contrName isPath amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      ciCfg <- getContractInitTransactionCfg baseCfg txOpts modTBD isPath initName paramsFile amount
+      ciCfg <- getContractInitTransactionCfg baseCfg txOpts modTBD isPath initName paramsFile schemaFile amount
       let txCfg = citcTransactionCfg ciCfg
 
       let intOpts = toInteractionOpts txOpts
@@ -1545,9 +1545,9 @@ processContractCmd action baseCfgDir verbose backend =
             let namedContrAddr = NamedContractAddress {ncaAddr = contrAddr, ncaName = contrName}
             logSuccess [[i|contract successfully initialized with address: #{namedContrAddr}|]]
 
-    ContractUpdate indexOrName subindex receiveName paramsFile amount txOpts -> do
+    ContractUpdate indexOrName subindex receiveName paramsFile schemaFile amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      cuCfg <- getContractUpdateTransactionCfg baseCfg txOpts indexOrName subindex receiveName paramsFile amount
+      cuCfg <- getContractUpdateTransactionCfg baseCfg txOpts indexOrName subindex receiveName paramsFile schemaFile amount
       let txCfg = cutcTransactionCfg cuCfg
 
       let intOpts = toInteractionOpts txOpts
@@ -1586,11 +1586,11 @@ displayContractInfo schemaFile contrInfo = case schemaFile of
           Right infoWithSchema -> putStr . showPrettyJSON $ infoWithSchema
 
 getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> Text -> Maybe Word64
-                                -> Text -> Maybe FilePath -> Types.Amount -> IO ContractUpdateTransactionCfg
-getContractUpdateTransactionCfg baseCfg txOpts indexOrName subindex receiveName paramsFile amount = do
+                                -> Text -> Maybe FilePath -> Maybe FilePath -> Types.Amount -> IO ContractUpdateTransactionCfg
+getContractUpdateTransactionCfg baseCfg txOpts indexOrName subindex receiveName paramsFile schemaFile amount = do
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-  params <- getWasmParameterFromFileOrDefault paramsFile
+  params <- getWasmParameter paramsFile schemaFile
   return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr) (Wasm.ReceiveName receiveName) params amount
 
 contractUpdateTransactionPayload :: ContractUpdateTransactionCfg -> Types.Payload
@@ -1612,13 +1612,13 @@ data ContractUpdateTransactionCfg =
   }
 
 getContractInitTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> String -> Bool -> Text
-                              -> Maybe FilePath -> Types.Amount -> IO ContractInitTransactionCfg
-getContractInitTransactionCfg baseCfg txOpts modTBD isPath initName paramsFile amount = do
+                              -> Maybe FilePath -> Maybe FilePath -> Types.Amount -> IO ContractInitTransactionCfg
+getContractInitTransactionCfg baseCfg txOpts modTBD isPath initName paramsFile schemaFile amount = do
   modRef <- if isPath
             then getModuleRefFromFile modTBD
             else nmrRef <$> getNamedModuleRef (bcModuleNameMap baseCfg) (Text.pack modTBD)
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
-  params <- getWasmParameterFromFileOrDefault paramsFile
+  params <- getWasmParameter paramsFile schemaFile
   return $ ContractInitTransactionCfg txCfg amount modRef (Wasm.InitName initName) params
 
 data ContractInitTransactionCfg =
@@ -1645,11 +1645,17 @@ contractInitTransactionPayload ContractInitTransactionCfg {..} =
 getWasmModuleFromFile :: FilePath -> IO Wasm.WasmModule
 getWasmModuleFromFile moduleFile = Wasm.WasmModule 0 <$> handleReadFile BS.readFile moduleFile
 
--- |Load Wasm Parameters from a binary file if Just, otherwise return mempty.
-getWasmParameterFromFileOrDefault :: Maybe FilePath -> IO Wasm.Parameter
-getWasmParameterFromFileOrDefault paramsFile = case paramsFile of
-  Nothing -> pure . Wasm.Parameter $ BSS.empty
-  Just file -> Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile file
+-- |Load Wasm Parameters from an optional parameter file and an optional schema file.
+-- If the schema file is supplied, parse the parameter file as JSON. Otherwise, parse it as binary.
+-- Warns the user if a schema is supplied without a parameter file.
+-- If no parameter file is supplied, return mempty.
+getWasmParameter :: Maybe FilePath -> Maybe FilePath -> IO Wasm.Parameter
+getWasmParameter paramsFile schemaFile = case (paramsFile, schemaFile) of
+  (Nothing, Nothing) -> emptyParams
+  (Nothing, Just _) -> logWarn ["ignoring the --schema as no --params were supplied"] *> emptyParams
+  (Just paramsFile', Nothing) -> Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile paramsFile'
+  (Just _paramsFile', Just _schemaFile') -> emptyParams -- TODO: parse params and return or fail.
+  where emptyParams = pure . Wasm.Parameter $ BSS.empty
 
 -- |Try to parse the input as a module reference and assume it is a path if it fails.
 getModuleRefFromRefOrFile :: String -> IO Types.ModuleRef
