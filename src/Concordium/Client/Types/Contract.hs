@@ -207,8 +207,7 @@ getModel Schema{..} = do
   state' <- case state of
       Nothing -> return AE.Null
       Just rsType -> getRsValue rsType
-  methodParameter' <- traverse (\(k, v) -> mkNamedUnaryObj k <$> getRsValue v) (HM.toList methodParameter)
-  return $ object ["state" .= state', "method_parameters" .= methodParameter']
+  return $ object ["state" .= state', "method_parameters" .= methodParameter] -- TODO: remove Rs from names in methodParameter
 
 getFields :: Fields -> Get AE.Value
 getFields fields = case fields of
