@@ -83,9 +83,9 @@ data ConfigCmd
   = ConfigInit
   | ConfigShow
   | ConfigBackupExport
-    { caeFileName :: !Text }
+    { cbeFileName :: !FilePath }
   | ConfigBackupImport
-    { caeFileName :: !Text }
+    { cbiFileName :: !FilePath }
   | ConfigAccountCmd -- groups 'config account' commands
     { configAccountCmd :: ConfigAccountCmd }
   deriving (Show)
