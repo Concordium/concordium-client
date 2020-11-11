@@ -191,6 +191,25 @@ processConfigCmd action baseCfgDir verbose =
       putStrLn ""
       accCfgs <- getAllAccountConfigs baseCfg
       runPrinter $ printAccountConfigList accCfgs
+    ConfigBackupExport fileName -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      pwd <- askPassword "Enter password for encryption of backup" --, (Leave blank for no encryption): "
+      allAccounts <- getAllAccountConfigs baseCfg
+      backup <- exportConfigBackup allAccounts (Just pwd)
+      BS.writeFile (Text.unpack fileName) backup
+    
+    ConfigBackupImport fileName -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      ciphertext <- BS.readFile (Text.unpack fileName)
+      pwd <- askPassword "Enter password for decryption of backup" --, (Leave blank for no encryption): "
+      accCfgs <- importConfigBackup ciphertext (Just pwd)
+      case accCfgs of
+        Right accCfgs' -> do 
+          void $ importAccountConfig baseCfg accCfgs' verbose
+          -- backup2' <- exportConfigBackup accCfgs' (Just pwd)
+          -- BS.writeFile ("verification") backup2'
+        Left err -> putStrLn err
+
     ConfigAccountCmd c -> case c of
       ConfigAccountAdd addr naName -> do
         baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
@@ -244,6 +263,7 @@ processConfigCmd action baseCfgDir verbose =
                      ++ " will be added to account " ++ Text.unpack addr]
             let accCfg' = accCfg { acKeys = keyMapNew }
             writeAccountKeys baseCfg' accCfg' verbose
+      
       ConfigAccountUpdateKeys addr keysFile -> do
         baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
         when verbose $ do

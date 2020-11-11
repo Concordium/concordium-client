@@ -81,6 +81,10 @@ data Cmd
 data ConfigCmd
   = ConfigInit
   | ConfigShow
+  | ConfigBackupExport
+    { caeFileName :: !Text }
+  | ConfigBackupImport
+    { caeFileName :: !Text }
   | ConfigAccountCmd -- groups 'config account' commands
     { configAccountCmd :: ConfigAccountCmd }
   deriving (Show)
@@ -755,6 +759,8 @@ configCmds showAllOpts =
         hsubparser
           (configInitCmd <>
            configShowCmd <>
+           configBackupExportCmd <>
+           configBackupImportCmd <>
            configAccountCmds showAllOpts))
       (progDesc "Commands for inspecting and changing local configuration."))
 
@@ -773,6 +779,29 @@ configShowCmd =
     (info
       (pure ConfigShow)
       (progDesc "Show configuration."))
+
+configBackupExportCmd :: Mod CommandFields ConfigCmd
+configBackupExportCmd = 
+  command
+    "export-backup"
+    (info
+      (ConfigBackupExport <$>
+        strArgument (metavar "FileName" <> help "Name for backup file")
+      )
+      (progDesc "Save config to backup file, optionally encrypted with a password"))
+
+
+configBackupImportCmd :: Mod CommandFields ConfigCmd
+configBackupImportCmd = 
+  command
+    "import-backup"
+    (info
+      (ConfigBackupImport <$>
+        strArgument (metavar "FileName" <> help "Backup file name")
+      )
+      (progDesc "Import config backup file, requires password if encrypted"))
+
+
 
 configAccountCmds :: ShowAllOpts -> Mod CommandFields ConfigCmd
 configAccountCmds showAllOpts =
