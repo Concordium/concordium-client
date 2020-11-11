@@ -1,10 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Concordium.Client.Types.Account (
   module Concordium.Client.Types.Account,
   CryptoFFI.ElgamalSecretKey
   ) where
+
+import GHC.Generics
 
 import Control.Monad
 import Control.Monad.Except
@@ -31,7 +34,12 @@ import Data.ByteString (ByteString)
 -- * Accounts
 
 data NamedAddress = NamedAddress { naName :: Maybe Text, naAddr :: ID.AccountAddress }
-  deriving (Show, Eq)
+  deriving (Generic, Show, Eq)
+
+instance AE.ToJSON NamedAddress where
+  toEncoding = AE.genericToEncoding AE.defaultOptions
+
+instance AE.FromJSON NamedAddress
 
 -- * Account keys
 

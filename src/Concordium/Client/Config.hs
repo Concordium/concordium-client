@@ -1,6 +1,9 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveGeneric #-}
 module Concordium.Client.Config where
+
+import GHC.Generics
 
 import Concordium.Types as Types
 import Concordium.ID.Types (addressFromText, KeyIndex)
@@ -397,7 +400,12 @@ data AccountConfig =
   -- you just import an account and don't initialize a dummy config first. But
   -- that is for the future, and for now we just have to deal with null pointers.
   , acEncryptionKey :: !(Maybe EncryptedAccountEncryptionSecretKey)
-  }
+  } deriving (Generic)
+
+instance AE.ToJSON AccountConfig where
+  toEncoding = AE.genericToEncoding AE.defaultOptions
+instance AE.FromJSON AccountConfig
+
 
 -- | Whether to automatically initialize the account configuration or not.
 data AutoInit = AutoInit | AssumeInitialized
