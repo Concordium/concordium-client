@@ -53,29 +53,31 @@ genRsType :: Int -> Gen RsType
 genRsType n
   | n == 0 = pure RsUnit
   | otherwise = oneof
-      [ pure RsU8
+      [ pure RsUnit
+      , pure RsBool
+      , pure RsU8
       , pure RsU16
       , pure RsU32
       , pure RsU64
-      , pure RsString
-      , pure RsUnit
-      , pure RsBool
-      , pure RsBytes
-      , RsPair <$> genRsType n' <*> genRsType n'
-      , RsStruct <$> genFields n'
-      , RsEnum <$> listOf (genTwoOf genText (genFields n'))
-      , RsList <$> genRsType n'
-      , RsMap <$> genRsType n' <*> genRsType n'
-      , RsSet <$> genRsType n'
-      , RsOption <$> genRsType n'
-      , pure RsAccountAddress
-      , pure RsContractAddress
-      , RsArray <$> arbitrary <*> genRsType n'
       , pure RsI8
       , pure RsI16
       , pure RsI32
-      , pure RsI64 ]
+      , pure RsI64
+      , pure RsAccountAddress
+      , pure RsContractAddress
+      , RsOption <$> genRsType n'
+      , RsPair <$> genRsType n' <*> genRsType n'
+      , RsString <$> genSizeLen
+      , RsList <$> genSizeLen <*> genRsType n'
+      , RsSet <$> genSizeLen <*> genRsType n'
+      , RsMap <$> genSizeLen <*> genRsType n' <*> genRsType n'
+      , RsArray <$> arbitrary <*> genRsType n'
+      , RsStruct <$> genFields n'
+      , RsEnum <$> listOf (genTwoOf genText (genFields n')) ]
   where n' = nextNSize n
+
+genSizeLen :: Gen SizeLength
+genSizeLen = oneof $ pure <$> [LenU8, LenU16, LenU32, LenU64]
 
 genTwoOf :: Gen a -> Gen b -> Gen (a, b)
 genTwoOf ga gb = (,) <$> ga <*> gb
