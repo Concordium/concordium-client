@@ -198,7 +198,7 @@ processConfigCmd action baseCfgDir verbose =
       allAccounts <- getAllAccountConfigs baseCfg
       backup <- exportConfigBackup allAccounts (Just pwd)
       handleWriteFile BS.writeFile PromptBeforeOverwrite verbose (Text.unpack fileName) backup 
-      
+
     ConfigBackupImport fileName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       ciphertext <- BS.readFile (Text.unpack fileName)
@@ -207,8 +207,6 @@ processConfigCmd action baseCfgDir verbose =
       case accCfgs of
         Right accCfgs' -> do 
           void $ importAccountConfig baseCfg accCfgs' verbose
-          -- backup2' <- exportConfigBackup accCfgs' (Just pwd)
-          -- BS.writeFile ("verification") backup2'
         Left err -> putStrLn err
 
     ConfigAccountCmd c -> case c of
