@@ -201,7 +201,7 @@ processConfigCmd action baseCfgDir verbose =
 
     ConfigBackupImport fileName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      ciphertext <- handleReadFile BS.readFile (Text.unpack fileName)
+      ciphertext <- handleReadFile BS.readFile fileName
       pwd <- askPassword "Enter password for decryption of backup" --, (Leave blank for no encryption): "
       accCfgs <- importConfigBackup ciphertext (Just pwd)
       case accCfgs of

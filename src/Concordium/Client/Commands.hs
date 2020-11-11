@@ -867,7 +867,7 @@ configBackupExportCmd =
     "export-backup"
     (info
       (ConfigBackupExport <$>
-        strArgument (metavar "FileName" <> help "Name for backup file")
+        strArgument (metavar "FILE" <> help "Name for backup file")
       )
       (progDesc "Save config to backup file, optionally encrypted with a password"))
 
@@ -878,7 +878,7 @@ configBackupImportCmd =
     "import-backup"
     (info
       (ConfigBackupImport <$>
-        strArgument (metavar "FileName" <> help "Backup file name")
+        strArgument (metavar "FILE" <> help "Backup file name")
       )
       (progDesc "Import config backup file, requires password if encrypted"))
 
