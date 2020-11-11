@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE QuasiQuotes #-}
 module Concordium.Client.Runner
   ( process
   , getAccountNonce
@@ -96,6 +97,7 @@ import           Data.List                           as L
 import qualified Data.Serialize                      as S
 import qualified Data.Set                            as Set
 import           Data.String
+import           Data.String.Interpolate (i)
 import           Data.Text(Text)
 import qualified Data.Tuple                          as Tuple
 import qualified Data.Text                           as Text
@@ -104,9 +106,8 @@ import           Data.Word
 import           Lens.Micro.Platform
 import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client.Exceptions
-import           Prelude                             hiding (fail, mod, unlines)
+import           Prelude                             hiding (fail, unlines)
 import           System.IO
-import qualified System.IO.Error                    as Err
 import           System.Directory
 import           Text.Printf
 import           Text.Read (readMaybe)
@@ -184,16 +185,16 @@ process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir
 processConfigCmd :: ConfigCmd -> Maybe FilePath -> Verbose ->  IO ()
 processConfigCmd action baseCfgDir verbose =
   case action of
-    ConfigInit -> void $ initBaseConfig baseCfgDir
+    ConfigInit -> void $ initBaseConfig baseCfgDir verbose
     ConfigShow -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
       runPrinter $ printBaseConfig baseCfg
       putStrLn ""
       accCfgs <- getAllAccountConfigs baseCfg
       runPrinter $ printAccountConfigList accCfgs
     ConfigAccountCmd c -> case c of
       ConfigAccountAdd addr naName -> do
-        baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+        baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
@@ -205,7 +206,7 @@ processConfigCmd action baseCfgDir verbose =
         forM_ naName $ logFatalOnError . validateAccountName
         void $ initAccountConfig baseCfg NamedAddress{..} True
       ConfigAccountImport file name importFormat -> do
-        baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+        baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
@@ -217,7 +218,7 @@ processConfigCmd action baseCfgDir verbose =
         accCfgs <- loadAccountImportFile importFormat file name
         void $ importAccountConfig baseCfg accCfgs verbose
       ConfigAccountAddKeys addr keysFile -> do
-        baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+        baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
@@ -245,7 +246,7 @@ processConfigCmd action baseCfgDir verbose =
             let accCfg' = accCfg { acKeys = keyMapNew }
             writeAccountKeys baseCfg' accCfg' verbose
       ConfigAccountUpdateKeys addr keysFile -> do
-        baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+        baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
@@ -279,7 +280,7 @@ processConfigCmd action baseCfgDir verbose =
               let accCfg' = accCfg { acKeys = keyMapDuplicates }
               writeAccountKeys baseCfg' accCfg' verbose
       ConfigAccountRemoveKeys addr idxs threshold -> do
-        baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+        baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
@@ -333,7 +334,7 @@ processConfigCmd action baseCfgDir verbose =
 -- If a name is provided in this case, this will become the account name.
 loadAccountImportFile :: AccountExportFormat -> FilePath -> Maybe Text -> IO [AccountConfig]
 loadAccountImportFile format file name = do
-  contents <- BS.readFile file
+  contents <- handleReadFile BS.readFile file
   case format of
     FormatMobile -> do
       pwd <- askPassword "Enter encryption password: "
@@ -357,7 +358,7 @@ processTransactionCmd action baseCfgDir verbose backend =
   case action of
     TransactionSubmit fname intOpts -> do
       -- TODO Ensure that the "nonce" field is optional in the payload.
-      source <- BSL.readFile fname
+      source <- handleReadFile BSL.readFile fname
 
       -- TODO Print transaction details and ask for confirmation if (ioConfirm intOpts)
 
@@ -369,7 +370,7 @@ processTransactionCmd action baseCfgDir verbose backend =
           tailTransaction_ hash
 --          logSuccess [ "transaction successfully completed" ]
     TransactionDeployCredential fname intOpts -> do
-      source <- BSL.readFile fname
+      source <- handleReadFile BSL.readFile fname
       withClient backend $ do
         tx <- processCredential source defaultNetId
         let hash = getBlockItemHash tx
@@ -388,7 +389,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       --      It should skip already completed steps.
       -- withClient backend $ tailTransaction_ hash
     TransactionSendGtu receiver amount txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -402,8 +403,23 @@ processTransactionCmd action baseCfgDir verbose backend =
       pl <- transferTransactionPayload ttxCfg (ioConfirm intOpts)
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
+    TransactionSendWithSchedule receiver schedule txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+      ttxCfg <- getTransferWithScheduleTransactionCfg baseCfg txOpts receiver schedule
+      let txCfg = twstcTransactionCfg ttxCfg
+      when verbose $ do
+        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        putStrLn ""
+
+      let intOpts = toInteractionOpts txOpts
+      pl <- transferWithScheduleTransactionPayload ttxCfg (ioConfirm intOpts)
+      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+
     TransactionEncryptedTransfer txOpts receiver amount index -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -556,6 +572,42 @@ getTransferTransactionCfg baseCfg txOpts receiver amount = do
     , ttcReceiver = receiverAddress
     , ttcAmount = amount }
   where nrgCost _ = return $ Just simpleTransferEnergyCost
+
+-- |Resolved configuration for a transfer transaction.
+data TransferWithScheduleTransactionConfig =
+  TransferWithScheduleTransactionConfig
+  { twstcTransactionCfg :: TransactionConfig
+  , twstcReceiver :: NamedAddress
+  , twstcSchedule :: [(Types.Timestamp, Types.Amount)]}
+
+-- |Resolve configuration of a transfer with schedule transaction based on persisted config and CLI flags.
+-- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
+getTransferWithScheduleTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Text -> Either (Types.Amount, COM.Interval, Int, Types.Timestamp) [(Types.Timestamp, Types.Amount)] -> IO TransferWithScheduleTransactionConfig
+getTransferWithScheduleTransactionCfg baseCfg txOpts receiver preSchedule = do
+  let realSchedule = case preSchedule of
+                       Right val -> val
+                       Left (total, interval, numIntervals, start) ->
+                         let chunks = total `div` fromIntegral numIntervals
+                             lastChunk = total `mod` fromIntegral numIntervals
+                             diff = case interval of
+                               COM.Minute -> 60 * 1000
+                               COM.Hour -> 60 * 60 * 1000
+                               COM.Day -> 24 * 60 * 60 * 1000
+                               COM.Week -> 7 * 24 * 60 * 60 * 1000
+                               COM.Month -> 30 * 24 * 60 * 60 * 1000
+                               COM.Year -> 365 * 24 * 60 * 60 * 1000
+                         in
+                           zip (iterate (+ diff) start) (replicate (numIntervals - 1) chunks ++ [chunks + lastChunk])
+  let nrgCost _ = return $ Just $ transferWithScheduleEnergyCost (length realSchedule)
+  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
+
+  receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
+
+  return TransferWithScheduleTransactionConfig
+    { twstcTransactionCfg = txCfg
+    , twstcReceiver = receiverAddress
+    , twstcSchedule = realSchedule }
+  where
 
 data EncryptedTransferTransactionConfig =
   EncryptedTransferTransactionConfig
@@ -816,6 +868,29 @@ transferTransactionPayload ttxCfg confirm = do
     unless confirmed exitTransactionCancelled
 
   return Types.Transfer { tToAddress = naAddr toAddress, tAmount = amount }
+
+-- |Convert transfer transaction config into a valid payload,
+-- optionally asking the user for confirmation.
+transferWithScheduleTransactionPayload :: TransferWithScheduleTransactionConfig -> Bool -> IO Types.Payload
+transferWithScheduleTransactionPayload ttxCfg confirm = do
+  let TransferWithScheduleTransactionConfig
+        { twstcTransactionCfg = TransactionConfig
+                              { tcEnergy = energy
+                              , tcExpiry = expiryTs
+                              , tcAccountCfg = AccountConfig { acAddr = fromAddress } }
+        , twstcSchedule = schedule
+        , twstcReceiver = toAddress }
+        = ttxCfg
+
+  logSuccess [ printf "sending GTUs from %s to %s" (showNamedAddress fromAddress) (showNamedAddress toAddress)
+             , printf "with the following release schedule:\n%swith a total amount of %s" (unlines $ map (\(a, b) -> showTimeFormatted (Types.timestampToUTCTime a) ++ ": " ++ showGtu b) schedule) (showGtu $ foldl' (\acc (_, x) -> acc + x) 0 schedule)
+             , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+             , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiryTs) ]
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  return Types.TransferWithSchedule { twsTo = naAddr toAddress, twsSchedule = schedule }
 
 encryptedTransferTransactionPayload :: MonadIO m => EncryptedTransferTransactionConfig -> Bool -> m Types.Payload
 encryptedTransferTransactionPayload EncryptedTransferTransactionConfig{..} confirm = do
@@ -1152,7 +1227,7 @@ processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processAccountCmd action baseCfgDir verbose backend =
   case action of
     AccountShow address block showEncrypted showDecrypted -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
 
       na <- getAccountAddressArg (bcAccountNameMap baseCfg) address
       encKey <-
@@ -1176,17 +1251,17 @@ processAccountCmd action baseCfgDir verbose backend =
       case v of
         Nothing -> putStrLn "Account not found."
         Just a -> runPrinter $ printAccountInfo na a verbose (showEncrypted || showDecrypted) encKey
-    
+
     AccountList block -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
       v <- withClientJson backend $ withBestBlockHash block getAccountList
       let addrmap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
       let addname :: ID.AccountAddress -> NamedAddress
           addname addr = NamedAddress (Map.lookup addr addrmap) addr
       runPrinter $ printAccountList (map addname v)
-    
+
     AccountDelegate bakerId txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -1203,7 +1278,7 @@ processAccountCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountUndelegate txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -1220,7 +1295,7 @@ processAccountCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountUpdateKeys f txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -1237,7 +1312,7 @@ processAccountCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountAddKeys f thresh txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -1254,7 +1329,7 @@ processAccountCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountRemoveKeys idxs thresh txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -1271,7 +1346,7 @@ processAccountCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountEncrypt{..} -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1287,7 +1362,7 @@ processAccountCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountDecrypt{..} -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1324,10 +1399,10 @@ processAccountCmd action baseCfgDir verbose backend =
 processModuleCmd :: ModuleCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processModuleCmd action baseCfgDir verbose backend =
   case action of
-    ModuleDeploy moduleFile txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+    ModuleDeploy modFile modName txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
 
-      mdCfg <- getModuleDeployTransactionCfg baseCfg txOpts moduleFile
+      mdCfg <- getModuleDeployTransactionCfg baseCfg txOpts modFile
       let txCfg = mdtcTransactionCfg mdCfg
 
       let intOpts = toInteractionOpts txOpts
@@ -1337,9 +1412,15 @@ processModuleCmd action baseCfgDir verbose backend =
         case extractModRef mTsr of
           Left "ioTail disabled" -> return ()
           Left err -> logFatal ["module deployment failed:", err]
-          Right modRef -> logSuccess ["module successfully deployed with reference:", show modRef]
+          Right modRef -> do
+            case modName of
+              Nothing -> return ()
+              Just modName' -> addModuleNameAndWrite verbose baseCfg modName' modRef
+            let namedModRef = NamedModuleRef {nmrRef = modRef, nmrName = modName}
+            logSuccess [[i|module successfully deployed with reference: #{namedModRef}|]]
 
     ModuleList block -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
       (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getModuleList bb
       v <- getFromJsonAndHandleError (\_ _ -> logFatal ["could not retrieve the list of modules",
                                    "the provided block hash is invalid:", Text.unpack bestBlock]) res
@@ -1347,39 +1428,39 @@ processModuleCmd action baseCfgDir verbose backend =
         Nothing -> logFatal ["could not retrieve the list of modules",
                                "the provided block does not exist:", Text.unpack bestBlock]
         Just [] -> logInfo ["there are no modules in block " ++ Text.unpack bestBlock]
-        Just xs -> runPrinter $ printModuleList xs
+        Just xs -> runPrinter $ printModuleList (bcModuleNameMap baseCfg) xs
 
-    ModuleShow moduleRef outFile block -> do
-      (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getModuleSource moduleRef bb
+    ModuleShow modRefOrName outFile block -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      namedModRef <- getNamedModuleRef (bcModuleNameMap baseCfg) modRefOrName
+      (bestBlock, res) <- withClient backend $ withBestBlockHash block $
+        \bb -> (bb,) <$> getModuleSource (showText $ nmrRef namedModRef) bb
 
       case res of
-        Left err -> logFatal ["I/O error: " ++ err]
-        Right "" -> logInfo ["module with reference " ++ Text.unpack moduleRef
-                            ++ " does not exist in block " ++ Text.unpack bestBlock]
-        Right moduleSource ->
+        Left err -> logFatal ["I/O error:", err]
+        Right "" -> logInfo [[i|the module reference #{namedModRef} does not exist in block #{bestBlock}|]]
+        Right modSource ->
           case outFile of
             -- Write to stdout
-            "-" -> BS.putStr moduleSource
+            "-" -> BS.putStr modSource
             -- Write to file
-            _   -> handleWriteModuleToFile outFile moduleSource
+            _   -> handleWriteFile BS.writeFile PromptBeforeOverwrite verbose outFile modSource
+    ModuleName modRefOrFile modName block -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      modRef <- getModuleRefFromRefOrFile modRefOrFile
+      (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getModuleSource (showText modRef) bb
+
+      case res of
+        Left err -> logFatal ["I/O error:", err]
+        -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
+        Right "" -> logInfo [[i|the module reference #{modRef} does not exist in block #{bestBlock}|]]
+        Right _ -> do
+          addModuleNameAndWrite verbose baseCfg modName modRef
+          logSuccess [[i|module reference #{modRef} was successfully named '#{modName}'|]]
   where extractModRef = extractFromTsr (\case
                                            Types.ModuleDeployed modRef -> Just modRef
                                            _ -> Nothing)
-
--- |Writes module to file and asks user to confirm if file already exists.
--- Relevant IOErrors are caught.
-handleWriteModuleToFile :: FilePath -> BS.ByteString -> IO ()
-handleWriteModuleToFile fileName contents = do
-  fileExists <- doesFileExist fileName
-  confirmed  <- if fileExists
-                then logWarn [fileNameQuoted ++ " already exists."] >> askConfirmation (Just "overwrite it")
-                else pure True
-  when confirmed $
-    Err.catchIOError (BS.writeFile fileName contents >> logSuccess ["successfully wrote the module to " ++ fileNameQuoted]) $
-      \e -> do
-        when (Err.isDoesNotExistError e) $ logError [fileNameQuoted ++ " does not exist and cannot be created"]
-        when (Err.isPermissionError e)   $ logError ["you do not have permissions to write to " ++ fileNameQuoted]
-  where fileNameQuoted = "'" ++ fileName ++ "'"
+        showText = Text.pack . show
 
 getModuleDeployTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> IO ModuleDeployTransactionCfg
 getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
@@ -1387,6 +1468,7 @@ getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
   txCfg <- getTransactionCfg baseCfg txOpts $ moduleDeployEnergyCost wasmModule
   return $ ModuleDeployTransactionCfg txCfg wasmModule
 
+-- |Calcuate the energy cost of deploying a module. Uses an ad hoc implementation from Concordium.Scheduler.Cost.
 moduleDeployEnergyCost :: Wasm.WasmModule -> AccountConfig -> IO (Maybe (Int -> Types.Energy))
 moduleDeployEnergyCost wasmMod accCfg = pure . Just . const $
   deployModuleCost payloadSize + headerCost signatureCount payloadSize
@@ -1421,6 +1503,7 @@ processContractCmd :: ContractCmd -> Maybe FilePath -> Verbose -> Backend -> IO 
 processContractCmd action baseCfgDir verbose backend =
   case action of
     ContractList block -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
       (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getInstances bb
       v <- getFromJsonAndHandleError (\_ _ -> logFatal ["could not retrieve the list of contracts",
                                    "the provided block hash is invalid:", Text.unpack bestBlock]) res
@@ -1428,23 +1511,23 @@ processContractCmd action baseCfgDir verbose backend =
         Nothing -> logFatal ["could not retrieve the list of contracts",
                                "the provided block does not exist:", Text.unpack bestBlock]
         Just [] -> logInfo ["there are no contract instances in block " ++ Text.unpack bestBlock]
-        Just xs -> runPrinter $ printContractList xs
+        Just xs -> runPrinter $ printContractList (bcContractNameMap baseCfg) xs
 
-    ContractShow contrAddrIndex contrAddrSubindex block -> do
-      let contrAddr = showCompactPrettyJSON $ mkContractAddress contrAddrIndex contrAddrSubindex
-      (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getInstanceInfo (Text.pack contrAddr) bb
+    ContractShow indexOrName subindex block -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
+      (bestBlock, res) <- withClient backend $ withBestBlockHash block $
+        \bb -> (bb,) <$> getInstanceInfo (Text.pack . showCompactPrettyJSON . ncaAddr $ namedContrAddr) bb
 
       case res of
-        Left err -> logFatal ["could not retrieve contract:", err]
-        -- TODO: Handle invalid block hashes and nonexisting blocks separately from nonexisting contracts.
-        Right AE.Null -> logInfo ["the contract instance at address " ++ contrAddr
-                      ++ " does not exist in block " ++ Text.unpack bestBlock]
+        Left err -> logFatal ["I/O error:", err]
+        -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
+        Right AE.Null -> logInfo [[i|the contract instance #{namedContrAddr} does not exist in block #{bestBlock}|]]
         Right contrInfo -> putStr . showPrettyJSON $ contrInfo
 
-    ContractInit moduleRefOrFile initName paramsFile amount txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
-
-      ciCfg <- getContractInitTransactionCfg baseCfg txOpts moduleRefOrFile initName paramsFile amount
+    ContractInit modTBD initName paramsFile contrName isPath amount txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      ciCfg <- getContractInitTransactionCfg baseCfg txOpts modTBD isPath initName paramsFile amount
       let txCfg = citcTransactionCfg ciCfg
 
       let intOpts = toInteractionOpts txOpts
@@ -1454,28 +1537,46 @@ processContractCmd action baseCfgDir verbose backend =
         case extractContractAddress mTsr of
           Left "ioTail disabled" -> return ()
           Left err -> logFatal ["contract initialisation failed:", err]
-          Right contrAddr -> logSuccess ["contract successfully initialized with address:", showCompactPrettyJSON contrAddr]
+          Right contrAddr -> do
+            case contrName of
+              Nothing -> return ()
+              Just contrName' -> addContractNameAndWrite verbose baseCfg contrName' contrAddr
+            let namedContrAddr = NamedContractAddress {ncaAddr = contrAddr, ncaName = contrName}
+            logSuccess [[i|contract successfully initialized with address: #{namedContrAddr}|]]
 
-    ContractUpdate contrAddrIndex contrAddrSubindex receiveName paramsFile amount txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
-
-      cuCfg <- getContractUpdateTransactionCfg baseCfg txOpts contrAddrIndex contrAddrSubindex receiveName paramsFile amount
+    ContractUpdate indexOrName subindex receiveName paramsFile amount txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      cuCfg <- getContractUpdateTransactionCfg baseCfg txOpts indexOrName subindex receiveName paramsFile amount
       let txCfg = cutcTransactionCfg cuCfg
 
       let intOpts = toInteractionOpts txOpts
       let pl = contractUpdateTransactionPayload cuCfg
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+
+    ContractName index subindex contrName block -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      let contrAddr = mkContractAddress index subindex
+      (bestBlock, res) <- withClient backend $ withBestBlockHash block $
+        \bb -> (bb,) <$> getInstanceInfo (Text.pack . showCompactPrettyJSON $ contrAddr) bb
+
+      case res of
+        Left err -> logFatal ["I/O error:", err]
+        -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
+        Right AE.Null -> logInfo [[i|the contract instance #{showCompactPrettyJSON contrAddr} does not exist in block #{bestBlock}|]]
+        Right _ -> do
+          addContractNameAndWrite verbose baseCfg contrName contrAddr
+          logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{contrName}'|]]
   where extractContractAddress = extractFromTsr (\case
                                                  Types.ContractInitialized {..} -> Just ecAddress
                                                  _ -> Nothing)
 
-getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> Word64 -> Word64
+getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> Text -> Maybe Word64
                                 -> Text -> Maybe FilePath -> Types.Amount -> IO ContractUpdateTransactionCfg
-getContractUpdateTransactionCfg baseCfg txOpts contrAddrIndex contrAddrSubindex receiveName paramsFile amount = do
+getContractUpdateTransactionCfg baseCfg txOpts indexOrName subindex receiveName paramsFile amount = do
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
-  let contrAddr = mkContractAddress contrAddrIndex contrAddrSubindex
+  namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
   params <- getWasmParameterFromFileOrDefault paramsFile
-  return $ ContractUpdateTransactionCfg txCfg contrAddr (Wasm.ReceiveName receiveName) params amount
+  return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr) (Wasm.ReceiveName receiveName) params amount
 
 contractUpdateTransactionPayload :: ContractUpdateTransactionCfg -> Types.Payload
 contractUpdateTransactionPayload ContractUpdateTransactionCfg {..} =
@@ -1495,15 +1596,15 @@ data ContractUpdateTransactionCfg =
   , cutcAmount :: !Types.Amount
   }
 
-getContractInitTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> String -> Text
+getContractInitTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> String -> Bool -> Text
                               -> Maybe FilePath -> Types.Amount -> IO ContractInitTransactionCfg
-getContractInitTransactionCfg baseCfg txOpts moduleRefOrFile initName paramsFile amount = do
-  moduleRef <- case readMaybe moduleRefOrFile of
-                 Just modRef -> pure modRef
-                 Nothing -> Types.ModuleRef . getHash <$> getWasmModuleFromFile moduleRefOrFile
+getContractInitTransactionCfg baseCfg txOpts modTBD isPath initName paramsFile amount = do
+  modRef <- if isPath
+            then getModuleRefFromFile modTBD
+            else nmrRef <$> getNamedModuleRef (bcModuleNameMap baseCfg) (Text.pack modTBD)
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   params <- getWasmParameterFromFileOrDefault paramsFile
-  return $ ContractInitTransactionCfg txCfg amount moduleRef (Wasm.InitName initName) params
+  return $ ContractInitTransactionCfg txCfg amount modRef (Wasm.InitName initName) params
 
 data ContractInitTransactionCfg =
   ContractInitTransactionCfg
@@ -1527,17 +1628,49 @@ contractInitTransactionPayload ContractInitTransactionCfg {..} =
 -- It defaults to our internal wasmVersion of 0, which essentially is the
 -- on-chain API version.
 getWasmModuleFromFile :: FilePath -> IO Wasm.WasmModule
-getWasmModuleFromFile moduleFile = Wasm.WasmModule 0 <$> BS.readFile moduleFile
+getWasmModuleFromFile moduleFile = Wasm.WasmModule 0 <$> handleReadFile BS.readFile moduleFile
 
 -- |Load Wasm Parameters from a binary file if Just, otherwise return mempty.
 getWasmParameterFromFileOrDefault :: Maybe FilePath -> IO Wasm.Parameter
 getWasmParameterFromFileOrDefault paramsFile = case paramsFile of
   Nothing -> pure . Wasm.Parameter $ BSS.empty
-  Just file -> Wasm.Parameter . BS.toShort <$> BS.readFile file
+  Just file -> Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile file
 
--- |Construct a Contract Address from an index and a subindex.
-mkContractAddress :: Word64 -> Word64 -> Types.ContractAddress
-mkContractAddress index subindex = Types.ContractAddress (Types.ContractIndex index) (Types.ContractSubindex subindex)
+-- |Try to parse the input as a module reference and assume it is a path if it fails.
+getModuleRefFromRefOrFile :: String -> IO Types.ModuleRef
+getModuleRefFromRefOrFile modRefOrFile = case readMaybe modRefOrFile of
+  Just modRef -> pure modRef
+  Nothing -> getModuleRefFromFile modRefOrFile
+
+-- |Load the module file and compute its hash, which is the reference.
+getModuleRefFromFile :: String -> IO Types.ModuleRef
+getModuleRefFromFile file = Types.ModuleRef . getHash <$> getWasmModuleFromFile file
+
+-- |Get a NamedContractAddress from either a name or index and an optional subindex.
+-- LogWarn if subindex is provided with a contract name.
+-- LogFatal if it is neither an index nor a contract name.
+getNamedContractAddress :: MonadIO m => ContractNameMap -> Text -> Maybe Word64 -> m NamedContractAddress
+getNamedContractAddress nameMap indexOrName subindex = case readMaybe $ Text.unpack indexOrName of
+  Just index -> return $ NamedContractAddress {ncaAddr = mkContractAddress index subindex, ncaName = Nothing}
+  Nothing -> do
+    when (isJust subindex) $ logWarn ["ignoring the --subindex as it should not be used in combination with a contract name"]
+    case Map.lookup indexOrName nameMap of
+      Just addr -> return $ NamedContractAddress {ncaAddr = addr, ncaName = Just indexOrName}
+      Nothing -> logFatal [[i|'#{indexOrName}' is neither the address index nor the name of a contract|]]
+
+-- |Get a NamedModuleRef from either a name or a module reference.
+-- LogFatal if it is neither a module reference nor a module name.
+getNamedModuleRef :: MonadIO m => ModuleNameMap -> Text -> m NamedModuleRef
+getNamedModuleRef nameMap modRefOrName = case readMaybe $ Text.unpack modRefOrName of
+  Just modRef -> return $ NamedModuleRef {nmrRef = modRef, nmrName = Nothing}
+  Nothing -> case Map.lookup modRefOrName nameMap of
+    Just modRef -> return $ NamedModuleRef {nmrRef = modRef, nmrName = Just modRefOrName}
+    Nothing -> logFatal [[i|'#{modRefOrName}' is neither the reference nor the name of a module|]]
+
+-- |Make a contract address from an index and an optional subindex (default: 0).
+mkContractAddress :: Word64 -> Maybe Word64 -> Types.ContractAddress
+mkContractAddress index subindex = Types.ContractAddress (Types.ContractIndex index) (Types.ContractSubindex subindex')
+  where subindex' = fromMaybe 0 subindex
 
 -- |Try to extract event information from a TransactionStatusResult.
 -- The Maybe returned by the supplied function is mapped to Either with an error message.
@@ -1564,14 +1697,14 @@ processConsensusCmd action _baseCfgDir verbose backend =
       v <- withClientJson backend getConsensusStatus
       runPrinter $ printConsensusStatus v
     ConsensusShowParameters b includeBakers -> do
-      baseCfg <- getBaseConfig _baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig _baseCfgDir verbose
       v <- withClientJson backend $ withBestBlockHash b getBirkParameters
       case v of
         Nothing -> putStrLn "Block not found."
         Just p -> runPrinter $ printBirkParameters includeBakers p addrmap
                     where
                       addrmap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
-                                          
+
     ConsensusChainUpdate rawUpdateFile authsFile keysFiles intOpts -> do
       let
         loadJSON :: (FromJSON a) => FilePath -> IO a
@@ -1592,10 +1725,10 @@ processConsensusCmd action _baseCfgDir verbose backend =
         keyLU key = let vk = SigScheme.correspondingVerifyKey key in
           case vk `Vec.elemIndex` Updates.asKeys auths of
             Nothing -> logFatal [printf "Authorizations file does not contain public key '%s'" (show vk)]
-            Just i -> do
-              unless (fromIntegral i `Set.member` keySet) $
-                logWarn [printf "Key with index %u (%s) is not authorized to perform this update type." i (show vk)]
-              return (fromIntegral i, key)
+            Just idx -> do
+              unless (fromIntegral idx `Set.member` keySet) $
+                logWarn [printf "Key with index %u (%s) is not authorized to perform this update type." idx (show vk)]
+              return (fromIntegral idx, key)
       keyMap <- OrdMap.fromList <$> mapM keyLU keys
       let ui = Updates.makeUpdateInstruction rawUpdate keyMap
       when verbose $ logInfo ["Generated update instruction:", show ui]
@@ -1670,7 +1803,7 @@ processBakerCmd action baseCfgDir verbose backend =
                      , "DO NOT LOSE THIS FILE"
                      , printf "to add a baker to the chain using these keys, use 'baker add %s'" f ]
     BakerAdd accountKeysFile txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1694,7 +1827,7 @@ processBakerCmd action baseCfgDir verbose backend =
           tailTransaction_ hash
 --          logSuccess [ "baker successfully added" ]
     BakerSetAccount bid accRef txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
       (_, rewardAccCfg) <- getAccountConfig (Just accRef) baseCfg Nothing Nothing Nothing AssumeInitialized
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -1719,7 +1852,7 @@ processBakerCmd action baseCfgDir verbose backend =
           tailTransaction_ hash
 --          logSuccess [ "baker reward account successfully updated" ]
     BakerSetKey bid file txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1732,7 +1865,7 @@ processBakerCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     BakerRemove bid txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1745,7 +1878,7 @@ processBakerCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     BakerSetAggregationKey bid file txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
@@ -1758,7 +1891,7 @@ processBakerCmd action baseCfgDir verbose backend =
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     BakerSetElectionKey bid file txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
       let intOpts = toInteractionOpts txOpts
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -1974,7 +2107,7 @@ processLegacyCmd :: LegacyCmd -> Backend -> IO ()
 processLegacyCmd action backend =
   case action of
     SendTransaction fname nid -> do
-      source <- BSL.readFile fname
+      source <- handleReadFile BSL.readFile fname
       t <- withClient backend $ processTransaction source nid
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (getBlockItemHash t)

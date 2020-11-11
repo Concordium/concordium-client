@@ -9,6 +9,7 @@ module Concordium.Client.Commands
   , AccountExportFormat(..)
   , ConfigAccountCmd(..)
   , TransactionOpts(..)
+  , Interval(..)
   , InteractionOpts(..)
   , TransactionCmd(..)
   , AccountCmd(..)
@@ -105,6 +106,14 @@ data ConfigAccountCmd
     , carkThreshold :: !(Maybe SignatureThreshold) }
   deriving (Show)
 
+data Interval = Minute -- 60 secs
+              | Hour -- 60 mins
+              | Day -- 24 hours
+              | Week -- 7 days
+              | Month -- 30 days
+              | Year -- 365 days
+              deriving (Show, Read)
+
 data TransactionCmd
   = TransactionSubmit
     { tsFile :: !FilePath
@@ -115,6 +124,10 @@ data TransactionCmd
     { tsgReceiver :: !Text
     , tsgAmount :: !Amount
     , tsgOpts :: !(TransactionOpts (Maybe Energy)) }
+  | TransactionSendWithSchedule
+    { twsReceiver :: !Text
+    , twsSchedule :: !(Either (Amount, Interval, Int, Timestamp) [(Timestamp, Amount)]) -- ^Eiher total amount, interval, number of intervals and starting time or a raw list of timestamps and amounts.
+    , twsOpts :: !(TransactionOpts (Maybe Energy)) }
   | TransactionDeployCredential
     { tdcFile :: !FilePath
     , tdcInteractionOpts :: !InteractionOpts }
@@ -177,57 +190,68 @@ data ModuleCmd
   = ModuleDeploy
     { -- |Path to the module.
       mdModuleFile :: !FilePath
+      -- |Local alias for the module reference.
+    , mdName :: !(Maybe Text)
       -- |Options for transaction.
-    , mdTransactionOpts :: !(TransactionOpts (Maybe Energy))
-    }
+    , mdTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   -- |List all modules.
   | ModuleList
     { -- |Hash of the block (default "best").
-      mlBlockHash :: !(Maybe Text)
-    }
+      mlBlockHash :: !(Maybe Text) }
   -- |Output the binary source code of the module to the provided file.
   | ModuleShow
-    { -- |Reference to the module.
-      msModuleReference :: !Text
+    { -- |Reference to the module OR a module name.
+      msModuleRefOrName :: !Text
       -- |Output the module to this file.
       -- Use '-' to output to stdout.
     , msOutFile :: !FilePath
       -- |Hash of the block (default "best").
     , mlBlockHash :: !(Maybe Text) }
+  -- |Add a local name to a module.
+  | ModuleName
+    { -- |Module reference OR path to the module (reference then calculated by hashing).
+      mnModule :: !String
+      -- |Name for the module.
+    , mnName :: !Text
+      -- |Hash of the block (default "best").
+    , mnBlockHash :: !(Maybe Text) }
   deriving (Show)
 
 data ContractCmd
   -- |Show the state of specified contract.
   = ContractShow
-    { -- |Index of the address for the contract.
-      cuAddressIndex :: !Word64
+    { -- |Index of the contract address OR a contract name.
+      cuAddressIndexOrName :: !Text
       -- |Subindex of the address for the contract (default: 0).
-    , cuAddressSubindex :: !Word64
+    , cuAddressSubindex :: !(Maybe Word64)
       -- |Hash of the block (default "best").
     , csBlockHash :: !(Maybe Text) }
   -- |List all contracts on chain.
   | ContractList
     { -- |Hash of the block (default "best").
-      clBlockHash :: !(Maybe Text)
-    }
+      clBlockHash :: !(Maybe Text) }
   -- |Initialize a contract from a module on chain.
   | ContractInit
-    { -- |Module reference OR path to the module (reference then calculated by hashing).
+    { -- |Module reference OR module name OR (if ciPath == True) path to the module (reference then calculated by hashing).
       ciModule :: !String
       -- |Name of the init function to use (default: "init").
     , ciInitName :: !Text
       -- |Path to a binary file containing parameters for the init function.
     , ciParameterFile :: !(Maybe FilePath)
+      -- |Local alias for the contract address.
+    , ciName :: !(Maybe Text)
+      -- |Determines whether ciModule should be interpreted as a path.
+    , ciPath :: !Bool
       -- |Amount to be send to contract (default: 0).
     , ciAmount :: !Amount
       -- |Options for transaction.
     , ciTransactionOpts :: !(TransactionOpts Energy) }
   -- |Update an existing contract, i.e. invoke a receive function.
   | ContractUpdate
-    { -- |Index of the address for the contract to invoke.
-      cuAddressIndex :: !Word64
+    { -- |Index of the contract address OR a contract name.
+      cuAddressIndexOrName :: !Text
       -- |Subindex of the address for the contract to invoke (default: 0).
-    , cuAddressSubindex :: !Word64
+    , cuAddressSubindex :: !(Maybe Word64)
       -- |Name of the receive function to use (default: "receive").
     , cuReceiveName :: !Text
       -- |Path to a binary file containing paramaters for the receive method.
@@ -236,6 +260,16 @@ data ContractCmd
     , cuAmount :: !Amount
       -- |Options for transaction.
     , cuTransactionOpts :: !(TransactionOpts Energy) }
+  -- |Add a local name to a contract.
+  | ContractName
+    { -- |Index of the address for the contract.
+      cnAddressIndex :: !Word64
+      -- |Subindex of the address for the contract (default: 0).
+    , cnAddressSubindex :: !(Maybe Word64)
+      -- |Name for the contract.
+    , cnName :: !Text
+      -- |Hash of the block (default "best").
+    , cnBlockHash :: !(Maybe Text) }
   deriving (Show)
 
 -- | The type parameter 'energyOrMaybe' should be Energy or Maybe Energy.
@@ -450,6 +484,7 @@ transactionCmds =
           (transactionSubmitCmd <>
            transactionStatusCmd <>
            transactionSendGtuCmd <>
+           transactionWithScheduleCmd <>
            transactionDeployCredentialCmd <>
            transactionEncryptedTransferCmd))
       (progDesc "Commands for submitting and inspecting transactions."))
@@ -489,10 +524,27 @@ transactionSendGtuCmd =
     "send-gtu"
     (info
       (TransactionSendGtu <$>
-        strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
-        option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
-        transactionOptsParser)
+       strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
+       option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
+       transactionOptsParser)
       (progDesc "Transfer GTU from one account to another (sending to contracts is currently not supported with this method - use 'transaction submit')."))
+
+transactionWithScheduleCmd :: Mod CommandFields TransactionCmd
+transactionWithScheduleCmd =
+  command
+   "send-gtu-scheduled"
+   (info
+     (let implicit = (\a b c d -> Left (a, b, c, d)) <$>
+                     option (eitherReader amountFromStringInform) (long "amount" <> metavar "amount" <> help "amount") <*>
+                     option auto (long "every" <> metavar "Interval" <> help "interval") <*>
+                     option auto (long "for" <> metavar "numItems" <> help "numIntems") <*>
+                     option auto (long "starting" <> metavar "starting" <> help "starting")
+          explicit = Right <$>
+                     (some (option auto (long "schedule" <> metavar "schedule" <> help "schedule")))
+       in
+         TransactionSendWithSchedule <$>
+         strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*> (implicit <|> explicit) <*> transactionOptsParser)
+     (progDesc "Transfer GTU from one account to another with the provided schedule of releases."))
 
 transactionEncryptedTransferCmd :: Mod CommandFields TransactionCmd
 transactionEncryptedTransferCmd =
@@ -645,7 +697,8 @@ moduleCmds =
         hsubparser
           (moduleDeployCmd <>
            moduleListCmd <>
-           moduleShowCmd))
+           moduleShowCmd <>
+           moduleNameCmd))
       (progDesc "Commands for inspecting and deploying modules."))
 
 moduleDeployCmd :: Mod CommandFields ModuleCmd
@@ -655,8 +708,9 @@ moduleDeployCmd =
     (info
       (ModuleDeploy <$>
         strArgument (metavar "FILE" <> help "Path to the smart contract module.") <*>
+        optional (strOption (long "name" <> metavar "NAME" <> help "Name for the module.")) <*>
         transactionOptsParser)
-      (progDesc "Deploy a smart contract module on the chain."))
+      (progDesc "Deploy a smart contract module on the chain, optionally naming the module."))
 
 moduleListCmd :: Mod CommandFields ModuleCmd
 moduleListCmd =
@@ -673,10 +727,21 @@ moduleShowCmd =
     "show"
     (info
       (ModuleShow <$>
-        strArgument (metavar "MODULE-REFERENCE" <> help "Reference to the module (use 'module list' to find it).") <*>
+        strArgument (metavar "MODULE-OR-NAME" <> help "Module reference OR a module name.") <*>
         strOption (long "out" <> metavar "FILE" <> help "File to output the source code to (use '-' for stdout).") <*>
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
-      (progDesc "List all modules."))
+      (progDesc "Get the source code for a module."))
+
+moduleNameCmd :: Mod CommandFields ModuleCmd
+moduleNameCmd =
+  command
+    "name"
+    (info
+      (ModuleName <$>
+        strArgument (metavar "MODULE" <> help "Module reference OR path to the module.") <*>
+        strOption (long "name" <> metavar "NAME" <> help "Name for the module.") <*>
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+      (progDesc "Name a module."))
 
 contractCmds :: Mod CommandFields Cmd
 contractCmds =
@@ -688,7 +753,8 @@ contractCmds =
           (contractShowCmd <>
            contractListCmd <>
            contractInitCmd <>
-           contractUpdateCmd))
+           contractUpdateCmd <>
+           contractNameCmd))
       (progDesc "Commands for inspecting and initializing smart contracts."))
 
 contractShowCmd :: Mod CommandFields ContractCmd
@@ -697,9 +763,9 @@ contractShowCmd =
     "show"
     (info
       (ContractShow <$>
-        argument auto (metavar "INDEX" <> help "Index of address for the contract on chain.") <*>
-        option auto (long "subindex" <> metavar "SUBINDEX" <> value 0
-                            <> help "Subindex of address for the contract on chain (default: 0)") <*>
+        strArgument (metavar "INDEX-OR-NAME" <> help "Index of the contract address OR a contract name.") <*>
+        optional (option auto (long "subindex" <> metavar "SUBINDEX"
+                            <> help "Subindex of address for the contract (default: 0)")) <*>
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
       (progDesc "Display contract state at given block."))
 
@@ -718,15 +784,17 @@ contractInitCmd =
     "init"
     (info
       (ContractInit <$>
-        strArgument (metavar "MODULE" <> help "Module reference OR path to the module.") <*>
+        strArgument (metavar "MODULE" <> help "Module reference OR module name OR (if --path is used) path to a module.") <*>
         strOption (long "func" <> metavar "INIT-NAME" <> value "init"
                              <> help "Name of the specific init function in the module (default: \"init\").") <*>
         optional (strOption (long "params" <> metavar "FILE"
                              <> help "Binary file with parameters for init function (default: no parameters).")) <*>
+        optional (strOption (long "name" <> metavar "NAME" <> help "Name for the contract.")) <*>
+        switch (long "path" <> help "Use when MODULE is a path to a module file.") <*>
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> value 0
                                                                 <> help "Amount of GTU to transfer to the contract.") <*>
         requiredEnergyTransactionOptsParser)
-      (progDesc "Initialize contract from already deployed module."))
+      (progDesc "Initialize contract from already deployed module, optionally naming the contract."))
 
 contractUpdateCmd :: Mod CommandFields ContractCmd
 contractUpdateCmd =
@@ -734,9 +802,9 @@ contractUpdateCmd =
     "update"
     (info
       (ContractUpdate <$>
-        argument auto (metavar "INDEX" <> help "Index of address for the contract on chain.") <*>
-        option auto (long "subindex" <> metavar "SUBINDEX" <> value 0 <>
-                     help "Subindex of address for the contract on chain (default: 0)") <*>
+        strArgument (metavar "INDEX-OR-NAME" <> help "Index of the contract address OR a contract name.") <*>
+        optional (option auto (long "subindex" <> metavar "SUBINDEX" <>
+                     help "Subindex of address for the contract on chain (default: 0)")) <*>
         strOption (long "func" <> metavar "RECEIVE-NAME" <> value "receive"
                              <> help "Name of the specific receive function in the module (default: \"receive\").") <*>
         optional (strOption (long "params" <> metavar "FILE"
@@ -745,6 +813,19 @@ contractUpdateCmd =
                                                                 <> help "Amount of GTU to transfer to the contract.") <*>
         requiredEnergyTransactionOptsParser)
       (progDesc "Update an existing contract."))
+
+contractNameCmd :: Mod CommandFields ContractCmd
+contractNameCmd =
+  command
+    "name"
+    (info
+      (ContractName <$>
+        argument auto (metavar "INDEX" <> help "Index of the contract address to be named.") <*>
+        optional (option auto (long "subindex" <> metavar "SUBINDEX"
+                            <> help "Subindex of contract address to be named (default: 0)")) <*>
+        strOption (long "name" <> metavar "NAME" <> help "Name for the contract.") <*>
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+      (progDesc "Name a contract."))
 
 configCmds :: ShowAllOpts -> Mod CommandFields Cmd
 configCmds showAllOpts =
