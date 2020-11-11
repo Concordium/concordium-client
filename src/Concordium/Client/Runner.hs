@@ -193,14 +193,14 @@ processConfigCmd action baseCfgDir verbose =
       accCfgs <- getAllAccountConfigs baseCfg
       runPrinter $ printAccountConfigList accCfgs
     ConfigBackupExport fileName -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
       pwd <- askPassword "Enter password for encryption of backup" --, (Leave blank for no encryption): "
       allAccounts <- getAllAccountConfigs baseCfg
       backup <- exportConfigBackup allAccounts (Just pwd)
-      BS.writeFile (Text.unpack fileName) backup
-    
+      handleWriteFile BS.writeFile PromptBeforeOverwrite verbose (Text.unpack fileName) backup 
+      
     ConfigBackupImport fileName -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose AutoInit
+      baseCfg <- getBaseConfig baseCfgDir verbose
       ciphertext <- BS.readFile (Text.unpack fileName)
       pwd <- askPassword "Enter password for decryption of backup" --, (Leave blank for no encryption): "
       accCfgs <- importConfigBackup ciphertext (Just pwd)

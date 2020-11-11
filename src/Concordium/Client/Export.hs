@@ -152,7 +152,6 @@ decodeGenesisFormattedAccountExport payload name pwd = runExceptT $ do
 
 
 ---- Code for instantiating, exporting and importing config backups
-
 -- | An export format used for config backups.
 data WalletBackup =
   WalletBackup
@@ -168,19 +167,17 @@ instance AE.FromJSON WalletBackup
 -- | Encode and encrypt the config Json, for writing to a file, optionally protected under a password.
 exportConfigBackup  :: [AccountConfig] -- ^ A list of 'AccountConfig's
   -> Maybe Password -- ^ Password to decrypt the export and to encrypt the sign keys.
-  -- -> Password -- ^ Password to decrypt the export and to encrypt the sign keys.
   -> IO (BS.ByteString) -- ^ JSON with encrypted accounts and identities,
                    -- which must include the fields of an 'EncryptedJSON WalletExport'.
 exportConfigBackup accounts pwd = case pwd of
   Just password -> LazyBS.toStrict . AE.encode <$> ( encryptJSON AES256 PBKDF2SHA256 WalletBackup{wbuAccounts = accounts} password)
   Nothing -> return $ LazyBS.toStrict $ AE.encode WalletBackup{wbuAccounts = accounts} 
-  -- LazyBS.toStrict $ AE.encode encryptedBackup
+
 
 -- |Decrypt and decode an exported config, optionally protected under a password.
 importConfigBackup
   :: BS.ByteString
   -> Maybe Password
-  -- -> Password
   -> IO (Either String [AccountConfig])
 importConfigBackup json pwd = runExceptT $ do
   case pwd of
@@ -191,23 +188,3 @@ importConfigBackup json pwd = runExceptT $ do
     Nothing -> do
       WalletBackup{..} <- AE.eitherDecodeStrict json `embedErr` printf "cannot decode walletbackup JSON: %s"
       return $ wbuAccounts
-    
-
--- accountCfgFromWalletBackupAccount :: Password -> WalletExportAccount -> ExceptT String IO AccountConfig
--- accountCfgFromWalletExportAccount pwd WalletExportAccount { weaKeys = AccountSigningData{..}, .. } = do
---   name <- liftIO $ ensureValidName weaName
---   acKeys <- liftIO $ encryptAccountKeyMap pwd asdKeys
---   acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd weaEncryptionKey)
---   return $ AccountConfig
---     { acAddr = NamedAddress { naName = Just name, naAddr = asdAddress }
---     , acThreshold = asdThreshold
---     , ..
---     }
---   where
---     ensureValidName name =
---       case validateAccountName name of
---         Left err -> do
---           logError [err]
---           putStr "Input valid replacement name: "
---           T.getLine >>= ensureValidName
---         Right () -> return name
