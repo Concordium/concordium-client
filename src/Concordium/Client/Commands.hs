@@ -104,6 +104,11 @@ data ConfigAccountCmd
     { carkAddr :: !Text
     , carkKeys :: ![KeyIndex]
     , carkThreshold :: !(Maybe SignatureThreshold) }
+  | ConfigAccountAddName
+    { canAddr :: !Text
+    , canName :: !Text }
+  | ConfigAccountRemoveName
+    { carnText :: !Text }
   deriving (Show)
 
 data Interval = Minute -- 60 secs
@@ -866,7 +871,9 @@ configAccountCmds showAllOpts =
            configAccountImportCmd showAllOpts <>
            configAccountAddKeysCmd <>
            configAccountUpdateKeysCmd <>
-           configAccountRemoveKeysCmd))
+           configAccountRemoveKeysCmd <>
+           configAccountAddNameCmd <>
+           configAccountRemoveNameCmd))
       (progDesc "Commands for inspecting and changing account-specific configuration."))
 
 configAccountAddCmd :: Mod CommandFields ConfigAccountCmd
@@ -963,6 +970,27 @@ readAccountExportFormat = str >>= \case
   "mobile" -> return FormatMobile
   "genesis" -> return FormatGenesis
   s -> readerError $ printf "invalid format: %s (supported values: 'mobile' and 'genesis')" (s :: String)
+
+configAccountAddNameCmd :: Mod CommandFields ConfigAccountCmd
+configAccountAddNameCmd =
+  command
+    "add-name"
+    (info
+      (ConfigAccountAddName <$>
+        strArgument (metavar "ADDRESS" <> help "Address of the account to name") <*>
+        strArgument (metavar "NAME" <> help "Name to assign associate with the given address"))
+    (progDescDoc $ docFromLines
+      [ "Associates the given name with the given address" ]))
+
+configAccountRemoveNameCmd :: Mod CommandFields ConfigAccountCmd
+configAccountRemoveNameCmd =
+  command
+    "remove-name"
+    (info
+      (ConfigAccountRemoveName <$>
+        strArgument (metavar "NAME" <> help "Name of the account"))
+    (progDescDoc $ docFromLines
+      [ "Remove the given name and its associated address from the list of named accounts" ]))
 
 consensusCmds :: Mod CommandFields Cmd
 consensusCmds =

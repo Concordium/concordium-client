@@ -18,7 +18,6 @@ import qualified Data.Aeson.Encode.Pretty as AE
 import qualified Data.ByteString.Lazy as BSL
 import Data.Maybe
 import Data.Either
-
 import Data.Char
 import Data.List as L
 import Data.List.Split
@@ -293,6 +292,36 @@ initAccountConfig baseCfg namedAddr inCLI = do
     Left err -> logFatal [err]
     Right config -> return config
 
+-- |Remove a name from the account name map. If the name is not in use
+-- |it does nothing
+-- |Returns the potentially updated baseConfig
+removeAccountNameAndWrite :: BaseConfig -> Text -> Verbose -> IO BaseConfig
+removeAccountNameAndWrite baseCfg name verbose = do
+  -- Check if config has been initialized.
+  let accCfgDir = bcAccountCfgDir baseCfg
+      mapFile = accountNameMapFile accCfgDir
+  liftIO $ ensureAccountConfigInitialized baseCfg
+
+  let m = M.delete name $ bcAccountNameMap baseCfg
+  liftIO $ writeNameMap verbose mapFile m
+  logSuccess ["removed name mapping"]
+  return baseCfg { bcAccountNameMap = m }
+
+-- |Add a name to the account name map. If the name is already in use it
+-- |overwrites it
+-- |Returns the updated baseConfig
+addAccountNameAndWrite :: BaseConfig -> Text -> AccountAddress -> Verbose -> IO BaseConfig
+addAccountNameAndWrite baseCfg name addr verbose = do
+  -- Check if config has been initialized.
+  let accCfgDir = bcAccountCfgDir baseCfg
+      mapFile = accountNameMapFile accCfgDir
+  liftIO $ ensureAccountConfigInitialized baseCfg
+
+  let m = M.insert name addr $ bcAccountNameMap baseCfg
+  liftIO $ writeNameMap verbose mapFile m
+  logSuccess ["added name mapping"]
+  return baseCfg { bcAccountNameMap = m }
+
 -- |Write the provided configuration to disk in the expected formats.
 importAccountConfigEither :: BaseConfig -> [AccountConfig] -> Verbose -> IO (Either String BaseConfig)
 importAccountConfigEither baseCfg accCfgs verbose = runExceptT $ foldM f baseCfg accCfgs
@@ -536,6 +565,21 @@ isValidContractOrModuleName n = not (T.null n) && not (isSpace $ T.head n) && is
                                 not (isSpace $ T.last n) && T.all supportedChar n
   where supportedChar c = isAlphaNum c || c `elem` supportedSpecialChars
         supportedSpecialChars = "-_,.!? " :: String
+
+-- |Prompt the user to input an account name validating the input
+promptAccountName :: MonadIO m => String -> m Text
+promptAccountName prompt = liftIO $ do
+  putStr $ prettyMsg ": " prompt
+  input <- T.getLine >>= ensureValidName
+  return input
+  where
+    ensureValidName name =
+      case validateAccountName name of
+        Left err -> do
+          logError [err]
+          putStr "Input valid name: "
+          T.getLine >>= ensureValidName
+        Right () -> return name
 
 -- |Check whether the given text is a valid name and fail with an error message if it is not.
 validateAccountName :: (MonadError String m) => Text -> m ()

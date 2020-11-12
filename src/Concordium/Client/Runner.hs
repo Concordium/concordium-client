@@ -216,7 +216,38 @@ processConfigCmd action baseCfgDir verbose =
 
         -- NB: This also checks whether the name is valid if provided.
         accCfgs <- loadAccountImportFile importFormat file name
-        void $ importAccountConfig baseCfg accCfgs verbose
+
+        -- fold over all accounts to add adding them to the config, starting from
+        -- the base config. Checks for duplicates in the names mapping and prompts
+        -- the user to give a new name
+        foldM_ f baseCfg accCfgs
+
+        where
+          f bCfg aCfg = do
+            let NamedAddress { naAddr = addr, naName = nameOpt } = acAddr aCfg
+            case nameOpt of
+              Just n -> do
+                newName <- checkUntilNoCollision n $ bcAccountNameMap bCfg
+                (bCfg', _, t) <- initAccountConfig bCfg NamedAddress{naAddr = addr, naName = Just newName} True
+                when t $ writeAccountKeys bCfg' aCfg True
+                return bCfg'
+              Nothing -> do
+                -- Currently, all contacts imported from mobile should have a name,
+                -- so this case should never be met, but should we be able to encounter
+                -- it in the future, it is handled as initializing an account without a
+                -- name
+                (bCfg', _, t) <- initAccountConfig bCfg (acAddr aCfg) True
+                when t $ writeAccountKeys bCfg' aCfg verbose
+                return bCfg'
+          -- prompt user for a new input until a non-colliding one is given
+          checkUntilNoCollision :: Text -> (Map.HashMap Text ID.AccountAddress) -> IO Text
+          checkUntilNoCollision key m =
+            case Map.lookup key m of
+              Just currentAddr -> do
+                logWarn [[i|Importing an account with the name '#{key}', but this name is already mapped to the account '#{currentAddr}'|]]
+                userInput <- promptAccountName [i|specify a new name to map to this account|]
+                checkUntilNoCollision userInput m
+              Nothing -> return key
       ConfigAccountAddKeys addr keysFile -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
@@ -314,6 +345,43 @@ processConfigCmd action baseCfgDir verbose =
 
               let accCfg' = accCfg { acThreshold = fromMaybe (acThreshold accCfg) threshold }
               removeAccountKeys baseCfg accCfg' (HSet.toList idxsToRemove) verbose
+      ConfigAccountAddName addr name -> do
+        baseCfg <- getBaseConfig baseCfgDir verbose
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        checkedAddr <-
+          case ID.addressFromText addr of
+            Left err -> logFatal [[i|cannot parse #{addr} as an address: #{err}|]]
+            Right a -> return a
+        logFatalOnError $ validateAccountName name
+
+        let nameMap = bcAccountNameMap baseCfg
+        case Map.lookup name nameMap of
+          Nothing -> do
+            logInfo [[i|mapping '#{name}' to address '#{checkedAddr}'|]]
+            void $ addAccountNameAndWrite baseCfg name checkedAddr verbose
+          Just currentAddr -> do
+            logWarn [[i|the name '#{name}' is already mapped to the address '#{currentAddr}'|]]
+
+            updateConfirmed <- askConfirmation $ Just "confirm that you want to overwrite the existing mapping"
+
+            when updateConfirmed $ do
+              logInfo [[i|mapping '#{name}' to address '#{checkedAddr}'|]]
+              void $ addAccountNameAndWrite baseCfg name checkedAddr verbose
+      ConfigAccountRemoveName name -> do
+        baseCfg <- getBaseConfig baseCfgDir verbose
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        let nameMap = bcAccountNameMap baseCfg
+        case Map.lookup name nameMap of
+          Nothing -> logFatal [[i|the name '#{name}' is not in use|]]
+          Just currentAddr -> do
+            logInfo [[i|removing mapping from '#{name}' to address '#{currentAddr}'|]]
+            void $ removeAccountNameAndWrite baseCfg name verbose
 
   where showMapIdxs = showIdxs . Map.keys
         showHSetIdxs = showIdxs . HSet.toList
