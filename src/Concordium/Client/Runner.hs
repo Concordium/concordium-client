@@ -1590,7 +1590,7 @@ getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy ->
 getContractUpdateTransactionCfg baseCfg txOpts indexOrName subindex receiveName paramsFile schemaFile amount = do
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-  params <- getWasmParameter paramsFile schemaFile
+  params <- getWasmParameter paramsFile schemaFile receiveName
   return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr) (Wasm.ReceiveName receiveName) params amount
 
 contractUpdateTransactionPayload :: ContractUpdateTransactionCfg -> Types.Payload
@@ -1618,7 +1618,7 @@ getContractInitTransactionCfg baseCfg txOpts modTBD isPath initName paramsFile s
             then getModuleRefFromFile modTBD
             else nmrRef <$> getNamedModuleRef (bcModuleNameMap baseCfg) (Text.pack modTBD)
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
-  params <- getWasmParameter paramsFile schemaFile
+  params <- getWasmParameter paramsFile schemaFile initName
   return $ ContractInitTransactionCfg txCfg amount modRef (Wasm.InitName initName) params
 
 data ContractInitTransactionCfg =
@@ -1649,12 +1649,23 @@ getWasmModuleFromFile moduleFile = Wasm.WasmModule 0 <$> handleReadFile BS.readF
 -- If the schema file is supplied, parse the parameter file as JSON. Otherwise, parse it as binary.
 -- Warns the user if a schema is supplied without a parameter file.
 -- If no parameter file is supplied, return mempty.
-getWasmParameter :: Maybe FilePath -> Maybe FilePath -> IO Wasm.Parameter
-getWasmParameter paramsFile schemaFile = case (paramsFile, schemaFile) of
+getWasmParameter :: Maybe FilePath -> Maybe FilePath -> Text -> IO Wasm.Parameter
+getWasmParameter paramsFile schemaFile funcName = case (paramsFile, schemaFile) of
   (Nothing, Nothing) -> emptyParams
   (Nothing, Just _) -> logWarn ["ignoring the --schema as no --params were supplied"] *> emptyParams
   (Just paramsFile', Nothing) -> Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile paramsFile'
-  (Just _paramsFile', Just _schemaFile') -> emptyParams -- TODO: parse params and return or fail.
+  (Just paramsFile', Just schemaFile') -> do
+    eParams :: Either String AE.Value <- AE.eitherDecode <$> handleReadFile BSL8.readFile paramsFile'
+    eSchema <- Contract.decodeSchema <$> handleReadFile BS.readFile schemaFile'
+    case (eParams, eSchema) of
+      (Left errP, Left errS) -> logFatal [[i|Could not decode parameters ('#{paramsFile'}') nor schema ('#{schemaFile'}'):|], errP, errS]
+      (Left errP, _) -> logFatal [[i|Could not decode parameters from file '#{paramsFile'}' as JSON:|], errP]
+      (_, Left errS) -> logFatal [[i|Could not decode schema from file '#{schemaFile'}':|], errS]
+      (Right params, Right Contract.Schema {..}) -> case Map.lookup funcName methodParameter of
+        Nothing -> logFatal [[i|Function name #{funcName} does not exist in schema.|]]
+        Just rsType -> case Contract.serializeParams rsType params of
+          Left err -> logFatal [[i|Failed while parsing parameters using schema: #{err}|]]
+          Right bs -> pure . Wasm.Parameter . BS.toShort $ bs
   where emptyParams = pure . Wasm.Parameter $ BSS.empty
 
 -- |Try to parse the input as a module reference and assume it is a path if it fails.
