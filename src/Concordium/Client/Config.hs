@@ -358,8 +358,8 @@ data NamedModuleRef =
 
 instance Show NamedModuleRef where
   show NamedModuleRef {..} = case nmrName of
-    Just nmrName' -> [i|#{nmrRef} (#{nmrName'})|]
-    Nothing -> show nmrRef
+    Just nmrName' -> [i|'#{nmrRef}' (#{nmrName'})|]
+    Nothing -> [i|'#{nmrRef}'|]
 
 -- |Write the name map to a file in a pretty JSON format.
 writeNameMapAsJSON :: AE.ToJSON v => Verbose -> FilePath -> NameMap v -> IO ()
