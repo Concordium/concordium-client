@@ -211,7 +211,9 @@ processConfigCmd action baseCfgDir verbose =
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
 
-        nameAddr@NamedAddress{..} <- getAccountAddressArg (bcAccountNameMap baseCfg) (Just account)
+        -- look up the name/address and check if account is initialized:
+        (_, accountConfig) <- getAccountConfig (Just account) baseCfg Nothing Nothing Nothing AssumeInitialized
+        let nameAddr@NamedAddress{..} = acAddr accountConfig
 
         let descriptor = case naName of
               Nothing -> "the account with address " ++ show naAddr
@@ -352,7 +354,7 @@ processConfigCmd action baseCfgDir verbose =
           logWarn ["the threshold can at most be the number of keys: " ++ show numberOfKeys]
         else 
           do 
-            logWarn ["the threshold will be set to " ++ show (fromIntegral threshold)]
+            logWarn ["the threshold will be set to " ++ show (toInteger threshold)]
 
             let accCfg' = accCfg { acThreshold = threshold }
             updateConfirmed <- askConfirmation $ Just "confirm that you want change the threshold"
