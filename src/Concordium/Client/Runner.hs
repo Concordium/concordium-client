@@ -215,7 +215,7 @@ processConfigCmd action baseCfgDir verbose =
 
         let descriptor = case naName of
               Nothing -> "the account with adress " ++ (show naAddr)
-              Just name -> "the account " ++ (show name) ++ " with adress " ++ (show naAddr)
+              Just name -> "the account " ++ (show name) ++ " with address " ++ (show naAddr)
 
         logWarn [descriptor ++ " will be removed and can NOT be recovered"]
 
