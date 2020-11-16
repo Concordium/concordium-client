@@ -215,6 +215,18 @@ Account keys:
     2: sign=329bb019222c721734f1bfc22d5d30320fe120a2dd33a202a1f1a29b76d9593f, verify=57d18474625f4e4b677ed0cda28725c6e4ce9617c63afbaac08e85c4faa41208
 ```
 
+##### `config account remove ACCOUNT`
+Remove the account `ACCOUNT` from the persisted configuration. `ACCOUNT` can be the name or the address of an initialized account.
+
+##### `config account set-threshold`
+Update the signature threshold of an account
+
+Required flags:
+
+* `--account`: Address or name of the account.
+* `--threshold`: New signature threshold for the account. Must be at least 1 and at most the number of keys on the account.
+
+
 #### Transaction
 
 Transaction sending and inspection.
