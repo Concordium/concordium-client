@@ -315,6 +315,10 @@ removeAccountConfig baseCfg@BaseConfig{..} NamedAddress{..} = do
   let keysDir = accountKeysDir bcAccountCfgDir naAddr
   liftIO $ removePathForcibly keysDir
 
+  -- Remove the threshold file
+  let thresholdFilePath = accountThresholdFile bcAccountCfgDir naAddr
+  liftIO $ removePathForcibly thresholdFilePath
+
   -- If an alias was removed, write the new map
   when nameWasRemoved (liftIO $ writeNameMap True (accountNameMapFile bcAccountCfgDir) accountNameMap')
 
