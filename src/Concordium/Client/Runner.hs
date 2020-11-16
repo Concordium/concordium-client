@@ -352,7 +352,7 @@ processConfigCmd action baseCfgDir verbose =
           logWarn ["the threshold can at most be the number of keys: " ++ show numberOfKeys]
         else 
           do 
-            logWarn ["the threshold will be set to " ++ show threshold]
+            logWarn ["the threshold will be set to " ++ show (fromIntegral threshold)]
 
             let accCfg' = accCfg { acThreshold = threshold }
             updateConfirmed <- askConfirmation $ Just "confirm that you want change the threshold"
