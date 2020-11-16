@@ -214,8 +214,8 @@ processConfigCmd action baseCfgDir verbose =
         nameAddr@NamedAddress{..} <- getAccountAddressArg (bcAccountNameMap baseCfg) (Just account)
 
         let descriptor = case naName of
-              Nothing -> "the account with address " ++ (show naAddr)
-              Just name -> "the account " ++ (show name) ++ " with address " ++ (show naAddr)
+              Nothing -> "the account with address " ++ show naAddr
+              Just name -> "the account " ++ show name ++ " with address " ++ show naAddr
 
         logWarn [descriptor ++ " will be removed and can NOT be recovered"]
 
@@ -348,10 +348,11 @@ processConfigCmd action baseCfgDir verbose =
         -- The parser checks that the threshold is at least 1.
         -- Check that the new threshold is at most the amount of keys:
         let numberOfKeys = Map.size (acKeys accCfg)
-        case (numberOfKeys < (fromIntegral threshold)) of
-          True -> logWarn ["the threshold can at most be the number of keys: " ++ (show numberOfKeys)]
-          False -> do 
-            logWarn ["the threshold will be set to " ++ (show threshold)]
+        if numberOfKeys < fromIntegral threshold then 
+          logWarn ["the threshold can at most be the number of keys: " ++ show numberOfKeys]
+        else 
+          do 
+            logWarn ["the threshold will be set to " ++ show threshold]
 
             let accCfg' = accCfg { acThreshold = threshold }
             updateConfirmed <- askConfirmation $ Just "confirm that you want change the threshold"
