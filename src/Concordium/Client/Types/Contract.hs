@@ -1,9 +1,22 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE QuasiQuotes #-}
-module Concordium.Client.Types.Contract where
+module Concordium.Client.Types.Contract
+  ( addSchemaToInfo
+  , decodeSchema
+  , encodeSchema
+  , runGetRsValueAsJSON
+  , serializeParams
+  , Fields(..)
+  , Info(..)
+  , Model(..)
+  , RsType(..)
+  , Schema(..)
+  , SizeLength(..)
+  ) where
 
 import Concordium.ID.Types (addressFromText)
-import Concordium.Types (AccountAddress, Amount, ContractAddress)
+import Concordium.Types (AccountAddress, Amount, ContractAddress(..), ContractIndex(..), ContractSubindex(..))
 
 import Control.Monad (unless, when)
 import Data.Aeson (FromJSON, ToJSON, object, toJSON, (.=), (.:))
@@ -23,6 +36,7 @@ import Data.Serialize (Get, Put, Putter, Serialize, get, getInt8, getInt16le, ge
 import qualified Data.Serialize as S
 import Data.String.Interpolate (i)
 import Data.Text (Text)
+import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Vector as V
 import Data.Word (Word32)
@@ -221,24 +235,18 @@ instance FromJSON Model where
   parseJSON invalid = fail [i|Invalid model. Should be either a ByteString or a JSON obj: #{invalid}|]
 
 
--- ** VALUES **
+-- ** Get and Put JSON **
 
-getModel :: Schema -> Get AE.Value
-getModel Schema{..} = do
+getModelAsJSON :: Schema -> Get AE.Value
+getModelAsJSON Schema{..} = do
   state' <- case state of
       Nothing -> return AE.Null
-      Just rsType -> getRsValue rsType
+      Just rsType -> getRsValueAsJSON rsType
   return $ object ["state" .= state', "method_parameters" .= methodParameter]
 
-getFields :: Fields -> Get AE.Value
-getFields fields = case fields of
-  Named pairs -> toJSON <$> traverse getPair pairs
-  Unnamed xs  -> toJSON <$> traverse getRsValue xs
-  Unit        -> return $ AE.Array mempty
-  where getPair (k, v) = (\val -> object [k .= val]) <$> getRsValue v
 
-getRsValue :: RsType -> Get AE.Value
-getRsValue rsType = case rsType of
+getRsValueAsJSON :: RsType -> Get AE.Value
+getRsValueAsJSON rsType = case rsType of
   RsUnit -> return AE.Null
   RsBool -> AE.Bool <$> get
   RsU8   -> toJSON <$> getWord8
@@ -250,23 +258,23 @@ getRsValue rsType = case rsType of
   RsI32  -> toJSON <$> getInt32le
   RsI64  -> toJSON <$> getInt64le
   RsAccountAddress  -> toJSON <$> (get :: Get AccountAddress)
-  RsContractAddress -> toJSON <$> (get :: Get ContractAddress)
+  RsContractAddress -> toJSON <$> (ContractAddress <$> (ContractIndex <$> getWord64le) <*> (ContractSubindex <$> getWord64le))
   RsOption optType -> do
     some <- getWord8
     case some of
       0 -> return AE.Null
-      1 -> getRsValue optType
+      1 -> getRsValueAsJSON optType
       _ -> fail "Invalid some tag for Option."
   RsPair a b -> do
-    l <- getRsValue a
-    r <- getRsValue b
+    l <- getRsValueAsJSON a
+    r <- getRsValueAsJSON b
     return $ AE.toJSON [l, r]
   RsString sl        -> toJSON <$> getTextWithSizeLen sl
-  RsList sl elemType -> toJSON <$> getListOfWithSizeLen sl (getRsValue elemType)
-  RsSet sl elemType  -> toJSON <$> getListOfWithSizeLen sl (getRsValue elemType)
-  RsMap sl keyType valType -> toJSON <$> getListOfWithSizeLen sl (getTwoOf (getRsValue keyType) (getRsValue valType))
-  RsArray len elemType     -> toJSON <$> getListOfWithKnownLen len (getRsValue elemType)
-  RsStruct fields -> toJSON <$> getFields fields
+  RsList sl elemType -> toJSON <$> getListOfWithSizeLen sl (getRsValueAsJSON elemType)
+  RsSet sl elemType  -> toJSON <$> getListOfWithSizeLen sl (getRsValueAsJSON elemType)
+  RsMap sl keyType valType -> toJSON <$> getListOfWithSizeLen sl (getTwoOf (getRsValueAsJSON keyType) (getRsValueAsJSON valType))
+  RsArray len elemType     -> toJSON <$> getListOfWithKnownLen len (getRsValueAsJSON elemType)
+  RsStruct fields -> toJSON <$> getFieldsAsJSON fields
   RsEnum variants -> do
     idx <- if length variants <= 256
            then fromIntegral <$> getWord8
@@ -274,11 +282,25 @@ getRsValue rsType = case rsType of
     (name, fields) <- case variants !? idx of
                       Just v -> return v
                       Nothing -> fail [i|Variant with index #{idx} does not exist for Enum.|]
-    fields' <- getFields fields
+    fields' <- getFieldsAsJSON fields
     return $ object [name .= fields']
+  where
+    getFieldsAsJSON :: Fields -> Get AE.Value
+    getFieldsAsJSON fields = case fields of
+      Named pairs -> toJSON <$> traverse getPair pairs
+      Unnamed xs  -> toJSON <$> traverse getRsValueAsJSON xs
+      Unit        -> return $ AE.Array mempty
+      where getPair (k, v) = (\val -> object [k .= val]) <$> getRsValueAsJSON v
 
-putJSON :: RsType -> AE.Value -> Either String Put
-putJSON rsType json = case (rsType, json) of
+    -- Slightly simplified version of Data.List.Safe.(!!)
+    (!?) :: [a] -> Integer -> Maybe a
+    (!?) [] _ = Nothing
+    (!?) (x:xs) n | n == 0 = Just x
+                  | n < 0 = Nothing
+                  | otherwise = (!?) xs (n-1)
+
+putJSONParams :: RsType -> AE.Value -> Either String Put
+putJSONParams rsType json = case (rsType, json) of
   (RsUnit, AE.Null)    -> pure mempty
   (RsBool, AE.Bool b)  -> pure $ put b
   (RsU8,  AE.Number x) -> putWord8    <$> fromScientific x
@@ -302,36 +324,51 @@ putJSON rsType json = case (rsType, json) of
     AE.Null -> pure $ putWord8 0
     val -> do
       let putTag = putWord8 1
-      putVal <- putJSON optType val
+      putVal <- putJSONParams optType val
       pure $ putTag <> putVal
 
   (RsPair ta tb, AE.Array vec) -> case V.toList vec of
     [a, b] -> do
-      putA <- putJSON ta a
-      putB <- putJSON tb b
+      putA <- putJSONParams ta a
+      putB <- putJSONParams tb b
       pure $ putA <> putB
     xs -> Left [i|#{xs} is not a pair.|]
-  (RsString sl, AE.String str) -> pure $ putTextWithSizeLen sl str
 
-  (RsList sl elemType, AE.Array vec) -> putListLike sl elemType (V.toList vec)
+  (RsString sl, AE.String str) -> do
+    let len = fromIntegral . Text.length $ str
+        maxLen = maxSizeLen sl
+    when (len > maxLen) $ Left $ tooLongError "String" maxLen len
+    pure $ putTextWithSizeLen sl str
 
-  (RsSet sl elemType, AE.Array vec) -> let ls = V.toList vec in do
+  (RsList sl elemType, AE.Array vec) -> do
+    let len = fromIntegral . V.length $ vec
+        maxLen = maxSizeLen sl
+    when (len > maxLen) $ Left $ tooLongError "List" maxLen len
+    putListLike sl elemType (V.toList vec)
+
+  (RsSet sl elemType, AE.Array vec) -> do
+    let len = fromIntegral . V.length $ vec
+        maxLen = maxSizeLen sl
+        ls = V.toList vec
+    when (len > maxLen) $ Left $ tooLongError "Set" maxLen len
     unless (allUnique ls) $ Left [i|Invalid set. Can only contain unique elements: #{ls}|]
     putListLike sl elemType ls
 
   (RsMap sl keyType valType, AE.Array vec) -> do
-    let putLen = putLenWithSizeLen sl $ V.length vec
-    putElems <- traverse (putJSON (RsPair keyType valType)) vec
+    let len = fromIntegral . V.length $ vec
+        maxLen = maxSizeLen sl
+        putLen = putLenWithSizeLen sl $ V.length vec
+    when (len > maxLen) $ Left $ tooLongError "Map" maxLen len
+    putElems <- traverse (putJSONParams (RsPair keyType valType)) vec
     pure . sequence_ $ V.cons putLen putElems
 
-  (RsArray len elemType, AE.Array vec) ->
+  (RsArray len elemType, AE.Array vec) -> do
     let ls = V.toList vec
         actualLen = length ls
-    in do
-      unless (fromIntegral len == actualLen) $ Left [i|Expected the array to have length #{len}, but it had length #{actualLen}|]
-      sequence_ <$> traverse (putJSON elemType) ls
+    unless (fromIntegral len == actualLen) $ Left [i|Expected the array to have length #{len}, but it had length #{actualLen}|]
+    sequence_ <$> traverse (putJSONParams elemType) ls
 
-  (RsStruct fields, val) -> putFields fields val
+  (RsStruct fields, val) -> putJSONFields fields val
 
   (RsEnum variants, AE.Object obj) -> case HM.toList obj of
     [] -> Left "fail, empty obj"
@@ -341,17 +378,41 @@ putJSON rsType json = case (rsType, json) of
         let putLen = if length variants <= 256
                        then putWord8 $ fromIntegral idx
                        else putWord32le $ fromIntegral idx
-        putFields' <- putFields fieldTypes fields
-        pure $ putLen <> putFields'
+        putJSONFields' <- putJSONFields fieldTypes fields
+        pure $ putLen <> putJSONFields'
     _ -> Left "fail, too many fields to be an enum"
 
   (type_, val) -> Left [i|#{val} is not of type #{type_}|] -- TODO: implement show manually to match rust type names
 
   where
+    putJSONFields :: Fields -> AE.Value -> Either String Put
+    putJSONFields fields val = case (fields, val) of
+      (Named pairs, AE.Array vec) -> do
+        let ls = V.toList vec
+        when (length pairs /= length ls) $ Left "Too few fields were provided." -- TODO: Improve msg
+        putNamedUnordered <- traverse (lookupAndPut pairs) ls
+        unless (allUnique . map fst $ putNamedUnordered) $ Left "Contains duplicate fields."
+        -- The fields entered might be in a different order, so we need to order them correctly.
+        pure . traverse_ snd . List.sortOn fst $ putNamedUnordered
+
+      (Unnamed rsTypes, AE.Array vec) -> do
+        let ls = V.toList vec
+        let expectedLen = length rsTypes
+        let actualLen = length ls
+        when (expectedLen /= actualLen) $ Left [i|Incorrect number of fields. Expected #{expectedLen} but got #{actualLen} fields.|]
+        putUnnamed <- traverse (uncurry putJSONParams) $ zip rsTypes ls
+        pure . sequence_ $ putUnnamed
+
+      (Unit, AE.Array vec) -> if V.null vec
+                                then pure mempty
+                                else Left [i|The type #{Unit} should be represented by an empty Array.|]
+
+      (type_, value) -> Left [i|#{value} is not of type #{type_}|] -- TODO: implement show manually to match rust type names
+
     putListLike :: SizeLength -> RsType -> [AE.Value] -> Either String Put
     putListLike sl elemType xs = do
       let putLen = putLenWithSizeLen sl $ length xs
-      putElems <- traverse (putJSON elemType) xs
+      putElems <- traverse (putJSONParams elemType) xs
       pure . sequence_ $ putLen : putElems
 
     putContrAddr :: Scientific -> Scientific -> Either String Put
@@ -360,56 +421,46 @@ putJSON rsType json = case (rsType, json) of
       subidx' <- fromScientific subidx
       pure $ putWord64le idx' <> putWord64le subidx'
 
-putFields :: Fields -> AE.Value -> Either String Put
-putFields fields val = case (fields, val) of
-  (Named pairs, AE.Array vec) -> do
-    let ls = V.toList vec
-    when (length pairs /= length ls) $ Left "Too few fields were provided." -- TODO: show fields needed
-    putNamedUnordered <- traverse (lookupAndPut pairs) ls
-    unless (allUnique . map fst $ putNamedUnordered) $ Left "Contains duplicate fields."
-    -- The fields entered might be in a different order, so we need to order them correctly.
-    pure . traverse_ snd . List.sortOn fst $ putNamedUnordered
+    fromScientific :: (Integral i, Bounded i) => Scientific -> Either String i
+    fromScientific x = case toBoundedInteger x of
+      Nothing -> Left [i|Could not convert #{x} from a scientific number.|]
+      Just x' -> Right x'
 
-  (Unnamed rsTypes, AE.Array vec) -> do
-    let ls = V.toList vec
-    when (length rsTypes /= length ls) $ Left "Too few fields were provided." -- TODO: show fields needed
-    putUnnamed <- traverse (uncurry putJSON) $ zip rsTypes ls
-    pure . sequence_ $ putTag 1 : putUnnamed
+    tooLongError :: String -> Integer -> Integer -> String
+    tooLongError typeName maxLen actualLen =
+      [i|The provided #{typeName} is too long. It has length #{actualLen} and the maximum is #{maxLen}|]
 
-  (Unit, AE.Array vec) -> if V.null vec
-                             then pure $ putTag 2
-                             else Left [i|The type #{Unit} should be represented by an empty Array.|]
+    maxSizeLen :: SizeLength -> Integer
+    maxSizeLen = \case
+      LenU8 -> 255
+      LenU16 -> 65_535
+      LenU32 -> 4_294_967_295
+      LenU64 -> 18_446_744_073_709_551_615
 
-  (type_, value) -> Left [i|#{value} is not of type #{type_}|] -- TODO: implement show manually to match rust type names
+    lookupAndPut :: [(Text, RsType)] -> AE.Value -> Either String (Int, Put)
+    lookupAndPut pairs v = case v of
+      AE.Object obj -> case HM.toList obj of
+        [] -> Left "fail, empty obj"
+        [(name, value)] -> case lookupItemAndIndex name pairs of
+          Nothing -> Left "fail, name not found"
+          Just (rsType', idx) -> (idx, ) <$> putJSONParams rsType' value
+        _ -> Left "fail, too many fields"
+      _ -> Left [i|#{v} is not a valid struct.|] -- TODO: improve error msg
 
-  where putTag idx = putWord8 idx
+    lookupItemAndIndex :: Eq a => a -> [(a, b)] -> Maybe (b, Int)
+    lookupItemAndIndex item thePairs = go item thePairs 0
+      where go _ [] _ = Nothing
+            go x ((a,b):pairs) idx = if x == a
+                                    then Just (b, idx)
+                                    else go x pairs (idx + 1)
 
-        lookupAndPut :: [(Text, RsType)] -> AE.Value -> Either String (Int, Put)
-        lookupAndPut pairs v = case v of
-          AE.Object obj -> case HM.toList obj of
-            [] -> Left "fail, empty obj"
-            [(name, value)] -> case lookupItemAndIndex name pairs of
-              Nothing -> Left "fail, name not found"
-              Just (rsType, idx) -> (idx, ) <$> putJSON rsType value
-            _ -> Left "fail, too many fields"
-          _ -> Left [i|#{v} is not a valid struct.|] -- TODO: improve error msg
+    allUnique :: Eq a => [a] -> Bool
+    allUnique xs = length xs == length (List.nub xs)
 
-lookupItemAndIndex :: Eq a => a -> [(a, b)] -> Maybe (b, Int)
-lookupItemAndIndex item thePairs = go item thePairs 0
-  where go _ [] _ = Nothing
-        go x ((a,b):pairs) idx = if x == a
-                                then Just (b, idx)
-                                else go x pairs (idx + 1)
 
-allUnique :: Eq a => [a] -> Bool
-allUnique xs = length xs == length (List.nub xs)
+-- ** Helpers **
 
-fromScientific :: (Integral i, Bounded i) => Scientific -> Either String i
-fromScientific x = case toBoundedInteger x of
-  Nothing -> Left [i|Could not convert #{x} from a scientific number.|]
-  Just x' -> Right x'
-
--- ** List **
+-- * List *
 
 -- Nearly identical to Data.Serialize.getListOf implementation (except for length).
 getListOfWithKnownLen :: Integral len => len -> Get a -> Get [a]
@@ -443,12 +494,11 @@ putLenWithSizeLen sl = \len -> case sl of
   LenU32 -> putWord32le $ fromIntegral len
   LenU64 -> putWord64le $ fromIntegral len
 
-
 putListOfWith32leLen :: Putter a -> Putter [a]
 putListOfWith32leLen = putListOfWithSizeLen LenU32
 
 
--- ** Map **
+-- * Map *
 
 getMapOfWith32leLen :: (Eq k, Hashable k) => Get k -> Get v -> Get (HashMap k v)
 getMapOfWith32leLen gt gv = HM.fromList <$> getListOfWith32leLen (getTwoOf gt gv)
@@ -457,7 +507,7 @@ putMapOfWith32leLen :: Putter k -> Putter v -> Putter (HashMap k v)
 putMapOfWith32leLen pv pk = putListOfWith32leLen (putTwoOf pv pk) . HM.toList
 
 
--- ** Text **
+-- * Text *
 
 getText :: Get Text
 getText = getTextWithSizeLen LenU32
@@ -472,7 +522,20 @@ putTextWithSizeLen :: SizeLength -> Putter Text
 putTextWithSizeLen sl = putListOfWithSizeLen sl put . BS.unpack . Text.encodeUtf8
 
 
--- ** Other **
+-- ** External API **
+
+-- |Uses a `Schema` to parse the `JustBytes` of `Info`.
+-- Returns `Left` if a schema has already been included or the parsing fails.
+addSchemaToInfo :: Info -> Schema -> Either String Info
+addSchemaToInfo info@Info{..} schema = case ciModel of
+  WithSchema _ -> Left "Already contains a schema."
+  JustBytes bytes -> (\m -> info {ciModel = WithSchema m}) <$> S.runGet (getModelAsJSON schema) bytes
+
+-- |Serialize JSON parameters to binary using `RsType` or fail with an error message.
+serializeParams :: RsType -> AE.Value -> Either String ByteString
+serializeParams rsType params = S.runPut <$> putJSONParams rsType params
+
+-- * For Testing *
 
 decodeSchema :: ByteString -> Either String Schema
 decodeSchema = S.decode
@@ -480,19 +543,5 @@ decodeSchema = S.decode
 encodeSchema :: Schema -> ByteString
 encodeSchema = S.encode
 
--- Slightly simplified version of Data.List.Safe.(!!)
-(!?) :: [a] -> Integer -> Maybe a
-(!?) [] _ = Nothing
-(!?) (x:xs) n | n == 0 = Just x
-              | n < 0 = Nothing
-              | otherwise = (!?) xs (n-1)
-
--- |Uses a `Schema` to parse the `JustBytes` of `Info`.
--- Returns `Left` if a schema has already been included or the parsing fails.
-addSchemaToInfo :: Info -> Schema -> Either String Info
-addSchemaToInfo info@Info{..} schema = case ciModel of
-  WithSchema _ -> Left "Already contains a schema."
-  JustBytes bytes -> (\m -> info {ciModel = WithSchema m}) <$> S.runGet (getModel schema) bytes
-
-serializeParams :: RsType -> AE.Value -> Either String ByteString
-serializeParams rsType params = S.runPut <$> putJSON rsType params
+runGetRsValueAsJSON :: RsType -> ByteString -> Either String AE.Value
+runGetRsValueAsJSON rsType = S.runGet (getRsValueAsJSON rsType)
