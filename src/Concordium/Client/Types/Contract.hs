@@ -16,10 +16,10 @@ module Concordium.Client.Types.Contract
   ) where
 
 import Concordium.ID.Types (addressFromText)
-import Concordium.Types (AccountAddress, Amount, ContractAddress(..), ContractIndex(..), ContractSubindex(..))
+import Concordium.Types (AccountAddress, Amount(..), ContractAddress(..), ContractIndex(..), ContractSubindex(..))
 
 import Control.Monad (unless, when)
-import Data.Aeson (FromJSON, ToJSON, object, toJSON, (.=), (.:))
+import Data.Aeson (FromJSON, Result, ToJSON, object, toJSON, (.=), (.:))
 import qualified Data.Aeson as AE
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -96,6 +96,7 @@ data RsType =
   | RsI16
   | RsI32
   | RsI64
+  | RsAmount
   | RsAccountAddress
   | RsContractAddress
   | RsOption RsType
@@ -127,17 +128,18 @@ instance Serialize RsType where
       7  -> pure RsI16
       8  -> pure RsI32
       9  -> pure RsI64
-      10 -> pure RsAccountAddress
-      11 -> pure RsContractAddress
-      12 -> RsOption <$> get
-      13 -> RsPair <$> get <*> get
-      14 -> RsString <$> get
-      15 -> RsList <$> get <*> get
-      16 -> RsSet <$> get <*> get
-      17 -> RsMap <$> get <*> get <*> get
-      18 -> RsArray <$> get <*> get
-      19 -> RsStruct <$> get
-      20 -> RsEnum <$> getListOfWith32leLen (getTwoOf getText get)
+      10 -> pure RsAmount
+      11 -> pure RsAccountAddress
+      12 -> pure RsContractAddress
+      13 -> RsOption <$> get
+      14 -> RsPair <$> get <*> get
+      15 -> RsString <$> get
+      16 -> RsList <$> get <*> get
+      17 -> RsSet <$> get <*> get
+      18 -> RsMap <$> get <*> get <*> get
+      19 -> RsArray <$> get <*> get
+      20 -> RsStruct <$> get
+      21 -> RsEnum <$> getListOfWith32leLen (getTwoOf getText get)
       x  -> fail [i|Invalid RsType tag: #{x}|]
 
   put rsType = case rsType of
@@ -151,17 +153,18 @@ instance Serialize RsType where
     RsI16  -> putWord8 7
     RsI32  -> putWord8 8
     RsI64  -> putWord8 9
-    RsAccountAddress  -> putWord8 10
-    RsContractAddress -> putWord8 11
-    RsOption a  -> putWord8 12 *> put a
-    RsPair a b  -> putWord8 13 *> put a *> put b
-    RsString sl -> putWord8 14 *> put sl
-    RsList sl a -> putWord8 15 *> put sl *> put a
-    RsSet sl a  -> putWord8 16 *> put sl *> put a
-    RsMap sl k v    -> putWord8 17 *> put sl *> put k *> put v
-    RsArray len a   -> putWord8 18 *> put len *> put a
-    RsStruct fields -> putWord8 19 *> put fields
-    RsEnum enum     -> putWord8 20 *> putListOfWith32leLen (putTwoOf putText put) enum
+    RsAmount -> putWord8 10
+    RsAccountAddress  -> putWord8 11
+    RsContractAddress -> putWord8 12
+    RsOption a  -> putWord8 13 *> put a
+    RsPair a b  -> putWord8 14 *> put a *> put b
+    RsString sl -> putWord8 15 *> put sl
+    RsList sl a -> putWord8 16 *> put sl *> put a
+    RsSet sl a  -> putWord8 17 *> put sl *> put a
+    RsMap sl k v    -> putWord8 18 *> put sl *> put k *> put v
+    RsArray len a   -> putWord8 19 *> put len *> put a
+    RsStruct fields -> putWord8 20 *> put fields
+    RsEnum enum     -> putWord8 21 *> putListOfWith32leLen (putTwoOf putText put) enum
 
 -- |Parallel to SizeLength defined in contracts-common (Rust).
 -- Must stay in sync.
@@ -257,6 +260,7 @@ getRsValueAsJSON rsType = case rsType of
   RsI16  -> toJSON <$> getInt16le
   RsI32  -> toJSON <$> getInt32le
   RsI64  -> toJSON <$> getInt64le
+  RsAmount -> toJSON . Amount <$> getWord64le
   RsAccountAddress  -> toJSON <$> (get :: Get AccountAddress)
   RsContractAddress -> toJSON <$> (ContractAddress <$> (ContractIndex <$> getWord64le) <*> (ContractSubindex <$> getWord64le))
   RsOption optType -> do
@@ -312,7 +316,9 @@ putJSONParams rsType json = case (rsType, json) of
   (RsI32, AE.Number x) -> putInt32le  <$> fromScientific x
   (RsI64, AE.Number x) -> putInt64le  <$> fromScientific x
 
-  (RsAccountAddress, AE.String s)    -> put <$> addressFromText s -- TODO: better error msg?
+  (RsAmount, amt@(AE.String _)) -> putWord64le . _amount <$> (resToEither . AE.fromJSON $ amt)
+
+  (RsAccountAddress, AE.String s) -> put <$> addressFromText s -- TODO: better error msg?
 
   (RsContractAddress, AE.Object obj) -> case HM.toList obj of
     [("index", AE.Number idx)] -> putContrAddr idx 0
@@ -456,6 +462,10 @@ putJSONParams rsType json = case (rsType, json) of
 
     allUnique :: Eq a => [a] -> Bool
     allUnique xs = length xs == length (List.nub xs)
+
+    resToEither :: Result a -> Either String a
+    resToEither (AE.Error str) = Left str
+    resToEither (AE.Success a) = Right a
 
 
 -- ** Helpers **

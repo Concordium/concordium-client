@@ -100,8 +100,10 @@ printParamsSpec = describe "serialize JSON params to bytes and deserialize to JS
     fromToJSONFail    RsI64 $ AE.Number 9_223_372_036_854_775_808    -- Max + 1
 
   it "Amount" $ do
-    pending
-    -- TODO: Amount
+    fromToJSONSucceed RsAmount $ AE.String "42"
+    fromToJSONFail RsAmount $ AE.String "-42" -- Negatives not allowed
+    fromToJSONFail RsAmount $ AE.String "42.5" -- Floats not allowed
+    fromToJSONFail RsAmount $ AE.String "-42.0" -- Negative floats are definitely not allowed
 
   it "AccountAddress" $ do
     fromToJSONSucceed RsAccountAddress $ AE.String . Text.pack $ accAddr
