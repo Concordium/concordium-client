@@ -250,3 +250,4 @@ tests:
       - time
       - unordered-containers
       - filepath
+      - vector
