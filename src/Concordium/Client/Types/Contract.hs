@@ -137,7 +137,7 @@ instance Serialize RsType where
       16 -> RsList <$> get <*> get
       17 -> RsSet <$> get <*> get
       18 -> RsMap <$> get <*> get <*> get
-      19 -> RsArray <$> get <*> get
+      19 -> RsArray <$> getWord32le <*> get
       20 -> RsStruct <$> get
       21 -> RsEnum <$> getListOfWith32leLen (getTwoOf getText get)
       x  -> fail [i|Invalid RsType tag: #{x}|]
@@ -162,7 +162,7 @@ instance Serialize RsType where
     RsList sl a -> putWord8 16 *> put sl *> put a
     RsSet sl a  -> putWord8 17 *> put sl *> put a
     RsMap sl k v    -> putWord8 18 *> put sl *> put k *> put v
-    RsArray len a   -> putWord8 19 *> put len *> put a
+    RsArray len a   -> putWord8 19 *> putWord32le len *> put a
     RsStruct fields -> putWord8 20 *> put fields
     RsEnum enum     -> putWord8 21 *> putListOfWith32leLen (putTwoOf putText put) enum
 
