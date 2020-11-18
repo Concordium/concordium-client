@@ -1,4 +1,7 @@
 # Nix static build system
+
+**NOTE: This build is not properly working at November 2020 with ghc884.**
+
 The following guide has been tested on a NixOS unstable on mid August 2020. However it is also possible to use it with `nix` not on NixOS.
 ## Setup environment
 This following below assumes that this repository is checked out in the directory named `simple-client`
@@ -20,7 +23,7 @@ $> stack --nix build --flag simple-client:static \
 ```
 ## Final binary
 ```bash
-$> ldd .stack-work/install/x86_64-linux-nix/*/8.8.3/bin/concordium-client 
+$> ldd .stack-work/install/x86_64-linux-nix/*/8.8.3/bin/concordium-client
 	not a dynamic executable
 ```
 Distribute this binary - it'll be fully static with libmusl and without GMP (ie no system GPL libraries linked)
@@ -36,7 +39,7 @@ To force the nix-shell stack will be using to have the right version of `rustc` 
       targets = [ "x86_64-unknown-linux-musl" ];
     };
 ```
-and 
+and
 ```
   CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
 ```
