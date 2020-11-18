@@ -1,0 +1,36 @@
+resolver: lts-16.20
+
+packages:
+- .
+
+extra-deps:
+# http2-client was never included in stackage
+- github: lucasdicioccio/http2-client
+  commit: 7201f65b31bf0a2b0bc4a904173233e1e728697b
+
+# Temporary fork to remove compiler warnings. Switch to original once fixed.
+- github: Concordium/http2-grpc-haskell
+  commit: 4e842ba0d23db89fb0ad108aacde23cb4321d96f
+  subdirs:
+    - http2-client-grpc
+    - http2-grpc-proto-lens
+    - http2-grpc-types
+
+- ./deps/crypto
+- ./deps/globalstate-types
+
+extra-lib-dirs:
+- ./deps/crypto/rust-src/target/x86_64-unknown-linux-musl/release
+
+flags:
+  simple-client:
+    static: true
+    middleware: false
+  hashable:
+    integer-gmp: false
+  scientific:
+    integer-simple: true
+  integer-logarithms:
+    integer-gmp: false
+  cryptonite:
+    integer-gmp: false
