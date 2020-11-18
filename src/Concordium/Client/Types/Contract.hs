@@ -15,6 +15,7 @@ module Concordium.Client.Types.Contract
   , SizeLength(..)
   ) where
 
+import Concordium.Client.Config (showCompactPrettyJSON, showPrettyJSON)
 import Concordium.ID.Types (addressFromText)
 import qualified Concordium.Types as T
 
@@ -29,7 +30,7 @@ import Data.Hashable (Hashable)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.List as List
-import Data.Scientific (Scientific, toBoundedInteger)
+import Data.Scientific (Scientific, isFloating, toBoundedInteger)
 import Data.Serialize (Get, Put, Putter, Serialize, get, getInt8, getInt16le, getInt32le, getInt64le,
                        getTwoOf, getWord8, getWord16le, getWord32le, getWord64le, put, putInt8, putInt16le,
                        putInt32le, putInt64le, putTwoOf, putWord8, putWord16le, putWord32le, putWord64le)
@@ -247,7 +248,6 @@ getModelAsJSON Schema{..} = do
       Just typ -> getValueAsJSON typ
   return $ AE.object ["state" .= state', "method_parameters" .= methodParameter]
 
-
 getValueAsJSON :: SchemaType -> Get AE.Value
 getValueAsJSON typ = case typ of
   Unit -> return AE.Null
@@ -308,24 +308,24 @@ putJSONParams :: SchemaType -> AE.Value -> Either String Put
 putJSONParams typ json = case (typ, json) of
   (Unit, AE.Null)     -> pure mempty
   (Bool, AE.Bool b)   -> pure $ put b
-  (U8,   AE.Number x) -> putWord8    <$> fromScientific x
-  (U16,  AE.Number x) -> putWord16le <$> fromScientific x
-  (U32,  AE.Number x) -> putWord32le <$> fromScientific x
-  (U64,  AE.Number x) -> putWord64le <$> fromScientific x
-  (I8,   AE.Number x) -> putInt8     <$> fromScientific x
-  (I16,  AE.Number x) -> putInt16le  <$> fromScientific x
-  (I32,  AE.Number x) -> putInt32le  <$> fromScientific x
-  (I64,  AE.Number x) -> putInt64le  <$> fromScientific x
+  (U8,   AE.Number x) -> putWord8    <$> fromScientific x U8
+  (U16,  AE.Number x) -> putWord16le <$> fromScientific x U16
+  (U32,  AE.Number x) -> putWord32le <$> fromScientific x U32
+  (U64,  AE.Number x) -> putWord64le <$> fromScientific x U64
+  (I8,   AE.Number x) -> putInt8     <$> fromScientific x I8
+  (I16,  AE.Number x) -> putInt16le  <$> fromScientific x I16
+  (I32,  AE.Number x) -> putInt32le  <$> fromScientific x I32
+  (I64,  AE.Number x) -> putInt64le  <$> fromScientific x I64
 
-  (Amount, amt@(AE.String _)) -> putWord64le . T._amount <$> (resToEither . AE.fromJSON $ amt)
+  (Amount, amt@(AE.String _)) -> addTraceInfo $ putWord64le . T._amount <$> (resToEither . AE.fromJSON $ amt)
 
-  (AccountAddress, AE.String s) -> put <$> addressFromText s -- TODO: better error msg?
+  (AccountAddress, AE.String s) -> addTraceInfo $ put <$> addressFromText s
 
-  (ContractAddress, AE.Object obj) -> case HM.toList obj of
+  (ContractAddress, AE.Object obj) -> addTraceInfo $ case HM.toList obj of
     [("index", AE.Number idx)] -> putContrAddr idx 0
     [("index", AE.Number idx), ("subindex", AE.Number subidx)] -> putContrAddr idx subidx
     [("subindex", AE.Number subidx), ("index", AE.Number idx)] -> putContrAddr idx subidx
-    _ -> Left [i|Invalid ContractAddress: #{obj}|]
+    _ -> Left [i|Invalid contract address. It should be an object with an 'index' and an optional 'subindex' field.|]
 
   (Option optType, opt)  -> case opt of -- TODO: Remove
     AE.Null -> pure $ putWord8 0
@@ -334,14 +334,14 @@ putJSONParams typ json = case (typ, json) of
       putVal <- putJSONParams optType val
       pure $ putTag <> putVal
 
-  (Pair ta tb, AE.Array vec) -> case V.toList vec of
+  (Pair ta tb, AE.Array vec) -> addTraceInfo $ case V.toList vec of
     [a, b] -> do
       putA <- putJSONParams ta a
       putB <- putJSONParams tb b
       pure $ putA <> putB
-    xs -> Left [i|#{xs} is not a pair.|]
+    _ -> Left [i|Invalid pair. It should have the form '[#{ta}, #{tb}]'.|]
 
-  (String sl, AE.String str) -> do
+  (String sl, AE.String str) -> do -- TODO: Remove
     let len = fromIntegral . Text.length $ str
         maxLen = maxSizeLen sl
     when (len > maxLen) $ Left $ tooLongError "String" maxLen len
@@ -351,15 +351,15 @@ putJSONParams typ json = case (typ, json) of
     let len = fromIntegral . V.length $ vec
         maxLen = maxSizeLen sl
     when (len > maxLen) $ Left $ tooLongError "List" maxLen len
-    putListLike sl elemType (V.toList vec)
+    addTraceInfo $ putListLike sl elemType (V.toList vec)
 
   (Set sl elemType, AE.Array vec) -> do
     let len = fromIntegral . V.length $ vec
         maxLen = maxSizeLen sl
         ls = V.toList vec
     when (len > maxLen) $ Left $ tooLongError "Set" maxLen len
-    unless (allUnique ls) $ Left [i|Invalid set. Can only contain unique elements: #{ls}|]
-    putListLike sl elemType ls
+    unless (allUnique ls) $ Left [i|All elements must be unique in a set, but got:\n#{showPrettyJSON vec}.|]
+    addTraceInfo $ putListLike sl elemType ls
 
   (Map sl keyType valType, AE.Array vec) -> do
     let len = fromIntegral . V.length $ vec
@@ -367,38 +367,42 @@ putJSONParams typ json = case (typ, json) of
         putLen = putLenWithSizeLen sl $ V.length vec
     when (len > maxLen) $ Left $ tooLongError "Map" maxLen len
     putElems <- traverse (putJSONParams (Pair keyType valType)) vec
-    pure . sequence_ $ V.cons putLen putElems
+    addTraceInfo $ pure . sequence_ $ V.cons putLen putElems
 
-  (Array len elemType, AE.Array vec) -> do
+  (Array expectedLen elemType, AE.Array vec) -> do
     let ls = V.toList vec
         actualLen = length ls
-    unless (fromIntegral len == actualLen) $ Left [i|Expected the array to have length #{len}, but it had length #{actualLen}|]
-    sequence_ <$> traverse (putJSONParams elemType) ls
+    unless (actualLen == fromIntegral expectedLen) $ addTraceInfo
+      $ Left [i|Expected length is #{expectedLen}, but actual length is #{actualLen}.|]
+    addTraceInfo $ sequence_ <$> traverse (putJSONParams elemType) ls
 
-  (Struct fields, val) -> putJSONFields fields val
+  (Struct fields, val) -> addTraceInfo $ putJSONFields fields val
 
   (Enum variants, AE.Object obj) -> case HM.toList obj of
-    [] -> Left "fail, empty obj"
+    [] -> Left [i|The object provided was empty, but it should have contained a variant of the following enum: #{variants}.|]
     [(name, fields)] -> case lookupItemAndIndex name variants of
-      Nothing -> Left [i|Enum variant '#{name}' does not exist in enum #{variants}|] -- TODO: too verbose?
+      Nothing -> Left [i|Enum variant '#{name}' does not exist in enum #{variants}|]
       Just (fieldTypes, idx) -> do
         let putLen = if length variants <= 256
                        then putWord8 $ fromIntegral idx
                        else putWord32le $ fromIntegral idx
-        putJSONFields' <- putJSONFields fieldTypes fields
+        putJSONFields' <- putJSONFields fieldTypes fields `addTraceInfoOf` [i|In enum variant '#{name}'.|]
         pure $ putLen <> putJSONFields'
-    _ -> Left "fail, too many fields to be an enum"
+    _ -> Left [i|#{obj} had too many fields. It should contain a single variant of the following enum: #{variants}.|]
 
-  (type_, val) -> Left [i|#{val} is not of type #{type_}|] -- TODO: implement show manually to match rust type names
+  (type_, value) -> Left [i|Expected value of type #{type_}, but got: #{showCompactPrettyJSON value}.|]
 
   where
     putJSONFields :: Fields -> AE.Value -> Either String Put
     putJSONFields fields val = case (fields, val) of
       (Named pairs, AE.Array vec) -> do
         let ls = V.toList vec
-        when (length pairs /= length ls) $ Left "Too few fields were provided." -- TODO: Improve msg
+        let actualLen = length ls
+        let expectedLen = length pairs
+        when (actualLen /= expectedLen)
+          $ Left [i|#{actualLen} fields were provided, but expected #{expectedLen} fields for type: #{fields}.|]
         putNamedUnordered <- traverse (lookupAndPut pairs) ls
-        unless (allUnique . map fst $ putNamedUnordered) $ Left "Contains duplicate fields."
+        unless (allUnique . map fst $ putNamedUnordered) $ Left [i|Multiple fields with the same name exist.|]
         -- The fields entered might be in a different order, so we need to order them correctly.
         pure . traverse_ snd . List.sortOn fst $ putNamedUnordered
 
@@ -406,15 +410,16 @@ putJSONParams typ json = case (typ, json) of
         let ls = V.toList vec
         let expectedLen = length types
         let actualLen = length ls
-        when (expectedLen /= actualLen) $ Left [i|Incorrect number of fields. Expected #{expectedLen} but got #{actualLen} fields.|]
-        putUnnamed <- traverse (uncurry putJSONParams) $ zip types ls
+        when (actualLen /= expectedLen)
+          $ Left [i|#{actualLen} fields were provided, but it should have had #{expectedLen} according to its type: #{fields}.|]
+        putUnnamed <- traverse (uncurry putJSONParams) (zip types ls) `addTraceInfoOf` [i|In #{showPrettyJSON vec}.|]
         pure . sequence_ $ putUnnamed
 
       (Empty, AE.Array vec) -> if V.null vec
                                 then pure mempty
-                                else Left [i|The type #{Empty} should be represented by an empty Array.|]
+                                else Left [i|Expected an empty array to represent Empty, but got: #{showCompactPrettyJSON val}.|]
 
-      (type_, value) -> Left [i|#{value} is not of type #{type_}|] -- TODO: implement show manually to match rust type names
+      (type_, value) -> Left [i|Expected value of type #{type_}, but got: #{showCompactPrettyJSON value}.|]
 
     putListLike :: SizeLength -> SchemaType -> [AE.Value] -> Either String Put
     putListLike sl elemType xs = do
@@ -424,18 +429,20 @@ putJSONParams typ json = case (typ, json) of
 
     putContrAddr :: Scientific -> Scientific -> Either String Put
     putContrAddr idx subidx = do
-      idx' <- fromScientific idx
-      subidx' <- fromScientific subidx
+      idx' <- fromScientific idx U64
+      subidx' <- fromScientific subidx U64
       pure $ putWord64le idx' <> putWord64le subidx'
 
-    fromScientific :: (Integral i, Bounded i) => Scientific -> Either String i
-    fromScientific x = case toBoundedInteger x of
-      Nothing -> Left [i|Could not convert #{x} from a scientific number.|]
-      Just x' -> Right x'
+    -- |The `SchemaType` should be a type of number.
+    fromScientific :: (Integral i, Bounded i) => Scientific -> SchemaType -> Either String i
+    fromScientific x numType = if isFloating x then Left [i|#{x} is a float, but it should have been of type #{numType}.|]
+      else case toBoundedInteger x of
+        Nothing -> Left [i|#{x} is out of bounds for for type #{numType}.|]
+        Just x' -> Right x'
 
     tooLongError :: String -> Integer -> Integer -> String
     tooLongError typeName maxLen actualLen =
-      [i|The provided #{typeName} is too long. It has length #{actualLen} and the maximum is #{maxLen}|]
+      [i|The provided #{typeName} is too long. It has length #{actualLen} and the maximum is #{maxLen}.|]
 
     maxSizeLen :: SizeLength -> Integer
     maxSizeLen = \case
@@ -447,12 +454,13 @@ putJSONParams typ json = case (typ, json) of
     lookupAndPut :: [(Text, SchemaType)] -> AE.Value -> Either String (Int, Put)
     lookupAndPut pairs v = case v of
       AE.Object obj -> case HM.toList obj of
-        [] -> Left "fail, empty obj"
+        [] -> Left [i|The object provided was empty, but it should have contained a named field from: #{namedFields}.|]
         [(name, value)] -> case lookupItemAndIndex name pairs of
-          Nothing -> Left "fail, name not found"
-          Just (typ', idx) -> (idx, ) <$> putJSONParams typ' value
-        _ -> Left "fail, too many fields"
-      _ -> Left [i|#{v} is not a valid struct.|] -- TODO: improve error msg
+          Nothing -> Left [i|'#{name}' is not a valid field in the type: #{Named pairs}.|]
+          Just (typ', idx) -> ((idx, ) <$> putJSONParams typ' value) `addTraceInfoOf` [i|In field '#{name}'.|]
+        _ -> Left [i|Invalid named field. Expected an object with a single field, but got: #{showCompactPrettyJSON v}.|]
+      _ -> Left [i|#{showCompactPrettyJSON v} should have been a named field from: #{namedFields}.|]
+      where namedFields = Named pairs
 
     lookupItemAndIndex :: Eq a => a -> [(a, b)] -> Maybe (b, Int)
     lookupItemAndIndex item thePairs = go item thePairs 0
@@ -467,6 +475,13 @@ putJSONParams typ json = case (typ, json) of
     resToEither :: Result a -> Either String a
     resToEither (AE.Error str) = Left str
     resToEither (AE.Success a) = Right a
+
+    addTraceInfo :: Either String a -> Either String a
+    addTraceInfo = flip addTraceInfoOf [i|In #{showPrettyJSON json}.|]
+
+    addTraceInfoOf :: Either String a -> String -> Either String a
+    addTraceInfoOf (Left err) a = Left [i|#{err}\n#{a}|]
+    addTraceInfoOf right _ = right
 
 
 -- ** Helpers **
@@ -494,12 +509,12 @@ getListOfWith32leLen :: Get a -> Get [a]
 getListOfWith32leLen = getListOfWithSizeLen LenU32
 
 putListOfWithSizeLen :: SizeLength -> Putter a -> Putter [a]
-putListOfWithSizeLen sl pa = \ls -> do
+putListOfWithSizeLen sl pa ls = do
   putLenWithSizeLen sl $ length ls
   mapM_ pa ls
 
 putLenWithSizeLen :: SizeLength -> Putter Int
-putLenWithSizeLen sl = \len -> case sl of
+putLenWithSizeLen sl len = case sl of
   LenU8  -> putWord8    $ fromIntegral len
   LenU16 -> putWord16le $ fromIntegral len
   LenU32 -> putWord32le $ fromIntegral len
