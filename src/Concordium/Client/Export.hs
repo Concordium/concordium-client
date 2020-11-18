@@ -191,7 +191,7 @@ configImport json pwd = runExceptT $ do
       vconfigbackup :: Versioned AE.Value <- AE.eitherDecodeStrict json `embedErr` (\err -> [i|Failed to decode version number of input file: #{err}|])
       case vVersion vconfigbackup of
         1 -> do
-          cbu :: EncryptedJSON ConfigBackup <- resToEither (AE.fromJSON (vValue vconfigbackup)) `embedErr` (\err -> [i|Failed to decode input file to ConfigBackup JSON: #{err}|])
+          cbu :: EncryptedJSON ConfigBackup <- resToEither (AE.fromJSON (vValue vconfigbackup)) `embedErr` decodeError 
           ConfigBackup{..} <- decryptJSON cbu password `embedErr` (("Failed to decrypt Config Backup using the supplied password: " ++) . displayException)
           case vVersion cbuAccounts of
             1 -> return $ vValue cbuAccounts
@@ -201,7 +201,7 @@ configImport json pwd = runExceptT $ do
       vconfigbackup :: Versioned AE.Value <- AE.eitherDecodeStrict json `embedErr` (\err -> [i|Failed to decode version number of input file: #{err}|])
       case vVersion vconfigbackup of
         1 -> do
-          ConfigBackup{..} <- resToEither (AE.fromJSON (vValue vconfigbackup)) `embedErr` (\err -> [i|Failed to decode input file to ConfigBackup JSON: #{err}|])
+          ConfigBackup{..} <- resToEither (AE.fromJSON (vValue vconfigbackup)) `embedErr` decodeError
           case vVersion cbuAccounts of
             1 -> return $ vValue cbuAccounts
             v -> throwError [i|Unsupported accountconfig encoding version, : #{v}|]
@@ -211,3 +211,7 @@ configImport json pwd = runExceptT $ do
     resToEither res = case res of
       (AE.Success a) -> Right a
       (AE.Error err) -> Left err
+    decodeError err = case err of 
+              "key \"accounts\" not found" -> [i|Failed to decode input file to ConfigBackup JSON. File may be password encrypted: #{err}|]
+              "key \"metadata\" not found" -> [i|Failed to decode input file to ConfigBackup JSON. File may not be password encrypted: #{err}|]
+              _ -> [i|Failed to decode input file to ConfigBackup JSON: #{err}|]
