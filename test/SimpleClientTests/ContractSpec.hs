@@ -122,14 +122,8 @@ printParamsSpec = describe "serialize JSON params to bytes and deserialize to JS
     fromToJSONSucceed (Pair U8 U8)  $ AE.toJSON ([99, 255] :: [Word8])
     fromToJSONSucceed (Pair U64 I8) $ toArray $ [AE.Number 99, AE.Number (-54)]
 
-  it "String" $ do
-    fromToJSONSucceed (String LenU8) $ AE.String "something"
-    fromToJSONSucceed (String LenU8) $ AE.String . Text.pack . replicate 255 $ 'a'
-    fromToJSONFail (String LenU8)    $ AE.String . Text.pack . replicate 256 $ 'a'
-
   it "List" $ do
-    fromToJSONSucceed (List LenU16 (String LenU8)) $ AE.Array . V.fromList $ ["abc", "def"]
-    fromToJSONSucceed (List LenU8 U8) $ toNumArray [0,1,2]
+    fromToJSONSucceed (List LenU16 U16) $ toNumArray [0,1,2]
     fromToJSONFail (List LenU8 U8) $ toNumArray $ replicate 256 2
 
   it "Set" $ do
@@ -139,7 +133,6 @@ printParamsSpec = describe "serialize JSON params to bytes and deserialize to JS
     fromToJSONFail (Set LenU8 U8)     $ toNumArray [1, 2, 2, 3] -- Contains duplicates
 
   it "Map" $ do
-    fromToJSONSucceed (Map LenU16 U8 (String LenU64)) $ toArray . map toPair $ ([(0, "a"), (1, "b"), (2, "c")] :: [(Word8, Text)])
     fromToJSONSucceed (Map LenU8 U8 U16) $ toArray . map toPair $ (zip [0..10] [20..30] :: [(Int, Int)])
     fromToJSONSucceed (Map LenU8 U8 U8) $ toArray . map toPair $ (zip [1..255] [1..255] :: [(Int, Int)])
     fromToJSONFail (Map LenU8 U8 U8) $ toArray . map toPair $ (zip [1..256] [1..256] :: [(Int, Int)]) -- Too long
@@ -151,20 +144,20 @@ printParamsSpec = describe "serialize JSON params to bytes and deserialize to JS
 
   it "Struct" $ do
     -- Named
-    let namedStructType = Struct (Named [("num", U8), ("str", String LenU8)])
-    fromToJSONSucceed namedStructType $ toArray [object ["num" .= AE.Number 42], object ["str" .= AE.String "abc"]]
-    fromToJSON namedStructType (toArray [object ["str" .= AE.String "abc"], object ["num" .= AE.Number 42]])
-      `shouldBe` Right (toArray [object ["num" .= AE.Number 42], object ["str" .= AE.String "abc"]]) -- Fields in different ordering works
-    fromToJSONFail namedStructType $ toArray [object ["str" .= AE.String "abc"]] -- missing fields
-    fromToJSONFail namedStructType $ toArray [object ["str" .= AE.String "abc"], object ["wrong" .= AE.String "field"]] -- missing and incorrect field
+    let namedStructType = Struct (Named [("num", U8), ("bool", Bool)])
+    fromToJSONSucceed namedStructType $ toArray [object ["num" .= AE.Number 42], object ["bool" .= AE.Bool True]]
+    fromToJSON namedStructType (toArray [object ["bool" .= AE.Bool True], object ["num" .= AE.Number 42]])
+      `shouldBe` Right (toArray [object ["num" .= AE.Number 42], object ["bool" .= AE.Bool True]]) -- Fields in different ordering works
+    fromToJSONFail namedStructType $ toArray [object ["bool" .= AE.Bool True]] -- missing fields
+    fromToJSONFail namedStructType $ toArray [object ["bool" .= AE.Bool True], object ["wrong" .= AE.String "field"]] -- missing and incorrect field
     fromToJSONFail namedStructType $ toArray [object ["num" .= AE.Number 42]
-                                         , object ["str" .= AE.String "abc"]
-                                         , object ["str" .= AE.String "def"]] -- duplicate fields
+                                         , object ["bool" .= AE.Bool True]
+                                         , object ["bool" .= AE.Bool False]] -- duplicate fields
 
     -- Unnamed
-    let unnamedStructType = Struct (Unnamed [U8, String LenU8, Pair U8 AccountAddress])
+    let unnamedStructType = Struct (Unnamed [U8, Bool, Pair U8 AccountAddress])
     fromToJSONSucceed unnamedStructType $
-      toArray [AE.Number 10, AE.String "abc", toArray [AE.Number 8, AE.String (Text.pack accAddr)]]
+      toArray [AE.Number 10, AE.Bool True, toArray [AE.Number 8, AE.String (Text.pack accAddr)]]
     fromToJSONFail unnamedStructType $
       toArray [AE.Number 10, toArray [AE.Number 8, AE.String (Text.pack accAddr)]] -- Too few fields
     fromToJSONFail unnamedStructType $
@@ -176,8 +169,8 @@ printParamsSpec = describe "serialize JSON params to bytes and deserialize to JS
 
   it "Enum" $ do
     let enumType = Enum [ ("a", Named [("a.1", Bool)])
-                          , ("b", Unnamed [Bool])
-                          , ("c", Empty)]
+                        , ("b", Unnamed [Bool])
+                        , ("c", Empty)]
 
     fromToJSONSucceed enumType $ object ["a" .= toArray [object ["a.1" .= AE.Bool True]]]
     fromToJSONSucceed enumType $ object ["b" .= toArray [AE.Bool True]]
@@ -250,9 +243,7 @@ genSchemaType n
       , pure I64
       , pure AccountAddress
       , pure ContractAddress
-      , Option <$> genSchemaType n'
       , Pair <$> genSchemaType n' <*> genSchemaType n'
-      , String <$> genSizeLen
       , List <$> genSizeLen <*> genSchemaType n'
       , Set <$> genSizeLen <*> genSchemaType n'
       , Map <$> genSizeLen <*> genSchemaType n' <*> genSchemaType n'

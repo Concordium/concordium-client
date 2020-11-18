@@ -37,7 +37,6 @@ import Data.Serialize (Get, Put, Putter, Serialize, get, getInt8, getInt16le, ge
 import qualified Data.Serialize as S
 import Data.String.Interpolate (i)
 import Data.Text (Text)
-import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Vector as V
 import Data.Word (Word32)
@@ -100,9 +99,7 @@ data SchemaType =
   | Amount
   | AccountAddress
   | ContractAddress
-  | Option SchemaType
   | Pair SchemaType SchemaType
-  | String SizeLength
   | List SizeLength SchemaType
   | Set SizeLength SchemaType
   | Map SizeLength SchemaType SchemaType
@@ -132,9 +129,7 @@ instance Serialize SchemaType where
       10 -> pure Amount
       11 -> pure AccountAddress
       12 -> pure ContractAddress
-      13 -> Option <$> get
       14 -> Pair <$> get <*> get
-      15 -> String <$> get
       16 -> List <$> get <*> get
       17 -> Set <$> get <*> get
       18 -> Map <$> get <*> get <*> get
@@ -157,9 +152,7 @@ instance Serialize SchemaType where
     Amount -> putWord8 10
     AccountAddress  -> putWord8 11
     ContractAddress -> putWord8 12
-    Option a  -> putWord8 13 *> put a
     Pair a b  -> putWord8 14 *> put a *> put b
-    String sl -> putWord8 15 *> put sl
     List sl a -> putWord8 16 *> put sl *> put a
     Set sl a  -> putWord8 17 *> put sl *> put a
     Map sl k v    -> putWord8 18 *> put sl *> put k *> put v
@@ -264,17 +257,10 @@ getValueAsJSON typ = case typ of
   AccountAddress  -> AE.toJSON <$> (get :: Get T.AccountAddress)
   ContractAddress -> AE.toJSON <$>
     (T.ContractAddress <$> (T.ContractIndex <$> getWord64le) <*> (T.ContractSubindex <$> getWord64le))
-  Option optType -> do
-    some <- getWord8
-    case some of
-      0 -> return AE.Null
-      1 -> getValueAsJSON optType
-      _ -> fail "Invalid some tag for Option."
   Pair a b -> do
     l <- getValueAsJSON a
     r <- getValueAsJSON b
     return $ AE.toJSON [l, r]
-  String sl        -> AE.toJSON <$> getTextWithSizeLen sl
   List sl elemType -> AE.toJSON <$> getListOfWithSizeLen sl (getValueAsJSON elemType)
   Set sl elemType  -> AE.toJSON <$> getListOfWithSizeLen sl (getValueAsJSON elemType)
   Map sl keyType valType -> AE.toJSON <$> getListOfWithSizeLen sl (getTwoOf (getValueAsJSON keyType) (getValueAsJSON valType))
@@ -327,25 +313,12 @@ putJSONParams typ json = case (typ, json) of
     [("subindex", AE.Number subidx), ("index", AE.Number idx)] -> putContrAddr idx subidx
     _ -> Left [i|Invalid contract address. It should be an object with an 'index' and an optional 'subindex' field.|]
 
-  (Option optType, opt)  -> case opt of -- TODO: Remove
-    AE.Null -> pure $ putWord8 0
-    val -> do
-      let putTag = putWord8 1
-      putVal <- putJSONParams optType val
-      pure $ putTag <> putVal
-
   (Pair ta tb, AE.Array vec) -> addTraceInfo $ case V.toList vec of
     [a, b] -> do
       putA <- putJSONParams ta a
       putB <- putJSONParams tb b
       pure $ putA <> putB
     _ -> Left [i|Invalid pair. It should have the form '[#{ta}, #{tb}]'.|]
-
-  (String sl, AE.String str) -> do -- TODO: Remove
-    let len = fromIntegral . Text.length $ str
-        maxLen = maxSizeLen sl
-    when (len > maxLen) $ Left $ tooLongError "String" maxLen len
-    pure $ putTextWithSizeLen sl str
 
   (List sl elemType, AE.Array vec) -> do
     let len = fromIntegral . V.length $ vec
@@ -536,16 +509,10 @@ putMapOfWith32leLen pv pk = putListOfWith32leLen (putTwoOf pv pk) . HM.toList
 -- * Text *
 
 getText :: Get Text
-getText = getTextWithSizeLen LenU32
-
-getTextWithSizeLen :: SizeLength -> Get Text
-getTextWithSizeLen sl = Text.decodeUtf8 . BS.pack <$> getListOfWithSizeLen sl get
+getText = Text.decodeUtf8 . BS.pack <$> getListOfWithSizeLen LenU32 get
 
 putText :: Putter Text
-putText = putTextWithSizeLen LenU32
-
-putTextWithSizeLen :: SizeLength -> Putter Text
-putTextWithSizeLen sl = putListOfWithSizeLen sl put . BS.unpack . Text.encodeUtf8
+putText = putListOfWithSizeLen LenU32 put . BS.unpack . Text.encodeUtf8
 
 
 -- ** External API **
