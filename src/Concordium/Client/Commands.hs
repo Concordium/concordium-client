@@ -90,6 +90,8 @@ data ConfigAccountCmd
   = ConfigAccountAdd
     { caaAddr :: !Text
     , caaName :: !(Maybe Text) }
+  | ConfigAccountRemove
+    { carAddr :: !(Text) }
   | ConfigAccountImport
     { caiFile :: !FilePath
     , caiName :: !(Maybe Text)
@@ -104,6 +106,9 @@ data ConfigAccountCmd
     { carkAddr :: !Text
     , carkKeys :: ![KeyIndex]
     , carkThreshold :: !(Maybe SignatureThreshold) }
+  | ConfigAccountSetThreshold
+    { cuatAddr :: !Text
+    , cuatThreshold :: !SignatureThreshold }
   deriving (Show)
 
 data Interval = Minute -- 60 secs
@@ -863,9 +868,11 @@ configAccountCmds showAllOpts =
       (ConfigAccountCmd <$>
         hsubparser
           (configAccountAddCmd <>
+           configAccountRemove <>
            configAccountImportCmd showAllOpts <>
            configAccountAddKeysCmd <>
            configAccountUpdateKeysCmd <>
+           configAccountSetThresholdCmd <>
            configAccountRemoveKeysCmd))
       (progDesc "Commands for inspecting and changing account-specific configuration."))
 
@@ -878,6 +885,15 @@ configAccountAddCmd =
         strArgument (metavar "ADDRESS" <> help "Address of the account.") <*>
         optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account.")))
       (progDesc "Add account address to persistent config, optionally naming the account."))
+
+configAccountRemove :: Mod CommandFields ConfigAccountCmd
+configAccountRemove =
+  command
+    "remove"
+    (info
+      (ConfigAccountRemove <$>
+        strArgument (metavar "ACCOUNT" <> help "Name or address of the account."))
+      (progDesc "Remove the account from the persistent config."))
 
 configAccountImportCmd :: ShowAllOpts -> Mod CommandFields ConfigAccountCmd
 configAccountImportCmd showAllOpts =
@@ -957,6 +973,18 @@ configAccountRemoveKeysCmd =
             help "Update the signature threshold to this value. If not set, no changes are made to the threshold.")))
       (progDescDoc $ docFromLines
         [ "Removes the keys from the account at the specified indices. The --threshold option may be used to update the signature threshold." ]))
+
+configAccountSetThresholdCmd :: Mod CommandFields ConfigAccountCmd
+configAccountSetThresholdCmd =
+  command
+    "set-threshold"
+    (info
+      (ConfigAccountSetThreshold <$>
+        strOption (long "account" <> metavar "ACCOUNT" <> help "Name or address of the account.") <*>
+        (option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <>
+            help "Sets the signature threshold to this value.")))
+      (progDescDoc $ docFromLines
+        [ "Sets the signature threshold of the account to the specified value."]))
 
 readAccountExportFormat :: ReadM AccountExportFormat
 readAccountExportFormat = str >>= \case
