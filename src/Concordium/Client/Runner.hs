@@ -64,6 +64,7 @@ import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.SignatureScheme   as SigScheme
 import qualified Concordium.Crypto.VRF               as VRF
+import qualified Concordium.Client.Encryption        as Password
 import qualified Concordium.Types.Updates            as Updates
 import qualified Concordium.Types.Transactions       as Types
 import           Concordium.Types.HashableTo
@@ -194,20 +195,24 @@ processConfigCmd action baseCfgDir verbose =
       runPrinter $ printAccountConfigList accCfgs
     ConfigBackupExport fileName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      pwd <- askPassword "Enter password for encryption of backup" --, (Leave blank for no encryption): "
+      pwd <- askPassword "Enter password for encryption of backup. (Leave blank for no encryption.)" 
       allAccounts <- getAllAccountConfigs baseCfg
-      backup <- exportConfigBackup allAccounts (Just pwd)
+      backup <- case (Password.getPassword pwd) of 
+        "" -> configExport allAccounts Nothing
+        _ -> configExport allAccounts (Just pwd)
       handleWriteFile BS.writeFile PromptBeforeOverwrite verbose fileName backup 
 
     ConfigBackupImport fileName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       ciphertext <- handleReadFile BS.readFile fileName
-      pwd <- askPassword "Enter password for decryption of backup" --, (Leave blank for no encryption): "
-      accCfgs <- importConfigBackup ciphertext (Just pwd)
+      pwd <- askPassword "Enter password for decryption of backup. (Leave blank if not encrypted.)" 
+      accCfgs <- case (Password.getPassword pwd) of 
+        "" -> configImport ciphertext Nothing
+        _ -> configImport ciphertext (Just pwd)
       case accCfgs of
         Right accCfgs' -> do 
           void $ importAccountConfig baseCfg accCfgs' verbose
-        Left err -> putStrLn err
+        Left err -> logFatal [[i|Failed to import Config Backup, #{err}|]]
 
     ConfigAccountCmd c -> case c of
       ConfigAccountAdd addr naName -> do
