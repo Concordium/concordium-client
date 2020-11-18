@@ -227,6 +227,28 @@ processConfigCmd action baseCfgDir verbose =
             Right a -> return a
         forM_ naName $ logFatalOnError . validateAccountName
         void $ initAccountConfig baseCfg NamedAddress{..} True
+      ConfigAccountRemove account -> do
+        baseCfg <- getBaseConfig baseCfgDir verbose
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        -- look up the name/address and check if account is initialized:
+        (_, accountConfig) <- getAccountConfig (Just account) baseCfg Nothing Nothing Nothing AssumeInitialized
+        let nameAddr@NamedAddress{..} = acAddr accountConfig
+
+        let descriptor = case naName of
+              Nothing -> "the account with address " ++ show naAddr
+              Just name -> "the account " ++ show name ++ " with address " ++ show naAddr
+
+        logWarn [descriptor ++ " will be removed and can NOT be recovered"]
+
+        updateConfirmed <- askConfirmation $ Just "confirm that you want to remove the account"
+
+        when updateConfirmed $ do
+          logInfo[ descriptor ++ " will be removed"]
+          void $ removeAccountConfig baseCfg nameAddr
+
       ConfigAccountImport file name importFormat -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
@@ -337,6 +359,31 @@ processConfigCmd action baseCfgDir verbose =
 
               let accCfg' = accCfg { acThreshold = fromMaybe (acThreshold accCfg) threshold }
               removeAccountKeys baseCfg accCfg' (HSet.toList idxsToRemove) verbose
+      ConfigAccountSetThreshold addr threshold -> do
+        baseCfg <- getBaseConfig baseCfgDir verbose
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        let accCfgDir = bcAccountCfgDir baseCfg
+
+        (_, accCfg) <- getAccountConfigFromAddr addr baseCfg
+
+        -- A valid threshold is between 1 and the number of keys, both inclusive.
+        -- The parser checks that the threshold is at least 1.
+        -- Check that the new threshold is at most the amount of keys:
+        let numberOfKeys = Map.size (acKeys accCfg)
+        if numberOfKeys < fromIntegral threshold then 
+          logWarn ["the threshold can at most be the number of keys: " ++ show numberOfKeys]
+        else 
+          do 
+            logWarn ["the threshold will be set to " ++ show (toInteger threshold)]
+
+            let accCfg' = accCfg { acThreshold = threshold }
+            updateConfirmed <- askConfirmation $ Just "confirm that you want change the threshold"
+
+            when updateConfirmed (writeThresholdFile accCfgDir accCfg' verbose)
+
 
   where showMapIdxs = showIdxs . Map.keys
         showHSetIdxs = showIdxs . HSet.toList

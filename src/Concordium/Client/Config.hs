@@ -313,6 +313,29 @@ importAccountConfig baseCfg accCfgs verbose = foldM f baseCfg accCfgs
           when t $ writeAccountKeys bc' ac verbose
           return bc'
 
+removeAccountConfig :: BaseConfig -> NamedAddress -> IO BaseConfig
+removeAccountConfig baseCfg@BaseConfig{..} NamedAddress{..} = do
+  -- Remove the keys directory
+  let keysDir = accountKeysDir bcAccountCfgDir naAddr
+  liftIO $ removePathForcibly keysDir
+
+  -- Remove the threshold file
+  let thresholdFilePath = accountThresholdFile bcAccountCfgDir naAddr
+  liftIO $ removePathForcibly thresholdFilePath
+
+  -- If an alias was removed, write the new map
+  when nameWasRemoved (liftIO $ writeNameMap True (accountNameMapFile bcAccountCfgDir) accountNameMap')
+
+  return baseCfg{bcAccountNameMap = accountNameMap'}
+  where
+    (accountNameMap', nameWasRemoved) = case naName of
+      Nothing ->
+        (bcAccountNameMap, False)
+      Just name ->
+        -- Remove the alias, if it exists
+        (M.delete name bcAccountNameMap, True)
+
+
 -- |Add a contract name and write it to 'contractNames.map'
 addContractNameAndWrite :: MonadIO m => Verbose -> BaseConfig -> Text -> ContractAddress -> m ()
 addContractNameAndWrite verbose baseCfg = addContractOrModuleNameAndWrite verbose mapFile nameMap showCompactPrettyJSON
