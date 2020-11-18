@@ -1663,7 +1663,7 @@ getWasmParameter paramsFile schemaFile funcName = case (paramsFile, schemaFile) 
       (_, Left errS) -> logFatal [[i|Could not decode schema from file '#{schemaFile'}':|], errS]
       (Right params, Right Contract.Schema {..}) -> case Map.lookup funcName methodParameter of
         Nothing -> logFatal [[i|Function name #{funcName} does not exist in schema.|]]
-        Just rsType -> case Contract.serializeParams rsType params of
+        Just typ -> case Contract.serializeParams typ params of
           Left err -> logFatal [[i|Failed while parsing parameters using schema: #{err}|]]
           Right bs -> pure . Wasm.Parameter . BS.toShort $ bs
   where emptyParams = pure . Wasm.Parameter $ BSS.empty

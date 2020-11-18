@@ -37,121 +37,121 @@ printInfoSpec = describe "serialize Info" $ do
 printParamsSpec :: Spec
 printParamsSpec = describe "serialize JSON params to bytes and deserialize to JSON works for:" $ do
   it "Unit" $ do
-    fromToJSONSucceed (RsUnit) $ AE.Null
+    fromToJSONSucceed (Unit) $ AE.Null
 
   it "Bool" $ do
-    fromToJSONSucceed (RsBool) $ AE.Bool False
-    fromToJSONSucceed (RsBool) $ AE.Bool True
+    fromToJSONSucceed Bool $ AE.Bool False
+    fromToJSONSucceed Bool $ AE.Bool True
 
   it "U8" $ do
-    fromToJSONSucceed RsU8 $ AE.Number 42
-    fromToJSONSucceed RsU8 $ AE.Number 255  -- Max
-    fromToJSONFail    RsU8 $ AE.Number (-1) -- Min - 1
-    fromToJSONFail    RsU8 $ AE.Number 256  -- Max + 1
+    fromToJSONSucceed U8 $ AE.Number 42
+    fromToJSONSucceed U8 $ AE.Number 255  -- Max
+    fromToJSONFail    U8 $ AE.Number (-1) -- Min - 1
+    fromToJSONFail    U8 $ AE.Number 256  -- Max + 1
 
   it "U16" $ do
-    fromToJSONSucceed RsU16 $ AE.Number 42
-    fromToJSONSucceed RsU16 $ AE.Number 65_535 -- Max
-    fromToJSONFail    RsU16 $ AE.Number (-1)   -- Min - 1
-    fromToJSONFail    RsU16 $ AE.Number 65_536 -- Max + 1
+    fromToJSONSucceed U16 $ AE.Number 42
+    fromToJSONSucceed U16 $ AE.Number 65_535 -- Max
+    fromToJSONFail    U16 $ AE.Number (-1)   -- Min - 1
+    fromToJSONFail    U16 $ AE.Number 65_536 -- Max + 1
 
   it "U32" $ do
-    fromToJSONSucceed RsU32 $ AE.Number 42
-    fromToJSONSucceed RsU32 $ AE.Number 4_294_967_295 -- Max
-    fromToJSONFail    RsU32 $ AE.Number (-1)          -- Min - 1
-    fromToJSONFail    RsU32 $ AE.Number 4_294_967_296 -- Max + 1
+    fromToJSONSucceed U32 $ AE.Number 42
+    fromToJSONSucceed U32 $ AE.Number 4_294_967_295 -- Max
+    fromToJSONFail    U32 $ AE.Number (-1)          -- Min - 1
+    fromToJSONFail    U32 $ AE.Number 4_294_967_296 -- Max + 1
 
   it "U64" $ do
-    fromToJSONSucceed RsU64 $ AE.Number 42
-    fromToJSONSucceed RsU64 $ AE.Number 18_446_744_073_709_551_615 -- Max
-    fromToJSONFail    RsU64 $ AE.Number (-1)                       -- Min - 1
-    fromToJSONFail    RsU64 $ AE.Number 18_446_744_073_709_551_616 -- Max + 1
+    fromToJSONSucceed U64 $ AE.Number 42
+    fromToJSONSucceed U64 $ AE.Number 18_446_744_073_709_551_615 -- Max
+    fromToJSONFail    U64 $ AE.Number (-1)                       -- Min - 1
+    fromToJSONFail    U64 $ AE.Number 18_446_744_073_709_551_616 -- Max + 1
 
   it "I8" $ do
-    fromToJSONSucceed RsI8 $ AE.Number (-42)
-    fromToJSONSucceed RsI8 $ AE.Number 42
-    fromToJSONSucceed RsI8 $ AE.Number (-128) -- Min
-    fromToJSONSucceed RsI8 $ AE.Number 127    -- Max
-    fromToJSONFail    RsI8 $ AE.Number (-129) -- Min - 1
-    fromToJSONFail    RsI8 $ AE.Number 128    -- Max + 1
+    fromToJSONSucceed I8 $ AE.Number (-42)
+    fromToJSONSucceed I8 $ AE.Number 42
+    fromToJSONSucceed I8 $ AE.Number (-128) -- Min
+    fromToJSONSucceed I8 $ AE.Number 127    -- Max
+    fromToJSONFail    I8 $ AE.Number (-129) -- Min - 1
+    fromToJSONFail    I8 $ AE.Number 128    -- Max + 1
 
   it "I16" $ do
-    fromToJSONSucceed RsI16 $ AE.Number (-42)
-    fromToJSONSucceed RsI16 $ AE.Number 42
-    fromToJSONSucceed RsI16 $ AE.Number (-32_768) -- Min
-    fromToJSONSucceed RsI16 $ AE.Number 32_767    -- Max
-    fromToJSONFail    RsI16 $ AE.Number (-32_769) -- Min - 1
-    fromToJSONFail    RsI16 $ AE.Number 32_768    -- Max + 1
+    fromToJSONSucceed I16 $ AE.Number (-42)
+    fromToJSONSucceed I16 $ AE.Number 42
+    fromToJSONSucceed I16 $ AE.Number (-32_768) -- Min
+    fromToJSONSucceed I16 $ AE.Number 32_767    -- Max
+    fromToJSONFail    I16 $ AE.Number (-32_769) -- Min - 1
+    fromToJSONFail    I16 $ AE.Number 32_768    -- Max + 1
 
   it "I32" $ do
-    fromToJSONSucceed RsI32 $ AE.Number (-42)
-    fromToJSONSucceed RsI32 $ AE.Number 42
-    fromToJSONSucceed RsI32 $ AE.Number (-2_147_483_648) -- Min
-    fromToJSONSucceed RsI32 $ AE.Number 2_147_483_647    -- Max
-    fromToJSONFail    RsI32 $ AE.Number (-2_147_483_649) -- Min - 1
-    fromToJSONFail    RsI32 $ AE.Number 2_147_483_648    -- Max + 1
+    fromToJSONSucceed I32 $ AE.Number (-42)
+    fromToJSONSucceed I32 $ AE.Number 42
+    fromToJSONSucceed I32 $ AE.Number (-2_147_483_648) -- Min
+    fromToJSONSucceed I32 $ AE.Number 2_147_483_647    -- Max
+    fromToJSONFail    I32 $ AE.Number (-2_147_483_649) -- Min - 1
+    fromToJSONFail    I32 $ AE.Number 2_147_483_648    -- Max + 1
 
   it "I64" $ do
-    fromToJSONSucceed RsI64 $ AE.Number (-42)
-    fromToJSONSucceed RsI64 $ AE.Number 42
-    fromToJSONSucceed RsI64 $ AE.Number (-9_223_372_036_854_775_808) -- Min
-    fromToJSONSucceed RsI64 $ AE.Number 9_223_372_036_854_775_807    -- Max
-    fromToJSONFail    RsI64 $ AE.Number (-9_223_372_036_854_775_809) -- Min - 1
-    fromToJSONFail    RsI64 $ AE.Number 9_223_372_036_854_775_808    -- Max + 1
+    fromToJSONSucceed I64 $ AE.Number (-42)
+    fromToJSONSucceed I64 $ AE.Number 42
+    fromToJSONSucceed I64 $ AE.Number (-9_223_372_036_854_775_808) -- Min
+    fromToJSONSucceed I64 $ AE.Number 9_223_372_036_854_775_807    -- Max
+    fromToJSONFail    I64 $ AE.Number (-9_223_372_036_854_775_809) -- Min - 1
+    fromToJSONFail    I64 $ AE.Number 9_223_372_036_854_775_808    -- Max + 1
 
   it "Amount" $ do
-    fromToJSONSucceed RsAmount $ AE.String "42"
-    fromToJSONFail RsAmount $ AE.String "-42" -- Negatives not allowed
-    fromToJSONFail RsAmount $ AE.String "42.5" -- Floats not allowed
-    fromToJSONFail RsAmount $ AE.String "-42.0" -- Negative floats are definitely not allowed
+    fromToJSONSucceed Amount $ AE.String "42"
+    fromToJSONFail Amount    $ AE.String "-42" -- Negatives not allowed
+    fromToJSONFail Amount    $ AE.String "42.5" -- Floats not allowed
+    fromToJSONFail Amount    $ AE.String "-42.0" -- Negative floats are definitely not allowed
 
   it "AccountAddress" $ do
-    fromToJSONSucceed RsAccountAddress $ AE.String . Text.pack $ accAddr
-    fromToJSONFail    RsAccountAddress $ AE.String . Text.pack . drop 10 $ accAddr
-    fromToJSONFail    RsAccountAddress $ AE.String . Text.pack . (++ "---") . drop 3 $ accAddr
+    fromToJSONSucceed AccountAddress $ AE.String . Text.pack $ accAddr
+    fromToJSONFail    AccountAddress $ AE.String . Text.pack . drop 10 $ accAddr
+    fromToJSONFail    AccountAddress $ AE.String . Text.pack . (++ "---") . drop 3 $ accAddr
 
   it "ContractAddress" $ do
-    fromToJSON RsContractAddress (object ["index" .= idx]) `shouldBe` Right (object ["index" .= idx, "subindex" .= subidx0])
-    fromToJSONSucceed    RsContractAddress $ object ["index" .= idx, "subindex" .= subidx]
-    fromToJSONFail       RsContractAddress $ object ["subindex" .= subidx]
-    fromToJSONFail       RsContractAddress $ object ["wrongname" .= idx]
-    fromToJSONFail       RsContractAddress $ object ["index" .= idx, "subindex" .= subidx, "tooManyFields" .= idx]
-    fromToJSONFail       RsContractAddress $ object []
+    fromToJSON ContractAddress (object ["index" .= idx]) `shouldBe` Right (object ["index" .= idx, "subindex" .= subidx0])
+    fromToJSONSucceed    ContractAddress $ object ["index" .= idx, "subindex" .= subidx]
+    fromToJSONFail       ContractAddress $ object ["subindex" .= subidx]
+    fromToJSONFail       ContractAddress $ object ["wrongname" .= idx]
+    fromToJSONFail       ContractAddress $ object ["index" .= idx, "subindex" .= subidx, "tooManyFields" .= idx]
+    fromToJSONFail       ContractAddress $ object []
 
   it "Pair" $ do
-    fromToJSONSucceed (RsPair RsU8 RsU8) $ AE.toJSON ([99, 255] :: [Word8])
-    fromToJSONSucceed (RsPair RsU64 RsI8) $ toArray $ [AE.Number 99, AE.Number (-54)]
+    fromToJSONSucceed (Pair U8 U8)  $ AE.toJSON ([99, 255] :: [Word8])
+    fromToJSONSucceed (Pair U64 I8) $ toArray $ [AE.Number 99, AE.Number (-54)]
 
   it "String" $ do
-    fromToJSONSucceed (RsString LenU8) $ AE.String "something"
-    fromToJSONSucceed (RsString LenU8) $ AE.String . Text.pack . replicate 255 $ 'a'
-    fromToJSONFail (RsString LenU8) $ AE.String . Text.pack . replicate 256 $ 'a'
+    fromToJSONSucceed (String LenU8) $ AE.String "something"
+    fromToJSONSucceed (String LenU8) $ AE.String . Text.pack . replicate 255 $ 'a'
+    fromToJSONFail (String LenU8)    $ AE.String . Text.pack . replicate 256 $ 'a'
 
   it "List" $ do
-    fromToJSONSucceed (RsList LenU16 (RsString LenU8)) $ AE.Array . V.fromList $ ["abc", "def"]
-    fromToJSONSucceed (RsList LenU8 RsU8) $ toNumArray [0,1,2]
-    fromToJSONFail (RsList LenU8 RsU8) $ toNumArray $ replicate 256 2
+    fromToJSONSucceed (List LenU16 (String LenU8)) $ AE.Array . V.fromList $ ["abc", "def"]
+    fromToJSONSucceed (List LenU8 U8) $ toNumArray [0,1,2]
+    fromToJSONFail (List LenU8 U8) $ toNumArray $ replicate 256 2
 
   it "Set" $ do
-    fromToJSONSucceed (RsSet LenU16 RsU8) $ toNumArray [1,2,3,4,5]
-    fromToJSONSucceed (RsSet LenU8 RsU8) $ toNumArray [1..255]
-    fromToJSONFail (RsSet LenU8 RsU8) $ toNumArray [0..256] -- Too long
-    fromToJSONFail (RsSet LenU8 RsU8) $ toNumArray [1, 2, 2, 3] -- Contains duplicates
+    fromToJSONSucceed (Set LenU16 U8) $ toNumArray [1,2,3,4,5]
+    fromToJSONSucceed (Set LenU8 U8)  $ toNumArray [1..255]
+    fromToJSONFail (Set LenU8 U8)     $ toNumArray [0..256] -- Too long
+    fromToJSONFail (Set LenU8 U8)     $ toNumArray [1, 2, 2, 3] -- Contains duplicates
 
   it "Map" $ do
-    fromToJSONSucceed (RsMap LenU16 RsU8 (RsString LenU64)) $ toArray . map toPair $ ([(0, "a"), (1, "b"), (2, "c")] :: [(Word8, Text)])
-    fromToJSONSucceed (RsMap LenU8 RsU8 RsU16) $ toArray . map toPair $ (zip [0..10] [20..30] :: [(Int, Int)])
-    fromToJSONSucceed (RsMap LenU8 RsU8 RsU8) $ toArray . map toPair $ (zip [1..255] [1..255] :: [(Int, Int)])
-    fromToJSONFail (RsMap LenU8 RsU8 RsU8) $ toArray . map toPair $ (zip [1..256] [1..256] :: [(Int, Int)]) -- Too long
+    fromToJSONSucceed (Map LenU16 U8 (String LenU64)) $ toArray . map toPair $ ([(0, "a"), (1, "b"), (2, "c")] :: [(Word8, Text)])
+    fromToJSONSucceed (Map LenU8 U8 U16) $ toArray . map toPair $ (zip [0..10] [20..30] :: [(Int, Int)])
+    fromToJSONSucceed (Map LenU8 U8 U8) $ toArray . map toPair $ (zip [1..255] [1..255] :: [(Int, Int)])
+    fromToJSONFail (Map LenU8 U8 U8) $ toArray . map toPair $ (zip [1..256] [1..256] :: [(Int, Int)]) -- Too long
 
   it "Array" $ do
-    fromToJSONSucceed (RsArray 10 RsU8) $ toNumArray [1..10]
-    fromToJSONFail (RsArray 1000 RsU8) $ toNumArray [1..1001] -- Too long
-    fromToJSONFail (RsArray 1000 RsU8) $ toNumArray [1..999] -- Too short
+    fromToJSONSucceed (Array 10 U8) $ toNumArray [1..10]
+    fromToJSONFail (Array 1000 U8)  $ toNumArray [1..1001] -- Too long
+    fromToJSONFail (Array 1000 U8)  $ toNumArray [1..999] -- Too short
 
   it "Struct" $ do
     -- Named
-    let namedStructType = RsStruct (Named [("num", RsU8), ("str", RsString LenU8)])
+    let namedStructType = Struct (Named [("num", U8), ("str", String LenU8)])
     fromToJSONSucceed namedStructType $ toArray [object ["num" .= AE.Number 42], object ["str" .= AE.String "abc"]]
     fromToJSON namedStructType (toArray [object ["str" .= AE.String "abc"], object ["num" .= AE.Number 42]])
       `shouldBe` Right (toArray [object ["num" .= AE.Number 42], object ["str" .= AE.String "abc"]]) -- Fields in different ordering works
@@ -162,7 +162,7 @@ printParamsSpec = describe "serialize JSON params to bytes and deserialize to JS
                                          , object ["str" .= AE.String "def"]] -- duplicate fields
 
     -- Unnamed
-    let unnamedStructType = RsStruct (Unnamed [RsU8, RsString LenU8, RsPair RsU8 RsAccountAddress])
+    let unnamedStructType = Struct (Unnamed [U8, String LenU8, Pair U8 AccountAddress])
     fromToJSONSucceed unnamedStructType $
       toArray [AE.Number 10, AE.String "abc", toArray [AE.Number 8, AE.String (Text.pack accAddr)]]
     fromToJSONFail unnamedStructType $
@@ -170,14 +170,14 @@ printParamsSpec = describe "serialize JSON params to bytes and deserialize to JS
     fromToJSONFail unnamedStructType $
       toArray [AE.Number 10, AE.Number 11, AE.Number 12, toArray [AE.Number 8, AE.String (Text.pack accAddr)]] -- Too many fields
 
-    -- Unit
-    fromToJSONSucceed (RsStruct Unit) $ toArray []
-    fromToJSONFail (RsStruct Unit) $ toArray [AE.Null] -- Non-empty list for unit
+    -- Empty
+    fromToJSONSucceed (Struct Empty) $ toArray []
+    fromToJSONFail (Struct Empty) $ toArray [AE.Null] -- Non-empty list for Empty
 
   it "Enum" $ do
-    let enumType = RsEnum [ ("a", Named [("a.1", RsBool)])
-                          , ("b", Unnamed [RsBool])
-                          , ("c", Unit)]
+    let enumType = Enum [ ("a", Named [("a.1", Bool)])
+                          , ("b", Unnamed [Bool])
+                          , ("c", Empty)]
 
     fromToJSONSucceed enumType $ object ["a" .= toArray [object ["a.1" .= AE.Bool True]]]
     fromToJSONSucceed enumType $ object ["b" .= toArray [AE.Bool True]]
@@ -203,14 +203,14 @@ printParamsSpec = describe "serialize JSON params to bytes and deserialize to JS
         accAddr :: String
         accAddr = "47JNHkJZo9ShomDypbiSJzdGN7FNxo8MwtUFsPa49KGvejf7Wh"
 
-        fromToJSON :: RsType -> AE.Value -> Either String AE.Value
-        fromToJSON rsType originalJSON = serializeParams rsType originalJSON >>= runGetRsValueAsJSON rsType
+        fromToJSON :: SchemaType -> AE.Value -> Either String AE.Value
+        fromToJSON typ originalJSON = serializeParams typ originalJSON >>= runGetValueAsJSON typ
 
-        fromToJSONSucceed :: RsType -> AE.Value -> Expectation
-        fromToJSONSucceed rsType originalJSON = fromToJSON rsType originalJSON `shouldBe` Right originalJSON
+        fromToJSONSucceed :: SchemaType -> AE.Value -> Expectation
+        fromToJSONSucceed typ originalJSON = fromToJSON typ originalJSON `shouldBe` Right originalJSON
 
-        fromToJSONFail :: RsType -> AE.Value -> Expectation
-        fromToJSONFail rsType originalJSON = fromToJSON rsType originalJSON `shouldSatisfy` isLeft
+        fromToJSONFail :: SchemaType -> AE.Value -> Expectation
+        fromToJSONFail typ originalJSON = fromToJSON typ originalJSON `shouldSatisfy` isLeft
 
 
 -- ** Arbitrary Generators **
@@ -219,46 +219,46 @@ genModel :: Gen Model
 genModel = JustBytes . BS.pack <$> listOf (arbitrary :: Gen Word8)
 
 genSchema :: Int -> Gen Schema
-genSchema n = Schema <$> genState <*> (HM.fromList <$> listOf (genTwoOf genText (genRsType n')))
+genSchema n = Schema <$> genState <*> (HM.fromList <$> listOf (genTwoOf genText (genSchemaType n')))
   where genState = case n of
           0 -> pure Nothing
-          _ -> frequency [ (9, Just <$> genRsType n')
+          _ -> frequency [ (9, Just <$> genSchemaType n')
                          , (1, pure Nothing) ]
         n' = nextNSize n
 
 genFields :: Int -> Gen Fields
 genFields n
-  | n == 0 = pure Unit
-  | otherwise = frequency [ (8, Named <$> listOf (genTwoOf genText (genRsType n')))
-                  , (4, Unnamed <$> listOf (genRsType n'))
-                  , (1, pure Unit) ]
+  | n == 0 = pure Empty
+  | otherwise = frequency [ (8, Named <$> listOf (genTwoOf genText (genSchemaType n')))
+                  , (4, Unnamed <$> listOf (genSchemaType n'))
+                  , (1, pure Empty) ]
   where n' = nextNSize n
 
-genRsType :: Int -> Gen RsType
-genRsType n
-  | n == 0 = pure RsUnit
+genSchemaType :: Int -> Gen SchemaType
+genSchemaType n
+  | n == 0 = pure Unit
   | otherwise = oneof
-      [ pure RsUnit
-      , pure RsBool
-      , pure RsU8
-      , pure RsU16
-      , pure RsU32
-      , pure RsU64
-      , pure RsI8
-      , pure RsI16
-      , pure RsI32
-      , pure RsI64
-      , pure RsAccountAddress
-      , pure RsContractAddress
-      , RsOption <$> genRsType n'
-      , RsPair <$> genRsType n' <*> genRsType n'
-      , RsString <$> genSizeLen
-      , RsList <$> genSizeLen <*> genRsType n'
-      , RsSet <$> genSizeLen <*> genRsType n'
-      , RsMap <$> genSizeLen <*> genRsType n' <*> genRsType n'
-      , RsArray <$> arbitrary <*> genRsType n'
-      , RsStruct <$> genFields n'
-      , RsEnum <$> listOf (genTwoOf genText (genFields n')) ]
+      [ pure Unit
+      , pure Bool
+      , pure U8
+      , pure U16
+      , pure U32
+      , pure U64
+      , pure I8
+      , pure I16
+      , pure I32
+      , pure I64
+      , pure AccountAddress
+      , pure ContractAddress
+      , Option <$> genSchemaType n'
+      , Pair <$> genSchemaType n' <*> genSchemaType n'
+      , String <$> genSizeLen
+      , List <$> genSizeLen <*> genSchemaType n'
+      , Set <$> genSizeLen <*> genSchemaType n'
+      , Map <$> genSizeLen <*> genSchemaType n' <*> genSchemaType n'
+      , Array <$> arbitrary <*> genSchemaType n'
+      , Struct <$> genFields n'
+      , Enum <$> listOf (genTwoOf genText (genFields n')) ]
   where n' = nextNSize n
 
 genSizeLen :: Gen SizeLength

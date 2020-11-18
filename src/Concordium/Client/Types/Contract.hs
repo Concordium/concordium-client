@@ -5,21 +5,21 @@ module Concordium.Client.Types.Contract
   ( addSchemaToInfo
   , decodeSchema
   , encodeSchema
-  , runGetRsValueAsJSON
+  , runGetValueAsJSON
   , serializeParams
   , Fields(..)
   , Info(..)
   , Model(..)
-  , RsType(..)
   , Schema(..)
+  , SchemaType(..)
   , SizeLength(..)
   ) where
 
 import Concordium.ID.Types (addressFromText)
-import Concordium.Types (AccountAddress, Amount(..), ContractAddress(..), ContractIndex(..), ContractSubindex(..))
+import qualified Concordium.Types as T
 
 import Control.Monad (unless, when)
-import Data.Aeson (FromJSON, Result, ToJSON, object, toJSON, (.=), (.:))
+import Data.Aeson (FromJSON, Result, ToJSON, (.=), (.:))
 import qualified Data.Aeson as AE
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -48,8 +48,8 @@ import GHC.Generics
 -- Must stay in sync.
 data Schema
   =  Schema -- ^ Describes all the schemas of a smart contract.
-  {  state :: Maybe RsType -- ^ The optional contract state
-  ,  methodParameter :: HashMap Text RsType -- ^ Named method parameters
+  {  state :: Maybe SchemaType -- ^ The optional contract state
+  ,  methodParameter :: HashMap Text SchemaType -- ^ Named method parameters
   }
   deriving (Eq, Show)
 
@@ -60,9 +60,9 @@ instance Serialize Schema where
 -- |Parallel to Fields defined in contracts-common (Rust).
 -- Must stay in sync.
 data Fields
-  = Named [(Text, RsType)] -- ^ Represents an unnamed enum or struct.
-  | Unnamed [RsType] -- ^ Represents an unnamed struct or struct.
-  | Unit -- ^ The leaf node.
+  = Named [(Text, SchemaType)] -- ^ Represents an unnamed enum or struct.
+  | Unnamed [SchemaType] -- ^ Represents an unnamed struct or struct.
+  | Empty -- ^ The leaf node.
   deriving (Eq, Generic, Show)
 
 instance Hashable Fields
@@ -75,96 +75,96 @@ instance Serialize Fields where
     case tag of
       0 -> Named <$> getListOfWith32leLen (getTwoOf getText get)
       1 -> Unnamed <$> getListOfWith32leLen get
-      2 -> pure Unit
+      2 -> pure Empty
       x -> fail [i|Invalid Fields tag: #{x}|]
 
-  put schema = case schema of
+  put fields = case fields of
     Named pairs -> putWord8 0 *> putListOfWith32leLen (putTwoOf putText put) pairs
-    Unnamed rsTypes -> putWord8 1 *> putListOfWith32leLen put rsTypes
-    Unit -> putWord8 2
+    Unnamed types -> putWord8 1 *> putListOfWith32leLen put types
+    Empty -> putWord8 2
 
 -- |Parallel to Type defined in contracts-common (Rust).
 -- Must stay in sync.
-data RsType =
-    RsUnit
-  | RsBool
-  | RsU8
-  | RsU16
-  | RsU32
-  | RsU64
-  | RsI8
-  | RsI16
-  | RsI32
-  | RsI64
-  | RsAmount
-  | RsAccountAddress
-  | RsContractAddress
-  | RsOption RsType
-  | RsPair RsType RsType
-  | RsString SizeLength
-  | RsList SizeLength RsType
-  | RsSet SizeLength RsType
-  | RsMap SizeLength RsType RsType
-  | RsArray Word32 RsType
-  | RsStruct Fields
-  | RsEnum [(Text, Fields)]
+data SchemaType =
+    Unit
+  | Bool
+  | U8
+  | U16
+  | U32
+  | U64
+  | I8
+  | I16
+  | I32
+  | I64
+  | Amount
+  | AccountAddress
+  | ContractAddress
+  | Option SchemaType
+  | Pair SchemaType SchemaType
+  | String SizeLength
+  | List SizeLength SchemaType
+  | Set SizeLength SchemaType
+  | Map SizeLength SchemaType SchemaType
+  | Array Word32 SchemaType
+  | Struct Fields
+  | Enum [(Text, Fields)]
   deriving (Eq, Generic, Show)
 
-instance Hashable RsType
+instance Hashable SchemaType
 
-instance ToJSON RsType
+instance ToJSON SchemaType
 
-instance Serialize RsType where
+instance Serialize SchemaType where
   get = do
     tag <- getWord8
     case tag of
-      0  -> pure RsUnit
-      1  -> pure RsBool
-      2  -> pure RsU8
-      3  -> pure RsU16
-      4  -> pure RsU32
-      5  -> pure RsU64
-      6  -> pure RsI8
-      7  -> pure RsI16
-      8  -> pure RsI32
-      9  -> pure RsI64
-      10 -> pure RsAmount
-      11 -> pure RsAccountAddress
-      12 -> pure RsContractAddress
-      13 -> RsOption <$> get
-      14 -> RsPair <$> get <*> get
-      15 -> RsString <$> get
-      16 -> RsList <$> get <*> get
-      17 -> RsSet <$> get <*> get
-      18 -> RsMap <$> get <*> get <*> get
-      19 -> RsArray <$> getWord32le <*> get
-      20 -> RsStruct <$> get
-      21 -> RsEnum <$> getListOfWith32leLen (getTwoOf getText get)
-      x  -> fail [i|Invalid RsType tag: #{x}|]
+      0  -> pure Unit
+      1  -> pure Bool
+      2  -> pure U8
+      3  -> pure U16
+      4  -> pure U32
+      5  -> pure U64
+      6  -> pure I8
+      7  -> pure I16
+      8  -> pure I32
+      9  -> pure I64
+      10 -> pure Amount
+      11 -> pure AccountAddress
+      12 -> pure ContractAddress
+      13 -> Option <$> get
+      14 -> Pair <$> get <*> get
+      15 -> String <$> get
+      16 -> List <$> get <*> get
+      17 -> Set <$> get <*> get
+      18 -> Map <$> get <*> get <*> get
+      19 -> Array <$> getWord32le <*> get
+      20 -> Struct <$> get
+      21 -> Enum <$> getListOfWith32leLen (getTwoOf getText get)
+      x  -> fail [i|Invalid SchemaType tag: #{x}|]
 
-  put rsType = case rsType of
-    RsUnit -> putWord8 0
-    RsBool -> putWord8 1
-    RsU8   -> putWord8 2
-    RsU16  -> putWord8 3
-    RsU32  -> putWord8 4
-    RsU64  -> putWord8 5
-    RsI8   -> putWord8 6
-    RsI16  -> putWord8 7
-    RsI32  -> putWord8 8
-    RsI64  -> putWord8 9
-    RsAmount -> putWord8 10
-    RsAccountAddress  -> putWord8 11
-    RsContractAddress -> putWord8 12
-    RsOption a  -> putWord8 13 *> put a
-    RsPair a b  -> putWord8 14 *> put a *> put b
-    RsString sl -> putWord8 15 *> put sl
-    RsList sl a -> putWord8 16 *> put sl *> put a
-    RsSet sl a  -> putWord8 17 *> put sl *> put a
-    RsMap sl k v    -> putWord8 18 *> put sl *> put k *> put v
-    RsArray len a   -> putWord8 19 *> putWord32le len *> put a
-    RsStruct fields -> putWord8 20 *> put fields
-    RsEnum enum     -> putWord8 21 *> putListOfWith32leLen (putTwoOf putText put) enum
+  put typ = case typ of
+    Unit -> putWord8 0
+    Bool -> putWord8 1
+    U8   -> putWord8 2
+    U16  -> putWord8 3
+    U32  -> putWord8 4
+    U64  -> putWord8 5
+    I8   -> putWord8 6
+    I16  -> putWord8 7
+    I32  -> putWord8 8
+    I64  -> putWord8 9
+    Amount -> putWord8 10
+    AccountAddress  -> putWord8 11
+    ContractAddress -> putWord8 12
+    Option a  -> putWord8 13 *> put a
+    Pair a b  -> putWord8 14 *> put a *> put b
+    String sl -> putWord8 15 *> put sl
+    List sl a -> putWord8 16 *> put sl *> put a
+    Set sl a  -> putWord8 17 *> put sl *> put a
+    Map sl k v    -> putWord8 18 *> put sl *> put k *> put v
+    Array len a   -> putWord8 19 *> putWord32le len *> put a
+    Struct fields -> putWord8 20 *> put fields
+    Enum enum     -> putWord8 21 *> putListOfWith32leLen (putTwoOf putText put) enum
 
 -- |Parallel to SizeLength defined in contracts-common (Rust).
 -- Must stay in sync.
@@ -199,9 +199,9 @@ data Info
   -- |Info about a contract.
   = Info
     { -- |The contract balance.
-      ciAmount :: !Amount
+      ciAmount :: !T.Amount
       -- |The owner of the contract.
-    , ciOwner  :: !AccountAddress
+    , ciOwner  :: !T.AccountAddress
       -- |The contract state.
     , ciModel  :: !Model }
   deriving (Eq, Show)
@@ -213,7 +213,7 @@ instance FromJSON Info where
       <*> v .: "model"
 
 instance ToJSON Info where
-  toJSON Info {..} = object
+  toJSON Info {..} = AE.object
     [ "amount" .= ciAmount
     , "owner"  .= ciOwner
     , "model"  .= ciModel ]
@@ -243,43 +243,44 @@ instance FromJSON Model where
 getModelAsJSON :: Schema -> Get AE.Value
 getModelAsJSON Schema{..} = do
   state' <- case state of
-      Nothing -> return AE.Null
-      Just rsType -> getRsValueAsJSON rsType
-  return $ object ["state" .= state', "method_parameters" .= methodParameter]
+      Nothing    -> return AE.Null
+      Just typ -> getValueAsJSON typ
+  return $ AE.object ["state" .= state', "method_parameters" .= methodParameter]
 
 
-getRsValueAsJSON :: RsType -> Get AE.Value
-getRsValueAsJSON rsType = case rsType of
-  RsUnit -> return AE.Null
-  RsBool -> AE.Bool <$> get
-  RsU8   -> toJSON <$> getWord8
-  RsU16  -> toJSON <$> getWord16le
-  RsU32  -> toJSON <$> getWord32le
-  RsU64  -> toJSON <$> getWord64le
-  RsI8   -> toJSON <$> getInt8
-  RsI16  -> toJSON <$> getInt16le
-  RsI32  -> toJSON <$> getInt32le
-  RsI64  -> toJSON <$> getInt64le
-  RsAmount -> toJSON . Amount <$> getWord64le
-  RsAccountAddress  -> toJSON <$> (get :: Get AccountAddress)
-  RsContractAddress -> toJSON <$> (ContractAddress <$> (ContractIndex <$> getWord64le) <*> (ContractSubindex <$> getWord64le))
-  RsOption optType -> do
+getValueAsJSON :: SchemaType -> Get AE.Value
+getValueAsJSON typ = case typ of
+  Unit -> return AE.Null
+  Bool -> AE.Bool <$> get
+  U8   -> AE.toJSON <$> getWord8
+  U16  -> AE.toJSON <$> getWord16le
+  U32  -> AE.toJSON <$> getWord32le
+  U64  -> AE.toJSON <$> getWord64le
+  I8   -> AE.toJSON <$> getInt8
+  I16  -> AE.toJSON <$> getInt16le
+  I32  -> AE.toJSON <$> getInt32le
+  I64  -> AE.toJSON <$> getInt64le
+  Amount -> AE.toJSON . T.Amount <$> getWord64le
+  AccountAddress  -> AE.toJSON <$> (get :: Get T.AccountAddress)
+  ContractAddress -> AE.toJSON <$>
+    (T.ContractAddress <$> (T.ContractIndex <$> getWord64le) <*> (T.ContractSubindex <$> getWord64le))
+  Option optType -> do
     some <- getWord8
     case some of
       0 -> return AE.Null
-      1 -> getRsValueAsJSON optType
+      1 -> getValueAsJSON optType
       _ -> fail "Invalid some tag for Option."
-  RsPair a b -> do
-    l <- getRsValueAsJSON a
-    r <- getRsValueAsJSON b
+  Pair a b -> do
+    l <- getValueAsJSON a
+    r <- getValueAsJSON b
     return $ AE.toJSON [l, r]
-  RsString sl        -> toJSON <$> getTextWithSizeLen sl
-  RsList sl elemType -> toJSON <$> getListOfWithSizeLen sl (getRsValueAsJSON elemType)
-  RsSet sl elemType  -> toJSON <$> getListOfWithSizeLen sl (getRsValueAsJSON elemType)
-  RsMap sl keyType valType -> toJSON <$> getListOfWithSizeLen sl (getTwoOf (getRsValueAsJSON keyType) (getRsValueAsJSON valType))
-  RsArray len elemType     -> toJSON <$> getListOfWithKnownLen len (getRsValueAsJSON elemType)
-  RsStruct fields -> toJSON <$> getFieldsAsJSON fields
-  RsEnum variants -> do
+  String sl        -> AE.toJSON <$> getTextWithSizeLen sl
+  List sl elemType -> AE.toJSON <$> getListOfWithSizeLen sl (getValueAsJSON elemType)
+  Set sl elemType  -> AE.toJSON <$> getListOfWithSizeLen sl (getValueAsJSON elemType)
+  Map sl keyType valType -> AE.toJSON <$> getListOfWithSizeLen sl (getTwoOf (getValueAsJSON keyType) (getValueAsJSON valType))
+  Array len elemType     -> AE.toJSON <$> getListOfWithKnownLen len (getValueAsJSON elemType)
+  Struct fields -> AE.toJSON <$> getFieldsAsJSON fields
+  Enum variants -> do
     idx <- if length variants <= 256
            then fromIntegral <$> getWord8
            else fromIntegral <$> getWord32le
@@ -287,14 +288,14 @@ getRsValueAsJSON rsType = case rsType of
                       Just v -> return v
                       Nothing -> fail [i|Variant with index #{idx} does not exist for Enum.|]
     fields' <- getFieldsAsJSON fields
-    return $ object [name .= fields']
+    return $ AE.object [name .= fields']
   where
     getFieldsAsJSON :: Fields -> Get AE.Value
     getFieldsAsJSON fields = case fields of
-      Named pairs -> toJSON <$> traverse getPair pairs
-      Unnamed xs  -> toJSON <$> traverse getRsValueAsJSON xs
-      Unit        -> return $ AE.Array mempty
-      where getPair (k, v) = (\val -> object [k .= val]) <$> getRsValueAsJSON v
+      Named pairs -> AE.toJSON <$> traverse getPair pairs
+      Unnamed xs  -> AE.toJSON <$> traverse getValueAsJSON xs
+      Empty       -> return $ AE.Array mempty
+      where getPair (k, v) = (\val -> AE.object [k .= val]) <$> getValueAsJSON v
 
     -- Slightly simplified version of Data.List.Safe.(!!)
     (!?) :: [a] -> Integer -> Maybe a
@@ -303,56 +304,56 @@ getRsValueAsJSON rsType = case rsType of
                   | n < 0 = Nothing
                   | otherwise = (!?) xs (n-1)
 
-putJSONParams :: RsType -> AE.Value -> Either String Put
-putJSONParams rsType json = case (rsType, json) of
-  (RsUnit, AE.Null)    -> pure mempty
-  (RsBool, AE.Bool b)  -> pure $ put b
-  (RsU8,  AE.Number x) -> putWord8    <$> fromScientific x
-  (RsU16, AE.Number x) -> putWord16le <$> fromScientific x
-  (RsU32, AE.Number x) -> putWord32le <$> fromScientific x
-  (RsU64, AE.Number x) -> putWord64le <$> fromScientific x
-  (RsI8,  AE.Number x) -> putInt8     <$> fromScientific x
-  (RsI16, AE.Number x) -> putInt16le  <$> fromScientific x
-  (RsI32, AE.Number x) -> putInt32le  <$> fromScientific x
-  (RsI64, AE.Number x) -> putInt64le  <$> fromScientific x
+putJSONParams :: SchemaType -> AE.Value -> Either String Put
+putJSONParams typ json = case (typ, json) of
+  (Unit, AE.Null)     -> pure mempty
+  (Bool, AE.Bool b)   -> pure $ put b
+  (U8,   AE.Number x) -> putWord8    <$> fromScientific x
+  (U16,  AE.Number x) -> putWord16le <$> fromScientific x
+  (U32,  AE.Number x) -> putWord32le <$> fromScientific x
+  (U64,  AE.Number x) -> putWord64le <$> fromScientific x
+  (I8,   AE.Number x) -> putInt8     <$> fromScientific x
+  (I16,  AE.Number x) -> putInt16le  <$> fromScientific x
+  (I32,  AE.Number x) -> putInt32le  <$> fromScientific x
+  (I64,  AE.Number x) -> putInt64le  <$> fromScientific x
 
-  (RsAmount, amt@(AE.String _)) -> putWord64le . _amount <$> (resToEither . AE.fromJSON $ amt)
+  (Amount, amt@(AE.String _)) -> putWord64le . T._amount <$> (resToEither . AE.fromJSON $ amt)
 
-  (RsAccountAddress, AE.String s) -> put <$> addressFromText s -- TODO: better error msg?
+  (AccountAddress, AE.String s) -> put <$> addressFromText s -- TODO: better error msg?
 
-  (RsContractAddress, AE.Object obj) -> case HM.toList obj of
+  (ContractAddress, AE.Object obj) -> case HM.toList obj of
     [("index", AE.Number idx)] -> putContrAddr idx 0
     [("index", AE.Number idx), ("subindex", AE.Number subidx)] -> putContrAddr idx subidx
     [("subindex", AE.Number subidx), ("index", AE.Number idx)] -> putContrAddr idx subidx
     _ -> Left [i|Invalid ContractAddress: #{obj}|]
 
-  (RsOption optType, opt)  -> case opt of -- TODO: Remove
+  (Option optType, opt)  -> case opt of -- TODO: Remove
     AE.Null -> pure $ putWord8 0
     val -> do
       let putTag = putWord8 1
       putVal <- putJSONParams optType val
       pure $ putTag <> putVal
 
-  (RsPair ta tb, AE.Array vec) -> case V.toList vec of
+  (Pair ta tb, AE.Array vec) -> case V.toList vec of
     [a, b] -> do
       putA <- putJSONParams ta a
       putB <- putJSONParams tb b
       pure $ putA <> putB
     xs -> Left [i|#{xs} is not a pair.|]
 
-  (RsString sl, AE.String str) -> do
+  (String sl, AE.String str) -> do
     let len = fromIntegral . Text.length $ str
         maxLen = maxSizeLen sl
     when (len > maxLen) $ Left $ tooLongError "String" maxLen len
     pure $ putTextWithSizeLen sl str
 
-  (RsList sl elemType, AE.Array vec) -> do
+  (List sl elemType, AE.Array vec) -> do
     let len = fromIntegral . V.length $ vec
         maxLen = maxSizeLen sl
     when (len > maxLen) $ Left $ tooLongError "List" maxLen len
     putListLike sl elemType (V.toList vec)
 
-  (RsSet sl elemType, AE.Array vec) -> do
+  (Set sl elemType, AE.Array vec) -> do
     let len = fromIntegral . V.length $ vec
         maxLen = maxSizeLen sl
         ls = V.toList vec
@@ -360,23 +361,23 @@ putJSONParams rsType json = case (rsType, json) of
     unless (allUnique ls) $ Left [i|Invalid set. Can only contain unique elements: #{ls}|]
     putListLike sl elemType ls
 
-  (RsMap sl keyType valType, AE.Array vec) -> do
+  (Map sl keyType valType, AE.Array vec) -> do
     let len = fromIntegral . V.length $ vec
         maxLen = maxSizeLen sl
         putLen = putLenWithSizeLen sl $ V.length vec
     when (len > maxLen) $ Left $ tooLongError "Map" maxLen len
-    putElems <- traverse (putJSONParams (RsPair keyType valType)) vec
+    putElems <- traverse (putJSONParams (Pair keyType valType)) vec
     pure . sequence_ $ V.cons putLen putElems
 
-  (RsArray len elemType, AE.Array vec) -> do
+  (Array len elemType, AE.Array vec) -> do
     let ls = V.toList vec
         actualLen = length ls
     unless (fromIntegral len == actualLen) $ Left [i|Expected the array to have length #{len}, but it had length #{actualLen}|]
     sequence_ <$> traverse (putJSONParams elemType) ls
 
-  (RsStruct fields, val) -> putJSONFields fields val
+  (Struct fields, val) -> putJSONFields fields val
 
-  (RsEnum variants, AE.Object obj) -> case HM.toList obj of
+  (Enum variants, AE.Object obj) -> case HM.toList obj of
     [] -> Left "fail, empty obj"
     [(name, fields)] -> case lookupItemAndIndex name variants of
       Nothing -> Left [i|Enum variant '#{name}' does not exist in enum #{variants}|] -- TODO: too verbose?
@@ -401,21 +402,21 @@ putJSONParams rsType json = case (rsType, json) of
         -- The fields entered might be in a different order, so we need to order them correctly.
         pure . traverse_ snd . List.sortOn fst $ putNamedUnordered
 
-      (Unnamed rsTypes, AE.Array vec) -> do
+      (Unnamed types, AE.Array vec) -> do
         let ls = V.toList vec
-        let expectedLen = length rsTypes
+        let expectedLen = length types
         let actualLen = length ls
         when (expectedLen /= actualLen) $ Left [i|Incorrect number of fields. Expected #{expectedLen} but got #{actualLen} fields.|]
-        putUnnamed <- traverse (uncurry putJSONParams) $ zip rsTypes ls
+        putUnnamed <- traverse (uncurry putJSONParams) $ zip types ls
         pure . sequence_ $ putUnnamed
 
-      (Unit, AE.Array vec) -> if V.null vec
+      (Empty, AE.Array vec) -> if V.null vec
                                 then pure mempty
-                                else Left [i|The type #{Unit} should be represented by an empty Array.|]
+                                else Left [i|The type #{Empty} should be represented by an empty Array.|]
 
       (type_, value) -> Left [i|#{value} is not of type #{type_}|] -- TODO: implement show manually to match rust type names
 
-    putListLike :: SizeLength -> RsType -> [AE.Value] -> Either String Put
+    putListLike :: SizeLength -> SchemaType -> [AE.Value] -> Either String Put
     putListLike sl elemType xs = do
       let putLen = putLenWithSizeLen sl $ length xs
       putElems <- traverse (putJSONParams elemType) xs
@@ -443,13 +444,13 @@ putJSONParams rsType json = case (rsType, json) of
       LenU32 -> 4_294_967_295
       LenU64 -> 18_446_744_073_709_551_615
 
-    lookupAndPut :: [(Text, RsType)] -> AE.Value -> Either String (Int, Put)
+    lookupAndPut :: [(Text, SchemaType)] -> AE.Value -> Either String (Int, Put)
     lookupAndPut pairs v = case v of
       AE.Object obj -> case HM.toList obj of
         [] -> Left "fail, empty obj"
         [(name, value)] -> case lookupItemAndIndex name pairs of
           Nothing -> Left "fail, name not found"
-          Just (rsType', idx) -> (idx, ) <$> putJSONParams rsType' value
+          Just (typ', idx) -> (idx, ) <$> putJSONParams typ' value
         _ -> Left "fail, too many fields"
       _ -> Left [i|#{v} is not a valid struct.|] -- TODO: improve error msg
 
@@ -541,9 +542,9 @@ addSchemaToInfo info@Info{..} schema = case ciModel of
   WithSchema _ -> Left "Already contains a schema."
   JustBytes bytes -> (\m -> info {ciModel = WithSchema m}) <$> S.runGet (getModelAsJSON schema) bytes
 
--- |Serialize JSON parameters to binary using `RsType` or fail with an error message.
-serializeParams :: RsType -> AE.Value -> Either String ByteString
-serializeParams rsType params = S.runPut <$> putJSONParams rsType params
+-- |Serialize JSON parameters to binary using `SchemaType` or fail with an error message.
+serializeParams :: SchemaType -> AE.Value -> Either String ByteString
+serializeParams typ params = S.runPut <$> putJSONParams typ params
 
 -- * For Testing *
 
@@ -553,5 +554,5 @@ decodeSchema = S.decode
 encodeSchema :: Schema -> ByteString
 encodeSchema = S.encode
 
-runGetRsValueAsJSON :: RsType -> ByteString -> Either String AE.Value
-runGetRsValueAsJSON rsType = S.runGet (getRsValueAsJSON rsType)
+runGetValueAsJSON :: SchemaType -> ByteString -> Either String AE.Value
+runGetValueAsJSON typ = S.runGet (getValueAsJSON typ)
