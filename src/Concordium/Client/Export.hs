@@ -193,18 +193,14 @@ configImport json pwd = runExceptT $ do
         1 -> do
           cbu :: EncryptedJSON ConfigBackup <- resToEither (AE.fromJSON (vValue vconfigbackup)) `embedErr` decodeError 
           ConfigBackup{..} <- decryptJSON cbu password `embedErr` (("Failed to decrypt Config Backup using the supplied password: " ++) . displayException)
-          case vVersion cbuAccounts of
-            1 -> return $ vValue cbuAccounts
-            v -> throwError [i|Unsupported accountconfig encoding version, : #{v}|]
+          return $ vValue cbuAccounts
         v -> throwError [i|Unsupported configbackup encoding version, : #{v}|]
     Nothing -> do
       vconfigbackup :: Versioned AE.Value <- AE.eitherDecodeStrict json `embedErr` (\err -> [i|Failed to decode version number of input file: #{err}|])
       case vVersion vconfigbackup of
         1 -> do
           ConfigBackup{..} <- resToEither (AE.fromJSON (vValue vconfigbackup)) `embedErr` decodeError
-          case vVersion cbuAccounts of
-            1 -> return $ vValue cbuAccounts
-            v -> throwError [i|Unsupported accountconfig encoding version, : #{v}|]
+          return $ vValue cbuAccounts
         v -> throwError [i|Unsupported configbackup encoding version, : #{v}|]
   where
     resToEither :: AE.Result a -> Either String a
