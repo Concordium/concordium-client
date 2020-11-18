@@ -1,10 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE DeriveGeneric #-}
-
+{-# LANGUAGE QuasiQuotes #-}
 
 module Concordium.Client.Export where
-
-import GHC.Generics
 
 import Concordium.Client.Cli
 import Concordium.Client.Config
@@ -16,13 +13,15 @@ import Control.Exception
 import Control.Monad.Except
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
-import Data.Aeson ((.:),(.:?),(.!=))
+import Data.Aeson ((.:),(.:?),(.!=),(.=))
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LazyBS
 import qualified Data.HashMap.Strict as Map
 import Data.Text as T
+import Data.String.Interpolate ( i )
 import qualified Data.Text.IO as T
 import Text.Printf
+import Concordium.Common.Version
 
 -- | An export format used by wallets including accounts and identities.
 data WalletExport =
@@ -153,38 +152,62 @@ decodeGenesisFormattedAccountExport payload name pwd = runExceptT $ do
 
 ---- Code for instantiating, exporting and importing config backups
 -- | An export format used for config backups.
-data WalletBackup =
-  WalletBackup
-  { wbuAccounts :: ![AccountConfig] }
-  deriving (Generic)
+data ConfigBackup =
+  ConfigBackup
+  { cbuAccounts :: Versioned [AccountConfig] }
 
-instance AE.ToJSON WalletBackup where
-  toEncoding = AE.genericToEncoding AE.defaultOptions
+configBackupVersion :: Version
+configBackupVersion = 1
 
-instance AE.FromJSON WalletBackup
+instance AE.ToJSON ConfigBackup where
+   toJSON (ConfigBackup cbuAccounts) = AE.object ["accounts" .= cbuAccounts]
 
+instance AE.FromJSON ConfigBackup where
+  parseJSON = AE.withObject "ConfigBackup" $ \v -> do
+    cbuAccounts <- v .: "accounts"
+    version <- cbuAccounts .: "v"
+    unless (version == 1) $
+      fail $ [i|Unsupported accountconfig encoding version, : #{version}|]
+    accountConfigs <- cbuAccounts .: "value"
+    return ConfigBackup{cbuAccounts = (Versioned version) accountConfigs}
 
 -- | Encode and encrypt the config Json, for writing to a file, optionally protected under a password.
-exportConfigBackup  :: [AccountConfig] -- ^ A list of 'AccountConfig's
-  -> Maybe Password -- ^ Password to decrypt the export and to encrypt the sign keys.
+configExport  :: [AccountConfig] -- ^ A list of 'AccountConfig's
+  -> Maybe Password -- ^ Password to decrypt the export.
   -> IO (BS.ByteString) -- ^ JSON with encrypted accounts and identities,
-                   -- which must include the fields of an 'EncryptedJSON WalletExport'.
-exportConfigBackup accounts pwd = case pwd of
-  Just password -> LazyBS.toStrict . AE.encode <$> ( encryptJSON AES256 PBKDF2SHA256 WalletBackup{wbuAccounts = accounts} password)
-  Nothing -> return $ LazyBS.toStrict $ AE.encode WalletBackup{wbuAccounts = accounts} 
+configExport accounts pwd = case pwd of
+  Just password -> LazyBS.toStrict . AE.encode <$> (Versioned configBackupVersion) <$> (encryptJSON AES256 PBKDF2SHA256 ConfigBackup{cbuAccounts = (Versioned accountConfigVersion) accounts} password)
+  Nothing -> return $ LazyBS.toStrict $ AE.encode $ (Versioned configBackupVersion) ConfigBackup{cbuAccounts = (Versioned accountConfigVersion) accounts} 
 
 
 -- |Decrypt and decode an exported config, optionally protected under a password.
-importConfigBackup
+configImport
   :: BS.ByteString
   -> Maybe Password
   -> IO (Either String [AccountConfig])
-importConfigBackup json pwd = runExceptT $ do
+configImport json pwd = runExceptT $ do
   case pwd of
     Just password -> do 
-      wbu :: EncryptedJSON WalletBackup <- AE.eitherDecodeStrict json `embedErr` printf "cannot decode walletbackup JSON: %s"
-      WalletBackup{..} <- decryptJSON wbu password `embedErr` (("cannot decrypt wallet export: " ++) . displayException)
-      return $ wbuAccounts
+      vconfigbackup :: Versioned AE.Value <- AE.eitherDecodeStrict json `embedErr` (\err -> [i|Failed to decode version number of input file: #{err}|])
+      case vVersion vconfigbackup of
+        1 -> do
+          cbu :: EncryptedJSON ConfigBackup <- resToEither (AE.fromJSON (vValue vconfigbackup)) `embedErr` (\err -> [i|Failed to decode input file to ConfigBackup JSON: #{err}|])
+          ConfigBackup{..} <- decryptJSON cbu password `embedErr` (("Failed to decrypt Config Backup using the supplied password: " ++) . displayException)
+          case vVersion cbuAccounts of
+            1 -> return $ vValue cbuAccounts
+            v -> throwError [i|Unsupported accountconfig encoding version, : #{v}|]
+        v -> throwError [i|Unsupported configbackup encoding version, : #{v}|]
     Nothing -> do
-      WalletBackup{..} <- AE.eitherDecodeStrict json `embedErr` printf "cannot decode walletbackup JSON: %s"
-      return $ wbuAccounts
+      vconfigbackup :: Versioned AE.Value <- AE.eitherDecodeStrict json `embedErr` (\err -> [i|Failed to decode version number of input file: #{err}|])
+      case vVersion vconfigbackup of
+        1 -> do
+          ConfigBackup{..} <- resToEither (AE.fromJSON (vValue vconfigbackup)) `embedErr` (\err -> [i|Failed to decode input file to ConfigBackup JSON: #{err}|])
+          case vVersion cbuAccounts of
+            1 -> return $ vValue cbuAccounts
+            v -> throwError [i|Unsupported accountconfig encoding version, : #{v}|]
+        v -> throwError [i|Unsupported configbackup encoding version, : #{v}|]
+  where
+    resToEither :: AE.Result a -> Either String a
+    resToEither res = case res of
+      (AE.Success a) -> Right a
+      (AE.Error err) -> Left err
