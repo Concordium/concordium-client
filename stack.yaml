@@ -44,9 +44,8 @@ extra-deps:
 - github: lucasdicioccio/http2-client
   commit: 7201f65b31bf0a2b0bc4a904173233e1e728697b
 
-# Temporary fork to remove compiler warnings. Switch to original once fixed.
-- github: Concordium/http2-grpc-haskell
-  commit: 4e842ba0d23db89fb0ad108aacde23cb4321d96f
+- github: haskell-grpc-native/http2-grpc-haskell
+  commit: 0d887de172d879c2d883e788115541a737eaf618
   subdirs:
     - http2-client-grpc
     - http2-grpc-proto-lens
