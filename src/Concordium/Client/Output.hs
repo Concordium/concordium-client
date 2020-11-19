@@ -10,11 +10,11 @@ import Concordium.Client.Parse
 import Concordium.Client.Types.Account
 import Concordium.Client.Types.TransactionStatus
 import Concordium.Common.Version
+import Concordium.ID.Parameters
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Types
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Crypto.EncryptedTransfers as Enc
-import Concordium.ID.Parameters (globalContext)
 
 import Control.Monad.Writer
 import qualified Data.Aeson as AE
@@ -139,7 +139,7 @@ showRevealedAttributes as =
                   Just k -> unpack k
     showAttr (t, IDTypes.AttributeValue v) = printf "%s=%s" (showTag t) (show v)
 
-printAccountInfo :: NamedAddress -> AccountInfoResult -> Verbose -> Bool -> Maybe ElgamalSecretKey -> Printer
+printAccountInfo :: NamedAddress -> AccountInfoResult -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
 printAccountInfo addr a verbose showEncrypted mEncKey= do
   tell ([ printf "Local name:            %s" (showMaybe unpack $ naName addr)
        , printf "Address:               %s" (show $ naAddr addr)
@@ -148,10 +148,10 @@ printAccountInfo addr a verbose showEncrypted mEncKey= do
        case totalRelease $ airReleaseSchedule a of
          0 -> []
          tot -> (printf "Release schedule:      total %s" (showGtu tot)) :
-               (map (\(timestamp, (amount, hashes)) -> printf "   %s:               %s scheduled by the transactions: %s."
-                                                         (showTimeFormatted (Types.timestampToUTCTime timestamp))
-                                                         (showGtu amount)
-                                                         (intercalate ", " $ map show hashes))
+               (map (\ReleaseScheduleItem{..} -> printf "   %s:               %s scheduled by the transactions: %s."
+                                                (showTimeFormatted (Types.timestampToUTCTime rsiTimestamp))
+                                                (showGtu rsiAmount)
+                                                (intercalate ", " $ map show rsiTransactions))
                  (releaseSchedule $ airReleaseSchedule a))
        ++ [printf "Nonce:                 %s" (show $ airNonce a)
           , printf "Delegation:            %s" (maybe showNone (printf "baker %s" . show) $ airDelegation a)
@@ -177,7 +177,7 @@ printAccountInfo addr a verbose showEncrypted mEncKey= do
           let incomingAmounts = showEncryptedAmount <$> Types.getIncomingAmountsList (airEncryptedAmount a)
               selfAmount = showEncryptedAmount $ airEncryptedAmount a ^. Types.selfAmount
           in showEncryptedBalance incomingAmounts selfAmount
-        Just encKey -> do
+        Just (encKey, globalContext) -> do
              let table = Enc.computeTable globalContext (2^(16::Int))
                  decoder = Enc.decryptAmount table encKey
                  printer x = let decoded = decoder x in "(" ++ showGtu decoded ++ ") " ++ showEncryptedAmount x

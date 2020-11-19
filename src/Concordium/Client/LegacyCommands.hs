@@ -99,6 +99,8 @@ data LegacyCmd
     { legacyBlockHash :: !(Maybe Text) }
   | GetAnonymityRevokers
     { legacyBlockHash :: !(Maybe Text) }
+  | GetCryptographicParameters
+    { legacyBlockHash :: !(Maybe Text) }
   deriving (Show)
 
 legacyProgramOptions :: Parser LegacyCmd
@@ -137,7 +139,8 @@ legacyProgramOptions =
      dumpStartCommand <>
      dumpStopCommand <>
      getIdentityProvidersCommand <>
-     getAnonymityRevokersCommand
+     getAnonymityRevokersCommand <>
+     getCryptographicParametersCommand
     )
 
 getPeerDataCommand :: Mod CommandFields LegacyCmd
@@ -474,7 +477,7 @@ getIdentityProvidersCommand =
      (GetIdentityProviders <$>
         optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
        )
-       (progDesc "Query the gRPC server for the identity providers on a specific block."))
+       (progDesc "Query the gRPC server for the identity providers in a specific block."))
 
 getAnonymityRevokersCommand :: Mod CommandFields LegacyCmd
 getAnonymityRevokersCommand =
@@ -484,4 +487,14 @@ getAnonymityRevokersCommand =
      (GetAnonymityRevokers <$>
         optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
        )
-       (progDesc "Query the gRPC server for the anonymity revokers on a specific block."))
+       (progDesc "Query the gRPC server for the anonymity revokers in a specific block."))
+
+getCryptographicParametersCommand :: Mod CommandFields LegacyCmd
+getCryptographicParametersCommand =
+    command
+    "GetCryptographicParameters"
+    (info
+     (GetAnonymityRevokers <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+       )
+       (progDesc "Query the gRPC server for the cryptographic parameters in a specific block."))

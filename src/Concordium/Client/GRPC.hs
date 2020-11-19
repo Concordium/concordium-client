@@ -282,6 +282,10 @@ getAnonymityRevokers :: (MonadIO m) => Text -> ClientMonad m (Either String Valu
 getAnonymityRevokers hash = withUnary (call @"getAnonymityRevokers") msg (to processJSON)
   where msg = defMessage & CF.blockHash .~ hash
 
+getCryptographicParameters :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
+getCryptographicParameters hash = withUnary (call @"getCryptographicParameters") msg (to processJSON)
+  where msg = defMessage & CF.blockHash .~ hash
+
 -- | Setup the GRPC client and run a rawUnary call with the provided message to the provided method,
 -- the output is interpreted using the function given in the third parameter.
 withUnaryCore :: forall m n b. (HasMethod P2P m, MonadIO n)
