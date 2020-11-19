@@ -109,7 +109,11 @@ accountEncryptEnergyCost = (+100) . checkHeaderEnergyCost
 accountDecryptEnergyCost :: Int -> Energy
 accountDecryptEnergyCost = (+16000) . checkHeaderEnergyCost
 
-transferWithScheduleEnergyCost :: Int -> Int -> Energy
+-- |The cost of transfer with schedule.
+transferWithScheduleEnergyCost ::
+  Int -- ^ Number of releases.
+  -> Int -- ^Number of signatures.
+  -> Energy
 transferWithScheduleEnergyCost numRels = (+ (100 * fromIntegral numRels)) . checkHeaderEnergyCost
 
 -- |Transaction header type
