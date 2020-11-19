@@ -145,14 +145,11 @@ printParamsSpec = describe "serialize JSON params to bytes and deserialize to JS
   it "Struct" $ do
     -- Named
     let namedStructType = Struct (Named [("num", U8), ("bool", Bool)])
-    fromToJSONSucceed namedStructType $ toArray [object ["num" .= AE.Number 42], object ["bool" .= AE.Bool True]]
-    fromToJSON namedStructType (toArray [object ["bool" .= AE.Bool True], object ["num" .= AE.Number 42]])
-      `shouldBe` Right (toArray [object ["num" .= AE.Number 42], object ["bool" .= AE.Bool True]]) -- Fields in different ordering works
-    fromToJSONFail namedStructType $ toArray [object ["bool" .= AE.Bool True]] -- missing fields
-    fromToJSONFail namedStructType $ toArray [object ["bool" .= AE.Bool True], object ["wrong" .= AE.String "field"]] -- missing and incorrect field
-    fromToJSONFail namedStructType $ toArray [object ["num" .= AE.Number 42]
-                                         , object ["bool" .= AE.Bool True]
-                                         , object ["bool" .= AE.Bool False]] -- duplicate fields
+    fromToJSONSucceed namedStructType $ object ["num" .= AE.Number 42, "bool" .= AE.Bool True]
+    fromToJSON namedStructType (object ["bool" .= AE.Bool True, "num" .= AE.Number 42])
+      `shouldBe` Right (object ["num" .= AE.Number 42, "bool" .= AE.Bool True]) -- Fields in different ordering works
+    fromToJSONFail namedStructType $ object ["bool" .= AE.Bool True] -- missing fields
+    fromToJSONFail namedStructType $ object ["bool" .= AE.Bool True, "wrong" .= AE.String "field"] -- missing and incorrect field
 
     -- Unnamed
     let unnamedStructType = Struct (Unnamed [U8, Bool, Pair U8 AccountAddress])
@@ -172,7 +169,7 @@ printParamsSpec = describe "serialize JSON params to bytes and deserialize to JS
                         , ("b", Unnamed [Bool])
                         , ("c", Empty)]
 
-    fromToJSONSucceed enumType $ object ["a" .= toArray [object ["a.1" .= AE.Bool True]]]
+    fromToJSONSucceed enumType $ object ["a" .= object ["a.1" .= AE.Bool True]]
     fromToJSONSucceed enumType $ object ["b" .= toArray [AE.Bool True]]
     fromToJSONSucceed enumType $ object ["c" .= toArray []]
 

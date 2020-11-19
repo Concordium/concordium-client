@@ -286,10 +286,10 @@ getValueAsJSON typ = case typ of
   where
     getFieldsAsJSON :: Fields -> Get AE.Value
     getFieldsAsJSON fields = case fields of
-      Named pairs -> AE.toJSON <$> traverse getPair pairs
+      Named pairs -> AE.toJSON . HM.fromList <$> traverse getPair pairs
       Unnamed xs  -> AE.toJSON <$> traverse getValueAsJSON xs
       Empty       -> return $ AE.Array mempty
-      where getPair (k, v) = (\val -> AE.object [k .= val]) <$> getValueAsJSON v
+      where getPair (k, v) = (k,) <$> getValueAsJSON v
 
     -- Slightly simplified version of Data.List.Safe.(!!)
     (!?) :: [a] -> Integer -> Maybe a
@@ -376,14 +376,13 @@ putJSONParams typ json = case (typ, json) of
   where
     putJSONFields :: Fields -> AE.Value -> Either String Put
     putJSONFields fields val = case (fields, val) of
-      (Named pairs, AE.Array vec) -> do
-        let ls = V.toList vec
+      (Named pairs, AE.Object obj) -> do
+        let ls = HM.toList obj
         let actualLen = length ls
         let expectedLen = length pairs
         when (actualLen /= expectedLen)
           $ Left [i|#{actualLen} fields were provided, but expected #{expectedLen} fields for type: #{fields}.|]
         putNamedUnordered <- traverse (lookupAndPut pairs) ls
-        unless (allUnique . map fst $ putNamedUnordered) $ Left [i|Multiple fields with the same name exist.|]
         -- The fields entered might be in a different order, so we need to order them correctly.
         pure . traverse_ snd . List.sortOn fst $ putNamedUnordered
 
@@ -432,16 +431,10 @@ putJSONParams typ json = case (typ, json) of
       LenU32 -> 4_294_967_295
       LenU64 -> 18_446_744_073_709_551_615
 
-    lookupAndPut :: [(Text, SchemaType)] -> AE.Value -> Either String (Int, Put)
-    lookupAndPut pairs v = case v of
-      AE.Object obj -> case HM.toList obj of
-        [] -> Left [i|The object provided was empty, but it should have contained a named field from: #{namedFields}.|]
-        [(name, value)] -> case lookupItemAndIndex name pairs of
-          Nothing -> Left [i|'#{name}' is not a valid field in the type: #{Named pairs}.|]
+    lookupAndPut :: [(Text, SchemaType)] -> (Text, AE.Value) -> Either String (Int, Put)
+    lookupAndPut types (name, value) = case lookupItemAndIndex name types of
+          Nothing -> Left [i|'#{name}' is not a valid field in the type: #{Named types}.|]
           Just (typ', idx) -> ((idx, ) <$> putJSONParams typ' value) `addTraceInfoOf` [i|In field '#{name}'.|]
-        _ -> Left [i|Invalid named field. Expected an object with a single field, but got: #{showCompactPrettyJSON v}.|]
-      _ -> Left [i|#{showCompactPrettyJSON v} should have been a named field from: #{namedFields}.|]
-      where namedFields = Named pairs
 
     lookupItemAndIndex :: Eq a => a -> [(a, b)] -> Maybe (b, Int)
     lookupItemAndIndex item thePairs = go item thePairs 0
