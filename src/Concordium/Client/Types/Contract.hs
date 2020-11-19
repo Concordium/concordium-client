@@ -37,6 +37,7 @@ import Data.Serialize (Get, Put, Putter, Serialize, get, getInt8, getInt16le, ge
 import qualified Data.Serialize as S
 import Data.String.Interpolate (i)
 import Data.Text (Text)
+import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Vector as V
 import Data.Word (Word32)
@@ -61,13 +62,16 @@ instance Serialize Schema where
 -- Must stay in sync.
 data Fields
   = Named [(Text, SchemaType)] -- ^ Represents an unnamed enum or struct.
-  | Unnamed [SchemaType] -- ^ Represents an unnamed struct or struct.
-  | Empty -- ^ The leaf node.
+  | Unnamed [SchemaType] -- ^ Represents an unnamed enum or struct.
+  | Empty -- ^ Represents an empty enum or struct.
   deriving (Eq, Generic, Show)
 
 instance Hashable Fields
 
-instance ToJSON Fields
+instance ToJSON Fields where
+  toJSON (Named fields) = AE.toJSON . HM.fromList $ fields
+  toJSON (Unnamed fields) = AE.Array . V.fromList . map AE.toJSON $ fields
+  toJSON Empty = AE.Array . V.fromList $ []
 
 instance Serialize Fields where
   get = do
@@ -110,7 +114,11 @@ data SchemaType =
 
 instance Hashable SchemaType
 
-instance ToJSON SchemaType
+instance ToJSON SchemaType where
+  toJSON = \case
+    Struct fields -> AE.toJSON fields
+    Enum variants -> AE.object ["Enum" .= (AE.Array . V.fromList . map (\(k, v) -> AE.object [k .= v]) $ variants)]
+    x -> AE.String . Text.pack . show $ x
 
 instance Serialize SchemaType where
   get = do

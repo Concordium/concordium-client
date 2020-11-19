@@ -207,6 +207,14 @@ data ModuleCmd
     , msOutFile :: !FilePath
       -- |Hash of the block (default "best").
     , msBlockHash :: !(Maybe Text) }
+  -- |Show the functions available in a module, including type signatures if schema is provided.
+  | ModuleInspect
+    { -- |Reference to the module OR a module name.
+      miModuleRefOrName :: !Text
+      -- |Path to a contract schema, used to display the type signatures.
+    , miSchema :: !(Maybe FilePath)
+      -- |Hash of the block (default "best").
+    , miBlockHash :: !(Maybe Text) }
   -- |Add a local name to a module.
   | ModuleName
     { -- |Module reference OR path to the module (reference then calculated by hashing).
@@ -708,6 +716,7 @@ moduleCmds =
           (moduleDeployCmd <>
            moduleListCmd <>
            moduleShowCmd <>
+           moduleInspectCmd <>
            moduleNameCmd))
       (progDesc "Commands for inspecting and deploying modules."))
 
@@ -741,6 +750,17 @@ moduleShowCmd =
         strOption (long "out" <> metavar "FILE" <> help "File to output the source code to (use '-' for stdout).") <*>
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
       (progDesc "Get the source code for a module."))
+
+moduleInspectCmd :: Mod CommandFields ModuleCmd
+moduleInspectCmd =
+  command
+    "inspect"
+    (info
+      (ModuleInspect <$>
+        strArgument (metavar "MODULE-OR-NAME" <> help "Module reference OR a module name.") <*>
+        optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to display the type signatures of the functions.")) <*>
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+      (progDesc "Show the functions from a module, including type signatures if a schema is provided."))
 
 moduleNameCmd :: Mod CommandFields ModuleCmd
 moduleNameCmd =
