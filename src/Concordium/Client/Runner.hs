@@ -1446,6 +1446,20 @@ processModuleCmd action baseCfgDir verbose backend =
             "-" -> BS.putStr modSource
             -- Write to file
             _   -> handleWriteFile BS.writeFile PromptBeforeOverwrite verbose outFile modSource
+
+    ModuleInspect modRefOrName schemaFile _block -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      namedModRef <- getNamedModuleRef (bcModuleNameMap baseCfg) modRefOrName
+      case schemaFile of
+        -- TODO: Show func names when they are available on chain.
+        Nothing -> logInfo [[i|modules can currently not be inspected without a schema file.|]]
+        Just schemaFile' -> do
+          eSchema <- getSchemaFromFile schemaFile'
+          case eSchema of
+            Left err -> logFatal [[i|Could not decode schema from file '#{schemaFile'}':|], err]
+            Right schema -> logInfo [[i|Functions for module #{namedModRef}:|]
+                                    , showPrettyJSON . Contract.methodParameter $ schema]
+
     ModuleName modRefOrFile modName block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       modRef <- getModuleRefFromRefOrFile modRefOrFile
@@ -1656,7 +1670,7 @@ getWasmParameter paramsFile schemaFile funcName = case (paramsFile, schemaFile) 
   (Just paramsFile', Nothing) -> Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile paramsFile'
   (Just paramsFile', Just schemaFile') -> do
     eParams :: Either String AE.Value <- AE.eitherDecode <$> handleReadFile BSL8.readFile paramsFile'
-    eSchema <- Contract.decodeSchema <$> handleReadFile BS.readFile schemaFile'
+    eSchema <- getSchemaFromFile schemaFile'
     case (eParams, eSchema) of
       (Left errP, Left errS) -> logFatal [[i|Could not decode parameters ('#{paramsFile'}') nor schema ('#{schemaFile'}'):|], errP, errS]
       (Left errP, _) -> logFatal [[i|Could not decode parameters from file '#{paramsFile'}' as JSON:|], errP]
@@ -1667,6 +1681,10 @@ getWasmParameter paramsFile schemaFile funcName = case (paramsFile, schemaFile) 
           Left err -> logFatal [[i|While parsing parameters using schema:|], err]
           Right bs -> pure . Wasm.Parameter . BS.toShort $ bs
   where emptyParams = pure . Wasm.Parameter $ BSS.empty
+
+-- |Load and decode a schema from a file.
+getSchemaFromFile :: FilePath -> IO (Either String Contract.Schema)
+getSchemaFromFile schemaFile = Contract.decodeSchema <$> handleReadFile BS.readFile schemaFile
 
 -- |Try to parse the input as a module reference and assume it is a path if it fails.
 getModuleRefFromRefOrFile :: String -> IO Types.ModuleRef
