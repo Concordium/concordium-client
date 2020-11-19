@@ -129,9 +129,9 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     , "Credentials: none" ]
   specify "with release schedule" $ p exampleAddress ((exampleAccountInfoResult (Just 1) []) { airReleaseSchedule = AccountInfoReleaseSchedule {
                                                                                                  totalRelease = 100,
-                                                                                                 releaseSchedule = [(1604417302000, (33, [dummyTransactionHash1, dummyTransactionHash2])),
-                                                                                                                    (1604417342000, (33, [dummyTransactionHash1])),
-                                                                                                                    (1604417382000, (34, [dummyTransactionHash2]))]
+                                                                                                 releaseSchedule = [ReleaseScheduleItem 1604417302000 33 [dummyTransactionHash1, dummyTransactionHash2],
+                                                                                                                    ReleaseScheduleItem 1604417342000 33 [dummyTransactionHash1],
+                                                                                                                    ReleaseScheduleItem 1604417382000 34 [dummyTransactionHash2]]
                                                                                                  } }) `shouldBe`
     [ "Local name:            example"
     , "Address:               2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"

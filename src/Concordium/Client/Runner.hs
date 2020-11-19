@@ -668,7 +668,7 @@ getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx s
   let senderAddr = acAddress . tcAccountCfg $ ettTransactionCfg
 
   -- get encrypted amounts for the sender
-  infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getAccountInfo (Text.pack . show $ senderAddr))
+  (bbHash, infoValue) <- logFatalOnError =<< withBestBlockHash Nothing (\bbHash -> ((bbHash,) <$>) <$> getAccountInfo (Text.pack . show $ senderAddr) bbHash)
   case AE.fromJSON infoValue of
     AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
     AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
@@ -687,6 +687,8 @@ getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx s
         AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
         AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show $ naAddr ettReceiver]
         AE.Success (Just air) -> do
+          globalContext <- logFatalOnError =<< getParseCryptographicParameters bbHash
+
           let receiverPk = ID._elgamalPublicKey $ airEncryptionKey air
           -- precomputed table for speeding up decryption
           let table = Enc.computeTable globalContext (2^(16::Int))
@@ -862,11 +864,13 @@ getAccountEncryptTransactionCfg baseCfg txOpts aeAmount = do
 getAccountDecryptTransactionCfg :: TransactionConfig -> Types.Amount -> ElgamalSecretKey -> Maybe Int -> ClientMonad IO AccountDecryptTransactionConfig
 getAccountDecryptTransactionCfg adTransactionCfg adAmount secretKey idx = do
   let senderAddr = acAddress . tcAccountCfg $ adTransactionCfg
-  infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getAccountInfo (Text.pack . show $ senderAddr))
+  (bbHash, infoValue) <- logFatalOnError =<< withBestBlockHash Nothing (\bbh -> ((bbh, ) <$>) <$> getAccountInfo (Text.pack . show $ senderAddr) bbh)
   case AE.fromJSON infoValue of
     AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
     AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
     AE.Success (Just AccountInfoResult{airEncryptedAmount=a@Types.AccountEncryptedAmount{..}}) -> do
+      globalContext <- logFatalOnError =<< getParseCryptographicParameters bbHash
+
       let listOfEncryptedAmounts = Types.getIncomingAmountsList a
       taker <- case idx of
         Nothing -> return id
@@ -893,6 +897,16 @@ getAccountDecryptTransactionCfg adTransactionCfg adAmount secretKey idx = do
         Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
         Just adTransferData -> return AccountDecryptTransactionConfig{..}
 
+-- |Get the cryptographic parameters in a given block, and attempt to parse them.
+getParseCryptographicParameters :: Text -> ClientMonad IO (Either String GlobalContext)
+getParseCryptographicParameters bHash = runExceptT $ do
+  vglobalContext <- liftEither =<< (lift . getCryptographicParameters $ bHash)
+  case AE.fromJSON vglobalContext of
+    AE.Error err -> throwError err
+    AE.Success Nothing -> throwError "The given block does not exist."
+    AE.Success (Just Versioned{..}) -> do
+      unless (vVersion == 0) $ throwError "Received unsupported version of cryptographi parameters."
+      return vValue
 
 -- |Convert transfer transaction config into a valid payload,
 -- optionally asking the user for confirmation.
@@ -1294,10 +1308,17 @@ processAccountCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      v <- withClientJson backend $ withBestBlockHash block $ getAccountInfo (Text.pack $ show $ naAddr na)
+      (v, dec) <- withClient backend $ do
+        (bbh, accInfoValue) <- withBestBlockHash block $ (\bbh -> (bbh,) <$> getAccountInfo (Text.pack $ show $ naAddr na) bbh)
+        accInfo <- getFromJson accInfoValue
+        case encKey of
+          Nothing -> return (accInfo, Nothing)
+          Just k -> do
+            gc <- logFatalOnError =<< getParseCryptographicParameters bbh
+            return (accInfo, Just (k, gc))
       case v of
         Nothing -> putStrLn "Account not found."
-        Just a -> runPrinter $ printAccountInfo na a verbose (showEncrypted || showDecrypted) encKey
+        Just a -> runPrinter $ printAccountInfo na a verbose (showEncrypted || showDecrypted) dec
 
     AccountList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -2196,6 +2217,7 @@ processLegacyCmd action backend =
     DumpStop -> withClient backend $ dumpStop >>= printSuccess
     GetIdentityProviders block -> withClient backend $ withBestBlockHash block getIdentityProviders >>= printJSON
     GetAnonymityRevokers block -> withClient backend $ withBestBlockHash block getAnonymityRevokers >>= printJSON
+    GetCryptographicParameters block -> withClient backend $ withBestBlockHash block getCryptographicParameters >>= printJSON
   where
     printSuccess (Left x)  = liftIO . putStrLn $ x
     printSuccess (Right x) = liftIO $ if x then putStrLn "OK" else putStrLn "FAIL"
