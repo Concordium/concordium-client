@@ -75,15 +75,11 @@ extra-deps:
 # Extra directories used by stack for building
 # extra-include-dirs: [/path/to/dir]
 extra-lib-dirs:
-- ./deps/crypto/lib/
+- ./deps/crypto/rust-src/target/release
 #
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
 # allow-newer: true
-
-flags:
-  simple-client:
-    middleware: true
 
 nix:
   shell-file: shell-stack.nix
