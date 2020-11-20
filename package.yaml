@@ -107,7 +107,6 @@ executables:
     source-dirs:      app
 
     ghc-options:
-      - -threaded
       - -Wcompat
       - -Werror=missing-fields
       - -Wredundant-constraints
@@ -117,8 +116,6 @@ executables:
       - condition: flag(static)
         ld-options:
         - -static
-      - condition: "!os(windows) && !flag(static)"
-        ghc-options: -dynamic
 
     dependencies:
       - optparse-applicative
@@ -139,9 +136,6 @@ executables:
       - condition: flag(static)
         ld-options:
         - -static
-      - condition: "!os(windows) && !flag(static)"
-        ghc-options: -dynamic
-
     dependencies:
       - optparse-applicative
       - mtl
@@ -189,8 +183,6 @@ executables:
       - cereal >= 0.5.8
       - transformers
     when:
-      - condition: "!os(windows)"
-        ghc-options: -dynamic
       - condition: flag(middleware)
         then:
           buildable: true
@@ -228,9 +220,6 @@ executables:
       - psqueues
       - hashable
       - fast-logger
-    when:
-      - condition: "!os(windows)"
-        ghc-options: -dynamic
 
 tests:
   simple-client-test:
@@ -239,10 +228,6 @@ tests:
       - -Werror=missing-fields
       - -Wredundant-constraints
       - -O
-    when:
-      - condition: "!os(windows)"
-        then:
-          ghc-options: -dynamic
     main:             Spec.hs
     source-dirs:      test
     dependencies:
