@@ -20,7 +20,7 @@ extra-deps:
 - ./deps/globalstate-types
 
 extra-lib-dirs:
-- ./deps/crypto/rust-src/target/release
+- ./deps/crypto/rust-src/target/x86_64-unknown-linux-musl/release
 
 flags:
   simple-client:
