@@ -575,14 +575,18 @@ data AccountConfig =
   } 
 
 instance AE.ToJSON AccountConfig where
-   toJSON (AccountConfig acAddr acKeys acThreshold acEncryptionKey) = AE.object ["address" .= acAddr, "keys" .= acKeys, "threshold" .= acThreshold, "accencryptionkey" .= acEncryptionKey]
+   toJSON AccountConfig{..} = 
+     AE.object ["address" .= acAddr,
+                "accountKeys" .= acKeys,
+                "threshold" .= acThreshold,
+                "accountEncryptionKey" .= acEncryptionKey]
 
 instance AE.FromJSON AccountConfig where
   parseJSON = AE.withObject "AccountConfig" $ \v -> do
     acAddr <- v .: "address"
-    acKeys <- v .: "keys"
+    acKeys <- v .: "accountKeys"
     acThreshold <- v .: "threshold"
-    acEncryptionKey <- v .: "accencryptionkey"
+    acEncryptionKey <- v .: "accountEncryptionKey"
     return AccountConfig{..}
 
 
