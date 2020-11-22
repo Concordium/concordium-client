@@ -7,4 +7,4 @@ sed -i 's/git-fetch-with-cli = true/git-fetch-with-cli = false/' deps/crypto/rus
 
 stack build --stack-yaml stack.integer-simple.yaml
 
-cp $(find .stack-work/install -type f -name "concordium-client") /out/concordium-client
+cp $(stack --stack-yaml stack.integer-simple.yaml path --local-install-root)/bin/concordium-client /out/concordium-client
