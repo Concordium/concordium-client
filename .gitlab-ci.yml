@@ -19,7 +19,7 @@ cache:
 simple-client-build-and-test:
   script:
     - "git config --global url.https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/.insteadOf ssh://git@gitlab.com:22/"
-    - "stack build --ghc-options -j4 | ts '[%Y-%m-%d %H:%M:%.S]'"
+    - "stack build --flag 'simple-client:-middleware' --ghc-options -j4 | ts '[%Y-%m-%d %H:%M:%.S]'"
     - "stack test | ts '[%Y-%m-%d %H:%M:%.S]'"
 
 middleware-build-and-test:
