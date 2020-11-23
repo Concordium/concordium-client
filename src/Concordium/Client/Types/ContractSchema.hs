@@ -1,16 +1,18 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE QuasiQuotes #-}
-module Concordium.Client.Types.Contract
+module Concordium.Client.Types.ContractSchema
   ( addSchemaToInfo
+  , decodeEmbeddedSchema
   , decodeSchema
   , encodeSchema
   , runGetValueAsJSON
   , serializeParams
+  , Contract(..)
   , Fields(..)
   , Info(..)
   , Model(..)
-  , Schema(..)
+  , Module(..)
   , SchemaType(..)
   , SizeLength(..)
   ) where
@@ -18,10 +20,12 @@ module Concordium.Client.Types.Contract
 import Concordium.Client.Config (showCompactPrettyJSON, showPrettyJSON)
 import Concordium.ID.Types (addressFromText)
 import qualified Concordium.Types as T
+import qualified Concordium.Wasm as Wasm
 
 import Control.Monad (unless, when)
 import Data.Aeson (FromJSON, Result, ToJSON, (.=), (.:))
 import qualified Data.Aeson as AE
+import qualified Data.Bits as Bits
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as BS16
@@ -40,23 +44,40 @@ import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Vector as V
-import Data.Word (Word32)
+import Data.Word (Word8, Word32, Word64)
 import GHC.Generics
+
+import Debug.Trace
 
 -- ** Data Types and Instances **
 
+-- |Parallel to Module defined in contracts-common (Rust).
+-- Must stay in sync.
+newtype Module
+  = Module { contracts :: HashMap Text Contract }
+  deriving (Eq, Show, Generic)
+
+instance ToJSON Module
+
+instance Serialize Module where
+  get = Module <$> getMapOfWith32leLen getText get
+  put Module {..} = putMapOfWith32leLen putText put contracts
+
 -- |Parallel to Contract defined in contracts-common (Rust).
 -- Must stay in sync.
-data Schema
-  =  Schema -- ^ Describes all the schemas of a smart contract.
+data Contract
+  =  Contract -- ^ Describes the schemas of a smart contract.
   {  state :: Maybe SchemaType -- ^ The optional contract state
-  ,  methodParameter :: HashMap Text SchemaType -- ^ Named method parameters
+  ,  initSig :: Maybe SchemaType -- ^ Type signature for the init function
+  ,  receiveSigs :: HashMap Text SchemaType -- ^ Type signatures for the receive functions
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
-instance Serialize Schema where
-  get = Schema <$> get <*> getMapOfWith32leLen getText get
-  put Schema {..} = put state *> putMapOfWith32leLen putText put methodParameter
+instance ToJSON Contract
+
+instance Serialize Contract where
+  get = Contract <$> get <*> get <*> getMapOfWith32leLen getText get
+  put Contract {..} = put state *> put initSig *> putMapOfWith32leLen putText put receiveSigs
 
 -- |Parallel to Fields defined in contracts-common (Rust).
 -- Must stay in sync.
@@ -197,28 +218,43 @@ instance Serialize SizeLength where
     LenU32 -> putWord8 2
     LenU64 -> putWord8 3
 
+
 data Info
   -- |Info about a contract.
   = Info
     { -- |The contract balance.
-      ciAmount :: !T.Amount
+      iAmount :: !T.Amount
       -- |The owner of the contract.
-    , ciOwner  :: !T.AccountAddress
+    , iOwner  :: !T.AccountAddress
       -- |The contract state.
-    , ciModel  :: !Model }
+    , iModel  :: !Model
+      -- |The receive functions/methods.
+    , iMethods :: ![Text]
+      -- |The contract name.
+    , iName :: !Text
+      -- |The corresponding source module.
+    , iSourceModule :: !T.ModuleRef }
   deriving (Eq, Show)
 
 instance FromJSON Info where
-  parseJSON = AE.withObject "Info" $ \v -> Info
-      <$> v .: "amount"
-      <*> v .: "owner"
-      <*> v .: "model"
+  parseJSON = AE.withObject "Info" $ \v -> do
+    iAmount       <- v .: "amount"
+    iOwner        <- v .: "owner"
+    iModel        <- v .: "model"
+    iMethods      <- v .: "methods"
+    iName         <- v .: "name"
+    iSourceModule <- v .: "sourceModule"
+    pure Info{..}
+
 
 instance ToJSON Info where
   toJSON Info {..} = AE.object
-    [ "amount" .= ciAmount
-    , "owner"  .= ciOwner
-    , "model"  .= ciModel ]
+    [ "owner"        .= iOwner
+    , "name"         .= iName
+    , "amount"       .= iAmount
+    , "model"        .= iModel
+    , "methods"      .= iMethods
+    , "sourceModule" .= iSourceModule ]
 
 data Model =
     WithSchema AE.Value  -- ^ The decoded contract state.
@@ -242,12 +278,12 @@ instance FromJSON Model where
 
 -- ** Get and Put JSON **
 
-getModelAsJSON :: Schema -> Get AE.Value
-getModelAsJSON Schema{..} = do
+getModelAsJSON :: Contract -> Get AE.Value
+getModelAsJSON Contract{..} = do
   state' <- case state of
       Nothing    -> return AE.Null
       Just typ -> getValueAsJSON typ
-  return $ AE.object ["state" .= state', "method_parameters" .= methodParameter]
+  return $ AE.object ["state" .= state', "init" .= initSig, "receive" .= receiveSigs]
 
 getValueAsJSON :: SchemaType -> Get AE.Value
 getValueAsJSON typ = case typ of
@@ -458,6 +494,33 @@ putJSONParams typ json = case (typ, json) of
     addTraceInfoOf right _ = right
 
 
+-- ** Schema from Module **
+
+getEmbeddedSchemaFromModule :: Get (Maybe Module)
+getEmbeddedSchemaFromModule = do
+  S.skip 4 -- Magic
+  S.skip 4 -- Version
+  go
+
+  where
+    go :: Get (Maybe Module)
+    go = do
+      isEmpty <- S.isEmpty
+      -- Not all modules contain a schema.
+      when isEmpty $ pure ()
+      sectionId <- getWord8
+      sectionSize <- fromIntegral <$> getLEB128Word32le
+      if sectionId == 0
+      then do
+        nameLen <- getLEB128Word32le
+        name <- BS.pack <$> getListOfWithKnownLen nameLen get
+        if name == "concordium-schema-v1"
+        then do
+          Just <$> get
+        else S.skip sectionSize *> go
+      else S.skip sectionSize *> go
+
+
 -- ** Helpers **
 
 -- * List *
@@ -507,6 +570,23 @@ putMapOfWith32leLen :: Putter k -> Putter v -> Putter (HashMap k v)
 putMapOfWith32leLen pv pk = putListOfWith32leLen (putTwoOf pv pk) . HM.toList
 
 
+-- * LEB128 *
+
+getLEB128Word32le :: Get Word32
+getLEB128Word32le = decode7 0 5 1
+  where
+    decode7 :: Word64 -> Word8 -> Word64 -> Get Word32
+    decode7 acc left multiplier = do
+      unless (left > 0) $ fail "Section size byte overflow"
+      byte <- S.getWord8
+      if Bits.testBit byte 7
+        then decode7 (acc + multiplier * fromIntegral (Bits.clearBit byte 7)) (left-1) (multiplier * 128)
+      else do
+        let value = acc + multiplier * fromIntegral byte
+        unless (value <= fromIntegral (maxBound :: Word32)) $ fail "Section size value overflow"
+        return . fromIntegral $ value
+
+
 -- * Text *
 
 getText :: Get Text
@@ -520,21 +600,28 @@ putText = putListOfWithSizeLen LenU32 put . BS.unpack . Text.encodeUtf8
 
 -- |Uses a `Schema` to parse the `JustBytes` of `Info`.
 -- Returns `Left` if a schema has already been included or the parsing fails.
-addSchemaToInfo :: Info -> Schema -> Either String Info
-addSchemaToInfo info@Info{..} schema = case ciModel of
+addSchemaToInfo :: Info -> Module -> Either String Info
+addSchemaToInfo info@Info{..} Module{..} = case iModel of
   WithSchema _ -> Left "Already contains a schema."
-  JustBytes bytes -> (\m -> info {ciModel = WithSchema m}) <$> S.runGet (getModelAsJSON schema) bytes
+  JustBytes bytes -> case HM.lookup iName contracts of
+    Nothing -> Left "The provided schema does not match the provided contract info."
+    Just contract -> (\m -> info {iModel = WithSchema m}) <$> S.runGet (getModelAsJSON contract) bytes
 
 -- |Serialize JSON parameters to binary using `SchemaType` or fail with an error message.
 serializeParams :: SchemaType -> AE.Value -> Either String ByteString
 serializeParams typ params = S.runPut <$> putJSONParams typ params
 
+decodeEmbeddedSchema :: ByteString -> Maybe Module
+decodeEmbeddedSchema bs = case S.runGet getEmbeddedSchemaFromModule bs of
+  Left _ -> Nothing
+  Right mModule -> mModule
+
 -- * For Testing *
 
-decodeSchema :: ByteString -> Either String Schema
+decodeSchema :: ByteString -> Either String Module
 decodeSchema = S.decode
 
-encodeSchema :: Schema -> ByteString
+encodeSchema :: Module -> ByteString
 encodeSchema = S.encode
 
 runGetValueAsJSON :: SchemaType -> ByteString -> Either String AE.Value
