@@ -6,10 +6,12 @@ module Concordium.Client.Types.ContractSchema
   , decodeEmbeddedSchema
   , decodeSchema
   , encodeSchema
+  , lookupSchemaForParams
   , runGetValueAsJSON
   , serializeParams
   , Contract(..)
   , Fields(..)
+  , FuncName(..)
   , Info(..)
   , Model(..)
   , Module(..)
@@ -46,8 +48,6 @@ import qualified Data.Text.Encoding as Text
 import qualified Data.Vector as V
 import Data.Word (Word8, Word32, Word64)
 import GHC.Generics
-
-import Debug.Trace
 
 -- ** Data Types and Instances **
 
@@ -616,10 +616,22 @@ decodeEmbeddedSchema bs = case S.runGet getEmbeddedSchemaFromModule bs of
   Left _ -> Nothing
   Right mModule -> mModule
 
--- * For Testing *
+data FuncName
+  = InitName Text
+  | ReceiveName Text Text
+  deriving Eq
+
+lookupSchemaForParams :: Module -> FuncName -> Maybe SchemaType
+lookupSchemaForParams Module{..} funcName = case funcName of
+  InitName contrName -> HM.lookup contrName contracts >>= initSig
+  ReceiveName contrName receiveName -> do
+    contract <- HM.lookup contrName contracts
+    HM.lookup receiveName (receiveSigs contract)
 
 decodeSchema :: ByteString -> Either String Module
 decodeSchema = S.decode
+
+-- * For Testing *
 
 encodeSchema :: Module -> ByteString
 encodeSchema = S.encode

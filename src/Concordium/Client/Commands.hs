@@ -249,12 +249,12 @@ data ContractCmd
   | ContractInit
     { -- |Module reference OR module name OR (if ciPath == True) path to the module (reference then calculated by hashing).
       ciModule :: !String
-      -- |Name of the init function to use (default: "init").
-    , ciInitName :: !Text
-      -- |Path to a file containing parameters for the init function.
-      -- Read as JSON if a schema file is supplied.
-      -- Otherwise, read as binary.
-    , ciParameterFile :: !(Maybe FilePath)
+      -- |Name of the contract to initialize. This corresponds to a specific init function.
+    , ciContractName :: !Text
+      -- |Path to a JSON file containing parameters for the init function (only one type of parameter is allowed).
+    , ciParameterFileJSON :: !(Maybe FilePath)
+      -- |Path to a binary file containing parameters for the init function.
+    , ciParameterFileBinary :: !(Maybe FilePath)
       -- |Path to a contract schema.
     , ciSchema :: !(Maybe FilePath)
       -- |Local alias for the contract address.
@@ -271,12 +271,14 @@ data ContractCmd
       cuAddressIndexOrName :: !Text
       -- |Subindex of the address for the contract to invoke (default: 0).
     , cuAddressSubindex :: !(Maybe Word64)
-      -- |Name of the receive function to use (default: "receive").
+      -- |Name of the contract to use. This corresponds to a specific init function.
+    , cuContractName :: !Text
+      -- |Name of the receive function to use.
     , cuReceiveName :: !Text
-      -- |Path to a file containing paramaters for the receive method.
-      -- Read as JSON if a schema file is supplied.
-      -- Otherwise, read as binary.
-    , cuParameterFile :: !(Maybe FilePath)
+      -- |Path to a JSON file containing parameters for the receive function (only one type of parameter is allowed).
+    , cuParameterFileJSON :: !(Maybe FilePath)
+      -- |Path to a binary file containing parameters for the receive function.
+    , cuParameterFileBinary :: !(Maybe FilePath)
       -- |Path to a contract schema.
     , cuSchema :: !(Maybe FilePath)
       -- |Amount to invoke the receive function with (default: 0).
@@ -821,10 +823,12 @@ contractInitCmd =
     (info
       (ContractInit <$>
         strArgument (metavar "MODULE" <> help "Module reference OR module name OR (if --path is used) path to a module.") <*>
-        strOption (long "func" <> metavar "INIT-NAME" <> value "init"
-                             <> help "Name of the specific init function in the module (default: \"init\").") <*>
-        optional (strOption (long "params" <> metavar "FILE"
-                             <> help "File with parameters for init function. If a schema is supplied, the file should be in JSON format, otherwise binary (default: no parameters).")) <*>
+        strOption (long "contract" <> metavar "CONTRACT-NAME"
+                             <> help "Name of the contract (i.e. init function) in the module.") <*>
+        optional (strOption (long "params-json" <> metavar "FILE"
+                             <> help "JSON file with parameters for init function. This parameter format should be used if a schema is supplied (default: no parameters).")) <*>
+        optional (strOption (long "params-binary" <> metavar "FILE"
+                             <> help "Binary file with parameters for init function. This should _not_ be used if a schema is supplied (default: no parameters).")) <*>
         optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to parse the params file.")) <*>
         optional (strOption (long "name" <> metavar "NAME" <> help "Name for the contract.")) <*>
         switch (long "path" <> help "Use when MODULE is a path to a module file.") <*>
@@ -842,10 +846,14 @@ contractUpdateCmd =
         strArgument (metavar "INDEX-OR-NAME" <> help "Index of the contract address OR a contract name.") <*>
         optional (option auto (long "subindex" <> metavar "SUBINDEX" <>
                      help "Subindex of address for the contract on chain (default: 0)")) <*>
-        strOption (long "func" <> metavar "RECEIVE-NAME" <> value "receive"
-                             <> help "Name of the specific receive function in the module (default: \"receive\").") <*>
-        optional (strOption (long "params" <> metavar "FILE"
-                             <> help "File with parameters for receive function. If a schema is supplied, the file should be in JSON format, otherwise binary (default: no parameters).")) <*>
+        strOption (long "contract" <> metavar "CONTRACT-NAME"
+                             <> help "Name of the contract (i.e. init function) in the module.") <*>
+        strOption (long "func" <> metavar "RECEIVE-NAME"
+                             <> help "Name of the specific receive function in the module.") <*>
+        optional (strOption (long "params-json" <> metavar "FILE"
+                             <> help "JSON file with parameters for receive function. This parameter format should be used if a schema is supplied (default: no parameters).")) <*>
+        optional (strOption (long "params-binary" <> metavar "FILE"
+                             <> help "Binary file with parameters for receive function. This should _not_ be used if a schema is supplied (default: no parameters).")) <*>
         optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to parse the params file.")) <*>
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> value 0
                                                                 <> help "Amount of GTU to transfer to the contract.") <*>
