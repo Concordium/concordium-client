@@ -7,7 +7,8 @@ import Data.Aeson (ToJSON, object, (.=))
 import qualified Data.Aeson as AE
 import qualified Data.ByteString as BS
 import Data.Either (isLeft)
-import qualified Data.HashMap.Strict as HM
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Data.Serialize as S
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -211,7 +212,7 @@ genModel :: Gen Model
 genModel = JustBytes . BS.pack <$> listOf (arbitrary :: Gen Word8)
 
 genModule :: Int -> Gen Module
-genModule n = Module . HM.fromList <$> listOf (genTwoOf genText $ genContract n)
+genModule n = Module . Map.fromList <$> listOf (genTwoOf genText $ genContract n)
 
 genContract :: Int -> Gen Contract
 genContract n = Contract <$> genMaybeSchemaType <*> genMaybeSchemaType <*> genReceiveSigs
@@ -219,8 +220,8 @@ genContract n = Contract <$> genMaybeSchemaType <*> genMaybeSchemaType <*> genRe
         genMaybeSchemaType = frequency [ (7, Just <$> genSchemaType (n'))
                                        , (1, pure Nothing) ]
 
-        genReceiveSigs :: Gen (HM.HashMap Text SchemaType)
-        genReceiveSigs = HM.fromList <$> listOf (genTwoOf genText (genSchemaType n'))
+        genReceiveSigs :: Gen (Map Text SchemaType)
+        genReceiveSigs = Map.fromList <$> listOf (genTwoOf genText (genSchemaType n'))
 
         n' = nextNSize n
 

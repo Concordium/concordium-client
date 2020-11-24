@@ -31,9 +31,10 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as BS16
 import Data.Foldable (traverse_)
 import Data.Hashable (Hashable)
-import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.List as List
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Scientific (Scientific, isFloating, toBoundedInteger)
 import Data.Serialize (Get, Put, Putter, Serialize, get, getInt8, getInt16le, getInt32le, getInt64le,
                        getTwoOf, getWord8, getWord16le, getWord32le, getWord64le, put, putInt8, putInt16le,
@@ -52,7 +53,7 @@ import GHC.Generics
 -- |Parallel to Module defined in contracts-common (Rust).
 -- Must stay in sync.
 newtype Module
-  = Module { contracts :: HashMap Text Contract }
+  = Module { contracts :: Map Text Contract }
   deriving (Eq, Show, Generic)
 
 instance ToJSON Module
@@ -67,7 +68,7 @@ data Contract
   =  Contract -- ^ Describes the schemas of a smart contract.
   {  state :: Maybe SchemaType -- ^ The optional contract state
   ,  initSig :: Maybe SchemaType -- ^ Type signature for the init function
-  ,  receiveSigs :: HashMap Text SchemaType -- ^ Type signatures for the receive functions
+  ,  receiveSigs :: Map Text SchemaType -- ^ Type signatures for the receive functions
   }
   deriving (Eq, Show, Generic)
 
@@ -88,7 +89,7 @@ data Fields
 instance Hashable Fields
 
 instance ToJSON Fields where
-  toJSON (Named fields) = AE.toJSON . HM.fromList $ fields
+  toJSON (Named fields) = AE.toJSON . Map.fromList $ fields
   toJSON (Unnamed fields) = AE.Array . V.fromList . map AE.toJSON $ fields
   toJSON Empty = AE.Array . V.fromList $ []
 
@@ -320,7 +321,7 @@ getValueAsJSON typ = case typ of
   where
     getFieldsAsJSON :: Fields -> Get AE.Value
     getFieldsAsJSON fields = case fields of
-      Named pairs -> AE.toJSON . HM.fromList <$> traverse getPair pairs
+      Named pairs -> AE.toJSON . Map.fromList <$> traverse getPair pairs
       Unnamed xs  -> AE.toJSON <$> traverse getValueAsJSON xs
       Empty       -> return $ AE.Array mempty
       where getPair (k, v) = (k,) <$> getValueAsJSON v
@@ -561,11 +562,11 @@ putListOfWith32leLen = putListOfWithSizeLen LenU32
 
 -- * Map *
 
-getMapOfWith32leLen :: (Eq k, Hashable k) => Get k -> Get v -> Get (HashMap k v)
-getMapOfWith32leLen gt gv = HM.fromList <$> getListOfWith32leLen (getTwoOf gt gv)
+getMapOfWith32leLen :: Ord k => Get k -> Get v -> Get (Map k v)
+getMapOfWith32leLen gt gv = Map.fromList <$> getListOfWith32leLen (getTwoOf gt gv)
 
-putMapOfWith32leLen :: Putter k -> Putter v -> Putter (HashMap k v)
-putMapOfWith32leLen pv pk = putListOfWith32leLen (putTwoOf pv pk) . HM.toList
+putMapOfWith32leLen :: Putter k -> Putter v -> Putter (Map k v)
+putMapOfWith32leLen pv pk = putListOfWith32leLen (putTwoOf pv pk) . Map.toList
 
 
 -- * LEB128 *
@@ -601,7 +602,7 @@ putText = putListOfWithSizeLen LenU32 put . BS.unpack . Text.encodeUtf8
 addSchemaToInfo :: Info -> Module -> Either String Info
 addSchemaToInfo info@Info{..} Module{..} = case iModel of
   WithSchema _ -> Left "Already contains a schema."
-  JustBytes bytes -> case HM.lookup iName contracts of
+  JustBytes bytes -> case Map.lookup iName contracts of
     Nothing -> Left "The provided schema does not match the provided contract info."
     Just contract -> (\m -> info {iModel = WithSchema m}) <$> S.runGet (getModelAsJSON contract) bytes
 
@@ -624,7 +625,7 @@ data FuncName
 
 lookupSchemaForParams :: Module -> FuncName -> Maybe SchemaType
 lookupSchemaForParams Module{..} funcName = case funcName of
-  InitName contrName -> HM.lookup contrName contracts >>= initSig
+  InitName contrName -> Map.lookup contrName contracts >>= initSig
   ReceiveName contrName receiveName -> do
-    contract <- HM.lookup contrName contracts
-    HM.lookup receiveName (receiveSigs contract)
+    contract <- Map.lookup contrName contracts
+    Map.lookup receiveName (receiveSigs contract)
