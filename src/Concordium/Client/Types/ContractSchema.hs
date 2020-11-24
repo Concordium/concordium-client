@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE QuasiQuotes #-}
 module Concordium.Client.Types.ContractSchema
@@ -7,6 +8,7 @@ module Concordium.Client.Types.ContractSchema
   , decodeSchema
   , getValueAsJSON
   , lookupSchemaForParams
+  , putJSONParams
   , serializeParams
   , Contract(..)
   , Fields(..)
@@ -19,12 +21,12 @@ module Concordium.Client.Types.ContractSchema
   ) where
 
 import Concordium.Client.Config (showCompactPrettyJSON, showPrettyJSON)
-import Concordium.ID.Types (addressFromText)
 import qualified Concordium.Types as T
 
 import Control.Monad (unless, when, zipWithM)
 import Data.Aeson (FromJSON, Result, ToJSON, (.=), (.:))
 import qualified Data.Aeson as AE
+import qualified Data.Aeson.Types as AE
 import qualified Data.Bits as Bits
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -46,6 +48,7 @@ import qualified Data.Text.Encoding as Text
 import qualified Data.Vector as V
 import Data.Word (Word8, Word32, Word64)
 import GHC.Generics
+import Lens.Micro.Platform ((^?), ix)
 
 -- ** Data Types and Instances **
 
@@ -133,10 +136,14 @@ data SchemaType =
 
 instance Hashable SchemaType
 
+-- |This should match the format used in `getValueAsJSON` so the user can copy this and use it for
+-- creating a parameter file in json format. The only difference is for enums, in which all of its
+-- variants are shown here, but only one should be used in the parameter file.
 instance ToJSON SchemaType where
   toJSON = \case
     Struct fields -> AE.toJSON fields
     Enum variants -> AE.object ["Enum" .= (AE.Array . V.fromList . map (\(k, v) -> AE.object [k .= v]) $ variants)]
+    Pair typA typB -> AE.Array . V.fromList $ [AE.toJSON typA, AE.toJSON typB]
     x -> AE.String . Text.pack . show $ x
 
 instance Serialize SchemaType where
@@ -196,7 +203,11 @@ data SizeLength
   | LenU64
   deriving (Eq, Generic, Show)
 
-instance ToJSON SizeLength
+instance ToJSON SizeLength where
+  toJSON LenU8  = AE.String "LenU8"
+  toJSON LenU16 = AE.String "LenU16"
+  toJSON LenU32 = AE.String "LenU32"
+  toJSON LenU64 = AE.String "LenU64"
 
 instance Hashable SizeLength
 
@@ -216,7 +227,8 @@ instance Serialize SizeLength where
     LenU32 -> putWord8 2
     LenU64 -> putWord8 3
 
-
+-- |This is returned by the node and specified in Concordium.Getters (from prototype repo).
+-- Must stay in sync.
 data Info
   -- |Info about a contract.
   = Info
@@ -273,6 +285,14 @@ instance FromJSON Model where
   parseJSON obj@(AE.Object _) = pure $ WithSchema obj
   parseJSON invalid = fail [i|Invalid model. Should be either a ByteString or a JSON obj: #{invalid}|]
 
+-- |Wrapper for Concordium.Types.Amount that uses a little-endian encoding.
+newtype AmountLE = AmountLE T.Amount
+  deriving Eq
+  deriving newtype (FromJSON, Show, ToJSON)
+
+instance Serialize AmountLE where
+  put (AmountLE T.Amount{..}) = putWord64le _amount
+  get = AmountLE . T.Amount <$> getWord64le
 
 -- ** Get and Put JSON **
 
@@ -295,7 +315,7 @@ getValueAsJSON typ = case typ of
   I16  -> AE.toJSON <$> getInt16le
   I32  -> AE.toJSON <$> getInt32le
   I64  -> AE.toJSON <$> getInt64le
-  Amount -> AE.toJSON . T.Amount <$> getWord64le
+  Amount -> AE.toJSON <$> (get :: Get AmountLE)
   AccountAddress  -> AE.toJSON <$> (get :: Get T.AccountAddress)
   ContractAddress -> AE.toJSON <$>
     (T.ContractAddress <$> (T.ContractIndex <$> getWord64le) <*> (T.ContractSubindex <$> getWord64le))
@@ -309,10 +329,10 @@ getValueAsJSON typ = case typ of
   Array len elemType     -> AE.toJSON <$> getListOfWithKnownLen len (getValueAsJSON elemType)
   Struct fields -> AE.toJSON <$> getFieldsAsJSON fields
   Enum variants -> do
-    idx <- if length variants <= 256
+    idx <- if length variants <= 255
            then fromIntegral <$> getWord8
            else fromIntegral <$> getWord32le
-    (name, fields) <- case variants !? idx of
+    (name, fields) <- case variants ^? ix idx of
                       Just v -> return v
                       Nothing -> fail [i|Variant with index #{idx} does not exist for Enum.|]
     fields' <- getFieldsAsJSON fields
@@ -324,13 +344,6 @@ getValueAsJSON typ = case typ of
       Unnamed xs  -> AE.toJSON <$> mapM getValueAsJSON xs
       Empty       -> return $ AE.Array mempty
       where getPair (k, v) = (k,) <$> getValueAsJSON v
-
-    -- Slightly simplified version of Data.List.Safe.(!!)
-    (!?) :: [a] -> Integer -> Maybe a
-    (!?) [] _ = Nothing
-    (!?) (x:xs) n | n == 0 = Just x
-                  | n < 0 = Nothing
-                  | otherwise = (!?) xs (n-1)
 
 putJSONParams :: SchemaType -> AE.Value -> Either String Put
 putJSONParams typ json = case (typ, json) of
@@ -345,9 +358,9 @@ putJSONParams typ json = case (typ, json) of
   (I32,  AE.Number x) -> putInt32le  <$> fromScientific x I32
   (I64,  AE.Number x) -> putInt64le  <$> fromScientific x I64
 
-  (Amount, amt@(AE.String _)) -> addTraceInfo $ putWord64le . T._amount <$> (resToEither . AE.fromJSON $ amt)
+  (Amount, amt@(AE.String _)) -> addTraceInfo $ (put :: Putter AmountLE) <$> (resToEither . AE.fromJSON $ amt)
 
-  (AccountAddress, AE.String s) -> addTraceInfo $ put <$> addressFromText s
+  (AccountAddress, v@(AE.String _)) -> addTraceInfo $ (put :: Putter T.AccountAddress) <$> AE.parseEither AE.parseJSON v
 
   (ContractAddress, AE.Object obj) -> addTraceInfo $ case HM.toList obj of
     [("index", AE.Number idx)] -> putContrAddr idx 0
@@ -398,7 +411,7 @@ putJSONParams typ json = case (typ, json) of
     [(name, fields)] -> case lookupItemAndIndex name variants of
       Nothing -> Left [i|Enum variant '#{name}' does not exist in:\n#{showPrettyJSON enum}|]
       Just (fieldTypes, idx) -> do
-        let putLen = if length variants <= 256
+        let putLen = if length variants <= 255
                        then putWord8 $ fromIntegral idx
                        else putWord32le $ fromIntegral idx
         putJSONFields' <- putJSONFields fieldTypes fields `addTraceInfoOf` [i|In enum variant '#{name}'.|]
@@ -451,7 +464,7 @@ putJSONParams typ json = case (typ, json) of
     fromScientific :: (Integral i, Bounded i) => Scientific -> SchemaType -> Either String i
     fromScientific x numType = if isFloating x then Left [i|#{x} is a float, but it should have been of type #{numType}.|]
       else case toBoundedInteger x of
-        Nothing -> Left [i|#{x} is out of bounds for for type #{showCompactPrettyJSON numType}.|]
+        Nothing -> Left [i|#{x} is out of bounds for type #{numType}.|]
         Just x' -> Right x'
 
     tooLongError :: String -> Integer -> Integer -> String
@@ -465,7 +478,11 @@ putJSONParams typ json = case (typ, json) of
       LenU32 -> 4_294_967_295
       LenU64 -> 18_446_744_073_709_551_615
 
-    lookupAndPut :: [(Text, SchemaType)] -> (Text, AE.Value) -> Either String (Int, Put)
+    lookupAndPut :: [(Text, SchemaType)]     -- ^ The names and types for Named Fields.
+                 -> (Text, AE.Value)         -- ^ A field name and a value.
+                 -> Either String (Int, Put) -- ^ The index of the field in the particular Named Fields,
+                                             --   used for subsequent ordering,
+                                             --   and a putter for the value (or an error message).
     lookupAndPut types (name, value) = case lookupItemAndIndex name types of
           Nothing -> Left [i|'#{name}' is not a valid field in the type:\n#{showPrettyJSON (Named types)}.|]
           Just (typ', idx) -> ((idx, ) <$> putJSONParams typ' value) `addTraceInfoOf` [i|In field '#{name}'.|]

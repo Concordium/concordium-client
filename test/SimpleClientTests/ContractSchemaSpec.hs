@@ -104,9 +104,9 @@ printParamsSpec = describe "serialize JSON params to bytes and deserialize to JS
 
   it "Amount" $ do
     fromToJSONSucceed Amount $ AE.String "42"
-    fromToJSONFail Amount    $ AE.String "-42" -- Negatives not allowed
-    fromToJSONFail Amount    $ AE.String "42.5" -- Floats not allowed
-    fromToJSONFail Amount    $ AE.String "-42.0" -- Negative floats are definitely not allowed
+    fromToJSONFail    Amount $ AE.String "-42" -- Negatives not allowed
+    fromToJSONFail    Amount $ AE.String "42.5" -- Floats not allowed
+    fromToJSONFail    Amount $ AE.String "-42.0" -- Negative floats are definitely not allowed
 
   it "AccountAddress" $ do
     fromToJSONSucceed AccountAddress $ AE.String . Text.pack $ accAddr
