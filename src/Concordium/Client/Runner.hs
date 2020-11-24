@@ -1773,9 +1773,7 @@ getSchemaFromFile schemaFile = ContractSchema.decodeSchema <$> handleReadFile BS
 -- |Gets a schema from a file or extracts it from a module. The former method is used, if a schemafile is provided.
 getSchemaFromFileOrModule :: Maybe FilePath -> BS.ByteString -> IO (Either String ContractSchema.Module)
 getSchemaFromFileOrModule schemaFile modul = case schemaFile of
-  Nothing -> case ContractSchema.decodeEmbeddedSchema modul of
-    Nothing -> pure $ Left "Module did not contain a schema."
-    Just schema -> pure $ Right schema
+  Nothing -> pure $ ContractSchema.decodeEmbeddedSchema modul
   Just schemaFile' -> getSchemaFromFile schemaFile'
 
 -- |Try to parse the input as a module reference and assume it is a path if it fails.
