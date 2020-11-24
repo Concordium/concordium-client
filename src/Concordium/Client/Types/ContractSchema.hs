@@ -22,14 +22,13 @@ import Concordium.Client.Config (showCompactPrettyJSON, showPrettyJSON)
 import Concordium.ID.Types (addressFromText)
 import qualified Concordium.Types as T
 
-import Control.Monad (unless, when)
+import Control.Monad (unless, when, zipWithM)
 import Data.Aeson (FromJSON, Result, ToJSON, (.=), (.:))
 import qualified Data.Aeson as AE
 import qualified Data.Bits as Bits
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as BS16
-import Data.Foldable (traverse_)
 import Data.Hashable (Hashable)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.List as List
@@ -76,12 +75,12 @@ instance ToJSON Contract
 
 instance Serialize Contract where
   get = Contract <$> get <*> get <*> getMapOfWith32leLen getText get
-  put Contract {..} = put state *> put initSig *> putMapOfWith32leLen putText put receiveSigs
+  put Contract {..} = put state <> put initSig <> putMapOfWith32leLen putText put receiveSigs
 
 -- |Parallel to Fields defined in contracts-common (Rust).
 -- Must stay in sync.
 data Fields
-  = Named [(Text, SchemaType)] -- ^ Represents an unnamed enum or struct.
+  = Named [(Text, SchemaType)] -- ^ Represents a named enum or struct.
   | Unnamed [SchemaType] -- ^ Represents an unnamed enum or struct.
   | Empty -- ^ Represents an empty enum or struct.
   deriving (Eq, Generic, Show)
@@ -89,8 +88,8 @@ data Fields
 instance Hashable Fields
 
 instance ToJSON Fields where
-  toJSON (Named fields) = AE.toJSON . Map.fromList $ fields
-  toJSON (Unnamed fields) = AE.Array . V.fromList . map AE.toJSON $ fields
+  toJSON (Named fields) = AE.object . map (\(name, value) -> name .= value) $ fields
+  toJSON (Unnamed fields) = AE.toJSON fields
   toJSON Empty = AE.Array . V.fromList $ []
 
 instance Serialize Fields where
@@ -103,8 +102,8 @@ instance Serialize Fields where
       x -> fail [i|Invalid Fields tag: #{x}|]
 
   put fields = case fields of
-    Named pairs -> putWord8 0 *> putListOfWith32leLen (putTwoOf putText put) pairs
-    Unnamed types -> putWord8 1 *> putListOfWith32leLen put types
+    Named pairs -> putWord8 0 <> putListOfWith32leLen (putTwoOf putText put) pairs
+    Unnamed types -> putWord8 1 <> putListOfWith32leLen put types
     Empty -> putWord8 2
 
 -- |Parallel to Type defined in contracts-common (Rust).
@@ -180,13 +179,13 @@ instance Serialize SchemaType where
     Amount -> putWord8 10
     AccountAddress  -> putWord8 11
     ContractAddress -> putWord8 12
-    Pair a b  -> putWord8 14 *> put a *> put b
-    List sl a -> putWord8 16 *> put sl *> put a
-    Set sl a  -> putWord8 17 *> put sl *> put a
-    Map sl k v    -> putWord8 18 *> put sl *> put k *> put v
-    Array len a   -> putWord8 19 *> putWord32le len *> put a
-    Struct fields -> putWord8 20 *> put fields
-    Enum enum     -> putWord8 21 *> putListOfWith32leLen (putTwoOf putText put) enum
+    Pair a b  -> putWord8 14 <> put a <> put b
+    List sl a -> putWord8 16 <> put sl <> put a
+    Set sl a  -> putWord8 17 <> put sl <> put a
+    Map sl k v    -> putWord8 18 <> put sl <> put k <> put v
+    Array len a   -> putWord8 19 <> putWord32le len <> put a
+    Struct fields -> putWord8 20 <> put fields
+    Enum enum     -> putWord8 21 <> putListOfWith32leLen (putTwoOf putText put) enum
 
 -- |Parallel to SizeLength defined in contracts-common (Rust).
 -- Must stay in sync.
@@ -321,8 +320,8 @@ getValueAsJSON typ = case typ of
   where
     getFieldsAsJSON :: Fields -> Get AE.Value
     getFieldsAsJSON fields = case fields of
-      Named pairs -> AE.toJSON . Map.fromList <$> traverse getPair pairs
-      Unnamed xs  -> AE.toJSON <$> traverse getValueAsJSON xs
+      Named pairs -> AE.toJSON . Map.fromList <$> mapM getPair pairs
+      Unnamed xs  -> AE.toJSON <$> mapM getValueAsJSON xs
       Empty       -> return $ AE.Array mempty
       where getPair (k, v) = (k,) <$> getValueAsJSON v
 
@@ -382,7 +381,7 @@ putJSONParams typ json = case (typ, json) of
         maxLen = maxSizeLen sl
         putLen = putLenWithSizeLen sl $ V.length vec
     when (len > maxLen) $ Left $ tooLongError "Map" maxLen len
-    putElems <- traverse (putJSONParams (Pair keyType valType)) vec
+    putElems <- mapM (putJSONParams (Pair keyType valType)) vec
     addTraceInfo $ pure . sequence_ $ V.cons putLen putElems
 
   (Array expectedLen elemType, AE.Array vec) -> do
@@ -390,7 +389,7 @@ putJSONParams typ json = case (typ, json) of
         actualLen = length ls
     unless (actualLen == fromIntegral expectedLen) $ addTraceInfo
       $ Left [i|Expected length is #{expectedLen}, but actual length is #{actualLen}.|]
-    addTraceInfo $ sequence_ <$> traverse (putJSONParams elemType) ls
+    addTraceInfo $ sequence_ <$> mapM (putJSONParams elemType) ls
 
   (Struct fields, val) -> addTraceInfo $ putJSONFields fields val
 
@@ -417,9 +416,9 @@ putJSONParams typ json = case (typ, json) of
         let expectedLen = length pairs
         when (actualLen /= expectedLen)
           $ Left [i|#{actualLen} fields were provided, but expected #{expectedLen} fields for type:\n#{showPrettyJSON fields}.|]
-        putNamedUnordered <- traverse (lookupAndPut pairs) ls
+        putNamedUnordered <- mapM (lookupAndPut pairs) ls
         -- The fields entered might be in a different order, so we need to order them correctly.
-        pure . traverse_ snd . List.sortOn fst $ putNamedUnordered
+        pure . mapM_ snd . List.sortOn fst $ putNamedUnordered
 
       (Unnamed types, AE.Array vec) -> do
         let ls = V.toList vec
@@ -427,7 +426,7 @@ putJSONParams typ json = case (typ, json) of
         let actualLen = length ls
         when (actualLen /= expectedLen)
           $ Left [i|#{actualLen} fields were provided, but it should have had #{expectedLen} according to its type:\n#{showPrettyJSON fields}.|]
-        putUnnamed <- traverse (uncurry putJSONParams) (zip types ls) `addTraceInfoOf` [i|In #{showPrettyJSON vec}.|]
+        putUnnamed <- zipWithM putJSONParams types ls `addTraceInfoOf` [i|In #{showPrettyJSON vec}.|]
         pure . sequence_ $ putUnnamed
 
       (Empty, AE.Array vec) -> if V.null vec
@@ -439,7 +438,7 @@ putJSONParams typ json = case (typ, json) of
     putListLike :: SizeLength -> SchemaType -> [AE.Value] -> Either String Put
     putListLike sl elemType xs = do
       let putLen = putLenWithSizeLen sl $ length xs
-      putElems <- traverse (putJSONParams elemType) xs
+      putElems <- mapM (putJSONParams elemType) xs
       pure . sequence_ $ putLen : putElems
 
     putContrAddr :: Scientific -> Scientific -> Either String Put
