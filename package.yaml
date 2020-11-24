@@ -236,6 +236,7 @@ tests:
     dependencies:
       - simple-client
       - concordium-crypto
+      - cereal
       - globalstate-types
       - aeson
       - bytestring

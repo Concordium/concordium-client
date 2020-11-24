@@ -5,9 +5,8 @@ module Concordium.Client.Types.ContractSchema
   ( addSchemaToInfo
   , decodeEmbeddedSchema
   , decodeSchema
-  , encodeSchema
+  , getValueAsJSON
   , lookupSchemaForParams
-  , runGetValueAsJSON
   , serializeParams
   , Contract(..)
   , Fields(..)
@@ -22,7 +21,6 @@ module Concordium.Client.Types.ContractSchema
 import Concordium.Client.Config (showCompactPrettyJSON, showPrettyJSON)
 import Concordium.ID.Types (addressFromText)
 import qualified Concordium.Types as T
-import qualified Concordium.Wasm as Wasm
 
 import Control.Monad (unless, when)
 import Data.Aeson (FromJSON, Result, ToJSON, (.=), (.:))
@@ -616,6 +614,9 @@ decodeEmbeddedSchema bs = case S.runGet getEmbeddedSchemaFromModule bs of
   Left _ -> Nothing
   Right mModule -> mModule
 
+decodeSchema :: ByteString -> Either String Module
+decodeSchema = S.decode
+
 data FuncName
   = InitName Text
   | ReceiveName Text Text
@@ -627,14 +628,3 @@ lookupSchemaForParams Module{..} funcName = case funcName of
   ReceiveName contrName receiveName -> do
     contract <- HM.lookup contrName contracts
     HM.lookup receiveName (receiveSigs contract)
-
-decodeSchema :: ByteString -> Either String Module
-decodeSchema = S.decode
-
--- * For Testing *
-
-encodeSchema :: Module -> ByteString
-encodeSchema = S.encode
-
-runGetValueAsJSON :: SchemaType -> ByteString -> Either String AE.Value
-runGetValueAsJSON typ = S.runGet (getValueAsJSON typ)

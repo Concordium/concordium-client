@@ -3,7 +3,7 @@ module SimpleClientTests.CliSpec where
 import Test.Hspec hiding (pending)
 
 import SimpleClientTests.ConfigSpec
-import SimpleClientTests.ContractSpec
+import SimpleClientTests.ContractSchemaSpec
 import SimpleClientTests.TransactionSpec
 import SimpleClientTests.AccountSpec
 import SimpleClientTests.ConsensusSpec
@@ -14,7 +14,7 @@ import SimpleClientTests.ParseSpec
 tests :: Spec
 tests = do
   configSpec
-  contractSpec
+  contractSchemaSpec
   transactionSpec
   accountSpec
   consensusSpec
