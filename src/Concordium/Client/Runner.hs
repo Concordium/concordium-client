@@ -1516,10 +1516,9 @@ processModuleCmd action baseCfgDir verbose backend =
         -- TODO: Show func names when they are available on chain.
         Nothing -> logInfo [[i|modules can currently not be inspected without a schema file.|]]
         Just schemaFile' -> do
-          eSchema <- getSchemaFromFile schemaFile'
-          case eSchema of
-            Left err -> logFatal [[i|Could not decode schema from file '#{schemaFile'}':|], err]
-            Right schema -> logInfo [[i|Functions for module #{namedModRef}:|]
+          -- TODO: use getSchemaFromFileOrModule
+          schema <- getSchemaFromFile schemaFile'
+          logInfo [[i|Functions for module #{namedModRef}:|]
                                     , showPrettyJSON schema]
 
     ModuleName modRefOrFile modName block -> do
@@ -1666,17 +1665,19 @@ displayContractInfo schemaFile contrInfo = case schemaFile of
           Left err' -> logFatal ["Parsing the contract model failed:", err']
           Right infoWithSchema -> putStr . showPrettyJSON $ infoWithSchema
 
+
+
 getContractUpdateTransactionCfg :: Backend -> BaseConfig -> TransactionOpts Types.Energy -> Text -> Maybe Word64 -> Text -> Text
-                                -> Maybe FilePath-> Maybe FilePath -> Maybe FilePath -> Types.Amount -> IO ContractUpdateTransactionCfg
+                                -> Maybe FilePath -> Maybe FilePath -> Maybe FilePath -> Types.Amount -> IO ContractUpdateTransactionCfg
 getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex contrName receiveName
                                 paramsFileJSON paramsFileBinary schemaFile amount = do
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
   ContractSchema.Info{iSourceModule = moduleRef} <- getContractInfo backend namedContrAddr Nothing
   modSource <- getModuleSourceOrFail backend (NamedModuleRef {nmrRef = moduleRef, nmrName = Nothing}) Nothing
-  schema <- getSchemaFromFileOrModule schemaFile modSource
-  params <- getWasmParameter paramsFileJSON paramsFileBinary schema (ContractSchema.ReceiveName contrName receiveName)
-  return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr) (Wasm.ReceiveName receiveName) params amount
+  params <- getWasmParameter paramsFileJSON paramsFileBinary schemaFile modSource (ContractSchema.ReceiveName contrName receiveName)
+  return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr)
+    (Wasm.ReceiveName [i|#{contrName}.#{receiveName}|]) params amount
 
 contractUpdateTransactionPayload :: ContractUpdateTransactionCfg -> Types.Payload
 contractUpdateTransactionPayload ContractUpdateTransactionCfg {..} =
@@ -1704,9 +1705,8 @@ getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath contrName par
             else getNamedModuleRef (bcModuleNameMap baseCfg) (Text.pack modTBD)
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   modSource <- getModuleSourceOrFail backend namedModRef Nothing
-  schema <- getSchemaFromFileOrModule schemaFile modSource
-  params <- getWasmParameter paramsFileJSON paramsFileBinary schema (ContractSchema.InitName contrName)
-  return $ ContractInitTransactionCfg txCfg amount (nmrRef namedModRef) (Wasm.InitName contrName) params
+  params <- getWasmParameter paramsFileJSON paramsFileBinary schemaFile modSource (ContractSchema.InitName contrName)
+  return $ ContractInitTransactionCfg txCfg amount (nmrRef namedModRef) (Wasm.InitName [i|init_#{contrName}|]) params
 
 getModuleSourceOrFail :: Backend -> NamedModuleRef -> Maybe Text -> IO BS.ByteString
 getModuleSourceOrFail backend namedModRef block = do
@@ -1748,33 +1748,44 @@ getWasmModuleFromFile moduleFile = Wasm.WasmModule 0 <$> handleReadFile BS.readF
 -- If the schema file is supplied, parse the parameter file as JSON. Otherwise, parse it as binary.
 -- Warns the user if a schema is supplied without a parameter file.
 -- If no parameter file is supplied, return mempty.
-getWasmParameter :: Maybe FilePath -> Maybe FilePath -> Either String ContractSchema.Module
+getWasmParameter :: Maybe FilePath -> Maybe FilePath -> Maybe FilePath -> BS.ByteString
                  -> ContractSchema.FuncName -> IO Wasm.Parameter
-getWasmParameter paramsFileJSON paramsFileBinary schema funcName = case (paramsFileJSON, paramsFileBinary, schema) of
+getWasmParameter paramsFileJSON paramsFileBinary schemaFile modSource funcName = case (paramsFileJSON, paramsFileBinary, schemaFile) of
+  (Nothing, Nothing, Nothing) -> emptyParams
+  (Nothing, Nothing, Just _) -> logWarn ["ignoring the --schema as no --params were provided"] *> emptyParams
+  (Nothing, Just binaryFile, Nothing) -> binaryParams binaryFile
+  (_, Just binaryFile, Just _) -> logWarn ["ignoring the --schema as --params-binary was used"] *> binaryParams binaryFile
+  (Just jsonFile', Nothing, Nothing) -> do
+    let schema = ContractSchema.decodeEmbeddedSchema modSource
+    case schema of
+      Left err -> logFatal ["Could not decode embedded schema:", err]
+      Right schema' -> getFromJSONParams jsonFile' schema'
+  (Just jsonFile', Nothing, Just schemaFile') -> do
+    schema <- getSchemaFromFile schemaFile'
+    getFromJSONParams jsonFile' schema
   (Just _, Just _, _) -> logFatal ["--params-json and --params-binary cannot be used at the same time"]
-  (Nothing, Nothing, Right _) -> logWarn ["ignoring the --schema as no parameters were supplied"] *> emptyParams
-  (_, Just binaryFile, _) -> Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile binaryFile
-  (_, _, Left errSchema) -> logFatal [[i|Could not decode contract schema:|], errSchema]
-  (Just jsonFile, _, Right schema') -> case ContractSchema.lookupSchemaForParams schema' funcName of
-    Nothing -> logFatal [[i|the schema did not include the provided function|]]
-    Just schemaForParams -> do
-      jsonFileContents <- handleReadFile BSL8.readFile jsonFile
-      let params = AE.eitherDecode jsonFileContents >>= ContractSchema.serializeParams schemaForParams
-      case params of
-        Left errParams -> logFatal [[i|Could not decode parameters from file '#{jsonFile}' as JSON:|], errParams]
-        Right params' -> pure . Wasm.Parameter . BS.toShort $ params'
-  where emptyParams = pure . Wasm.Parameter $ BSS.empty
+
+  where getFromJSONParams :: FilePath -> ContractSchema.Module -> IO Wasm.Parameter
+        getFromJSONParams jsonFile schema = case ContractSchema.lookupSchemaForParams schema funcName of
+          Nothing -> logFatal [[i|the schema did not include the provided function|]]
+          Just schemaForParams -> do
+            jsonFileContents <- handleReadFile BSL8.readFile jsonFile
+            let params = AE.eitherDecode jsonFileContents >>= ContractSchema.serializeParams schemaForParams
+            case params of
+              Left errParams -> logFatal [[i|Could not decode parameters from file '#{jsonFile}' as JSON:|], errParams]
+              Right params' -> pure . Wasm.Parameter . BS.toShort $ params'
+
+        emptyParams = pure . Wasm.Parameter $ BSS.empty
+        binaryParams file = Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile file
+
 
 -- |Load and decode a schema from a file.
-getSchemaFromFile :: FilePath -> IO (Either String ContractSchema.Module)
-getSchemaFromFile schemaFile = ContractSchema.decodeSchema <$> handleReadFile BS.readFile schemaFile
-
--- TODO: Refactor, since a missing schema is ok, if no or binary params are provided.
--- |Gets a schema from a file or extracts it from a module. The former method is used, if a schemafile is provided.
-getSchemaFromFileOrModule :: Maybe FilePath -> BS.ByteString -> IO (Either String ContractSchema.Module)
-getSchemaFromFileOrModule schemaFile modul = case schemaFile of
-  Nothing -> pure $ ContractSchema.decodeEmbeddedSchema modul
-  Just schemaFile' -> getSchemaFromFile schemaFile'
+getSchemaFromFile :: FilePath -> IO ContractSchema.Module
+getSchemaFromFile schemaFile = do
+  schema <- ContractSchema.decodeSchema <$> handleReadFile BS.readFile schemaFile
+  case schema of
+    Left err -> logFatal [[i|Could not decode schema from file '#{schemaFile}':|], err]
+    Right schema' -> pure schema'
 
 -- |Try to parse the input as a module reference and assume it is a path if it fails.
 getModuleRefFromRefOrFile :: String -> IO Types.ModuleRef
