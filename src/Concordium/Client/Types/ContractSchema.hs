@@ -38,7 +38,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Scientific (Scientific, isFloating, toBoundedInteger)
 import Data.Serialize (Get, Put, Putter, Serialize, get, getInt8, getInt16le, getInt32le, getInt64le,
-                       getTwoOf, getWord8, getWord16le, getWord32le, getWord64le, put, putInt8, putInt16le,
+                       getTwoOf, getWord8, getWord16le, getWord32le, getWord64le, label, put, putInt8, putInt16le,
                        putInt32le, putInt64le, putTwoOf, putWord8, putWord16le, putWord32le, putWord64le)
 import qualified Data.Serialize as S
 import Data.String.Interpolate (i)
@@ -61,7 +61,7 @@ newtype Module
 instance ToJSON Module
 
 instance Serialize Module where
-  get = Module <$> getMapOfWith32leLen getText get
+  get = label "Module" $ Module <$> getMapOfWith32leLen getText get
   put Module {..} = putMapOfWith32leLen putText put contracts
 
 -- |Parallel to Contract defined in contracts-common (Rust).
@@ -77,7 +77,11 @@ data Contract
 instance ToJSON Contract
 
 instance Serialize Contract where
-  get = Contract <$> get <*> get <*> getMapOfWith32leLen getText get
+  get = label "Contract" $ do
+    state <- label "state" get
+    initSig <- label "initSig" get
+    receiveSigs <- label "receiveSigs" $ getMapOfWith32leLen getText get
+    pure Contract{..}
   put Contract {..} = put state <> put initSig <> putMapOfWith32leLen putText put receiveSigs
 
 -- |Parallel to Fields defined in contracts-common (Rust).
@@ -96,12 +100,12 @@ instance ToJSON Fields where
   toJSON Empty = AE.Array . V.fromList $ []
 
 instance Serialize Fields where
-  get = do
+  get = label "Fields" $ do
     tag <- getWord8
     case tag of
-      0 -> Named <$> getListOfWith32leLen (getTwoOf getText get)
-      1 -> Unnamed <$> getListOfWith32leLen get
-      2 -> pure Empty
+      0 -> label "Named" $ Named <$> getListOfWith32leLen (getTwoOf getText get)
+      1 -> label "Unnamed" $ Unnamed <$> getListOfWith32leLen get
+      2 -> label "Empty" $ pure Empty
       x -> fail [i|Invalid Fields tag: #{x}|]
 
   put fields = case fields of
@@ -147,29 +151,29 @@ instance ToJSON SchemaType where
     x -> AE.String . Text.pack . show $ x
 
 instance Serialize SchemaType where
-  get = do
-    tag <- getWord8
+  get = label "SchemaType" $ do
+    tag <- label "tag" getWord8
     case tag of
-      0  -> pure Unit
-      1  -> pure Bool
-      2  -> pure U8
-      3  -> pure U16
-      4  -> pure U32
-      5  -> pure U64
-      6  -> pure I8
-      7  -> pure I16
-      8  -> pure I32
-      9  -> pure I64
-      10 -> pure Amount
-      11 -> pure AccountAddress
-      12 -> pure ContractAddress
-      14 -> Pair <$> get <*> get
-      16 -> List <$> get <*> get
-      17 -> Set <$> get <*> get
-      18 -> Map <$> get <*> get <*> get
-      19 -> Array <$> getWord32le <*> get
-      20 -> Struct <$> get
-      21 -> Enum <$> getListOfWith32leLen (getTwoOf getText get)
+      0  -> label "Unit" $ pure Unit
+      1  -> label "Bool" $ pure Bool
+      2  -> label "U8"   $ pure U8
+      3  -> label "U16"  $ pure U16
+      4  -> label "U32"  $ pure U32
+      5  -> label "U64"  $ pure U64
+      6  -> label "I8"   $ pure I8
+      7  -> label "I16"  $ pure I16
+      8  -> label "I32"  $ pure I32
+      9  -> label "I64"  $ pure I64
+      10 -> label "Amount" $ pure Amount
+      11 -> label "AccountAddress"  $ pure AccountAddress
+      12 -> label "ContractAddress" $ pure ContractAddress
+      13 -> label "Pair"   $ Pair <$> get <*> get
+      14 -> label "List"   $ List <$> get <*> get
+      15 -> label "Set"    $ Set <$> get <*> get
+      16 -> label "Map"    $ Map <$> get <*> get <*> get
+      17 -> label "Array"  $ Array <$> getWord32le <*> get
+      18 -> label "Struct" $ Struct <$> get
+      19 -> label "Enum"   $ Enum <$> getListOfWith32leLen (getTwoOf getText get)
       x  -> fail [i|Invalid SchemaType tag: #{x}|]
 
   put typ = case typ of
@@ -186,13 +190,13 @@ instance Serialize SchemaType where
     Amount -> putWord8 10
     AccountAddress  -> putWord8 11
     ContractAddress -> putWord8 12
-    Pair a b  -> putWord8 14 <> put a <> put b
-    List sl a -> putWord8 16 <> put sl <> put a
-    Set sl a  -> putWord8 17 <> put sl <> put a
-    Map sl k v    -> putWord8 18 <> put sl <> put k <> put v
-    Array len a   -> putWord8 19 <> putWord32le len <> put a
-    Struct fields -> putWord8 20 <> put fields
-    Enum enum     -> putWord8 21 <> putListOfWith32leLen (putTwoOf putText put) enum
+    Pair a b  -> putWord8 13 <> put a <> put b
+    List sl a -> putWord8 14 <> put sl <> put a
+    Set sl a  -> putWord8 15 <> put sl <> put a
+    Map sl k v    -> putWord8 16 <> put sl <> put k <> put v
+    Array len a   -> putWord8 17 <> putWord32le len <> put a
+    Struct fields -> putWord8 18 <> put fields
+    Enum enum     -> putWord8 19 <> putListOfWith32leLen (putTwoOf putText put) enum
 
 -- |Parallel to SizeLength defined in contracts-common (Rust).
 -- Must stay in sync.
@@ -212,13 +216,13 @@ instance ToJSON SizeLength where
 instance Hashable SizeLength
 
 instance Serialize SizeLength where
-  get = do
-    tag <- getWord8
+  get = label "SizeLength" $ do
+    tag <- label "tag" getWord8
     case tag of
-      0 -> pure LenU8
-      1 -> pure LenU16
-      2 -> pure LenU32
-      3 -> pure LenU64
+      0 -> label "LenU8"  $ pure LenU8
+      1 -> label "LenU16" $ pure LenU16
+      2 -> label "LenU32" $ pure LenU32
+      3 -> label "LenU64" $ pure LenU64
       x  -> fail [i|Invalid SizeLength tag: #{x}|]
 
   put sizeLen = case sizeLen of
@@ -291,8 +295,8 @@ newtype AmountLE = AmountLE T.Amount
   deriving newtype (FromJSON, Show, ToJSON)
 
 instance Serialize AmountLE where
+  get = label "AmountLE" $ AmountLE . T.Amount <$> getWord64le
   put (AmountLE T.Amount{..}) = putWord64le _amount
-  get = AmountLE . T.Amount <$> getWord64le
 
 -- ** Get and Put JSON **
 
@@ -511,27 +515,26 @@ putJSONParams typ json = case (typ, json) of
 
 -- ** Schema from Module **
 
-getEmbeddedSchemaFromModule :: Get (Maybe Module)
+getEmbeddedSchemaFromModule :: Get Module
 getEmbeddedSchemaFromModule = do
-  S.skip 4 -- Magic
-  S.skip 4 -- Version
+  label "Magic"   $ S.skip 4
+  label "Version" $ S.skip 4
   go
 
   where
-    go :: Get (Maybe Module)
+    go :: Get Module
     go = do
       isEmpty <- S.isEmpty
       -- Not all modules contain a schema.
-      when isEmpty $ pure ()
-      sectionId <- getWord8
-      sectionSize <- fromIntegral <$> getLEB128Word32le
+      when isEmpty $ fail "Module does not contain a schema."
+      sectionId <- label "sectionId" getWord8
+      sectionSize <- label "sectionSize" $ fromIntegral <$> getLEB128Word32le
       if sectionId == 0
       then do
-        nameLen <- getLEB128Word32le
-        name <- BS.pack <$> getListOfWithKnownLen nameLen get
+        name <- label "Custom Section Name" getTextWithLEB128Len
         if name == "concordium-schema-v1"
         then do
-          Just <$> get
+          get
         else S.skip sectionSize *> go
       else S.skip sectionSize *> go
 
@@ -542,20 +545,20 @@ getEmbeddedSchemaFromModule = do
 
 -- Nearly identical to Data.Serialize.getListOf implementation (except for length).
 getListOfWithKnownLen :: Integral len => len -> Get a -> Get [a]
-getListOfWithKnownLen len ga = go [] len
+getListOfWithKnownLen len ga = label "List of known length" $ go [] len
   where
     go as 0 = return $! reverse as
     go as l = do x <- ga
                  x `seq` go (x:as) (l - 1)
 
 getListOfWithSizeLen :: SizeLength -> Get a -> Get [a]
-getListOfWithSizeLen sl ga = do
-  len :: Integer <- case sl of
+getListOfWithSizeLen sl ga = label "List" $ do
+  len :: Integer <- label "Length" $ case sl of
     LenU8  -> fromIntegral <$> getWord8
     LenU16 -> fromIntegral <$> getWord16le
     LenU32 -> fromIntegral <$> getWord32le
     LenU64 -> fromIntegral <$> getWord64le
-  getListOfWithKnownLen len ga
+  label [i|#{len} elements|] $ getListOfWithKnownLen len ga
 
 getListOfWith32leLen :: Get a -> Get [a]
 getListOfWith32leLen = getListOfWithSizeLen LenU32
@@ -579,7 +582,7 @@ putListOfWith32leLen = putListOfWithSizeLen LenU32
 -- * Map *
 
 getMapOfWith32leLen :: Ord k => Get k -> Get v -> Get (Map k v)
-getMapOfWith32leLen gt gv = Map.fromList <$> getListOfWith32leLen (getTwoOf gt gv)
+getMapOfWith32leLen gt gv = label "Map" $ Map.fromList <$> getListOfWith32leLen (getTwoOf gt gv)
 
 putMapOfWith32leLen :: Putter k -> Putter v -> Putter (Map k v)
 putMapOfWith32leLen pv pk = putListOfWith32leLen (putTwoOf pv pk) . Map.toList
@@ -588,7 +591,7 @@ putMapOfWith32leLen pv pk = putListOfWith32leLen (putTwoOf pv pk) . Map.toList
 -- * LEB128 *
 
 getLEB128Word32le :: Get Word32
-getLEB128Word32le = decode7 0 5 1
+getLEB128Word32le = label "Word32LEB128" $ decode7 0 5 1
   where
     decode7 :: Word64 -> Word8 -> Word64 -> Get Word32
     decode7 acc left multiplier = do
@@ -605,11 +608,15 @@ getLEB128Word32le = decode7 0 5 1
 -- * Text *
 
 getText :: Get Text
-getText = Text.decodeUtf8 . BS.pack <$> getListOfWithSizeLen LenU32 get
+getText = label "Text" $ Text.decodeUtf8 . BS.pack <$> getListOfWith32leLen get
 
 putText :: Putter Text
 putText = putListOfWithSizeLen LenU32 put . BS.unpack . Text.encodeUtf8
 
+getTextWithLEB128Len :: Get Text
+getTextWithLEB128Len = label "Text with LEB128 Length" $ do
+  len <- getLEB128Word32le
+  Text.decodeUtf8 . BS.pack <$> getListOfWithKnownLen len get
 
 -- ** External API **
 
@@ -626,10 +633,8 @@ addSchemaToInfo info@Info{..} Module{..} = case iModel of
 serializeParams :: SchemaType -> AE.Value -> Either String ByteString
 serializeParams typ params = S.runPut <$> putJSONParams typ params
 
-decodeEmbeddedSchema :: ByteString -> Maybe Module
-decodeEmbeddedSchema bs = case S.runGet getEmbeddedSchemaFromModule bs of
-  Left _ -> Nothing
-  Right mModule -> mModule
+decodeEmbeddedSchema :: ByteString -> Either String Module
+decodeEmbeddedSchema = S.runGet getEmbeddedSchemaFromModule
 
 decodeSchema :: ByteString -> Either String Module
 decodeSchema = S.decode
