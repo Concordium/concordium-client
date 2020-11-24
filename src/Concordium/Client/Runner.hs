@@ -1522,23 +1522,18 @@ processModuleCmd action baseCfgDir verbose backend =
             Right schema -> logInfo [[i|Functions for module #{namedModRef}:|]
                                     , showPrettyJSON schema]
 
-    -- TODO: Use getModuleSourceOrFail
     ModuleName modRefOrFile modName block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       modRef <- getModuleRefFromRefOrFile modRefOrFile
-      (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getModuleSource (showText modRef) bb
+      -- Get the module to ensure its existence, or fail trying.
+      _modSource <- getModuleSourceOrFail backend (NamedModuleRef {nmrRef = modRef, nmrName = Nothing}) block
+      -- The module exists, if we reach this far.
+      addModuleNameAndWrite verbose baseCfg modName modRef
+      logSuccess [[i|module reference #{modRef} was successfully named '#{modName}'|]]
 
-      case res of
-        Left err -> logFatal ["I/O error:", err]
-        -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
-        Right "" -> logInfo [[i|the module reference #{modRef} does not exist in block #{bestBlock}|]]
-        Right _ -> do
-          addModuleNameAndWrite verbose baseCfg modName modRef
-          logSuccess [[i|module reference #{modRef} was successfully named '#{modName}'|]]
   where extractModRef = extractFromTsr (\case
                                            Types.ModuleDeployed modRef -> Just modRef
                                            _ -> Nothing)
-        showText = Text.pack . show
 
 getModuleDeployTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> IO ModuleDeployTransactionCfg
 getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
@@ -1594,14 +1589,8 @@ processContractCmd action baseCfgDir verbose backend =
     ContractShow indexOrName subindex schemaFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-      (bestBlock, res) <- withClient backend $ withBestBlockHash block $
-        \bb -> (bb,) <$> getInstanceInfo (Text.pack . showCompactPrettyJSON . ncaAddr $ namedContrAddr) bb
-
-      case res of
-        Left err -> logFatal ["I/O error:", err]
-        -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
-        Right AE.Null -> logInfo [[i|the contract instance #{namedContrAddr} does not exist in block #{bestBlock}|]]
-        Right contrInfo -> displayContractInfo schemaFile contrInfo
+      contrInfo <- getContractInfo backend namedContrAddr block
+      displayContractInfo schemaFile contrInfo
 
     ContractInit modTBD contrName paramsFileJSON paramsFileBinary schemaFile contrAlias isPath amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1625,7 +1614,7 @@ processContractCmd action baseCfgDir verbose backend =
 
     ContractUpdate indexOrName subindex contrName receiveName paramsFileJSON paramsFileBinary schemaFile amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      cuCfg <- getContractUpdateTransactionCfg baseCfg txOpts indexOrName subindex contrName
+      cuCfg <- getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex contrName
                 receiveName paramsFileJSON paramsFileBinary schemaFile amount
       let txCfg = cutcTransactionCfg cuCfg
 
@@ -1650,27 +1639,43 @@ processContractCmd action baseCfgDir verbose backend =
                                                  Types.ContractInitialized {..} -> Just ecAddress
                                                  _ -> Nothing)
 
+-- |Try to fetch info about the contract and deserialize it from JSON.
+-- Or, log fatally with appropriate error messages if anything goes wrong.
+getContractInfo :: Backend -> NamedContractAddress -> Maybe Text -> IO ContractSchema.Info
+getContractInfo backend namedContrAddr block = do
+  (bestBlock, res) <- withClient backend $ withBestBlockHash block $
+    \bb -> (bb,) <$> getInstanceInfo (Text.pack . showCompactPrettyJSON . ncaAddr $ namedContrAddr) bb
+
+  case res of
+    Left err -> logFatal ["I/O error:", err]
+    -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
+    Right AE.Null -> logFatal [[i|the contract instance #{namedContrAddr} does not exist in block #{bestBlock}|]]
+    Right contrInfo -> case AE.fromJSON contrInfo of
+      Error err -> logFatal ["Could not decode contract info:", err]
+      Success info -> pure info
+
 -- |Display contract info, optionally using a schema to decode the contract state.
-displayContractInfo :: Maybe FilePath -> AE.Value -> IO ()
+displayContractInfo :: Maybe FilePath -> ContractSchema.Info -> IO ()
 displayContractInfo schemaFile contrInfo = case schemaFile of
   Nothing -> putStr . showPrettyJSON $ contrInfo
   Just schemaFile' -> do
     schema <- ContractSchema.decodeSchema <$> handleReadFile BS.readFile schemaFile'
     case schema of
       Left err -> logFatal ["Decoding the contract schema failed:", err]
-      Right schema' -> case AE.fromJSON contrInfo of
-        Error err' -> logFatal ["Could not decode contract info:", err']
-        Success info -> case ContractSchema.addSchemaToInfo info schema' of
-          Left err'' -> logFatal ["Parsing the contract model failed:", err'']
+      Right schema' -> case ContractSchema.addSchemaToInfo contrInfo schema' of
+          Left err' -> logFatal ["Parsing the contract model failed:", err']
           Right infoWithSchema -> putStr . showPrettyJSON $ infoWithSchema
 
-getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> Text -> Maybe Word64 -> Text -> Text
+getContractUpdateTransactionCfg :: Backend -> BaseConfig -> TransactionOpts Types.Energy -> Text -> Maybe Word64 -> Text -> Text
                                 -> Maybe FilePath-> Maybe FilePath -> Maybe FilePath -> Types.Amount -> IO ContractUpdateTransactionCfg
-getContractUpdateTransactionCfg baseCfg txOpts indexOrName subindex contrName receiveName
-                                paramsFileJSON paramsFileBinary schemaFileBinary amount = do
+getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex contrName receiveName
+                                paramsFileJSON paramsFileBinary schemaFile amount = do
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-  params <- getWasmParameter paramsFileJSON paramsFileBinary (Left "") (ContractSchema.ReceiveName contrName receiveName) -- TODO: use schema
+  ContractSchema.Info{iSourceModule = moduleRef} <- getContractInfo backend namedContrAddr Nothing
+  modSource <- getModuleSourceOrFail backend (NamedModuleRef {nmrRef = moduleRef, nmrName = Nothing}) Nothing
+  schema <- getSchemaFromFileOrModule schemaFile modSource
+  params <- getWasmParameter paramsFileJSON paramsFileBinary schema (ContractSchema.ReceiveName contrName receiveName)
   return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr) (Wasm.ReceiveName receiveName) params amount
 
 contractUpdateTransactionPayload :: ContractUpdateTransactionCfg -> Types.Payload
@@ -1750,7 +1755,7 @@ getWasmParameter paramsFileJSON paramsFileBinary schema funcName = case (paramsF
   (Nothing, Nothing, Right _) -> logWarn ["ignoring the --schema as no parameters were supplied"] *> emptyParams
   (_, Just binaryFile, _) -> Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile binaryFile
   (_, _, Left errSchema) -> logFatal [[i|Could not decode contract schema:|], errSchema]
-  (Just jsonFile, _, Right schema) -> case ContractSchema.lookupSchemaForParams schema funcName of
+  (Just jsonFile, _, Right schema') -> case ContractSchema.lookupSchemaForParams schema' funcName of
     Nothing -> logFatal [[i|the schema did not include the provided function|]]
     Just schemaForParams -> do
       jsonFileContents <- handleReadFile BSL8.readFile jsonFile
