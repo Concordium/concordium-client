@@ -9,9 +9,11 @@ import SimpleClientTests.ConsensusSpec
 import SimpleClientTests.BlockSpec
 import SimpleClientTests.LogSpec
 import SimpleClientTests.ParseSpec
+import SimpleClientTests.BackupSpec
 
 tests :: Spec
 tests = do
+  backupSpec
   configSpec
   transactionSpec
   accountSpec
