@@ -52,7 +52,7 @@ data EncryptedAccountKeyPair
   = EncryptedAccountKeyPairEd25519
     { verifyKey :: !Ed25519.VerifyKey
     , encryptedSignKey :: !(EncryptedJSON Ed25519.SignKey)
-    }
+    } deriving(Show, Eq)
 
 instance AE.ToJSON EncryptedAccountKeyPair where
   toJSON EncryptedAccountKeyPairEd25519{..} =
