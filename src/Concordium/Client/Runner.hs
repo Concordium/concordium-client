@@ -1502,30 +1502,37 @@ processModuleCmd action baseCfgDir verbose backend =
     ModuleShow modRefOrName outFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedModRef <- getNamedModuleRef (bcModuleNameMap baseCfg) modRefOrName
-      modSource <- getModuleSourceOrFail backend namedModRef block
+      (version, modSource) <- getVersionedModuleSource backend namedModRef block
+      logInfo [[i|WASM Version of module: #{version}|]]
       case outFile of
         -- Write to stdout
         "-" -> BS.putStr modSource
         -- Write to file
-        _   -> handleWriteFile BS.writeFile PromptBeforeOverwrite verbose outFile modSource
+        _   -> do
+          handleWriteFile BS.writeFile PromptBeforeOverwrite verbose outFile modSource
+          logSuccess [[i|wrote module source to the file '#{outFile}'|]]
 
-    ModuleInspect modRefOrName schemaFile _block -> do
+    ModuleInspect modRefOrName schemaFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedModRef <- getNamedModuleRef (bcModuleNameMap baseCfg) modRefOrName
       case schemaFile of
-        -- TODO: Show func names when they are available on chain.
-        Nothing -> logInfo [[i|modules can currently not be inspected without a schema file.|]]
+        Nothing -> do
+          (_, modSource) <- getVersionedModuleSource backend namedModRef block
+          let schema = getSchemaFromModule modSource
+          case schema of
+            -- TODO: relying on the specific string is fragile. This information can be gathered by parsing the Export section in the module.
+            Left "Module does not contain a schema." -> logInfo ["Inspection failed: no schema provided and module does not contain an embedded schema"]
+            Left err -> logFatal [[i|Could not inspect module:|], err]
+            Right schema' -> logInfo [[i|Functions for module #{namedModRef}:|], showPrettyJSON schema']
         Just schemaFile' -> do
-          -- TODO: use getSchemaFromFileOrModule
           schema <- getSchemaFromFile schemaFile'
-          logInfo [[i|Functions for module #{namedModRef}:|]
-                                    , showPrettyJSON schema]
+          logInfo [[i|Functions for module #{namedModRef}:|], showPrettyJSON schema]
 
     ModuleName modRefOrFile modName block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       modRef <- getModuleRefFromRefOrFile modRefOrFile
       -- Get the module to ensure its existence, or fail trying.
-      _modSource <- getModuleSourceOrFail backend (NamedModuleRef {nmrRef = modRef, nmrName = Nothing}) block
+      _modSource <- getVersionedModuleSource backend (NamedModuleRef {nmrRef = modRef, nmrName = Nothing}) block
       -- The module exists, if we reach this far.
       addModuleNameAndWrite verbose baseCfg modName modRef
       logSuccess [[i|module reference #{modRef} was successfully named '#{modName}'|]]
@@ -1674,7 +1681,7 @@ getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex cont
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
   ContractSchema.Info{iSourceModule = moduleRef} <- getContractInfo backend namedContrAddr Nothing
-  modSource <- getModuleSourceOrFail backend (NamedModuleRef {nmrRef = moduleRef, nmrName = Nothing}) Nothing
+  (_, modSource) <- getVersionedModuleSource backend (NamedModuleRef {nmrRef = moduleRef, nmrName = Nothing}) Nothing
   params <- getWasmParameter paramsFileJSON paramsFileBinary schemaFile modSource (ContractSchema.ReceiveName contrName receiveName)
   return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr)
     (Wasm.ReceiveName [i|#{contrName}.#{receiveName}|]) params amount
@@ -1704,20 +1711,21 @@ getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath contrName par
             then (\ref -> NamedModuleRef {nmrRef = ref, nmrName = Nothing}) <$> getModuleRefFromFile modTBD
             else getNamedModuleRef (bcModuleNameMap baseCfg) (Text.pack modTBD)
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
-  modSource <- getModuleSourceOrFail backend namedModRef Nothing
+  (_, modSource) <- getVersionedModuleSource backend namedModRef Nothing
   params <- getWasmParameter paramsFileJSON paramsFileBinary schemaFile modSource (ContractSchema.InitName contrName)
   return $ ContractInitTransactionCfg txCfg amount (nmrRef namedModRef) (Wasm.InitName [i|init_#{contrName}|]) params
 
-getModuleSourceOrFail :: Backend -> NamedModuleRef -> Maybe Text -> IO BS.ByteString
-getModuleSourceOrFail backend namedModRef block = do
+getVersionedModuleSource :: Backend -> NamedModuleRef -> Maybe Text -> IO (Word32, BS.ByteString)
+getVersionedModuleSource backend namedModRef block = do
   (bestBlock, res) <- withClient backend $ withBestBlockHash block $
     \bb -> (bb,) <$> getModuleSource (Text.pack . show . nmrRef $ namedModRef) bb
 
   case res of
     Left err -> logFatal ["I/O error:", err]
     Right "" -> logFatal [[i|the module reference #{namedModRef} does not exist in block #{bestBlock}|]]
-    Right modSource -> pure modSource
-
+    Right unparsedModSource -> case ContractSchema.runGetVersionedModuleSource unparsedModSource of
+      Left err' -> logFatal [[i|could not extract versioned module source:|], err']
+      Right (version, modSource) -> pure (version, modSource)
 
 data ContractInitTransactionCfg =
   ContractInitTransactionCfg
@@ -1754,16 +1762,16 @@ getWasmParameter paramsFileJSON paramsFileBinary schemaFile modSource funcName =
   (Nothing, Nothing, Nothing) -> emptyParams
   (Nothing, Nothing, Just _) -> logWarn ["ignoring the --schema as no --params were provided"] *> emptyParams
   (Nothing, Just binaryFile, Nothing) -> binaryParams binaryFile
-  (_, Just binaryFile, Just _) -> logWarn ["ignoring the --schema as --params-binary was used"] *> binaryParams binaryFile
+  (_, Just binaryFile, Just _) -> logWarn ["ignoring the --schema as --parameter-bin was used"] *> binaryParams binaryFile
   (Just jsonFile', Nothing, Nothing) -> do
-    let schema = ContractSchema.decodeEmbeddedSchema modSource
+    let schema = getSchemaFromModule modSource
     case schema of
       Left err -> logFatal ["Could not decode embedded schema:", err]
       Right schema' -> getFromJSONParams jsonFile' schema'
   (Just jsonFile', Nothing, Just schemaFile') -> do
     schema <- getSchemaFromFile schemaFile'
     getFromJSONParams jsonFile' schema
-  (Just _, Just _, _) -> logFatal ["--params-json and --params-binary cannot be used at the same time"]
+  (Just _, Just _, _) -> logFatal ["--parameter-json and --parameter-bin cannot be used at the same time"]
 
   where getFromJSONParams :: FilePath -> ContractSchema.Module -> IO Wasm.Parameter
         getFromJSONParams jsonFile schema = case ContractSchema.lookupSchemaForParams schema funcName of
@@ -1786,6 +1794,10 @@ getSchemaFromFile schemaFile = do
   case schema of
     Left err -> logFatal [[i|Could not decode schema from file '#{schemaFile}':|], err]
     Right schema' -> pure schema'
+
+-- |Try to extract and decode a schema from a module.
+getSchemaFromModule :: BS.ByteString -> Either String ContractSchema.Module
+getSchemaFromModule = ContractSchema.decodeEmbeddedSchema
 
 -- |Try to parse the input as a module reference and assume it is a path if it fails.
 getModuleRefFromRefOrFile :: String -> IO Types.ModuleRef
