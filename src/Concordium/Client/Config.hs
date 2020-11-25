@@ -3,6 +3,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 module Concordium.Client.Config where
 
+
 import Concordium.Types as Types
 import Concordium.ID.Types (addressFromText, KeyIndex)
 import qualified Concordium.ID.Types as IDTypes
@@ -18,6 +19,9 @@ import qualified Data.Aeson.Encode.Pretty as AE
 import qualified Data.ByteString.Lazy as BSL
 import Data.Maybe
 import Data.Either
+
+import Data.Aeson ((.:),(.=))
+import Concordium.Common.Version
 
 import Data.Char
 import Data.List as L
@@ -576,6 +580,10 @@ validateContractOrModuleName name =
                   and should otherwise consist of letters, numbers, space, '.', ',', '!',
                   '?', '-', and '_' only)|]
 
+-- |Current version of accountconfig, for configbackup export/import compatability
+accountConfigVersion :: Version
+accountConfigVersion = 1
+
 data AccountConfig =
   AccountConfig
   { acAddr :: !NamedAddress
@@ -587,7 +595,23 @@ data AccountConfig =
   -- you just import an account and don't initialize a dummy config first. But
   -- that is for the future, and for now we just have to deal with null pointers.
   , acEncryptionKey :: !(Maybe EncryptedAccountEncryptionSecretKey)
-  }
+  } deriving(Show, Eq)
+
+instance AE.ToJSON AccountConfig where
+   toJSON AccountConfig{..} = 
+     AE.object ["address" .= acAddr,
+                "accountKeys" .= acKeys,
+                "threshold" .= acThreshold,
+                "accountEncryptionKey" .= acEncryptionKey]
+
+instance AE.FromJSON AccountConfig where
+  parseJSON = AE.withObject "AccountConfig" $ \v -> do
+    acAddr <- v .: "address"
+    acKeys <- v .: "accountKeys"
+    acThreshold <- v .: "threshold"
+    acEncryptionKey <- v .: "accountEncryptionKey"
+    return AccountConfig{..}
+
 
 -- | Whether to automatically initialize the account configuration or not.
 data AutoInit = AutoInit | AssumeInitialized

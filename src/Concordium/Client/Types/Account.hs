@@ -33,6 +33,15 @@ import Data.ByteString (ByteString)
 data NamedAddress = NamedAddress { naName :: Maybe Text, naAddr :: ID.AccountAddress }
   deriving (Show, Eq)
 
+instance AE.ToJSON NamedAddress where
+  toJSON (NamedAddress naName naAddr) = AE.object ["name" .= naName, "address" .= naAddr]
+
+instance AE.FromJSON NamedAddress where
+  parseJSON = AE.withObject "NamedAddress" $ \v -> do
+    naName <- v .: "name"
+    naAddr <- v .: "address"
+    return NamedAddress{..}
+
 -- * Account keys
 
 -- ** Encrypted and unencrypted account keys
@@ -43,7 +52,7 @@ data EncryptedAccountKeyPair
   = EncryptedAccountKeyPairEd25519
     { verifyKey :: !Ed25519.VerifyKey
     , encryptedSignKey :: !(EncryptedJSON Ed25519.SignKey)
-    }
+    } deriving(Show, Eq)
 
 instance AE.ToJSON EncryptedAccountKeyPair where
   toJSON EncryptedAccountKeyPairEd25519{..} =

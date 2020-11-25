@@ -64,6 +64,7 @@ import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.SignatureScheme   as SigScheme
 import qualified Concordium.Crypto.VRF               as VRF
+import qualified Concordium.Client.Encryption        as Password
 import qualified Concordium.Types.Updates            as Updates
 import qualified Concordium.Types.Transactions       as Types
 import           Concordium.Types.HashableTo
@@ -192,6 +193,24 @@ processConfigCmd action baseCfgDir verbose =
       putStrLn ""
       accCfgs <- getAllAccountConfigs baseCfg
       runPrinter $ printAccountConfigList accCfgs
+    ConfigBackupExport fileName -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      pwd <- askPassword "Enter password for encryption of backup (leave blank for no encryption): " 
+      allAccounts <- getAllAccountConfigs baseCfg
+      backup <- case Password.getPassword pwd of 
+        "" -> configExport allAccounts Nothing
+        _ -> configExport allAccounts (Just pwd)
+      handleWriteFile BS.writeFile PromptBeforeOverwrite verbose fileName backup 
+
+    ConfigBackupImport fileName -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      ciphertext <- handleReadFile BS.readFile fileName
+      accCfgs <- configImport ciphertext (askPassword "The backup file is password protected. Enter password: ")
+      case accCfgs of
+        Right accCfgs' -> do 
+          void $ importAccountConfig baseCfg accCfgs' verbose
+        Left err -> logFatal [[i|Failed to import Config Backup, #{err}|]]
+
     ConfigAccountCmd c -> case c of
       ConfigAccountAdd addr naName -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
@@ -267,6 +286,7 @@ processConfigCmd action baseCfgDir verbose =
                      ++ " will be added to account " ++ Text.unpack addr]
             let accCfg' = accCfg { acKeys = keyMapNew }
             writeAccountKeys baseCfg' accCfg' verbose
+      
       ConfigAccountUpdateKeys addr keysFile -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do

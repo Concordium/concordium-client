@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 module Concordium.Client.Export where
 
@@ -12,12 +13,15 @@ import Control.Exception
 import Control.Monad.Except
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
-import Data.Aeson ((.:),(.:?),(.!=))
+import Data.Aeson ((.:),(.:?),(.!=),(.=))
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as LazyBS
 import qualified Data.HashMap.Strict as Map
 import Data.Text as T
+import Data.String.Interpolate ( i )
 import qualified Data.Text.IO as T
 import Text.Printf
+import Concordium.Common.Version
 
 -- | An export format used by wallets including accounts and identities.
 data WalletExport =
@@ -144,3 +148,69 @@ decodeGenesisFormattedAccountExport payload name pwd = runExceptT $ do
             acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd accEncryptionKey)
             return AccountConfig { acAddr = NamedAddress{naName = name, naAddr = addr}
                                  , .. }
+
+
+---- Code for instantiating, exporting and importing config backups
+-- | An export format used for config backups.
+newtype ConfigBackup =
+  ConfigBackup
+  { cbuAccounts :: [AccountConfig] }
+
+-- | Currently supported version of the config backup.
+-- Imports from older versions might be possible, but exports are going to use only this version.
+configBackupVersion :: Version
+configBackupVersion = 1
+
+instance AE.ToJSON ConfigBackup where
+   toJSON (ConfigBackup cbuAccounts) = AE.toJSON (Versioned configBackupVersion cbuAccounts)
+
+instance AE.FromJSON ConfigBackup where
+  parseJSON v = do
+    vObj <- AE.parseJSON v
+    unless (vVersion vObj == configBackupVersion) $ 
+      fail $ [i|Unsupported account config version : #{vVersion vObj}|]
+    return ConfigBackup{cbuAccounts = vValue vObj}
+
+-- | Encode and encrypt the config Json, for writing to a file, optionally protected under a password.
+-- The output artifact is an object with two fields, "type" and "contents", with "type" being either unencrypted or encrypted
+-- and contents being the actual data, in either encrypted or unencrypted formats.
+configExport  :: [AccountConfig] -- ^ A list of 'AccountConfig's
+  -> Maybe Password -- ^ Password to decrypt the export.
+  -> IO BS.ByteString -- ^ JSON with encrypted accounts and identities,
+configExport accounts pwd = do
+    case pwd of
+      Just password -> do 
+        contents <- encryptJSON AES256 PBKDF2SHA256 ConfigBackup{cbuAccounts = accounts} password
+        return $ LazyBS.toStrict . AE.encode $ AE.object ["type" .= AE.String "encrypted", "contents" .= contents]
+      Nothing -> return $ 
+        let contents = ConfigBackup{cbuAccounts = accounts}
+        in LazyBS.toStrict . AE.encode $ AE.object ["type" .= AE.String "unencrypted", "contents" .= contents]
+
+
+-- |Decrypt and decode an exported config, optionally protected under a password.
+configImport
+  :: BS.ByteString
+  -> IO Password -- ^ Action to obtain the password if necessary.
+  -> IO (Either String [AccountConfig])
+configImport json pwdAction = runExceptT $ do
+  vconfigBackup <- AE.eitherDecodeStrict json `embedErr` (\err -> [i|The input file is not valid JSON: #{err}|])
+  case AE.parseEither importParser vconfigBackup of
+    Left err -> throwError [i| Failed reading the input file: #{err}|]
+    Right (Left encrypted) -> do
+      pwd <- liftIO pwdAction
+      ConfigBackup{..} <- decryptJSON encrypted pwd `embedErr` (("Failed to decrypt Config Backup using the supplied password: " ++) . displayException)
+      return $ cbuAccounts
+    Right (Right ConfigBackup{..}) -> return cbuAccounts
+  where
+    importParser = AE.withObject "ConfigBackup" $ \v -> do
+      ty <- v .: "type"
+      case ty of 
+        "encrypted" -> do
+          -- Parse as EncryptedJSON ConfigBackup
+          cnt <- v .: "contents"
+          return (Left cnt)
+        "unencrypted" -> do
+          -- Parse as ConfigBackup
+          cnt <- v .: "contents"
+          return (Right cnt)
+        _ -> fail $ "Unsupported config backup type: " ++ ty
