@@ -195,9 +195,9 @@ processConfigCmd action baseCfgDir verbose =
       runPrinter $ printAccountConfigList accCfgs
     ConfigBackupExport fileName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      pwd <- askPassword "Enter password for encryption of backup. (Leave blank for no encryption.)" 
+      pwd <- askPassword "Enter password for encryption of backup (leave blank for no encryption): " 
       allAccounts <- getAllAccountConfigs baseCfg
-      backup <- case (Password.getPassword pwd) of 
+      backup <- case Password.getPassword pwd of 
         "" -> configExport allAccounts Nothing
         _ -> configExport allAccounts (Just pwd)
       handleWriteFile BS.writeFile PromptBeforeOverwrite verbose fileName backup 
@@ -205,10 +205,7 @@ processConfigCmd action baseCfgDir verbose =
     ConfigBackupImport fileName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       ciphertext <- handleReadFile BS.readFile fileName
-      pwd <- askPassword "Enter password for decryption of backup. (Leave blank if not encrypted.)" 
-      accCfgs <- case (Password.getPassword pwd) of 
-        "" -> configImport ciphertext Nothing
-        _ -> configImport ciphertext (Just pwd)
+      accCfgs <- configImport ciphertext (askPassword "The backup file is password protected. Enter password: ")
       case accCfgs of
         Right accCfgs' -> do 
           void $ importAccountConfig baseCfg accCfgs' verbose

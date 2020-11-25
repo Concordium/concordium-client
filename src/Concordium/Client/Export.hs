@@ -152,62 +152,65 @@ decodeGenesisFormattedAccountExport payload name pwd = runExceptT $ do
 
 ---- Code for instantiating, exporting and importing config backups
 -- | An export format used for config backups.
-data ConfigBackup =
+newtype ConfigBackup =
   ConfigBackup
-  { cbuAccounts :: Versioned [AccountConfig] }
+  { cbuAccounts :: [AccountConfig] }
 
+-- | Currently supported version of the config backup.
+-- Imports from older versions might be possible, but exports are going to use only this version.
 configBackupVersion :: Version
 configBackupVersion = 1
 
 instance AE.ToJSON ConfigBackup where
-   toJSON (ConfigBackup cbuAccounts) = AE.object ["accounts" .= cbuAccounts]
+   toJSON (ConfigBackup cbuAccounts) = AE.toJSON (Versioned configBackupVersion cbuAccounts)
 
 instance AE.FromJSON ConfigBackup where
-  parseJSON = AE.withObject "ConfigBackup" $ \v -> do
-    cbuAccounts <- v .: "accounts"
-    version <- cbuAccounts .: "v"
-    unless (version == 1) $
-      fail $ [i|Unsupported accountconfig encoding version, : #{version}|]
-    accountConfigs <- cbuAccounts .: "value"
-    return ConfigBackup{cbuAccounts = (Versioned version) accountConfigs}
+  parseJSON v = do
+    vObj <- AE.parseJSON v
+    unless (vVersion vObj == configBackupVersion) $ 
+      fail $ [i|Unsupported account config version : #{vVersion vObj}|]
+    return ConfigBackup{cbuAccounts = vValue vObj}
 
 -- | Encode and encrypt the config Json, for writing to a file, optionally protected under a password.
+-- The output artifact is an object with two fields, "type" and "contents", with "type" being either unencrypted or encrypted
+-- and contents being the actual data, in either encrypted or unencrypted formats.
 configExport  :: [AccountConfig] -- ^ A list of 'AccountConfig's
   -> Maybe Password -- ^ Password to decrypt the export.
-  -> IO (BS.ByteString) -- ^ JSON with encrypted accounts and identities,
-configExport accounts pwd = case pwd of
-  Just password -> LazyBS.toStrict . AE.encode <$> (Versioned configBackupVersion) <$> (encryptJSON AES256 PBKDF2SHA256 ConfigBackup{cbuAccounts = (Versioned accountConfigVersion) accounts} password)
-  Nothing -> return $ LazyBS.toStrict $ AE.encode $ (Versioned configBackupVersion) ConfigBackup{cbuAccounts = (Versioned accountConfigVersion) accounts} 
+  -> IO BS.ByteString -- ^ JSON with encrypted accounts and identities,
+configExport accounts pwd = do
+    case pwd of
+      Just password -> do 
+        contents <- encryptJSON AES256 PBKDF2SHA256 ConfigBackup{cbuAccounts = accounts} password
+        return $ LazyBS.toStrict . AE.encode $ AE.object ["type" .= AE.String "encrypted", "contents" .= contents]
+      Nothing -> return $ 
+        let contents = ConfigBackup{cbuAccounts = accounts}
+        in LazyBS.toStrict . AE.encode $ AE.object ["type" .= AE.String "unencrypted", "contents" .= contents]
 
 
 -- |Decrypt and decode an exported config, optionally protected under a password.
 configImport
   :: BS.ByteString
-  -> Maybe Password
+  -> IO Password -- ^ Action to obtain the password if necessary.
   -> IO (Either String [AccountConfig])
-configImport json pwd = runExceptT $ do
-  case pwd of
-    Just password -> do 
-      vconfigbackup :: Versioned AE.Value <- AE.eitherDecodeStrict json `embedErr` (\err -> [i|Failed to decode version number of input file: #{err}|])
-      case vVersion vconfigbackup of
-        1 -> do
-          cbu :: EncryptedJSON ConfigBackup <- resToEither (AE.fromJSON (vValue vconfigbackup)) `embedErr` decodeError 
-          ConfigBackup{..} <- decryptJSON cbu password `embedErr` (("Failed to decrypt Config Backup using the supplied password: " ++) . displayException)
-          return $ vValue cbuAccounts
-        v -> throwError [i|Unsupported configbackup encoding version, : #{v}|]
-    Nothing -> do
-      vconfigbackup :: Versioned AE.Value <- AE.eitherDecodeStrict json `embedErr` (\err -> [i|Failed to decode version number of input file: #{err}|])
-      case vVersion vconfigbackup of
-        1 -> do
-          ConfigBackup{..} <- resToEither (AE.fromJSON (vValue vconfigbackup)) `embedErr` decodeError
-          return $ vValue cbuAccounts
-        v -> throwError [i|Unsupported configbackup encoding version, : #{v}|]
+configImport json pwdAction = runExceptT $ do
+  vconfigBackup <- AE.eitherDecodeStrict json `embedErr` (\err -> [i|The input file is not valid JSON: #{err}|])
+  case AE.parseEither importParser vconfigBackup of
+    Left err -> throwError [i| Failed reading the input file: #{err}|]
+    Right (Left encrypted) -> do
+      pwd <- liftIO pwdAction
+      ConfigBackup{..} <- decryptJSON encrypted pwd `embedErr` (("Failed to decrypt Config Backup using the supplied password: " ++) . displayException)
+      return $ cbuAccounts
+    Right (Right ConfigBackup{..}) -> return cbuAccounts
   where
-    resToEither :: AE.Result a -> Either String a
-    resToEither res = case res of
-      (AE.Success a) -> Right a
-      (AE.Error err) -> Left err
-    decodeError err = case err of 
-              "key \"accounts\" not found" -> [i|Failed to decode input file to ConfigBackup JSON. File may be password encrypted: #{err}|]
-              "key \"metadata\" not found" -> [i|Failed to decode input file to ConfigBackup JSON. File may not be password encrypted: #{err}|]
-              _ -> [i|Failed to decode input file to ConfigBackup JSON: #{err}|]
+    importParser = AE.withObject "ConfigBackup" $ \v -> do
+      ty <- v .: "type"
+      case ty of 
+        "encrypted" -> do
+          -- Parse as EncryptedJSON ConfigBackup
+          cnt <- v .: "contents"
+          return (Left cnt)
+        "unencrypted" -> do
+          -- Parse as ConfigBackup
+          cnt <- v .: "contents"
+          return (Right cnt)
+        _ -> fail $ "Unsupported config backup type: " ++ ty
