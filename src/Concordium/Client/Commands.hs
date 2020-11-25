@@ -825,9 +825,9 @@ contractInitCmd =
         strArgument (metavar "MODULE" <> help "Module reference OR module name OR (if --path is used) path to a module.") <*>
         strOption (long "contract" <> metavar "CONTRACT-NAME"
                              <> help "Name of the contract (i.e. init function) in the module.") <*>
-        optional (strOption (long "params-json" <> metavar "FILE"
+        optional (strOption (long "parameter-json" <> metavar "FILE"
                              <> help "JSON file with parameters for init function. This parameter format should be used if a schema is supplied (default: no parameters).")) <*>
-        optional (strOption (long "params-binary" <> metavar "FILE"
+        optional (strOption (long "parameter-bin" <> metavar "FILE"
                              <> help "Binary file with parameters for init function. This should _not_ be used if a schema is supplied (default: no parameters).")) <*>
         optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to parse the params file.")) <*>
         optional (strOption (long "name" <> metavar "NAME" <> help "Name for the contract.")) <*>
@@ -850,9 +850,9 @@ contractUpdateCmd =
                              <> help "Name of the contract (i.e. init function) in the module.") <*>
         strOption (long "func" <> metavar "RECEIVE-NAME"
                              <> help "Name of the specific receive function in the module.") <*>
-        optional (strOption (long "params-json" <> metavar "FILE"
+        optional (strOption (long "parameter-json" <> metavar "FILE"
                              <> help "JSON file with parameters for receive function. This parameter format should be used if a schema is supplied (default: no parameters).")) <*>
-        optional (strOption (long "params-binary" <> metavar "FILE"
+        optional (strOption (long "parameter-bin" <> metavar "FILE"
                              <> help "Binary file with parameters for receive function. This should _not_ be used if a schema is supplied (default: no parameters).")) <*>
         optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to parse the params file.")) <*>
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> value 0

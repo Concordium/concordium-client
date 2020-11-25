@@ -9,6 +9,7 @@ module Concordium.Client.Types.ContractSchema
   , getValueAsJSON
   , lookupSchemaForParams
   , putJSONParams
+  , runGetVersionedModuleSource
   , serializeParams
   , Contract(..)
   , Fields(..)
@@ -22,6 +23,7 @@ module Concordium.Client.Types.ContractSchema
 
 import Concordium.Client.Config (showCompactPrettyJSON, showPrettyJSON)
 import qualified Concordium.Types as T
+import qualified Concordium.Wasm as Wasm
 
 import Control.Monad (unless, when, zipWithM)
 import Data.Aeson (FromJSON, Result, ToJSON, (.=), (.:))
@@ -243,9 +245,9 @@ data Info
       -- |The contract state.
     , iModel  :: !Model
       -- |The receive functions/methods.
-    , iMethods :: ![Text]
+    , iMethods :: ![Wasm.ReceiveName]
       -- |The contract name.
-    , iName :: !Text
+    , iName :: !Wasm.InitName
       -- |The corresponding source module.
     , iSourceModule :: !T.ModuleRef }
   deriving (Eq, Show)
@@ -538,6 +540,13 @@ getEmbeddedSchemaFromModule = do
         else S.skip sectionSize *> go
       else S.skip sectionSize *> go
 
+-- |Extract the WASM version, our API version, and the module source.
+getVersionedModuleSource :: Get (Word32, ByteString)
+getVersionedModuleSource = do
+  version <- label "WASM Version" getWord32le
+  sourceLen <- label "Length of Module Source" $ fromIntegral <$> S.getWord32be
+  modSource <- label "Module Source" $ S.getBytes sourceLen
+  pure (version, modSource)
 
 -- ** Helpers **
 
@@ -608,7 +617,11 @@ getLEB128Word32le = label "Word32LEB128" $ decode7 0 5 1
 -- * Text *
 
 getText :: Get Text
-getText = label "Text" $ Text.decodeUtf8 . BS.pack <$> getListOfWith32leLen get
+getText = do
+  txt <- label "Text" $ Text.decodeUtf8' . BS.pack <$> getListOfWith32leLen get
+  case txt of
+    Left err -> fail [i|Could not decode Text: #{err}|]
+    Right txt' -> pure txt'
 
 putText :: Putter Text
 putText = putListOfWithSizeLen LenU32 put . BS.unpack . Text.encodeUtf8
@@ -616,7 +629,10 @@ putText = putListOfWithSizeLen LenU32 put . BS.unpack . Text.encodeUtf8
 getTextWithLEB128Len :: Get Text
 getTextWithLEB128Len = label "Text with LEB128 Length" $ do
   len <- getLEB128Word32le
-  Text.decodeUtf8 . BS.pack <$> getListOfWithKnownLen len get
+  txt <- Text.decodeUtf8' . BS.pack <$> getListOfWithKnownLen len get
+  case txt of
+    Left err -> fail [i|Could not decode Text with LEB128 len: #{err}|]
+    Right txt' -> pure txt'
 
 -- ** External API **
 
@@ -625,9 +641,10 @@ getTextWithLEB128Len = label "Text with LEB128 Length" $ do
 addSchemaToInfo :: Info -> Module -> Either String Info
 addSchemaToInfo info@Info{..} Module{..} = case iModel of
   WithSchema _ -> Left "Already contains a schema."
-  JustBytes bytes -> case Map.lookup iName contracts of
+  JustBytes bytes -> case contractName >>= \contrName -> Map.lookup contrName contracts of
     Nothing -> Left "The provided schema does not match the provided contract info."
     Just contract -> (\m -> info {iModel = WithSchema m}) <$> S.runGet (getModelAsJSON contract) bytes
+  where contractName = Text.stripPrefix "init_" (Wasm.initName iName)
 
 -- |Serialize JSON parameters to binary using `SchemaType` or fail with an error message.
 serializeParams :: SchemaType -> AE.Value -> Either String ByteString
@@ -650,3 +667,6 @@ lookupSchemaForParams Module{..} funcName = case funcName of
   ReceiveName contrName receiveName -> do
     contract <- Map.lookup contrName contracts
     Map.lookup receiveName (receiveSigs contract)
+
+runGetVersionedModuleSource :: ByteString -> Either String (Word32, ByteString)
+runGetVersionedModuleSource = S.runGet getVersionedModuleSource
