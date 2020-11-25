@@ -595,7 +595,7 @@ data AccountConfig =
   -- you just import an account and don't initialize a dummy config first. But
   -- that is for the future, and for now we just have to deal with null pointers.
   , acEncryptionKey :: !(Maybe EncryptedAccountEncryptionSecretKey)
-  } 
+  } deriving(Show, Eq)
 
 instance AE.ToJSON AccountConfig where
    toJSON AccountConfig{..} = 

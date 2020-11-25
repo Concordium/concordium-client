@@ -221,7 +221,7 @@ encryptText emEncryptionMethod emKeyDerivationMethod text pwd =
 
 -- | An encrypted JSON serialization of a value of the given type.
 newtype EncryptedJSON a = EncryptedJSON EncryptedText
-  deriving (AE.FromJSON, AE.ToJSON, Show)
+  deriving (AE.FromJSON, AE.ToJSON, Show, Eq)
 
 -- | Failures that can occur when decrypting an 'EncryptedJSON'.
 data DecryptJSONFailure
