@@ -8,7 +8,7 @@ module Concordium.Client.Types.ContractSchema
   , decodeEmbeddedSchema
   , decodeSchema
   , getValueAsJSON
-  , lookupSchemaForParams
+  , lookupSignatureForFunc
   , methodNameFromReceiveName
   , putJSONParams
   , runGetVersionedModuleSource
@@ -589,6 +589,7 @@ putMapOfWith32leLen pv pk = putListOfWith32leLen (putTwoOf pv pk) . Map.toList
 
 -- * LEB128 *
 
+-- |Get a little-endian LEB128-encoded Word32 (might use fewer bytes).
 getLEB128Word32le :: Get Word32
 getLEB128Word32le = label "Word32LEB128" $ decode7 0 5 1
   where
@@ -657,23 +658,28 @@ addSchemaToInfo info@Info{..} schema@Module{..} = case iModel of
 serializeParams :: SchemaType -> AE.Value -> Either String ByteString
 serializeParams typ params = S.runPut <$> putJSONParams typ params
 
+-- |Try to find an embedded schema in a module and decode it. Alias to avoid having to import Data.Serialize.
 decodeEmbeddedSchema :: ByteString -> Either String Module
 decodeEmbeddedSchema = S.runGet getEmbeddedSchemaFromModule
 
+-- |Decode a schema. Alias to avoid having to import Data.Serialize.
 decodeSchema :: ByteString -> Either String Module
 decodeSchema = S.decode
 
+-- |A function name for a function inside a smart contract.
 data FuncName
-  = InitName Text
-  | ReceiveName Text Text
+  = InitName Text -- ^ Name of an init function.
+  | ReceiveName Text Text -- ^ Name of a receive function.
   deriving Eq
 
-lookupSchemaForParams :: Module -> FuncName -> Maybe SchemaType
-lookupSchemaForParams Module{..} funcName = case funcName of
+-- |Tries to find the signature, i.e. `SchemaType`, for a function by its name.
+lookupSignatureForFunc :: Module -> FuncName -> Maybe SchemaType
+lookupSignatureForFunc Module{..} funcName = case funcName of
   InitName contrName -> Map.lookup contrName contracts >>= initSig
   ReceiveName contrName receiveName -> do
     contract <- Map.lookup contrName contracts
     Map.lookup receiveName (receiveSigs contract)
 
+-- |Tries to parse a versioned module source from a bytestring.
 runGetVersionedModuleSource :: ByteString -> Either String (Word32, ByteString)
 runGetVersionedModuleSource = S.runGet getVersionedModuleSource

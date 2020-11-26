@@ -1740,11 +1740,12 @@ contractInitTransactionPayload ContractInitTransactionCfg {..} =
 getWasmModuleFromFile :: FilePath -> IO Wasm.WasmModule
 getWasmModuleFromFile moduleFile = Wasm.WasmModule 0 <$> handleReadFile BS.readFile moduleFile
 
--- TODO: update docs
--- |Load Wasm Parameters from an optional parameter file and an optional schema file.
--- If the schema file is supplied, parse the parameter file as JSON. Otherwise, parse it as binary.
--- Warns the user if a schema is supplied without a parameter file.
--- If no parameter file is supplied, return mempty.
+-- |Load Wasm Parameter through various methods dependent on the arguments:
+--   - Binary parameters -> Read file and wrap contents in `Wasm.Parameter`
+--   - JSON parameters ->
+--     - With schemaFile -> Read schemaFile and parameters file and encode the parameters.
+--     - Otherwise -> Try to get an embedded schema from the module and use it to encode the parameters.
+-- For all other cases, appropriate error or warning messages are shown.
 getWasmParameter :: Backend -> Maybe FilePath -> Maybe FilePath -> Maybe FilePath
                  -> Either BS.ByteString NamedModuleRef -> ContractSchema.FuncName -> IO Wasm.Parameter
 getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile modSourceOrRef funcName =
@@ -1761,7 +1762,7 @@ getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile modSourceOrR
         Just schema' -> getFromJSONParams jsonFile' schema'
     (Just _, Just _, _) -> logFatal ["--parameter-json and --parameter-bin cannot be used at the same time"]
   where getFromJSONParams :: FilePath -> ContractSchema.Module -> IO Wasm.Parameter
-        getFromJSONParams jsonFile schema = case ContractSchema.lookupSchemaForParams schema funcName of
+        getFromJSONParams jsonFile schema = case ContractSchema.lookupSignatureForFunc schema funcName of
           Nothing -> logFatal [[i|the schema did not include the provided function|]]
           Just schemaForParams -> do
             jsonFileContents <- handleReadFile BSL8.readFile jsonFile
@@ -1773,6 +1774,9 @@ getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile modSourceOrR
         emptyParams = pure . Wasm.Parameter $ BSS.empty
         binaryParams file = Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile file
 
+-- |Get a schema from a file or, alternative, try to extract an embedded schema from a module.
+-- Logs fatally if an invalid schema is found (either from a file or embedded).
+-- Only returns `Nothing` if no schemaFile is provided and no embedded schema was found in the module.
 getSchemaFromFileOrModule :: Backend -> Maybe FilePath -> Either BS.ByteString NamedModuleRef
                           -> Maybe Text -> IO (Maybe ContractSchema.Module)
 getSchemaFromFileOrModule backend schemaFile modSourceOrRef block = case (schemaFile, modSourceOrRef) of
