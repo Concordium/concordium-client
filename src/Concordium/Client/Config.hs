@@ -708,9 +708,13 @@ resolveAccountAddress m input = do
                 return (Just input, a)
               Right a -> do
                 -- Input is an address. Try to look up its name in the map.
-                let name = fst <$> find ((== a) . snd) (M.toList m)
+                let name = lookupByValue m a
                 return (name, a)
   return NamedAddress { naName = n, naAddr = a }
+
+-- |Lookup by value from a map. Returns first entry found.
+lookupByValue :: Eq v => NameMap v -> v -> Maybe Text
+lookupByValue m input = fst <$> find ((== input) . snd) (M.toList m)
 
 -- |Look up an account by name or address. See doc for 'resolveAccountAddress'.
 -- If the lookup fails, an error is thrown.
