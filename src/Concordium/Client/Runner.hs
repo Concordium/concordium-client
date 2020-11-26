@@ -1587,10 +1587,11 @@ processContractCmd action baseCfgDir verbose backend =
     ContractShow indexOrName subindex schemaFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-      contrInfo@(ContractSchema.Info{iSourceModule = moduleRef}) <- getContractInfo backend namedContrAddr block
-      let namedModRef = NamedModuleRef {nmrRef = moduleRef, nmrName = Nothing}
+      contrInfo@ContractSchema.Info{..} <- getContractInfo backend namedContrAddr block
+      let namedModRef = NamedModuleRef {nmrRef = iSourceModule, nmrName = lookupByValue (bcModuleNameMap baseCfg) iSourceModule}
       schema <- getSchemaFromFileOrModule backend schemaFile (Right namedModRef) block
-      displayContractInfo schema contrInfo
+      let namedOwner = NamedAddress {naAddr = iOwner, naName = lookupByValue (bcAccountNameMap baseCfg) iOwner}
+      displayContractInfo schema contrInfo namedOwner namedModRef
 
     ContractInit modTBD contrName paramsFileJSON paramsFileBinary schemaFile contrAlias isPath amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1655,12 +1656,12 @@ getContractInfo backend namedContrAddr block = do
       Success info -> pure info
 
 -- |Display contract info, optionally using a schema to decode the contract state.
-displayContractInfo :: Maybe ContractSchema.Module -> ContractSchema.Info -> IO ()
-displayContractInfo schema contrInfo = case schema of
-  Nothing -> logStr . showPrettyJSON $ contrInfo
+displayContractInfo :: Maybe ContractSchema.Module -> ContractSchema.Info -> NamedAddress -> NamedModuleRef -> IO ()
+displayContractInfo schema contrInfo namedOwner namedModRef = case schema of
+  Nothing -> runPrinter $ printContractInfo contrInfo namedOwner namedModRef
   Just schema' -> case ContractSchema.addSchemaToInfo contrInfo schema' of
     Left err' -> logFatal ["Parsing the contract model failed:", err']
-    Right infoWithSchema -> logStr . showPrettyJSON $ infoWithSchema
+    Right infoWithSchema -> runPrinter $ printContractInfo infoWithSchema namedOwner namedModRef
 
 getContractUpdateTransactionCfg :: Backend -> BaseConfig -> TransactionOpts Types.Energy -> Text -> Maybe Word64 -> Text -> Text
                                 -> Maybe FilePath -> Maybe FilePath -> Maybe FilePath -> Types.Amount -> IO ContractUpdateTransactionCfg

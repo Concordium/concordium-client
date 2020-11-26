@@ -20,22 +20,12 @@ import Test.QuickCheck
 contractSchemaSpec :: Spec
 contractSchemaSpec = describe "contractSchema" $ do
   printSchemaSpec
-  printInfoSpec
   printParamsSpec
 
 printSchemaSpec :: Spec
 printSchemaSpec = describe "serialize Module" $ do
   it "decode is inverse of encode" $ withMaxSuccess 30 $
     forAll (sized genModule) $ \c -> (S.decode . S.encode) c === Right c
-
-printInfoSpec :: Spec
-printInfoSpec = describe "serialize Info" $ do
-  it "fromJSON is inverse of toJSON for Info" $ do
-    pendingWith "TODO"
-
-  it "fromJSON is inverse of toJSON for Model" $ withMaxSuccess 100 $
-    forAll genModel $ \m -> (AE.fromJSON . AE.toJSON) m === AE.Success m
-
 
 printParamsSpec :: Spec
 printParamsSpec = describe "serialize JSON params to bytes and deserialize to JSON works for:" $ do

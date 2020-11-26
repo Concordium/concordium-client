@@ -4,10 +4,12 @@
 {-# LANGUAGE QuasiQuotes #-}
 module Concordium.Client.Types.ContractSchema
   ( addSchemaToInfo
+  , contractNameFromInitName
   , decodeEmbeddedSchema
   , decodeSchema
   , getValueAsJSON
   , lookupSchemaForParams
+  , methodNameFromReceiveName
   , putJSONParams
   , runGetVersionedModuleSource
   , serializeParams
@@ -51,6 +53,10 @@ import qualified Data.Vector as V
 import Data.Word (Word8, Word32, Word64)
 import GHC.Generics
 import Lens.Micro.Platform ((^?), ix)
+
+
+import Concordium.ID.Types (addressFromText)
+import Concordium.Crypto.SHA256 as SHA256
 
 -- ** Data Types and Instances **
 
@@ -256,40 +262,24 @@ instance FromJSON Info where
   parseJSON = AE.withObject "Info" $ \v -> do
     iAmount       <- v .: "amount"
     iOwner        <- v .: "owner"
-    iModel        <- v .: "model"
+    iModel        <- case HM.lookup "model" v of
+      Just (AE.String s) -> JustBytes <$> decodeBase16 s
+      Just x -> fail [i|Invalid Info, expected "model" field to be a String of base16 bytes, but got: #{x}|]
+      Nothing -> fail [i|Invalid Info, missing "model" field.|]
     iMethods      <- v .: "methods"
     iName         <- v .: "name"
     iSourceModule <- v .: "sourceModule"
     pure Info{..}
-
-
-instance ToJSON Info where
-  toJSON Info {..} = AE.object
-    [ "owner"        .= iOwner
-    , "name"         .= iName
-    , "amount"       .= iAmount
-    , "model"        .= iModel
-    , "methods"      .= iMethods
-    , "sourceModule" .= iSourceModule ]
-
-data Model =
-    WithSchema AE.Value  -- ^ The decoded contract state.
-  | JustBytes ByteString -- ^ The binary-encoded contract state.
-  deriving (Eq, Show)
-
-instance ToJSON Model where
-  toJSON (WithSchema val) = val
-  toJSON (JustBytes bs) = AE.String . Text.decodeUtf8 . BS16.encode $ bs
-
-instance FromJSON Model where
-  parseJSON (AE.String s) = JustBytes <$> decodeBase16 s
     where decodeBase16 xs =
             let (parsed, remaining) = BS16.decode . Text.encodeUtf8 $ xs in
               if BS.null remaining
               then pure parsed
               else fail [i|Invalid model. Parsed: '#{parsed}', but failed on the remaining: '#{remaining}'|]
-  parseJSON obj@(AE.Object _) = pure $ WithSchema obj
-  parseJSON invalid = fail [i|Invalid model. Should be either a ByteString or a JSON obj: #{invalid}|]
+
+data Model =
+    WithSchema Module AE.Value  -- ^ The schema and the decoded contract state.
+  | JustBytes ByteString        -- ^ The binary-encoded contract state.
+  deriving (Eq, Show)
 
 -- |Wrapper for Concordium.Types.Amount that uses a little-endian encoding.
 newtype AmountLE = AmountLE T.Amount
@@ -634,17 +624,34 @@ getTextWithLEB128Len = label "Text with LEB128 Length" $ do
     Left err -> fail [i|Could not decode Text with LEB128 len: #{err}|]
     Right txt' -> pure txt'
 
+-- |Get a contract name from an InitName, i.e. extracting the text and removing the "init_" prefix.
+-- If the stripping the prefix fails, it simply returns the extracted text
+-- (this should never happen, unless the InitName was incorrectly constructed).
+contractNameFromInitName :: Wasm.InitName -> Text
+contractNameFromInitName initName = case Text.stripPrefix "init_" initNameText of
+  Nothing -> initNameText
+  Just contrName -> contrName
+  where initNameText = Wasm.initName initName
+
+-- |Get a method name from a Receive name, i.e. extracting the text and removing the "<contractName>." prefix.
+-- If the receiveName does not have the prefix, it simply returns the extracted text.
+methodNameFromReceiveName :: Wasm.ReceiveName -> Text
+methodNameFromReceiveName rcvName = case Text.split (=='.') receiveNameText of
+  [_contrName, methodName] -> methodName
+  _ -> receiveNameText
+  where receiveNameText = Wasm.receiveName rcvName
+
 -- ** External API **
 
 -- |Uses a `Schema` to parse the `JustBytes` of `Info`.
 -- Returns `Left` if a schema has already been included or the parsing fails.
 addSchemaToInfo :: Info -> Module -> Either String Info
-addSchemaToInfo info@Info{..} Module{..} = case iModel of
-  WithSchema _ -> Left "Already contains a schema."
-  JustBytes bytes -> case contractName >>= \contrName -> Map.lookup contrName contracts of
+addSchemaToInfo info@Info{..} schema@Module{..} = case iModel of
+  WithSchema _ _ -> Left "Already contains a schema."
+  JustBytes bytes -> case Map.lookup contractName contracts of
     Nothing -> Left "The provided schema does not match the provided contract info."
-    Just contract -> (\m -> info {iModel = WithSchema m}) <$> S.runGet (getModelAsJSON contract) bytes
-  where contractName = Text.stripPrefix "init_" (Wasm.initName iName)
+    Just contract -> (\decodedState -> info {iModel = WithSchema schema decodedState}) <$> S.runGet (getModelAsJSON contract) bytes
+  where contractName = contractNameFromInitName iName
 
 -- |Serialize JSON parameters to binary using `SchemaType` or fail with an error message.
 serializeParams :: SchemaType -> AE.Value -> Either String ByteString
