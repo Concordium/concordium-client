@@ -1551,12 +1551,12 @@ moduleDeployEnergyCost wasmMod accCfg = pure . Just . const $
         -- Ad hoc cost implementation from Concordium.Scheduler.Cost
         deployModuleCost :: Int -> Types.Energy
         deployModuleCost psize = Types.Energy . fromIntegral $
-                                  psize * 3 -- typeCheck
-                                  + (5 + (((2 * psize) + 99) `div` 100) * 50) -- storeBytes
+                                  (psize `div` 30)
+                                  + (5 + 2 * ((psize + 99) `div` 100) * 50) -- storeModule
 
         signatureCount = fromIntegral . acThreshold $ accCfg
         payloadSize = (+ tagSize) . BS.length . S.encode . Wasm.wasmSource $ wasmMod
-        headerSize = 60
+        headerSize = fromIntegral Types.transactionHeaderSize
         tagSize = 1
 
 data ModuleDeployTransactionCfg =
