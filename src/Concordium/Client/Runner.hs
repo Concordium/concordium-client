@@ -1516,14 +1516,14 @@ processModuleCmd action baseCfgDir verbose backend =
     ModuleShow modRefOrName outFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedModRef <- getNamedModuleRef (bcModuleNameMap baseCfg) modRefOrName
-      (version, modSource) <- getVersionedModuleSource backend namedModRef block
-      logInfo [[i|WASM Version of module: #{version}|]]
+      Wasm.WasmModule{..} <- getWasmModule backend namedModRef block
+      logInfo [[i|WASM Version of module: #{wasmVersion}|]]
       case outFile of
         -- Write to stdout
-        "-" -> BS.putStr modSource
+        "-" -> BS.putStr wasmSource
         -- Write to file
         _   -> do
-          handleWriteFile BS.writeFile PromptBeforeOverwrite verbose outFile modSource
+          handleWriteFile BS.writeFile PromptBeforeOverwrite verbose outFile wasmSource
           logSuccess [[i|wrote module source to the file '#{outFile}'|]]
 
     ModuleInspect modRefOrName schemaFile block -> do
@@ -1538,7 +1538,7 @@ processModuleCmd action baseCfgDir verbose backend =
       baseCfg <- getBaseConfig baseCfgDir verbose
       modRef <- getModuleRefFromRefOrFile modRefOrFile
       -- Get the module to ensure its existence, or fail trying.
-      _modSource <- getVersionedModuleSource backend (NamedModuleRef {nmrRef = modRef, nmrName = Nothing}) block
+      _wasmMod <- getWasmModule backend (NamedModuleRef {nmrRef = modRef, nmrName = Nothing}) block
       -- The module exists, if we reach this far.
       addModuleNameAndWrite verbose baseCfg modName modRef
       logSuccess [[i|module reference #{modRef} was successfully named '#{modName}'|]]
@@ -1739,17 +1739,17 @@ getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath contrName par
   params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef) (ContractSchema.InitName contrName)
   return $ ContractInitTransactionCfg txCfg amount (nmrRef namedModRef) (Wasm.InitName [i|init_#{contrName}|]) params
 
-getVersionedModuleSource :: Backend -> NamedModuleRef -> Maybe Text -> IO (Word32, BS.ByteString)
-getVersionedModuleSource backend namedModRef block = do
+getWasmModule :: Backend -> NamedModuleRef -> Maybe Text -> IO Wasm.WasmModule
+getWasmModule backend namedModRef block = do
   (bestBlock, res) <- withClient backend $ withBestBlockHash block $
     \bb -> (bb,) <$> getModuleSource (Text.pack . show . nmrRef $ namedModRef) bb
 
   case res of
     Left err -> logFatal ["I/O error:", err]
     Right "" -> logFatal [[i|the module reference #{namedModRef} does not exist in block #{bestBlock}|]]
-    Right unparsedModSource -> case ContractSchema.runGetVersionedModuleSource unparsedModSource of
-      Left err' -> logFatal [[i|could not extract versioned module source:|], err']
-      Right (version, modSource) -> pure (version, modSource)
+    Right unparsedWasmMod -> case S.decode unparsedWasmMod of
+      Left err' -> logFatal [[i|could not decode Wasm Module:|], err']
+      Right wasmMod -> pure wasmMod
 
 data ContractInitTransactionCfg =
   ContractInitTransactionCfg
@@ -1817,8 +1817,8 @@ getSchemaFromFileOrModule :: Backend -> Maybe FilePath -> Either BS.ByteString N
 getSchemaFromFileOrModule backend schemaFile modSourceOrRef block = case (schemaFile, modSourceOrRef) of
   (Nothing, Left modSource) -> tryGetSchemaFromModuleSource modSource
   (Nothing, Right namedModRef) -> do
-    (_, modSource) <- getVersionedModuleSource backend namedModRef block
-    tryGetSchemaFromModuleSource modSource
+    Wasm.WasmModule{..} <- getWasmModule backend namedModRef block
+    tryGetSchemaFromModuleSource wasmSource
   (Just schemaFile', _) -> Just <$> getSchemaFromFile schemaFile'
   where tryGetSchemaFromModuleSource modSrc = case getSchemaFromModule modSrc of
           -- TODO: relying on the specific string is fragile.
