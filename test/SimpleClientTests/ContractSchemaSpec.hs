@@ -153,14 +153,14 @@ printParamsSpec = describe "serialize JSON params to bytes and deserialize to JS
     fromToJSONFail unnamedStructType $
       toArray [AE.Number 10, AE.Number 11, AE.Number 12, toArray [AE.Number 8, AE.String (Text.pack accAddr)]] -- Too many fields
 
-    -- Empty
-    fromToJSONSucceed (Struct Empty) $ toArray []
-    fromToJSONFail (Struct Empty) $ toArray [AE.Null] -- Non-empty list for Empty
+    -- None
+    fromToJSONSucceed (Struct None) $ toArray []
+    fromToJSONFail (Struct None) $ toArray [AE.Null] -- Non-empty list for None
 
   it "Enum" $ do
     let enumType = Enum [ ("a", Named [("a.1", Bool)])
                         , ("b", Unnamed [Bool])
-                        , ("c", Empty)]
+                        , ("c", None)]
 
     fromToJSONSucceed enumType $ object ["a" .= object ["a.1" .= AE.Bool True]]
     fromToJSONSucceed enumType $ object ["b" .= toArray [AE.Bool True]]
@@ -217,10 +217,10 @@ genContract n = Contract <$> genMaybeSchemaType <*> genMaybeSchemaType <*> genRe
 
 genFields :: Int -> Gen Fields
 genFields n
-  | n == 0 = pure Empty
+  | n == 0 = pure None
   | otherwise = frequency [ (8, Named <$> listOf (genTwoOf genText (genSchemaType n')))
-                  , (4, Unnamed <$> listOf (genSchemaType n'))
-                  , (1, pure Empty) ]
+                          , (4, Unnamed <$> listOf (genSchemaType n'))
+                          , (1, pure None) ]
   where n' = nextNSize n
 
 genSchemaType :: Int -> Gen SchemaType

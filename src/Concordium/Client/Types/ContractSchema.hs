@@ -1,6 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE QuasiQuotes #-}
 module Concordium.Client.Types.ContractSchema
   ( addSchemaToInfo
@@ -28,6 +27,7 @@ import qualified Concordium.Wasm as Wasm
 
 import Control.Monad (unless, when, zipWithM)
 import Data.Aeson (FromJSON, Result, ToJSON, (.=), (.:))
+import Data.Maybe (fromMaybe)
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import qualified Data.Bits as Bits
@@ -40,16 +40,13 @@ import qualified Data.List as List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Scientific (Scientific, isFloating, toBoundedInteger)
-import Data.Serialize (Get, Put, Putter, Serialize, get, getInt8, getInt16le, getInt32le, getInt64le,
-                       getTwoOf, getWord8, getWord16le, getWord32le, getWord64le, label, put, putInt8, putInt16le,
-                       putInt32le, putInt64le, putTwoOf, putWord8, putWord16le, putWord32le, putWord64le)
 import qualified Data.Serialize as S
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Vector as V
-import Data.Word (Word8, Word32, Word64)
+import Data.Word (Word16, Word8, Word32, Word64)
 import GHC.Generics
 import Lens.Micro.Platform ((^?), ix)
 
@@ -63,9 +60,9 @@ newtype Module
 
 instance ToJSON Module
 
-instance Serialize Module where
-  get = label "Module" $ Module <$> getMapOfWith32leLen getText get
-  put Module {..} = putMapOfWith32leLen putText put contracts
+instance S.Serialize Module where
+  get = S.label "Module" $ Module <$> getMapOfWith32leLen getText S.get
+  put Module {..} = putMapOfWith32leLen putText S.put contracts
 
 -- |Parallel to Contract defined in contracts-common (Rust).
 -- Must stay in sync.
@@ -79,20 +76,20 @@ data Contract
 
 instance ToJSON Contract
 
-instance Serialize Contract where
-  get = label "Contract" $ do
-    state <- label "state" get
-    initSig <- label "initSig" get
-    receiveSigs <- label "receiveSigs" $ getMapOfWith32leLen getText get
+instance S.Serialize Contract where
+  get = S.label "Contract" $ do
+    state <- S.label "state" S.get
+    initSig <- S.label "initSig" S.get
+    receiveSigs <- S.label "receiveSigs" $ getMapOfWith32leLen getText S.get
     pure Contract{..}
-  put Contract {..} = put state <> put initSig <> putMapOfWith32leLen putText put receiveSigs
+  put Contract {..} = S.put state <> S.put initSig <> putMapOfWith32leLen putText S.put receiveSigs
 
 -- |Parallel to Fields defined in contracts-common (Rust).
 -- Must stay in sync.
 data Fields
   = Named [(Text, SchemaType)] -- ^ Represents a named enum or struct.
   | Unnamed [SchemaType] -- ^ Represents an unnamed enum or struct.
-  | Empty -- ^ Represents an empty enum or struct.
+  | None -- ^ Represents an empty enum or struct.
   deriving (Eq, Generic, Show)
 
 instance Hashable Fields
@@ -100,21 +97,21 @@ instance Hashable Fields
 instance ToJSON Fields where
   toJSON (Named fields) = AE.object . map (\(name, value) -> name .= value) $ fields
   toJSON (Unnamed fields) = AE.toJSON fields
-  toJSON Empty = AE.Array . V.fromList $ []
+  toJSON None = AE.Array V.empty
 
-instance Serialize Fields where
-  get = label "Fields" $ do
-    tag <- getWord8
+instance S.Serialize Fields where
+  get = S.label "Fields" $ do
+    tag <- S.getWord8
     case tag of
-      0 -> label "Named" $ Named <$> getListOfWith32leLen (getTwoOf getText get)
-      1 -> label "Unnamed" $ Unnamed <$> getListOfWith32leLen get
-      2 -> label "Empty" $ pure Empty
+      0 -> S.label "Named" $ Named <$> getListOfWith32leLen (S.getTwoOf getText S.get)
+      1 -> S.label "Unnamed" $ Unnamed <$> getListOfWith32leLen S.get
+      2 -> S.label "None" $ pure None
       x -> fail [i|Invalid Fields tag: #{x}|]
 
   put fields = case fields of
-    Named pairs -> putWord8 0 <> putListOfWith32leLen (putTwoOf putText put) pairs
-    Unnamed types -> putWord8 1 <> putListOfWith32leLen put types
-    Empty -> putWord8 2
+    Named pairs -> S.putWord8 0 <> putListOfWith32leLen (S.putTwoOf putText S.put) pairs
+    Unnamed types -> S.putWord8 1 <> putListOfWith32leLen S.put types
+    None -> S.putWord8 2
 
 -- |Parallel to Type defined in contracts-common (Rust).
 -- Must stay in sync.
@@ -153,53 +150,53 @@ instance ToJSON SchemaType where
     Pair typA typB -> AE.Array . V.fromList $ [AE.toJSON typA, AE.toJSON typB]
     x -> AE.String . Text.pack . show $ x
 
-instance Serialize SchemaType where
-  get = label "SchemaType" $ do
-    tag <- label "tag" getWord8
+instance S.Serialize SchemaType where
+  get = S.label "SchemaType" $ do
+    tag <- S.label "tag" S.getWord8
     case tag of
-      0  -> label "Unit" $ pure Unit
-      1  -> label "Bool" $ pure Bool
-      2  -> label "U8"   $ pure U8
-      3  -> label "U16"  $ pure U16
-      4  -> label "U32"  $ pure U32
-      5  -> label "U64"  $ pure U64
-      6  -> label "I8"   $ pure I8
-      7  -> label "I16"  $ pure I16
-      8  -> label "I32"  $ pure I32
-      9  -> label "I64"  $ pure I64
-      10 -> label "Amount" $ pure Amount
-      11 -> label "AccountAddress"  $ pure AccountAddress
-      12 -> label "ContractAddress" $ pure ContractAddress
-      13 -> label "Pair"   $ Pair <$> get <*> get
-      14 -> label "List"   $ List <$> get <*> get
-      15 -> label "Set"    $ Set <$> get <*> get
-      16 -> label "Map"    $ Map <$> get <*> get <*> get
-      17 -> label "Array"  $ Array <$> getWord32le <*> get
-      18 -> label "Struct" $ Struct <$> get
-      19 -> label "Enum"   $ Enum <$> getListOfWith32leLen (getTwoOf getText get)
+      0  -> S.label "Unit" $ pure Unit
+      1  -> S.label "Bool" $ pure Bool
+      2  -> S.label "U8"   $ pure U8
+      3  -> S.label "U16"  $ pure U16
+      4  -> S.label "U32"  $ pure U32
+      5  -> S.label "U64"  $ pure U64
+      6  -> S.label "I8"   $ pure I8
+      7  -> S.label "I16"  $ pure I16
+      8  -> S.label "I32"  $ pure I32
+      9  -> S.label "I64"  $ pure I64
+      10 -> S.label "Amount" $ pure Amount
+      11 -> S.label "AccountAddress"  $ pure AccountAddress
+      12 -> S.label "ContractAddress" $ pure ContractAddress
+      13 -> S.label "Pair"   $ Pair <$> S.get <*> S.get
+      14 -> S.label "List"   $ List <$> S.get <*> S.get
+      15 -> S.label "Set"    $ Set <$> S.get <*> S.get
+      16 -> S.label "Map"    $ Map <$> S.get <*> S.get <*> S.get
+      17 -> S.label "Array"  $ Array <$> S.getWord32le <*> S.get
+      18 -> S.label "Struct" $ Struct <$> S.get
+      19 -> S.label "Enum"   $ Enum <$> getListOfWith32leLen (S.getTwoOf getText S.get)
       x  -> fail [i|Invalid SchemaType tag: #{x}|]
 
   put typ = case typ of
-    Unit -> putWord8 0
-    Bool -> putWord8 1
-    U8   -> putWord8 2
-    U16  -> putWord8 3
-    U32  -> putWord8 4
-    U64  -> putWord8 5
-    I8   -> putWord8 6
-    I16  -> putWord8 7
-    I32  -> putWord8 8
-    I64  -> putWord8 9
-    Amount -> putWord8 10
-    AccountAddress  -> putWord8 11
-    ContractAddress -> putWord8 12
-    Pair a b  -> putWord8 13 <> put a <> put b
-    List sl a -> putWord8 14 <> put sl <> put a
-    Set sl a  -> putWord8 15 <> put sl <> put a
-    Map sl k v    -> putWord8 16 <> put sl <> put k <> put v
-    Array len a   -> putWord8 17 <> putWord32le len <> put a
-    Struct fields -> putWord8 18 <> put fields
-    Enum enum     -> putWord8 19 <> putListOfWith32leLen (putTwoOf putText put) enum
+    Unit -> S.putWord8 0
+    Bool -> S.putWord8 1
+    U8   -> S.putWord8 2
+    U16  -> S.putWord8 3
+    U32  -> S.putWord8 4
+    U64  -> S.putWord8 5
+    I8   -> S.putWord8 6
+    I16  -> S.putWord8 7
+    I32  -> S.putWord8 8
+    I64  -> S.putWord8 9
+    Amount -> S.putWord8 10
+    AccountAddress  -> S.putWord8 11
+    ContractAddress -> S.putWord8 12
+    Pair a b  -> S.putWord8 13 <> S.put a <> S.put b
+    List sl a -> S.putWord8 14 <> S.put sl <> S.put a
+    Set sl a  -> S.putWord8 15 <> S.put sl <> S.put a
+    Map sl k v    -> S.putWord8 16 <> S.put sl <> S.put k <> S.put v
+    Array len a   -> S.putWord8 17 <> S.putWord32le len <> S.put a
+    Struct fields -> S.putWord8 18 <> S.put fields
+    Enum enum     -> S.putWord8 19 <> putListOfWith32leLen (S.putTwoOf putText S.put) enum
 
 -- |Parallel to SizeLength defined in contracts-common (Rust).
 -- Must stay in sync.
@@ -218,21 +215,21 @@ instance ToJSON SizeLength where
 
 instance Hashable SizeLength
 
-instance Serialize SizeLength where
-  get = label "SizeLength" $ do
-    tag <- label "tag" getWord8
+instance S.Serialize SizeLength where
+  get = S.label "SizeLength" $ do
+    tag <- S.label "tag" S.getWord8
     case tag of
-      0 -> label "LenU8"  $ pure LenU8
-      1 -> label "LenU16" $ pure LenU16
-      2 -> label "LenU32" $ pure LenU32
-      3 -> label "LenU64" $ pure LenU64
+      0 -> S.label "LenU8"  $ pure LenU8
+      1 -> S.label "LenU16" $ pure LenU16
+      2 -> S.label "LenU32" $ pure LenU32
+      3 -> S.label "LenU64" $ pure LenU64
       x  -> fail [i|Invalid SizeLength tag: #{x}|]
 
   put sizeLen = case sizeLen of
-    LenU8 -> putWord8 0
-    LenU16 -> putWord8 1
-    LenU32 -> putWord8 2
-    LenU64 -> putWord8 3
+    LenU8 -> S.putWord8 0
+    LenU16 -> S.putWord8 1
+    LenU32 -> S.putWord8 2
+    LenU64 -> S.putWord8 3
 
 -- |This is returned by the node and specified in Concordium.Getters (from prototype repo).
 -- Must stay in sync.
@@ -264,94 +261,97 @@ instance FromJSON Info where
     iMethods      <- v .: "methods"
     iName         <- v .: "name"
     iSourceModule <- v .: "sourceModule"
-    pure Info{..}
+    return Info{..}
     where decodeBase16 xs =
             let (parsed, remaining) = BS16.decode . Text.encodeUtf8 $ xs in
               if BS.null remaining
-              then pure parsed
+              then return parsed
               else fail [i|Invalid model. Parsed: '#{parsed}', but failed on the remaining: '#{remaining}'|]
 
+-- |State of the smart contract.
 data Model =
-    WithSchema Module AE.Value  -- ^ The schema and the decoded contract state.
-  | JustBytes ByteString        -- ^ The binary-encoded contract state.
+    WithSchema !Module !AE.Value  -- ^ The schema and the decoded contract state.
+  | JustBytes !ByteString        -- ^ The binary-encoded contract state.
   deriving (Eq, Show)
 
--- |Wrapper for Concordium.Types.Amount that uses a little-endian encoding.
+-- |Wrapper for Concordium.Types.Amount that uses a little-endian encoding
+-- for binary serialization. Show and JSON instances are inherited from
+-- the Amount type.
 newtype AmountLE = AmountLE T.Amount
   deriving Eq
   deriving newtype (FromJSON, Show, ToJSON)
 
-instance Serialize AmountLE where
-  get = label "AmountLE" $ AmountLE . T.Amount <$> getWord64le
-  put (AmountLE T.Amount{..}) = putWord64le _amount
+instance S.Serialize AmountLE where
+  get = S.label "AmountLE" $ AmountLE . T.Amount <$> S.getWord64le
+  put (AmountLE T.Amount{..}) = S.putWord64le _amount
 
 -- ** Get and Put JSON **
 
-getModelAsJSON :: Contract -> Get AE.Value
+getModelAsJSON :: Contract -> S.Get AE.Value
 getModelAsJSON Contract{..} = do
   state' <- case state of
       Nothing    -> return AE.Null
       Just typ -> getValueAsJSON typ
   return $ AE.object ["state" .= state', "init" .= initSig, "receive" .= receiveSigs]
 
-getValueAsJSON :: SchemaType -> Get AE.Value
+getValueAsJSON :: SchemaType -> S.Get AE.Value
 getValueAsJSON typ = case typ of
   Unit -> return AE.Null
-  Bool -> AE.Bool <$> get
-  U8   -> AE.toJSON <$> getWord8
-  U16  -> AE.toJSON <$> getWord16le
-  U32  -> AE.toJSON <$> getWord32le
-  U64  -> AE.toJSON <$> getWord64le
-  I8   -> AE.toJSON <$> getInt8
-  I16  -> AE.toJSON <$> getInt16le
-  I32  -> AE.toJSON <$> getInt32le
-  I64  -> AE.toJSON <$> getInt64le
-  Amount -> AE.toJSON <$> (get :: Get AmountLE)
-  AccountAddress  -> AE.toJSON <$> (get :: Get T.AccountAddress)
+  Bool -> AE.Bool <$> S.get
+  U8   -> AE.toJSON <$> S.getWord8
+  U16  -> AE.toJSON <$> S.getWord16le
+  U32  -> AE.toJSON <$> S.getWord32le
+  U64  -> AE.toJSON <$> S.getWord64le
+  I8   -> AE.toJSON <$> S.getInt8
+  I16  -> AE.toJSON <$> S.getInt16le
+  I32  -> AE.toJSON <$> S.getInt32le
+  I64  -> AE.toJSON <$> S.getInt64le
+  Amount -> AE.toJSON <$> (S.get :: S.Get AmountLE)
+  AccountAddress  -> AE.toJSON <$> (S.get :: S.Get T.AccountAddress)
   ContractAddress -> AE.toJSON <$>
-    (T.ContractAddress <$> (T.ContractIndex <$> getWord64le) <*> (T.ContractSubindex <$> getWord64le))
+    (T.ContractAddress <$> (T.ContractIndex <$> S.getWord64le) <*> (T.ContractSubindex <$> S.getWord64le))
   Pair a b -> do
     l <- getValueAsJSON a
     r <- getValueAsJSON b
     return $ AE.toJSON [l, r]
   List sl elemType -> AE.toJSON <$> getListOfWithSizeLen sl (getValueAsJSON elemType)
   Set sl elemType  -> AE.toJSON <$> getListOfWithSizeLen sl (getValueAsJSON elemType)
-  Map sl keyType valType -> AE.toJSON <$> getListOfWithSizeLen sl (getTwoOf (getValueAsJSON keyType) (getValueAsJSON valType))
+  Map sl keyType valType -> AE.toJSON <$> getListOfWithSizeLen sl (S.getTwoOf (getValueAsJSON keyType) (getValueAsJSON valType))
   Array len elemType     -> AE.toJSON <$> getListOfWithKnownLen len (getValueAsJSON elemType)
   Struct fields -> AE.toJSON <$> getFieldsAsJSON fields
   Enum variants -> do
     idx <- if length variants <= 255
-           then fromIntegral <$> getWord8
-           else fromIntegral <$> getWord32le
+           then fromIntegral <$> S.getWord8
+           else fromIntegral <$> S.getWord32le
     (name, fields) <- case variants ^? ix idx of
                       Just v -> return v
                       Nothing -> fail [i|Variant with index #{idx} does not exist for Enum.|]
     fields' <- getFieldsAsJSON fields
     return $ AE.object [name .= fields']
   where
-    getFieldsAsJSON :: Fields -> Get AE.Value
+    getFieldsAsJSON :: Fields -> S.Get AE.Value
     getFieldsAsJSON fields = case fields of
       Named pairs -> AE.toJSON . Map.fromList <$> mapM getPair pairs
       Unnamed xs  -> AE.toJSON <$> mapM getValueAsJSON xs
-      Empty       -> return $ AE.Array mempty
+      None       -> return $ AE.Array mempty
       where getPair (k, v) = (k,) <$> getValueAsJSON v
 
-putJSONParams :: SchemaType -> AE.Value -> Either String Put
+putJSONParams :: SchemaType -> AE.Value -> Either String S.Put
 putJSONParams typ json = case (typ, json) of
   (Unit, AE.Null)     -> pure mempty
-  (Bool, AE.Bool b)   -> pure $ put b
-  (U8,   AE.Number x) -> putWord8    <$> fromScientific x U8
-  (U16,  AE.Number x) -> putWord16le <$> fromScientific x U16
-  (U32,  AE.Number x) -> putWord32le <$> fromScientific x U32
-  (U64,  AE.Number x) -> putWord64le <$> fromScientific x U64
-  (I8,   AE.Number x) -> putInt8     <$> fromScientific x I8
-  (I16,  AE.Number x) -> putInt16le  <$> fromScientific x I16
-  (I32,  AE.Number x) -> putInt32le  <$> fromScientific x I32
-  (I64,  AE.Number x) -> putInt64le  <$> fromScientific x I64
+  (Bool, AE.Bool b)   -> pure $ S.put b
+  (U8,   AE.Number x) -> S.putWord8    <$> fromScientific x U8
+  (U16,  AE.Number x) -> S.putWord16le <$> fromScientific x U16
+  (U32,  AE.Number x) -> S.putWord32le <$> fromScientific x U32
+  (U64,  AE.Number x) -> S.putWord64le <$> fromScientific x U64
+  (I8,   AE.Number x) -> S.putInt8     <$> fromScientific x I8
+  (I16,  AE.Number x) -> S.putInt16le  <$> fromScientific x I16
+  (I32,  AE.Number x) -> S.putInt32le  <$> fromScientific x I32
+  (I64,  AE.Number x) -> S.putInt64le  <$> fromScientific x I64
 
-  (Amount, amt@(AE.String _)) -> addTraceInfo $ (put :: Putter AmountLE) <$> (resToEither . AE.fromJSON $ amt)
+  (Amount, amt@(AE.String _)) -> addTraceInfo $ (S.put :: S.Putter AmountLE) <$> (resToEither . AE.fromJSON $ amt)
 
-  (AccountAddress, v@(AE.String _)) -> addTraceInfo $ (put :: Putter T.AccountAddress) <$> AE.parseEither AE.parseJSON v
+  (AccountAddress, v@(AE.String _)) -> addTraceInfo $ (S.put :: S.Putter T.AccountAddress) <$> AE.parseEither AE.parseJSON v
 
   (ContractAddress, AE.Object obj) -> addTraceInfo $ case HM.toList obj of
     [("index", AE.Number idx)] -> putContrAddr idx 0
@@ -403,8 +403,8 @@ putJSONParams typ json = case (typ, json) of
       Nothing -> Left [i|Enum variant '#{name}' does not exist in:\n#{showPrettyJSON enum}|]
       Just (fieldTypes, idx) -> do
         let putLen = if length variants <= 255
-                       then putWord8 $ fromIntegral idx
-                       else putWord32le $ fromIntegral idx
+                       then S.putWord8 $ fromIntegral idx
+                       else S.putWord32le $ fromIntegral idx
         putJSONFields' <- putJSONFields fieldTypes fields `addTraceInfoOf` [i|In enum variant '#{name}'.|]
         pure $ putLen <> putJSONFields'
     _ -> Left [i|#{obj} had too many fields. It should contain a single variant of the following enum:\n#{showPrettyJSON enum}.|]
@@ -412,7 +412,7 @@ putJSONParams typ json = case (typ, json) of
   (type_, value) -> Left [i|Expected value of type #{showCompactPrettyJSON type_}, but got: #{showCompactPrettyJSON value}.|]
 
   where
-    putJSONFields :: Fields -> AE.Value -> Either String Put
+    putJSONFields :: Fields -> AE.Value -> Either String S.Put
     putJSONFields fields val = case (fields, val) of
       (Named pairs, AE.Object obj) -> do
         let ls = HM.toList obj
@@ -433,23 +433,23 @@ putJSONParams typ json = case (typ, json) of
         putUnnamed <- zipWithM putJSONParams types ls `addTraceInfoOf` [i|In #{showPrettyJSON vec}.|]
         pure . sequence_ $ putUnnamed
 
-      (Empty, AE.Array vec) -> if V.null vec
+      (None, AE.Array vec) -> if V.null vec
                                 then pure mempty
-                                else Left [i|Expected an empty array to represent Empty, but got: #{showCompactPrettyJSON val}.|]
+                                else Left [i|Expected an empty array to represent None, but got: #{showCompactPrettyJSON val}.|]
 
       (type_, value) -> Left [i|Expected value of type #{showCompactPrettyJSON type_}, but got: #{showCompactPrettyJSON value}.|]
 
-    putListLike :: SizeLength -> SchemaType -> [AE.Value] -> Either String Put
+    putListLike :: SizeLength -> SchemaType -> [AE.Value] -> Either String S.Put
     putListLike sl elemType xs = do
       let putLen = putLenWithSizeLen sl $ length xs
       putElems <- mapM (putJSONParams elemType) xs
       pure . sequence_ $ putLen : putElems
 
-    putContrAddr :: Scientific -> Scientific -> Either String Put
+    putContrAddr :: Scientific -> Scientific -> Either String S.Put
     putContrAddr idx subidx = do
       idx' <- fromScientific idx U64
       subidx' <- fromScientific subidx U64
-      pure $ putWord64le idx' <> putWord64le subidx'
+      pure $ S.putWord64le idx' <> S.putWord64le subidx'
 
     -- |The `SchemaType` should be a type of number.
     fromScientific :: (Integral i, Bounded i) => Scientific -> SchemaType -> Either String i
@@ -464,14 +464,14 @@ putJSONParams typ json = case (typ, json) of
 
     maxSizeLen :: SizeLength -> Integer
     maxSizeLen = \case
-      LenU8 -> 255
-      LenU16 -> 65_535
-      LenU32 -> 4_294_967_295
-      LenU64 -> 18_446_744_073_709_551_615
+      LenU8 -> toInteger (maxBound :: Word8)
+      LenU16 -> toInteger (maxBound :: Word16)
+      LenU32 -> toInteger (maxBound :: Word32)
+      LenU64 -> toInteger (maxBound :: Word64)
 
     lookupAndPut :: [(Text, SchemaType)]     -- ^ The names and types for Named Fields.
                  -> (Text, AE.Value)         -- ^ A field name and a value.
-                 -> Either String (Int, Put) -- ^ The index of the field in the particular Named Fields,
+                 -> Either String (Int, S.Put) -- ^ The index of the field in the particular Named Fields,
                                              --   used for subsequent ordering,
                                              --   and a putter for the value (or an error message).
     lookupAndPut types (name, value) = case lookupItemAndIndex name types of
@@ -502,26 +502,35 @@ putJSONParams typ json = case (typ, json) of
 
 -- ** Schema from Module **
 
-getEmbeddedSchemaFromModule :: Get Module
+-- |4 bytes that start every valid Wasm module in binary.
+wasmMagicHash :: ByteString
+wasmMagicHash = BS.pack [0x00, 0x61, 0x73, 0x6D]
+
+-- |The currently supported version of the Wasm specification.
+wasmVersion :: ByteString
+wasmVersion = BS.pack [0x01, 0x00, 0x00, 0x00]
+
+getEmbeddedSchemaFromModule :: S.Get Module
 getEmbeddedSchemaFromModule = do
-  label "Magic"   $ S.skip 4
-  label "Version" $ S.skip 4
+  mhBs <- S.getByteString 4
+  unless (mhBs == wasmMagicHash) $ fail "Unknown magic value. This is likely not a Wasm module."
+  vBs <- S.getByteString 4
+  unless (vBs == wasmVersion) $ fail "Unsupported Wasm version."
   go
 
   where
-    go :: Get Module
+    go :: S.Get Module
     go = do
       isEmpty <- S.isEmpty
       -- Not all modules contain a schema.
       when isEmpty $ fail "Module does not contain a schema."
-      sectionId <- label "sectionId" getWord8
-      sectionSize <- label "sectionSize" $ fromIntegral <$> getLEB128Word32le
+      sectionId <- S.label "sectionId" S.getWord8
+      sectionSize <- S.label "sectionSize" $ fromIntegral <$> getLEB128Word32le
       if sectionId == 0
       then do
-        name <- label "Custom Section Name" getTextWithLEB128Len
+        name <- S.label "Custom Section Name" getTextWithLEB128Len
         if name == "concordium-schema-v1"
-        then do
-          get
+        then S.get
         else S.skip sectionSize *> go
       else S.skip sectionSize *> go
 
@@ -529,58 +538,59 @@ getEmbeddedSchemaFromModule = do
 
 -- * List *
 
--- Nearly identical to Data.Serialize.getListOf implementation (except for length).
-getListOfWithKnownLen :: Integral len => len -> Get a -> Get [a]
-getListOfWithKnownLen len ga = label "List of known length" $ go [] len
+-- |Nearly identical to Data.Serialize.getListOf implementation (except for length).
+getListOfWithKnownLen :: Integral len => len -> S.Get a -> S.Get [a]
+getListOfWithKnownLen len ga = S.label "List of known length" $ go [] len
   where
     go as 0 = return $! reverse as
     go as l = do x <- ga
                  x `seq` go (x:as) (l - 1)
 
-getListOfWithSizeLen :: SizeLength -> Get a -> Get [a]
-getListOfWithSizeLen sl ga = label "List" $ do
-  len :: Integer <- label "Length" $ case sl of
-    LenU8  -> fromIntegral <$> getWord8
-    LenU16 -> fromIntegral <$> getWord16le
-    LenU32 -> fromIntegral <$> getWord32le
-    LenU64 -> fromIntegral <$> getWord64le
-  label [i|#{len} elements|] $ getListOfWithKnownLen len ga
+getListOfWithSizeLen :: SizeLength -> S.Get a -> S.Get [a]
+getListOfWithSizeLen sl ga = S.label "List" $ do
+  len <- S.label "Length" $ case sl of
+    LenU8  -> toInteger <$> S.getWord8
+    LenU16 -> toInteger <$> S.getWord16le
+    LenU32 -> toInteger <$> S.getWord32le
+    LenU64 -> toInteger <$> S.getWord64le
+  S.label [i|#{len} elements|] $ getListOfWithKnownLen len ga
 
-getListOfWith32leLen :: Get a -> Get [a]
+getListOfWith32leLen :: S.Get a -> S.Get [a]
 getListOfWith32leLen = getListOfWithSizeLen LenU32
 
-putListOfWithSizeLen :: SizeLength -> Putter a -> Putter [a]
+putListOfWithSizeLen :: SizeLength -> S.Putter a -> S.Putter [a]
 putListOfWithSizeLen sl pa ls = do
   putLenWithSizeLen sl $ length ls
   mapM_ pa ls
 
-putLenWithSizeLen :: SizeLength -> Putter Int
+putLenWithSizeLen :: SizeLength -> S.Putter Int
 putLenWithSizeLen sl len = case sl of
-  LenU8  -> putWord8    $ fromIntegral len
-  LenU16 -> putWord16le $ fromIntegral len
-  LenU32 -> putWord32le $ fromIntegral len
-  LenU64 -> putWord64le $ fromIntegral len
+  LenU8  -> S.putWord8    $ fromIntegral len
+  LenU16 -> S.putWord16le $ fromIntegral len
+  LenU32 -> S.putWord32le $ fromIntegral len
+  LenU64 -> S.putWord64le $ fromIntegral len
 
-putListOfWith32leLen :: Putter a -> Putter [a]
+putListOfWith32leLen :: S.Putter a -> S.Putter [a]
 putListOfWith32leLen = putListOfWithSizeLen LenU32
 
 
 -- * Map *
 
-getMapOfWith32leLen :: Ord k => Get k -> Get v -> Get (Map k v)
-getMapOfWith32leLen gt gv = label "Map" $ Map.fromList <$> getListOfWith32leLen (getTwoOf gt gv)
+getMapOfWith32leLen :: Ord k => S.Get k -> S.Get v -> S.Get (Map k v)
+getMapOfWith32leLen gt gv = S.label "Map" $ Map.fromList <$> getListOfWith32leLen (S.getTwoOf gt gv)
 
-putMapOfWith32leLen :: Putter k -> Putter v -> Putter (Map k v)
-putMapOfWith32leLen pv pk = putListOfWith32leLen (putTwoOf pv pk) . Map.toList
+putMapOfWith32leLen :: S.Putter k -> S.Putter v -> S.Putter (Map k v)
+putMapOfWith32leLen pv pk = putListOfWith32leLen (S.putTwoOf pv pk) . Map.toList
 
 
 -- * LEB128 *
 
--- |Get a little-endian LEB128-encoded Word32 (might use fewer bytes).
-getLEB128Word32le :: Get Word32
-getLEB128Word32le = label "Word32LEB128" $ decode7 0 5 1
+-- |Get a LEB128-encoded Word32. This uses an encoding compatible with the Wasm standard,
+-- which means that the encoding will use at most 5 bytes.
+getLEB128Word32le :: S.Get Word32
+getLEB128Word32le = S.label "Word32LEB128" $ decode7 0 5 1
   where
-    decode7 :: Word64 -> Word8 -> Word64 -> Get Word32
+    decode7 :: Word64 -> Word8 -> Word64 -> S.Get Word32
     decode7 acc left multiplier = do
       unless (left > 0) $ fail "Section size byte overflow"
       byte <- S.getWord8
@@ -594,31 +604,34 @@ getLEB128Word32le = label "Word32LEB128" $ decode7 0 5 1
 
 -- * Text *
 
-getText :: Get Text
+-- |Read text where length is serialized as little-endian 4-byte value.
+-- This tries to decode the bytes in utf8 encoding, signalling failure
+-- if the byte sequence is not valid utf8.
+getText :: S.Get Text
 getText = do
-  txt <- label "Text" $ Text.decodeUtf8' . BS.pack <$> getListOfWith32leLen get
+  txt <- S.label "Text" $ Text.decodeUtf8' . BS.pack <$> getListOfWith32leLen S.get
   case txt of
     Left err -> fail [i|Could not decode Text: #{err}|]
     Right txt' -> pure txt'
 
-putText :: Putter Text
-putText = putListOfWithSizeLen LenU32 put . BS.unpack . Text.encodeUtf8
+-- |Serialize text in utf8 encoding. The length it output as
+-- 4 bytes, little endian.
+putText :: S.Putter Text
+putText = putListOfWithSizeLen LenU32 S.put . BS.unpack . Text.encodeUtf8
 
-getTextWithLEB128Len :: Get Text
-getTextWithLEB128Len = label "Text with LEB128 Length" $ do
+getTextWithLEB128Len :: S.Get Text
+getTextWithLEB128Len = S.label "Text with LEB128 Length" $ do
   len <- getLEB128Word32le
-  txt <- Text.decodeUtf8' . BS.pack <$> getListOfWithKnownLen len get
+  txt <- Text.decodeUtf8' . BS.pack <$> getListOfWithKnownLen len S.get
   case txt of
     Left err -> fail [i|Could not decode Text with LEB128 len: #{err}|]
     Right txt' -> pure txt'
 
 -- |Get a contract name from an InitName, i.e. extracting the text and removing the "init_" prefix.
--- If the stripping the prefix fails, it simply returns the extracted text
+-- If stripping the prefix fails, it simply returns the extracted text
 -- (this should never happen, unless the InitName was incorrectly constructed).
 contractNameFromInitName :: Wasm.InitName -> Text
-contractNameFromInitName initName = case Text.stripPrefix "init_" initNameText of
-  Nothing -> initNameText
-  Just contrName -> contrName
+contractNameFromInitName initName = fromMaybe initNameText (Text.stripPrefix "init_" initNameText)
   where initNameText = Wasm.initName initName
 
 -- |Get a method name from a Receive name, i.e. extracting the text and removing the "<contractName>." prefix.
@@ -655,8 +668,8 @@ decodeSchema = S.decode
 
 -- |A function name for a function inside a smart contract.
 data FuncName
-  = InitName Text -- ^ Name of an init function.
-  | ReceiveName Text Text -- ^ Name of a receive function.
+  = InitName !Text -- ^ Name of an init function.
+  | ReceiveName !Text !Text -- ^ Name of a receive function.
   deriving Eq
 
 -- |Tries to find the signature, i.e. `SchemaType`, for a function by its name.

@@ -833,7 +833,7 @@ contractInitCmd =
         optional (strOption (long "name" <> metavar "NAME" <> help "Name for the contract.")) <*>
         switch (long "path" <> help "Use when MODULE is a path to a module file.") <*>
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> value 0
-                                                                <> help "Amount of GTU to transfer to the contract.") <*>
+                                                      <> help "Amount of GTU to transfer to the contract.") <*>
         requiredEnergyTransactionOptsParser)
       (progDesc "Initialize contract from already deployed module, optionally naming the contract."))
 
