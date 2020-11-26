@@ -1612,11 +1612,13 @@ processContractCmd action baseCfgDir verbose backend =
       ciCfg <- getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath contrName
                 paramsFileJSON paramsFileBinary schemaFile amount
       let txCfg = citcTransactionCfg ciCfg
+      let energy = tcEnergy txCfg
+      let expiryTs = tcExpiry txCfg
 
-
-      let nrg = tcEnergy txCfg
       logInfo [ [i|initialize contract '#{contrName}' from module '#{citcModuleRef ciCfg}' with |]
-                  ++ paramsMsg paramsFileJSON paramsFileBinary ++ " Costing at most " ++ showNrg nrg]
+                  ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{citcAmount ciCfg} GTU.|]
+              , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
+              , [i|transaction expires at #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
 
       initConfirmed <- askConfirmation Nothing
 
@@ -1640,10 +1642,13 @@ processContractCmd action baseCfgDir verbose backend =
       cuCfg <- getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex contrName
                 receiveName paramsFileJSON paramsFileBinary schemaFile amount
       let txCfg = cutcTransactionCfg cuCfg
+      let energy = tcEnergy txCfg
+      let expiryTs = tcExpiry txCfg
 
-      let nrg = tcEnergy txCfg
       logInfo [ [i|update contract '#{contrName}' using the function '#{receiveName}' with |]
-                  ++ paramsMsg paramsFileJSON paramsFileBinary ++ " Costing at most " ++ showNrg nrg]
+                  ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{cutcAmount cuCfg} GTU.|]
+              , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
+              , [i|transaction expires at #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
 
       updateConfirmed <- askConfirmation Nothing
 
