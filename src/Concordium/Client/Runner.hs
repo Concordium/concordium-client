@@ -1474,19 +1474,33 @@ processModuleCmd action baseCfgDir verbose backend =
       mdCfg <- getModuleDeployTransactionCfg baseCfg txOpts modFile
       let txCfg = mdtcTransactionCfg mdCfg
 
-      let intOpts = toInteractionOpts txOpts
-      let pl = moduleDeployTransactionPayload mdCfg
-      withClient backend $ do
-        mTsr <- sendAndTailTransaction txCfg pl intOpts
-        case extractModRef mTsr of
-          Left "ioTail disabled" -> return ()
-          Left err -> logFatal ["module deployment failed:", err]
-          Right modRef -> do
-            case modName of
-              Nothing -> return ()
-              Just modName' -> addModuleNameAndWrite verbose baseCfg modName' modRef
-            let namedModRef = NamedModuleRef {nmrRef = modRef, nmrName = modName}
-            logSuccess [[i|module successfully deployed with reference: #{namedModRef}|]]
+      let nrg = tcEnergy txCfg
+
+      let msgIntro = case modName of
+            Nothing -> [i|deploy the module '#{modFile}'|]
+            Just modName' -> [i|deploy the module '#{modFile}' and name it '#{modName'}'|]
+      logInfo [ msgIntro
+              , "it will cost " ++ showNrg nrg]
+
+      deployConfirmed <- askConfirmation Nothing
+
+      when deployConfirmed $ do
+          logInfo ["deploying module..."]
+
+          let intOpts = toInteractionOpts txOpts
+          let pl = moduleDeployTransactionPayload mdCfg
+
+          withClient backend $ do
+            mTsr <- sendAndTailTransaction txCfg pl intOpts
+            case extractModRef mTsr of
+              Left "ioTail disabled" -> return ()
+              Left err -> logFatal ["module deployment failed:", err]
+              Right modRef -> do
+                case modName of
+                  Nothing -> return ()
+                  Just modName' -> addModuleNameAndWrite verbose baseCfg modName' modRef
+                let namedModRef = NamedModuleRef {nmrRef = modRef, nmrName = modName}
+                logSuccess [[i|module successfully deployed with reference: #{namedModRef}|]]
 
     ModuleList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1599,19 +1613,27 @@ processContractCmd action baseCfgDir verbose backend =
                 paramsFileJSON paramsFileBinary schemaFile amount
       let txCfg = citcTransactionCfg ciCfg
 
-      let intOpts = toInteractionOpts txOpts
-      let pl = contractInitTransactionPayload ciCfg
-      withClient backend $ do
-        mTsr <- sendAndTailTransaction txCfg pl intOpts
-        case extractContractAddress mTsr of
-          Left "ioTail disabled" -> return ()
-          Left err -> logFatal ["contract initialisation failed:", err]
-          Right contrAddr -> do
-            case contrAlias of
-              Nothing -> return ()
-              Just contrAlias' -> addContractNameAndWrite verbose baseCfg contrAlias' contrAddr
-            let namedContrAddr = NamedContractAddress {ncaAddr = contrAddr, ncaName = contrAlias}
-            logSuccess [[i|contract successfully initialized with address: #{namedContrAddr}|]]
+
+      let nrg = tcEnergy txCfg
+      logInfo [ [i|initialize contract '#{contrName}' from module '#{citcModuleRef ciCfg}' with |]
+                  ++ paramsMsg paramsFileJSON paramsFileBinary ++ " Costing at most " ++ showNrg nrg]
+
+      initConfirmed <- askConfirmation Nothing
+
+      when initConfirmed $ do
+        let intOpts = toInteractionOpts txOpts
+        let pl = contractInitTransactionPayload ciCfg
+        withClient backend $ do
+          mTsr <- sendAndTailTransaction txCfg pl intOpts
+          case extractContractAddress mTsr of
+            Left "ioTail disabled" -> return ()
+            Left err -> logFatal ["contract initialisation failed:", err]
+            Right contrAddr -> do
+              case contrAlias of
+                Nothing -> return ()
+                Just contrAlias' -> addContractNameAndWrite verbose baseCfg contrAlias' contrAddr
+              let namedContrAddr = NamedContractAddress {ncaAddr = contrAddr, ncaName = contrAlias}
+              logSuccess [[i|contract successfully initialized with address: #{namedContrAddr}|]]
 
     ContractUpdate indexOrName subindex contrName receiveName paramsFileJSON paramsFileBinary schemaFile amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1619,9 +1641,16 @@ processContractCmd action baseCfgDir verbose backend =
                 receiveName paramsFileJSON paramsFileBinary schemaFile amount
       let txCfg = cutcTransactionCfg cuCfg
 
-      let intOpts = toInteractionOpts txOpts
-      let pl = contractUpdateTransactionPayload cuCfg
-      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+      let nrg = tcEnergy txCfg
+      logInfo [ [i|update contract '#{contrName}' using the function '#{receiveName}' with |]
+                  ++ paramsMsg paramsFileJSON paramsFileBinary ++ " Costing at most " ++ showNrg nrg]
+
+      updateConfirmed <- askConfirmation Nothing
+
+      when updateConfirmed $ do
+        let intOpts = toInteractionOpts txOpts
+        let pl = contractUpdateTransactionPayload cuCfg
+        withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     ContractName index subindex contrName block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1639,6 +1668,12 @@ processContractCmd action baseCfgDir verbose backend =
   where extractContractAddress = extractFromTsr (\case
                                                  Types.ContractInitialized {..} -> Just ecAddress
                                                  _ -> Nothing)
+        paramsMsg paramsFileJSON paramsFileBinary = case (paramsFileJSON, paramsFileBinary) of
+            (Nothing, Nothing) -> "no parameters."
+            (Nothing, Just binFile) -> [i|binary parameters from '#{binFile}'.|]
+            (Just jsonFile, Nothing) -> [i|JSON parameters from '#{jsonFile}'.|]
+            -- This case should already have failed while creating the config.
+            _ -> ""
 
 -- |Try to fetch info about the contract and deserialize it from JSON.
 -- Or, log fatally with appropriate error messages if anything goes wrong.

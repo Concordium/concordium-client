@@ -54,10 +54,6 @@ import Data.Word (Word8, Word32, Word64)
 import GHC.Generics
 import Lens.Micro.Platform ((^?), ix)
 
-
-import Concordium.ID.Types (addressFromText)
-import Concordium.Crypto.SHA256 as SHA256
-
 -- ** Data Types and Instances **
 
 -- |Parallel to Module defined in contracts-common (Rust).
