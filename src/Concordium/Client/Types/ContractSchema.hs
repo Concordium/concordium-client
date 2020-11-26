@@ -11,7 +11,6 @@ module Concordium.Client.Types.ContractSchema
   , lookupSignatureForFunc
   , methodNameFromReceiveName
   , putJSONParams
-  , runGetVersionedModuleSource
   , serializeParams
   , Contract(..)
   , Fields(..)
@@ -526,14 +525,6 @@ getEmbeddedSchemaFromModule = do
         else S.skip sectionSize *> go
       else S.skip sectionSize *> go
 
--- |Extract the WASM version, our API version, and the module source.
-getVersionedModuleSource :: Get (Word32, ByteString)
-getVersionedModuleSource = do
-  version <- label "WASM Version" getWord32le
-  sourceLen <- label "Length of Module Source" $ fromIntegral <$> S.getWord32be
-  modSource <- label "Module Source" $ S.getBytes sourceLen
-  pure (version, modSource)
-
 -- ** Helpers **
 
 -- * List *
@@ -675,7 +666,3 @@ lookupSignatureForFunc Module{..} funcName = case funcName of
   ReceiveName contrName receiveName -> do
     contract <- Map.lookup contrName contracts
     Map.lookup receiveName (receiveSigs contract)
-
--- |Tries to parse a versioned module source from a bytestring.
-runGetVersionedModuleSource :: ByteString -> Either String (Word32, ByteString)
-runGetVersionedModuleSource = S.runGet getVersionedModuleSource
