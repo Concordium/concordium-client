@@ -76,6 +76,7 @@ import qualified Concordium.Wasm                     as Wasm
 import           Proto.ConcordiumP2pRpc
 import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 
+import           Control.Exception
 import           Control.Monad.Fail
 import           Control.Monad.Except
 import           Control.Monad.Reader                hiding (fail)
@@ -106,33 +107,34 @@ import qualified Data.Vector                         as Vec
 import           Data.Word
 import           Lens.Micro.Platform
 import           Network.GRPC.Client.Helpers
-import           Network.HTTP2.Client.Exceptions
 import           Prelude                             hiding (fail, unlines)
 import           System.IO
 import           System.Directory
 import           Text.Printf
 import           Text.Read (readMaybe)
 
-liftClientIOToM :: MonadIO m => ClientIO a -> ExceptT ClientError m a
-liftClientIOToM comp = do
-  r <- liftIO (runClientIO comp)
-  case r of
-    Left err  -> throwError err
-    Right res -> return res
-
-withClient :: MonadIO m => Backend -> ClientMonad m a -> m a
+-- |Establish a new connection to the backend and run the provided computation.
+-- Close a connection after completion of the computation. Establishing a
+-- connection is expensive, and thus if multiple RPC calls are going to be made
+-- they should be made in the context of the same 'withClient' so they reuse it.
+withClient :: Backend -> ClientMonad IO a -> IO a
 withClient bkend comp = do
-  r <- runExceptT $! do
-    let config = GrpcConfig (COM.grpcHost bkend) (COM.grpcPort bkend) (COM.grpcAuthenticationToken bkend) (COM.grpcTarget bkend) (COM.grpcRetryNum bkend) Nothing
-    client <- liftClientIOToM (mkGrpcClient config Nothing)
-    ret <- (runReaderT . _runClientMonad) comp $! client
-    liftClientIOToM (maybe (return ()) close =<< (liftIO . readIORef $ grpc client))
-    return ret
-  case r of
-    Left err -> error (show err)
-    Right x  -> return x
+  let config = GrpcConfig (COM.grpcHost bkend) (COM.grpcPort bkend) (COM.grpcAuthenticationToken bkend) (COM.grpcTarget bkend) (COM.grpcRetryNum bkend) Nothing
+  runExceptT (mkGrpcClient config Nothing) >>= \case
+      Left err -> logFatal ["Cannot establish connection to the node: " ++ show err]
+      Right client -> do
+        let body = runExceptT ((runReaderT . _runClientMonad) comp $! client) >>= \case
+              Left err -> fail (show err)
+              Right x -> return x
+        let closeOrFail Nothing = return ()
+            closeOrFail (Just ref) =
+              runExceptT (close ref) >>= \case
+                Left err -> logFatal ["Error closing connection: " ++ show err]
+                Right () -> return ()
+        let closeConnection = closeOrFail =<< (readIORef $ grpc client)
+        finally body closeConnection
 
-withClientJson :: (MonadIO m, FromJSON a) => Backend -> ClientMonad m (Either String Value) -> m a
+withClientJson :: (FromJSON a) => Backend -> ClientMonad IO (Either String Value) -> IO a
 withClientJson b c = withClient b c >>= getFromJson
 
 -- |Helper function for parsing JSON Value or fail if the value is missing or cannot be converted correctly.
@@ -1516,7 +1518,7 @@ processModuleCmd action baseCfgDir verbose backend =
     ModuleShow modRefOrName outFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedModRef <- getNamedModuleRef (bcModuleNameMap baseCfg) modRefOrName
-      Wasm.WasmModule{..} <- getWasmModule backend namedModRef block
+      Wasm.WasmModule{..} <- withClient backend . withBestBlockHash block $ getWasmModule namedModRef
       logInfo [[i|WASM Version of module: #{wasmVersion}|]]
       case outFile of
         -- Write to stdout
@@ -1529,7 +1531,7 @@ processModuleCmd action baseCfgDir verbose backend =
     ModuleInspect modRefOrName schemaFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedModRef <- getNamedModuleRef (bcModuleNameMap baseCfg) modRefOrName
-      schema <- getSchemaFromFileOrModule backend schemaFile (Right namedModRef) block
+      schema <- withClient backend . withBestBlockHash block $ getSchemaFromFileOrModule schemaFile (Right namedModRef)
       case schema of
         Nothing -> logInfo ["Inspection failed: no schema provided and module does not contain an embedded schema"]
         Just schema' -> logInfo [[i|Functions for module #{namedModRef}:|], showPrettyJSON schema']
@@ -1538,7 +1540,7 @@ processModuleCmd action baseCfgDir verbose backend =
       baseCfg <- getBaseConfig baseCfgDir verbose
       modRef <- getModuleRefFromRefOrFile modRefOrFile
       -- Get the module to ensure its existence, or fail trying.
-      _wasmMod <- getWasmModule backend (NamedModuleRef {nmrRef = modRef, nmrName = Nothing}) block
+      _wasmMod <- withClient backend . withBestBlockHash block $ getWasmModule (NamedModuleRef {nmrRef = modRef, nmrName = Nothing})
       -- The module exists, if we reach this far.
       addModuleNameAndWrite verbose baseCfg modName modRef
       logSuccess [[i|module reference #{modRef} was successfully named '#{modName}'|]]
@@ -1601,10 +1603,12 @@ processContractCmd action baseCfgDir verbose backend =
     ContractShow indexOrName subindex schemaFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-      contrInfo@ContractSchema.Info{..} <- getContractInfo backend namedContrAddr block
-      let namedModRef = NamedModuleRef {nmrRef = iSourceModule, nmrName = lookupByValue (bcModuleNameMap baseCfg) iSourceModule}
-      schema <- getSchemaFromFileOrModule backend schemaFile (Right namedModRef) block
-      let namedOwner = NamedAddress {naAddr = iOwner, naName = lookupByValue (bcAccountNameMap baseCfg) iOwner}
+      (schema, contrInfo, namedOwner, namedModRef) <- withClient backend . withBestBlockHash block $ \bb -> do
+        contrInfo@ContractSchema.Info{..} <- getContractInfo namedContrAddr bb
+        let namedModRef = NamedModuleRef {nmrRef = iSourceModule, nmrName = lookupByValue (bcModuleNameMap baseCfg) iSourceModule}
+        schema <- getSchemaFromFileOrModule schemaFile (Right namedModRef) bb
+        let namedOwner = NamedAddress {naAddr = iOwner, naName = lookupByValue (bcAccountNameMap baseCfg) iOwner}
+        return (schema, contrInfo, namedOwner, namedModRef)
       displayContractInfo schema contrInfo namedOwner namedModRef
 
     ContractInit modTBD contrName paramsFileJSON paramsFileBinary schemaFile contrAlias isPath amount txOpts -> do
@@ -1682,15 +1686,13 @@ processContractCmd action baseCfgDir verbose backend =
 
 -- |Try to fetch info about the contract and deserialize it from JSON.
 -- Or, log fatally with appropriate error messages if anything goes wrong.
-getContractInfo :: Backend -> NamedContractAddress -> Maybe Text -> IO ContractSchema.Info
-getContractInfo backend namedContrAddr block = do
-  (bestBlock, res) <- withClient backend $ withBestBlockHash block $
-    \bb -> (bb,) <$> getInstanceInfo (Text.pack . showCompactPrettyJSON . ncaAddr $ namedContrAddr) bb
-
+getContractInfo :: NamedContractAddress -> Text -> ClientMonad IO ContractSchema.Info
+getContractInfo namedContrAddr block = do
+  res <- getInstanceInfo (Text.pack . showCompactPrettyJSON . ncaAddr $ namedContrAddr) block
   case res of
     Left err -> logFatal ["I/O error:", err]
     -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
-    Right AE.Null -> logFatal [[i|the contract instance #{namedContrAddr} does not exist in block #{bestBlock}|]]
+    Right AE.Null -> logFatal [[i|the contract instance #{namedContrAddr} does not exist in block #{block}|]]
     Right contrInfo -> case AE.fromJSON contrInfo of
       Error err -> logFatal ["Could not decode contract info:", err]
       Success info -> pure info
@@ -1703,13 +1705,14 @@ displayContractInfo schema contrInfo namedOwner namedModRef = case schema of
     Left err' -> logFatal ["Parsing the contract model failed:", err']
     Right infoWithSchema -> runPrinter $ printContractInfo infoWithSchema namedOwner namedModRef
 
+-- FIXME: This needs documentation
 getContractUpdateTransactionCfg :: Backend -> BaseConfig -> TransactionOpts Types.Energy -> Text -> Maybe Word64 -> Text -> Text
                                 -> Maybe FilePath -> Maybe FilePath -> Maybe FilePath -> Types.Amount -> IO ContractUpdateTransactionCfg
 getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex contrName receiveName
                                 paramsFileJSON paramsFileBinary schemaFile amount = do
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-  ContractSchema.Info{iSourceModule = moduleRef} <- getContractInfo backend namedContrAddr Nothing
+  ContractSchema.Info{iSourceModule = moduleRef} <- withClient backend . withBestBlockHash Nothing $ getContractInfo namedContrAddr
   let namedModRef = NamedModuleRef {nmrRef = moduleRef, nmrName = Nothing}
   params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef)
             (ContractSchema.ReceiveName contrName receiveName)
@@ -1734,6 +1737,7 @@ data ContractUpdateTransactionCfg =
   , cutcAmount :: !Types.Amount
   }
 
+-- FIXME: This needs documentation
 getContractInitTransactionCfg :: Backend -> BaseConfig -> TransactionOpts Types.Energy -> String -> Bool -> Text -> Maybe FilePath
                               -> Maybe FilePath -> Maybe FilePath -> Types.Amount -> IO ContractInitTransactionCfg
 getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath contrName paramsFileJSON paramsFileBinary schemaFile amount = do
@@ -1744,17 +1748,21 @@ getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath contrName par
   params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef) (ContractSchema.InitName contrName)
   return $ ContractInitTransactionCfg txCfg amount (nmrRef namedModRef) (Wasm.InitName [i|init_#{contrName}|]) params
 
-getWasmModule :: Backend -> NamedModuleRef -> Maybe Text -> IO Wasm.WasmModule
-getWasmModule backend namedModRef block = do
-  (bestBlock, res) <- withClient backend $ withBestBlockHash block $
-    \bb -> (bb,) <$> getModuleSource (Text.pack . show . nmrRef $ namedModRef) bb
+-- |Query the node for a module reference, and parse the result.
+-- Terminate program execution if either the module cannot be obtained,
+-- or the result cannot be parsed.
+getWasmModule :: NamedModuleRef -- ^On-chain reference of the module.
+              -> Text -- ^Hash of the block to query in.
+              -> ClientMonad IO Wasm.WasmModule
+getWasmModule namedModRef block = do
+  res <- getModuleSource (Text.pack . show $ nmrRef namedModRef) block
 
   case res of
     Left err -> logFatal ["I/O error:", err]
-    Right "" -> logFatal [[i|the module reference #{namedModRef} does not exist in block #{bestBlock}|]]
+    Right "" -> logFatal [[i|the module reference #{namedModRef} does not exist in block #{block}|]]
     Right unparsedWasmMod -> case S.decode unparsedWasmMod of
       Left err' -> logFatal [[i|could not decode Wasm Module:|], err']
-      Right wasmMod -> pure wasmMod
+      Right wasmMod -> return wasmMod
 
 data ContractInitTransactionCfg =
   ContractInitTransactionCfg
@@ -1795,7 +1803,7 @@ getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile modSourceOrR
     (Nothing, Just binaryFile, Nothing) -> binaryParams binaryFile
     (_, Just binaryFile, Just _) -> logWarn ["ignoring the --schema as --parameter-bin was used"] *> binaryParams binaryFile
     (Just jsonFile', Nothing, _) -> do
-      schema <- getSchemaFromFileOrModule backend schemaFile modSourceOrRef Nothing
+      schema <- withClient backend . withBestBlockHash Nothing $ getSchemaFromFileOrModule schemaFile modSourceOrRef
       case schema of
         Nothing -> logFatal [[iii|could not parse the json parameter because the module does not include an embedded schema.
                                   Supply a schema using the --schema flag|]]
@@ -1817,19 +1825,17 @@ getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile modSourceOrR
 -- |Get a schema from a file or, alternative, try to extract an embedded schema from a module.
 -- Logs fatally if an invalid schema is found (either from a file or embedded).
 -- Only returns `Nothing` if no schemaFile is provided and no embedded schema was found in the module.
-getSchemaFromFileOrModule :: Backend -> Maybe FilePath -> Either BS.ByteString NamedModuleRef
-                          -> Maybe Text -> IO (Maybe ContractSchema.Module)
-getSchemaFromFileOrModule backend schemaFile modSourceOrRef block = case (schemaFile, modSourceOrRef) of
-  (Nothing, Left modSource) -> tryGetSchemaFromModuleSource modSource
+getSchemaFromFileOrModule :: Maybe FilePath -> Either BS.ByteString NamedModuleRef
+                          -> Text -> ClientMonad IO (Maybe ContractSchema.Module)
+getSchemaFromFileOrModule schemaFile modSourceOrRef block = case (schemaFile, modSourceOrRef) of
+  (Nothing, Left modSource) -> liftIO $ tryGetSchemaFromModuleSource modSource
   (Nothing, Right namedModRef) -> do
-    Wasm.WasmModule{..} <- getWasmModule backend namedModRef block
-    tryGetSchemaFromModuleSource wasmSource
-  (Just schemaFile', _) -> Just <$> getSchemaFromFile schemaFile'
+    Wasm.WasmModule{..} <- getWasmModule namedModRef block
+    liftIO $ tryGetSchemaFromModuleSource wasmSource
+  (Just schemaFile', _) -> liftIO (Just <$> getSchemaFromFile schemaFile')
   where tryGetSchemaFromModuleSource modSrc = case getSchemaFromModule modSrc of
-          -- TODO: relying on the specific string is fragile.
-          Left "Module does not contain a schema." -> pure Nothing
           Left err -> logFatal [[i|Could not parse embedded schema from module:|], err]
-          Right schema -> pure . Just $ schema
+          Right schema -> return schema
 
 -- |Load and decode a schema from a file.
 getSchemaFromFile :: FilePath -> IO ContractSchema.Module
@@ -1840,7 +1846,7 @@ getSchemaFromFile schemaFile = do
     Right schema' -> pure schema'
 
 -- |Try to extract and decode a schema from a module.
-getSchemaFromModule :: BS.ByteString -> Either String ContractSchema.Module
+getSchemaFromModule :: BS.ByteString -> Either String (Maybe ContractSchema.Module)
 getSchemaFromModule = ContractSchema.decodeEmbeddedSchema
 
 -- |Try to parse the input as a module reference and assume it is a path if it fails.
