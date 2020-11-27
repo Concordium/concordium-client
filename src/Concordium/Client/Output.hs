@@ -8,7 +8,8 @@ import Concordium.Client.Commands (Verbose)
 import Concordium.Client.Config
 import Concordium.Client.Parse
 import Concordium.Client.Types.Account
-import Concordium.Client.Types.ContractSchema as Contract
+import Concordium.Client.Types.Contract.Info as CI
+import Concordium.Client.Types.Contract.Schema as CS
 import Concordium.Client.Types.TransactionStatus
 import Concordium.Common.Version
 import Concordium.ID.Parameters
@@ -16,6 +17,7 @@ import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Types
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Crypto.EncryptedTransfers as Enc
+import qualified Concordium.Wasm as Wasm
 
 import Control.Monad.Writer
 import qualified Data.Aeson as AE
@@ -28,7 +30,7 @@ import Data.List
 import Data.Maybe
 import qualified Data.Map.Strict as M
 import Data.String.Interpolate (i)
-import Data.Text (Text, pack, unpack)
+import Data.Text (Text, pack, unpack, split)
 import Data.Time
 import Lens.Micro.Platform
 import Text.Printf
@@ -268,8 +270,8 @@ printNameList variantName header format xs =
 -- |Print contract info using a provided namedAddress and namedModRef.
 -- Since ContractInfo comes directly from the node, the names are not included and must
 -- be provided separately.
-printContractInfo :: Contract.Info -> NamedAddress -> NamedModuleRef -> Printer
-printContractInfo Contract.Info{..} namedOwner namedModRef = do
+printContractInfo :: CI.ContractInfo -> NamedAddress -> NamedModuleRef -> Printer
+printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
   tell [ [i|Contract:        #{contractName}|]
        , [i|Owner:           #{owner}|]
        , [i|ModuleReference: #{namedModRef}|]
@@ -278,28 +280,37 @@ printContractInfo Contract.Info{..} namedOwner namedModRef = do
   tell [ [i|Methods:|]]
   tellMethods
   where
-    contractName = Contract.contractNameFromInitName iName
+    contractName = CI.contractNameFromInitName ciName
     owner = showNamedAddress namedOwner
-    state = case iModel of
-      Contract.JustBytes bs -> [[i|Bytes: [#{bs}]|]]
-      Contract.WithSchema _ (AE.Object obj) -> case HM.lookup "state" obj of
+    state = case ciState of
+      CI.JustBytes bs -> [[i|Bytes: [#{bs}]|]]
+      CI.WithSchema _ (AE.Object obj) -> case HM.lookup "state" obj of
                                    Nothing -> stateErrorMsg
                                    Just state' -> [indentBy 4 $ showPrettyJSON state']
-      Contract.WithSchema _ _ -> stateErrorMsg
+      CI.WithSchema _ _ -> stateErrorMsg
     stateErrorMsg = ["Could not display contract state."]
-    tellMethods = case iModel of
-      Contract.JustBytes _ -> tell $ toDashedList methodNames
-      Contract.WithSchema Contract.Module{..} _ -> case M.lookup contractName contracts of
+    tellMethods = case ciState of
+      CI.JustBytes _ -> tell $ toDashedList methodNames
+      CI.WithSchema CS.ModuleSchema{..} _ -> case M.lookup contractName contractSchemas of
         Nothing -> tell $ toDashedList methodNames
-        Just Contract{receiveSigs=rcvSigs} -> tell . toDashedList . map (tryAppendSignature rcvSigs) $ methodNames
-      where methodNames = map methodNameFromReceiveName iMethods
+        Just CS.ContractSchema{receiveSigs=rcvSigs} -> tell . toDashedList . map (tryAppendSignature rcvSigs) $ methodNames
+      where methodNames = map methodNameFromReceiveName ciMethods
             toDashedList = map (\x -> [i| - #{x}|])
 
-            tryAppendSignature :: M.Map Text SchemaType -> Text -> Text
+            tryAppendSignature :: M.Map Text CS.SchemaType -> Text -> Text
             tryAppendSignature rcvSigs rcvName = case M.lookup rcvName rcvSigs of
               Nothing -> rcvName
               Just schemaType -> rcvName <> "\n" <> pack (indentBy 4 $ showPrettyJSON schemaType)
     indentBy spaces = intercalate "\n" . map (replicate spaces ' ' <>) . lines
+
+
+    -- |Get a method name from a Receive name, i.e. extracting the text and removing the "<contractName>." prefix.
+    -- If the receiveName does not have the prefix, it simply returns the extracted text.
+    methodNameFromReceiveName :: Wasm.ReceiveName -> Text
+    methodNameFromReceiveName rcvName = case split (=='.') receiveNameText of
+      [_contrName, methodName] -> methodName
+      _ -> receiveNameText
+      where receiveNameText = Wasm.receiveName rcvName
 
 nameSpacing :: Text
 nameSpacing = pack $ replicate 10 ' '
