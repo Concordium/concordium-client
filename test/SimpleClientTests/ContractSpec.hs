@@ -1,7 +1,10 @@
 {-# LANGUAGE NumericUnderscores #-}
-module SimpleClientTests.ContractSchemaSpec where
+module SimpleClientTests.ContractSpec where
 
-import Concordium.Client.Types.ContractSchema
+
+import Concordium.Client.Types.Contract.Info
+import Concordium.Client.Types.Contract.Schema
+import Concordium.Client.Types.Contract.Parameter
 
 import Data.Aeson (ToJSON, object, (.=))
 import qualified Data.Aeson as AE
@@ -17,18 +20,18 @@ import Data.Word (Word8, Word64)
 import Test.Hspec
 import Test.QuickCheck
 
-contractSchemaSpec :: Spec
-contractSchemaSpec = describe "contractSchema" $ do
+contractSpec :: Spec
+contractSpec = describe "contract" $ do
   printSchemaSpec
-  printParamsSpec
+  printParameterSpec
 
 printSchemaSpec :: Spec
-printSchemaSpec = describe "serialize Module" $ do
+printSchemaSpec = describe "serialize ModuleSchema" $ do
   it "decode is inverse of encode" $ withMaxSuccess 30 $
-    forAll (sized genModule) $ \c -> (S.decode . S.encode) c === Right c
+    forAll (sized genModuleSchema) $ \c -> (S.decode . S.encode) c === Right c
 
-printParamsSpec :: Spec
-printParamsSpec = describe "serialize JSON params to bytes and deserialize to JSON works for:" $ do
+printParameterSpec :: Spec
+printParameterSpec = describe "serialize JSON params to bytes and deserialize to JSON works for:" $ do
   it "Unit" $ do
     fromToJSONSucceed (Unit) $ AE.Null
 
@@ -187,7 +190,7 @@ printParamsSpec = describe "serialize JSON params to bytes and deserialize to JS
         accAddr = "47JNHkJZo9ShomDypbiSJzdGN7FNxo8MwtUFsPa49KGvejf7Wh"
 
         fromToJSON :: SchemaType -> AE.Value -> Either String AE.Value
-        fromToJSON typ originalJSON = serializeParams typ originalJSON >>= S.runGet (getValueAsJSON typ)
+        fromToJSON typ originalJSON = encodeParameter typ originalJSON >>= S.runGet (getJSONUsingSchema typ)
 
         fromToJSONSucceed :: SchemaType -> AE.Value -> Expectation
         fromToJSONSucceed typ originalJSON = fromToJSON typ originalJSON `shouldBe` Right originalJSON
@@ -198,14 +201,14 @@ printParamsSpec = describe "serialize JSON params to bytes and deserialize to JS
 
 -- ** Arbitrary Generators **
 
-genModel :: Gen Model
-genModel = JustBytes . BS.pack <$> listOf (arbitrary :: Gen Word8)
+genContractState :: Gen ContractState
+genContractState = JustBytes . BS.pack <$> listOf (arbitrary :: Gen Word8)
 
-genModule :: Int -> Gen Module
-genModule n = Module . Map.fromList <$> listOf (genTwoOf genText $ genContract n)
+genModuleSchema :: Int -> Gen ModuleSchema
+genModuleSchema n = ModuleSchema . Map.fromList <$> listOf (genTwoOf genText $ genContractSchema n)
 
-genContract :: Int -> Gen Contract
-genContract n = Contract <$> genMaybeSchemaType <*> genMaybeSchemaType <*> genReceiveSigs
+genContractSchema :: Int -> Gen ContractSchema
+genContractSchema n = ContractSchema <$> genMaybeSchemaType <*> genMaybeSchemaType <*> genReceiveSigs
   where genMaybeSchemaType :: Gen (Maybe SchemaType)
         genMaybeSchemaType = frequency [ (7, Just <$> genSchemaType (n'))
                                        , (1, pure Nothing) ]
