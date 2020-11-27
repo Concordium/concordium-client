@@ -510,7 +510,7 @@ wasmMagicHash = BS.pack [0x00, 0x61, 0x73, 0x6D]
 wasmVersion :: ByteString
 wasmVersion = BS.pack [0x01, 0x00, 0x00, 0x00]
 
-getEmbeddedSchemaFromModule :: S.Get Module
+getEmbeddedSchemaFromModule :: S.Get (Maybe Module)
 getEmbeddedSchemaFromModule = do
   mhBs <- S.getByteString 4
   unless (mhBs == wasmMagicHash) $ fail "Unknown magic value. This is likely not a Wasm module."
@@ -519,20 +519,23 @@ getEmbeddedSchemaFromModule = do
   go
 
   where
-    go :: S.Get Module
+    go :: S.Get (Maybe Module)
     go = do
       isEmpty <- S.isEmpty
       -- Not all modules contain a schema.
-      when isEmpty $ fail "Module does not contain a schema."
-      sectionId <- S.label "sectionId" S.getWord8
-      sectionSize <- S.label "sectionSize" $ fromIntegral <$> getLEB128Word32le
-      if sectionId == 0
-      then do
-        name <- S.label "Custom Section Name" getTextWithLEB128Len
-        if name == "concordium-schema-v1"
-        then S.get
+      -- We reached the end of input without finding the schema.
+      if isEmpty then
+        return Nothing
+      else do
+        sectionId <- S.label "sectionId" S.getWord8
+        sectionSize <- S.label "sectionSize" $ fromIntegral <$> getLEB128Word32le
+        if sectionId == 0
+        then do
+          name <- S.label "Custom Section Name" getTextWithLEB128Len
+          if name == "concordium-schema-v1"
+          then Just <$> S.get
+          else S.skip sectionSize *> go
         else S.skip sectionSize *> go
-      else S.skip sectionSize *> go
 
 -- ** Helpers **
 
@@ -659,7 +662,7 @@ serializeParams :: SchemaType -> AE.Value -> Either String ByteString
 serializeParams typ params = S.runPut <$> putJSONParams typ params
 
 -- |Try to find an embedded schema in a module and decode it. Alias to avoid having to import Data.Serialize.
-decodeEmbeddedSchema :: ByteString -> Either String Module
+decodeEmbeddedSchema :: ByteString -> Either String (Maybe Module)
 decodeEmbeddedSchema = S.runGet getEmbeddedSchemaFromModule
 
 -- |Decode a schema. Alias to avoid having to import Data.Serialize.
