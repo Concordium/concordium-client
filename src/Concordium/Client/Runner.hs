@@ -1482,7 +1482,7 @@ processModuleCmd action baseCfgDir verbose backend =
             Nothing -> [i|deploy the module '#{modFile}'|]
             Just modName' -> [i|deploy the module '#{modFile}' and name it '#{modName'}'|]
       logInfo [ msgIntro
-              , "it will cost " ++ showNrg nrg]
+              , [i|allowing up to #{showNrg nrg} to be spent as transaction fee|]]
 
       deployConfirmed <- askConfirmation Nothing
 
@@ -1536,12 +1536,9 @@ processModuleCmd action baseCfgDir verbose backend =
         Nothing -> logInfo ["Inspection failed: no schema provided and module does not contain an embedded schema"]
         Just schema' -> logInfo [[i|Functions for module #{namedModRef}:|], showPrettyJSON schema']
 
-    ModuleName modRefOrFile modName block -> do
+    ModuleName modRefOrFile modName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       modRef <- getModuleRefFromRefOrFile modRefOrFile
-      -- Get the module to ensure its existence, or fail trying.
-      _wasmMod <- withClient backend . withBestBlockHash block $ getWasmModule (NamedModuleRef {nmrRef = modRef, nmrName = Nothing})
-      -- The module exists, if we reach this far.
       addModuleNameAndWrite verbose baseCfg modName modRef
       logSuccess [[i|module reference #{modRef} was successfully named '#{modName}'|]]
 
@@ -1641,15 +1638,15 @@ processContractCmd action baseCfgDir verbose backend =
               let namedContrAddr = NamedContractAddress {ncaAddr = contrAddr, ncaName = contrAlias}
               logSuccess [[i|contract successfully initialized with address: #{namedContrAddr}|]]
 
-    ContractUpdate indexOrName subindex contrName receiveName paramsFileJSON paramsFileBinary schemaFile amount txOpts -> do
+    ContractUpdate indexOrName subindex receiveName paramsFileJSON paramsFileBinary schemaFile amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      cuCfg <- getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex contrName
+      cuCfg <- getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex
                 receiveName paramsFileJSON paramsFileBinary schemaFile amount
       let txCfg = cutcTransactionCfg cuCfg
       let energy = tcEnergy txCfg
       let expiryTs = tcExpiry txCfg
 
-      logInfo [ [i|update contract '#{contrName}' using the function '#{receiveName}' with |]
+      logInfo [ [i|update contract '#{cutcContrName cuCfg}' using the function '#{receiveName}' with |]
                   ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{cutcAmount cuCfg} GTU.|]
               , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
               , [i|transaction expires at #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
@@ -1705,19 +1702,22 @@ displayContractInfo schema contrInfo namedOwner namedModRef = case schema of
     Left err' -> logFatal ["Parsing the contract model failed:", err']
     Right infoWithSchema -> runPrinter $ printContractInfo infoWithSchema namedOwner namedModRef
 
--- FIXME: This needs documentation
-getContractUpdateTransactionCfg :: Backend -> BaseConfig -> TransactionOpts Types.Energy -> Text -> Maybe Word64 -> Text -> Text
+-- FIXME: This needs documentation and probably some rework.
+-- We can't have this many text and filepath parameters without any notion of what they are.
+getContractUpdateTransactionCfg :: Backend -> BaseConfig -> TransactionOpts Types.Energy -> Text -> Maybe Word64 -> Text
                                 -> Maybe FilePath -> Maybe FilePath -> Maybe FilePath -> Types.Amount -> IO ContractUpdateTransactionCfg
-getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex contrName receiveName
+getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex receiveName
                                 paramsFileJSON paramsFileBinary schemaFile amount = do
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-  ContractSchema.Info{iSourceModule = moduleRef} <- withClient backend . withBestBlockHash Nothing $ getContractInfo namedContrAddr
+  ContractSchema.Info{iSourceModule = moduleRef,..} <- withClient backend . withBestBlockHash Nothing $ getContractInfo namedContrAddr
   let namedModRef = NamedModuleRef {nmrRef = moduleRef, nmrName = Nothing}
+  -- fromJust here is OK because any init name must start with init_.
+  let contrName = fromJust $ Text.stripPrefix "init_" $ Wasm.initName iName
   params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef)
             (ContractSchema.ReceiveName contrName receiveName)
   return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr)
-    (Wasm.ReceiveName [i|#{contrName}.#{receiveName}|]) params amount
+           contrName (Wasm.ReceiveName [i|#{contrName}.#{receiveName}|]) params amount
 
 contractUpdateTransactionPayload :: ContractUpdateTransactionCfg -> Types.Payload
 contractUpdateTransactionPayload ContractUpdateTransactionCfg {..} =
@@ -1729,6 +1729,9 @@ data ContractUpdateTransactionCfg =
     cutcTransactionCfg :: !TransactionConfig
     -- |The address of the contract to invoke.
   , cutcAddress :: !Types.ContractAddress
+    -- |Name of the contract that is being updated.
+    -- This is resolved from the chain.
+  , cutcContrName :: !Text
     -- |Name of the receive method to invoke.
   , cutcReceiveName :: !Wasm.ReceiveName
     -- |Parameters to the receive method.

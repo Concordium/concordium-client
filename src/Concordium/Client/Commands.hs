@@ -226,8 +226,7 @@ data ModuleCmd
       mnModule :: !String
       -- |Name for the module.
     , mnName :: !Text
-      -- |Hash of the block (default "best").
-    , mnBlockHash :: !(Maybe Text) }
+    }
   deriving (Show)
 
 data ContractCmd
@@ -271,8 +270,6 @@ data ContractCmd
       cuAddressIndexOrName :: !Text
       -- |Subindex of the address for the contract to invoke (default: 0).
     , cuAddressSubindex :: !(Maybe Word64)
-      -- |Name of the contract to use. This corresponds to a specific init function.
-    , cuContractName :: !Text
       -- |Name of the receive function to use.
     , cuReceiveName :: !Text
       -- |Path to a JSON file containing parameters for the receive function (only one type of parameter is allowed).
@@ -776,8 +773,7 @@ moduleNameCmd =
     (info
       (ModuleName <$>
         strArgument (metavar "MODULE" <> help "Module reference OR path to the module.") <*>
-        strOption (long "name" <> metavar "NAME" <> help "Name for the module.") <*>
-        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+        strOption (long "name" <> metavar "NAME" <> help "Name for the module."))
       (progDesc "Name a module."))
 
 contractCmds :: Mod CommandFields Cmd
@@ -846,8 +842,6 @@ contractUpdateCmd =
         strArgument (metavar "INDEX-OR-NAME" <> help "Index of the contract address OR a contract name.") <*>
         optional (option auto (long "subindex" <> metavar "SUBINDEX" <>
                      help "Subindex of address for the contract on chain (default: 0)")) <*>
-        strOption (long "contract" <> metavar "CONTRACT-NAME"
-                             <> help "Name of the contract (i.e. init function) in the module.") <*>
         strOption (long "func" <> metavar "RECEIVE-NAME"
                              <> help "Name of the specific receive function in the module.") <*>
         optional (strOption (long "parameter-json" <> metavar "FILE"
