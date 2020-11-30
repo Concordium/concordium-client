@@ -23,8 +23,7 @@ import qualified Concordium.ID.Types as ID
 import qualified Concordium.Types as Types
 import qualified Concordium.Crypto.SignatureScheme as SigScheme
 import qualified Concordium.Crypto.Ed25519Signature as Ed25519
-import Data.Serialize (encode)
-import Data.Serialize (decode)
+import Data.Serialize (decode, encode)
 import Data.ByteString (ByteString)
 
 

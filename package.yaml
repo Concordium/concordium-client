@@ -97,6 +97,7 @@ library:
     - async >= 2.2
     - vector >= 0.12
     - string-interpolate
+    - scientific
   generated-exposed-modules:
     Proto.ConcordiumP2pRpc
     Proto.ConcordiumP2pRpc_Fields
@@ -233,6 +234,7 @@ tests:
     dependencies:
       - simple-client
       - concordium-crypto
+      - cereal
       - globalstate-types
       - aeson
       - bytestring
@@ -247,3 +249,4 @@ tests:
       - time
       - unordered-containers
       - filepath
+      - vector
