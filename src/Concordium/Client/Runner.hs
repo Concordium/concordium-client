@@ -55,7 +55,9 @@ import           Concordium.Client.Output
 import           Concordium.Client.Parse
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Account
-import qualified Concordium.Client.Types.ContractSchema as ContractSchema
+import qualified Concordium.Client.Types.Contract.Info as CI
+import qualified Concordium.Client.Types.Contract.Parameter as CP
+import qualified Concordium.Client.Types.Contract.Schema as CS
 import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Client.Types.TransactionStatus
 import           Concordium.Common.Version
@@ -1601,10 +1603,10 @@ processContractCmd action baseCfgDir verbose backend =
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
       (schema, contrInfo, namedOwner, namedModRef) <- withClient backend . withBestBlockHash block $ \bb -> do
-        contrInfo@ContractSchema.Info{..} <- getContractInfo namedContrAddr bb
-        let namedModRef = NamedModuleRef {nmrRef = iSourceModule, nmrName = lookupByValue (bcModuleNameMap baseCfg) iSourceModule}
+        contrInfo@CI.ContractInfo{..} <- getContractInfo namedContrAddr bb
+        let namedModRef = NamedModuleRef {nmrRef = ciSourceModule, nmrName = lookupByValue (bcModuleNameMap baseCfg) ciSourceModule}
         schema <- getSchemaFromFileOrModule schemaFile (Right namedModRef) bb
-        let namedOwner = NamedAddress {naAddr = iOwner, naName = lookupByValue (bcAccountNameMap baseCfg) iOwner}
+        let namedOwner = NamedAddress {naAddr = ciOwner, naName = lookupByValue (bcAccountNameMap baseCfg) ciOwner}
         return (schema, contrInfo, namedOwner, namedModRef)
       displayContractInfo schema contrInfo namedOwner namedModRef
 
@@ -1683,7 +1685,7 @@ processContractCmd action baseCfgDir verbose backend =
 
 -- |Try to fetch info about the contract and deserialize it from JSON.
 -- Or, log fatally with appropriate error messages if anything goes wrong.
-getContractInfo :: NamedContractAddress -> Text -> ClientMonad IO ContractSchema.Info
+getContractInfo :: NamedContractAddress -> Text -> ClientMonad IO CI.ContractInfo
 getContractInfo namedContrAddr block = do
   res <- getInstanceInfo (Text.pack . showCompactPrettyJSON . ncaAddr $ namedContrAddr) block
   case res of
@@ -1695,10 +1697,10 @@ getContractInfo namedContrAddr block = do
       Success info -> pure info
 
 -- |Display contract info, optionally using a schema to decode the contract state.
-displayContractInfo :: Maybe ContractSchema.Module -> ContractSchema.Info -> NamedAddress -> NamedModuleRef -> IO ()
+displayContractInfo :: Maybe CS.ModuleSchema -> CI.ContractInfo -> NamedAddress -> NamedModuleRef -> IO ()
 displayContractInfo schema contrInfo namedOwner namedModRef = case schema of
   Nothing -> runPrinter $ printContractInfo contrInfo namedOwner namedModRef
-  Just schema' -> case ContractSchema.addSchemaToInfo contrInfo schema' of
+  Just schema' -> case CI.decodeContractStateUsingSchema contrInfo schema' of
     Left err' -> logFatal ["Parsing the contract model failed:", err']
     Right infoWithSchema -> runPrinter $ printContractInfo infoWithSchema namedOwner namedModRef
 
@@ -1710,12 +1712,12 @@ getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex rece
                                 paramsFileJSON paramsFileBinary schemaFile amount = do
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-  ContractSchema.Info{iSourceModule = moduleRef,..} <- withClient backend . withBestBlockHash Nothing $ getContractInfo namedContrAddr
+  CI.ContractInfo{ciSourceModule = moduleRef,..} <- withClient backend . withBestBlockHash Nothing $ getContractInfo namedContrAddr
   let namedModRef = NamedModuleRef {nmrRef = moduleRef, nmrName = Nothing}
   -- fromJust here is OK because any init name must start with init_.
-  let contrName = fromJust $ Text.stripPrefix "init_" $ Wasm.initName iName
+  let contrName = fromJust $ Text.stripPrefix "init_" $ Wasm.initName ciName
   params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef)
-            (ContractSchema.ReceiveName contrName receiveName)
+            (CS.ReceiveName contrName receiveName)
   return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr)
            contrName (Wasm.ReceiveName [i|#{contrName}.#{receiveName}|]) params amount
 
@@ -1748,7 +1750,7 @@ getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath contrName par
             then (\ref -> NamedModuleRef {nmrRef = ref, nmrName = Nothing}) <$> getModuleRefFromFile modTBD
             else getNamedModuleRef (bcModuleNameMap baseCfg) (Text.pack modTBD)
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
-  params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef) (ContractSchema.InitName contrName)
+  params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef) (CS.InitName contrName)
   return $ ContractInitTransactionCfg txCfg amount (nmrRef namedModRef) (Wasm.InitName [i|init_#{contrName}|]) params
 
 -- |Query the node for a module reference, and parse the result.
@@ -1798,7 +1800,7 @@ getWasmModuleFromFile moduleFile = Wasm.WasmModule 0 <$> handleReadFile BS.readF
 --     - Otherwise -> Try to get an embedded schema from the module and use it to encode the parameters.
 -- For all other cases, appropriate error or warning messages are shown.
 getWasmParameter :: Backend -> Maybe FilePath -> Maybe FilePath -> Maybe FilePath
-                 -> Either BS.ByteString NamedModuleRef -> ContractSchema.FuncName -> IO Wasm.Parameter
+                 -> Either BS.ByteString NamedModuleRef -> CS.FuncName -> IO Wasm.Parameter
 getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile modSourceOrRef funcName =
   case (paramsFileJSON, paramsFileBinary, schemaFile) of
     (Nothing, Nothing, Nothing) -> emptyParams
@@ -1812,12 +1814,12 @@ getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile modSourceOrR
                                   Supply a schema using the --schema flag|]]
         Just schema' -> getFromJSONParams jsonFile' schema'
     (Just _, Just _, _) -> logFatal ["--parameter-json and --parameter-bin cannot be used at the same time"]
-  where getFromJSONParams :: FilePath -> ContractSchema.Module -> IO Wasm.Parameter
-        getFromJSONParams jsonFile schema = case ContractSchema.lookupSignatureForFunc schema funcName of
+  where getFromJSONParams :: FilePath -> CS.ModuleSchema -> IO Wasm.Parameter
+        getFromJSONParams jsonFile schema = case CS.lookupSignatureForFunc schema funcName of
           Nothing -> logFatal [[i|the schema did not include the provided function|]]
           Just schemaForParams -> do
             jsonFileContents <- handleReadFile BSL8.readFile jsonFile
-            let params = AE.eitherDecode jsonFileContents >>= ContractSchema.serializeParams schemaForParams
+            let params = AE.eitherDecode jsonFileContents >>= CP.encodeParameter schemaForParams
             case params of
               Left errParams -> logFatal [[i|Could not decode parameters from file '#{jsonFile}' as JSON:|], errParams]
               Right params' -> pure . Wasm.Parameter . BS.toShort $ params'
@@ -1829,7 +1831,7 @@ getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile modSourceOrR
 -- Logs fatally if an invalid schema is found (either from a file or embedded).
 -- Only returns `Nothing` if no schemaFile is provided and no embedded schema was found in the module.
 getSchemaFromFileOrModule :: Maybe FilePath -> Either BS.ByteString NamedModuleRef
-                          -> Text -> ClientMonad IO (Maybe ContractSchema.Module)
+                          -> Text -> ClientMonad IO (Maybe CS.ModuleSchema)
 getSchemaFromFileOrModule schemaFile modSourceOrRef block = case (schemaFile, modSourceOrRef) of
   (Nothing, Left modSource) -> liftIO $ tryGetSchemaFromModuleSource modSource
   (Nothing, Right namedModRef) -> do
@@ -1841,16 +1843,16 @@ getSchemaFromFileOrModule schemaFile modSourceOrRef block = case (schemaFile, mo
           Right schema -> return schema
 
 -- |Load and decode a schema from a file.
-getSchemaFromFile :: FilePath -> IO ContractSchema.Module
+getSchemaFromFile :: FilePath -> IO CS.ModuleSchema
 getSchemaFromFile schemaFile = do
-  schema <- ContractSchema.decodeSchema <$> handleReadFile BS.readFile schemaFile
+  schema <- CS.decodeModuleSchema <$> handleReadFile BS.readFile schemaFile
   case schema of
     Left err -> logFatal [[i|Could not decode schema from file '#{schemaFile}':|], err]
     Right schema' -> pure schema'
 
 -- |Try to extract and decode a schema from a module.
-getSchemaFromModule :: BS.ByteString -> Either String (Maybe ContractSchema.Module)
-getSchemaFromModule = ContractSchema.decodeEmbeddedSchema
+getSchemaFromModule :: BS.ByteString -> Either String (Maybe CS.ModuleSchema)
+getSchemaFromModule = CS.decodeEmbeddedSchema
 
 -- |Try to parse the input as a module reference and assume it is a path if it fails.
 getModuleRefFromRefOrFile :: String -> IO Types.ModuleRef
