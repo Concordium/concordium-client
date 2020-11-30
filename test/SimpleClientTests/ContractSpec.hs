@@ -39,61 +39,61 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
     fromToJSONSucceed Bool $ AE.Bool False
     fromToJSONSucceed Bool $ AE.Bool True
 
-  it "U8" $ do
-    fromToJSONSucceed U8 $ AE.Number 42
-    fromToJSONSucceed U8 $ AE.Number 255  -- Max
-    fromToJSONFail    U8 $ AE.Number (-1) -- Min - 1
-    fromToJSONFail    U8 $ AE.Number 256  -- Max + 1
+  it "UInt8" $ do
+    fromToJSONSucceed UInt8 $ AE.Number 42
+    fromToJSONSucceed UInt8 $ AE.Number 255  -- Max
+    fromToJSONFail    UInt8 $ AE.Number (-1) -- Min - 1
+    fromToJSONFail    UInt8 $ AE.Number 256  -- Max + 1
 
-  it "U16" $ do
-    fromToJSONSucceed U16 $ AE.Number 42
-    fromToJSONSucceed U16 $ AE.Number 65_535 -- Max
-    fromToJSONFail    U16 $ AE.Number (-1)   -- Min - 1
-    fromToJSONFail    U16 $ AE.Number 65_536 -- Max + 1
+  it "UInt16" $ do
+    fromToJSONSucceed UInt16 $ AE.Number 42
+    fromToJSONSucceed UInt16 $ AE.Number 65_535 -- Max
+    fromToJSONFail    UInt16 $ AE.Number (-1)   -- Min - 1
+    fromToJSONFail    UInt16 $ AE.Number 65_536 -- Max + 1
 
-  it "U32" $ do
-    fromToJSONSucceed U32 $ AE.Number 42
-    fromToJSONSucceed U32 $ AE.Number 4_294_967_295 -- Max
-    fromToJSONFail    U32 $ AE.Number (-1)          -- Min - 1
-    fromToJSONFail    U32 $ AE.Number 4_294_967_296 -- Max + 1
+  it "UInt32" $ do
+    fromToJSONSucceed UInt32 $ AE.Number 42
+    fromToJSONSucceed UInt32 $ AE.Number 4_294_967_295 -- Max
+    fromToJSONFail    UInt32 $ AE.Number (-1)          -- Min - 1
+    fromToJSONFail    UInt32 $ AE.Number 4_294_967_296 -- Max + 1
 
-  it "U64" $ do
-    fromToJSONSucceed U64 $ AE.Number 42
-    fromToJSONSucceed U64 $ AE.Number 18_446_744_073_709_551_615 -- Max
-    fromToJSONFail    U64 $ AE.Number (-1)                       -- Min - 1
-    fromToJSONFail    U64 $ AE.Number 18_446_744_073_709_551_616 -- Max + 1
+  it "UInt64" $ do
+    fromToJSONSucceed UInt64 $ AE.Number 42
+    fromToJSONSucceed UInt64 $ AE.Number 18_446_744_073_709_551_615 -- Max
+    fromToJSONFail    UInt64 $ AE.Number (-1)                       -- Min - 1
+    fromToJSONFail    UInt64 $ AE.Number 18_446_744_073_709_551_616 -- Max + 1
 
-  it "I8" $ do
-    fromToJSONSucceed I8 $ AE.Number (-42)
-    fromToJSONSucceed I8 $ AE.Number 42
-    fromToJSONSucceed I8 $ AE.Number (-128) -- Min
-    fromToJSONSucceed I8 $ AE.Number 127    -- Max
-    fromToJSONFail    I8 $ AE.Number (-129) -- Min - 1
-    fromToJSONFail    I8 $ AE.Number 128    -- Max + 1
+  it "Int8" $ do
+    fromToJSONSucceed Int8 $ AE.Number (-42)
+    fromToJSONSucceed Int8 $ AE.Number 42
+    fromToJSONSucceed Int8 $ AE.Number (-128) -- Min
+    fromToJSONSucceed Int8 $ AE.Number 127    -- Max
+    fromToJSONFail    Int8 $ AE.Number (-129) -- Min - 1
+    fromToJSONFail    Int8 $ AE.Number 128    -- Max + 1
 
-  it "I16" $ do
-    fromToJSONSucceed I16 $ AE.Number (-42)
-    fromToJSONSucceed I16 $ AE.Number 42
-    fromToJSONSucceed I16 $ AE.Number (-32_768) -- Min
-    fromToJSONSucceed I16 $ AE.Number 32_767    -- Max
-    fromToJSONFail    I16 $ AE.Number (-32_769) -- Min - 1
-    fromToJSONFail    I16 $ AE.Number 32_768    -- Max + 1
+  it "Int16" $ do
+    fromToJSONSucceed Int16 $ AE.Number (-42)
+    fromToJSONSucceed Int16 $ AE.Number 42
+    fromToJSONSucceed Int16 $ AE.Number (-32_768) -- Min
+    fromToJSONSucceed Int16 $ AE.Number 32_767    -- Max
+    fromToJSONFail    Int16 $ AE.Number (-32_769) -- Min - 1
+    fromToJSONFail    Int16 $ AE.Number 32_768    -- Max + 1
 
-  it "I32" $ do
-    fromToJSONSucceed I32 $ AE.Number (-42)
-    fromToJSONSucceed I32 $ AE.Number 42
-    fromToJSONSucceed I32 $ AE.Number (-2_147_483_648) -- Min
-    fromToJSONSucceed I32 $ AE.Number 2_147_483_647    -- Max
-    fromToJSONFail    I32 $ AE.Number (-2_147_483_649) -- Min - 1
-    fromToJSONFail    I32 $ AE.Number 2_147_483_648    -- Max + 1
+  it "Int32" $ do
+    fromToJSONSucceed Int32 $ AE.Number (-42)
+    fromToJSONSucceed Int32 $ AE.Number 42
+    fromToJSONSucceed Int32 $ AE.Number (-2_147_483_648) -- Min
+    fromToJSONSucceed Int32 $ AE.Number 2_147_483_647    -- Max
+    fromToJSONFail    Int32 $ AE.Number (-2_147_483_649) -- Min - 1
+    fromToJSONFail    Int32 $ AE.Number 2_147_483_648    -- Max + 1
 
-  it "I64" $ do
-    fromToJSONSucceed I64 $ AE.Number (-42)
-    fromToJSONSucceed I64 $ AE.Number 42
-    fromToJSONSucceed I64 $ AE.Number (-9_223_372_036_854_775_808) -- Min
-    fromToJSONSucceed I64 $ AE.Number 9_223_372_036_854_775_807    -- Max
-    fromToJSONFail    I64 $ AE.Number (-9_223_372_036_854_775_809) -- Min - 1
-    fromToJSONFail    I64 $ AE.Number 9_223_372_036_854_775_808    -- Max + 1
+  it "Int64" $ do
+    fromToJSONSucceed Int64 $ AE.Number (-42)
+    fromToJSONSucceed Int64 $ AE.Number 42
+    fromToJSONSucceed Int64 $ AE.Number (-9_223_372_036_854_775_808) -- Min
+    fromToJSONSucceed Int64 $ AE.Number 9_223_372_036_854_775_807    -- Max
+    fromToJSONFail    Int64 $ AE.Number (-9_223_372_036_854_775_809) -- Min - 1
+    fromToJSONFail    Int64 $ AE.Number 9_223_372_036_854_775_808    -- Max + 1
 
   it "Amount" $ do
     fromToJSONSucceed Amount $ AE.String "42"
@@ -115,32 +115,31 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
     fromToJSONFail       ContractAddress $ object []
 
   it "Pair" $ do
-    fromToJSONSucceed (Pair U8 U8)  $ AE.toJSON ([99, 255] :: [Word8])
-    fromToJSONSucceed (Pair U64 I8) $ toArray $ [AE.Number 99, AE.Number (-54)]
+    fromToJSONSucceed (Pair UInt8 UInt8)  $ AE.toJSON ([99, 255] :: [Word8])
+    fromToJSONSucceed (Pair UInt64 Int8) $ toArray $ [AE.Number 99, AE.Number (-54)]
 
   it "List" $ do
-    fromToJSONSucceed (List LenU16 U16) $ toNumArray [0,1,2]
-    fromToJSONFail (List LenU8 U8) $ toNumArray $ replicate 256 2
+    fromToJSONSucceed (List LenUInt16 UInt16) $ toNumArray [0,1,2]
+    fromToJSONFail (List LenUInt8 UInt8) $ toNumArray $ replicate 256 2
 
   it "Set" $ do
-    fromToJSONSucceed (Set LenU16 U8) $ toNumArray [1,2,3,4,5]
-    fromToJSONSucceed (Set LenU8 U8)  $ toNumArray [1..255]
-    fromToJSONFail (Set LenU8 U8)     $ toNumArray [0..256] -- Too long
-    fromToJSONFail (Set LenU8 U8)     $ toNumArray [1, 2, 2, 3] -- Contains duplicates
+    fromToJSONSucceed (Set LenUInt16 UInt8) $ toNumArray [1,2,3,4,5]
+    fromToJSONSucceed (Set LenUInt8 UInt8)  $ toNumArray [1..255]
+    fromToJSONFail (Set LenUInt8 UInt8)     $ toNumArray [0..256] -- Too long
 
   it "Map" $ do
-    fromToJSONSucceed (Map LenU8 U8 U16) $ toArray . map toPair $ (zip [0..10] [20..30] :: [(Int, Int)])
-    fromToJSONSucceed (Map LenU8 U8 U8) $ toArray . map toPair $ (zip [1..255] [1..255] :: [(Int, Int)])
-    fromToJSONFail (Map LenU8 U8 U8) $ toArray . map toPair $ (zip [1..256] [1..256] :: [(Int, Int)]) -- Too long
+    fromToJSONSucceed (Map LenUInt8 UInt8 UInt16) $ toArray . map toPair $ (zip [0..10] [20..30] :: [(Int, Int)])
+    fromToJSONSucceed (Map LenUInt8 UInt8 UInt8) $ toArray . map toPair $ (zip [1..255] [1..255] :: [(Int, Int)])
+    fromToJSONFail (Map LenUInt8 UInt8 UInt8) $ toArray . map toPair $ (zip [1..256] [1..256] :: [(Int, Int)]) -- Too long
 
   it "Array" $ do
-    fromToJSONSucceed (Array 10 U8) $ toNumArray [1..10]
-    fromToJSONFail (Array 1000 U8)  $ toNumArray [1..1001] -- Too long
-    fromToJSONFail (Array 1000 U8)  $ toNumArray [1..999] -- Too short
+    fromToJSONSucceed (Array 10 UInt8) $ toNumArray [1..10]
+    fromToJSONFail (Array 1000 UInt8)  $ toNumArray [1..1001] -- Too long
+    fromToJSONFail (Array 1000 UInt8)  $ toNumArray [1..999] -- Too short
 
   it "Struct" $ do
     -- Named
-    let namedStructType = Struct (Named [("num", U8), ("bool", Bool)])
+    let namedStructType = Struct (Named [("num", UInt8), ("bool", Bool)])
     fromToJSONSucceed namedStructType $ object ["num" .= AE.Number 42, "bool" .= AE.Bool True]
     fromToJSON namedStructType (object ["bool" .= AE.Bool True, "num" .= AE.Number 42])
       `shouldBe` Right (object ["num" .= AE.Number 42, "bool" .= AE.Bool True]) -- Fields in different ordering works
@@ -148,7 +147,7 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
     fromToJSONFail namedStructType $ object ["bool" .= AE.Bool True, "wrong" .= AE.String "field"] -- missing and incorrect field
 
     -- Unnamed
-    let unnamedStructType = Struct (Unnamed [U8, Bool, Pair U8 AccountAddress])
+    let unnamedStructType = Struct (Unnamed [UInt8, Bool, Pair UInt8 AccountAddress])
     fromToJSONSucceed unnamedStructType $
       toArray [AE.Number 10, AE.Bool True, toArray [AE.Number 8, AE.String (Text.pack accAddr)]]
     fromToJSONFail unnamedStructType $
@@ -232,14 +231,14 @@ genSchemaType n
   | otherwise = oneof
       [ pure Unit
       , pure Bool
-      , pure U8
-      , pure U16
-      , pure U32
-      , pure U64
-      , pure I8
-      , pure I16
-      , pure I32
-      , pure I64
+      , pure UInt8
+      , pure UInt16
+      , pure UInt32
+      , pure UInt64
+      , pure Int8
+      , pure Int16
+      , pure Int32
+      , pure Int64
       , pure AccountAddress
       , pure ContractAddress
       , Pair <$> genSchemaType n' <*> genSchemaType n'
@@ -252,7 +251,7 @@ genSchemaType n
   where n' = nextNSize n
 
 genSizeLen :: Gen SizeLength
-genSizeLen = oneof $ pure <$> [LenU8, LenU16, LenU32, LenU64]
+genSizeLen = oneof $ pure <$> [LenUInt8, LenUInt16, LenUInt32, LenUInt64]
 
 genTwoOf :: Gen a -> Gen b -> Gen (a, b)
 genTwoOf ga gb = (,) <$> ga <*> gb

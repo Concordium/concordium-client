@@ -35,14 +35,14 @@ getJSONUsingSchema :: SchemaType -> S.Get AE.Value
 getJSONUsingSchema typ = case typ of
   Unit -> return AE.Null
   Bool -> AE.Bool <$> S.get
-  U8   -> AE.toJSON <$> S.getWord8
-  U16  -> AE.toJSON <$> S.getWord16le
-  U32  -> AE.toJSON <$> S.getWord32le
-  U64  -> AE.toJSON <$> S.getWord64le
-  I8   -> AE.toJSON <$> S.getInt8
-  I16  -> AE.toJSON <$> S.getInt16le
-  I32  -> AE.toJSON <$> S.getInt32le
-  I64  -> AE.toJSON <$> S.getInt64le
+  UInt8   -> AE.toJSON <$> S.getWord8
+  UInt16  -> AE.toJSON <$> S.getWord16le
+  UInt32  -> AE.toJSON <$> S.getWord32le
+  UInt64  -> AE.toJSON <$> S.getWord64le
+  Int8   -> AE.toJSON <$> S.getInt8
+  Int16  -> AE.toJSON <$> S.getInt16le
+  Int32  -> AE.toJSON <$> S.getInt32le
+  Int64  -> AE.toJSON <$> S.getInt64le
   Amount -> AE.toJSON <$> (S.get :: S.Get AmountLE)
   AccountAddress  -> AE.toJSON <$> (S.get :: S.Get T.AccountAddress)
   ContractAddress -> AE.toJSON <$>
@@ -82,14 +82,14 @@ putJSONUsingSchema :: SchemaType -> AE.Value -> Either String S.Put
 putJSONUsingSchema typ json = case (typ, json) of
   (Unit, AE.Null)     -> pure mempty
   (Bool, AE.Bool b)   -> pure $ S.put b
-  (U8,   AE.Number x) -> S.putWord8    <$> fromScientific x U8
-  (U16,  AE.Number x) -> S.putWord16le <$> fromScientific x U16
-  (U32,  AE.Number x) -> S.putWord32le <$> fromScientific x U32
-  (U64,  AE.Number x) -> S.putWord64le <$> fromScientific x U64
-  (I8,   AE.Number x) -> S.putInt8     <$> fromScientific x I8
-  (I16,  AE.Number x) -> S.putInt16le  <$> fromScientific x I16
-  (I32,  AE.Number x) -> S.putInt32le  <$> fromScientific x I32
-  (I64,  AE.Number x) -> S.putInt64le  <$> fromScientific x I64
+  (UInt8,   AE.Number x) -> S.putWord8    <$> fromScientific x UInt8
+  (UInt16,  AE.Number x) -> S.putWord16le <$> fromScientific x UInt16
+  (UInt32,  AE.Number x) -> S.putWord32le <$> fromScientific x UInt32
+  (UInt64,  AE.Number x) -> S.putWord64le <$> fromScientific x UInt64
+  (Int8,   AE.Number x) -> S.putInt8     <$> fromScientific x Int8
+  (Int16,  AE.Number x) -> S.putInt16le  <$> fromScientific x Int16
+  (Int32,  AE.Number x) -> S.putInt32le  <$> fromScientific x Int32
+  (Int64,  AE.Number x) -> S.putInt64le  <$> fromScientific x Int64
 
   (Amount, amt@(AE.String _)) -> addTraceInfo $ (S.put :: S.Putter AmountLE) <$> (resToEither . AE.fromJSON $ amt)
 
@@ -119,7 +119,6 @@ putJSONUsingSchema typ json = case (typ, json) of
         maxLen = maxSizeLen sl
         ls = V.toList vec
     when (len > maxLen) $ Left $ tooLongError "Set" maxLen len
-    unless (allUnique ls) $ Left [i|All elements must be unique in a set, but got:\n#{showPrettyJSON vec}.|]
     addTraceInfo $ putListLike sl elemType ls
 
   (Map sl keyType valType, AE.Array vec) -> do
@@ -189,8 +188,8 @@ putJSONUsingSchema typ json = case (typ, json) of
 
     putContrAddr :: Scientific -> Scientific -> Either String S.Put
     putContrAddr idx subidx = do
-      idx' <- fromScientific idx U64
-      subidx' <- fromScientific subidx U64
+      idx' <- fromScientific idx UInt64
+      subidx' <- fromScientific subidx UInt64
       pure $ S.putWord64le idx' <> S.putWord64le subidx'
 
     -- |The `SchemaType` should be a type of number.
@@ -206,10 +205,10 @@ putJSONUsingSchema typ json = case (typ, json) of
 
     maxSizeLen :: SizeLength -> Integer
     maxSizeLen = \case
-      LenU8 -> toInteger (maxBound :: Word8)
-      LenU16 -> toInteger (maxBound :: Word16)
-      LenU32 -> toInteger (maxBound :: Word32)
-      LenU64 -> toInteger (maxBound :: Word64)
+      LenUInt8 -> toInteger (maxBound :: Word8)
+      LenUInt16 -> toInteger (maxBound :: Word16)
+      LenUInt32 -> toInteger (maxBound :: Word32)
+      LenUInt64 -> toInteger (maxBound :: Word64)
 
     lookupAndPut :: [(Text, SchemaType)]     -- ^ The names and types for Named Fields.
                  -> (Text, AE.Value)         -- ^ A field name and a value.
@@ -226,9 +225,6 @@ putJSONUsingSchema typ json = case (typ, json) of
             go x ((a,b):pairs) idx = if x == a
                                     then Just (b, idx)
                                     else go x pairs (idx + 1)
-
-    allUnique :: Eq a => [a] -> Bool
-    allUnique xs = length xs == length (List.nub xs)
 
     resToEither :: Result a -> Either String a
     resToEither (AE.Error str) = Left str

@@ -44,8 +44,8 @@ newtype ModuleSchema
 instance AE.ToJSON ModuleSchema
 
 instance S.Serialize ModuleSchema where
-  get = S.label "ModuleSchema" $ ModuleSchema <$> getMapOfWithSizeLen LenU32 getText S.get
-  put ModuleSchema {..} = putMapOfWithSizeLen LenU32 putText S.put contractSchemas
+  get = S.label "ModuleSchema" $ ModuleSchema <$> getMapOfWithSizeLen LenUInt32 getText S.get
+  put ModuleSchema {..} = putMapOfWithSizeLen LenUInt32 putText S.put contractSchemas
 
 -- |Parallel to ContractSchema defined in contracts-common (Rust).
 -- Must stay in sync.
@@ -63,9 +63,9 @@ instance S.Serialize ContractSchema where
   get = S.label "ContractSchema" $ do
     state <- S.label "state" S.get
     initSig <- S.label "initSig" S.get
-    receiveSigs <- S.label "receiveSigs" $ getMapOfWithSizeLen LenU32 getText S.get
+    receiveSigs <- S.label "receiveSigs" $ getMapOfWithSizeLen LenUInt32 getText S.get
     pure ContractSchema{..}
-  put ContractSchema {..} = S.put state <> S.put initSig <> putMapOfWithSizeLen LenU32 putText S.put receiveSigs
+  put ContractSchema {..} = S.put state <> S.put initSig <> putMapOfWithSizeLen LenUInt32 putText S.put receiveSigs
 
 -- |Parallel to Fields defined in contracts-common (Rust).
 -- Must stay in sync.
@@ -86,14 +86,14 @@ instance S.Serialize Fields where
   get = S.label "Fields" $ do
     tag <- S.getWord8
     case tag of
-      0 -> S.label "Named" $ Named <$> getListOfWithSizeLen LenU32 (S.getTwoOf getText S.get)
-      1 -> S.label "Unnamed" $ Unnamed <$> getListOfWithSizeLen LenU32 S.get
+      0 -> S.label "Named" $ Named <$> getListOfWithSizeLen LenUInt32 (S.getTwoOf getText S.get)
+      1 -> S.label "Unnamed" $ Unnamed <$> getListOfWithSizeLen LenUInt32 S.get
       2 -> S.label "None" $ pure None
       x -> fail [i|Invalid Fields tag: #{x}|]
 
   put fields = case fields of
-    Named pairs -> S.putWord8 0 <> putListOfWithSizeLen LenU32 (S.putTwoOf putText S.put) pairs
-    Unnamed types -> S.putWord8 1 <> putListOfWithSizeLen LenU32 S.put types
+    Named pairs -> S.putWord8 0 <> putListOfWithSizeLen LenUInt32 (S.putTwoOf putText S.put) pairs
+    Unnamed types -> S.putWord8 1 <> putListOfWithSizeLen LenUInt32 S.put types
     None -> S.putWord8 2
 
 -- |Parallel to Type defined in contracts-common (Rust).
@@ -101,14 +101,14 @@ instance S.Serialize Fields where
 data SchemaType =
     Unit
   | Bool
-  | U8
-  | U16
-  | U32
-  | U64
-  | I8
-  | I16
-  | I32
-  | I64
+  | UInt8
+  | UInt16
+  | UInt32
+  | UInt64
+  | Int8
+  | Int16
+  | Int32
+  | Int64
   | Amount
   | AccountAddress
   | ContractAddress
@@ -139,15 +139,15 @@ instance S.Serialize SchemaType where
     case tag of
       0  -> S.label "Unit" $ pure Unit
       1  -> S.label "Bool" $ pure Bool
-      2  -> S.label "U8"   $ pure U8
-      3  -> S.label "U16"  $ pure U16
-      4  -> S.label "U32"  $ pure U32
-      5  -> S.label "U64"  $ pure U64
-      6  -> S.label "I8"   $ pure I8
-      7  -> S.label "I16"  $ pure I16
-      8  -> S.label "I32"  $ pure I32
-      9  -> S.label "I64"  $ pure I64
-      10 -> S.label "Amount" $ pure Amount
+      2  -> S.label "UInt8"   $ pure UInt8
+      3  -> S.label "UInt16"  $ pure UInt16
+      4  -> S.label "UInt32"  $ pure UInt32
+      5  -> S.label "UInt64"  $ pure UInt64
+      6  -> S.label "Int8"    $ pure Int8
+      7  -> S.label "Int16"   $ pure Int16
+      8  -> S.label "Int32"   $ pure Int32
+      9  -> S.label "Int64"   $ pure Int64
+      10 -> S.label "Amount"  $ pure Amount
       11 -> S.label "AccountAddress"  $ pure AccountAddress
       12 -> S.label "ContractAddress" $ pure ContractAddress
       13 -> S.label "Pair"   $ Pair <$> S.get <*> S.get
@@ -156,20 +156,20 @@ instance S.Serialize SchemaType where
       16 -> S.label "Map"    $ Map <$> S.get <*> S.get <*> S.get
       17 -> S.label "Array"  $ Array <$> S.getWord32le <*> S.get
       18 -> S.label "Struct" $ Struct <$> S.get
-      19 -> S.label "Enum"   $ Enum <$> getListOfWithSizeLen LenU32 (S.getTwoOf getText S.get)
+      19 -> S.label "Enum"   $ Enum <$> getListOfWithSizeLen LenUInt32 (S.getTwoOf getText S.get)
       x  -> fail [i|Invalid SchemaType tag: #{x}|]
 
   put typ = case typ of
     Unit -> S.putWord8 0
     Bool -> S.putWord8 1
-    U8   -> S.putWord8 2
-    U16  -> S.putWord8 3
-    U32  -> S.putWord8 4
-    U64  -> S.putWord8 5
-    I8   -> S.putWord8 6
-    I16  -> S.putWord8 7
-    I32  -> S.putWord8 8
-    I64  -> S.putWord8 9
+    UInt8   -> S.putWord8 2
+    UInt16  -> S.putWord8 3
+    UInt32  -> S.putWord8 4
+    UInt64  -> S.putWord8 5
+    Int8   -> S.putWord8 6
+    Int16  -> S.putWord8 7
+    Int32  -> S.putWord8 8
+    Int64  -> S.putWord8 9
     Amount -> S.putWord8 10
     AccountAddress  -> S.putWord8 11
     ContractAddress -> S.putWord8 12
@@ -179,22 +179,22 @@ instance S.Serialize SchemaType where
     Map sl k v    -> S.putWord8 16 <> S.put sl <> S.put k <> S.put v
     Array len a   -> S.putWord8 17 <> S.putWord32le len <> S.put a
     Struct fields -> S.putWord8 18 <> S.put fields
-    Enum enum     -> S.putWord8 19 <> putListOfWithSizeLen LenU32 (S.putTwoOf putText S.put) enum
+    Enum enum     -> S.putWord8 19 <> putListOfWithSizeLen LenUInt32 (S.putTwoOf putText S.put) enum
 
 -- |Parallel to SizeLength defined in contracts-common (Rust).
 -- Must stay in sync.
 data SizeLength
-  = LenU8
-  | LenU16
-  | LenU32
-  | LenU64
+  = LenUInt8
+  | LenUInt16
+  | LenUInt32
+  | LenUInt64
   deriving (Eq, Generic, Show)
 
 instance AE.ToJSON SizeLength where
-  toJSON LenU8  = AE.String "LenU8"
-  toJSON LenU16 = AE.String "LenU16"
-  toJSON LenU32 = AE.String "LenU32"
-  toJSON LenU64 = AE.String "LenU64"
+  toJSON LenUInt8  = AE.String "LenUInt8"
+  toJSON LenUInt16 = AE.String "LenUInt16"
+  toJSON LenUInt32 = AE.String "LenUInt32"
+  toJSON LenUInt64 = AE.String "LenUInt64"
 
 instance Hashable SizeLength
 
@@ -202,17 +202,17 @@ instance S.Serialize SizeLength where
   get = S.label "SizeLength" $ do
     tag <- S.label "tag" S.getWord8
     case tag of
-      0 -> S.label "LenU8"  $ pure LenU8
-      1 -> S.label "LenU16" $ pure LenU16
-      2 -> S.label "LenU32" $ pure LenU32
-      3 -> S.label "LenU64" $ pure LenU64
+      0 -> S.label "LenUInt8"  $ pure LenUInt8
+      1 -> S.label "LenUInt16" $ pure LenUInt16
+      2 -> S.label "LenUInt32" $ pure LenUInt32
+      3 -> S.label "LenUInt64" $ pure LenUInt64
       x  -> fail [i|Invalid SizeLength tag: #{x}|]
 
   put sizeLen = case sizeLen of
-    LenU8 -> S.putWord8 0
-    LenU16 -> S.putWord8 1
-    LenU32 -> S.putWord8 2
-    LenU64 -> S.putWord8 3
+    LenUInt8 -> S.putWord8 0
+    LenUInt16 -> S.putWord8 1
+    LenUInt32 -> S.putWord8 2
+    LenUInt64 -> S.putWord8 3
 
 -- |A function name for a function inside a smart contract.
 data FuncName
@@ -295,10 +295,10 @@ getListOfWithKnownLen len ga = S.label ("List of known length " ++ show len) $ g
 getListOfWithSizeLen :: SizeLength -> S.Get a -> S.Get [a]
 getListOfWithSizeLen sl ga = S.label "List" $ do
   len <- S.label "Length" $ case sl of
-    LenU8  -> toInteger <$> S.getWord8
-    LenU16 -> toInteger <$> S.getWord16le
-    LenU32 -> toInteger <$> S.getWord32le
-    LenU64 -> toInteger <$> S.getWord64le
+    LenUInt8  -> toInteger <$> S.getWord8
+    LenUInt16 -> toInteger <$> S.getWord16le
+    LenUInt32 -> toInteger <$> S.getWord32le
+    LenUInt64 -> toInteger <$> S.getWord64le
   S.label [i|#{len} elements|] $ getListOfWithKnownLen len ga
 
 putListOfWithSizeLen :: SizeLength -> S.Putter a -> S.Putter [a]
@@ -308,10 +308,10 @@ putListOfWithSizeLen sl pa ls = do
 
 putLenWithSizeLen :: SizeLength -> S.Putter Int
 putLenWithSizeLen sl len = case sl of
-  LenU8  -> S.putWord8    $ fromIntegral len
-  LenU16 -> S.putWord16le $ fromIntegral len
-  LenU32 -> S.putWord32le $ fromIntegral len
-  LenU64 -> S.putWord64le $ fromIntegral len
+  LenUInt8  -> S.putWord8    $ fromIntegral len
+  LenUInt16 -> S.putWord16le $ fromIntegral len
+  LenUInt32 -> S.putWord32le $ fromIntegral len
+  LenUInt64 -> S.putWord64le $ fromIntegral len
 
 
 -- * Map *
@@ -327,11 +327,11 @@ putMapOfWithSizeLen sl pv pk = putListOfWithSizeLen sl (S.putTwoOf pv pk) . Map.
 
 getText :: S.Get Text
 getText = do
-  txt <- S.label "Text" $ Text.decodeUtf8' . BS.pack <$> getListOfWithSizeLen LenU32 S.get
+  txt <- S.label "Text" $ Text.decodeUtf8' . BS.pack <$> getListOfWithSizeLen LenUInt32 S.get
   case txt of
     Left err -> fail [i|Could not decode Text: #{err}|]
     Right txt' -> pure txt'
 
 -- Serialize text in utf8 encoding. The liength is output as 4 bytes, little endian.
 putText :: S.Putter Text
-putText = putListOfWithSizeLen LenU32 S.put . BS.unpack . Text.encodeUtf8
+putText = putListOfWithSizeLen LenUInt32 S.put . BS.unpack . Text.encodeUtf8
