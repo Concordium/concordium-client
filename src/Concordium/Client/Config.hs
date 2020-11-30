@@ -385,8 +385,8 @@ data NamedModuleRef =
 
 instance Show NamedModuleRef where
   show NamedModuleRef {..} = case nmrName of
-    Just nmrName' -> [i|#{nmrRef} (#{nmrName'})|]
-    Nothing -> show nmrRef
+    Just nmrName' -> [i|'#{nmrRef}' (#{nmrName'})|]
+    Nothing -> [i|'#{nmrRef}'|]
 
 -- |Write the name map to a file in a pretty JSON format.
 writeNameMapAsJSON :: AE.ToJSON v => Verbose -> FilePath -> NameMap v -> IO ()
@@ -423,15 +423,15 @@ handleWriteFile wrtFile overwriteSetting verbose file contents = do
       when verbose $ logInfo [[i|writing file '#{file}'|]]
       wrtFile file contents) logFatalOnErrors
   where logFatalOnErrors e
-          | isDoesNotExistError e = logFatal [[i|'#{file}' does not exist and cannot be created|]]
+          | isDoesNotExistError e = logFatal [[i|the file '#{file}' does not exist and cannot be created|]]
           | isPermissionError e   = logFatal [[i|you do not have permissions to write to the file '#{file}'|]]
-          | otherwise             = logFatal [[i|'something went wrong while writing to the file #{file}'|]]
+          | otherwise             = logFatal [[i|something went wrong while writing to the file '#{file}'|]]
 
 -- |Read a file with the provided function and handle IO errors with an appropriate logging of errors.
 handleReadFile :: (FilePath -> IO s) -> FilePath -> IO s
 handleReadFile rdFile file = catchIOError (rdFile file) logFatalOnErrors
   where logFatalOnErrors e
-          | isDoesNotExistError e = logFatal [[i|'#{file}' does not exist and cannot be read|]]
+          | isDoesNotExistError e = logFatal [[i|the file '#{file}' does not exist and cannot be read|]]
           | isPermissionError e   = logFatal [[i|you do not have permissions to read the file '#{file}'|]]
           | otherwise             = logFatal [[i|something went wrong while reading the file '#{file}'|]]
 
@@ -732,9 +732,13 @@ resolveAccountAddress m input = do
                 return (Just input, a)
               Right a -> do
                 -- Input is an address. Try to look up its name in the map.
-                let name = fst <$> find ((== a) . snd) (M.toList m)
+                let name = lookupByValue m a
                 return (name, a)
   return NamedAddress { naName = n, naAddr = a }
+
+-- |Lookup by value from a map. Returns first entry found.
+lookupByValue :: Eq v => NameMap v -> v -> Maybe Text
+lookupByValue m input = fst <$> find ((== input) . snd) (M.toList m)
 
 -- |Look up an account by name or address. See doc for 'resolveAccountAddress'.
 -- If the lookup fails, an error is thrown.

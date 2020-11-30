@@ -215,24 +215,33 @@ data ModuleCmd
       -- Use '-' to output to stdout.
     , msOutFile :: !FilePath
       -- |Hash of the block (default "best").
-    , mlBlockHash :: !(Maybe Text) }
+    , msBlockHash :: !(Maybe Text) }
+  -- |Show the functions available in a module, including type signatures if schema is provided.
+  | ModuleInspect
+    { -- |Reference to the module OR a module name.
+      miModuleRefOrName :: !Text
+      -- |Path to a contract schema, used to display the type signatures.
+    , miSchema :: !(Maybe FilePath)
+      -- |Hash of the block (default "best").
+    , miBlockHash :: !(Maybe Text) }
   -- |Add a local name to a module.
   | ModuleName
     { -- |Module reference OR path to the module (reference then calculated by hashing).
       mnModule :: !String
       -- |Name for the module.
     , mnName :: !Text
-      -- |Hash of the block (default "best").
-    , mnBlockHash :: !(Maybe Text) }
+    }
   deriving (Show)
 
 data ContractCmd
   -- |Show the state of specified contract.
   = ContractShow
     { -- |Index of the contract address OR a contract name.
-      cuAddressIndexOrName :: !Text
+      csAddressIndexOrName :: !Text
       -- |Subindex of the address for the contract (default: 0).
-    , cuAddressSubindex :: !(Maybe Word64)
+    , csAddressSubindex :: !(Maybe Word64)
+      -- |Path to a contract schema, used to display the contract info.
+    , csSchema :: !(Maybe FilePath)
       -- |Hash of the block (default "best").
     , csBlockHash :: !(Maybe Text) }
   -- |List all contracts on chain.
@@ -243,10 +252,14 @@ data ContractCmd
   | ContractInit
     { -- |Module reference OR module name OR (if ciPath == True) path to the module (reference then calculated by hashing).
       ciModule :: !String
-      -- |Name of the init function to use (default: "init").
-    , ciInitName :: !Text
+      -- |Name of the contract to initialize. This corresponds to a specific init function.
+    , ciContractName :: !Text
+      -- |Path to a JSON file containing parameters for the init function (only one type of parameter is allowed).
+    , ciParameterFileJSON :: !(Maybe FilePath)
       -- |Path to a binary file containing parameters for the init function.
-    , ciParameterFile :: !(Maybe FilePath)
+    , ciParameterFileBinary :: !(Maybe FilePath)
+      -- |Path to a contract schema.
+    , ciSchema :: !(Maybe FilePath)
       -- |Local alias for the contract address.
     , ciName :: !(Maybe Text)
       -- |Determines whether ciModule should be interpreted as a path.
@@ -261,10 +274,14 @@ data ContractCmd
       cuAddressIndexOrName :: !Text
       -- |Subindex of the address for the contract to invoke (default: 0).
     , cuAddressSubindex :: !(Maybe Word64)
-      -- |Name of the receive function to use (default: "receive").
+      -- |Name of the receive function to use.
     , cuReceiveName :: !Text
-      -- |Path to a binary file containing paramaters for the receive method.
-    , cuParameterFile :: !(Maybe FilePath)
+      -- |Path to a JSON file containing parameters for the receive function (only one type of parameter is allowed).
+    , cuParameterFileJSON :: !(Maybe FilePath)
+      -- |Path to a binary file containing parameters for the receive function.
+    , cuParameterFileBinary :: !(Maybe FilePath)
+      -- |Path to a contract schema.
+    , cuSchema :: !(Maybe FilePath)
       -- |Amount to invoke the receive function with (default: 0).
     , cuAmount :: !Amount
       -- |Options for transaction.
@@ -707,6 +724,7 @@ moduleCmds =
           (moduleDeployCmd <>
            moduleListCmd <>
            moduleShowCmd <>
+           moduleInspectCmd <>
            moduleNameCmd))
       (progDesc "Commands for inspecting and deploying modules."))
 
@@ -741,6 +759,17 @@ moduleShowCmd =
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
       (progDesc "Get the source code for a module."))
 
+moduleInspectCmd :: Mod CommandFields ModuleCmd
+moduleInspectCmd =
+  command
+    "inspect"
+    (info
+      (ModuleInspect <$>
+        strArgument (metavar "MODULE-OR-NAME" <> help "Module reference OR a module name.") <*>
+        optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to display the type signatures of the functions.")) <*>
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+      (progDesc "Show the functions from a module, including type signatures if a schema is provided."))
+
 moduleNameCmd :: Mod CommandFields ModuleCmd
 moduleNameCmd =
   command
@@ -748,8 +777,7 @@ moduleNameCmd =
     (info
       (ModuleName <$>
         strArgument (metavar "MODULE" <> help "Module reference OR path to the module.") <*>
-        strOption (long "name" <> metavar "NAME" <> help "Name for the module.") <*>
-        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+        strOption (long "name" <> metavar "NAME" <> help "Name for the module."))
       (progDesc "Name a module."))
 
 contractCmds :: Mod CommandFields Cmd
@@ -775,6 +803,7 @@ contractShowCmd =
         strArgument (metavar "INDEX-OR-NAME" <> help "Index of the contract address OR a contract name.") <*>
         optional (option auto (long "subindex" <> metavar "SUBINDEX"
                             <> help "Subindex of address for the contract (default: 0)")) <*>
+        optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to display the contract info.")) <*>
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
       (progDesc "Display contract state at given block."))
 
@@ -794,14 +823,17 @@ contractInitCmd =
     (info
       (ContractInit <$>
         strArgument (metavar "MODULE" <> help "Module reference OR module name OR (if --path is used) path to a module.") <*>
-        strOption (long "func" <> metavar "INIT-NAME" <> value "init"
-                             <> help "Name of the specific init function in the module (default: \"init\").") <*>
-        optional (strOption (long "params" <> metavar "FILE"
-                             <> help "Binary file with parameters for init function (default: no parameters).")) <*>
+        strOption (long "contract" <> metavar "CONTRACT-NAME"
+                             <> help "Name of the contract (i.e. init function) in the module.") <*>
+        optional (strOption (long "parameter-json" <> metavar "FILE"
+                             <> help "JSON file with parameters for init function. This parameter format should be used if a schema is supplied (default: no parameters).")) <*>
+        optional (strOption (long "parameter-bin" <> metavar "FILE"
+                             <> help "Binary file with parameters for init function. This should _not_ be used if a schema is supplied (default: no parameters).")) <*>
+        optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to parse the params file.")) <*>
         optional (strOption (long "name" <> metavar "NAME" <> help "Name for the contract.")) <*>
         switch (long "path" <> help "Use when MODULE is a path to a module file.") <*>
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> value 0
-                                                                <> help "Amount of GTU to transfer to the contract.") <*>
+                                                      <> help "Amount of GTU to transfer to the contract.") <*>
         requiredEnergyTransactionOptsParser)
       (progDesc "Initialize contract from already deployed module, optionally naming the contract."))
 
@@ -814,10 +846,13 @@ contractUpdateCmd =
         strArgument (metavar "INDEX-OR-NAME" <> help "Index of the contract address OR a contract name.") <*>
         optional (option auto (long "subindex" <> metavar "SUBINDEX" <>
                      help "Subindex of address for the contract on chain (default: 0)")) <*>
-        strOption (long "func" <> metavar "RECEIVE-NAME" <> value "receive"
-                             <> help "Name of the specific receive function in the module (default: \"receive\").") <*>
-        optional (strOption (long "params" <> metavar "FILE"
-                             <> help "Binary file with parameters for init function (default: no parameters).")) <*>
+        strOption (long "func" <> metavar "RECEIVE-NAME"
+                             <> help "Name of the specific receive function in the module.") <*>
+        optional (strOption (long "parameter-json" <> metavar "FILE"
+                             <> help "JSON file with parameters for receive function. This parameter format should be used if a schema is supplied (default: no parameters).")) <*>
+        optional (strOption (long "parameter-bin" <> metavar "FILE"
+                             <> help "Binary file with parameters for receive function. This should _not_ be used if a schema is supplied (default: no parameters).")) <*>
+        optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to parse the params file.")) <*>
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> value 0
                                                                 <> help "Amount of GTU to transfer to the contract.") <*>
         requiredEnergyTransactionOptsParser)
