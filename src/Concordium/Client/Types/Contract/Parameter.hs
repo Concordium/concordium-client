@@ -205,10 +205,10 @@ putJSONUsingSchema typ json = case (typ, json) of
 
     maxSizeLen :: SizeLength -> Integer
     maxSizeLen = \case
-      LenUInt8 -> toInteger (maxBound :: Word8)
-      LenUInt16 -> toInteger (maxBound :: Word16)
-      LenUInt32 -> toInteger (maxBound :: Word32)
-      LenUInt64 -> toInteger (maxBound :: Word64)
+      One   -> toInteger (maxBound :: Word8)
+      Two   -> toInteger (maxBound :: Word16)
+      Four  -> toInteger (maxBound :: Word32)
+      Eight -> toInteger (maxBound :: Word64)
 
     lookupAndPut :: [(Text, SchemaType)]     -- ^ The names and types for Named Fields.
                  -> (Text, AE.Value)         -- ^ A field name and a value.
