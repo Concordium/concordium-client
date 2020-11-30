@@ -1704,18 +1704,28 @@ displayContractInfo schema contrInfo namedOwner namedModRef = case schema of
     Left err' -> logFatal ["Parsing the contract model failed:", err']
     Right infoWithSchema -> runPrinter $ printContractInfo infoWithSchema namedOwner namedModRef
 
--- FIXME: This needs documentation and probably some rework.
--- We can't have this many text and filepath parameters without any notion of what they are.
-getContractUpdateTransactionCfg :: Backend -> BaseConfig -> TransactionOpts Types.Energy -> Text -> Maybe Word64 -> Text
-                                -> Maybe FilePath -> Maybe FilePath -> Maybe FilePath -> Types.Amount -> IO ContractUpdateTransactionCfg
+-- |Attempts to acquire the needed parts for updating a contract.
+-- The two primary parts are a contract address, which is acquired using `getNamedContractAddress`,
+-- and a `Wasm.Parameter` which is acquired using `getWasmParameter`.
+-- It will log fatally if one of the two cannot be acquired.
+getContractUpdateTransactionCfg :: Backend
+                                -> BaseConfig
+                                -> TransactionOpts Types.Energy
+                                -> Text -- ^ Index of the contract address OR a contract name.
+                                -> Maybe Word64 -- ^ Optional subindex.
+                                -> Text -- ^ Name of the receive function to use.
+                                -> Maybe FilePath -- ^ Optional parameter file in JSON format.
+                                -> Maybe FilePath -- ^ Optional parameter file in binary format.
+                                -> Maybe FilePath -- ^ Optional schema file.
+                                -> Types.Amount   -- ^ `Amount` to send to the contract.
+                                -> IO ContractUpdateTransactionCfg
 getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex receiveName
                                 paramsFileJSON paramsFileBinary schemaFile amount = do
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
   CI.ContractInfo{ciSourceModule = moduleRef,..} <- withClient backend . withBestBlockHash Nothing $ getContractInfo namedContrAddr
   let namedModRef = NamedModuleRef {nmrRef = moduleRef, nmrName = Nothing}
-  -- fromJust here is OK because any init name must start with init_.
-  let contrName = fromJust $ Text.stripPrefix "init_" $ Wasm.initName ciName
+  let contrName = CI.contractNameFromInitName ciName
   params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef)
             (CS.ReceiveName contrName receiveName)
   return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr)
@@ -1742,9 +1752,21 @@ data ContractUpdateTransactionCfg =
   , cutcAmount :: !Types.Amount
   }
 
--- FIXME: This needs documentation
-getContractInitTransactionCfg :: Backend -> BaseConfig -> TransactionOpts Types.Energy -> String -> Bool -> Text -> Maybe FilePath
-                              -> Maybe FilePath -> Maybe FilePath -> Types.Amount -> IO ContractInitTransactionCfg
+-- |Attempts to acquire the needed parts for initializing a contract.
+-- The two primary parts are a module reference, which can be acquired in one of three ways
+-- (see the arguments for details), and a `Wasm.Parameter`, which is acquired using `getWasmParameter`.
+-- It will log fatally if one of the two cannot be acquired.
+getContractInitTransactionCfg :: Backend
+                              -> BaseConfig
+                              -> TransactionOpts Types.Energy
+                              -> String -- ^ Module reference OR module name OR (if isPath == True) path to the module (reference then calculated by hashing).
+                              -> Bool   -- ^ isPath: if True, the previous argument is assumed to be a path.
+                              -> Text   -- ^ Name of contract to init.
+                              -> Maybe FilePath -- ^ Optional parameter file in JSON format.
+                              -> Maybe FilePath -- ^ Optional parameter file in binary format.
+                              -> Maybe FilePath -- ^ Optional schema file.
+                              -> Types.Amount   -- ^ `Amount` to send to the contract.
+                              -> IO ContractInitTransactionCfg
 getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath contrName paramsFileJSON paramsFileBinary schemaFile amount = do
   namedModRef <- if isPath
             then (\ref -> NamedModuleRef {nmrRef = ref, nmrName = Nothing}) <$> getModuleRefFromFile modTBD
@@ -1793,14 +1815,18 @@ contractInitTransactionPayload ContractInitTransactionCfg {..} =
 getWasmModuleFromFile :: FilePath -> IO Wasm.WasmModule
 getWasmModuleFromFile moduleFile = Wasm.WasmModule 0 <$> handleReadFile BS.readFile moduleFile
 
--- |Load Wasm Parameter through various methods dependent on the arguments:
---   - Binary parameters -> Read file and wrap contents in `Wasm.Parameter`
---   - JSON parameters ->
---     - With schemaFile -> Read schemaFile and parameters file and encode the parameters.
---     - Otherwise -> Try to get an embedded schema from the module and use it to encode the parameters.
--- For all other cases, appropriate error or warning messages are shown.
-getWasmParameter :: Backend -> Maybe FilePath -> Maybe FilePath -> Maybe FilePath
-                 -> Either BS.ByteString NamedModuleRef -> CS.FuncName -> IO Wasm.Parameter
+-- |Load `Wasm.Parameter` through one of several ways, dependent on the arguments:
+--   * If binary file provided -> Read the file and wrap its contents in `Wasm.Parameter`.
+--   * If JSON file provided   -> Try to get a schema using `getSchemaFromFileOrModule` and use it to encode the parameters
+--                                into a `Wasm.Parameter`.
+-- If invalid arguments are provided or something fails, appropriate warning or error messages are logged.
+getWasmParameter :: Backend
+                 -> Maybe FilePath -- ^ Optional parameter file in JSON format.
+                 -> Maybe FilePath -- ^ Optional parameter file in binary format.
+                 -> Maybe FilePath -- ^ Optional schema file.
+                 -> Either BS.ByteString NamedModuleRef -- ^ Module source OR a `NamedModuleRef`.
+                 -> CS.FuncName -- ^ A func name used for finding the func signature in the schema.
+                 -> IO Wasm.Parameter
 getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile modSourceOrRef funcName =
   case (paramsFileJSON, paramsFileBinary, schemaFile) of
     (Nothing, Nothing, Nothing) -> emptyParams
@@ -1827,11 +1853,13 @@ getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile modSourceOrR
         emptyParams = pure . Wasm.Parameter $ BSS.empty
         binaryParams file = Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile file
 
--- |Get a schema from a file or, alternative, try to extract an embedded schema from a module.
+-- |Get a schema from a file or, alternatively, try to extract an embedded schema from a module.
 -- Logs fatally if an invalid schema is found (either from a file or embedded).
 -- Only returns `Nothing` if no schemaFile is provided and no embedded schema was found in the module.
-getSchemaFromFileOrModule :: Maybe FilePath -> Either BS.ByteString NamedModuleRef
-                          -> Text -> ClientMonad IO (Maybe CS.ModuleSchema)
+getSchemaFromFileOrModule :: Maybe FilePath -- ^ Optional schema file.
+                          -> Either BS.ByteString NamedModuleRef -- ^ Either a
+                          -> Text
+                          -> ClientMonad IO (Maybe CS.ModuleSchema)
 getSchemaFromFileOrModule schemaFile modSourceOrRef block = case (schemaFile, modSourceOrRef) of
   (Nothing, Left modSource) -> liftIO $ tryGetSchemaFromModuleSource modSource
   (Nothing, Right namedModRef) -> do
