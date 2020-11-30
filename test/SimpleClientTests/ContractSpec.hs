@@ -119,18 +119,18 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
     fromToJSONSucceed (Pair UInt64 Int8) $ toArray $ [AE.Number 99, AE.Number (-54)]
 
   it "List" $ do
-    fromToJSONSucceed (List LenUInt16 UInt16) $ toNumArray [0,1,2]
-    fromToJSONFail (List LenUInt8 UInt8) $ toNumArray $ replicate 256 2
+    fromToJSONSucceed (List Two UInt16) $ toNumArray [0,1,2]
+    fromToJSONFail (List One UInt8) $ toNumArray $ replicate 256 2
 
   it "Set" $ do
-    fromToJSONSucceed (Set LenUInt16 UInt8) $ toNumArray [1,2,3,4,5]
-    fromToJSONSucceed (Set LenUInt8 UInt8)  $ toNumArray [1..255]
-    fromToJSONFail (Set LenUInt8 UInt8)     $ toNumArray [0..256] -- Too long
+    fromToJSONSucceed (Set Two UInt8) $ toNumArray [1,2,3,4,5]
+    fromToJSONSucceed (Set One UInt8)  $ toNumArray [1..255]
+    fromToJSONFail (Set One UInt8)     $ toNumArray [0..256] -- Too long
 
   it "Map" $ do
-    fromToJSONSucceed (Map LenUInt8 UInt8 UInt16) $ toArray . map toPair $ (zip [0..10] [20..30] :: [(Int, Int)])
-    fromToJSONSucceed (Map LenUInt8 UInt8 UInt8) $ toArray . map toPair $ (zip [1..255] [1..255] :: [(Int, Int)])
-    fromToJSONFail (Map LenUInt8 UInt8 UInt8) $ toArray . map toPair $ (zip [1..256] [1..256] :: [(Int, Int)]) -- Too long
+    fromToJSONSucceed (Map One UInt8 UInt16) $ toArray . map toPair $ (zip [0..10] [20..30] :: [(Int, Int)])
+    fromToJSONSucceed (Map One UInt8 UInt8) $ toArray . map toPair $ (zip [1..255] [1..255] :: [(Int, Int)])
+    fromToJSONFail (Map One UInt8 UInt8) $ toArray . map toPair $ (zip [1..256] [1..256] :: [(Int, Int)]) -- Too long
 
   it "Array" $ do
     fromToJSONSucceed (Array 10 UInt8) $ toNumArray [1..10]
@@ -251,7 +251,7 @@ genSchemaType n
   where n' = nextNSize n
 
 genSizeLen :: Gen SizeLength
-genSizeLen = oneof $ pure <$> [LenUInt8, LenUInt16, LenUInt32, LenUInt64]
+genSizeLen = oneof $ pure <$> [One, Two, Four, Eight]
 
 genTwoOf :: Gen a -> Gen b -> Gen (a, b)
 genTwoOf ga gb = (,) <$> ga <*> gb
