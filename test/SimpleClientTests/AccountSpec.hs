@@ -8,6 +8,7 @@ import Concordium.Common.Version
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
 import qualified Concordium.Crypto.ByteStringHelpers as BSH
+import qualified Concordium.Crypto.SignatureScheme as SS
 import Concordium.Crypto.EncryptedTransfers
 
 import Control.Monad.Writer
@@ -16,6 +17,7 @@ import qualified Data.Aeson as AE
 import Test.Hspec
 import Data.Maybe
 import qualified Data.Sequence as Seq
+import System.IO.Unsafe (unsafePerformIO)
 
 exampleAddress :: NamedAddress
 exampleAddress = NamedAddress (Just "example") a
@@ -59,14 +61,17 @@ exampleAccountInfoResult d cs = AccountInfoResult
 
 exampleCredentials :: IDTypes.Policy -> IDTypes.AccountCredential
 exampleCredentials p = IDTypes.NormalAC $ IDTypes.CredentialDeploymentValues
-                       { IDTypes.cdvAccount = IDTypes.ExistingAccount acc
+                       { IDTypes.cdvAccount = acc
                        , IDTypes.cdvRegId = regId
                        , IDTypes.cdvIpId = IDTypes.IP_ID 21
                        , IDTypes.cdvThreshold = IDTypes.Threshold 1
                        , IDTypes.cdvArData = Map.singleton (IDTypes.ArIdentity 0) IDTypes.ChainArData
                                               { IDTypes.ardIdCredPubShare = share }
                        , IDTypes.cdvPolicy = p }
-  where acc = naAddr exampleAddress
+  where acc = let
+          keys = unsafePerformIO $ replicateM 2 (SS.correspondingVerifyKey <$> SS.newKeyPair SS.Ed25519)
+          threshold = 1
+          in IDTypes.NewAccount keys (IDTypes.SignatureThreshold threshold)
         (Just regId) = BSH.deserializeBase16 "a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f"
         (Just share) = BSH.deserializeBase16 "a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46fa1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f"
 
