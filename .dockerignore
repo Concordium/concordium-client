@@ -1,0 +1,4 @@
+**/.stack-work
+**/target
+/deps/crypto/lib
+/out
