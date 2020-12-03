@@ -18,7 +18,7 @@ pipeline {
                         sh script: 'exit 1', label: 'missing genesis SHA'
                     }
                 }
-                sshagent (credentials: ['6a7625a8-34f4-4c39-b0be-ed5b49aabc16']) {
+                sshagent (credentials: ['jenkins-gitlab-ssh']) {
                     sh "./scripts/build-k8s-image.sh $params.SHA"
                 }
 
