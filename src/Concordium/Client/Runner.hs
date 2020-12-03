@@ -55,6 +55,9 @@ import           Concordium.Client.Output
 import           Concordium.Client.Parse
 import           Concordium.Client.Runner.Helper
 import           Concordium.Client.Types.Account
+import qualified Concordium.Client.Types.Contract.Info as CI
+import qualified Concordium.Client.Types.Contract.Parameter as CP
+import qualified Concordium.Client.Types.Contract.Schema as CS
 import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Client.Types.TransactionStatus
 import           Concordium.Common.Version
@@ -64,6 +67,7 @@ import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.SignatureScheme   as SigScheme
 import qualified Concordium.Crypto.VRF               as VRF
+import qualified Concordium.Client.Encryption        as Password
 import qualified Concordium.Types.Updates            as Updates
 import qualified Concordium.Types.Transactions       as Types
 import           Concordium.Types.HashableTo
@@ -75,6 +79,7 @@ import qualified Concordium.Wasm                     as Wasm
 import           Proto.ConcordiumP2pRpc
 import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 
+import           Control.Exception
 import           Control.Monad.Fail
 import           Control.Monad.Except
 import           Control.Monad.Reader                hiding (fail)
@@ -97,7 +102,7 @@ import           Data.List                           as L
 import qualified Data.Serialize                      as S
 import qualified Data.Set                            as Set
 import           Data.String
-import           Data.String.Interpolate (i)
+import           Data.String.Interpolate (i, iii)
 import           Data.Text(Text)
 import qualified Data.Tuple                          as Tuple
 import qualified Data.Text                           as Text
@@ -105,33 +110,34 @@ import qualified Data.Vector                         as Vec
 import           Data.Word
 import           Lens.Micro.Platform
 import           Network.GRPC.Client.Helpers
-import           Network.HTTP2.Client.Exceptions
 import           Prelude                             hiding (fail, unlines)
 import           System.IO
 import           System.Directory
 import           Text.Printf
 import           Text.Read (readMaybe)
 
-liftClientIOToM :: MonadIO m => ClientIO a -> ExceptT ClientError m a
-liftClientIOToM comp = do
-  r <- liftIO (runClientIO comp)
-  case r of
-    Left err  -> throwError err
-    Right res -> return res
-
-withClient :: MonadIO m => Backend -> ClientMonad m a -> m a
+-- |Establish a new connection to the backend and run the provided computation.
+-- Close a connection after completion of the computation. Establishing a
+-- connection is expensive, and thus if multiple RPC calls are going to be made
+-- they should be made in the context of the same 'withClient' so they reuse it.
+withClient :: Backend -> ClientMonad IO a -> IO a
 withClient bkend comp = do
-  r <- runExceptT $! do
-    let config = GrpcConfig (COM.grpcHost bkend) (COM.grpcPort bkend) (COM.grpcAuthenticationToken bkend) (COM.grpcTarget bkend) (COM.grpcRetryNum bkend) Nothing
-    client <- liftClientIOToM (mkGrpcClient config Nothing)
-    ret <- (runReaderT . _runClientMonad) comp $! client
-    liftClientIOToM (maybe (return ()) close =<< (liftIO . readIORef $ grpc client))
-    return ret
-  case r of
-    Left err -> error (show err)
-    Right x  -> return x
+  let config = GrpcConfig (COM.grpcHost bkend) (COM.grpcPort bkend) (COM.grpcAuthenticationToken bkend) (COM.grpcTarget bkend) (COM.grpcRetryNum bkend) Nothing
+  runExceptT (mkGrpcClient config Nothing) >>= \case
+      Left err -> logFatal ["Cannot establish connection to the node: " ++ show err]
+      Right client -> do
+        let body = runExceptT ((runReaderT . _runClientMonad) comp $! client) >>= \case
+              Left err -> fail (show err)
+              Right x -> return x
+        let closeOrFail Nothing = return ()
+            closeOrFail (Just ref) =
+              runExceptT (close ref) >>= \case
+                Left err -> logFatal ["Error closing connection: " ++ show err]
+                Right () -> return ()
+        let closeConnection = closeOrFail =<< (readIORef $ grpc client)
+        finally body closeConnection
 
-withClientJson :: (MonadIO m, FromJSON a) => Backend -> ClientMonad m (Either String Value) -> m a
+withClientJson :: (FromJSON a) => Backend -> ClientMonad IO (Either String Value) -> IO a
 withClientJson b c = withClient b c >>= getFromJson
 
 -- |Helper function for parsing JSON Value or fail if the value is missing or cannot be converted correctly.
@@ -192,6 +198,24 @@ processConfigCmd action baseCfgDir verbose =
       putStrLn ""
       accCfgs <- getAllAccountConfigs baseCfg
       runPrinter $ printAccountConfigList accCfgs
+    ConfigBackupExport fileName -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      pwd <- askPassword "Enter password for encryption of backup (leave blank for no encryption): " 
+      allAccounts <- getAllAccountConfigs baseCfg
+      backup <- case Password.getPassword pwd of 
+        "" -> configExport allAccounts Nothing
+        _ -> configExport allAccounts (Just pwd)
+      handleWriteFile BS.writeFile PromptBeforeOverwrite verbose fileName backup 
+
+    ConfigBackupImport fileName -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      ciphertext <- handleReadFile BS.readFile fileName
+      accCfgs <- configImport ciphertext (askPassword "The backup file is password protected. Enter password: ")
+      case accCfgs of
+        Right accCfgs' -> do 
+          void $ importAccountConfig baseCfg accCfgs' verbose
+        Left err -> logFatal [[i|Failed to import Config Backup, #{err}|]]
+
     ConfigAccountCmd c -> case c of
       ConfigAccountAdd addr naName -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
@@ -205,6 +229,28 @@ processConfigCmd action baseCfgDir verbose =
             Right a -> return a
         forM_ naName $ logFatalOnError . validateAccountName
         void $ initAccountConfig baseCfg NamedAddress{..} True
+      ConfigAccountRemove account -> do
+        baseCfg <- getBaseConfig baseCfgDir verbose
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        -- look up the name/address and check if account is initialized:
+        (_, accountConfig) <- getAccountConfig (Just account) baseCfg Nothing Nothing Nothing AssumeInitialized
+        let nameAddr@NamedAddress{..} = acAddr accountConfig
+
+        let descriptor = case naName of
+              Nothing -> "the account with address " ++ show naAddr
+              Just name -> "the account " ++ show name ++ " with address " ++ show naAddr
+
+        logWarn [descriptor ++ " will be removed and can NOT be recovered"]
+
+        updateConfirmed <- askConfirmation $ Just "confirm that you want to remove the account"
+
+        when updateConfirmed $ do
+          logInfo[ descriptor ++ " will be removed"]
+          void $ removeAccountConfig baseCfg nameAddr
+
       ConfigAccountImport file name importFormat -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
@@ -276,6 +322,7 @@ processConfigCmd action baseCfgDir verbose =
                      ++ " will be added to account " ++ Text.unpack addr]
             let accCfg' = accCfg { acKeys = keyMapNew }
             writeAccountKeys baseCfg' accCfg' verbose
+      
       ConfigAccountUpdateKeys addr keysFile -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
@@ -345,6 +392,18 @@ processConfigCmd action baseCfgDir verbose =
 
               let accCfg' = accCfg { acThreshold = fromMaybe (acThreshold accCfg) threshold }
               removeAccountKeys baseCfg accCfg' (HSet.toList idxsToRemove) verbose
+      ConfigAccountRemoveName name -> do      
+        baseCfg <- getBaseConfig baseCfgDir verbose
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        let nameMap = bcAccountNameMap baseCfg
+        case Map.lookup name nameMap of
+          Nothing -> logFatal [[i|the name '#{name}' is not in use|]]
+          Just currentAddr -> do
+            logInfo [[i|removing mapping from '#{name}' to address '#{currentAddr}'|]]
+            void $ removeAccountNameAndWrite baseCfg name verbose
       ConfigAccountAddName addr name -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
@@ -370,18 +429,32 @@ processConfigCmd action baseCfgDir verbose =
             when updateConfirmed $ do
               logInfo [[i|mapping '#{name}' to address '#{checkedAddr}'|]]
               void $ addAccountNameAndWrite baseCfg name checkedAddr verbose
-      ConfigAccountRemoveName name -> do
+      ConfigAccountSetThreshold addr threshold -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
 
-        let nameMap = bcAccountNameMap baseCfg
-        case Map.lookup name nameMap of
-          Nothing -> logFatal [[i|the name '#{name}' is not in use|]]
-          Just currentAddr -> do
-            logInfo [[i|removing mapping from '#{name}' to address '#{currentAddr}'|]]
-            void $ removeAccountNameAndWrite baseCfg name verbose
+        let accCfgDir = bcAccountCfgDir baseCfg
+
+        (_, accCfg) <- getAccountConfigFromAddr addr baseCfg
+
+        -- A valid threshold is between 1 and the number of keys, both inclusive.
+        -- The parser checks that the threshold is at least 1.
+        -- Check that the new threshold is at most the amount of keys:
+        let numberOfKeys = Map.size (acKeys accCfg)
+        if numberOfKeys < fromIntegral threshold then 
+          logWarn ["the threshold can at most be the number of keys: " ++ show numberOfKeys]
+        else 
+          do 
+            logWarn ["the threshold will be set to " ++ show (toInteger threshold)]
+
+            let accCfg' = accCfg { acThreshold = threshold }
+            updateConfirmed <- askConfirmation $ Just "confirm that you want change the threshold"
+
+            when updateConfirmed (writeThresholdFile accCfgDir accCfg' verbose)
+
+
 
   where showMapIdxs = showIdxs . Map.keys
         showHSetIdxs = showIdxs . HSet.toList
@@ -689,7 +762,7 @@ getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx s
   let senderAddr = acAddress . tcAccountCfg $ ettTransactionCfg
 
   -- get encrypted amounts for the sender
-  infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getAccountInfo (Text.pack . show $ senderAddr))
+  (bbHash, infoValue) <- logFatalOnError =<< withBestBlockHash Nothing (\bbHash -> ((bbHash,) <$>) <$> getAccountInfo (Text.pack . show $ senderAddr) bbHash)
   case AE.fromJSON infoValue of
     AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
     AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
@@ -708,6 +781,8 @@ getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx s
         AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
         AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show $ naAddr ettReceiver]
         AE.Success (Just air) -> do
+          globalContext <- logFatalOnError =<< getParseCryptographicParameters bbHash
+
           let receiverPk = ID._elgamalPublicKey $ airEncryptionKey air
           -- precomputed table for speeding up decryption
           let table = Enc.computeTable globalContext (2^(16::Int))
@@ -883,11 +958,13 @@ getAccountEncryptTransactionCfg baseCfg txOpts aeAmount = do
 getAccountDecryptTransactionCfg :: TransactionConfig -> Types.Amount -> ElgamalSecretKey -> Maybe Int -> ClientMonad IO AccountDecryptTransactionConfig
 getAccountDecryptTransactionCfg adTransactionCfg adAmount secretKey idx = do
   let senderAddr = acAddress . tcAccountCfg $ adTransactionCfg
-  infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getAccountInfo (Text.pack . show $ senderAddr))
+  (bbHash, infoValue) <- logFatalOnError =<< withBestBlockHash Nothing (\bbh -> ((bbh, ) <$>) <$> getAccountInfo (Text.pack . show $ senderAddr) bbh)
   case AE.fromJSON infoValue of
     AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
     AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
     AE.Success (Just AccountInfoResult{airEncryptedAmount=a@Types.AccountEncryptedAmount{..}}) -> do
+      globalContext <- logFatalOnError =<< getParseCryptographicParameters bbHash
+
       let listOfEncryptedAmounts = Types.getIncomingAmountsList a
       taker <- case idx of
         Nothing -> return id
@@ -914,6 +991,16 @@ getAccountDecryptTransactionCfg adTransactionCfg adAmount secretKey idx = do
         Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
         Just adTransferData -> return AccountDecryptTransactionConfig{..}
 
+-- |Get the cryptographic parameters in a given block, and attempt to parse them.
+getParseCryptographicParameters :: Text -> ClientMonad IO (Either String GlobalContext)
+getParseCryptographicParameters bHash = runExceptT $ do
+  vglobalContext <- liftEither =<< (lift . getCryptographicParameters $ bHash)
+  case AE.fromJSON vglobalContext of
+    AE.Error err -> throwError err
+    AE.Success Nothing -> throwError "The given block does not exist."
+    AE.Success (Just Versioned{..}) -> do
+      unless (vVersion == 0) $ throwError "Received unsupported version of cryptographi parameters."
+      return vValue
 
 -- |Convert transfer transaction config into a valid payload,
 -- optionally asking the user for confirmation.
@@ -1315,10 +1402,17 @@ processAccountCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      v <- withClientJson backend $ withBestBlockHash block $ getAccountInfo (Text.pack $ show $ naAddr na)
+      (v, dec) <- withClient backend $ do
+        (bbh, accInfoValue) <- withBestBlockHash block $ (\bbh -> (bbh,) <$> getAccountInfo (Text.pack $ show $ naAddr na) bbh)
+        accInfo <- getFromJson accInfoValue
+        case encKey of
+          Nothing -> return (accInfo, Nothing)
+          Just k -> do
+            gc <- logFatalOnError =<< getParseCryptographicParameters bbh
+            return (accInfo, Just (k, gc))
       case v of
         Nothing -> putStrLn "Account not found."
-        Just a -> runPrinter $ printAccountInfo na a verbose (showEncrypted || showDecrypted) encKey
+        Just a -> runPrinter $ printAccountInfo na a verbose (showEncrypted || showDecrypted) dec
 
     AccountList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1473,19 +1567,33 @@ processModuleCmd action baseCfgDir verbose backend =
       mdCfg <- getModuleDeployTransactionCfg baseCfg txOpts modFile
       let txCfg = mdtcTransactionCfg mdCfg
 
-      let intOpts = toInteractionOpts txOpts
-      let pl = moduleDeployTransactionPayload mdCfg
-      withClient backend $ do
-        mTsr <- sendAndTailTransaction txCfg pl intOpts
-        case extractModRef mTsr of
-          Left "ioTail disabled" -> return ()
-          Left err -> logFatal ["module deployment failed:", err]
-          Right modRef -> do
-            case modName of
-              Nothing -> return ()
-              Just modName' -> addModuleNameAndWrite verbose baseCfg modName' modRef
-            let namedModRef = NamedModuleRef {nmrRef = modRef, nmrName = modName}
-            logSuccess [[i|module successfully deployed with reference: #{namedModRef}|]]
+      let nrg = tcEnergy txCfg
+
+      let msgIntro = case modName of
+            Nothing -> [i|deploy the module '#{modFile}'|]
+            Just modName' -> [i|deploy the module '#{modFile}' and name it '#{modName'}'|]
+      logInfo [ msgIntro
+              , [i|allowing up to #{showNrg nrg} to be spent as transaction fee|]]
+
+      deployConfirmed <- askConfirmation Nothing
+
+      when deployConfirmed $ do
+          logInfo ["deploying module..."]
+
+          let intOpts = toInteractionOpts txOpts
+          let pl = moduleDeployTransactionPayload mdCfg
+
+          withClient backend $ do
+            mTsr <- sendAndTailTransaction txCfg pl intOpts
+            case extractModRef mTsr of
+              Left "ioTail disabled" -> return ()
+              Left err -> logFatal ["module deployment failed:", err]
+              Right modRef -> do
+                case modName of
+                  Nothing -> return ()
+                  Just modName' -> addModuleNameAndWrite verbose baseCfg modName' modRef
+                let namedModRef = NamedModuleRef {nmrRef = modRef, nmrName = modName}
+                logSuccess [[i|module successfully deployed with reference: #{namedModRef}|]]
 
     ModuleList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1501,34 +1609,33 @@ processModuleCmd action baseCfgDir verbose backend =
     ModuleShow modRefOrName outFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedModRef <- getNamedModuleRef (bcModuleNameMap baseCfg) modRefOrName
-      (bestBlock, res) <- withClient backend $ withBestBlockHash block $
-        \bb -> (bb,) <$> getModuleSource (showText $ nmrRef namedModRef) bb
+      Wasm.WasmModule{..} <- withClient backend . withBestBlockHash block $ getWasmModule namedModRef
+      logInfo [[i|WASM Version of module: #{wasmVersion}|]]
+      case outFile of
+        -- Write to stdout
+        "-" -> BS.putStr wasmSource
+        -- Write to file
+        _   -> do
+          handleWriteFile BS.writeFile PromptBeforeOverwrite verbose outFile wasmSource
+          logSuccess [[i|wrote module source to the file '#{outFile}'|]]
 
-      case res of
-        Left err -> logFatal ["I/O error:", err]
-        Right "" -> logInfo [[i|the module reference #{namedModRef} does not exist in block #{bestBlock}|]]
-        Right modSource ->
-          case outFile of
-            -- Write to stdout
-            "-" -> BS.putStr modSource
-            -- Write to file
-            _   -> handleWriteFile BS.writeFile PromptBeforeOverwrite verbose outFile modSource
-    ModuleName modRefOrFile modName block -> do
+    ModuleInspect modRefOrName schemaFile block -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      namedModRef <- getNamedModuleRef (bcModuleNameMap baseCfg) modRefOrName
+      schema <- withClient backend . withBestBlockHash block $ getSchemaFromFileOrModule schemaFile (Right namedModRef)
+      case schema of
+        Nothing -> logInfo ["Inspection failed: no schema provided and module does not contain an embedded schema"]
+        Just schema' -> logInfo [[i|Functions for module #{namedModRef}:|], showPrettyJSON schema']
+
+    ModuleName modRefOrFile modName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       modRef <- getModuleRefFromRefOrFile modRefOrFile
-      (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getModuleSource (showText modRef) bb
+      addModuleNameAndWrite verbose baseCfg modName modRef
+      logSuccess [[i|module reference #{modRef} was successfully named '#{modName}'|]]
 
-      case res of
-        Left err -> logFatal ["I/O error:", err]
-        -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
-        Right "" -> logInfo [[i|the module reference #{modRef} does not exist in block #{bestBlock}|]]
-        Right _ -> do
-          addModuleNameAndWrite verbose baseCfg modName modRef
-          logSuccess [[i|module reference #{modRef} was successfully named '#{modName}'|]]
   where extractModRef = extractFromTsr (\case
                                            Types.ModuleDeployed modRef -> Just modRef
                                            _ -> Nothing)
-        showText = Text.pack . show
 
 getModuleDeployTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> IO ModuleDeployTransactionCfg
 getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
@@ -1548,12 +1655,12 @@ moduleDeployEnergyCost wasmMod accCfg = pure . Just . const $
         -- Ad hoc cost implementation from Concordium.Scheduler.Cost
         deployModuleCost :: Int -> Types.Energy
         deployModuleCost psize = Types.Energy . fromIntegral $
-                                  psize * 3 -- typeCheck
-                                  + (5 + (((2 * psize) + 99) `div` 100) * 50) -- storeBytes
+                                  (psize `div` 30)
+                                  + (5 + 2 * ((psize + 99) `div` 100) * 50) -- storeModule
 
         signatureCount = fromIntegral . acThreshold $ accCfg
         payloadSize = (+ tagSize) . BS.length . S.encode . Wasm.wasmSource $ wasmMod
-        headerSize = 60
+        headerSize = fromIntegral Types.transactionHeaderSize
         tagSize = 1
 
 data ModuleDeployTransactionCfg =
@@ -1581,45 +1688,66 @@ processContractCmd action baseCfgDir verbose backend =
         Just [] -> logInfo ["there are no contract instances in block " ++ Text.unpack bestBlock]
         Just xs -> runPrinter $ printContractList (bcContractNameMap baseCfg) xs
 
-    ContractShow indexOrName subindex block -> do
+    ContractShow indexOrName subindex schemaFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-      (bestBlock, res) <- withClient backend $ withBestBlockHash block $
-        \bb -> (bb,) <$> getInstanceInfo (Text.pack . showCompactPrettyJSON . ncaAddr $ namedContrAddr) bb
+      (schema, contrInfo, namedOwner, namedModRef) <- withClient backend . withBestBlockHash block $ \bb -> do
+        contrInfo@CI.ContractInfo{..} <- getContractInfo namedContrAddr bb
+        let namedModRef = NamedModuleRef {nmrRef = ciSourceModule, nmrName = lookupByValue (bcModuleNameMap baseCfg) ciSourceModule}
+        schema <- getSchemaFromFileOrModule schemaFile (Right namedModRef) bb
+        let namedOwner = NamedAddress {naAddr = ciOwner, naName = lookupByValue (bcAccountNameMap baseCfg) ciOwner}
+        return (schema, contrInfo, namedOwner, namedModRef)
+      displayContractInfo schema contrInfo namedOwner namedModRef
 
-      case res of
-        Left err -> logFatal ["I/O error:", err]
-        -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
-        Right AE.Null -> logInfo [[i|the contract instance #{namedContrAddr} does not exist in block #{bestBlock}|]]
-        Right contrInfo -> putStr . showPrettyJSON $ contrInfo
-
-    ContractInit modTBD initName paramsFile contrName isPath amount txOpts -> do
+    ContractInit modTBD contrName paramsFileJSON paramsFileBinary schemaFile contrAlias isPath amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      ciCfg <- getContractInitTransactionCfg baseCfg txOpts modTBD isPath initName paramsFile amount
+      ciCfg <- getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath contrName
+                paramsFileJSON paramsFileBinary schemaFile amount
       let txCfg = citcTransactionCfg ciCfg
+      let energy = tcEnergy txCfg
+      let expiryTs = tcExpiry txCfg
 
-      let intOpts = toInteractionOpts txOpts
-      let pl = contractInitTransactionPayload ciCfg
-      withClient backend $ do
-        mTsr <- sendAndTailTransaction txCfg pl intOpts
-        case extractContractAddress mTsr of
-          Left "ioTail disabled" -> return ()
-          Left err -> logFatal ["contract initialisation failed:", err]
-          Right contrAddr -> do
-            case contrName of
-              Nothing -> return ()
-              Just contrName' -> addContractNameAndWrite verbose baseCfg contrName' contrAddr
-            let namedContrAddr = NamedContractAddress {ncaAddr = contrAddr, ncaName = contrName}
-            logSuccess [[i|contract successfully initialized with address: #{namedContrAddr}|]]
+      logInfo [ [i|initialize contract '#{contrName}' from module '#{citcModuleRef ciCfg}' with |]
+                  ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{citcAmount ciCfg} GTU.|]
+              , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
+              , [i|transaction expires at #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
 
-    ContractUpdate indexOrName subindex receiveName paramsFile amount txOpts -> do
+      initConfirmed <- askConfirmation Nothing
+
+      when initConfirmed $ do
+        let intOpts = toInteractionOpts txOpts
+        let pl = contractInitTransactionPayload ciCfg
+        withClient backend $ do
+          mTsr <- sendAndTailTransaction txCfg pl intOpts
+          case extractContractAddress mTsr of
+            Left "ioTail disabled" -> return ()
+            Left err -> logFatal ["contract initialisation failed:", err]
+            Right contrAddr -> do
+              case contrAlias of
+                Nothing -> return ()
+                Just contrAlias' -> addContractNameAndWrite verbose baseCfg contrAlias' contrAddr
+              let namedContrAddr = NamedContractAddress {ncaAddr = contrAddr, ncaName = contrAlias}
+              logSuccess [[i|contract successfully initialized with address: #{namedContrAddr}|]]
+
+    ContractUpdate indexOrName subindex receiveName paramsFileJSON paramsFileBinary schemaFile amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      cuCfg <- getContractUpdateTransactionCfg baseCfg txOpts indexOrName subindex receiveName paramsFile amount
+      cuCfg <- getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex
+                receiveName paramsFileJSON paramsFileBinary schemaFile amount
       let txCfg = cutcTransactionCfg cuCfg
+      let energy = tcEnergy txCfg
+      let expiryTs = tcExpiry txCfg
 
-      let intOpts = toInteractionOpts txOpts
-      let pl = contractUpdateTransactionPayload cuCfg
-      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+      logInfo [ [i|update contract '#{cutcContrName cuCfg}' using the function '#{receiveName}' with |]
+                  ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{cutcAmount cuCfg} GTU.|]
+              , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
+              , [i|transaction expires at #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
+
+      updateConfirmed <- askConfirmation Nothing
+
+      when updateConfirmed $ do
+        let intOpts = toInteractionOpts txOpts
+        let pl = contractUpdateTransactionPayload cuCfg
+        withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     ContractName index subindex contrName block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1637,14 +1765,60 @@ processContractCmd action baseCfgDir verbose backend =
   where extractContractAddress = extractFromTsr (\case
                                                  Types.ContractInitialized {..} -> Just ecAddress
                                                  _ -> Nothing)
+        paramsMsg paramsFileJSON paramsFileBinary = case (paramsFileJSON, paramsFileBinary) of
+            (Nothing, Nothing) -> "no parameters."
+            (Nothing, Just binFile) -> [i|binary parameters from '#{binFile}'.|]
+            (Just jsonFile, Nothing) -> [i|JSON parameters from '#{jsonFile}'.|]
+            -- This case should already have failed while creating the config.
+            _ -> ""
 
-getContractUpdateTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> Text -> Maybe Word64
-                                -> Text -> Maybe FilePath -> Types.Amount -> IO ContractUpdateTransactionCfg
-getContractUpdateTransactionCfg baseCfg txOpts indexOrName subindex receiveName paramsFile amount = do
+-- |Try to fetch info about the contract and deserialize it from JSON.
+-- Or, log fatally with appropriate error messages if anything goes wrong.
+getContractInfo :: NamedContractAddress -> Text -> ClientMonad IO CI.ContractInfo
+getContractInfo namedContrAddr block = do
+  res <- getInstanceInfo (Text.pack . showCompactPrettyJSON . ncaAddr $ namedContrAddr) block
+  case res of
+    Left err -> logFatal ["I/O error:", err]
+    -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
+    Right AE.Null -> logFatal [[i|the contract instance #{namedContrAddr} does not exist in block #{block}|]]
+    Right contrInfo -> case AE.fromJSON contrInfo of
+      Error err -> logFatal ["Could not decode contract info:", err]
+      Success info -> pure info
+
+-- |Display contract info, optionally using a schema to decode the contract state.
+displayContractInfo :: Maybe CS.ModuleSchema -> CI.ContractInfo -> NamedAddress -> NamedModuleRef -> IO ()
+displayContractInfo schema contrInfo namedOwner namedModRef = case schema of
+  Nothing -> runPrinter $ printContractInfo contrInfo namedOwner namedModRef
+  Just schema' -> case CI.decodeContractStateUsingSchema contrInfo schema' of
+    Left err' -> logFatal ["Parsing the contract model failed:", err']
+    Right infoWithSchema -> runPrinter $ printContractInfo infoWithSchema namedOwner namedModRef
+
+-- |Attempts to acquire the needed parts for updating a contract.
+-- The two primary parts are a contract address, which is acquired using `getNamedContractAddress`,
+-- and a `Wasm.Parameter` which is acquired using `getWasmParameter`.
+-- It will log fatally if one of the two cannot be acquired.
+getContractUpdateTransactionCfg :: Backend
+                                -> BaseConfig
+                                -> TransactionOpts Types.Energy
+                                -> Text -- ^ Index of the contract address OR a contract name.
+                                -> Maybe Word64 -- ^ Optional subindex.
+                                -> Text -- ^ Name of the receive function to use.
+                                -> Maybe FilePath -- ^ Optional parameter file in JSON format.
+                                -> Maybe FilePath -- ^ Optional parameter file in binary format.
+                                -> Maybe FilePath -- ^ Optional schema file.
+                                -> Types.Amount   -- ^ `Amount` to send to the contract.
+                                -> IO ContractUpdateTransactionCfg
+getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex receiveName
+                                paramsFileJSON paramsFileBinary schemaFile amount = do
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-  params <- getWasmParameterFromFileOrDefault paramsFile
-  return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr) (Wasm.ReceiveName receiveName) params amount
+  CI.ContractInfo{ciSourceModule = moduleRef,..} <- withClient backend . withBestBlockHash Nothing $ getContractInfo namedContrAddr
+  let namedModRef = NamedModuleRef {nmrRef = moduleRef, nmrName = Nothing}
+  let contrName = CI.contractNameFromInitName ciName
+  params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef)
+            (CS.ReceiveName contrName receiveName)
+  return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr)
+           contrName (Wasm.ReceiveName [i|#{contrName}.#{receiveName}|]) params amount
 
 contractUpdateTransactionPayload :: ContractUpdateTransactionCfg -> Types.Payload
 contractUpdateTransactionPayload ContractUpdateTransactionCfg {..} =
@@ -1656,6 +1830,9 @@ data ContractUpdateTransactionCfg =
     cutcTransactionCfg :: !TransactionConfig
     -- |The address of the contract to invoke.
   , cutcAddress :: !Types.ContractAddress
+    -- |Name of the contract that is being updated.
+    -- This is resolved from the chain.
+  , cutcContrName :: !Text
     -- |Name of the receive method to invoke.
   , cutcReceiveName :: !Wasm.ReceiveName
     -- |Parameters to the receive method.
@@ -1664,15 +1841,44 @@ data ContractUpdateTransactionCfg =
   , cutcAmount :: !Types.Amount
   }
 
-getContractInitTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> String -> Bool -> Text
-                              -> Maybe FilePath -> Types.Amount -> IO ContractInitTransactionCfg
-getContractInitTransactionCfg baseCfg txOpts modTBD isPath initName paramsFile amount = do
-  modRef <- if isPath
-            then getModuleRefFromFile modTBD
-            else nmrRef <$> getNamedModuleRef (bcModuleNameMap baseCfg) (Text.pack modTBD)
+-- |Attempts to acquire the needed parts for initializing a contract.
+-- The two primary parts are a module reference, which can be acquired in one of three ways
+-- (see the arguments for details), and a `Wasm.Parameter`, which is acquired using `getWasmParameter`.
+-- It will log fatally if one of the two cannot be acquired.
+getContractInitTransactionCfg :: Backend
+                              -> BaseConfig
+                              -> TransactionOpts Types.Energy
+                              -> String -- ^ Module reference OR module name OR (if isPath == True) path to the module (reference then calculated by hashing).
+                              -> Bool   -- ^ isPath: if True, the previous argument is assumed to be a path.
+                              -> Text   -- ^ Name of contract to init.
+                              -> Maybe FilePath -- ^ Optional parameter file in JSON format.
+                              -> Maybe FilePath -- ^ Optional parameter file in binary format.
+                              -> Maybe FilePath -- ^ Optional schema file.
+                              -> Types.Amount   -- ^ `Amount` to send to the contract.
+                              -> IO ContractInitTransactionCfg
+getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath contrName paramsFileJSON paramsFileBinary schemaFile amount = do
+  namedModRef <- if isPath
+            then (\ref -> NamedModuleRef {nmrRef = ref, nmrName = Nothing}) <$> getModuleRefFromFile modTBD
+            else getNamedModuleRef (bcModuleNameMap baseCfg) (Text.pack modTBD)
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
-  params <- getWasmParameterFromFileOrDefault paramsFile
-  return $ ContractInitTransactionCfg txCfg amount modRef (Wasm.InitName initName) params
+  params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef) (CS.InitName contrName)
+  return $ ContractInitTransactionCfg txCfg amount (nmrRef namedModRef) (Wasm.InitName [i|init_#{contrName}|]) params
+
+-- |Query the node for a module reference, and parse the result.
+-- Terminate program execution if either the module cannot be obtained,
+-- or the result cannot be parsed.
+getWasmModule :: NamedModuleRef -- ^On-chain reference of the module.
+              -> Text -- ^Hash of the block to query in.
+              -> ClientMonad IO Wasm.WasmModule
+getWasmModule namedModRef block = do
+  res <- getModuleSource (Text.pack . show $ nmrRef namedModRef) block
+
+  case res of
+    Left err -> logFatal ["I/O error:", err]
+    Right "" -> logFatal [[i|the module reference #{namedModRef} does not exist in block #{block}|]]
+    Right unparsedWasmMod -> case S.decode unparsedWasmMod of
+      Left err' -> logFatal [[i|could not decode Wasm Module:|], err']
+      Right wasmMod -> return wasmMod
 
 data ContractInitTransactionCfg =
   ContractInitTransactionCfg
@@ -1698,11 +1904,72 @@ contractInitTransactionPayload ContractInitTransactionCfg {..} =
 getWasmModuleFromFile :: FilePath -> IO Wasm.WasmModule
 getWasmModuleFromFile moduleFile = Wasm.WasmModule 0 <$> handleReadFile BS.readFile moduleFile
 
--- |Load Wasm Parameters from a binary file if Just, otherwise return mempty.
-getWasmParameterFromFileOrDefault :: Maybe FilePath -> IO Wasm.Parameter
-getWasmParameterFromFileOrDefault paramsFile = case paramsFile of
-  Nothing -> pure . Wasm.Parameter $ BSS.empty
-  Just file -> Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile file
+-- |Load `Wasm.Parameter` through one of several ways, dependent on the arguments:
+--   * If binary file provided -> Read the file and wrap its contents in `Wasm.Parameter`.
+--   * If JSON file provided   -> Try to get a schema using `getSchemaFromFileOrModule` and use it to encode the parameters
+--                                into a `Wasm.Parameter`.
+-- If invalid arguments are provided or something fails, appropriate warning or error messages are logged.
+getWasmParameter :: Backend
+                 -> Maybe FilePath -- ^ Optional parameter file in JSON format.
+                 -> Maybe FilePath -- ^ Optional parameter file in binary format.
+                 -> Maybe FilePath -- ^ Optional schema file.
+                 -> Either BS.ByteString NamedModuleRef -- ^ Module source OR a `NamedModuleRef`.
+                 -> CS.FuncName -- ^ A func name used for finding the func signature in the schema.
+                 -> IO Wasm.Parameter
+getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile modSourceOrRef funcName =
+  case (paramsFileJSON, paramsFileBinary, schemaFile) of
+    (Nothing, Nothing, Nothing) -> emptyParams
+    (Nothing, Nothing, Just _) -> logWarn ["ignoring the --schema as no --params were provided"] *> emptyParams
+    (Nothing, Just binaryFile, Nothing) -> binaryParams binaryFile
+    (_, Just binaryFile, Just _) -> logWarn ["ignoring the --schema as --parameter-bin was used"] *> binaryParams binaryFile
+    (Just jsonFile', Nothing, _) -> do
+      schema <- withClient backend . withBestBlockHash Nothing $ getSchemaFromFileOrModule schemaFile modSourceOrRef
+      case schema of
+        Nothing -> logFatal [[iii|could not parse the json parameter because the module does not include an embedded schema.
+                                  Supply a schema using the --schema flag|]]
+        Just schema' -> getFromJSONParams jsonFile' schema'
+    (Just _, Just _, _) -> logFatal ["--parameter-json and --parameter-bin cannot be used at the same time"]
+  where getFromJSONParams :: FilePath -> CS.ModuleSchema -> IO Wasm.Parameter
+        getFromJSONParams jsonFile schema = case CS.lookupSignatureForFunc schema funcName of
+          Nothing -> logFatal [[i|the schema did not include the provided function|]]
+          Just schemaForParams -> do
+            jsonFileContents <- handleReadFile BSL8.readFile jsonFile
+            let params = AE.eitherDecode jsonFileContents >>= CP.encodeParameter schemaForParams
+            case params of
+              Left errParams -> logFatal [[i|Could not decode parameters from file '#{jsonFile}' as JSON:|], errParams]
+              Right params' -> pure . Wasm.Parameter . BS.toShort $ params'
+
+        emptyParams = pure . Wasm.Parameter $ BSS.empty
+        binaryParams file = Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile file
+
+-- |Get a schema from a file or, alternatively, try to extract an embedded schema from a module.
+-- Logs fatally if an invalid schema is found (either from a file or embedded).
+-- Only returns `Nothing` if no schemaFile is provided and no embedded schema was found in the module.
+getSchemaFromFileOrModule :: Maybe FilePath -- ^ Optional schema file.
+                          -> Either BS.ByteString NamedModuleRef -- ^ Either a
+                          -> Text
+                          -> ClientMonad IO (Maybe CS.ModuleSchema)
+getSchemaFromFileOrModule schemaFile modSourceOrRef block = case (schemaFile, modSourceOrRef) of
+  (Nothing, Left modSource) -> liftIO $ tryGetSchemaFromModuleSource modSource
+  (Nothing, Right namedModRef) -> do
+    Wasm.WasmModule{..} <- getWasmModule namedModRef block
+    liftIO $ tryGetSchemaFromModuleSource wasmSource
+  (Just schemaFile', _) -> liftIO (Just <$> getSchemaFromFile schemaFile')
+  where tryGetSchemaFromModuleSource modSrc = case getSchemaFromModule modSrc of
+          Left err -> logFatal [[i|Could not parse embedded schema from module:|], err]
+          Right schema -> return schema
+
+-- |Load and decode a schema from a file.
+getSchemaFromFile :: FilePath -> IO CS.ModuleSchema
+getSchemaFromFile schemaFile = do
+  schema <- CS.decodeModuleSchema <$> handleReadFile BS.readFile schemaFile
+  case schema of
+    Left err -> logFatal [[i|Could not decode schema from file '#{schemaFile}':|], err]
+    Right schema' -> pure schema'
+
+-- |Try to extract and decode a schema from a module.
+getSchemaFromModule :: BS.ByteString -> Either String (Maybe CS.ModuleSchema)
+getSchemaFromModule = CS.decodeEmbeddedSchema
 
 -- |Try to parse the input as a module reference and assume it is a path if it fails.
 getModuleRefFromRefOrFile :: String -> IO Types.ModuleRef
@@ -2217,6 +2484,7 @@ processLegacyCmd action backend =
     DumpStop -> withClient backend $ dumpStop >>= printSuccess
     GetIdentityProviders block -> withClient backend $ withBestBlockHash block getIdentityProviders >>= printJSON
     GetAnonymityRevokers block -> withClient backend $ withBestBlockHash block getAnonymityRevokers >>= printJSON
+    GetCryptographicParameters block -> withClient backend $ withBestBlockHash block getCryptographicParameters >>= printJSON
   where
     printSuccess (Left x)  = liftIO . putStrLn $ x
     printSuccess (Right x) = liftIO $ if x then putStrLn "OK" else putStrLn "FAIL"

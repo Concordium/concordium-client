@@ -14,9 +14,10 @@ extra-libs/
 *.eventlog
 *-bakers.tar.gz
 concordium.proto
-stack.yaml.lock
+stack*.yaml.lock
 .idea
 *.iml
 tmp/
 gtu-drop-account.json
 hie.yaml
+out/
