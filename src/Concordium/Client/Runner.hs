@@ -217,18 +217,30 @@ processConfigCmd action baseCfgDir verbose =
         Left err -> logFatal [[i|Failed to import Config Backup, #{err}|]]
 
     ConfigAccountCmd c -> case c of
-      ConfigAccountAdd addr naName -> do
+      ConfigAccountAdd addr name -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
           putStrLn ""
 
-        naAddr <-
+        checkedAddr <-
           case ID.addressFromText addr of
-            Left err -> logFatal [printf "cannot parse '%s' as an address: %s" addr err]
+            Left err -> logFatal [[i|cannot parse #{addr} as an address: #{err}|]]
             Right a -> return a
-        forM_ naName $ logFatalOnError . validateAccountName
-        void $ initAccountConfig baseCfg NamedAddress{..} True
+        logFatalOnError $ validateAccountName name
+
+        let nameMap = bcAccountNameMap baseCfg
+        case Map.lookup name nameMap of
+          Nothing -> do
+            void $ addAccountNameAndWrite baseCfg name checkedAddr verbose
+          Just currentAddr -> do
+            logWarn [[i|the name '#{name}' is already mapped to the address '#{currentAddr}'|]]
+
+            updateConfirmed <- askConfirmation $ Just "confirm that you want to overwrite the existing mapping"
+
+            when updateConfirmed $ do
+              logInfo [[i|mapping '#{name}' to address '#{checkedAddr}'|]]
+              void $ addAccountNameAndWrite baseCfg name checkedAddr verbose
       ConfigAccountRemove account -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
@@ -263,28 +275,33 @@ processConfigCmd action baseCfgDir verbose =
         -- NB: This also checks whether the name is valid if provided.
         accCfgs <- loadAccountImportFile importFormat file name
 
-        -- fold over all accounts to add adding them to the config, starting from
-        -- the base config. Checks for duplicates in the names mapping and prompts
-        -- the user to give a new name
-        foldM_ f baseCfg accCfgs
+        if verbose then 
+          -- fold over all accounts adding them to the config, starting from the
+          -- base config. Checks for duplicates in the names mapping and prompts
+          -- the user to give a new name
+          foldM_ addAccountToBaseConfigWithNamePrompts baseCfg accCfgs
+        else void $ importAccountConfigEither baseCfg accCfgs False
 
         where
-          f bCfg aCfg = do
-            let NamedAddress { naAddr = addr, naName = nameOpt } = acAddr aCfg
+          -- Adds an account to the BaseConfig, prompting the user for a new
+          -- non-colliding name if the account is named and the name already
+          -- exists in the name map.
+          addAccountToBaseConfigWithNamePrompts baseCfg accCfg = do
+            let NamedAddress { naAddr = addr, naName = nameOpt } = acAddr accCfg
             case nameOpt of
               Just n -> do
-                newName <- checkUntilNoCollision n $ bcAccountNameMap bCfg
-                (bCfg', _, t) <- initAccountConfig bCfg NamedAddress{naAddr = addr, naName = Just newName} True
-                when t $ writeAccountKeys bCfg' aCfg True
-                return bCfg'
+                newName <- checkUntilNoCollision n $ bcAccountNameMap baseCfg
+                (bcfg, _, t) <- initAccountConfig baseCfg NamedAddress{naAddr = addr, naName = Just newName} True
+                when t $ writeAccountKeys bcfg accCfg True
+                return bcfg
               Nothing -> do
                 -- Currently, all contacts imported from mobile should have a name,
                 -- so this case should never be met, but should we be able to encounter
                 -- it in the future, it is handled as initializing an account without a
                 -- name
-                (bCfg', _, t) <- initAccountConfig bCfg (acAddr aCfg) True
-                when t $ writeAccountKeys bCfg' aCfg verbose
-                return bCfg'
+                (bcfg, _, t) <- initAccountConfig baseCfg (acAddr accCfg) True
+                when t $ writeAccountKeys bcfg accCfg verbose
+                return bcfg
           -- prompt user for a new input until a non-colliding one is given
           checkUntilNoCollision :: Text -> (Map.HashMap Text ID.AccountAddress) -> IO Text
           checkUntilNoCollision key m =
@@ -404,31 +421,6 @@ processConfigCmd action baseCfgDir verbose =
           Just currentAddr -> do
             logInfo [[i|removing mapping from '#{name}' to address '#{currentAddr}'|]]
             void $ removeAccountNameAndWrite baseCfg name verbose
-      ConfigAccountAddName addr name -> do
-        baseCfg <- getBaseConfig baseCfgDir verbose
-        when verbose $ do
-          runPrinter $ printBaseConfig baseCfg
-          putStrLn ""
-
-        checkedAddr <-
-          case ID.addressFromText addr of
-            Left err -> logFatal [[i|cannot parse #{addr} as an address: #{err}|]]
-            Right a -> return a
-        logFatalOnError $ validateAccountName name
-
-        let nameMap = bcAccountNameMap baseCfg
-        case Map.lookup name nameMap of
-          Nothing -> do
-            logInfo [[i|mapping '#{name}' to address '#{checkedAddr}'|]]
-            void $ addAccountNameAndWrite baseCfg name checkedAddr verbose
-          Just currentAddr -> do
-            logWarn [[i|the name '#{name}' is already mapped to the address '#{currentAddr}'|]]
-
-            updateConfirmed <- askConfirmation $ Just "confirm that you want to overwrite the existing mapping"
-
-            when updateConfirmed $ do
-              logInfo [[i|mapping '#{name}' to address '#{checkedAddr}'|]]
-              void $ addAccountNameAndWrite baseCfg name checkedAddr verbose
       ConfigAccountSetThreshold addr threshold -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
