@@ -97,6 +97,7 @@ library:
     - async >= 2.2
     - vector >= 0.12
     - string-interpolate
+    - scientific
   generated-exposed-modules:
     Proto.ConcordiumP2pRpc
     Proto.ConcordiumP2pRpc_Fields
@@ -136,7 +137,6 @@ executables:
       - condition: flag(static)
         ld-options:
         - -static
-
     dependencies:
       - optparse-applicative
       - mtl
@@ -149,47 +149,46 @@ executables:
       - time
 
   middleware:
+    main:             Main.hs
+    source-dirs:      middleware
+    ghc-options:
+      - -threaded
+    dependencies:
+      - aeson
+      - wai-logger
+      - bytestring
+      - concordium-crypto
+      - containers
+      - directory
+      - filepath
+      - globalstate-types
+      - http-conduit
+      - http2-client-grpc
+      - microlens-platform
+      - monad-logger
+      - mtl
+      - process
+      - servant
+      - servant-server
+      - simple-client
+      - split
+      - text
+      - time
+      - unordered-containers
+      - wai
+      - wai-cors
+      - wai-extra
+      - wai-middleware-static
+      - warp
+      - mtl >= 2.2.2
+      - cereal >= 0.5.8
+      - transformers
     when:
       - condition: flag(middleware)
         then:
-          main:             Main.hs
-          source-dirs:      middleware
-          ghc-options:
-            - -threaded
-          dependencies:
-            - aeson
-            - wai-logger
-            - bytestring
-            - concordium-crypto
-            - containers
-            - directory
-            - filepath
-            - globalstate-types
-            - http-conduit
-            - http2-client-grpc
-            - microlens-platform
-            - monad-logger
-            - mtl
-            - process
-            - servant
-            - servant-server
-            - simple-client
-            - split
-            - text
-            - time
-            - unordered-containers
-            - wai
-            - wai-cors
-            - wai-extra
-            - wai-middleware-static
-            - warp
-            - mtl >= 2.2.2
-            - cereal >= 0.5.8
-            - transformers
-
+          buildable: true
         else:
-          main:             DummyMain.hs
-          source-dirs:      middleware-dummy
+          buildable: false
 
   delegation-server:
     main:   Main.hs
@@ -235,6 +234,7 @@ tests:
     dependencies:
       - simple-client
       - concordium-crypto
+      - cereal
       - globalstate-types
       - aeson
       - bytestring
@@ -249,3 +249,4 @@ tests:
       - time
       - unordered-containers
       - filepath
+      - vector

@@ -3,6 +3,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 module Concordium.Client.Config where
 
+
 import Concordium.Types as Types
 import Concordium.ID.Types (addressFromText, KeyIndex)
 import qualified Concordium.ID.Types as IDTypes
@@ -18,6 +19,10 @@ import qualified Data.Aeson.Encode.Pretty as AE
 import qualified Data.ByteString.Lazy as BSL
 import Data.Maybe
 import Data.Either
+
+import Data.Aeson ((.:),(.=))
+import Concordium.Common.Version
+
 import Data.Char
 import Data.List as L
 import Data.List.Split
@@ -338,6 +343,29 @@ importAccountConfig baseCfg accCfgs verbose = foldM f baseCfg accCfgs
           when t $ writeAccountKeys bc' ac verbose
           return bc'
 
+removeAccountConfig :: BaseConfig -> NamedAddress -> IO BaseConfig
+removeAccountConfig baseCfg@BaseConfig{..} NamedAddress{..} = do
+  -- Remove the keys directory
+  let keysDir = accountKeysDir bcAccountCfgDir naAddr
+  liftIO $ removePathForcibly keysDir
+
+  -- Remove the threshold file
+  let thresholdFilePath = accountThresholdFile bcAccountCfgDir naAddr
+  liftIO $ removePathForcibly thresholdFilePath
+
+  -- If an alias was removed, write the new map
+  when nameWasRemoved (liftIO $ writeNameMap True (accountNameMapFile bcAccountCfgDir) accountNameMap')
+
+  return baseCfg{bcAccountNameMap = accountNameMap'}
+  where
+    (accountNameMap', nameWasRemoved) = case naName of
+      Nothing ->
+        (bcAccountNameMap, False)
+      Just name ->
+        -- Remove the alias, if it exists
+        (M.delete name bcAccountNameMap, True)
+
+
 -- |Add a contract name and write it to 'contractNames.map'
 addContractNameAndWrite :: MonadIO m => Verbose -> BaseConfig -> Text -> ContractAddress -> m ()
 addContractNameAndWrite verbose baseCfg = addContractOrModuleNameAndWrite verbose mapFile nameMap showCompactPrettyJSON
@@ -387,8 +415,8 @@ data NamedModuleRef =
 
 instance Show NamedModuleRef where
   show NamedModuleRef {..} = case nmrName of
-    Just nmrName' -> [i|#{nmrRef} (#{nmrName'})|]
-    Nothing -> show nmrRef
+    Just nmrName' -> [i|'#{nmrRef}' (#{nmrName'})|]
+    Nothing -> [i|'#{nmrRef}'|]
 
 -- |Write the name map to a file in a pretty JSON format.
 writeNameMapAsJSON :: AE.ToJSON v => Verbose -> FilePath -> NameMap v -> IO ()
@@ -425,15 +453,15 @@ handleWriteFile wrtFile overwriteSetting verbose file contents = do
       when verbose $ logInfo [[i|writing file '#{file}'|]]
       wrtFile file contents) logFatalOnErrors
   where logFatalOnErrors e
-          | isDoesNotExistError e = logFatal [[i|'#{file}' does not exist and cannot be created|]]
+          | isDoesNotExistError e = logFatal [[i|the file '#{file}' does not exist and cannot be created|]]
           | isPermissionError e   = logFatal [[i|you do not have permissions to write to the file '#{file}'|]]
-          | otherwise             = logFatal [[i|'something went wrong while writing to the file #{file}'|]]
+          | otherwise             = logFatal [[i|something went wrong while writing to the file '#{file}'|]]
 
 -- |Read a file with the provided function and handle IO errors with an appropriate logging of errors.
 handleReadFile :: (FilePath -> IO s) -> FilePath -> IO s
 handleReadFile rdFile file = catchIOError (rdFile file) logFatalOnErrors
   where logFatalOnErrors e
-          | isDoesNotExistError e = logFatal [[i|'#{file}' does not exist and cannot be read|]]
+          | isDoesNotExistError e = logFatal [[i|the file '#{file}' does not exist and cannot be read|]]
           | isPermissionError e   = logFatal [[i|you do not have permissions to read the file '#{file}'|]]
           | otherwise             = logFatal [[i|something went wrong while reading the file '#{file}'|]]
 
@@ -597,6 +625,10 @@ validateContractOrModuleName name =
                   and should otherwise consist of letters, numbers, space, '.', ',', '!',
                   '?', '-', and '_' only)|]
 
+-- |Current version of accountconfig, for configbackup export/import compatability
+accountConfigVersion :: Version
+accountConfigVersion = 1
+
 data AccountConfig =
   AccountConfig
   { acAddr :: !NamedAddress
@@ -608,7 +640,23 @@ data AccountConfig =
   -- you just import an account and don't initialize a dummy config first. But
   -- that is for the future, and for now we just have to deal with null pointers.
   , acEncryptionKey :: !(Maybe EncryptedAccountEncryptionSecretKey)
-  }
+  } deriving(Show, Eq)
+
+instance AE.ToJSON AccountConfig where
+   toJSON AccountConfig{..} = 
+     AE.object ["address" .= acAddr,
+                "accountKeys" .= acKeys,
+                "threshold" .= acThreshold,
+                "accountEncryptionKey" .= acEncryptionKey]
+
+instance AE.FromJSON AccountConfig where
+  parseJSON = AE.withObject "AccountConfig" $ \v -> do
+    acAddr <- v .: "address"
+    acKeys <- v .: "accountKeys"
+    acThreshold <- v .: "threshold"
+    acEncryptionKey <- v .: "accountEncryptionKey"
+    return AccountConfig{..}
+
 
 -- | Whether to automatically initialize the account configuration or not.
 data AutoInit = AutoInit | AssumeInitialized
@@ -729,9 +777,13 @@ resolveAccountAddress m input = do
                 return (Just input, a)
               Right a -> do
                 -- Input is an address. Try to look up its name in the map.
-                let name = fst <$> find ((== a) . snd) (M.toList m)
+                let name = lookupByValue m a
                 return (name, a)
   return NamedAddress { naName = n, naAddr = a }
+
+-- |Lookup by value from a map. Returns first entry found.
+lookupByValue :: Eq v => NameMap v -> v -> Maybe Text
+lookupByValue m input = fst <$> find ((== input) . snd) (M.toList m)
 
 -- |Look up an account by name or address. See doc for 'resolveAccountAddress'.
 -- If the lookup fails, an error is thrown.

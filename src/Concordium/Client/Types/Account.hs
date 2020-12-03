@@ -23,8 +23,7 @@ import qualified Concordium.ID.Types as ID
 import qualified Concordium.Types as Types
 import qualified Concordium.Crypto.SignatureScheme as SigScheme
 import qualified Concordium.Crypto.Ed25519Signature as Ed25519
-import Data.Serialize (encode)
-import Data.Serialize (decode)
+import Data.Serialize (decode, encode)
 import Data.ByteString (ByteString)
 
 
@@ -32,6 +31,15 @@ import Data.ByteString (ByteString)
 
 data NamedAddress = NamedAddress { naName :: Maybe Text, naAddr :: ID.AccountAddress }
   deriving (Show, Eq)
+
+instance AE.ToJSON NamedAddress where
+  toJSON (NamedAddress naName naAddr) = AE.object ["name" .= naName, "address" .= naAddr]
+
+instance AE.FromJSON NamedAddress where
+  parseJSON = AE.withObject "NamedAddress" $ \v -> do
+    naName <- v .: "name"
+    naAddr <- v .: "address"
+    return NamedAddress{..}
 
 -- * Account keys
 
@@ -43,7 +51,7 @@ data EncryptedAccountKeyPair
   = EncryptedAccountKeyPairEd25519
     { verifyKey :: !Ed25519.VerifyKey
     , encryptedSignKey :: !(EncryptedJSON Ed25519.SignKey)
-    }
+    } deriving(Show, Eq)
 
 instance AE.ToJSON EncryptedAccountKeyPair where
   toJSON EncryptedAccountKeyPairEd25519{..} =
