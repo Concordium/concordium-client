@@ -1517,9 +1517,9 @@ processModuleCmd action baseCfgDir verbose backend =
           withClient backend $ do
             mTsr <- sendAndTailTransaction txCfg pl intOpts
             case extractModRef mTsr of
-              Left "ioTail disabled" -> return ()
-              Left err -> logFatal ["module deployment failed:", err]
-              Right modRef -> do
+              Nothing -> return ()
+              Just (Left err) -> logFatal ["module deployment failed:", err]
+              Just (Right modRef) -> do
                 case modName of
                   Nothing -> return ()
                   Just modName' -> addModuleNameAndWrite verbose baseCfg modName' modRef
@@ -1651,9 +1651,9 @@ processContractCmd action baseCfgDir verbose backend =
         withClient backend $ do
           mTsr <- sendAndTailTransaction txCfg pl intOpts
           case extractContractAddress mTsr of
-            Left "ioTail disabled" -> return ()
-            Left err -> logFatal ["contract initialisation failed:", err]
-            Right contrAddr -> do
+            Nothing -> return ()
+            Just (Left err) -> logFatal ["contract initialisation failed:", err]
+            Just (Right contrAddr) -> do
               case contrAlias of
                 Nothing -> return ()
                 Just contrAlias' -> addContractNameAndWrite verbose baseCfg contrAlias' contrAddr
@@ -1681,9 +1681,9 @@ processContractCmd action baseCfgDir verbose backend =
         withClient backend $ do
           mTsr <- sendAndTailTransaction txCfg pl intOpts
           case extractUpdate mTsr of
-            Left "ioTail disabled" -> return ()
-            Left err -> logFatal ["updating contract instance failed:", err]
-            Right _ -> do
+            Nothing -> return ()
+            Just (Left err) -> logFatal ["updating contract instance failed:", err]
+            Just (Right _) -> do
               namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
               logSuccess [[iii|successfully updated contract instance #{namedContrAddr}
                                                 using the function '#{receiveName}'|]]
@@ -1944,9 +1944,10 @@ mkContractAddress index subindex = Types.ContractAddress (Types.ContractIndex in
 
 -- |Try to extract event information from a TransactionStatusResult.
 -- The Maybe returned by the supplied function is mapped to Either with an error message.
-extractFromTsr :: (Types.Event -> Maybe a) -> Maybe TransactionStatusResult -> Either String a
-extractFromTsr _ Nothing = Left "ioTail disabled" -- occurs when ioTail is disabled.
-extractFromTsr eventMatcher (Just tsr) = case parseTransactionBlockResult tsr of
+-- 'Nothing' is mapped to 'Nothing'
+extractFromTsr :: (Types.Event -> Maybe a) -> Maybe TransactionStatusResult -> Maybe (Either String a)
+extractFromTsr _ Nothing = Nothing -- occurs when ioTail is disabled.
+extractFromTsr eventMatcher (Just tsr) = Just $ case parseTransactionBlockResult tsr of
   SingleBlock _ tSummary -> getEvents tSummary >>= maybeToRight "transaction not included in any blocks" . findModRef
   NoBlocks -> Left "transaction not included in any blocks"
   _ -> Left "internal server: Finalized chain has split"
