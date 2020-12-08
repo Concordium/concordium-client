@@ -1678,7 +1678,15 @@ processContractCmd action baseCfgDir verbose backend =
       when updateConfirmed $ do
         let intOpts = toInteractionOpts txOpts
         let pl = contractUpdateTransactionPayload cuCfg
-        withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+        withClient backend $ do
+          mTsr <- sendAndTailTransaction txCfg pl intOpts
+          case extractUpdate mTsr of
+            Left "ioTail disabled" -> return ()
+            Left err -> logFatal ["updating contract instance failed:", err]
+            Right _ -> do
+              namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
+              logSuccess [[iii|successfully updated contract instance #{namedContrAddr}
+                                                using the function '#{receiveName}'|]]
 
     ContractName index subindex contrName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1689,6 +1697,9 @@ processContractCmd action baseCfgDir verbose backend =
   where extractContractAddress = extractFromTsr (\case
                                                  Types.ContractInitialized {..} -> Just ecAddress
                                                  _ -> Nothing)
+        extractUpdate = extractFromTsr (\case
+                                        Types.Updated {..} -> Just ()
+                                        _ -> Nothing)
         paramsMsg paramsFileJSON paramsFileBinary = case (paramsFileJSON, paramsFileBinary) of
             (Nothing, Nothing) -> "no parameters."
             (Nothing, Just binFile) -> [i|binary parameters from '#{binFile}'.|]
