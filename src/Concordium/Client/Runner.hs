@@ -1680,19 +1680,12 @@ processContractCmd action baseCfgDir verbose backend =
         let pl = contractUpdateTransactionPayload cuCfg
         withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
-    ContractName index subindex contrName block -> do
+    ContractName index subindex contrName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       let contrAddr = mkContractAddress index subindex
-      (bestBlock, res) <- withClient backend $ withBestBlockHash block $
-        \bb -> (bb,) <$> getInstanceInfo (Text.pack . showCompactPrettyJSON $ contrAddr) bb
+      addContractNameAndWrite verbose baseCfg contrName contrAddr
+      logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{contrName}'|]]
 
-      case res of
-        Left err -> logFatal ["I/O error:", err]
-        -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
-        Right AE.Null -> logInfo [[i|the contract instance #{showCompactPrettyJSON contrAddr} does not exist in block #{bestBlock}|]]
-        Right _ -> do
-          addContractNameAndWrite verbose baseCfg contrName contrAddr
-          logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{contrName}'|]]
   where extractContractAddress = extractFromTsr (\case
                                                  Types.ContractInitialized {..} -> Just ecAddress
                                                  _ -> Nothing)

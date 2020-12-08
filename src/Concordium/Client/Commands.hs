@@ -293,9 +293,7 @@ data ContractCmd
       -- |Subindex of the address for the contract (default: 0).
     , cnAddressSubindex :: !(Maybe Word64)
       -- |Name for the contract.
-    , cnName :: !Text
-      -- |Hash of the block (default "best").
-    , cnBlockHash :: !(Maybe Text) }
+    , cnName :: !Text }
   deriving (Show)
 
 -- | The type parameter 'energyOrMaybe' should be Energy or Maybe Energy.
@@ -867,8 +865,7 @@ contractNameCmd =
         argument auto (metavar "INDEX" <> help "Index of the contract address to be named.") <*>
         optional (option auto (long "subindex" <> metavar "SUBINDEX"
                             <> help "Subindex of contract address to be named (default: 0)")) <*>
-        strOption (long "name" <> metavar "NAME" <> help "Name for the contract.") <*>
-        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+        strOption (long "name" <> metavar "NAME" <> help "Name for the contract."))
       (progDesc "Name a contract."))
 
 configCmds :: ShowAllOpts -> Mod CommandFields Cmd
