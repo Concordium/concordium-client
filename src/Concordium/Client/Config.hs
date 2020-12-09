@@ -391,8 +391,9 @@ instance Show NamedModuleRef where
 
 -- |Write the name map to a file in a pretty JSON format.
 writeNameMapAsJSON :: AE.ToJSON v => Verbose -> FilePath -> NameMap v -> IO ()
-writeNameMapAsJSON verbose file =  handledWriteFile file . BSL.fromStrict . encodeUtf8 . T.pack . showSortedPrettyJSON
-  where handledWriteFile = handleWriteFile BSL.writeFile AllowOverwrite verbose 
+writeNameMapAsJSON verbose file =  handledWriteFile file .  AE.encodePretty' config
+  where config = AE.defConfig { AE.confCompare = compare }
+        handledWriteFile = handleWriteFile BSL.writeFile AllowOverwrite verbose 
 -- |Write the name map to a file in the expected format.
 writeNameMap :: Show v => Verbose -> FilePath -> NameMap v -> IO ()
 writeNameMap verbose file = handledWriteFile file . BSL.fromStrict . encodeUtf8 . T.pack . unlines . map f . sortOn fst . M.toList
