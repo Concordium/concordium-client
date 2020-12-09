@@ -671,6 +671,9 @@ getTransferWithScheduleTransactionCfg baseCfg txOpts receiver preSchedule = do
                          in
                            zip (iterate (+ diff) start) (replicate (numIntervals - 1) chunks ++ [chunks + lastChunk])
   let nrgCost _ = return $ Just $ transferWithScheduleEnergyCost (length realSchedule)
+
+  when (length realSchedule > 255) $ logFatal ["At most 255 releases can be scheduled."]
+
   txCfg <- getTransactionCfg baseCfg txOpts nrgCost
 
   receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
