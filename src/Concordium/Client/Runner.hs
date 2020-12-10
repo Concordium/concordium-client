@@ -1580,12 +1580,8 @@ getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
 -- |Calcuate the energy cost of deploying a module. Uses an ad hoc implementation from Concordium.Scheduler.Cost.
 moduleDeployEnergyCost :: Wasm.WasmModule -> AccountConfig -> IO (Maybe (Int -> Types.Energy))
 moduleDeployEnergyCost wasmMod accCfg = pure . Just . const $
-  deployModuleCost payloadSize + headerCost signatureCount payloadSize
+  deployModuleCost payloadSize + headerEnergyCost payloadSize signatureCount
   where
-        -- Ad hoc cost implementation from Concordium.Scheduler.Cost
-        headerCost :: Int -> Int -> Types.Energy
-        headerCost signatureCnt psize = Types.Energy . fromIntegral $ 6 + ((psize + headerSize) `div` 232) + signatureCnt * 53
-
         -- Ad hoc cost implementation from Concordium.Scheduler.Cost
         deployModuleCost :: Int -> Types.Energy
         deployModuleCost psize = Types.Energy . fromIntegral $
@@ -1594,8 +1590,21 @@ moduleDeployEnergyCost wasmMod accCfg = pure . Just . const $
 
         signatureCount = fromIntegral . acThreshold $ accCfg
         payloadSize = (+ tagSize) . BS.length . S.encode . Wasm.wasmSource $ wasmMod
-        headerSize = fromIntegral Types.transactionHeaderSize
         tagSize = 1
+
+-- |Calculate energy needed for a transaction header.
+-- It is essentially Concordium.Scheduler.Cost.checkHeader and *must stay in sync*.
+-- The only difference is that headerSize is found automatically.
+headerEnergyCost
+  :: Int -- ^ The number of bytes of serialized payload.
+  -> Int -- ^ The number of signatures the transaction signature contains.
+  -> Types.Energy
+headerEnergyCost payloadSize nSig =
+    6
+  + fromIntegral (headerSize + payloadSize) `div` 232
+  + fromIntegral nSig * 53
+
+  where headerSize = fromIntegral Types.transactionHeaderSize
 
 data ModuleDeployTransactionCfg =
   ModuleDeployTransactionCfg
@@ -1641,6 +1650,11 @@ processContractCmd action baseCfgDir verbose backend =
       let energy = tcEnergy txCfg
       let expiryTs = tcExpiry txCfg
 
+      let minEnergy = contractInitMinimumEnergy ciCfg (tcAccountCfg txCfg)
+      when (energy < minEnergy) $ logFatal [ "insufficient energy provided"
+                                           , [iii|to verify the transaction signature #{showNrg minEnergy} is needed,
+                                                  and additional energy is needed to complete the initialization|]]
+
       logInfo [ [i|initialize contract '#{contrName}' from module '#{citcModuleRef ciCfg}' with |]
                   ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{citcAmount ciCfg} GTU.|]
               , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
@@ -1670,6 +1684,11 @@ processContractCmd action baseCfgDir verbose backend =
       let txCfg = cutcTransactionCfg cuCfg
       let energy = tcEnergy txCfg
       let expiryTs = tcExpiry txCfg
+
+      let minEnergy = contractUpdateMinimumEnergy cuCfg (tcAccountCfg txCfg)
+      when (energy < minEnergy) $ logFatal [ "insufficient energy provided"
+                                           , [iii|to verify the transaction signature #{showNrg minEnergy} is needed,
+                                                  and additional energy is needed to complete the update|]]
 
       logInfo [ [i|update contract '#{cutcContrName cuCfg}' using the function '#{receiveName}' with |]
                   ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{cutcAmount cuCfg} GTU.|]
@@ -1709,6 +1728,30 @@ processContractCmd action baseCfgDir verbose backend =
             (Just jsonFile, Nothing) -> [i|JSON parameters from '#{jsonFile}'.|]
             -- This case should already have failed while creating the config.
             _ -> ""
+
+        -- |Calculates the minimum energy required for checking the signature of a contract initialization.
+        -- The minimum will not cover the full initialization, but enough of it, so that a potential 'Not enough energy' error
+        -- can be shown.
+        contractInitMinimumEnergy :: ContractInitTransactionCfg -> AccountConfig -> Types.Energy
+        contractInitMinimumEnergy ContractInitTransactionCfg{..} accCfg = headerEnergyCost (fromIntegral payloadSize) signatureCount
+          where
+            payloadSize =    1 -- tag
+                          + 32 -- module ref
+                          +  2 + (length $ show citcInitName) -- size length + length of initName
+                          +  2 + (BSS.length . Wasm.parameter $ citcParams) -- size length + length of params
+            signatureCount = fromIntegral . acThreshold $ accCfg
+
+        -- |Calculates the minimum energy required for checking the signature of a contract update.
+        -- The minimum will not cover the full update, but enough of it, so that a potential 'Not enough energy' error
+        -- can be shown.
+        contractUpdateMinimumEnergy :: ContractUpdateTransactionCfg -> AccountConfig -> Types.Energy
+        contractUpdateMinimumEnergy ContractUpdateTransactionCfg{..} accCfg = headerEnergyCost (fromIntegral payloadSize) signatureCount
+          where
+            payloadSize =    1 -- tag
+                          + 16 -- contract address
+                          +  2 + Text.length cutcContrName + (length $ show cutcReceiveName) -- size length + length of contrName and receiveName
+                          +  2 + (BSS.length . Wasm.parameter $ cutcParams) -- size length + length of params
+            signatureCount = fromIntegral . acThreshold $ accCfg
 
 -- |Try to fetch info about the contract and deserialize it from JSON.
 -- Or, log fatally with appropriate error messages if anything goes wrong.
