@@ -1,8 +1,10 @@
+{-# LANGUAGE QuasiQuotes #-}
 module Concordium.Client.Utils where
 
 import Control.Monad.Except
 import Concordium.Types
 import qualified Concordium.ID.Types as IDTypes
+import Data.String.Interpolate (i)
 import Text.Read
 
 -- | In the 'Left' case of an 'Either', transform the error using the given function and
@@ -42,6 +44,21 @@ amountFromStringInform s =
   case amountFromString s of
     Just a -> Right a
     Nothing -> Left $ "Invalid GTU amount '" ++ s ++ "'. Amounts must be of the form n[.m] where m, if present,\n must have at least one and at most 6 digits."
+
+-- |Try to parse `Energy` from a string, and, if failing, inform the user
+-- what the expected format and bounds are.
+-- This is intended to be used by the options parsers.
+energyFromStringInform :: String -> Either String Energy
+energyFromStringInform s =
+  -- Reading negative numbers directly to Energy (i.e. Word64) silently underflows, so this approach is necessary.
+  case readMaybe s :: Maybe Integer of
+    Just a -> if a >= nrgMinBound && a <= nrgMaxBound
+              then Right . fromIntegral $ a
+              else Left errMsg
+    Nothing -> Left errMsg
+  where errMsg = [i|Invalid energy '#{s}'. Energy must be an integer between #{nrgMinBound} and #{nrgMaxBound}, both inclusive.|]
+        nrgMinBound = 0
+        nrgMaxBound = fromIntegral (maxBound :: Energy)
 
 -- |Try to parse the amount a signature threshold from string.
 thresholdFromStringInform :: String -> Either String IDTypes.SignatureThreshold
