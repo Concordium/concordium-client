@@ -1580,7 +1580,7 @@ getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
 -- |Calcuate the energy cost of deploying a module. Uses an ad hoc implementation from Concordium.Scheduler.Cost.
 moduleDeployEnergyCost :: Wasm.WasmModule -> AccountConfig -> IO (Maybe (Int -> Types.Energy))
 moduleDeployEnergyCost wasmMod accCfg = pure . Just . const $
-  deployModuleCost payloadSize + headerEnergyCost payloadSize signatureCount
+  deployModuleCost payloadSize + checkHeaderEnergyCostWithPayload payloadSize signatureCount
   where
         -- Ad hoc cost implementation from Concordium.Scheduler.Cost
         deployModuleCost :: Int -> Types.Energy
@@ -1592,18 +1592,16 @@ moduleDeployEnergyCost wasmMod accCfg = pure . Just . const $
         payloadSize = (+ tagSize) . BS.length . S.encode . Wasm.wasmSource $ wasmMod
         tagSize = 1
 
--- |Calculate energy needed for a transaction header.
--- It is essentially Concordium.Scheduler.Cost.checkHeader and *must stay in sync*.
--- The only difference is that headerSize is found automatically.
-headerEnergyCost
+-- |Cost of checking a header where the sender provides n signatures.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost.
+-- This function differs from Concordium.Client.Types.Transaction.checkHeaderEnergyCost,
+-- in that it accounts for the payload.
+checkHeaderEnergyCostWithPayload
   :: Int -- ^ The number of bytes of serialized payload.
   -> Int -- ^ The number of signatures the transaction signature contains.
   -> Types.Energy
-headerEnergyCost payloadSize nSig =
-    6
-  + fromIntegral (headerSize + payloadSize) `div` 232
-  + fromIntegral nSig * 53
-
+checkHeaderEnergyCostWithPayload payloadSize nSig =
+  CT.checkHeaderEnergyCost nSig + (headerSize + fromIntegral payloadSize) `div` 232
   where headerSize = fromIntegral Types.transactionHeaderSize
 
 data ModuleDeployTransactionCfg =
@@ -1733,7 +1731,7 @@ processContractCmd action baseCfgDir verbose backend =
         -- The minimum will not cover the full initialization, but enough of it, so that a potential 'Not enough energy' error
         -- can be shown.
         contractInitMinimumEnergy :: ContractInitTransactionCfg -> AccountConfig -> Types.Energy
-        contractInitMinimumEnergy ContractInitTransactionCfg{..} accCfg = headerEnergyCost (fromIntegral payloadSize) signatureCount
+        contractInitMinimumEnergy ContractInitTransactionCfg{..} accCfg = checkHeaderEnergyCostWithPayload (fromIntegral payloadSize) signatureCount
           where
             payloadSize =    1 -- tag
                           + 32 -- module ref
@@ -1745,7 +1743,7 @@ processContractCmd action baseCfgDir verbose backend =
         -- The minimum will not cover the full update, but enough of it, so that a potential 'Not enough energy' error
         -- can be shown.
         contractUpdateMinimumEnergy :: ContractUpdateTransactionCfg -> AccountConfig -> Types.Energy
-        contractUpdateMinimumEnergy ContractUpdateTransactionCfg{..} accCfg = headerEnergyCost (fromIntegral payloadSize) signatureCount
+        contractUpdateMinimumEnergy ContractUpdateTransactionCfg{..} accCfg = checkHeaderEnergyCostWithPayload (fromIntegral payloadSize) signatureCount
           where
             payloadSize =    1 -- tag
                           + 16 -- contract address
