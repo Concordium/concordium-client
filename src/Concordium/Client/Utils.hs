@@ -57,7 +57,7 @@ energyFromStringInform s =
               else Left errMsg
     Nothing -> Left errMsg
   where errMsg = [i|Invalid energy '#{s}'. Energy must be an integer between #{nrgMinBound} and #{nrgMaxBound}, both inclusive.|]
-        nrgMinBound = fromIntegral (minBound :: Energy)
+        nrgMinBound = 0
         nrgMaxBound = fromIntegral (maxBound :: Energy)
 
 -- |Try to parse the amount a signature threshold from string.
