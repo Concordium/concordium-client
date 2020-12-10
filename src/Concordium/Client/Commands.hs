@@ -444,12 +444,12 @@ retryNumParser =
 -- |Parse transactionOpts with an optional energy flag
 transactionOptsParser :: Parser (TransactionOpts (Maybe Energy))
 transactionOptsParser = transactionOptsParserBuilder $
-    optional (option auto (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction."))
+    optional (option (eitherReader energyFromStringInform) (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction."))
 
 -- |Parse transactionOpts with a required energy flag
 requiredEnergyTransactionOptsParser :: Parser (TransactionOpts Energy)
 requiredEnergyTransactionOptsParser = transactionOptsParserBuilder $
-    option auto (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction.")
+    option (eitherReader energyFromStringInform) (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction.")
 
 -- |Helper function to build an transactionOptsParser with or without a required energy flag
 transactionOptsParserBuilder :: Parser energyOrMaybe -> Parser (TransactionOpts energyOrMaybe)
