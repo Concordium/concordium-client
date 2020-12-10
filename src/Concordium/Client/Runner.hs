@@ -1559,7 +1559,7 @@ processModuleCmd action baseCfgDir verbose backend =
       schema <- withClient backend . withBestBlockHash block $ getSchemaFromFileOrModule schemaFile (Right namedModRef)
       case schema of
         Nothing -> logInfo ["Inspection failed: no schema provided and module does not contain an embedded schema"]
-        Just schema' -> logInfo [[i|Functions for module #{namedModRef}:|], showPrettyJSON schema']
+        Just schema' -> runPrinter $ printModuleInspectInfo namedModRef schema'
 
     ModuleName modRefOrFile modName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose

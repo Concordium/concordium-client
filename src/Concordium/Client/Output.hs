@@ -302,8 +302,6 @@ printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
             tryAppendSignature rcvSigs rcvName = case M.lookup rcvName rcvSigs of
               Nothing -> rcvName
               Just schemaType -> rcvName <> "\n" <> pack (indentBy 4 $ showPrettyJSON schemaType)
-    indentBy spaces = intercalate "\n" . map (replicate spaces ' ' <>) . lines
-
 
     -- |Get a method name from a Receive name, i.e. extracting the text and removing the "<contractName>." prefix.
     -- If the receiveName does not have the prefix, it simply returns the extracted text.
@@ -313,8 +311,24 @@ printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
       _ -> receiveNameText
       where receiveNameText = Wasm.receiveName rcvName
 
-nameSpacing :: Text
-nameSpacing = pack $ replicate 10 ' '
+-- |Print module inspect info, i.e., the named moduleRef and its included contracts.
+-- Signatures for the contracts' init functions are also printed, if available in the schema.
+printModuleInspectInfo :: NamedModuleRef -> CS.ModuleSchema -> Printer
+printModuleInspectInfo namedModRef CS.ModuleSchema{..} = do
+  tell [ [i|Module:    #{namedModRef}|]
+       , [i|Contracts:|]]
+  -- TODO: Should also print contracts without a schema. They can be found by parsing the Wasm module.
+  tell contracts
+
+  where
+    contracts = map showContract $ M.toList contractSchemas
+    showContract (contractName, CS.ContractSchema{..}) = case initSig of
+      Nothing -> [i| - #{contractName}|]
+      Just initSig' -> [i| - #{contractName}\n#{indentBy 4 $ showPrettyJSON initSig'}|]
+
+-- |Indents each line in a string by the number of spaces specified.
+indentBy :: Int -> String -> String
+indentBy spaces = intercalate "\n" . map (replicate spaces ' ' <>) . lines
 
 -- |Invert a hash map. Note that if any `v` is duplicated, then the _last_ one is used.
 invertHashMap :: (Eq v, Hashable v) => HM.HashMap k v -> HM.HashMap v k
