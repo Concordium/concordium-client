@@ -1738,7 +1738,7 @@ processContractCmd action baseCfgDir verbose backend =
             payloadSize =    1 -- tag
                           + 32 -- module ref
                           +  2 + (length $ show citcInitName) -- size length + length of initName
-                          +  2 + (BSS.length . Wasm.parameter $ citcParams) -- size length + length of params
+                          +  2 + (BSS.length . Wasm.parameter $ citcParams) -- size length + length of parameter
             signatureCount = fromIntegral . acThreshold $ accCfg
 
         -- |Calculates the minimum energy required for checking the signature of a contract update.
@@ -1749,8 +1749,8 @@ processContractCmd action baseCfgDir verbose backend =
           where
             payloadSize =    1 -- tag
                           + 16 -- contract address
-                          +  2 + Text.length cutcContrName + (length $ show cutcReceiveName) -- size length + length of contrName and receiveName
-                          +  2 + (BSS.length . Wasm.parameter $ cutcParams) -- size length + length of params
+                          +  2 + (length $ show cutcReceiveName) -- size length + length of receiveName
+                          +  2 + (BSS.length . Wasm.parameter $ cutcParams) -- size length + length of the parameter
             signatureCount = fromIntegral . acThreshold $ accCfg
 
 -- |Try to fetch info about the contract and deserialize it from JSON.
