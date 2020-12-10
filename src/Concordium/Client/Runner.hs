@@ -1559,7 +1559,7 @@ processModuleCmd action baseCfgDir verbose backend =
       schema <- withClient backend . withBestBlockHash block $ getSchemaFromFileOrModule schemaFile (Right namedModRef)
       case schema of
         Nothing -> logInfo ["Inspection failed: no schema provided and module does not contain an embedded schema"]
-        Just schema' -> logInfo [[i|Functions for module #{namedModRef}:|], showPrettyJSON schema']
+        Just schema' -> runPrinter $ printModuleInspectInfo namedModRef schema'
 
     ModuleName modRefOrFile modName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1642,7 +1642,7 @@ processContractCmd action baseCfgDir verbose backend =
       let expiryTs = tcExpiry txCfg
 
       logInfo [ [i|initialize contract '#{contrName}' from module '#{citcModuleRef ciCfg}' with |]
-                  ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{citcAmount ciCfg} GTU.|]
+                  ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{Types.amountToString $ citcAmount ciCfg} GTU.|]
               , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
               , [i|transaction expires at #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
 
@@ -1672,7 +1672,7 @@ processContractCmd action baseCfgDir verbose backend =
       let expiryTs = tcExpiry txCfg
 
       logInfo [ [i|update contract '#{cutcContrName cuCfg}' using the function '#{receiveName}' with |]
-                  ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{cutcAmount cuCfg} GTU.|]
+                  ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{Types.amountToString $ cutcAmount cuCfg} GTU.|]
               , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
               , [i|transaction expires at #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
 
