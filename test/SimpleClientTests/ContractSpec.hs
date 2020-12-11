@@ -114,6 +114,16 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
     fromToJSONFail       ContractAddress $ object ["index" .= idx, "subindex" .= subidx, "tooManyFields" .= idx]
     fromToJSONFail       ContractAddress $ object []
 
+  it "Timestamp" $ do
+    fromToJSON Timestamp (AE.String "1996-12-19T16:39:57Z") `shouldBe` Right (AE.String "1996-12-19T16:39:57Z") -- UTC
+    fromToJSON Timestamp (AE.String "1996-12-19T08:39:57-08:20") `shouldBe` Right (AE.String "1996-12-19T16:59:57Z") -- Different timezone
+    -- fromToJSON Timestamp (AE.String "1996-12-19T16:39:57.87Z") `shouldBe` Right (AE.String "1996-12-19T16:39:57.87Z") -- Milliseconds work
+    fromToJSONFail Timestamp (AE.String "1969-12-31T23:59:59Z") -- Before unix time stamps (1970-01-01)
+    fromToJSONFail Timestamp (AE.String "1996-12-19T16:39:57") -- No timezone
+
+  it "Duration" $ do
+    pendingWith "Add when Duration has been implemented."
+
   it "Pair" $ do
     fromToJSONSucceed (Pair UInt8 UInt8)  $ AE.toJSON ([99, 255] :: [Word8])
     fromToJSONSucceed (Pair UInt64 Int8) $ toArray $ [AE.Number 99, AE.Number (-54)]

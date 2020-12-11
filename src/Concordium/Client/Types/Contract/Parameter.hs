@@ -19,6 +19,10 @@ import Data.Scientific (Scientific, isFloating, toBoundedInteger)
 import qualified Data.Serialize as S
 import Data.String.Interpolate (i)
 import Data.Text (Text)
+import qualified Data.Text as Text
+import qualified Data.Time as Time
+import qualified Data.Time.Clock.POSIX as POSIX
+import qualified Data.Time.RFC3339 as RFC3339
 import qualified Data.Vector as V
 import Data.Word (Word8, Word16, Word32, Word64)
 import Lens.Micro.Platform ((^?), ix)
@@ -47,6 +51,8 @@ getJSONUsingSchema typ = case typ of
   AccountAddress  -> AE.toJSON <$> (S.get :: S.Get T.AccountAddress)
   ContractAddress -> AE.toJSON <$>
     (T.ContractAddress <$> (T.ContractIndex <$> S.getWord64le) <*> (T.ContractSubindex <$> S.getWord64le))
+  Timestamp -> AE.toJSON . unixTimestampInMsToRFC3339 <$> S.getWord64le
+  Duration -> undefined -- TODO
   Pair a b -> do
     l <- getJSONUsingSchema a
     r <- getJSONUsingSchema b
@@ -72,6 +78,18 @@ getJSONUsingSchema typ = case typ of
       Unnamed xs  -> AE.toJSON <$> mapM getJSONUsingSchema xs
       None        -> return $ AE.Array mempty
       where getPair (k, v) = (k,) <$> getJSONUsingSchema v
+
+    -- |Converts a unix timestamp in milliseconds to UTC in RFC3339-format.
+    -- Example: 220966827870 -> "1977-01-01T11:40:27Z"
+    -- FIXME: Currently looses the milliseconds (.87 in this example).
+    unixTimestampInMsToRFC3339 :: Word64 -> Text
+    unixTimestampInMsToRFC3339 = Text.pack . utcToRFC3339 . posixMillisecondsToUTCTime . fromIntegral
+      where posixMillisecondsToUTCTime :: POSIX.POSIXTime -> Time.UTCTime
+            posixMillisecondsToUTCTime ms = POSIX.posixSecondsToUTCTime s
+              where s = ms / 1000
+
+            utcToRFC3339 :: Time.UTCTime -> String
+            utcToRFC3339 = RFC3339.formatTimeRFC3339 . Time.utcToZonedTime Time.utc
 
 -- |Create a `Serialize.Put` for JSON using a `SchemaType`.
 -- It goes through the JSON and SchemaType recursively, and
@@ -100,6 +118,10 @@ putJSONUsingSchema typ json = case (typ, json) of
     [("index", AE.Number idx), ("subindex", AE.Number subidx)] -> putContrAddr idx subidx
     [("subindex", AE.Number subidx), ("index", AE.Number idx)] -> putContrAddr idx subidx
     _ -> Left [i|Invalid contract address. It should be an object with an 'index' and an optional 'subindex' field.|]
+
+  (Timestamp, AE.String s) -> S.putWord64le <$> rfc3339ToUnixTimestampInMs s
+
+  (Duration, AE.String _s) -> undefined -- TODO
 
   (Pair ta tb, AE.Array vec) -> addTraceInfo $ case V.toList vec of
     [a, b] -> do
@@ -237,6 +259,19 @@ putJSONUsingSchema typ json = case (typ, json) of
     addTraceInfoOf (Left err) a = Left [i|#{err}\n#{a}|]
     addTraceInfoOf right _ = right
 
+    -- |Converts a date in RFC3339-format to a unix timestamp in milliseconds.
+    -- Unix timestamps are always in UTC.
+    -- Returns an error message if input is invalid RFC3339 or the date is prior to '1970-01-01T00:00:00Z'.
+    -- Example: "1977-01-01T12:00:27.87+00:20" -> Right 220966827870
+    rfc3339ToUnixTimestampInMs :: Text -> Either String Word64
+    rfc3339ToUnixTimestampInMs s = case RFC3339.parseTimeRFC3339 . Text.unpack $ s of
+      Nothing -> Left [i|Invalid timestamp '#{s}'. Should be in a RFC3339 format.|]
+      Just zonedTime -> utcTimeToTimestampInMs . Time.zonedTimeToUTC $ zonedTime
+      where utcTimeToTimestampInMs :: Time.UTCTime -> Either String Word64
+            utcTimeToTimestampInMs t
+              | posixSeconds < 0 = Left [i|Invalid timestamp '#{s}'. Dates before '1970-01-01T00:00:00Z' are not supported|]
+              | otherwise = Right . floor . (* 1000) $ posixSeconds
+              where posixSeconds = POSIX.utcTimeToPOSIXSeconds t
 
 -- |Wrapper for Concordium.Types.Amount that uses a little-endian encoding
 -- for binary serialization. Show and JSON instances are inherited from
