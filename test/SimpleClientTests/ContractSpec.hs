@@ -115,14 +115,25 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
     fromToJSONFail       ContractAddress $ object []
 
   it "Timestamp" $ do
-    fromToJSON Timestamp (AE.String "1996-12-19T16:39:57Z") `shouldBe` Right (AE.String "1996-12-19T16:39:57Z") -- UTC
-    fromToJSON Timestamp (AE.String "1996-12-19T08:39:57-08:20") `shouldBe` Right (AE.String "1996-12-19T16:59:57Z") -- Different timezone
-    -- fromToJSON Timestamp (AE.String "1996-12-19T16:39:57.87Z") `shouldBe` Right (AE.String "1996-12-19T16:39:57.87Z") -- Milliseconds work
+    fromToJSON Timestamp (AE.String "1996-12-19T16:39:57Z")
+      `shouldBe` Right (AE.String "1996-12-19T16:39:57Z") -- UTC
+    fromToJSON Timestamp (AE.String "1996-12-19T08:39:57-08:20")
+      `shouldBe` Right (AE.String "1996-12-19T16:59:57Z") -- Different timezone
+
+    pendingWith "Test timestamps with milliseconds, once the issue has been fixed."
+--    fromToJSON Timestamp (AE.String "1996-12-19T16:39:57.87Z") `shouldBe` Right (AE.String "1996-12-19T16:39:57.87Z") -- Milliseconds work
+
     fromToJSONFail Timestamp (AE.String "1969-12-31T23:59:59Z") -- Before unix time stamps (1970-01-01)
     fromToJSONFail Timestamp (AE.String "1996-12-19T16:39:57") -- No timezone
 
   it "Duration" $ do
-    pendingWith "Add when Duration has been implemented."
+    fromToJSONSucceed Duration (AE.String "1d 20h 30m 40s 50ms")
+    fromToJSON Duration (AE.String "40s 50ms 1d 30m 20h")
+      `shouldBe` Right (AE.String "1d 20h 30m 40s 50ms") -- different ordering
+    fromToJSON Duration (AE.String "1d 2d 10h 10h 20m 20m 25s 25s 400ms 400ms")
+      `shouldBe` Right (AE.String "3d 20h 40m 50s 800ms") -- combine
+    fromToJSON Duration (AE.String "12h 12h 30m 30m 30s 30s 500ms 500ms 1ms")
+      `shouldBe` Right (AE.String "1d 1h 1m 1s 1ms") -- combine and collect
 
   it "Pair" $ do
     fromToJSONSucceed (Pair UInt8 UInt8)  $ AE.toJSON ([99, 255] :: [Word8])
