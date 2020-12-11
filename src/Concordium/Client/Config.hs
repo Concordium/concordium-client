@@ -34,7 +34,6 @@ import qualified Data.Text.IO as T
 import Data.Text (Text, pack, strip, unpack)
 import Data.Text.Encoding (decodeUtf8)
 import System.Directory
-import System.Exit (exitFailure)
 import System.IO.Error
 import System.FilePath
 import Text.Printf
@@ -335,33 +334,46 @@ removeAccountConfig baseCfg@BaseConfig{..} NamedAddress{..} = do
         -- Remove the alias, if it exists
         (M.delete name bcAccountNameMap, True)
 
-
--- |Add a contract name and write it to 'contractNames.map'
-addContractNameAndWrite :: MonadIO m => Verbose -> BaseConfig -> Text -> ContractAddress -> m ()
+-- |Add a contract name and write it to 'contractNames.map', or return a list of error messages.
+-- Returns a non-empty list of error messages if the name could not be added.
+-- This happens when:
+--  - The name is already in use
+--  - Or, the contract is already named
+-- Can also log fatally, if 'contractNames.map' cannot be written to.
+addContractNameAndWrite :: MonadIO m => Verbose -> BaseConfig -> Text -> ContractAddress -> m [String]
 addContractNameAndWrite verbose baseCfg = addContractOrModuleNameAndWrite verbose mapFile nameMap showCompactPrettyJSON
   where mapFile = contractNameMapFile . bcContractCfgDir $ baseCfg
         nameMap = bcContractNameMap baseCfg
 
 -- |Add a module name and write it to 'moduleNames.map'
-addModuleNameAndWrite :: MonadIO m => Verbose -> BaseConfig -> Text -> ModuleRef -> m ()
+-- Returns a non-empty list of error messages if the name could not be added.
+-- This happens when:
+--  - The name is already in use
+--  - Or, the module is already named
+-- Can also log fatally, if 'moduleNames.map' cannot be written to.
+addModuleNameAndWrite :: MonadIO m => Verbose -> BaseConfig -> Text -> ModuleRef -> m [String]
 addModuleNameAndWrite verbose baseCfg = addContractOrModuleNameAndWrite verbose mapFile nameMap show
   where mapFile = moduleNameMapFile . bcContractCfgDir $ baseCfg
         nameMap = bcModuleNameMap baseCfg
 
 -- |Add a contract or module name and write it to the appropriate map file.
--- Warn if name already in use or value already named.
+-- Returns a non-empty list of error messages if the name could not be added.
+-- This happens when:
+--  - The name is already in use
+--  - Or, the module is already named
+-- Can also log fatally, if the map file cannot be written to.
 addContractOrModuleNameAndWrite :: (AE.ToJSON v, Eq v, MonadIO m) => Verbose -> FilePath -> NameMap v ->
-                                   (v -> String) -> Text -> v -> m ()
+                                   (v -> String) -> Text -> v -> m [String]
 addContractOrModuleNameAndWrite verbose mapFile nameMap showVal name val = case validateContractOrModuleName name of
-  -- TODO: return whether it succeded instead of exitFailure, this would allow for logging
-  -- "nameWarning + module deployed with ref..", or similar situations.
-  Left err -> logWarn [namingError, err] >> liftIO exitFailure
-  Right _ -> do
-    nameMap' <- case (M.member name nameMap, val `elem` M.elems nameMap) of
-      (True, _) -> logWarn [namingError, [i|the name '#{name}' is already in use|]] >> liftIO exitFailure
-      (_, True) -> logWarn [namingError, [i|'#{showVal val}' is already named|]] >> liftIO exitFailure
-      _ -> return $ M.insert name val nameMap
-    liftIO $ writeNameMapAsJSON verbose mapFile nameMap'
+  Left err -> return [namingError, err]
+  Right _ ->
+    let updatedNameMap = case (M.member name nameMap, val `elem` M.elems nameMap) of
+          (True, _) -> Left [namingError, [i|the name '#{name}' is already in use|]]
+          (_, True) -> Left [namingError, [i|'#{showVal val}' is already named|]]
+          _ -> Right $ M.insert name val nameMap
+    in case updatedNameMap of
+      Left err' -> return err'
+      Right updatedNameMap' -> liftIO $ writeNameMapAsJSON verbose mapFile updatedNameMap' >> return mempty
   where namingError = "Name was not added:"
 
 -- |A contract address along with an optional name.

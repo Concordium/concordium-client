@@ -1523,11 +1523,14 @@ processModuleCmd action baseCfgDir verbose backend =
               Nothing -> return ()
               Just (Left err) -> logFatal ["module deployment failed:", err]
               Just (Right modRef) -> do
+                logSuccess [[i|module successfully deployed with reference: '#{modRef}'|]]
                 case modName of
                   Nothing -> return ()
-                  Just modName' -> addModuleNameAndWrite verbose baseCfg modName' modRef
-                let namedModRef = NamedModuleRef {nmrRef = modRef, nmrName = modName}
-                logSuccess [[i|module successfully deployed with reference: #{namedModRef}|]]
+                  Just modName' -> do
+                    warnings <- addModuleNameAndWrite verbose baseCfg modName' modRef
+                    if null warnings
+                      then logSuccess [[i|module reference #{modRef} was successfully named '#{modName'}'|]]
+                      else logWarn warnings
 
     ModuleList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1564,8 +1567,10 @@ processModuleCmd action baseCfgDir verbose backend =
     ModuleName modRefOrFile modName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       modRef <- getModuleRefFromRefOrFile modRefOrFile
-      addModuleNameAndWrite verbose baseCfg modName modRef
-      logSuccess [[i|module reference #{modRef} was successfully named '#{modName}'|]]
+      warnings <- addModuleNameAndWrite verbose baseCfg modName modRef
+      if null warnings
+        then logSuccess [[i|module reference #{modRef} was successfully named '#{modName}'|]]
+        else logWarn warnings
 
   where extractModRef = extractFromTsr (\case
                                            Types.ModuleDeployed modRef -> Just modRef
@@ -1657,11 +1662,14 @@ processContractCmd action baseCfgDir verbose backend =
             Nothing -> return ()
             Just (Left err) -> logFatal ["contract initialisation failed:", err]
             Just (Right contrAddr) -> do
+              logSuccess [[i|contract successfully initialized with address: #{contrAddr}|]]
               case contrAlias of
                 Nothing -> return ()
-                Just contrAlias' -> addContractNameAndWrite verbose baseCfg contrAlias' contrAddr
-              let namedContrAddr = NamedContractAddress {ncaAddr = contrAddr, ncaName = contrAlias}
-              logSuccess [[i|contract successfully initialized with address: #{namedContrAddr}|]]
+                Just contrAlias' -> do
+                  warnings <- addContractNameAndWrite verbose baseCfg contrAlias' contrAddr
+                  if null warnings
+                    then logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{contrAlias'}'|]]
+                    else logWarn warnings
 
     ContractUpdate indexOrName subindex receiveName paramsFileJSON paramsFileBinary schemaFile amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1694,8 +1702,10 @@ processContractCmd action baseCfgDir verbose backend =
     ContractName index subindex contrName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       let contrAddr = mkContractAddress index subindex
-      addContractNameAndWrite verbose baseCfg contrName contrAddr
-      logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{contrName}'|]]
+      warnings <- addContractNameAndWrite verbose baseCfg contrName contrAddr
+      if null warnings
+        then logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{contrName}'|]]
+        else logWarn warnings
 
   where extractContractAddress = extractFromTsr (\case
                                                  Types.ContractInitialized {..} -> Just ecAddress
