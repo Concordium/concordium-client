@@ -23,9 +23,10 @@ module Concordium.Client.Commands
   , IdentityShowCmd(..)
   ) where
 
-import Data.Text hiding (map)
+import Data.Text hiding (map, unlines)
 import Data.Version (showVersion)
 import Data.Word (Word64)
+import Data.Time.Format.ISO8601
 import Network.HTTP2.Client
 import Options.Applicative
 import Paths_simple_client (version)
@@ -36,6 +37,8 @@ import Concordium.ID.Types (KeyIndex, SignatureThreshold)
 import Concordium.Types
 import Text.Printf
 import qualified Text.PrettyPrint.ANSI.Leijen as P
+import Control.Monad
+import Options.Applicative.Help.Pretty (hang, softline, fillCat)
 
 type Verbose = Bool
 
@@ -535,7 +538,7 @@ transactionSendGtuCmd =
        strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
        option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
        transactionOptsParser)
-      (progDesc "Transfer GTU from one account to another (sending to contracts is currently not supported with this method - use 'transaction submit')."))
+      (progDesc "Transfer GTU from one account to another."))
 
 transactionWithScheduleCmd :: Mod CommandFields TransactionCmd
 transactionWithScheduleCmd =
@@ -543,16 +546,53 @@ transactionWithScheduleCmd =
    "send-gtu-scheduled"
    (info
      (let implicit = (\a b c d -> Left (a, b, c, d)) <$>
-                     option (eitherReader amountFromStringInform) (long "amount" <> metavar "amount" <> help "amount") <*>
-                     option auto (long "every" <> metavar "Interval" <> help "interval") <*>
-                     option auto (long "for" <> metavar "numItems" <> help "numIntems") <*>
-                     option auto (long "starting" <> metavar "starting" <> help "starting")
+                     option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Total amount of GTU to send.") <*>
+                     option auto (long "every" <> metavar "INTERVAL" <> help "Interval between releases, one of 'Minute', 'Hour', 'Day', 'Week', 'Month' (30 days), or 'Year' (365 days). ") <*>
+                     option auto (long "for" <> metavar "N" <> help "Number of releases.") <*>
+                     option (eitherReader timeFromString) (long "starting" <> metavar "starting" <>
+                                                           help "Start time of the first release, as a ISO8601 UTC time string, e.g., 2021-31-12T00:00:00Z.")
           explicit = Right <$>
-                     some (option auto (long "schedule" <> metavar "schedule" <> help "schedule"))
+                     option (eitherReader eitherParseScheduleInform)  (long "schedule" <> metavar "schedule" <> help "Explicit schedule in the form of a comma separated list of elements of the form '3.0 at 2020-12-13T23:35:59Z' (send 3 GTU on December 13, 2020). Timestamps must be given in UTC.")
        in
          TransactionSendWithSchedule <$>
          strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*> (implicit <|> explicit) <*> transactionOptsParser)
-     (progDesc "Transfer GTU from one account to another with the provided schedule of releases."))
+     (progDescDoc . Just $ fillCat [
+         "Transfer GTU from one account to another with the provided schedule of releases.",
+         "Releases can be specified in one of two ways, either as regular releses via intervals," <>
+         softline <> "or as an explicit schedule at specific timestamps.",
+         "",
+         "To specify the release via regular intervals use the options" <> softline <> "'--amount', '--every', '--for', and '--starting'.",
+         "To specify an explicit schedule provide a list of releases in" <>
+         softline <> "the form of a '--schedule' flag, which takes a comma separated list of releases.",
+         "Each release must be of the form 100 at 2020-12-13T23:23:23Z.",
+         "",
+         "For example, to supply three releases, of 100, 150, and 200 GTU," <> softline <>
+         "on January 1, 2021, February 15, 2021, and December 31, 2021," <> softline <>
+         "the following input would be used. All releases are at the beginning of" <> softline <> "the day in the UTC time zone.",
+         "",
+         hang 4 "\"100 at 2021-01-01T00:00:00Z, 150 at 2021-15-02T00:00:00Z, 200 at 2021-31-12T00:00:00Z\"",
+         "",
+         "Times are parsed according to the ISO8601 standard for the UTC time zone."
+         ]))
+  where
+    eitherParseScheduleInform :: String -> Either String [(Timestamp, Amount)]
+    eitherParseScheduleInform s =
+      let items = map Data.Text.words (splitOn "," (pack s))
+      in forM items $ \case 
+          [amountString, "at", timeString] ->
+            case amountFromString (unpack amountString) of
+              Nothing -> Left "Could not parse amount."
+              Just amount ->
+                case iso8601ParseM (unpack timeString) of
+                  Nothing -> Left "Could not parse a timestamp."
+                  Just time -> return (utcTimeToTimestamp time, amount)
+          _ -> Left "Could not parse schedule. It should be a comma separated list of the form '3.0 at 2020-12-13T23:23:23Z'."
+
+    timeFromString :: String -> Either String Timestamp
+    timeFromString s = 
+      case iso8601ParseM s of
+        Nothing -> Left "Starting point could not be read."
+        Just time -> return (utcTimeToTimestamp time)
 
 transactionEncryptedTransferCmd :: Mod CommandFields TransactionCmd
 transactionEncryptedTransferCmd =
