@@ -55,7 +55,7 @@ outcomeSuccess1a = Types.TransactionSummary
                    , Types.tsHash = exampleTransactionHash
                    , Types.tsCost = 10
                    , Types.tsEnergyCost = 10
-                   , Types.tsType = Types.AccountTransactionType $ Just Types.TTTransfer
+                   , Types.tsType = Types.TSTAccountTransaction $ Just Types.TTTransfer
                    , Types.tsResult = Types.TxSuccess { Types.vrEvents = [exampleEvent] }
                    , Types.tsIndex = Types.TransactionIndex 0 }
 
@@ -65,7 +65,7 @@ outcomeSuccess1b = Types.TransactionSummary
                    , Types.tsHash = exampleTransactionHash
                    , Types.tsCost = 10
                    , Types.tsEnergyCost = 10
-                   , Types.tsType = Types.AccountTransactionType $ Just Types.TTTransfer
+                   , Types.tsType = Types.TSTAccountTransaction $ Just Types.TTTransfer
                    , Types.tsResult = Types.TxSuccess { Types.vrEvents = [exampleEvent] }
                    , Types.tsIndex = 0 }
 
@@ -75,7 +75,7 @@ outcomeSuccess2 = Types.TransactionSummary
                   , Types.tsHash = exampleTransactionHash
                   , Types.tsCost = 20
                   , Types.tsEnergyCost = 20
-                  , Types.tsType = Types.AccountTransactionType $ Just Types.TTTransfer
+                  , Types.tsType = Types.TSTAccountTransaction $ Just Types.TTTransfer
                   , Types.tsResult = Types.TxSuccess { Types.vrEvents = [exampleEvent] }
                   , Types.tsIndex = 0 }
 
@@ -85,7 +85,7 @@ outcomeFailure = Types.TransactionSummary
                  , Types.tsHash = exampleTransactionHash
                  , Types.tsCost = 20
                  , Types.tsEnergyCost = 20
-                 , Types.tsType = Types.AccountTransactionType $ Just Types.TTTransfer
+                 , Types.tsType = Types.TSTAccountTransaction $ Just Types.TTTransfer
                  , Types.tsResult = Types.TxReject { Types.vrRejectReason = exampleRejectReason }
                  , Types.tsIndex = 0 }
 

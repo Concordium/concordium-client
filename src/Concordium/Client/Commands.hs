@@ -95,7 +95,7 @@ data ConfigAccountCmd
     { caaAddr :: !Text
     , caaName :: !(Maybe Text) }
   | ConfigAccountRemove
-    { carAddr :: !(Text) }
+    { carAddr :: !Text }
   | ConfigAccountImport
     { caiFile :: !FilePath
     , caiName :: !(Maybe Text)
@@ -159,11 +159,6 @@ data AccountCmd
     , asDecryptEncryptedBalance :: !Bool }
   | AccountList
     { alBlockHash :: !(Maybe Text) }
-  | AccountDelegate
-    { adBakerId :: !BakerId
-    , adTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
-  | AccountUndelegate
-    { auTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | AccountUpdateKeys
     { aukKeys :: !FilePath
     , aukTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
@@ -335,26 +330,15 @@ data BakerCmd
     { bgkFile :: !(Maybe FilePath) }
   | BakerAdd
     { baFile :: !FilePath
-    , baTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
-  | BakerSetAccount
-    { bsaBakerId :: !BakerId
-    , bsaAccountRef :: !Text
-    , bsaTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
-  | BakerSetKey
-    { buskBakerId :: !BakerId
-    , bsaSignatureKeysFile :: !FilePath
+    , baTransactionOpts :: !(TransactionOpts (Maybe Energy))
+    , baStake :: !Amount
+    , baAutoAddEarnings :: !Bool}
+  | BakerSetKeys
+    { bsaKeysFile :: !FilePath
     , buskTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | BakerRemove
     { brBakerId :: !BakerId
     , brTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
-  | BakerSetAggregationKey
-    { bsakBakerId :: !BakerId
-    , bsakBakerAggregationKeyFile :: !FilePath
-    , bsakTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
-  | BakerSetElectionKey
-    { bsekBakerId :: !BakerId
-    , bsekBakerElectionKeyFile :: !FilePath
-    , bsakTransactionOps :: !(TransactionOpts (Maybe Energy)) }
   deriving (Show)
 
 data IdentityCmd
@@ -473,7 +457,7 @@ interactionOptsParser =
 programOptions :: ShowAllOpts -> Parser Options
 programOptions showAllOpts =
   Options <$>
-    (hsubparser
+    hsubparser
      (metavar "command" <>
       transactionCmds <>
       accountCmds <>
@@ -485,7 +469,7 @@ programOptions showAllOpts =
       bakerCmds <>
       identityCmds <>
       rawCmds
-     )) <*>
+     ) <*>
     backendParser <*>
     optional (strOption (long "config" <> metavar "DIR" <> help "Path to the configuration directory.")) <*>
     switch (hidden <> long "verbose" <> short 'v' <> help "Make output verbose.")
@@ -564,7 +548,7 @@ transactionWithScheduleCmd =
                      option auto (long "for" <> metavar "numItems" <> help "numIntems") <*>
                      option auto (long "starting" <> metavar "starting" <> help "starting")
           explicit = Right <$>
-                     (some (option auto (long "schedule" <> metavar "schedule" <> help "schedule")))
+                     some (option auto (long "schedule" <> metavar "schedule" <> help "schedule"))
        in
          TransactionSendWithSchedule <$>
          strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*> (implicit <|> explicit) <*> transactionOptsParser)
@@ -591,8 +575,6 @@ accountCmds =
         hsubparser
           (accountShowCmd <>
            accountListCmd <>
-           accountDelegateCmd <>
-           accountUndelegateCmd <>
            accountUpdateKeysCmd <>
            accountAddKeysCmd <>
            accountRemoveKeysCmd <>
@@ -620,25 +602,6 @@ accountListCmd =
        (AccountList <$>
          optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
        (progDesc "List all accounts."))
-
-accountDelegateCmd :: Mod CommandFields AccountCmd
-accountDelegateCmd =
-  command
-    "delegate"
-    (info
-      (AccountDelegate <$>
-        option auto (long "baker" <> metavar "BAKER-ID" <> help "Baker to which the stake of the sender's account should be delegated.") <*>
-        transactionOptsParser)
-      (progDesc "Delegate stake of account to baker."))
-
-accountUndelegateCmd :: Mod CommandFields AccountCmd
-accountUndelegateCmd =
-  command
-    "undelegate"
-    (info
-      (AccountUndelegate <$>
-        transactionOptsParser)
-      (progDesc "Delegate stake of account to baker."))
 
 accountEncryptCmd :: Mod CommandFields AccountCmd
 accountEncryptCmd =
@@ -1042,8 +1005,8 @@ configAccountSetThresholdCmd =
     (info
       (ConfigAccountSetThreshold <$>
         strOption (long "account" <> metavar "ACCOUNT" <> help "Name or address of the account.") <*>
-        (option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <>
-            help "Sets the signature threshold to this value.")))
+        option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <>
+            help "Sets the signature threshold to this value."))
       (progDescDoc $ docFromLines
         [ "Sets the signature threshold of the account to the specified value."]))
 
@@ -1126,10 +1089,7 @@ bakerCmds =
           (bakerGenerateKeysCmd <>
            bakerAddCmd <>
            bakerRemoveCmd <>
-           bakerSetAccountCmd <>
-           bakerSetKeyCmd <>
-           bakerSetAggregationKeyCmd <>
-           bakerSetElectionKeyCmd))
+           bakerSetKeysCmd))
       (progDesc "Commands for creating and deploying baker credentials."))
 
 bakerGenerateKeysCmd :: Mod CommandFields BakerCmd
@@ -1157,35 +1117,29 @@ bakerAddCmd =
     (info
       (BakerAdd <$>
         strArgument (metavar "FILE" <> help "File containing the baker credentials.") <*>
-        transactionOptsParser)
+        transactionOptsParser <*>
+        option (eitherReader amountFromStringInform) (long "stake" <> metavar "GTU-AMOUNT" <> help "The amount of GTU to stake.") <*>
+        (not <$> switch (long "no-restake" <> help "If supplied, the earnings will not be added to the baker stake automatically."))
+      )
       (progDesc "Deploy baker credentials to the chain."))
 
-bakerSetAccountCmd :: Mod CommandFields BakerCmd
-bakerSetAccountCmd =
-  command
-    "set-account"
-    (info
-      (BakerSetAccount <$>
-        argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
-        strArgument (metavar "ACCOUNT" <> help "Name or address of the account to send rewards to.") <*>
-        transactionOptsParser)
-      (progDescDoc $ docFromLines
-        [ "Update the account that a baker's rewards are sent to." ]))
-
-bakerSetKeyCmd :: Mod CommandFields BakerCmd
-bakerSetKeyCmd =
+bakerSetKeysCmd :: Mod CommandFields BakerCmd
+bakerSetKeysCmd =
   command
     "set-key"
     (info
-      (BakerSetKey <$>
-        argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
-        strArgument (metavar "FILE" <> help "File containing the signature keys.") <*>
+      (BakerSetKeys <$>
+        strArgument (metavar "FILE" <> help "File containing the new public and private keys.") <*>
         transactionOptsParser)
       (progDescDoc $ docFromLines
-        [ "Update the signature keys of a baker. Expected format of the key file:"
+        [ "Update the keys of a baker. Expected format of the key file:"
         , "   {"
         , "     \"signatureSignKey\": ...,"
         , "     \"signatureVerifyKey\": ..."
+        , "     \"aggregationSignKey\": ...,"
+        , "     \"aggregationVerifyKey\": ..."
+        , "     \"electionPrivateKey\": ...,"
+        , "     \"electionVerifyKey\": ...,"
         , "   }" ]))
 
 bakerRemoveCmd :: Mod CommandFields BakerCmd
@@ -1198,40 +1152,6 @@ bakerRemoveCmd =
         transactionOptsParser)
       (progDesc "Remove a baker from the chain."))
 
-bakerSetAggregationKeyCmd :: Mod CommandFields BakerCmd
-bakerSetAggregationKeyCmd =
-  command
-    "set-aggregation-key"
-    (info
-      (BakerSetAggregationKey <$>
-        argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
-        strArgument (metavar "FILE" <> help "File containing the aggregation key.") <*>
-        transactionOptsParser)
-      (progDescDoc $ docFromLines
-        [ "Update the aggregation key of a baker. Expected format of the key file:"
-        , "   {"
-        , "     \"aggregationSignKey\": ...,"
-        , "     \"aggregationVerifyKey\": ..."
-        , "   }" ]))
-
-bakerSetElectionKeyCmd :: Mod CommandFields BakerCmd
-bakerSetElectionKeyCmd =
-  command
-    "set-election-key"
-    (info
-      (BakerSetElectionKey <$>
-        argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
-        strArgument (metavar "FILE" <> help "File containing the election key.") <*>
-        transactionOptsParser)
-      (progDescDoc $ docFromLines
-        [ "Update the election key of a baker. Expected format of the key file:"
-        , "   {"
-        , "     ..."
-        , "     \"electionPrivateKey\": ...,"
-        , "     \"electionVerifyKey\": ...,"
-        , "     ..."
-        , "   }" ]))
-
 identityCmds :: Mod CommandFields Cmd
 identityCmds =
   command
@@ -1239,7 +1159,7 @@ identityCmds =
     (info
       (IdentityCmd <$>
         hsubparser
-          (identityShowCmd))
+          identityShowCmd)
       (progDesc "Commands for interacting with the ID layer."))
 
 

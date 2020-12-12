@@ -190,38 +190,6 @@ executables:
         else:
           buildable: false
 
-  delegation-server:
-    main:   Main.hs
-    source-dirs: delegation-server
-    ghc-options:
-      - -threaded
-    dependencies:
-      - concordium-crypto
-      - simple-client
-      - mtl
-      - bytestring
-      - split
-      - text
-      - wai
-      - warp
-      - wai-extra
-      - wai-cors
-      - wai-middleware-static
-      - filepath
-      - aeson
-      - transformers
-      - unordered-containers
-      - containers
-      - time
-      - servant-server
-      - servant
-      - globalstate-types
-      - vector
-      - stm
-      - psqueues
-      - hashable
-      - fast-logger
-
 tests:
   simple-client-test:
     ghc-options:

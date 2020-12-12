@@ -39,7 +39,7 @@ getSimpleTransactionStatus trHash = do
       , "sender" .= tsSender
       , "cost" .= tsCost] <>) <$>
       case tsType of
-        CredentialDeploymentTransaction _ -> -- credential deployment
+        TSTCredentialDeploymentTransaction _ -> -- credential deployment
           case tsResult of
             TxSuccess [AccountCreated {}, _] ->
               return ["outcome" .= String "newAccount"]
@@ -47,7 +47,7 @@ getSimpleTransactionStatus trHash = do
               return ["outcome" .= String "newCredential"]
             es ->
               Left $ "Unexpected outcome of credential deployment: " ++ show es
-        AccountTransactionType (Just TTTransfer) ->
+        TSTAccountTransaction (Just TTTransfer) ->
           case tsResult of
             TxSuccess [Transferred{etTo = AddressAccount addr,..}] ->
               return ["outcome" .= String "transferSuccess", "to" .= addr, "amount" .= etAmount]

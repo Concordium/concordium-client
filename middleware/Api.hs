@@ -29,7 +29,6 @@ import           System.IO.Error
 import           Lens.Micro.Platform ((^.), (^?), _Just)
 import           Data.Time.Clock.POSIX
 import qualified Data.List as L
-import           System.FilePath.Posix
 
 import           Concordium.Client.Commands as COM
 import           Concordium.Client.Encryption (Password(..))
@@ -86,9 +85,6 @@ data Routes r = Routes
     , getAccounts :: r :-
         "v1" :> "getAccounts" :> Get '[JSON] GetAccountsResponse
 
-    , addBaker :: r :-
-        "v1" :> "addBaker" :> ReqBody '[JSON] AddBakerRequest
-                           :> Post '[JSON] AddBakerResponse
     , removeBaker :: r :-
         "v1" :> "removeBaker" :> ReqBody '[JSON] RemoveBakerRequest
                               :> Post '[JSON] RemoveBakerResponse
@@ -103,8 +99,8 @@ api = genericApi (Proxy :: Proxy Routes)
 
 type Account = (IDTypes.AccountAddress, AccountKeyMap)
 
-servantApp :: EnvData -> FilePath -> FilePath -> Application
-servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
+servantApp :: EnvData -> FilePath -> Application
+servantApp nodeBackend cfgDir = genericServe routesAsServer
  where
   routesAsServer = Routes {..} :: Routes AsServer
 
@@ -209,44 +205,6 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
                  unnamedAsText = Prelude.map (\b -> GetAccountsResponseItem Nothing (Text.pack $ show b)) (allAccs L.\\ namedAddresses)
              return $ namedAsText ++ unnamedAsText
 
-
-  addBaker :: AddBakerRequest -> Handler AddBakerResponse
-  addBaker AddBakerRequest{..} = do
-      -- get base configuration
-      baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False
-      -- generate options for the transaction
-      accCfg' <- wrapIOError $ snd <$> getAccountConfig sender baseCfg Nothing Nothing Nothing AssumeInitialized
-      let accCfg = accCfg' { acThreshold = fromIntegral (HM.size $ acKeys accCfg') }
-          file = dataDir </> "baker-credentials.json"
-          -- get Baker add transaction config
-          energy = bakerAddEnergyCost (HM.size $ acKeys accCfg)
-
-      expiry <- (600 +) <$> (liftIO getCurrentTimeUnix)
-
-      let AccountConfig{..} = accCfg
-      let senderAddr = naAddr acAddr
-
-      bakerKeys <- liftIO $ Aeson.eitherDecodeFileStrict file >>= getFromJson
-
-      accountKeysRes <- liftIO (decryptAccountKeyMap acKeys (passwordFromText password))
-
-      accountKeys <- (case accountKeysRes of
-        Left err -> throwError' err401 $ Just ("", err)
-        Right acc -> return acc)
-
-      pl <- liftIO $ generateBakerAddPayload bakerKeys $ accountSigningDataFromConfig accCfg accountKeys
-      -- run the transaction
-      res <- liftIO $ runClient nodeBackend $ do
-        currentNonce <- getBestBlockHash >>= getAccountNonce senderAddr
-        let tx = encodeAndSignTransaction pl senderAddr energy currentNonce expiry accountKeys acThreshold
-        sendTransactionToBaker tx defaultNetId >>= \case
-          Left err -> fail err
-          Right False -> fail "transaction not accepted by the baker"
-          Right True -> return $ getBlockItemHash tx
-      case res of
-        Left err -> throwError' err409 $ Just ("", err)
-        Right v -> return . AddBakerResponse . Just . Text.pack $ show v
-
   removeBaker :: RemoveBakerRequest -> Handler RemoveBakerResponse
   removeBaker RemoveBakerRequest{..} = do
       -- get base configuration
@@ -268,7 +226,7 @@ servantApp nodeBackend cfgDir dataDir = genericServe routesAsServer
         Right acc -> return acc)
 
 
-      let pl = Execution.RemoveBaker $ Types.BakerId bakerId
+      let pl = Execution.RemoveBaker
       -- run the transaction
       res <- liftIO $ runClient nodeBackend $ do
         currentNonce <- getBestBlockHash >>= getAccountNonce senderAddr
