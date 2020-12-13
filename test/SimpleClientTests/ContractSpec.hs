@@ -120,8 +120,7 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
     fromToJSON Timestamp (AE.String "1996-12-19T08:39:57-08:20")
       `shouldBe` Right (AE.String "1996-12-19T16:59:57Z") -- Different timezone
 
-    pendingWith "Test timestamps with milliseconds, once the issue has been fixed."
---    fromToJSON Timestamp (AE.String "1996-12-19T16:39:57.87Z") `shouldBe` Right (AE.String "1996-12-19T16:39:57.87Z") -- Milliseconds work
+    fromToJSON Timestamp (AE.String "1996-12-19T16:39:57.87Z") `shouldBe` Right (AE.String "1996-12-19T16:39:57.87Z")
 
     fromToJSONFail Timestamp (AE.String "1969-12-31T23:59:59Z") -- Before unix time stamps (1970-01-01)
     fromToJSONFail Timestamp (AE.String "1996-12-19T16:39:57") -- No timezone
