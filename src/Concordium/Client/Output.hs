@@ -447,31 +447,27 @@ showEvent verbose = \case
                               (show ecAddress) (show ecRef) (show ecAmount)
   Types.Updated{..} ->
     verboseOrNothing $ printf "sent message '%s' and '%s' tokens from %s to %s"
-                              (show euMessage) (show euAmount) (showAccount euInstigator) (showAccount $ Types.AddressContract euAddress)
+                              (show euMessage) (show euAmount) (showAddress euInstigator) (showAddress $ Types.AddressContract euAddress)
   Types.Transferred{..} ->
-    verboseOrNothing $ printf "transferred %s tokens from %s to %s" (show etAmount) (showAccount etFrom) (showAccount etTo)
+    verboseOrNothing $ printf "transferred %s tokens from %s to %s" (show etAmount) (showAddress etFrom) (showAddress etTo)
   Types.AccountCreated addr ->
     verboseOrNothing $ printf "account '%s' created" (show addr)
   Types.CredentialDeployed{..} ->
     verboseOrNothing $ printf "credential with registration '%s' deployed onto account '%s'" (show ecdRegId) (show ecdAccount)
-  Types.BakerAdded bid ->
-    Just $ printf "baker added with ID %s" (show bid)
-  Types.BakerRemoved bid ->
-    verboseOrNothing $ printf "baker '%s' removed" (show bid)
-  Types.BakerAccountUpdated{..} ->
-    verboseOrNothing $ printf "reward account of baker '%s' updated to '%s'" (show ebauBaker) (show ebauNewAccount)
-  Types.BakerKeyUpdated{..} ->
-    verboseOrNothing $ printf "signature key of baker '%s' updated to '%s'" (show ebkuBaker) (show ebkuNewKey)
-  Types.BakerElectionKeyUpdated{..} ->
-    verboseOrNothing $ printf "election key of baker '%s' updated to '%s'" (show ebekuBaker) (show ebekuNewKey)
-  Types.BakerAggregationKeyUpdated{..} ->
-    verboseOrNothing $ printf "aggregation key of baker '%s' updated to '%s'" (show ebakuBaker) (show ebakuNewKey)
-  Types.StakeDelegated{..} ->
-    verboseOrNothing $ printf "stake of account '%s' delegated to baker '%s'" (show esdAccount) (show esdBaker)
-  Types.StakeUndelegated{..} ->
-    verboseOrNothing $ case esuBaker of
-                         Nothing -> printf "stake of account '%s' undelegated (was not previous delegated)" (show esuAccount)
-                         Just bid -> printf "stake of account '%s' undelegated from baker %s" (show esuAccount) (show bid)
+  Types.BakerAdded{..} ->
+    let restakeString :: String = if ebaRestakeEarnings then "Earnings are added to the stake." else "Earnings are not added to the stake."
+    in Just $ printf "baker %s added, staking %s GTU. %s" (showBaker ebaBakerId ebaAccount) (Types.amountToString ebaStake) restakeString
+  Types.BakerRemoved{..} ->
+    verboseOrNothing $ printf "baker %s, removed" (showBaker ebrBakerId ebrAccount) (show ebrBakerId)
+  Types.BakerStakeIncreased{..} ->
+    Just $ printf "baker %s stake increased to %s" (showBaker ebsiBakerId ebsiAccount) (Types.amountToString ebsiNewStake)
+  Types.BakerStakeDecreased{..} ->
+    Just $ printf "baker %s stake decreased to %s" (showBaker ebsiBakerId ebsiAccount) (Types.amountToString ebsiNewStake)
+  Types.BakerSetRestakeEarnings{..} ->
+    verboseOrNothing $ printf "baker %s restake earnings %s" (showBaker ebsreBakerId ebsreAccount) (if ebsreRestakeEarnings then "set" :: String else "unset")
+  Types.BakerKeysUpdated{..} ->
+    verboseOrNothing $ printf "baker %s keys updated" (showBaker ebkuBakerId ebkuAccount)
+
   Types.AccountKeysUpdated -> verboseOrNothing $ "account keys updated"
   Types.AccountKeysAdded -> verboseOrNothing $ "account keys added"
   Types.AccountKeysRemoved -> verboseOrNothing $ "account keys removed"
@@ -488,10 +484,14 @@ showEvent verbose = \case
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
 
-    showAccount :: Types.Address -> String
-    showAccount = \case
+    showAddress :: Types.Address -> String
+    showAddress = \case
       Types.AddressAccount a -> printf "account '%s'" (show a)
       Types.AddressContract a -> printf "contract '%s'" (show a)
+
+    showBaker :: Types.BakerId -> Types.AccountAddress -> String
+    showBaker bid addr = show addr ++ " (ID " ++ show bid ++ ")"
+
 
 -- |Return string representation of reject reason.
 -- If verbose is true, the string includes the details from the fields of the reason.
@@ -566,40 +566,11 @@ showRejectReason verbose = \case
       "account does not exist"
   Types.InvalidProof ->
     "proof that baker owns relevant private keys is not valid"
-  Types.RemovingNonExistentBaker b ->
-    if verbose then
-      printf "baker '%s' does not exist (tried to remove baker)" (show b)
-    else
-      "baker does not exist"
-  Types.InvalidBakerRemoveSource a ->
-    if verbose then
-      printf "invalid sender account '%s' (tried to remove baker)" (show a)
-    else
-      "invalid sender account"
-  Types.UpdatingNonExistentBaker b ->
-    if verbose then
-      printf "baker '%s' does not exist (tried to update baker signature key)" (show b)
-    else
-      "baker does not exist"
-  Types.InvalidStakeDelegationTarget b ->
-    if verbose then
-      printf "invalid baker ID '%s' (tried to delegate stake)" (show b)
-    else
-      "invalid baker ID"
-  Types.DuplicateSignKey k ->
-    if verbose then
-      printf "duplicate sign key '%s'" (show k)
-    else
-      "duplicate sign key"
   Types.DuplicateAggregationKey k ->
     if verbose then
       printf "duplicate aggregation key '%s'" (show k)
     else
       "duplicate aggregation key"
-  Types.NotFromBakerAccount fromAccount bakerAccount ->
-    printf "sender '%s' is not the baker's account ('%s' is)" (show fromAccount) (show bakerAccount)
-  Types.NotFromSpecialAccount ->
-    "sender is not allowed to perform this special type of transaction"
   Types.NonExistentAccountKey ->
     "encountered key index to which no key belongs"
   Types.KeyIndexAlreadyInUse ->
@@ -619,6 +590,10 @@ showRejectReason verbose = \case
   Types.FirstScheduledReleaseExpired -> "the first release has already expired"
   Types.ScheduledSelfTransfer acc ->
     printf "attempted to make an scheduled transfer to the same account '%s'" (show acc)
+  Types.AlreadyABaker bid -> printf "%s is already a baker id" (show bid)
+  Types.NotABaker addr -> printf "attempt to remove a baker account %s that is not a baker" (show addr)
+  Types.InsufficientBalanceForBakerStake -> "the balance on the account is insufficient to cover the desired stake"
+  Types.BakerInCooldown -> "change could not be completed because the baker is in the cooldown period"
 
 
 -- CONSENSUS

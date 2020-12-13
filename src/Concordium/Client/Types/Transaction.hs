@@ -6,22 +6,34 @@
 module Concordium.Client.Types.Transaction where
 
 import           Concordium.Client.Types.Account
-import           Concordium.Crypto.Proofs
 import qualified Concordium.ID.Types                 as IDTypes
 import           Concordium.Types
-import           Concordium.Types.Execution          as Types
 import           Concordium.Crypto.EncryptedTransfers
 
 import           Data.Aeson                          as AE
 import qualified Data.Aeson.TH                       as AETH
 import           Data.Text                           hiding (length, map)
 import           GHC.Generics                        (Generic)
+import qualified Concordium.Types.Transactions as Types
+import qualified Concordium.Types as Types
 
 -- |Cost of checking a header where the sender provides n signatures.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 -- This function does not account for the size of the transaction payload.
 checkHeaderEnergyCost :: Int -> Energy
 checkHeaderEnergyCost = fromIntegral . (+6) . (*53)
+
+-- |Cost of checking a header where the sender provides n signatures.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost.
+-- This function differs from Concordium.Client.Types.Transaction.checkHeaderEnergyCost,
+-- in that it accounts for the payload.
+checkHeaderEnergyCostWithPayload
+  :: PayloadSize -- ^ The number of bytes of serialized payload.
+  -> Int -- ^ The number of signatures the transaction signature contains.
+  -> Types.Energy
+checkHeaderEnergyCostWithPayload size nSig =
+  checkHeaderEnergyCost nSig + (headerSize + fromIntegral size) `div` 232
+  where headerSize = fromIntegral Types.transactionHeaderSize
 
 -- |Cost of a simple transfer transaction.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
@@ -60,24 +72,16 @@ accountRemoveKeysEnergyCost = checkHeaderEnergyCost
 
 -- |Cost of a baker add transaction.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
--- The (+2) is added due to the size of the transaction.
--- TODO Compute (+2) the correct way to take into account that it depends
---      on the number of signatures.
-bakerAddEnergyCost :: Int -> Energy
-bakerAddEnergyCost = (+2) . (+3000) . checkHeaderEnergyCost
+bakerAddEnergyCost :: Types.PayloadSize -> Int -> Energy
+bakerAddEnergyCost psize numSigs = 3000 + checkHeaderEnergyCostWithPayload psize numSigs
 
 -- |Cost of a baker set account transaction.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
--- The (+1) is added due to the size of the transaction.
--- TODO Compute (+1) the correct way to take into account that it depends
---      on the number of signatures.
-bakerSetAccountEnergyCost :: Int -> Energy
-bakerSetAccountEnergyCost = (+1) . bakerSetKeyEnergyCost
-
--- |Cost of a baker set account transaction.
--- This must be kept in sync with the cost in Concordium.Scheduler.Cost
-bakerSetKeyEnergyCost :: Int -> Energy
-bakerSetKeyEnergyCost = (+ 90) . checkHeaderEnergyCost
+bakerSetKeysEnergyCost ::
+  PayloadSize -- ^Size of the payload
+  -> Int -- ^Number of signatures
+  -> Energy
+bakerSetKeysEnergyCost size numSigs = 2980 + checkHeaderEnergyCostWithPayload size numSigs
 
 -- |Cost of a baker set aggregation key transaction
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
@@ -164,21 +168,6 @@ data TransactionJSONPayload
       , amount    :: !Amount
       } -- ^ Transfers specific amount to the recipent
   | RemoveBaker
-      { removeId :: !BakerId
-      }
-  | UpdateBakerAccount
-      { bakerId        :: !BakerId
-      , accountAddress :: !AccountAddress
-      , proofBa        :: !AccountOwnershipProof
-      }
-  | UpdateBakerSignKey
-      { bakerId    :: !BakerId
-      , newSignKey :: !BakerSignVerifyKey
-      , proofBs    :: !Dlog25519Proof
-      }
-  | DelegateStake
-      { bakerId :: !BakerId
-      }
   | TransferToEncrypted{
       -- |Amount to transfer from public to encrypted balance of the account.
       tteAmount :: !Amount

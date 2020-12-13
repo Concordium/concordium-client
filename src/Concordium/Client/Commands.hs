@@ -23,9 +23,10 @@ module Concordium.Client.Commands
   , IdentityShowCmd(..)
   ) where
 
-import Data.Text hiding (map)
+import Data.Text hiding (map, unlines)
 import Data.Version (showVersion)
 import Data.Word (Word64)
+import Data.Time.Format.ISO8601
 import Network.HTTP2.Client
 import Options.Applicative
 import Paths_simple_client (version)
@@ -36,6 +37,8 @@ import Concordium.ID.Types (KeyIndex, SignatureThreshold)
 import Concordium.Types
 import Text.Printf
 import qualified Text.PrettyPrint.ANSI.Leijen as P
+import Control.Monad
+import Options.Applicative.Help.Pretty (hang, softline, fillCat)
 
 type Verbose = Bool
 
@@ -93,9 +96,9 @@ data ConfigCmd
 data ConfigAccountCmd
   = ConfigAccountAdd
     { caaAddr :: !Text
-    , caaName :: !(Maybe Text) }
+    , caaName :: !Text }
   | ConfigAccountRemove
-    { carAddr :: !(Text) }
+    { carAddr :: !Text }
   | ConfigAccountImport
     { caiFile :: !FilePath
     , caiName :: !(Maybe Text)
@@ -110,6 +113,8 @@ data ConfigAccountCmd
     { carkAddr :: !Text
     , carkKeys :: ![KeyIndex]
     , carkThreshold :: !(Maybe SignatureThreshold) }
+  | ConfigAccountRemoveName
+    { carnText :: !Text }
   | ConfigAccountSetThreshold
     { cuatAddr :: !Text
     , cuatThreshold :: !SignatureThreshold }
@@ -159,11 +164,6 @@ data AccountCmd
     , asDecryptEncryptedBalance :: !Bool }
   | AccountList
     { alBlockHash :: !(Maybe Text) }
-  | AccountDelegate
-    { adBakerId :: !BakerId
-    , adTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
-  | AccountUndelegate
-    { auTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | AccountUpdateKeys
     { aukKeys :: !FilePath
     , aukTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
@@ -335,26 +335,16 @@ data BakerCmd
     { bgkFile :: !(Maybe FilePath) }
   | BakerAdd
     { baFile :: !FilePath
-    , baTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
-  | BakerSetAccount
-    { bsaBakerId :: !BakerId
-    , bsaAccountRef :: !Text
-    , bsaTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
-  | BakerSetKey
-    { buskBakerId :: !BakerId
-    , bsaSignatureKeysFile :: !FilePath
+    , baTransactionOpts :: !(TransactionOpts (Maybe Energy))
+    , baStake :: !Amount
+    , baAutoAddEarnings :: !Bool
+    , outputFile :: Maybe FilePath}
+  | BakerSetKeys
+    { bsaKeysFile :: !FilePath
     , buskTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | BakerRemove
     { brBakerId :: !BakerId
     , brTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
-  | BakerSetAggregationKey
-    { bsakBakerId :: !BakerId
-    , bsakBakerAggregationKeyFile :: !FilePath
-    , bsakTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
-  | BakerSetElectionKey
-    { bsekBakerId :: !BakerId
-    , bsekBakerElectionKeyFile :: !FilePath
-    , bsakTransactionOps :: !(TransactionOpts (Maybe Energy)) }
   deriving (Show)
 
 data IdentityCmd
@@ -473,7 +463,7 @@ interactionOptsParser =
 programOptions :: ShowAllOpts -> Parser Options
 programOptions showAllOpts =
   Options <$>
-    (hsubparser
+    hsubparser
      (metavar "command" <>
       transactionCmds <>
       accountCmds <>
@@ -485,7 +475,7 @@ programOptions showAllOpts =
       bakerCmds <>
       identityCmds <>
       rawCmds
-     )) <*>
+     ) <*>
     backendParser <*>
     optional (strOption (long "config" <> metavar "DIR" <> help "Path to the configuration directory.")) <*>
     switch (hidden <> long "verbose" <> short 'v' <> help "Make output verbose.")
@@ -551,7 +541,7 @@ transactionSendGtuCmd =
        strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
        option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
        transactionOptsParser)
-      (progDesc "Transfer GTU from one account to another (sending to contracts is currently not supported with this method - use 'transaction submit')."))
+      (progDesc "Transfer GTU from one account to another."))
 
 transactionWithScheduleCmd :: Mod CommandFields TransactionCmd
 transactionWithScheduleCmd =
@@ -559,16 +549,53 @@ transactionWithScheduleCmd =
    "send-gtu-scheduled"
    (info
      (let implicit = (\a b c d -> Left (a, b, c, d)) <$>
-                     option (eitherReader amountFromStringInform) (long "amount" <> metavar "amount" <> help "amount") <*>
-                     option auto (long "every" <> metavar "Interval" <> help "interval") <*>
-                     option auto (long "for" <> metavar "numItems" <> help "numIntems") <*>
-                     option auto (long "starting" <> metavar "starting" <> help "starting")
+                     option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Total amount of GTU to send.") <*>
+                     option auto (long "every" <> metavar "INTERVAL" <> help "Interval between releases, one of 'Minute', 'Hour', 'Day', 'Week', 'Month' (30 days), or 'Year' (365 days). ") <*>
+                     option auto (long "for" <> metavar "N" <> help "Number of releases.") <*>
+                     option (eitherReader timeFromString) (long "starting" <> metavar "starting" <>
+                                                           help "Start time of the first release, as a ISO8601 UTC time string, e.g., 2021-31-12T00:00:00Z.")
           explicit = Right <$>
-                     (some (option auto (long "schedule" <> metavar "schedule" <> help "schedule")))
+                     option (eitherReader eitherParseScheduleInform)  (long "schedule" <> metavar "schedule" <> help "Explicit schedule in the form of a comma separated list of elements of the form '3.0 at 2020-12-13T23:35:59Z' (send 3 GTU on December 13, 2020). Timestamps must be given in UTC.")
        in
          TransactionSendWithSchedule <$>
          strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*> (implicit <|> explicit) <*> transactionOptsParser)
-     (progDesc "Transfer GTU from one account to another with the provided schedule of releases."))
+     (progDescDoc . Just $ fillCat [
+         "Transfer GTU from one account to another with the provided schedule of releases.",
+         "Releases can be specified in one of two ways, either as regular releses via intervals," <>
+         softline <> "or as an explicit schedule at specific timestamps.",
+         "",
+         "To specify the release via regular intervals use the options" <> softline <> "'--amount', '--every', '--for', and '--starting'.",
+         "To specify an explicit schedule provide a list of releases in" <>
+         softline <> "the form of a '--schedule' flag, which takes a comma separated list of releases.",
+         "Each release must be of the form 100 at 2020-12-13T23:23:23Z.",
+         "",
+         "For example, to supply three releases, of 100, 150, and 200 GTU," <> softline <>
+         "on January 1, 2021, February 15, 2021, and December 31, 2021," <> softline <>
+         "the following input would be used. All releases are at the beginning of" <> softline <> "the day in the UTC time zone.",
+         "",
+         hang 4 "\"100 at 2021-01-01T00:00:00Z, 150 at 2021-15-02T00:00:00Z, 200 at 2021-31-12T00:00:00Z\"",
+         "",
+         "Times are parsed according to the ISO8601 standard for the UTC time zone."
+         ]))
+  where
+    eitherParseScheduleInform :: String -> Either String [(Timestamp, Amount)]
+    eitherParseScheduleInform s =
+      let items = map Data.Text.words (splitOn "," (pack s))
+      in forM items $ \case 
+          [amountString, "at", timeString] ->
+            case amountFromString (unpack amountString) of
+              Nothing -> Left "Could not parse amount."
+              Just amount ->
+                case iso8601ParseM (unpack timeString) of
+                  Nothing -> Left "Could not parse a timestamp."
+                  Just time -> return (utcTimeToTimestamp time, amount)
+          _ -> Left "Could not parse schedule. It should be a comma separated list of the form '3.0 at 2020-12-13T23:23:23Z'."
+
+    timeFromString :: String -> Either String Timestamp
+    timeFromString s = 
+      case iso8601ParseM s of
+        Nothing -> Left "Starting point could not be read."
+        Just time -> return (utcTimeToTimestamp time)
 
 transactionEncryptedTransferCmd :: Mod CommandFields TransactionCmd
 transactionEncryptedTransferCmd =
@@ -591,8 +618,6 @@ accountCmds =
         hsubparser
           (accountShowCmd <>
            accountListCmd <>
-           accountDelegateCmd <>
-           accountUndelegateCmd <>
            accountUpdateKeysCmd <>
            accountAddKeysCmd <>
            accountRemoveKeysCmd <>
@@ -620,25 +645,6 @@ accountListCmd =
        (AccountList <$>
          optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
        (progDesc "List all accounts."))
-
-accountDelegateCmd :: Mod CommandFields AccountCmd
-accountDelegateCmd =
-  command
-    "delegate"
-    (info
-      (AccountDelegate <$>
-        option auto (long "baker" <> metavar "BAKER-ID" <> help "Baker to which the stake of the sender's account should be delegated.") <*>
-        transactionOptsParser)
-      (progDesc "Delegate stake of account to baker."))
-
-accountUndelegateCmd :: Mod CommandFields AccountCmd
-accountUndelegateCmd =
-  command
-    "undelegate"
-    (info
-      (AccountUndelegate <$>
-        transactionOptsParser)
-      (progDesc "Delegate stake of account to baker."))
 
 accountEncryptCmd :: Mod CommandFields AccountCmd
 accountEncryptCmd =
@@ -919,8 +925,6 @@ configBackupImportCmd =
       )
       (progDesc "Import config backup file, requires password if encrypted"))
 
-
-
 configAccountCmds :: ShowAllOpts -> Mod CommandFields ConfigCmd
 configAccountCmds showAllOpts =
   command
@@ -933,6 +937,8 @@ configAccountCmds showAllOpts =
            configAccountImportCmd showAllOpts <>
            configAccountAddKeysCmd <>
            configAccountUpdateKeysCmd <>
+           configAccountRemoveKeysCmd <>
+           configAccountRemoveNameCmd <>
            configAccountSetThresholdCmd <>
            configAccountRemoveKeysCmd))
       (progDesc "Commands for inspecting and changing account-specific configuration."))
@@ -944,8 +950,8 @@ configAccountAddCmd =
     (info
       (ConfigAccountAdd <$>
         strArgument (metavar "ADDRESS" <> help "Address of the account.") <*>
-        optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account.")))
-      (progDesc "Add account address to persistent config, optionally naming the account."))
+        strArgument (metavar "NAME" <> help "Name of the account."))
+      (progDesc "Adds a named account address to persistent config"))
 
 configAccountRemove :: Mod CommandFields ConfigAccountCmd
 configAccountRemove =
@@ -1042,8 +1048,8 @@ configAccountSetThresholdCmd =
     (info
       (ConfigAccountSetThreshold <$>
         strOption (long "account" <> metavar "ACCOUNT" <> help "Name or address of the account.") <*>
-        (option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <>
-            help "Sets the signature threshold to this value.")))
+        option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <>
+            help "Sets the signature threshold to this value."))
       (progDescDoc $ docFromLines
         [ "Sets the signature threshold of the account to the specified value."]))
 
@@ -1052,6 +1058,16 @@ readAccountExportFormat = str >>= \case
   "mobile" -> return FormatMobile
   "genesis" -> return FormatGenesis
   s -> readerError $ printf "invalid format: %s (supported values: 'mobile' and 'genesis')" (s :: String)
+
+configAccountRemoveNameCmd :: Mod CommandFields ConfigAccountCmd
+configAccountRemoveNameCmd =
+  command
+    "remove-name"
+    (info
+      (ConfigAccountRemoveName <$>
+        strArgument (metavar "NAME" <> help "Name of the account"))
+    (progDescDoc $ docFromLines
+      [ "Removes the given name from the list of named accounts" ]))
 
 consensusCmds :: Mod CommandFields Cmd
 consensusCmds =
@@ -1126,10 +1142,7 @@ bakerCmds =
           (bakerGenerateKeysCmd <>
            bakerAddCmd <>
            bakerRemoveCmd <>
-           bakerSetAccountCmd <>
-           bakerSetKeyCmd <>
-           bakerSetAggregationKeyCmd <>
-           bakerSetElectionKeyCmd))
+           bakerSetKeysCmd))
       (progDesc "Commands for creating and deploying baker credentials."))
 
 bakerGenerateKeysCmd :: Mod CommandFields BakerCmd
@@ -1157,35 +1170,30 @@ bakerAddCmd =
     (info
       (BakerAdd <$>
         strArgument (metavar "FILE" <> help "File containing the baker credentials.") <*>
-        transactionOptsParser)
+        transactionOptsParser <*>
+        option (eitherReader amountFromStringInform) (long "stake" <> metavar "GTU-AMOUNT" <> help "The amount of GTU to stake.") <*>
+        (not <$> switch (long "no-restake" <> help "If supplied, the earnings will not be added to the baker stake automatically.")) <*>
+        optional (strOption (long "out" <> metavar "FILE" <> help "File to write the baker credentials to, in case of succesful transaction. These can be used to start the node."))
+      )
       (progDesc "Deploy baker credentials to the chain."))
 
-bakerSetAccountCmd :: Mod CommandFields BakerCmd
-bakerSetAccountCmd =
-  command
-    "set-account"
-    (info
-      (BakerSetAccount <$>
-        argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
-        strArgument (metavar "ACCOUNT" <> help "Name or address of the account to send rewards to.") <*>
-        transactionOptsParser)
-      (progDescDoc $ docFromLines
-        [ "Update the account that a baker's rewards are sent to." ]))
-
-bakerSetKeyCmd :: Mod CommandFields BakerCmd
-bakerSetKeyCmd =
+bakerSetKeysCmd :: Mod CommandFields BakerCmd
+bakerSetKeysCmd =
   command
     "set-key"
     (info
-      (BakerSetKey <$>
-        argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
-        strArgument (metavar "FILE" <> help "File containing the signature keys.") <*>
+      (BakerSetKeys <$>
+        strArgument (metavar "FILE" <> help "File containing the new public and private keys.") <*>
         transactionOptsParser)
       (progDescDoc $ docFromLines
-        [ "Update the signature keys of a baker. Expected format of the key file:"
+        [ "Update the keys of a baker. Expected format of the key file:"
         , "   {"
         , "     \"signatureSignKey\": ...,"
         , "     \"signatureVerifyKey\": ..."
+        , "     \"aggregationSignKey\": ...,"
+        , "     \"aggregationVerifyKey\": ..."
+        , "     \"electionPrivateKey\": ...,"
+        , "     \"electionVerifyKey\": ...,"
         , "   }" ]))
 
 bakerRemoveCmd :: Mod CommandFields BakerCmd
@@ -1198,40 +1206,6 @@ bakerRemoveCmd =
         transactionOptsParser)
       (progDesc "Remove a baker from the chain."))
 
-bakerSetAggregationKeyCmd :: Mod CommandFields BakerCmd
-bakerSetAggregationKeyCmd =
-  command
-    "set-aggregation-key"
-    (info
-      (BakerSetAggregationKey <$>
-        argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
-        strArgument (metavar "FILE" <> help "File containing the aggregation key.") <*>
-        transactionOptsParser)
-      (progDescDoc $ docFromLines
-        [ "Update the aggregation key of a baker. Expected format of the key file:"
-        , "   {"
-        , "     \"aggregationSignKey\": ...,"
-        , "     \"aggregationVerifyKey\": ..."
-        , "   }" ]))
-
-bakerSetElectionKeyCmd :: Mod CommandFields BakerCmd
-bakerSetElectionKeyCmd =
-  command
-    "set-election-key"
-    (info
-      (BakerSetElectionKey <$>
-        argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
-        strArgument (metavar "FILE" <> help "File containing the election key.") <*>
-        transactionOptsParser)
-      (progDescDoc $ docFromLines
-        [ "Update the election key of a baker. Expected format of the key file:"
-        , "   {"
-        , "     ..."
-        , "     \"electionPrivateKey\": ...,"
-        , "     \"electionVerifyKey\": ...,"
-        , "     ..."
-        , "   }" ]))
-
 identityCmds :: Mod CommandFields Cmd
 identityCmds =
   command
@@ -1239,7 +1213,7 @@ identityCmds =
     (info
       (IdentityCmd <$>
         hsubparser
-          (identityShowCmd))
+          identityShowCmd)
       (progDesc "Commands for interacting with the ID layer."))
 
 

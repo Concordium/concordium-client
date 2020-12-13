@@ -165,23 +165,9 @@ data GetAccountsResponseItem =
   , address :: Text }
   deriving (ToJSON, Generic, Show)
 
-data AddBakerRequest =
-  AddBakerRequest
-  { sender :: Maybe Text
-  -- | The password to decrypt the account signing keys.
-  -- It must be UTF-8 encoded.
-  , password :: Text }
-  deriving (FromJSON, Generic, Show)
-
-data AddBakerResponse =
-  AddBakerResponse
-  { hash :: Maybe Text }
-  deriving (ToJSON, Generic, Show)
-
 data RemoveBakerRequest =
   RemoveBakerRequest
   { sender :: Maybe Text
-  , bakerId :: Word64
   -- | The password to decrypt the account signing keys.
   -- It must be UTF-8 encoded.
   , password :: Text }

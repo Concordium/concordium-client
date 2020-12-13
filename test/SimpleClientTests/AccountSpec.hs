@@ -10,6 +10,8 @@ import qualified Concordium.Types as Types
 import qualified Concordium.Crypto.ByteStringHelpers as BSH
 import qualified Concordium.Crypto.SignatureScheme as SS
 import Concordium.Crypto.EncryptedTransfers
+import Concordium.ID.DummyData(dummyCommitment)
+import qualified Data.Map.Strict as OrdMap
 
 import Control.Monad.Writer
 import qualified Data.Map.Strict as Map
@@ -60,14 +62,21 @@ exampleAccountInfoResult d cs = AccountInfoResult
                                 , airEncryptionKey = dummyEncryptionPublicKey }
 
 exampleCredentials :: IDTypes.Policy -> IDTypes.AccountCredential
-exampleCredentials p = IDTypes.NormalAC $ IDTypes.CredentialDeploymentValues
+exampleCredentials p = IDTypes.NormalAC (IDTypes.CredentialDeploymentValues
                        { IDTypes.cdvAccount = acc
                        , IDTypes.cdvRegId = regId
                        , IDTypes.cdvIpId = IDTypes.IP_ID 21
                        , IDTypes.cdvThreshold = IDTypes.Threshold 1
                        , IDTypes.cdvArData = Map.singleton (IDTypes.ArIdentity 0) IDTypes.ChainArData
                                               { IDTypes.ardIdCredPubShare = share }
-                       , IDTypes.cdvPolicy = p }
+                       , IDTypes.cdvPolicy = p }) $ IDTypes.CredentialDeploymentCommitments
+                        {
+                          cmmPrf = dummyCommitment,
+                          cmmCredCounter = dummyCommitment,
+                          cmmMaxAccounts = dummyCommitment,
+                          cmmAttributes = OrdMap.empty,
+                          cmmIdCredSecSharingCoeff = []
+                        }
   where acc = let
           keys = unsafePerformIO $ replicateM 2 (SS.correspondingVerifyKey <$> SS.newKeyPair SS.Ed25519)
           threshold = 1
