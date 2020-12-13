@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Concordium.Client.Config where
 
 
@@ -32,7 +33,7 @@ import Data.String.Interpolate (i, iii)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import Data.Text (Text, pack, strip, unpack)
-import Data.Text.Encoding (decodeUtf8)
+import Data.Text.Encoding (decodeUtf8', decodeUtf8, encodeUtf8)
 import System.Directory
 import System.IO.Error
 import System.FilePath
@@ -192,7 +193,7 @@ initBaseConfig f verbose = do
       moduleMapFile = moduleNameMapFile contrCfgDir
 
   -- Create all map files
-  mapM_ (uncurry $ handleWriteFile writeFile AllowOverwrite verbose)
+  mapM_ (uncurry $ handleWriteFile BSL.writeFile AllowOverwrite verbose)
     [(accMapFile, mempty), (contrMapFile, emptyMapContentJSON), (moduleMapFile, emptyMapContentJSON)]
 
   accNameMap <- loadAccountNameMap accMapFile
@@ -433,14 +434,14 @@ instance Show NamedModuleRef where
 
 -- |Write the name map to a file in a pretty JSON format.
 writeNameMapAsJSON :: AE.ToJSON v => Verbose -> FilePath -> NameMap v -> IO ()
-writeNameMapAsJSON verbose file =  handledWriteFile file . showSortedPrettyJSON
-  where handledWriteFile = handleWriteFile writeFile AllowOverwrite verbose
-
+writeNameMapAsJSON verbose file =  handledWriteFile file .  AE.encodePretty' config
+  where config = AE.defConfig { AE.confCompare = compare }
+        handledWriteFile = handleWriteFile BSL.writeFile AllowOverwrite verbose
 -- |Write the name map to a file in the expected format.
 writeNameMap :: Show v => Verbose -> FilePath -> NameMap v -> IO ()
-writeNameMap verbose file = handledWriteFile file . unlines . map f . sortOn fst . M.toList
+writeNameMap verbose file = handledWriteFile file . BSL.fromStrict . encodeUtf8 . T.pack . unlines . map f . sortOn fst . M.toList
   where f (name, val) = printf "%s = %s" name (show val)
-        handledWriteFile = handleWriteFile writeFile AllowOverwrite verbose
+        handledWriteFile = handleWriteFile BSL.writeFile AllowOverwrite verbose
 
 -- Used in `handleWriteFile` to determine how already exisiting files should be handled.
 data OverwriteSetting =
@@ -468,7 +469,7 @@ handleWriteFile wrtFile overwriteSetting verbose file contents = do
   where logFatalOnErrors e
           | isDoesNotExistError e = logFatal [[i|the file '#{file}' does not exist and cannot be created|]]
           | isPermissionError e   = logFatal [[i|you do not have permissions to write to the file '#{file}'|]]
-          | otherwise             = logFatal [[i|something went wrong while writing to the file '#{file}'|]]
+          | otherwise             = logFatal [[i|something went wrong while writing to the file '#{file}', err: '#{e}'|]]
 
 -- |Read a file with the provided function and handle IO errors with an appropriate logging of errors.
 handleReadFile :: (FilePath -> IO s) -> FilePath -> IO s
@@ -476,7 +477,7 @@ handleReadFile rdFile file = catchIOError (rdFile file) logFatalOnErrors
   where logFatalOnErrors e
           | isDoesNotExistError e = logFatal [[i|the file '#{file}' does not exist and cannot be read|]]
           | isPermissionError e   = logFatal [[i|you do not have permissions to read the file '#{file}'|]]
-          | otherwise             = logFatal [[i|something went wrong while reading the file '#{file}'|]]
+          | otherwise             = logFatal [[i|something went wrong while reading the file '#{file}', err: '#{e}'|]]
 
 -- |Write the account keys structure into the directory of the given account.
 -- Each 'EncryptedAccountKeyPair' is written to a JSON file the name of which
@@ -567,10 +568,13 @@ emptyMapContentJSON = "{}"
 loadAccountNameMap :: FilePath -> IO AccountNameMap
 loadAccountNameMap mapFile = do
   -- Simply use an empty map if the reading fails
-  content <- readFile mapFile `catch` (\(_ :: SomeException) -> return mempty)
-  case parseAccountNameMap $ lines content of
-    Left err -> logFatal [[i|cannot parse account name map file '#{content}': #{err}|]]
-    Right m -> return m
+  contentbs <- BSL.readFile mapFile `catch` (\(_ :: SomeException) -> return mempty)
+  case decodeUtf8' (BSL.toStrict contentbs) of
+    Left _ -> logFatal ["The account name map file is not valid UTF8. If you manually edited it please make sure to save it in UTF8 encoding."]
+    Right content ->
+      case parseAccountNameMap $ lines (T.unpack content) of
+        Left err -> logFatal [[i|cannot parse account name map file '#{content}': #{err}|]]
+        Right m -> return m
 
 -- |Parse an AccountNamepMap from zero or more entries, as specificied in `parseAccoutNameMapEntry`.
 parseAccountNameMap :: (MonadError String m) => [String] -> m AccountNameMap
@@ -656,7 +660,7 @@ data AccountConfig =
   } deriving(Show, Eq)
 
 instance AE.ToJSON AccountConfig where
-   toJSON AccountConfig{..} = 
+   toJSON AccountConfig{..} =
      AE.object ["address" .= acAddr,
                 "accountKeys" .= acKeys,
                 "threshold" .= acThreshold,
