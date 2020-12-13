@@ -191,19 +191,19 @@ processConfigCmd action baseCfgDir verbose =
       runPrinter $ printAccountConfigList accCfgs
     ConfigBackupExport fileName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      pwd <- askPassword "Enter password for encryption of backup (leave blank for no encryption): " 
+      pwd <- askPassword "Enter password for encryption of backup (leave blank for no encryption): "
       allAccounts <- getAllAccountConfigs baseCfg
-      backup <- case Password.getPassword pwd of 
+      backup <- case Password.getPassword pwd of
         "" -> configExport allAccounts Nothing
         _ -> configExport allAccounts (Just pwd)
-      handleWriteFile BS.writeFile PromptBeforeOverwrite verbose fileName backup 
+      handleWriteFile BS.writeFile PromptBeforeOverwrite verbose fileName backup
 
     ConfigBackupImport fileName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       ciphertext <- handleReadFile BS.readFile fileName
       accCfgs <- configImport ciphertext (askPassword "The backup file is password protected. Enter password: ")
       case accCfgs of
-        Right accCfgs' -> do 
+        Right accCfgs' -> do
           void $ importAccountConfig baseCfg accCfgs' verbose
         Left err -> logFatal [[i|Failed to import Config Backup, #{err}|]]
 
@@ -282,7 +282,7 @@ processConfigCmd action baseCfgDir verbose =
                      ++ " will be added to account " ++ Text.unpack addr]
             let accCfg' = accCfg { acKeys = keyMapNew }
             writeAccountKeys baseCfg' accCfg' verbose
-      
+
       ConfigAccountUpdateKeys addr keysFile -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
@@ -366,10 +366,10 @@ processConfigCmd action baseCfgDir verbose =
         -- The parser checks that the threshold is at least 1.
         -- Check that the new threshold is at most the amount of keys:
         let numberOfKeys = Map.size (acKeys accCfg)
-        if numberOfKeys < fromIntegral threshold then 
+        if numberOfKeys < fromIntegral threshold then
           logWarn ["the threshold can at most be the number of keys: " ++ show numberOfKeys]
-        else 
-          do 
+        else
+          do
             logWarn ["the threshold will be set to " ++ show (toInteger threshold)]
 
             let accCfg' = accCfg { acThreshold = threshold }
@@ -929,7 +929,7 @@ bakerAddTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy)
                     -> Types.Amount -- ^How much to stake.
                     -> Bool -- ^Whether to restake earnings.
                     -> Bool -- ^Whether to confirm before sending or not.
-                    -> IO (TransactionConfig, Types.Payload)
+                    -> IO (BakerKeys, TransactionConfig, Types.Payload)
 bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm = do
   accCfg <- getAccountCfgFromTxOpts baseCfg txOpts
   bakerKeys <- eitherDecodeFileStrict f >>= getFromJson
@@ -955,14 +955,14 @@ bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm
   txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
 
   logSuccess [ printf "adding baker with account %s" (show (acAddress tcAccountCfg))
-             , printf "initial stake will be %s" (Types.amountToString batcBakingStake)
+             , printf "initial stake will be %s GTU" (Types.amountToString batcBakingStake)
              , if batcRestakeEarnings then "Rewards will be automatically added to the baking stake." else "Rewards will _not_ be automatically added to the baking stake."
              , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy) ]
   when confirm $ do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  return (txCfg, payload)
+  return (bakerKeys, txCfg, payload)
 
   where except c err = c >>= \case
           Just x -> return x
@@ -1976,14 +1976,14 @@ processBakerCmd action baseCfgDir verbose backend =
           logSuccess [ printf "keys written to file '%s'" f
                      , "DO NOT LOSE THIS FILE"
                      , printf "to add a baker to the chain using these keys, use 'baker add %s'" f ]
-    BakerAdd accountKeysFile txOpts initialStake autoRestake -> do
+    BakerAdd accountKeysFile txOpts initialStake autoRestake outputFile -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
       let intOpts = toInteractionOpts txOpts
-      (txCfg, pl) <- bakerAddTransaction baseCfg txOpts accountKeysFile initialStake autoRestake (ioConfirm intOpts)
+      (bakerKeys, txCfg, pl) <- bakerAddTransaction baseCfg txOpts accountKeysFile initialStake autoRestake (ioConfirm intOpts)
 
       when verbose $ do
         runPrinter $ printAccountConfig $ tcAccountCfg txCfg
@@ -1998,8 +1998,18 @@ processBakerCmd action baseCfgDir verbose backend =
               Finalized | SingleBlock _ summary <- parseTransactionBlockResult ts ->
                           case Types.tsResult summary of
                             Types.TxSuccess [Types.BakerAdded{..}] ->
-                              -- TODO: Output a full file that a baker can be started with
-                              logInfo ["Baker with ID " ++ show ebaBakerId ++ " added"]
+                              case outputFile of
+                                Nothing ->
+                                  -- TODO: Output a full file that a baker can be started with
+                                  logInfo ["Baker with ID " ++ show ebaBakerId ++ " added.",
+                                          printf "To use it add \"bakerId\": %s to the keys file %s." (show ebaBakerId) accountKeysFile
+                                          ]
+                                Just outFile -> do
+                                  let credentials = BakerCredentials{
+                                        bcKeys = bakerKeys,
+                                        bcIdentity = ebaBakerId
+                                        }
+                                  liftIO $ handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose outFile (AE.encodePretty credentials)
                             Types.TxReject reason -> do
                               logWarn [showRejectReason True reason]
                             _ -> logFatal ["Unexpected response for baker add transaction type."]
@@ -2053,7 +2063,7 @@ bakerSetKeysTransaction baseCfg txOpts fp confirm = do
   ubkProofAggregation <- Bls.proveKnowledgeOfSK challenge aggrSignKey
 
   let payload = Types.UpdateBakerKeys{..}
-  
+
   let nrgCost _ = return . Just $ bakerSetKeysEnergyCost (Types.payloadSize (Types.encodePayload payload))
 
   txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost

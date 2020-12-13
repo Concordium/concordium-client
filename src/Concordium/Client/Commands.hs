@@ -335,7 +335,8 @@ data BakerCmd
     { baFile :: !FilePath
     , baTransactionOpts :: !(TransactionOpts (Maybe Energy))
     , baStake :: !Amount
-    , baAutoAddEarnings :: !Bool}
+    , baAutoAddEarnings :: !Bool
+    , outputFile :: Maybe FilePath}
   | BakerSetKeys
     { bsaKeysFile :: !FilePath
     , buskTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
@@ -1159,7 +1160,8 @@ bakerAddCmd =
         strArgument (metavar "FILE" <> help "File containing the baker credentials.") <*>
         transactionOptsParser <*>
         option (eitherReader amountFromStringInform) (long "stake" <> metavar "GTU-AMOUNT" <> help "The amount of GTU to stake.") <*>
-        (not <$> switch (long "no-restake" <> help "If supplied, the earnings will not be added to the baker stake automatically."))
+        (not <$> switch (long "no-restake" <> help "If supplied, the earnings will not be added to the baker stake automatically.")) <*>
+        optional (strOption (long "out" <> metavar "FILE" <> help "File to write the baker credentials to, in case of succesful transaction. These can be used to start the node."))
       )
       (progDesc "Deploy baker credentials to the chain."))
 
