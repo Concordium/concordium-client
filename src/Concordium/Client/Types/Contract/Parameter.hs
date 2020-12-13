@@ -12,16 +12,25 @@ import Data.Aeson (FromJSON, Result, ToJSON, (.=))
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import Data.ByteString (ByteString)
+import qualified Data.Char as Char
 import qualified Data.HashMap.Strict as HM
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import Data.Scientific (Scientific, isFloating, toBoundedInteger)
 import qualified Data.Serialize as S
-import Data.String.Interpolate (i)
+import Data.String.Interpolate (i, iii)
 import Data.Text (Text)
+import qualified Data.Text as Text
+import qualified Data.Time as Time
 import qualified Data.Vector as V
 import Data.Word (Word8, Word16, Word32, Word64)
 import Lens.Micro.Platform ((^?), ix)
+import Text.Read (readMaybe)
+import Data.Time.Format.ISO8601 (iso8601ParseM, iso8601Show)
+import Data.Maybe (mapMaybe)
+import Data.Time (addUTCTime, diffUTCTime)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Data.Ratio
 
 -- |Serialize JSON parameter to binary using `SchemaType` or fail with an error message.
 encodeParameter :: SchemaType -> AE.Value -> Either String ByteString
@@ -47,6 +56,8 @@ getJSONUsingSchema typ = case typ of
   AccountAddress  -> AE.toJSON <$> (S.get :: S.Get T.AccountAddress)
   ContractAddress -> AE.toJSON <$>
     (T.ContractAddress <$> (T.ContractIndex <$> S.getWord64le) <*> (T.ContractSubindex <$> S.getWord64le))
+  Timestamp -> AE.toJSON . timestampToRFC3339 <$> S.getWord64le
+  Duration -> AE.toJSON . durationToText <$> S.getWord64le
   Pair a b -> do
     l <- getJSONUsingSchema a
     r <- getJSONUsingSchema b
@@ -72,6 +83,34 @@ getJSONUsingSchema typ = case typ of
       Unnamed xs  -> AE.toJSON <$> mapM getJSONUsingSchema xs
       None        -> return $ AE.Array mempty
       where getPair (k, v) = (k,) <$> getJSONUsingSchema v
+
+    -- |Converts a unix timestamp in milliseconds to UTC in ISO8601/RFC3339-format.
+    -- Example: 220966827870 -> "1977-01-01T11:40:27.87Z"
+    timestampToRFC3339 :: Word64 -> Text
+    timestampToRFC3339 millis = Text.pack . iso8601Show $ utcTime
+      where utcTime = addUTCTime diffTime (posixSecondsToUTCTime 0)
+            diffTime = fromRational (toInteger millis % 1000)
+
+    -- |Convert a duration in milliseconds into text with a list of duration measures separated by a space.
+    -- A measure is a non-negative integer followed by the unit (with no whitespace in between).
+    -- The support units are: days (d), hours (h), minutes (m), seconds (s), milliseconds (ms).
+    -- Measures that are 0 are omitted from the output (see example, where 'd' and 'ms' are omitted).
+    -- Example: 5022000 -> "1h 23m 42s".
+    durationToText :: Word64 -> Text
+    durationToText t = Text.intercalate " " . mapMaybe showTimeUnit $
+                      [(d, "d"), (h, "h"), (m, "m"), (s, "s"), (ms, "ms")]
+      where
+        (d, rem0) = quotRem t dayInMs
+        (h, rem1) = quotRem rem0 hrInMs
+        (m, rem2) = quotRem rem1 minInMs
+        (s, ms)   = quotRem rem2 secInMs
+
+        -- Show the time unit if it is non-zero, otherwise return Nothing.
+        showTimeUnit :: (Word64, Text) -> Maybe Text
+        showTimeUnit (value, unit) =
+            if value == 0
+            then Nothing
+            else Just [i|#{value}#{unit}|]
 
 -- |Create a `Serialize.Put` for JSON using a `SchemaType`.
 -- It goes through the JSON and SchemaType recursively, and
@@ -100,6 +139,10 @@ putJSONUsingSchema typ json = case (typ, json) of
     [("index", AE.Number idx), ("subindex", AE.Number subidx)] -> putContrAddr idx subidx
     [("subindex", AE.Number subidx), ("index", AE.Number idx)] -> putContrAddr idx subidx
     _ -> Left [i|Invalid contract address. It should be an object with an 'index' and an optional 'subindex' field.|]
+
+  (Timestamp, AE.String s) -> S.putWord64le <$> rfc3339ToTimestamp s
+
+  (Duration, AE.String s) -> S.putWord64le <$> textToDuration s
 
   (Pair ta tb, AE.Array vec) -> addTraceInfo $ case V.toList vec of
     [a, b] -> do
@@ -237,6 +280,63 @@ putJSONUsingSchema typ json = case (typ, json) of
     addTraceInfoOf (Left err) a = Left [i|#{err}\n#{a}|]
     addTraceInfoOf right _ = right
 
+    -- |Converts a date in RFC3339-format to a unix timestamp in milliseconds.
+    -- Returns an error message if input is invalid RFC3339 or the date is prior to '1970-01-01T00:00:00Z'.
+    -- Example: "1977-01-01T12:00:27.87+00:20" -> Right 220966827870
+    rfc3339ToTimestamp :: Text -> Either String Word64
+    rfc3339ToTimestamp s = case iso8601ParseM timeString of
+      Nothing ->
+        case iso8601ParseM timeString of
+          Nothing -> Left [i|Invalid timestamp '#{s}'. Should be in a RFC3339 format.|]
+          Just utcTime -> utcTimeToTimestamp utcTime
+      Just zonedTime -> utcTimeToTimestamp . Time.zonedTimeToUTC $ zonedTime
+      where utcTimeToTimestamp :: Time.UTCTime -> Either String Word64
+            utcTimeToTimestamp t
+              | millis < 0 = Left [i|Invalid timestamp '#{s}'. Dates before '1970-01-01T00:00:00Z' are not supported|]
+              | millis > toInteger (maxBound :: Word64) = Left "Timestamp too far in the future."
+              | otherwise = Right (fromIntegral millis)
+              where frac = 1000 * toRational (diffUTCTime t (posixSecondsToUTCTime 0)) -- conversion functions give seconds
+                    millis = numerator frac `div` denominator frac
+            timeString = Text.unpack s
+
+    -- |Parse a string containing a list of duration measures separated by
+    -- spaces. A measure is a non-negative integer followed by a unit (no whitespace is allowed in between).
+    -- Every measure is accumulated into a duration. The string is allowed to contain
+    -- any number of measures with the same unit in no particular order.
+    -- The support units are: days (d), hours (h), minutes (m), seconds (s), milliseconds (ms).
+    -- Example: "1d 2h 3m 2d 1h" -> Right 270180000
+    textToDuration :: Text -> Either String Word64
+    textToDuration t = mapM measureToMs measures >>= Right . sum
+      where measures :: [String]
+            measures = map Text.unpack . Text.split (== ' ') $ t
+
+            measureToMs :: String -> Either String Word64
+            measureToMs m = do
+              let (digits, unit) = span Char.isDigit m
+
+              value <- word64FromString digits
+              unit' <- case unit of
+                "ms" -> Right 1
+                "s"  -> Right secInMs
+                "m"  -> Right minInMs
+                "h"  -> Right hrInMs
+                "d"  -> Right dayInMs
+                _    -> Left invalidMeasureErrorMsg
+              Right $ value * unit'
+
+              where
+                invalidMeasureErrorMsg = [iii|"Invalid measure of time '#{m}'.
+                                              Should be a non-negative integer followed by a unit (d, h, m, s, ms)."|]
+
+                -- Reading negative numbers directly to Word64 silently underflows, so this approach is necessary.
+                word64FromString :: String -> Either String Word64
+                word64FromString s = case readMaybe s :: Maybe Integer of
+                                      Nothing -> Left invalidMeasureErrorMsg
+                                      Just x -> if x >= word64MinBound && x <= word64MaxBound
+                                                  then Right . fromIntegral $ x
+                                                  else Left invalidMeasureErrorMsg
+                  where word64MinBound = 0
+                        word64MaxBound = fromIntegral (maxBound :: Word64)
 
 -- |Wrapper for Concordium.Types.Amount that uses a little-endian encoding
 -- for binary serialization. Show and JSON instances are inherited from
@@ -248,3 +348,17 @@ newtype AmountLE = AmountLE T.Amount
 instance S.Serialize AmountLE where
   get = S.label "AmountLE" $ AmountLE . T.Amount <$> S.getWord64le
   put (AmountLE T.Amount{..}) = S.putWord64le _amount
+
+-- Time Units
+
+secInMs :: Word64
+secInMs = 1000
+
+minInMs :: Word64
+minInMs = 60 * secInMs
+
+hrInMs :: Word64
+hrInMs = 60 * minInMs
+
+dayInMs :: Word64
+dayInMs = 24 * hrInMs
