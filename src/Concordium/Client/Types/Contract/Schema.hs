@@ -112,6 +112,8 @@ data SchemaType =
   | Amount
   | AccountAddress
   | ContractAddress
+  | Timestamp
+  | Duration
   | Pair SchemaType SchemaType
   | List SizeLength SchemaType
   | Set SizeLength SchemaType
@@ -150,13 +152,15 @@ instance S.Serialize SchemaType where
       10 -> S.label "Amount"  $ pure Amount
       11 -> S.label "AccountAddress"  $ pure AccountAddress
       12 -> S.label "ContractAddress" $ pure ContractAddress
-      13 -> S.label "Pair"   $ Pair <$> S.get <*> S.get
-      14 -> S.label "List"   $ List <$> S.get <*> S.get
-      15 -> S.label "Set"    $ Set <$> S.get <*> S.get
-      16 -> S.label "Map"    $ Map <$> S.get <*> S.get <*> S.get
-      17 -> S.label "Array"  $ Array <$> S.getWord32le <*> S.get
-      18 -> S.label "Struct" $ Struct <$> S.get
-      19 -> S.label "Enum"   $ Enum <$> getListOfWithSizeLen Four (S.getTwoOf getText S.get)
+      13 -> S.label "Timestamp" $ pure Timestamp
+      14 -> S.label "Duration"  $ pure Duration
+      15 -> S.label "Pair"   $ Pair <$> S.get <*> S.get
+      16 -> S.label "List"   $ List <$> S.get <*> S.get
+      17 -> S.label "Set"    $ Set <$> S.get <*> S.get
+      18 -> S.label "Map"    $ Map <$> S.get <*> S.get <*> S.get
+      19 -> S.label "Array"  $ Array <$> S.getWord32le <*> S.get
+      20 -> S.label "Struct" $ Struct <$> S.get
+      21 -> S.label "Enum"   $ Enum <$> getListOfWithSizeLen Four (S.getTwoOf getText S.get)
       x  -> fail [i|Invalid SchemaType tag: #{x}|]
 
   put typ = case typ of
@@ -173,13 +177,15 @@ instance S.Serialize SchemaType where
     Amount -> S.putWord8 10
     AccountAddress  -> S.putWord8 11
     ContractAddress -> S.putWord8 12
-    Pair a b  -> S.putWord8 13 <> S.put a <> S.put b
-    List sl a -> S.putWord8 14 <> S.put sl <> S.put a
-    Set sl a  -> S.putWord8 15 <> S.put sl <> S.put a
-    Map sl k v    -> S.putWord8 16 <> S.put sl <> S.put k <> S.put v
-    Array len a   -> S.putWord8 17 <> S.putWord32le len <> S.put a
-    Struct fields -> S.putWord8 18 <> S.put fields
-    Enum enum     -> S.putWord8 19 <> putListOfWithSizeLen Four (S.putTwoOf putText S.put) enum
+    Timestamp -> S.putWord8 13
+    Duration  -> S.putWord8 14
+    Pair a b  -> S.putWord8 15 <> S.put a <> S.put b
+    List sl a -> S.putWord8 16 <> S.put sl <> S.put a
+    Set sl a  -> S.putWord8 17 <> S.put sl <> S.put a
+    Map sl k v    -> S.putWord8 18 <> S.put sl <> S.put k <> S.put v
+    Array len a   -> S.putWord8 19 <> S.putWord32le len <> S.put a
+    Struct fields -> S.putWord8 20 <> S.put fields
+    Enum enum     -> S.putWord8 21 <> putListOfWithSizeLen Four (S.putTwoOf putText S.put) enum
 
 -- |Parallel to SizeLength defined in contracts-common (Rust).
 -- Must stay in sync.
