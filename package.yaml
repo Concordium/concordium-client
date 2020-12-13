@@ -98,7 +98,6 @@ library:
     - vector >= 0.12
     - string-interpolate
     - scientific
-    - timerep
   generated-exposed-modules:
     Proto.ConcordiumP2pRpc
     Proto.ConcordiumP2pRpc_Fields

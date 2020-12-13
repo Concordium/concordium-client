@@ -22,12 +22,15 @@ import Data.String.Interpolate (i, iii)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Time as Time
-import qualified Data.Time.Clock.POSIX as POSIX
-import qualified Data.Time.RFC3339 as RFC3339
 import qualified Data.Vector as V
 import Data.Word (Word8, Word16, Word32, Word64)
 import Lens.Micro.Platform ((^?), ix)
 import Text.Read (readMaybe)
+import Data.Time.Format.ISO8601 (iso8601ParseM, iso8601Show)
+import Data.Maybe (mapMaybe)
+import Data.Time (addUTCTime, diffUTCTime)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Data.Ratio
 
 -- |Serialize JSON parameter to binary using `SchemaType` or fail with an error message.
 encodeParameter :: SchemaType -> AE.Value -> Either String ByteString
@@ -81,17 +84,12 @@ getJSONUsingSchema typ = case typ of
       None        -> return $ AE.Array mempty
       where getPair (k, v) = (k,) <$> getJSONUsingSchema v
 
-    -- |Converts a unix timestamp in milliseconds to UTC in RFC3339-format.
-    -- Example: 220966827870 -> "1977-01-01T11:40:27Z"
-    -- FIXME: Currently looses the milliseconds (.87 in this example). Caused by `formatTimeRFC3339`.
+    -- |Converts a unix timestamp in milliseconds to UTC in ISO8601/RFC3339-format.
+    -- Example: 220966827870 -> "1977-01-01T11:40:27.87Z"
     timestampToRFC3339 :: Word64 -> Text
-    timestampToRFC3339 = Text.pack . utcToRFC3339 . posixMillisecondsToUTCTime . fromIntegral
-      where posixMillisecondsToUTCTime :: POSIX.POSIXTime -> Time.UTCTime
-            posixMillisecondsToUTCTime ms = POSIX.posixSecondsToUTCTime s
-              where s = ms / 1000
-
-            utcToRFC3339 :: Time.UTCTime -> String
-            utcToRFC3339 = RFC3339.formatTimeRFC3339 . Time.utcToZonedTime Time.utc
+    timestampToRFC3339 millis = Text.pack . iso8601Show $ utcTime
+      where utcTime = addUTCTime diffTime (posixSecondsToUTCTime 0)
+            diffTime = fromRational (toInteger millis % 1000)
 
     -- |Convert a duration in milliseconds into text with a list of duration measures separated by a space.
     -- A measure is a non-negative integer followed by the unit (with no whitespace in between).
@@ -99,7 +97,7 @@ getJSONUsingSchema typ = case typ of
     -- Measures that are 0 are omitted from the output (see example, where 'd' and 'ms' are omitted).
     -- Example: 5022000 -> "1h 23m 42s".
     durationToText :: Word64 -> Text
-    durationToText t = Text.intercalate " " . filter (/= "") . map showTimeUnit $
+    durationToText t = Text.intercalate " " . mapMaybe showTimeUnit $
                       [(d, "d"), (h, "h"), (m, "m"), (s, "s"), (ms, "ms")]
       where
         (d, rem0) = quotRem t dayInMs
@@ -107,10 +105,12 @@ getJSONUsingSchema typ = case typ of
         (m, rem2) = quotRem rem1 minInMs
         (s, ms)   = quotRem rem2 secInMs
 
-        showTimeUnit :: (Word64, Text) -> Text
-        showTimeUnit (value, unit) = if value == 0
-                                  then ""
-                                  else [i|#{value}#{unit}|]
+        -- Show the time unit if it is non-zero, otherwise return Nothing.
+        showTimeUnit :: (Word64, Text) -> Maybe Text
+        showTimeUnit (value, unit) =
+            if value == 0
+            then Nothing
+            else Just [i|#{value}#{unit}|]
 
 -- |Create a `Serialize.Put` for JSON using a `SchemaType`.
 -- It goes through the JSON and SchemaType recursively, and
@@ -281,18 +281,19 @@ putJSONUsingSchema typ json = case (typ, json) of
     addTraceInfoOf right _ = right
 
     -- |Converts a date in RFC3339-format to a unix timestamp in milliseconds.
-    -- Unix timestamps are always in UTC.
     -- Returns an error message if input is invalid RFC3339 or the date is prior to '1970-01-01T00:00:00Z'.
     -- Example: "1977-01-01T12:00:27.87+00:20" -> Right 220966827870
     rfc3339ToTimestamp :: Text -> Either String Word64
-    rfc3339ToTimestamp s = case RFC3339.parseTimeRFC3339 . Text.unpack $ s of
+    rfc3339ToTimestamp s = case iso8601ParseM . Text.unpack $ s of
       Nothing -> Left [i|Invalid timestamp '#{s}'. Should be in a RFC3339 format.|]
       Just zonedTime -> utcTimeToTimestamp . Time.zonedTimeToUTC $ zonedTime
       where utcTimeToTimestamp :: Time.UTCTime -> Either String Word64
             utcTimeToTimestamp t
-              | posixSeconds < 0 = Left [i|Invalid timestamp '#{s}'. Dates before '1970-01-01T00:00:00Z' are not supported|]
-              | otherwise = Right . floor . (* 1000) $ posixSeconds
-              where posixSeconds = POSIX.utcTimeToPOSIXSeconds t
+              | millis < 0 = Left [i|Invalid timestamp '#{s}'. Dates before '1970-01-01T00:00:00Z' are not supported|]
+              | millis > toInteger (maxBound :: Word64) = Left "Timestamp too far in the future."
+              | otherwise = Right (fromIntegral millis)
+              where frac = 1000 * toRational (diffUTCTime t (posixSecondsToUTCTime 0)) -- conversion functions give seconds
+                    millis = numerator frac `div` denominator frac
 
     -- |Parse a string containing a list of duration measures separated by
     -- spaces. A measure is a non-negative integer followed by a unit (no whitespace is allowed in between).
