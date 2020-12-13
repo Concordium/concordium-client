@@ -17,6 +17,7 @@ import Control.Monad.IO.Class
 import Control.Monad.Except
 import Control.Exception
 import Data.Aeson as AE
+import Data.Aeson.Types (Pair)
 import qualified Data.Char as C
 import Data.List
 import qualified Data.HashMap.Strict as Map
@@ -393,6 +394,14 @@ data BakerKeys =
   , bkElectionSignKey :: VRF.SecretKey
   , bkElectionVerifyKey :: VRF.PublicKey }
 
+data BakerCredentials = BakerCredentials {
+  bcKeys :: !BakerKeys,
+  bcIdentity :: !BakerId
+  }
+
+instance AE.ToJSON BakerCredentials where
+  toJSON BakerCredentials{..} = object (("bakerId" .= bcIdentity) : bakerKeysToPairs bcKeys)
+
 instance AE.FromJSON BakerKeys where
   parseJSON = withObject "Baker keys" $ \v -> do
     bkAggrSignKey <- v .: "aggregationSignKey"
@@ -403,13 +412,16 @@ instance AE.FromJSON BakerKeys where
     bkSigVerifyKey <- v .: "signatureVerifyKey"
     return BakerKeys {..}
 
-instance AE.ToJSON BakerKeys where
-  toJSON v = object [ "aggregationSignKey" .= bkAggrSignKey v
+bakerKeysToPairs :: BakerKeys -> [Pair]
+bakerKeysToPairs v = [ "aggregationSignKey" .= bkAggrSignKey v
                     , "aggregationVerifyKey" .= bkAggrVerifyKey v
                     , "electionPrivateKey" .= bkElectionSignKey v
                     , "electionVerifyKey" .= bkElectionVerifyKey v
                     , "signatureSignKey" .= bkSigSignKey v
                     , "signatureVerifyKey" .= bkSigVerifyKey v ]
+
+instance AE.ToJSON BakerKeys where
+  toJSON = object . bakerKeysToPairs
 
 -- |Hardcoded network ID.
 defaultNetId :: Int
