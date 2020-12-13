@@ -33,7 +33,7 @@ import Data.String.Interpolate (i, iii)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import Data.Text (Text, pack, strip, unpack)
-import Data.Text.Encoding (decodeUtf8, encodeUtf8)  
+import Data.Text.Encoding (decodeUtf8', decodeUtf8, encodeUtf8)
 import System.Directory
 import System.Exit (exitFailure)
 import System.IO.Error
@@ -393,12 +393,12 @@ instance Show NamedModuleRef where
 writeNameMapAsJSON :: AE.ToJSON v => Verbose -> FilePath -> NameMap v -> IO ()
 writeNameMapAsJSON verbose file =  handledWriteFile file .  AE.encodePretty' config
   where config = AE.defConfig { AE.confCompare = compare }
-        handledWriteFile = handleWriteFile BSL.writeFile AllowOverwrite verbose 
+        handledWriteFile = handleWriteFile BSL.writeFile AllowOverwrite verbose
 -- |Write the name map to a file in the expected format.
 writeNameMap :: Show v => Verbose -> FilePath -> NameMap v -> IO ()
 writeNameMap verbose file = handledWriteFile file . BSL.fromStrict . encodeUtf8 . T.pack . unlines . map f . sortOn fst . M.toList
   where f (name, val) = printf "%s = %s" name (show val)
-        handledWriteFile = handleWriteFile BSL.writeFile AllowOverwrite verbose 
+        handledWriteFile = handleWriteFile BSL.writeFile AllowOverwrite verbose
 
 -- Used in `handleWriteFile` to determine how already exisiting files should be handled.
 data OverwriteSetting =
@@ -526,10 +526,12 @@ loadAccountNameMap :: FilePath -> IO AccountNameMap
 loadAccountNameMap mapFile = do
   -- Simply use an empty map if the reading fails
   contentbs <- BSL.readFile mapFile `catch` (\(_ :: SomeException) -> return mempty)
-  content <- return $ decodeUtf8 (BSL.toStrict contentbs)
-  case parseAccountNameMap $ lines (T.unpack content) of
-    Left err -> logFatal [[i|cannot parse account name map file '#{content}': #{err}|]]
-    Right m -> return m
+  case decodeUtf8' (BSL.toStrict contentbs) of
+    Left _ -> logFatal ["The account name map file is not valid UTF8. If you manually edited it please make sure to save it in UTF8 encoding."]
+    Right content ->
+      case parseAccountNameMap $ lines (T.unpack content) of
+        Left err -> logFatal [[i|cannot parse account name map file '#{content}': #{err}|]]
+        Right m -> return m
 
 -- |Parse an AccountNamepMap from zero or more entries, as specificied in `parseAccoutNameMapEntry`.
 parseAccountNameMap :: (MonadError String m) => [String] -> m AccountNameMap
@@ -600,7 +602,7 @@ data AccountConfig =
   } deriving(Show, Eq)
 
 instance AE.ToJSON AccountConfig where
-   toJSON AccountConfig{..} = 
+   toJSON AccountConfig{..} =
      AE.object ["address" .= acAddr,
                 "accountKeys" .= acKeys,
                 "threshold" .= acThreshold,
