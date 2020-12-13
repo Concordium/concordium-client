@@ -93,7 +93,7 @@ data ConfigCmd
 data ConfigAccountCmd
   = ConfigAccountAdd
     { caaAddr :: !Text
-    , caaName :: !(Maybe Text) }
+    , caaName :: !Text }
   | ConfigAccountRemove
     { carAddr :: !(Text) }
   | ConfigAccountImport
@@ -110,6 +110,8 @@ data ConfigAccountCmd
     { carkAddr :: !Text
     , carkKeys :: ![KeyIndex]
     , carkThreshold :: !(Maybe SignatureThreshold) }
+  | ConfigAccountRemoveName
+    { carnText :: !Text }
   | ConfigAccountSetThreshold
     { cuatAddr :: !Text
     , cuatThreshold :: !SignatureThreshold }
@@ -919,8 +921,6 @@ configBackupImportCmd =
       )
       (progDesc "Import config backup file, requires password if encrypted"))
 
-
-
 configAccountCmds :: ShowAllOpts -> Mod CommandFields ConfigCmd
 configAccountCmds showAllOpts =
   command
@@ -933,6 +933,8 @@ configAccountCmds showAllOpts =
            configAccountImportCmd showAllOpts <>
            configAccountAddKeysCmd <>
            configAccountUpdateKeysCmd <>
+           configAccountRemoveKeysCmd <>
+           configAccountRemoveNameCmd <>
            configAccountSetThresholdCmd <>
            configAccountRemoveKeysCmd))
       (progDesc "Commands for inspecting and changing account-specific configuration."))
@@ -944,8 +946,8 @@ configAccountAddCmd =
     (info
       (ConfigAccountAdd <$>
         strArgument (metavar "ADDRESS" <> help "Address of the account.") <*>
-        optional (strOption (long "name" <> metavar "NAME" <> help "Name of the account.")))
-      (progDesc "Add account address to persistent config, optionally naming the account."))
+        strArgument (metavar "NAME" <> help "Name of the account."))
+      (progDesc "Adds a named account address to persistent config"))
 
 configAccountRemove :: Mod CommandFields ConfigAccountCmd
 configAccountRemove =
@@ -1052,6 +1054,16 @@ readAccountExportFormat = str >>= \case
   "mobile" -> return FormatMobile
   "genesis" -> return FormatGenesis
   s -> readerError $ printf "invalid format: %s (supported values: 'mobile' and 'genesis')" (s :: String)
+
+configAccountRemoveNameCmd :: Mod CommandFields ConfigAccountCmd
+configAccountRemoveNameCmd =
+  command
+    "remove-name"
+    (info
+      (ConfigAccountRemoveName <$>
+        strArgument (metavar "NAME" <> help "Name of the account"))
+    (progDescDoc $ docFromLines
+      [ "Removes the given name from the list of named accounts" ]))
 
 consensusCmds :: Mod CommandFields Cmd
 consensusCmds =
