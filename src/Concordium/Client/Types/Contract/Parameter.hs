@@ -284,8 +284,11 @@ putJSONUsingSchema typ json = case (typ, json) of
     -- Returns an error message if input is invalid RFC3339 or the date is prior to '1970-01-01T00:00:00Z'.
     -- Example: "1977-01-01T12:00:27.87+00:20" -> Right 220966827870
     rfc3339ToTimestamp :: Text -> Either String Word64
-    rfc3339ToTimestamp s = case iso8601ParseM . Text.unpack $ s of
-      Nothing -> Left [i|Invalid timestamp '#{s}'. Should be in a RFC3339 format.|]
+    rfc3339ToTimestamp s = case iso8601ParseM timeString of
+      Nothing ->
+        case iso8601ParseM timeString of
+          Nothing -> Left [i|Invalid timestamp '#{s}'. Should be in a RFC3339 format.|]
+          Just utcTime -> utcTimeToTimestamp utcTime
       Just zonedTime -> utcTimeToTimestamp . Time.zonedTimeToUTC $ zonedTime
       where utcTimeToTimestamp :: Time.UTCTime -> Either String Word64
             utcTimeToTimestamp t
@@ -294,6 +297,7 @@ putJSONUsingSchema typ json = case (typ, json) of
               | otherwise = Right (fromIntegral millis)
               where frac = 1000 * toRational (diffUTCTime t (posixSecondsToUTCTime 0)) -- conversion functions give seconds
                     millis = numerator frac `div` denominator frac
+            timeString = Text.unpack s
 
     -- |Parse a string containing a list of duration measures separated by
     -- spaces. A measure is a non-negative integer followed by a unit (no whitespace is allowed in between).
