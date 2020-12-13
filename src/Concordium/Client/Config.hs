@@ -275,7 +275,7 @@ initAccountConfigEither baseCfg namedAddr inCLI = runExceptT $ do
     Just n -> do
       let m = M.insert n addr $ bcAccountNameMap baseCfg
       liftIO $ writeNameMap True mapFile m
-      logSuccess ["added name mapping"]
+      logSuccess [[i|added name mapping: '#{n}' --> '#{addr}'|]]
       return baseCfg { bcAccountNameMap = m }
 
   return (baseCfg', AccountConfig
@@ -296,6 +296,37 @@ initAccountConfig baseCfg namedAddr inCLI = do
   case res of
     Left err -> logFatal [err]
     Right config -> return config
+
+-- |Remove a name from the account name map. If the name is not in use
+-- |it does nothing
+-- |Returns the potentially updated baseConfig
+removeAccountNameAndWrite :: BaseConfig -> Text -> Verbose -> IO BaseConfig
+removeAccountNameAndWrite baseCfg name verbose = do
+  -- Check if config has been initialized.
+  let accCfgDir = bcAccountCfgDir baseCfg
+      mapFile = accountNameMapFile accCfgDir
+  liftIO $ ensureAccountConfigInitialized baseCfg
+
+  let m = M.delete name $ bcAccountNameMap baseCfg
+  liftIO $ writeNameMap verbose mapFile m
+  logSuccess ["removed name mapping"]
+  return baseCfg { bcAccountNameMap = m }
+
+-- |Add a name to the account name map. If the name is already in use it
+-- |overwrites it
+-- |Returns the updated baseConfig
+-- |PRECONDITION: Account name is a valid account account name
+addAccountNameAndWrite :: BaseConfig -> Text -> AccountAddress -> Verbose -> IO BaseConfig
+addAccountNameAndWrite baseCfg name addr verbose = do
+  -- Check if config has been initialized.
+  let accCfgDir = bcAccountCfgDir baseCfg
+      mapFile = accountNameMapFile accCfgDir
+  liftIO $ ensureAccountConfigInitialized baseCfg
+
+  let m = M.insert name addr $ bcAccountNameMap baseCfg
+  liftIO $ writeNameMap verbose mapFile m
+  logSuccess [[i|added name mapping: '#{name}' --> '#{addr}'|]]
+  return baseCfg { bcAccountNameMap = m }
 
 -- |Write the provided configuration to disk in the expected formats.
 importAccountConfigEither :: BaseConfig -> [AccountConfig] -> Verbose -> IO (Either String BaseConfig)
@@ -564,6 +595,21 @@ isValidContractOrModuleName n = not (T.null n) && not (isSpace $ T.head n) && is
   where supportedChar c = isAlphaNum c || c `elem` supportedSpecialChars
         supportedSpecialChars = "-_,.!? " :: String
 
+-- |Prompt the user to input an account name validating the input
+promptAccountName :: MonadIO m => String -> m Text
+promptAccountName prompt = liftIO $ do
+  putStr $ prettyMsg ": " prompt
+  input <- T.getLine >>= ensureValidName
+  return input
+  where
+    ensureValidName name =
+      case validateAccountName name of
+        Left err -> do
+          logError [err]
+          putStr "Input valid name: "
+          T.getLine >>= ensureValidName
+        Right () -> return name
+
 -- |Check whether the given text is a valid name and fail with an error message if it is not.
 validateAccountName :: (MonadError String m) => Text -> m ()
 validateAccountName name =
@@ -700,22 +746,33 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
     acEncryptionKey = enc
     })
 
- where
-   autoinit :: BaseConfig -> FilePath -> AccountAddress -> IO (Maybe BaseConfig)
-   autoinit cfg dir addr = do
-     dirExists <- doesDirectoryExist dir
-     if not dirExists && autoInit == AutoInit
-       then do
-         printf "Account '%s' is not yet initialized.\n" (show addr)
-         printf "Enter name of account or leave empty to initialize without a name (use ^C to cancel): "
-         name <- strip <$> T.getLine >>= \case
-           "" -> return Nothing
-           s -> return $ Just s
-         let namedAddr' = NamedAddress { naAddr = addr, naName = name }
-         (a, _, _) <- initAccountConfig cfg namedAddr' False
-         return . Just $ a
-       else do
-         return Nothing
+  where
+    autoinit :: BaseConfig -> FilePath -> AccountAddress -> IO (Maybe BaseConfig)
+    autoinit cfg dir addr = do
+      dirExists <- doesDirectoryExist dir
+      if not dirExists && autoInit == AutoInit
+        then do
+          logInfo [[i|Account '#{addr}' is not yet initialized, creating key directory|]]
+          let nameMap = bcAccountNameMap baseCfg
+              nameOpt = find (\(_, addr') -> addr == addr') (M.toList nameMap)
+          case nameOpt of 
+            Just (name, _) -> do
+              let namedAddr' = NamedAddress { naAddr = addr, naName = Just name }
+              (a, _, _) <- initAccountConfig cfg namedAddr' False
+              return . Just $ a
+            Nothing -> do
+              logInfo [[i|No name associated with account '#{addr}'.|]]
+              printf "Enter name of account or leave empty to initialize without a name (use ^C to cancel): "
+              name <- strip <$> T.getLine >>= \case
+                "" -> return Nothing
+                s -> do 
+                  logFatalOnError $ validateAccountName s
+                  return $ Just s
+              let namedAddr' = NamedAddress { naAddr = addr, naName = name }
+              (a, _, _) <- initAccountConfig cfg namedAddr' False
+              return . Just $ a
+        else do
+          return Nothing
 
 -- |Look up an account by name or address:
 -- If input is a well-formed account address, try to (reverse) look up its name in the map.
