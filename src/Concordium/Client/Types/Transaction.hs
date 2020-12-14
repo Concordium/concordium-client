@@ -98,6 +98,16 @@ bakerSetElectionKeyEnergyCost = (+ 90) . checkHeaderEnergyCost
 bakerRemoveEnergyCost :: Int -> Energy
 bakerRemoveEnergyCost = checkHeaderEnergyCost
 
+-- |Cost to update a baker's stake.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
+bakerUpdateStakeEnergyCost :: Int -> Energy
+bakerUpdateStakeEnergyCost = (+ 90) . checkHeaderEnergyCost
+
+-- |Cost to update a baker's re-staking option.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
+bakerUpdateRestakeEnergyCost :: Int -> Energy
+bakerUpdateRestakeEnergyCost = checkHeaderEnergyCost
+
 -- |Cost of a "set election difficulty" transaction.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 setElectionDifficultyEnergyCost :: Int -> Energy
