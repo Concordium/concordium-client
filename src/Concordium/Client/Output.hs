@@ -157,7 +157,7 @@ printAccountInfo addr a verbose showEncrypted mEncKey= do
                                                 (intercalate ", " $ map show rsiTransactions))
                  (releaseSchedule $ airReleaseSchedule a))
        ++ [printf "Nonce:                 %s" (show $ airNonce a)
-          , printf "Delegation:            %s" (maybe showNone (printf "baker %s" . show) $ airDelegation a)
+          , printf "Baker:                 %s" (maybe showNone (show . aibiIdentity . abirAccountBakerInfo) . airBaker $ a)
           , printf "Encryption public key: %s" (show $ airEncryptionKey a)
           , "" ])
 

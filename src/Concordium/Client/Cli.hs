@@ -200,6 +200,7 @@ getCurrentTimeUnix = TransactionTime . round <$> getPOSIXTime
 timeFromTransactionExpiryTime :: TransactionExpiryTime -> UTCTime
 timeFromTransactionExpiryTime = posixSecondsToUTCTime . fromIntegral . ttsSeconds
 
+----------------------------------------------------------------------------------------------------
 -- |One item in the release schedule, i.e., one release at a given timestamp
 -- This must match the serialization in Concorium.Globalstate.Basic.BlockState.AccountReleaseSchedule
 data ReleaseScheduleItem = ReleaseScheduleItem {
@@ -228,6 +229,51 @@ instance AE.FromJSON AccountInfoReleaseSchedule where
     releaseSchedule <- v .: "schedule"
     return $ AccountInfoReleaseSchedule{..}
 
+data AccountInfoBakerInfo =  AccountInfoBakerInfo {
+  aibiIdentity :: !BakerId,
+  aibiElectionVerifyKey :: !BakerElectionVerifyKey,
+  aibiSignatureVerifyKey :: !BakerSignVerifyKey,
+  aibiAggregationVerifyKey :: !BakerAggregationVerifyKey
+  } deriving (Eq, Show)
+
+data AccountInfoBakerPendingChange
+  = NoChange
+  | ReduceStake !Amount !Epoch
+  | RemoveBaker !Epoch
+  deriving (Eq, Ord, Show)
+
+data AccountInfoBakerResult = AccountInfoBakerResult {
+  abirStakedAmount :: !Amount,
+  abirStakeEarnings :: !Bool,
+  abirAccountBakerInfo :: !AccountInfoBakerInfo,
+  abirBakerPendingChange :: !AccountInfoBakerPendingChange
+} deriving (Eq, Show)
+
+instance AE.FromJSON AccountInfoBakerResult where
+  parseJSON = withObject "Account baker" $ \v -> do
+    abirStakedAmount <- v .: "stakedAmount"
+    abirStakeEarnings <- v .: "restakeEarnings"
+    abirAccountBakerInfo <- do
+      aibiIdentity <- v .: "bakerId"
+      aibiElectionVerifyKey <- v .: "bakerElectionVerifyKey"
+      aibiSignatureVerifyKey <- v .: "bakerSignatureVerifyKey"
+      aibiAggregationVerifyKey <- v .: "bakerAggregationVerifyKey"
+      return AccountInfoBakerInfo{..}
+    abirBakerPendingChange <- (do
+                                  mPendingChange <- v .:? "pendingChange"
+                                  case mPendingChange of
+                                    Nothing -> return Nothing
+                                    Just val -> do
+                                      change :: String <- val .: "change"
+                                      case change of
+                                        "RemoveBaker" -> Just . RemoveBaker <$> val .: "epoch"
+                                        "ReduceStake" -> do
+                                          newStake <- val .: "newStake"
+                                          epoch <- val .: "epoch"
+                                          return . Just $ ReduceStake newStake epoch
+                                        _ -> fail "Unknown baker pending change") .!= NoChange
+    return AccountInfoBakerResult{..}
+
 -- | Expected result of the 'getAccountInfo' endpoint, when non-null.
 data AccountInfoResult = AccountInfoResult
   {
@@ -235,8 +281,8 @@ data AccountInfoResult = AccountInfoResult
     airAmount :: !Amount
     -- | Nonce the next transaction must use.
   , airNonce :: !Nonce
-    -- |Which baker, if any, this account delegates to.
-  , airDelegation :: !(Maybe BakerId)
+    -- | The baker information for the account.
+  , airBaker :: !(Maybe AccountInfoBakerResult)
     -- | List of credentials on the account, latest first.
   , airCredentials :: ![Versioned IDTypes.AccountCredential]
     -- | List of smart contract instances created by this account.
@@ -250,16 +296,18 @@ data AccountInfoResult = AccountInfoResult
   deriving (Show)
 
 instance AE.FromJSON AccountInfoResult where
-  parseJSON = withObject "Account info" $ \v -> do
+  parseJSON val = withObject "Account info" (\v -> do
     airAmount <- v .: "accountAmount"
     airNonce <- v .: "accountNonce"
-    airDelegation <- v .: "accountDelegation"
+    airBaker <- v .:? "accountBaker"
     airCredentials <- v .: "accountCredentials"
     airInstances <- v .: "accountInstances"
     airEncryptedAmount <- v .: "accountEncryptedAmount"
     airEncryptionKey <- v .: "accountEncryptionKey"
     airReleaseSchedule <- v .: "accountReleaseSchedule"
-    return $ AccountInfoResult {..}
+    return $ AccountInfoResult {..}) val
+
+----------------------------------------------------------------------------------------------------
 
 data ConsensusStatusResult = ConsensusStatusResult
   { csrBestBlock :: BlockHash

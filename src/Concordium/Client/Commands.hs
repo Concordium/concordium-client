@@ -338,13 +338,18 @@ data BakerCmd
     , baTransactionOpts :: !(TransactionOpts (Maybe Energy))
     , baStake :: !Amount
     , baAutoAddEarnings :: !Bool
-    , outputFile :: Maybe FilePath}
+    , outputFile :: Maybe FilePath }
   | BakerSetKeys
     { bsaKeysFile :: !FilePath
-    , buskTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
+    , bsaTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | BakerRemove
-    { brBakerId :: !BakerId
-    , brTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
+    { brTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
+  | BakerUpdateStake
+    { busStake :: !Amount
+    , busTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
+  | BakerUpdateRestakeEarnings
+    { bursRestake :: !Bool
+    , bursTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   deriving (Show)
 
 data IdentityCmd
@@ -1142,7 +1147,9 @@ bakerCmds =
           (bakerGenerateKeysCmd <>
            bakerAddCmd <>
            bakerRemoveCmd <>
-           bakerSetKeysCmd))
+           bakerSetKeysCmd <>
+           bakerUpdateRestakeCmd <>
+           bakerUpdateStakeCmd))
       (progDesc "Commands for creating and deploying baker credentials."))
 
 bakerGenerateKeysCmd :: Mod CommandFields BakerCmd
@@ -1202,9 +1209,28 @@ bakerRemoveCmd =
     "remove"
     (info
       (BakerRemove <$>
-        argument auto (metavar "BAKER-ID" <> help "ID of the baker.") <*>
         transactionOptsParser)
       (progDesc "Remove a baker from the chain."))
+
+bakerUpdateRestakeCmd :: Mod CommandFields BakerCmd
+bakerUpdateRestakeCmd =
+  command
+   "update-restake"
+   (info
+     (BakerUpdateRestakeEarnings <$>
+       argument auto (metavar "UPDATE" <> help "True|False") <*>
+       transactionOptsParser)
+     (progDesc "Change whether to restake the earnings automatically or not"))
+
+bakerUpdateStakeCmd :: Mod CommandFields BakerCmd
+bakerUpdateStakeCmd =
+  command
+   "update-stake"
+   (info
+     (BakerUpdateStake <$>
+       option (eitherReader amountFromStringInform) (long "stake" <> metavar "GTU-AMOUNT" <> help "The amount of GTU to stake.") <*>
+       transactionOptsParser)
+     (progDesc "Update the amount staked for the baker."))
 
 identityCmds :: Mod CommandFields Cmd
 identityCmds =
@@ -1215,7 +1241,6 @@ identityCmds =
         hsubparser
           identityShowCmd)
       (progDesc "Commands for interacting with the ID layer."))
-
 
 identityShowCmd :: Mod CommandFields IdentityCmd
 identityShowCmd=
