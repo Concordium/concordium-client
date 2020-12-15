@@ -106,6 +106,8 @@ import           System.IO
 import           System.Directory
 import           Text.Printf
 import           Text.Read (readMaybe)
+import Data.Time.Clock (addUTCTime, secondsToNominalDiffTime)
+import Data.Ratio
 
 -- |Establish a new connection to the backend and run the provided computation.
 -- Close a connection after completion of the computation. Establishing a
@@ -734,7 +736,6 @@ getTransferWithScheduleTransactionCfg baseCfg txOpts receiver preSchedule = do
     { twstcTransactionCfg = txCfg
     , twstcReceiver = receiverAddress
     , twstcSchedule = realSchedule }
-  where
 
 data EncryptedTransferTransactionConfig =
   EncryptedTransferTransactionConfig
@@ -797,6 +798,58 @@ data BakerRemoveTransactionConfig =
   { brtcTransactionCfg :: TransactionConfig
   , brtcBakerId :: Types.BakerId }
 
+-- |Resolve configuration of a 'baker remove' transaction based on persisted config and CLI flags.
+-- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
+getBakerRemoveTransactionCfg :: TransactionConfig -> ClientMonad IO BakerRemoveTransactionConfig
+getBakerRemoveTransactionCfg txCfg= do
+  let senderAddr = acAddress . tcAccountCfg $ txCfg
+  infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getAccountInfo (Text.pack . show $ senderAddr))
+  case AE.fromJSON infoValue of
+    AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
+    AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
+    AE.Success (Just AccountInfoResult{..}) -> do
+      case airBaker of
+        Nothing -> logFatal ["This account doesn't have an active baker so it cannot request a baker removal."]
+        Just bk ->
+          return BakerRemoveTransactionConfig
+          { brtcBakerId = aibiIdentity . abirAccountBakerInfo $ bk
+          , brtcTransactionCfg = txCfg }
+
+-- |Resolved configuration for a 'baker update-stake' transaction
+data BakerUpdateStakeTransactionConfig =
+  BakerUpdateStakeTransactionConfig
+  { bustcTransactionCfg :: TransactionConfig
+  , bustcNewAmount :: !Types.Amount }
+
+-- |Resolve configuration of a 'baker update-stake' transaction based on persisted config and CLI flags.
+-- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
+getBakerUpdateStakeTransactionCfg :: TransactionConfig -> Types.Amount -> ClientMonad IO BakerUpdateStakeTransactionConfig
+getBakerUpdateStakeTransactionCfg txCfg newAmount = do
+  let senderAddr = acAddress . tcAccountCfg $ txCfg
+  infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getAccountInfo (Text.pack . show $ senderAddr))
+  case AE.fromJSON infoValue of
+    AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
+    AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
+    AE.Success (Just AccountInfoResult{..}) ->
+      if airAmount < newAmount
+      then
+        logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the new amount requested to be staked (#{showGtu newAmount}).|]]
+      else
+        return BakerUpdateStakeTransactionConfig
+          { bustcNewAmount = newAmount
+          , bustcTransactionCfg = txCfg }
+
+data BakerUpdateRestakeTransactionConfig =
+  BakerUpdateRestakeTransactionConfig
+  { burTransactionCfg :: TransactionConfig
+  , burRestake :: !Bool }
+
+getBakerUpdateRestakeTransactionCfg :: TransactionConfig -> Bool -> ClientMonad IO BakerUpdateRestakeTransactionConfig
+getBakerUpdateRestakeTransactionCfg txCfg newRestake =
+  return BakerUpdateRestakeTransactionConfig
+          { burRestake = newRestake
+          , burTransactionCfg = txCfg }
+
 data AccountUpdateKeysTransactionCfg =
   AccountUpdateKeysTransactionCfg
   { auktcTransactionCfg :: TransactionConfig
@@ -827,17 +880,6 @@ data AccountDecryptTransactionConfig =
   { adTransactionCfg :: TransactionConfig,
     adTransferData :: Enc.SecToPubAmountTransferData
   }
-
--- |Resolve configuration of a 'baker add' transaction based on persisted config and CLI flags.
--- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
-getBakerRemoveTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.BakerId -> IO BakerRemoveTransactionConfig
-getBakerRemoveTransactionCfg baseCfg txOpts bid = do
-  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
-  return BakerRemoveTransactionConfig
-    { brtcTransactionCfg = txCfg
-    , brtcBakerId = bid }
-  where nrgCost _ = return $ Just bakerRemoveEnergyCost
-
 
 -- |Resolve configuration for an 'update keys' transaction
 getAccountUpdateKeysTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> IO AccountUpdateKeysTransactionCfg
@@ -916,7 +958,7 @@ getParseCryptographicParameters bHash = runExceptT $ do
     AE.Error err -> throwError err
     AE.Success Nothing -> throwError "The given block does not exist."
     AE.Success (Just Versioned{..}) -> do
-      unless (vVersion == 0) $ throwError "Received unsupported version of cryptographi parameters."
+      unless (vVersion == 0) $ throwError "Received unsupported version of cryptographic parameters."
       return vValue
 
 -- |Convert transfer transaction config into a valid payload,
@@ -1046,6 +1088,38 @@ bakerRemoveTransactionPayload brtxCfg confirm = do
     unless confirmed exitTransactionCancelled
 
   return Types.RemoveBaker
+
+bakerUpdateStakeTransactionPayload :: BakerUpdateStakeTransactionConfig -> Bool -> IO Types.Payload
+bakerUpdateStakeTransactionPayload brtxCfg confirm = do
+  let BakerUpdateStakeTransactionConfig
+        { bustcTransactionCfg = TransactionConfig
+                               { tcEnergy = energy }
+        , bustcNewAmount = newAmount }
+        = brtxCfg
+
+  logSuccess [ printf "submitting transaction to update stake of baker to '%s'" (showGtu newAmount)
+             , printf "allowing up to %s to be spent as transaction fee" (showNrg energy) ]
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  return $ Types.UpdateBakerStake newAmount
+
+bakerUpdateRestakeTransactionPayload :: BakerUpdateRestakeTransactionConfig -> Bool -> IO Types.Payload
+bakerUpdateRestakeTransactionPayload burtxCfg confirm = do
+  let BakerUpdateRestakeTransactionConfig
+        { burTransactionCfg = TransactionConfig
+                              { tcEnergy = energy }
+        , burRestake = newRestake }
+        = burtxCfg
+
+  logSuccess [ printf "submitting transaction to change restaking switch of baker to '%s'" (show newRestake)
+             , printf "allowing up to %s to be spent as transaction fee" (showNrg energy) ]
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
+  return $ Types.UpdateBakerRestakeEarnings newRestake
 
 accountUpdateKeysTransactionPayload :: AccountUpdateKeysTransactionCfg -> Bool -> IO Types.Payload
 accountUpdateKeysTransactionPayload AccountUpdateKeysTransactionCfg{..} confirm = do
@@ -1306,17 +1380,18 @@ processAccountCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      (v, dec) <- withClient backend $ do
+      (v, dec, f) <- withClient backend $ do
         (bbh, accInfoValue) <- withBestBlockHash block (\bbh -> (bbh,) <$> getAccountInfo (Text.pack $ show $ naAddr na) bbh)
+        cs <- getFromJson =<< getConsensusStatus
         accInfo <- getFromJson accInfoValue
         case encKey of
-          Nothing -> return (accInfo, Nothing)
+          Nothing -> return (accInfo, Nothing, \e ->  addUTCTime (fromRational ((toInteger e * toInteger (csrEpochDuration cs)) % 1000)) (csrGenesisTime cs))
           Just k -> do
             gc <- logFatalOnError =<< getParseCryptographicParameters bbh
-            return (accInfo, Just (k, gc))
+            return (accInfo, Just (k, gc), \e ->  addUTCTime (fromRational ((toInteger e * toInteger (csrEpochDuration cs)) % 1000)) (csrGenesisTime cs))
       case v of
         Nothing -> putStrLn "Account not found."
-        Just a -> runPrinter $ printAccountInfo na a verbose (showEncrypted || showDecrypted) dec
+        Just a -> runPrinter $ printAccountInfo f na a verbose (showEncrypted || showDecrypted) dec
 
     AccountList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -2061,33 +2136,43 @@ processBakerCmd action baseCfgDir verbose backend =
         putStrLn ""
 
       withClient backend $ do
-        result <- sendAndTailTransaction txCfg pl intOpts
-        case result of
-          Nothing -> return ()
-          Just ts -> do
-            case tsrState ts of
-              Finalized | SingleBlock _ summary <- parseTransactionBlockResult ts ->
-                          case Types.tsResult summary of
-                            Types.TxSuccess [Types.BakerAdded{..}] ->
-                              case outputFile of
-                                Nothing ->
-                                  -- TODO: Output a full file that a baker can be started with
-                                  logInfo ["Baker with ID " ++ show ebaBakerId ++ " added.",
-                                          printf "To use it add \"bakerId\": %s to the keys file %s." (show ebaBakerId) accountKeysFile
-                                          ]
-                                Just outFile -> do
-                                  let credentials = BakerCredentials{
-                                        bcKeys = bakerKeys,
-                                        bcIdentity = ebaBakerId
-                                        }
-                                  liftIO $ handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose outFile (AE.encodePretty credentials)
-                            Types.TxReject reason -> do
-                              logWarn [showRejectReason True reason]
-                            _ -> logFatal ["Unexpected response for baker add transaction type."]
-              Absent ->
-                logFatal ["Transaction is absent."]
-              _ ->
-                logFatal ["Unexpected status."]
+         let senderAddr = acAddress . tcAccountCfg $ txCfg
+         infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getAccountInfo (Text.pack . show $ senderAddr))
+         case AE.fromJSON infoValue of
+           AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
+           AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
+           AE.Success (Just AccountInfoResult{..}) ->
+             -- TODO: this should also take into account the estimated cost for this transaction
+             if airAmount < initialStake
+             then
+               logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the amount requested to be staked (#{showGtu initialStake}).|]]
+             else do
+               result <- sendAndTailTransaction txCfg pl intOpts
+               case result of
+                 Nothing -> return ()
+                 Just ts -> do
+                   case tsrState ts of
+                     Finalized | SingleBlock _ summary <- parseTransactionBlockResult ts ->
+                                   case Types.tsResult summary of
+                                     Types.TxSuccess [Types.BakerAdded{..}] ->
+                                       case outputFile of
+                                         Nothing ->
+                                           logInfo ["Baker with ID " ++ show ebaBakerId ++ " added.",
+                                                    printf "To use it add \"bakerId\": %s to the keys file %s." (show ebaBakerId) accountKeysFile
+                                                   ]
+                                         Just outFile -> do
+                                           let credentials = BakerCredentials{
+                                                 bcKeys = bakerKeys,
+                                                 bcIdentity = ebaBakerId
+                                                 }
+                                           liftIO $ handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose outFile (AE.encodePretty credentials)
+                                     Types.TxReject reason -> do
+                                       logWarn [showRejectReason True reason]
+                                     _ -> logFatal ["Unexpected response for baker add transaction type."]
+                     Absent ->
+                       logFatal ["Transaction is absent."]
+                     _ ->
+                       logFatal ["Unexpected status."]
     BakerSetKeys file txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
@@ -2098,18 +2183,44 @@ processBakerCmd action baseCfgDir verbose backend =
       (txCfg, pl) <- bakerSetKeysTransaction baseCfg txOpts file (ioConfirm intOpts)
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
-    BakerRemove bid txOpts -> do
+    BakerRemove txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
+      let nrgCost _ = return $ Just bakerRemoveEnergyCost
+      txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
+      withClient backend $ do
+        brtcCfg <- getBakerRemoveTransactionCfg txCfg
+        let intOpts = toInteractionOpts txOpts
+        pl <- liftIO $ bakerRemoveTransactionPayload brtcCfg (ioConfirm intOpts)
+        sendAndTailTransaction_ txCfg pl intOpts
 
-      brtcCfg <- getBakerRemoveTransactionCfg baseCfg txOpts bid
-      let txCfg = brtcTransactionCfg brtcCfg
+    BakerUpdateStake newStake txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+      let nrgCost _ = return $ Just bakerUpdateStakeEnergyCost
+      txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
+      withClient backend $ do
+        brtcCfg <- getBakerUpdateStakeTransactionCfg txCfg newStake
+        let intOpts = toInteractionOpts txOpts
+        pl <- liftIO $ bakerUpdateStakeTransactionPayload brtcCfg (ioConfirm intOpts)
+        sendAndTailTransaction_ txCfg pl intOpts
 
-      let intOpts = toInteractionOpts txOpts
-      pl <- bakerRemoveTransactionPayload brtcCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+    BakerUpdateRestakeEarnings bureRestake txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+      let nrgCost _ = return $ Just bakerUpdateRestakeEnergyCost
+      txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
+      withClient backend $ do
+        burtCfg <- getBakerUpdateRestakeTransactionCfg txCfg bureRestake
+        let intOpts = toInteractionOpts txOpts
+        pl <- liftIO $ bakerUpdateRestakeTransactionPayload burtCfg (ioConfirm intOpts)
+        sendAndTailTransaction_ txCfg pl intOpts
 
 -- |Convert 'baker set-keys' transaction config into a valid payload.
 bakerSetKeysTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> Bool -> IO (TransactionConfig, Types.Payload)

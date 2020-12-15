@@ -93,10 +93,10 @@ backupSpec = describe "Testing backup import/export" $ do
         x' <- configImport exported (return testPassword)
         x' `shouldBe` (Right [exampleAccountConfigWithKeysAndName])
     specify "import unencrypted accountconfig V1" $ do
-        -- |Tests that we can import accountconfig's with v1.0 serialisation 
+        -- Tests that we can import accountconfig's with v1.0 serialisation
         x' <- configImport unencryptedBackupv1 (return testPassword)
         x' `shouldBe` (Right [exampleAccountConfigWithKeysAndName])
     specify "import encrypted accountconfig V1" $ do
-        -- |Tests that we can import encrypted accountconfig's with v1.0 serialisation 
+        -- Tests that we can import encrypted accountconfig's with v1.0 serialisation
         x' <- configImport encryptedBackupv1 (return testPassword)
         x' `shouldBe` (Right [exampleAccountConfigWithKeysAndName])
