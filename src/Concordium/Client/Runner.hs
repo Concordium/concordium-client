@@ -107,6 +107,7 @@ import           System.Directory
 import           Text.Printf
 import           Text.Read (readMaybe)
 import Data.Time.Clock (addUTCTime, secondsToNominalDiffTime)
+import Data.Ratio
 
 -- |Establish a new connection to the backend and run the provided computation.
 -- Close a connection after completion of the computation. Establishing a
@@ -1384,10 +1385,10 @@ processAccountCmd action baseCfgDir verbose backend =
         cs <- getFromJson =<< getConsensusStatus
         accInfo <- getFromJson accInfoValue
         case encKey of
-          Nothing -> return (accInfo, Nothing, \e ->  addUTCTime (secondsToNominalDiffTime (fromIntegral e * fromIntegral (csrEpochDuration cs) / 1000)) (csrGenesisTime cs) )
+          Nothing -> return (accInfo, Nothing, \e ->  addUTCTime (fromRational ((toInteger e * toInteger (csrEpochDuration cs)) % 1000)) (csrGenesisTime cs))
           Just k -> do
             gc <- logFatalOnError =<< getParseCryptographicParameters bbh
-            return (accInfo, Just (k, gc), \e -> addUTCTime (secondsToNominalDiffTime (fromIntegral e * fromIntegral (csrEpochDuration cs) / 1000)) (csrGenesisTime cs) )
+            return (accInfo, Just (k, gc), \e ->  addUTCTime (fromRational ((toInteger e * toInteger (csrEpochDuration cs)) % 1000)) (csrGenesisTime cs))
       case v of
         Nothing -> putStrLn "Account not found."
         Just a -> runPrinter $ printAccountInfo f na a verbose (showEncrypted || showDecrypted) dec
@@ -2141,7 +2142,7 @@ processBakerCmd action baseCfgDir verbose backend =
            AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
            AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
            AE.Success (Just AccountInfoResult{..}) ->
-             if airAmount < initialStake
+             if airAmount <= initialStake + fromIntegral (tcEnergy txCfg)
              then
                logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the amount requested to be staked (#{showGtu initialStake}).|]]
              else do
@@ -2155,7 +2156,6 @@ processBakerCmd action baseCfgDir verbose backend =
                                      Types.TxSuccess [Types.BakerAdded{..}] ->
                                        case outputFile of
                                          Nothing ->
-                                           -- TODO: Output a full file that a baker can be started with
                                            logInfo ["Baker with ID " ++ show ebaBakerId ++ " added.",
                                                     printf "To use it add \"bakerId\": %s to the keys file %s." (show ebaBakerId) accountKeysFile
                                                    ]
