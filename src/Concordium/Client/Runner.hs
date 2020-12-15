@@ -2142,7 +2142,8 @@ processBakerCmd action baseCfgDir verbose backend =
            AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
            AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
            AE.Success (Just AccountInfoResult{..}) ->
-             if airAmount <= initialStake + fromIntegral (tcEnergy txCfg)
+             -- TODO: this should also take into account the estimated cost for this transaction
+             if airAmount < initialStake
              then
                logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the amount requested to be staked (#{showGtu initialStake}).|]]
              else do
