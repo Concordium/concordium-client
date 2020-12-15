@@ -218,3 +218,4 @@ tests:
       - unordered-containers
       - filepath
       - vector
+      - random

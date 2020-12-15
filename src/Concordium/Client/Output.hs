@@ -142,8 +142,8 @@ showRevealedAttributes as =
                   Just k -> unpack k
     showAttr (t, IDTypes.AttributeValue v) = printf "%s=%s" (showTag t) (show v)
 
-printAccountInfo :: NamedAddress -> AccountInfoResult -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
-printAccountInfo addr a verbose showEncrypted mEncKey= do
+printAccountInfo :: (Types.Epoch -> UTCTime) -> NamedAddress -> AccountInfoResult -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
+printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
   tell ([ printf "Local name:            %s" (showMaybe unpack $ naName addr)
        , printf "Address:               %s" (show $ naAddr addr)
        , printf "Balance:               %s" (showGtu $ airAmount a)
@@ -157,7 +157,6 @@ printAccountInfo addr a verbose showEncrypted mEncKey= do
                                                 (intercalate ", " $ map show rsiTransactions))
                  (releaseSchedule $ airReleaseSchedule a))
        ++ [printf "Nonce:                 %s" (show $ airNonce a)
-          , printf "Baker:                 %s" (maybe showNone (show . aibiIdentity . abirAccountBakerInfo) . airBaker $ a)
           , printf "Encryption public key: %s" (show $ airEncryptionKey a)
           , "" ])
 
@@ -174,6 +173,7 @@ printAccountInfo addr a verbose showEncrypted mEncKey= do
                  [] -> ["  Incoming amounts: []"]
                  _ -> ["  Incoming amounts:"] <> balances
         tell [printf "  Self balance: %s" self]
+        tell [ "" ]
     in
       case mEncKey of
         Nothing ->
@@ -189,6 +189,22 @@ printAccountInfo addr a verbose showEncrypted mEncKey= do
                  showableIncomingAmountsList =  printer <$>  incomingAmountsList
              showEncryptedBalance showableIncomingAmountsList showableSelfDecryptedAmount
     else return ()
+
+
+
+  case airBaker a of
+    Nothing -> tell ["Baker: none"]
+    Just bk -> do
+      let bkid = [i|Baker: ##{show . aibiIdentity . abirAccountBakerInfo $ bk}|]
+          stkstr = [i| - Staked amount: #{showGtu . abirStakedAmount $ bk}|]
+      case abirBakerPendingChange bk of
+        NoChange -> tell [ bkid
+                         , stkstr ]
+        RemoveBaker e -> tell [ [i|#{bkid} to be removed at epoch #{e} (#{epochsToUTC e})|]
+                              , stkstr ]
+        ReduceStake n e -> tell [ bkid
+                                , [i|#{stkstr} to be updated to #{n} at epoch #{e}  (#{epochsToUTC e})|] ]
+      tell [[i| - Restake earnings: #{showYesNo . abirStakeEarnings $ bk}|]]
 
   tell [ "" ]
 

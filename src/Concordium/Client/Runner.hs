@@ -106,6 +106,7 @@ import           System.IO
 import           System.Directory
 import           Text.Printf
 import           Text.Read (readMaybe)
+import Data.Time.Clock (addUTCTime, secondsToNominalDiffTime)
 
 -- |Establish a new connection to the backend and run the provided computation.
 -- Close a connection after completion of the computation. Establishing a
@@ -1378,17 +1379,18 @@ processAccountCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      (v, dec) <- withClient backend $ do
+      (v, dec, f) <- withClient backend $ do
         (bbh, accInfoValue) <- withBestBlockHash block (\bbh -> (bbh,) <$> getAccountInfo (Text.pack $ show $ naAddr na) bbh)
+        cs <- getFromJson =<< getConsensusStatus
         accInfo <- getFromJson accInfoValue
         case encKey of
-          Nothing -> return (accInfo, Nothing)
+          Nothing -> return (accInfo, Nothing, \e ->  addUTCTime (secondsToNominalDiffTime (fromIntegral e * fromIntegral (csrEpochDuration cs) / 1000)) (csrGenesisTime cs) )
           Just k -> do
             gc <- logFatalOnError =<< getParseCryptographicParameters bbh
-            return (accInfo, Just (k, gc))
+            return (accInfo, Just (k, gc), \e -> addUTCTime (secondsToNominalDiffTime (fromIntegral e * fromIntegral (csrEpochDuration cs) / 1000)) (csrGenesisTime cs) )
       case v of
         Nothing -> putStrLn "Account not found."
-        Just a -> runPrinter $ printAccountInfo na a verbose (showEncrypted || showDecrypted) dec
+        Just a -> runPrinter $ printAccountInfo f na a verbose (showEncrypted || showDecrypted) dec
 
     AccountList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
