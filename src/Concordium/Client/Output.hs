@@ -203,7 +203,7 @@ printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
         RemoveBaker e -> tell [ [i|#{bkid} to be removed at epoch #{e} (#{epochsToUTC e})|]
                               , stkstr ]
         ReduceStake n e -> tell [ bkid
-                                , [i|#{stkstr} to be updated to #{n} at epoch #{e}  (#{epochsToUTC e})|] ]
+                                , [i|#{stkstr} to be updated to #{showGtu n} at epoch #{e} (#{epochsToUTC e})|] ]
       tell [[i| - Restake earnings: #{showYesNo . abirStakeEarnings $ bk}|]]
 
   tell [ "" ]
