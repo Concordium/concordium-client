@@ -566,7 +566,7 @@ transactionWithScheduleCmd =
          strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*> (implicit <|> explicit) <*> transactionOptsParser)
      (progDescDoc . Just $ fillCat [
          "Transfer GTU from one account to another with the provided schedule of releases.",
-         "Releases can be specified in one of two ways, either as regular releses via intervals," <>
+         "Releases can be specified in one of two ways, either as regular releases via intervals," <>
          softline <> "or as an explicit schedule at specific timestamps.",
          "",
          "To specify the release via regular intervals use the options" <> softline <> "'--amount', '--every', '--for', and '--starting'.",
@@ -578,7 +578,7 @@ transactionWithScheduleCmd =
          "on January 1, 2021, February 15, 2021, and December 31, 2021," <> softline <>
          "the following input would be used. All releases are at the beginning of" <> softline <> "the day in the UTC time zone.",
          "",
-         hang 4 "\"100 at 2021-01-01T00:00:00Z, 150 at 2021-15-02T00:00:00Z, 200 at 2021-31-12T00:00:00Z\"",
+         hang 4 "\"100 at 2021-01-01T00:00:00Z, 150 at 2021-02-15T00:00:00Z, 200 at 2021-12-31T00:00:00Z\"",
          "",
          "Times are parsed according to the ISO8601 standard for the UTC time zone."
          ]))
