@@ -106,7 +106,7 @@ import           System.IO
 import           System.Directory
 import           Text.Printf
 import           Text.Read (readMaybe)
-import Data.Time.Clock (addUTCTime, secondsToNominalDiffTime)
+import Data.Time.Clock (addUTCTime)
 import Data.Ratio
 
 -- |Establish a new connection to the backend and run the provided computation.
@@ -268,12 +268,10 @@ processConfigCmd action baseCfgDir verbose =
         -- NB: This also checks whether the name is valid if provided.
         accCfgs <- loadAccountImportFile importFormat file name
 
-        if verbose then 
-          -- fold over all accounts adding them to the config, starting from the
-          -- base config. Checks for duplicates in the names mapping and prompts
-          -- the user to give a new name
-          foldM_ addAccountToBaseConfigWithNamePrompts baseCfg accCfgs
-        else void $ importAccountConfigEither baseCfg accCfgs False
+        -- fold over all accounts adding them to the config, starting from the
+        -- base config. Checks for duplicates in the names mapping and prompts
+        -- the user to give a new name
+        foldM_ addAccountToBaseConfigWithNamePrompts baseCfg accCfgs
 
         where
           -- Adds an account to the BaseConfig, prompting the user for a new
@@ -283,7 +281,7 @@ processConfigCmd action baseCfgDir verbose =
             let NamedAddress { naAddr = addr, naName = nameOpt } = acAddr accCfg
             case nameOpt of
               Just n -> do
-                newName <- checkUntilNoCollision n $ bcAccountNameMap baseCfg
+                newName <- checkUntilNoCollision addr n $ bcAccountNameMap baseCfg
                 (bcfg, _, t) <- initAccountConfig baseCfg NamedAddress{naAddr = addr, naName = Just newName} True
                 when t $ writeAccountKeys bcfg accCfg True
                 return bcfg
@@ -296,14 +294,14 @@ processConfigCmd action baseCfgDir verbose =
                 when t $ writeAccountKeys bcfg accCfg verbose
                 return bcfg
           -- prompt user for a new input until a non-colliding one is given
-          checkUntilNoCollision :: Text -> (Map.HashMap Text ID.AccountAddress) -> IO Text
-          checkUntilNoCollision key m =
+          checkUntilNoCollision :: ID.AccountAddress -> Text -> Map.HashMap Text ID.AccountAddress -> IO Text
+          checkUntilNoCollision newAddr key m =
             case Map.lookup key m of
-              Just currentAddr -> do
-                logWarn [[i|Importing an account with the name '#{key}', but this name is already mapped to the account '#{currentAddr}'|]]
+              Just currentAddr | currentAddr /= newAddr -> do
+                logWarn [[i|Importing an account with the name '#{key}', but this name is already used for account '#{currentAddr}'|]]
                 userInput <- promptAccountName [i|specify a new name to map to this account|]
-                checkUntilNoCollision userInput m
-              Nothing -> return key
+                checkUntilNoCollision newAddr userInput m
+              _ -> return key
       ConfigAccountAddKeys addr keysFile -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
