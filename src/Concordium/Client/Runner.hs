@@ -400,7 +400,7 @@ processConfigCmd action baseCfgDir verbose =
 
               let accCfg' = accCfg { acThreshold = fromMaybe (acThreshold accCfg) threshold }
               removeAccountKeys baseCfg accCfg' (HSet.toList idxsToRemove) verbose
-      ConfigAccountRemoveName name -> do      
+      ConfigAccountRemoveName name -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
@@ -761,7 +761,7 @@ getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx s
                   then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
                   else return $ take (v - fromIntegral _startIndex)
       -- get receiver's public encryption key
-      infoValueReceiver <- logFatalOnError =<< withBestBlockHash Nothing (getAccountInfo (Text.pack . show $ naAddr ettReceiver))
+      infoValueReceiver <- logFatalOnError =<< withBestBlockHash (Just bbHash) (getAccountInfo (Text.pack . show $ naAddr ettReceiver))
       case AE.fromJSON infoValueReceiver of
         AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
         AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show $ naAddr ettReceiver]
@@ -801,17 +801,13 @@ data BakerRemoveTransactionConfig =
 getBakerRemoveTransactionCfg :: TransactionConfig -> ClientMonad IO BakerRemoveTransactionConfig
 getBakerRemoveTransactionCfg txCfg= do
   let senderAddr = acAddress . tcAccountCfg $ txCfg
-  infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getAccountInfo (Text.pack . show $ senderAddr))
-  case AE.fromJSON infoValue of
-    AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
-    AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
-    AE.Success (Just AccountInfoResult{..}) -> do
-      case airBaker of
-        Nothing -> logFatal ["This account doesn't have an active baker so it cannot request a baker removal."]
-        Just bk ->
-          return BakerRemoveTransactionConfig
-          { brtcBakerId = aibiIdentity . abirAccountBakerInfo $ bk
-          , brtcTransactionCfg = txCfg }
+  AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
+  case airBaker of
+    Nothing -> logFatal ["This account doesn't have an active baker so it cannot request a baker removal."]
+    Just bk ->
+        return BakerRemoveTransactionConfig
+        { brtcBakerId = aibiIdentity . abirAccountBakerInfo $ bk
+        , brtcTransactionCfg = txCfg }
 
 -- |Resolved configuration for a 'baker update-stake' transaction
 data BakerUpdateStakeTransactionConfig =
@@ -824,29 +820,37 @@ data BakerUpdateStakeTransactionConfig =
 getBakerUpdateStakeTransactionCfg :: TransactionConfig -> Types.Amount -> ClientMonad IO BakerUpdateStakeTransactionConfig
 getBakerUpdateStakeTransactionCfg txCfg newAmount = do
   let senderAddr = acAddress . tcAccountCfg $ txCfg
-  infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getAccountInfo (Text.pack . show $ senderAddr))
-  case AE.fromJSON infoValue of
-    AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
-    AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
-    AE.Success (Just AccountInfoResult{..}) ->
-      if airAmount < newAmount
-      then
-        logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the new amount requested to be staked (#{showGtu newAmount}).|]]
-      else
-        return BakerUpdateStakeTransactionConfig
-          { bustcNewAmount = newAmount
-          , bustcTransactionCfg = txCfg }
+  AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
+  when (isNothing airBaker) $ logFatal [[i|Account #{senderAddr} is not a baker, so cannot update its stake.|]]
+  when (airAmount < newAmount) $ logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the new amount requested to be staked (#{showGtu newAmount}).|]]
+  return BakerUpdateStakeTransactionConfig
+         { bustcNewAmount = newAmount
+         , bustcTransactionCfg = txCfg }
 
 data BakerUpdateRestakeTransactionConfig =
   BakerUpdateRestakeTransactionConfig
   { burTransactionCfg :: TransactionConfig
   , burRestake :: !Bool }
 
+-- |Query the chain for the given account. Fail if either the chain cannot be reached, or
+-- if the account does not exist.
+getAccountInfoOrDie :: ID.AccountAddress ->  ClientMonad IO AccountInfoResult
+getAccountInfoOrDie senderAddr = do
+  infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getAccountInfo (Text.pack . show $ senderAddr))
+  case AE.fromJSON infoValue of
+    AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
+    AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
+    AE.Success (Just air) -> return air
+
 getBakerUpdateRestakeTransactionCfg :: TransactionConfig -> Bool -> ClientMonad IO BakerUpdateRestakeTransactionConfig
-getBakerUpdateRestakeTransactionCfg txCfg newRestake =
+getBakerUpdateRestakeTransactionCfg txCfg newRestake = do
+  let senderAddr = acAddress . tcAccountCfg $ txCfg
+  AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
+  when (isNothing airBaker) $ logFatal [[i|Account #{senderAddr} is not a baker, so cannot update its stake.|]]
   return BakerUpdateRestakeTransactionConfig
-          { burRestake = newRestake
-          , burTransactionCfg = txCfg }
+         { burRestake = newRestake
+         , burTransactionCfg = txCfg }
+
 
 data AccountUpdateKeysTransactionCfg =
   AccountUpdateKeysTransactionCfg
@@ -2135,11 +2139,10 @@ processBakerCmd action baseCfgDir verbose backend =
 
       withClient backend $ do
          let senderAddr = acAddress . tcAccountCfg $ txCfg
-         infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getAccountInfo (Text.pack . show $ senderAddr))
-         case AE.fromJSON infoValue of
-           AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
-           AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
-           AE.Success (Just AccountInfoResult{..}) ->
+         AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
+         case airBaker of
+           Just AccountInfoBakerResult{..} -> logFatal [[i|Account is already a baker with ID #{aibiIdentity abirAccountBakerInfo}.|]]
+           Nothing -> do
              -- TODO: this should also take into account the estimated cost for this transaction
              if airAmount < initialStake
              then
@@ -2178,8 +2181,9 @@ processBakerCmd action baseCfgDir verbose backend =
         putStrLn ""
 
       let intOpts = toInteractionOpts txOpts
-      (txCfg, pl) <- bakerSetKeysTransaction baseCfg txOpts file (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+      withClient backend $ do
+        (txCfg, pl) <- bakerSetKeysTransaction baseCfg txOpts file (ioConfirm intOpts)
+        sendAndTailTransaction_ txCfg pl intOpts
 
     BakerRemove txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -2221,41 +2225,46 @@ processBakerCmd action baseCfgDir verbose backend =
         sendAndTailTransaction_ txCfg pl intOpts
 
 -- |Convert 'baker set-keys' transaction config into a valid payload.
-bakerSetKeysTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> Bool -> IO (TransactionConfig, Types.Payload)
+bakerSetKeysTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> Bool -> ClientMonad IO (TransactionConfig, Types.Payload)
 bakerSetKeysTransaction baseCfg txOpts fp confirm = do
-  accCfg <- getAccountCfgFromTxOpts baseCfg txOpts
-
-  bsktcBakerKeys <- getFromJson =<< eitherDecodeFileStrict fp
+  accCfg <- liftIO $ getAccountCfgFromTxOpts baseCfg txOpts
 
   let senderAddress = acAddress accCfg
 
-  let electionSignKey = bkElectionSignKey bsktcBakerKeys
-      signatureSignKey = bkSigSignKey bsktcBakerKeys
-      aggrSignKey = bkAggrSignKey bsktcBakerKeys
 
-  let ubkElectionVerifyKey = bkElectionVerifyKey bsktcBakerKeys
-      ubkSignatureVerifyKey = bkSigVerifyKey bsktcBakerKeys
-      ubkAggregationVerifyKey = bkAggrVerifyKey bsktcBakerKeys
+  AccountInfoResult{..} <- getAccountInfoOrDie senderAddress
+  when (isNothing airBaker) $ logFatal [printf "Account %s is not a baker, so cannot set its keys." (show senderAddress)]
+  liftIO $ do
+    bsktcBakerKeys <- getFromJson =<< eitherDecodeFileStrict fp
 
-  let challenge = Types.updateBakerKeyChallenge senderAddress ubkElectionVerifyKey ubkSignatureVerifyKey ubkAggregationVerifyKey
-  ubkProofElection <- Proofs.proveDlog25519VRF challenge (VRF.KeyPair electionSignKey ubkElectionVerifyKey) `except` "cannot produce VRF key proof"
-  ubkProofSig <- Proofs.proveDlog25519Block challenge (BlockSig.KeyPair signatureSignKey ubkSignatureVerifyKey) `except` "cannot produce signature key proof"
-  ubkProofAggregation <- Bls.proveKnowledgeOfSK challenge aggrSignKey
 
-  let payload = Types.UpdateBakerKeys{..}
+    let electionSignKey = bkElectionSignKey bsktcBakerKeys
+        signatureSignKey = bkSigSignKey bsktcBakerKeys
+        aggrSignKey = bkAggrSignKey bsktcBakerKeys
 
-  let nrgCost _ = return . Just $ bakerSetKeysEnergyCost (Types.payloadSize (Types.encodePayload payload))
+    let ubkElectionVerifyKey = bkElectionVerifyKey bsktcBakerKeys
+        ubkSignatureVerifyKey = bkSigVerifyKey bsktcBakerKeys
+        ubkAggregationVerifyKey = bkAggrVerifyKey bsktcBakerKeys
 
-  txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
+    let challenge = Types.updateBakerKeyChallenge senderAddress ubkElectionVerifyKey ubkSignatureVerifyKey ubkAggregationVerifyKey
+    ubkProofElection <- Proofs.proveDlog25519VRF challenge (VRF.KeyPair electionSignKey ubkElectionVerifyKey) `except` "cannot produce VRF key proof"
+    ubkProofSig <- Proofs.proveDlog25519Block challenge (BlockSig.KeyPair signatureSignKey ubkSignatureVerifyKey) `except` "cannot produce signature key proof"
+    ubkProofAggregation <- Bls.proveKnowledgeOfSK challenge aggrSignKey
 
-  logSuccess [ printf "setting new keys for baker %s" (show senderAddress)
-             , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
-             , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime tcExpiry) ]
-  when confirm $ do
-    confirmed <- askConfirmation Nothing
-    unless confirmed exitTransactionCancelled
+    let payload = Types.UpdateBakerKeys{..}
 
-  return (txCfg, payload)
+    let nrgCost _ = return . Just $ bakerSetKeysEnergyCost (Types.payloadSize (Types.encodePayload payload))
+
+    txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
+
+    logSuccess [ printf "setting new keys for baker %s" (show senderAddress)
+               , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
+               , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime tcExpiry) ]
+    when confirm $ do
+      confirmed <- askConfirmation Nothing
+      unless confirmed exitTransactionCancelled
+
+    return (txCfg, payload)
   where except c err = c >>= \case
           Just x -> return x
           Nothing -> logFatal [err]
