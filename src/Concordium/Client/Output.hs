@@ -606,7 +606,7 @@ showRejectReason verbose = \case
   Types.FirstScheduledReleaseExpired -> "the first release has already expired"
   Types.ScheduledSelfTransfer acc ->
     printf "attempted to make an scheduled transfer to the same account '%s'" (show acc)
-  Types.AlreadyABaker bid -> printf "%s is already a baker id" (show bid)
+  Types.AlreadyABaker bid -> printf "already a registered baker with ID %s" (show bid)
   Types.NotABaker addr -> printf "attempt to remove a baker account %s that is not a baker" (show addr)
   Types.InsufficientBalanceForBakerStake -> "the balance on the account is insufficient to cover the desired stake"
   Types.BakerInCooldown -> "change could not be completed because the baker is in the cooldown period"
