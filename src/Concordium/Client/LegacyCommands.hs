@@ -494,7 +494,7 @@ getCryptographicParametersCommand =
     command
     "GetCryptographicParameters"
     (info
-     (GetAnonymityRevokers <$>
+     (GetCryptographicParameters <$>
         optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
        )
        (progDesc "Query the gRPC server for the cryptographic parameters in a specific block."))
