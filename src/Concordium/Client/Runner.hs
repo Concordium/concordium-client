@@ -942,7 +942,7 @@ getAccountDecryptTransactionCfg adTransactionCfg adAmount secretKey idx = do
           aggAmounts = foldl' (<>) _selfAmount inputEncAmounts
           totalEncryptedAmount = foldl' (+) selfDecrypted $ fmap decoder inputEncAmounts
       unless (totalEncryptedAmount >= adAmount) $
-        logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (show adAmount) (show totalEncryptedAmount)]
+        logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (Types.amountToString adAmount) (Types.amountToString totalEncryptedAmount)]
       -- index indicating which encrypted amounts we used as input
       let aggIndex = case idx of
             Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (length listOfEncryptedAmounts))
@@ -1016,7 +1016,7 @@ encryptedTransferTransactionPayload EncryptedTransferTransactionConfig{..} confi
         , tcAccountCfg = AccountConfig { acAddr = addr } }
         = ettTransactionCfg
 
-  logInfo $
+  logInfo
     [ printf "transferring %s GTU from encrypted balance of account %s to %s" (Types.amountToString ettAmount) (showNamedAddress addr) (showNamedAddress ettReceiver)
     , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
     , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
