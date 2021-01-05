@@ -144,6 +144,7 @@ executables:
       - base
       - simple-client
       - globalstate-types
+      - concordium-crypto
       - bytestring
       - aeson
       - time
