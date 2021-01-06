@@ -23,6 +23,7 @@ import Control.Monad.Writer
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import Data.Bool
+import qualified Data.ByteString as BS
 import Data.Functor
 import Data.Hashable (Hashable)
 import qualified Data.HashMap.Strict as HM
@@ -291,8 +292,7 @@ printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
   tell [ [i|Contract:        #{contractName}|]
        , [i|Owner:           #{owner}|]
        , [i|ModuleReference: #{namedModRef}|]
-       , [i|Balance:         #{Types.amountToString ciAmount} GTU|]
-       , [i|State:|]]
+       , [i|Balance:         #{Types.amountToString ciAmount} GTU|]]
   tell state
   tell [ [i|Methods:|]]
   tellMethods
@@ -300,10 +300,10 @@ printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
     contractName = CI.contractNameFromInitName ciName
     owner = showNamedAddress namedOwner
     state = case ciState of
-      CI.JustBytes bs -> [[i|Bytes: [#{bs}]|]]
+      CI.JustBytes bs -> ["State(raw):", [i|    #{BS.unpack bs}|]]
       CI.WithSchema _ (AE.Object obj) -> case HM.lookup "state" obj of
                                    Nothing -> stateErrorMsg
-                                   Just state' -> [indentBy 4 $ showPrettyJSON state']
+                                   Just state' -> ["State:", indentBy 4 $ showPrettyJSON state']
       CI.WithSchema _ _ -> stateErrorMsg
     stateErrorMsg = ["Could not display contract state."]
     tellMethods = case ciState of
