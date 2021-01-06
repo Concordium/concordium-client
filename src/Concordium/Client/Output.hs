@@ -459,11 +459,11 @@ showEvent verbose = \case
   Types.ModuleDeployed ref->
     verboseOrNothing $ printf "module '%s' deployed" (show ref)
   Types.ContractInitialized{..} ->
-    verboseOrNothing $ printf "initialized contract '%s' from module '%s' with '%s' tokens"
-                              (show ecAddress) (show ecRef) (show ecAmount)
+    verboseOrNothing $ printf "initialized contract '%s' using init function '%s' from module '%s' with '%s' tokens"
+                              (show ecAddress) (show ecInitName) (show ecRef) (show ecAmount)
   Types.Updated{..} ->
-    verboseOrNothing $ printf "sent message '%s' and '%s' tokens from %s to %s"
-                              (show euMessage) (show euAmount) (showAddress euInstigator) (showAddress $ Types.AddressContract euAddress)
+    verboseOrNothing $ printf "sent message to function '%s' with '%s' and '%s' tokens from %s to %s"
+                              (show euReceiveName) (show euMessage) (show euAmount) (showAddress euInstigator) (showAddress $ Types.AddressContract euAddress)
   Types.Transferred{..} ->
     verboseOrNothing $ printf "transferred %s tokens from %s to %s" (show etAmount) (showAddress etFrom) (showAddress etTo)
   Types.AccountCreated addr ->
