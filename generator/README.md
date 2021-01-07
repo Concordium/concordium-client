@@ -40,3 +40,7 @@ The differences from the simple transfer are
 - `--addresses` is a mandatory field
 - the account the transfers are being sent from should not receive any encrypted transfers. If this is not observed then transfers will become
   invalid at some point, leading to skewed test results if, e.g., TPS is being measured.
+
+### Caveats
+
+The generator is sequential which limits the amount of transactions it can output. For encrypted transfers no more than about 10 are possible on a fairly high-end CPU.
