@@ -558,7 +558,7 @@ transactionWithScheduleCmd =
                      option auto (long "every" <> metavar "INTERVAL" <> help "Interval between releases, one of 'Minute', 'Hour', 'Day', 'Week', 'Month' (30 days), or 'Year' (365 days). ") <*>
                      option auto (long "for" <> metavar "N" <> help "Number of releases.") <*>
                      option (eitherReader timeFromString) (long "starting" <> metavar "starting" <>
-                                                           help "Start time of the first release, as a ISO8601 UTC time string, e.g., 2021-31-12T00:00:00Z.")
+                                                           help "Start time of the first release, as a ISO8601 UTC time string, e.g., 2021-12-31T00:00:00Z.")
           explicit = Right <$>
                      option (eitherReader eitherParseScheduleInform)  (long "schedule" <> metavar "schedule" <> help "Explicit schedule in the form of a comma separated list of elements of the form '3.0 at 2020-12-13T23:35:59Z' (send 3 GTU on December 13, 2020). Timestamps must be given in UTC.")
        in

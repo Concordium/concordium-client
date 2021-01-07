@@ -17,6 +17,9 @@ import sys
 import random
 import os
 
+from dateutil.parser import *
+import datetime
+
 blocks = []
 
 with open(sys.argv[1], 'r') as f:
@@ -46,12 +49,19 @@ for block in blocks:
         continue
     if start == 0:
         start = block["blockSlot"]
-
+    try:
+        arriveTime = isoparse(block["blockArriveTime"])
+        slotTime = isoparse(block["blockSlotTime"])
+        if arriveTime >= slotTime:
+            elapsed = arriveTime - slotTime
+            print(elapsed)
+    except:
+        pass
     count += 1
 
 # read from environment var, defaulting to 1
 if 'SLOTTIME' in os.environ:
-    SLOTTIME = int(os.environ['SLOTTIME'])
+    SLOTTIME = float(os.environ['SLOTTIME'])
 else:
     SLOTTIME = 1
 
