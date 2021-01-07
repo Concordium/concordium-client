@@ -14,6 +14,7 @@ module Concordium.Client.Runner
   , getConsensusStatus
   , generateBakerKeys
   , getAccountInfo
+  , getAccountInfoOrDie
   , getModuleSet
   , getStatusOfPeers
   , StatusOfPeers(..)
@@ -35,6 +36,8 @@ module Concordium.Client.Runner
   , withClientJson
   , TransactionConfig(..)
   , getFromJson
+  -- other auxiliary functions
+  , getParseCryptographicParameters
   ) where
 
 import           Concordium.Client.Utils
