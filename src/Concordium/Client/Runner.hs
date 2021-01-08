@@ -1601,8 +1601,7 @@ moduleDeployEnergyCost wasmMod accCfg = pure . Just . const $
                                   + (5 + 2 * ((psize + 99) `div` 100) * 50) -- storeModule
 
         signatureCount = fromIntegral . acThreshold $ accCfg
-        payloadSize = Types.PayloadSize . fromIntegral $ (+ tagSize) . BS.length . S.encode . Wasm.wasmSource $ wasmMod
-        tagSize = 1
+        payloadSize = Types.payloadSize . Types.encodePayload . Types.DeployModule $ wasmMod
 
 data ModuleDeployTransactionCfg =
   ModuleDeployTransactionCfg
