@@ -124,6 +124,7 @@ askConfirmation :: MonadIO m => Maybe String -> m Bool
 askConfirmation prompt = liftIO $ do
   putStr $ prettyMsg " [yN]: " $ fromMaybe defaultPrompt prompt
   input <- T.getLine
+  T.putStrLn input
   return $ T.strip (T.toLower input) == "y"
   where defaultPrompt = "confirm"
 
