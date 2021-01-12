@@ -366,6 +366,59 @@ removeAccountConfig baseCfg@BaseConfig{..} NamedAddress{..} = do
         -- Remove the alias, if it exists
         (M.delete name bcAccountNameMap, True)
 
+importConfigBackup :: Verbose -> BaseConfig -> ([AccountConfig], ContractNameMap, ModuleNameMap) -> IO BaseConfig
+importConfigBackup verbose baseCfg (accs, cnm, mnm) = do
+  logInfo ["\nImporting accounts..."]
+  baseCfg' <- importAccountConfig baseCfg accs verbose
+  logSuccess ["accounts successfully imported"]
+
+  logInfo ["\nImporting contract instance names..."]
+  baseCfg'' <- importContractNameMap verbose baseCfg' cnm
+  logSuccess ["contract instance names successfully imported"]
+
+  logInfo ["\nImporting module names..."]
+  baseCfg''' <- importModuleNameMap verbose baseCfg'' mnm
+  logSuccess ["module names successfully imported"]
+
+  return baseCfg'''
+
+importContractNameMap :: Verbose -> BaseConfig -> ContractNameMap -> IO BaseConfig
+importContractNameMap verbose baseCfg importedNameMap = do
+  let currentNameMap = bcContractNameMap baseCfg
+  let mapFile = contractNameMapFile . bcContractCfgDir $ baseCfg
+  mergedNameMap <- mergeNameMapsWithPromptsToRename checkContractNameUntilNoCollision currentNameMap importedNameMap
+  unless (M.null mergedNameMap) $ liftIO $ writeNameMapAsJSON verbose mapFile mergedNameMap
+  return $ baseCfg {bcContractNameMap = mergedNameMap}
+  where checkContractNameUntilNoCollision = checkUntilNoCollision "contract instance" validateContractOrModuleName
+
+importModuleNameMap :: Verbose -> BaseConfig -> ModuleNameMap -> IO BaseConfig
+importModuleNameMap verbose baseCfg importedNameMap = do
+  let currentNameMap = bcModuleNameMap baseCfg
+  let mapFile = moduleNameMapFile . bcContractCfgDir $ baseCfg
+  mergedNameMap <- mergeNameMapsWithPromptsToRename checkModuleNameUntilNoCollision currentNameMap importedNameMap
+  unless (M.null mergedNameMap) $ liftIO $ writeNameMapAsJSON verbose mapFile mergedNameMap
+  return $ baseCfg {bcModuleNameMap = mergedNameMap}
+  where checkModuleNameUntilNoCollision = checkUntilNoCollision "module" validateContractOrModuleName
+
+mergeNameMapsWithPromptsToRename :: (NameMap v -> Text -> v -> IO Text) -> NameMap v -> NameMap v -> IO (NameMap v)
+mergeNameMapsWithPromptsToRename checkAndPrompt currentNM newNM = go currentNM $ M.toList newNM
+  where
+    go nm [] = return nm
+    go nm ((k,v):xs) = do
+      -- Check and prompt user until a valid and available 'k' is found
+      newK <- checkAndPrompt nm k v
+      let nm' = M.insert newK v nm
+      go nm' xs
+
+checkUntilNoCollision :: (Eq v, Show v) => Text -> (Text -> Either String ()) -> NameMap v -> Text -> v -> IO Text
+checkUntilNoCollision typeOfValue validateName nm key newVal =
+  case M.lookup key nm of
+    Just existingVal | existingVal /= newVal -> do
+      logWarn [[i|Importing #{typeOfValue} name '#{key}', but this name is already used for #{typeOfValue} '#{show existingVal}'|]]
+      userInput <- promptNameUntilValid validateName [i|specify a new name to map to this #{typeOfValue}|]
+      checkUntilNoCollision typeOfValue validateName nm userInput newVal
+    _ -> return key
+
 -- |Add a contract name and write it to 'contractNames.map', or return a list of error messages.
 -- Returns a non-empty list of error messages if the name could not be added.
 -- This happens when:
@@ -611,15 +664,15 @@ isValidContractOrModuleName n = not (T.null n) && not (isSpace $ T.head n) && is
   where supportedChar c = isAlphaNum c || c `elem` supportedSpecialChars
         supportedSpecialChars = "-_,.!? " :: String
 
--- |Prompt the user to input an account name validating the input
-promptAccountName :: MonadIO m => String -> m Text
-promptAccountName prompt = liftIO $ do
+-- |Prompt the user to input a name repeatedly until it passes validation.
+promptNameUntilValid :: MonadIO m => (Text -> Either String ()) -> String -> m Text
+promptNameUntilValid validateName prompt = liftIO $ do
   putStr $ prettyMsg ": " prompt
   input <- T.getLine >>= ensureValidName
   return input
   where
     ensureValidName name =
-      case validateAccountName name of
+      case validateName name of
         Left err -> do
           logError [err]
           putStr "Input valid name: "

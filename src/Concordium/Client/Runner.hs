@@ -198,18 +198,22 @@ processConfigCmd action baseCfgDir verbose =
       baseCfg <- getBaseConfig baseCfgDir verbose
       pwd <- askPassword "Enter password for encryption of backup (leave blank for no encryption): "
       allAccounts <- getAllAccountConfigs baseCfg
-      backup <- case Password.getPassword pwd of
-        "" -> configExport allAccounts Nothing
-        _ -> configExport allAccounts (Just pwd)
-      handleWriteFile BS.writeFile PromptBeforeOverwrite verbose fileName backup
+      let configBackup = ConfigBackup { cbAccounts = allAccounts
+                                      , cbContractNameMap = bcContractNameMap baseCfg
+                                      , cbModuleNameMap = bcModuleNameMap baseCfg
+                                      }
+      exportedConfigBackup <- case Password.getPassword pwd of
+        "" -> configExport configBackup Nothing
+        _ -> configExport configBackup (Just pwd)
+      handleWriteFile BS.writeFile PromptBeforeOverwrite verbose fileName exportedConfigBackup
 
     ConfigBackupImport fileName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       ciphertext <- handleReadFile BS.readFile fileName
-      accCfgs <- configImport ciphertext (askPassword "The backup file is password protected. Enter password: ")
-      case accCfgs of
-        Right accCfgs' -> do
-          void $ importAccountConfig baseCfg accCfgs' verbose
+      configBackup <- configImport ciphertext (askPassword "The backup file is password protected. Enter password: ")
+      case configBackup of
+        Right ConfigBackup{..} -> do
+          void $ importConfigBackup verbose baseCfg (cbAccounts, cbContractNameMap, cbModuleNameMap)
         Left err -> logFatal [[i|Failed to import Config Backup, #{err}|]]
 
     ConfigAccountCmd c -> case c of
@@ -302,7 +306,7 @@ processConfigCmd action baseCfgDir verbose =
             case Map.lookup key m of
               Just currentAddr | currentAddr /= newAddr -> do
                 logWarn [[i|Importing an account with the name '#{key}', but this name is already used for account '#{currentAddr}'|]]
-                userInput <- promptAccountName [i|specify a new name to map to this account|]
+                userInput <- promptNameUntilValid validateAccountName [i|specify a new name to map to this account|]
                 checkUntilNoCollision newAddr userInput m
               _ -> return key
       ConfigAccountAddKeys addr keysFile -> do
