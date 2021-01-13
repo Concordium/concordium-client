@@ -151,6 +151,7 @@ decodeGenesisFormattedAccountExport payload name pwd = runExceptT $ do
 
 
 ---- Code for instantiating, exporting and importing config backups
+
 -- | An export format used for config backups.
 data ConfigBackup =
   ConfigBackup
@@ -173,6 +174,7 @@ instance AE.ToJSON ConfigBackup where
      , "moduleNameMap" .= cbModuleNameMap
      ]
 
+-- | Versioned wrapper for ConfigBackup.
 newtype VersionedConfigBackup = VersionedConfigBackup (Versioned ConfigBackup) deriving (Eq, Show)
 
 -- | Currently supported version of the config backup.
@@ -212,7 +214,7 @@ configImport
   -> IO Password -- ^ Action to obtain the password if necessary.
   -> IO (Either String ConfigBackup)
 configImport json pwdAction = runExceptT $ do
-  vconfigBackup <- AE.eitherDecodeStrict' json `embedErr` (\err -> [i|The input file is not valid JSON: #{err}|])
+  vconfigBackup <- AE.eitherDecodeStrict json `embedErr` (\err -> [i|The input file is not valid JSON: #{err}|])
   case AE.parseEither importParser vconfigBackup of
     Left err -> throwError [i|Failed reading the input file: #{err}|]
     Right (Left encrypted) -> do
