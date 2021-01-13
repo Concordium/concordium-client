@@ -348,14 +348,6 @@ importAccountConfigEither baseCfg accCfgs collidingNameStg verbose = runExceptT 
           liftIO $ when t $ writeAccountKeys bc' ac verbose
           return bc'
 
--- |Write the provided configuration to disk in the expected formats.
-importAccountConfig :: BaseConfig -> [AccountConfig] -> Verbose -> IO BaseConfig
-importAccountConfig baseCfg accCfgs verbose = foldM f baseCfg accCfgs
-  where f bc ac = do
-          (bc', _, t) <- initAccountConfig bc (acAddr ac) True
-          when t $ writeAccountKeys bc' ac verbose
-          return bc'
-
 removeAccountConfig :: BaseConfig -> NamedAddress -> IO BaseConfig
 removeAccountConfig baseCfg@BaseConfig{..} NamedAddress{..} = do
   -- Remove the keys directory
@@ -378,49 +370,68 @@ removeAccountConfig baseCfg@BaseConfig{..} NamedAddress{..} = do
         -- Remove the alias, if it exists
         (M.delete name bcAccountNameMap, True)
 
+-- |Import the contents of a `ConfigBackup` and log information about each step in the process.
+-- Naming conflicts are handled by prompting the user for new names.
 importConfigBackup :: Verbose -> BaseConfig -> ([AccountConfig], ContractNameMap, ModuleNameMap) -> IO BaseConfig
 importConfigBackup verbose baseCfg (accs, cnm, mnm) = do
   logInfo ["\nImporting accounts..."]
-  baseCfg' <- importAccountConfig baseCfg accs verbose
+  baseCfg' <- importAccountConfig baseCfg accs
   logSuccess ["accounts successfully imported"]
 
   logInfo ["\nImporting contract instance names..."]
-  baseCfg'' <- importContractNameMap verbose baseCfg' cnm
+  baseCfg'' <- importContractNameMap baseCfg' cnm
   logSuccess ["contract instance names successfully imported"]
 
   logInfo ["\nImporting module names..."]
-  baseCfg''' <- importModuleNameMap verbose baseCfg'' mnm
+  baseCfg''' <- importModuleNameMap baseCfg'' mnm
   logSuccess ["module names successfully imported"]
 
   return baseCfg'''
 
-importContractNameMap :: Verbose -> BaseConfig -> ContractNameMap -> IO BaseConfig
-importContractNameMap verbose baseCfg importedNameMap = do
-  let currentNameMap = bcContractNameMap baseCfg
-  let mapFile = contractNameMapFile . bcContractCfgDir $ baseCfg
-  mergedNameMap <- mergeNameMapsWithPromptsToRename checkContractNameUntilNoCollision currentNameMap importedNameMap
-  unless (M.null mergedNameMap) $ liftIO $ writeNameMapAsJSON verbose mapFile mergedNameMap
-  return $ baseCfg {bcContractNameMap = mergedNameMap}
-  where checkContractNameUntilNoCollision = checkUntilNoCollision "contract instance" validateContractOrModuleName
-
-importModuleNameMap :: Verbose -> BaseConfig -> ModuleNameMap -> IO BaseConfig
-importModuleNameMap verbose baseCfg importedNameMap = do
-  let currentNameMap = bcModuleNameMap baseCfg
-  let mapFile = moduleNameMapFile . bcContractCfgDir $ baseCfg
-  mergedNameMap <- mergeNameMapsWithPromptsToRename checkModuleNameUntilNoCollision currentNameMap importedNameMap
-  unless (M.null mergedNameMap) $ liftIO $ writeNameMapAsJSON verbose mapFile mergedNameMap
-  return $ baseCfg {bcModuleNameMap = mergedNameMap}
-  where checkModuleNameUntilNoCollision = checkUntilNoCollision "module" validateContractOrModuleName
-
-mergeNameMapsWithPromptsToRename :: (NameMap v -> Text -> v -> IO Text) -> NameMap v -> NameMap v -> IO (NameMap v)
-mergeNameMapsWithPromptsToRename checkAndPrompt currentNM newNM = go currentNM $ M.toList newNM
   where
-    go nm [] = return nm
-    go nm ((k,v):xs) = do
-      -- Check and prompt user until a valid and available 'k' is found
-      newK <- checkAndPrompt nm k v
-      let nm' = M.insert newK v nm
-      go nm' xs
+    -- |Write the provided configuration to disk in the expected formats.
+    -- If any account names collide with existing ones,
+    -- the user is prompted to provide a new, non-colliding name.
+    importAccountConfig :: BaseConfig -> [AccountConfig] -> IO BaseConfig
+    importAccountConfig bCfg accCfgs = foldM f bCfg accCfgs
+      where f bc ac = do
+              (bc', _, t) <- initAccountConfig bc (acAddr ac) PromptToProvideNoncollidingNames True
+              when t $ writeAccountKeys bc' ac verbose
+              return bc'
+
+    -- |Import ContractNameMap by merging it with the existing namemap from BaseConfig.
+    -- Then write it to disk in the expected format.
+    -- Name conflicts are handled by prompting the user for a new name.
+    importContractNameMap :: BaseConfig -> ContractNameMap -> IO BaseConfig
+    importContractNameMap bCfg importedNameMap = do
+      let currentNameMap = bcContractNameMap bCfg
+      let mapFile = contractNameMapFile . bcContractCfgDir $ bCfg
+      mergedNameMap <- mergeNameMapsWithPromptsToRename checkContractNameUntilNoCollision currentNameMap importedNameMap
+      unless (M.null mergedNameMap) $ liftIO $ writeNameMapAsJSON verbose mapFile mergedNameMap
+      return $ bCfg {bcContractNameMap = mergedNameMap}
+      where checkContractNameUntilNoCollision = checkNameUntilNoCollision "contract instance" validateContractOrModuleName
+
+    -- |Import ModuleNameMap by merging it with the existing namemap from BaseConfig.
+    -- Then write it to disk in the expected format.
+    -- Name conflicts are handled by prompting the user for a new name.
+    importModuleNameMap :: BaseConfig -> ModuleNameMap -> IO BaseConfig
+    importModuleNameMap bCfg importedNameMap = do
+      let currentNameMap = bcModuleNameMap bCfg
+      let mapFile = moduleNameMapFile . bcContractCfgDir $ bCfg
+      mergedNameMap <- mergeNameMapsWithPromptsToRename checkModuleNameUntilNoCollision currentNameMap importedNameMap
+      unless (M.null mergedNameMap) $ liftIO $ writeNameMapAsJSON verbose mapFile mergedNameMap
+      return $ bCfg {bcModuleNameMap = mergedNameMap}
+      where checkModuleNameUntilNoCollision = checkNameUntilNoCollision "module" validateContractOrModuleName
+
+    -- |Merge two namemaps and use the provided function to handle name conflicts.
+    mergeNameMapsWithPromptsToRename :: (NameMap v -> Text -> v -> IO Text) -> NameMap v -> NameMap v -> IO (NameMap v)
+    mergeNameMapsWithPromptsToRename checkAndPrompt currentNM newNM = go currentNM $ M.toList newNM
+      where
+        go nm [] = return nm
+        go nm ((name,val):xs) = do
+          newName <- checkAndPrompt nm name val
+          let nm' = M.insert newName val nm
+          go nm' xs
 
 -- |Check if the provided name (key) already is already used,
 -- and continually prompt the user to provide an alternative,
