@@ -285,7 +285,7 @@ processConfigCmd action baseCfgDir verbose =
           -- non-colliding name if the account is named and the name already
           -- exists in the name map.
           addAccountToBaseConfigWithNamePrompts baseCfg accCfg = do
-            (bcfg, _, t) <- initAccountConfig baseCfg (acAddr accCfg) PromptToProvideNoncollidingNames True
+            (bcfg, _, t) <- initAccountConfig baseCfg (acAddr accCfg) True
             when t $ writeAccountKeys bcfg accCfg verbose
             return bcfg
       ConfigAccountAddKeys addr keysFile -> do
