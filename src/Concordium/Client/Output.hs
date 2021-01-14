@@ -255,7 +255,7 @@ printAccountList nameMap accs = printNameList "Accounts" header format accsWithN
                 names = maybe " " (Text.intercalate " " . map (\name -> [i|'#{name}'|])) mNames
 
         accsWithNames :: [(IDTypes.AccountAddress, Maybe [Text])]
-        accsWithNames = map (\addr -> (addr, HM.lookup addr nameMapInv)) accs
+        accsWithNames = map (\addr -> (addr, sort <$> HM.lookup addr nameMapInv)) accs
           where nameMapInv :: HM.HashMap IDTypes.AccountAddress [Text]
                 nameMapInv = HM.fromListWith (++) . map (\(k, v) -> (v, [k])) . HM.toList $ nameMap
 
