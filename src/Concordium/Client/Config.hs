@@ -225,18 +225,11 @@ ensureDirCreated verbose dir = do
   else
     createDirectoryIfMissing True dir
 
--- |Setting for how to handle name collisions when importing account names.
-data CollidingNameSetting =
-    PromptToProvideNoncollidingNames -- ^ The user should be prompted to provide a new name until a noncolliding one is found.
-  | OverwriteCollidingNames -- ^ The existing name should be overwritten when an imported name collides with it.
-  deriving Eq
-
 initAccountConfigEither :: BaseConfig
                         -> NamedAddress
-                        -> CollidingNameSetting -- ^ Setting for how name collisions in name map are handled.
                         -> Bool -- ^ True if we are in a cli environment
                         -> IO (Either String (BaseConfig, AccountConfig, Bool))
-initAccountConfigEither baseCfg namedAddr collidingNameStg inCLI = runExceptT $ do
+initAccountConfigEither baseCfg namedAddr inCLI = runExceptT $ do
   let NamedAddress { naAddr = addr, naName = name } = namedAddr
   case name of
     Nothing -> logInfo [printf "adding account %s without a name" (show addr)]
@@ -281,9 +274,7 @@ initAccountConfigEither baseCfg namedAddr collidingNameStg inCLI = runExceptT $ 
     Nothing -> return baseCfg
     Just n -> do
       let accountNameMap = bcAccountNameMap baseCfg
-      newName <- case collidingNameStg of
-        PromptToProvideNoncollidingNames -> liftIO $ checkNameUntilNoCollision "account" validateAccountName accountNameMap n addr
-        OverwriteCollidingNames -> return n
+      newName <- liftIO $ checkNameUntilNoCollision "account" validateAccountName accountNameMap n addr
       let m = M.insert newName addr accountNameMap
       liftIO $ writeNameMap True mapFile m
       logSuccess [[i|added name mapping: '#{n}' --> '#{addr}'|]]
@@ -300,11 +291,10 @@ initAccountConfigEither baseCfg namedAddr collidingNameStg inCLI = runExceptT $ 
 -- optionally a name mapping.
 initAccountConfig :: BaseConfig
                   -> NamedAddress
-                  -> CollidingNameSetting
                   -> Bool -- ^ True if we are in a cli environment
                   -> IO (BaseConfig, AccountConfig, Bool)
-initAccountConfig baseCfg namedAddr collidingNameSetting inCLI = do
-  res <- initAccountConfigEither baseCfg namedAddr collidingNameSetting inCLI
+initAccountConfig baseCfg namedAddr inCLI = do
+  res <- initAccountConfigEither baseCfg namedAddr inCLI
   case res of
     Left err -> logFatal [err]
     Right config -> return config
@@ -339,14 +329,6 @@ addAccountNameAndWrite baseCfg name addr verbose = do
   liftIO $ writeNameMap verbose mapFile m
   logSuccess [[i|added name mapping: '#{name}' --> '#{addr}'|]]
   return baseCfg { bcAccountNameMap = m }
-
--- |Write the provided configuration to disk in the expected formats.
-importAccountConfigEither :: BaseConfig -> [AccountConfig] -> CollidingNameSetting -> Verbose -> IO (Either String BaseConfig)
-importAccountConfigEither baseCfg accCfgs collidingNameStg verbose = runExceptT $ foldM f baseCfg accCfgs
-  where f bc ac = do
-          (bc', _, t) <- ExceptT $ initAccountConfigEither bc (acAddr ac) collidingNameStg False
-          liftIO $ when t $ writeAccountKeys bc' ac verbose
-          return bc'
 
 removeAccountConfig :: BaseConfig -> NamedAddress -> IO BaseConfig
 removeAccountConfig baseCfg@BaseConfig{..} NamedAddress{..} = do
@@ -395,7 +377,7 @@ importConfigBackup verbose baseCfg (accs, cnm, mnm) = do
     importAccountConfig :: BaseConfig -> [AccountConfig] -> IO BaseConfig
     importAccountConfig bCfg accCfgs = foldM f bCfg accCfgs
       where f bc ac = do
-              (bc', _, t) <- initAccountConfig bc (acAddr ac) PromptToProvideNoncollidingNames True
+              (bc', _, t) <- initAccountConfig bc (acAddr ac) True
               when t $ writeAccountKeys bc' ac verbose
               return bc'
 
@@ -406,10 +388,9 @@ importConfigBackup verbose baseCfg (accs, cnm, mnm) = do
     importContractNameMap bCfg importedNameMap = do
       let currentNameMap = bcContractNameMap bCfg
       let mapFile = contractNameMapFile . bcContractCfgDir $ bCfg
-      mergedNameMap <- mergeNameMapsWithPromptsToRename checkContractNameUntilNoCollision currentNameMap importedNameMap
+      mergedNameMap <- mergeNameMapsWithPromptsToRename "contract instance" validateContractOrModuleName currentNameMap importedNameMap
       unless (M.null mergedNameMap) $ liftIO $ writeNameMapAsJSON verbose mapFile mergedNameMap
       return $ bCfg {bcContractNameMap = mergedNameMap}
-      where checkContractNameUntilNoCollision = checkNameUntilNoCollision "contract instance" validateContractOrModuleName
 
     -- |Import ModuleNameMap by merging it with the existing namemap from BaseConfig.
     -- Then write it to disk in the expected format.
@@ -418,20 +399,21 @@ importConfigBackup verbose baseCfg (accs, cnm, mnm) = do
     importModuleNameMap bCfg importedNameMap = do
       let currentNameMap = bcModuleNameMap bCfg
       let mapFile = moduleNameMapFile . bcContractCfgDir $ bCfg
-      mergedNameMap <- mergeNameMapsWithPromptsToRename checkModuleNameUntilNoCollision currentNameMap importedNameMap
+      mergedNameMap <- mergeNameMapsWithPromptsToRename "module" validateContractOrModuleName currentNameMap importedNameMap
       unless (M.null mergedNameMap) $ liftIO $ writeNameMapAsJSON verbose mapFile mergedNameMap
       return $ bCfg {bcModuleNameMap = mergedNameMap}
-      where checkModuleNameUntilNoCollision = checkNameUntilNoCollision "module" validateContractOrModuleName
 
-    -- |Merge two namemaps and use the provided function to handle name conflicts.
-    mergeNameMapsWithPromptsToRename :: (NameMap v -> Text -> v -> IO Text) -> NameMap v -> NameMap v -> IO (NameMap v)
-    mergeNameMapsWithPromptsToRename checkAndPrompt currentNM newNM = go currentNM $ M.toList newNM
+    -- |Merge two namemaps and use `checkNameUntilNoCollision` to resolve name collisions.
+    mergeNameMapsWithPromptsToRename :: (Eq v, Show v) => Text -> (Text -> Either String ()) -> NameMap v -> NameMap v -> IO (NameMap v)
+    mergeNameMapsWithPromptsToRename typeOfValue validateName currentNM newNM = go currentNM $ M.toList newNM
       where
         go nm [] = return nm
         go nm ((name,val):xs) = do
           newName <- checkAndPrompt nm name val
           let nm' = M.insert newName val nm
           go nm' xs
+
+        checkAndPrompt = checkNameUntilNoCollision typeOfValue validateName
 
 -- |Check if the provided name (key) already is already used,
 -- and continually prompt the user to provide an alternative,
@@ -860,7 +842,7 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
           case nameOpt of 
             Just (name, _) -> do
               let namedAddr' = NamedAddress { naAddr = addr, naName = Just name }
-              (a, _, _) <- initAccountConfig cfg namedAddr' OverwriteCollidingNames False
+              (a, _, _) <- initAccountConfig cfg namedAddr' False
               return . Just $ a
             Nothing -> do
               logInfo [[i|No name associated with account '#{addr}'.|]]
@@ -871,7 +853,7 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
                   logFatalOnError $ validateAccountName s
                   return $ Just s
               let namedAddr' = NamedAddress { naAddr = addr, naName = name }
-              (a, _, _) <- initAccountConfig cfg namedAddr' OverwriteCollidingNames False
+              (a, _, _) <- initAccountConfig cfg namedAddr' False
               return . Just $ a
         else do
           return Nothing

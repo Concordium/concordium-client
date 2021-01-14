@@ -4,9 +4,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Api where
 
@@ -28,7 +26,6 @@ import           System.Environment
 import           System.IO.Error
 import           Lens.Micro.Platform ((^.), (^?), _Just)
 import           Data.Time.Clock.POSIX
-import qualified Data.List as L
 
 import           Concordium.Client.Commands as COM
 import           Concordium.Client.Encryption (Password(..))
@@ -77,13 +74,6 @@ data Routes r = Routes
     , setNodeState :: r :-
         "v1" :> "nodeState" :> ReqBody '[JSON] SetNodeStateRequest
                             :> Post '[JSON] SetNodeStateResponse
-
-    , importAccount :: r :-
-        "v1" :> "importAccount" :> ReqBody '[JSON] ImportAccountRequest
-                                :> Post '[JSON] ()
-
-    , getAccounts :: r :-
-        "v1" :> "getAccounts" :> Get '[JSON] GetAccountsResponse
 
     , removeBaker :: r :-
         "v1" :> "removeBaker" :> ReqBody '[JSON] RemoveBakerRequest
@@ -182,28 +172,6 @@ servantApp nodeBackend cfgDir = genericServe routesAsServer
     pure $
       SetNodeStateResponse
         { success = True }
-
-  importAccount :: ImportAccountRequest -> Handler ()
-  importAccount ImportAccountRequestMobile{..} = do
-    -- init configuration if missing
-    baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False
-    accCfgs <- ((liftIO $ decodeMobileFormattedAccountExport (Text.encodeUtf8 contents) Nothing (passwordFromText password))
-                 `embedServerErrM` err400) Just
-    void $ ((liftIO $ importAccountConfigEither baseCfg accCfgs OverwriteCollidingNames False) `embedServerErrM` err400) Just
-
-  getAccounts :: Handler GetAccountsResponse
-  getAccounts = GetAccountsResponse <$> wrapIOError go
-   where go :: IO [GetAccountsResponseItem]
-         go = do
-             -- get base config
-             baseCfg <- getBaseConfig (Just cfgDir) False
-             -- get all accounts
-             allAccs <- Prelude.map (naAddr . acAddr) <$> getAllAccountConfigs baseCfg
-             let named = HM.toList $ bcAccountNameMap baseCfg
-                 namedAddresses = Prelude.map snd named
-                 namedAsText = Prelude.map (\(a, b) -> GetAccountsResponseItem (Just a) (Text.pack $ show b)) named
-                 unnamedAsText = Prelude.map (\b -> GetAccountsResponseItem Nothing (Text.pack $ show b)) (allAccs L.\\ namedAddresses)
-             return $ namedAsText ++ unnamedAsText
 
   removeBaker :: RemoveBakerRequest -> Handler RemoveBakerResponse
   removeBaker RemoveBakerRequest{..} = do

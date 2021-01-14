@@ -139,32 +139,6 @@ $(deriveJSON defaultOptions{sumEncoding=TaggedObject{
    ''OutcomeDetails
   )
 
-data ImportAccountRequest
-  = ImportAccountRequestMobile
-    { -- | The encrypted mobile-formatted export.
-      contents :: Text
-      -- | The password to decrypt the export and to encrypt the signing keys with.
-      -- It must be UTF-8 encoded.
-    , password :: Text
-    }
-  deriving (FromJSON, ToJSON, Generic, Show)
-
-
-data ImportAccountResponse =
-  ImportAccountResponse
-  { success :: Maybe String }
-  deriving (ToJSON, Generic, Show)
-
-data GetAccountsResponse =
-  GetAccountsResponse [GetAccountsResponseItem]
-  deriving (ToJSON, Generic, Show)
-
-data GetAccountsResponseItem =
-  GetAccountsResponseItem
-  { name :: Maybe Text
-  , address :: Text }
-  deriving (ToJSON, Generic, Show)
-
 data RemoveBakerRequest =
   RemoveBakerRequest
   { sender :: Maybe Text
