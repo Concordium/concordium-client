@@ -1383,11 +1383,8 @@ processAccountCmd action baseCfgDir verbose backend =
 
     AccountList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      v <- withClientJson backend $ withBestBlockHash block getAccountList
-      let addrmap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
-      let addname :: ID.AccountAddress -> NamedAddress
-          addname addr = NamedAddress (Map.lookup addr addrmap) addr
-      runPrinter $ printAccountList (map addname v)
+      accs <- withClientJson backend $ withBestBlockHash block getAccountList
+      runPrinter $ printAccountList (bcAccountNameMap baseCfg) accs
 
     AccountUpdateKeys f txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
