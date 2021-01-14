@@ -244,13 +244,20 @@ printCred c =
                Just t -> showTimeYearMonth t
 
 -- |Print a list of accounts along with optional names.
-printAccountList :: [NamedAddress] -> Printer
-printAccountList = printNameList "Accounts" header format
+printAccountList :: AccountNameMap -> [IDTypes.AccountAddress] -> Printer
+printAccountList nameMap accs = printNameList "Accounts" header format accsWithNames
   where header = [ "Accounts:"
-                 , "                 Account Address                     Account Name"
-                 , "-------------------------------------------------------------------" ]
-        format NamedAddress{..} = [i|#{naAddr}   #{name}|]
-          where name = fromMaybe " " naName
+                 , "                 Account Address                     Account Name(s)"
+                 , "----------------------------------------------------------------------" ]
+        format :: (IDTypes.AccountAddress, Maybe [Text]) -> String
+        format (addr, mNames) = [i|#{addr}   #{names}|]
+          where names :: Text
+                names = maybe " " (Text.intercalate " " . map (\name -> [i|'#{name}'|])) mNames
+
+        accsWithNames :: [(IDTypes.AccountAddress, Maybe [Text])]
+        accsWithNames = map (\addr -> (addr, HM.lookup addr nameMapInv)) accs
+          where nameMapInv :: HM.HashMap IDTypes.AccountAddress [Text]
+                nameMapInv = HM.fromListWith (++) . map (\(k, v) -> (v, [k])) . HM.toList $ nameMap
 
 -- |Print a list of modules along with optional names.
 printModuleList :: ModuleNameMap -> [Types.ModuleRef] -> Printer
