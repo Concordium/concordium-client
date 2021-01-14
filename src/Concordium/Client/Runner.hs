@@ -198,18 +198,22 @@ processConfigCmd action baseCfgDir verbose =
       baseCfg <- getBaseConfig baseCfgDir verbose
       pwd <- askPassword "Enter password for encryption of backup (leave blank for no encryption): "
       allAccounts <- getAllAccountConfigs baseCfg
-      backup <- case Password.getPassword pwd of
-        "" -> configExport allAccounts Nothing
-        _ -> configExport allAccounts (Just pwd)
-      handleWriteFile BS.writeFile PromptBeforeOverwrite verbose fileName backup
+      let configBackup = ConfigBackup { cbAccounts = allAccounts
+                                      , cbContractNameMap = bcContractNameMap baseCfg
+                                      , cbModuleNameMap = bcModuleNameMap baseCfg
+                                      }
+      exportedConfigBackup <- case Password.getPassword pwd of
+        "" -> configExport configBackup Nothing
+        _ -> configExport configBackup (Just pwd)
+      handleWriteFile BS.writeFile PromptBeforeOverwrite verbose fileName exportedConfigBackup
 
     ConfigBackupImport fileName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       ciphertext <- handleReadFile BS.readFile fileName
-      accCfgs <- configImport ciphertext (askPassword "The backup file is password protected. Enter password: ")
-      case accCfgs of
-        Right accCfgs' -> do
-          void $ importAccountConfig baseCfg accCfgs' verbose
+      configBackup <- configImport ciphertext (askPassword "The backup file is password protected. Enter password: ")
+      case configBackup of
+        Right ConfigBackup{..} -> do
+          void $ importConfigBackup verbose baseCfg (cbAccounts, cbContractNameMap, cbModuleNameMap)
         Left err -> logFatal [[i|Failed to import Config Backup, #{err}|]]
 
     ConfigAccountCmd c -> case c of
@@ -281,30 +285,9 @@ processConfigCmd action baseCfgDir verbose =
           -- non-colliding name if the account is named and the name already
           -- exists in the name map.
           addAccountToBaseConfigWithNamePrompts baseCfg accCfg = do
-            let NamedAddress { naAddr = addr, naName = nameOpt } = acAddr accCfg
-            case nameOpt of
-              Just n -> do
-                newName <- checkUntilNoCollision addr n $ bcAccountNameMap baseCfg
-                (bcfg, _, t) <- initAccountConfig baseCfg NamedAddress{naAddr = addr, naName = Just newName} True
-                when t $ writeAccountKeys bcfg accCfg True
-                return bcfg
-              Nothing -> do
-                -- Currently, all contacts imported from mobile should have a name,
-                -- so this case should never be met, but should we be able to encounter
-                -- it in the future, it is handled as initializing an account without a
-                -- name
-                (bcfg, _, t) <- initAccountConfig baseCfg (acAddr accCfg) True
-                when t $ writeAccountKeys bcfg accCfg verbose
-                return bcfg
-          -- prompt user for a new input until a non-colliding one is given
-          checkUntilNoCollision :: ID.AccountAddress -> Text -> Map.HashMap Text ID.AccountAddress -> IO Text
-          checkUntilNoCollision newAddr key m =
-            case Map.lookup key m of
-              Just currentAddr | currentAddr /= newAddr -> do
-                logWarn [[i|Importing an account with the name '#{key}', but this name is already used for account '#{currentAddr}'|]]
-                userInput <- promptAccountName [i|specify a new name to map to this account|]
-                checkUntilNoCollision newAddr userInput m
-              _ -> return key
+            (bcfg, _, t) <- initAccountConfig baseCfg (acAddr accCfg) True
+            when t $ writeAccountKeys bcfg accCfg verbose
+            return bcfg
       ConfigAccountAddKeys addr keysFile -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
