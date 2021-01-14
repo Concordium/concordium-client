@@ -161,36 +161,20 @@ data ConfigBackup =
   } deriving (Eq, Show)
 
 instance AE.FromJSON ConfigBackup where
-  parseJSON = AE.withObject "configBackup" $ \o -> do
-    cbAccounts <- o .: "accounts"
-    cbContractNameMap <- o .: "contractNameMap"
-    cbModuleNameMap <- o .: "moduleNameMap"
+  parseJSON v = do
+    vObj <- AE.parseJSON v
+    unless (vVersion vObj == configBackupVersion) $
+      fail [i|Unsupported account config version : #{vVersion vObj}|]
+    let (cbAccounts, cbContractNameMap, cbModuleNameMap) = vValue vObj
     return ConfigBackup{..}
 
 instance AE.ToJSON ConfigBackup where
-   toJSON ConfigBackup{..} = AE.object
-     [ "accounts" .= cbAccounts
-     , "contractNameMap" .= cbContractNameMap
-     , "moduleNameMap" .= cbModuleNameMap
-     ]
-
--- | Versioned wrapper for ConfigBackup.
-newtype VersionedConfigBackup = VersionedConfigBackup (Versioned ConfigBackup) deriving (Eq, Show)
+   toJSON ConfigBackup{..} = AE.toJSON $ Versioned configBackupVersion (cbAccounts, cbContractNameMap, cbModuleNameMap)
 
 -- | Currently supported version of the config backup.
 -- Imports from older versions might be possible, but exports are going to use only this version.
 configBackupVersion :: Version
 configBackupVersion = 1
-
-instance AE.FromJSON VersionedConfigBackup where
-  parseJSON v = do
-    vObj <- AE.parseJSON v
-    unless (vVersion vObj == configBackupVersion) $
-      fail [i|Unsupported config backup version : #{vVersion vObj}|]
-    return . VersionedConfigBackup $ vObj
-
-instance AE.ToJSON VersionedConfigBackup where
-  toJSON (VersionedConfigBackup vcb) = AE.toJSON vcb
 
 -- | Encode and encrypt the config Json, for writing to a file, optionally protected under a password.
 -- The output artifact is an object with two fields, "type" and "contents", with "type" being either unencrypted or encrypted
@@ -205,8 +189,7 @@ configExport cb pwd = do
         return . LazyBS.toStrict . AE.encode $ AE.object ["type" .= AE.String "encrypted", "contents" .= contents]
       Nothing -> do
         return . LazyBS.toStrict . AE.encode $ AE.object ["type" .= AE.String "unencrypted", "contents" .= vcb]
- where vcb = VersionedConfigBackup $ Versioned configBackupVersion cb
-
+ where vcb = Versioned configBackupVersion cb
 
 -- |Decrypt and decode an exported config, optionally protected under a password.
 configImport
@@ -219,10 +202,10 @@ configImport json pwdAction = runExceptT $ do
     Left err -> throwError [i|Failed reading the input file: #{err}|]
     Right (Left encrypted) -> do
       pwd <- liftIO pwdAction
-      VersionedConfigBackup (Versioned _ cb) <- decryptJSON encrypted pwd
+      (Versioned _ cb) <- decryptJSON encrypted pwd
         `embedErr` (("Failed to decrypt Config Backup using the supplied password: " ++) . displayException)
       return cb
-    Right (Right (VersionedConfigBackup (Versioned _ cb))) -> return cb
+    Right (Right (Versioned _ cb)) -> return cb
   where
     importParser = AE.withObject "ConfigBackup" $ \v -> do
       ty <- v .: "type"
