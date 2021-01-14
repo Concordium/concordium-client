@@ -31,7 +31,8 @@ import Data.List
 import Data.Maybe
 import qualified Data.Map.Strict as M
 import Data.String.Interpolate (i)
-import Data.Text (Text, pack, unpack, split)
+import Data.Text (Text)
+import qualified Data.Text as Text
 import Data.Time
 import Lens.Micro.Platform
 import Text.Printf
@@ -92,7 +93,7 @@ printBaseConfig cfg = do
 printAccountConfig :: AccountConfig -> Printer
 printAccountConfig cfg = do
   tell [ printf "Account configuration:"
-       , printf "- Name:    %s" (fromMaybe (pack showNone) $ naName $ acAddr cfg)
+       , printf "- Name:    %s" (fromMaybe (Text.pack showNone) $ naName $ acAddr cfg)
        , printf "- Address: %s" (show $ naAddr $ acAddr cfg) ]
   printKeys $ acKeys cfg
   where printKeys m =
@@ -140,12 +141,12 @@ showRevealedAttributes as =
   where
     showTag t = case M.lookup t IDTypes.invMapping of
                   Nothing -> printf "<%s>" (show t)
-                  Just k -> unpack k
+                  Just k -> Text.unpack k
     showAttr (t, IDTypes.AttributeValue v) = printf "%s=%s" (showTag t) (show v)
 
 printAccountInfo :: (Types.Epoch -> UTCTime) -> NamedAddress -> AccountInfoResult -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
 printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
-  tell ([ printf "Local name:            %s" (showMaybe unpack $ naName addr)
+  tell ([ printf "Local name:            %s" (showMaybe Text.unpack $ naName addr)
        , printf "Address:               %s" (show $ naAddr addr)
        , printf "Balance:               %s" (showGtu $ airAmount a)
        ] ++
@@ -317,12 +318,12 @@ printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
             tryAppendSignature :: M.Map Text CS.SchemaType -> Text -> Text
             tryAppendSignature rcvSigs rcvName = case M.lookup rcvName rcvSigs of
               Nothing -> rcvName
-              Just schemaType -> rcvName <> "\n" <> pack (indentBy 4 $ showPrettyJSON schemaType)
+              Just schemaType -> rcvName <> "\n" <> Text.pack (indentBy 4 $ showPrettyJSON schemaType)
 
     -- |Get a method name from a Receive name, i.e. extracting the text and removing the "<contractName>." prefix.
     -- If the receiveName does not have the prefix, it simply returns the extracted text.
     methodNameFromReceiveName :: Wasm.ReceiveName -> Text
-    methodNameFromReceiveName rcvName = case split (=='.') receiveNameText of
+    methodNameFromReceiveName rcvName = case Text.split (=='.') receiveNameText of
       [_contrName, methodName] -> methodName
       _ -> receiveNameText
       where receiveNameText = Wasm.receiveName rcvName
