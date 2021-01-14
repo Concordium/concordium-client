@@ -273,7 +273,9 @@ initAccountConfigEither baseCfg namedAddr inCLI = runExceptT $ do
   baseCfg' <- if not written then return baseCfg else case name of
     Nothing -> return baseCfg
     Just n -> do
-      let m = M.insert n addr $ bcAccountNameMap baseCfg
+      let accountNameMap = bcAccountNameMap baseCfg
+      newName <- liftIO $ checkNameUntilNoCollision "account" validateAccountName accountNameMap n addr
+      let m = M.insert newName addr accountNameMap
       liftIO $ writeNameMap True mapFile m
       logSuccess [[i|added name mapping: '#{n}' --> '#{addr}'|]]
       return baseCfg { bcAccountNameMap = m }
@@ -328,22 +330,6 @@ addAccountNameAndWrite baseCfg name addr verbose = do
   logSuccess [[i|added name mapping: '#{name}' --> '#{addr}'|]]
   return baseCfg { bcAccountNameMap = m }
 
--- |Write the provided configuration to disk in the expected formats.
-importAccountConfigEither :: BaseConfig -> [AccountConfig] -> Verbose -> IO (Either String BaseConfig)
-importAccountConfigEither baseCfg accCfgs verbose = runExceptT $ foldM f baseCfg accCfgs
-  where f bc ac = do
-          (bc', _, t) <- ExceptT $ initAccountConfigEither bc (acAddr ac) False
-          liftIO $ when t $ writeAccountKeys bc' ac verbose
-          return bc'
-
--- |Write the provided configuration to disk in the expected formats.
-importAccountConfig :: BaseConfig -> [AccountConfig] -> Verbose -> IO BaseConfig
-importAccountConfig baseCfg accCfgs verbose = foldM f baseCfg accCfgs
-  where f bc ac = do
-          (bc', _, t) <- initAccountConfig bc (acAddr ac) True
-          when t $ writeAccountKeys bc' ac verbose
-          return bc'
-
 removeAccountConfig :: BaseConfig -> NamedAddress -> IO BaseConfig
 removeAccountConfig baseCfg@BaseConfig{..} NamedAddress{..} = do
   -- Remove the keys directory
@@ -365,6 +351,88 @@ removeAccountConfig baseCfg@BaseConfig{..} NamedAddress{..} = do
       Just name ->
         -- Remove the alias, if it exists
         (M.delete name bcAccountNameMap, True)
+
+-- |Import the contents of a `ConfigBackup` and log information about each step in the process.
+-- Naming conflicts are handled by prompting the user for new names.
+importConfigBackup :: Verbose -> BaseConfig -> ([AccountConfig], ContractNameMap, ModuleNameMap) -> IO BaseConfig
+importConfigBackup verbose baseCfg (accs, cnm, mnm) = do
+  logInfo ["\nImporting accounts..."]
+  baseCfg' <- importAccountConfig baseCfg accs
+  logSuccess ["accounts successfully imported"]
+
+  logInfo ["\nImporting contract instance names..."]
+  baseCfg'' <- importContractNameMap baseCfg' cnm
+  logSuccess ["contract instance names successfully imported"]
+
+  logInfo ["\nImporting module names..."]
+  baseCfg''' <- importModuleNameMap baseCfg'' mnm
+  logSuccess ["module names successfully imported"]
+
+  return baseCfg'''
+
+  where
+    -- |Write the provided configuration to disk in the expected formats.
+    -- If any account names collide with existing ones,
+    -- the user is prompted to provide a new, non-colliding name.
+    importAccountConfig :: BaseConfig -> [AccountConfig] -> IO BaseConfig
+    importAccountConfig bCfg accCfgs = foldM f bCfg accCfgs
+      where f bc ac = do
+              (bc', _, t) <- initAccountConfig bc (acAddr ac) True
+              when t $ writeAccountKeys bc' ac verbose
+              return bc'
+
+    -- |Import ContractNameMap by merging it with the existing namemap from BaseConfig.
+    -- Then write it to disk in the expected format.
+    -- Name conflicts are handled by prompting the user for a new name.
+    importContractNameMap :: BaseConfig -> ContractNameMap -> IO BaseConfig
+    importContractNameMap bCfg importedNameMap = do
+      let currentNameMap = bcContractNameMap bCfg
+      let mapFile = contractNameMapFile . bcContractCfgDir $ bCfg
+      mergedNameMap <- mergeNameMapsWithPromptsToRename "contract instance" validateContractOrModuleName currentNameMap importedNameMap
+      unless (M.null mergedNameMap) $ liftIO $ writeNameMapAsJSON verbose mapFile mergedNameMap
+      return $ bCfg {bcContractNameMap = mergedNameMap}
+
+    -- |Import ModuleNameMap by merging it with the existing namemap from BaseConfig.
+    -- Then write it to disk in the expected format.
+    -- Name conflicts are handled by prompting the user for a new name.
+    importModuleNameMap :: BaseConfig -> ModuleNameMap -> IO BaseConfig
+    importModuleNameMap bCfg importedNameMap = do
+      let currentNameMap = bcModuleNameMap bCfg
+      let mapFile = moduleNameMapFile . bcContractCfgDir $ bCfg
+      mergedNameMap <- mergeNameMapsWithPromptsToRename "module" validateContractOrModuleName currentNameMap importedNameMap
+      unless (M.null mergedNameMap) $ liftIO $ writeNameMapAsJSON verbose mapFile mergedNameMap
+      return $ bCfg {bcModuleNameMap = mergedNameMap}
+
+    -- |Merge two namemaps and use `checkNameUntilNoCollision` to resolve name collisions.
+    mergeNameMapsWithPromptsToRename :: (Eq v, Show v) => Text -> (Text -> Either String ()) -> NameMap v -> NameMap v -> IO (NameMap v)
+    mergeNameMapsWithPromptsToRename typeOfValue validateName currentNM newNM = go currentNM $ M.toList newNM
+      where
+        go nm [] = return nm
+        go nm ((name,val):xs) = do
+          newName <- checkAndPrompt nm name val
+          let nm' = M.insert newName val nm
+          go nm' xs
+
+        checkAndPrompt = checkNameUntilNoCollision typeOfValue validateName
+
+-- |Check if the provided name (key) already is already used,
+-- and continually prompt the user to provide an alternative,
+-- until a valid and non-colliding one is entered.
+-- Returns a valid and non-colliding name.
+checkNameUntilNoCollision :: (Eq v, Show v)
+                      => Text -- ^ Name of the value type, fx "account" or "module". Used in the prompt.
+                      -> (Text -> Either String ()) -- ^ A validation function for the name.
+                      -> NameMap v -- ^ The namemap to check collision against.
+                      -> Text -- ^ The name provided.
+                      -> v -- ^ The value.
+                      -> IO Text -- ^ A valid and non-colliding name.
+checkNameUntilNoCollision typeOfValue validateName nm key newVal =
+  case M.lookup key nm of
+    Just existingVal | existingVal /= newVal -> do
+      logWarn [[i|Importing #{typeOfValue} name '#{key}', but this name is already used for #{typeOfValue} '#{show existingVal}'|]]
+      userInput <- promptNameUntilValid validateName [i|specify a new name to map to this #{typeOfValue}|]
+      checkNameUntilNoCollision typeOfValue validateName nm userInput newVal
+    _ -> return key
 
 -- |Add a contract name and write it to 'contractNames.map', or return a list of error messages.
 -- Returns a non-empty list of error messages if the name could not be added.
@@ -443,7 +511,7 @@ writeNameMap verbose file = handledWriteFile file . BSL.fromStrict . encodeUtf8 
   where f (name, val) = printf "%s = %s" name (show val)
         handledWriteFile = handleWriteFile BSL.writeFile AllowOverwrite verbose
 
--- Used in `handleWriteFile` to determine how already exisiting files should be handled.
+-- |Used in `handleWriteFile` to determine how already exisiting files should be handled.
 data OverwriteSetting =
     PromptBeforeOverwrite -- ^ The user should be prompted to confirm before overwriting.
   | AllowOverwrite        -- ^ Simply overwrite the file.
@@ -611,15 +679,15 @@ isValidContractOrModuleName n = not (T.null n) && not (isSpace $ T.head n) && is
   where supportedChar c = isAlphaNum c || c `elem` supportedSpecialChars
         supportedSpecialChars = "-_,.!? " :: String
 
--- |Prompt the user to input an account name validating the input
-promptAccountName :: MonadIO m => String -> m Text
-promptAccountName prompt = liftIO $ do
+-- |Prompt the user to input a name repeatedly until it passes validation.
+promptNameUntilValid :: MonadIO m => (Text -> Either String ()) -> String -> m Text
+promptNameUntilValid validateName prompt = liftIO $ do
   putStr $ prettyMsg ": " prompt
   input <- T.getLine >>= ensureValidName
   return input
   where
     ensureValidName name =
-      case validateAccountName name of
+      case validateName name of
         Left err -> do
           logError [err]
           putStr "Input valid name: "
