@@ -17,6 +17,7 @@ import Data.Aeson ((.:),(.:?),(.!=),(.=))
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LazyBS
 import qualified Data.HashMap.Strict as Map
+import Data.Maybe (maybeToList)
 import Data.Text as T
 import Data.String.Interpolate ( i )
 import qualified Data.Text.IO as T
@@ -112,7 +113,7 @@ accountCfgFromWalletExportAccount pwd WalletExportAccount { weaKeys = AccountSig
   acKeys <- liftIO $ encryptAccountKeyMap pwd asdKeys
   acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd weaEncryptionKey)
   return $ AccountConfig
-    { acAddr = NamedAddress { naName = Just name, naAddr = asdAddress }
+    { acAddr = NamedAddress { naNames = [name], naAddr = asdAddress }
     , acThreshold = asdThreshold
     , ..
     }
@@ -146,7 +147,7 @@ decodeGenesisFormattedAccountExport payload name pwd = runExceptT $ do
           return $ do
             acKeys <- encryptAccountKeyMap pwd accKeyMap
             acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd accEncryptionKey)
-            return AccountConfig { acAddr = NamedAddress{naName = name, naAddr = addr}
+            return AccountConfig { acAddr = NamedAddress{naNames = maybeToList name, naAddr = addr}
                                  , .. }
 
 

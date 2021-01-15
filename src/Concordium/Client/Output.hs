@@ -92,9 +92,9 @@ printBaseConfig cfg = do
 
 printAccountConfig :: AccountConfig -> Printer
 printAccountConfig cfg = do
-  tell [ printf "Account configuration:"
-       , printf "- Name:    %s" (fromMaybe (Text.pack showNone) $ naName $ acAddr cfg)
-       , printf "- Address: %s" (show $ naAddr $ acAddr cfg) ]
+  tell [ [i|Account configuration:|]
+       , [i|- Names:   #{nameListOrNone}|]
+       , [i|- Address: #{naAddr $ acAddr cfg}|] ]
   printKeys $ acKeys cfg
   where printKeys m =
           if null m then
@@ -104,6 +104,10 @@ printAccountConfig cfg = do
             printMap showEntry $ toSortedList m
         showEntry (n, kp) =
           printf "    %s: %s" (show n) (showAccountKeyPair kp)
+
+        nameListOrNone = case naNames $ acAddr cfg of
+          [] -> showNone
+          names -> showNameList names
 
 printAccountConfigList :: [AccountConfig] -> Printer
 printAccountConfigList cfgs =
@@ -146,20 +150,20 @@ showRevealedAttributes as =
 
 printAccountInfo :: (Types.Epoch -> UTCTime) -> NamedAddress -> AccountInfoResult -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
 printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
-  tell ([ printf "Local name:            %s" (showMaybe Text.unpack $ naName addr)
-       , printf "Address:               %s" (show $ naAddr addr)
-       , printf "Balance:               %s" (showGtu $ airAmount a)
-       ] ++
+  tell ([ [i|Local names:            #{showNameList $ naNames addr}|]
+        , [i|Address:                #{naAddr addr}|]
+        , [i|Balance:                #{showGtu $ airAmount a}|]
+        ] ++
        case totalRelease $ airReleaseSchedule a of
          0 -> []
-         tot -> (printf "Release schedule:      total %s" (showGtu tot)) :
+         tot -> (printf "Release schedule:       total %s" (showGtu tot)) :
                (map (\ReleaseScheduleItem{..} -> printf "   %s:               %s scheduled by the transactions: %s."
                                                 (showTimeFormatted (Types.timestampToUTCTime rsiTimestamp))
                                                 (showGtu rsiAmount)
                                                 (intercalate ", " $ map show rsiTransactions))
                  (releaseSchedule $ airReleaseSchedule a))
-       ++ [printf "Nonce:                 %s" (show $ airNonce a)
-          , printf "Encryption public key: %s" (show $ airEncryptionKey a)
+       ++ [ printf "Nonce:                  %s" (show $ airNonce a)
+          , printf "Encryption public key:  %s" (show $ airEncryptionKey a)
           , "" ])
 
   if showEncrypted then
@@ -245,42 +249,34 @@ printCred c =
 
 -- |Print a list of accounts along with optional names.
 printAccountList :: AccountNameMap -> [IDTypes.AccountAddress] -> Printer
-printAccountList nameMap accs = printNameList "Accounts" header format accsWithNames
-  where header = [ "Accounts:"
-                 , "                 Account Address                     Account Name(s)"
-                 , "----------------------------------------------------------------------" ]
-        format :: (IDTypes.AccountAddress, Maybe [Text]) -> String
-        format (addr, mNames) = [i|#{addr}   #{names}|]
-          where names :: Text
-                names = maybe " " (Text.intercalate " " . map (\name -> [i|'#{name}'|])) mNames
-
-        accsWithNames :: [(IDTypes.AccountAddress, Maybe [Text])]
-        accsWithNames = map (\addr -> (addr, sort <$> HM.lookup addr nameMapInv)) accs
-          where nameMapInv :: HM.HashMap IDTypes.AccountAddress [Text]
-                nameMapInv = HM.fromListWith (++) . map (\(k, v) -> (v, [k])) . HM.toList $ nameMap
+printAccountList nameMap accs = printNameList "Accounts" header format namedAccs
+  where namedAccs = map (\addr -> NamedAddress {naAddr = addr, naNames = concat $ HM.lookup addr nameMapInv}) accs
+        nameMapInv = invertHashMapAndCombine nameMap
+        header = [ "Accounts:"
+                 , "                 Account Address                     Account Names"
+                 , "--------------------------------------------------------------------" ]
+        format NamedAddress{..} = [i|#{naAddr}   #{showNameList naNames}|]
 
 -- |Print a list of modules along with optional names.
 printModuleList :: ModuleNameMap -> [Types.ModuleRef] -> Printer
 printModuleList nameMap refs = printNameList "Modules" header format namedModRefs
-  where namedModRefs = map (\ref -> NamedModuleRef {nmrRef = ref, nmrName = HM.lookup ref nameMapInv}) refs
-        nameMapInv = invertHashMap nameMap
+  where namedModRefs = map (\ref -> NamedModuleRef {nmrRef = ref, nmrNames = concat $ HM.lookup ref nameMapInv}) refs
+        nameMapInv = invertHashMapAndCombine nameMap
         header = [ "Modules:"
-                 , "                        Module Reference                           Module Name"
-                 , "--------------------------------------------------------------------------------" ]
-        format NamedModuleRef{..} = [i|#{nmrRef}   #{name}|]
-          where name = fromMaybe " " nmrName
+                 , "                        Module Reference                           Module Names"
+                 , "---------------------------------------------------------------------------------" ]
+        format NamedModuleRef{..} = [i|#{nmrRef}   #{showNameList nmrNames}|]
 
 -- |Print a list of contracts along with optional names.
 printContractList :: ContractNameMap -> [Types.ContractAddress] -> Printer
 printContractList nameMap addrs = printNameList "Contracts" header format namedContrAddrs
-  where namedContrAddrs = map (\addr -> NamedContractAddress {ncaAddr = addr, ncaName = HM.lookup addr nameMapInv}) addrs
-        nameMapInv = invertHashMap nameMap
+  where namedContrAddrs = map (\addr -> NamedContractAddress {ncaAddr = addr, ncaNames = concat $ HM.lookup addr nameMapInv}) addrs
+        nameMapInv = invertHashMapAndCombine nameMap
         header = [ "Contracts:"
-                 , "    Contract Address       Contract Name"
-                 , "------------------------------------------" ]
-        format NamedContractAddress{..} = [i|#{addr}   #{name}|]
+                 , "    Contract Address       Contract Names"
+                 , "-------------------------------------------" ]
+        format NamedContractAddress{..} = [i|#{addr}   #{showNameList ncaNames}|]
           where addr = showCompactPrettyJSON ncaAddr
-                name = fromMaybe " " ncaName
 
 -- |Print a header and a list of named items in the provided format.
 printNameList :: String -> [String] -> (a -> String) -> [a] -> Printer
@@ -299,7 +295,7 @@ printContractInfo :: CI.ContractInfo -> NamedAddress -> NamedModuleRef -> Printe
 printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
   tell [ [i|Contract:        #{contractName}|]
        , [i|Owner:           #{owner}|]
-       , [i|ModuleReference: #{namedModRef}|]
+       , [i|ModuleReference: #{showNamedModuleRef namedModRef}|]
        , [i|Balance:         #{Types.amountToString ciAmount} GTU|]]
   tell state
   tell [ [i|Methods:|]]
@@ -339,7 +335,7 @@ printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
 -- Signatures for the contracts' init functions are also printed, if available in the schema.
 printModuleInspectInfo :: NamedModuleRef -> CS.ModuleSchema -> Printer
 printModuleInspectInfo namedModRef CS.ModuleSchema{..} = do
-  tell [ [i|Module:    #{namedModRef}|]
+  tell [ [i|Module:    #{showNamedModuleRef namedModRef}|]
        , [i|Contracts:|]]
   -- TODO: Should also print contracts without a schema. They can be found by parsing the Wasm module.
   tell contracts
@@ -354,9 +350,9 @@ printModuleInspectInfo namedModRef CS.ModuleSchema{..} = do
 indentBy :: Int -> String -> String
 indentBy spaces = intercalate "\n" . map (replicate spaces ' ' <>) . lines
 
--- |Invert a hash map. Note that if any `v` is duplicated, then the _last_ one is used.
-invertHashMap :: (Eq v, Hashable v) => HM.HashMap k v -> HM.HashMap v k
-invertHashMap m = HM.fromList [(v, k) | (k, v) <- HM.toList m]
+-- |Invert a hashmap and combine the new values in a list.
+invertHashMapAndCombine :: (Eq v, Hashable v) => HM.HashMap k v -> HM.HashMap v [k]
+invertHashMapAndCombine = HM.fromListWith (++) . map (\(k, v) -> (v, [k])) . HM.toList
 
 showAccountKeyPair :: EncryptedAccountKeyPair -> String
 -- TODO Make it respect indenting if this will be the final output format.
@@ -749,13 +745,27 @@ showNrg = printf "%s NRG" . show
 
 -- UTIL
 
--- |Produce a string fragment of the address and, if available, name of the account.
+-- |Produce a string fragment of the account address and, if available, a list of names for it.
 showNamedAddress :: NamedAddress -> String
-showNamedAddress NamedAddress { naName = name, naAddr = a } =
-  let addr = printf "'%s'" (show a)
-  in case name of
-    Nothing -> addr
-    Just n -> printf "%s (%s)" addr n
+showNamedAddress NamedAddress {..} =
+  case naNames of
+    [] -> [i|'#{naAddr}'|]
+    names -> [i|'#{naAddr}' (#{showNameList names})|]
+
+-- |Produce a string fragment of the contract address and, if available, a list of names for it.
+showNamedContractAddress :: NamedContractAddress -> String
+showNamedContractAddress NamedContractAddress{..} =
+  case ncaNames of
+    [] -> ncaAddr'
+    names -> [i|#{ncaAddr'} (#{showNameList names})|]
+    where ncaAddr' = showCompactPrettyJSON ncaAddr
+
+-- |Produce a string fragment of the moduleRef and, if available, a list of names for it.
+showNamedModuleRef :: NamedModuleRef -> String
+showNamedModuleRef NamedModuleRef {..} =
+  case nmrNames of
+    [] -> [i|'#{nmrRef}'|]
+    names -> [i|'#{nmrRef}' (#{showNameList names})|]
 
 -- |Standardized method of displaying optional values.
 showMaybe :: (a -> String) -> Maybe a -> String

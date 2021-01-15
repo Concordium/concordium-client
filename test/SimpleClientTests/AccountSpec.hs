@@ -29,7 +29,7 @@ import System.Random
 import Test.Hspec
 
 exampleNamedAddress :: NamedAddress
-exampleNamedAddress = NamedAddress (Just "example") exampleAddress1
+exampleNamedAddress = NamedAddress ["example"] exampleAddress1
 
 exampleAddress1 :: IDTypes.AccountAddress
 exampleAddress1 = addr
@@ -144,8 +144,8 @@ printAccountListSpec = describe "printAccountList" $ do
   specify "empty" $ p [] `shouldBe` ["Accounts: none"]
   specify "multiple" $ p [exampleAddress1, exampleAddress2] `shouldBe`
     ["Accounts:"
-      , "                 Account Address                     Account Name(s)"
-      , "----------------------------------------------------------------------"
+      , "                 Account Address                     Account Names"
+      , "--------------------------------------------------------------------"
       , "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6   'example' 'exampleExtraName'"
       , "4P6vppapjvwAxGf5o1dXUhgwpW3Tvpc6vHj75MJHD6Z3RUmMpJ   'example2'"
       ]
@@ -157,21 +157,21 @@ exampleTime _ = unsafePerformIO getCurrentTime
 printAccountInfoSpec :: Spec
 printAccountInfoSpec = describe "printAccountInfo" $ do
   specify "without baker nor credentials" $ p exampleNamedAddress (exampleAccountInfoResult Nothing []) `shouldBe`
-    [ "Local name:            example"
-    , "Address:               2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-    , "Balance:               0.000001 GTU"
-    , "Nonce:                 2"
-    , "Encryption public key: a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
+    [ "Local names:            'example'"
+    , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+    , "Balance:                0.000001 GTU"
+    , "Nonce:                  2"
+    , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
     , ""
     , "Baker: none"
     , ""
     , "Credentials: none" ]
   specify "with baker" $ p exampleNamedAddress (exampleAccountInfoResult (Just NoChange) []) `shouldBe`
-    [ "Local name:            example"
-    , "Address:               2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-    , "Balance:               0.000001 GTU"
-    , "Nonce:                 2"
-    , "Encryption public key: a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
+    [ "Local names:            'example'"
+    , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+    , "Balance:                0.000001 GTU"
+    , "Nonce:                  2"
+    , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
     , ""
     , "Baker: #1"
     ," - Staked amount: 0.000100 GTU"
@@ -184,25 +184,25 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
                                                                                                                     ReleaseScheduleItem 1604417342000 33 [dummyTransactionHash1],
                                                                                                                     ReleaseScheduleItem 1604417382000 34 [dummyTransactionHash2]]
                                                                                                  } }) `shouldBe`
-    [ "Local name:            example"
-    , "Address:               2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-    , "Balance:               0.000001 GTU"
-    , "Release schedule:      total 0.000100 GTU"
+    [ "Local names:            'example'"
+    , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+    , "Balance:                0.000001 GTU"
+    , "Release schedule:       total 0.000100 GTU"
     , "   Tue,  3 Nov 2020 15:28:22 UTC:               0.000033 GTU scheduled by the transactions: f26a45adbb7d5cbefd9430d1eac665bd225fb3d8e04efb288d99a0347f0b8868, b041315fe35a8bdf836647037c24c8e87402547c82aea568c66ee18aa3091326."
     , "   Tue,  3 Nov 2020 15:29:02 UTC:               0.000033 GTU scheduled by the transactions: f26a45adbb7d5cbefd9430d1eac665bd225fb3d8e04efb288d99a0347f0b8868."
     , "   Tue,  3 Nov 2020 15:29:42 UTC:               0.000034 GTU scheduled by the transactions: b041315fe35a8bdf836647037c24c8e87402547c82aea568c66ee18aa3091326."
-    , "Nonce:                 2"
-    , "Encryption public key: a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
+    , "Nonce:                  2"
+    , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
     , ""
     , "Baker: none"
     , ""
     , "Credentials: none" ]
   specify "with one credential" $ p exampleNamedAddress (exampleAccountInfoResult Nothing [exampleCredentials examplePolicyWithoutItems]) `shouldBe`
-    [ "Local name:            example"
-    , "Address:               2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-    , "Balance:               0.000001 GTU"
-    , "Nonce:                 2"
-    , "Encryption public key: a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
+    [ "Local names:            'example'"
+    , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+    , "Balance:                0.000001 GTU"
+    , "Nonce:                  2"
+    , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
     , ""
     , "Baker: none"
     , ""
@@ -213,11 +213,11 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     , "  - Revealed attributes: none" ]
   specify "with two credentials" $ p exampleNamedAddress (exampleAccountInfoResult Nothing [ exampleCredentials examplePolicyWithoutItems
                                                                                        , exampleCredentials examplePolicyWithTwoItems ]) `shouldBe`
-    [ "Local name:            example"
-    , "Address:               2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-    , "Balance:               0.000001 GTU"
-    , "Nonce:                 2"
-    , "Encryption public key: a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
+    [ "Local names:            'example'"
+    , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+    , "Balance:                0.000001 GTU"
+    , "Nonce:                  2"
+    , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
     , ""
     , "Baker: none"
     , ""
@@ -232,11 +232,11 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     , "  - Revealed attributes: lastName=\"Value-1\", dob=\"Value-2\"" ]
   xspecify "with one credential - verbose" $
     (execWriter $ printAccountInfo exampleTime exampleNamedAddress (exampleAccountInfoResult Nothing [exampleCredentials examplePolicyWithoutItems]) True False Nothing) `shouldBe`
-      [ "Local name:            example"
-      , "Address:               2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-      , "Balance:               0.000001 GTU"
-      , "Nonce:                 2"
-      , "Encryption public key: a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
+      [ "Local names:            'example'"
+      , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+      , "Balance:                0.000001 GTU"
+      , "Nonce:                  2"
+      , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
       , ""
       , "Baker: none"
       , ""
@@ -261,11 +261,11 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
         \    \"v\": 0\n\
         \}" ]
   specify "show encrypted balance" $ penc exampleNamedAddress (exampleAccountInfoResult Nothing [exampleCredentials examplePolicyWithoutItems]) `shouldBe`
-    [ "Local name:            example"
-    , "Address:               2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-    , "Balance:               0.000001 GTU"
-    , "Nonce:                 2"
-    , "Encryption public key: a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
+    [ "Local names:            'example'"
+    , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+    , "Balance:                0.000001 GTU"
+    , "Nonce:                  2"
+    , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
     , ""
     , "Encrypted balance:"
     , "  Incoming amounts:"
@@ -282,11 +282,11 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     , "  - Revealed attributes: none" ]
   xspecify "show encrypted balance - verbose" $
     (execWriter $ printAccountInfo exampleTime exampleNamedAddress (exampleAccountInfoResult Nothing [exampleCredentials examplePolicyWithoutItems]) True True Nothing) `shouldBe`
-      [ "Local name:            example"
-      , "Address:               2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-      , "Balance:               0.000001 GTU"
-      , "Nonce:                 2"
-      , "Encryption public key: a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
+      [ "Local names:            'example'"
+      , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+      , "Balance:                0.000001 GTU"
+      , "Nonce:                  2"
+      , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
       , ""
       , "Encrypted balance:"
       , "  Incoming amounts:"
