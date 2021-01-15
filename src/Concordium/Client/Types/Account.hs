@@ -29,15 +29,15 @@ import Data.ByteString (ByteString)
 
 -- * Accounts
 
-data NamedAddress = NamedAddress { naName :: Maybe Text, naAddr :: ID.AccountAddress }
+data NamedAddress = NamedAddress { naNames :: [Text], naAddr :: ID.AccountAddress }
   deriving (Show, Eq)
 
 instance AE.ToJSON NamedAddress where
-  toJSON (NamedAddress naName naAddr) = AE.object ["name" .= naName, "address" .= naAddr]
+  toJSON (NamedAddress naNames naAddr) = AE.object ["names" .= naNames, "address" .= naAddr]
 
 instance AE.FromJSON NamedAddress where
   parseJSON = AE.withObject "NamedAddress" $ \v -> do
-    naName <- v .: "name"
+    naNames <- v .: "names"
     naAddr <- v .: "address"
     return NamedAddress{..}
 

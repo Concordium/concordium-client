@@ -230,10 +230,10 @@ initAccountConfigEither :: BaseConfig
                         -> Bool -- ^ True if we are in a cli environment
                         -> IO (Either String (BaseConfig, AccountConfig, Bool))
 initAccountConfigEither baseCfg namedAddr inCLI = runExceptT $ do
-  let NamedAddress { naAddr = addr, naName = name } = namedAddr
-  case name of
-    Nothing -> logInfo [printf "adding account %s without a name" (show addr)]
-    Just n -> logInfo [printf "adding account %s with name '%s'" (show addr) n]
+  let NamedAddress { naAddr = addr, naNames = names } = namedAddr
+  case names of
+    [] -> logInfo [[i|adding account #{addr} without a name|]]
+    names' -> logInfo [[i|adding account #{addr} with name(s) #{showNameList names'}|]]
 
   -- Check if config has been initialized.
   let accCfgDir = bcAccountCfgDir baseCfg
@@ -270,15 +270,16 @@ initAccountConfigEither baseCfg namedAddr inCLI = runExceptT $ do
       return True
 
   -- Add name mapping.
-  baseCfg' <- if not written then return baseCfg else case name of
-    Nothing -> return baseCfg
-    Just n -> do
+  baseCfg' <- if not written then return baseCfg else case names of
+    [] -> return baseCfg
+    names' -> do
       let accountNameMap = bcAccountNameMap baseCfg
-      newName <- liftIO $ checkNameUntilNoCollision "account" validateAccountName accountNameMap n addr
-      let m = M.insert newName addr accountNameMap
-      liftIO $ writeNameMap True mapFile m
-      logSuccess [[i|added name mapping: '#{n}' --> '#{addr}'|]]
-      return baseCfg { bcAccountNameMap = m }
+      (updatedNameMap, addedNames) <- foldM (\(nameMap, newNames) name -> do
+        newName <- liftIO $ checkNameUntilNoCollision "account" validateAccountName nameMap name addr
+        return (M.insert newName addr nameMap, newNames ++ [newName])) (accountNameMap, []) names'
+      liftIO $ writeNameMap True mapFile updatedNameMap
+      mapM_ (\n -> logSuccess [[i|added name mapping: '#{n}' --> '#{addr}'|]]) addedNames
+      return baseCfg { bcAccountNameMap = updatedNameMap }
 
   return (baseCfg', AccountConfig
                     { acAddr = namedAddr
@@ -345,12 +346,12 @@ removeAccountConfig baseCfg@BaseConfig{..} NamedAddress{..} = do
 
   return baseCfg{bcAccountNameMap = accountNameMap'}
   where
-    (accountNameMap', nameWasRemoved) = case naName of
-      Nothing ->
+    (accountNameMap', nameWasRemoved) = case naNames of
+      [] ->
         (bcAccountNameMap, False)
-      Just name ->
+      names ->
         -- Remove the alias, if it exists
-        (M.delete name bcAccountNameMap, True)
+        (foldr M.delete bcAccountNameMap names, True)
 
 -- |Import the contents of a `ConfigBackup` and log information about each step in the process.
 -- Naming conflicts are handled by prompting the user for new names.
@@ -476,29 +477,17 @@ addContractOrModuleNameAndWrite verbose mapFile nameMap showVal name val = case 
       Right updatedNameMap' -> liftIO $ writeNameMapAsJSON verbose mapFile updatedNameMap' >> return mempty
   where namingError = "Name was not added:"
 
--- |A contract address along with an optional name.
+-- |A contract address along with a list of local names.
 data NamedContractAddress =
-  NamedContractAddress { ncaAddr :: Types.ContractAddress -- ^ The contract address.
-                       , ncaName :: Maybe Text            -- ^ The optional contract name.
-                       }
+  NamedContractAddress { ncaAddr  :: Types.ContractAddress -- ^ The contract address.
+                       , ncaNames :: [Text]                -- ^ The local names for the contract.
+                       } deriving Show
 
-instance Show NamedContractAddress where
-  show NamedContractAddress{..} = case ncaName of
-    Just ncaName' -> [i|#{ncaAddr'} (#{ncaName'})|]
-    Nothing -> ncaAddr'
-    where ncaAddr' = showCompactPrettyJSON ncaAddr
-
-
--- |A module reference along with an optional name.
+-- |A module reference along with a list of local names.
 data NamedModuleRef =
-  NamedModuleRef { nmrRef  :: Types.ModuleRef -- ^ The module reference.
-                 , nmrName :: Maybe Text      -- ^ The optional contract name.
-                 }
-
-instance Show NamedModuleRef where
-  show NamedModuleRef {..} = case nmrName of
-    Just nmrName' -> [i|'#{nmrRef}' (#{nmrName'})|]
-    Nothing -> [i|'#{nmrRef}'|]
+  NamedModuleRef { nmrRef   :: Types.ModuleRef -- ^ The module reference.
+                 , nmrNames :: [Text]          -- ^ The local names for the module.
+                 } deriving Show
 
 -- |Write the name map to a file in a pretty JSON format.
 writeNameMapAsJSON :: AE.ToJSON v => Verbose -> FilePath -> NameMap v -> IO ()
@@ -841,18 +830,18 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
               nameOpt = find (\(_, addr') -> addr == addr') (M.toList nameMap)
           case nameOpt of 
             Just (name, _) -> do
-              let namedAddr' = NamedAddress { naAddr = addr, naName = Just name }
+              let namedAddr' = NamedAddress { naAddr = addr, naNames = [name] }
               (a, _, _) <- initAccountConfig cfg namedAddr' False
               return . Just $ a
             Nothing -> do
               logInfo [[i|No name associated with account '#{addr}'.|]]
               printf "Enter name of account or leave empty to initialize without a name (use ^C to cancel): "
               name <- strip <$> T.getLine >>= \case
-                "" -> return Nothing
+                "" -> return []
                 s -> do 
                   logFatalOnError $ validateAccountName s
-                  return $ Just s
-              let namedAddr' = NamedAddress { naAddr = addr, naName = name }
+                  return $ [s]
+              let namedAddr' = NamedAddress { naAddr = addr, naNames = name }
               (a, _, _) <- initAccountConfig cfg namedAddr' False
               return . Just $ a
         else do
@@ -870,12 +859,12 @@ resolveAccountAddress m input = do
               Left _ -> do
                 -- Assume input is a name. Look it up in the map.
                 a <- M.lookup input m
-                return (Just input, a)
+                return ([input], a)
               Right a -> do
                 -- Input is an address. Try to look up its name in the map.
                 let name = lookupByValue m a
-                return (name, a)
-  return NamedAddress { naName = n, naAddr = a }
+                return (maybeToList name, a)
+  return NamedAddress { naNames = n, naAddr = a }
 
 -- |Lookup by value from a map. Returns first entry found.
 lookupByValue :: Eq v => NameMap v -> v -> Maybe Text
@@ -950,3 +939,15 @@ safeListDirectory :: FilePath -> IO [FilePath]
 safeListDirectory dir = do
   e <- doesDirectoryExist dir
   if e then listDirectory dir else return []
+
+-- |Show a list of names with spacing and quotes. The names are sorted while ignoring case.
+-- Example:
+--
+-- >>> showNameList ["B", "a"]
+-- "'a' 'B'"
+showNameList :: [T.Text] -> String
+showNameList = T.unpack . T.unwords . map addQuotes . caseInsensitiveSort
+  where
+    -- Sort on lower-case to be case insensitive, but do not alter original text
+    caseInsensitiveSort = map fst . sortOn snd . map (\n -> (n, T.toLower n))
+    addQuotes n = [i|'#{n}'|]

@@ -81,11 +81,11 @@ parseAccountNameMapSpec = describe "parseAccountNameMap" $ do
 resolveAccountAddressSpec :: Spec
 resolveAccountAddressSpec = describe "resolveAccountAddress" $ do
   specify "valid account address" $
-    r M.empty s1 `shouldBe` Just NamedAddress { naName = Nothing, naAddr = a1 }
+    r M.empty s1 `shouldBe` Just NamedAddress { naNames = [], naAddr = a1 }
   specify "valid account address is not looked up in map" $
-    r (M.fromList [(s1, a2)]) s1 `shouldBe` Just NamedAddress { naName = Nothing, naAddr = a1 }
+    r (M.fromList [(s1, a2)]) s1 `shouldBe` Just NamedAddress { naNames = [], naAddr = a1 }
   specify "existing account name" $
-    r (M.fromList [("name", a1)]) "name" `shouldBe` Just NamedAddress { naName = Just "name", naAddr = a1 }
+    r (M.fromList [("name", a1)]) "name" `shouldBe` Just NamedAddress { naNames = ["name"], naAddr = a1 }
   specify "nonexisting account name" $
     r M.empty "name" `shouldBe` Nothing
   where r = resolveAccountAddress
@@ -132,14 +132,14 @@ printAccountConfigSpec = describe "account config" $ do
   -- TODO Update to new format when the format of this and other commands has been decided.
   specify "with keys and name" $ p exampleAccountConfigWithKeysAndName `shouldBe`
     [ "Account configuration:"
-    , "- Name:    name"
+    , "- Names:   'name'"
     , "- Address: 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
     , "- Keys:"
     , "    2: {\n    \"encryptedSignKey\": {\n        \"metadata\": {\n            \"encryptionMethod\": \"AES-256\",\n            \"iterations\": 100000,\n            \"salt\": \"slzkcKo8IPymU5t7jamGQQ==\",\n            \"initializationVector\": \"NXbbI8Cc3AXtaG/go+L+FA==\",\n            \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\"\n        },\n        \"cipherText\": \"hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY=\"\n    },\n    \"verifyKey\": \"f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213\",\n    \"schemeId\": \"Ed25519\"\n}"
     ,"    11: {\n    \"encryptedSignKey\": {\n        \"metadata\": {\n            \"encryptionMethod\": \"AES-256\",\n            \"iterations\": 100000,\n            \"salt\": \"sQ8NG/fBLdLuuLd1ARlAqw==\",\n            \"initializationVector\": \"z6tTcT5ko8vS2utlwwNvbw==\",\n            \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\"\n        },\n        \"cipherText\": \"9ltKSJtlkiBXY/kU8huA4GoCaGNjy8M2Ym2SOtlg1ay6lfI9o95sXJ1cjcQ2b8gV+WddwS7ile8ZhIr8es58pTaM8PczlLbKBCSJ11R2iqw=\"\n    },\n    \"verifyKey\": \"c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027\",\n    \"schemeId\": \"Ed25519\"\n}" ]
   specify "without keys and name" $ p exampleAccountConfigWithoutKeysAndName `shouldBe`
     [ "Account configuration:"
-    , "- Name:    none"
+    , "- Names:   none"
     , "- Address: 4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y"
     , "- Keys:    none" ]
   where p = execWriter . printAccountConfig
@@ -152,14 +152,14 @@ printAccountConfigListSpec = describe "all account config" $ do
   specify "non-empty" $ p [exampleAccountConfigWithKeysAndName, exampleAccountConfigWithoutKeysAndName] `shouldBe`
     [ "Account keys:"
 
-    , "- '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' (name):"
+    , "- '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' ('name'):"
     ,"{\n    \"2\": {\n        \"encryptedSignKey\": {\n            \"metadata\": {\n                \"encryptionMethod\": \"AES-256\",\n                \"iterations\": 100000,\n                \"salt\": \"slzkcKo8IPymU5t7jamGQQ==\",\n                \"initializationVector\": \"NXbbI8Cc3AXtaG/go+L+FA==\",\n                \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\"\n            },\n            \"cipherText\": \"hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY=\"\n        },\n        \"verifyKey\": \"f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213\",\n        \"schemeId\": \"Ed25519\"\n    },\n    \"11\": {\n        \"encryptedSignKey\": {\n            \"metadata\": {\n                \"encryptionMethod\": \"AES-256\",\n                \"iterations\": 100000,\n                \"salt\": \"sQ8NG/fBLdLuuLd1ARlAqw==\",\n                \"initializationVector\": \"z6tTcT5ko8vS2utlwwNvbw==\",\n                \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\"\n            },\n            \"cipherText\": \"9ltKSJtlkiBXY/kU8huA4GoCaGNjy8M2Ym2SOtlg1ay6lfI9o95sXJ1cjcQ2b8gV+WddwS7ile8ZhIr8es58pTaM8PczlLbKBCSJ11R2iqw=\"\n        },\n        \"verifyKey\": \"c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027\",\n        \"schemeId\": \"Ed25519\"\n    }\n}"
 
     ,"- '4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y': none"
 
     ,"Encryption secret keys:"
 
-    ,"- '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' (name): {\n    \"metadata\": {\n        \"encryptionMethod\": \"AES-256\",\n        \"iterations\": 100000,\n        \"salt\": \"w7pmsDi1K4bWf+zkLCuzVw==\",\n        \"initializationVector\": \"EXhd7ctFeqKvaA0P/oB8wA==\",\n        \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\"\n    },\n    \"cipherText\": \"pYvIywCAMLhvag1EJmGVuVezGsNvYn24zBnB6TCTkwEwOH50AOrx8NAZnVuQteZMQ7k7Kd7a1RorSxIQI1H/WX+Usi8f3VLnzdZFJmbk4Cme+dcgAbI+wWr0hisgrCDl\"\n}"
+    ,"- '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' ('name'): {\n    \"metadata\": {\n        \"encryptionMethod\": \"AES-256\",\n        \"iterations\": 100000,\n        \"salt\": \"w7pmsDi1K4bWf+zkLCuzVw==\",\n        \"initializationVector\": \"EXhd7ctFeqKvaA0P/oB8wA==\",\n        \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\"\n    },\n    \"cipherText\": \"pYvIywCAMLhvag1EJmGVuVezGsNvYn24zBnB6TCTkwEwOH50AOrx8NAZnVuQteZMQ7k7Kd7a1RorSxIQI1H/WX+Usi8f3VLnzdZFJmbk4Cme+dcgAbI+wWr0hisgrCDl\"\n}"
 
     ,"- '4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y': none" ]
   where p = execWriter . printAccountConfigList
@@ -193,7 +193,7 @@ dummyEncryptionPublicKey = fromJust $ AE.decode "\"a820662531d0aac70b3a80dd8a249
 exampleAccountConfigWithKeysAndName :: AccountConfig
 exampleAccountConfigWithKeysAndName =
   AccountConfig
-  { acAddr = NamedAddress { naName = Just "name" , naAddr = exampleAccountAddress1 }
+  { acAddr = NamedAddress { naNames = ["name"] , naAddr = exampleAccountAddress1 }
   -- TODO Generate testdata instead of hard-coding (generate key pairs, encrypt).
   -- Test keypairs can either be generated with
   -- randomEd25519KeyPair from Concordium.Crypto.DummyData if determinism is required, or
@@ -245,7 +245,7 @@ exampleAccountConfigWithKeysAndName =
 exampleAccountConfigWithoutKeysAndName :: AccountConfig
 exampleAccountConfigWithoutKeysAndName =
   AccountConfig
-  { acAddr = NamedAddress { naName = Nothing, naAddr = exampleAccountAddress2}
+  { acAddr = NamedAddress { naNames = [], naAddr = exampleAccountAddress2}
   , acKeys = M.empty
   , acThreshold = 1
   , acEncryptionKey = Nothing}
