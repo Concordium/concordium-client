@@ -2148,7 +2148,7 @@ processBakerCmd action baseCfgDir verbose backend =
                        logFatal ["Transaction is absent."]
                      _ ->
                        logFatal ["Unexpected status."]
-    BakerSetKeys file txOpts -> do
+    BakerSetKeys file txOpts outfile -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -2156,8 +2156,35 @@ processBakerCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       withClient backend $ do
-        (txCfg, pl) <- bakerSetKeysTransaction baseCfg txOpts file (ioConfirm intOpts)
-        sendAndTailTransaction_ txCfg pl intOpts
+        (bakerKeys, txCfg, pl) <- bakerSetKeysTransaction baseCfg txOpts file (ioConfirm intOpts)
+        result <- sendAndTailTransaction txCfg pl intOpts
+        case result of
+           Nothing -> return ()
+           Just ts -> do
+             case tsrState ts of
+               Finalized | SingleBlock _ summary <- parseTransactionBlockResult ts ->
+                             case Types.tsResult summary of
+                               Types.TxSuccess [Types.BakerKeysUpdated{..}] ->
+                                 case outfile of
+                                   Nothing ->
+                                     logInfo ["Keys for baker with ID " ++ show ebkuBakerId ++ " updated.",
+                                              printf "To use it add \"bakerId\": %s to the keys file %s." (show ebkuBakerId) file
+                                             ]
+                                   Just outFile -> do
+                                     let credentials = BakerCredentials{
+                                           bcKeys = bakerKeys,
+                                           bcIdentity = ebkuBakerId
+                                           }
+                                     liftIO $ handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose outFile (AE.encodePretty credentials)
+                               Types.TxReject reason -> do
+                                 logWarn [showRejectReason True reason]
+                               _ -> logFatal ["Unexpected response for baker set-key transaction type."]
+               Absent ->
+                 logFatal ["Transaction is absent."]
+               _ ->
+                 logFatal ["Unexpected status."]
+
+
 
     BakerRemove txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -2199,7 +2226,7 @@ processBakerCmd action baseCfgDir verbose backend =
         sendAndTailTransaction_ txCfg pl intOpts
 
 -- |Convert 'baker set-keys' transaction config into a valid payload.
-bakerSetKeysTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> Bool -> ClientMonad IO (TransactionConfig, Types.Payload)
+bakerSetKeysTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> Bool -> ClientMonad IO (BakerKeys, TransactionConfig, Types.Payload)
 bakerSetKeysTransaction baseCfg txOpts fp confirm = do
   accCfg <- liftIO $ getAccountCfgFromTxOpts baseCfg txOpts
 
@@ -2238,7 +2265,7 @@ bakerSetKeysTransaction baseCfg txOpts fp confirm = do
       confirmed <- askConfirmation Nothing
       unless confirmed exitTransactionCancelled
 
-    return (txCfg, payload)
+    return (bsktcBakerKeys, txCfg, payload)
   where except c err = c >>= \case
           Just x -> return x
           Nothing -> logFatal [err]
