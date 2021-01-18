@@ -430,52 +430,53 @@ checkNameUntilNoCollision :: (Eq v, Show v)
 checkNameUntilNoCollision typeOfValue validateName nm key newVal =
   case M.lookup key nm of
     Just existingVal | existingVal /= newVal -> do
-      logWarn [[i|Importing #{typeOfValue} name '#{key}', but this name is already used for #{typeOfValue} '#{show existingVal}'|]]
-      userInput <- promptNameUntilValid validateName [i|specify a new name to map to this #{typeOfValue}|]
+      logWarn [[i|Adding #{typeOfValue} name '#{key}', but this name is already used for #{typeOfValue} '#{show existingVal}'|]]
+      userInput <- promptNameUntilValid
       checkNameUntilNoCollision typeOfValue validateName nm userInput newVal
     _ -> return key
+  where
+    -- |Prompt the user to input a name repeatedly until it passes validation.
+    promptNameUntilValid :: MonadIO m => m Text
+    promptNameUntilValid = liftIO $ do
+      putStr $ prettyMsg ": " [i|specify a new name to map to this #{typeOfValue}|]
+      input <- T.getLine >>= ensureValidName
+      return input
 
--- |Add a contract name and write it to 'contractNames.map', or return a list of error messages.
--- Returns a non-empty list of error messages if the name could not be added.
--- This happens when:
---  - The name is already in use
---  - Or, the contract is already named
--- Can also log fatally, if 'contractNames.map' cannot be written to.
-addContractNameAndWrite :: MonadIO m => Verbose -> BaseConfig -> Text -> ContractAddress -> m [String]
-addContractNameAndWrite verbose baseCfg = addContractOrModuleNameAndWrite verbose mapFile nameMap showCompactPrettyJSON
+    ensureValidName name =
+      case validateName name of
+        Left err -> do
+          logError [err]
+          putStr "Input valid name: "
+          T.getLine >>= ensureValidName
+        Right () -> return name
+
+-- |Add a contract name and write it to 'contractNames.map'.
+-- If the name collides with an existing one, `checkNameUntilNoCollision` is
+-- used to resolve the conflict and find a new name.
+-- Returns the name that was actually added.
+-- Logs fatally, if 'contractNames.map' cannot be written to.
+addContractNameAndWrite :: Verbose -> BaseConfig -> Text -> ContractAddress -> IO Text
+addContractNameAndWrite verbose baseCfg name contrAddr = do
+  newName <- checkNameUntilNoCollision "contract instance" validateContractOrModuleName nameMap name contrAddr
+  let updatedNameMap = M.insert newName contrAddr nameMap
+  writeNameMapAsJSON verbose mapFile updatedNameMap
+  return newName
   where mapFile = contractNameMapFile . bcContractCfgDir $ baseCfg
         nameMap = bcContractNameMap baseCfg
 
--- |Add a module name and write it to 'moduleNames.map'
--- Returns a non-empty list of error messages if the name could not be added.
--- This happens when:
---  - The name is already in use
---  - Or, the module is already named
--- Can also log fatally, if 'moduleNames.map' cannot be written to.
-addModuleNameAndWrite :: MonadIO m => Verbose -> BaseConfig -> Text -> ModuleRef -> m [String]
-addModuleNameAndWrite verbose baseCfg = addContractOrModuleNameAndWrite verbose mapFile nameMap show
+-- |Add a module name and write it to 'moduleNames.map'.
+-- If the name collides with an existing one, `checkNameUntilNoCollision` is
+-- used to resolve the conflict and find a new name.
+-- Returns the name that was actually added.
+-- Logs fatally, if 'moduleNames.map' cannot be written to.
+addModuleNameAndWrite :: Verbose -> BaseConfig -> Text -> ModuleRef -> IO Text
+addModuleNameAndWrite verbose baseCfg name modRef = do
+  newName <- checkNameUntilNoCollision "module" validateContractOrModuleName nameMap name modRef
+  let updatedNameMap = M.insert newName modRef nameMap
+  writeNameMapAsJSON verbose mapFile updatedNameMap
+  return newName
   where mapFile = moduleNameMapFile . bcContractCfgDir $ baseCfg
         nameMap = bcModuleNameMap baseCfg
-
--- |Add a contract or module name and write it to the appropriate map file.
--- Returns a non-empty list of error messages if the name could not be added.
--- This happens when:
---  - The name is already in use
---  - Or, the module is already named
--- Can also log fatally, if the map file cannot be written to.
-addContractOrModuleNameAndWrite :: (AE.ToJSON v, Eq v, MonadIO m) => Verbose -> FilePath -> NameMap v ->
-                                   (v -> String) -> Text -> v -> m [String]
-addContractOrModuleNameAndWrite verbose mapFile nameMap showVal name val = case validateContractOrModuleName name of
-  Left err -> return [namingError, err]
-  Right _ ->
-    let updatedNameMap = case (M.member name nameMap, val `elem` M.elems nameMap) of
-          (True, _) -> Left [namingError, [i|the name '#{name}' is already in use|]]
-          (_, True) -> Left [namingError, [i|'#{showVal val}' is already named|]]
-          _ -> Right $ M.insert name val nameMap
-    in case updatedNameMap of
-      Left err' -> return err'
-      Right updatedNameMap' -> liftIO $ writeNameMapAsJSON verbose mapFile updatedNameMap' >> return mempty
-  where namingError = "Name was not added:"
 
 -- |A contract address along with a list of local names.
 data NamedContractAddress =
@@ -667,21 +668,6 @@ isValidContractOrModuleName n = not (T.null n) && not (isSpace $ T.head n) && is
                                 not (isSpace $ T.last n) && T.all supportedChar n
   where supportedChar c = isAlphaNum c || c `elem` supportedSpecialChars
         supportedSpecialChars = "-_,.!? " :: String
-
--- |Prompt the user to input a name repeatedly until it passes validation.
-promptNameUntilValid :: MonadIO m => (Text -> Either String ()) -> String -> m Text
-promptNameUntilValid validateName prompt = liftIO $ do
-  putStr $ prettyMsg ": " prompt
-  input <- T.getLine >>= ensureValidName
-  return input
-  where
-    ensureValidName name =
-      case validateName name of
-        Left err -> do
-          logError [err]
-          putStr "Input valid name: "
-          T.getLine >>= ensureValidName
-        Right () -> return name
 
 -- |Check whether the given text is a valid name and fail with an error message if it is not.
 validateAccountName :: (MonadError String m) => Text -> m ()
