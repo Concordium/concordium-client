@@ -250,7 +250,7 @@ printCred c =
 -- |Print a list of accounts along with optional names.
 printAccountList :: AccountNameMap -> [IDTypes.AccountAddress] -> Printer
 printAccountList nameMap accs = printNameList "Accounts" header format namedAccs
-  where namedAccs = map (\addr -> NamedAddress {naAddr = addr, naNames = concat $ HM.lookup addr nameMapInv}) accs
+  where namedAccs = map (\addr -> NamedAddress {naAddr = addr, naNames = unwrapMaybeList $ HM.lookup addr nameMapInv}) accs
         nameMapInv = invertHashMapAndCombine nameMap
         header = [ "Accounts:"
                  , "                 Account Address                     Account Names"
@@ -260,7 +260,7 @@ printAccountList nameMap accs = printNameList "Accounts" header format namedAccs
 -- |Print a list of modules along with optional names.
 printModuleList :: ModuleNameMap -> [Types.ModuleRef] -> Printer
 printModuleList nameMap refs = printNameList "Modules" header format namedModRefs
-  where namedModRefs = map (\ref -> NamedModuleRef {nmrRef = ref, nmrNames = concat $ HM.lookup ref nameMapInv}) refs
+  where namedModRefs = map (\ref -> NamedModuleRef {nmrRef = ref, nmrNames = unwrapMaybeList $ HM.lookup ref nameMapInv}) refs
         nameMapInv = invertHashMapAndCombine nameMap
         header = [ "Modules:"
                  , "                        Module Reference                           Module Names"
@@ -270,7 +270,7 @@ printModuleList nameMap refs = printNameList "Modules" header format namedModRef
 -- |Print a list of contracts along with optional names.
 printContractList :: ContractNameMap -> [Types.ContractAddress] -> Printer
 printContractList nameMap addrs = printNameList "Contracts" header format namedContrAddrs
-  where namedContrAddrs = map (\addr -> NamedContractAddress {ncaAddr = addr, ncaNames = concat $ HM.lookup addr nameMapInv}) addrs
+  where namedContrAddrs = map (\addr -> NamedContractAddress {ncaAddr = addr, ncaNames = unwrapMaybeList $ HM.lookup addr nameMapInv}) addrs
         nameMapInv = invertHashMapAndCombine nameMap
         header = [ "Contracts:"
                  , "    Contract Address       Contract Names"
@@ -805,3 +805,7 @@ showYesNo = bool "no" "yes"
 -- |Convert a map to an assoc list sorted on the key.
 toSortedList :: Ord k => HM.HashMap k v -> [(k, v)]
 toSortedList = sortOn fst . HM.toList
+
+-- |Unwrap a list from within `Maybe`. `Nothing` becomes an empty list.
+unwrapMaybeList :: Maybe [a] -> [a]
+unwrapMaybeList = concat
