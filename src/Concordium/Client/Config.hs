@@ -416,7 +416,7 @@ importConfigBackup verbose baseCfg (accs, cnm, mnm) = do
 
         checkAndPrompt = checkNameUntilNoCollision typeOfValue validateName
 
--- |Check if the provided name (key) already is already used,
+-- |Check if the provided name (key) is invalid or already used,
 -- and continually prompt the user to provide an alternative,
 -- until a valid and non-colliding one is entered.
 -- Returns a valid and non-colliding name.
@@ -427,13 +427,14 @@ checkNameUntilNoCollision :: (Eq v, Show v)
                       -> Text -- ^ The name provided.
                       -> v -- ^ The value.
                       -> IO Text -- ^ A valid and non-colliding name.
-checkNameUntilNoCollision typeOfValue validateName nm key newVal =
-  case M.lookup key nm of
+checkNameUntilNoCollision typeOfValue validateName nm unvalidatedName newVal = do
+  validName <- ensureValidName unvalidatedName
+  case M.lookup validName nm of
     Just existingVal | existingVal /= newVal -> do
-      logWarn [[i|Adding #{typeOfValue} name '#{key}', but this name is already used for #{typeOfValue} '#{show existingVal}'|]]
+      logWarn [[i|Adding #{typeOfValue} name '#{validName}', but this name is already used for #{typeOfValue} '#{show existingVal}'|]]
       userInput <- promptNameUntilValid
       checkNameUntilNoCollision typeOfValue validateName nm userInput newVal
-    _ -> return key
+    _ -> return validName
   where
     -- |Prompt the user to input a name repeatedly until it passes validation.
     promptNameUntilValid :: MonadIO m => m Text
