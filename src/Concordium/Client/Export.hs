@@ -91,18 +91,20 @@ decodeMobileFormattedAccountExport json accountName password = runExceptT $ do
   WalletExport{..} <- decryptJSON we password `embedErr` (("cannot decrypt wallet export: " ++) . displayException)
   accountCfgsFromWalletExportAccounts wepAccounts accountName password
 
-
 -- | Convert one or all wallet export accounts to regular account configs.
 -- This encrypts all signing keys with the provided password.
 -- If name is provided, only the account with matching name (if any) is converted.
 -- Otherwise they all are. Names to be imported are checked to be valid.
 accountCfgsFromWalletExportAccounts :: [WalletExportAccount] -> Maybe Text -> Password -> ExceptT String IO [AccountConfig]
-accountCfgsFromWalletExportAccounts weas name pwd =
-  let selectedAccounts =
+accountCfgsFromWalletExportAccounts weas name pwd = do
+  selectedAccounts <-
         case name of
-          Nothing -> weas
-          Just n -> Prelude.filter ((==n) . weaName) weas
-  in forM selectedAccounts $ accountCfgFromWalletExportAccount pwd
+          Nothing -> return weas
+          Just n -> case Prelude.filter ((==n) . weaName) weas of
+              [] -> let possibleNames = showNameList . Prelude.map weaName $ weas
+                    in throwError [i|An account named '#{n}' does not exist. Possible account names: #{possibleNames}.|]
+              namesFound -> return namesFound
+  forM selectedAccounts $ accountCfgFromWalletExportAccount pwd
 
 -- |Convert a wallet export account to a regular account config.
 -- This checks whether the name provided by the export is a valid account name.
