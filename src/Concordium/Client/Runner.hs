@@ -249,7 +249,9 @@ processConfigCmd action baseCfgDir verbose =
 
         -- look up the name/address and check if account is initialized:
         (_, accountConfig) <- getAccountConfig (Just account) baseCfg Nothing Nothing Nothing AssumeInitialized
-        let nameAddr@NamedAddress{..} = acAddr accountConfig
+        let accAddr = naAddr . acAddr $ accountConfig
+        let accNames = findAllNamesFor (bcAccountNameMap baseCfg) accAddr
+        let nameAddr = NamedAddress {naAddr = accAddr, naNames = accNames}
 
         let descriptor = [i|the account #{showNamedAddress nameAddr}|]
 
@@ -1611,9 +1613,9 @@ processContractCmd action baseCfgDir verbose backend =
       namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
       (schema, contrInfo, namedOwner, namedModRef) <- withClient backend . withBestBlockHash block $ \bb -> do
         contrInfo@CI.ContractInfo{..} <- getContractInfo namedContrAddr bb
-        let namedModRef = NamedModuleRef {nmrRef = ciSourceModule, nmrNames = maybeToList $ lookupByValue (bcModuleNameMap baseCfg) ciSourceModule}
+        let namedModRef = NamedModuleRef {nmrRef = ciSourceModule, nmrNames = findAllNamesFor (bcModuleNameMap baseCfg) ciSourceModule}
         schema <- getSchemaFromFileOrModule schemaFile (Right namedModRef) bb
-        let namedOwner = NamedAddress {naAddr = ciOwner, naNames = maybeToList $ lookupByValue (bcAccountNameMap baseCfg) ciOwner}
+        let namedOwner = NamedAddress {naAddr = ciOwner, naNames = findAllNamesFor (bcAccountNameMap baseCfg) ciOwner}
         return (schema, contrInfo, namedOwner, namedModRef)
       displayContractInfo schema contrInfo namedOwner namedModRef
 
