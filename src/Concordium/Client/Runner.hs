@@ -1514,10 +1514,8 @@ processModuleCmd action baseCfgDir verbose backend =
                 case modName of
                   Nothing -> return ()
                   Just modName' -> do
-                    warnings <- addModuleNameAndWrite verbose baseCfg modName' modRef
-                    if null warnings
-                      then logSuccess [[i|module reference #{modRef} was successfully named '#{modName'}'|]]
-                      else logWarn warnings
+                    nameAdded <- liftIO $ addModuleNameAndWrite verbose baseCfg modName' modRef
+                    logSuccess [[i|module reference #{modRef} was successfully named '#{nameAdded}'|]]
 
     ModuleList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1554,10 +1552,8 @@ processModuleCmd action baseCfgDir verbose backend =
     ModuleName modRefOrFile modName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       modRef <- getModuleRefFromRefOrFile modRefOrFile
-      warnings <- addModuleNameAndWrite verbose baseCfg modName modRef
-      if null warnings
-        then logSuccess [[i|module reference #{modRef} was successfully named '#{modName}'|]]
-        else logWarn warnings
+      nameAdded <- liftIO $ addModuleNameAndWrite verbose baseCfg modName modRef
+      logSuccess [[i|module reference #{modRef} was successfully named '#{nameAdded}'|]]
 
   where extractModRef = extractFromTsr (\case
                                            Types.ModuleDeployed modRef -> Just modRef
@@ -1652,10 +1648,8 @@ processContractCmd action baseCfgDir verbose backend =
               case contrAlias of
                 Nothing -> return ()
                 Just contrAlias' -> do
-                  warnings <- addContractNameAndWrite verbose baseCfg contrAlias' contrAddr
-                  if null warnings
-                    then logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{contrAlias'}'|]]
-                    else logWarn warnings
+                  nameAdded <- liftIO $ addContractNameAndWrite verbose baseCfg contrAlias' contrAddr
+                  logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{nameAdded}'|]]
 
     ContractUpdate indexOrName subindex receiveName paramsFileJSON paramsFileBinary schemaFile amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1693,10 +1687,8 @@ processContractCmd action baseCfgDir verbose backend =
     ContractName index subindex contrName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       let contrAddr = mkContractAddress index subindex
-      warnings <- addContractNameAndWrite verbose baseCfg contrName contrAddr
-      if null warnings
-        then logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{contrName}'|]]
-        else logWarn warnings
+      nameAdded <- liftIO $ addContractNameAndWrite verbose baseCfg contrName contrAddr
+      logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{nameAdded}'|]]
 
   where extractContractAddress = extractFromTsr (\case
                                                  Types.ContractInitialized {..} -> Just ecAddress
