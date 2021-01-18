@@ -862,13 +862,13 @@ resolveAccountAddress m input = do
                 return ([input], a)
               Right a -> do
                 -- Input is an address. Try to look up its name in the map.
-                let name = lookupByValue m a
-                return (maybeToList name, a)
+                let names = findAllNamesFor m a
+                return (names, a)
   return NamedAddress { naNames = n, naAddr = a }
 
--- |Lookup by value from a map. Returns first entry found.
-lookupByValue :: Eq v => NameMap v -> v -> Maybe Text
-lookupByValue m input = fst <$> find ((== input) . snd) (M.toList m)
+-- |Find all names (keys) for the given value in a namemap.
+findAllNamesFor :: Eq v => NameMap v -> v -> [Text]
+findAllNamesFor m input = map fst $ filter ((== input) . snd) (M.toList m)
 
 -- |Look up an account by name or address. See doc for 'resolveAccountAddress'.
 -- If the lookup fails, an error is thrown.
