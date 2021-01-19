@@ -249,11 +249,11 @@ processConfigCmd action baseCfgDir verbose =
 
         -- look up the name/address and check if account is initialized:
         (_, accountConfig) <- getAccountConfig (Just account) baseCfg Nothing Nothing Nothing AssumeInitialized
-        let nameAddr@NamedAddress{..} = acAddr accountConfig
+        let accAddr = naAddr . acAddr $ accountConfig
+        let accNames = findAllNamesFor (bcAccountNameMap baseCfg) accAddr
+        let nameAddr = NamedAddress {naAddr = accAddr, naNames = accNames}
 
-        let descriptor = case naName of
-              Nothing -> "the account with address " ++ show naAddr
-              Just name -> "the account " ++ show name ++ " with address " ++ show naAddr
+        let descriptor = [i|the account #{showNamedAddress nameAddr}|]
 
         logWarn [descriptor ++ " will be removed and can NOT be recovered"]
 
@@ -451,7 +451,7 @@ loadAccountImportFile format file name = do
       accCfgs <- decodeMobileFormattedAccountExport contents name pwd `withLogFatalIO` ("cannot import accounts: " ++)
 
       logInfo ["loaded account(s):"]
-      forM_ accCfgs $ \AccountConfig{acAddr=NamedAddress{..}} -> logInfo [printf "- %s (%s)" (show naAddr) (fromMaybe (Text.pack "-") naName)]
+      forM_ accCfgs $ \AccountConfig{acAddr=NamedAddress{..}} -> logInfo [[i|- #{naAddr} #{showNameList naNames}|]]
       logInfo ["all signing keys have been encrypted with the password used for this import."]
 
       when (null accCfgs) $ logWarn ["no accounts selected for import"]
@@ -1383,11 +1383,8 @@ processAccountCmd action baseCfgDir verbose backend =
 
     AccountList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      v <- withClientJson backend $ withBestBlockHash block getAccountList
-      let addrmap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
-      let addname :: ID.AccountAddress -> NamedAddress
-          addname addr = NamedAddress (Map.lookup addr addrmap) addr
-      runPrinter $ printAccountList (map addname v)
+      accs <- withClientJson backend $ withBestBlockHash block getAccountList
+      runPrinter $ printAccountList (bcAccountNameMap baseCfg) accs
 
     AccountUpdateKeys f txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1517,10 +1514,8 @@ processModuleCmd action baseCfgDir verbose backend =
                 case modName of
                   Nothing -> return ()
                   Just modName' -> do
-                    warnings <- addModuleNameAndWrite verbose baseCfg modName' modRef
-                    if null warnings
-                      then logSuccess [[i|module reference #{modRef} was successfully named '#{modName'}'|]]
-                      else logWarn warnings
+                    nameAdded <- liftIO $ addModuleNameAndWrite verbose baseCfg modName' modRef
+                    logSuccess [[i|module reference #{modRef} was successfully named '#{nameAdded}'|]]
 
     ModuleList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1557,10 +1552,8 @@ processModuleCmd action baseCfgDir verbose backend =
     ModuleName modRefOrFile modName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       modRef <- getModuleRefFromRefOrFile modRefOrFile
-      warnings <- addModuleNameAndWrite verbose baseCfg modName modRef
-      if null warnings
-        then logSuccess [[i|module reference #{modRef} was successfully named '#{modName}'|]]
-        else logWarn warnings
+      nameAdded <- liftIO $ addModuleNameAndWrite verbose baseCfg modName modRef
+      logSuccess [[i|module reference #{modRef} was successfully named '#{nameAdded}'|]]
 
   where extractModRef = extractFromTsr (\case
                                            Types.ModuleDeployed modRef -> Just modRef
@@ -1616,9 +1609,9 @@ processContractCmd action baseCfgDir verbose backend =
       namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
       (schema, contrInfo, namedOwner, namedModRef) <- withClient backend . withBestBlockHash block $ \bb -> do
         contrInfo@CI.ContractInfo{..} <- getContractInfo namedContrAddr bb
-        let namedModRef = NamedModuleRef {nmrRef = ciSourceModule, nmrName = lookupByValue (bcModuleNameMap baseCfg) ciSourceModule}
+        let namedModRef = NamedModuleRef {nmrRef = ciSourceModule, nmrNames = findAllNamesFor (bcModuleNameMap baseCfg) ciSourceModule}
         schema <- getSchemaFromFileOrModule schemaFile (Right namedModRef) bb
-        let namedOwner = NamedAddress {naAddr = ciOwner, naName = lookupByValue (bcAccountNameMap baseCfg) ciOwner}
+        let namedOwner = NamedAddress {naAddr = ciOwner, naNames = findAllNamesFor (bcAccountNameMap baseCfg) ciOwner}
         return (schema, contrInfo, namedOwner, namedModRef)
       displayContractInfo schema contrInfo namedOwner namedModRef
 
@@ -1655,10 +1648,8 @@ processContractCmd action baseCfgDir verbose backend =
               case contrAlias of
                 Nothing -> return ()
                 Just contrAlias' -> do
-                  warnings <- addContractNameAndWrite verbose baseCfg contrAlias' contrAddr
-                  if null warnings
-                    then logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{contrAlias'}'|]]
-                    else logWarn warnings
+                  nameAdded <- liftIO $ addContractNameAndWrite verbose baseCfg contrAlias' contrAddr
+                  logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{nameAdded}'|]]
 
     ContractUpdate indexOrName subindex receiveName paramsFileJSON paramsFileBinary schemaFile amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1690,16 +1681,14 @@ processContractCmd action baseCfgDir verbose backend =
             Just (Left err) -> logFatal ["updating contract instance failed:", err]
             Just (Right _) -> do
               namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-              logSuccess [[iii|successfully updated contract instance #{namedContrAddr}
+              logSuccess [[iii|successfully updated contract instance #{showNamedContractAddress namedContrAddr}
                                                 using the function '#{receiveName}'|]]
 
     ContractName index subindex contrName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       let contrAddr = mkContractAddress index subindex
-      warnings <- addContractNameAndWrite verbose baseCfg contrName contrAddr
-      if null warnings
-        then logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{contrName}'|]]
-        else logWarn warnings
+      nameAdded <- liftIO $ addContractNameAndWrite verbose baseCfg contrName contrAddr
+      logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{nameAdded}'|]]
 
   where extractContractAddress = extractFromTsr (\case
                                                  Types.ContractInitialized {..} -> Just ecAddress
@@ -1746,7 +1735,7 @@ getContractInfo namedContrAddr block = do
   case res of
     Left err -> logFatal ["I/O error:", err]
     -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
-    Right AE.Null -> logFatal [[i|the contract instance #{namedContrAddr} does not exist in block #{block}|]]
+    Right AE.Null -> logFatal [[i|the contract instance #{showNamedContractAddress namedContrAddr} does not exist in block #{block}|]]
     Right contrInfo -> case AE.fromJSON contrInfo of
       Error err -> logFatal ["Could not decode contract info:", err]
       Success info -> pure info
@@ -1779,7 +1768,7 @@ getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex rece
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
   CI.ContractInfo{ciSourceModule = moduleRef,..} <- withClient backend . withBestBlockHash Nothing $ getContractInfo namedContrAddr
-  let namedModRef = NamedModuleRef {nmrRef = moduleRef, nmrName = Nothing}
+  let namedModRef = NamedModuleRef {nmrRef = moduleRef, nmrNames = []}
   let contrName = CI.contractNameFromInitName ciName
   params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef)
             (CS.ReceiveName contrName receiveName)
@@ -1824,7 +1813,7 @@ getContractInitTransactionCfg :: Backend
                               -> IO ContractInitTransactionCfg
 getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath contrName paramsFileJSON paramsFileBinary schemaFile amount = do
   namedModRef <- if isPath
-            then (\ref -> NamedModuleRef {nmrRef = ref, nmrName = Nothing}) <$> getModuleRefFromFile modTBD
+            then (\ref -> NamedModuleRef {nmrRef = ref, nmrNames = []}) <$> getModuleRefFromFile modTBD
             else getNamedModuleRef (bcModuleNameMap baseCfg) (Text.pack modTBD)
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef) (CS.InitName contrName)
@@ -1841,7 +1830,7 @@ getWasmModule namedModRef block = do
 
   case res of
     Left err -> logFatal ["I/O error:", err]
-    Right "" -> logFatal [[i|the module reference #{namedModRef} does not exist in block #{block}|]]
+    Right "" -> logFatal [[i|the module reference #{showNamedModuleRef namedModRef} does not exist in block #{block}|]]
     Right unparsedWasmMod -> case S.decode unparsedWasmMod of
       Left err' -> logFatal [[i|could not decode Wasm Module:|], err']
       Right wasmMod -> return wasmMod
@@ -1952,20 +1941,20 @@ getModuleRefFromFile file = Types.ModuleRef . getHash <$> getWasmModuleFromFile 
 -- LogFatal if it is neither an index nor a contract name.
 getNamedContractAddress :: MonadIO m => ContractNameMap -> Text -> Maybe Word64 -> m NamedContractAddress
 getNamedContractAddress nameMap indexOrName subindex = case readMaybe $ Text.unpack indexOrName of
-  Just index -> return $ NamedContractAddress {ncaAddr = mkContractAddress index subindex, ncaName = Nothing}
+  Just index -> return $ NamedContractAddress {ncaAddr = mkContractAddress index subindex, ncaNames = []}
   Nothing -> do
     when (isJust subindex) $ logWarn ["ignoring the --subindex as it should not be used in combination with a contract name"]
     case Map.lookup indexOrName nameMap of
-      Just addr -> return $ NamedContractAddress {ncaAddr = addr, ncaName = Just indexOrName}
+      Just addr -> return $ NamedContractAddress {ncaAddr = addr, ncaNames = [indexOrName]}
       Nothing -> logFatal [[i|'#{indexOrName}' is neither the address index nor the name of a contract|]]
 
 -- |Get a NamedModuleRef from either a name or a module reference.
 -- LogFatal if it is neither a module reference nor a module name.
 getNamedModuleRef :: MonadIO m => ModuleNameMap -> Text -> m NamedModuleRef
 getNamedModuleRef nameMap modRefOrName = case readMaybe $ Text.unpack modRefOrName of
-  Just modRef -> return $ NamedModuleRef {nmrRef = modRef, nmrName = Nothing}
+  Just modRef -> return $ NamedModuleRef {nmrRef = modRef, nmrNames = []}
   Nothing -> case Map.lookup modRefOrName nameMap of
-    Just modRef -> return $ NamedModuleRef {nmrRef = modRef, nmrName = Just modRefOrName}
+    Just modRef -> return $ NamedModuleRef {nmrRef = modRef, nmrNames = [modRefOrName]}
     Nothing -> logFatal [[i|'#{modRefOrName}' is neither the reference nor the name of a module|]]
 
 -- |Make a contract address from an index and an optional subindex (default: 0).
