@@ -6,10 +6,12 @@ set -e
 # Retrieve genesis data sha
 GENESIS_VERSION=$1
 
+echo "Downloading genesis data SHA $GENESIS_VERSION"
+
 # Setup directory we expect them to be in
 mkdir -p genesis-data
 
-# Download all files in archive
+# Download all files in archive and the benchmark bundles
 (
     cd genesis-data &&
     curl -s https://s3-eu-west-1.amazonaws.com/genesis-data.concordium.com/finbench-bakers-${GENESIS_VERSION}.tar.gz > finbench-bakers.tar.gz
