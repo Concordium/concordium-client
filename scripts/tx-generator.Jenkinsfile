@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'SHA', defaultValue: '', description: 'Genesis SHA - must be SHA, not ref!')
+        string(name: 'GENESIS_REF', defaultValue: '', description: 'Genesis ref - must be branch or tag, not SHA!')
     }
 
     stages {
@@ -14,12 +14,12 @@ pipeline {
         stage('build') {
             steps {
                 script {
-                    if (params.SHA == '') {
+                    if (params.GENESIS_REF == '') {
                         sh script: 'exit 1', label: 'missing genesis SHA'
                     }
                 }
                 sshagent (credentials: ['jenkins-gitlab-ssh']) {
-                    sh "./scripts/build-k8s-image.sh $params.SHA"
+                    sh "./scripts/build-k8s-image.sh $params.GENESIS_REF"
                 }
 
                 sh 'docker rmi -f $(docker images -q) || true'
