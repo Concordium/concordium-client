@@ -15,7 +15,7 @@ pipeline {
             steps {
                 script {
                     if (params.GENESIS_REF == '') {
-                        sh script: 'exit 1', label: 'missing genesis SHA'
+                        sh script: 'exit 1', label: 'missing genesis ref'
                     }
                 }
                 sshagent (credentials: ['jenkins-gitlab-ssh']) {
