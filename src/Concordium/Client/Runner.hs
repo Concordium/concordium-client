@@ -454,7 +454,6 @@ loadAccountImportFile format file name = do
       forM_ accCfgs $ \AccountConfig{acAddr=NamedAddress{..}} -> logInfo [[i|- #{naAddr} #{showNameList naNames}|]]
       logInfo ["all signing keys have been encrypted with the password used for this import."]
 
-      when (null accCfgs) $ logWarn ["no accounts selected for import"]
       return accCfgs
     FormatGenesis -> do
      pwd <- createPasswordInteractive (Just "encrypt all signing keys with") `withLogFatalIO` id

@@ -936,5 +936,5 @@ showNameList :: [T.Text] -> String
 showNameList = T.unpack . T.unwords . map addQuotes . caseInsensitiveSort
   where
     -- Sort on lower-case to be case insensitive, but do not alter original text
-    caseInsensitiveSort = map fst . sortOn snd . map (\n -> (n, T.toLower n))
+    caseInsensitiveSort = sortOn T.toLower
     addQuotes n = [i|'#{n}'|]
