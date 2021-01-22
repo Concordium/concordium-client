@@ -66,7 +66,7 @@ EOF
 # Clone and build our project
 git clone git@gitlab.com:Concordium/consensus/simple-client --recurse-submodules
 cd simple-client
-nano deps/crypto/concordium-crypto.cabal # set the `static` flag to true
+nano deps/concordium-base/concordium-base.cabal # set the `static` flag to true
 stack build --flag "scientific:integer-simple" --flag "cryptonite:-integer-gmp" --flag "integer-logarithms:-integer-gmp" --flag "hashable:-integer-gmp"
 ```
 
@@ -82,4 +82,4 @@ find `pwd`/.stack-work/install -type f -name "concordium-client" | xargs otool -
 Distribute this binary - it only requires the basic system libraries, which OSX comes with.
 ## Notes
 ### Stack bugs
-Due to a bug in [stack #5375](https://github.com/commercialhaskell/stack/issues/5375), which Javier has reported - it is needed to manually set the default value of the flag `static` to `True` in the `deps/crypto/concordium-crypto.cabal` file before running stack. When this bug has been fixed, or a better work around has been found this can be skipped.
+Due to a bug in [stack #5375](https://github.com/commercialhaskell/stack/issues/5375), which Javier has reported - it is needed to manually set the default value of the flag `static` to `True` in the `deps/concordium-base/concordium-base.cabal` file before running stack. When this bug has been fixed, or a better work around has been found this can be skipped.

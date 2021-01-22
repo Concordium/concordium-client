@@ -1,4 +1,4 @@
 **/.stack-work
 **/target
-/deps/crypto/lib
+/deps/concordium-base/lib
 /out

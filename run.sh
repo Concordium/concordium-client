@@ -36,8 +36,8 @@ fi
 # Build and run client.
 # Do stack build && stack exec instead of stack run because it doesn't accept --flag nor --fast
 # (and thus results in constant rebuilds).
-log "> export LD_LIBRARY_PATH=deps/crypto/rust-src/target/release"
-export LD_LIBRARY_PATH=deps/crypto/rust-src/target/release
+log "> export LD_LIBRARY_PATH=deps/concordium-base/rust-src/target/release"
+export LD_LIBRARY_PATH=deps/concordium-base/rust-src/target/release
 (
     log "> stack build --profile --fast --flag 'simple-client:-middleware' --test --no-run-tests"
     stack build --profile --fast --flag 'simple-client:-middleware' --test --no-run-tests >&2
