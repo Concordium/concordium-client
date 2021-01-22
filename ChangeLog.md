@@ -1,3 +1,3 @@
-# Changelog for simple-client
+# Changelog for concordium-client
 
 ## Unreleased changes

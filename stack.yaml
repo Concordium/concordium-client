@@ -81,5 +81,5 @@ extra-lib-dirs:
 # allow-newer: true
 
 flags:
-  simple-client:
+  concordium-client:
     middleware: true

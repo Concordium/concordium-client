@@ -64,8 +64,8 @@ EOF
 ## Build the partially static binaries
 ```bash
 # Clone and build our project
-git clone git@gitlab.com:Concordium/consensus/simple-client --recurse-submodules
-cd simple-client
+git clone git@gitlab.com:Concordium/consensus/concordium-client --recurse-submodules
+cd concordium-client
 nano deps/concordium-base/concordium-base.cabal # set the `static` flag to true
 stack build --flag "scientific:integer-simple" --flag "cryptonite:-integer-gmp" --flag "integer-logarithms:-integer-gmp" --flag "hashable:-integer-gmp"
 ```

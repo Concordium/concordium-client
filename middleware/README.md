@@ -29,15 +29,15 @@ Leave this server running in one tab.
 :warning: The middleware exe is flagged out of the build by default. You can enable it for build/install like so:
 
 ```
-stack build  --flag "simple-client:middleware"
-stack install simple-client:middleware
+stack build  --flag "concordium-client:middleware"
+stack install concordium-client:middleware
 ```
 
 ### Build & launch the middleware
 
 #### Scenario: Against local testnet
 
-In a new tab, open up the `simple-client` repo (this repo), and run this helper script:
+In a new tab, open up the `concordium-client` repo (this repo), and run this helper script:
 
 ```
 ./scripts/bootMiddleware.sh
@@ -65,8 +65,8 @@ See the bottom of `middleware/Api.hs` for the `debugTestFullProvision` function.
 To run it:
 
 ```
-cd simple-client
-stack ghci --flag "simple-client:middleware"
+cd concordium-client
+stack ghci --flag "concordium-client:middleware"
 # Pick middleware option
 ```
 
@@ -75,7 +75,7 @@ You can boot `ghci` with the supported ENV vars:
 ```
 NODE_URL="localhost:11100" \
 SIMPLEID_URL="http://localhost:8000" \
-stack ghci --flag "simple-client:middleware"
+stack ghci --flag "concordium-client:middleware"
 ```
 
 Then in GHCI you can do:

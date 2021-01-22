@@ -4,17 +4,17 @@
 
 The following guide has been tested on a NixOS unstable on mid August 2020. However it is also possible to use it with `nix` not on NixOS.
 ## Setup environment
-This following below assumes that this repository is checked out in the directory named `simple-client`
+This following below assumes that this repository is checked out in the directory named `concordium-client`
 ``` bash
 $> nix-env -i stack # if already installed, this step can be skipped
 $> cd ..
 $> git clone https://github.com/NixOS/nixpkgs.git
 $> cd nixpkgs
-$> patch -p1 < ../simple-client/scripts/nix-static-build/nixpkgs.patch
+$> patch -p1 < ../concordium-client/scripts/nix-static-build/nixpkgs.patch
 ```
 ## Build the static binaries
 ```bash
-$> stack --nix build --flag simple-client:static \
+$> stack --nix build --flag concordium-client:static \
 	--flag hashable:-integer-gmp \
 	--flag scientific:integer-simple \
 	--flag integer-logarithms:-integer-gmp \
