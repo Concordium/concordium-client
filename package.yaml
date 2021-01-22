@@ -1,10 +1,10 @@
-name:                simple-client
-version:             0.4.5
-github:              "githubuser/simple-client"
+name:                concordium-client
+version:             0.4.8
+github:              "githubuser/concordium-client"
 license:             BSD3
-author:              "Author name here"
-maintainer:          "example@example.com"
-copyright:           "2019 Author name here"
+author:              "Concordium AG"
+maintainer:          "contact@concordium.com"
+copyright:           "Concordium"
 build-type:          Custom
 extra-source-files:
 - README.md
@@ -35,7 +35,7 @@ ghc-options: -Wall
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/githubuser/simple-client#readme>
+description:         Please see the README on GitHub at <https://github.com/githubuser/concordium-client#readme>
 
 flags:
   middleware:
@@ -68,11 +68,10 @@ library:
     - base64-bytestring
     - bytestring
     - cereal
-    - concordium-crypto
+    - concordium-base
     - containers
     - cryptonite
     - directory
-    - globalstate-types
     - filepath
     - optparse-applicative
     - random
@@ -121,7 +120,7 @@ executables:
     dependencies:
       - optparse-applicative
       - base
-      - simple-client
+      - concordium-client
 
   tx-generator:
     main:            Main.hs
@@ -142,9 +141,8 @@ executables:
       - mtl
       - unordered-containers
       - base
-      - simple-client
-      - globalstate-types
-      - concordium-crypto
+      - concordium-client
+      - concordium-base
       - bytestring
       - aeson
       - time
@@ -158,11 +156,10 @@ executables:
       - aeson
       - wai-logger
       - bytestring
-      - concordium-crypto
+      - concordium-base
       - containers
       - directory
       - filepath
-      - globalstate-types
       - http-conduit
       - http2-client-grpc
       - microlens-platform
@@ -171,7 +168,7 @@ executables:
       - process
       - servant
       - servant-server
-      - simple-client
+      - concordium-client
       - split
       - text
       - time
@@ -192,7 +189,7 @@ executables:
           buildable: false
 
 tests:
-  simple-client-test:
+  concordium-client-test:
     ghc-options:
       - -Wcompat
       - -Werror=missing-fields
@@ -201,10 +198,9 @@ tests:
     main:             Spec.hs
     source-dirs:      test
     dependencies:
-      - simple-client
-      - concordium-crypto
+      - concordium-client
+      - concordium-base
       - cereal
-      - globalstate-types
       - aeson
       - bytestring
       - containers

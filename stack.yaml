@@ -51,8 +51,7 @@ extra-deps:
     - http2-grpc-proto-lens
     - http2-grpc-types
 
-- ./deps/crypto
-- ./deps/globalstate-types
+- ./deps/concordium-base
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
@@ -72,17 +71,15 @@ extra-deps:
 # arch: x86_64
 #
 # Extra directories used by stack for building
-# extra-include-dirs: [/path/to/dir]
+
 extra-lib-dirs:
-- ./deps/crypto/lib/
+- ./deps/concordium-base/lib
+
 #
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
 # allow-newer: true
 
 flags:
-  simple-client:
+  concordium-client:
     middleware: true
-
-nix:
-  shell-file: shell-stack.nix

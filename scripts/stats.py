@@ -2,7 +2,7 @@
 
 # Compute statistics from a list of downloaded block infos.
 # This assumes that the first argument is a file that was obtained by
-# GetBlockInfo --all call of the simple-client.
+# GetBlockInfo --all call of the concordium-client.
 
 # This script assumes that the chain started with no transactions and after some
 # time transactions started coming. The TPS is computed from that point onward.
