@@ -68,11 +68,10 @@ library:
     - base64-bytestring
     - bytestring
     - cereal
-    - concordium-crypto
+    - concordium-base
     - containers
     - cryptonite
     - directory
-    - globalstate-types
     - filepath
     - optparse-applicative
     - random
@@ -143,8 +142,7 @@ executables:
       - unordered-containers
       - base
       - simple-client
-      - globalstate-types
-      - concordium-crypto
+      - concordium-base
       - bytestring
       - aeson
       - time
@@ -158,11 +156,10 @@ executables:
       - aeson
       - wai-logger
       - bytestring
-      - concordium-crypto
+      - concordium-base
       - containers
       - directory
       - filepath
-      - globalstate-types
       - http-conduit
       - http2-client-grpc
       - microlens-platform
@@ -202,9 +199,8 @@ tests:
     source-dirs:      test
     dependencies:
       - simple-client
-      - concordium-crypto
+      - concordium-base
       - cereal
-      - globalstate-types
       - aeson
       - bytestring
       - containers

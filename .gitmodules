@@ -1,9 +1,6 @@
-[submodule "deps/crypto"]
-	path = deps/crypto
-	url = ../../crypto.git
-[submodule "deps/globalstate-types"]
-	path = deps/globalstate-types
-	url = ../globalstate-types.git
 [submodule "deps/grpc-api"]
 	path = deps/grpc-api
 	url = ../../grpc-api.git
+[submodule "deps/concordium-base"]
+	path = deps/concordium-base
+	url = ../../concordium-base.git

@@ -56,4 +56,4 @@ Lastly it's important to configure the inherited `ghc` property and not use the 
 ```
 
 ### Stack bugs
-Due to a bug in [stack #5375](https://github.com/commercialhaskell/stack/issues/5375), which Javier has reported - it is needed to manually set the default value of the flag `link-with-musl` to `True` in the `deps/crypto/concordium-crypto.cabal` file before running stack. When this bug has been fixed, or a better work around has been found this can be skipped.
+Due to a bug in [stack #5375](https://github.com/commercialhaskell/stack/issues/5375), which Javier has reported - it is needed to manually set the default value of the flag `link-with-musl` to `True` in the `deps/concordium-base/concordium-base.cabal` file before running stack. When this bug has been fixed, or a better work around has been found this can be skipped.
