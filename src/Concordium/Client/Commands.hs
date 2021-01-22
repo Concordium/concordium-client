@@ -29,7 +29,7 @@ import Data.Word (Word64)
 import Data.Time.Format.ISO8601
 import Network.HTTP2.Client
 import Options.Applicative
-import Paths_simple_client (version)
+import Paths_concordium_client (version)
 import Concordium.Client.LegacyCommands
 import Concordium.Client.Types.Account
 import Concordium.Client.Utils

@@ -16,10 +16,10 @@ COPY --from=build-libs /out deps/concordium-base/rust-src/target/release
 # so it only needs to have a command named 'cargo' on PATH that doesn't fail
 # (if it isn't there, the build just dies without any explanation).
 RUN ln -s /bin/true /usr/local/bin/cargo
-# 'simple-client' expects to find the same libs as 'crypto' at ./extra-libs,
+# 'concordium-client' expects to find the same libs as 'crypto' at ./extra-libs,
 # but overriding LD_LIBRARY_PATH does the same.
 RUN LD_LIBRARY_PATH=deps/concordium-base/rust-src/target/release \
-      stack build --flag "simple-client:-middleware" && \
+      stack build --flag "concordium-client:-middleware" && \
     cp "$(stack path --local-install-root)/bin/concordium-client" /concordium-client
 
 FROM ubuntu:20.04

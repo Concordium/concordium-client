@@ -21,7 +21,7 @@ extra-lib-dirs:
 - ./deps/concordium-base/rust-src/target/x86_64-unknown-linux-musl/release
 
 flags:
-  simple-client:
+  concordium-client:
     static: true
     middleware: false
   hashable:
