@@ -35,7 +35,7 @@ The current nonce for accont `ACCOUNT-ID` can be retrieved using the command `Ge
 
 If a transaction with a reused nonce is submitted, the following helpful error message is returned:
 ```
-simple-client: user error (gRPC response error: Got non-success response from FFI interface Stale)
+concordium-client: user error (gRPC response error: Got non-success response from FFI interface Stale)
 ```
 
 The nonce must be provided if a transaction is created from a (JSON) payload file (i.e. `transaction submit` or `SendTransaction`).
@@ -153,7 +153,7 @@ Writing '/home/testuser/.config/concordium/accounts/4DY7Kq5vXsNDhEAnj969Fd86g9eg
 
 ## Usage
 
-Run using `stack run simple-client -- [BACKEND] COMMAND [ARGS...]`, where
+Run using `stack run concordium-client -- [BACKEND] COMMAND [ARGS...]`, where
 
 * `BACKEND` is the GRPC server on which to perform the actions/queries.
   It's specified using the flags `--grpc-ip`, `--grpc-port`, and `--grpc-target`
@@ -201,7 +201,7 @@ Show all persisted configuration.
 *Example*
 
 ```
-$ simple-client config show
+$ concordium-client config show
 Base configuration:
 - Verbose:            no
 - Account config dir: /home/testuser/.config/concordium/accounts
@@ -236,7 +236,7 @@ Transaction sending and inspection.
 *Example*
 
 ```
-$ simple-client transaction submit test/transactions/transfer.json
+$ concordium-client transaction submit test/transactions/transfer.json
 Transaction sent to the baker.
 Query status using 'transaction status 1b5aedf75e397f2c3fed3f13f96ee12d99952928ef5a0cd18bd39841b7b34430'.
 ```
@@ -250,7 +250,7 @@ Poll status on the transaction `TX-HASH`.
 *Example*
 
 ```
-$ simple-client transaction status 1b5aedf75e397f2c3fed3f13f96ee12d99952928ef5a0cd18bd39841b7b34430
+$ concordium-client transaction status 1b5aedf75e397f2c3fed3f13f96ee12d99952928ef5a0cd18bd39841b7b34430
 Transaction is finalized into block 180ab359d341576e90a23c08302fb78a63e671e0adedb29c306a7c12815c37e1 with status "success" and cost 165 GTU (165 NRG).
 ```
 
@@ -279,7 +279,7 @@ the command blocks, waiting for the transaction to get committed and ultimately 
 *Example*
 
 ```
-$ simple-client transaction send-gtu --amount 100 --energy 10000 --expiry 9999999999 --receiver 3EmnjMy8AY5zoebNaA3HuVx1UShdW8vh9n1YjJztmSc2jN4K3V
+$ concordium-client transaction send-gtu --amount 100 --energy 10000 --expiry 9999999999 --receiver 3EmnjMy8AY5zoebNaA3HuVx1UShdW8vh9n1YjJztmSc2jN4K3V
 Account reference not provided; using "default".
 Sending 100 GTU from '4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y' (default) to '3EmnjMy8AY5zoebNaA3HuVx1UShdW8vh9n1YjJztmSc2jN4K3V'.
 Allowing up to 10000 NRG to be spent as transaction fee.
@@ -303,7 +303,7 @@ Show details of a specific account as of a specific block.
 *Example*
 
 ```
-$ simple-client account show 2zgcMk7heVZKaaBfPtxVqmvE3GnrrP7N2nFGHoiC6X9nZT9TaG --block 7b33b3593e3100b38e6f70cd2a8a942116c99c000ea6011ff2af4707dec2a011
+$ concordium-client account show 2zgcMk7heVZKaaBfPtxVqmvE3GnrrP7N2nFGHoiC6X9nZT9TaG --block 7b33b3593e3100b38e6f70cd2a8a942116c99c000ea6011ff2af4707dec2a011
 Address:    2zgcMk7heVZKaaBfPtxVqmvE3GnrrP7N2nFGHoiC6X9nZT9TaG
 Amount:     1000000263826 GTU
 Nonce:      1
@@ -322,7 +322,7 @@ Show list of all account addresses as of a specific block.
 *Example*
 
 ```
-$ simple-client account list --block 7b33b3593e3100b38e6f70cd2a8a942116c99c000ea6011ff2af4707dec2a011
+$ concordium-client account list --block 7b33b3593e3100b38e6f70cd2a8a942116c99c000ea6011ff2af4707dec2a011
 2zgcMk7heVZKaaBfPtxVqmvE3GnrrP7N2nFGHoiC6X9nZT9TaG
 33MT5V7LAzbjfRS537nqq9AqHb4ALymQWwYhriE3kcYr8qsDoS
 3EmnjMy8AY5zoebNaA3HuVx1UShdW8vh9n1YjJztmSc2jN4K3V
@@ -351,7 +351,7 @@ List various parameters related to the current state of the consensus protocol.
 *Example*
 
 ```
-$ simple-client consensus status
+$ concordium-client consensus status
 Best block:                  7f9641fd4dfc1ffca2ef187fdddff375bb975764d66d68744574b893b61a8338
 Genesis block:               1c647ab5e7ff63b28926f5eed88a9d49b130942a54d791abfa79b4cc0c98acd0
 Last finalized block:        183e50fb2700716bd6f194f62fbd4b142a657b4bbd6d83bb64093463960ba4f3
@@ -378,7 +378,7 @@ Show election parameters as of a specific block, optionally including the "lotte
 *Example*
 
 ```
-$ simple-client consensus show-parameters --include-bakers
+$ concordium-client consensus show-parameters --include-bakers
 Election nonce:      758d81a016e747f186a1fd3706f267c07d8e900d0126c08adfd89e34a77eb92c
 Election difficulty: 0.2
 Bakers:
@@ -402,7 +402,7 @@ Show stats for a block.
 *Example*
 
 ```
-$ simple-client block show 7f9641fd4dfc1ffca2ef187fdddff375bb975764d66d68744574b893b61a8338
+$ concordium-client block show 7f9641fd4dfc1ffca2ef187fdddff375bb975764d66d68744574b893b61a8338
 Hash:                       7f9641fd4dfc1ffca2ef187fdddff375bb975764d66d68744574b893b61a8338
 Parent block:               183e50fb2700716bd6f194f62fbd4b142a657b4bbd6d83bb64093463960ba4f3
 Last finalized block:       a4e69297aa654e716cb9f52170aa7639d1cf03c83c87e26e4f8109da11761cbb
@@ -427,7 +427,7 @@ All the commands supported by the client are documented below.
 See [this wiki page](https://gitlab.com/Concordium/notes-wiki/wikis/Consensus-queries#state-queries)
 for a reference on the output values.
 
-In the examples, the dummy binary `simple-client` represents whatever method is used to invoke the client.
+In the examples, the dummy binary `concordium-client` represents whatever method is used to invoke the client.
 
 The transaction payload listed using `cat` are all shown to have nonce 1.
 They need to be replaced with the next nonce of the sending account as described in the [nonce](#nonce) section.
@@ -445,7 +445,7 @@ The command doesn't use the backend, so any `--grpc-*` flags are ignored.
 *Example*
 
 ```
-$ simple-client LoadModule ../prototype/scheduler/test/contracts/SimpleCounter.acorn
+$ concordium-client LoadModule ../prototype/scheduler/test/contracts/SimpleCounter.acorn
 Module processed.
 The following modules are currently in the local database and can be deployed.
 
@@ -461,7 +461,7 @@ The command doesn't use the backend, so any `--grpc-*` flags are ignored.
 *Example*
 
 ```
-$ simple-client ListModules
+$ concordium-client ListModules
 The following modules are in the local database.
 
 Module SimpleCounter with reference 0433d69fd2974e90a5e9eb81d214f10623e4771bd2767c7fee7f373385d24086
@@ -474,7 +474,7 @@ If the `--hook` flag is provided, a hook is automatically installed.
 If not, it may be installed using the command `HookTransaction` though it will only work
 if it's called before the transaction is processed.
 
-Supported transaction types (see the `simple-client/test/transactions/` directory for examples):
+Supported transaction types (see the `concordium-client/test/transactions/` directory for examples):
 
 * `DeployModule` (example below)
 * `InitContract` (example under `GetInstances`)
@@ -505,7 +505,7 @@ $ cat test/transactions/deploy.json
         "moduleName" : "SimpleCounter"
     }
 }
-$ simple-client SendTransaction test/transactions/deploy.json --hook
+$ concordium-client SendTransaction test/transactions/deploy.json --hook
 Installing hook for transaction 88b123dbf59969bf4e5f05543217385f154b5029f6ebb8b4af9fe3b682e88136
 {
     "status": "absent",
@@ -529,7 +529,7 @@ Output format: JSON (object).
 Right after sending the transaction in the example above:
 
 ```
-$ simple-client HookTransaction 88b123dbf59969bf4e5f05543217385f154b5029f6ebb8b4af9fe3b682e88136
+$ concordium-client HookTransaction 88b123dbf59969bf4e5f05543217385f154b5029f6ebb8b4af9fe3b682e88136
 {
     "status": "pending",
     "results": [],
@@ -540,7 +540,7 @@ $ simple-client HookTransaction 88b123dbf59969bf4e5f05543217385f154b5029f6ebb8b4
 A few minutes later:
 
 ```
-$ simple-client HookTransaction 88b123dbf59969bf4e5f05543217385f154b5029f6ebb8b4af9fe3b682e88136
+$ concordium-client HookTransaction 88b123dbf59969bf4e5f05543217385f154b5029f6ebb8b4af9fe3b682e88136
 {
     "status": "committed",
     "results": [
@@ -570,7 +570,7 @@ Output format: JSON (object).
 *Example*
 
 ```
-$ simple-client GetConsensusInfo
+$ concordium-client GetConsensusInfo
 {
     "lastFinalizedBlockHeight": 76,
     "blockArriveLatencyEMSD": 3.258284834322888e-2,
@@ -607,7 +607,7 @@ Output format: JSON (object). Outputs `null` if the provided hash is invalid.
 *Example*
 
 ```
-$ /simple-client GetBlockInfo
+$ /concordium-client GetBlockInfo
 {
     "transactionsSize": 0,
     "blockParent": "d2f566d3acc47d824e0c902833536c33f2af07855002d1060d883f0b37e4f3cf",
@@ -628,7 +628,7 @@ $ /simple-client GetBlockInfo
     "executionCost": 0,
     "centralBankAmount": 618
 }
-$ simple-client GetBlockInfo dc534d3de795ebf9856d00dbc927c39a5b08eaf5a447d192cf8abec122995bf9
+$ concordium-client GetBlockInfo dc534d3de795ebf9856d00dbc927c39a5b08eaf5a447d192cf8abec122995bf9
 {
     "transactionsSize": 0,
     "blockParent": "20c93296260f08f60486c191cd718013cf6bd6e6a5edf207af964a43e56b8d3d",
@@ -649,7 +649,7 @@ $ simple-client GetBlockInfo dc534d3de795ebf9856d00dbc927c39a5b08eaf5a447d192cf8
     "executionCost": 0,
     "centralBankAmount": 1344
 }
-$ simple-client GetBlockInfo something-invalid
+$ concordium-client GetBlockInfo something-invalid
 null
 ```
 
@@ -662,7 +662,7 @@ Output format: JSON (list).
 *Example*
 
 ```
-$ simple-client GetAccountList
+$ concordium-client GetAccountList
 [
     "356XG1CpfGhnhCbVYynFoicssQmXFmV11gBTasKT7nErapsCK2",
     "3M3cAqFN3MzeaE88pxDys7ia6SFZhT7jtC4pHd9AwoTBYSVqdM",
@@ -691,7 +691,7 @@ Output format: JSON (object).
 *Example*
 
 ```
-$ simple-client GetAccountInfo 356XG1CpfGhnhCbVYynFoicssQmXFmV11gBTasKT7nErapsCK2
+$ concordium-client GetAccountInfo 356XG1CpfGhnhCbVYynFoicssQmXFmV11gBTasKT7nErapsCK2
 {
     "accountAmount": 1000000000000,
     "accountNonce": 1,
@@ -746,7 +746,7 @@ $ simple-client GetAccountInfo 356XG1CpfGhnhCbVYynFoicssQmXFmV11gBTasKT7nErapsCK
         ]
     ]
 }
-$ simple-client GetAccountInfo invalid-account
+$ concordium-client GetAccountInfo invalid-account
 null
 ```
 
@@ -763,7 +763,7 @@ Output format: JSON (list).
 The local test network starts without any smart contract instances:
 
 ```
-$ simple-client GetInstances
+$ concordium-client GetInstances
 []
 ```
 
@@ -790,7 +790,7 @@ $ cat test/transactions/init.json
         "parameter": "0"
     }
 }
-$ simple-client SendTransaction test/transactions/init.json --hook
+$ concordium-client SendTransaction test/transactions/init.json --hook
 Installing hook for transaction 84a3636a059bbbfe5927dd421ce0b39ec568025bbbd895381c02d1b9ef9fbfa0
 {
     "status": "absent",
@@ -804,7 +804,7 @@ Transaction sent to the baker. Its hash is 84a3636a059bbbfe5927dd421ce0b39ec5680
 A minute later:
 
 ```
-$ simple-client HookTransaction 84a3636a059bbbfe5927dd421ce0b39ec568025bbbd895381c02d1b9ef9fbfa0
+$ concordium-client HookTransaction 84a3636a059bbbfe5927dd421ce0b39ec568025bbbd895381c02d1b9ef9fbfa0
 {
     "status": "committed",
     "results": [
@@ -821,7 +821,7 @@ $ simple-client HookTransaction 84a3636a059bbbfe5927dd421ce0b39ec568025bbbd89538
     "expires": "2020-01-24T10:37:19.054684092Z",
     "transactionHash": "84a3636a059bbbfe5927dd421ce0b39ec568025bbbd895381c02d1b9ef9fbfa0"
 }
-$ simple-client GetInstances
+$ concordium-client GetInstances
 [
     {
         "subindex": 0,
@@ -840,7 +840,7 @@ Output format: JSON (object).
 *Example*
 
 ```
-$ simple-client GetInstanceInfo '{ "subindex": 0, "index": 0 }'
+$ concordium-client GetInstanceInfo '{ "subindex": 0, "index": 0 }'
 {
     "amount": 100,
     "owner": "3M3cAqFN3MzeaE88pxDys7ia6SFZhT7jtC4pHd9AwoTBYSVqdM",
@@ -872,10 +872,10 @@ $ cat test/transactions/update.json
         "address": { "index" : 0, "subindex" : 0 }
     }
 }
-$ simple-client SendTransaction test/transactions/update.json --hook
+$ concordium-client SendTransaction test/transactions/update.json --hook
 ...
 Transaction sent to the baker. Its hash is 5fe96b57dff8113298b10c52e4a30f51339db2acc48b2341f4d9193720186a5b
-$ simple-client HookTransaction 5fe96b57dff8113298b10c52e4a30f51339db2acc48b2341f4d9193720186a5b
+$ concordium-client HookTransaction 5fe96b57dff8113298b10c52e4a30f51339db2acc48b2341f4d9193720186a5b
 {
     "status": "committed",
     "results": [
@@ -892,7 +892,7 @@ $ simple-client HookTransaction 5fe96b57dff8113298b10c52e4a30f51339db2acc48b2341
     "expires": "2020-01-24T10:43:25.578864647Z",
     "transactionHash": "5fe96b57dff8113298b10c52e4a30f51339db2acc48b2341f4d9193720186a5b"
 }
-$ simple-client GetInstanceInfo '{ "subindex": 0, "index": 0 }'
+$ concordium-client GetInstanceInfo '{ "subindex": 0, "index": 0 }'
 {
     "amount": 100,
     "owner": "3M3cAqFN3MzeaE88pxDys7ia6SFZhT7jtC4pHd9AwoTBYSVqdM",
@@ -916,7 +916,7 @@ Output format: JSON (object).
 *Example*
 
 ```
-$ simple-client GetRewardStatus
+$ concordium-client GetRewardStatus
 {
     "mintedAmountPerSlot": 100,
     "totalEncryptedAmount": 0,
@@ -944,7 +944,7 @@ Output format: JSON (object).
 *Example*
 
 ```
-$ simple-client GetBirkParameters
+$ concordium-client GetBirkParameters
 {
     "electionNonce": "4d1118c8c191ea21e7f6077ec068930212eabeab35b3a07927157586b175368a",
     "bakers": [
@@ -1012,7 +1012,7 @@ Output format: A header line followed by a pretty-printed variant of the Acorn A
 *Example*
 
 ```
-$ simple-client GetModuleSource 2790dc37cf1412f41ecb51be92723865520baa8e25f975ea24f0762ceca1c4a9
+$ concordium-client GetModuleSource 2790dc37cf1412f41ecb51be92723865520baa8e25f975ea24f0762ceca1c4a9
 Retrieved module "2790dc37cf1412f41ecb51be92723865520baa8e25f975ea24f0762ceca1c4a9"
 module where
 
@@ -1050,7 +1050,7 @@ Output format: Text.
 *Example*
 
 ```
-$ simple-client GetNodeInfo
+$ concordium-client GetNodeInfo
 Node id: "0000000000000001"
 Current local time: 1579859118
 Peer type: "Node"
@@ -1070,7 +1070,7 @@ Output format: JSON (object).
 *Example*
 
 ```
-$ simple-client GetBakerPrivateData
+$ concordium-client GetBakerPrivateData
 {
     "signatureVerifyKey": "5c18a8ed9a86d6471c7a2915f564047cceae1b97d6344762ed83af5e7541172e",
     "aggregationSignKey": "59ee62aa69b1189ff22617a7168d2a25afe2f15fee067789b7be27dfa0b84bd7",
@@ -1091,7 +1091,7 @@ Output format: Text.
 *Example*
 
 ```
-$ simple-client GetPeerData
+$ concordium-client GetPeerData
 Total packets sent: 416
 Total packets received: 431
 Peer version: 0.2.1
@@ -1157,7 +1157,7 @@ Output format: `Either` value marshalled from Haskell containing the uptime in m
 *Example*
 
 ```
-$ simple-client GetPeerUptime
+$ concordium-client GetPeerUptime
 Right 13504701
 ```
 
@@ -1215,7 +1215,7 @@ Output format: JSON (object).
 *Example*
 
 ```
-$ simple-client GetBranches
+$ concordium-client GetBranches
 {
     "children": [
         {
