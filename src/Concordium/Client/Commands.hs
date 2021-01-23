@@ -33,6 +33,7 @@ import Paths_concordium_client (version)
 import Concordium.Client.LegacyCommands
 import Concordium.Client.Types.Account
 import Concordium.Client.Utils
+import Concordium.Common.Time
 import Concordium.ID.Types (KeyIndex, SignatureThreshold)
 import Concordium.Types
 import Text.Printf
