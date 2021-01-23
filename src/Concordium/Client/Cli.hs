@@ -1,6 +1,7 @@
 module Concordium.Client.Cli where
 
 import Concordium.Common.Version
+import Concordium.Common.Time
 import qualified Concordium.Crypto.BlockSignature as BlockSig
 import qualified Concordium.Crypto.BlsSignature as Bls
 import qualified Concordium.Crypto.VRF as VRF
