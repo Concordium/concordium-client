@@ -1,0 +1,243 @@
+cabal-version: 2.0
+
+-- This file has been generated from package.yaml by hpack version 0.33.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 09f9fe18f523f9c5abc7cabeacda9b3d049dada5b8b5cf44d88ae49084723e63
+
+name:           concordium-client
+version:        0.4.8
+description:    Please see the README on GitHub at <https://github.com/githubuser/concordium-client#readme>
+homepage:       https://github.com/githubuser/concordium-client#readme
+bug-reports:    https://github.com/githubuser/concordium-client/issues
+author:         Concordium AG
+maintainer:     contact@concordium.com
+copyright:      Concordium
+license:        BSD3
+license-file:   LICENSE
+build-type:     Custom
+extra-source-files:
+    README.md
+    ChangeLog.md
+    deps/grpc-api/concordium_p2p_rpc.proto
+
+source-repository head
+  type: git
+  location: https://github.com/githubuser/concordium-client
+
+custom-setup
+  setup-depends:
+      Cabal
+    , base
+    , proto-lens-setup ==0.4.*
+
+flag middleware
+  manual: True
+  default: True
+
+flag static
+  description: Use static linking.
+  manual: True
+  default: False
+
+library
+  exposed-modules:
+      Concordium.Client.Cli
+      Concordium.Client.Commands
+      Concordium.Client.Config
+      Concordium.Client.Encryption
+      Concordium.Client.Export
+      Concordium.Client.GRPC
+      Concordium.Client.LegacyCommands
+      Concordium.Client.Output
+      Concordium.Client.Parse
+      Concordium.Client.Runner
+      Concordium.Client.Runner.Helper
+      Concordium.Client.TransactionStatus
+      Concordium.Client.Types.Account
+      Concordium.Client.Types.Contract.Info
+      Concordium.Client.Types.Contract.Parameter
+      Concordium.Client.Types.Contract.Schema
+      Concordium.Client.Types.Transaction
+      Concordium.Client.Types.TransactionStatus
+      Concordium.Client.Utils
+      Proto.ConcordiumP2pRpc Proto.ConcordiumP2pRpc_Fields
+  other-modules:
+      Paths_concordium_client
+  autogen-modules:
+      Proto.ConcordiumP2pRpc Proto.ConcordiumP2pRpc_Fields
+  hs-source-dirs:
+      src
+  default-extensions: OverloadedStrings RecordWildCards GeneralizedNewtypeDeriving ScopedTypeVariables FlexibleContexts LambdaCase TupleSections
+  ghc-options: -Wall -Wcompat -Werror=missing-fields -Wredundant-constraints -O
+  build-depends:
+      aeson
+    , aeson-pretty
+    , ansi-terminal
+    , ansi-wl-pprint
+    , async >=2.2
+    , attoparsec
+    , base >=4.7 && <5
+    , base16-bytestring
+    , base64-bytestring
+    , bytestring
+    , cereal
+    , concordium-base
+    , concurrent-extra >=0.7
+    , containers
+    , cryptonite
+    , directory
+    , filepath
+    , hashable >=1.2
+    , http2-client >=0.9
+    , http2-client-grpc >=0.7
+    , http2-grpc-proto-lens
+    , http2-grpc-types
+    , microlens-platform
+    , mtl
+    , optparse-applicative
+    , pretty
+    , proto-lens ==0.7.*
+    , proto-lens-protobuf-types ==0.7.*
+    , proto-lens-runtime ==0.7.*
+    , random
+    , scientific
+    , split
+    , string-interpolate
+    , text
+    , time
+    , transformers
+    , unordered-containers
+    , uri-encode >=1.5
+    , vector >=0.12
+  default-language: Haskell2010
+
+executable concordium-client
+  main-is: Main.hs
+  other-modules:
+      Paths_concordium_client
+  hs-source-dirs:
+      app
+  default-extensions: OverloadedStrings RecordWildCards GeneralizedNewtypeDeriving ScopedTypeVariables FlexibleContexts LambdaCase TupleSections
+  ghc-options: -Wall -Wcompat -Werror=missing-fields -Wredundant-constraints -O
+  build-depends:
+      base
+    , concordium-client
+    , optparse-applicative
+  if flag(static)
+    ld-options: -static
+  default-language: Haskell2010
+
+executable middleware
+  main-is: Main.hs
+  other-modules:
+      Api
+      Api.Types
+      Config
+      Http
+      Server
+      Paths_concordium_client
+  hs-source-dirs:
+      middleware
+  default-extensions: OverloadedStrings RecordWildCards GeneralizedNewtypeDeriving ScopedTypeVariables FlexibleContexts LambdaCase TupleSections
+  ghc-options: -Wall -threaded
+  build-depends:
+      aeson
+    , base >=4.7 && <5
+    , bytestring
+    , cereal >=0.5.8
+    , concordium-base
+    , concordium-client
+    , containers
+    , directory
+    , filepath
+    , http-conduit
+    , http2-client-grpc
+    , microlens-platform
+    , monad-logger
+    , mtl >=2.2.2
+    , process
+    , servant
+    , servant-server
+    , split
+    , text
+    , time
+    , transformers
+    , unordered-containers
+    , wai
+    , wai-cors
+    , wai-extra
+    , wai-logger
+    , wai-middleware-static
+    , warp
+  if flag(middleware)
+    buildable: True
+  else
+    buildable: False
+  default-language: Haskell2010
+
+executable tx-generator
+  main-is: Main.hs
+  other-modules:
+      Paths_concordium_client
+  hs-source-dirs:
+      generator
+  default-extensions: OverloadedStrings RecordWildCards GeneralizedNewtypeDeriving ScopedTypeVariables FlexibleContexts LambdaCase TupleSections
+  ghc-options: -Wall -Wcompat -Werror=missing-fields -Wredundant-constraints -O -threaded
+  build-depends:
+      aeson
+    , base
+    , bytestring
+    , concordium-base
+    , concordium-client
+    , mtl
+    , optparse-applicative
+    , time
+    , unordered-containers
+  if flag(static)
+    ld-options: -static
+  default-language: Haskell2010
+
+test-suite concordium-client-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      SimpleClientTests.AccountSpec
+      SimpleClientTests.BackupSpec
+      SimpleClientTests.BlockSpec
+      SimpleClientTests.CliSpec
+      SimpleClientTests.ConfigSpec
+      SimpleClientTests.ConsensusSpec
+      SimpleClientTests.ContractSpec
+      SimpleClientTests.EncryptionSpec
+      SimpleClientTests.LogSpec
+      SimpleClientTests.ParseSpec
+      SimpleClientTests.QueryTransaction
+      SimpleClientTests.TransactionSpec
+      Paths_concordium_client
+  hs-source-dirs:
+      test
+  default-extensions: OverloadedStrings RecordWildCards GeneralizedNewtypeDeriving ScopedTypeVariables FlexibleContexts LambdaCase TupleSections
+  ghc-options: -Wall -Wcompat -Werror=missing-fields -Wredundant-constraints -O
+  build-depends:
+      HUnit >=1.6
+    , QuickCheck >=2.13
+    , aeson
+    , base >=4.7 && <5
+    , bytestring
+    , cereal
+    , concordium-base
+    , concordium-client
+    , containers
+    , filepath
+    , hspec >=2.6
+    , hspec-expectations >=0.8
+    , mtl >=2.2.2
+    , random
+    , text
+    , time
+    , transformers
+    , unordered-containers
+    , vector
+  default-language: Haskell2010

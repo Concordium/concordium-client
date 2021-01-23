@@ -56,6 +56,7 @@ import qualified Concordium.Client.Types.Contract.Schema as CS
 import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Client.Types.TransactionStatus
 import           Concordium.Common.Version
+import qualified Concordium.Common.Time as Time
 import qualified Concordium.Crypto.EncryptedTransfers as Enc
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
@@ -687,11 +688,11 @@ data TransferWithScheduleTransactionConfig =
   TransferWithScheduleTransactionConfig
   { twstcTransactionCfg :: TransactionConfig
   , twstcReceiver :: NamedAddress
-  , twstcSchedule :: [(Types.Timestamp, Types.Amount)]}
+  , twstcSchedule :: [(Time.Timestamp, Types.Amount)]}
 
 -- |Resolve configuration of a transfer with schedule transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
-getTransferWithScheduleTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Text -> Either (Types.Amount, COM.Interval, Int, Types.Timestamp) [(Types.Timestamp, Types.Amount)] -> IO TransferWithScheduleTransactionConfig
+getTransferWithScheduleTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Text -> Either (Types.Amount, COM.Interval, Int, Time.Timestamp) [(Time.Timestamp, Types.Amount)] -> IO TransferWithScheduleTransactionConfig
 getTransferWithScheduleTransactionCfg baseCfg txOpts receiver preSchedule = do
   let realSchedule = case preSchedule of
                        Right val -> val
@@ -984,7 +985,7 @@ transferWithScheduleTransactionPayload ttxCfg confirm = do
         = ttxCfg
 
   logSuccess [ printf "sending GTUs from %s to %s" (showNamedAddress fromAddress) (showNamedAddress toAddress)
-             , printf "with the following release schedule:\n%swith a total amount of %s" (unlines $ map (\(a, b) -> showTimeFormatted (Types.timestampToUTCTime a) ++ ": " ++ showGtu b) schedule) (showGtu $ foldl' (\acc (_, x) -> acc + x) 0 schedule)
+             , printf "with the following release schedule:\n%swith a total amount of %s" (unlines $ map (\(a, b) -> showTimeFormatted (Time.timestampToUTCTime a) ++ ": " ++ showGtu b) schedule) (showGtu $ foldl' (\acc (_, x) -> acc + x) 0 schedule)
              , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
              , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiryTs) ]
   when confirm $ do

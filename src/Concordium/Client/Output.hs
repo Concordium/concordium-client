@@ -18,6 +18,7 @@ import qualified Concordium.Types.Execution as Types
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Crypto.EncryptedTransfers as Enc
 import qualified Concordium.Wasm as Wasm
+import qualified Concordium.Common.Time as Time
 
 import Control.Monad.Writer
 import qualified Data.Aeson as AE
@@ -158,7 +159,7 @@ printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
          0 -> []
          tot -> (printf "Release schedule:       total %s" (showGtu tot)) :
                (map (\ReleaseScheduleItem{..} -> printf "   %s:               %s scheduled by the transactions: %s."
-                                                (showTimeFormatted (Types.timestampToUTCTime rsiTimestamp))
+                                                (showTimeFormatted (Time.timestampToUTCTime rsiTimestamp))
                                                 (showGtu rsiAmount)
                                                 (intercalate ", " $ map show rsiTransactions))
                  (releaseSchedule $ airReleaseSchedule a))
@@ -499,7 +500,7 @@ showEvent verbose = \case
   Types.UpdateEnqueued{..} ->
     verboseOrNothing $ printf "Enqueued chain update, effective at %s:\n%s" (showTimeFormatted (timeFromTransactionExpiryTime ueEffectiveTime)) (show uePayload)
   Types.TransferredWithSchedule{..} ->
-    verboseOrNothing $ printf "Sent transfer with schedule %s" (intercalate ", " . map (\(a, b) -> showTimeFormatted (Types.timestampToUTCTime a) ++ ": " ++ showGtu b) $ etwsAmount)
+    verboseOrNothing $ printf "Sent transfer with schedule %s" (intercalate ", " . map (\(a, b) -> showTimeFormatted (Time.timestampToUTCTime a) ++ ": " ++ showGtu b) $ etwsAmount)
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
