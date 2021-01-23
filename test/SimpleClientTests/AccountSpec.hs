@@ -6,6 +6,7 @@ import Concordium.Client.Config (AccountNameMap)
 import Concordium.Client.Output
 import Concordium.Client.Types.Account
 import Concordium.Common.Version
+import Concordium.Common.Time
 import Concordium.Crypto.BlsSignature (derivePublicKey, generateSecretKey)
 import qualified Concordium.Crypto.ByteStringHelpers as BSH
 import Concordium.Crypto.Ed25519Signature (newKeyPair)
@@ -115,28 +116,28 @@ exampleCredentials p = IDTypes.NormalAC (IDTypes.CredentialDeploymentValues
         (Just share) = BSH.deserializeBase16 "a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46fa1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f"
 
 examplePolicyWithoutItems :: IDTypes.Policy
-examplePolicyWithoutItems = IDTypes.Policy { IDTypes.pCreatedAt = IDTypes.YearMonth 2020 4
-                                           , IDTypes.pValidTo = IDTypes.YearMonth 2021 4
+examplePolicyWithoutItems = IDTypes.Policy { IDTypes.pCreatedAt = YearMonth 2020 4
+                                           , IDTypes.pValidTo = YearMonth 2021 4
                                            , IDTypes.pItems = Map.empty }
 
 examplePolicyWithOneItem :: IDTypes.Policy
 examplePolicyWithOneItem = IDTypes.Policy
-                           { IDTypes.pCreatedAt = IDTypes.YearMonth 2020 4
-                           , IDTypes.pValidTo = IDTypes.YearMonth 2021 4
+                           { IDTypes.pCreatedAt = YearMonth 2020 4
+                           , IDTypes.pValidTo = YearMonth 2021 4
                            , IDTypes.pItems = Map.fromList [(IDTypes.AttributeTag 1,
                                                              IDTypes.AttributeValue "Value-1")] }
 
 examplePolicyWithTwoItems :: IDTypes.Policy
 examplePolicyWithTwoItems = IDTypes.Policy
-                            { IDTypes.pCreatedAt = IDTypes.YearMonth 2020 4
-                            , IDTypes.pValidTo = IDTypes.YearMonth 2021 4
+                            { IDTypes.pCreatedAt = YearMonth 2020 4
+                            , IDTypes.pValidTo = YearMonth 2021 4
                             , IDTypes.pItems = Map.fromList [(IDTypes.AttributeTag 1, IDTypes.AttributeValue "Value-1"),
                                                              (IDTypes.AttributeTag 3, IDTypes.AttributeValue "Value-2")] }
 
 examplePolicyWithItemOutOfRange :: IDTypes.Policy
 examplePolicyWithItemOutOfRange = IDTypes.Policy
-                                  { IDTypes.pCreatedAt = IDTypes.YearMonth 2020 4
-                                  , IDTypes.pValidTo = IDTypes.YearMonth 2021 4
+                                  { IDTypes.pCreatedAt = YearMonth 2020 4
+                                  , IDTypes.pValidTo = YearMonth 2021 4
                                   , IDTypes.pItems = Map.fromList [(IDTypes.AttributeTag 255, IDTypes.AttributeValue "Value-1")] }
 
 printAccountListSpec :: Spec
