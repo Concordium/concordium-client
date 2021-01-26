@@ -2122,33 +2122,9 @@ processBakerCmd action baseCfgDir verbose backend =
              then
                logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the amount requested to be staked (#{showGtu initialStake}).|]]
              else do
-               result <- sendAndTailTransaction txCfg pl intOpts
-               case result of
-                 Nothing -> return ()
-                 Just ts -> do
-                   case tsrState ts of
-                     Finalized | SingleBlock _ summary <- parseTransactionBlockResult ts ->
-                                   case Types.tsResult summary of
-                                     Types.TxSuccess [Types.BakerAdded{..}] ->
-                                       case outputFile of
-                                         Nothing ->
-                                           logInfo ["Baker with ID " ++ show ebaBakerId ++ " added.",
-                                                    printf "To use it add \"bakerId\": %s to the keys file %s." (show ebaBakerId) accountKeysFile
-                                                   ]
-                                         Just outFile -> do
-                                           let credentials = BakerCredentials{
-                                                 bcKeys = bakerKeys,
-                                                 bcIdentity = ebaBakerId
-                                                 }
-                                           liftIO $ handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose outFile (AE.encodePretty credentials)
-                                     Types.TxReject reason -> do
-                                       logWarn [showRejectReason True reason]
-                                     _ -> logFatal ["Unexpected response for baker add transaction type."]
-                     Absent ->
-                       logFatal ["Transaction is absent."]
-                     _ ->
-                       logFatal ["Unexpected status."]
-    BakerSetKeys file txOpts -> do
+               sendAndMaybeOutputCredentials bakerKeys accountKeysFile outputFile txCfg pl intOpts
+
+    BakerSetKeys file txOpts outfile -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -2156,8 +2132,8 @@ processBakerCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       withClient backend $ do
-        (txCfg, pl) <- bakerSetKeysTransaction baseCfg txOpts file (ioConfirm intOpts)
-        sendAndTailTransaction_ txCfg pl intOpts
+        (bakerKeys, txCfg, pl) <- bakerSetKeysTransaction baseCfg txOpts file (ioConfirm intOpts)
+        sendAndMaybeOutputCredentials bakerKeys file outfile txCfg pl intOpts
 
     BakerRemove txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -2197,9 +2173,43 @@ processBakerCmd action baseCfgDir verbose backend =
         let intOpts = toInteractionOpts txOpts
         pl <- liftIO $ bakerUpdateRestakeTransactionPayload burtCfg (ioConfirm intOpts)
         sendAndTailTransaction_ txCfg pl intOpts
-
+  where sendAndMaybeOutputCredentials bakerKeys infile outputFile txCfg pl intOpts = do
+          let printToFile ident out = do
+                  let credentials = BakerCredentials{
+                        bcKeys = bakerKeys,
+                        bcIdentity = ident
+                      }
+                  liftIO $ handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose out (AE.encodePretty credentials)
+          result <- sendAndTailTransaction txCfg pl intOpts
+          case result of
+            Nothing -> return ()
+            Just ts -> do
+              case tsrState ts of
+                Finalized | SingleBlock _ summary <- parseTransactionBlockResult ts ->
+                              case Types.tsResult summary of
+                                Types.TxSuccess [Types.BakerAdded{..}] ->
+                                  case outputFile of
+                                    Nothing ->
+                                      logInfo ["Baker with ID " ++ show ebaBakerId ++ " added.",
+                                               printf "To use it add \"bakerId\": %s to the keys file %s." (show ebaBakerId) infile
+                                              ]
+                                    Just outFile -> printToFile ebaBakerId outFile
+                                Types.TxSuccess [Types.BakerKeysUpdated{..}] ->
+                                  case outputFile of
+                                    Nothing ->
+                                      logInfo ["Keys for baker with ID " ++ show ebkuBakerId ++ " updated.",
+                                               printf "To use it add \"bakerId\": %s to the keys file %s." (show ebkuBakerId) infile
+                                              ]
+                                    Just outFile -> printToFile ebkuBakerId outFile
+                                Types.TxReject reason -> do
+                                        logWarn [showRejectReason True reason]
+                                _ -> logFatal ["Unexpected response for the transaction type."]
+                Absent ->
+                  logFatal ["Transaction is absent."]
+                _ ->
+                  logFatal ["Unexpected status."]
 -- |Convert 'baker set-keys' transaction config into a valid payload.
-bakerSetKeysTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> Bool -> ClientMonad IO (TransactionConfig, Types.Payload)
+bakerSetKeysTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> Bool -> ClientMonad IO (BakerKeys, TransactionConfig, Types.Payload)
 bakerSetKeysTransaction baseCfg txOpts fp confirm = do
   accCfg <- liftIO $ getAccountCfgFromTxOpts baseCfg txOpts
 
@@ -2238,7 +2248,7 @@ bakerSetKeysTransaction baseCfg txOpts fp confirm = do
       confirmed <- askConfirmation Nothing
       unless confirmed exitTransactionCancelled
 
-    return (txCfg, payload)
+    return (bsktcBakerKeys, txCfg, payload)
   where except c err = c >>= \case
           Just x -> return x
           Nothing -> logFatal [err]
