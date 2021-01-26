@@ -342,7 +342,8 @@ data BakerCmd
     , outputFile :: Maybe FilePath }
   | BakerSetKeys
     { bsaKeysFile :: !FilePath
-    , bsaTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
+    , bsaTransactionOpts :: !(TransactionOpts (Maybe Energy))
+    , bsaOutputFile :: Maybe FilePath }
   | BakerRemove
     { brTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | BakerUpdateStake
@@ -1192,7 +1193,8 @@ bakerSetKeysCmd =
     (info
       (BakerSetKeys <$>
         strArgument (metavar "FILE" <> help "File containing the new public and private keys.") <*>
-        transactionOptsParser)
+        transactionOptsParser <*>
+        optional (strOption (long "out" <> metavar "FILE" <> help "File to write the baker credentials to, in case of succesful transaction. These can be used to start the node.")))
       (progDescDoc $ docFromLines
         [ "Update the keys of a baker. Expected format of the key file:"
         , "   {"
