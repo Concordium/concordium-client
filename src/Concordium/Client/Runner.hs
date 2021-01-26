@@ -2203,7 +2203,7 @@ processBakerCmd action baseCfgDir verbose backend =
                                     Just outFile -> printToFile ebkuBakerId outFile
                                 Types.TxReject reason -> do
                                         logWarn [showRejectReason True reason]
-                                _ -> logFatal ["Unexpected response for baker add transaction type."]
+                                _ -> logFatal ["Unexpected response for the transaction type."]
                 Absent ->
                   logFatal ["Transaction is absent."]
                 _ ->
