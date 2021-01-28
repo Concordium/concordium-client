@@ -10,7 +10,7 @@ import           Network.GRPC.Client.Helpers
 import           Network.HTTP2.Client
 import           Network.GRPC.HTTP2.ProtoLens
 
-import           Data.ProtoLens                      (defMessage)
+import           Data.ProtoLens(defMessage)
 import           Data.ProtoLens.Service.Types
 import qualified Data.ProtoLens.Field                as Field
 import           Proto.ConcordiumP2pRpc
@@ -44,6 +44,7 @@ import           Data.Maybe
 import           Text.Printf
 
 import           Prelude                             hiding (fail, mod, null, unlines)
+import Proto.Google.Protobuf.Wrappers
 
 type LoggerMethod = Text -> IO ()
 
@@ -224,19 +225,25 @@ peerConnect ip peerPort = withUnary (call @"peerConnect") msg CF.value
 getPeerUptime :: ClientMonad IO (Either String Word64)
 getPeerUptime = withUnaryNoMsg (call @"peerUptime") CF.value
 
-banNode :: Text -> Int -> Text -> ClientMonad IO (Either String Bool)
+banNode :: Maybe Text -> Maybe Int -> Maybe Text -> ClientMonad IO (Either String Bool)
 banNode identifier peerPort ip = withUnary (call @"banNode") msg CF.value
   where msg = defMessage &
-              CF.nodeId .~ (defMessage & CF.value .~ identifier) &
-              CF.ip .~ (defMessage & CF.value .~ ip) &
-              CF.port .~ (defMessage & CF.value .~ fromIntegral peerPort)
+              CF.maybe'nodeId .~ (textToStringValue <$> identifier) &
+              CF.maybe'ip .~ (textToStringValue <$> ip) &
+              CF.maybe'port .~ (intToUInt <$> peerPort)
 
-unbanNode :: Text -> Int -> Text -> ClientMonad IO (Either String Bool)
+unbanNode :: Maybe Text -> Maybe Int -> Maybe Text -> ClientMonad IO (Either String Bool)
 unbanNode identifier peerPort ip = withUnary (call @"unbanNode") msg CF.value
   where msg = defMessage &
-              CF.nodeId .~ (defMessage & CF.value .~ identifier) &
-              CF.ip .~ (defMessage & CF.value .~ ip) &
-              CF.port .~ (defMessage & CF.value .~ fromIntegral peerPort)
+              CF.maybe'nodeId .~ (textToStringValue <$> identifier) &
+              CF.maybe'ip .~ (textToStringValue <$> ip) &
+              CF.maybe'port .~ (intToUInt <$> peerPort)
+
+textToStringValue :: Text -> StringValue
+textToStringValue x = defMessage & CF.value .~ x
+
+intToUInt :: Int -> UInt32Value
+intToUInt n = defMessage & CF.value .~ fromIntegral n
 
 joinNetwork :: Int -> ClientMonad IO (Either String Bool)
 joinNetwork net = withUnary (call @"joinNetwork") msg CF.value
