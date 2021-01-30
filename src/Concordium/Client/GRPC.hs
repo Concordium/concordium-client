@@ -225,25 +225,24 @@ peerConnect ip peerPort = withUnary (call @"peerConnect") msg CF.value
 getPeerUptime :: ClientMonad IO (Either String Word64)
 getPeerUptime = withUnaryNoMsg (call @"peerUptime") CF.value
 
-banNode :: Maybe Text -> Maybe Int -> Maybe Text -> ClientMonad IO (Either String Bool)
-banNode identifier peerPort ip = withUnary (call @"banNode") msg CF.value
+banNode :: Maybe Text -> -- ^ Node ID
+          Maybe Text -> -- ^ IP address
+          ClientMonad IO (Either String Bool)
+banNode identifier ip = withUnary (call @"banNode") msg CF.value
   where msg = defMessage &
               CF.maybe'nodeId .~ (textToStringValue <$> identifier) &
-              CF.maybe'ip .~ (textToStringValue <$> ip) &
-              CF.maybe'port .~ (intToUInt <$> peerPort)
+              CF.maybe'ip .~ (textToStringValue <$> ip)
 
-unbanNode :: Maybe Text -> Maybe Int -> Maybe Text -> ClientMonad IO (Either String Bool)
-unbanNode identifier peerPort ip = withUnary (call @"unbanNode") msg CF.value
+unbanNode :: Maybe Text -> -- ^ Node ID
+            Maybe Text -> -- ^ IP address
+            ClientMonad IO (Either String Bool)
+unbanNode identifier ip = withUnary (call @"unbanNode") msg CF.value
   where msg = defMessage &
               CF.maybe'nodeId .~ (textToStringValue <$> identifier) &
-              CF.maybe'ip .~ (textToStringValue <$> ip) &
-              CF.maybe'port .~ (intToUInt <$> peerPort)
+              CF.maybe'ip .~ (textToStringValue <$> ip)
 
 textToStringValue :: Text -> StringValue
 textToStringValue x = defMessage & CF.value .~ x
-
-intToUInt :: Int -> UInt32Value
-intToUInt n = defMessage & CF.value .~ fromIntegral n
 
 joinNetwork :: Int -> ClientMonad IO (Either String Bool)
 joinNetwork net = withUnary (call @"joinNetwork") msg CF.value

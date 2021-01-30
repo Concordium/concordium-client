@@ -72,12 +72,10 @@ data LegacyCmd
   | GetPeerUptime
   | BanNode
       { legacyNodeId   :: !(Maybe Text)
-      , legacyNodePort :: !(Maybe Int)
       , legacyNodeIp   :: !(Maybe Text)
       }
   | UnbanNode
       { legacyNodeId   :: !(Maybe Text)
-      , legacyNodePort :: !(Maybe Int)
       , legacyNodeIp   :: !(Maybe Text)
       }
   | JoinNetwork
@@ -374,9 +372,6 @@ banNodeCommand =
     (info
        (BanNode <$>
         optional (strOption (long "node-id" <> metavar "NODE-ID" <> help "ID of the node to be banned")) <*>
-        optional (option
-          auto
-          (long "port" <> metavar "NODE-PORT" <> help "Port of the node to be banned")) <*>
         optional (strOption (long "ip" <> metavar "NODE-IP" <> help "IP of the node to be banned")))
        (progDesc "Ban a node. The node to ban can either be supplied via a node-id or via an IP and port, but not both."))
 
@@ -386,13 +381,9 @@ unbanNodeCommand =
      "UnbanNode"
     (info
        (UnbanNode <$>
-        optional (strArgument (metavar "NODE-ID" <> help "ID of the node to be unbanned")) <*>
-        optional (argument
-          auto
-          (metavar "NODE-PORT" <> help "Port of the node to be unbanned")) <*>
-        optional (strArgument
-          (metavar "NODE-IP" <> help "IP of the node to be unbanned")))
-       (progDesc "Unban a node. The node to ban can either be supplied via a node-id or via an IP and port, but not both."))
+        optional (strOption (long "node-id" <> metavar "NODE-ID" <> help "ID of the node to be unbanned")) <*>
+        optional (strOption (long "ip" <> metavar "NODE-IP" <> help "IP of the node to be banned")))
+       (progDesc "Unban a node. The node to ban can either be supplied via a node-id or via an IP."))
 
 joinNetworkCommand :: Mod CommandFields LegacyCmd
 joinNetworkCommand =
