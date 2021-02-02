@@ -17,6 +17,7 @@ import           Concordium.Client.Types.Account
 import           Concordium.Client.Types.Transaction ()
 import qualified Concordium.Types as Types
 import           Concordium.Utils
+import qualified Proto.ConcordiumP2pRpc as Rpc
 
 import Concordium.Types (BakerId)
 
@@ -54,12 +55,32 @@ data TransferRequest =
 
 instance FromJSON TransferRequest
 
+newtype IsInBakingCommittee = IsInBakingCommittee (Rpc.NodeInfoResponse'IsInBakingCommittee)
+  deriving (Show)
+
+instance FromJSON IsInBakingCommittee where
+  parseJSON v = do
+    str :: String <- parseJSON v
+    case str of
+      "NotInCommittee" -> return $ IsInBakingCommittee Rpc.NodeInfoResponse'NOT_IN_COMMITTEE
+      "AddedButNotActiveInCommittee" -> return $ IsInBakingCommittee Rpc.NodeInfoResponse'ADDED_BUT_NOT_ACTIVE_IN_COMMITTEE
+      "AddedButWrongKeys" -> return $ IsInBakingCommittee Rpc.NodeInfoResponse'ADDED_BUT_WRONG_KEYS
+      "ActiveInCommittee" -> return $ IsInBakingCommittee Rpc.NodeInfoResponse'ACTIVE_IN_COMMITTEE
+      err -> fail $ "Unknown value for IsInBakingCommittee '" ++ err ++ "'."
+
+instance ToJSON IsInBakingCommittee where
+  toJSON (IsInBakingCommittee isInBakingCommittee) = case isInBakingCommittee of
+    Rpc.NodeInfoResponse'NOT_IN_COMMITTEE -> String "NotInCommittee"
+    Rpc.NodeInfoResponse'ADDED_BUT_NOT_ACTIVE_IN_COMMITTEE -> String "AddedButNotActiveInCommittee"
+    Rpc.NodeInfoResponse'ADDED_BUT_WRONG_KEYS -> String "AddedButWrongKeys"
+    Rpc.NodeInfoResponse'ACTIVE_IN_COMMITTEE -> String "ActiveInCommittee"
+    (Rpc.NodeInfoResponse'IsInBakingCommittee'Unrecognized _) -> String "NotInCommittee"
+
 newtype TransferResponse =
   TransferResponse
     { transactionId :: Types.TransactionHash
     }
   deriving newtype (ToJSON, Show)
-
 
 data GetNodeStateResponse =
   GetNodeStateResponse
@@ -71,7 +92,7 @@ data GetNodeStateResponse =
     , sent :: Int
     , received :: Int
     , isBaking :: Bool
-    , isInBakingCommittee :: Bool
+    , isInBakingCommittee :: IsInBakingCommittee
     , bakerId :: Maybe Word64
     , isFinalizing :: Bool
     , isInFinalizingCommittee :: Bool
@@ -95,7 +116,7 @@ data SetNodeStateRequest =
     , sent :: Maybe Int
     , received :: Maybe Int
     , isBaking :: Maybe Bool
-    , isInBakingCommittee :: Maybe Bool
+    , isInBakingCommittee :: Maybe IsInBakingCommittee
     , isFinalizing :: Maybe Bool
     , isInFinalizingCommittee :: Maybe Bool
     }
