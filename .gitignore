@@ -1,6 +1,5 @@
 .DS_Store
 .stack-work/
-simple-client.cabal
 *~
 .cache
 TAGS
