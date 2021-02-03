@@ -975,7 +975,7 @@ configAccountImportCmd showAllOpts =
     "import"
     (info
       (ConfigAccountImport <$>
-        strArgument (metavar "FILE" <> help "Account file exported from the wallet.") <*>
+        strArgument (metavar "FILE" <> help "Account file exported from the wallet. By default all accounts will be imported.") <*>
         optional (strOption (long "name" <> metavar "NAME" <> help nameOptionHelp)) <*>
         option readAccountExportFormat (internalUnless showAllOpts <> long "format" <> metavar "FORMAT" <> value FormatMobile <> help "Export format. Supported values are 'mobile' and 'genesis' (default: 'mobile').")
       )
@@ -984,7 +984,7 @@ configAccountImportCmd showAllOpts =
           if showAllOpts then
              "Name of the account. For the 'genesis' format, this sets the name to assign to the account. For the 'mobile' format (which contains multiple already named accounts), it selects which account to import."
           else
-             "Name of the account."
+             "Name of a single account in the wallet. This will cause the client to only import that account."
 
 configAccountAddKeysCmd :: Mod CommandFields ConfigAccountCmd
 configAccountAddKeysCmd =
