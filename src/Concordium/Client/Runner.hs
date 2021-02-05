@@ -218,7 +218,7 @@ processConfigCmd action baseCfgDir verbose =
         Left err -> logFatal [[i|Failed to import Config Backup, #{err}|]]
 
     ConfigAccountCmd c -> case c of
-      ConfigAccountAdd addr name -> do
+      ConfigAccountName addr name -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
