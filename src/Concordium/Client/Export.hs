@@ -121,12 +121,13 @@ accountCfgFromWalletExportAccount pwd WalletExportAccount { weaKeys = AccountSig
     }
   where
     ensureValidName name =
-      case validateAccountName name of
-        Left err -> do
-          logError [err]
-          putStr "Input valid replacement name: "
-          T.getLine >>= ensureValidName
-        Right () -> return name
+      let trimmedName = strip name
+      in case validateAccountName trimmedName of
+          Left err -> do
+            logError [err]
+            putStr "Input valid replacement name: "
+            T.getLine >>= ensureValidName
+          Right () -> return trimmedName
 
 -- |Decode and parse a genesis account into a named account config.
 -- All signing keys are encrypted with the given password.
