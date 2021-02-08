@@ -14,7 +14,7 @@ function log {
 function docker_port {
     local -r node="$1"
     # Extract port of docker container running the node with the provided ID.
-    local -r port="$(docker port "p2p-client_baker_$node" | grep '10000/tcp' | cut -d: -f2)"
+    local -r port="$(docker port "docker-compose_baker_$node" | grep '10000/tcp' | cut -d: -f2)"
     if [ -z "$port" ]; then
         log "Error: Cannot resolve docker port for node $node - falling back to port 0."
         echo 0
