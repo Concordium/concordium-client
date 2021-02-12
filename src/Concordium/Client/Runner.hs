@@ -218,30 +218,15 @@ processConfigCmd action baseCfgDir verbose =
         Left err -> logFatal [[i|Failed to import Config Backup, #{err}|]]
 
     ConfigAccountCmd c -> case c of
-      ConfigAccountAdd addr name -> do
+      ConfigAccountName addr name -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
-        when verbose $ do
-          runPrinter $ printBaseConfig baseCfg
-          putStrLn ""
-
         checkedAddr <-
           case ID.addressFromText addr of
             Left err -> logFatal [[i|cannot parse #{addr} as an address: #{err}|]]
             Right a -> return a
-        logFatalOnError $ validateAccountName name
-
-        let nameMap = bcAccountNameMap baseCfg
-        case Map.lookup name nameMap of
-          Nothing -> do
-            void $ addAccountNameAndWrite baseCfg name checkedAddr verbose
-          Just currentAddr -> do
-            logWarn [[i|the name '#{name}' is already mapped to the address '#{currentAddr}'|]]
-
-            updateConfirmed <- askConfirmation $ Just "confirm that you want to overwrite the existing mapping"
-
-            when updateConfirmed $ do
-              logInfo [[i|mapping '#{name}' to address '#{checkedAddr}'|]]
-              void $ addAccountNameAndWrite baseCfg name checkedAddr verbose
+        nameAdded <- liftIO $ addAccountNameAndWrite verbose baseCfg name checkedAddr
+        logSuccess [[i|module reference #{addr} was successfully named '#{nameAdded}'|]]
+        
       ConfigAccountRemove account -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
