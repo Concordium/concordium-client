@@ -315,22 +315,6 @@ removeAccountNameAndWrite baseCfg name verbose = do
   logSuccess ["removed name mapping"]
   return baseCfg { bcAccountNameMap = m }
 
--- |Add a name to the account name map. If the name is already in use it
--- |overwrites it
--- |Returns the updated baseConfig
--- |PRECONDITION: Account name is a valid account account name
-addAccountNameAndWrite :: BaseConfig -> Text -> AccountAddress -> Verbose -> IO BaseConfig
-addAccountNameAndWrite baseCfg name addr verbose = do
-  -- Check if config has been initialized.
-  let accCfgDir = bcAccountCfgDir baseCfg
-      mapFile = accountNameMapFile accCfgDir
-  liftIO $ ensureAccountConfigInitialized baseCfg
-
-  let m = M.insert name addr $ bcAccountNameMap baseCfg
-  liftIO $ writeNameMap verbose mapFile m
-  logSuccess [[i|added name mapping: '#{name}' --> '#{addr}'|]]
-  return baseCfg { bcAccountNameMap = m }
-
 removeAccountConfig :: BaseConfig -> NamedAddress -> IO BaseConfig
 removeAccountConfig baseCfg@BaseConfig{..} NamedAddress{..} = do
   -- Remove the keys directory
@@ -450,6 +434,20 @@ checkNameUntilNoCollision typeOfValue validateName nm unvalidatedName newVal = d
           putStr "Input valid name: "
           T.getLine >>= ensureValidName
         Right () -> return name
+
+-- |Add a name to the account name map. 
+-- If the name is invalid or collides with an existing one, `checkNameUntilNoCollision` is
+-- used to resolve the conflict and find a new name.
+-- Returns the name that was actually added.
+addAccountNameAndWrite :: Verbose -> BaseConfig -> Text -> AccountAddress -> IO Text
+addAccountNameAndWrite verbose baseCfg name accountAddr = do
+  newName <- checkNameUntilNoCollision "account" validateAccountName nameMap name accountAddr
+  let updatedNameMap = M.insert newName accountAddr nameMap
+  liftIO $ writeNameMap verbose mapFile updatedNameMap
+  return newName
+  where accCfgDir = bcAccountCfgDir baseCfg 
+        mapFile = accountNameMapFile accCfgDir
+        nameMap = bcAccountNameMap baseCfg
 
 -- |Add a contract name and write it to 'contractNames.map'.
 -- If the name collides with an existing one, `checkNameUntilNoCollision` is

@@ -95,7 +95,7 @@ data ConfigCmd
   deriving (Show)
 
 data ConfigAccountCmd
-  = ConfigAccountAdd
+  = ConfigAccountName
     { caaAddr :: !Text
     , caaName :: !Text }
   | ConfigAccountRemove
@@ -939,7 +939,7 @@ configAccountCmds showAllOpts =
     (info
       (ConfigAccountCmd <$>
         hsubparser
-          (configAccountAddCmd <>
+          (configAccountNameCmd <>
            configAccountRemove <>
            configAccountImportCmd showAllOpts <>
            configAccountAddKeysCmd <>
@@ -950,14 +950,14 @@ configAccountCmds showAllOpts =
            configAccountRemoveKeysCmd))
       (progDesc "Commands for inspecting and changing account-specific configuration."))
 
-configAccountAddCmd :: Mod CommandFields ConfigAccountCmd
-configAccountAddCmd =
+configAccountNameCmd :: Mod CommandFields ConfigAccountCmd
+configAccountNameCmd =
   command
-    "add"
+    "name"
     (info
-      (ConfigAccountAdd <$>
+      (ConfigAccountName <$>
         strArgument (metavar "ADDRESS" <> help "Address of the account.") <*>
-        strArgument (metavar "NAME" <> help "Name of the account."))
+        strOption (long "name" <> metavar "NAME" <> help "Name of the account."))
       (progDesc "Adds a named account address to persistent config"))
 
 configAccountRemove :: Mod CommandFields ConfigAccountCmd
