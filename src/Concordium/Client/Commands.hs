@@ -103,7 +103,8 @@ data ConfigAccountCmd
   | ConfigAccountImport
     { caiFile :: !FilePath
     , caiName :: !(Maybe Text)
-    , caiFormat :: !AccountExportFormat }
+    , caiFormat :: !AccountExportFormat 
+    , caiSkipExisting :: !Bool }
   | ConfigAccountAddKeys
     { caakAddr :: !Text
     , caakKeysFile :: !FilePath }
@@ -937,7 +938,8 @@ configAccountImportCmd showAllOpts =
       (ConfigAccountImport <$>
         strArgument (metavar "FILE" <> help "Account file exported from the wallet. By default all accounts will be imported.") <*>
         optional (strOption (long "name" <> metavar "NAME" <> help nameOptionHelp)) <*>
-        option readAccountExportFormat (internalUnless showAllOpts <> long "format" <> metavar "FORMAT" <> value FormatMobile <> help "Export format. Supported values are 'mobile' and 'genesis' (default: 'mobile').")
+        option readAccountExportFormat (internalUnless showAllOpts <> long "format" <> metavar "FORMAT" <> value FormatMobile <> help "Export format. Supported values are 'mobile' and 'genesis' (default: 'mobile').") <*>
+        switch (long "skip-existing" <> short 's' <> help "Automatically skip importing accounts when the keydirectory already exists")
       )
       (progDesc "Import an account to persistent config."))
   where nameOptionHelp =

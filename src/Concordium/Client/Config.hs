@@ -228,8 +228,9 @@ ensureDirCreated verbose dir = do
 initAccountConfigEither :: BaseConfig
                         -> NamedAddress
                         -> Bool -- ^ True if we are in a cli environment
+                        -> Bool -- ^ True if skip-existing flag is set
                         -> IO (Either String (BaseConfig, AccountConfig, Bool))
-initAccountConfigEither baseCfg namedAddr inCLI = runExceptT $ do
+initAccountConfigEither baseCfg namedAddr inCLI skipExisting = runExceptT $ do
   let NamedAddress { naAddr = addr, naNames = names } = namedAddr
   case names of
     [] -> logInfo [[i|adding account #{addr} without a name|]]
@@ -244,25 +245,29 @@ initAccountConfigEither baseCfg namedAddr inCLI = runExceptT $ do
   let keysDir = accountKeysDir accCfgDir addr
   keysDirExists <- liftIO $ doesDirectoryExist keysDir
   written <- if keysDirExists
-    then
-      if inCLI then do
-        logWarn [printf "account is already initialized: directory '%s' exists." keysDir
-                , "overwriting the directory would erase all the currently stored keys"
-                , "This is a destructive operation and cannot be undone"
-                , "Are you certain that you want to proceed with this operation?"]
-        ovwt <- liftIO $ askConfirmation Nothing
-        if ovwt
-          then do
-          liftIO $ removePathForcibly keysDir
-          logInfo [printf "overwriting directory '%s'" keysDir]
-          liftIO $ createDirectoryIfMissing False keysDir
-          logSuccess ["overwrote key directory"]
-          return True
-          else do
-          liftIO $ logInfo [printf "Account '%s' will not be imported" (show addr)]
-          return False
+    then 
+      if skipExisting then do
+        logInfo [printf "skipped existing account '%s' as keydir '%s' already exists" (show addr) keysDir]
+        return False
       else do
-        throwE $ printf "account is already initialized: directory '%s' exists, retry using the CLI for more options" keysDir
+        if inCLI then do
+          logWarn [printf "account is already initialized: directory '%s' exists." keysDir
+                  , "overwriting the directory would erase all the currently stored keys"
+                  , "This is a destructive operation and cannot be undone"
+                  , "Are you certain that you want to proceed with this operation?"]
+          ovwt <- liftIO $ askConfirmation Nothing
+          if ovwt
+            then do
+            liftIO $ removePathForcibly keysDir
+            logInfo [printf "overwriting directory '%s'" keysDir]
+            liftIO $ createDirectoryIfMissing False keysDir
+            logSuccess ["overwrote key directory"]
+            return True
+            else do
+            liftIO $ logInfo [printf "Account '%s' will not be imported" (show addr)]
+            return False
+        else do
+          throwE $ printf "account is already initialized: directory '%s' exists, retry using the CLI for more options" keysDir
     else do
       logInfo [printf "creating directory '%s'" keysDir]
       liftIO $ createDirectoryIfMissing False keysDir
@@ -293,9 +298,10 @@ initAccountConfigEither baseCfg namedAddr inCLI = runExceptT $ do
 initAccountConfig :: BaseConfig
                   -> NamedAddress
                   -> Bool -- ^ True if we are in a cli environment
+                  -> Bool -- ^ Skip-existing flag
                   -> IO (BaseConfig, AccountConfig, Bool)
-initAccountConfig baseCfg namedAddr inCLI = do
-  res <- initAccountConfigEither baseCfg namedAddr inCLI
+initAccountConfig baseCfg namedAddr inCLI skipExisting= do
+  res <- initAccountConfigEither baseCfg namedAddr inCLI skipExisting
   case res of
     Left err -> logFatal [err]
     Right config -> return config
@@ -362,7 +368,7 @@ importConfigBackup verbose baseCfg (accs, cnm, mnm) = do
     importAccountConfig :: BaseConfig -> [AccountConfig] -> IO BaseConfig
     importAccountConfig bCfg accCfgs = foldM f bCfg accCfgs
       where f bc ac = do
-              (bc', _, t) <- initAccountConfig bc (acAddr ac) True
+              (bc', _, t) <- initAccountConfig bc (acAddr ac) True False
               when t $ writeAccountKeys bc' ac verbose
               return bc'
 
@@ -816,7 +822,7 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
           case nameOpt of 
             Just (name, _) -> do
               let namedAddr' = NamedAddress { naAddr = addr, naNames = [name] }
-              (a, _, _) <- initAccountConfig cfg namedAddr' False
+              (a, _, _) <- initAccountConfig cfg namedAddr' False False
               return . Just $ a
             Nothing -> do
               logInfo [[i|No name associated with account '#{addr}'.|]]
@@ -827,7 +833,7 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
                   logFatalOnError $ validateAccountName s
                   return $ [s]
               let namedAddr' = NamedAddress { naAddr = addr, naNames = name }
-              (a, _, _) <- initAccountConfig cfg namedAddr' False
+              (a, _, _) <- initAccountConfig cfg namedAddr' False False
               return . Just $ a
         else do
           return Nothing
