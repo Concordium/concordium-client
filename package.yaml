@@ -1,5 +1,5 @@
 name:                concordium-client
-version:             0.4.8
+version:             0.5.0
 github:              "githubuser/concordium-client"
 license:             BSD3
 author:              "Concordium AG"
