@@ -82,7 +82,6 @@ exampleAccountInfoResult d cs = AccountInfoResult
                                 , airNonce = Types.Nonce 2
                                 , airBaker = exampleBakerInfoResult <$> d
                                 , airCredentials = map (Versioned 0) cs
-                                , airInstances = []
                                 , airReleaseSchedule = AccountInfoReleaseSchedule 0 []
                                 , airEncryptedAmount = Types.AccountEncryptedAmount {
                                     _startIndex = 3,
