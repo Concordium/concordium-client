@@ -287,8 +287,6 @@ data AccountInfoResult = AccountInfoResult
   , airBaker :: !(Maybe AccountInfoBakerResult)
     -- | List of credentials on the account, latest first.
   , airCredentials :: ![Versioned IDTypes.AccountCredential]
-    -- | List of smart contract instances created by this account.
-  , airInstances :: ![ContractAddress]
     -- | Account's encrypted amount.
   , airEncryptedAmount :: !AccountEncryptedAmount
     -- | The public key to use when sending encrypted transfers to the account.
@@ -303,7 +301,6 @@ instance AE.FromJSON AccountInfoResult where
     airNonce <- v .: "accountNonce"
     airBaker <- v .:? "accountBaker"
     airCredentials <- v .: "accountCredentials"
-    airInstances <- v .: "accountInstances"
     airEncryptedAmount <- v .: "accountEncryptedAmount"
     airEncryptionKey <- v .: "accountEncryptionKey"
     airReleaseSchedule <- v .: "accountReleaseSchedule"
