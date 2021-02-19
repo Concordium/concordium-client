@@ -1,18 +1,21 @@
 pipeline {
-    agent none
+    agent { label 'jenkins-worker' }
     environment {
         GHC_VERSION = '8.8.4'
-        BASE_OUTFILE = 's3://static-libraries.concordium.com/dist-macos/concordium-client'
+        VERSION = sh(
+            returnStdout: true, 
+            script: '''\
+                # Extract version number if not set as parameter
+                [ -z "$VERSION" ] && VERSION=$(awk '/version: / { print $2; exit }' package.yaml)
+                echo -n "$VERSION"
+            '''.stripIndent()
+        )
+        OUTFILE = "s3://client-distribution.concordium.com/macos/concordium-client_${VERSION}"
     }
     stages {
         stage('precheck') {
-            agent { label 'jenkins-worker' }
             steps {
                 sh '''\
-                    # Extract version number from package.yaml, if not set as parameter
-                    [ -z "$VERSION" ] && VERSION=$(awk '/version: / { print $2; exit }' package.yaml)
-                    OUTFILE="${BASE_OUTFILE}_${VERSION}"
-
                     # Fail if file already exists
                     totalFoundObjects=$(aws s3 ls ${OUTFILE} --summarize | grep "Total Objects: " | sed 's/[^0-9]*//g')
                     if [ "$totalFoundObjects" -ne "0" ]; then
@@ -42,14 +45,9 @@ pipeline {
             }
         }
         stage('Publish') {
-            agent { label 'jenkins-worker' }
             steps {
                 unstash 'release'
                 sh '''\
-                    # Push to s3
-                    # Extract version number from package.yaml, if not set as parameter
-                    [ -z "$VERSION" ] && VERSION=$(awk '/version: / { print $2; exit }' package.yaml)
-                    OUTFILE="${BASE_OUTFILE}_${VERSION}"
                     aws s3 cp out/concordium-client ${OUTFILE} --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
                 '''.stripIndent()
             }
