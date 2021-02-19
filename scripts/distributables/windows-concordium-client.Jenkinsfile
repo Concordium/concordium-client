@@ -5,13 +5,14 @@ pipeline {
         stage('build') {
             environment {
                 GHC_VERSION = '8.8.4'
+                BASE_OUTFILE = 's3://client-distribution.concordium.com/windows/concordium-client'
             }
             steps {
                 sh '''\
                     
                     # Extract version number from package.yaml, if not set as parameter
                     [ -z "$VERSION" ] && VERSION=$(awk '/version: / { print $2; exit }' package.yaml)
-                    OUTFILE="s3://static-libraries.concordium.com/dist-windows/concordium-client_${VERSION}.exe"
+                    OUTFILE="${BASE_OUTFILE}_${VERSION}.exe"
 
                     # Fail if file already exists
                     totalFoundObjects=$(aws s3 ls ${OUTFILE} --summarize | grep "Total Objects: " | sed 's/[^0-9]*//g')
