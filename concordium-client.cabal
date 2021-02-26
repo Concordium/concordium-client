@@ -4,10 +4,10 @@ cabal-version: 2.0
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 09f9fe18f523f9c5abc7cabeacda9b3d049dada5b8b5cf44d88ae49084723e63
+-- hash: 45ee289943690348ebc21e921ecce7132418b6dab71690dd1f3be083cca0c6c9
 
 name:           concordium-client
-version:        0.4.8
+version:        0.5.0
 description:    Please see the README on GitHub at <https://github.com/githubuser/concordium-client#readme>
 homepage:       https://github.com/githubuser/concordium-client#readme
 bug-reports:    https://github.com/githubuser/concordium-client/issues
