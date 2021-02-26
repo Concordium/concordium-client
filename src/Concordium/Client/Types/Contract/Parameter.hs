@@ -197,12 +197,13 @@ putJSONUsingSchema typ json = case (typ, json) of
     _ -> Left [i|#{obj} had too many fields. It should contain a single variant of the following enum:\n#{showPrettyJSON enum}.|]
 
   (String sl, AE.String str) -> do
-    let len = fromIntegral . Text.length $ str
+    let bytes = BS.unpack . Text.encodeUtf8 $ str
+        len = fromIntegral $ length bytes
         maxLen = maxSizeLen sl
     when (len > maxLen) $ Left $ tooLongError "String" maxLen len
-    let putLen = putLenWithSizeLen sl (fromIntegral len)
-    let putChars = mapM_ S.put . BS.unpack . Text.encodeUtf8 $ str
-    pure $ putLen <> putChars
+    let putLen = putLenWithSizeLen sl $ fromIntegral len
+    let putBytes = mapM_ S.put bytes
+    pure $ putLen <> putBytes
 
   (type_, value) -> Left [i|Expected value of type #{showCompactPrettyJSON type_}, but got: #{showCompactPrettyJSON value}.|]
 
