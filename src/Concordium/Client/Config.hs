@@ -365,6 +365,7 @@ importConfigBackup verbose baseCfg skipExistingAccounts (accs, cnm, mnm) = do
     -- |Write the provided configuration to disk in the expected formats.
     -- If any account names collide with existing ones,
     -- the user is prompted to provide a new, non-colliding name.
+    -- skipExisting flag automatically skips accounts for which the key folder already exists
     importAccountConfig :: BaseConfig -> [AccountConfig] -> Bool -> IO BaseConfig
     importAccountConfig bCfg accCfgs skipExisting = do -- foldM f bCfg accCfgs
       (bc', skipped) <- foldM f (bCfg, 0::Int) accCfgs  
@@ -378,23 +379,6 @@ importConfigBackup verbose baseCfg skipExistingAccounts (accs, cnm, mnm) = do
             return (bc', skipped + 1)
           else 
             return (bc', skipped)
-
-      --   where
-      --     -- Adds an account to the BaseConfig, prompting the user for a new
-      --     -- non-colliding name if the account is named and the name already
-      --     -- exists in the name map.
-      --     -- If skip-existing flag is set, count how many variables were skipped
-      --     addAccountToBaseConfigWithNamePrompts (baseCfg, skipped) accCfg = do
-      --       (bcfg, _, t) <- initAccountConfig baseCfg (acAddr accCfg) True skipExisting
-      --       when t $ writeAccountKeys bcfg accCfg verbose
-      --       if skipExisting && (not t) then
-      --         return (bcfg, skipped + 1)
-      --       else 
-      --         return (bcfg, skipped)
-      -- where f bc ac = do
-      --         (bc', _, t) <- initAccountConfig bc (acAddr ac) True skipExisting
-      --         when t $ writeAccountKeys bc' ac verbose
-      --         return bc'
 
     -- |Import ContractNameMap by merging it with the existing namemap from BaseConfig.
     -- Then write it to disk in the expected format.
