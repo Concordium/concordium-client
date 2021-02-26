@@ -190,6 +190,7 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
 
   it "String" $ do
     fromToJSONSucceed (String One) $ AE.String "something"
+    fromToJSONSucceed (String One) $ AE.String "UTF-8: 😀🦄✅"
     fromToJSONSucceed (String One) $ AE.String . Text.pack . replicate 255 $ 'a'
     fromToJSONFail (String One)   $ AE.String . Text.pack . replicate 256 $ 'a' -- Too long
 
