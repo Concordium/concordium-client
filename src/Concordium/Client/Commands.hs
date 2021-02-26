@@ -89,7 +89,8 @@ data ConfigCmd
   | ConfigBackupExport
     { cbeFileName :: !FilePath }
   | ConfigBackupImport
-    { cbiFileName :: !FilePath }
+    { cbiFileName :: !FilePath
+    , cbiSkipExisting :: !Bool }
   | ConfigAccountCmd -- groups 'config account' commands
     { configAccountCmd :: ConfigAccountCmd }
   deriving (Show)
@@ -889,7 +890,8 @@ configBackupImportCmd =
     "import-backup"
     (info
       (ConfigBackupImport <$>
-        strArgument (metavar "FILE" <> help "Backup file name")
+        strArgument (metavar "FILE" <> help "Backup file name") <*>
+        switch (long "skip-existing" <> short 's' <> help "Automatically skip importing accounts when the keydirectory already exists")
       )
       (progDesc "Import config backup file, requires password if encrypted"))
 
