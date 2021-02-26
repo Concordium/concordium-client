@@ -188,6 +188,12 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
     fromToJSONSucceed enumType $ object ["b" .= toArray [AE.Bool True]]
     fromToJSONSucceed enumType $ object ["c" .= toArray []]
 
+  it "String" $ do
+    fromToJSONSucceed (String One) $ AE.String "something"
+    fromToJSONSucceed (String One) $ AE.String . Text.pack . replicate 255 $ 'a'
+    fromToJSONFail (String One)   $ AE.String . Text.pack . replicate 256 $ 'a' -- Too long
+
+
   where idx :: Word64
         idx = 42
 
