@@ -208,13 +208,13 @@ processConfigCmd action baseCfgDir verbose =
         _ -> configExport configBackup (Just pwd)
       handleWriteFile BS.writeFile PromptBeforeOverwrite verbose fileName exportedConfigBackup
 
-    ConfigBackupImport fileName -> do
+    ConfigBackupImport fileName skipExistingAccounts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       ciphertext <- handleReadFile BS.readFile fileName
       configBackup <- configImport ciphertext (askPassword "The backup file is password protected. Enter password: ")
       case configBackup of
         Right ConfigBackup{..} -> do
-          void $ importConfigBackup verbose baseCfg (cbAccounts, cbContractNameMap, cbModuleNameMap)
+          void $ importConfigBackup verbose baseCfg skipExistingAccounts (cbAccounts, cbContractNameMap, cbModuleNameMap)
         Left err -> logFatal [[i|Failed to import Config Backup, #{err}|]]
 
     ConfigAccountCmd c -> case c of
@@ -266,7 +266,7 @@ processConfigCmd action baseCfgDir verbose =
         -- the user to give a new name
         (_, skipped) <- foldM addAccountToBaseConfigWithNamePrompts (baseCfg, 0::Int) accCfgs
         
-        when (skipExisting && (skipped > 0)) $ logInfo [printf "`%d` account[s] were automatically skipped. To overwrite these keys, re-import file without the skip-existing flag, or import them individually with --name" skipped ]
+        when (skipExisting && (skipped > 0)) $ logInfo [printf "`%d` account[s] automatically skipped. To overwrite these keys, re-import file without the skip-existing flag, or import them individually with --name" skipped ]
 
         where
           -- Adds an account to the BaseConfig, prompting the user for a new
