@@ -12,6 +12,7 @@ import Data.Aeson (FromJSON, Result, ToJSON, (.=))
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import qualified Data.Char as Char
 import qualified Data.HashMap.Strict as HM
 import qualified Data.List as List
@@ -21,6 +22,7 @@ import qualified Data.Serialize as S
 import Data.String.Interpolate (i, iii)
 import Data.Text (Text)
 import qualified Data.Text as Text
+import qualified Data.Text.Encoding as Text
 import qualified Data.Time as Time
 import qualified Data.Vector as V
 import Data.Word (Word8, Word16, Word32, Word64)
@@ -76,6 +78,7 @@ getJSONUsingSchema typ = case typ of
                       Nothing -> fail [i|Variant with index #{idx} does not exist for Enum.|]
     fields' <- getFieldsAsJSON fields
     return $ AE.object [name .= fields']
+  String sl -> AE.toJSON . Text.decodeUtf8 . BS.pack <$> getListOfWithSizeLen sl S.get
   where
     getFieldsAsJSON :: Fields -> S.Get AE.Value
     getFieldsAsJSON fields = case fields of
@@ -192,6 +195,14 @@ putJSONUsingSchema typ json = case (typ, json) of
         putJSONFields' <- putJSONFields fieldTypes fields `addTraceInfoOf` [i|In enum variant '#{name}'.|]
         pure $ putLen <> putJSONFields'
     _ -> Left [i|#{obj} had too many fields. It should contain a single variant of the following enum:\n#{showPrettyJSON enum}.|]
+
+  (String sl, AE.String str) -> do
+    let len = fromIntegral . Text.length $ str
+        maxLen = maxSizeLen sl
+    when (len > maxLen) $ Left $ tooLongError "String" maxLen len
+    let putLen = putLenWithSizeLen sl (fromIntegral len)
+    let putChars = mapM_ S.put . BS.unpack . Text.encodeUtf8 $ str
+    pure $ putLen <> putChars
 
   (type_, value) -> Left [i|Expected value of type #{showCompactPrettyJSON type_}, but got: #{showCompactPrettyJSON value}.|]
 
