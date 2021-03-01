@@ -1629,7 +1629,7 @@ processContractCmd action baseCfgDir verbose backend =
             Nothing -> return ()
             Just (Left err) -> logFatal ["contract initialisation failed:", err]
             Just (Right contrAddr) -> do
-              logSuccess [[i|contract successfully initialized with address: #{contrAddr}|]]
+              logSuccess [[i|contract successfully initialized with address: #{showCompactPrettyJSON contrAddr}|]]
               case contrAlias of
                 Nothing -> return ()
                 Just contrAlias' -> do
