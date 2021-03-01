@@ -121,6 +121,7 @@ data SchemaType =
   | Array Word32 SchemaType
   | Struct Fields
   | Enum [(Text, Fields)]
+  | String SizeLength
   deriving (Eq, Generic, Show)
 
 instance Hashable SchemaType
@@ -161,6 +162,7 @@ instance S.Serialize SchemaType where
       19 -> S.label "Array"  $ Array <$> S.getWord32le <*> S.get
       20 -> S.label "Struct" $ Struct <$> S.get
       21 -> S.label "Enum"   $ Enum <$> getListOfWithSizeLen Four (S.getTwoOf getText S.get)
+      22 -> S.label "String" $ String <$> S.get
       x  -> fail [i|Invalid SchemaType tag: #{x}|]
 
   put typ = case typ of
@@ -186,6 +188,7 @@ instance S.Serialize SchemaType where
     Array len a   -> S.putWord8 19 <> S.putWord32le len <> S.put a
     Struct fields -> S.putWord8 20 <> S.put fields
     Enum enum     -> S.putWord8 21 <> putListOfWithSizeLen Four (S.putTwoOf putText S.put) enum
+    String sl     -> S.putWord8 22 <> S.put sl
 
 -- |Parallel to SizeLength defined in contracts-common (Rust).
 -- Must stay in sync.
