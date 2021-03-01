@@ -78,7 +78,11 @@ getJSONUsingSchema typ = case typ of
                       Nothing -> fail [i|Variant with index #{idx} does not exist for Enum.|]
     fields' <- getFieldsAsJSON fields
     return $ AE.object [name .= fields']
-  String sl -> AE.toJSON . Text.decodeUtf8 . BS.pack <$> getListOfWithSizeLen sl S.get
+  String sl -> do
+    bStr <- BS.pack <$> getListOfWithSizeLen sl S.get
+    case Text.decodeUtf8' bStr of
+      Left _ -> fail "String is not valid UTF-8."
+      Right str -> return $ AE.toJSON str
   where
     getFieldsAsJSON :: Fields -> S.Get AE.Value
     getFieldsAsJSON fields = case fields of
