@@ -3,8 +3,10 @@ module Concordium.Client.Utils where
 
 import Control.Monad.Except
 import Concordium.Types
+import Concordium.Crypto.ByteStringHelpers
 import qualified Concordium.ID.Types as IDTypes
 import Data.String.Interpolate (i)
+import qualified Data.Text as Text
 import Text.Read
 
 -- | In the 'Left' case of an 'Either', transform the error using the given function and
@@ -44,6 +46,16 @@ amountFromStringInform s =
   case amountFromString s of
     Just a -> Right a
     Nothing -> Left $ "Invalid GTU amount '" ++ s ++ "'. Amounts must be of the form n[.m] where m, if present,\n must have at least one and at most 6 digits."
+
+-- |Try to parse a credential id from string, and if failing, try to inform the user
+-- what the expected format is. This is intended to be used by the options
+-- parsers.
+credIdFromStringInform :: String -> Either String IDTypes.CredentialRegistrationID
+credIdFromStringInform s =
+  case deserializeBase16 (Text.pack s) of
+    Just a -> Right a
+    Nothing -> Left $ "Invalid credential registration ID."
+
 
 -- |Try to parse `Energy` from a string, and, if failing, inform the user
 -- what the expected format and bounds are.

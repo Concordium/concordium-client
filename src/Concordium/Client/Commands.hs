@@ -34,7 +34,7 @@ import Concordium.Client.LegacyCommands
 import Concordium.Client.Types.Account
 import Concordium.Client.Utils
 import Concordium.Common.Time
-import Concordium.ID.Types (KeyIndex, SignatureThreshold)
+import Concordium.ID.Types (KeyIndex, SignatureThreshold, CredentialRegistrationID)
 import Concordium.Types
 import Text.Printf
 import qualified Text.PrettyPrint.ANSI.Leijen as P
@@ -167,15 +167,8 @@ data AccountCmd
     { alBlockHash :: !(Maybe Text) }
   | AccountUpdateKeys
     { aukKeys :: !FilePath
+    , aukCredId :: !CredentialRegistrationID
     , aukTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
-  | AccountAddKeys
-    { aakKeys :: !FilePath
-    , aakThreshold :: !(Maybe SignatureThreshold)
-    , aakTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
-  | AccountRemoveKeys
-    { arkKeys :: ![KeyIndex]
-    , arkThreshold :: !(Maybe SignatureThreshold)
-    , arkTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   -- |Transfer part of the public balance to the encrypted balance of the
   -- account.
   | AccountEncrypt
@@ -626,8 +619,6 @@ accountCmds =
           (accountShowCmd <>
            accountListCmd <>
            accountUpdateKeysCmd <>
-           accountAddKeysCmd <>
-           accountRemoveKeysCmd <>
            accountEncryptCmd <>
            accountDecryptCmd))
       (progDesc "Commands for inspecting and modifying accounts."))
@@ -681,9 +672,10 @@ accountUpdateKeysCmd =
     (info
       (AccountUpdateKeys <$>
         strArgument (metavar "FILE" <> help "File containing the new account keys.") <*>
+        option (eitherReader credIdFromStringInform) (long "credId" <> metavar "CRED-ID" <> help "The credential registration id of the credential whose keys we want to update.") <*>
         transactionOptsParser)
       (progDescDoc $ docFromLines
-        [ "Update one or several keys of an account. Expected format of the key file:"
+        [ "Set keys for the credential. Expected format of the key file:"
         , "   {"
         , "     idx: {"
         , "       \"verifyKey\": ..."
@@ -692,38 +684,6 @@ accountUpdateKeysCmd =
         , "   }"
         , "where idx is the key index associated to the corresponding verify key." ]))
 
-accountAddKeysCmd :: Mod CommandFields AccountCmd
-accountAddKeysCmd =
-  command
-    "add-keys"
-    (info
-      (AccountAddKeys <$>
-        strArgument (metavar "FILE" <> help "File containing the account keys.") <*>
-        optional (option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <>
-            help "Update the signature threshold to this value. If not set, no changes are made to the threshold.")) <*>
-        transactionOptsParser)
-      (progDescDoc $ docFromLines
-        [ "Adds one or several additional keys to an account. Expected format of the key file:"
-        , "   {"
-        , "     idx: {"
-        , "       \"verifyKey\": ..."
-        , "     },"
-        , "     ..."
-        , "   }"
-        , "where idx is the key index associated to the corresponding verify key. The --threshold option may be used to update the signature threshold." ]))
-
-accountRemoveKeysCmd :: Mod CommandFields AccountCmd
-accountRemoveKeysCmd =
-  command
-    "remove-keys"
-    (info
-      (AccountRemoveKeys <$>
-        some (argument auto (metavar "KEYINDICES" <> help "space-separated list of indices of the keys to remove.")) <*>
-        optional (option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <>
-            help "Update the signature threshold to this value. If not set, no changes are made to the threshold.")) <*>
-        transactionOptsParser)
-      (progDescDoc $ docFromLines
-        [ "Removes the keys from the account at the specified indices. The --threshold option may be used to update the signature threshold." ]))
 
 moduleCmds :: Mod CommandFields Cmd
 moduleCmds =
