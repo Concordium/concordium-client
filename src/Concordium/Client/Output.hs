@@ -215,24 +215,25 @@ printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
 
   tell [ "" ]
 
-  case airCredentials a of
-      [] -> tell ["Credentials: " ++ showNone]
-      creds -> do
-        tell ["Credentials:"]
-        if verbose then
-          tell $ creds <&> showPrettyJSON
-        else
-          forM_ creds printVersionedCred
+  if M.null $airCredentials a then
+    tell ["Credentials: " ++ showNone]
+  else do
+    tell ["Credentials:"]
+    if verbose then
+      tell $ [showPrettyJSON (airCredentials a)]
+    else
+      forM_ (M.toList (airCredentials a)) printVersionedCred
 
 -- |Print a versioned credential. This only prints the credential value, and not the
 -- associated version.
-printVersionedCred :: (Versioned IDTypes.AccountCredential) -> Printer
-printVersionedCred vc = printCred (vValue vc)
+printVersionedCred :: (IDTypes.CredentialIndex, (Versioned IDTypes.AccountCredential)) -> Printer
+printVersionedCred (ci, vc) = printCred ci (vValue vc)
 
 -- |Print the registration id, expiry date, and revealed attributes of a credential.
-printCred :: IDTypes.AccountCredential -> Printer
-printCred c =
+printCred :: IDTypes.CredentialIndex -> IDTypes.AccountCredential -> Printer
+printCred ci c =
   tell [ printf "* %s:" (show $ IDTypes.credId c)
+       , printf "  - Index: %s" (show ci)
        , printf "  - Expiration: %s" expiry
        , printf "  - Type: %s" credType
        , printf "  - Revealed attributes: %s" (showRevealedAttributes attrs) ]
