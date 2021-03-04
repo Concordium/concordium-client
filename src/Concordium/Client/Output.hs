@@ -215,7 +215,7 @@ printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
 
   tell [ "" ]
 
-  if M.null $airCredentials a then
+  if M.null $ airCredentials a then
     tell ["Credentials: " ++ showNone]
   else do
     tell ["Credentials:"]

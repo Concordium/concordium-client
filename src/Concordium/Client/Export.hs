@@ -3,6 +3,8 @@
 
 module Concordium.Client.Export where
 
+import qualified Concordium.ID.Types as IDTypes
+
 import Concordium.Client.Cli
 import Concordium.Client.Config
 import Concordium.Client.Encryption
@@ -143,14 +145,19 @@ decodeGenesisFormattedAccountExport payload name pwd = runExceptT $ do
   liftIO action
   where accountParser = AE.withObject "Account data" $ \v -> do
           addr <- v .: "address"
-          ad <- v .: "accountData"
-          accKeyMap <- ad .: "keys"
+          aks <- v .: "accountKeys"
           accEncryptionKey <- v .: "encryptionSecretKey"
-          acThreshold <- ad .:? "threshold" .!= fromIntegral (Map.size accKeyMap)
-          return $ do
-            acKeys <- encryptAccountKeyMap pwd accKeyMap
-            acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd accEncryptionKey)
-            return AccountConfig { acAddr = NamedAddress{naNames = maybeToList name, naAddr = addr}
+          accCredMap <- aks .: "keys"
+          unless (Map.size accCredMap == 1) $ fail "Currently only accounts with a single credential are supported."
+          case Map.lookup (0 :: IDTypes.CredentialIndex) accCredMap of
+            Nothing -> fail "Currently only accounts with a single credential (0) are supported."
+            Just ad -> do
+              accKeyMap <- ad .: "keys"
+              acThreshold <- ad .:? "threshold" .!= fromIntegral (Map.size accKeyMap)
+              return $ do
+                acKeys <- encryptAccountKeyMap pwd accKeyMap
+                acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd accEncryptionKey)
+                return AccountConfig { acAddr = NamedAddress{naNames = maybeToList name, naAddr = addr}
                                  , .. }
 
 
