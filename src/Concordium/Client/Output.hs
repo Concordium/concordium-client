@@ -488,6 +488,8 @@ showEvent verbose = \case
     verboseOrNothing $ printf "baker %s restake earnings %s" (showBaker ebsreBakerId ebsreAccount) (if ebsreRestakeEarnings then "set" :: String else "unset")
   Types.BakerKeysUpdated{..} ->
     verboseOrNothing $ printf "baker %s keys updated" (showBaker ebkuBakerId ebkuAccount)
+  Types.CredentialsUpdated{..} ->
+    verboseOrNothing $ [i|credentials on account #{cuAccount} have been updated.\nCredentials #{cuRemovedCredIds} have been removed, and credentials #{cuNewCredIds} have been added.\nThe new account threshold is #{cuNewThreshold}.|]
 
   Types.CredentialKeysUpdated cid -> verboseOrNothing $ printf "credential keys updated for credential with credId %s" (show cid)
   Types.NewEncryptedAmount{..} -> verboseOrNothing $ printf "encrypted amount received on account '%s' with index '%s'" (show neaAccount) (show neaNewIndex)
@@ -610,7 +612,12 @@ showRejectReason verbose = \case
   Types.NotABaker addr -> printf "attempt to remove a baker account %s that is not a baker" (show addr)
   Types.InsufficientBalanceForBakerStake -> "the balance on the account is insufficient to cover the desired stake"
   Types.BakerInCooldown -> "change could not be completed because the baker is in the cooldown period"
-
+  Types.NonExistentCredentialID -> "credential ID does not exist on the account"
+  Types.InvalidCredentials -> "one or more of the credentials is not valid"
+  Types.DuplicateCredIDs cids -> [i|credential registration ids #{cids} are duplicate|]
+  Types.NonExistentCredIDs cids -> [i|credential registration ids #{cids} do not exist|]
+  Types.RemoveFirstCredential -> [i|attempt to remove the first credential of the account|]
+  Types.CredentialHolderDidNotSign -> [i|credential holder did not sign the credential key update|]
 
 -- CONSENSUS
 
