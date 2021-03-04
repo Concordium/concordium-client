@@ -232,7 +232,7 @@ printVersionedCred vc = printCred (vValue vc)
 -- |Print the registration id, expiry date, and revealed attributes of a credential.
 printCred :: IDTypes.AccountCredential -> Printer
 printCred c =
-  tell [ printf "* %s:" (show $ IDTypes.regId c)
+  tell [ printf "* %s:" (show $ IDTypes.credId c)
        , printf "  - Expiration: %s" expiry
        , printf "  - Type: %s" credType
        , printf "  - Revealed attributes: %s" (showRevealedAttributes attrs) ]
@@ -489,10 +489,7 @@ showEvent verbose = \case
   Types.BakerKeysUpdated{..} ->
     verboseOrNothing $ printf "baker %s keys updated" (showBaker ebkuBakerId ebkuAccount)
 
-  Types.AccountKeysUpdated -> verboseOrNothing $ "account keys updated"
-  Types.AccountKeysAdded -> verboseOrNothing $ "account keys added"
-  Types.AccountKeysRemoved -> verboseOrNothing $ "account keys removed"
-  Types.AccountKeysSignThresholdUpdated -> verboseOrNothing $ "account signature threshold updated"
+  Types.CredentialKeysUpdated cid -> verboseOrNothing $ printf "credential keys updated for credential with credId %s" (show cid)
   Types.NewEncryptedAmount{..} -> verboseOrNothing $ printf "encrypted amount received on account '%s' with index '%s'" (show neaAccount) (show neaNewIndex)
   Types.EncryptedAmountsRemoved{..} -> verboseOrNothing $ printf "encrypted amounts removed on account '%s' up to index '%s' with a resulting self encrypted amount of '%s'" (show earAccount) (show earUpToIndex) (show earNewAmount)
   Types.AmountAddedByDecryption{..} -> verboseOrNothing $ printf "transferred '%s' tokens from the shielded balance to the public balance on account '%s'" (show aabdAmount) (show aabdAccount)
@@ -592,8 +589,6 @@ showRejectReason verbose = \case
       printf "duplicate aggregation key '%s'" (show k)
     else
       "duplicate aggregation key"
-  Types.NonExistentAccountKey ->
-    "encountered key index to which no key belongs"
   Types.KeyIndexAlreadyInUse ->
     "encountered a key index that is already in use"
   Types.InvalidAccountKeySignThreshold ->
