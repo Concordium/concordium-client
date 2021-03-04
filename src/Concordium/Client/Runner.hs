@@ -823,22 +823,11 @@ getBakerUpdateRestakeTransactionCfg txCfg newRestake = do
          , burTransactionCfg = txCfg }
 
 
-data AccountUpdateKeysTransactionCfg =
-  AccountUpdateKeysTransactionCfg
-  { auktcTransactionCfg :: TransactionConfig
-  , auktcKeys :: OrdMap.Map ID.KeyIndex Types.AccountVerificationKey }
-
-data AccountAddKeysTransactionCfg =
-  AccountAddKeysTransactionCfg
-  { aaktcTransactionCfg :: TransactionConfig
-  , aaktcKeys :: OrdMap.Map ID.KeyIndex Types.AccountVerificationKey
-  , aaktcThreshold :: Maybe ID.SignatureThreshold }
-
-data AccountRemoveKeysTransactionCfg =
-  AccountRemoveKeysTransactionCfg
-  { arktcTransactionCfg :: TransactionConfig
-  , arktcIndices :: Set.Set ID.KeyIndex
-  , arktcThreshold :: Maybe ID.SignatureThreshold }
+data CredentialUpdateKeysTransactionCfg =
+  CredentialUpdateKeysTransactionCfg
+  { cuktcTransactionCfg :: TransactionConfig
+  , cuktcKeys :: ID.CredentialPublicKeys
+  , cuktcCredId :: ID.CredentialRegistrationID }
 
 -- |Resolved configuration for transferring from public to encrypted balance.
 data AccountEncryptTransactionConfig =
@@ -855,27 +844,12 @@ data AccountDecryptTransactionConfig =
   }
 
 -- |Resolve configuration for an 'update keys' transaction
-getAccountUpdateKeysTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> IO AccountUpdateKeysTransactionCfg
-getAccountUpdateKeysTransactionCfg baseCfg txOpts f = do
+getAccountUpdateKeysTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> ID.CredentialRegistrationID -> IO CredentialUpdateKeysTransactionCfg
+getAccountUpdateKeysTransactionCfg baseCfg txOpts f cid = do
   keys <- getFromJson =<< eitherDecodeFileStrict f
-  txCfg <- getTransactionCfg baseCfg txOpts (nrgCost $ length keys)
-  return $ AccountUpdateKeysTransactionCfg txCfg keys
+  txCfg <- getTransactionCfg baseCfg txOpts (nrgCost $ length (ID.credKeys keys))
+  return $ CredentialUpdateKeysTransactionCfg txCfg keys cid
   where nrgCost numKeys _ = return $ Just $ accountUpdateKeysEnergyCost numKeys
-
-getAccountAddKeysTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> Maybe ID.SignatureThreshold -> IO AccountAddKeysTransactionCfg
-getAccountAddKeysTransactionCfg baseCfg txOps f threshold = do
-  keys <- getFromJson =<< eitherDecodeFileStrict f
-  txCfg <- getTransactionCfg baseCfg txOps (nrgCost $ length keys)
-  return $ AccountAddKeysTransactionCfg txCfg keys threshold
-  where nrgCost numKeys _ = return $ Just $ accountAddKeysEnergyCost numKeys
-
-getAccountRemoveKeysTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> [ID.KeyIndex] -> Maybe ID.SignatureThreshold -> IO AccountRemoveKeysTransactionCfg
-getAccountRemoveKeysTransactionCfg baseCfg txOpts idxs threshold = do
-  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
-  indexSet <- Types.safeSetFromAscList $ L.sort idxs
-  return $ AccountRemoveKeysTransactionCfg txCfg indexSet threshold
-  where
-      nrgCost _ = return $ Just accountRemoveKeysEnergyCost
 
 -- |Resolve configuration for transferring an amount from public to encrypted
 -- balance of an account.
@@ -1094,19 +1068,20 @@ bakerUpdateRestakeTransactionPayload burtxCfg confirm = do
 
   return $ Types.UpdateBakerRestakeEarnings newRestake
 
-accountUpdateKeysTransactionPayload :: AccountUpdateKeysTransactionCfg -> Bool -> IO Types.Payload
-accountUpdateKeysTransactionPayload AccountUpdateKeysTransactionCfg{..} confirm = do
+credentialUpdateKeysTransactionPayload :: CredentialUpdateKeysTransactionCfg -> Bool -> IO Types.Payload
+credentialUpdateKeysTransactionPayload CredentialUpdateKeysTransactionCfg{..} confirm = do
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
         , tcAccountCfg = AccountConfig { acAddr = addr } }
-        = auktcTransactionCfg
+        = cuktcTransactionCfg
 
-  let logKeyChanges = OrdMap.foldrWithKey (\idx (SigScheme.VerifyKeyEd25519 key) l -> (printf "\t%s: %s" (show idx) (show key)) : l) [] auktcKeys
+  let logNewKeys = OrdMap.foldrWithKey (\idx (SigScheme.VerifyKeyEd25519 key) l -> (printf "\t%s: %s" (show idx) (show key)) : l) [] (ID.credKeys cuktcKeys)
 
   logInfo $
-    [ printf "updating the following keys for account %s:" (showNamedAddress addr) ] ++
-    logKeyChanges ++
+    [ printf "setting the following keys for credential %s on account:" (show cuktcCredId) (showNamedAddress addr) ] ++
+    logNewKeys ++
+    [ printf "with threshold %s" (show (ID.credThreshold cuktcKeys))] ++
     [ printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
     , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
 
@@ -1114,58 +1089,7 @@ accountUpdateKeysTransactionPayload AccountUpdateKeysTransactionCfg{..} confirm 
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  return $ Types.UpdateAccountKeys auktcKeys
-
-
-accountAddKeysTransactionPayload :: AccountAddKeysTransactionCfg -> Bool -> IO Types.Payload
-accountAddKeysTransactionPayload AccountAddKeysTransactionCfg{..} confirm = do
-  let TransactionConfig
-        { tcEnergy = energy
-        , tcExpiry = expiry
-        , tcAccountCfg = AccountConfig { acAddr = addr } }
-        = aaktcTransactionCfg
-
-  let logKeyChanges = OrdMap.foldrWithKey (\idx (SigScheme.VerifyKeyEd25519 key) l -> (printf "\t%s: %s" (show idx) (show key)) : l) [] aaktcKeys
-      logThresholdChange = case aaktcThreshold of
-          Nothing -> []
-          Just v -> [ printf "updating signature threshold for account to %d" (toInteger v) ]
-
-  logInfo $
-    [ printf "adding the following keys to account %s:" (showNamedAddress addr) ] ++
-    logKeyChanges ++
-    logThresholdChange ++
-    [ printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-    , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
-
-  when confirm $ do
-    confirmed <- askConfirmation Nothing
-    unless confirmed exitTransactionCancelled
-
-  return $ Types.AddAccountKeys aaktcKeys aaktcThreshold
-
-accountRemoveKeysTransactionPayload :: AccountRemoveKeysTransactionCfg -> Bool -> IO Types.Payload
-accountRemoveKeysTransactionPayload AccountRemoveKeysTransactionCfg{..} confirm = do
-  let TransactionConfig
-        { tcEnergy = energy
-        , tcExpiry = expiry
-        , tcAccountCfg = AccountConfig { acAddr = addr } }
-        = arktcTransactionCfg
-
-  let logThresholdChange = case arktcThreshold of
-        Nothing -> []
-        Just v -> [ printf "updating signature threshold for account to %d" (toInteger v) ]
-
-  logInfo $
-    [ printf "removing keys at indices %s from account %s" (show $ Set.toList arktcIndices) (showNamedAddress addr) ] ++
-    logThresholdChange ++
-    [ printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-    , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
-
-  when confirm $ do
-    confirmed <- askConfirmation Nothing
-    unless confirmed exitTransactionCancelled
-
-  return $ Types.RemoveAccountKeys arktcIndices arktcThreshold
+  return $ Types.UpdateCredentialKeys cuktcCredId cuktcKeys
 
 accountEncryptTransactionPayload :: AccountEncryptTransactionConfig -> Bool -> IO Types.Payload
 accountEncryptTransactionPayload AccountEncryptTransactionConfig{..} confirm = do
@@ -1371,55 +1295,21 @@ processAccountCmd action baseCfgDir verbose backend =
       accs <- withClientJson backend $ withBestBlockHash block getAccountList
       runPrinter $ printAccountList (bcAccountNameMap baseCfg) accs
 
-    AccountUpdateKeys f txOpts -> do
+    AccountUpdateKeys f cid txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      aukCfg <- getAccountUpdateKeysTransactionCfg baseCfg txOpts f
-      let txCfg = auktcTransactionCfg aukCfg
+      aukCfg <- getAccountUpdateKeysTransactionCfg baseCfg txOpts f cid
+      let txCfg = cuktcTransactionCfg aukCfg
       when verbose $ do
         runPrinter $ printAccountConfig $ tcAccountCfg txCfg
         putStrLn ""
 
       let intOpts = toInteractionOpts txOpts
-      pl <- accountUpdateKeysTransactionPayload aukCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
-
-    AccountAddKeys f thresh txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose
-
-      when verbose $ do
-        runPrinter $ printBaseConfig baseCfg
-        putStrLn ""
-
-      aakCfg <- getAccountAddKeysTransactionCfg baseCfg txOpts f thresh
-      let txCfg = aaktcTransactionCfg aakCfg
-      when verbose $ do
-        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
-        putStrLn ""
-
-      let intOpts = toInteractionOpts txOpts
-      pl <- accountAddKeysTransactionPayload aakCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
-
-    AccountRemoveKeys idxs thresh txOpts -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose
-
-      when verbose $ do
-        runPrinter $ printBaseConfig baseCfg
-        putStrLn ""
-
-      arkCfg <- getAccountRemoveKeysTransactionCfg baseCfg txOpts idxs thresh
-      let txCfg = arktcTransactionCfg arkCfg
-      when verbose $ do
-        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
-        putStrLn ""
-
-      let intOpts = toInteractionOpts txOpts
-      pl <- accountRemoveKeysTransactionPayload arkCfg (ioConfirm intOpts)
+      pl <- credentialUpdateKeysTransactionPayload aukCfg (ioConfirm intOpts)
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountEncrypt{..} -> do
@@ -2540,4 +2430,4 @@ encodeAndSignTransaction txPayload sender energy nonce expiry accKeys threshold 
         thExpiry = expiry
       }
       keys = take (fromIntegral threshold) . sortOn fst . Map.toList $ accKeys
-  in Types.signTransaction keys header encPayload
+  in Types.signTransaction [(0, keys)] header encPayload

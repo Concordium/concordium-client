@@ -76,12 +76,13 @@ exampleBakerInfoResult pc = AccountInfoBakerResult
   , abirBakerPendingChange = pc
   }
 
+-- The credentials will be given indices 0, 1, ..
 exampleAccountInfoResult :: Maybe AccountInfoBakerPendingChange -> [IDTypes.AccountCredential] -> AccountInfoResult
 exampleAccountInfoResult d cs = AccountInfoResult
                                 { airAmount = Types.Amount 1
                                 , airNonce = Types.Nonce 2
                                 , airBaker = exampleBakerInfoResult <$> d
-                                , airCredentials = map (Versioned 0) cs
+                                , airCredentials = Map.fromList . zip [0..] . map (Versioned 0) $ cs
                                 , airReleaseSchedule = AccountInfoReleaseSchedule 0 []
                                 , airEncryptedAmount = Types.AccountEncryptedAmount {
                                     _startIndex = 3,
@@ -93,8 +94,8 @@ exampleAccountInfoResult d cs = AccountInfoResult
 
 exampleCredentials :: IDTypes.Policy -> IDTypes.AccountCredential
 exampleCredentials p = IDTypes.NormalAC (IDTypes.CredentialDeploymentValues
-                       { IDTypes.cdvAccount = acc
-                       , IDTypes.cdvRegId = regId
+                       {IDTypes.cdvPublicKeys = acc
+                       , IDTypes.cdvCredId = regId
                        , IDTypes.cdvIpId = IDTypes.IP_ID 21
                        , IDTypes.cdvThreshold = IDTypes.Threshold 1
                        , IDTypes.cdvArData = Map.singleton (IDTypes.ArIdentity 0) IDTypes.ChainArData
@@ -108,9 +109,9 @@ exampleCredentials p = IDTypes.NormalAC (IDTypes.CredentialDeploymentValues
                           cmmIdCredSecSharingCoeff = []
                         }
   where acc = let
-          keys = unsafePerformIO $ replicateM 2 (SS.correspondingVerifyKey <$> SS.newKeyPair SS.Ed25519)
+          keys = Map.fromList . zip [0..] $ unsafePerformIO $ replicateM 2 (SS.correspondingVerifyKey <$> SS.newKeyPair SS.Ed25519)
           threshold = 1
-          in IDTypes.NewAccount keys (IDTypes.SignatureThreshold threshold)
+          in IDTypes.CredentialPublicKeys keys (IDTypes.SignatureThreshold threshold)
         (Just regId) = BSH.deserializeBase16 "a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f"
         (Just share) = BSH.deserializeBase16 "a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46fa1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f"
 
@@ -208,6 +209,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     , ""
     , "Credentials:"
     , "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
+    , "  - Index: 0"
     , "  - Expiration: Apr 2021"
     , "  - Type: normal"
     , "  - Revealed attributes: none" ]
@@ -223,10 +225,12 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     , ""
     , "Credentials:"
     , "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
+    , "  - Index: 0"
     , "  - Expiration: Apr 2021"
     , "  - Type: normal"
     , "  - Revealed attributes: none"
     , "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
+    , "  - Index: 1"
     , "  - Expiration: Apr 2021"
     , "  - Type: normal"
     , "  - Revealed attributes: lastName=\"Value-1\", dob=\"Value-2\"" ]
@@ -277,6 +281,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     , ""
     , "Credentials:"
     , "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
+    , "  - Index: 0"
     , "  - Expiration: Apr 2021"
     , "  - Type: normal"
     , "  - Revealed attributes: none" ]
@@ -323,22 +328,26 @@ printCredSpec :: Spec
 printCredSpec = describe "printCred" $ do
   specify "without attributes" $ (p $ exampleCredentials examplePolicyWithoutItems) `shouldBe`
     [ "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
+    , "  - Index: 0"
     , "  - Expiration: Apr 2021"
     , "  - Type: normal"
     , "  - Revealed attributes: none" ]
   specify "with single attribute" $ (p $ exampleCredentials examplePolicyWithOneItem) `shouldBe`
     [ "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
+    , "  - Index: 0"
     , "  - Expiration: Apr 2021"
     , "  - Type: normal"
     , "  - Revealed attributes: lastName=\"Value-1\"" ]
   specify "with two attributes" $ (p $ exampleCredentials examplePolicyWithTwoItems) `shouldBe`
     [ "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
+    , "  - Index: 0"
     , "  - Expiration: Apr 2021"
     , "  - Type: normal"
     , "  - Revealed attributes: lastName=\"Value-1\", dob=\"Value-2\"" ]
   specify "with attribute having key out of range" $ (p $ exampleCredentials examplePolicyWithItemOutOfRange) `shouldBe`
     [ "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
+    , "  - Index: 0"
     , "  - Expiration: Apr 2021"
     , "  - Type: normal"
     , "  - Revealed attributes: <255>=\"Value-1\"" ]
-  where p = execWriter . printCred
+  where p = execWriter . printCred 0

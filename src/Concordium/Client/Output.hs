@@ -215,24 +215,25 @@ printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
 
   tell [ "" ]
 
-  case airCredentials a of
-      [] -> tell ["Credentials: " ++ showNone]
-      creds -> do
-        tell ["Credentials:"]
-        if verbose then
-          tell $ creds <&> showPrettyJSON
-        else
-          forM_ creds printVersionedCred
+  if M.null $ airCredentials a then
+    tell ["Credentials: " ++ showNone]
+  else do
+    tell ["Credentials:"]
+    if verbose then
+      tell $ [showPrettyJSON (airCredentials a)]
+    else
+      forM_ (M.toList (airCredentials a)) printVersionedCred
 
 -- |Print a versioned credential. This only prints the credential value, and not the
 -- associated version.
-printVersionedCred :: (Versioned IDTypes.AccountCredential) -> Printer
-printVersionedCred vc = printCred (vValue vc)
+printVersionedCred :: (IDTypes.CredentialIndex, (Versioned IDTypes.AccountCredential)) -> Printer
+printVersionedCred (ci, vc) = printCred ci (vValue vc)
 
 -- |Print the registration id, expiry date, and revealed attributes of a credential.
-printCred :: IDTypes.AccountCredential -> Printer
-printCred c =
-  tell [ printf "* %s:" (show $ IDTypes.regId c)
+printCred :: IDTypes.CredentialIndex -> IDTypes.AccountCredential -> Printer
+printCred ci c =
+  tell [ printf "* %s:" (show $ IDTypes.credId c)
+       , printf "  - Index: %s" (show ci)
        , printf "  - Expiration: %s" expiry
        , printf "  - Type: %s" credType
        , printf "  - Revealed attributes: %s" (showRevealedAttributes attrs) ]
@@ -488,11 +489,10 @@ showEvent verbose = \case
     verboseOrNothing $ printf "baker %s restake earnings %s" (showBaker ebsreBakerId ebsreAccount) (if ebsreRestakeEarnings then "set" :: String else "unset")
   Types.BakerKeysUpdated{..} ->
     verboseOrNothing $ printf "baker %s keys updated" (showBaker ebkuBakerId ebkuAccount)
+  Types.CredentialsUpdated{..} ->
+    verboseOrNothing $ [i|credentials on account #{cuAccount} have been updated.\nCredentials #{cuRemovedCredIds} have been removed, and credentials #{cuNewCredIds} have been added.\nThe new account threshold is #{cuNewThreshold}.|]
 
-  Types.AccountKeysUpdated -> verboseOrNothing $ "account keys updated"
-  Types.AccountKeysAdded -> verboseOrNothing $ "account keys added"
-  Types.AccountKeysRemoved -> verboseOrNothing $ "account keys removed"
-  Types.AccountKeysSignThresholdUpdated -> verboseOrNothing $ "account signature threshold updated"
+  Types.CredentialKeysUpdated cid -> verboseOrNothing $ printf "credential keys updated for credential with credId %s" (show cid)
   Types.NewEncryptedAmount{..} -> verboseOrNothing $ printf "encrypted amount received on account '%s' with index '%s'" (show neaAccount) (show neaNewIndex)
   Types.EncryptedAmountsRemoved{..} -> verboseOrNothing $ printf "encrypted amounts removed on account '%s' up to index '%s' with a resulting self encrypted amount of '%s'" (show earAccount) (show earUpToIndex) (show earNewAmount)
   Types.AmountAddedByDecryption{..} -> verboseOrNothing $ printf "transferred '%s' tokens from the shielded balance to the public balance on account '%s'" (show aabdAmount) (show aabdAccount)
@@ -592,8 +592,6 @@ showRejectReason verbose = \case
       printf "duplicate aggregation key '%s'" (show k)
     else
       "duplicate aggregation key"
-  Types.NonExistentAccountKey ->
-    "encountered key index to which no key belongs"
   Types.KeyIndexAlreadyInUse ->
     "encountered a key index that is already in use"
   Types.InvalidAccountKeySignThreshold ->
@@ -615,7 +613,12 @@ showRejectReason verbose = \case
   Types.NotABaker addr -> printf "attempt to remove a baker account %s that is not a baker" (show addr)
   Types.InsufficientBalanceForBakerStake -> "the balance on the account is insufficient to cover the desired stake"
   Types.BakerInCooldown -> "change could not be completed because the baker is in the cooldown period"
-
+  Types.NonExistentCredentialID -> "credential ID does not exist on the account"
+  Types.InvalidCredentials -> "one or more of the credentials is not valid"
+  Types.DuplicateCredIDs cids -> [i|credential registration ids #{cids} are duplicate|]
+  Types.NonExistentCredIDs cids -> [i|credential registration ids #{cids} do not exist|]
+  Types.RemoveFirstCredential -> [i|attempt to remove the first credential of the account|]
+  Types.CredentialHolderDidNotSign -> [i|credential holder did not sign the credential key update|]
 
 -- CONSENSUS
 

@@ -22,6 +22,7 @@ import Data.Aeson.Types (Pair)
 import qualified Data.Char as C
 import Data.List
 import qualified Data.HashMap.Strict as Map
+import qualified Data.Map.Strict as OrdMap
 import Data.Maybe
 import Data.Text(Text)
 import qualified Data.Text as T
@@ -286,7 +287,7 @@ data AccountInfoResult = AccountInfoResult
     -- | The baker information for the account.
   , airBaker :: !(Maybe AccountInfoBakerResult)
     -- | List of credentials on the account, latest first.
-  , airCredentials :: ![Versioned IDTypes.AccountCredential]
+  , airCredentials :: !(OrdMap.Map IDTypes.CredentialIndex (Versioned IDTypes.AccountCredential))
     -- | Account's encrypted amount.
   , airEncryptedAmount :: !AccountEncryptedAmount
     -- | The public key to use when sending encrypted transfers to the account.
