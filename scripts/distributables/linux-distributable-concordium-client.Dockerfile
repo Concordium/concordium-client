@@ -10,14 +10,14 @@ RUN apk add perl g++ make protoc ncurses ncurses-dev zlib zlib-static zlib-dev g
 ARG RUST_VERSION=1.45.2
 RUN wget -qO - https://sh.rustup.rs | sh -s -- --profile minimal --default-toolchain ${RUST_VERSION} -y
 
-ARG GHC_VERSION=8.8.4
+ARG GHC_VERSION=8.10.4
 RUN wget -q https://s3-eu-west-1.amazonaws.com/static-libraries.concordium.com/ghc-${GHC_VERSION}-x86_64-alpine-linux-integer-simple.tar.xz && \
         tar -xf ghc-${GHC_VERSION}-x86_64-alpine-linux-integer-simple.tar.xz && \
         cd ghc-${GHC_VERSION}-x86_64-alpine-linux && \
         ./configure && \
         make install && \
         cd .. && \
-        rm -rf ghc-${GHC_VERSION}-x86_64-alpine-linux-integer-simple.tar.xz ghc-8.8.4-x86_64-alpine-linux
+        rm -rf ghc-${GHC_VERSION}-x86_64-alpine-linux-integer-simple.tar.xz ghc-${GHC_VERSION}-x86_64-alpine-linux
 
 ARG STACK_VERSION=2.5.1
 RUN wget -q https://github.com/commercialhaskell/stack/releases/download/v${STACK_VERSION}/stack-${STACK_VERSION}-linux-x86_64.tar.gz && \

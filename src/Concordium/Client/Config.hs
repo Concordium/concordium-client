@@ -25,7 +25,7 @@ import Data.Aeson ((.:),(.=))
 import Concordium.Common.Version
 
 import Data.Char
-import Data.List as L
+import Data.List (foldl', find, sort, sortOn)
 import Data.List.Split
 import qualified Data.HashMap.Strict as M
 import Data.String (IsString)
@@ -636,7 +636,7 @@ loadAccountNameMap mapFile = do
 -- |Parse an AccountNamepMap from zero or more entries, as specificied in `parseAccoutNameMapEntry`.
 parseAccountNameMap :: (MonadError String m) => [String] -> m AccountNameMap
 parseAccountNameMap ls = M.fromList <$> mapM parseAccountNameMapEntry ls'
-  where ls' = filter (not . L.all isSpace) ls
+  where ls' = filter (not . all isSpace) ls
 
 -- |Parse a line representing a single name-account mapping of the format "<name> = <address>".
 -- Leading and trailing whitespaces around name and address are ignored.

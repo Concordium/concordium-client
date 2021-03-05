@@ -1,7 +1,7 @@
 pipeline {
     agent any
     environment {
-        GHC_VERSION = '8.8.4'
+        GHC_VERSION = '8.10.4'
         VERSION = sh(
             returnStdout: true, 
             script: '''\

@@ -93,7 +93,7 @@ import qualified Data.HashMap.Strict                 as Map
 import qualified Data.HashSet                        as HSet
 import qualified Data.Map                            as OrdMap
 import           Data.Maybe
-import           Data.List                           as L
+import qualified Data.List                           as L
 import qualified Data.Serialize                      as S
 import qualified Data.Set                            as Set
 import           Data.String
@@ -1147,7 +1147,6 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
         , tcExpiry = expiry
         , tcNonce = n
         , tcAccountCfg = AccountConfig { acAddr = NamedAddress { .. }, .. }
-        , ..
         } = txCfg
   nonce <- getNonce naAddr n confirmNonce
   accountKeyMap <- case maybeAccKeys of
@@ -1569,7 +1568,7 @@ processContractCmd action baseCfgDir verbose backend =
                                                  Types.ContractInitialized {..} -> Just ecAddress
                                                  _ -> Nothing)
         extractUpdate = extractFromTsr (\case
-                                        Types.Updated {..} -> Just ()
+                                        Types.Updated {} -> Just ()
                                         _ -> Nothing)
         paramsMsg paramsFileJSON paramsFileBinary = case (paramsFileJSON, paramsFileBinary) of
             (Nothing, Nothing) -> "no parameters."
@@ -2429,5 +2428,5 @@ encodeAndSignTransaction txPayload sender energy nonce expiry accKeys threshold 
         thEnergyAmount = energy,
         thExpiry = expiry
       }
-      keys = take (fromIntegral threshold) . sortOn fst . Map.toList $ accKeys
+      keys = take (fromIntegral threshold) . L.sortOn fst . Map.toList $ accKeys
   in Types.signTransaction [(0, keys)] header encPayload

@@ -1,7 +1,7 @@
 pipeline {
     agent { label 'jenkins-worker' }
     environment {
-        GHC_VERSION = '8.8.4'
+        GHC_VERSION = '8.10.4'
         VERSION = sh(
             returnStdout: true, 
             script: '''\
@@ -30,7 +30,7 @@ pipeline {
             steps {
                 sh '''\
                     # Ensure using custom version of ghc
-                    ghcup rm ghc 8.8.4 || true
+                    ghcup rm ghc 8.10.4 || true
                     ghcup set ghc ${GHC_VERSION}-simple
 
                     # Build project
