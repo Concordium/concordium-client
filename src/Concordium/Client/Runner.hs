@@ -337,6 +337,34 @@ processConfigCmd action baseCfgDir verbose =
                         ++ " will be updated on account " ++ Text.unpack addr]
               let accCfg' = accCfg { acKeys = keyMapDuplicates }
               writeAccountKeys baseCfg' accCfg' verbose
+      
+      ConfigAccountChangeKeyPassword name keyIndex -> do
+        logWarn [printf "Re-encrypting keys under a new password permanently overwrites the previous encrypted keys"
+                , "This is a destructive operation and cannot be undone"]
+        
+        baseCfg <- getBaseConfig baseCfgDir verbose
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        (baseCfg', accountCfg) <- getAccountConfig (Just name) baseCfg Nothing Nothing Nothing AssumeInitialized
+        let keyMap = acKeys accountCfg
+        let encKey = Map.lookup keyIndex keyMap
+        case encKey of
+          Nothing -> logError [printf [i|There is no key with index #{keyIndex} for account '#{name}'. |]]
+          Just encKey' -> do
+            decPwd <- askPassword "Enter current encrypted key password"
+            plain <- runExceptT (decryptAccountKeyPair decPwd keyIndex encKey')
+            case plain of
+              Left err -> logError [printf err]
+              Right plainKey -> do
+                encPwd <- askPassword "Enter new password to re-encrypt key under"
+                encKey2 <- encryptAccountKeyPair encPwd plainKey
+                let newKeys = Map.insert keyIndex encKey2 keyMap
+                let accCfg' = accountCfg { acKeys = newKeys }
+                writeAccountKeys baseCfg' accCfg' verbose
+                logInfo [printf [i|Key at index #{keyIndex} for account '#{name}' has been re-encrypted under the new password. |]]
+
       ConfigAccountRemoveKeys addr idxs threshold -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do

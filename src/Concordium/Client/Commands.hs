@@ -110,6 +110,9 @@ data ConfigAccountCmd
   | ConfigAccountUpdateKeys
     { caukAddr :: !Text
     , caukKeysFile :: !FilePath }
+  | ConfigAccountChangeKeyPassword
+    { cackpName :: !Text 
+    , cackpIndex :: !KeyIndex }
   | ConfigAccountRemoveKeys
     { carkAddr :: !Text
     , carkKeys :: ![KeyIndex]
@@ -904,6 +907,7 @@ configAccountCmds showAllOpts =
            configAccountImportCmd showAllOpts <>
            configAccountAddKeysCmd <>
            configAccountUpdateKeysCmd <>
+           configAccountChangeKeyPasswordCmd <>
            configAccountRemoveKeysCmd <>
            configAccountRemoveNameCmd <>
            configAccountSetThresholdCmd <>
@@ -994,6 +998,17 @@ expectedAddOrUpdateKeysFileFormat =
   , "   }"
   , "where idx is the index of the respective key pair."
   ]
+
+configAccountChangeKeyPasswordCmd :: Mod CommandFields ConfigAccountCmd
+configAccountChangeKeyPasswordCmd = 
+  command
+    "change-password"
+    (info
+      (ConfigAccountChangeKeyPassword <$>
+          strOption (long "account" <> metavar "ACCOUNT" <> help "Name or Address of account to update the keypair of") <*>
+          (option (eitherReader indexFromStringInform) (long "index" <> metavar "INDEX" <> help "Key index to update password for"))
+      )
+      (progDesc "Change the password used to encrypt the account keys"))
 
 configAccountRemoveKeysCmd :: Mod CommandFields ConfigAccountCmd
 configAccountRemoveKeysCmd =
