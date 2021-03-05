@@ -28,7 +28,7 @@ import qualified Data.ByteString as BS
 import Data.Functor
 import Data.Hashable (Hashable)
 import qualified Data.HashMap.Strict as HM
-import Data.List
+import Data.List (foldl', intercalate, nub, sortOn)
 import Data.Maybe
 import qualified Data.Map.Strict as M
 import Data.String.Interpolate (i)
@@ -202,7 +202,7 @@ printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
   case airBaker a of
     Nothing -> tell ["Baker: none"]
     Just bk -> do
-      let bkid = [i|Baker: ##{show . aibiIdentity . abirAccountBakerInfo $ bk}|]
+      let bkid = [i|Baker: \##{show . aibiIdentity . abirAccountBakerInfo $ bk}|]
           stkstr = [i| - Staked amount: #{showGtu . abirStakedAmount $ bk}|]
       case abirBakerPendingChange bk of
         NoChange -> tell [ bkid

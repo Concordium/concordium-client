@@ -20,7 +20,7 @@ import Control.Exception
 import Data.Aeson as AE
 import Data.Aeson.Types (Pair)
 import qualified Data.Char as C
-import Data.List
+import Data.List (uncons, sortOn)
 import qualified Data.HashMap.Strict as Map
 import qualified Data.Map.Strict as OrdMap
 import Data.Maybe
