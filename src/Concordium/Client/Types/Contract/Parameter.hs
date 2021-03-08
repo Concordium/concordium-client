@@ -78,11 +78,20 @@ getJSONUsingSchema typ = case typ of
                       Nothing -> fail [i|Variant with index #{idx} does not exist for Enum.|]
     fields' <- getFieldsAsJSON fields
     return $ AE.object [name .= fields']
-  String sl -> do
-    bStr <- BS.pack <$> getListOfWithSizeLen sl S.get
-    case Text.decodeUtf8' bStr of
-      Left _ -> fail "String is not valid UTF-8."
-      Right str -> return $ AE.toJSON str
+  String sl -> AE.toJSON <$> getUtf8String sl
+  ContractName sl -> do
+    rawName <- getUtf8String sl
+    case Text.stripPrefix "init_" rawName of
+      Just contractName -> return $ AE.object ["contract" .= contractName]
+      Nothing -> fail [i|Expect contract name with format: 'init_<contract_name>', but got: #{rawName}.|]
+  ReceiveName sl -> do
+    rawName <- getUtf8String sl
+    let separatorIndex = Text.findIndex (== '.') rawName
+    case separatorIndex of
+      Nothing -> fail [i|Expected format '<contract_name>.<func_name>' but got: #{rawName}.|]
+      Just idx -> let (contractName, funcNameWithDot) = Text.splitAt idx rawName
+                      funcName = Text.tail funcNameWithDot -- Safe, since we know it contains a dot.
+                  in return $ AE.object ["contract" .= contractName, "func" .= funcName]
   where
     getFieldsAsJSON :: Fields -> S.Get AE.Value
     getFieldsAsJSON fields = case fields of
@@ -118,6 +127,14 @@ getJSONUsingSchema typ = case typ of
             if value == 0
             then Nothing
             else Just [i|#{value}#{unit}|]
+
+    -- |Gets a string of the specified SizeLength. Fails if the string is not valid UTF8.
+    getUtf8String :: SizeLength -> S.Get Text
+    getUtf8String sl = do
+      bStr <- BS.pack <$> getListOfWithSizeLen sl S.get
+      case Text.decodeUtf8' bStr of
+        Left _ -> fail "String is not valid UTF-8."
+        Right str -> return str
 
 -- |Create a `Serialize.Put` for JSON using a `SchemaType`.
 -- It goes through the JSON and SchemaType recursively, and
@@ -208,6 +225,36 @@ putJSONUsingSchema typ json = case (typ, json) of
     let putLen = putLenWithSizeLen sl $ fromIntegral len
     let putBytes = mapM_ S.put bytes
     pure $ putLen <> putBytes
+
+  (ContractName sl, AE.Object obj) -> do
+    let fieldCount = length . HM.toList $ obj
+    when (fieldCount /= 1) $ Left [i|Expected object with a single field 'contract', but got: #{showPrettyJSON obj}.|]
+    case HM.lookup "contract" obj of
+      Just (AE.String contractName) -> do
+        let nameWithInit = "init_" <> contractName
+            bytes = BS.unpack . Text.encodeUtf8 $ nameWithInit
+            len = fromIntegral $ length bytes
+            maxLen = maxSizeLen sl
+        when (len > maxLen) $ Left $ tooLongError "ContractName" maxLen len
+        let putLen = putLenWithSizeLen sl $ fromIntegral len
+        let putBytes = mapM_ S.put bytes
+        pure $ putLen <> putBytes
+      _ -> Left [i|Expected object with a field 'contract' of type String, but got: #{showPrettyJSON obj}.|]
+
+  (ReceiveName sl, AE.Object obj) -> do
+    let fieldCount = length . HM.toList $ obj
+    when (fieldCount /= 2) $ Left [i|Expected object with two fields 'contract' and 'func', but got: #{showPrettyJSON obj}.|]
+    case (HM.lookup "contract" obj, HM.lookup "func" obj) of
+      (Just (AE.String contractName), Just (AE.String funcName)) -> do
+        let nameWithDot = contractName <> "." <> funcName
+            bytes = BS.unpack . Text.encodeUtf8 $ nameWithDot
+            len = fromIntegral $ length bytes
+            maxLen = maxSizeLen sl
+        when (len > maxLen) $ Left $ tooLongError "ReceiveName" maxLen len
+        let putLen = putLenWithSizeLen sl $ fromIntegral len
+        let putBytes = mapM_ S.put bytes
+        pure $ putLen <> putBytes
+      _ -> Left [i|Expected object with fields 'contract' and 'func' of type String, but got: #{showPrettyJSON obj}.|]
 
   (type_, value) -> Left [i|Expected value of type #{showCompactPrettyJSON type_}, but got: #{showCompactPrettyJSON value}.|]
 

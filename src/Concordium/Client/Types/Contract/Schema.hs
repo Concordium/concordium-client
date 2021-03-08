@@ -30,8 +30,8 @@ decodeModuleSchema = S.decode
 -- |Tries to find the signature, i.e. `SchemaType`, for a contract function by its name.
 lookupSignatureForFunc :: ModuleSchema -> FuncName -> Maybe SchemaType
 lookupSignatureForFunc ModuleSchema{..} funcName = case funcName of
-  InitName contrName -> Map.lookup contrName contractSchemas >>= initSig
-  ReceiveName contrName receiveName -> do
+  InitFuncName contrName -> Map.lookup contrName contractSchemas >>= initSig
+  ReceiveFuncName contrName receiveName -> do
     contract <- Map.lookup contrName contractSchemas
     Map.lookup receiveName (receiveSigs contract)
 
@@ -122,6 +122,8 @@ data SchemaType =
   | Struct Fields
   | Enum [(Text, Fields)]
   | String SizeLength
+  | ContractName SizeLength
+  | ReceiveName SizeLength
   deriving (Eq, Generic, Show)
 
 instance Hashable SchemaType
@@ -163,6 +165,8 @@ instance S.Serialize SchemaType where
       20 -> S.label "Struct" $ Struct <$> S.get
       21 -> S.label "Enum"   $ Enum <$> getListOfWithSizeLen Four (S.getTwoOf getText S.get)
       22 -> S.label "String" $ String <$> S.get
+      23 -> S.label "ContractName" $ ContractName <$> S.get
+      24 -> S.label "ReceiveName"  $ ReceiveName <$> S.get
       x  -> fail [i|Invalid SchemaType tag: #{x}|]
 
   put typ = case typ of
@@ -189,6 +193,8 @@ instance S.Serialize SchemaType where
     Struct fields -> S.putWord8 20 <> S.put fields
     Enum enum     -> S.putWord8 21 <> putListOfWithSizeLen Four (S.putTwoOf putText S.put) enum
     String sl     -> S.putWord8 22 <> S.put sl
+    ContractName sl     -> S.putWord8 23 <> S.put sl
+    ReceiveName sl      -> S.putWord8 24 <> S.put sl
 
 -- |Parallel to SizeLength defined in contracts-common (Rust).
 -- Must stay in sync.
@@ -225,8 +231,8 @@ instance S.Serialize SizeLength where
 
 -- |A function name for a function inside a smart contract.
 data FuncName
-  = InitName !Text -- ^ Name of an init function.
-  | ReceiveName !Text !Text -- ^ Name of a receive function.
+  = InitFuncName !Text -- ^ Name of an init function.
+  | ReceiveFuncName !Text !Text -- ^ Name of a receive function.
   deriving Eq
 
 -- |Try to find an embedded `ModuleSchema` inside a WasmModule and decode it.
