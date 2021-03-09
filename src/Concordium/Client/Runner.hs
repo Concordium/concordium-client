@@ -208,13 +208,13 @@ processConfigCmd action baseCfgDir verbose =
         _ -> configExport configBackup (Just pwd)
       handleWriteFile BS.writeFile PromptBeforeOverwrite verbose fileName exportedConfigBackup
 
-    ConfigBackupImport fileName -> do
+    ConfigBackupImport fileName skipExistingAccounts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       ciphertext <- handleReadFile BS.readFile fileName
       configBackup <- configImport ciphertext (askPassword "The backup file is password protected. Enter password: ")
       case configBackup of
         Right ConfigBackup{..} -> do
-          void $ importConfigBackup verbose baseCfg (cbAccounts, cbContractNameMap, cbModuleNameMap)
+          void $ importConfigBackup verbose baseCfg skipExistingAccounts (cbAccounts, cbContractNameMap, cbModuleNameMap)
         Left err -> logFatal [[i|Failed to import Config Backup, #{err}|]]
 
     ConfigAccountCmd c -> case c of
@@ -249,7 +249,7 @@ processConfigCmd action baseCfgDir verbose =
           logInfo[ descriptor ++ " will be removed"]
           void $ removeAccountConfig baseCfg nameAddr
 
-      ConfigAccountImport file name importFormat -> do
+      ConfigAccountImport file name importFormat skipExisting -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
@@ -264,16 +264,25 @@ processConfigCmd action baseCfgDir verbose =
         -- fold over all accounts adding them to the config, starting from the
         -- base config. Checks for duplicates in the names mapping and prompts
         -- the user to give a new name
-        foldM_ addAccountToBaseConfigWithNamePrompts baseCfg accCfgs
+        (_, skipped) <- foldM addAccountToBaseConfigWithNamePrompts (baseCfg, 0::Int) accCfgs
+        
+        when (skipExisting && (skipped > 0)) $ logInfo [printf "`%d` account[s] automatically skipped. To overwrite these keys, re-import file without the skip-existing flag, or import them individually with --name" skipped ]
 
         where
           -- Adds an account to the BaseConfig, prompting the user for a new
           -- non-colliding name if the account is named and the name already
           -- exists in the name map.
-          addAccountToBaseConfigWithNamePrompts baseCfg accCfg = do
-            (bcfg, _, t) <- initAccountConfig baseCfg (acAddr accCfg) True
+          -- If skip-existing flag is set, count how many accounts were skipped
+          addAccountToBaseConfigWithNamePrompts (baseCfg, skipped) accCfg = do
+            (bcfg, _, t) <- initAccountConfig baseCfg (acAddr accCfg) True skipExisting
             when t $ writeAccountKeys bcfg accCfg verbose
-            return bcfg
+            if skipExisting && (not t) then
+              return (bcfg, skipped + 1)
+            else 
+              return (bcfg, skipped)
+        
+
+          
       ConfigAccountAddKeys addr keysFile -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
