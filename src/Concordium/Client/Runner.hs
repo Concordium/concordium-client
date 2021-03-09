@@ -272,7 +272,7 @@ processConfigCmd action baseCfgDir verbose =
           -- Adds an account to the BaseConfig, prompting the user for a new
           -- non-colliding name if the account is named and the name already
           -- exists in the name map.
-          -- If skip-existing flag is set, count how many variables were skipped
+          -- If skip-existing flag is set, count how many accounts were skipped
           addAccountToBaseConfigWithNamePrompts (baseCfg, skipped) accCfg = do
             (bcfg, _, t) <- initAccountConfig baseCfg (acAddr accCfg) True skipExisting
             when t $ writeAccountKeys bcfg accCfg verbose
