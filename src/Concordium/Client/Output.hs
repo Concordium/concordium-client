@@ -299,7 +299,7 @@ printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
        , [i|Owner:           #{owner}|]
        , [i|ModuleReference: #{showNamedModuleRef namedModRef}|]
        , [i|Balance:         #{Types.amountToString ciAmount} GTU|]
-       , [i|Size:            #{ciSize} bytes|]]
+       , [i|State size:      #{ciSize} bytes|]]
   tell state
   tell [ [i|Methods:|]]
   tellMethods
