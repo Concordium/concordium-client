@@ -230,6 +230,8 @@ initAccountConfigEither :: BaseConfig
                         -> Bool -- ^ True if we are in a cli environment
                         -> Bool -- ^ True if skip-existing flag is set
                         -> IO (Either String (BaseConfig, AccountConfig, Bool))
+                        -- ^ Return either an error or a triple of an update base config, a new account config
+                        -- and a boolean indicating whether the new account config was written to disk.
 initAccountConfigEither baseCfg namedAddr inCLI skipExisting = runExceptT $ do
   let NamedAddress { naAddr = addr, naNames = names } = namedAddr
   case names of
