@@ -381,6 +381,7 @@ processConfigCmd action baseCfgDir verbose =
 
               let accCfg' = accCfg { acThreshold = fromMaybe (acThreshold accCfg) threshold }
               removeAccountKeys baseCfg accCfg' (HSet.toList idxsToRemove) verbose
+
       ConfigAccountRemoveName name -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
@@ -391,8 +392,9 @@ processConfigCmd action baseCfgDir verbose =
         case Map.lookup name nameMap of
           Nothing -> logFatal [[i|the name '#{name}' is not in use|]]
           Just currentAddr -> do
-            logInfo [[i|removing mapping from '#{name}' to address '#{currentAddr}'|]]
+            logInfo [[i|removing mapping from '#{name}' to account address '#{currentAddr}'|]]
             void $ removeAccountNameAndWrite baseCfg name verbose
+
       ConfigAccountSetThreshold addr threshold -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
@@ -1438,6 +1440,19 @@ processModuleCmd action baseCfgDir verbose backend =
       nameAdded <- liftIO $ addModuleNameAndWrite verbose baseCfg modName modRef
       logSuccess [[i|module reference #{modRef} was successfully named '#{nameAdded}'|]]
 
+    ModuleRemoveName name -> do
+        baseCfg <- getBaseConfig baseCfgDir verbose
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        let nameMap = bcModuleNameMap baseCfg
+        case Map.lookup name nameMap of
+          Nothing -> logFatal [[i|the name '#{name}' is not in use|]]
+          Just currentAddr -> do
+            logInfo [[i|removing mapping from '#{name}' to contract address '#{currentAddr}'|]]
+            void $ removeModuleNameAndWrite baseCfg name verbose
+
   where extractModRef = extractFromTsr (\case
                                            Types.ModuleDeployed modRef -> Just modRef
                                            _ -> Nothing)
@@ -1572,6 +1587,19 @@ processContractCmd action baseCfgDir verbose backend =
       let contrAddr = mkContractAddress index subindex
       nameAdded <- liftIO $ addContractNameAndWrite verbose baseCfg contrName contrAddr
       logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{nameAdded}'|]]
+
+    ContractRemoveName name -> do
+        baseCfg <- getBaseConfig baseCfgDir verbose
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        let nameMap = bcContractNameMap baseCfg
+        case Map.lookup name nameMap of
+          Nothing -> logFatal [[i|the name '#{name}' is not in use|]]
+          Just currentAddr -> do
+            logInfo [[i|removing mapping from '#{name}' to contract address '#{currentAddr}'|]]
+            void $ removeContractNameAndWrite baseCfg name verbose
 
   where extractContractAddress = extractFromTsr (\case
                                                  Types.ContractInitialized {..} -> Just ecAddress
