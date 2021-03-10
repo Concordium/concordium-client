@@ -227,6 +227,10 @@ data ModuleCmd
       -- |Name for the module.
     , mnName :: !Text
     }
+  -- |Remove a local name from the module name map
+  | ModuleRemoveName
+    -- |The module name to remove
+    { mrnText :: !Text }
   deriving (Show)
 
 data ContractCmd
@@ -290,6 +294,10 @@ data ContractCmd
     , cnAddressSubindex :: !(Maybe Word64)
       -- |Name for the contract.
     , cnName :: !Text }
+  -- |Remove a local name from the contract name map
+  | ContractRemoveName
+    -- |The contract name to remove
+    { crnText :: !Text }
   deriving (Show)
 
 -- | The type parameter 'energyOrMaybe' should be Energy or Maybe Energy.
@@ -698,7 +706,8 @@ moduleCmds =
            moduleListCmd <>
            moduleShowCmd <>
            moduleInspectCmd <>
-           moduleNameCmd))
+           moduleNameCmd <>
+           moduleRemoveNameCmd))
       (progDesc "Commands for inspecting and deploying modules."))
 
 moduleDeployCmd :: Mod CommandFields ModuleCmd
@@ -753,6 +762,16 @@ moduleNameCmd =
         strOption (long "name" <> metavar "NAME" <> help "Name for the module."))
       (progDesc "Name a module."))
 
+moduleRemoveNameCmd ::  Mod CommandFields ModuleCmd
+moduleRemoveNameCmd =
+  command
+    "remove-name"
+    (info
+      (ModuleRemoveName <$>
+        strArgument (metavar "NAME" <> help "The module-name to forget"))
+    (progDescDoc $ docFromLines
+      [ "Removes the given name from the list of named modules" ]))
+
 contractCmds :: Mod CommandFields Cmd
 contractCmds =
   command
@@ -764,7 +783,8 @@ contractCmds =
            contractListCmd <>
            contractInitCmd <>
            contractUpdateCmd <>
-           contractNameCmd))
+           contractNameCmd <>
+           contractRemoveNameCmd))
       (progDesc "Commands for inspecting and initializing smart contracts."))
 
 contractShowCmd :: Mod CommandFields ContractCmd
@@ -842,6 +862,18 @@ contractNameCmd =
                             <> help "Subindex of contract address to be named (default: 0)")) <*>
         strOption (long "name" <> metavar "NAME" <> help "Name for the contract."))
       (progDesc "Name a contract."))
+
+
+contractRemoveNameCmd ::  Mod CommandFields ContractCmd
+contractRemoveNameCmd =
+  command
+    "remove-name"
+    (info
+      (ContractRemoveName <$>
+        strArgument (metavar "NAME" <> help "The contract-name to forget"))
+    (progDescDoc $ docFromLines
+      [ "Removes the given name from the list of named contracts" ]))
+
 
 configCmds :: ShowAllOpts -> Mod CommandFields Cmd
 configCmds showAllOpts =
