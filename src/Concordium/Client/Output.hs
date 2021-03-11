@@ -579,8 +579,10 @@ showRejectReason verbose = \case
     "serialization failed"
   Types.OutOfEnergy ->
     "not enough energy"
-  Types.Rejected{..} ->
-    [i|"contract logic failure with code #{rejectReason}|]
+  Types.RejectedInit{..} ->
+    [i|"contract init logic failed with code #{rejectReason}|]
+  Types.RejectedReceive{..} ->
+    [i|"contract #{receiveName} at #{showCompactPrettyJSON ContractAddress} failed with code #{rejectReason}|]
   Types.NonExistentRewardAccount a ->
     if verbose then
       printf "account '%s' does not exist (tried to set baker reward account)" (show a)
