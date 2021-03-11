@@ -6,6 +6,7 @@ module Concordium.Client.Types.Contract.Parameter where
 import Concordium.Client.Config (showCompactPrettyJSON, showPrettyJSON)
 import qualified Concordium.Types as T
 import Concordium.Client.Types.Contract.Schema
+import qualified Data.DoubleWord as DW
 
 import Control.Monad (unless, when, zipWithM)
 import Data.Aeson (FromJSON, Result, ToJSON, (.=))
@@ -83,6 +84,9 @@ getJSONUsingSchema typ = case typ of
     case Text.decodeUtf8' bStr of
       Left _ -> fail "String is not valid UTF-8."
       Right str -> return $ AE.toJSON str
+  UInt128 -> AE.toJSON . show <$> (S.get :: S.Get DW.Word128)
+  Int128 -> AE.toJSON . show <$> (S.get :: S.Get DW.Int128)
+
   where
     getFieldsAsJSON :: Fields -> S.Get AE.Value
     getFieldsAsJSON fields = case fields of
@@ -208,6 +212,16 @@ putJSONUsingSchema typ json = case (typ, json) of
     let putLen = putLenWithSizeLen sl $ fromIntegral len
     let putBytes = mapM_ S.put bytes
     pure $ putLen <> putBytes
+
+  (UInt128, AE.String str) -> do
+    case DW.word128FromString $ Text.unpack str of
+      Left err -> Left [i|Invalid UInt128 '#{str}': #{err}|]
+      Right n -> pure $ S.put n
+
+  (Int128, AE.String str) -> do
+    case DW.int128FromString $ Text.unpack str of
+      Left err -> Left [i|Invalid Int128 '#{str}': #{err}|]
+      Right n -> pure $ S.put n
 
   (type_, value) -> Left [i|Expected value of type #{showCompactPrettyJSON type_}, but got: #{showCompactPrettyJSON value}.|]
 
