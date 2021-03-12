@@ -297,8 +297,9 @@ data ContractCmd
     , cnName :: !Text }
   -- |Remove a local name from the contract name map
   | ContractRemoveName
-    -- |The contract name to remove
-    { crnText :: !Text }
+    { -- |The contract name to remove
+      crnText :: !Text
+    }
   deriving (Show)
 
 -- | The type parameter 'energyOrMaybe' should be Energy or Maybe Energy.
