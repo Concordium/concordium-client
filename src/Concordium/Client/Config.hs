@@ -335,10 +335,9 @@ removeAccountNameAndWrite baseCfg name verbose = do
   logSuccess ["removed account name mapping"]
   return baseCfg { bcAccountNameMap = m }
 
-
--- |Remove a name from the contract name map. If the name is not in use
--- |it does nothing
--- |Returns the potentially updated baseConfig
+-- |Remove a name from the contract name map. If the name is not in use,
+-- |it does nothing.
+-- |Returns the potentially updated baseConfig.
 removeContractNameAndWrite :: BaseConfig -> Text -> Verbose -> IO BaseConfig
 removeContractNameAndWrite baseCfg name verbose = do
   -- Check if config has been initialized.
