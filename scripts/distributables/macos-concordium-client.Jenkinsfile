@@ -48,7 +48,7 @@ pipeline {
             steps {
                 unstash 'release'
                 sh '''\
-                    aws s3 cp out/concordium-client ${OUTFILE} --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+                    aws s3 cp out/concordium-client ${OUTFILE}
                 '''.stripIndent()
             }
         }

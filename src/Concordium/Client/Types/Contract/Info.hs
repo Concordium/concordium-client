@@ -61,6 +61,8 @@ data ContractInfo
     , ciOwner  :: !T.AccountAddress
       -- |The contract state.
     , ciState :: !ContractState
+      -- |The size of the contract state in bytes.
+    , ciSize :: !Int
       -- |The receive functions/methods.
     , ciMethods :: ![Wasm.ReceiveName]
       -- |The contract name.
@@ -77,15 +79,17 @@ data ContractState =
 
 instance AE.FromJSON ContractInfo where
   parseJSON = AE.withObject "Info" $ \v -> do
-    ciAmount       <- v .: "amount"
-    ciOwner        <- v .: "owner"
-    ciState        <- case HM.lookup "model" v of
-      Just (AE.String s) -> JustBytes <$> decodeBase16 s
+    ciAmount            <- v .: "amount"
+    ciOwner             <- v .: "owner"
+    (ciState, ciSize)   <- case HM.lookup "model" v of
+      Just (AE.String s) -> do
+        bs <- decodeBase16 s
+        return (JustBytes bs, BS.length bs)
       Just x -> fail [i|Invalid Info, expected "model" field to be a String of base16 bytes, but got: #{x}|]
       Nothing -> fail [i|Invalid Info, missing "model" field.|]
-    ciMethods      <- v .: "methods"
-    ciName         <- v .: "name"
-    ciSourceModule <- v .: "sourceModule"
+    ciMethods           <- v .: "methods"
+    ciName              <- v .: "name"
+    ciSourceModule      <- v .: "sourceModule"
     return ContractInfo{..}
     where decodeBase16 xs =
             let (parsed, remaining) = BS16.decode . Text.encodeUtf8 $ xs in
