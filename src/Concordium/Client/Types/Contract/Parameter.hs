@@ -84,8 +84,8 @@ getJSONUsingSchema typ = case typ of
     case Text.decodeUtf8' bStr of
       Left _ -> fail "String is not valid UTF-8."
       Right str -> return $ AE.toJSON str
-  UInt128 -> AE.toJSON . show <$> (S.get :: S.Get DW.Word128)
-  Int128 -> AE.toJSON . show <$> (S.get :: S.Get DW.Int128)
+  UInt128 -> AE.toJSON . show <$> DW.getWord128le
+  Int128 -> AE.toJSON . show <$> DW.getInt128le
 
   where
     getFieldsAsJSON :: Fields -> S.Get AE.Value
@@ -216,12 +216,12 @@ putJSONUsingSchema typ json = case (typ, json) of
   (UInt128, AE.String str) -> do
     case DW.word128FromString $ Text.unpack str of
       Left err -> Left [i|Invalid UInt128 '#{str}': #{err}|]
-      Right n -> pure $ S.put n
+      Right n -> pure $ DW.putWord128le n
 
   (Int128, AE.String str) -> do
     case DW.int128FromString $ Text.unpack str of
       Left err -> Left [i|Invalid Int128 '#{str}': #{err}|]
-      Right n -> pure $ S.put n
+      Right n -> pure $ DW.putInt128le n
 
   (type_, value) -> Left [i|Expected value of type #{showCompactPrettyJSON type_}, but got: #{showCompactPrettyJSON value}.|]
 
