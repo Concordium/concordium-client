@@ -34,7 +34,7 @@ word128Spec = describe "Word128" $ do
   it "parse from string: fails for string with words" $
     word128FromString "NotANumber" `shouldSatisfy` isLeft
   where minBnd = 0
-        maxBnd = 340282366920938463463374607431768211455 -- 2 ^ 128
+        maxBnd = 2 ^ (128 :: Int) - 1
 
 int128Spec :: Spec
 int128Spec = describe "Int128" $ do
@@ -64,8 +64,8 @@ int128Spec = describe "Int128" $ do
     int128FromString "3.3" `shouldSatisfy` isLeft
   it "parse from string: fails for string with Ints" $
     int128FromString "NotANumber" `shouldSatisfy` isLeft
-  where minBnd = -170141183460469231731687303715884105728 -- -2 ^ 127
-        maxBnd = 170141183460469231731687303715884105727 -- 2 ^ 127 - 1
+  where minBnd = -2 ^ (127 :: Int)
+        maxBnd = 2 ^ (127 :: Int) - 1
 
 genWord128 :: Gen Word128
 genWord128 = do
