@@ -6,6 +6,7 @@ module Concordium.Client.Types.Contract.Parameter where
 import Concordium.Client.Config (showCompactPrettyJSON, showPrettyJSON)
 import qualified Concordium.Types as T
 import Concordium.Client.Types.Contract.Schema
+import qualified Concordium.Wasm as Wasm
 
 import Control.Monad (unless, when, zipWithM)
 import Data.Aeson (FromJSON, Result, ToJSON, (.=))
@@ -235,6 +236,9 @@ putJSONUsingSchema typ json = case (typ, json) of
             bytes = BS.unpack . Text.encodeUtf8 $ nameWithInit
             len = fromIntegral $ length bytes
             maxLen = maxSizeLen sl
+        unless (Wasm.isValidInitName nameWithInit) $
+          -- Include 'obj' in the error to be explicit about where the error occured.
+          Left [i|'#{contractName}' is not a valid contract name.\nIn #{showPrettyJSON obj}.|]
         when (len > maxLen) $ Left $ tooLongError "ContractName" maxLen len
         let putLen = putLenWithSizeLen sl $ fromIntegral len
         let putBytes = mapM_ S.put bytes
@@ -250,6 +254,9 @@ putJSONUsingSchema typ json = case (typ, json) of
             bytes = BS.unpack . Text.encodeUtf8 $ nameWithDot
             len = fromIntegral $ length bytes
             maxLen = maxSizeLen sl
+        unless (Wasm.isValidReceiveName nameWithDot) $
+          -- Include 'obj' in the error to be explicit about where the error occured.
+          Left [i|'#{contractName}' combined with '#{funcName}' is not a valid receive name.\nIn #{showPrettyJSON obj}.|]
         when (len > maxLen) $ Left $ tooLongError "ReceiveName" maxLen len
         let putLen = putLenWithSizeLen sl $ fromIntegral len
         let putBytes = mapM_ S.put bytes
