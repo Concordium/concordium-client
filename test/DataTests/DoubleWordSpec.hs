@@ -15,6 +15,8 @@ word128Spec :: Spec
 word128Spec = describe "Word128" $ do
   it "decode is inverse of encode" $
     forAll genWord128 $ \w -> (S.decode . S.encode) w === Right w
+  it "getWord128le is inverse of putWord128le" $
+    forAll genWord128 $ \w -> (S.runGet getWord128le . S.runPut . putWord128le) w === Right w
   it "convert to integer is inverse of from integer" $
     forAll genWord128 $ \w -> (integerToWord128 . word128ToInteger) w === Right w
   it "parse from string: is inverse of show" $
@@ -38,6 +40,8 @@ int128Spec :: Spec
 int128Spec = describe "Int128" $ do
   it "decode is inverse of encode" $
     forAll genInt128 $ \w -> (S.decode . S.encode) w === Right w
+  it "getInt128le is inverse of putInt128le" $
+    forAll genInt128 $ \w -> (S.runGet getInt128le . S.runPut . putInt128le) w === Right w
   it "convert to integer is inverse of from integer" $
     forAll genInt128 $ \w -> (integerToInt128 . int128ToInteger) w === Right w
   it "parse from string: is inverse of show" $

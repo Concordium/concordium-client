@@ -1,4 +1,4 @@
--- | Signed and unsigned 128-bit integer types with little-endian serialization instances.
+-- | Signed and unsigned 128-bit integer types.
 --   Used as values for contract schema types UInt128 and Int128.
 module Data.DoubleWord where
 
@@ -19,10 +19,21 @@ instance Show Word128 where
 
 instance S.Serialize Word128 where
   get = S.label "Word128" $ do
-    word128Lo64 <- S.getWord64le
-    word128Hi64  <- S.getWord64le
-    return Word128 { .. }
-  put Word128 {..} = S.putWord64le word128Lo64 <> S.putWord64le word128Hi64
+    word128Hi64 <- S.get
+    word128Lo64 <- S.get
+    return Word128 {..}
+  put Word128 {..} = S.put word128Hi64 <> S.put word128Lo64
+
+-- | Get 'Word128' using little-endian encoding.
+getWord128le :: S.Get Word128
+getWord128le = S.label "Word128" $ do
+  word128Lo64 <- S.getWord64le
+  word128Hi64 <- S.getWord64le
+  return Word128 {..}
+
+-- | Put 'Word128' using little-endian encoding.
+putWord128le :: S.Putter Word128
+putWord128le Word128 {..} = S.putWord64le word128Lo64 <> S.putWord64le word128Hi64
 
 -- | Parse a 'Word128' from a 'String'. Bounds are checked.
 word128FromString :: String -> Either String Word128
@@ -57,10 +68,21 @@ instance Show Int128 where
 
 instance S.Serialize Int128 where
   get = S.label "Int128" $ do
-    int128Lo64 <- S.getWord64le
-    int128Hi64  <- S.getWord64le
-    return Int128 { .. }
-  put Int128 {..} = S.putWord64le int128Lo64 <> S.putWord64le int128Hi64
+    int128Hi64 <- S.get
+    int128Lo64 <- S.get
+    return Int128 {..}
+  put Int128 {..} = S.put int128Hi64 <> S.put int128Lo64
+
+-- | Get 'Int128' using little-endian encoding.
+getInt128le :: S.Get Int128
+getInt128le = S.label "Int128" $ do
+  int128Lo64 <- S.getWord64le
+  int128Hi64 <- S.getWord64le
+  return Int128 {..}
+
+-- | Put 'Int128' using little-endian encoding.
+putInt128le :: S.Putter Int128
+putInt128le Int128 {..} = S.putWord64le int128Lo64 <> S.putWord64le int128Hi64
 
 -- | Convert an 'Int128' to an 'Integer'.
 int128ToInteger :: Int128 -> Integer
