@@ -229,8 +229,9 @@ data ModuleCmd
     }
   -- |Remove a local name from the module name map
   | ModuleRemoveName
-    -- |The module name to remove
-    { mrnText :: !Text }
+    { -- |The module name to remove
+      mrnText :: !Text
+    }
   deriving (Show)
 
 data ContractCmd
