@@ -7,6 +7,7 @@ import Concordium.Client.Config (showCompactPrettyJSON, showPrettyJSON)
 import qualified Concordium.Types as T
 import Concordium.Client.Types.Contract.Schema
 import qualified Concordium.Wasm as Wasm
+import qualified Data.DoubleWord as DW
 
 import Control.Monad (unless, when, zipWithM)
 import Data.Aeson (FromJSON, Result, ToJSON, (.=))
@@ -80,6 +81,8 @@ getJSONUsingSchema typ = case typ of
     fields' <- getFieldsAsJSON fields
     return $ AE.object [name .= fields']
   String sl -> AE.toJSON <$> getUtf8String sl
+  UInt128 -> AE.toJSON . show <$> DW.getWord128le
+  Int128 -> AE.toJSON . show <$> DW.getInt128le
   ContractName sl -> do
     rawName <- getUtf8String sl
     case Text.stripPrefix "init_" rawName of
@@ -93,6 +96,7 @@ getJSONUsingSchema typ = case typ of
       Just idx -> let (contractName, funcNameWithDot) = Text.splitAt idx rawName
                       funcName = Text.tail funcNameWithDot -- Safe, since we know it contains a dot.
                   in return $ AE.object ["contract" .= contractName, "func" .= funcName]
+
   where
     getFieldsAsJSON :: Fields -> S.Get AE.Value
     getFieldsAsJSON fields = case fields of
@@ -226,6 +230,16 @@ putJSONUsingSchema typ json = case (typ, json) of
     let putLen = putLenWithSizeLen sl $ fromIntegral len
     let putBytes = mapM_ S.put bytes
     pure $ putLen <> putBytes
+
+  (UInt128, AE.String str) -> do
+    case DW.word128FromString $ Text.unpack str of
+      Left err -> Left [i|Invalid UInt128 '#{str}': #{err}|]
+      Right n -> pure $ DW.putWord128le n
+
+  (Int128, AE.String str) -> do
+    case DW.int128FromString $ Text.unpack str of
+      Left err -> Left [i|Invalid Int128 '#{str}': #{err}|]
+      Right n -> pure $ DW.putInt128le n
 
   (ContractName sl, AE.Object obj) -> do
     let fieldCount = length . HM.toList $ obj
