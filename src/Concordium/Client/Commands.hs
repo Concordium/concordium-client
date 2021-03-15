@@ -909,8 +909,7 @@ configAccountCmds showAllOpts =
            configAccountUpdateKeysCmd <>
            configAccountRemoveKeysCmd <>
            configAccountRemoveNameCmd <>
-           configAccountSetThresholdCmd <>
-           configAccountRemoveKeysCmd))
+           configAccountSetThresholdCmd))
       (progDesc "Commands for inspecting and changing account-specific configuration."))
 
 configAccountNameCmd :: Mod CommandFields ConfigAccountCmd
