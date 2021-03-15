@@ -210,6 +210,25 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
     fromToJSONFail Int128 $ AE.String "3.3" -- With decimal point
     fromToJSONFail Int128 $ AE.String "NotANumber" -- Not a number
 
+  it "ContractName" $ do
+    fromToJSONSucceed (ContractName One) $ object ["contract" .= AE.String "contrName"]
+    fromToJSONFail (ContractName One) $ object [] -- Missing field
+    fromToJSONFail (ContractName One) $ object ["contract" .= AE.Number 3] -- Incorrect type
+    fromToJSONFail (ContractName One) $ object ["wrongKey" .= AE.String "contrName"] -- Incorrect key
+    -- Additional fields not allowed
+    fromToJSONFail (ContractName One) $ object ["contract" .= AE.String "contrName", "func" .= AE.String "funcName"]
+
+
+  it "ReceiveName" $ do
+    fromToJSONSucceed (ReceiveName One) $ object ["contract" .= AE.String "contrName", "func" .= AE.String "funcName"]
+    fromToJSONFail (ReceiveName One) $ object ["contract" .= AE.String "contrName"] -- Missing field
+    fromToJSONFail (ReceiveName One) $ object ["contract" .= AE.String "contrName", "func" .= AE.Number 3] -- Incorrect type
+    fromToJSONFail (ReceiveName One) $ object ["contract" .= AE.Number 3, "func" .= AE.String "funcName"] -- Incorrect type
+    -- Additional fields not allowed
+    fromToJSONFail (ReceiveName One) $ object [ "contract" .= AE.String "contrName"
+                                                    , "func" .= AE.String "funcName"
+                                                    , "extra" .= AE.String "extra"]
+
   where idx :: Word64
         idx = 42
 
