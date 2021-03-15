@@ -122,6 +122,8 @@ data SchemaType =
   | Struct Fields
   | Enum [(Text, Fields)]
   | String SizeLength
+  | UInt128
+  | Int128
   deriving (Eq, Generic, Show)
 
 instance Hashable SchemaType
@@ -163,6 +165,8 @@ instance S.Serialize SchemaType where
       20 -> S.label "Struct" $ Struct <$> S.get
       21 -> S.label "Enum"   $ Enum <$> getListOfWithSizeLen Four (S.getTwoOf getText S.get)
       22 -> S.label "String" $ String <$> S.get
+      23 -> S.label "UInt128" $ pure UInt128
+      24 -> S.label "Int128"  $ pure Int128
       x  -> fail [i|Invalid SchemaType tag: #{x}|]
 
   put typ = case typ of
@@ -189,6 +193,8 @@ instance S.Serialize SchemaType where
     Struct fields -> S.putWord8 20 <> S.put fields
     Enum enum     -> S.putWord8 21 <> putListOfWithSizeLen Four (S.putTwoOf putText S.put) enum
     String sl     -> S.putWord8 22 <> S.put sl
+    UInt128 -> S.putWord8 23
+    Int128  -> S.putWord8 24
 
 -- |Parallel to SizeLength defined in contracts-common (Rust).
 -- Must stay in sync.
