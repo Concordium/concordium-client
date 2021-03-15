@@ -517,10 +517,17 @@ processTransactionCmd action baseCfgDir verbose backend =
       when verbose $ do
         runPrinter $ printAccountConfig $ tcAccountCfg txCfg
         putStrLn ""
-
-      let intOpts = toInteractionOpts txOpts
-      pl <- transferWithScheduleTransactionPayload ttxCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+      -- Check that sending and receiving accounts are not the same
+      let fromAddr = naAddr $ acAddr ( tcAccountCfg txCfg)
+      let toAddr = naAddr $ twstcReceiver ttxCfg
+      case fromAddr == toAddr of
+        False -> do
+          let intOpts = toInteractionOpts txOpts
+          pl <- transferWithScheduleTransactionPayload ttxCfg (ioConfirm intOpts)
+          withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+        True -> do 
+          logWarn ["Scheduled transfers from an account to itself are not allowed."]
+          logWarn ["Transaction Cancelled"]
 
     TransactionEncryptedTransfer txOpts receiver amount index -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
