@@ -1654,7 +1654,7 @@ getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex rece
   let namedModRef = NamedModuleRef {nmrRef = moduleRef, nmrNames = []}
   let contrName = CI.contractNameFromInitName ciName
   params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef)
-            (CS.ReceiveName contrName receiveName)
+            (CS.ReceiveFuncName contrName receiveName)
   return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr)
            contrName (Wasm.ReceiveName [i|#{contrName}.#{receiveName}|]) params amount
 
@@ -1699,7 +1699,7 @@ getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath contrName par
             then (\ref -> NamedModuleRef {nmrRef = ref, nmrNames = []}) <$> getModuleRefFromFile modTBD
             else getNamedModuleRef (bcModuleNameMap baseCfg) (Text.pack modTBD)
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
-  params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef) (CS.InitName contrName)
+  params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef) (CS.InitFuncName contrName)
   return $ ContractInitTransactionCfg txCfg amount (nmrRef namedModRef) (Wasm.InitName [i|init_#{contrName}|]) params
 
 -- |Query the node for a module reference, and parse the result.
