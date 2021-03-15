@@ -791,7 +791,7 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
               handleJust
               (guard . isDoesNotExistError)
               (\_ -> logFatal [ printf "key directory for account '%s' not found" (show addr)
-                             , "did you forget to add the account (using 'config account add')?"])
+                             , "did you forget to add the account (using 'concordium-client config account add')?"])
               (do km <- loadKeyMap dir
                   let file = accountThresholdFile accCfgDir addr
                   t <- loadThreshold file $ fromIntegral (M.size km)
