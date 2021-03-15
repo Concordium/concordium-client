@@ -9,10 +9,12 @@ import Data.Word (Word64)
 import Text.Read (readMaybe)
 
 -- | 128-bit unsigned integer type.
---   Serialization instance uses little-endian encoding.
-data Word128 = Word128
-  { word128Lo64 :: !Word64
-  , word128Hi64 :: !Word64
+--   Serialization instance uses big-endian encoding as is normal for integral type Serialize instances.
+data Word128 = Word128 {
+  -- | Least significant 64 bits.
+  word128Lo64 :: !Word64,
+  -- | Most significant 64 bits.
+  word128Hi64 :: !Word64
   } deriving Eq
 
 instance Show Word128 where
@@ -59,10 +61,14 @@ integerToWord128 x
     maxBnd = 2 ^ (128 :: Int) - 1
 
 -- | 128-bit signed integer type.
---   Serialization instance uses little-endian encoding.
+--   Serialization instance uses big-endian encoding as is normal for integral type Serialize instances.
+-- This uses two's complement representation to represent positive and negative numbers.
 data Int128 = Int128
-  { int128Lo64 :: !Word64
-  , int128Hi64 :: !Word64
+  {
+  -- | Least significant 64 bits.
+  int128Lo64 :: !Word64,
+  -- | Most significant 64 bits.
+  int128Hi64 :: !Word64
   } deriving Eq
 
 instance Show Int128 where
