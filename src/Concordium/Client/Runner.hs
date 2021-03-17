@@ -225,7 +225,7 @@ processConfigCmd action baseCfgDir verbose =
             Left err -> logFatal [[i|cannot parse #{addr} as an address: #{err}|]]
             Right a -> return a
         nameAdded <- liftIO $ addAccountNameAndWrite verbose baseCfg name checkedAddr
-        logSuccess [[i|module reference #{addr} was successfully named '#{nameAdded}'|]]
+        logSuccess [[i|Account reference #{addr} was successfully named '#{nameAdded}'|]]
         
       ConfigAccountRemove account -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
