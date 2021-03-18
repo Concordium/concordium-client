@@ -208,13 +208,13 @@ processConfigCmd action baseCfgDir verbose =
         _ -> configExport configBackup (Just pwd)
       handleWriteFile BS.writeFile PromptBeforeOverwrite verbose fileName exportedConfigBackup
 
-    ConfigBackupImport fileName -> do
+    ConfigBackupImport fileName skipExistingAccounts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       ciphertext <- handleReadFile BS.readFile fileName
       configBackup <- configImport ciphertext (askPassword "The backup file is password protected. Enter password: ")
       case configBackup of
         Right ConfigBackup{..} -> do
-          void $ importConfigBackup verbose baseCfg (cbAccounts, cbContractNameMap, cbModuleNameMap)
+          void $ importConfigBackup verbose baseCfg skipExistingAccounts (cbAccounts, cbContractNameMap, cbModuleNameMap)
         Left err -> logFatal [[i|Failed to import Config Backup, #{err}|]]
 
     ConfigAccountCmd c -> case c of
@@ -249,7 +249,7 @@ processConfigCmd action baseCfgDir verbose =
           logInfo[ descriptor ++ " will be removed"]
           void $ removeAccountConfig baseCfg nameAddr
 
-      ConfigAccountImport file name importFormat -> do
+      ConfigAccountImport file name importFormat skipExisting -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
@@ -264,17 +264,26 @@ processConfigCmd action baseCfgDir verbose =
         -- fold over all accounts adding them to the config, starting from the
         -- base config. Checks for duplicates in the names mapping and prompts
         -- the user to give a new name
-        foldM_ addAccountToBaseConfigWithNamePrompts baseCfg accCfgs
+        (_, skipped) <- foldM addAccountToBaseConfigWithNamePrompts (baseCfg, 0::Int) accCfgs
+        
+        when (skipExisting && (skipped > 0)) $ logInfo [printf "`%d` account[s] automatically skipped. To overwrite these keys, re-import file without the skip-existing flag, or import them individually with --name" skipped ]
 
         where
           -- Adds an account to the BaseConfig, prompting the user for a new
           -- non-colliding name if the account is named and the name already
           -- exists in the name map.
-          addAccountToBaseConfigWithNamePrompts baseCfg accCfg = do
-            (bcfg, _, t) <- initAccountConfig baseCfg (acAddr accCfg) True
+          -- If skip-existing flag is set, count how many accounts were skipped
+          addAccountToBaseConfigWithNamePrompts (baseCfg, skipped) accCfg = do
+            (bcfg, _, t) <- initAccountConfig baseCfg (acAddr accCfg) True skipExisting
             when t $ writeAccountKeys bcfg accCfg verbose
-            return bcfg
-      ConfigAccountAddKeys addr keysFile -> do 
+            if skipExisting && (not t) then
+              return (bcfg, skipped + 1)
+            else 
+              return (bcfg, skipped)
+        
+
+          
+      ConfigAccountAddKeys addr keysFile -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
@@ -337,7 +346,7 @@ processConfigCmd action baseCfgDir verbose =
                               [ "the keys for credential "++ show cidx ++" with indices "
                                 ++ showMapIdxs km
                                 ++ " can not be updated because they do not match existing keys",
-                                "Use 'config account add-keys' if you want to add them."]
+                                "Use 'concordium-client config account add-keys' if you want to add them."]
 
         case Map.null keyDuplicates of
           True -> logInfo ["no keys were updated"]
@@ -508,10 +517,17 @@ processTransactionCmd action baseCfgDir verbose backend =
       when verbose $ do
         runPrinter $ printAccountConfig $ tcAccountCfg txCfg
         putStrLn ""
-
-      let intOpts = toInteractionOpts txOpts
-      pl <- transferWithScheduleTransactionPayload ttxCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+      -- Check that sending and receiving accounts are not the same
+      let fromAddr = naAddr $ acAddr ( tcAccountCfg txCfg)
+      let toAddr = naAddr $ twstcReceiver ttxCfg
+      case fromAddr == toAddr of
+        False -> do
+          let intOpts = toInteractionOpts txOpts
+          pl <- transferWithScheduleTransactionPayload ttxCfg (ioConfirm intOpts)
+          withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+        True -> do 
+          logWarn ["Scheduled transfers from an account to itself are not allowed."]
+          logWarn ["Transaction Cancelled"]
 
     TransactionEncryptedTransfer txOpts receiver amount index -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -941,7 +957,7 @@ transferTransactionPayload ttxCfg confirm = do
 
   logSuccess [ printf "sending %s from %s to %s" (showGtu amount) (showNamedAddress fromAddress) (showNamedAddress toAddress)
              , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-             , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiryTs) ]
+             , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiryTs) ]
   when confirm $ do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
@@ -964,7 +980,7 @@ transferWithScheduleTransactionPayload ttxCfg confirm = do
   logSuccess [ printf "sending GTUs from %s to %s" (showNamedAddress fromAddress) (showNamedAddress toAddress)
              , printf "with the following release schedule:\n%swith a total amount of %s" (unlines $ map (\(a, b) -> showTimeFormatted (Time.timestampToUTCTime a) ++ ": " ++ showGtu b) schedule) (showGtu $ foldl' (\acc (_, x) -> acc + x) 0 schedule)
              , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-             , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiryTs) ]
+             , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiryTs) ]
   when confirm $ do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
@@ -982,7 +998,7 @@ encryptedTransferTransactionPayload EncryptedTransferTransactionConfig{..} confi
   logInfo
     [ printf "transferring %s GTU from encrypted balance of account %s to %s" (Types.amountToString ettAmount) (showNamedAddress addr) (showNamedAddress ettReceiver)
     , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-    , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
+    , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
 
   when confirm $ do
     confirmed <- askConfirmation Nothing
@@ -1101,7 +1117,7 @@ credentialUpdateKeysTransactionPayload CredentialUpdateKeysTransactionCfg{..} co
     logNewKeys ++
     [ printf "with threshold %s" (show (ID.credThreshold cuktcKeys))] ++
     [ printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-    , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
+    , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
 
   when confirm $ do
     confirmed <- askConfirmation Nothing
@@ -1121,7 +1137,7 @@ accountEncryptTransactionPayload AccountEncryptTransactionConfig{..} confirm = d
   logInfo $
     [ printf "transferring %s GTU from public to encrypted balance of account %s" (Types.amountToString aeAmount) (showNamedAddress addr)
     , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-    , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
+    , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
 
   when confirm $ do
     confirmed <- askConfirmation Nothing
@@ -1140,7 +1156,7 @@ accountDecryptTransactionPayload AccountDecryptTransactionConfig{..} confirm = d
   logInfo $
     [ printf "transferring %s GTU from encrypted to public balance of account %s" (Types.amountToString (Enc.stpatdTransferAmount adTransferData)) (showNamedAddress addr)
     , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-    , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
+    , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
 
   when confirm $ do
     confirmed <- askConfirmation Nothing
@@ -1232,7 +1248,7 @@ tailTransaction :: (MonadIO m) => Types.TransactionHash -> ClientMonad m Transac
 tailTransaction hash = do
   logInfo [ "waiting for the transaction to be committed and finalized"
           , "you may skip this step by interrupting the command using Ctrl-C (pass flag '--no-wait' to do this by default)"
-          , printf "the transaction will still get processed and may be queried using\n  'transaction status %s'" (show hash) ]
+          , printf "the transaction will still get processed and may be queried using\n  'concordium-client transaction status %s'" (show hash) ]
 
   liftIO $ printf "[%s] Waiting for the transaction to be committed..." =<< getLocalTimeOfDayFormatted
   committedStatus <- awaitState 2 Committed hash
@@ -1523,7 +1539,7 @@ processContractCmd action baseCfgDir verbose backend =
       logInfo [ [i|initialize contract '#{contrName}' from module '#{citcModuleRef ciCfg}' with |]
                   ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{Types.amountToString $ citcAmount ciCfg} GTU.|]
               , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
-              , [i|transaction expires at #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
+              , [i|transaction expires on #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
 
       initConfirmed <- askConfirmation Nothing
 
@@ -1559,7 +1575,7 @@ processContractCmd action baseCfgDir verbose backend =
       logInfo [ [i|update contract '#{cutcContrName cuCfg}' using the function '#{receiveName}' with |]
                   ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{Types.amountToString $ cutcAmount cuCfg} GTU.|]
               , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
-              , [i|transaction expires at #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
+              , [i|transaction expires on #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
 
       updateConfirmed <- askConfirmation Nothing
 
@@ -1663,7 +1679,7 @@ getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex rece
   let namedModRef = NamedModuleRef {nmrRef = moduleRef, nmrNames = []}
   let contrName = CI.contractNameFromInitName ciName
   params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef)
-            (CS.ReceiveName contrName receiveName)
+            (CS.ReceiveFuncName contrName receiveName)
   return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr)
            contrName (Wasm.ReceiveName [i|#{contrName}.#{receiveName}|]) params amount
 
@@ -1708,7 +1724,7 @@ getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath contrName par
             then (\ref -> NamedModuleRef {nmrRef = ref, nmrNames = []}) <$> getModuleRefFromFile modTBD
             else getNamedModuleRef (bcModuleNameMap baseCfg) (Text.pack modTBD)
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
-  params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef) (CS.InitName contrName)
+  params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef) (CS.InitFuncName contrName)
   return $ ContractInitTransactionCfg txCfg amount (nmrRef namedModRef) (Wasm.InitName [i|init_#{contrName}|]) params
 
 -- |Query the node for a module reference, and parse the result.
@@ -1984,12 +2000,12 @@ processBakerCmd action baseCfgDir verbose backend =
         Nothing -> do
           -- TODO Store in config.
           BSL8.putStrLn out
-          logInfo [ printf "to add a baker to the chain using these keys, store it in a file and use 'baker add FILE'" ]
+          logInfo [ printf "to add a baker to the chain using these keys, store it in a file and use 'concordium-client baker add FILE'" ]
         Just f -> do
           BSL.writeFile f out
           logSuccess [ printf "keys written to file '%s'" f
                      , "DO NOT LOSE THIS FILE"
-                     , printf "to add a baker to the chain using these keys, use 'baker add %s'" f ]
+                     , printf "to add a baker to the chain using these keys, use 'concordium-client baker add %s'" f ]
     BakerAdd accountKeysFile txOpts initialStake autoRestake outputFile -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
@@ -2135,7 +2151,7 @@ bakerSetKeysTransaction baseCfg txOpts fp confirm = do
 
     logSuccess [ printf "setting new keys for baker %s" (show senderAddress)
                , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
-               , printf "transaction expires at %s" (showTimeFormatted $ timeFromTransactionExpiryTime tcExpiry) ]
+               , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime tcExpiry) ]
     when confirm $ do
       confirmed <- askConfirmation Nothing
       unless confirmed exitTransactionCancelled
@@ -2410,11 +2426,11 @@ processCredential source networkId =
 convertTransactionJsonPayload :: (MonadFail m) => CT.TransactionJSONPayload -> ClientMonad m Types.Payload
 convertTransactionJsonPayload = \case
   (CT.DeployModule _) ->
-    fail "Use 'module deploy' instead."
+    fail "Use 'concordium-client module deploy' instead."
   CT.InitContract{} ->
-    fail "Use 'contract init' instead."
+    fail "Use 'concordium-client contract init' instead."
   CT.Update{} ->
-    fail "Use 'contract update' instead."
+    fail "Use 'concordium-client contract update' instead."
   (CT.Transfer transferTo transferAmount) ->
     return $ Types.Transfer transferTo transferAmount
   CT.RemoveBaker -> return $ Types.RemoveBaker

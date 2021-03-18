@@ -4,7 +4,7 @@ cabal-version: 2.0
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 45ee289943690348ebc21e921ecce7132418b6dab71690dd1f3be083cca0c6c9
+-- hash: ad9f35cfde7375a9de31e953286cd457a5bba0a2e3f8dc9bf7ecf180d350b7b3
 
 name:           concordium-client
 version:        0.5.0
@@ -62,6 +62,7 @@ library
       Concordium.Client.Types.Transaction
       Concordium.Client.Types.TransactionStatus
       Concordium.Client.Utils
+      Data.DoubleWord
       Proto.ConcordiumP2pRpc Proto.ConcordiumP2pRpc_Fields
   other-modules:
       Paths_concordium_client
@@ -203,6 +204,7 @@ test-suite concordium-client-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      DataTests.DoubleWordSpec
       SimpleClientTests.AccountSpec
       SimpleClientTests.BackupSpec
       SimpleClientTests.BlockSpec

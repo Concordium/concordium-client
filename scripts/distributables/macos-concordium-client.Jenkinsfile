@@ -1,7 +1,7 @@
 pipeline {
     agent { label 'jenkins-worker' }
     environment {
-        GHC_VERSION = '8.10.4'
+        GHC_VERSION = '8.8.4'
         VERSION = sh(
             returnStdout: true, 
             script: '''\
@@ -30,16 +30,30 @@ pipeline {
             steps {
                 sh '''\
                     # Ensure using custom version of ghc
-                    ghcup rm ghc 8.10.4 || true
-                    ghcup set ghc ${GHC_VERSION}-simple
+                    # Stack is refusing for some reason to use the ghc installed by ghcup :/ so I'm installing it via stack.
+                    rm -rf ~/.stack/*
+                    cat <<'EOF' > ~/.stack/config.yaml
+                    setup-info:
+                      ghc:
+                         macosx-custom-integer-simple:
+                             8.8.4:
+                                  url: "https://s3-eu-west-1.amazonaws.com/static-libraries.concordium.com/ghc-8.8.4-x86_64-apple-darwin.tar.xz"
+
+                    ghc-variant: integer-simple
+                    EOF
+                    
+                    sed -i '' "s/lts-17.4/lts-16.20/g" stack.yaml
+                    sed -i '' "s/default: False/default: True/g" deps/concordium-base/package.yaml
 
                     # Build project
-                    stack build --flag "scientific:integer-simple" --flag "cryptonite:-integer-gmp" --flag "integer-logarithms:-integer-gmp" --flag "hashable:-integer-gmp"
-                    
+                    # Note that we have to copy the haddock binary into the specified path or else stack will fail.
+                    # As we don't spawn a fresh instance each time, I did build `cabal install haddock --install-method=copy` and then we can copy the binary into the required path. If it goes missing, just build it manually again
+                    (stack build --flag "scientific:integer-simple" --flag "cryptonite:-integer-gmp" --flag "integer-logarithms:-integer-gmp" --flag "hashable:-integer-gmp" || ( cp ~/.cabal/bin/haddock /Users/administrator/.stack/programs/x86_64-osx/ghc-custom-integer-simple-8.8.4/bin/haddock-8.8.4 && stack build --flag "scientific:integer-simple" --flag "cryptonite:-integer-gmp" --flag "integer-logarithms:-integer-gmp" --flag "hashable:-integer-gmp"))
+                           
                     mkdir out
 
-                    # Find executable 
-                    cp $(find $PWD/.stack-work/install -type f -name "concordium-client") out/
+                    # Find executable
+                    cp $(find .stack-work/install -type f -name concordium-client) out/concordium-client
                 '''.stripIndent()
                 stash includes: 'out/concordium-client', name: 'release'
             }
@@ -48,7 +62,7 @@ pipeline {
             steps {
                 unstash 'release'
                 sh '''\
-                    aws s3 cp out/concordium-client ${OUTFILE} --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+                    aws s3 cp out/concordium-client ${OUTFILE}
                 '''.stripIndent()
             }
         }
