@@ -301,7 +301,8 @@ printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
   tell [ [i|Contract:        #{contractName}|]
        , [i|Owner:           #{owner}|]
        , [i|ModuleReference: #{showNamedModuleRef namedModRef}|]
-       , [i|Balance:         #{Types.amountToString ciAmount} GTU|]]
+       , [i|Balance:         #{Types.amountToString ciAmount} GTU|]
+       , [i|State size:      #{ciSize} bytes|]]
   tell state
   tell [ [i|Methods:|]]
   tellMethods
@@ -581,8 +582,10 @@ showRejectReason verbose = \case
     "serialization failed"
   Types.OutOfEnergy ->
     "not enough energy"
-  Types.Rejected ->
-    "contract logic failure"
+  Types.RejectedInit{..} ->
+    [i|"contract init logic failed with code #{rejectReason}|]
+  Types.RejectedReceive{..} ->
+    [i|"contract #{receiveName} at #{showCompactPrettyJSON ContractAddress} failed with code #{rejectReason}|]
   Types.NonExistentRewardAccount a ->
     if verbose then
       printf "account '%s' does not exist (tried to set baker reward account)" (show a)
@@ -597,8 +600,10 @@ showRejectReason verbose = \case
       "duplicate aggregation key"
   Types.KeyIndexAlreadyInUse ->
     "encountered a key index that is already in use"
-  Types.InvalidAccountKeySignThreshold ->
-    "signature threshold exceeds the number of keys"
+  Types.InvalidCredentialKeySignThreshold ->
+    "signature threshold exceeds the number of keys of the credential"
+  Types.InvalidAccountThreshold ->
+    "account threshold exceeds the number of credentials"
   Types.InvalidEncryptedAmountTransferProof ->
     "the proof for the encrypted transfer doesn't validate"
   Types.EncryptedAmountSelfTransfer acc ->

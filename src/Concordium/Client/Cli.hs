@@ -209,7 +209,7 @@ timeFromTransactionExpiryTime = posixSecondsToUTCTime . fromIntegral . ttsSecond
 
 ----------------------------------------------------------------------------------------------------
 -- |One item in the release schedule, i.e., one release at a given timestamp
--- This must match the serialization in Concorium.Globalstate.Basic.BlockState.AccountReleaseSchedule
+-- This must match the serialization in Concordium.Globalstate.Basic.BlockState.AccountReleaseSchedule
 data ReleaseScheduleItem = ReleaseScheduleItem {
   rsiTimestamp :: !Timestamp,
   rsiAmount :: !Amount,
