@@ -222,7 +222,6 @@ exampleAccountConfigWithKeysAndName =
                                                                          emInitializationVector = "NXbbI8Cc3AXtaG/go+L+FA=="},
                                                                      etCipherText = "hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY="})
                               })]
-  , acThreshold = 2
   , acEncryptionKey = Just EncryptedText {
       etMetadata = EncryptionMetadata {
           emEncryptionMethod = AES256,
@@ -247,7 +246,6 @@ exampleAccountConfigWithoutKeysAndName =
   AccountConfig
   { acAddr = NamedAddress { naNames = [], naAddr = exampleAccountAddress2}
   , acKeys = M.empty
-  , acThreshold = 1
   , acEncryptionKey = Nothing}
 
 exampleAccountAddress1 :: IDTypes.AccountAddress

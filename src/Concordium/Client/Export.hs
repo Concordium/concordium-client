@@ -118,7 +118,7 @@ accountCfgFromWalletExportAccount pwd WalletExportAccount { weaKeys = AccountSig
   acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd weaEncryptionKey)
   return $ AccountConfig
     { acAddr = NamedAddress { naNames = [name], naAddr = asdAddress }
-    , acThreshold = asdThreshold
+    , acCids = Map.empty -- TODO: Find out from where to get this map
     , ..
     }
   where
@@ -148,17 +148,20 @@ decodeGenesisFormattedAccountExport payload name pwd = runExceptT $ do
           aks <- v .: "accountKeys"
           accEncryptionKey <- v .: "encryptionSecretKey"
           accCredMap <- aks .: "keys"
-          unless (Map.size accCredMap == 1) $ fail "Currently only accounts with a single credential are supported."
-          case Map.lookup (0 :: IDTypes.CredentialIndex) accCredMap of
-            Nothing -> fail "Currently only accounts with a single credential (0) are supported."
-            Just ad -> do
-              accKeyMap <- ad .: "keys"
-              acThreshold <- ad .:? "threshold" .!= fromIntegral (Map.size accKeyMap)
-              return $ do
-                acKeys <- encryptAccountKeyMap pwd accKeyMap
-                acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd accEncryptionKey)
-                return AccountConfig { acAddr = NamedAddress{naNames = maybeToList name, naAddr = addr}
-                                 , .. }
+          credsVersioned <- v .: "credentials"
+          creds <- credsVersioned .: "value"
+          acCids <- forM creds $ \cred -> do
+            contents <- cred .: "contents"
+            regId <- contents .: "regId"
+            return regId 
+          acKeysNotEncrypted <- forM accCredMap $ \ad -> do
+            accKeyMap <- ad .: "keys"
+            return accKeyMap
+          return $ do
+            acKeys <- encryptAccountKeyMap pwd acKeysNotEncrypted
+            acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd accEncryptionKey)
+            return AccountConfig { acAddr = NamedAddress{naNames = maybeToList name, naAddr = addr}
+                            , .. }
 
 
 ---- Code for instantiating, exporting and importing config backups
