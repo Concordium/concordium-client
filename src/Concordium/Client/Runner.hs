@@ -274,7 +274,7 @@ processConfigCmd action baseCfgDir verbose =
             (bcfg, _, t) <- initAccountConfig baseCfg (acAddr accCfg) True
             when t $ writeAccountKeys bcfg accCfg verbose
             return bcfg
-      ConfigAccountAddKeys addr keysFile -> do
+      ConfigAccountAddKeys addr keysFile -> do 
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
@@ -284,22 +284,31 @@ processConfigCmd action baseCfgDir verbose =
         (baseCfg', accCfg) <- getAccountConfigFromAddr addr baseCfg
 
         let keyMapCurrent = acKeys accCfg
-        let keyMapNew = Map.difference keyMapInput keyMapCurrent
-        let keyMapDuplicates = Map.intersection keyMapCurrent keyMapInput
 
-        unless (Map.null keyMapDuplicates) $ logWarn
-                              [ "the keys with indices "
-                                ++ showMapIdxs keyMapDuplicates
-                                ++ " can not be added because they already exist",
-                                "Use 'config account update-keys' if you want to update them."]
+        let keyMapNew = flip Map.mapWithKey keyMapInput $ \cidx km -> case Map.lookup cidx keyMapCurrent of
+              Nothing -> km
+              Just kmCurrent -> Map.difference km kmCurrent
+        -- let keyMapNew = Map.difference keyMapInput keyMapCurrent
+        let credDuplicates = Map.intersection keyMapCurrent keyMapInput
+
+        let keyDuplicates = flip Map.mapWithKey credDuplicates $ \cidx _ -> case (Map.lookup cidx keyMapCurrent, Map.lookup cidx keyMapInput) of 
+              (Just kmCurrent, Just kmInput) -> Map.intersection kmCurrent kmInput
+              _ -> Map.empty -- will never happen
+
+        unless (Map.null credDuplicates) $ forM_ (Map.toList keyDuplicates) $ \(cidx, km) -> do  
+          unless (Map.null km) $ logWarn [ "the keys for credential "++ show cidx ++" with indices "
+                  ++ showMapIdxs km
+                  ++ " can not be added because they already exist",
+                  "Use 'config account update-keys' if you want to update them."]
 
         -- Only write account keys if any non-duplicated keys are added
         case Map.null keyMapNew of
           True -> logInfo ["no keys were added"]
           False -> do
-            logInfo ["the keys with indices "
-                     ++ showMapIdxs keyMapNew
-                     ++ " will be added to account " ++ Text.unpack addr]
+            forM_ (Map.toList keyMapNew) $ \(cidx, km) -> do
+              unless (Map.null km) $ logInfo ["the keys for credential "++ show cidx ++" with indices "
+                      ++ showMapIdxs km
+                      ++ " will be added to account " ++ Text.unpack addr]
             let accCfg' = accCfg { acKeys = keyMapNew }
             writeAccountKeys baseCfg' accCfg' verbose
 
@@ -313,31 +322,41 @@ processConfigCmd action baseCfgDir verbose =
         (baseCfg', accCfg) <- getAccountConfigFromAddr addr baseCfg
 
         let keyMapCurrent = acKeys accCfg
-        let keyMapNew = Map.difference keyMapInput keyMapCurrent
-        let keyMapDuplicates = Map.intersection keyMapCurrent keyMapInput
+        -- let keyMapNew = Map.difference keyMapInput keyMapCurrent
+        -- let keyMapDuplicates = Map.intersection keyMapCurrent keyMapInput
+        let keyMapNew = flip Map.mapWithKey keyMapInput $ \cidx km -> case Map.lookup cidx keyMapCurrent of
+              Nothing -> km
+              Just kmCurrent -> Map.difference km kmCurrent
+        let credDuplicates = Map.intersection keyMapCurrent keyMapInput
 
-        unless (Map.null keyMapNew) $ logWarn
-                              [ "the keys with indices "
-                                ++ showMapIdxs keyMapNew
+        let keyDuplicates = flip Map.mapWithKey credDuplicates $ \cidx _ -> case (Map.lookup cidx keyMapCurrent, Map.lookup cidx keyMapInput) of 
+              (Just kmCurrent, Just kmInput) -> Map.intersection kmInput kmCurrent
+
+        unless (Map.null keyMapNew) $ forM_ (Map.toList keyMapNew) $ \(cidx, km) -> do  
+          unless (Map.null km) $ logWarn
+                              [ "the keys for credential "++ show cidx ++" with indices "
+                                ++ showMapIdxs km
                                 ++ " can not be updated because they do not match existing keys",
                                 "Use 'config account add-keys' if you want to add them."]
 
-        case Map.null keyMapDuplicates of
+        case Map.null keyDuplicates of
           True -> logInfo ["no keys were updated"]
           False -> do
-            logWarn [ "the keys with indices "
-                      ++ showMapIdxs keyMapDuplicates
+            forM_ (Map.toList keyDuplicates) $ \(cidx, km) -> do
+              unless (Map.null km) $ logWarn [ "the keys for credential "++ show cidx ++" with indices "
+                      ++ showMapIdxs km
                       ++ " will be updated and can NOT be recovered"]
 
             updateConfirmed <- askConfirmation $ Just "confirm that you want to update the keys"
 
             when updateConfirmed $ do
-              logInfo [ "the keys with indices "
-                        ++ showMapIdxs keyMapDuplicates
-                        ++ " will be updated on account " ++ Text.unpack addr]
-              let accCfg' = accCfg { acKeys = keyMapDuplicates }
+              forM_ (Map.toList keyDuplicates) $ \(cidx, km) -> do
+                unless (Map.null km) $ logInfo [ "the keys for credential "++ show cidx ++" with indices "
+                          ++ showMapIdxs km
+                          ++ " will be updated on account " ++ Text.unpack addr]
+              let accCfg' = accCfg { acKeys = keyDuplicates } 
               writeAccountKeys baseCfg' accCfg' verbose
-      ConfigAccountRemoveKeys addr idxs threshold -> do
+      ConfigAccountRemoveKeys addr cidx idxs threshold -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
@@ -346,32 +365,37 @@ processConfigCmd action baseCfgDir verbose =
         (_, accCfg) <- getAccountConfigFromAddr addr baseCfg
 
         let idxsInput = HSet.fromList idxs
-        let idxsCurrent = Map.keysSet . acKeys $ accCfg
+        let cKeys = Map.lookup cidx $ acKeys accCfg
 
-        let idxsToRemove = HSet.intersection idxsCurrent idxsInput
-        let idxsNotFound = HSet.difference idxsInput idxsToRemove
+        case cKeys of 
+          Nothing -> do logWarn
+                              ["No credential found with index  "
+                               ++ show cidx]
+          Just keys -> do
+            let idxsCurrent = Map.keysSet keys
 
-        unless (HSet.null idxsNotFound) $ logWarn
-                              ["keys with indices "
-                               ++ showHSetIdxs idxsNotFound
-                               ++ " do not exist and can therefore not be removed"]
+            let idxsToRemove = HSet.intersection idxsCurrent idxsInput
+            let idxsNotFound = HSet.difference idxsInput idxsToRemove
 
-        case HSet.null idxsToRemove of
-          True -> logInfo ["no keys were removed"]
-          False -> do
-            logWarn [ "the keys with indices "
-                      ++ showHSetIdxs idxsToRemove
-                      ++ " will be removed and can NOT be recovered"]
+            unless (HSet.null idxsNotFound) $ logWarn
+                                  ["keys (for credential "++show cidx++") with indices "
+                                  ++ showHSetIdxs idxsNotFound
+                                  ++ " do not exist and can therefore not be removed"]
 
-            updateConfirmed <- askConfirmation $ Just "confirm that you want to remove the keys"
+            case HSet.null idxsToRemove of
+              True -> logInfo ["no keys were removed"]
+              False -> do
+                logWarn [ "the keys (for credential "++show cidx++") with indices "
+                          ++ showHSetIdxs idxsToRemove
+                          ++ " will be removed and can NOT be recovered"]
 
-            when updateConfirmed $ do
-              logInfo [ "the keys with indices "
-                        ++ showHSetIdxs idxsToRemove
-                        ++ " will be removed from account " ++ Text.unpack addr]
+                updateConfirmed <- askConfirmation $ Just "confirm that you want to remove the keys"
 
-              let accCfg' = accCfg { acThreshold = fromMaybe (acThreshold accCfg) threshold }
-              removeAccountKeys baseCfg accCfg' (HSet.toList idxsToRemove) verbose
+                when updateConfirmed $ do
+                  logInfo [ "the keys (for credential "++show cidx++") with indices "
+                            ++ showHSetIdxs idxsToRemove
+                            ++ " will be removed from account " ++ Text.unpack addr]
+                  removeAccountKeys baseCfg accCfg cidx (HSet.toList idxsToRemove) verbose
       ConfigAccountRemoveName name -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
@@ -384,30 +408,6 @@ processConfigCmd action baseCfgDir verbose =
           Just currentAddr -> do
             logInfo [[i|removing mapping from '#{name}' to address '#{currentAddr}'|]]
             void $ removeAccountNameAndWrite baseCfg name verbose
-      ConfigAccountSetThreshold addr threshold -> do
-        baseCfg <- getBaseConfig baseCfgDir verbose
-        when verbose $ do
-          runPrinter $ printBaseConfig baseCfg
-          putStrLn ""
-
-        let accCfgDir = bcAccountCfgDir baseCfg
-
-        (_, accCfg) <- getAccountConfigFromAddr addr baseCfg
-
-        -- A valid threshold is between 1 and the number of keys, both inclusive.
-        -- The parser checks that the threshold is at least 1.
-        -- Check that the new threshold is at most the amount of keys:
-        let numberOfKeys = Map.size (acKeys accCfg)
-        if numberOfKeys < fromIntegral threshold then
-          logWarn ["the threshold can at most be the number of keys: " ++ show numberOfKeys]
-        else
-          do
-            logWarn ["the threshold will be set to " ++ show (toInteger threshold)]
-
-            let accCfg' = accCfg { acThreshold = threshold }
-            updateConfirmed <- askConfirmation $ Just "confirm that you want change the threshold"
-
-            when updateConfirmed (writeThresholdFile accCfgDir accCfg' verbose)
 
 
 
@@ -579,7 +579,7 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
   energyCostFunc <- getEnergyCostFunc accCfg
   let computedCost = case energyCostFunc of
                        Nothing -> Nothing
-                       Just ec -> Just $ ec (length $ acKeys accCfg)
+                       Just ec -> Just $ ec (foldl (\acc m -> acc + length m) 0 (acKeys accCfg))
   energy <- case (toMaxEnergyAmount txOpts, computedCost) of
               (Nothing, Nothing) -> logFatal ["energy amount not specified"]
               (Nothing, Just c) -> do
@@ -645,7 +645,25 @@ getAccountCfgFromTxOpts baseCfg txOpts = do
   keysArg <- case toKeys txOpts of
                Nothing -> return Nothing
                Just filePath -> AE.eitherDecodeFileStrict filePath `withLogFatalIO` ("cannot decode keys: " ++)
-  snd <$> getAccountConfig (toSender txOpts) baseCfg Nothing keysArg Nothing AssumeInitialized
+  let chosenKeysText = toSigners txOpts
+  let chosenKeysMaybe :: Maybe (Map.HashMap ID.CredentialIndex [ID.KeyIndex]) = case chosenKeysText of
+        Nothing -> Nothing
+        Just t -> Just $ let insertKey c k acc = case Map.lookup c acc of
+                              Nothing -> Map.insert c [k] acc
+                              Just x -> Map.insert c ([k]++x) acc
+                            in foldl (\acc (c, k) -> insertKey c k acc) Map.empty $ fmap ((\(p1, p2) -> (read . Text.unpack $ p1, read . Text.unpack $ Text.drop 1 p2)) . Text.breakOn ":") $ Text.split (==',') t
+  accCfg <- snd <$> getAccountConfig (toSender txOpts) baseCfg Nothing keysArg Nothing AssumeInitialized
+  let keys = acKeys accCfg
+  case chosenKeysMaybe of 
+    Nothing -> return accCfg
+    Just chosenKeys -> do
+      let newKeys = Map.intersection keys chosenKeys
+      let filteredKeys = Map.mapWithKey (\c m -> Map.filterWithKey (\k _ -> case Map.lookup c chosenKeys of 
+                                                                        Nothing -> False
+                                                                        Just keyList -> elem k keyList) m) newKeys
+      let accCfg' = accCfg{acKeys = filteredKeys}
+      return accCfg'
+
 
 -- |Resolved configuration for a transfer transaction.
 data TransferTransactionConfig =
@@ -1151,8 +1169,8 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
   nonce <- getNonce naAddr n confirmNonce
   accountKeyMap <- case maybeAccKeys of
                      Just acKeys' -> return acKeys'
-                     Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive acKeys (Just acThreshold) Nothing
-  let tx = encodeAndSignTransaction pl naAddr energy nonce expiry accountKeyMap acThreshold
+                     Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive acKeys (Nothing) Nothing
+  let tx = encodeAndSignTransaction pl naAddr energy nonce expiry accountKeyMap
 
   sendTransactionToBaker tx defaultNetId >>= \case
     Left err -> fail err
@@ -1450,7 +1468,7 @@ moduleDeployEnergyCost wasmMod accCfg = pure . Just . const $
                                   (psize `div` 30)
                                   + (5 + 2 * ((psize + 99) `div` 100) * 50) -- storeModule
 
-        signatureCount = fromIntegral . acThreshold $ accCfg
+        signatureCount = foldl (\acc m -> acc + length m) 0 (acKeys accCfg)
         payloadSize = Types.payloadSize . Types.encodePayload . Types.DeployModule $ wasmMod
 
 data ModuleDeployTransactionCfg =
@@ -1587,7 +1605,7 @@ processContractCmd action baseCfgDir verbose backend =
                           + 32 -- module ref
                           +  2 + (length $ show citcInitName) -- size length + length of initName
                           +  2 + (BSS.length . Wasm.parameter $ citcParams) -- size length + length of parameter
-            signatureCount = fromIntegral . acThreshold $ accCfg
+            signatureCount = foldl (\acc m -> acc + length m) 0 (acKeys accCfg) 
 
         -- |Calculates the minimum energy required for checking the signature of a contract update.
         -- The minimum will not cover the full update, but enough of it, so that a potential 'Not enough energy' error
@@ -1599,7 +1617,7 @@ processContractCmd action baseCfgDir verbose backend =
                           + 16 -- contract address
                           +  2 + (length $ show cutcReceiveName) -- size length + length of receiveName
                           +  2 + (BSS.length . Wasm.parameter $ cutcParams) -- size length + length of the parameter
-            signatureCount = fromIntegral . acThreshold $ accCfg
+            signatureCount = foldl (\acc m -> acc + length m) 0 (acKeys accCfg) 
 
 -- |Try to fetch info about the contract and deserialize it from JSON.
 -- Or, log fatally with appropriate error messages if anything goes wrong.
@@ -2360,7 +2378,6 @@ processTransaction_ transaction networkId _verbose = do
       nonce
       (thExpiry header)
       accountKeys
-      threshold
 
   sendTransactionToBaker tx networkId >>= \case
     Left err -> fail $ show err
@@ -2417,9 +2434,8 @@ encodeAndSignTransaction ::
   -> Types.Nonce
   -> Types.TransactionExpiryTime
   -> AccountKeyMap
-  -> ID.SignatureThreshold
   -> Types.BareBlockItem
-encodeAndSignTransaction txPayload sender energy nonce expiry accKeys threshold = Types.NormalTransaction $
+encodeAndSignTransaction txPayload sender energy nonce expiry accKeys = Types.NormalTransaction $
   let encPayload = Types.encodePayload txPayload
       header = Types.TransactionHeader{
         thSender = sender,
@@ -2428,5 +2444,5 @@ encodeAndSignTransaction txPayload sender energy nonce expiry accKeys threshold 
         thEnergyAmount = energy,
         thExpiry = expiry
       }
-      keys = take (fromIntegral threshold) . L.sortOn fst . Map.toList $ accKeys
-  in Types.signTransaction [(0, keys)] header encPayload
+      keys = Map.toList $ fmap Map.toList accKeys
+  in Types.signTransaction keys header encPayload

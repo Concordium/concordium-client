@@ -91,7 +91,7 @@ printBaseConfig cfg = do
     showEntry showVal (n, a) = [i|    #{n} -> #{a'}|] :: String
       where a' = showVal a
 
-printAccountConfig :: AccountConfig -> Printer
+printAccountConfig :: AccountConfig -> Printer -- TODO: find out if indentation is OK
 printAccountConfig cfg = do
   tell [ [i|Account configuration:|]
        , [i|- Names:   #{nameListOrNone}|]
@@ -99,10 +99,13 @@ printAccountConfig cfg = do
   printKeys $ acKeys cfg
   where printKeys m =
           if null m then
-            tell [ "- Keys:    " ++ showNone ]
+            tell [ "- Credentials keys:    " ++ showNone ]
           else do
-            tell [ "- Keys:" ]
-            printMap showEntry $ toSortedList m
+            tell [ "- Credentials keys:" ]
+            forM_ (HM.toList m) $ (\(cidx, km) -> do
+              let idString = ""
+              tell [ "   - Keys for credential with " ++ idString]
+              printMap showEntry $ toSortedList km)
         showEntry (n, kp) =
           printf "    %s: %s" (show n) (showAccountKeyPair kp)
 

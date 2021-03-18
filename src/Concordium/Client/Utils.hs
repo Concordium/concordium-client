@@ -80,3 +80,11 @@ thresholdFromStringInform s =
     Nothing -> Left errString
   where errString = "Invalid signature threshold. A signature threshold must be an integer between 1 and 255 inclusive."
 
+-- |Try to parse the credential index
+credentialIndexFromStringInform :: String -> Either String IDTypes.CredentialIndex
+credentialIndexFromStringInform s =
+  case readMaybe s :: Maybe Integer of
+    Just a -> Right (IDTypes.CredentialIndex (fromIntegral a))
+    Nothing -> Left errString
+  where errString = "Invalid credential index"
+

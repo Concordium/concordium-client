@@ -178,8 +178,7 @@ servantApp nodeBackend cfgDir = genericServe routesAsServer
       -- get base configuration
       baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False
       -- generate options for the transaction
-      accCfg' <- wrapIOError $ snd <$> getAccountConfig sender baseCfg Nothing Nothing Nothing AssumeInitialized
-      let accCfg = accCfg' { acThreshold = fromIntegral (HM.size $ acKeys accCfg') }
+      accCfg <- wrapIOError $ snd <$> getAccountConfig sender baseCfg Nothing Nothing Nothing AssumeInitialized
       -- get Baker add transaction config
       let energy = bakerRemoveEnergyCost (HM.size $ acKeys accCfg)
 
@@ -198,7 +197,7 @@ servantApp nodeBackend cfgDir = genericServe routesAsServer
       -- run the transaction
       res <- liftIO $ runClient nodeBackend $ do
         currentNonce <- getBestBlockHash >>= getAccountNonce senderAddr
-        let tx = encodeAndSignTransaction pl senderAddr energy currentNonce expiry accountKeys acThreshold
+        let tx = encodeAndSignTransaction pl senderAddr energy currentNonce expiry accountKeys
         sendTransactionToBaker tx defaultNetId >>= \case
           Left err -> fail err
           Right False -> fail "transaction not accepted by the baker"
