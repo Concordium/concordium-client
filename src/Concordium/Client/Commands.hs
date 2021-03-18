@@ -157,6 +157,14 @@ data TransactionCmd
       -- | Which indices to use as inputs to the encrypted amount transfer.
       -- If none are provided all existing ones will be used.
       tetIndex :: !(Maybe Int) }
+  -- | Register data on chain.
+  | TransactionRegisterData
+    { -- | File containing the data.
+      trdFile :: !FilePath,
+      -- | Options for transaction.
+      trdTransactionOptions :: !(TransactionOpts (Maybe Energy))
+    }
+
   deriving (Show)
 
 data AccountCmd
@@ -502,7 +510,8 @@ transactionCmds =
            transactionSendGtuCmd <>
            transactionWithScheduleCmd <>
            transactionDeployCredentialCmd <>
-           transactionEncryptedTransferCmd))
+           transactionEncryptedTransferCmd <>
+           transactionRegisterDataCmd))
       (progDesc "Commands for submitting and inspecting transactions."))
 
 transactionSubmitCmd :: Mod CommandFields TransactionCmd
@@ -610,6 +619,16 @@ transactionEncryptedTransferCmd =
          option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
          optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which incoming encrypted amounts should be used.")))
       (progDesc "Transfer GTU from the encrypted balance of the account to the encrypted balance of another account."))
+
+transactionRegisterDataCmd :: Mod CommandFields TransactionCmd
+transactionRegisterDataCmd =
+  command
+    "register-data"
+    (info
+      (TransactionRegisterData <$>
+        strArgument (metavar "FILE" <> help "File containing the data to register.") <*>
+        transactionOptsParser)
+      (progDesc "Register data on the chain."))
 
 accountCmds :: Mod CommandFields Cmd
 accountCmds =

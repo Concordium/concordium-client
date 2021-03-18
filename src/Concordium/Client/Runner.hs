@@ -558,6 +558,65 @@ processTransactionCmd action baseCfgDir verbose backend =
         pl <- encryptedTransferTransactionPayload ttxCfg (ioConfirm intOpts)
         sendAndTailTransaction_ txCfg pl intOpts
 
+    TransactionRegisterData file txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      rdCfg <- getRegisterDataTransactionCfg baseCfg txOpts file
+      let txCfg = rdtcTransactionCfg rdCfg
+      let nrg = tcEnergy txCfg
+
+      logInfo [[i|Register data from file '#{file}'. Allowing up to #{showNrg nrg} to be spent as transaction fee.|]]
+
+      registerConfirmed <- askConfirmation Nothing
+      when registerConfirmed $ do
+        logInfo ["Registering data..."]
+
+        let intOpts = toInteractionOpts txOpts
+        let pl = registerDataTransactionPayload rdCfg
+
+        withClient backend $ do
+          mTsr <- sendAndTailTransaction txCfg pl intOpts
+          let extractDataRegistered = extractFromTsr $ \case Types.DataRegistered rd -> Just rd; _ -> Nothing
+          case extractDataRegistered mTsr of
+            Nothing -> return ()
+            Just (Left err) -> logFatal ["Registering data failed:", err]
+            Just (Right _) -> logSuccess ["Data succesfully registered."]
+
+-- |Construct a transaction config for registering data.
+--  The data is read from the 'FilePath' provided.
+--  Fails if the data can't be read or it violates the size limit checked by 'Types.registeredDataFromBSS'.
+getRegisterDataTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> IO RegisterDataTransactionCfg
+getRegisterDataTransactionCfg baseCfg txOpts dataFile = do
+  bss <- BS.toShort <$> handleReadFile BS.readFile dataFile
+  case Types.registeredDataFromBSS bss of
+    Left err ->
+      logFatal [[i|Failed registering '#{dataFile}': #{err}|]]
+    Right rdtcData -> do
+      rdtcTransactionCfg <- getTransactionCfg baseCfg txOpts $ registerDataEnergyCost rdtcData
+      return RegisterDataTransactionCfg {..}
+
+-- |Calculate the energy cost for registering data. Uses an ad hoc implementation from Concordium.Scheduler.Cost.
+registerDataEnergyCost :: Types.RegisteredData -> AccountConfig -> IO (Maybe (Int -> Types.Energy))
+registerDataEnergyCost rd accCfg = pure . Just . const $
+  registerDataCost payloadSize + checkHeaderEnergyCostWithPayload payloadSize signatureCount
+  where
+    registerDataCost :: Types.PayloadSize -> Types.Energy
+    registerDataCost psize = Types.Energy . fromIntegral $
+      5 + ((psize + 99) `div` 100) * 50 -- storeBytes (from scheduler)
+
+    signatureCount = fromIntegral . acThreshold $ accCfg
+    payloadSize = Types.payloadSize . Types.encodePayload . Types.RegisterData $ rd
+
+registerDataTransactionPayload :: RegisterDataTransactionCfg -> Types.Payload
+registerDataTransactionPayload RegisterDataTransactionCfg {..} = Types.RegisterData rdtcData
+
+-- |Transaction config for registering data.
+data RegisterDataTransactionCfg =
+  RegisterDataTransactionCfg
+  { -- |Configuration for the transaction.
+    rdtcTransactionCfg :: !TransactionConfig
+    -- |The data to register.
+  , rdtcData :: !Types.RegisteredData }
+
 -- |Poll the transaction state continuously until it is "at least" the provided one.
 -- Note that the "absent" state is considered the "highest" state,
 -- so the loop will break if, for instance, the transaction state goes from "committed" to "absent".
