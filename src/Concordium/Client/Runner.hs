@@ -500,7 +500,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       ttxCfg <- getTransferTransactionCfg baseCfg txOpts receiver amount
       let txCfg = ttcTransactionCfg ttxCfg
       when verbose $ do
-        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        runPrinter $ printAccountConfig $ tcEncryptedSigningData txCfg
         putStrLn ""
 
       let intOpts = toInteractionOpts txOpts
@@ -515,10 +515,10 @@ processTransactionCmd action baseCfgDir verbose backend =
       ttxCfg <- getTransferWithScheduleTransactionCfg baseCfg txOpts receiver schedule
       let txCfg = twstcTransactionCfg ttxCfg
       when verbose $ do
-        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        runPrinter $ printAccountConfig $ tcEncryptedSigningData txCfg
         putStrLn ""
       -- Check that sending and receiving accounts are not the same
-      let fromAddr = naAddr $ acAddr ( tcAccountCfg txCfg)
+      let fromAddr = naAddr $ esdAddress ( tcEncryptedSigningData txCfg)
       let toAddr = naAddr $ twstcReceiver ttxCfg
       case fromAddr == toAddr of
         False -> do
@@ -540,9 +540,9 @@ processTransactionCmd action baseCfgDir verbose backend =
       txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
 
       encryptedSecretKey <-
-          case acEncryptionKey . tcAccountCfg $ txCfg of
+          case esdEncryptionKey . tcEncryptedSigningData $ txCfg of
             Nothing ->
-              logFatal ["Missing account encryption secret key for account: " ++ show (acAddr . tcAccountCfg $ txCfg)]
+              logFatal ["Missing account encryption secret key for account: " ++ show (esdAddress . tcEncryptedSigningData $ txCfg)]
             Just x -> return x
       secretKey <- decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey `withLogFatalIO` ("Couldn't decrypt account encryption secret key: " ++)
 
@@ -551,7 +551,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       withClient backend $ do
         ttxCfg <- getEncryptedTransferTransactionCfg txCfg receiverAcc amount index secretKey
         liftIO $ when verbose $ do
-          runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+          runPrinter $ printAccountConfig $ tcEncryptedSigningData txCfg
           putStrLn ""
 
         let intOpts = toInteractionOpts txOpts
@@ -575,12 +575,12 @@ awaitState t s hash = do
 type ComputeEnergyCost = Int -> Types.Energy
 
 -- |Function for computing a cost function based on the resolved account config.
-type GetComputeEnergyCost = AccountConfig -> IO (Maybe ComputeEnergyCost)
+type GetComputeEnergyCost = EncryptedSigningData -> IO (Maybe ComputeEnergyCost)
 
 -- |Resolved configuration common to all transaction types.
 data TransactionConfig =
   TransactionConfig
-  { tcAccountCfg :: AccountConfig
+  { tcEncryptedSigningData :: EncryptedSigningData
   , tcNonce :: Maybe Types.Nonce
   , tcEnergy :: Types.Energy
   , tcExpiry :: Types.TransactionExpiryTime }
@@ -591,11 +591,11 @@ data TransactionConfig =
 -- If the energy allocation is too low, the user is prompted to increase it.
 getTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> GetComputeEnergyCost -> IO TransactionConfig
 getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
-  accCfg <- getAccountCfgFromTxOpts baseCfg txOpts
-  energyCostFunc <- getEnergyCostFunc accCfg
+  encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
+  energyCostFunc <- getEnergyCostFunc encSignData
   let computedCost = case energyCostFunc of
                        Nothing -> Nothing
-                       Just ec -> Just $ ec (foldl (\acc m -> acc + length m) 0 (acKeys accCfg))
+                       Just ec -> Just $ ec (foldl (\acc m -> acc + length m) 0 (esdKeys encSignData))
   energy <- case (toMaxEnergyAmount txOpts, computedCost) of
               (Nothing, Nothing) -> logFatal ["energy amount not specified"]
               (Nothing, Just c) -> do
@@ -609,7 +609,7 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
   warnSuspiciousExpiry expiry now
 
   return TransactionConfig
-    { tcAccountCfg = accCfg
+    { tcEncryptedSigningData = encSignData
     , tcNonce = toNonce txOpts
     , tcEnergy = energy
     , tcExpiry = expiry }
@@ -629,14 +629,14 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
 -- Used for transactions where a specification of maxEnergy is required.
 getRequiredEnergyTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> IO TransactionConfig
 getRequiredEnergyTransactionCfg baseCfg txOpts = do
-  accCfg <- getAccountCfgFromTxOpts baseCfg txOpts
+  encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
   let energy = toMaxEnergyAmount txOpts
   now <- getCurrentTimeUnix
   expiry <- getExpiryArg "expiry" now $ toExpiration txOpts
   warnSuspiciousExpiry expiry now
 
   return TransactionConfig
-    { tcAccountCfg = accCfg
+    { tcEncryptedSigningData = encSignData
     , tcNonce = toNonce txOpts
     , tcEnergy = energy
     , tcExpiry = expiry }
@@ -655,8 +655,8 @@ warnSuspiciousExpiry expiryArg now
     logWarn [ "expiration time is in more than one hour" ]
   | otherwise = return ()
 
--- |Get accountCfg from the config folder or logFatal if the keys are not provided in txOpts.
-getAccountCfgFromTxOpts :: BaseConfig -> TransactionOpts energyOrMaybe -> IO AccountConfig
+-- |Get accountCfg from the config folder and return EncryptedSigningData or logFatal if the keys are not provided in txOpts.
+getAccountCfgFromTxOpts :: BaseConfig -> TransactionOpts energyOrMaybe -> IO EncryptedSigningData
 getAccountCfgFromTxOpts baseCfg txOpts = do
   keysArg <- case toKeys txOpts of
                Nothing -> return Nothing
@@ -671,14 +671,13 @@ getAccountCfgFromTxOpts baseCfg txOpts = do
   accCfg <- snd <$> getAccountConfig (toSender txOpts) baseCfg Nothing keysArg Nothing AssumeInitialized
   let keys = acKeys accCfg
   case chosenKeysMaybe of 
-    Nothing -> return accCfg
+    Nothing -> return EncryptedSigningData{esdKeys=keys, esdAddress = acAddr accCfg, esdEncryptionKey = acEncryptionKey accCfg}
     Just chosenKeys -> do
       let newKeys = Map.intersection keys chosenKeys
       let filteredKeys = Map.mapWithKey (\c m -> Map.filterWithKey (\k _ -> case Map.lookup c chosenKeys of 
                                                                         Nothing -> False
                                                                         Just keyList -> elem k keyList) m) newKeys
-      let accCfg' = accCfg{acKeys = filteredKeys}
-      return accCfg'
+      return EncryptedSigningData{esdKeys=filteredKeys, esdAddress = acAddr accCfg, esdEncryptionKey = acEncryptionKey accCfg}
 
 
 -- |Resolved configuration for a transfer transaction.
@@ -749,7 +748,7 @@ data EncryptedTransferTransactionConfig =
 
 getEncryptedTransferTransactionCfg :: TransactionConfig -> NamedAddress -> Types.Amount -> Maybe Int -> ElgamalSecretKey -> ClientMonad IO EncryptedTransferTransactionConfig
 getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx secretKey = do
-  let senderAddr = acAddress . tcAccountCfg $ ettTransactionCfg
+  let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ ettTransactionCfg
 
   -- get encrypted amounts for the sender
   (bbHash, infoValue) <- logFatalOnError =<< withBestBlockHash Nothing (\bbHash -> ((bbHash,) <$>) <$> getAccountInfo (Text.pack . show $ senderAddr) bbHash)
@@ -805,7 +804,7 @@ data BakerRemoveTransactionConfig =
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
 getBakerRemoveTransactionCfg :: TransactionConfig -> ClientMonad IO BakerRemoveTransactionConfig
 getBakerRemoveTransactionCfg txCfg= do
-  let senderAddr = acAddress . tcAccountCfg $ txCfg
+  let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
   AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
   case airBaker of
     Nothing -> logFatal ["This account doesn't have an active baker so it cannot request a baker removal."]
@@ -824,7 +823,7 @@ data BakerUpdateStakeTransactionConfig =
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
 getBakerUpdateStakeTransactionCfg :: TransactionConfig -> Types.Amount -> ClientMonad IO BakerUpdateStakeTransactionConfig
 getBakerUpdateStakeTransactionCfg txCfg newAmount = do
-  let senderAddr = acAddress . tcAccountCfg $ txCfg
+  let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
   AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
   when (isNothing airBaker) $ logFatal [[i|Account #{senderAddr} is not a baker, so cannot update its stake.|]]
   when (airAmount < newAmount) $ logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the new amount requested to be staked (#{showGtu newAmount}).|]]
@@ -849,7 +848,7 @@ getAccountInfoOrDie senderAddr = do
 
 getBakerUpdateRestakeTransactionCfg :: TransactionConfig -> Bool -> ClientMonad IO BakerUpdateRestakeTransactionConfig
 getBakerUpdateRestakeTransactionCfg txCfg newRestake = do
-  let senderAddr = acAddress . tcAccountCfg $ txCfg
+  let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
   AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
   when (isNothing airBaker) $ logFatal [[i|Account #{senderAddr} is not a baker, so cannot update its stake.|]]
   return BakerUpdateRestakeTransactionConfig
@@ -897,7 +896,7 @@ getAccountEncryptTransactionCfg baseCfg txOpts aeAmount = do
 -- balance of an account.
 getAccountDecryptTransactionCfg :: TransactionConfig -> Types.Amount -> ElgamalSecretKey -> Maybe Int -> ClientMonad IO AccountDecryptTransactionConfig
 getAccountDecryptTransactionCfg adTransactionCfg adAmount secretKey idx = do
-  let senderAddr = acAddress . tcAccountCfg $ adTransactionCfg
+  let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ adTransactionCfg
   (bbHash, infoValue) <- logFatalOnError =<< withBestBlockHash Nothing (\bbh -> ((bbh, ) <$>) <$> getAccountInfo (Text.pack . show $ senderAddr) bbh)
   case AE.fromJSON infoValue of
     AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
@@ -950,7 +949,7 @@ transferTransactionPayload ttxCfg confirm = do
         { ttcTransactionCfg = TransactionConfig
                               { tcEnergy = energy
                               , tcExpiry = expiryTs
-                              , tcAccountCfg = AccountConfig { acAddr = fromAddress } }
+                              , tcEncryptedSigningData = EncryptedSigningData { esdAddress = fromAddress } }
         , ttcAmount = amount
         , ttcReceiver = toAddress }
         = ttxCfg
@@ -972,7 +971,7 @@ transferWithScheduleTransactionPayload ttxCfg confirm = do
         { twstcTransactionCfg = TransactionConfig
                               { tcEnergy = energy
                               , tcExpiry = expiryTs
-                              , tcAccountCfg = AccountConfig { acAddr = fromAddress } }
+                              , tcEncryptedSigningData = EncryptedSigningData { esdAddress = fromAddress } }
         , twstcSchedule = schedule
         , twstcReceiver = toAddress }
         = ttxCfg
@@ -992,7 +991,7 @@ encryptedTransferTransactionPayload EncryptedTransferTransactionConfig{..} confi
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
-        , tcAccountCfg = AccountConfig { acAddr = addr } }
+        , tcEncryptedSigningData = EncryptedSigningData { esdAddress = addr } }
         = ettTransactionCfg
 
   logInfo
@@ -1015,7 +1014,7 @@ bakerAddTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy)
                     -> Bool -- ^Whether to confirm before sending or not.
                     -> IO (BakerKeys, TransactionConfig, Types.Payload)
 bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm = do
-  accCfg <- getAccountCfgFromTxOpts baseCfg txOpts
+  encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
   bakerKeys <- eitherDecodeFileStrict f >>= getFromJson
 
   let electionSignKey = bkElectionSignKey bakerKeys
@@ -1026,7 +1025,7 @@ bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm
       abSignatureVerifyKey = bkSigVerifyKey bakerKeys
       abAggregationVerifyKey = bkAggrVerifyKey bakerKeys
 
-  let senderAddress = acAddress accCfg
+  let senderAddress = naAddr $ esdAddress encSignData
 
   let challenge = Types.addBakerChallenge senderAddress abElectionVerifyKey abSignatureVerifyKey abAggregationVerifyKey
   abProofElection <- Proofs.proveDlog25519VRF challenge (VRF.KeyPair electionSignKey abElectionVerifyKey) `except` "cannot produce VRF key proof"
@@ -1038,7 +1037,7 @@ bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm
 
   txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
 
-  logSuccess [ printf "adding baker with account %s" (show (acAddress tcAccountCfg))
+  logSuccess [ printf "adding baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
              , printf "initial stake will be %s GTU" (Types.amountToString batcBakingStake)
              , if batcRestakeEarnings then "Rewards will be automatically added to the baking stake." else "Rewards will _not_ be automatically added to the baking stake."
              , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy) ]
@@ -1107,7 +1106,7 @@ credentialUpdateKeysTransactionPayload CredentialUpdateKeysTransactionCfg{..} co
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
-        , tcAccountCfg = AccountConfig { acAddr = addr } }
+        , tcEncryptedSigningData = EncryptedSigningData { esdAddress = addr } }
         = cuktcTransactionCfg
 
   let logNewKeys = OrdMap.foldrWithKey (\idx (SigScheme.VerifyKeyEd25519 key) l -> (printf "\t%s: %s" (show idx) (show key)) : l) [] (ID.credKeys cuktcKeys)
@@ -1130,7 +1129,7 @@ accountEncryptTransactionPayload AccountEncryptTransactionConfig{..} confirm = d
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
-        , tcAccountCfg = AccountConfig { acAddr = addr } }
+        , tcEncryptedSigningData = EncryptedSigningData { esdAddress = addr } }
         = aeTransactionCfg
 
 
@@ -1150,7 +1149,7 @@ accountDecryptTransactionPayload AccountDecryptTransactionConfig{..} confirm = d
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
-        , tcAccountCfg = AccountConfig { acAddr = addr } }
+        , tcEncryptedSigningData = EncryptedSigningData { esdAddress = addr } }
         = adTransactionCfg
 
   logInfo $
@@ -1180,12 +1179,12 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
         { tcEnergy = energy
         , tcExpiry = expiry
         , tcNonce = n
-        , tcAccountCfg = AccountConfig { acAddr = NamedAddress { .. }, .. }
+        , tcEncryptedSigningData = EncryptedSigningData { esdAddress = NamedAddress{..}, .. }
         } = txCfg
   nonce <- getNonce naAddr n confirmNonce
   accountKeyMap <- case maybeAccKeys of
                      Just acKeys' -> return acKeys'
-                     Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive acKeys (Nothing) Nothing
+                     Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys (Nothing) Nothing
   let tx = encodeAndSignTransaction pl naAddr energy nonce expiry accountKeyMap
 
   sendTransactionToBaker tx defaultNetId >>= \case
@@ -1338,7 +1337,7 @@ processAccountCmd action baseCfgDir verbose backend =
       aukCfg <- getAccountUpdateKeysTransactionCfg baseCfg txOpts f cid
       let txCfg = cuktcTransactionCfg aukCfg
       when verbose $ do
-        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        runPrinter $ printAccountConfig $ tcEncryptedSigningData txCfg
         putStrLn ""
 
       let intOpts = toInteractionOpts txOpts
@@ -1354,7 +1353,7 @@ processAccountCmd action baseCfgDir verbose backend =
       aetxCfg <- getAccountEncryptTransactionCfg baseCfg aeTransactionOpts aeAmount
       let txCfg = aeTransactionCfg aetxCfg
       when verbose $ do
-        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        runPrinter $ printAccountConfig $ tcEncryptedSigningData txCfg
         putStrLn ""
 
       let intOpts = toInteractionOpts aeTransactionOpts
@@ -1372,13 +1371,13 @@ processAccountCmd action baseCfgDir verbose backend =
       let nrgCost _ = return $ Just $ (6+) . accountDecryptEnergyCost
       txCfg <- liftIO (getTransactionCfg baseCfg adTransactionOpts nrgCost)
 
-      encryptedSecretKey <- maybe (logFatal ["Missing account encryption secret key for account: " ++ show (acAddr . tcAccountCfg $ txCfg)]) return (acEncryptionKey . tcAccountCfg $ txCfg)
+      encryptedSecretKey <- maybe (logFatal ["Missing account encryption secret key for account: " ++ show (esdAddress . tcEncryptedSigningData $ txCfg)]) return (esdEncryptionKey . tcEncryptedSigningData $ txCfg)
       secretKey <- either (\e -> logFatal ["Couldn't decrypt account encryption secret key: " ++ e]) return =<< decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey
 
       withClient backend $ do
         adtxCfg <- getAccountDecryptTransactionCfg txCfg adAmount secretKey adIndex
         when verbose $ do
-          runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+          runPrinter $ printAccountConfig $ tcEncryptedSigningData txCfg
           liftIO $ putStrLn ""
 
         let intOpts = toInteractionOpts adTransactionOpts
@@ -1474,8 +1473,8 @@ getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
   return $ ModuleDeployTransactionCfg txCfg wasmModule
 
 -- |Calcuate the energy cost of deploying a module. Uses an ad hoc implementation from Concordium.Scheduler.Cost.
-moduleDeployEnergyCost :: Wasm.WasmModule -> AccountConfig -> IO (Maybe (Int -> Types.Energy))
-moduleDeployEnergyCost wasmMod accCfg = pure . Just . const $
+moduleDeployEnergyCost :: Wasm.WasmModule -> EncryptedSigningData -> IO (Maybe (Int -> Types.Energy))
+moduleDeployEnergyCost wasmMod encSignData = pure . Just . const $
   deployModuleCost payloadSize + checkHeaderEnergyCostWithPayload payloadSize signatureCount
   where
         -- Ad hoc cost implementation from Concordium.Scheduler.Cost
@@ -1484,7 +1483,7 @@ moduleDeployEnergyCost wasmMod accCfg = pure . Just . const $
                                   (psize `div` 30)
                                   + (5 + 2 * ((psize + 99) `div` 100) * 50) -- storeModule
 
-        signatureCount = foldl (\acc m -> acc + length m) 0 (acKeys accCfg)
+        signatureCount = foldl (\acc m -> acc + length m) 0 (esdKeys encSignData)
         payloadSize = Types.payloadSize . Types.encodePayload . Types.DeployModule $ wasmMod
 
 data ModuleDeployTransactionCfg =
@@ -1531,7 +1530,7 @@ processContractCmd action baseCfgDir verbose backend =
       let energy = tcEnergy txCfg
       let expiryTs = tcExpiry txCfg
 
-      let minEnergy = contractInitMinimumEnergy ciCfg (tcAccountCfg txCfg)
+      let minEnergy = contractInitMinimumEnergy ciCfg (tcEncryptedSigningData txCfg)
       when (energy < minEnergy) $ logFatal [ "insufficient energy provided"
                                            , [iii|to verify the transaction signature #{showNrg minEnergy} is needed,
                                                   and additional energy is needed to complete the initialization|]]
@@ -1567,7 +1566,7 @@ processContractCmd action baseCfgDir verbose backend =
       let energy = tcEnergy txCfg
       let expiryTs = tcExpiry txCfg
 
-      let minEnergy = contractUpdateMinimumEnergy cuCfg (tcAccountCfg txCfg)
+      let minEnergy = contractUpdateMinimumEnergy cuCfg (tcEncryptedSigningData txCfg)
       when (energy < minEnergy) $ logFatal [ "insufficient energy provided"
                                            , [iii|to verify the transaction signature #{showNrg minEnergy} is needed,
                                                   and additional energy is needed to complete the update|]]
@@ -1614,26 +1613,26 @@ processContractCmd action baseCfgDir verbose backend =
         -- |Calculates the minimum energy required for checking the signature of a contract initialization.
         -- The minimum will not cover the full initialization, but enough of it, so that a potential 'Not enough energy' error
         -- can be shown.
-        contractInitMinimumEnergy :: ContractInitTransactionCfg -> AccountConfig -> Types.Energy
-        contractInitMinimumEnergy ContractInitTransactionCfg{..} accCfg = checkHeaderEnergyCostWithPayload (fromIntegral payloadSize) signatureCount
+        contractInitMinimumEnergy :: ContractInitTransactionCfg -> EncryptedSigningData -> Types.Energy
+        contractInitMinimumEnergy ContractInitTransactionCfg{..} encSignData = checkHeaderEnergyCostWithPayload (fromIntegral payloadSize) signatureCount
           where
             payloadSize =    1 -- tag
                           + 32 -- module ref
                           +  2 + (length $ show citcInitName) -- size length + length of initName
                           +  2 + (BSS.length . Wasm.parameter $ citcParams) -- size length + length of parameter
-            signatureCount = foldl (\acc m -> acc + length m) 0 (acKeys accCfg) 
+            signatureCount = foldl (\acc m -> acc + length m) 0 (esdKeys encSignData) 
 
         -- |Calculates the minimum energy required for checking the signature of a contract update.
         -- The minimum will not cover the full update, but enough of it, so that a potential 'Not enough energy' error
         -- can be shown.
-        contractUpdateMinimumEnergy :: ContractUpdateTransactionCfg -> AccountConfig -> Types.Energy
-        contractUpdateMinimumEnergy ContractUpdateTransactionCfg{..} accCfg = checkHeaderEnergyCostWithPayload (fromIntegral payloadSize) signatureCount
+        contractUpdateMinimumEnergy :: ContractUpdateTransactionCfg -> EncryptedSigningData -> Types.Energy
+        contractUpdateMinimumEnergy ContractUpdateTransactionCfg{..} encSignData = checkHeaderEnergyCostWithPayload (fromIntegral payloadSize) signatureCount
           where
             payloadSize =    1 -- tag
                           + 16 -- contract address
                           +  2 + (length $ show cutcReceiveName) -- size length + length of receiveName
                           +  2 + (BSS.length . Wasm.parameter $ cutcParams) -- size length + length of the parameter
-            signatureCount = foldl (\acc m -> acc + length m) 0 (acKeys accCfg) 
+            signatureCount = foldl (\acc m -> acc + length m) 0 (esdKeys encSignData) 
 
 -- |Try to fetch info about the contract and deserialize it from JSON.
 -- Or, log fatally with appropriate error messages if anything goes wrong.
@@ -2016,11 +2015,11 @@ processBakerCmd action baseCfgDir verbose backend =
       (bakerKeys, txCfg, pl) <- bakerAddTransaction baseCfg txOpts accountKeysFile initialStake autoRestake (ioConfirm intOpts)
 
       when verbose $ do
-        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        runPrinter $ printAccountConfig $ tcEncryptedSigningData txCfg
         putStrLn ""
 
       withClient backend $ do
-         let senderAddr = acAddress . tcAccountCfg $ txCfg
+         let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
          AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
          case airBaker of
            Just AccountInfoBakerResult{..} -> logFatal [[i|Account is already a baker with ID #{aibiIdentity abirAccountBakerInfo}.|]]
@@ -2119,9 +2118,9 @@ processBakerCmd action baseCfgDir verbose backend =
 -- |Convert 'baker set-keys' transaction config into a valid payload.
 bakerSetKeysTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> Bool -> ClientMonad IO (BakerKeys, TransactionConfig, Types.Payload)
 bakerSetKeysTransaction baseCfg txOpts fp confirm = do
-  accCfg <- liftIO $ getAccountCfgFromTxOpts baseCfg txOpts
+  encSignData <- liftIO $ getAccountCfgFromTxOpts baseCfg txOpts
 
-  let senderAddress = acAddress accCfg
+  let senderAddress = naAddr $ esdAddress encSignData
 
 
   AccountInfoResult{..} <- getAccountInfoOrDie senderAddress

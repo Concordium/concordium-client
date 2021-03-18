@@ -91,25 +91,24 @@ printBaseConfig cfg = do
     showEntry showVal (n, a) = [i|    #{n} -> #{a'}|] :: String
       where a' = showVal a
 
-printAccountConfig :: AccountConfig -> Printer -- TODO: find out if indentation is OK
-printAccountConfig cfg = do
+printAccountConfig :: EncryptedSigningData -> Printer -- TODO: find out if indentation is OK
+printAccountConfig encSignData = do
   tell [ [i|Account configuration:|]
        , [i|- Names:   #{nameListOrNone}|]
-       , [i|- Address: #{naAddr $ acAddr cfg}|] ]
-  printKeys $ acKeys cfg
+       , [i|- Address: #{naAddr $ esdAddress encSignData}|] ]
+  printKeys $ esdKeys encSignData
   where printKeys m =
           if null m then
             tell [ "- Credentials keys:    " ++ showNone ]
           else do
             tell [ "- Credentials keys:" ]
             forM_ (HM.toList m) $ (\(cidx, km) -> do
-              let idString = ""
-              tell [ "   - Keys for credential with " ++ idString]
+              tell [ "   - Keys for credential with index " ++ show cidx]
               printMap showEntry $ toSortedList km)
         showEntry (n, kp) =
           printf "    %s: %s" (show n) (showAccountKeyPair kp)
 
-        nameListOrNone = case naNames $ acAddr cfg of
+        nameListOrNone = case naNames $ esdAddress encSignData of
           [] -> showNone
           names -> showNameList names
 
