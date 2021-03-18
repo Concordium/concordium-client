@@ -82,6 +82,14 @@ data AccountSigningData =
   , asdThreshold :: !ID.AccountThreshold }
   deriving (Show)
 
+
+data EncryptedSigningData =
+  EncryptedSigningData
+  { esdAddress :: !NamedAddress
+  , esdKeys :: !EncryptedAccountKeyMap
+  , esdEncryptionKey :: !(Maybe EncryptedAccountEncryptionSecretKey) }
+  deriving (Show)
+
 -- | Test whether the given keypair passes a basic sanity check, signing and
 -- verifying the signature with the keypair should succeed.
 checkAccountKeyPair :: AccountKeyPair -> IO Bool
