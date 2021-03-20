@@ -3,22 +3,22 @@
 
 module Concordium.Client.Export where
 
-import qualified Concordium.ID.Types as IDTypes
-
 import Concordium.Client.Cli
 import Concordium.Client.Config
 import Concordium.Client.Encryption
 import Concordium.Client.Types.Account
 import Concordium.Client.Utils
 
+import qualified Concordium.ID.Types as IDTypes
+
 import Control.Exception
 import Control.Monad.Except
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
-import Data.Aeson ((.:),(.:?),(.!=),(.=))
+import Data.Aeson ((.:),(.=))
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LazyBS
-import qualified Data.HashMap.Strict as Map
+import qualified Data.Map.Strict as Map
 import Data.Maybe (maybeToList)
 import Data.Text as T
 import Data.String.Interpolate ( i )
@@ -61,6 +61,7 @@ data WalletExportAccount =
   WalletExportAccount
   { weaName :: !Text
   , weaKeys :: !AccountSigningData
+  , weaCredMap :: !(Map.Map IDTypes.CredentialIndex IDTypes.CredentialRegistrationID)
   , weaEncryptionKey :: !ElgamalSecretKey }
   deriving (Show)
 
@@ -69,16 +70,23 @@ instance AE.FromJSON WalletExportAccount where
     name <- v .: "name"
     addr <- v .: "address"
     e <- v .: "encryptionSecretKey"
-    (keys, th) <- v .: "accountData" >>= AE.withObject "Account data" (\w -> do
-      keys <- w .: "keys"
+    (keys, th) <- v .: "accountKeys" >>= AE.withObject "Account keys" (\w -> do
+      credentials <- w .: "keys"
+      keys <- forM credentials $ AE.withObject "Credential keys" (.: "keys")
       th <- w .: "threshold"
       return (keys, th))
+    -- the credentials are stored inside a credentials field in the exact format that they are sent to the chain,
+    -- which is a (versioned) object with two fields "messageExpiry" and "credential"
+    -- since the mobile only supports single-credential accounts by definition the credential is the
+    -- credential with index 0
+    credential :: IDTypes.AccountCredentialWithProofs <- (vValue <$> (v .: "credential")) >>= AE.withObject "Credential" (.: "credential")
     return WalletExportAccount
       { weaName = name
       , weaKeys = AccountSigningData
                   { asdAddress = addr
                   , asdKeys = keys
                   , asdThreshold = th }
+      , weaCredMap = Map.singleton 0 (IDTypes.credId credential)
       , weaEncryptionKey = e }
 
 -- | Decode, decrypt and parse a mobile wallet export, reencrypting the singing keys with the same password.
@@ -118,7 +126,7 @@ accountCfgFromWalletExportAccount pwd WalletExportAccount { weaKeys = AccountSig
   acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd weaEncryptionKey)
   return $ AccountConfig
     { acAddr = NamedAddress { naNames = [name], naAddr = asdAddress }
-    , acCids = Map.empty -- TODO: Find out from where to get this map
+    , acCids = weaCredMap
     , ..
     }
   where

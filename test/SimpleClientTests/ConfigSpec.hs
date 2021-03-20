@@ -12,7 +12,7 @@ import Concordium.Types.HashableTo (getHash)
 import Control.Monad.Writer
 import qualified Data.Aeson as AE
 import qualified Data.ByteString as BS
-import qualified Data.HashMap.Strict as M
+import qualified Data.Map.Strict as Map
 import Data.Maybe
 import Data.Text
 import Test.Hspec
@@ -61,13 +61,13 @@ parseAccountNameMapEntrySpec = describe "parseAccountNameEntryMap" $ do
 parseAccountNameMapSpec :: Spec
 parseAccountNameMapSpec = describe "parseAccountNameMap" $ do
   specify "empty" $
-    parseAccountNameMap [] `shouldBe` Right M.empty
+    parseAccountNameMap [] `shouldBe` Right Map.empty
   specify "two lines separated by blank" $
     let input = [ ""
                 , "first= " ++ s1
                 , " \t "
                 , "second =" ++ s2 ]
-        want = M.fromList [("first", a1), ("second", a2)]
+        want = Map.fromList [("first", a1), ("second", a2)]
     in parseAccountNameMap input `shouldBe` Right want
   specify "invalid format" $
     parseAccountNameMap ["invalid"] `shouldBe` Left "invalid mapping format 'invalid' (should be '<name> = <address>')"
@@ -81,13 +81,13 @@ parseAccountNameMapSpec = describe "parseAccountNameMap" $ do
 resolveAccountAddressSpec :: Spec
 resolveAccountAddressSpec = describe "resolveAccountAddress" $ do
   specify "valid account address" $
-    r M.empty s1 `shouldBe` Just NamedAddress { naNames = [], naAddr = a1 }
+    r Map.empty s1 `shouldBe` Just NamedAddress { naNames = [], naAddr = a1 }
   specify "valid account address is not looked up in map" $
-    r (M.fromList [(s1, a2)]) s1 `shouldBe` Just NamedAddress { naNames = [], naAddr = a1 }
+    r (Map.fromList [(s1, a2)]) s1 `shouldBe` Just NamedAddress { naNames = [], naAddr = a1 }
   specify "existing account name" $
-    r (M.fromList [("name", a1)]) "name" `shouldBe` Just NamedAddress { naNames = ["name"], naAddr = a1 }
+    r (Map.fromList [("name", a1)]) "name" `shouldBe` Just NamedAddress { naNames = ["name"], naAddr = a1 }
   specify "nonexisting account name" $
-    r M.empty "name" `shouldBe` Nothing
+    r Map.empty "name" `shouldBe` Nothing
   where r = resolveAccountAddress
         s1 = "35FtQ8HgRShXLGUer7k8wtovjKAcSQ2Ys8RQPx27KfRA7zf7i4"
         s2 = "4RDhNeQB7DUKcKNStBQfLjU6y32HYDMxsJef2ATVncKRYJWoCV"
@@ -98,7 +98,6 @@ printSpec :: Spec
 printSpec = describe "print" $ do
   printBaseConfigSpec
   printAccountConfigSpec
-  printAccountConfigListSpec
 
 printBaseConfigSpec :: Spec
 printBaseConfigSpec = describe "base config" $ do
@@ -130,58 +129,39 @@ printBaseConfigSpec = describe "base config" $ do
 printAccountConfigSpec :: Spec
 printAccountConfigSpec = describe "account config" $ do
   -- TODO Update to new format when the format of this and other commands has been decided.
-  specify "with keys and name" $ p exampleAccountConfigWithKeysAndName `shouldBe`
+  specify "with keys and name" $ p exampleSelectedKeyConfigWithKeysAndName `shouldBe`
     [ "Account configuration:"
     , "- Names:   'name'"
     , "- Address: 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-    , "- Keys:"
-    , "    2: {\n    \"encryptedSignKey\": {\n        \"metadata\": {\n            \"encryptionMethod\": \"AES-256\",\n            \"iterations\": 100000,\n            \"salt\": \"slzkcKo8IPymU5t7jamGQQ==\",\n            \"initializationVector\": \"NXbbI8Cc3AXtaG/go+L+FA==\",\n            \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\"\n        },\n        \"cipherText\": \"hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY=\"\n    },\n    \"verifyKey\": \"f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213\",\n    \"schemeId\": \"Ed25519\"\n}"
-    ,"    11: {\n    \"encryptedSignKey\": {\n        \"metadata\": {\n            \"encryptionMethod\": \"AES-256\",\n            \"iterations\": 100000,\n            \"salt\": \"sQ8NG/fBLdLuuLd1ARlAqw==\",\n            \"initializationVector\": \"z6tTcT5ko8vS2utlwwNvbw==\",\n            \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\"\n        },\n        \"cipherText\": \"9ltKSJtlkiBXY/kU8huA4GoCaGNjy8M2Ym2SOtlg1ay6lfI9o95sXJ1cjcQ2b8gV+WddwS7ile8ZhIr8es58pTaM8PczlLbKBCSJ11R2iqw=\"\n    },\n    \"verifyKey\": \"c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027\",\n    \"schemeId\": \"Ed25519\"\n}" ]
+    , "- Credentials keys:"
+    , "   - Keys for credential with index 0"
+    , "      2: {\n    \"encryptedSignKey\": {\n        \"metadata\": {\n            \"encryptionMethod\": \"AES-256\",\n            \"iterations\": 100000,\n            \"salt\": \"slzkcKo8IPymU5t7jamGQQ==\",\n            \"initializationVector\": \"NXbbI8Cc3AXtaG/go+L+FA==\",\n            \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\"\n        },\n        \"cipherText\": \"hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY=\"\n    },\n    \"verifyKey\": \"f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213\",\n    \"schemeId\": \"Ed25519\"\n}"
+    ,"      11: {\n    \"encryptedSignKey\": {\n        \"metadata\": {\n            \"encryptionMethod\": \"AES-256\",\n            \"iterations\": 100000,\n            \"salt\": \"sQ8NG/fBLdLuuLd1ARlAqw==\",\n            \"initializationVector\": \"z6tTcT5ko8vS2utlwwNvbw==\",\n            \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\"\n        },\n        \"cipherText\": \"9ltKSJtlkiBXY/kU8huA4GoCaGNjy8M2Ym2SOtlg1ay6lfI9o95sXJ1cjcQ2b8gV+WddwS7ile8ZhIr8es58pTaM8PczlLbKBCSJ11R2iqw=\"\n    },\n    \"verifyKey\": \"c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027\",\n    \"schemeId\": \"Ed25519\"\n}" ]
   specify "without keys and name" $ p exampleAccountConfigWithoutKeysAndName `shouldBe`
     [ "Account configuration:"
     , "- Names:   none"
     , "- Address: 4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y"
-    , "- Keys:    none" ]
-  where p = execWriter . printAccountConfig
-
-printAccountConfigListSpec :: Spec
-printAccountConfigListSpec = describe "all account config" $ do
-  specify "empty" $ p [] `shouldBe`
-    [ "Account keys: none" ]
-  -- TODO Update to new format when the format of this and other commands has been decided.
-  specify "non-empty" $ p [exampleAccountConfigWithKeysAndName, exampleAccountConfigWithoutKeysAndName] `shouldBe`
-    [ "Account keys:"
-
-    , "- '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' ('name'):"
-    ,"{\n    \"2\": {\n        \"encryptedSignKey\": {\n            \"metadata\": {\n                \"encryptionMethod\": \"AES-256\",\n                \"iterations\": 100000,\n                \"salt\": \"slzkcKo8IPymU5t7jamGQQ==\",\n                \"initializationVector\": \"NXbbI8Cc3AXtaG/go+L+FA==\",\n                \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\"\n            },\n            \"cipherText\": \"hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY=\"\n        },\n        \"verifyKey\": \"f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213\",\n        \"schemeId\": \"Ed25519\"\n    },\n    \"11\": {\n        \"encryptedSignKey\": {\n            \"metadata\": {\n                \"encryptionMethod\": \"AES-256\",\n                \"iterations\": 100000,\n                \"salt\": \"sQ8NG/fBLdLuuLd1ARlAqw==\",\n                \"initializationVector\": \"z6tTcT5ko8vS2utlwwNvbw==\",\n                \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\"\n            },\n            \"cipherText\": \"9ltKSJtlkiBXY/kU8huA4GoCaGNjy8M2Ym2SOtlg1ay6lfI9o95sXJ1cjcQ2b8gV+WddwS7ile8ZhIr8es58pTaM8PczlLbKBCSJ11R2iqw=\"\n        },\n        \"verifyKey\": \"c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027\",\n        \"schemeId\": \"Ed25519\"\n    }\n}"
-
-    ,"- '4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y': none"
-
-    ,"Encryption secret keys:"
-
-    ,"- '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' ('name'): {\n    \"metadata\": {\n        \"encryptionMethod\": \"AES-256\",\n        \"iterations\": 100000,\n        \"salt\": \"w7pmsDi1K4bWf+zkLCuzVw==\",\n        \"initializationVector\": \"EXhd7ctFeqKvaA0P/oB8wA==\",\n        \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\"\n    },\n    \"cipherText\": \"pYvIywCAMLhvag1EJmGVuVezGsNvYn24zBnB6TCTkwEwOH50AOrx8NAZnVuQteZMQ7k7Kd7a1RorSxIQI1H/WX+Usi8f3VLnzdZFJmbk4Cme+dcgAbI+wWr0hisgrCDl\"\n}"
-
-    ,"- '4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y': none" ]
-  where p = execWriter . printAccountConfigList
+    , "- Credentials keys:    none" ]
+  where p = execWriter . printSelectedKeyConfig
 
 exampleBaseConfigWithAccountNameMap :: BaseConfig
 exampleBaseConfigWithAccountNameMap =
   BaseConfig
   { bcVerbose = True
-  , bcAccountNameMap = M.fromList [("accName1", exampleAccountAddress1), ("accName2", exampleAccountAddress2)]
+  , bcAccountNameMap = Map.fromList [("accName1", exampleAccountAddress1), ("accName2", exampleAccountAddress2)]
   , bcAccountCfgDir = "/some/path"
-  , bcContractNameMap = M.fromList [("contrName1", exampleContractAddress1), ("contrName2", exampleContractAddress2)]
-  , bcModuleNameMap = M.fromList [("modName1", exampleModuleRef1), ("modName2", exampleModuleRef2)]
+  , bcContractNameMap = Map.fromList [("contrName1", exampleContractAddress1), ("contrName2", exampleContractAddress2)]
+  , bcModuleNameMap = Map.fromList [("modName1", exampleModuleRef1), ("modName2", exampleModuleRef2)]
   , bcContractCfgDir = "/some/path"}
 
 exampleBaseConfigWithoutNameMaps :: BaseConfig
 exampleBaseConfigWithoutNameMaps =
   BaseConfig
   { bcVerbose = False
-  , bcAccountNameMap = M.empty
+  , bcAccountNameMap = Map.empty
   , bcAccountCfgDir = "/some/other/path"
-  , bcContractNameMap = M.empty
-  , bcModuleNameMap = M.empty
+  , bcContractNameMap = Map.empty
+  , bcModuleNameMap = Map.empty
   , bcContractCfgDir = "/some/other/path"}
 
 
@@ -190,15 +170,15 @@ dummyEncryptionSecretKey = fromJust $ AE.decode "\"a820662531d0aac70b3a80dd8a249
 dummyEncryptionPublicKey :: IDTypes.AccountEncryptionKey
 dummyEncryptionPublicKey = fromJust $ AE.decode "\"a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4\""
 
-exampleAccountConfigWithKeysAndName :: AccountConfig
-exampleAccountConfigWithKeysAndName =
-  AccountConfig
-  { acAddr = NamedAddress { naNames = ["name"] , naAddr = exampleAccountAddress1 }
+exampleSelectedKeyConfigWithKeysAndName :: EncryptedSigningData
+exampleSelectedKeyConfigWithKeysAndName =
+  EncryptedSigningData
+  { esdAddress = NamedAddress { naNames = ["name"] , naAddr = exampleAccountAddress1 }
   -- TODO Generate testdata instead of hard-coding (generate key pairs, encrypt).
   -- Test keypairs can either be generated with
   -- randomEd25519KeyPair from Concordium.Crypto.DummyData if determinism is required, or
   -- with newKeyPair from Concordium.Crypto.SignatureScheme if determinism is not important.
-  , acKeys = M.fromList [ (11,
+  , esdKeys = Map.singleton 0 $ Map.fromList [ (11,
                            EncryptedAccountKeyPairEd25519 {
                               verifyKey=vk1
                               , encryptedSignKey = EncryptedJSON (EncryptedText {
@@ -222,7 +202,7 @@ exampleAccountConfigWithKeysAndName =
                                                                          emInitializationVector = "NXbbI8Cc3AXtaG/go+L+FA=="},
                                                                      etCipherText = "hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY="})
                               })]
-  , acEncryptionKey = Just EncryptedText {
+  , esdEncryptionKey = Just EncryptedText {
       etMetadata = EncryptionMetadata {
           emEncryptionMethod = AES256,
           emIterations = 100000,
@@ -241,12 +221,12 @@ exampleAccountConfigWithKeysAndName =
         -- (Just sk2) = BSH.deserializeBase16 s2
         (Just vk2) = BSH.deserializeBase16 v2
 
-exampleAccountConfigWithoutKeysAndName :: AccountConfig
+exampleAccountConfigWithoutKeysAndName :: EncryptedSigningData
 exampleAccountConfigWithoutKeysAndName =
-  AccountConfig
-  { acAddr = NamedAddress { naNames = [], naAddr = exampleAccountAddress2}
-  , acKeys = M.empty
-  , acEncryptionKey = Nothing}
+  EncryptedSigningData
+  { esdAddress = NamedAddress { naNames = [], naAddr = exampleAccountAddress2}
+  , esdKeys = Map.empty
+  , esdEncryptionKey = Nothing}
 
 exampleAccountAddress1 :: IDTypes.AccountAddress
 Right exampleAccountAddress1 = IDTypes.addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
