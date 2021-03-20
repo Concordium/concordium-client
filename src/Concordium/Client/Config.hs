@@ -26,9 +26,9 @@ import Data.Aeson ((.:),(.=))
 import Concordium.Common.Version
 
 import Data.Char
-import Data.List (foldl', find, sort, sortOn)
+import Data.List (foldl', find, sortOn)
 import Data.List.Split
-import qualified Data.HashMap.Strict as M
+import qualified Data.Map.Strict as M
 import Data.String (IsString)
 import Data.String.Interpolate (i, iii)
 import qualified Data.Text as T
@@ -177,7 +177,7 @@ moduleNameMapFile :: ContractConfigDir -> FilePath
 moduleNameMapFile = (</> "moduleNames.map")
 
 -- |Mapping builder from a name to a provided type.
-type NameMap = M.HashMap Text
+type NameMap = M.Map Text
 
 -- |Mapping from account names to their addresses.
 type AccountNameMap = NameMap Types.AccountAddress
@@ -541,7 +541,7 @@ writeNameMapAsJSON verbose file =  handledWriteFile file .  AE.encodePretty' con
         handledWriteFile = handleWriteFile BSL.writeFile AllowOverwrite verbose
 -- |Write the name map to a file in the expected format.
 writeNameMap :: Show v => Verbose -> FilePath -> NameMap v -> IO ()
-writeNameMap verbose file = handledWriteFile file . BSL.fromStrict . encodeUtf8 . T.pack . unlines . map f . sortOn fst . M.toList
+writeNameMap verbose file = handledWriteFile file . BSL.fromStrict . encodeUtf8 . T.pack . unlines . map f . M.toAscList
   where f (name, val) = printf "%s = %s" name (show val)
         handledWriteFile = handleWriteFile BSL.writeFile AllowOverwrite verbose
 
@@ -665,7 +665,7 @@ loadNameMapFromJSON mapFile = do
     Left err -> logFatal [[i|cannot parse name map file '#{mapFile}' as JSON: #{err}|]]
     Right nm -> return nm
 
--- |A string representing an empty hashmap in JSON format.
+-- |A string representing an empty map in JSON format.
 emptyMapContentJSON :: IsString s => s
 emptyMapContentJSON = "{}"
 
@@ -741,7 +741,8 @@ data AccountConfig =
   AccountConfig
   { acAddr :: !NamedAddress
   , acKeys :: EncryptedAccountKeyMap
-  , acCids :: !(M.HashMap IDTypes.CredentialIndex IDTypes.CredentialRegistrationID)
+  -- |Index assignment of credential registration ids to credential indices.
+  , acCids :: !(M.Map IDTypes.CredentialIndex IDTypes.CredentialRegistrationID)
   -- | FIXME: This is a Maybe because the setup with account init being a
   -- special thing is such that we need to be able to initialize a dummy config.
   -- However this makes no practical sense, and that should be reworked so that
@@ -916,7 +917,7 @@ getAllAccountConfigs cfg = do
       doesDirectoryExist $ joinPath [dir, f]
 
 -- |Return all key pairs and CredentialID's from the provided directory.
-loadKeyMap :: FilePath -> IO (EncryptedAccountKeyMap, M.HashMap IDTypes.CredentialIndex IDTypes.CredentialRegistrationID)
+loadKeyMap :: FilePath -> IO (EncryptedAccountKeyMap, M.Map IDTypes.CredentialIndex IDTypes.CredentialRegistrationID)
 loadKeyMap accountDir = do
   filesInAccountDir <- listDirectory accountDir 
   credentialDirs <- filterM (doesDirectoryExist . (accountDir </>)) filesInAccountDir
@@ -931,8 +932,8 @@ loadKeyMap accountDir = do
       kp <- AE.eitherDecodeFileStrict' file `withLogFatalIO` (\e -> "cannot load key file " ++ file ++ " " ++ e)
       return (kidx, kp)
     return (credIdx, keys, cid)
-  let allKeys = map (\(cidx, keys, cid) -> (cidx, keys)) allKeysAndCids
-  let cidMap = M.fromList $ map (\(cidx, keys, cid) -> (cidx, cid)) allKeysAndCids
+  let allKeys = map (\(cidx, keys, _cid) -> (cidx, keys)) allKeysAndCids
+  let cidMap = M.fromList $ map (\(cidx, _keys, cid) -> (cidx, cid)) allKeysAndCids
   return (foldl' insertAccountKey M.empty allKeys, cidMap)
 
 loadCredId :: FilePath -> IO IDTypes.CredentialRegistrationID

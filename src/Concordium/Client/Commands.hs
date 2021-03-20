@@ -34,7 +34,7 @@ import Concordium.Client.LegacyCommands
 import Concordium.Client.Types.Account
 import Concordium.Client.Utils
 import Concordium.Common.Time
-import Concordium.ID.Types (CredentialIndex, KeyIndex, SignatureThreshold, CredentialRegistrationID)
+import Concordium.ID.Types (CredentialIndex, KeyIndex, CredentialRegistrationID)
 import Concordium.Types
 import Text.Printf
 import qualified Text.PrettyPrint.ANSI.Leijen as P
@@ -116,12 +116,9 @@ data ConfigAccountCmd
     { carkAddr :: !Text
     , carkCidx :: !CredentialIndex
     , carkKeys :: ![KeyIndex]
-    , carkThreshold :: !(Maybe SignatureThreshold) }
+    }
   | ConfigAccountRemoveName
     { carnText :: !Text }
-  | ConfigAccountSetThreshold
-    { cuatAddr :: !Text
-    , cuatThreshold :: !SignatureThreshold }
   deriving (Show)
 
 data Interval = Minute -- 60 secs
@@ -911,8 +908,8 @@ configAccountCmds showAllOpts =
            configAccountAddKeysCmd <>
            configAccountUpdateKeysCmd <>
            configAccountRemoveKeysCmd <>
-           configAccountRemoveNameCmd <>
-           configAccountSetThresholdCmd))
+           configAccountRemoveNameCmd
+           ))
       (progDesc "Commands for inspecting and changing account-specific configuration."))
 
 configAccountNameCmd :: Mod CommandFields ConfigAccountCmd
@@ -1009,23 +1006,10 @@ configAccountRemoveKeysCmd =
       (ConfigAccountRemoveKeys <$>
         strOption (long "account" <> metavar "ACCOUNT" <> help "Name or address of the account.") <*>
         option (eitherReader credentialIndexFromStringInform) (long "credential-index" <> metavar "CREDENTIALINDEX" <> help "Index of the credential containing the keys to remove") <*>
-        some (argument auto (metavar "KEYINDICES" <> help "space-separated list of indices of the keys to remove.")) <*>
-        optional (option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <>
-            help "Update the signature threshold to this value. If not set, no changes are made to the threshold.")))
+        some (argument auto (metavar "KEYINDICES" <> help "space-separated list of indices of the keys to remove."))
+        )
       (progDescDoc $ docFromLines
         [ "Removes the keys from the account at the specified indices. The --threshold option may be used to update the signature threshold." ]))
-
-configAccountSetThresholdCmd :: Mod CommandFields ConfigAccountCmd
-configAccountSetThresholdCmd =
-  command
-    "set-threshold"
-    (info
-      (ConfigAccountSetThreshold <$>
-        strOption (long "account" <> metavar "ACCOUNT" <> help "Name or address of the account.") <*>
-        option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <>
-            help "Sets the signature threshold to this value."))
-      (progDescDoc $ docFromLines
-        [ "Sets the signature threshold of the account to the specified value."]))
 
 readAccountExportFormat :: ReadM AccountExportFormat
 readAccountExportFormat = str >>= \case

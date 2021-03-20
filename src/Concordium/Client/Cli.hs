@@ -21,8 +21,7 @@ import Control.Exception
 import Data.Aeson as AE
 import Data.Aeson.Types (Pair)
 import qualified Data.Char as C
-import Data.List (uncons, sortOn)
-import qualified Data.HashMap.Strict as Map
+import Data.List (uncons)
 import qualified Data.Map.Strict as OrdMap
 import Data.Maybe
 import Data.Text(Text)
@@ -157,7 +156,7 @@ createPasswordInteractive descr = runExceptT $ do
 -- presenting the key index to the user.
 decryptAccountKeyMapInteractive
   :: EncryptedAccountKeyMap
-  -> Maybe (Map.HashMap ID.CredentialIndex [ID.KeyIndex])
+  -> Maybe (OrdMap.Map ID.CredentialIndex [ID.KeyIndex])
   -> Maybe String -- ^ Optional text describing the account of which to decrypt keys. Will be shown in the format
                   -- "Enter password for %s signing key"
   -> IO (Either String AccountKeyMap) -- ^ The decrypted 'AccountKeyMap' or an error message on failure.
@@ -173,14 +172,14 @@ decryptAccountKeyMapInteractive encryptedKeyMap indexmap accDescr = runExceptT $
   -- In order to request passwords only for `threshold` number of accounts, we will map over the sub-map of the wanted size
   let inputMap = case indexmap of
         Nothing -> encryptedKeyMap -- no map provided, use the full map
-        Just im -> let filterCredentials = Map.filterWithKey (\k _ -> Map.member k im) encryptedKeyMap
+        Just im -> let filterCredentials = OrdMap.filterWithKey (\k _ -> OrdMap.member k im) encryptedKeyMap
                        lookUpKey cidx kidx = 
-                         case Map.lookup cidx im of 
+                         case OrdMap.lookup cidx im of 
                            Nothing -> False
                            Just keyIndexList -> kidx `elem` keyIndexList
-                       newmap = Map.mapWithKey (\credIndex m -> Map.filterWithKey (\k _ -> lookUpKey credIndex k) m) filterCredentials
+                       newmap = OrdMap.mapWithKey (\credIndex m -> OrdMap.filterWithKey (\k _ -> lookUpKey credIndex k) m) filterCredentials
                       in newmap
-  sequence $ Map.mapWithKey (\credIndex eKpMap -> (sequence . Map.mapWithKey (\keyIndex eKp -> do
+  sequence $ OrdMap.mapWithKey (\credIndex eKpMap -> (sequence . OrdMap.mapWithKey (\keyIndex eKp -> do
                                 pwd <- liftIO $ askPassword $ queryText credIndex keyIndex
                                 decryptAccountKeyPair pwd keyIndex eKp
                             )) eKpMap) inputMap

@@ -10,7 +10,7 @@ import Control.Monad
 import Control.Monad.Except
 import Control.Exception
 
-import qualified Data.HashMap.Strict as Map
+import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import qualified Data.Aeson as AE
 import Data.Aeson ((.=),(.:),(.:?), (.!=))
@@ -69,8 +69,10 @@ instance AE.FromJSON EncryptedAccountKeyPair where
     case schemeId of
       SigScheme.Ed25519 -> return EncryptedAccountKeyPairEd25519{..}
 
-type AccountKeyMap = Map.HashMap ID.CredentialIndex (Map.HashMap ID.KeyIndex AccountKeyPair)
-type EncryptedAccountKeyMap = Map.HashMap ID.CredentialIndex (Map.HashMap ID.KeyIndex EncryptedAccountKeyPair)
+-- |Full map of plaintext account signing keys.
+type AccountKeyMap = Map.Map ID.CredentialIndex (Map.Map ID.KeyIndex AccountKeyPair)
+-- |Encrypted analogue of 'AccountKeyMap'
+type EncryptedAccountKeyMap = Map.Map ID.CredentialIndex (Map.Map ID.KeyIndex EncryptedAccountKeyPair)
 type EncryptedAccountEncryptionSecretKey = EncryptedText
 
 -- |Information about a given account sufficient to sign transactions.
@@ -83,6 +85,9 @@ data AccountSigningData =
   deriving (Show)
 
 
+-- |Selected keys resolved from the account config for the specific interaction.
+-- In contrast to the account config this will only contain the keys the user selected.
+-- The keys are still encrypted. They will only be decrypted when they will be used.
 data EncryptedSigningData =
   EncryptedSigningData
   { esdAddress :: !NamedAddress

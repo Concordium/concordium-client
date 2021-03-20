@@ -13,18 +13,23 @@ import Concordium.Types.HashableTo (getHash)
 
 import qualified Data.Aeson as AE
 import qualified Data.ByteString as BS
-import qualified Data.HashMap.Strict as M
+import qualified Data.Map.Strict as Map
 import Test.Hspec
 
 exampleAccountAddress1 :: IDTypes.AccountAddress
 Right exampleAccountAddress1 = IDTypes.addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+
+-- some value that has the right format, it does not matter what it is.
+someCredId :: IDTypes.CredentialRegistrationID
+Just someCredId = AE.decode "\"96f89a557352b0aa7596b12f3ccf4cc5973066e31e2c57a8b9dc096fdcff6dd8967e27a7a6e9d41fcc0d553b62650148\""
 
 -- |dummy accountconfig, for testing export/import
 exampleAccountConfigWithKeysAndName :: AccountConfig
 exampleAccountConfigWithKeysAndName =
   AccountConfig
   { acAddr = NamedAddress { naNames = ["name"] , naAddr = exampleAccountAddress1 }
-  , acKeys = M.fromList [ (11,
+  , acCids = Map.singleton 0 someCredId
+  , acKeys = Map.singleton 0 $ Map.fromList [ (11,
                            EncryptedAccountKeyPairEd25519 {
                               verifyKey=vk1
                               , encryptedSignKey = EncryptedJSON (EncryptedText {
@@ -68,11 +73,11 @@ exampleAccountConfigWithKeysAndName =
         (Just vk2) = BSH.deserializeBase16 v2
 
 exampleContractNameMap :: ContractNameMap
-exampleContractNameMap = M.fromList [("contrA", mkContrAddr 0 0), ("contrB", mkContrAddr 42 0), ("contrC", mkContrAddr 42 4200)]
+exampleContractNameMap = Map.fromList [("contrA", mkContrAddr 0 0), ("contrB", mkContrAddr 42 0), ("contrC", mkContrAddr 42 4200)]
   where mkContrAddr index subindex = Types.ContractAddress (Types.ContractIndex index) (Types.ContractSubindex subindex)
 
 exampleModuleNameMap :: ModuleNameMap
-exampleModuleNameMap = M.fromList [("modA", modRef1), ("modB", modRef2)]
+exampleModuleNameMap = Map.fromList [("modA", modRef1), ("modB", modRef2)]
   where
     modRef1 = Types.ModuleRef $ getHash ("ref1" :: BS.ByteString) -- Hash: de0cd794099a5e03c2131d662d423164111d3b78d5122970197cd7e1937ed0e4
     modRef2 = Types.ModuleRef $ getHash ("ref2" :: BS.ByteString) -- Hash: 3bdc9752a50026c173ce5e1e344b09bc131b04ba15e9f870e23c53490a51b840

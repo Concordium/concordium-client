@@ -89,9 +89,8 @@ import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
 import qualified Data.ByteString.Short               as BS (toShort)
 import qualified Data.ByteString.Short               as BSS
-import qualified Data.HashMap.Strict                 as Map
-import qualified Data.HashSet                        as HSet
-import qualified Data.Map                            as OrdMap
+import qualified Data.Map.Strict                     as Map
+import qualified Data.HashMap.Strict                 as HM
 import           Data.Maybe
 import qualified Data.List                           as L
 import qualified Data.Serialize                      as S
@@ -338,8 +337,11 @@ processConfigCmd action baseCfgDir verbose =
               Just kmCurrent -> Map.difference km kmCurrent
         let credDuplicates = Map.intersection keyMapCurrent keyMapInput
 
-        let keyDuplicates = flip Map.mapWithKey credDuplicates $ \cidx _ -> case (Map.lookup cidx keyMapCurrent, Map.lookup cidx keyMapInput) of 
-              (Just kmCurrent, Just kmInput) -> Map.intersection kmInput kmCurrent
+        let keyDuplicates = let f cidx _ =
+                                 case (Map.lookup cidx keyMapCurrent, Map.lookup cidx keyMapInput) of 
+                                   (Just kmCurrent, Just kmInput) -> Map.intersection kmInput kmCurrent
+                                   _ -> Map.empty -- if the credential exists in one but not the other then it won't be updated.
+                            in Map.filter (not . Map.null) . Map.mapWithKey f $ credDuplicates
 
         unless (Map.null keyMapNew) $ forM_ (Map.toList keyMapNew) $ \(cidx, km) -> do  
           unless (Map.null km) $ logWarn
@@ -365,7 +367,7 @@ processConfigCmd action baseCfgDir verbose =
                           ++ " will be updated on account " ++ Text.unpack addr]
               let accCfg' = accCfg { acKeys = keyDuplicates } 
               writeAccountKeys baseCfg' accCfg' verbose
-      ConfigAccountRemoveKeys addr cidx idxs threshold -> do
+      ConfigAccountRemoveKeys addr cidx idxs -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
@@ -373,7 +375,7 @@ processConfigCmd action baseCfgDir verbose =
 
         (_, accCfg) <- getAccountConfigFromAddr addr baseCfg
 
-        let idxsInput = HSet.fromList idxs
+        let idxsInput = Set.fromList idxs
         let cKeys = Map.lookup cidx $ acKeys accCfg
 
         case cKeys of 
@@ -383,28 +385,28 @@ processConfigCmd action baseCfgDir verbose =
           Just keys -> do
             let idxsCurrent = Map.keysSet keys
 
-            let idxsToRemove = HSet.intersection idxsCurrent idxsInput
-            let idxsNotFound = HSet.difference idxsInput idxsToRemove
+            let idxsToRemove = Set.intersection idxsCurrent idxsInput
+            let idxsNotFound = Set.difference idxsInput idxsToRemove
 
-            unless (HSet.null idxsNotFound) $ logWarn
+            unless (Set.null idxsNotFound) $ logWarn
                                   ["keys (for credential "++show cidx++") with indices "
-                                  ++ showHSetIdxs idxsNotFound
+                                  ++ showSetIdxs idxsNotFound
                                   ++ " do not exist and can therefore not be removed"]
 
-            case HSet.null idxsToRemove of
+            case Set.null idxsToRemove of
               True -> logInfo ["no keys were removed"]
               False -> do
                 logWarn [ "the keys (for credential "++show cidx++") with indices "
-                          ++ showHSetIdxs idxsToRemove
+                          ++ showSetIdxs idxsToRemove
                           ++ " will be removed and can NOT be recovered"]
 
                 updateConfirmed <- askConfirmation $ Just "confirm that you want to remove the keys"
 
                 when updateConfirmed $ do
                   logInfo [ "the keys (for credential "++show cidx++") with indices "
-                            ++ showHSetIdxs idxsToRemove
+                            ++ showSetIdxs idxsToRemove
                             ++ " will be removed from account " ++ Text.unpack addr]
-                  removeAccountKeys baseCfg accCfg cidx (HSet.toList idxsToRemove) verbose
+                  removeAccountKeys baseCfg accCfg cidx (Set.toList idxsToRemove) verbose
       ConfigAccountRemoveName name -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
@@ -421,7 +423,7 @@ processConfigCmd action baseCfgDir verbose =
 
 
   where showMapIdxs = showIdxs . Map.keys
-        showHSetIdxs = showIdxs . HSet.toList
+        showSetIdxs = showIdxs . Set.toList
         showIdxs = L.intercalate ", " . map show . L.sort
 
         getKeyMapInput :: FilePath -> IO EncryptedAccountKeyMap
@@ -500,7 +502,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       ttxCfg <- getTransferTransactionCfg baseCfg txOpts receiver amount
       let txCfg = ttcTransactionCfg ttxCfg
       when verbose $ do
-        runPrinter $ printAccountConfig $ tcEncryptedSigningData txCfg
+        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
         putStrLn ""
 
       let intOpts = toInteractionOpts txOpts
@@ -515,7 +517,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       ttxCfg <- getTransferWithScheduleTransactionCfg baseCfg txOpts receiver schedule
       let txCfg = twstcTransactionCfg ttxCfg
       when verbose $ do
-        runPrinter $ printAccountConfig $ tcEncryptedSigningData txCfg
+        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
         putStrLn ""
       -- Check that sending and receiving accounts are not the same
       let fromAddr = naAddr $ esdAddress ( tcEncryptedSigningData txCfg)
@@ -551,7 +553,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       withClient backend $ do
         ttxCfg <- getEncryptedTransferTransactionCfg txCfg receiverAcc amount index secretKey
         liftIO $ when verbose $ do
-          runPrinter $ printAccountConfig $ tcEncryptedSigningData txCfg
+          runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
           putStrLn ""
 
         let intOpts = toInteractionOpts txOpts
@@ -662,7 +664,7 @@ getAccountCfgFromTxOpts baseCfg txOpts = do
                Nothing -> return Nothing
                Just filePath -> AE.eitherDecodeFileStrict filePath `withLogFatalIO` ("cannot decode keys: " ++)
   let chosenKeysText = toSigners txOpts
-  let chosenKeysMaybe :: Maybe (Map.HashMap ID.CredentialIndex [ID.KeyIndex]) = case chosenKeysText of
+  let chosenKeysMaybe :: Maybe (Map.Map ID.CredentialIndex [ID.KeyIndex]) = case chosenKeysText of
         Nothing -> Nothing
         Just t -> Just $ let insertKey c k acc = case Map.lookup c acc of
                               Nothing -> Map.insert c [k] acc
@@ -1109,7 +1111,7 @@ credentialUpdateKeysTransactionPayload CredentialUpdateKeysTransactionCfg{..} co
         , tcEncryptedSigningData = EncryptedSigningData { esdAddress = addr } }
         = cuktcTransactionCfg
 
-  let logNewKeys = OrdMap.foldrWithKey (\idx (SigScheme.VerifyKeyEd25519 key) l -> (printf "\t%s: %s" (show idx) (show key)) : l) [] (ID.credKeys cuktcKeys)
+  let logNewKeys = Map.foldrWithKey (\idx (SigScheme.VerifyKeyEd25519 key) l -> (printf "\t%s: %s" (show idx) (show key)) : l) [] (ID.credKeys cuktcKeys)
 
   logInfo $
     [ printf "setting the following keys for credential %s on account:" (show cuktcCredId) (showNamedAddress addr) ] ++
@@ -1337,7 +1339,7 @@ processAccountCmd action baseCfgDir verbose backend =
       aukCfg <- getAccountUpdateKeysTransactionCfg baseCfg txOpts f cid
       let txCfg = cuktcTransactionCfg aukCfg
       when verbose $ do
-        runPrinter $ printAccountConfig $ tcEncryptedSigningData txCfg
+        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
         putStrLn ""
 
       let intOpts = toInteractionOpts txOpts
@@ -1353,7 +1355,7 @@ processAccountCmd action baseCfgDir verbose backend =
       aetxCfg <- getAccountEncryptTransactionCfg baseCfg aeTransactionOpts aeAmount
       let txCfg = aeTransactionCfg aetxCfg
       when verbose $ do
-        runPrinter $ printAccountConfig $ tcEncryptedSigningData txCfg
+        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
         putStrLn ""
 
       let intOpts = toInteractionOpts aeTransactionOpts
@@ -1377,7 +1379,7 @@ processAccountCmd action baseCfgDir verbose backend =
       withClient backend $ do
         adtxCfg <- getAccountDecryptTransactionCfg txCfg adAmount secretKey adIndex
         when verbose $ do
-          runPrinter $ printAccountConfig $ tcEncryptedSigningData txCfg
+          runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
           liftIO $ putStrLn ""
 
         let intOpts = toInteractionOpts adTransactionOpts
@@ -1932,7 +1934,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
               unless (fromIntegral idx `Set.member` keySet) $
                 logWarn [printf "Key with index %u (%s) is not authorized to perform this update type." idx (show vk)]
               return (fromIntegral idx, key)
-      keyMap <- OrdMap.fromList <$> mapM keyLU keys
+      keyMap <- Map.fromList <$> mapM keyLU keys
       let ui = Updates.makeUpdateInstruction rawUpdate keyMap
       when verbose $ logInfo ["Generated update instruction:", show ui]
       now <- getCurrentTimeUnix
@@ -2015,7 +2017,7 @@ processBakerCmd action baseCfgDir verbose backend =
       (bakerKeys, txCfg, pl) <- bakerAddTransaction baseCfg txOpts accountKeysFile initialStake autoRestake (ioConfirm intOpts)
 
       when verbose $ do
-        runPrinter $ printAccountConfig $ tcEncryptedSigningData txCfg
+        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
         putStrLn ""
 
       withClient backend $ do
@@ -2237,10 +2239,10 @@ loop v =
   case v of
     Left err       -> liftIO $ putStrLn err
     Right (AE.Object m) ->
-      case Map.lookup "blockParent" m of
+      case HM.lookup "blockParent" m of
         Just (String parent) -> do
           printJSON v
-          case Map.lookup "blockSlot" m of
+          case HM.lookup "blockSlot" m of
             Just (AE.Number x) | x > 0 ->
               getBlockInfo parent >>= loop
             _ -> return () -- Genesis block reached.
@@ -2380,7 +2382,6 @@ processTransaction_ transaction networkId _verbose = do
   tx <- do
     let header = metadata transaction
         sender = thSenderAddress header
-        threshold = fromIntegral $ Map.size accountKeys
     nonce <-
       case thNonce header of
         Nothing -> getBestBlockHash >>= getAccountNonce sender
