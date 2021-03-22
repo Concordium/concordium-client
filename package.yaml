@@ -139,7 +139,7 @@ executables:
     dependencies:
       - optparse-applicative
       - mtl
-      - unordered-containers
+      - containers
       - base
       - concordium-client
       - concordium-base

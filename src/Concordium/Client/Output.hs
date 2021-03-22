@@ -626,6 +626,7 @@ showRejectReason verbose = \case
   Types.NonExistentCredIDs cids -> [i|credential registration ids #{cids} do not exist|]
   Types.RemoveFirstCredential -> [i|attempt to remove the first credential of the account|]
   Types.CredentialHolderDidNotSign -> [i|credential holder did not sign the credential key update|]
+  Types.StakeUnderMinimumThresholdForBaking -> "the desired stake is under the minimum threshold for baking"
 
 -- CONSENSUS
 
