@@ -30,7 +30,8 @@ pipeline {
                       ghc:  
                         windows64-integersimple: 
                           ${GHC_VERSION}:  
-                            url: $(cygpath -w "/GHC/ghc-${GHC_VERSION}-x86_64-unknown-mingw32.tar.xz")
+                            url: https://s3-eu-west-1.amazonaws.com/static-libraries.concordium.com/ghc-8.10.4-x86_64-unknown-mingw32.tar.xz
+                            sha256: 6aa0ea598452e7b439d8ad1cd0cf3d7267317df4b266daf0359b1faabba6a588
                             
                     ghc-variant: integersimple" >> stack.yaml
 
