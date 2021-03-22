@@ -19,7 +19,6 @@ import qualified Concordium.Types as Types
 
 import Control.Monad.Writer
 import qualified Data.Aeson as AE
-import qualified Data.HashMap.Strict as HM
 import qualified Data.Map.Strict as Map
 import Data.Maybe
 import qualified Data.Sequence as Seq
@@ -41,7 +40,7 @@ exampleAddress2 = addr
   where Right addr = IDTypes.addressFromText "4P6vppapjvwAxGf5o1dXUhgwpW3Tvpc6vHj75MJHD6Z3RUmMpJ"
 
 exampleAccountNameMap :: AccountNameMap
-exampleAccountNameMap = HM.fromList [("example", exampleAddress1), ("exampleExtraName", exampleAddress1), ("example2", exampleAddress2)]
+exampleAccountNameMap = Map.fromList [("example", exampleAddress1), ("exampleExtraName", exampleAddress1), ("example2", exampleAddress2)]
 
 accountSpec :: Spec
 accountSpec = describe "account" $ do

@@ -10,7 +10,7 @@ import Control.Monad
 import Control.Monad.Except
 import Control.Exception
 
-import qualified Data.HashMap.Strict as Map
+import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import qualified Data.Aeson as AE
 import Data.Aeson ((.=),(.:),(.:?), (.!=))
@@ -69,9 +69,15 @@ instance AE.FromJSON EncryptedAccountKeyPair where
     case schemeId of
       SigScheme.Ed25519 -> return EncryptedAccountKeyPairEd25519{..}
 
-type AccountKeyMap = Map.HashMap ID.KeyIndex AccountKeyPair
-type EncryptedAccountKeyMap = Map.HashMap ID.KeyIndex EncryptedAccountKeyPair
+-- |Full map of plaintext account signing keys.
+type AccountKeyMap = Map.Map ID.CredentialIndex (Map.Map ID.KeyIndex AccountKeyPair)
+-- |Encrypted analogue of 'AccountKeyMap'
+type EncryptedAccountKeyMap = Map.Map ID.CredentialIndex (Map.Map ID.KeyIndex EncryptedAccountKeyPair)
 type EncryptedAccountEncryptionSecretKey = EncryptedText
+
+-- |Get the number of keys in the key map.
+mapNumKeys :: Map.Map ID.CredentialIndex (Map.Map ID.KeyIndex a) -> Int
+mapNumKeys = sum . fmap Map.size
 
 -- |Information about a given account sufficient to sign transactions.
 -- This includes the plain signing keys.
@@ -79,7 +85,18 @@ data AccountSigningData =
   AccountSigningData
   { asdAddress :: !Types.AccountAddress
   , asdKeys :: !AccountKeyMap
-  , asdThreshold :: !ID.SignatureThreshold }
+  , asdThreshold :: !ID.AccountThreshold }
+  deriving (Show)
+
+
+-- |Selected keys resolved from the account config for the specific interaction.
+-- In contrast to the account config this will only contain the keys the user selected.
+-- The keys are still encrypted. They will only be decrypted when they will be used.
+data EncryptedSigningData =
+  EncryptedSigningData
+  { esdAddress :: !NamedAddress
+  , esdKeys :: !EncryptedAccountKeyMap
+  , esdEncryptionKey :: !(Maybe EncryptedAccountEncryptionSecretKey) }
   deriving (Show)
 
 -- | Test whether the given keypair passes a basic sanity check, signing and
@@ -110,7 +127,7 @@ encryptAccountKeyPair pwd SigScheme.KeyPairEd25519{..} = do
   return EncryptedAccountKeyPairEd25519{..}
 
 encryptAccountKeyMap :: Password -> AccountKeyMap -> IO EncryptedAccountKeyMap
-encryptAccountKeyMap pwd = mapM (encryptAccountKeyPair pwd)
+encryptAccountKeyMap pwd akmap = mapM (mapM (encryptAccountKeyPair pwd)) akmap
 
 -- | Decrypt the given encrypted account keys using the same password for each key.
 decryptAccountKeyMap
@@ -118,7 +135,7 @@ decryptAccountKeyMap
   -> Password
   -> IO (Either String AccountKeyMap)
 decryptAccountKeyMap encryptedKeyMap pwd =
-  runExceptT $ sequence $ Map.mapWithKey (decryptAccountKeyPair pwd) encryptedKeyMap
+  runExceptT $ sequence $ Map.map (sequence . Map.mapWithKey (decryptAccountKeyPair pwd)) encryptedKeyMap
 
 -- |Encrypt, with the given password, the secret key for decrypting encrypted amounts
 encryptAccountEncryptionSecretKey :: Password -> CryptoFFI.ElgamalSecretKey -> IO EncryptedAccountEncryptionSecretKey
