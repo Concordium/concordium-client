@@ -75,6 +75,10 @@ type AccountKeyMap = Map.Map ID.CredentialIndex (Map.Map ID.KeyIndex AccountKeyP
 type EncryptedAccountKeyMap = Map.Map ID.CredentialIndex (Map.Map ID.KeyIndex EncryptedAccountKeyPair)
 type EncryptedAccountEncryptionSecretKey = EncryptedText
 
+-- |Get the number of keys in the key map.
+mapNumKeys :: Map.Map ID.CredentialIndex (Map.Map ID.KeyIndex a) -> Int
+mapNumKeys = sum . fmap Map.size
+
 -- |Information about a given account sufficient to sign transactions.
 -- This includes the plain signing keys.
 data AccountSigningData =

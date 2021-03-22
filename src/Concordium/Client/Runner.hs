@@ -306,8 +306,8 @@ processConfigCmd action baseCfgDir verbose =
         unless (Map.null credDuplicates) $ forM_ (Map.toList keyDuplicates) $ \(cidx, km) -> do  
           unless (Map.null km) $ logWarn [ "the keys for credential "++ show cidx ++" with indices "
                   ++ showMapIdxs km
-                  ++ " can not be added because they already exist",
-                  "Use 'config account update-keys' if you want to update them."]
+                  ++ " cannot be added because they already exist",
+                  "Use 'concordium-client config account update-keys' if you want to update them."]
 
         -- Only write account keys if any non-duplicated keys are added
         case Map.null keyMapNew of
@@ -597,7 +597,7 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
   energyCostFunc <- getEnergyCostFunc encSignData
   let computedCost = case energyCostFunc of
                        Nothing -> Nothing
-                       Just ec -> Just $ ec (foldl (\acc m -> acc + length m) 0 (esdKeys encSignData))
+                       Just ec -> Just $ ec (mapNumKeys (esdKeys encSignData))
   energy <- case (toMaxEnergyAmount txOpts, computedCost) of
               (Nothing, Nothing) -> logFatal ["energy amount not specified"]
               (Nothing, Just c) -> do
@@ -669,7 +669,7 @@ getAccountCfgFromTxOpts baseCfg txOpts = do
         Just t -> Just $ let insertKey c k acc = case Map.lookup c acc of
                               Nothing -> Map.insert c [k] acc
                               Just x -> Map.insert c ([k]++x) acc
-                            in foldl (\acc (c, k) -> insertKey c k acc) Map.empty $ fmap ((\(p1, p2) -> (read . Text.unpack $ p1, read . Text.unpack $ Text.drop 1 p2)) . Text.breakOn ":") $ Text.split (==',') t
+                            in foldl' (\acc (c, k) -> insertKey c k acc) Map.empty $ fmap ((\(p1, p2) -> (read . Text.unpack $ p1, read . Text.unpack $ Text.drop 1 p2)) . Text.breakOn ":") $ Text.split (==',') t
   accCfg <- snd <$> getAccountConfig (toSender txOpts) baseCfg Nothing keysArg Nothing AssumeInitialized
   let keys = acKeys accCfg
   case chosenKeysMaybe of 
@@ -1485,7 +1485,7 @@ moduleDeployEnergyCost wasmMod encSignData = pure . Just . const $
                                   (psize `div` 30)
                                   + (5 + 2 * ((psize + 99) `div` 100) * 50) -- storeModule
 
-        signatureCount = foldl (\acc m -> acc + length m) 0 (esdKeys encSignData)
+        signatureCount = mapNumKeys (esdKeys encSignData)
         payloadSize = Types.payloadSize . Types.encodePayload . Types.DeployModule $ wasmMod
 
 data ModuleDeployTransactionCfg =
@@ -1622,7 +1622,7 @@ processContractCmd action baseCfgDir verbose backend =
                           + 32 -- module ref
                           +  2 + (length $ show citcInitName) -- size length + length of initName
                           +  2 + (BSS.length . Wasm.parameter $ citcParams) -- size length + length of parameter
-            signatureCount = foldl (\acc m -> acc + length m) 0 (esdKeys encSignData) 
+            signatureCount = mapNumKeys (esdKeys encSignData) 
 
         -- |Calculates the minimum energy required for checking the signature of a contract update.
         -- The minimum will not cover the full update, but enough of it, so that a potential 'Not enough energy' error
@@ -1634,7 +1634,7 @@ processContractCmd action baseCfgDir verbose backend =
                           + 16 -- contract address
                           +  2 + (length $ show cutcReceiveName) -- size length + length of receiveName
                           +  2 + (BSS.length . Wasm.parameter $ cutcParams) -- size length + length of the parameter
-            signatureCount = foldl (\acc m -> acc + length m) 0 (esdKeys encSignData) 
+            signatureCount = mapNumKeys (esdKeys encSignData) 
 
 -- |Try to fetch info about the contract and deserialize it from JSON.
 -- Or, log fatally with appropriate error messages if anything goes wrong.

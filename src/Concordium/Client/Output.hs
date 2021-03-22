@@ -90,7 +90,7 @@ printBaseConfig cfg = do
     showEntry showVal (n, a) = [i|    #{n} -> #{a'}|] :: String
       where a' = showVal a
 
-printSelectedKeyConfig :: EncryptedSigningData -> Printer -- TODO: find out if indentation is OK
+printSelectedKeyConfig :: EncryptedSigningData -> Printer
 printSelectedKeyConfig encSignData = do
   tell [ [i|Account configuration:|]
        , [i|- Names:   #{nameListOrNone}|]

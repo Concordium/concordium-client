@@ -84,7 +84,8 @@ thresholdFromStringInform s =
 credentialIndexFromStringInform :: String -> Either String IDTypes.CredentialIndex
 credentialIndexFromStringInform s =
   case readMaybe s :: Maybe Integer of
-    Just a -> Right (IDTypes.CredentialIndex (fromIntegral a))
-    Nothing -> Left errString
-  where errString = "Invalid credential index"
+    Just a | a >= 0 && a <= 255 -> Right (IDTypes.CredentialIndex (fromIntegral a))
+           | a >= 0 -> Left "Credential index must be less than or equal to 255."
+           | otherwise -> Left "Credential index must be non-negative."
+    Nothing -> Left "Credential index must be an integer between 0 and 255 (inclusive)."
 
