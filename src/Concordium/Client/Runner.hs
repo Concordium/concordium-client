@@ -226,7 +226,7 @@ processConfigCmd action baseCfgDir verbose =
             Right a -> return a
         nameAdded <- liftIO $ addAccountNameAndWrite verbose baseCfg name checkedAddr
         logSuccess [[i|module reference #{addr} was successfully named '#{nameAdded}'|]]
-        
+
       ConfigAccountRemove account -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
@@ -265,7 +265,7 @@ processConfigCmd action baseCfgDir verbose =
         -- base config. Checks for duplicates in the names mapping and prompts
         -- the user to give a new name
         (_, skipped) <- foldM addAccountToBaseConfigWithNamePrompts (baseCfg, 0::Int) accCfgs
-        
+
         when (skipExisting && (skipped > 0)) $ logInfo [printf "`%d` account[s] automatically skipped. To overwrite these keys, re-import file without the skip-existing flag, or import them individually with --name" skipped ]
 
         where
@@ -278,11 +278,11 @@ processConfigCmd action baseCfgDir verbose =
             when t $ writeAccountKeys bcfg accCfg verbose
             if skipExisting && (not t) then
               return (bcfg, skipped + 1)
-            else 
+            else
               return (bcfg, skipped)
-        
 
-          
+
+
       ConfigAccountAddKeys addr keysFile -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
@@ -300,11 +300,11 @@ processConfigCmd action baseCfgDir verbose =
         -- let keyMapNew = Map.difference keyMapInput keyMapCurrent
         let credDuplicates = Map.intersection keyMapCurrent keyMapInput
 
-        let keyDuplicates = flip Map.mapWithKey credDuplicates $ \cidx _ -> case (Map.lookup cidx keyMapCurrent, Map.lookup cidx keyMapInput) of 
+        let keyDuplicates = flip Map.mapWithKey credDuplicates $ \cidx _ -> case (Map.lookup cidx keyMapCurrent, Map.lookup cidx keyMapInput) of
               (Just kmCurrent, Just kmInput) -> Map.intersection kmCurrent kmInput
               _ -> Map.empty -- will never happen
 
-        unless (Map.null credDuplicates) $ forM_ (Map.toList keyDuplicates) $ \(cidx, km) -> do  
+        unless (Map.null credDuplicates) $ forM_ (Map.toList keyDuplicates) $ \(cidx, km) -> do
           unless (Map.null km) $ logWarn [ "the keys for credential "++ show cidx ++" with indices "
                   ++ showMapIdxs km
                   ++ " cannot be added because they already exist",
@@ -339,12 +339,12 @@ processConfigCmd action baseCfgDir verbose =
         let credDuplicates = Map.intersection keyMapCurrent keyMapInput
 
         let keyDuplicates = let f cidx _ =
-                                 case (Map.lookup cidx keyMapCurrent, Map.lookup cidx keyMapInput) of 
+                                 case (Map.lookup cidx keyMapCurrent, Map.lookup cidx keyMapInput) of
                                    (Just kmCurrent, Just kmInput) -> Map.intersection kmInput kmCurrent
                                    _ -> Map.empty -- if the credential exists in one but not the other then it won't be updated.
                             in Map.filter (not . Map.null) . Map.mapWithKey f $ credDuplicates
 
-        unless (Map.null keyMapNew) $ forM_ (Map.toList keyMapNew) $ \(cidx, km) -> do  
+        unless (Map.null keyMapNew) $ forM_ (Map.toList keyMapNew) $ \(cidx, km) -> do
           unless (Map.null km) $ logWarn
                               [ "the keys for credential "++ show cidx ++" with indices "
                                 ++ showMapIdxs km
@@ -366,7 +366,7 @@ processConfigCmd action baseCfgDir verbose =
                 unless (Map.null km) $ logInfo [ "the keys for credential "++ show cidx ++" with indices "
                           ++ showMapIdxs km
                           ++ " will be updated on account " ++ Text.unpack addr]
-              let accCfg' = accCfg { acKeys = keyDuplicates } 
+              let accCfg' = accCfg { acKeys = keyDuplicates }
               writeAccountKeys baseCfg' accCfg' verbose
       ConfigAccountRemoveKeys addr cidx idxs -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
@@ -379,7 +379,7 @@ processConfigCmd action baseCfgDir verbose =
         let idxsInput = Set.fromList idxs
         let cKeys = Map.lookup cidx $ acKeys accCfg
 
-        case cKeys of 
+        case cKeys of
           Nothing -> do logWarn
                               ["No credential found with index  "
                                ++ show cidx]
@@ -528,7 +528,7 @@ processTransactionCmd action baseCfgDir verbose backend =
           let intOpts = toInteractionOpts txOpts
           pl <- transferWithScheduleTransactionPayload ttxCfg (ioConfirm intOpts)
           withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
-        True -> do 
+        True -> do
           logWarn ["Scheduled transfers from an account to itself are not allowed."]
           logWarn ["Transaction Cancelled"]
 
@@ -559,6 +559,62 @@ processTransactionCmd action baseCfgDir verbose backend =
         let intOpts = toInteractionOpts txOpts
         pl <- encryptedTransferTransactionPayload ttxCfg (ioConfirm intOpts)
         sendAndTailTransaction_ txCfg pl intOpts
+
+    TransactionRegisterData file txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      rdCfg <- getRegisterDataTransactionCfg baseCfg txOpts file
+      let txCfg = rdtcTransactionCfg rdCfg
+      let nrg = tcEnergy txCfg
+
+      logInfo [[i|Register data from file '#{file}'. Allowing up to #{showNrg nrg} to be spent as transaction fee.|]]
+
+      registerConfirmed <- askConfirmation Nothing
+      when registerConfirmed $ do
+        logInfo ["Registering data..."]
+
+        let intOpts = toInteractionOpts txOpts
+        let pl = registerDataTransactionPayload rdCfg
+
+        withClient backend $ do
+          mTsr <- sendAndTailTransaction txCfg pl intOpts
+          let extractDataRegistered = extractFromTsr $ \case Types.DataRegistered rd -> Just rd
+                                                             _ -> Nothing
+          case extractDataRegistered mTsr of
+            Nothing -> return ()
+            Just (Left err) -> logFatal ["Registering data failed:", err]
+            Just (Right _) -> logSuccess ["Data succesfully registered."]
+
+-- |Construct a transaction config for registering data.
+--  The data is read from the 'FilePath' provided.
+--  Fails if the data can't be read or it violates the size limit checked by 'Types.registeredDataFromBSS'.
+getRegisterDataTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> IO RegisterDataTransactionCfg
+getRegisterDataTransactionCfg baseCfg txOpts dataFile = do
+  bss <- BS.toShort <$> handleReadFile BS.readFile dataFile
+  case Types.registeredDataFromBSS bss of
+    Left err ->
+      logFatal [[i|Failed registering '#{dataFile}': #{err}|]]
+    Right rdtcData -> do
+      rdtcTransactionCfg <- getTransactionCfg baseCfg txOpts $ registerDataEnergyCost rdtcData
+      return RegisterDataTransactionCfg {..}
+    where
+      -- Calculate the energy cost for registering data.
+      registerDataEnergyCost :: Types.RegisteredData -> EncryptedSigningData -> IO (Maybe (Int -> Types.Energy))
+      registerDataEnergyCost rd encSignData = pure . Just . const $
+        Cost.registerDataCost + minimumCost payloadSize signatureCount
+        where
+          signatureCount = mapNumKeys (esdKeys encSignData)
+          payloadSize = Types.payloadSize . Types.encodePayload . Types.RegisterData $ rd
+
+registerDataTransactionPayload :: RegisterDataTransactionCfg -> Types.Payload
+registerDataTransactionPayload RegisterDataTransactionCfg {..} = Types.RegisterData rdtcData
+
+-- |Transaction config for registering data.
+data RegisterDataTransactionCfg =
+  RegisterDataTransactionCfg
+  { -- |Configuration for the transaction.
+    rdtcTransactionCfg :: !TransactionConfig
+    -- |The data to register.
+  , rdtcData :: !Types.RegisteredData }
 
 -- |Poll the transaction state continuously until it is "at least" the provided one.
 -- Note that the "absent" state is considered the "highest" state,
@@ -672,11 +728,11 @@ getAccountCfgFromTxOpts baseCfg txOpts = do
                             in foldl' (\acc (c, k) -> insertKey c k acc) Map.empty $ fmap ((\(p1, p2) -> (read . Text.unpack $ p1, read . Text.unpack $ Text.drop 1 p2)) . Text.breakOn ":") $ Text.split (==',') t
   accCfg <- snd <$> getAccountConfig (toSender txOpts) baseCfg Nothing keysArg Nothing AssumeInitialized
   let keys = acKeys accCfg
-  case chosenKeysMaybe of 
+  case chosenKeysMaybe of
     Nothing -> return EncryptedSigningData{esdKeys=keys, esdAddress = acAddr accCfg, esdEncryptionKey = acEncryptionKey accCfg}
     Just chosenKeys -> do
       let newKeys = Map.intersection keys chosenKeys
-      let filteredKeys = Map.mapWithKey (\c m -> Map.filterWithKey (\k _ -> case Map.lookup c chosenKeys of 
+      let filteredKeys = Map.mapWithKey (\c m -> Map.filterWithKey (\k _ -> case Map.lookup c chosenKeys of
                                                                         Nothing -> False
                                                                         Just keyList -> elem k keyList) m) newKeys
       return EncryptedSigningData{esdKeys=filteredKeys, esdAddress = acAddr accCfg, esdEncryptionKey = acEncryptionKey accCfg}
@@ -1355,7 +1411,7 @@ processAccountCmd action baseCfgDir verbose backend =
         when verbose $ liftIO $ do
           runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
           putStrLn ""
-        
+
         let intOpts = toInteractionOpts txOpts
         pl <- liftIO $ credentialUpdateKeysTransactionPayload aukCfg (ioConfirm intOpts)
         sendAndTailTransaction_ txCfg pl intOpts
@@ -1628,7 +1684,7 @@ processContractCmd action baseCfgDir verbose backend =
                           + 32 -- module ref
                           +  2 + (length $ show citcInitName) -- size length + length of initName
                           +  2 + (BSS.length . Wasm.parameter $ citcParams) -- size length + length of parameter
-            signatureCount = mapNumKeys (esdKeys encSignData) 
+            signatureCount = mapNumKeys (esdKeys encSignData)
 
         -- |Calculates the minimum energy required for checking the signature of a contract update.
         -- The minimum will not cover the full update, but enough of it, so that a potential 'Not enough energy' error
@@ -1640,7 +1696,7 @@ processContractCmd action baseCfgDir verbose backend =
                           + 16 -- contract address
                           +  2 + (length $ show cutcReceiveName) -- size length + length of receiveName
                           +  2 + (BSS.length . Wasm.parameter $ cutcParams) -- size length + length of the parameter
-            signatureCount = mapNumKeys (esdKeys encSignData) 
+            signatureCount = mapNumKeys (esdKeys encSignData)
 
 -- |Try to fetch info about the contract and deserialize it from JSON.
 -- Or, log fatally with appropriate error messages if anything goes wrong.
