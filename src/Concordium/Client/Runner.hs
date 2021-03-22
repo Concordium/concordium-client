@@ -536,7 +536,6 @@ processTransactionCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      -- the 11+ is because the size of the transfer is 2584 bytes (+ header)
       let nrgCost _ = return $ Just $ encryptedTransferEnergyCost
       txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
 
