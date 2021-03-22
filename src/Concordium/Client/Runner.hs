@@ -90,9 +90,8 @@ import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
 import qualified Data.ByteString.Short               as BS (toShort)
 import qualified Data.ByteString.Short               as BSS
-import qualified Data.HashMap.Strict                 as Map
-import qualified Data.HashSet                        as HSet
-import qualified Data.Map                            as OrdMap
+import qualified Data.Map.Strict                     as Map
+import qualified Data.HashMap.Strict                 as HM
 import           Data.Maybe
 import qualified Data.List                           as L
 import qualified Data.Serialize                      as S
@@ -294,22 +293,31 @@ processConfigCmd action baseCfgDir verbose =
         (baseCfg', accCfg) <- getAccountConfigFromAddr addr baseCfg
 
         let keyMapCurrent = acKeys accCfg
-        let keyMapNew = Map.difference keyMapInput keyMapCurrent
-        let keyMapDuplicates = Map.intersection keyMapCurrent keyMapInput
 
-        unless (Map.null keyMapDuplicates) $ logWarn
-                              [ "the keys with indices "
-                                ++ showMapIdxs keyMapDuplicates
-                                ++ " can not be added because they already exist",
-                                "Use 'concordium-client config account update-keys' if you want to update them."]
+        let keyMapNew = flip Map.mapWithKey keyMapInput $ \cidx km -> case Map.lookup cidx keyMapCurrent of
+              Nothing -> km
+              Just kmCurrent -> Map.difference km kmCurrent
+        -- let keyMapNew = Map.difference keyMapInput keyMapCurrent
+        let credDuplicates = Map.intersection keyMapCurrent keyMapInput
+
+        let keyDuplicates = flip Map.mapWithKey credDuplicates $ \cidx _ -> case (Map.lookup cidx keyMapCurrent, Map.lookup cidx keyMapInput) of 
+              (Just kmCurrent, Just kmInput) -> Map.intersection kmCurrent kmInput
+              _ -> Map.empty -- will never happen
+
+        unless (Map.null credDuplicates) $ forM_ (Map.toList keyDuplicates) $ \(cidx, km) -> do  
+          unless (Map.null km) $ logWarn [ "the keys for credential "++ show cidx ++" with indices "
+                  ++ showMapIdxs km
+                  ++ " cannot be added because they already exist",
+                  "Use 'concordium-client config account update-keys' if you want to update them."]
 
         -- Only write account keys if any non-duplicated keys are added
         case Map.null keyMapNew of
           True -> logInfo ["no keys were added"]
           False -> do
-            logInfo ["the keys with indices "
-                     ++ showMapIdxs keyMapNew
-                     ++ " will be added to account " ++ Text.unpack addr]
+            forM_ (Map.toList keyMapNew) $ \(cidx, km) -> do
+              unless (Map.null km) $ logInfo ["the keys for credential "++ show cidx ++" with indices "
+                      ++ showMapIdxs km
+                      ++ " will be added to account " ++ Text.unpack addr]
             let accCfg' = accCfg { acKeys = keyMapNew }
             writeAccountKeys baseCfg' accCfg' verbose
 
@@ -323,31 +331,44 @@ processConfigCmd action baseCfgDir verbose =
         (baseCfg', accCfg) <- getAccountConfigFromAddr addr baseCfg
 
         let keyMapCurrent = acKeys accCfg
-        let keyMapNew = Map.difference keyMapInput keyMapCurrent
-        let keyMapDuplicates = Map.intersection keyMapCurrent keyMapInput
+        -- let keyMapNew = Map.difference keyMapInput keyMapCurrent
+        -- let keyMapDuplicates = Map.intersection keyMapCurrent keyMapInput
+        let keyMapNew = flip Map.mapWithKey keyMapInput $ \cidx km -> case Map.lookup cidx keyMapCurrent of
+              Nothing -> km
+              Just kmCurrent -> Map.difference km kmCurrent
+        let credDuplicates = Map.intersection keyMapCurrent keyMapInput
 
-        unless (Map.null keyMapNew) $ logWarn
-                              [ "the keys with indices "
-                                ++ showMapIdxs keyMapNew
+        let keyDuplicates = let f cidx _ =
+                                 case (Map.lookup cidx keyMapCurrent, Map.lookup cidx keyMapInput) of 
+                                   (Just kmCurrent, Just kmInput) -> Map.intersection kmInput kmCurrent
+                                   _ -> Map.empty -- if the credential exists in one but not the other then it won't be updated.
+                            in Map.filter (not . Map.null) . Map.mapWithKey f $ credDuplicates
+
+        unless (Map.null keyMapNew) $ forM_ (Map.toList keyMapNew) $ \(cidx, km) -> do  
+          unless (Map.null km) $ logWarn
+                              [ "the keys for credential "++ show cidx ++" with indices "
+                                ++ showMapIdxs km
                                 ++ " can not be updated because they do not match existing keys",
                                 "Use 'concordium-client config account add-keys' if you want to add them."]
 
-        case Map.null keyMapDuplicates of
+        case Map.null keyDuplicates of
           True -> logInfo ["no keys were updated"]
           False -> do
-            logWarn [ "the keys with indices "
-                      ++ showMapIdxs keyMapDuplicates
+            forM_ (Map.toList keyDuplicates) $ \(cidx, km) -> do
+              unless (Map.null km) $ logWarn [ "the keys for credential "++ show cidx ++" with indices "
+                      ++ showMapIdxs km
                       ++ " will be updated and can NOT be recovered"]
 
             updateConfirmed <- askConfirmation $ Just "confirm that you want to update the keys"
 
             when updateConfirmed $ do
-              logInfo [ "the keys with indices "
-                        ++ showMapIdxs keyMapDuplicates
-                        ++ " will be updated on account " ++ Text.unpack addr]
-              let accCfg' = accCfg { acKeys = keyMapDuplicates }
+              forM_ (Map.toList keyDuplicates) $ \(cidx, km) -> do
+                unless (Map.null km) $ logInfo [ "the keys for credential "++ show cidx ++" with indices "
+                          ++ showMapIdxs km
+                          ++ " will be updated on account " ++ Text.unpack addr]
+              let accCfg' = accCfg { acKeys = keyDuplicates } 
               writeAccountKeys baseCfg' accCfg' verbose
-      ConfigAccountRemoveKeys addr idxs threshold -> do
+      ConfigAccountRemoveKeys addr cidx idxs -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
@@ -355,33 +376,38 @@ processConfigCmd action baseCfgDir verbose =
 
         (_, accCfg) <- getAccountConfigFromAddr addr baseCfg
 
-        let idxsInput = HSet.fromList idxs
-        let idxsCurrent = Map.keysSet . acKeys $ accCfg
+        let idxsInput = Set.fromList idxs
+        let cKeys = Map.lookup cidx $ acKeys accCfg
 
-        let idxsToRemove = HSet.intersection idxsCurrent idxsInput
-        let idxsNotFound = HSet.difference idxsInput idxsToRemove
+        case cKeys of 
+          Nothing -> do logWarn
+                              ["No credential found with index  "
+                               ++ show cidx]
+          Just keys -> do
+            let idxsCurrent = Map.keysSet keys
 
-        unless (HSet.null idxsNotFound) $ logWarn
-                              ["keys with indices "
-                               ++ showHSetIdxs idxsNotFound
-                               ++ " do not exist and can therefore not be removed"]
+            let idxsToRemove = Set.intersection idxsCurrent idxsInput
+            let idxsNotFound = Set.difference idxsInput idxsToRemove
 
-        case HSet.null idxsToRemove of
-          True -> logInfo ["no keys were removed"]
-          False -> do
-            logWarn [ "the keys with indices "
-                      ++ showHSetIdxs idxsToRemove
-                      ++ " will be removed and can NOT be recovered"]
+            unless (Set.null idxsNotFound) $ logWarn
+                                  ["keys (for credential "++show cidx++") with indices "
+                                  ++ showSetIdxs idxsNotFound
+                                  ++ " do not exist and can therefore not be removed"]
 
-            updateConfirmed <- askConfirmation $ Just "confirm that you want to remove the keys"
+            case Set.null idxsToRemove of
+              True -> logInfo ["no keys were removed"]
+              False -> do
+                logWarn [ "the keys (for credential "++show cidx++") with indices "
+                          ++ showSetIdxs idxsToRemove
+                          ++ " will be removed and can NOT be recovered"]
 
-            when updateConfirmed $ do
-              logInfo [ "the keys with indices "
-                        ++ showHSetIdxs idxsToRemove
-                        ++ " will be removed from account " ++ Text.unpack addr]
+                updateConfirmed <- askConfirmation $ Just "confirm that you want to remove the keys"
 
-              let accCfg' = accCfg { acThreshold = fromMaybe (acThreshold accCfg) threshold }
-              removeAccountKeys baseCfg accCfg' (HSet.toList idxsToRemove) verbose
+                when updateConfirmed $ do
+                  logInfo [ "the keys (for credential "++show cidx++") with indices "
+                            ++ showSetIdxs idxsToRemove
+                            ++ " will be removed from account " ++ Text.unpack addr]
+                  removeAccountKeys baseCfg accCfg cidx (Set.toList idxsToRemove) verbose
       ConfigAccountRemoveName name -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
@@ -394,35 +420,11 @@ processConfigCmd action baseCfgDir verbose =
           Just currentAddr -> do
             logInfo [[i|removing mapping from '#{name}' to address '#{currentAddr}'|]]
             void $ removeAccountNameAndWrite baseCfg name verbose
-      ConfigAccountSetThreshold addr threshold -> do
-        baseCfg <- getBaseConfig baseCfgDir verbose
-        when verbose $ do
-          runPrinter $ printBaseConfig baseCfg
-          putStrLn ""
-
-        let accCfgDir = bcAccountCfgDir baseCfg
-
-        (_, accCfg) <- getAccountConfigFromAddr addr baseCfg
-
-        -- A valid threshold is between 1 and the number of keys, both inclusive.
-        -- The parser checks that the threshold is at least 1.
-        -- Check that the new threshold is at most the amount of keys:
-        let numberOfKeys = Map.size (acKeys accCfg)
-        if numberOfKeys < fromIntegral threshold then
-          logWarn ["the threshold can at most be the number of keys: " ++ show numberOfKeys]
-        else
-          do
-            logWarn ["the threshold will be set to " ++ show (toInteger threshold)]
-
-            let accCfg' = accCfg { acThreshold = threshold }
-            updateConfirmed <- askConfirmation $ Just "confirm that you want change the threshold"
-
-            when updateConfirmed (writeThresholdFile accCfgDir accCfg' verbose)
 
 
 
   where showMapIdxs = showIdxs . Map.keys
-        showHSetIdxs = showIdxs . HSet.toList
+        showSetIdxs = showIdxs . Set.toList
         showIdxs = L.intercalate ", " . map show . L.sort
 
         getKeyMapInput :: FilePath -> IO EncryptedAccountKeyMap
@@ -501,7 +503,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       ttxCfg <- getTransferTransactionCfg baseCfg txOpts receiver amount
       let txCfg = ttcTransactionCfg ttxCfg
       when verbose $ do
-        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
         putStrLn ""
 
       let intOpts = toInteractionOpts txOpts
@@ -516,10 +518,10 @@ processTransactionCmd action baseCfgDir verbose backend =
       ttxCfg <- getTransferWithScheduleTransactionCfg baseCfg txOpts receiver schedule
       let txCfg = twstcTransactionCfg ttxCfg
       when verbose $ do
-        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
         putStrLn ""
       -- Check that sending and receiving accounts are not the same
-      let fromAddr = naAddr $ acAddr ( tcAccountCfg txCfg)
+      let fromAddr = naAddr $ esdAddress ( tcEncryptedSigningData txCfg)
       let toAddr = naAddr $ twstcReceiver ttxCfg
       case fromAddr == toAddr of
         False -> do
@@ -540,9 +542,9 @@ processTransactionCmd action baseCfgDir verbose backend =
       txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
 
       encryptedSecretKey <-
-          case acEncryptionKey . tcAccountCfg $ txCfg of
+          case esdEncryptionKey . tcEncryptedSigningData $ txCfg of
             Nothing ->
-              logFatal ["Missing account encryption secret key for account: " ++ show (acAddr . tcAccountCfg $ txCfg)]
+              logFatal ["Missing account encryption secret key for account: " ++ show (esdAddress . tcEncryptedSigningData $ txCfg)]
             Just x -> return x
       secretKey <- decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey `withLogFatalIO` ("Couldn't decrypt account encryption secret key: " ++)
 
@@ -551,7 +553,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       withClient backend $ do
         ttxCfg <- getEncryptedTransferTransactionCfg txCfg receiverAcc amount index secretKey
         liftIO $ when verbose $ do
-          runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+          runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
           putStrLn ""
 
         let intOpts = toInteractionOpts txOpts
@@ -631,12 +633,12 @@ awaitState t s hash = do
 type ComputeEnergyCost = Int -> Types.Energy
 
 -- |Function for computing a cost function based on the resolved account config.
-type GetComputeEnergyCost = AccountConfig -> IO (Maybe ComputeEnergyCost)
+type GetComputeEnergyCost = EncryptedSigningData -> IO (Maybe ComputeEnergyCost)
 
 -- |Resolved configuration common to all transaction types.
 data TransactionConfig =
   TransactionConfig
-  { tcAccountCfg :: AccountConfig
+  { tcEncryptedSigningData :: EncryptedSigningData
   , tcNonce :: Maybe Types.Nonce
   , tcEnergy :: Types.Energy
   , tcExpiry :: Types.TransactionExpiryTime }
@@ -647,11 +649,11 @@ data TransactionConfig =
 -- If the energy allocation is too low, the user is prompted to increase it.
 getTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> GetComputeEnergyCost -> IO TransactionConfig
 getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
-  accCfg <- getAccountCfgFromTxOpts baseCfg txOpts
-  energyCostFunc <- getEnergyCostFunc accCfg
+  encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
+  energyCostFunc <- getEnergyCostFunc encSignData
   let computedCost = case energyCostFunc of
                        Nothing -> Nothing
-                       Just ec -> Just $ ec (length $ acKeys accCfg)
+                       Just ec -> Just $ ec (mapNumKeys (esdKeys encSignData))
   energy <- case (toMaxEnergyAmount txOpts, computedCost) of
               (Nothing, Nothing) -> logFatal ["energy amount not specified"]
               (Nothing, Just c) -> do
@@ -665,7 +667,7 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
   warnSuspiciousExpiry expiry now
 
   return TransactionConfig
-    { tcAccountCfg = accCfg
+    { tcEncryptedSigningData = encSignData
     , tcNonce = toNonce txOpts
     , tcEnergy = energy
     , tcExpiry = expiry }
@@ -685,14 +687,14 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
 -- Used for transactions where a specification of maxEnergy is required.
 getRequiredEnergyTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> IO TransactionConfig
 getRequiredEnergyTransactionCfg baseCfg txOpts = do
-  accCfg <- getAccountCfgFromTxOpts baseCfg txOpts
+  encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
   let energy = toMaxEnergyAmount txOpts
   now <- getCurrentTimeUnix
   expiry <- getExpiryArg "expiry" now $ toExpiration txOpts
   warnSuspiciousExpiry expiry now
 
   return TransactionConfig
-    { tcAccountCfg = accCfg
+    { tcEncryptedSigningData = encSignData
     , tcNonce = toNonce txOpts
     , tcEnergy = energy
     , tcExpiry = expiry }
@@ -711,13 +713,30 @@ warnSuspiciousExpiry expiryArg now
     logWarn [ "expiration time is in more than one hour" ]
   | otherwise = return ()
 
--- |Get accountCfg from the config folder or logFatal if the keys are not provided in txOpts.
-getAccountCfgFromTxOpts :: BaseConfig -> TransactionOpts energyOrMaybe -> IO AccountConfig
+-- |Get accountCfg from the config folder and return EncryptedSigningData or logFatal if the keys are not provided in txOpts.
+getAccountCfgFromTxOpts :: BaseConfig -> TransactionOpts energyOrMaybe -> IO EncryptedSigningData
 getAccountCfgFromTxOpts baseCfg txOpts = do
   keysArg <- case toKeys txOpts of
                Nothing -> return Nothing
                Just filePath -> AE.eitherDecodeFileStrict filePath `withLogFatalIO` ("cannot decode keys: " ++)
-  snd <$> getAccountConfig (toSender txOpts) baseCfg Nothing keysArg Nothing AssumeInitialized
+  let chosenKeysText = toSigners txOpts
+  let chosenKeysMaybe :: Maybe (Map.Map ID.CredentialIndex [ID.KeyIndex]) = case chosenKeysText of
+        Nothing -> Nothing
+        Just t -> Just $ let insertKey c k acc = case Map.lookup c acc of
+                              Nothing -> Map.insert c [k] acc
+                              Just x -> Map.insert c ([k]++x) acc
+                            in foldl' (\acc (c, k) -> insertKey c k acc) Map.empty $ fmap ((\(p1, p2) -> (read . Text.unpack $ p1, read . Text.unpack $ Text.drop 1 p2)) . Text.breakOn ":") $ Text.split (==',') t
+  accCfg <- snd <$> getAccountConfig (toSender txOpts) baseCfg Nothing keysArg Nothing AssumeInitialized
+  let keys = acKeys accCfg
+  case chosenKeysMaybe of 
+    Nothing -> return EncryptedSigningData{esdKeys=keys, esdAddress = acAddr accCfg, esdEncryptionKey = acEncryptionKey accCfg}
+    Just chosenKeys -> do
+      let newKeys = Map.intersection keys chosenKeys
+      let filteredKeys = Map.mapWithKey (\c m -> Map.filterWithKey (\k _ -> case Map.lookup c chosenKeys of 
+                                                                        Nothing -> False
+                                                                        Just keyList -> elem k keyList) m) newKeys
+      return EncryptedSigningData{esdKeys=filteredKeys, esdAddress = acAddr accCfg, esdEncryptionKey = acEncryptionKey accCfg}
+
 
 -- |Resolved configuration for a transfer transaction.
 data TransferTransactionConfig =
@@ -787,7 +806,7 @@ data EncryptedTransferTransactionConfig =
 
 getEncryptedTransferTransactionCfg :: TransactionConfig -> NamedAddress -> Types.Amount -> Maybe Int -> ElgamalSecretKey -> ClientMonad IO EncryptedTransferTransactionConfig
 getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx secretKey = do
-  let senderAddr = acAddress . tcAccountCfg $ ettTransactionCfg
+  let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ ettTransactionCfg
 
   -- get encrypted amounts for the sender
   (bbHash, infoValue) <- logFatalOnError =<< withBestBlockHash Nothing (\bbHash -> ((bbHash,) <$>) <$> getAccountInfo (Text.pack . show $ senderAddr) bbHash)
@@ -843,7 +862,7 @@ data BakerRemoveTransactionConfig =
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
 getBakerRemoveTransactionCfg :: TransactionConfig -> ClientMonad IO BakerRemoveTransactionConfig
 getBakerRemoveTransactionCfg txCfg= do
-  let senderAddr = acAddress . tcAccountCfg $ txCfg
+  let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
   AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
   case airBaker of
     Nothing -> logFatal ["This account doesn't have an active baker so it cannot request a baker removal."]
@@ -862,7 +881,7 @@ data BakerUpdateStakeTransactionConfig =
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
 getBakerUpdateStakeTransactionCfg :: TransactionConfig -> Types.Amount -> ClientMonad IO BakerUpdateStakeTransactionConfig
 getBakerUpdateStakeTransactionCfg txCfg newAmount = do
-  let senderAddr = acAddress . tcAccountCfg $ txCfg
+  let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
   AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
   when (isNothing airBaker) $ logFatal [[i|Account #{senderAddr} is not a baker, so cannot update its stake.|]]
   when (airAmount < newAmount) $ logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the new amount requested to be staked (#{showGtu newAmount}).|]]
@@ -887,7 +906,7 @@ getAccountInfoOrDie senderAddr = do
 
 getBakerUpdateRestakeTransactionCfg :: TransactionConfig -> Bool -> ClientMonad IO BakerUpdateRestakeTransactionConfig
 getBakerUpdateRestakeTransactionCfg txCfg newRestake = do
-  let senderAddr = acAddress . tcAccountCfg $ txCfg
+  let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
   AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
   when (isNothing airBaker) $ logFatal [[i|Account #{senderAddr} is not a baker, so cannot update its stake.|]]
   return BakerUpdateRestakeTransactionConfig
@@ -941,7 +960,7 @@ getAccountEncryptTransactionCfg baseCfg txOpts aeAmount = do
 -- balance of an account.
 getAccountDecryptTransactionCfg :: TransactionConfig -> Types.Amount -> ElgamalSecretKey -> Maybe Int -> ClientMonad IO AccountDecryptTransactionConfig
 getAccountDecryptTransactionCfg adTransactionCfg adAmount secretKey idx = do
-  let senderAddr = acAddress . tcAccountCfg $ adTransactionCfg
+  let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ adTransactionCfg
   (bbHash, infoValue) <- logFatalOnError =<< withBestBlockHash Nothing (\bbh -> ((bbh, ) <$>) <$> getAccountInfo (Text.pack . show $ senderAddr) bbh)
   case AE.fromJSON infoValue of
     AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
@@ -994,7 +1013,7 @@ transferTransactionPayload ttxCfg confirm = do
         { ttcTransactionCfg = TransactionConfig
                               { tcEnergy = energy
                               , tcExpiry = expiryTs
-                              , tcAccountCfg = AccountConfig { acAddr = fromAddress } }
+                              , tcEncryptedSigningData = EncryptedSigningData { esdAddress = fromAddress } }
         , ttcAmount = amount
         , ttcReceiver = toAddress }
         = ttxCfg
@@ -1016,7 +1035,7 @@ transferWithScheduleTransactionPayload ttxCfg confirm = do
         { twstcTransactionCfg = TransactionConfig
                               { tcEnergy = energy
                               , tcExpiry = expiryTs
-                              , tcAccountCfg = AccountConfig { acAddr = fromAddress } }
+                              , tcEncryptedSigningData = EncryptedSigningData { esdAddress = fromAddress } }
         , twstcSchedule = schedule
         , twstcReceiver = toAddress }
         = ttxCfg
@@ -1036,7 +1055,7 @@ encryptedTransferTransactionPayload EncryptedTransferTransactionConfig{..} confi
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
-        , tcAccountCfg = AccountConfig { acAddr = addr } }
+        , tcEncryptedSigningData = EncryptedSigningData { esdAddress = addr } }
         = ettTransactionCfg
 
   logInfo
@@ -1059,7 +1078,7 @@ bakerAddTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy)
                     -> Bool -- ^Whether to confirm before sending or not.
                     -> IO (BakerKeys, TransactionConfig, Types.Payload)
 bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm = do
-  accCfg <- getAccountCfgFromTxOpts baseCfg txOpts
+  encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
   bakerKeys <- eitherDecodeFileStrict f >>= getFromJson
 
   let electionSignKey = bkElectionSignKey bakerKeys
@@ -1070,7 +1089,7 @@ bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm
       abSignatureVerifyKey = bkSigVerifyKey bakerKeys
       abAggregationVerifyKey = bkAggrVerifyKey bakerKeys
 
-  let senderAddress = acAddress accCfg
+  let senderAddress = naAddr $ esdAddress encSignData
 
   let challenge = Types.addBakerChallenge senderAddress abElectionVerifyKey abSignatureVerifyKey abAggregationVerifyKey
   abProofElection <- Proofs.proveDlog25519VRF challenge (VRF.KeyPair electionSignKey abElectionVerifyKey) `except` "cannot produce VRF key proof"
@@ -1082,7 +1101,7 @@ bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm
 
   txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
 
-  logSuccess [ printf "adding baker with account %s" (show (acAddress tcAccountCfg))
+  logSuccess [ printf "adding baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
              , printf "initial stake will be %s GTU" (Types.amountToString batcBakingStake)
              , if batcRestakeEarnings then "Rewards will be automatically added to the baking stake." else "Rewards will _not_ be automatically added to the baking stake."
              , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy) ]
@@ -1151,10 +1170,10 @@ credentialUpdateKeysTransactionPayload CredentialUpdateKeysTransactionCfg{..} co
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
-        , tcAccountCfg = AccountConfig { acAddr = addr } }
+        , tcEncryptedSigningData = EncryptedSigningData { esdAddress = addr } }
         = cuktcTransactionCfg
 
-  let logNewKeys = OrdMap.foldrWithKey (\idx (SigScheme.VerifyKeyEd25519 key) l -> (printf "\t%s: %s" (show idx) (show key)) : l) [] (ID.credKeys cuktcKeys)
+  let logNewKeys = Map.foldrWithKey (\idx (SigScheme.VerifyKeyEd25519 key) l -> (printf "\t%s: %s" (show idx) (show key)) : l) [] (ID.credKeys cuktcKeys)
 
   logInfo $
     [ printf "setting the following keys for credential %s on account:" (show cuktcCredId) (showNamedAddress addr) ] ++
@@ -1174,7 +1193,7 @@ accountEncryptTransactionPayload AccountEncryptTransactionConfig{..} confirm = d
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
-        , tcAccountCfg = AccountConfig { acAddr = addr } }
+        , tcEncryptedSigningData = EncryptedSigningData { esdAddress = addr } }
         = aeTransactionCfg
 
 
@@ -1194,7 +1213,7 @@ accountDecryptTransactionPayload AccountDecryptTransactionConfig{..} confirm = d
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
-        , tcAccountCfg = AccountConfig { acAddr = addr } }
+        , tcEncryptedSigningData = EncryptedSigningData { esdAddress = addr } }
         = adTransactionCfg
 
   logInfo $
@@ -1224,13 +1243,13 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
         { tcEnergy = energy
         , tcExpiry = expiry
         , tcNonce = n
-        , tcAccountCfg = AccountConfig { acAddr = NamedAddress { .. }, .. }
+        , tcEncryptedSigningData = EncryptedSigningData { esdAddress = NamedAddress{..}, .. }
         } = txCfg
   nonce <- getNonce naAddr n confirmNonce
   accountKeyMap <- case maybeAccKeys of
                      Just acKeys' -> return acKeys'
-                     Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive acKeys (Just acThreshold) Nothing
-  let tx = encodeAndSignTransaction pl naAddr energy nonce expiry accountKeyMap acThreshold
+                     Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys (Nothing) Nothing
+  let tx = encodeAndSignTransaction pl naAddr energy nonce expiry accountKeyMap
 
   sendTransactionToBaker tx defaultNetId >>= \case
     Left err -> fail err
@@ -1380,17 +1399,17 @@ processAccountCmd action baseCfgDir verbose backend =
         putStrLn ""
 
       accCfg <- liftIO $ getAccountCfgFromTxOpts baseCfg txOpts
-      let senderAddress = acAddress accCfg
+      let senderAddress = naAddr $ esdAddress accCfg
 
       withClient backend $ do
         accInfo <- getAccountInfoOrDie senderAddress
-        aukCfg <- liftIO $ getAccountUpdateKeysTransactionCfg baseCfg txOpts f cid (OrdMap.size (airCredentials accInfo))
+        aukCfg <- liftIO $ getAccountUpdateKeysTransactionCfg baseCfg txOpts f cid (Map.size (airCredentials accInfo))
         let txCfg = cuktcTransactionCfg aukCfg
 
         -- TODO: Check that the credential exists on the chain before making the update.
 
         when verbose $ liftIO $ do
-          runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+          runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
           putStrLn ""
         
         let intOpts = toInteractionOpts txOpts
@@ -1406,7 +1425,7 @@ processAccountCmd action baseCfgDir verbose backend =
       aetxCfg <- getAccountEncryptTransactionCfg baseCfg aeTransactionOpts aeAmount
       let txCfg = aeTransactionCfg aetxCfg
       when verbose $ do
-        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
         putStrLn ""
 
       let intOpts = toInteractionOpts aeTransactionOpts
@@ -1422,13 +1441,13 @@ processAccountCmd action baseCfgDir verbose backend =
       let nrgCost _ = return $ Just $  accountDecryptEnergyCost
       txCfg <- liftIO (getTransactionCfg baseCfg adTransactionOpts nrgCost)
 
-      encryptedSecretKey <- maybe (logFatal ["Missing account encryption secret key for account: " ++ show (acAddr . tcAccountCfg $ txCfg)]) return (acEncryptionKey . tcAccountCfg $ txCfg)
+      encryptedSecretKey <- maybe (logFatal ["Missing account encryption secret key for account: " ++ show (esdAddress . tcEncryptedSigningData $ txCfg)]) return (esdEncryptionKey . tcEncryptedSigningData $ txCfg)
       secretKey <- either (\e -> logFatal ["Couldn't decrypt account encryption secret key: " ++ e]) return =<< decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey
 
       withClient backend $ do
         adtxCfg <- getAccountDecryptTransactionCfg txCfg adAmount secretKey adIndex
         when verbose $ do
-          runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+          runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
           liftIO $ putStrLn ""
 
         let intOpts = toInteractionOpts adTransactionOpts
@@ -1523,12 +1542,12 @@ getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
   txCfg <- getTransactionCfg baseCfg txOpts $ moduleDeployEnergyCost wasmModule
   return $ ModuleDeployTransactionCfg txCfg wasmModule
 
--- |Calcuate the energy cost of deploying a module.
-moduleDeployEnergyCost :: Wasm.WasmModule -> AccountConfig -> IO (Maybe (Int -> Types.Energy))
-moduleDeployEnergyCost wasmMod accCfg = pure . Just . const $
+-- |Calculate the energy cost of deploying a module.
+moduleDeployEnergyCost :: Wasm.WasmModule -> EncryptedSigningData -> IO (Maybe (Int -> Types.Energy))
+moduleDeployEnergyCost wasmMod encSignData = pure . Just . const $
   Cost.deployModuleCost (fromIntegral payloadSize) + minimumCost payloadSize signatureCount
   where
-        signatureCount = fromIntegral . acThreshold $ accCfg
+        signatureCount = mapNumKeys (esdKeys encSignData)
         payloadSize = Types.payloadSize . Types.encodePayload . Types.DeployModule $ wasmMod
 
 data ModuleDeployTransactionCfg =
@@ -1575,7 +1594,7 @@ processContractCmd action baseCfgDir verbose backend =
       let energy = tcEnergy txCfg
       let expiryTs = tcExpiry txCfg
 
-      let minEnergy = contractInitMinimumEnergy ciCfg (tcAccountCfg txCfg)
+      let minEnergy = contractInitMinimumEnergy ciCfg (tcEncryptedSigningData txCfg)
       when (energy < minEnergy) $ logFatal [ "insufficient energy provided"
                                            , [iii|to verify the transaction signature #{showNrg minEnergy} is needed,
                                                   and additional energy is needed to complete the initialization|]]
@@ -1611,7 +1630,7 @@ processContractCmd action baseCfgDir verbose backend =
       let energy = tcEnergy txCfg
       let expiryTs = tcExpiry txCfg
 
-      let minEnergy = contractUpdateMinimumEnergy cuCfg (tcAccountCfg txCfg)
+      let minEnergy = contractUpdateMinimumEnergy cuCfg (tcEncryptedSigningData txCfg)
       when (energy < minEnergy) $ logFatal [ "insufficient energy provided"
                                            , [iii|to verify the transaction signature #{showNrg minEnergy} is needed,
                                                   and additional energy is needed to complete the update|]]
@@ -1658,26 +1677,26 @@ processContractCmd action baseCfgDir verbose backend =
         -- |Calculates the minimum energy required for checking the signature of a contract initialization.
         -- The minimum will not cover the full initialization, but enough of it, so that a potential 'Not enough energy' error
         -- can be shown.
-        contractInitMinimumEnergy :: ContractInitTransactionCfg -> AccountConfig -> Types.Energy
-        contractInitMinimumEnergy ContractInitTransactionCfg{..} accCfg = minimumCost (fromIntegral payloadSize) signatureCount
+        contractInitMinimumEnergy :: ContractInitTransactionCfg -> EncryptedSigningData -> Types.Energy
+        contractInitMinimumEnergy ContractInitTransactionCfg{..} encSignData = minimumCost (fromIntegral payloadSize) signatureCount
           where
             payloadSize =    1 -- tag
                           + 32 -- module ref
                           +  2 + (length $ show citcInitName) -- size length + length of initName
                           +  2 + (BSS.length . Wasm.parameter $ citcParams) -- size length + length of parameter
-            signatureCount = fromIntegral . acThreshold $ accCfg
+            signatureCount = mapNumKeys (esdKeys encSignData) 
 
         -- |Calculates the minimum energy required for checking the signature of a contract update.
         -- The minimum will not cover the full update, but enough of it, so that a potential 'Not enough energy' error
         -- can be shown.
-        contractUpdateMinimumEnergy :: ContractUpdateTransactionCfg -> AccountConfig -> Types.Energy
-        contractUpdateMinimumEnergy ContractUpdateTransactionCfg{..} accCfg = minimumCost (fromIntegral payloadSize) signatureCount
+        contractUpdateMinimumEnergy :: ContractUpdateTransactionCfg -> EncryptedSigningData -> Types.Energy
+        contractUpdateMinimumEnergy ContractUpdateTransactionCfg{..} encSignData = minimumCost (fromIntegral payloadSize) signatureCount
           where
             payloadSize =    1 -- tag
                           + 16 -- contract address
                           +  2 + (length $ show cutcReceiveName) -- size length + length of receiveName
                           +  2 + (BSS.length . Wasm.parameter $ cutcParams) -- size length + length of the parameter
-            signatureCount = fromIntegral . acThreshold $ accCfg
+            signatureCount = mapNumKeys (esdKeys encSignData) 
 
 -- |Try to fetch info about the contract and deserialize it from JSON.
 -- Or, log fatally with appropriate error messages if anything goes wrong.
@@ -1978,7 +1997,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
               unless (fromIntegral idx `Set.member` keySet) $
                 logWarn [printf "Key with index %u (%s) is not authorized to perform this update type." idx (show vk)]
               return (fromIntegral idx, key)
-      keyMap <- OrdMap.fromList <$> mapM keyLU keys
+      keyMap <- Map.fromList <$> mapM keyLU keys
       let ui = Updates.makeUpdateInstruction rawUpdate keyMap
       when verbose $ logInfo ["Generated update instruction:", show ui]
       now <- getCurrentTimeUnix
@@ -2061,11 +2080,11 @@ processBakerCmd action baseCfgDir verbose backend =
       (bakerKeys, txCfg, pl) <- bakerAddTransaction baseCfg txOpts accountKeysFile initialStake autoRestake (ioConfirm intOpts)
 
       when verbose $ do
-        runPrinter $ printAccountConfig $ tcAccountCfg txCfg
+        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
         putStrLn ""
 
       withClient backend $ do
-         let senderAddr = acAddress . tcAccountCfg $ txCfg
+         let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
          AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
          case airBaker of
            Just AccountInfoBakerResult{..} -> logFatal [[i|Account is already a baker with ID #{aibiIdentity abirAccountBakerInfo}.|]]
@@ -2164,9 +2183,9 @@ processBakerCmd action baseCfgDir verbose backend =
 -- |Convert 'baker set-keys' transaction config into a valid payload.
 bakerSetKeysTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> Bool -> ClientMonad IO (BakerKeys, TransactionConfig, Types.Payload)
 bakerSetKeysTransaction baseCfg txOpts fp confirm = do
-  accCfg <- liftIO $ getAccountCfgFromTxOpts baseCfg txOpts
+  encSignData <- liftIO $ getAccountCfgFromTxOpts baseCfg txOpts
 
-  let senderAddress = acAddress accCfg
+  let senderAddress = naAddr $ esdAddress encSignData
 
 
   AccountInfoResult{..} <- getAccountInfoOrDie senderAddress
@@ -2283,10 +2302,10 @@ loop v =
   case v of
     Left err       -> liftIO $ putStrLn err
     Right (AE.Object m) ->
-      case Map.lookup "blockParent" m of
+      case HM.lookup "blockParent" m of
         Just (String parent) -> do
           printJSON v
-          case Map.lookup "blockSlot" m of
+          case HM.lookup "blockSlot" m of
             Just (AE.Number x) | x > 0 ->
               getBlockInfo parent >>= loop
             _ -> return () -- Genesis block reached.
@@ -2426,7 +2445,6 @@ processTransaction_ transaction networkId _verbose = do
   tx <- do
     let header = metadata transaction
         sender = thSenderAddress header
-        threshold = fromIntegral $ Map.size accountKeys
     nonce <-
       case thNonce header of
         Nothing -> getBestBlockHash >>= getAccountNonce sender
@@ -2439,7 +2457,6 @@ processTransaction_ transaction networkId _verbose = do
       nonce
       (thExpiry header)
       accountKeys
-      threshold
 
   sendTransactionToBaker tx networkId >>= \case
     Left err -> fail $ show err
@@ -2496,9 +2513,8 @@ encodeAndSignTransaction ::
   -> Types.Nonce
   -> Types.TransactionExpiryTime
   -> AccountKeyMap
-  -> ID.SignatureThreshold
   -> Types.BareBlockItem
-encodeAndSignTransaction txPayload sender energy nonce expiry accKeys threshold = Types.NormalTransaction $
+encodeAndSignTransaction txPayload sender energy nonce expiry accKeys = Types.NormalTransaction $
   let encPayload = Types.encodePayload txPayload
       header = Types.TransactionHeader{
         thSender = sender,
@@ -2507,5 +2523,5 @@ encodeAndSignTransaction txPayload sender energy nonce expiry accKeys threshold 
         thEnergyAmount = energy,
         thExpiry = expiry
       }
-      keys = take (fromIntegral threshold) . L.sortOn fst . Map.toList $ accKeys
-  in Types.signTransaction [(0, keys)] header encPayload
+      keys = Map.toList $ fmap Map.toList accKeys
+  in Types.signTransaction keys header encPayload

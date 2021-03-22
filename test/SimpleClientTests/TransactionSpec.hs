@@ -11,7 +11,7 @@ import qualified Concordium.Types.Execution as Types
 import SimpleClientTests.QueryTransaction
 
 import Control.Monad.Writer
-import Data.HashMap.Strict as M
+import Data.Map.Strict as Map
 import Data.Text (Text)
 
 import Test.Hspec hiding (pending)
@@ -90,10 +90,10 @@ outcomeFailure = Types.TransactionSummary
                  , Types.tsIndex = 0 }
 
 received :: TransactionStatusResult
-received = TransactionStatusResult { tsrState = Received, tsrResults = M.empty }
+received = TransactionStatusResult { tsrState = Received, tsrResults = Map.empty }
 
 absent :: TransactionStatusResult
-absent = TransactionStatusResult { tsrState = Absent, tsrResults = M.empty }
+absent = TransactionStatusResult { tsrState = Absent, tsrResults = Map.empty }
 
 committedWithOutcomes :: TransactionBlockResults -> TransactionStatusResult
 committedWithOutcomes rs = TransactionStatusResult { tsrState = Committed, tsrResults = rs }
@@ -102,22 +102,22 @@ finalizedWithOutcome :: TransactionBlockResults -> TransactionStatusResult
 finalizedWithOutcome rs = TransactionStatusResult { tsrState = Finalized, tsrResults = rs }
 
 committedOneSuccessfulOutcome :: TransactionStatusResult
-committedOneSuccessfulOutcome = committedWithOutcomes $ M.singleton exampleBlockHash1 outcomeSuccess1a
+committedOneSuccessfulOutcome = committedWithOutcomes $ Map.singleton exampleBlockHash1 outcomeSuccess1a
 
 committedOneFailedOutcome :: TransactionStatusResult
-committedOneFailedOutcome = committedWithOutcomes $ M.singleton exampleBlockHash4 outcomeFailure
+committedOneFailedOutcome = committedWithOutcomes $ Map.singleton exampleBlockHash4 outcomeFailure
 
 committedTwoIdenticalSuccessfulOutcomes :: TransactionStatusResult
-committedTwoIdenticalSuccessfulOutcomes = committedWithOutcomes $ M.fromList [(exampleBlockHash1, outcomeSuccess1a), (exampleBlockHash2, outcomeSuccess1b)]
+committedTwoIdenticalSuccessfulOutcomes = committedWithOutcomes $ Map.fromList [(exampleBlockHash1, outcomeSuccess1a), (exampleBlockHash2, outcomeSuccess1b)]
 
 committedTwoDifferentSuccessfulOutcomes :: TransactionStatusResult
-committedTwoDifferentSuccessfulOutcomes = committedWithOutcomes $ M.fromList [(exampleBlockHash1, outcomeSuccess1a), (exampleBlockHash3, outcomeSuccess2)]
+committedTwoDifferentSuccessfulOutcomes = committedWithOutcomes $ Map.fromList [(exampleBlockHash1, outcomeSuccess1a), (exampleBlockHash3, outcomeSuccess2)]
 
 committedSuccessfulAndFailureOutcomes :: TransactionStatusResult
-committedSuccessfulAndFailureOutcomes = committedWithOutcomes $ M.fromList [(exampleBlockHash1, outcomeSuccess1a), (exampleBlockHash4, outcomeFailure)]
+committedSuccessfulAndFailureOutcomes = committedWithOutcomes $ Map.fromList [(exampleBlockHash1, outcomeSuccess1a), (exampleBlockHash4, outcomeFailure)]
 
 finalized :: TransactionStatusResult
-finalized = finalizedWithOutcome $ M.singleton exampleBlockHash1 outcomeSuccess1a
+finalized = finalizedWithOutcome $ Map.singleton exampleBlockHash1 outcomeSuccess1a
 
 initQuery :: TransactionState -> TestTransactionStatusQuery TransactionStatusResult
 initQuery s = awaitState 0 s exampleTransactionHash
@@ -258,14 +258,14 @@ printTransactionStatusTests = describe "print transaction status" $ do
   -- Unexpected cases.
   describe "committed with no outcomes" $
     specify "correct output" $
-      p TransactionStatusResult { tsrState = Committed, tsrResults = M.empty } `shouldBe`
+      p TransactionStatusResult { tsrState = Committed, tsrResults = Map.empty } `shouldBe`
         [ "Transaction is committed, but no block information was received - this should never happen!" ]
   describe "finalized with no outcomes" $
     specify "correct output" $
-      p TransactionStatusResult { tsrState = Finalized, tsrResults = M.empty } `shouldBe`
+      p TransactionStatusResult { tsrState = Finalized, tsrResults = Map.empty } `shouldBe`
         [ "Transaction is finalized, but no block information was received - this should never happen!" ]
   describe "finalized with multiple outcomes" $
     specify "correct output" $
-      p TransactionStatusResult { tsrState = Finalized, tsrResults = M.fromList [(exampleBlockHash1, outcomeSuccess1a), (exampleBlockHash2, outcomeSuccess1b)]} `shouldBe`
+      p TransactionStatusResult { tsrState = Finalized, tsrResults = Map.fromList [(exampleBlockHash1, outcomeSuccess1a), (exampleBlockHash2, outcomeSuccess1b)]} `shouldBe`
         [ "Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!" ]
   where p = execWriter . printTransactionStatus
