@@ -575,7 +575,8 @@ processTransactionCmd action baseCfgDir verbose backend =
 
         withClient backend $ do
           mTsr <- sendAndTailTransaction txCfg pl intOpts
-          let extractDataRegistered = extractFromTsr $ \case Types.DataRegistered rd -> Just rd; _ -> Nothing
+          let extractDataRegistered = extractFromTsr $ \case Types.DataRegistered rd -> Just rd
+                                                             _ -> Nothing
           case extractDataRegistered mTsr of
             Nothing -> return ()
             Just (Left err) -> logFatal ["Registering data failed:", err]
