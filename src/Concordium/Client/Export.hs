@@ -1,3 +1,4 @@
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE QuasiQuotes #-}
 
@@ -10,6 +11,8 @@ import Concordium.Client.Types.Account
 import Concordium.Client.Utils
 
 import qualified Concordium.ID.Types as IDTypes
+import Concordium.Crypto.SignatureScheme (KeyPair)
+import Concordium.Common.Version
 
 import Control.Exception
 import Control.Monad.Except
@@ -18,13 +21,48 @@ import qualified Data.Aeson.Types as AE
 import Data.Aeson ((.:),(.=))
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LazyBS
-import qualified Data.Map.Strict as Map
+import qualified Data.Map.Strict as OrdMap
 import Data.Maybe (maybeToList)
-import Data.Text as T
+import Data.Text(Text)
+import qualified Data.Text as T
 import Data.String.Interpolate ( i )
 import qualified Data.Text.IO as T
 import Text.Printf
-import Concordium.Common.Version
+
+-- |Format of keys in genesis per credential.
+data GenesisCredentialKeys = GenesisCredentialKeys {
+  gckKeys :: !(OrdMap.Map IDTypes.KeyIndex KeyPair),
+  gckThreshold :: !IDTypes.SignatureThreshold
+  }
+
+-- |Format of keys in a genesis account.
+data GenesisAccountKeys = GenesisAccountKeys {
+  gakKeys :: OrdMap.Map IDTypes.CredentialIndex GenesisCredentialKeys,
+  gakThreshold :: !IDTypes.AccountThreshold
+  }
+
+-- |Credentials for genesis accounts.
+newtype GenesisCredentials = GenesisCredentials {gcCredentials :: OrdMap.Map IDTypes.CredentialIndex IDTypes.AccountCredential}
+    deriving newtype (AE.FromJSON, AE.ToJSON)
+
+instance AE.FromJSON GenesisCredentialKeys where
+  parseJSON = AE.withObject "Genesis Credential Keys" $ \obj -> do
+    gckKeys <- obj AE..: "keys"
+    gckThreshold <- obj AE..: "threshold"
+    return GenesisCredentialKeys{..}
+
+instance AE.FromJSON GenesisAccountKeys where
+  parseJSON = AE.withObject "Genesis Account Keys" $ \obj -> do
+    gakKeys <- obj AE..: "keys"
+    gakThreshold <- obj AE..: "threshold"
+    return GenesisAccountKeys{..}
+
+-- |Get the list of keys suitable for signing. This will respect the thresholds
+-- so that the lists are no longer than the threshold that is specified.
+toKeysList :: GenesisAccountKeys -> [(IDTypes.CredentialIndex, [(IDTypes.KeyIndex, KeyPair)])]
+toKeysList GenesisAccountKeys{..} = take (fromIntegral gakThreshold) . fmap toKeysListCred . OrdMap.toAscList $ gakKeys
+    where toKeysListCred (ci, GenesisCredentialKeys{..}) = (ci, take (fromIntegral gckThreshold) . OrdMap.toAscList $ gckKeys)
+
 
 -- | An export format used by wallets including accounts and identities.
 data WalletExport =
@@ -61,7 +99,7 @@ data WalletExportAccount =
   WalletExportAccount
   { weaName :: !Text
   , weaKeys :: !AccountSigningData
-  , weaCredMap :: !(Map.Map IDTypes.CredentialIndex IDTypes.CredentialRegistrationID)
+  , weaCredMap :: !(OrdMap.Map IDTypes.CredentialIndex IDTypes.CredentialRegistrationID)
   , weaEncryptionKey :: !ElgamalSecretKey }
   deriving (Show)
 
@@ -86,7 +124,7 @@ instance AE.FromJSON WalletExportAccount where
                   { asdAddress = addr
                   , asdKeys = keys
                   , asdThreshold = th }
-      , weaCredMap = Map.singleton 0 (IDTypes.credId credential)
+      , weaCredMap = OrdMap.singleton 0 (IDTypes.credId credential)
       , weaEncryptionKey = e }
 
 -- | Decode, decrypt and parse a mobile wallet export, reencrypting the singing keys with the same password.
@@ -131,7 +169,7 @@ accountCfgFromWalletExportAccount pwd WalletExportAccount { weaKeys = AccountSig
     }
   where
     ensureValidName name =
-      let trimmedName = strip name
+      let trimmedName = T.strip name
       in case validateAccountName trimmedName of
           Left err -> do
             logError [err]
@@ -155,21 +193,15 @@ decodeGenesisFormattedAccountExport payload name pwd = runExceptT $ do
           addr <- v .: "address"
           aks <- v .: "accountKeys"
           accEncryptionKey <- v .: "encryptionSecretKey"
-          accCredMap <- aks .: "keys"
-          credsVersioned <- v .: "credentials"
-          creds <- credsVersioned .: "value"
-          acCids <- forM creds $ \cred -> do
-            contents <- cred .: "contents"
-            regId <- contents .: "regId"
-            return regId 
-          acKeysNotEncrypted <- forM accCredMap $ \ad -> do
-            accKeyMap <- ad .: "keys"
-            return accKeyMap
+          let accCredMap = gakKeys aks
+          -- the genesis credentials
+          cmap <- v .: "credentials"
           return $ do
-            acKeys <- encryptAccountKeyMap pwd acKeysNotEncrypted
+            acKeys <- encryptAccountKeyMap pwd (gckKeys <$> accCredMap)
             acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd accEncryptionKey)
             return AccountConfig { acAddr = NamedAddress{naNames = maybeToList name, naAddr = addr}
-                            , .. }
+                                 , acCids = IDTypes.credId <$> (gcCredentials . vValue $ cmap)
+                                 , .. }
 
 
 ---- Code for instantiating, exporting and importing config backups
