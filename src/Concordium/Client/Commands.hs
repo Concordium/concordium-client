@@ -1009,7 +1009,8 @@ configAccountRemoveKeysCmd =
         some (argument auto (metavar "KEYINDICES" <> help "space-separated list of indices of the keys to remove."))
         )
       (progDescDoc $ docFromLines
-        [ "Removes the keys from the account at the specified indices. The --threshold option may be used to update the signature threshold." ]))
+        [ "Removes the keys from the account at the specified indices.",
+          "The --threshold option may be used to update the signature threshold." ]))
 
 readAccountExportFormat :: ReadM AccountExportFormat
 readAccountExportFormat = str >>= \case
