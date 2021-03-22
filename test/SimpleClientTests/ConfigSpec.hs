@@ -1,13 +1,13 @@
 module SimpleClientTests.ConfigSpec where
 
 import Concordium.Client.Config
-import Concordium.Client.Encryption
 import Concordium.Client.Output
 import Concordium.Client.Types.Account
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Crypto.ByteStringHelpers as BSH
 import qualified Concordium.Types as Types
 import Concordium.Types.HashableTo (getHash)
+import Concordium.Utils.Encryption
 
 import Control.Monad.Writer
 import qualified Data.Aeson as AE
