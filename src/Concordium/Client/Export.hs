@@ -5,6 +5,9 @@ module Concordium.Client.Export where
 
 import qualified Concordium.ID.Types as IDTypes
 
+import Concordium.Common.Version
+import Concordium.Crypto.SignatureScheme(KeyPair)
+
 import Concordium.Client.Cli
 import Concordium.Client.Config
 import Concordium.Client.Encryption
@@ -15,16 +18,48 @@ import Control.Exception
 import Control.Monad.Except
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
-import Data.Aeson ((.:),(.:?),(.!=),(.=))
+import Data.Aeson ((.:),(.=))
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LazyBS
 import qualified Data.HashMap.Strict as Map
+import qualified Data.Map.Strict as OrdMap
 import Data.Maybe (maybeToList)
-import Data.Text as T
+import Data.Text(Text)
+import qualified Data.Text as T
 import Data.String.Interpolate ( i )
 import qualified Data.Text.IO as T
 import Text.Printf
-import Concordium.Common.Version
+
+-- |Format of keys in genesis per credential.
+data GenesisCredentialKeys = GenesisCredentialKeys {
+  gckKeys :: !(OrdMap.Map IDTypes.KeyIndex KeyPair),
+  gckThreshold :: !IDTypes.SignatureThreshold
+  }
+
+-- |Format of keys in a genesis account.
+data GenesisAccountKeys = GenesisAccountKeys {
+  gakKeys :: OrdMap.Map IDTypes.CredentialIndex GenesisCredentialKeys,
+  gakThreshold :: !IDTypes.AccountThreshold
+  }
+
+instance AE.FromJSON GenesisCredentialKeys where
+  parseJSON = AE.withObject "Genesis Credential Keys" $ \obj -> do
+    gckKeys <- obj AE..: "keys"
+    gckThreshold <- obj AE..: "threshold"
+    return GenesisCredentialKeys{..}
+
+instance AE.FromJSON GenesisAccountKeys where
+  parseJSON = AE.withObject "Genesis Account Keys" $ \obj -> do
+    gakKeys <- obj AE..: "keys"
+    gakThreshold <- obj AE..: "threshold"
+    return GenesisAccountKeys{..}
+
+-- |Get the list of keys suitable for signing. This will respect the thresholds
+-- so that the lists are no longer than the threshold that is specified.
+toKeysList :: GenesisAccountKeys -> [(IDTypes.CredentialIndex, [(IDTypes.KeyIndex, KeyPair)])]
+toKeysList GenesisAccountKeys{..} = take (fromIntegral gakThreshold) . fmap toKeysListCred . OrdMap.toAscList $ gakKeys
+    where toKeysListCred (ci, GenesisCredentialKeys{..}) = (ci, take (fromIntegral gckThreshold) . OrdMap.toAscList $ gckKeys)
+
 
 -- | An export format used by wallets including accounts and identities.
 data WalletExport =
@@ -123,7 +158,7 @@ accountCfgFromWalletExportAccount pwd WalletExportAccount { weaKeys = AccountSig
     }
   where
     ensureValidName name =
-      let trimmedName = strip name
+      let trimmedName = T.strip name
       in case validateAccountName trimmedName of
           Left err -> do
             logError [err]
@@ -147,18 +182,16 @@ decodeGenesisFormattedAccountExport payload name pwd = runExceptT $ do
           addr <- v .: "address"
           aks <- v .: "accountKeys"
           accEncryptionKey <- v .: "encryptionSecretKey"
-          accCredMap <- aks .: "keys"
-          unless (Map.size accCredMap == 1) $ fail "Currently only accounts with a single credential are supported."
-          case Map.lookup (0 :: IDTypes.CredentialIndex) accCredMap of
+          let accCredMap = gakKeys aks
+          unless (OrdMap.size accCredMap == 1) $ fail "Currently only accounts with a single credential are supported."
+          case OrdMap.lookup 0 accCredMap of
             Nothing -> fail "Currently only accounts with a single credential (0) are supported."
-            Just ad -> do
-              accKeyMap <- ad .: "keys"
-              acThreshold <- ad .:? "threshold" .!= fromIntegral (Map.size accKeyMap)
-              return $ do
-                acKeys <- encryptAccountKeyMap pwd accKeyMap
+            Just ad ->  return $ do
+                acKeys <- encryptAccountKeyMap pwd (Map.fromList . OrdMap.toList $ gckKeys ad)
                 acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd accEncryptionKey)
-                return AccountConfig { acAddr = NamedAddress{naNames = maybeToList name, naAddr = addr}
-                                 , .. }
+                return AccountConfig { acAddr = NamedAddress{naNames = maybeToList name, naAddr = addr},
+                                       acThreshold = gckThreshold ad
+                                     , .. }
 
 
 ---- Code for instantiating, exporting and importing config backups
