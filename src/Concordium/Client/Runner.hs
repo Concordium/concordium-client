@@ -67,6 +67,7 @@ import qualified Concordium.Client.Encryption        as Password
 import qualified Concordium.Types.Updates            as Updates
 import qualified Concordium.Types.Transactions       as Types
 import           Concordium.Types.HashableTo
+import qualified Concordium.Cost as Cost
 import qualified Concordium.Types.Execution          as Types
 import qualified Concordium.Types                    as Types
 import qualified Concordium.ID.Types                 as ID
@@ -537,8 +538,7 @@ processTransactionCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      -- the 11+ is because the size of the transfer is 2584 bytes (+ header)
-      let nrgCost _ = return $ Just $ (11+) . encryptedTransferEnergyCost
+      let nrgCost _ = return $ Just $ encryptedTransferEnergyCost
       txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
 
       encryptedSecretKey <-
@@ -879,12 +879,18 @@ data AccountDecryptTransactionConfig =
   }
 
 -- |Resolve configuration for an 'update keys' transaction
-getAccountUpdateKeysTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> ID.CredentialRegistrationID -> IO CredentialUpdateKeysTransactionCfg
-getAccountUpdateKeysTransactionCfg baseCfg txOpts f cid = do
+getAccountUpdateKeysTransactionCfg ::
+  BaseConfig
+  -> TransactionOpts (Maybe Types.Energy)
+  -> FilePath -- ^ File with the new credential keys.
+  -> ID.CredentialRegistrationID -- ^ ID of the credential we wish to update.
+  -> Int -- ^ The number of credentials on the account at the time the transaction is sent.
+  -> IO CredentialUpdateKeysTransactionCfg
+getAccountUpdateKeysTransactionCfg baseCfg txOpts f cid numCredentials = do
   keys <- getFromJson =<< eitherDecodeFileStrict f
   txCfg <- getTransactionCfg baseCfg txOpts (nrgCost $ length (ID.credKeys keys))
   return $ CredentialUpdateKeysTransactionCfg txCfg keys cid
-  where nrgCost numKeys _ = return $ Just $ accountUpdateKeysEnergyCost numKeys
+  where nrgCost numKeys _ = return $ Just $ accountUpdateKeysEnergyCost numCredentials numKeys
 
 -- |Resolve configuration for transferring an amount from public to encrypted
 -- balance of an account.
@@ -1336,15 +1342,23 @@ processAccountCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      aukCfg <- getAccountUpdateKeysTransactionCfg baseCfg txOpts f cid
-      let txCfg = cuktcTransactionCfg aukCfg
-      when verbose $ do
-        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
-        putStrLn ""
+      accCfg <- liftIO $ getAccountCfgFromTxOpts baseCfg txOpts
+      let senderAddress = naAddr $ esdAddress accCfg
 
-      let intOpts = toInteractionOpts txOpts
-      pl <- credentialUpdateKeysTransactionPayload aukCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+      withClient backend $ do
+        accInfo <- getAccountInfoOrDie senderAddress
+        aukCfg <- liftIO $ getAccountUpdateKeysTransactionCfg baseCfg txOpts f cid (Map.size (airCredentials accInfo))
+        let txCfg = cuktcTransactionCfg aukCfg
+
+        -- TODO: Check that the credential exists on the chain before making the update.
+
+        when verbose $ liftIO $ do
+          runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
+          putStrLn ""
+        
+        let intOpts = toInteractionOpts txOpts
+        pl <- liftIO $ credentialUpdateKeysTransactionPayload aukCfg (ioConfirm intOpts)
+        sendAndTailTransaction_ txCfg pl intOpts
 
     AccountEncrypt{..} -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1368,9 +1382,7 @@ processAccountCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      -- The (6+) is because the size of the transaction is 1404 bytes (+header size)
-      -- and we need to account for transaction size since we charge for it.
-      let nrgCost _ = return $ Just $ (6+) . accountDecryptEnergyCost
+      let nrgCost _ = return $ Just $  accountDecryptEnergyCost
       txCfg <- liftIO (getTransactionCfg baseCfg adTransactionOpts nrgCost)
 
       encryptedSecretKey <- maybe (logFatal ["Missing account encryption secret key for account: " ++ show (esdAddress . tcEncryptedSigningData $ txCfg)]) return (esdEncryptionKey . tcEncryptedSigningData $ txCfg)
@@ -1474,17 +1486,11 @@ getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
   txCfg <- getTransactionCfg baseCfg txOpts $ moduleDeployEnergyCost wasmModule
   return $ ModuleDeployTransactionCfg txCfg wasmModule
 
--- |Calcuate the energy cost of deploying a module. Uses an ad hoc implementation from Concordium.Scheduler.Cost.
+-- |Calculate the energy cost of deploying a module.
 moduleDeployEnergyCost :: Wasm.WasmModule -> EncryptedSigningData -> IO (Maybe (Int -> Types.Energy))
 moduleDeployEnergyCost wasmMod encSignData = pure . Just . const $
-  deployModuleCost payloadSize + checkHeaderEnergyCostWithPayload payloadSize signatureCount
+  Cost.deployModuleCost (fromIntegral payloadSize) + minimumCost payloadSize signatureCount
   where
-        -- Ad hoc cost implementation from Concordium.Scheduler.Cost
-        deployModuleCost :: Types.PayloadSize -> Types.Energy
-        deployModuleCost psize = Types.Energy . fromIntegral $
-                                  (psize `div` 30)
-                                  + (5 + 2 * ((psize + 99) `div` 100) * 50) -- storeModule
-
         signatureCount = mapNumKeys (esdKeys encSignData)
         payloadSize = Types.payloadSize . Types.encodePayload . Types.DeployModule $ wasmMod
 
@@ -1616,7 +1622,7 @@ processContractCmd action baseCfgDir verbose backend =
         -- The minimum will not cover the full initialization, but enough of it, so that a potential 'Not enough energy' error
         -- can be shown.
         contractInitMinimumEnergy :: ContractInitTransactionCfg -> EncryptedSigningData -> Types.Energy
-        contractInitMinimumEnergy ContractInitTransactionCfg{..} encSignData = checkHeaderEnergyCostWithPayload (fromIntegral payloadSize) signatureCount
+        contractInitMinimumEnergy ContractInitTransactionCfg{..} encSignData = minimumCost (fromIntegral payloadSize) signatureCount
           where
             payloadSize =    1 -- tag
                           + 32 -- module ref
@@ -1628,7 +1634,7 @@ processContractCmd action baseCfgDir verbose backend =
         -- The minimum will not cover the full update, but enough of it, so that a potential 'Not enough energy' error
         -- can be shown.
         contractUpdateMinimumEnergy :: ContractUpdateTransactionCfg -> EncryptedSigningData -> Types.Energy
-        contractUpdateMinimumEnergy ContractUpdateTransactionCfg{..} encSignData = checkHeaderEnergyCostWithPayload (fromIntegral payloadSize) signatureCount
+        contractUpdateMinimumEnergy ContractUpdateTransactionCfg{..} encSignData = minimumCost (fromIntegral payloadSize) signatureCount
           where
             payloadSize =    1 -- tag
                           + 16 -- contract address
@@ -1925,6 +1931,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
             Updates.MintDistributionUpdatePayload{} -> Updates.asParamMintDistribution
             Updates.TransactionFeeDistributionUpdatePayload{} -> Updates.asParamTransactionFeeDistribution
             Updates.GASRewardsUpdatePayload{} -> Updates.asParamGASRewards
+            Updates.BakerStakeThresholdUpdatePayload{} -> Updates.asBakerStakeThreshold
                                             )
           auths
         keyLU key = let vk = SigScheme.correspondingVerifyKey key in
