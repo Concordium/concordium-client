@@ -4,7 +4,7 @@ cabal-version: 2.0
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: ad9f35cfde7375a9de31e953286cd457a5bba0a2e3f8dc9bf7ecf180d350b7b3
+-- hash: 9c60889906f43b4b4bb3209fb7c67341764eaaaa00f7db41816567ced5900d3f
 
 name:           concordium-client
 version:        0.5.0
@@ -46,7 +46,6 @@ library
       Concordium.Client.Cli
       Concordium.Client.Commands
       Concordium.Client.Config
-      Concordium.Client.Encryption
       Concordium.Client.Export
       Concordium.Client.GRPC
       Concordium.Client.LegacyCommands
@@ -212,7 +211,6 @@ test-suite concordium-client-test
       SimpleClientTests.ConfigSpec
       SimpleClientTests.ConsensusSpec
       SimpleClientTests.ContractSpec
-      SimpleClientTests.EncryptionSpec
       SimpleClientTests.LogSpec
       SimpleClientTests.ParseSpec
       SimpleClientTests.QueryTransaction

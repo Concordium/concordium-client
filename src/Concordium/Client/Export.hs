@@ -7,9 +7,9 @@ import qualified Concordium.ID.Types as IDTypes
 
 import Concordium.Client.Cli
 import Concordium.Client.Config
-import Concordium.Client.Encryption
 import Concordium.Client.Types.Account
 import Concordium.Client.Utils
+import Concordium.Utils.Encryption
 
 import Control.Exception
 import Control.Monad.Except

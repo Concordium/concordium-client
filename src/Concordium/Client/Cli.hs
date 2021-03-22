@@ -7,11 +7,11 @@ import qualified Concordium.Crypto.BlsSignature as Bls
 import qualified Concordium.Crypto.VRF as VRF
 import qualified Concordium.ID.Types as IDTypes
 import Concordium.Types
+import Concordium.Utils.Encryption
 
 import Concordium.Client.Parse
 import Concordium.Client.Types.TransactionStatus
 import Concordium.Client.Types.Account
-import Concordium.Client.Encryption
 
 import Control.Monad
 import Control.Monad.IO.Class

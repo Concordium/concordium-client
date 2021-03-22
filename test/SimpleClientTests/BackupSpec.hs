@@ -3,13 +3,13 @@
 module SimpleClientTests.BackupSpec where
 
 import Concordium.Client.Config
-import Concordium.Client.Encryption
 import Concordium.Client.Export
 import Concordium.Client.Types.Account
 import qualified Concordium.Crypto.ByteStringHelpers as BSH
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
 import Concordium.Types.HashableTo (getHash)
+import Concordium.Utils.Encryption
 
 import qualified Data.Aeson as AE
 import qualified Data.ByteString as BS
