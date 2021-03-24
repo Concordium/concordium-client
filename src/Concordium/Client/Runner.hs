@@ -110,7 +110,7 @@ import           System.IO
 import           System.Directory
 import           Text.Printf
 import           Text.Read (readMaybe)
-import Data.Time.Clock (addUTCTime)
+import Data.Time.Clock (addUTCTime, getCurrentTime, UTCTime)
 import Data.Ratio
 
 -- |Establish a new connection to the backend and run the provided computation.
@@ -804,15 +804,43 @@ data BakerUpdateStakeTransactionConfig =
 
 -- |Resolve configuration of a 'baker update-stake' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
-getBakerUpdateStakeTransactionCfg :: TransactionConfig -> Types.Amount -> ClientMonad IO BakerUpdateStakeTransactionConfig
-getBakerUpdateStakeTransactionCfg txCfg newAmount = do
+getBakerUpdateStakeTransactionCfg :: TransactionConfig -> Types.Amount -> UTCTime -> ClientMonad IO BakerUpdateStakeTransactionConfig
+getBakerUpdateStakeTransactionCfg txCfg newAmount cooldownDate = do
   let senderAddr = acAddress . tcAccountCfg $ txCfg
   AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
-  when (isNothing airBaker) $ logFatal [[i|Account #{senderAddr} is not a baker, so cannot update its stake.|]]
-  when (airAmount < newAmount) $ logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the new amount requested to be staked (#{showGtu newAmount}).|]]
-  return BakerUpdateStakeTransactionConfig
-         { bustcNewAmount = newAmount
-         , bustcTransactionCfg = txCfg }
+  case airBaker of
+    Nothing -> logFatal [[i|Account #{senderAddr} is not a baker, so cannot update its stake.|]]
+    Just aibresult -> do
+      when (airAmount < newAmount) $ logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the new amount requested to be staked (#{showGtu newAmount}).|]]
+      -- Check if stake is being decreased, ask for confirmation if so if so
+      if (newAmount < abirStakedAmount aibresult) 
+      then do 
+        logWarn ["The new staked value appears to be lower than the amount currently staked on chain by this baker."]
+        logWarn ["Decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the GTU are made available."]
+        logWarn ["During this period it is not possible to update the baker's stake, or stop the baker."]
+        logWarn [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
+        confirmed <- askConfirmation $ Just "Confirm that you want to update the baker's stake"
+        unless confirmed exitTransactionCancelled
+        return BakerUpdateStakeTransactionConfig
+          { bustcNewAmount = newAmount
+          , bustcTransactionCfg = txCfg }
+      else do
+        logWarn ["Note that decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the GTU are made available."]
+        logWarn ["During this period it is not possible to update the baker's stake, or stop the baker."]
+        logWarn [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
+        return BakerUpdateStakeTransactionConfig
+          { bustcNewAmount = newAmount
+          , bustcTransactionCfg = txCfg }
+-- |Returns the UTCTime date when the baker cooldown on reducing stake/removing a baker will end, using on chain parameters
+getBakerCooldown :: BlockSummaryResult -> ClientMonad IO UTCTime
+getBakerCooldown cpr = do
+  let cooldownEpochs = toInteger $ cprBakerExtraCooldownEpochs $ bsurChainParameters $ bsrUpdates cpr
+  cs <- getFromJson =<< getConsensusStatus
+  let epochTime = (toInteger $ csrEpochDuration cs) % 1000
+  let cooldownTime = fromRational $ epochTime * ((cooldownEpochs + 2) % 1)
+  currTime <- liftIO getCurrentTime
+  let cooldownDate = addUTCTime cooldownTime currTime
+  return cooldownDate
 
 data BakerUpdateRestakeTransactionConfig =
   BakerUpdateRestakeTransactionConfig
@@ -2032,11 +2060,25 @@ processBakerCmd action baseCfgDir verbose backend =
         putStrLn ""
       let nrgCost _ = return $ Just bakerRemoveEnergyCost
       txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
-      withClient backend $ do
-        brtcCfg <- getBakerRemoveTransactionCfg txCfg
-        let intOpts = toInteractionOpts txOpts
-        pl <- liftIO $ bakerRemoveTransactionPayload brtcCfg (ioConfirm intOpts)
-        sendAndTailTransaction_ txCfg pl intOpts
+      v <- withClientJson backend $ withBestBlockHash Nothing getBlockSummary
+      case v of 
+        Nothing -> do
+          logError ["No Block Found"]
+          exitTransactionCancelled
+        Just cpr -> do 
+          withClient backend $ do
+            -- Warn user that stopping a baker incurs the baker cooldown timer
+            cooldownDate <- getBakerCooldown cpr
+            logWarn ["Stopping a baker that is staking will lock the stake of the baker for a cooldown period before the GTU are made available."]
+            logWarn ["During this period it is not possible to update the baker's stake, or restart the baker."]
+            logWarn [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
+            confirmed <- askConfirmation $ Just "Confirm that you want to send the transaction to stop this baker"
+            unless confirmed exitTransactionCancelled
+
+            brtcCfg <- getBakerRemoveTransactionCfg txCfg
+            let intOpts = toInteractionOpts txOpts
+            pl <- liftIO $ bakerRemoveTransactionPayload brtcCfg (ioConfirm intOpts)
+            sendAndTailTransaction_ txCfg pl intOpts
 
     BakerUpdateStake newStake txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -2045,11 +2087,18 @@ processBakerCmd action baseCfgDir verbose backend =
         putStrLn ""
       let nrgCost _ = return $ Just bakerUpdateStakeEnergyCost
       txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
-      withClient backend $ do
-        brtcCfg <- getBakerUpdateStakeTransactionCfg txCfg newStake
-        let intOpts = toInteractionOpts txOpts
-        pl <- liftIO $ bakerUpdateStakeTransactionPayload brtcCfg (ioConfirm intOpts)
-        sendAndTailTransaction_ txCfg pl intOpts
+      v <- withClientJson backend $ withBestBlockHash Nothing getBlockSummary
+      case v of 
+        Nothing -> do
+          logError ["No Block Found"]
+          exitTransactionCancelled
+        Just cpr -> do 
+          withClient backend $ do
+            cooldownDate <- getBakerCooldown cpr
+            brtcCfg <- getBakerUpdateStakeTransactionCfg txCfg newStake cooldownDate
+            let intOpts = toInteractionOpts txOpts
+            pl <- liftIO $ bakerUpdateStakeTransactionPayload brtcCfg (ioConfirm intOpts)
+            sendAndTailTransaction_ txCfg pl intOpts
 
     BakerUpdateRestakeEarnings bureRestake txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
