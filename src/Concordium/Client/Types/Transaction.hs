@@ -55,7 +55,7 @@ accountUpdateCredentialsEnergyCost ::
   -> [Int] -- ^ List of number of keys belonging to each new credential.
   -> Int -- ^ Number of signatures that will sign the transaction.
   -> Energy
-accountUpdateCredentialsEnergyCost credentialCount keyCountList numSigs = minimumCost psize numSigs + Cost.updateCredentialsVariableCost credentialCount keyCountList
+accountUpdateCredentialsEnergyCost credentialCount keyCountList numSigs = minimumCost psize numSigs + Cost.updateCredentialsCost credentialCount keyCountList
   where psize = 1 + 48 + 1 -- + fromIntegral keyCount * 49 + 1 -- TODO: fix this
     -- FIXME: After Simon's changes are done replace psize with computed size
 
