@@ -19,7 +19,6 @@ import           System.FilePath ((</>))
 import           Text.Read (readMaybe)
 import qualified Config
 import           Concordium.Client.GRPC
-import           Concordium.Client.Config (getDefaultBaseConfigDir)
 import qualified Api
 
 
@@ -33,8 +32,6 @@ runHttp middlewares = do
 
   nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:11100"
   grpcAdminToken <- Config.lookupEnvText "RPC_PASSWORD" "rpcadmin"
-
-  cfgDir <- T.unpack <$> (Config.lookupEnvText "CFG_DIR" . T.pack =<< getDefaultBaseConfigDir)
 
   let
     (nodeHost, nodePort) =
@@ -53,13 +50,12 @@ runHttp middlewares = do
     Left err -> fail (show err) -- cannot connect to grpc server
     Right nodeBackend -> do
       let
-        waiApp = Api.servantApp nodeBackend cfgDir
+        waiApp = Api.servantApp nodeBackend
 
         printStatus = do
           putStrLn $ "NODE_URL: " ++ show nodeUrl
           putStrLn $ "gRPC authentication token: " ++ show grpcAdminToken
           putStrLn $ "Server started: http://localhost:" ++ show serverPort
-          putStrLn $ "Config directory: " ++ cfgDir
 
         run l = W.defaultSettings
                   & W.setBeforeMainLoop printStatus
