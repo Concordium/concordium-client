@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Concordium.Client.Types.TransactionStatus where
 
-import qualified Data.HashMap.Strict as HM
+import qualified Data.Map.Strict as Map
 import Data.Aeson
 import Data.Aeson.TH
 
@@ -14,7 +14,7 @@ data TransactionState = Received | Committed | Finalized | Absent deriving (Eq, 
 
 $(deriveJSON defaultOptions{constructorTagModifier = firstLower} ''TransactionState)
 
-type TransactionBlockResults' a = HM.HashMap BlockHash (TransactionSummary' a)
+type TransactionBlockResults' a = Map.Map BlockHash (TransactionSummary' a)
 
 type TransactionBlockResults = TransactionBlockResults' ValidResult
 
@@ -26,13 +26,13 @@ data TransactionStatusResult' a = TransactionStatusResult
 type TransactionStatusResult = TransactionStatusResult' ValidResult
 
 instance FromJSON a => FromJSON (TransactionStatusResult' a) where
-  parseJSON Null = return TransactionStatusResult{tsrState = Absent, tsrResults = HM.empty}
+  parseJSON Null = return TransactionStatusResult{tsrState = Absent, tsrResults = Map.empty}
   parseJSON v = flip (withObject "Transaction status") v $ \obj -> do
     tsrState <- obj .: "status"
-    tsrResults <- obj .:? "outcomes" .!= HM.empty
+    tsrResults <- obj .:? "outcomes" .!= Map.empty
     return $ TransactionStatusResult {..}
 
 instance ToJSON a => ToJSON (TransactionStatusResult' a) where
   toJSON TransactionStatusResult{..} =
     object $ ("status" .= tsrState):mapObject
-    where mapObject = ["outcomes" .= tsrResults | HM.null tsrResults]
+    where mapObject = ["outcomes" .= tsrResults | Map.null tsrResults]

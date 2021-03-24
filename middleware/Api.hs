@@ -8,7 +8,6 @@
 
 module Api where
 
-import qualified Data.HashMap.Strict as HM
 import           Data.Aeson (decode')
 import qualified Data.Aeson as Aeson
 import           Data.Aeson.Types (FromJSON)
@@ -31,14 +30,10 @@ import           Concordium.Client.Commands as COM
 import           Concordium.Client.GRPC
 import qualified Concordium.Client.GRPC as GRPC
 import           Concordium.Client.Runner
-import           Concordium.Client.Types.Transaction
 import           Concordium.Client.Cli
-import           Concordium.Client.Config
 
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
-import           Concordium.Types.HashableTo
-import qualified Concordium.Types.Execution as Execution
 import           Concordium.Client.Types.Account
 import           Concordium.Utils.Encryption (Password(..))
 import           Control.Monad.Except
@@ -75,10 +70,6 @@ data Routes r = Routes
         "v1" :> "nodeState" :> ReqBody '[JSON] SetNodeStateRequest
                             :> Post '[JSON] SetNodeStateResponse
 
-    , removeBaker :: r :-
-        "v1" :> "removeBaker" :> ReqBody '[JSON] RemoveBakerRequest
-                              :> Post '[JSON] RemoveBakerResponse
-
     , getBakers :: r :-
         "v1" :> "getBakers" :> Get '[JSON] GetBakersResponse
     }
@@ -89,8 +80,8 @@ api = genericApi (Proxy :: Proxy Routes)
 
 type Account = (IDTypes.AccountAddress, AccountKeyMap)
 
-servantApp :: EnvData -> FilePath -> Application
-servantApp nodeBackend cfgDir = genericServe routesAsServer
+servantApp :: EnvData -> Application
+servantApp nodeBackend = genericServe routesAsServer
  where
   routesAsServer = Routes {..} :: Routes AsServer
 
@@ -173,41 +164,6 @@ servantApp nodeBackend cfgDir = genericServe routesAsServer
       SetNodeStateResponse
         { success = True }
 
-  removeBaker :: RemoveBakerRequest -> Handler RemoveBakerResponse
-  removeBaker RemoveBakerRequest{..} = do
-      -- get base configuration
-      baseCfg <- wrapIOError $ getBaseConfig (Just cfgDir) False
-      -- generate options for the transaction
-      accCfg' <- wrapIOError $ snd <$> getAccountConfig sender baseCfg Nothing Nothing Nothing AssumeInitialized
-      let accCfg = accCfg' { acThreshold = fromIntegral (HM.size $ acKeys accCfg') }
-      -- get Baker add transaction config
-      let energy = bakerRemoveEnergyCost (HM.size $ acKeys accCfg)
-
-      expiry <- wrapIOError $ (600 +) <$> getCurrentTimeUnix
-
-      let AccountConfig{..} = accCfg
-      let senderAddr = naAddr acAddr
-
-      accountKeysRes <- liftIO $ decryptAccountKeyMap acKeys (passwordFromText password)
-      accountKeys <- (case accountKeysRes of
-        Left err -> throwError' err401 $ Just ("", err)
-        Right acc -> return acc)
-
-
-      let pl = Execution.RemoveBaker
-      -- run the transaction
-      res <- liftIO $ runClient nodeBackend $ do
-        currentNonce <- getBestBlockHash >>= getAccountNonce senderAddr
-        let tx = encodeAndSignTransaction pl senderAddr energy currentNonce expiry accountKeys acThreshold
-        sendTransactionToBaker tx defaultNetId >>= \case
-          Left err -> fail err
-          Right False -> fail "transaction not accepted by the baker"
-          Right True -> return $ getBlockItemHash tx
-
-      case res of
-        Left err -> throwError' err409 $ Just ("", err)
-        Right v -> return . RemoveBakerResponse . Just . Text.pack $ show v
-
   getBakers :: Handler GetBakersResponse
   getBakers = GetBakersResponse <$> do
       eeParams <- wrapIOError $ runClient nodeBackend $ withBestBlockHash Nothing getBirkParameters
@@ -259,63 +215,11 @@ embedServerErrM action serverErr f = do
     Left err' -> throwError' serverErr (("",) <$> f err')
     Right v -> return v
 
--- For beta, uses the middlewareGodAccount which is seeded with funds
-runGodTransaction :: EnvData -> Account -> TransactionJSONPayload -> IO Types.TransactionHash
-runGodTransaction nodeBackend middlewareGodAccount payload =
-  runTransaction nodeBackend payload middlewareGodAccount
-
-
 runGRPC :: (MonadIO m) => EnvData -> ClientMonad m a -> m a
 runGRPC envData c =
   runClient envData c >>= \case
     Left err -> liftIO $ fail (show err)
     Right x -> return x
-
-runTransaction :: EnvData -> TransactionJSONPayload -> Account -> IO Types.TransactionHash
-runTransaction nodeBackend payload (address, keyMap) = do
-
-  nonce <- fst <$> runGRPC nodeBackend (getAccountNonceBestGuess address)
-
-  currentTime <- liftIO $ round `fmap` getPOSIXTime
-
-  let
-    transactionExpiry = currentTime + (60*30) -- Expires in 30 minutes from now
-
-    -- These are the agreed fixed costs for testnet, they
-    -- will change when tokenomics is finalized
-    energyAmount =
-      case payload of
-        Transfer _ _       -> simpleTransferEnergyCost (HM.size keyMap)
-        _                  -> 10000
-
-    transaction =
-      TransactionJSON
-        { metadata = transactionHeader
-        , payload = payload
-        , keys = keyMap
-        }
-
-    transactionHeader =
-          TransactionJSONHeader
-            { thSenderAddress = address
-            , thNonce = Just nonce
-            , thEnergyAmount = energyAmount
-            , thExpiry = Types.TransactionTime transactionExpiry
-            }
-
-  executeTransaction nodeBackend transaction
-
-executeTransaction :: EnvData -> TransactionJSON -> IO Types.TransactionHash
-executeTransaction nodeBackend transaction = do
-  -- The networkId is for running multiple networks that's not the same chain, but hasn't been taken into use yet
-  let nid = 1000
-
-  t <- runGRPC nodeBackend $ processTransaction_ transaction nid True
-
-  putStrLn $ "✅ Transaction sent to the baker and hooked: " ++ show (getHash t :: Types.TransactionHash)
-  print transaction
-
-  pure $ getHash t
 
 -- Dirty helper to help us with "definitely certain" value decoding
 certainDecode :: (FromJSON a) => Text -> a
