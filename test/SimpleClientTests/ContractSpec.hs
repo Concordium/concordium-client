@@ -194,6 +194,40 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
     fromToJSONSucceed (String One) $ AE.String . Text.pack . replicate 255 $ 'a'
     fromToJSONFail (String One)   $ AE.String . Text.pack . replicate 256 $ 'a' -- Too long
 
+  it "UInt128" $ do
+    fromToJSONFail UInt128 $ AE.String "-1" -- Below min bound
+    fromToJSONSucceed UInt128 $ AE.String "0" -- Min bound
+    fromToJSONSucceed UInt128 $ AE.String "340282366920938463463374607431768211455" -- Max bound
+    fromToJSONFail UInt128 $ AE.String "340282366920938463463374607431768211456" -- Greater than max bound
+    fromToJSONFail UInt128 $ AE.String "3.3" -- With decimal point
+    fromToJSONFail UInt128 $ AE.String "NotANumber" -- Not a number
+
+  it "Int128" $ do
+    fromToJSONFail Int128 $ AE.String "-170141183460469231731687303715884105729" -- Below min bound
+    fromToJSONSucceed Int128 $ AE.String "-170141183460469231731687303715884105728" -- Min bound
+    fromToJSONSucceed Int128 $ AE.String "170141183460469231731687303715884105727" -- Max bound
+    fromToJSONFail Int128 $ AE.String "170141183460469231731687303715884105728" -- Greater than max bound
+    fromToJSONFail Int128 $ AE.String "3.3" -- With decimal point
+    fromToJSONFail Int128 $ AE.String "NotANumber" -- Not a number
+
+  it "ContractName" $ do
+    fromToJSONSucceed (ContractName One) $ object ["contract" .= AE.String "contrName"]
+    fromToJSONFail (ContractName One) $ object [] -- Missing field
+    fromToJSONFail (ContractName One) $ object ["contract" .= AE.Number 3] -- Incorrect type
+    fromToJSONFail (ContractName One) $ object ["wrongKey" .= AE.String "contrName"] -- Incorrect key
+    -- Additional fields not allowed
+    fromToJSONFail (ContractName One) $ object ["contract" .= AE.String "contrName", "func" .= AE.String "funcName"]
+
+
+  it "ReceiveName" $ do
+    fromToJSONSucceed (ReceiveName One) $ object ["contract" .= AE.String "contrName", "func" .= AE.String "funcName"]
+    fromToJSONFail (ReceiveName One) $ object ["contract" .= AE.String "contrName"] -- Missing field
+    fromToJSONFail (ReceiveName One) $ object ["contract" .= AE.String "contrName", "func" .= AE.Number 3] -- Incorrect type
+    fromToJSONFail (ReceiveName One) $ object ["contract" .= AE.Number 3, "func" .= AE.String "funcName"] -- Incorrect type
+    -- Additional fields not allowed
+    fromToJSONFail (ReceiveName One) $ object [ "contract" .= AE.String "contrName"
+                                                    , "func" .= AE.String "funcName"
+                                                    , "extra" .= AE.String "extra"]
 
   where idx :: Word64
         idx = 42
