@@ -804,6 +804,7 @@ data BakerUpdateStakeTransactionConfig =
 
 -- |Resolve configuration of a 'baker update-stake' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
+-- Warns the user if they are staking a high proporition of their stake, or doing an action which might activate the baker cooldown
 getBakerUpdateStakeTransactionCfg :: TransactionConfig -> Types.Amount -> UTCTime -> ClientMonad IO BakerUpdateStakeTransactionConfig
 getBakerUpdateStakeTransactionCfg txCfg newAmount cooldownDate = do
   let senderAddr = acAddress . tcAccountCfg $ txCfg
@@ -825,12 +826,23 @@ getBakerUpdateStakeTransactionCfg txCfg newAmount cooldownDate = do
           { bustcNewAmount = newAmount
           , bustcTransactionCfg = txCfg }
       else do
-        logWarn ["Note that decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the GTU are made available."]
-        logWarn ["During this period it is not possible to update the baker's stake, or stop the baker."]
-        logWarn [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
-        return BakerUpdateStakeTransactionConfig
-          { bustcNewAmount = newAmount
-          , bustcTransactionCfg = txCfg }
+        logInfo ["Note that decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the GTU are made available."]
+        logInfo ["During this period it is not possible to update the baker's stake, or stop the baker."]
+        logInfo [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
+        -- Check if staked amount is greater than 95% of total GTU on the account, and warn user if so
+        if ((newAmount * 100) > (airAmount * 95))
+        then do
+          logWarn ["You are attempting to stake >95% of your total GTU on this account. Staked GTU is not available for spending on sending transactions."]
+          logWarn ["Be aware that updating or stopping your baker in the future will require some amount of non-staked GTU to pay for the transactions to do so."]
+          confirmed <- askConfirmation $ Just "Confirm that you wish to stake this much GTU"
+          unless confirmed exitTransactionCancelled
+          return BakerUpdateStakeTransactionConfig
+            { bustcNewAmount = newAmount
+            , bustcTransactionCfg = txCfg }
+        else 
+          return BakerUpdateStakeTransactionConfig
+            { bustcNewAmount = newAmount
+            , bustcTransactionCfg = txCfg }
 -- |Returns the UTCTime date when the baker cooldown on reducing stake/removing a baker will end, using on chain parameters
 getBakerCooldown :: BlockSummaryResult -> ClientMonad IO UTCTime
 getBakerCooldown cpr = do
