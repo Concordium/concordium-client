@@ -1,9 +1,8 @@
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE QuasiQuotes #-}
 
 module Concordium.Client.Export where
-
-import qualified Concordium.ID.Types as IDTypes
 
 import Concordium.Client.Cli
 import Concordium.Client.Config
@@ -11,20 +10,59 @@ import Concordium.Client.Types.Account
 import Concordium.Client.Utils
 import Concordium.Utils.Encryption
 
+import qualified Concordium.ID.Types as IDTypes
+import Concordium.Crypto.SignatureScheme (KeyPair)
+import Concordium.Common.Version
+
 import Control.Exception
 import Control.Monad.Except
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
-import Data.Aeson ((.:),(.:?),(.!=),(.=))
+import Data.Aeson ((.:),(.=))
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LazyBS
-import qualified Data.HashMap.Strict as Map
+import qualified Data.Map.Strict as OrdMap
 import Data.Maybe (maybeToList)
-import Data.Text as T
+import Data.Text(Text)
+import qualified Data.Text as T
 import Data.String.Interpolate ( i )
 import qualified Data.Text.IO as T
 import Text.Printf
-import Concordium.Common.Version
+
+-- |Format of keys in genesis per credential.
+data GenesisCredentialKeys = GenesisCredentialKeys {
+  gckKeys :: !(OrdMap.Map IDTypes.KeyIndex KeyPair),
+  gckThreshold :: !IDTypes.SignatureThreshold
+  }
+
+-- |Format of keys in a genesis account.
+data GenesisAccountKeys = GenesisAccountKeys {
+  gakKeys :: OrdMap.Map IDTypes.CredentialIndex GenesisCredentialKeys,
+  gakThreshold :: !IDTypes.AccountThreshold
+  }
+
+-- |Credentials for genesis accounts.
+newtype GenesisCredentials = GenesisCredentials {gcCredentials :: OrdMap.Map IDTypes.CredentialIndex IDTypes.AccountCredential}
+    deriving newtype (AE.FromJSON, AE.ToJSON)
+
+instance AE.FromJSON GenesisCredentialKeys where
+  parseJSON = AE.withObject "Genesis Credential Keys" $ \obj -> do
+    gckKeys <- obj AE..: "keys"
+    gckThreshold <- obj AE..: "threshold"
+    return GenesisCredentialKeys{..}
+
+instance AE.FromJSON GenesisAccountKeys where
+  parseJSON = AE.withObject "Genesis Account Keys" $ \obj -> do
+    gakKeys <- obj AE..: "keys"
+    gakThreshold <- obj AE..: "threshold"
+    return GenesisAccountKeys{..}
+
+-- |Get the list of keys suitable for signing. This will respect the thresholds
+-- so that the lists are no longer than the threshold that is specified.
+toKeysList :: GenesisAccountKeys -> [(IDTypes.CredentialIndex, [(IDTypes.KeyIndex, KeyPair)])]
+toKeysList GenesisAccountKeys{..} = take (fromIntegral gakThreshold) . fmap toKeysListCred . OrdMap.toAscList $ gakKeys
+    where toKeysListCred (ci, GenesisCredentialKeys{..}) = (ci, take (fromIntegral gckThreshold) . OrdMap.toAscList $ gckKeys)
+
 
 -- | An export format used by wallets including accounts and identities.
 data WalletExport =
@@ -61,6 +99,7 @@ data WalletExportAccount =
   WalletExportAccount
   { weaName :: !Text
   , weaKeys :: !AccountSigningData
+  , weaCredMap :: !(OrdMap.Map IDTypes.CredentialIndex IDTypes.CredentialRegistrationID)
   , weaEncryptionKey :: !ElgamalSecretKey }
   deriving (Show)
 
@@ -69,16 +108,23 @@ instance AE.FromJSON WalletExportAccount where
     name <- v .: "name"
     addr <- v .: "address"
     e <- v .: "encryptionSecretKey"
-    (keys, th) <- v .: "accountData" >>= AE.withObject "Account data" (\w -> do
-      keys <- w .: "keys"
+    (keys, th) <- v .: "accountKeys" >>= AE.withObject "Account keys" (\w -> do
+      credentials <- w .: "keys"
+      keys <- forM credentials $ AE.withObject "Credential keys" (.: "keys")
       th <- w .: "threshold"
       return (keys, th))
+    -- the credentials are stored inside a credentials field in the exact format that they are sent to the chain,
+    -- which is a (versioned) object with two fields "messageExpiry" and "credential"
+    -- since the mobile only supports single-credential accounts by definition the credential is the
+    -- credential with index 0
+    credential :: IDTypes.AccountCredentialWithProofs <- (vValue <$> (v .: "credential")) >>= AE.withObject "Credential" (.: "credential")
     return WalletExportAccount
       { weaName = name
       , weaKeys = AccountSigningData
                   { asdAddress = addr
                   , asdKeys = keys
                   , asdThreshold = th }
+      , weaCredMap = OrdMap.singleton 0 (IDTypes.credId credential)
       , weaEncryptionKey = e }
 
 -- | Decode, decrypt and parse a mobile wallet export, reencrypting the singing keys with the same password.
@@ -118,12 +164,12 @@ accountCfgFromWalletExportAccount pwd WalletExportAccount { weaKeys = AccountSig
   acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd weaEncryptionKey)
   return $ AccountConfig
     { acAddr = NamedAddress { naNames = [name], naAddr = asdAddress }
-    , acThreshold = asdThreshold
+    , acCids = weaCredMap
     , ..
     }
   where
     ensureValidName name =
-      let trimmedName = strip name
+      let trimmedName = T.strip name
       in case validateAccountName trimmedName of
           Left err -> do
             logError [err]
@@ -147,17 +193,14 @@ decodeGenesisFormattedAccountExport payload name pwd = runExceptT $ do
           addr <- v .: "address"
           aks <- v .: "accountKeys"
           accEncryptionKey <- v .: "encryptionSecretKey"
-          accCredMap <- aks .: "keys"
-          unless (Map.size accCredMap == 1) $ fail "Currently only accounts with a single credential are supported."
-          case Map.lookup (0 :: IDTypes.CredentialIndex) accCredMap of
-            Nothing -> fail "Currently only accounts with a single credential (0) are supported."
-            Just ad -> do
-              accKeyMap <- ad .: "keys"
-              acThreshold <- ad .:? "threshold" .!= fromIntegral (Map.size accKeyMap)
-              return $ do
-                acKeys <- encryptAccountKeyMap pwd accKeyMap
-                acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd accEncryptionKey)
-                return AccountConfig { acAddr = NamedAddress{naNames = maybeToList name, naAddr = addr}
+          let accCredMap = gakKeys aks
+          -- the genesis credentials
+          cmap <- v .: "credentials"
+          return $ do
+            acKeys <- encryptAccountKeyMap pwd (gckKeys <$> accCredMap)
+            acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd accEncryptionKey)
+            return AccountConfig { acAddr = NamedAddress{naNames = maybeToList name, naAddr = addr}
+                                 , acCids = IDTypes.credId <$> (gcCredentials . vValue $ cmap)
                                  , .. }
 
 
