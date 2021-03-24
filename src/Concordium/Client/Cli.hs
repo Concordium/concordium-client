@@ -7,7 +7,7 @@ import qualified Concordium.Crypto.BlsSignature as Bls
 import qualified Concordium.Crypto.VRF as VRF
 import qualified Concordium.ID.Types as IDTypes
 import Concordium.Types
-import Concordium.Utils.Encryption
+import Concordium.Utils.Encryption (Password(..))
 
 import Concordium.Client.Parse
 import Concordium.Client.Types.TransactionStatus
