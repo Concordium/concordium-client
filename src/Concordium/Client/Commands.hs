@@ -194,6 +194,12 @@ data AccountCmd
       -- If none are provided all existing ones will be used.
       adIndex :: !(Maybe Int)
     }
+  -- |Updated credentials and account threshold (i.e. how many credential holders that need to sign transactions)
+  | AccountUpdateCredentials
+    { aucNewCredInfos :: !(Maybe FilePath) -- File containing the new CredentialDeploymentInformation's
+    , aucRemoveCredIds :: !(Maybe FilePath) -- File containing the CredentialRegistrationID's for the credentials to be removed
+    , aucNewThreshold :: !Int -- The new account threshold
+    , aucTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   deriving (Show)
 
 data ModuleCmd
@@ -640,6 +646,7 @@ accountCmds =
           (accountShowCmd <>
            accountListCmd <>
            accountUpdateKeysCmd <>
+           accountUpdateCredentialsCmd <>
            accountEncryptCmd <>
            accountDecryptCmd))
       (progDesc "Commands for inspecting and modifying accounts."))
@@ -705,6 +712,26 @@ accountUpdateKeysCmd =
         , "   }"
         , "where idx is the key index associated to the corresponding verify key." ]))
 
+accountUpdateCredentialsCmd :: Mod CommandFields AccountCmd
+accountUpdateCredentialsCmd =
+  command
+    "update-credentials"
+    (info
+      (AccountUpdateCredentials <$>
+        optional (strOption (long "new-cdis" <> metavar "FILE" <> help "File containing the new credential deployment informations")) <*>
+        optional (strOption (long "remove-credentials" <> metavar "FILE" <> help "File containing credential registration ids of the credentials to be removed")) <*>
+        option auto (long "new-threshold" <> metavar "THRESHOLD" <> help "New account threshold, i.e. how many credential holders needed to sign a transaction") <*>
+        -- option (eitherReader credIdFromStringInform) (long "credId" <> metavar "CRED-ID" <> help "The credential registration id of the credential whose keys we want to update.") <*>
+        transactionOptsParser)
+      (progDescDoc $ docFromLines
+        [ "Set keys for the credential. Expected format of the key file:"
+        , "   {"
+        , "     idx: {"
+        , "       \"verifyKey\": ..."
+        , "     },"
+        , "     ..."
+        , "   }"
+        , "where idx is the key index associated to the corresponding verify key." ]))
 
 moduleCmds :: Mod CommandFields Cmd
 moduleCmds =
