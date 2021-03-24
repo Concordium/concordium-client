@@ -5,7 +5,7 @@ import Concordium.ID.Types
 import Concordium.Client.Output
 import Concordium.Types
 
-import qualified Data.HashMap.Strict as HM
+import qualified Data.Map.Strict as Map
 
 import Control.Monad.Writer
 import Data.Time.Clock
@@ -92,7 +92,7 @@ consensusShowParametersSpec = describe "show parameters" $ do
     , "     1: 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6  100.0000 %  account1" ]
   where 
     p includeBakers bparams = execWriter . printBirkParameters includeBakers bparams
-    addrmap = HM.fromList [(acc1, "account1"), (acc2, "account2")]
+    addrmap = Map.fromList [(acc1, "account1"), (acc2, "account2")]
     Right acc1 = addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
     Right acc2 = addressFromText "4p2n8QQn5akq3XqAAJt2a5CsnGhDvUon6HExd2szrfkZCTD4FX"
 
