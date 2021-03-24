@@ -7,6 +7,7 @@ import qualified Concordium.Crypto.BlsSignature as Bls
 import qualified Concordium.Crypto.VRF as VRF
 import qualified Concordium.ID.Types as IDTypes
 import Concordium.Types
+import qualified Concordium.Types.Updates as Updates
 
 import Concordium.Client.Parse
 import Concordium.Client.Types.TransactionStatus
@@ -307,6 +308,60 @@ instance AE.FromJSON AccountInfoResult where
     airReleaseSchedule <- v .: "accountReleaseSchedule"
     return $ AccountInfoResult {..}) val
 
+----------------------------------------------------------------------------------------------------
+-- Parses a limited subset of the BlockSummary GRPC call to extract the ChainParameters
+
+data BlockSummaryResult = BlockSummaryResult 
+  { bsrUpdates :: !BlockSummaryUpdateResults
+  } 
+
+instance AE.FromJSON BlockSummaryResult where
+  parseJSON = withObject "block summary" $ \v -> do
+    bsrUpdates <- v .: "updates"
+    return $ BlockSummaryResult {..}
+
+data BlockSummaryUpdateResults = BlockSummaryUpdateResults
+  { bsurChainParameters :: !ChainParametersResult
+  }
+
+instance AE.FromJSON BlockSummaryUpdateResults where
+  parseJSON = withObject "updates" $ \v -> do
+    bsurChainParameters <- v .: "chainParameters"
+    return $ BlockSummaryUpdateResults {..}
+
+data ChainParametersResult = ChainParametersResult 
+  { -- |Election difficulty parameter.
+    cprElectionDifficulty :: !ElectionDifficulty
+  , -- |Euro:Energy rate.
+    cprEuroPerEnergy :: !ExchangeRate
+  , -- |uGTU:Euro rate.
+    cprMicroGTUPerEuro :: !ExchangeRate
+  , -- |Number of additional epochs that bakers must cool down when
+    -- removing stake. The cool-down will effectively be 2 epochs
+    -- longer than this value, since at any given time, the bakers
+    -- (and stakes) for the current and next epochs have already
+    -- been determined.
+    cprBakerExtraCooldownEpochs :: !Epoch
+  , -- |LimitAccountCreation: the maximum number of accounts
+    -- that may be created in one block.
+    cprAccountCreationLimit :: !CredentialsPerBlockLimit
+  , -- |Reward parameters.
+    cprRewardParameters :: !Updates.RewardParameters
+  , -- |Foundation account index.
+    cprFoundationAccount :: !AccountIndex
+  }
+
+instance AE.FromJSON ChainParametersResult where
+  parseJSON = withObject "chainParameters" $ \v -> do
+    cprElectionDifficulty <- v .: "electionDifficulty"
+    cprEuroPerEnergy <- v .: "euroPerEnergy"
+    cprMicroGTUPerEuro <- v .: "microGTUPerEuro"
+    cprBakerExtraCooldownEpochs <- v .: "bakerCooldownEpochs"
+    cprAccountCreationLimit <- v .: "accountCreationLimit"
+    cprRewardParameters <- v .: "rewardParameters"
+    cprFoundationAccount <- v .: "foundationAccountIndex" 
+    return $ ChainParametersResult {..}
+    
 ----------------------------------------------------------------------------------------------------
 
 data ConsensusStatusResult = ConsensusStatusResult
