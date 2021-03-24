@@ -9,6 +9,7 @@ import           Concordium.Client.Types.Account
 import qualified Concordium.ID.Types                 as IDTypes
 import           Concordium.Types
 import           Concordium.Crypto.EncryptedTransfers
+import qualified Concordium.Cost as Cost
 
 import           Data.Aeson                          as AE
 import qualified Data.Aeson.TH                       as AETH
@@ -17,63 +18,40 @@ import           GHC.Generics                        (Generic)
 import qualified Concordium.Types.Transactions as Types
 import qualified Concordium.Types as Types
 
--- |Cost of checking a header where the sender provides n signatures.
--- This must be kept in sync with the cost in Concordium.Scheduler.Cost
--- This function does not account for the size of the transaction payload.
-checkHeaderEnergyCost :: Int -> Energy
-checkHeaderEnergyCost = fromIntegral . (+6) . (*53)
-
--- |Cost of checking a header where the sender provides n signatures.
--- This must be kept in sync with the cost in Concordium.Scheduler.Cost.
--- This function differs from Concordium.Client.Types.Transaction.checkHeaderEnergyCost,
--- in that it accounts for the payload.
-checkHeaderEnergyCostWithPayload
-  :: PayloadSize -- ^ The number of bytes of serialized payload.
-  -> Int -- ^ The number of signatures the transaction signature contains.
-  -> Types.Energy
-checkHeaderEnergyCostWithPayload size nSig =
-  checkHeaderEnergyCost nSig + (headerSize + fromIntegral size) `div` 232
-  where headerSize = fromIntegral Types.transactionHeaderSize
+-- | Base cost of checking the transaction. The cost is always at least this,
+-- but in most cases it will have a transaction specific cost.
+minimumCost :: PayloadSize -- ^ Size of the transaction payload in bytes
+            -> Int -- ^ Number of signatures.
+            -> Energy
+minimumCost psize numSigs = Cost.baseCost totalSize numSigs
+  where -- the total size of the transaction. The +1 is for the payload tag.
+    totalSize = fromIntegral psize + Types.transactionHeaderSize
 
 -- |Cost of a simple transfer transaction.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 simpleTransferEnergyCost :: Int -> Energy
-simpleTransferEnergyCost = checkHeaderEnergyCost
+simpleTransferEnergyCost numSigs = minimumCost 41 numSigs + Cost.simpleTransferCost
+    -- FIXME: After Simon's changes are done replace 41 with computed size
 
 encryptedTransferEnergyCost :: Int -> Energy
-encryptedTransferEnergyCost = (+30000) . checkHeaderEnergyCost
-
--- |Cost of a stake delegation transaction.
--- This must be kept in sync with the cost in Concordium.Scheduler.Cost
-accountDelegateEnergyCost :: Int -> Int -> Energy
-accountDelegateEnergyCost instanceCount = (+100) . (+50*c) . checkHeaderEnergyCost
-  where c = fromIntegral instanceCount
-
--- |Cost of a stake undelegation transaction.
--- This must be kept in sync with the cost in Concordium.Scheduler.Cost
-accountUndelegateEnergyCost :: Int -> Int -> Energy
-accountUndelegateEnergyCost = accountDelegateEnergyCost
+encryptedTransferEnergyCost numSigs = minimumCost 2617 numSigs + Cost.encryptedTransferCost
+    -- FIXME: After Simon's changes are done replace 2617 with computed size
 
 -- |Cost of updating the account keys.
 -- This must be kept in sync with Concordium.Scheduler.Cost
-accountUpdateKeysEnergyCost :: Int -> Int -> Energy
-accountUpdateKeysEnergyCost keyCount = (+5*c) . checkHeaderEnergyCost
-  where c = fromIntegral keyCount
-
--- |Cost of updating the account keys.
--- This must be kept in sync with Concordium.Scheduler.Cost
-accountAddKeysEnergyCost :: Int -> Int -> Energy
-accountAddKeysEnergyCost = accountUpdateKeysEnergyCost
-
--- |Cost of updating the account keys.
--- This must be kept in sync with Concordium.Scheduler.Cost
-accountRemoveKeysEnergyCost :: Int -> Energy
-accountRemoveKeysEnergyCost = checkHeaderEnergyCost
+accountUpdateKeysEnergyCost ::
+  Int -- ^ The number of credentials on the account at the time of the update.
+  -> Int -- ^ Number of keys that will belong to the credential after the update.
+  -> Int -- ^ Number of signatures that will sign the transaction.
+  -> Energy
+accountUpdateKeysEnergyCost credentialCount keyCount numSigs = minimumCost psize numSigs + Cost.updateCredentialKeysCost credentialCount keyCount
+  where psize = 1 + 48 + 1 + fromIntegral keyCount * 49 + 1
+    -- FIXME: After Simon's changes are done replace psize with computed size
 
 -- |Cost of a baker add transaction.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 bakerAddEnergyCost :: Types.PayloadSize -> Int -> Energy
-bakerAddEnergyCost psize numSigs = 3000 + checkHeaderEnergyCostWithPayload psize numSigs
+bakerAddEnergyCost psize numSigs = minimumCost psize numSigs + Cost.addBakerCost
 
 -- |Cost of a baker set account transaction.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
@@ -81,58 +59,45 @@ bakerSetKeysEnergyCost ::
   PayloadSize -- ^Size of the payload
   -> Int -- ^Number of signatures
   -> Energy
-bakerSetKeysEnergyCost size numSigs = 2980 + checkHeaderEnergyCostWithPayload size numSigs
-
--- |Cost of a baker set aggregation key transaction
--- This must be kept in sync with the cost in Concordium.Scheduler.Cost
-bakerSetAggregationKeyEnergyCost :: Int -> Energy
-bakerSetAggregationKeyEnergyCost = (+ 2700) . checkHeaderEnergyCost
-
--- |Cost of a baker set-election-key transaction
--- This must be kept in sync with the cost in Concordium.Scheduler.Cost
-bakerSetElectionKeyEnergyCost :: Int -> Energy
-bakerSetElectionKeyEnergyCost = (+ 90) . checkHeaderEnergyCost
+bakerSetKeysEnergyCost psize numSigs = minimumCost psize numSigs + Cost.updateBakerKeysCost
 
 -- |Cost of a baker remove transaction.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 bakerRemoveEnergyCost :: Int -> Energy
-bakerRemoveEnergyCost = checkHeaderEnergyCost
+bakerRemoveEnergyCost numSigs = minimumCost 1 numSigs + Cost.removeBakerCost
+    -- FIXME: After Simon's changes are done replace 1 with computed size
 
 -- |Cost to update a baker's stake.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 bakerUpdateStakeEnergyCost :: Int -> Energy
-bakerUpdateStakeEnergyCost = (+ 90) . checkHeaderEnergyCost
+bakerUpdateStakeEnergyCost numSigs = minimumCost 9 numSigs + Cost.updateBakerStakeCost
+    -- FIXME: After Simon's changes are done replace 9 with computed size
 
 -- |Cost to update a baker's re-staking option.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 bakerUpdateRestakeEnergyCost :: Int -> Energy
-bakerUpdateRestakeEnergyCost = checkHeaderEnergyCost
-
--- |Cost of a "set election difficulty" transaction.
--- This must be kept in sync with the cost in Concordium.Scheduler.Cost
-setElectionDifficultyEnergyCost :: Int -> Energy
-setElectionDifficultyEnergyCost = checkHeaderEnergyCost
+bakerUpdateRestakeEnergyCost numSigs = minimumCost 2 numSigs + Cost.updateBakerRestakeCost
+    -- FIXME: After Simon's changes are done replace 2 with computed size
 
 -- |Cost of moving funds from public to encrypted amount of an account.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 accountEncryptEnergyCost :: Int -> Energy
-accountEncryptEnergyCost = (+100) . checkHeaderEnergyCost
+accountEncryptEnergyCost numSigs = minimumCost 9 numSigs + Cost.transferToEncryptedCost
+    -- FIXME: After Simon's changes are done replace 9 with computed size
 
 -- |Cost of moving funds from encrypted to public balance of an account.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 accountDecryptEnergyCost :: Int -> Energy
-accountDecryptEnergyCost = (+16000) . checkHeaderEnergyCost
+accountDecryptEnergyCost numSigs = minimumCost 1405 numSigs + Cost.transferToPublicCost
+    -- FIXME: After Simon's changes are done replace 1405 with computed size
 
 -- |The cost of transfer with schedule.
 transferWithScheduleEnergyCost ::
   Int -- ^ Number of releases.
   -> Int -- ^Number of signatures.
   -> Energy
-transferWithScheduleEnergyCost numRels =
-  let sizePremium = (94 + 16 * fromIntegral numRels) `div` 232
-  -- the formula comes from counting the size of the transaction payload
-  -- + the header size
-  in (+ (100 * fromIntegral numRels)) . (+ sizePremium) . checkHeaderEnergyCost
+transferWithScheduleEnergyCost numRels numSigs = minimumCost (32 + 1 + 1 + fromIntegral numRels * 16) numSigs + Cost.scheduledTransferCost numRels
+    -- FIXME: After Simon's changes are done replace (...) with computed size
 
 -- |Transaction header type
 -- To be populated when deserializing a JSON object.

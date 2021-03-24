@@ -34,7 +34,7 @@ import Concordium.Client.LegacyCommands
 import Concordium.Client.Types.Account
 import Concordium.Client.Utils
 import Concordium.Common.Time
-import Concordium.ID.Types (KeyIndex, SignatureThreshold, CredentialRegistrationID)
+import Concordium.ID.Types (CredentialIndex, KeyIndex, CredentialRegistrationID)
 import Concordium.Types
 import Text.Printf
 import qualified Text.PrettyPrint.ANSI.Leijen as P
@@ -114,16 +114,15 @@ data ConfigAccountCmd
     , caukKeysFile :: !FilePath }
   | ConfigAccountChangeKeyPassword
     { cackpName :: !Text 
+    , cackpCIndex :: !CredentialIndex
     , cackpIndex :: !KeyIndex }
   | ConfigAccountRemoveKeys
     { carkAddr :: !Text
+    , carkCidx :: !CredentialIndex
     , carkKeys :: ![KeyIndex]
-    , carkThreshold :: !(Maybe SignatureThreshold) }
+    }
   | ConfigAccountRemoveName
     { carnText :: !Text }
-  | ConfigAccountSetThreshold
-    { cuatAddr :: !Text
-    , cuatThreshold :: !SignatureThreshold }
   deriving (Show)
 
 data Interval = Minute -- 60 secs
@@ -160,6 +159,14 @@ data TransactionCmd
       -- | Which indices to use as inputs to the encrypted amount transfer.
       -- If none are provided all existing ones will be used.
       tetIndex :: !(Maybe Int) }
+  -- | Register data on chain.
+  | TransactionRegisterData
+    { -- | File containing the data.
+      trdFile :: !FilePath,
+      -- | Options for transaction.
+      trdTransactionOptions :: !(TransactionOpts (Maybe Energy))
+    }
+
   deriving (Show)
 
 data AccountCmd
@@ -300,6 +307,7 @@ data TransactionOpts energyOrMaybe =
   TransactionOpts
   { toSender :: !(Maybe Text)
   , toKeys :: !(Maybe FilePath)
+  , toSigners :: !(Maybe Text)
   , toNonce :: !(Maybe Nonce)
   , toMaxEnergyAmount :: !energyOrMaybe
   , toExpiration :: !(Maybe Text)
@@ -454,6 +462,7 @@ transactionOptsParserBuilder energyOrMaybeParser =
     -- TODO Specify / refer to format of JSON file when new commands (e.g. account add-keys) that accept same format are
     -- added.
     optional (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file.")) <*>
+    optional (strOption (long "signers" <> metavar "SIGNERS" <> help "Specification of which (local) keys to sign with. Example: \"0:1,0:2,3:0,3:1\" specifies that credential holder 0 signs with keys 1 and 2, while credential holder 3 signs with keys 0 and 1")) <*>
     optional (option auto (long "nonce" <> metavar "NONCE" <> help "Transaction nonce.")) <*>
     energyOrMaybeParser <*>
     optional (strOption (long "expiry" <> metavar "EXPIRY" <> help "Expiration time of a transaction, specified as a relative duration (\"30s\", \"5m\", etc.) or UNIX epoch timestamp.")) <*>
@@ -505,7 +514,8 @@ transactionCmds =
            transactionSendGtuCmd <>
            transactionWithScheduleCmd <>
            transactionDeployCredentialCmd <>
-           transactionEncryptedTransferCmd))
+           transactionEncryptedTransferCmd <>
+           transactionRegisterDataCmd))
       (progDesc "Commands for submitting and inspecting transactions."))
 
 transactionSubmitCmd :: Mod CommandFields TransactionCmd
@@ -613,6 +623,16 @@ transactionEncryptedTransferCmd =
          option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
          optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which incoming encrypted amounts should be used.")))
       (progDesc "Transfer GTU from the encrypted balance of the account to the encrypted balance of another account."))
+
+transactionRegisterDataCmd :: Mod CommandFields TransactionCmd
+transactionRegisterDataCmd =
+  command
+    "register-data"
+    (info
+      (TransactionRegisterData <$>
+        strArgument (metavar "FILE" <> help "File containing the data to register.") <*>
+        transactionOptsParser)
+      (progDesc "Register data on the chain."))
 
 accountCmds :: Mod CommandFields Cmd
 accountCmds =
@@ -912,9 +932,8 @@ configAccountCmds showAllOpts =
            configAccountUpdateKeysCmd <>
            configAccountChangeKeyPasswordCmd <>
            configAccountRemoveKeysCmd <>
-           configAccountRemoveNameCmd <>
-           configAccountSetThresholdCmd <>
-           configAccountRemoveKeysCmd))
+           configAccountRemoveNameCmd
+           ))
       (progDesc "Commands for inspecting and changing account-specific configuration."))
 
 configAccountNameCmd :: Mod CommandFields ConfigAccountCmd
@@ -1010,7 +1029,8 @@ configAccountChangeKeyPasswordCmd =
     (info
       (ConfigAccountChangeKeyPassword <$>
           strOption (long "account" <> metavar "ACCOUNT" <> help "Name or Address of account to update the keypair of") <*>
-          (option (eitherReader indexFromStringInform) (long "index" <> metavar "INDEX" <> help "Key index to update password for"))
+          option (eitherReader credentialIndexFromStringInform) (long "cred-index" <> metavar "CREDINDEX" <> help "Credential index for the key to update password for") <*>
+          option (eitherReader indexFromStringInform) (long "key-index" <> metavar "KEYINDEX" <> help "Key index to update password for")
       )
       (progDesc "Change the password used to encrypt the account keys"))
 
@@ -1021,23 +1041,12 @@ configAccountRemoveKeysCmd =
     (info
       (ConfigAccountRemoveKeys <$>
         strOption (long "account" <> metavar "ACCOUNT" <> help "Name or address of the account.") <*>
-        some (argument auto (metavar "KEYINDICES" <> help "space-separated list of indices of the keys to remove.")) <*>
-        optional (option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <>
-            help "Update the signature threshold to this value. If not set, no changes are made to the threshold.")))
+        option (eitherReader credentialIndexFromStringInform) (long "credential-index" <> metavar "CREDENTIALINDEX" <> help "Index of the credential containing the keys to remove") <*>
+        some (argument auto (metavar "KEYINDICES" <> help "space-separated list of indices of the keys to remove."))
+        )
       (progDescDoc $ docFromLines
-        [ "Removes the keys from the account at the specified indices. The --threshold option may be used to update the signature threshold." ]))
-
-configAccountSetThresholdCmd :: Mod CommandFields ConfigAccountCmd
-configAccountSetThresholdCmd =
-  command
-    "set-threshold"
-    (info
-      (ConfigAccountSetThreshold <$>
-        strOption (long "account" <> metavar "ACCOUNT" <> help "Name or address of the account.") <*>
-        option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <>
-            help "Sets the signature threshold to this value."))
-      (progDescDoc $ docFromLines
-        [ "Sets the signature threshold of the account to the specified value."]))
+        [ "Removes the keys from the account at the specified indices.",
+          "The --threshold option may be used to update the signature threshold." ]))
 
 readAccountExportFormat :: ReadM AccountExportFormat
 readAccountExportFormat = str >>= \case

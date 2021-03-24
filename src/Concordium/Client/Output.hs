@@ -26,11 +26,10 @@ import qualified Data.Aeson.Types as AE
 import Data.Bool
 import qualified Data.ByteString as BS
 import Data.Functor
-import Data.Hashable (Hashable)
+import qualified Data.Map.Strict as Map
 import qualified Data.HashMap.Strict as HM
-import Data.List (foldl', intercalate, nub, sortOn)
+import Data.List (foldl', intercalate, nub)
 import Data.Maybe
-import qualified Data.Map.Strict as M
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -86,27 +85,29 @@ printBaseConfig cfg = do
         tell [[i|- #{variantName} name map:   #{showNone}|]]
       else do
         tell [[i|- #{variantName} name map:|]]
-        printMap (showEntry showVal) $ toSortedList m
+        printMap (showEntry showVal) $ Map.toAscList m
     showEntry :: (v -> String) -> (Text, v) -> String
     showEntry showVal (n, a) = [i|    #{n} -> #{a'}|] :: String
       where a' = showVal a
 
-printAccountConfig :: AccountConfig -> Printer
-printAccountConfig cfg = do
+printSelectedKeyConfig :: EncryptedSigningData -> Printer
+printSelectedKeyConfig encSignData = do
   tell [ [i|Account configuration:|]
        , [i|- Names:   #{nameListOrNone}|]
-       , [i|- Address: #{naAddr $ acAddr cfg}|] ]
-  printKeys $ acKeys cfg
+       , [i|- Address: #{naAddr $ esdAddress encSignData}|] ]
+  printKeys $ esdKeys encSignData
   where printKeys m =
           if null m then
-            tell [ "- Keys:    " ++ showNone ]
+            tell [ "- Credentials keys:    " ++ showNone ]
           else do
-            tell [ "- Keys:" ]
-            printMap showEntry $ toSortedList m
+            tell [ "- Credentials keys:" ]
+            forM_ (Map.toList m) $ (\(cidx, km) -> do
+              tell [ "   - Keys for credential with index " ++ show cidx]
+              printMap showEntry $ Map.toAscList km)
         showEntry (n, kp) =
-          printf "    %s: %s" (show n) (showAccountKeyPair kp)
+          printf "      %s: %s" (show n) (showAccountKeyPair kp)
 
-        nameListOrNone = case naNames $ acAddr cfg of
+        nameListOrNone = case naNames $ esdAddress encSignData of
           [] -> showNone
           names -> showNameList names
 
@@ -137,14 +138,14 @@ printAccountConfigList cfgs =
 showNone :: String
 showNone = "none"
 
-showRevealedAttributes :: M.Map IDTypes.AttributeTag IDTypes.AttributeValue -> String
+showRevealedAttributes :: Map.Map IDTypes.AttributeTag IDTypes.AttributeValue -> String
 showRevealedAttributes as =
   if null as then
     "none"
   else
-    intercalate ", " $ map showAttr $ M.toList as
+    intercalate ", " $ map showAttr $ Map.toList as
   where
-    showTag t = case M.lookup t IDTypes.invMapping of
+    showTag t = case Map.lookup t IDTypes.invMapping of
                   Nothing -> printf "<%s>" (show t)
                   Just k -> Text.unpack k
     showAttr (t, IDTypes.AttributeValue v) = printf "%s=%s" (showTag t) (show v)
@@ -215,14 +216,14 @@ printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
 
   tell [ "" ]
 
-  if M.null $ airCredentials a then
+  if Map.null $ airCredentials a then
     tell ["Credentials: " ++ showNone]
   else do
     tell ["Credentials:"]
     if verbose then
       tell $ [showPrettyJSON (airCredentials a)]
     else
-      forM_ (M.toList (airCredentials a)) printVersionedCred
+      forM_ (Map.toList (airCredentials a)) printVersionedCred
 
 -- |Print a versioned credential. This only prints the credential value, and not the
 -- associated version.
@@ -252,7 +253,7 @@ printCred ci c =
 -- |Print a list of accounts along with optional names.
 printAccountList :: AccountNameMap -> [IDTypes.AccountAddress] -> Printer
 printAccountList nameMap accs = printNameList "Accounts" header format namedAccs
-  where namedAccs = map (\addr -> NamedAddress {naAddr = addr, naNames = unwrapMaybeList $ HM.lookup addr nameMapInv}) accs
+  where namedAccs = map (\addr -> NamedAddress {naAddr = addr, naNames = unwrapMaybeList $ Map.lookup addr nameMapInv}) accs
         nameMapInv = invertHashMapAndCombine nameMap
         header = [ "Accounts:"
                  , "                 Account Address                     Account Names"
@@ -262,7 +263,7 @@ printAccountList nameMap accs = printNameList "Accounts" header format namedAccs
 -- |Print a list of modules along with optional names.
 printModuleList :: ModuleNameMap -> [Types.ModuleRef] -> Printer
 printModuleList nameMap refs = printNameList "Modules" header format namedModRefs
-  where namedModRefs = map (\ref -> NamedModuleRef {nmrRef = ref, nmrNames = unwrapMaybeList $ HM.lookup ref nameMapInv}) refs
+  where namedModRefs = map (\ref -> NamedModuleRef {nmrRef = ref, nmrNames = unwrapMaybeList $ Map.lookup ref nameMapInv}) refs
         nameMapInv = invertHashMapAndCombine nameMap
         header = [ "Modules:"
                  , "                        Module Reference                           Module Names"
@@ -272,7 +273,7 @@ printModuleList nameMap refs = printNameList "Modules" header format namedModRef
 -- |Print a list of contracts along with optional names.
 printContractList :: ContractNameMap -> [Types.ContractAddress] -> Printer
 printContractList nameMap addrs = printNameList "Contracts" header format namedContrAddrs
-  where namedContrAddrs = map (\addr -> NamedContractAddress {ncaAddr = addr, ncaNames = unwrapMaybeList $ HM.lookup addr nameMapInv}) addrs
+  where namedContrAddrs = map (\addr -> NamedContractAddress {ncaAddr = addr, ncaNames = unwrapMaybeList $ Map.lookup addr nameMapInv}) addrs
         nameMapInv = invertHashMapAndCombine nameMap
         header = [ "Contracts:"
                  , "    Contract Address       Contract Names"
@@ -315,14 +316,14 @@ printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
     stateErrorMsg = ["Could not display contract state."]
     tellMethods = case ciState of
       CI.JustBytes _ -> tell $ toDashedList methodNames
-      CI.WithSchema CS.ModuleSchema{..} _ -> case M.lookup contractName contractSchemas of
+      CI.WithSchema CS.ModuleSchema{..} _ -> case Map.lookup contractName contractSchemas of
         Nothing -> tell $ toDashedList methodNames
         Just CS.ContractSchema{receiveSigs=rcvSigs} -> tell . toDashedList . map (tryAppendSignature rcvSigs) $ methodNames
       where methodNames = map methodNameFromReceiveName ciMethods
             toDashedList = map (\x -> [i| - #{x}|])
 
-            tryAppendSignature :: M.Map Text CS.SchemaType -> Text -> Text
-            tryAppendSignature rcvSigs rcvName = case M.lookup rcvName rcvSigs of
+            tryAppendSignature :: Map.Map Text CS.SchemaType -> Text -> Text
+            tryAppendSignature rcvSigs rcvName = case Map.lookup rcvName rcvSigs of
               Nothing -> rcvName
               Just schemaType -> rcvName <> "\n" <> Text.pack (indentBy 4 $ showPrettyJSON schemaType)
 
@@ -344,7 +345,7 @@ printModuleInspectInfo namedModRef CS.ModuleSchema{..} = do
   tell contracts
 
   where
-    contracts = map showContract $ M.toList contractSchemas
+    contracts = map showContract $ Map.toList contractSchemas
     showContract (contractName, CS.ContractSchema{..}) = case initSig of
       Nothing -> [i| - #{contractName}|]
       Just initSig' -> [i| - #{contractName}\n#{indentBy 4 $ showPrettyJSON initSig'}|]
@@ -353,9 +354,9 @@ printModuleInspectInfo namedModRef CS.ModuleSchema{..} = do
 indentBy :: Int -> String -> String
 indentBy spaces = intercalate "\n" . map (replicate spaces ' ' <>) . lines
 
--- |Invert a hashmap and combine the new values in a list.
-invertHashMapAndCombine :: (Eq v, Hashable v) => HM.HashMap k v -> HM.HashMap v [k]
-invertHashMapAndCombine = HM.fromListWith (++) . map (\(k, v) -> (v, [k])) . HM.toList
+-- |Invert a map and combine the new values in a list.
+invertHashMapAndCombine :: (Ord v) => Map.Map k v -> Map.Map v [k]
+invertHashMapAndCombine = Map.fromListWith (++) . map (\(k, v) -> (v, [k])) . Map.toList
 
 showAccountKeyPair :: EncryptedAccountKeyPair -> String
 -- TODO Make it respect indenting if this will be the final output format.
@@ -374,7 +375,7 @@ data TransactionBlockResult
 
 parseTransactionBlockResult :: TransactionStatusResult -> TransactionBlockResult
 parseTransactionBlockResult status =
-  case sortOn fst $ HM.toList (tsrResults status) of
+  case Map.toAscList (tsrResults status) of
     [(hash, outcome)] -> SingleBlock hash outcome
     blocks -> case nub $ map snd blocks of
                 [] -> NoBlocks
@@ -502,6 +503,8 @@ showEvent verbose = \case
     verboseOrNothing $ printf "Enqueued chain update, effective at %s:\n%s" (showTimeFormatted (timeFromTransactionExpiryTime ueEffectiveTime)) (show uePayload)
   Types.TransferredWithSchedule{..} ->
     verboseOrNothing $ printf "Sent transfer with schedule %s" (intercalate ", " . map (\(a, b) -> showTimeFormatted (Time.timestampToUTCTime a) ++ ": " ++ showGtu b) $ etwsAmount)
+  Types.DataRegistered{ } ->
+    verboseOrNothing [i|Registered data on chain.|]
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
@@ -579,8 +582,10 @@ showRejectReason verbose = \case
     "serialization failed"
   Types.OutOfEnergy ->
     "not enough energy"
-  Types.Rejected{..} ->
-    [i|"contract logic failure with code #{rejectReason}|]
+  Types.RejectedInit{..} ->
+    [i|"contract init logic failed with code #{rejectReason}|]
+  Types.RejectedReceive{..} ->
+    [i|"contract #{receiveName} at #{showCompactPrettyJSON ContractAddress} failed with code #{rejectReason}|]
   Types.NonExistentRewardAccount a ->
     if verbose then
       printf "account '%s' does not exist (tried to set baker reward account)" (show a)
@@ -622,6 +627,7 @@ showRejectReason verbose = \case
   Types.NonExistentCredIDs cids -> [i|credential registration ids #{cids} do not exist|]
   Types.RemoveFirstCredential -> [i|attempt to remove the first credential of the account|]
   Types.CredentialHolderDidNotSign -> [i|credential holder did not sign the credential key update|]
+  Types.StakeUnderMinimumThresholdForBaking -> "the desired stake is under the minimum threshold for baking"
 
 -- CONSENSUS
 
@@ -648,7 +654,7 @@ printConsensusStatus r =
        , printf "Last finalized time:         %s" (showMaybeUTC $ csrLastFinalizedTime r)
        , printf "Finalization period:         %s" (showMaybeEmSeconds (csrFinalizationPeriodEMA r) (csrFinalizationPeriodEMSD r)) ]
 
-printBirkParameters :: Bool -> BirkParametersResult -> HM.HashMap IDTypes.AccountAddress Text -> Printer
+printBirkParameters :: Bool -> BirkParametersResult -> Map.Map IDTypes.AccountAddress Text -> Printer
 printBirkParameters includeBakers r addrmap = do
   tell [ printf "Election nonce:      %s" (show $ bprElectionNonce r)
       ] --, printf "Election difficulty: %f" (Types.electionDifficulty $ bprElectionDifficulty r) ]
@@ -666,7 +672,7 @@ printBirkParameters includeBakers r addrmap = do
           showLotteryPower lp = if 0 < lp && lp < 0.000001
                                 then " <0.0001 %" :: String
                                 else printf "%8.4f %%" (lp*100)
-          accountName bkr = fromMaybe " " $ HM.lookup bkr addrmap
+          accountName bkr = fromMaybe " " $ Map.lookup bkr addrmap
 
 
 -- BLOCK
@@ -808,10 +814,6 @@ printMap s m = forM_ m $ \(k, v) -> tell [s (k, v)]
 -- (for True and False, respectively).
 showYesNo :: Bool -> String
 showYesNo = bool "no" "yes"
-
--- |Convert a map to an assoc list sorted on the key.
-toSortedList :: Ord k => HM.HashMap k v -> [(k, v)]
-toSortedList = sortOn fst . HM.toList
 
 -- |Unwrap a list from within `Maybe`. `Nothing` becomes an empty list.
 unwrapMaybeList :: Maybe [a] -> [a]
