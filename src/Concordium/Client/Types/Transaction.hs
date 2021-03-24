@@ -52,11 +52,11 @@ accountUpdateKeysEnergyCost credentialCount keyCount numSigs = minimumCost psize
 -- This must be kept in sync with Concordium.Scheduler.Cost
 accountUpdateCredentialsEnergyCost ::
   Int -- ^ The number of credentials on the account at the time of the update.
-  -> Int -- ^ Number of keys that will belong to the credential after the update.
+  -> [Int] -- ^ List of number of keys belonging to each new credential.
   -> Int -- ^ Number of signatures that will sign the transaction.
   -> Energy
-accountUpdateCredentialsEnergyCost credentialCount keyCount numSigs = minimumCost psize numSigs + Cost.updateCredentialKeysCost credentialCount keyCount
-  where psize = 1 + 48 + 1 + fromIntegral keyCount * 49 + 1
+accountUpdateCredentialsEnergyCost credentialCount keyCountList numSigs = minimumCost psize numSigs + Cost.updateCredentialsVariableCost credentialCount keyCountList
+  where psize = 1 + 48 + 1 -- + fromIntegral keyCount * 49 + 1 -- TODO: fix this
     -- FIXME: After Simon's changes are done replace psize with computed size
 
 -- |Cost of a baker add transaction.

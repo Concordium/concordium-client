@@ -956,17 +956,18 @@ getAccountUpdateKeysTransactionCfg baseCfg txOpts f cid numCredentials = do
   where nrgCost numKeys _ = return $ Just $ accountUpdateKeysEnergyCost numCredentials numKeys
   
 -- |Resolve configuration for an 'update credentials' transaction
-getAccountUpdateCredentialsTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Maybe FilePath -> Maybe FilePath -> Int -> IO AccountUpdateCredentialsTransactionCfg
-getAccountUpdateCredentialsTransactionCfg baseCfg txOpts f1 f2 threshold = do
+getAccountUpdateCredentialsTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Maybe FilePath -> Maybe FilePath -> Int -> Int -> IO AccountUpdateCredentialsTransactionCfg
+getAccountUpdateCredentialsTransactionCfg baseCfg txOpts f1 f2 threshold numCredentials = do
   cdis <- case f1 of 
     Nothing -> return Map.empty
     Just file -> getFromJson =<< eitherDecodeFileStrict file
   removeCids <- case f2 of
     Nothing -> return []
     Just file -> getFromJson =<< eitherDecodeFileStrict file
-  txCfg <- getTransactionCfg baseCfg txOpts (nrgCost $ 1) -- TODO: fix the cost
+  let numKeysList = map (ID.credNumKeys . ID.credPubKeys) $ Map.elems cdis
+  txCfg <- getTransactionCfg baseCfg txOpts (nrgCost $ numKeysList)
   return $ AccountUpdateCredentialsTransactionCfg txCfg cdis removeCids $ fromIntegral threshold
-  where nrgCost numKeys _ = return $ Just $ accountUpdateCredentialsEnergyCost numKeys
+  where nrgCost l _ = return $ Just $ accountUpdateCredentialsEnergyCost numCredentials l
 
 -- |Resolve configuration for transferring an amount from public to encrypted
 -- balance of an account.
@@ -1217,13 +1218,13 @@ accountUpdateCredentialsTransactionPayload AccountUpdateCredentialsTransactionCf
         , tcEncryptedSigningData = EncryptedSigningData { esdAddress = addr } }
         = auctcTransactionCfg
 
-  -- let logNewCids = Map.foldrWithKey (\idx cdi l -> (printf "\t%s: %s" (show idx) (show $ ID.cdvCredId . ID.cdiValues $ cdi)) : l) [] auctcNewCredInfos
+  let logNewCids = Map.foldrWithKey (\idx cdi l -> (printf "\t%s: %s" (show idx) (show $ ID.credId $ cdi)) : l) [] auctcNewCredInfos
 
   logInfo $
-    -- [ printf "adding credentials with the following credential registration ids on account:" (showNamedAddress addr) ] ++
-    -- logNewCids ++
-    -- [ printf "with new account threshold %s" (show (auctcNewThreshold))] ++
-    -- [ printf "deleting credentials with credential registration ids " (show (auctcRemoveCredIds))] ++
+    [ printf "adding credentials to account %s with the following credential registration ids on account:" (showNamedAddress addr) ] ++
+    logNewCids ++
+    [ printf "setting new account threshold %s" (show (auctcNewThreshold))] ++
+    [ printf "removing credentials with credential registration ids %s" (show (auctcRemoveCredIds))] ++
     [ printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
     , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
 
@@ -1468,15 +1469,20 @@ processAccountCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      aucCfg <- getAccountUpdateCredentialsTransactionCfg baseCfg txOpts cdisFile removeCidsFile newThreshold
-      let txCfg = auctcTransactionCfg aucCfg
-      when verbose $ do
-        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
-        putStrLn ""
+      accCfg <- liftIO $ getAccountCfgFromTxOpts baseCfg txOpts
+      let senderAddress = naAddr $ esdAddress accCfg
 
-      let intOpts = toInteractionOpts txOpts
-      pl <- accountUpdateCredentialsTransactionPayload aucCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+      withClient backend $ do
+        accInfo <- getAccountInfoOrDie senderAddress
+        aucCfg <- liftIO $ getAccountUpdateCredentialsTransactionCfg baseCfg txOpts cdisFile removeCidsFile newThreshold (Map.size (airCredentials accInfo))
+        let txCfg = auctcTransactionCfg aucCfg
+        when verbose $ liftIO $ do
+          runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
+          putStrLn ""
+
+        let intOpts = toInteractionOpts txOpts
+        pl <- liftIO $ accountUpdateCredentialsTransactionPayload aucCfg (ioConfirm intOpts)
+        sendAndTailTransaction_ txCfg pl intOpts
 
     AccountEncrypt{..} -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
