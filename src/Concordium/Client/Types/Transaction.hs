@@ -60,6 +60,12 @@ accountUpdateKeysEnergyCost :: Int -> Int -> Energy
 accountUpdateKeysEnergyCost keyCount = (+5*c) . checkHeaderEnergyCost
   where c = fromIntegral keyCount
 
+-- |Cost of updating credentials.
+-- This must be kept in sync with Concordium.Scheduler.Cost
+accountUpdateCredentialsEnergyCost :: Int -> Int -> Energy
+accountUpdateCredentialsEnergyCost credCount = (+5*c) . checkHeaderEnergyCost
+  where c = fromIntegral credCount
+
 -- |Cost of updating the account keys.
 -- This must be kept in sync with Concordium.Scheduler.Cost
 accountAddKeysEnergyCost :: Int -> Int -> Energy
