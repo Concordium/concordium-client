@@ -11,6 +11,7 @@ import Concordium.ID.Types
 import Concordium.Crypto.EncryptedTransfers
 import Concordium.Client.Cli
 import Concordium.Client.Types.Transaction(encryptedTransferEnergyCost)
+import Concordium.Client.Export(toKeysList)
 
 import           Control.Concurrent
 import           Control.Monad.Reader
@@ -19,7 +20,6 @@ import System.Exit
 import Data.Time.Clock
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
-import qualified Data.HashMap.Strict as Map
 
 data TxOptions = TxOptions {
   -- |How many transactions to send per second.
@@ -90,7 +90,7 @@ main = do
 
   case AE.parseEither accountKeysParser v of
     Left err' -> putStrLn $ "Could not decode JSON because: " ++ err'
-    Right (selfAddress, keyMap, encryptionSecretKey) -> do
+    Right (selfAddress, keysList, encryptionSecretKey) -> do
       print $ "Using sender account = " ++ show selfAddress
 
       case encrypted txoptions of
@@ -113,11 +113,11 @@ main = do
           let txHeader nonce = TransactionHeader {
                 thSender = selfAddress,
                 thNonce = nonce,
-                thEnergyAmount = 1000,
+                thEnergyAmount = 1500,
                 thPayloadSize = payloadSize (txBody nonce),
                 thExpiry = TransactionTime maxBound
                 }
-          let sign nonce () = return (txRecepient nonce, NormalTransaction $ signTransaction (Map.toList keyMap) (txHeader nonce) (txBody nonce), ())
+          let sign nonce () = return (txRecepient nonce, NormalTransaction $ signTransaction keysList (txHeader nonce) (txBody nonce), ())
           go backend (logit txoptions) (tps txoptions) () sign (airNonce accInfo)
         True -> do
           globalParameters <- withClient backend (getBestBlockHash >>= getParseCryptographicParameters) >>= \case
@@ -152,18 +152,17 @@ main = do
           let txHeader nonce body = TransactionHeader {
                 thSender = selfAddress,
                 thNonce = nonce,
-                thEnergyAmount = 11 + encryptedTransferEnergyCost (Map.size keyMap),
+                thEnergyAmount = encryptedTransferEnergyCost (payloadSize body) (length keysList),
                 thPayloadSize = payloadSize body,
                 thExpiry = TransactionTime maxBound
                 }
           let sign nonce carry = do
                 (body, newSelfAmount) <- txBody nonce carry
-                return (fst (txRecepient nonce), NormalTransaction $ signTransaction (Map.toList keyMap) (txHeader nonce body) body, newSelfAmount)
+                return (fst (txRecepient nonce), NormalTransaction $ signTransaction keysList (txHeader nonce body) body, newSelfAmount)
           go backend (logit txoptions) (tps txoptions) (ownAmount, plain) sign (airNonce accInfo)
 
   where accountKeysParser = AE.withObject "Account keys" $ \v -> do
           accountAddr <- v AE..: "address"
-          accountData <- v AE..: "accountData"
+          accountKeys <- v AE..: "accountKeys"
           secretKey <- v AE..: "encryptionSecretKey"
-          keyMap <- accountData AE..: "keys"
-          return (accountAddr, keyMap, secretKey)
+          return (accountAddr, toKeysList accountKeys, secretKey)

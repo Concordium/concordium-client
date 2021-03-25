@@ -7,7 +7,8 @@ import qualified Concordium.Crypto.BlsSignature as Bls
 import qualified Concordium.Crypto.VRF as VRF
 import qualified Concordium.ID.Types as IDTypes
 import Concordium.Types
-import qualified Concordium.Types.Updates as Updates
+import Concordium.Types.Parameters
+import qualified Concordium.ID.Types as ID
 
 import Concordium.Client.Parse
 import Concordium.Client.Types.TransactionStatus
@@ -21,8 +22,7 @@ import Control.Exception
 import Data.Aeson as AE
 import Data.Aeson.Types (Pair)
 import qualified Data.Char as C
-import Data.List (uncons, sortOn)
-import qualified Data.HashMap.Strict as Map
+import Data.List (uncons)
 import qualified Data.Map.Strict as OrdMap
 import Data.Maybe
 import Data.Text(Text)
@@ -157,30 +157,33 @@ createPasswordInteractive descr = runExceptT $ do
 -- presenting the key index to the user.
 decryptAccountKeyMapInteractive
   :: EncryptedAccountKeyMap
-  -> Maybe IDTypes.SignatureThreshold
+  -> Maybe (OrdMap.Map ID.CredentialIndex [ID.KeyIndex])
   -> Maybe String -- ^ Optional text describing the account of which to decrypt keys. Will be shown in the format
                   -- "Enter password for %s signing key"
   -> IO (Either String AccountKeyMap) -- ^ The decrypted 'AccountKeyMap' or an error message on failure.
-decryptAccountKeyMapInteractive encryptedKeyMap threshold accDescr = runExceptT $ do
-  let accText = maybe " " (\s -> " " ++ s ++ " ") accDescr
-  let queryText keyIndex =
-        if Map.size encryptedKeyMap <= 1
-        then "Enter password for" ++ accText ++ "signing key: "
-        else case accDescr of
-               Nothing -> "Enter password for signing key with index " ++ show keyIndex ++ ": "
+decryptAccountKeyMapInteractive encryptedKeyMap indexmap accDescr = runExceptT $ do
+  -- let accText = maybe " " (\s -> " " ++ s ++ " ") accDescr
+  let queryText credIndex keyIndex =
+        -- if Map.size encryptedKeyMap <= 1
+        -- then "Enter password for" ++ accText ++ "signing key: "
+        -- else 
+          case accDescr of
+               Nothing -> "Enter password for credential with index " ++ show credIndex ++ " and signing key with index " ++ show keyIndex ++ ": "
                Just descr -> "Enter password for signing key of " ++ descr ++ " with index " ++ show keyIndex ++ ": "
   -- In order to request passwords only for `threshold` number of accounts, we will map over the sub-map of the wanted size
-  let inputMap = case threshold of
-        Nothing -> encryptedKeyMap -- no threshold provided, use the full map
-        Just t ->
-          -- encryptedKeyMap is a hashmap and as such it is not sorted. The way we choose the
-          -- keys for signing is by sorting on the index, and as we want to still return a hashmap
-          -- we just take `threshold` elements and recreate the submap.
-          Map.fromList . take (fromIntegral t) . sortOn fst . Map.toList $ encryptedKeyMap
-  sequence $ Map.mapWithKey (\keyIndex eKp -> do
-                                pwd <- liftIO $ askPassword $ queryText keyIndex
+  let inputMap = case indexmap of
+        Nothing -> encryptedKeyMap -- no map provided, use the full map
+        Just im -> let filterCredentials = OrdMap.filterWithKey (\k _ -> OrdMap.member k im) encryptedKeyMap
+                       lookUpKey cidx kidx = 
+                         case OrdMap.lookup cidx im of 
+                           Nothing -> False
+                           Just keyIndexList -> kidx `elem` keyIndexList
+                       newmap = OrdMap.mapWithKey (\credIndex m -> OrdMap.filterWithKey (\k _ -> lookUpKey credIndex k) m) filterCredentials
+                      in newmap
+  sequence $ OrdMap.mapWithKey (\credIndex eKpMap -> (sequence . OrdMap.mapWithKey (\keyIndex eKp -> do
+                                pwd <- liftIO $ askPassword $ queryText credIndex keyIndex
                                 decryptAccountKeyPair pwd keyIndex eKp
-                            ) inputMap
+                            )) eKpMap) inputMap
 
 decryptAccountEncryptionSecretKeyInteractive
   :: EncryptedAccountEncryptionSecretKey
@@ -321,7 +324,7 @@ instance AE.FromJSON BlockSummaryResult where
     return $ BlockSummaryResult {..}
 
 data BlockSummaryUpdateResults = BlockSummaryUpdateResults
-  { bsurChainParameters :: !ChainParametersResult
+  { bsurChainParameters :: !ChainParameters
   }
 
 instance AE.FromJSON BlockSummaryUpdateResults where
@@ -329,39 +332,6 @@ instance AE.FromJSON BlockSummaryUpdateResults where
     bsurChainParameters <- v .: "chainParameters"
     return $ BlockSummaryUpdateResults {..}
 
-data ChainParametersResult = ChainParametersResult 
-  { -- |Election difficulty parameter.
-    cprElectionDifficulty :: !ElectionDifficulty
-  , -- |Euro:Energy rate.
-    cprEuroPerEnergy :: !ExchangeRate
-  , -- |uGTU:Euro rate.
-    cprMicroGTUPerEuro :: !ExchangeRate
-  , -- |Number of additional epochs that bakers must cool down when
-    -- removing stake. The cool-down will effectively be 2 epochs
-    -- longer than this value, since at any given time, the bakers
-    -- (and stakes) for the current and next epochs have already
-    -- been determined.
-    cprBakerExtraCooldownEpochs :: !Epoch
-  , -- |LimitAccountCreation: the maximum number of accounts
-    -- that may be created in one block.
-    cprAccountCreationLimit :: !CredentialsPerBlockLimit
-  , -- |Reward parameters.
-    cprRewardParameters :: !Updates.RewardParameters
-  , -- |Foundation account index.
-    cprFoundationAccount :: !AccountIndex
-  }
-
-instance AE.FromJSON ChainParametersResult where
-  parseJSON = withObject "chainParameters" $ \v -> do
-    cprElectionDifficulty <- v .: "electionDifficulty"
-    cprEuroPerEnergy <- v .: "euroPerEnergy"
-    cprMicroGTUPerEuro <- v .: "microGTUPerEuro"
-    cprBakerExtraCooldownEpochs <- v .: "bakerCooldownEpochs"
-    cprAccountCreationLimit <- v .: "accountCreationLimit"
-    cprRewardParameters <- v .: "rewardParameters"
-    cprFoundationAccount <- v .: "foundationAccountIndex" 
-    return $ ChainParametersResult {..}
-    
 ----------------------------------------------------------------------------------------------------
 
 data ConsensusStatusResult = ConsensusStatusResult

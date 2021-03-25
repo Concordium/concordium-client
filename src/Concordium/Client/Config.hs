@@ -6,9 +6,10 @@ module Concordium.Client.Config where
 
 
 import Concordium.Types as Types
-import Concordium.ID.Types (addressFromText, KeyIndex)
+import Concordium.ID.Types (addressFromText, KeyIndex, CredentialIndex)
 import qualified Concordium.ID.Types as IDTypes
 import Concordium.Client.Cli
+import Concordium.Client.Utils
 import Concordium.Client.Commands
 import Concordium.Client.Types.Account
 
@@ -25,9 +26,9 @@ import Data.Aeson ((.:),(.=))
 import Concordium.Common.Version
 
 import Data.Char
-import Data.List (foldl', find, sort, sortOn)
+import Data.List (foldl', find, sortOn)
 import Data.List.Split
-import qualified Data.HashMap.Strict as M
+import qualified Data.Map.Strict as M
 import Data.String (IsString)
 import Data.String.Interpolate (i, iii)
 import qualified Data.Text as T
@@ -48,17 +49,37 @@ The layout of the config directory is shown in this example:
   ├── accounts
   │   ├── names.map
   │   ├── <account1>
-  │   │   ├── keypair0.json
-  │   │   ├── keypair1.json
+  │   │   ├── <credId1>
+  │   │   │   ├── keypair0.json
+  │   │   │   ├── keypair1.json
+  │   │   │   ├── <credId1>.threshold
+  │   │   │   ├── <credId1>.index
   │   │   ...
-  │   │   └── encSecretKey.json
+  │   │   │   └── encSecretKey.json
+  │   │   ├── <credId2>
+  │   │   │   ├── keypair0.json
+  │   │   │   ├── keypair1.json
+  │   │   │   ├── <credId2>.threshold
+  │   │   │   ├── <credId2>.index
+  │   │   ...
+  │   │   │   └── encSecretKey.json
   │   ├── <account1>.threshold
   │   ├── <account2>
-  │   │   ├── keypair0.json
-  │   │   ├── keypair1.json
+  │   │   ├── <credId1>
+  │   │   │   ├── keypair0.json
+  │   │   │   ├── keypair1.json
+  │   │   │   ├── <credId1>.threshold
+  │   │   │   ├── <credId1>.index
   │   │   ...
-  │   │   └── encSecretKey.json
-  │   └── <account2>.threshold
+  │   │   │   └── encSecretKey.json
+  │   │   ├── <credId2>
+  │   │   │   ├── keypair0.json
+  │   │   │   ├── keypair1.json
+  │   │   │   ├── <credId2>.threshold
+  │   │   │   ├── <credId2>.index
+  │   │   ...
+  │   │   │   └── encSecretKey.json
+  │   ├── <account2>.threshold
   └── contracts
       ├── contractNames.map
       └── moduleNames.map
@@ -131,6 +152,14 @@ parseAccountKeyFileName fileName =
   then readMaybe (drop (length accountKeyFilePrefix) $ takeBaseName fileName)
   else Nothing
 
+-- |For a credential folder name, find the corresponding credential index
+-- of an account key file (as it would be produced by 'accountKeyFile').
+parseCredentialFolder :: FilePath -> Maybe CredentialIndex
+parseCredentialFolder fileName =
+  if takeExtension fileName == "." ++ accountKeyFileExt
+  then readMaybe (drop (length accountKeyFilePrefix) $ takeBaseName fileName)
+  else Nothing
+
 -- |Name to use if no account name is provided.
 defaultAccountName :: Text
 defaultAccountName = "default"
@@ -148,7 +177,7 @@ moduleNameMapFile :: ContractConfigDir -> FilePath
 moduleNameMapFile = (</> "moduleNames.map")
 
 -- |Mapping builder from a name to a provided type.
-type NameMap = M.HashMap Text
+type NameMap = M.Map Text
 
 -- |Mapping from account names to their addresses.
 type AccountNameMap = NameMap Types.AccountAddress
@@ -214,6 +243,18 @@ ensureAccountConfigInitialized :: BaseConfig -> IO ()
 ensureAccountConfigInitialized baseCfg = do
   let accCfgDir = bcAccountCfgDir baseCfg
   ensureDirCreated False accCfgDir
+
+-- |Ensure the basic contract config is initialized.
+ensureContractConfigInitialized :: BaseConfig -> IO ()
+ensureContractConfigInitialized baseCfg = do
+  let conCfgDir = bcContractCfgDir baseCfg
+  ensureDirCreated False conCfgDir
+
+-- |Ensure the basic module config is initialized.
+ensureModuleConfigInitialized :: BaseConfig -> IO ()
+ensureModuleConfigInitialized baseCfg = do
+  let modCfgDir = bcContractCfgDir baseCfg
+  ensureDirCreated False modCfgDir
 
 -- |Ensure a directory is created and, if Verbose, logInfo actions.
 ensureDirCreated :: Verbose -> FilePath -> IO ()
@@ -291,7 +332,7 @@ initAccountConfigEither baseCfg namedAddr inCLI skipExisting = runExceptT $ do
   return (baseCfg', AccountConfig
                     { acAddr = namedAddr
                     , acKeys = M.empty
-                    , acThreshold = 1 -- minimum threshold
+                    , acCids = M.empty
                     , acEncryptionKey = Nothing
                     }, written)
 
@@ -320,8 +361,39 @@ removeAccountNameAndWrite baseCfg name verbose = do
 
   let m = M.delete name $ bcAccountNameMap baseCfg
   liftIO $ writeNameMap verbose mapFile m
-  logSuccess ["removed name mapping"]
+  logSuccess ["removed account name mapping"]
   return baseCfg { bcAccountNameMap = m }
+
+-- |Remove a name from the contract name map. If the name is not in use,
+-- |it does nothing.
+-- |Returns the potentially updated baseConfig.
+removeContractNameAndWrite :: BaseConfig -> Text -> Verbose -> IO BaseConfig
+removeContractNameAndWrite baseCfg name verbose = do
+  -- Check if config has been initialized.
+  let conCfgDir = bcContractCfgDir baseCfg
+      mapFile = contractNameMapFile conCfgDir
+  liftIO $ ensureContractConfigInitialized baseCfg
+
+  let m = M.delete name $ bcContractNameMap baseCfg
+  liftIO $ writeNameMapAsJSON verbose mapFile m
+  logSuccess ["removed contract name mapping"]
+  return baseCfg { bcContractNameMap = m }
+
+-- |Remove a name from the module name map. If the name is not in use
+-- |it does nothing
+-- |Returns the potentially updated baseConfig
+removeModuleNameAndWrite :: BaseConfig -> Text -> Verbose -> IO BaseConfig
+removeModuleNameAndWrite baseCfg name verbose = do
+  -- Check if config has been initialized.
+  -- module namemap file is in contract directory 
+  let conCfgDir = bcContractCfgDir baseCfg
+      mapFile = moduleNameMapFile conCfgDir
+  liftIO $ ensureModuleConfigInitialized baseCfg
+
+  let m = M.delete name $ bcModuleNameMap baseCfg
+  liftIO $ writeNameMapAsJSON verbose mapFile m
+  logSuccess ["removed module name mapping"]
+  return baseCfg { bcModuleNameMap = m }
 
 removeAccountConfig :: BaseConfig -> NamedAddress -> IO BaseConfig
 removeAccountConfig baseCfg@BaseConfig{..} NamedAddress{..} = do
@@ -512,7 +584,7 @@ writeNameMapAsJSON verbose file =  handledWriteFile file .  AE.encodePretty' con
         handledWriteFile = handleWriteFile BSL.writeFile AllowOverwrite verbose
 -- |Write the name map to a file in the expected format.
 writeNameMap :: Show v => Verbose -> FilePath -> NameMap v -> IO ()
-writeNameMap verbose file = handledWriteFile file . BSL.fromStrict . encodeUtf8 . T.pack . unlines . map f . sortOn fst . M.toList
+writeNameMap verbose file = handledWriteFile file . BSL.fromStrict . encodeUtf8 . T.pack . unlines . map f . M.toAscList
   where f (name, val) = printf "%s = %s" name (show val)
         handledWriteFile = handleWriteFile BSL.writeFile AllowOverwrite verbose
 
@@ -559,10 +631,17 @@ writeAccountKeys :: BaseConfig -> AccountConfig -> Verbose -> IO ()
 writeAccountKeys baseCfg accCfg verbose = do
   let accCfgDir = bcAccountCfgDir baseCfg
       keysDir = accountKeysDir accCfgDir $ acAddress accCfg
-  forM_ (M.toList $ acKeys accCfg) $ \(idx, kp) -> do
-    let file = accountKeyFile keysDir idx
-    -- NOTE: This writes the JSON in a compact way. If we want human-readable JSON, we should use pretty encoding.
-    handleWriteFile AE.encodeFile AllowOverwrite verbose file kp
+      cidmap = acCids accCfg
+  forM_ (M.toList $ acKeys accCfg) $ \(cidx, kpmap) ->
+        case M.lookup cidx cidmap of 
+          Nothing -> logFatal [ printf "Couldn't find credential with index "++ show cidx ++ "; map size=" ++ show (M.size cidmap)]
+          Just cid -> do 
+            let credDir = keysDir </> show cid
+            handleWriteFile AE.encodeFile AllowOverwrite verbose (credDir </> ".index") cidx
+            forM_ (M.toList kpmap) $ \(kidx, kp) -> do
+              let file = accountKeyFile credDir kidx
+              -- NOTE: This writes the JSON in a compact way. If we want human-readable JSON, we should use pretty encoding.
+              handleWriteFile AE.encodeFile AllowOverwrite verbose file kp
 
   -- TODO: Avoid writing encryptionKey and threshold files when unaltered.
 
@@ -572,29 +651,26 @@ writeAccountKeys baseCfg accCfg verbose = do
       handleWriteFile AE.encodeFile AllowOverwrite verbose encKeyFile k
     Nothing -> logFatal [ printf "importing account without a secret encryption key provided" ]
 
-  writeThresholdFile accCfgDir accCfg verbose
+  -- writeThresholdFile accCfgDir accCfg verbose
   logSuccess ["the keys were successfully written to disk"]
 
 -- |Remove the account keys, i.e. keypair{idx}.json files, with the provided indices.
-removeAccountKeys :: BaseConfig -> AccountConfig -> [KeyIndex] -> Verbose -> IO ()
-removeAccountKeys baseCfg accCfg idxs verbose = do
+removeAccountKeys :: BaseConfig -> AccountConfig -> CredentialIndex -> [KeyIndex] -> Verbose -> IO ()
+removeAccountKeys baseCfg accCfg cidx idxs verbose = do
   let accCfgDir = bcAccountCfgDir baseCfg
       keysDir = accountKeysDir accCfgDir $ acAddress accCfg
-  forM_ idxs $ \idx -> do
-    let file = accountKeyFile keysDir idx
-    when verbose $ logInfo ["removing file '" ++ file ++ "'"]
-    removeFile file
+      cidmap = acCids accCfg
+  case M.lookup cidx cidmap of 
+    Nothing -> logFatal [ printf "Couldn't find credential with index "++ show cidx ++ "; map size=" ++ show (M.size cidmap)]
+    Just cid -> do
+      let credDir = keysDir </> show cid
+      forM_ idxs $ \idx -> do
+        let file = accountKeyFile credDir idx
+        when verbose $ logInfo ["removing file '" ++ file ++ "'"]
+        removeFile file
 
-  writeThresholdFile accCfgDir accCfg verbose
+  -- writeThresholdFile accCfgDir accCfg verbose
   logSuccess ["the keys were successfully removed from disk"]
-
--- |Write the threshold as a JSON value to the file {accountName}.threshold.
-writeThresholdFile :: BaseConfigDir -> AccountConfig -> Verbose -> IO ()
-writeThresholdFile accCfgDir accCfg verbose = do
-  -- Write the threshold as a JSON value. Since it is a simple numeric
-  -- value this should look as expected.
-  let thresholdFile = accountThresholdFile accCfgDir (acAddress accCfg)
-  handleWriteFile AE.encodeFile AllowOverwrite verbose thresholdFile (acThreshold accCfg)
 
 getBaseConfig :: Maybe FilePath -> Verbose -> IO BaseConfig
 getBaseConfig f verbose = do
@@ -632,7 +708,7 @@ loadNameMapFromJSON mapFile = do
     Left err -> logFatal [[i|cannot parse name map file '#{mapFile}' as JSON: #{err}|]]
     Right nm -> return nm
 
--- |A string representing an empty hashmap in JSON format.
+-- |A string representing an empty map in JSON format.
 emptyMapContentJSON :: IsString s => s
 emptyMapContentJSON = "{}"
 
@@ -708,7 +784,8 @@ data AccountConfig =
   AccountConfig
   { acAddr :: !NamedAddress
   , acKeys :: EncryptedAccountKeyMap
-  , acThreshold :: !IDTypes.SignatureThreshold
+  -- |Index assignment of credential registration ids to credential indices.
+  , acCids :: !(M.Map IDTypes.CredentialIndex IDTypes.CredentialRegistrationID)
   -- | FIXME: This is a Maybe because the setup with account init being a
   -- special thing is such that we need to be able to initialize a dummy config.
   -- However this makes no practical sense, and that should be reworked so that
@@ -721,14 +798,14 @@ instance AE.ToJSON AccountConfig where
    toJSON AccountConfig{..} =
      AE.object ["address" .= acAddr,
                 "accountKeys" .= acKeys,
-                "threshold" .= acThreshold,
+                "credentialIds" .= acCids,
                 "accountEncryptionKey" .= acEncryptionKey]
 
 instance AE.FromJSON AccountConfig where
   parseJSON = AE.withObject "AccountConfig" $ \v -> do
     acAddr <- v .: "address"
     acKeys <- v .: "accountKeys"
-    acThreshold <- v .: "threshold"
+    acCids <- v .: "credentialIds"
     acEncryptionKey <- v .: "accountEncryptionKey"
     return AccountConfig{..}
 
@@ -740,13 +817,6 @@ data AutoInit = AutoInit | AssumeInitialized
 acAddress :: AccountConfig -> AccountAddress
 acAddress = naAddr . acAddr
 
-accountSigningDataFromConfig :: AccountConfig -> AccountKeyMap -> AccountSigningData
-accountSigningDataFromConfig AccountConfig{..} keys =
-  AccountSigningData { asdAddress = naAddr acAddr
-                     , asdKeys = keys
-                     , asdThreshold = acThreshold
-                     }
-
 getAccountConfig :: Maybe Text
                  -- ^Name or address of the account, defaulting to 'defaultAccountName' if not present.
                  -> BaseConfig
@@ -754,7 +824,7 @@ getAccountConfig :: Maybe Text
                  -> Maybe FilePath
                  -- ^Optional path to the key directory. Defaulting to directory derived from
                  -- 'BaseConfig' if absent.
-                 -> Maybe EncryptedAccountKeyMap
+                 -> Maybe (EncryptedAccountKeyMap)
                  -- ^Explicit keys. If provided they take precedence over other parameters,
                  -- otherwise the function attempts to lookup them up from the key directory.
                  -- If explicit keys are provided it is assumed that the
@@ -777,7 +847,7 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
                  Left err -> logFatal [err]
                  Right v -> return v
 
-  (bc, km, t) <-
+  (bc, km, cidMap) <-
     case keyMap of
       Nothing -> do
         let accCfgDir = bcAccountCfgDir baseCfg
@@ -785,21 +855,19 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
             dir = fromMaybe (accountKeysDir accCfgDir addr) keysDir
         m <- autoinit baseCfg dir addr
         case m of
-          Just b -> return (b, M.empty, 1)
+          Just b -> return (b, M.empty, M.empty)
           Nothing -> do
-            (km, acThreshold) <-
+            (km, cidMap) <-
               handleJust
               (guard . isDoesNotExistError)
               (\_ -> logFatal [ printf "key directory for account '%s' not found" (show addr)
-                             , "did you forget to add the account (using 'concordium-client config account add')?"])
-              (do km <- loadKeyMap dir
-                  let file = accountThresholdFile accCfgDir addr
-                  t <- loadThreshold file $ fromIntegral (M.size km)
-                  return (km, t))
+                             , "did you forget to add the account (using 'config account add')?"])
+              (do (km, cidMap) <- loadKeyMap dir
+                  return (km, cidMap))
 
-            return (baseCfg, km, acThreshold)
+            return (baseCfg, km, cidMap)
 
-      Just km -> return (baseCfg, km, fromIntegral (M.size km))
+      Just km -> return (baseCfg, km, M.empty)
 
   (bc', enc) <-
     case encKey of
@@ -816,7 +884,7 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
   return (bc', AccountConfig {
     acAddr = namedAddr,
     acKeys = km,
-    acThreshold = t,
+    acCids = cidMap,
     acEncryptionKey = enc
     })
 
@@ -891,29 +959,42 @@ getAllAccountConfigs cfg = do
     isDirectory dir f =
       doesDirectoryExist $ joinPath [dir, f]
 
--- |Return all key pairs from the provided directory.
-loadKeyMap :: FilePath -> IO EncryptedAccountKeyMap
-loadKeyMap keysDir = do
-  filesInKeyDir <- listDirectory keysDir
-  let keyIdxs = mapMaybe parseAccountKeyFileName filesInKeyDir
-  keys :: [(Maybe KeyIndex, EncryptedAccountKeyPair)] <- forM keyIdxs $ \idx -> do
-    let file = accountKeyFile keysDir idx
-    kp <- AE.eitherDecodeFileStrict' file `withLogFatalIO` (\e -> "cannot load key file " ++ file ++ " " ++ e)
-    return (Just idx, kp)
-  return $ foldl' insertAccountKey M.empty keys
+-- |Return all key pairs and CredentialID's from the provided directory.
+loadKeyMap :: FilePath -> IO (EncryptedAccountKeyMap, M.Map IDTypes.CredentialIndex IDTypes.CredentialRegistrationID)
+loadKeyMap accountDir = do
+  filesInAccountDir <- listDirectory accountDir 
+  credentialDirs <- filterM (doesDirectoryExist . (accountDir </>)) filesInAccountDir
+  allKeysAndCids :: [(CredentialIndex, [(KeyIndex, EncryptedAccountKeyPair)], IDTypes.CredentialRegistrationID)] <- forM credentialDirs $ \credentialDir -> do
+    let cdir = accountDir </> credentialDir
+    filesInCredDir <- listDirectory cdir
+    credIdx <- loadCredentialIndex cdir
+    cid <- loadCredId cdir
+    let credentialKeys = mapMaybe parseAccountKeyFileName filesInCredDir
+    keys :: [(KeyIndex, EncryptedAccountKeyPair)] <- forM credentialKeys $ \kidx -> do
+      let file = accountKeyFile cdir kidx
+      kp <- AE.eitherDecodeFileStrict' file `withLogFatalIO` (\e -> "cannot load key file " ++ file ++ " " ++ e)
+      return (kidx, kp)
+    return (credIdx, keys, cid)
+  let allKeys = map (\(cidx, keys, _cid) -> (cidx, keys)) allKeysAndCids
+  let cidMap = M.fromList $ map (\(cidx, _keys, cid) -> (cidx, cid)) allKeysAndCids
+  return (foldl' insertAccountKey M.empty allKeys, cidMap)
+
+loadCredId :: FilePath -> IO IDTypes.CredentialRegistrationID
+loadCredId credDir = do logFatalOnError $ credIdFromStringInform $ takeBaseName credDir
 
 loadEncryptionSecretKey :: FilePath -> IO EncryptedAccountEncryptionSecretKey
 loadEncryptionSecretKey keysDir = do
   let file = accountEncryptionSecretKeyFile keysDir
   AE.eitherDecodeFileStrict' file `withLogFatalIO` (\e -> "cannot load encryption secret key file " ++ file ++ " " ++ e)
 
--- |Insert key pair on the given index. If no index is given, use the first available one.
-insertAccountKey :: EncryptedAccountKeyMap -> (Maybe KeyIndex, EncryptedAccountKeyPair) -> EncryptedAccountKeyMap
-insertAccountKey km (idx,kp) =
-  let idx' = case idx of
-            Nothing -> nextUnusedIdx 1 (sort $ M.keys km)
-            Just idx'' -> idx''
-  in M.insert idx' kp km
+loadCredentialIndex :: FilePath -> IO CredentialIndex
+loadCredentialIndex credDir = do
+  let file = credDir </> "" <.> "index"
+  AE.eitherDecodeFileStrict' file `withLogFatalIO` (\e -> "cannot load credential index file " ++ file ++ " " ++ e)
+
+-- |Insert key pairs on the given index.
+insertAccountKey :: EncryptedAccountKeyMap -> (CredentialIndex, [(KeyIndex, EncryptedAccountKeyPair)]) -> EncryptedAccountKeyMap
+insertAccountKey km (cidx, kpm) = M.insert cidx (M.fromList kpm) km
 
 -- |Compute the next index not already in use, starting from the one provided
 -- (which is assumed to be less than or equal to the first element of the list).
@@ -928,7 +1009,7 @@ data KeyType = Sign | Verify deriving (Eq, Show)
 type KeyContents = Text
 
 -- |Load threshold from a file or return the provided default if the file does not exist.
-loadThreshold :: FilePath -> IDTypes.SignatureThreshold -> IO IDTypes.SignatureThreshold
+loadThreshold :: FilePath -> IDTypes.AccountThreshold -> IO IDTypes.AccountThreshold
 loadThreshold file defaultThreshold = do
   handleJust (guard . isDoesNotExistError) (const (return defaultThreshold)) $
     AE.eitherDecodeFileStrict' file >>= \case

@@ -34,7 +34,7 @@ import Concordium.Client.LegacyCommands
 import Concordium.Client.Types.Account
 import Concordium.Client.Utils
 import Concordium.Common.Time
-import Concordium.ID.Types (KeyIndex, SignatureThreshold, CredentialRegistrationID)
+import Concordium.ID.Types (CredentialIndex, KeyIndex, CredentialRegistrationID)
 import Concordium.Types
 import Text.Printf
 import qualified Text.PrettyPrint.ANSI.Leijen as P
@@ -112,15 +112,17 @@ data ConfigAccountCmd
   | ConfigAccountUpdateKeys
     { caukAddr :: !Text
     , caukKeysFile :: !FilePath }
+  | ConfigAccountChangeKeyPassword
+    { cackpName :: !Text 
+    , cackpCIndex :: !CredentialIndex
+    , cackpIndex :: !KeyIndex }
   | ConfigAccountRemoveKeys
     { carkAddr :: !Text
+    , carkCidx :: !CredentialIndex
     , carkKeys :: ![KeyIndex]
-    , carkThreshold :: !(Maybe SignatureThreshold) }
+    }
   | ConfigAccountRemoveName
     { carnText :: !Text }
-  | ConfigAccountSetThreshold
-    { cuatAddr :: !Text
-    , cuatThreshold :: !SignatureThreshold }
   deriving (Show)
 
 data Interval = Minute -- 60 secs
@@ -157,6 +159,14 @@ data TransactionCmd
       -- | Which indices to use as inputs to the encrypted amount transfer.
       -- If none are provided all existing ones will be used.
       tetIndex :: !(Maybe Int) }
+  -- | Register data on chain.
+  | TransactionRegisterData
+    { -- | File containing the data.
+      trdFile :: !FilePath,
+      -- | Options for transaction.
+      trdTransactionOptions :: !(TransactionOpts (Maybe Energy))
+    }
+
   deriving (Show)
 
 data AccountCmd
@@ -227,6 +237,11 @@ data ModuleCmd
       -- |Name for the module.
     , mnName :: !Text
     }
+  -- |Remove a local name from the module name map
+  | ModuleRemoveName
+    { -- |The module name to remove
+      mrnText :: !Text
+    }
   deriving (Show)
 
 data ContractCmd
@@ -290,6 +305,11 @@ data ContractCmd
     , cnAddressSubindex :: !(Maybe Word64)
       -- |Name for the contract.
     , cnName :: !Text }
+  -- |Remove a local name from the contract name map
+  | ContractRemoveName
+    { -- |The contract name to remove
+      crnText :: !Text
+    }
   deriving (Show)
 
 -- | The type parameter 'energyOrMaybe' should be Energy or Maybe Energy.
@@ -297,6 +317,7 @@ data TransactionOpts energyOrMaybe =
   TransactionOpts
   { toSender :: !(Maybe Text)
   , toKeys :: !(Maybe FilePath)
+  , toSigners :: !(Maybe Text)
   , toNonce :: !(Maybe Nonce)
   , toMaxEnergyAmount :: !energyOrMaybe
   , toExpiration :: !(Maybe Text)
@@ -316,7 +337,6 @@ data ConsensusCmd
     , cspIncludeBakers :: !Bool }
   | ConsensusChainUpdate
     { ccuUpdate :: !FilePath
-    , ccuAuthorizations :: !FilePath
     , ccuKeys :: ![FilePath]
     , ccuInteractionOpts :: !InteractionOpts }
   deriving (Show)
@@ -451,6 +471,7 @@ transactionOptsParserBuilder energyOrMaybeParser =
     -- TODO Specify / refer to format of JSON file when new commands (e.g. account add-keys) that accept same format are
     -- added.
     optional (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file.")) <*>
+    optional (strOption (long "signers" <> metavar "SIGNERS" <> help "Specification of which (local) keys to sign with. Example: \"0:1,0:2,3:0,3:1\" specifies that credential holder 0 signs with keys 1 and 2, while credential holder 3 signs with keys 0 and 1")) <*>
     optional (option auto (long "nonce" <> metavar "NONCE" <> help "Transaction nonce.")) <*>
     energyOrMaybeParser <*>
     optional (strOption (long "expiry" <> metavar "EXPIRY" <> help "Expiration time of a transaction, specified as a relative duration (\"30s\", \"5m\", etc.) or UNIX epoch timestamp.")) <*>
@@ -502,7 +523,8 @@ transactionCmds =
            transactionSendGtuCmd <>
            transactionWithScheduleCmd <>
            transactionDeployCredentialCmd <>
-           transactionEncryptedTransferCmd))
+           transactionEncryptedTransferCmd <>
+           transactionRegisterDataCmd))
       (progDesc "Commands for submitting and inspecting transactions."))
 
 transactionSubmitCmd :: Mod CommandFields TransactionCmd
@@ -611,6 +633,16 @@ transactionEncryptedTransferCmd =
          optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which incoming encrypted amounts should be used.")))
       (progDesc "Transfer GTU from the encrypted balance of the account to the encrypted balance of another account."))
 
+transactionRegisterDataCmd :: Mod CommandFields TransactionCmd
+transactionRegisterDataCmd =
+  command
+    "register-data"
+    (info
+      (TransactionRegisterData <$>
+        strArgument (metavar "FILE" <> help "File containing the data to register.") <*>
+        transactionOptsParser)
+      (progDesc "Register data on the chain."))
+
 accountCmds :: Mod CommandFields Cmd
 accountCmds =
   command
@@ -698,7 +730,8 @@ moduleCmds =
            moduleListCmd <>
            moduleShowCmd <>
            moduleInspectCmd <>
-           moduleNameCmd))
+           moduleNameCmd <>
+           moduleRemoveNameCmd))
       (progDesc "Commands for inspecting and deploying modules."))
 
 moduleDeployCmd :: Mod CommandFields ModuleCmd
@@ -753,6 +786,16 @@ moduleNameCmd =
         strOption (long "name" <> metavar "NAME" <> help "Name for the module."))
       (progDesc "Name a module."))
 
+moduleRemoveNameCmd ::  Mod CommandFields ModuleCmd
+moduleRemoveNameCmd =
+  command
+    "remove-name"
+    (info
+      (ModuleRemoveName <$>
+        strArgument (metavar "NAME" <> help "The module-name to forget"))
+    (progDescDoc $ docFromLines
+      [ "Removes the given name from the list of named modules" ]))
+
 contractCmds :: Mod CommandFields Cmd
 contractCmds =
   command
@@ -764,7 +807,8 @@ contractCmds =
            contractListCmd <>
            contractInitCmd <>
            contractUpdateCmd <>
-           contractNameCmd))
+           contractNameCmd <>
+           contractRemoveNameCmd))
       (progDesc "Commands for inspecting and initializing smart contracts."))
 
 contractShowCmd :: Mod CommandFields ContractCmd
@@ -843,6 +887,18 @@ contractNameCmd =
         strOption (long "name" <> metavar "NAME" <> help "Name for the contract."))
       (progDesc "Name a contract."))
 
+
+contractRemoveNameCmd ::  Mod CommandFields ContractCmd
+contractRemoveNameCmd =
+  command
+    "remove-name"
+    (info
+      (ContractRemoveName <$>
+        strArgument (metavar "NAME" <> help "The contract-name to forget"))
+    (progDescDoc $ docFromLines
+      [ "Removes the given name from the list of named contracts" ]))
+
+
 configCmds :: ShowAllOpts -> Mod CommandFields Cmd
 configCmds showAllOpts =
   command
@@ -907,9 +963,10 @@ configAccountCmds showAllOpts =
            configAccountImportCmd showAllOpts <>
            configAccountAddKeysCmd <>
            configAccountUpdateKeysCmd <>
+           configAccountChangeKeyPasswordCmd <>
            configAccountRemoveKeysCmd <>
-           configAccountRemoveNameCmd <>
-           configAccountSetThresholdCmd))
+           configAccountRemoveNameCmd
+           ))
       (progDesc "Commands for inspecting and changing account-specific configuration."))
 
 configAccountNameCmd :: Mod CommandFields ConfigAccountCmd
@@ -998,6 +1055,18 @@ expectedAddOrUpdateKeysFileFormat =
   , "where idx is the index of the respective key pair."
   ]
 
+configAccountChangeKeyPasswordCmd :: Mod CommandFields ConfigAccountCmd
+configAccountChangeKeyPasswordCmd = 
+  command
+    "change-password"
+    (info
+      (ConfigAccountChangeKeyPassword <$>
+          strOption (long "account" <> metavar "ACCOUNT" <> help "Name or Address of account to update the keypair of") <*>
+          option (eitherReader credentialIndexFromStringInform) (long "cred-index" <> metavar "CREDINDEX" <> help "Credential index for the key to update password for") <*>
+          option (eitherReader indexFromStringInform) (long "key-index" <> metavar "KEYINDEX" <> help "Key index to update password for")
+      )
+      (progDesc "Change the password used to encrypt the account keys"))
+
 configAccountRemoveKeysCmd :: Mod CommandFields ConfigAccountCmd
 configAccountRemoveKeysCmd =
   command
@@ -1005,23 +1074,12 @@ configAccountRemoveKeysCmd =
     (info
       (ConfigAccountRemoveKeys <$>
         strOption (long "account" <> metavar "ACCOUNT" <> help "Name or address of the account.") <*>
-        some (argument auto (metavar "KEYINDICES" <> help "space-separated list of indices of the keys to remove.")) <*>
-        optional (option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <>
-            help "Update the signature threshold to this value. If not set, no changes are made to the threshold.")))
+        option (eitherReader credentialIndexFromStringInform) (long "credential-index" <> metavar "CREDENTIALINDEX" <> help "Index of the credential containing the keys to remove") <*>
+        some (argument auto (metavar "KEYINDICES" <> help "space-separated list of indices of the keys to remove."))
+        )
       (progDescDoc $ docFromLines
-        [ "Removes the keys from the account at the specified indices. The --threshold option may be used to update the signature threshold." ]))
-
-configAccountSetThresholdCmd :: Mod CommandFields ConfigAccountCmd
-configAccountSetThresholdCmd =
-  command
-    "set-threshold"
-    (info
-      (ConfigAccountSetThreshold <$>
-        strOption (long "account" <> metavar "ACCOUNT" <> help "Name or address of the account.") <*>
-        option (eitherReader thresholdFromStringInform) (long "threshold" <> metavar "THRESHOLD" <>
-            help "Sets the signature threshold to this value."))
-      (progDescDoc $ docFromLines
-        [ "Sets the signature threshold of the account to the specified value."]))
+        [ "Removes the keys from the account at the specified indices.",
+          "The --threshold option may be used to update the signature threshold." ]))
 
 readAccountExportFormat :: ReadM AccountExportFormat
 readAccountExportFormat = str >>= \case
@@ -1077,7 +1135,6 @@ consensusChainUpdateCmd =
     (info
       (ConsensusChainUpdate <$>
         strArgument (metavar "UPDATE" <> help "File containing the update command in JSON format.") <*>
-        strOption (long "authorizations" <> metavar "FILE" <> help "File containing the public update authorizations.") <*>
         some (strOption (long "key" <> metavar "FILE" <> help "File containing key-pair to sign the update command. This option can be provided multiple times, once for each key-pair to use.")) <*>
         interactionOptsParser
         )
