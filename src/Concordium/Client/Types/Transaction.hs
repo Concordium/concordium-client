@@ -34,6 +34,9 @@ simpleTransferEnergyCost ::
   -> Energy
 simpleTransferEnergyCost psize numSigs = minimumCost psize numSigs + Cost.simpleTransferCost
 
+simpleTransferPayloadSize :: PayloadSize
+simpleTransferPayloadSize = 41
+
 -- |Cost of an encrypted transfer transaction.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 encryptedTransferEnergyCost ::
@@ -41,6 +44,9 @@ encryptedTransferEnergyCost ::
   -> Int -- ^Number of signatures
   -> Energy
 encryptedTransferEnergyCost psize numSigs = minimumCost psize numSigs + Cost.encryptedTransferCost
+
+encryptedTransferPayloadSize :: PayloadSize
+encryptedTransferPayloadSize = 2617
 
 -- |Cost of updating the account keys.
 -- This must be kept in sync with Concordium.Scheduler.Cost
@@ -100,6 +106,9 @@ accountEncryptEnergyCost ::
   -> Energy
 accountEncryptEnergyCost psize numSigs = minimumCost psize numSigs + Cost.transferToEncryptedCost
 
+accountEncryptPayloadSize :: PayloadSize
+accountEncryptPayloadSize = 9
+
 -- |Cost of moving funds from encrypted to public balance of an account.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 accountDecryptEnergyCost ::
@@ -108,6 +117,9 @@ accountDecryptEnergyCost ::
   -> Energy
 accountDecryptEnergyCost psize numSigs = minimumCost psize numSigs + Cost.transferToPublicCost
 
+accountDecryptPayloadSize :: PayloadSize
+accountDecryptPayloadSize = 1405
+
 -- |The cost of transfer with schedule.
 transferWithScheduleEnergyCost ::
   PayloadSize -- ^Size of the payload.
@@ -115,6 +127,11 @@ transferWithScheduleEnergyCost ::
   -> Int -- ^Number of signatures.
   -> Energy
 transferWithScheduleEnergyCost psize numRels numSigs = minimumCost psize numSigs + Cost.scheduledTransferCost numRels
+
+transferWithSchedulePayloadSize ::
+  Int -- ^ Number of releases.
+  -> PayloadSize
+transferWithSchedulePayloadSize numRels = 32 + 1 + 1 + fromIntegral numRels * 16
 
 -- |Transaction header type
 -- To be populated when deserializing a JSON object.
