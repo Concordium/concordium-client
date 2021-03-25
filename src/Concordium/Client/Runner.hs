@@ -67,6 +67,7 @@ import qualified Concordium.Client.Encryption        as Password
 import qualified Concordium.Types.Updates            as Updates
 import qualified Concordium.Types.Transactions       as Types
 import           Concordium.Types.HashableTo
+import           Concordium.Types.Parameters
 import qualified Concordium.Cost as Cost
 import qualified Concordium.Types.Execution          as Types
 import qualified Concordium.Types                    as Types
@@ -111,7 +112,7 @@ import           System.IO
 import           System.Directory
 import           Text.Printf
 import           Text.Read (readMaybe)
-import Data.Time.Clock (addUTCTime)
+import Data.Time.Clock (addUTCTime, getCurrentTime, UTCTime)
 import Data.Ratio
 
 -- |Establish a new connection to the backend and run the provided computation.
@@ -226,7 +227,7 @@ processConfigCmd action baseCfgDir verbose =
             Left err -> logFatal [[i|cannot parse #{addr} as an address: #{err}|]]
             Right a -> return a
         nameAdded <- liftIO $ addAccountNameAndWrite verbose baseCfg name checkedAddr
-        logSuccess [[i|module reference #{addr} was successfully named '#{nameAdded}'|]]
+        logSuccess [[i|Account reference #{addr} was successfully named '#{nameAdded}'|]]
 
       ConfigAccountRemove account -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
@@ -369,11 +370,11 @@ processConfigCmd action baseCfgDir verbose =
                           ++ " will be updated on account " ++ Text.unpack addr]
               let accCfg' = accCfg { acKeys = keyDuplicates }
               writeAccountKeys baseCfg' accCfg' verbose
-      
+
       ConfigAccountChangeKeyPassword name cidx keyIndex -> do
         logWarn [printf "Re-encrypting keys under a new password permanently overwrites the previous encrypted keys"
                 , "This is a destructive operation and cannot be undone"]
-        
+
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
           runPrinter $ printBaseConfig baseCfg
@@ -382,7 +383,7 @@ processConfigCmd action baseCfgDir verbose =
         (baseCfg', accountCfg) <- getAccountConfig (Just name) baseCfg Nothing Nothing Nothing AssumeInitialized
         let keyMap = acKeys accountCfg
         let ckeys = Map.lookup cidx keyMap
-        case ckeys of 
+        case ckeys of
           Nothing -> logError [printf [i|No Credential found at Credential index #{cidx} for account '#{name}'|]]
           Just enckeys -> do
             let encKey = Map.lookup keyIndex enckeys
@@ -395,7 +396,7 @@ processConfigCmd action baseCfgDir verbose =
                   Left err -> logError [printf err]
                   Right plainKey -> do
                     createpwdresult <- createPasswordInteractive (Just "re-encrypt key under")
-                    case createpwdresult of 
+                    case createpwdresult of
                       Left err -> logError [printf err]
                       Right encPwd -> do
                         encKey2 <- encryptAccountKeyPair encPwd plainKey
@@ -444,7 +445,7 @@ processConfigCmd action baseCfgDir verbose =
                             ++ showSetIdxs idxsToRemove
                             ++ " will be removed from account " ++ Text.unpack addr]
                   removeAccountKeys baseCfg accCfg cidx (Set.toList idxsToRemove) verbose
-                  
+
       ConfigAccountRemoveName name -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
@@ -535,7 +536,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
-      
+
       receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
 
       let pl = Types.encodePayload $ Types.Transfer (naAddr receiverAddress) amount
@@ -595,7 +596,7 @@ processTransactionCmd action baseCfgDir verbose backend =
           let intOpts = toInteractionOpts txOpts
           transferWithScheduleTransactionConfirm ttxCfg (ioConfirm intOpts)
           withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
-        True -> do 
+        True -> do
           logWarn ["Scheduled transfers from an account to itself are not allowed."]
           logWarn ["Transaction Cancelled"]
 
@@ -910,15 +911,55 @@ data BakerUpdateStakeTransactionConfig =
 
 -- |Resolve configuration of a 'baker update-stake' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
-getBakerUpdateStakeTransactionCfg :: TransactionConfig -> Types.Amount -> ClientMonad IO BakerUpdateStakeTransactionConfig
-getBakerUpdateStakeTransactionCfg txCfg newAmount = do
+-- Warns the user if they are staking a high proporition of their stake, or doing an action which might activate the baker cooldown
+getBakerUpdateStakeTransactionCfg :: TransactionConfig -> Types.Amount -> UTCTime -> ClientMonad IO BakerUpdateStakeTransactionConfig
+getBakerUpdateStakeTransactionCfg txCfg newAmount cooldownDate = do
   let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
   AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
-  when (isNothing airBaker) $ logFatal [[i|Account #{senderAddr} is not a baker, so cannot update its stake.|]]
-  when (airAmount < newAmount) $ logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the new amount requested to be staked (#{showGtu newAmount}).|]]
-  return BakerUpdateStakeTransactionConfig
-         { bustcNewAmount = newAmount
-         , bustcTransactionCfg = txCfg }
+  case airBaker of
+    Nothing -> logFatal [[i|Account #{senderAddr} is not a baker, so cannot update its stake.|]]
+    Just aibresult -> do
+      when (airAmount < newAmount) $ logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the new amount requested to be staked (#{showGtu newAmount}).|]]
+      -- Check if stake is being decreased, ask for confirmation if so if so
+      if (newAmount < abirStakedAmount aibresult)
+      then do
+        logWarn ["The new staked value appears to be lower than the amount currently staked on chain by this baker."]
+        logWarn ["Decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the GTU are made available."]
+        logWarn ["During this period it is not possible to update the baker's stake, or stop the baker."]
+        logWarn [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
+        confirmed <- askConfirmation $ Just "Confirm that you want to update the baker's stake"
+        unless confirmed exitTransactionCancelled
+        return BakerUpdateStakeTransactionConfig
+          { bustcNewAmount = newAmount
+          , bustcTransactionCfg = txCfg }
+      else do
+        logInfo ["Note that decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the GTU are made available."]
+        logInfo ["During this period it is not possible to update the baker's stake, or stop the baker."]
+        logInfo [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
+        -- Check if staked amount is greater than 95% of total GTU on the account, and warn user if so
+        if ((newAmount * 100) > (airAmount * 95))
+        then do
+          logWarn ["You are attempting to stake >95% of your total GTU on this account. Staked GTU is not available for spending."]
+          logWarn ["Be aware that updating or stopping your baker in the future will require some amount of non-staked GTU to pay for the transactions to do so."]
+          confirmed <- askConfirmation $ Just "Confirm that you wish to stake this much GTU"
+          unless confirmed exitTransactionCancelled
+          return BakerUpdateStakeTransactionConfig
+            { bustcNewAmount = newAmount
+            , bustcTransactionCfg = txCfg }
+        else
+          return BakerUpdateStakeTransactionConfig
+            { bustcNewAmount = newAmount
+            , bustcTransactionCfg = txCfg }
+-- |Returns the UTCTime date when the baker cooldown on reducing stake/removing a baker will end, using on chain parameters
+getBakerCooldown :: BlockSummaryResult -> ClientMonad IO UTCTime
+getBakerCooldown cpr = do
+  let cooldownEpochs = toInteger $ (bsurChainParameters $ bsrUpdates cpr) ^. cpBakerExtraCooldownEpochs
+  cs <- getFromJson =<< getConsensusStatus
+  let epochTime = (toInteger $ csrEpochDuration cs) % 1000
+  let cooldownTime = fromRational $ epochTime * ((cooldownEpochs + 2) % 1)
+  currTime <- liftIO getCurrentTime
+  let cooldownDate = addUTCTime cooldownTime currTime
+  return cooldownDate
 
 data BakerUpdateRestakeTransactionConfig =
   BakerUpdateRestakeTransactionConfig
@@ -1404,7 +1445,7 @@ processAccountCmd action baseCfgDir verbose backend =
       withClient backend $ do
         keys <- liftIO $ getFromJson =<< eitherDecodeFileStrict f
         let pl = Types.encodePayload $ Types.UpdateCredentialKeys cid keys
-        
+
         accInfo <- getAccountInfoOrDie senderAddress
         let numCredentials = Map.size $ airCredentials accInfo
         let numKeys = length $ ID.credKeys keys
@@ -1447,7 +1488,7 @@ processAccountCmd action baseCfgDir verbose backend =
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
-      
+
       accCfg <- getAccountCfgFromTxOpts baseCfg adTransactionOpts
       let senderAddr = esdAddress accCfg
 
@@ -2168,10 +2209,24 @@ processBakerCmd action baseCfgDir verbose backend =
       let nrgCost _ = return $ Just $ bakerRemoveEnergyCost $ Types.payloadSize pl
       txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
       withClient backend $ do
-        brtcCfg <- getBakerRemoveTransactionCfg txCfg
-        let intOpts = toInteractionOpts txOpts
-        liftIO $ bakerRemoveTransactionConfirm brtcCfg (ioConfirm intOpts)
-        sendAndTailTransaction_ txCfg pl intOpts
+        blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
+        case blockSummary of
+          Nothing -> do
+            logError ["No Block Found"]
+            exitTransactionCancelled
+          Just cpr -> do
+            -- Warn user that stopping a baker incurs the baker cooldown timer
+            cooldownDate <- getBakerCooldown cpr
+            logWarn ["Stopping a baker that is staking will lock the stake of the baker for a cooldown period before the GTU are made available."]
+            logWarn ["During this period it is not possible to update the baker's stake, or restart the baker."]
+            logWarn [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
+            confirmed <- askConfirmation $ Just "Confirm that you want to send the transaction to stop this baker"
+            unless confirmed exitTransactionCancelled
+
+            brtcCfg <- getBakerRemoveTransactionCfg txCfg
+            let intOpts = toInteractionOpts txOpts
+            () <- liftIO $ bakerRemoveTransactionConfirm brtcCfg (ioConfirm intOpts)
+            sendAndTailTransaction_ txCfg pl intOpts
 
     BakerUpdateStake newStake txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -2182,17 +2237,24 @@ processBakerCmd action baseCfgDir verbose backend =
       let nrgCost _ = return $ Just $ bakerUpdateStakeEnergyCost $ Types.payloadSize pl
       txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
       withClient backend $ do
-        brtcCfg <- getBakerUpdateStakeTransactionCfg txCfg newStake
-        let intOpts = toInteractionOpts txOpts
-        liftIO $ bakerUpdateStakeTransactionConfirm brtcCfg (ioConfirm intOpts)
-        sendAndTailTransaction_ txCfg pl intOpts
+        blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
+        case blockSummary of
+          Nothing -> do
+            logError ["No Block Found"]
+            exitTransactionCancelled
+          Just cpr -> do
+            cooldownDate <- getBakerCooldown cpr
+            brtcCfg <- getBakerUpdateStakeTransactionCfg txCfg newStake cooldownDate
+            let intOpts = toInteractionOpts txOpts
+            () <- liftIO $ bakerUpdateStakeTransactionConfirm brtcCfg (ioConfirm intOpts)
+            sendAndTailTransaction_ txCfg pl intOpts
 
     BakerUpdateRestakeEarnings bureRestake txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
-      
+
       let pl = Types.encodePayload $ Types.UpdateBakerRestakeEarnings bureRestake
       let nrgCost _ = return $ Just $ bakerUpdateRestakeEnergyCost $ Types.payloadSize pl
       txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
