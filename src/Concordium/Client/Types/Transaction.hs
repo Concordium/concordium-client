@@ -16,7 +16,6 @@ import qualified Data.Aeson.TH                       as AETH
 import           Data.Text                           hiding (length, map)
 import           GHC.Generics                        (Generic)
 import qualified Concordium.Types.Transactions as Types
-import qualified Concordium.Types as Types
 
 -- | Base cost of checking the transaction. The cost is always at least this,
 -- but in most cases it will have a transaction specific cost.
@@ -29,28 +28,36 @@ minimumCost psize numSigs = Cost.baseCost totalSize numSigs
 
 -- |Cost of a simple transfer transaction.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
-simpleTransferEnergyCost :: Int -> Energy
-simpleTransferEnergyCost numSigs = minimumCost 41 numSigs + Cost.simpleTransferCost
-    -- FIXME: After Simon's changes are done replace 41 with computed size
+simpleTransferEnergyCost ::
+  PayloadSize -- ^Size of the payload
+  -> Int -- ^Number of signatures
+  -> Energy
+simpleTransferEnergyCost psize numSigs = minimumCost psize numSigs + Cost.simpleTransferCost
 
-encryptedTransferEnergyCost :: Int -> Energy
-encryptedTransferEnergyCost numSigs = minimumCost 2617 numSigs + Cost.encryptedTransferCost
-    -- FIXME: After Simon's changes are done replace 2617 with computed size
+-- |Cost of an encrypted transfer transaction.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
+encryptedTransferEnergyCost ::
+  PayloadSize -- ^Size of the payload
+  -> Int -- ^Number of signatures
+  -> Energy
+encryptedTransferEnergyCost psize numSigs = minimumCost psize numSigs + Cost.encryptedTransferCost
 
 -- |Cost of updating the account keys.
 -- This must be kept in sync with Concordium.Scheduler.Cost
 accountUpdateKeysEnergyCost ::
-  Int -- ^ The number of credentials on the account at the time of the update.
+  PayloadSize -- ^Size of the payload
+  -> Int -- ^ The number of credentials on the account at the time of the update.
   -> Int -- ^ Number of keys that will belong to the credential after the update.
   -> Int -- ^ Number of signatures that will sign the transaction.
   -> Energy
-accountUpdateKeysEnergyCost credentialCount keyCount numSigs = minimumCost psize numSigs + Cost.updateCredentialKeysCost credentialCount keyCount
-  where psize = 1 + 48 + 1 + fromIntegral keyCount * 49 + 1
-    -- FIXME: After Simon's changes are done replace psize with computed size
+accountUpdateKeysEnergyCost psize credentialCount keyCount numSigs = minimumCost psize numSigs + Cost.updateCredentialKeysCost credentialCount keyCount
 
 -- |Cost of a baker add transaction.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
-bakerAddEnergyCost :: Types.PayloadSize -> Int -> Energy
+bakerAddEnergyCost ::
+  PayloadSize -- ^Size of the payload
+  -> Int -- ^Number of signatures
+  -> Energy
 bakerAddEnergyCost psize numSigs = minimumCost psize numSigs + Cost.addBakerCost
 
 -- |Cost of a baker set account transaction.
@@ -63,41 +70,51 @@ bakerSetKeysEnergyCost psize numSigs = minimumCost psize numSigs + Cost.updateBa
 
 -- |Cost of a baker remove transaction.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
-bakerRemoveEnergyCost :: Int -> Energy
-bakerRemoveEnergyCost numSigs = minimumCost 1 numSigs + Cost.removeBakerCost
-    -- FIXME: After Simon's changes are done replace 1 with computed size
+bakerRemoveEnergyCost ::
+  PayloadSize -- ^Size of the payload
+  -> Int -- ^Number of signatures
+  -> Energy
+bakerRemoveEnergyCost psize numSigs = minimumCost psize numSigs + Cost.removeBakerCost
 
 -- |Cost to update a baker's stake.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
-bakerUpdateStakeEnergyCost :: Int -> Energy
-bakerUpdateStakeEnergyCost numSigs = minimumCost 9 numSigs + Cost.updateBakerStakeCost
-    -- FIXME: After Simon's changes are done replace 9 with computed size
+bakerUpdateStakeEnergyCost ::
+  PayloadSize -- ^Size of the payload
+  -> Int -- ^Number of signatures
+  -> Energy
+bakerUpdateStakeEnergyCost psize numSigs = minimumCost psize numSigs + Cost.updateBakerStakeCost
 
 -- |Cost to update a baker's re-staking option.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
-bakerUpdateRestakeEnergyCost :: Int -> Energy
-bakerUpdateRestakeEnergyCost numSigs = minimumCost 2 numSigs + Cost.updateBakerRestakeCost
-    -- FIXME: After Simon's changes are done replace 2 with computed size
+bakerUpdateRestakeEnergyCost ::
+  PayloadSize -- ^Size of the payload
+  -> Int -- ^Number of signatures
+  -> Energy
+bakerUpdateRestakeEnergyCost psize numSigs = minimumCost psize numSigs + Cost.updateBakerRestakeCost
 
 -- |Cost of moving funds from public to encrypted amount of an account.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
-accountEncryptEnergyCost :: Int -> Energy
-accountEncryptEnergyCost numSigs = minimumCost 9 numSigs + Cost.transferToEncryptedCost
-    -- FIXME: After Simon's changes are done replace 9 with computed size
+accountEncryptEnergyCost ::
+  PayloadSize -- ^Size of the payload
+  -> Int -- ^Number of signatures
+  -> Energy
+accountEncryptEnergyCost psize numSigs = minimumCost psize numSigs + Cost.transferToEncryptedCost
 
 -- |Cost of moving funds from encrypted to public balance of an account.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
-accountDecryptEnergyCost :: Int -> Energy
-accountDecryptEnergyCost numSigs = minimumCost 1405 numSigs + Cost.transferToPublicCost
-    -- FIXME: After Simon's changes are done replace 1405 with computed size
+accountDecryptEnergyCost ::
+  PayloadSize -- ^Size of the payload
+  -> Int -- ^Number of signatures
+  -> Energy
+accountDecryptEnergyCost psize numSigs = minimumCost psize numSigs + Cost.transferToPublicCost
 
 -- |The cost of transfer with schedule.
 transferWithScheduleEnergyCost ::
-  Int -- ^ Number of releases.
+  PayloadSize -- ^Size of the payload.
+  -> Int -- ^ Number of releases.
   -> Int -- ^Number of signatures.
   -> Energy
-transferWithScheduleEnergyCost numRels numSigs = minimumCost (32 + 1 + 1 + fromIntegral numRels * 16) numSigs + Cost.scheduledTransferCost numRels
-    -- FIXME: After Simon's changes are done replace (...) with computed size
+transferWithScheduleEnergyCost psize numRels numSigs = minimumCost psize numSigs + Cost.scheduledTransferCost numRels
 
 -- |Transaction header type
 -- To be populated when deserializing a JSON object.

@@ -152,7 +152,7 @@ main = do
           let txHeader nonce body = TransactionHeader {
                 thSender = selfAddress,
                 thNonce = nonce,
-                thEnergyAmount = 11 + encryptedTransferEnergyCost (length keysList),
+                thEnergyAmount = encryptedTransferEnergyCost (payloadSize body) (length keysList),
                 thPayloadSize = payloadSize body,
                 thExpiry = TransactionTime maxBound
                 }
