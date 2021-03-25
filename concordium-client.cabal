@@ -4,10 +4,10 @@ cabal-version: 2.0
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: ad9f35cfde7375a9de31e953286cd457a5bba0a2e3f8dc9bf7ecf180d350b7b3
+-- hash: 9f86b7df0a716c195ed6f0c23fb4fa9f1da647b7fcc4b7cd53d303bdb5a3e2cd
 
 name:           concordium-client
-version:        0.5.0
+version:        0.5.1
 description:    Please see the README on GitHub at <https://github.com/githubuser/concordium-client#readme>
 homepage:       https://github.com/githubuser/concordium-client#readme
 bug-reports:    https://github.com/githubuser/concordium-client/issues
@@ -192,10 +192,10 @@ executable tx-generator
     , bytestring
     , concordium-base
     , concordium-client
+    , containers
     , mtl
     , optparse-applicative
     , time
-    , unordered-containers
   if flag(static)
     ld-options: -static
   default-language: Haskell2010
