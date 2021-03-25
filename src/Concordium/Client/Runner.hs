@@ -85,6 +85,7 @@ import           Data.IORef
 import           Data.Foldable
 import           Data.Aeson                          as AE
 import qualified Data.Aeson.Encode.Pretty            as AE
+import           Data.Aeson.Types                    as AE
 import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
@@ -1953,36 +1954,41 @@ processConsensusCmd action _baseCfgDir verbose backend =
                     where
                       addrmap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
 
-    ConsensusChainUpdate rawUpdateFile authsFile keysFiles intOpts -> do
+    ConsensusChainUpdate rawUpdateFile keysFiles intOpts -> do
       let
         loadJSON :: (FromJSON a) => FilePath -> IO a
         loadJSON fn = AE.eitherDecodeFileStrict fn >>= \case
           Left err -> logFatal [fn ++ ": " ++ err]
           Right r -> return r
       rawUpdate@Updates.RawUpdateInstruction{..} <- loadJSON rawUpdateFile
-      auths <- loadJSON authsFile
+      eBlockSummaryJSON <- withClient backend $ withBestBlockHash Nothing getBlockSummary
+      keyCollectionStore :: Updates.UpdateKeysCollection <-
+        case eBlockSummaryJSON of
+          Right v -> case parse (withObject "BlockSummary" $ \o -> (o .: "updates") >>= (.: "keys")) v of
+                       AE.Success v' -> return v'
+                       AE.Error e -> logFatal [printf "Error parsing a JSON for block summary: '%s'" (show e)]
+          Left e -> logFatal [printf "Error getting block summary: '%s'" (show e)]
       keys <- mapM loadJSON keysFiles
       let
-        keySet = Updates.accessPublicKeys $ (case ruiPayload of
-            Updates.AuthorizationUpdatePayload{} -> Updates.asAuthorization
-            Updates.ProtocolUpdatePayload{} -> Updates.asProtocol
-            Updates.ElectionDifficultyUpdatePayload{} -> Updates.asParamElectionDifficulty
-            Updates.EuroPerEnergyUpdatePayload{} -> Updates.asParamEuroPerEnergy
-            Updates.MicroGTUPerEuroUpdatePayload{} -> Updates.asParamMicroGTUPerEuro
-            Updates.FoundationAccountUpdatePayload{} -> Updates.asParamFoundationAccount
-            Updates.MintDistributionUpdatePayload{} -> Updates.asParamMintDistribution
-            Updates.TransactionFeeDistributionUpdatePayload{} -> Updates.asParamTransactionFeeDistribution
-            Updates.GASRewardsUpdatePayload{} -> Updates.asParamGASRewards
-            Updates.BakerStakeThresholdUpdatePayload{} -> Updates.asBakerStakeThreshold
-                                            )
-          auths
-        keyLU key = let vk = SigScheme.correspondingVerifyKey key in
-          case vk `Vec.elemIndex` Updates.asKeys auths of
-            Nothing -> logFatal [printf "Authorizations file does not contain public key '%s'" (show vk)]
-            Just idx -> do
-              unless (fromIntegral idx `Set.member` keySet) $
-                logWarn [printf "Key with index %u (%s) is not authorized to perform this update type." idx (show vk)]
-              return (fromIntegral idx, key)
+        (keySet, th) = Updates.extractKeysIndices ruiPayload keyCollectionStore
+        keyLU :: SigScheme.KeyPair -> IO (Word16, SigScheme.KeyPair)
+        keyLU key =
+          let vk = SigScheme.correspondingVerifyKey key in
+            case ruiPayload of
+              Updates.RootUpdatePayload{} -> case vk `Vec.elemIndex` (Updates.hlkKeys . Updates.rootKeys $ keyCollectionStore) of
+                                               Nothing -> logFatal [printf "Current key collection at best block does not contain public key '%s'" (show vk)]
+                                               Just idx -> return (fromIntegral idx, key)
+              Updates.Level1UpdatePayload{} -> case vk `Vec.elemIndex` (Updates.hlkKeys . Updates.level1Keys $ keyCollectionStore) of
+                                                 Nothing -> logFatal [printf "Current key collection at best block does not contain public key '%s'" (show vk)]
+                                                 Just idx -> return (fromIntegral idx, key)
+              _ -> case vk `Vec.elemIndex` (Updates.asKeys . Updates.level2Keys $ keyCollectionStore) of
+                     Nothing -> logFatal [printf "Current key collection at best block does not contain public key '%s'" (show vk)]
+                     Just idx -> do
+                       unless (fromIntegral idx `Set.member` keySet) $
+                         logWarn [printf "Key with index %u (%s) is not authorized to perform this update type." idx (show vk)]
+                       return (fromIntegral idx, key)
+      when (length keys < fromIntegral th) $
+        logFatal [printf "Not enough keys provided for signing this operation, got %u, need %u" (length keys) (fromIntegral th :: Int)]
       keyMap <- Map.fromList <$> mapM keyLU keys
       let ui = Updates.makeUpdateInstruction rawUpdate keyMap
       when verbose $ logInfo ["Generated update instruction:", show ui]
@@ -1993,7 +1999,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
       let effectiveTimeOK = ruiEffectiveTime == 0 || ruiEffectiveTime > ruiTimeout
       unless effectiveTimeOK $
         logWarn [printf "Update effective time (%s) is not later than expiry time (%s)" (showTimeFormatted $ timeFromTransactionExpiryTime ruiEffectiveTime) (showTimeFormatted $ timeFromTransactionExpiryTime ruiTimeout)]
-      let authorized = Updates.checkAuthorizedUpdate auths ui
+      let authorized = Updates.checkAuthorizedUpdate keyCollectionStore ui
       unless authorized $ do
         logWarn ["The update instruction is not authorized by the keys used to sign it."]
       when (ioConfirm intOpts) $ unless (expiryOK && effectiveTimeOK && authorized) $ do

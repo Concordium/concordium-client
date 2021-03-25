@@ -323,7 +323,6 @@ data ConsensusCmd
     , cspIncludeBakers :: !Bool }
   | ConsensusChainUpdate
     { ccuUpdate :: !FilePath
-    , ccuAuthorizations :: !FilePath
     , ccuKeys :: ![FilePath]
     , ccuInteractionOpts :: !InteractionOpts }
   deriving (Show)
@@ -1085,7 +1084,6 @@ consensusChainUpdateCmd =
     (info
       (ConsensusChainUpdate <$>
         strArgument (metavar "UPDATE" <> help "File containing the update command in JSON format.") <*>
-        strOption (long "authorizations" <> metavar "FILE" <> help "File containing the public update authorizations.") <*>
         some (strOption (long "key" <> metavar "FILE" <> help "File containing key-pair to sign the update command. This option can be provided multiple times, once for each key-pair to use.")) <*>
         interactionOptsParser
         )
