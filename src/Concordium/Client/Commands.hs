@@ -34,7 +34,7 @@ import Concordium.Client.LegacyCommands
 import Concordium.Client.Types.Account
 import Concordium.Client.Utils
 import Concordium.Common.Time
-import Concordium.ID.Types (CredentialIndex, KeyIndex, CredentialRegistrationID)
+import Concordium.ID.Types (CredentialIndex, KeyIndex, CredentialRegistrationID, AccountThreshold)
 import Concordium.Types
 import Text.Printf
 import qualified Text.PrettyPrint.ANSI.Leijen as P
@@ -198,7 +198,7 @@ data AccountCmd
   | AccountUpdateCredentials
     { aucNewCredInfos :: !(Maybe FilePath) -- File containing the new CredentialDeploymentInformation's
     , aucRemoveCredIds :: !(Maybe FilePath) -- File containing the CredentialRegistrationID's for the credentials to be removed
-    , aucNewThreshold :: !Int -- The new account threshold
+    , aucNewThreshold :: !AccountThreshold -- The new account threshold
     , aucTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   deriving (Show)
 
