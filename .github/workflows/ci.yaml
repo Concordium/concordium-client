@@ -1,0 +1,54 @@
+name: Build and test
+
+# Builds dependencies
+# Builds and tests concordium client
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch: # allow manual trigger
+
+env:
+  RUST: 1.45.2
+  GHC: 8.10.4
+
+jobs:
+  concordium-client-build-and-test:
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ env.RUST }}
+          override: true
+      - uses: haskell/actions/setup@v1
+        with:
+          ghc-version: ${{ env.GHC }}
+      - name: Install protoc
+        run: sudo apt -y install protobuf-compiler
+      - name: Cache cargo dependencies and targets
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.stack
+            .stack-work
+            **/target
+          key: ${{ runner.os }}-rust-deps-${{ env.RUST }}-${{ hashFiles('stack.yaml', 'package.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-rust-deps-${{ env.RUST }}
+      - name: Build dependencies
+        run: ./build-deps.sh
+      - name: Stack build
+        run: stack build --flag 'concordium-client:middleware' --test --no-run-tests
+      - name: Stack test
+        run: stack test --flag 'concordium-client:middleware'
