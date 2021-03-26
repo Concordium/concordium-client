@@ -7,6 +7,7 @@ import qualified Concordium.Crypto.BlsSignature as Bls
 import qualified Concordium.Crypto.VRF as VRF
 import qualified Concordium.ID.Types as IDTypes
 import Concordium.Types
+import Concordium.Types.Parameters
 import Concordium.Utils.Encryption (Password(..))
 import qualified Concordium.ID.Types as ID
 
@@ -309,6 +310,27 @@ instance AE.FromJSON AccountInfoResult where
     airEncryptionKey <- v .: "accountEncryptionKey"
     airReleaseSchedule <- v .: "accountReleaseSchedule"
     return $ AccountInfoResult {..}) val
+
+----------------------------------------------------------------------------------------------------
+-- Parses a limited subset of the BlockSummary GRPC call to extract the ChainParameters
+
+data BlockSummaryResult = BlockSummaryResult 
+  { bsrUpdates :: !BlockSummaryUpdateResults
+  } 
+
+instance AE.FromJSON BlockSummaryResult where
+  parseJSON = withObject "block summary" $ \v -> do
+    bsrUpdates <- v .: "updates"
+    return $ BlockSummaryResult {..}
+
+data BlockSummaryUpdateResults = BlockSummaryUpdateResults
+  { bsurChainParameters :: !ChainParameters
+  }
+
+instance AE.FromJSON BlockSummaryUpdateResults where
+  parseJSON = withObject "updates" $ \v -> do
+    bsurChainParameters <- v .: "chainParameters"
+    return $ BlockSummaryUpdateResults {..}
 
 ----------------------------------------------------------------------------------------------------
 

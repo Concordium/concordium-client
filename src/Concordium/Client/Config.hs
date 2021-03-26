@@ -244,6 +244,18 @@ ensureAccountConfigInitialized baseCfg = do
   let accCfgDir = bcAccountCfgDir baseCfg
   ensureDirCreated False accCfgDir
 
+-- |Ensure the basic contract config is initialized.
+ensureContractConfigInitialized :: BaseConfig -> IO ()
+ensureContractConfigInitialized baseCfg = do
+  let conCfgDir = bcContractCfgDir baseCfg
+  ensureDirCreated False conCfgDir
+
+-- |Ensure the basic module config is initialized.
+ensureModuleConfigInitialized :: BaseConfig -> IO ()
+ensureModuleConfigInitialized baseCfg = do
+  let modCfgDir = bcContractCfgDir baseCfg
+  ensureDirCreated False modCfgDir
+
 -- |Ensure a directory is created and, if Verbose, logInfo actions.
 ensureDirCreated :: Verbose -> FilePath -> IO ()
 ensureDirCreated verbose dir = do
@@ -349,8 +361,39 @@ removeAccountNameAndWrite baseCfg name verbose = do
 
   let m = M.delete name $ bcAccountNameMap baseCfg
   liftIO $ writeNameMap verbose mapFile m
-  logSuccess ["removed name mapping"]
+  logSuccess ["removed account name mapping"]
   return baseCfg { bcAccountNameMap = m }
+
+-- |Remove a name from the contract name map. If the name is not in use,
+-- |it does nothing.
+-- |Returns the potentially updated baseConfig.
+removeContractNameAndWrite :: BaseConfig -> Text -> Verbose -> IO BaseConfig
+removeContractNameAndWrite baseCfg name verbose = do
+  -- Check if config has been initialized.
+  let conCfgDir = bcContractCfgDir baseCfg
+      mapFile = contractNameMapFile conCfgDir
+  liftIO $ ensureContractConfigInitialized baseCfg
+
+  let m = M.delete name $ bcContractNameMap baseCfg
+  liftIO $ writeNameMapAsJSON verbose mapFile m
+  logSuccess ["removed contract name mapping"]
+  return baseCfg { bcContractNameMap = m }
+
+-- |Remove a name from the module name map. If the name is not in use
+-- |it does nothing
+-- |Returns the potentially updated baseConfig
+removeModuleNameAndWrite :: BaseConfig -> Text -> Verbose -> IO BaseConfig
+removeModuleNameAndWrite baseCfg name verbose = do
+  -- Check if config has been initialized.
+  -- module namemap file is in contract directory 
+  let conCfgDir = bcContractCfgDir baseCfg
+      mapFile = moduleNameMapFile conCfgDir
+  liftIO $ ensureModuleConfigInitialized baseCfg
+
+  let m = M.delete name $ bcModuleNameMap baseCfg
+  liftIO $ writeNameMapAsJSON verbose mapFile m
+  logSuccess ["removed module name mapping"]
+  return baseCfg { bcModuleNameMap = m }
 
 removeAccountConfig :: BaseConfig -> NamedAddress -> IO BaseConfig
 removeAccountConfig baseCfg@BaseConfig{..} NamedAddress{..} = do
