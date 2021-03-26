@@ -84,13 +84,22 @@ energyFromStringInform s =
         nrgMinBound = 0
         nrgMaxBound = fromIntegral (maxBound :: Energy)
 
--- |Try to parse the amount a signature threshold from string.
+-- |Try to parse the signature threshold from string with a meaningful error message if unsuccessful.
 thresholdFromStringInform :: String -> Either String IDTypes.SignatureThreshold
 thresholdFromStringInform s =
   case readMaybe s :: Maybe Integer of
     Just a -> if a >= 1 && a <= 255 then Right (IDTypes.SignatureThreshold (fromIntegral a)) else Left errString
     Nothing -> Left errString
   where errString = "Invalid signature threshold. A signature threshold must be an integer between 1 and 255 inclusive."
+
+-- |Try to parse the account threshold from string with a meaningful error message if unsuccessful.
+accountThresholdFromStringInform :: String -> Either String IDTypes.AccountThreshold
+accountThresholdFromStringInform s =
+  case readMaybe s :: Maybe Integer of
+    Just a -> if a >= 1 && a <= 255 then Right (IDTypes.AccountThreshold (fromIntegral a)) else Left errString
+    Nothing -> Left errString
+  where errString = "Invalid account threshold. A signature threshold must be an integer between 1 and 255 inclusive."
+
 
 -- |Try to parse the credential index
 credentialIndexFromStringInform :: String -> Either String IDTypes.CredentialIndex
