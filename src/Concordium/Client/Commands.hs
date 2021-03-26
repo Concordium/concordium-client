@@ -718,20 +718,33 @@ accountUpdateCredentialsCmd =
     "update-credentials"
     (info
       (AccountUpdateCredentials <$>
-        optional (strOption (long "new-cdis" <> metavar "FILE" <> help "File containing the new credential deployment informations")) <*>
-        optional (strOption (long "remove-credentials" <> metavar "FILE" <> help "File containing credential registration ids of the credentials to be removed")) <*>
-        option auto (long "new-threshold" <> metavar "THRESHOLD" <> help "New account threshold, i.e. how many credential holders needed to sign a transaction") <*>
-        -- option (eitherReader credIdFromStringInform) (long "credId" <> metavar "CRED-ID" <> help "The credential registration id of the credential whose keys we want to update.") <*>
+        optional (strOption (long "new-credentials" <> metavar "FILE" <> help "File containing the new credential deployment informations.")) <*>
+        optional (strOption (long "remove-credentials" <> metavar "FILE" <> help "File containing credential registration ids of the credentials to be removed.")) <*>
+        option auto (long "new-threshold" <> metavar "THRESHOLD" <> help "New account threshold, i.e. how many credential holders needed to sign a transaction.") <*>
         transactionOptsParser)
       (progDescDoc $ docFromLines
-        [ "Set keys for the credential. Expected format of the key file:"
+        [ "Add and/or remove credentials, and update account threshold. Expected format of the file containing new credentials:"
         , "   {"
-        , "     idx: {"
-        , "       \"verifyKey\": ..."
+        , "     \"cidx\": {"
+        , "       \"arData\": ...,"
+        , "       \"credId\": ...,"
+        , "       \"credentialPublicKeys\": {"
+        , "           \"keys\": {"
+        , "             \"kidx\": {"
+        , "                 \"schemeId\": ...,"
+        , "                 \"verifyKey\": ...,"
+        , "              },"
+        , "              ..."
+        , "           }"
+        , "       },"
+        , "       \"ipIdentity\": ...,"
+        , "       \"policy\": ...,"
+        , "       \"proofs\": ...,"
+        , "       \"revocationThreshold\": ...,"
         , "     },"
         , "     ..."
         , "   }"
-        , "where idx is the key index associated to the corresponding verify key." ]))
+        , "where cidx is the credential index and kidx is the key index of a verify key." ]))
 
 moduleCmds :: Mod CommandFields Cmd
 moduleCmds =
