@@ -992,6 +992,13 @@ data CredentialUpdateKeysTransactionCfg =
   , cuktcKeys :: ID.CredentialPublicKeys
   , cuktcCredId :: ID.CredentialRegistrationID }
 
+data AccountUpdateCredentialsTransactionCfg =
+  AccountUpdateCredentialsTransactionCfg
+  { auctcTransactionCfg :: TransactionConfig
+  , auctcNewCredInfos :: Map.Map ID.CredentialIndex ID.CredentialDeploymentInformation
+  , auctcRemoveCredIds :: [ID.CredentialRegistrationID]
+  , auctcNewThreshold :: ID.AccountThreshold }
+
 -- |Resolved configuration for transferring from public to encrypted balance.
 data AccountEncryptTransactionConfig =
   AccountEncryptTransactionConfig
@@ -1166,6 +1173,23 @@ bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm
           Just x -> return x
           Nothing -> logFatal [err]
 
+getAccountUpdateCredentialsTransactionData ::
+  Maybe FilePath -- ^ A file with new credentials.
+  -> Maybe FilePath -- ^ A file with an array of credential registration ids to remove.
+  -> ID.AccountThreshold -- ^ New threshold.
+  -> IO (Types.EncodedPayload, [Int], Map.Map ID.CredentialIndex ID.CredentialDeploymentInformation, [ID.CredentialRegistrationID])
+  -- ^ Return the payload to send, and the number of keys in all the new credentials, the new credentials, and the list of removed credentials.
+getAccountUpdateCredentialsTransactionData f1 f2 ucNewThreshold = do
+  ucNewCredInfos <- case f1 of
+    Nothing -> return Map.empty
+    Just file -> getFromJson =<< eitherDecodeFileStrict file
+  ucRemoveCredIds <- case f2 of
+    Nothing -> return []
+    Just file -> getFromJson =<< eitherDecodeFileStrict file
+  let pload = Types.encodePayload Types.UpdateCredentials{..}
+  let numKeysList = map (ID.credNumKeys . ID.credPubKeys) $ Map.elems ucNewCredInfos
+  return (pload, numKeysList, ucNewCredInfos, ucRemoveCredIds)
+
 -- |Convert 'baker remove' transaction config into a valid payload,
 -- optionally asking the user for confirmation.
 bakerRemoveTransactionConfirm :: BakerRemoveTransactionConfig -> Bool -> IO ()
@@ -1230,6 +1254,29 @@ credentialUpdateKeysTransactionConfirm CredentialUpdateKeysTransactionCfg{..} co
   when confirm $ do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
+
+accountUpdateCredentialsTransactionConfirm :: AccountUpdateCredentialsTransactionCfg -> Bool -> IO ()
+accountUpdateCredentialsTransactionConfirm AccountUpdateCredentialsTransactionCfg{..} confirm = do
+  let TransactionConfig
+        { tcEnergy = energy
+        , tcExpiry = expiry
+        , tcEncryptedSigningData = EncryptedSigningData { esdAddress = addr } }
+        = auctcTransactionCfg
+
+  let logNewCids = Map.foldrWithKey (\idx cdi l -> (printf "\t%s: %s" (show idx) (show $ ID.credId $ cdi)) : l) [] auctcNewCredInfos
+
+  logInfo $
+    [ printf "adding credentials to account %s with the following credential registration ids on account:" (showNamedAddress addr) ] ++
+    logNewCids ++
+    [ printf "setting new account threshold %s" (show (auctcNewThreshold))] ++
+    [ printf "removing credentials with credential registration ids %s" (show (auctcRemoveCredIds))] ++
+    [ printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
+    , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
+
+  when confirm $ do
+    confirmed <- askConfirmation Nothing
+    unless confirmed exitTransactionCancelled
+
 
 accountEncryptTransactionConfirm :: AccountEncryptTransactionConfig -> Bool -> IO ()
 accountEncryptTransactionConfirm AccountEncryptTransactionConfig{..} confirm = do
@@ -1464,6 +1511,35 @@ processAccountCmd action baseCfgDir verbose backend =
         let intOpts = toInteractionOpts txOpts
         liftIO $ credentialUpdateKeysTransactionConfirm aukCfg (ioConfirm intOpts)
         sendAndTailTransaction_ txCfg pl intOpts
+
+    AccountUpdateCredentials cdisFile removeCidsFile newThreshold txOpts -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+      accCfg <- liftIO $ getAccountCfgFromTxOpts baseCfg txOpts
+      let senderAddress = naAddr $ esdAddress accCfg
+
+      withClient backend $ do
+        accInfo <- getAccountInfoOrDie senderAddress
+        (epayload, numKeys, newCredentials, removedCredentials) <- liftIO $ getAccountUpdateCredentialsTransactionData cdisFile removeCidsFile newThreshold
+        let numExistingCredentials =  Map.size (airCredentials accInfo)
+        let nrgCost _ = return $ Just $ accountUpdateCredentialsEnergyCost (Types.payloadSize epayload) numExistingCredentials numKeys
+        txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
+        when verbose $ liftIO $ do
+          runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
+          putStrLn ""
+
+        let intOpts = toInteractionOpts txOpts
+        let aucCfg = AccountUpdateCredentialsTransactionCfg
+                { auctcTransactionCfg = txCfg
+                , auctcNewCredInfos = newCredentials
+                , auctcRemoveCredIds = removedCredentials
+                , auctcNewThreshold = newThreshold }
+        liftIO $ accountUpdateCredentialsTransactionConfirm aucCfg (ioConfirm intOpts)
+        sendAndTailTransaction_ txCfg epayload intOpts
 
     AccountEncrypt{..} -> do
       baseCfg <- getBaseConfig baseCfgDir verbose

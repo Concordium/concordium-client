@@ -34,7 +34,7 @@ import Concordium.Client.LegacyCommands
 import Concordium.Client.Types.Account
 import Concordium.Client.Utils
 import Concordium.Common.Time
-import Concordium.ID.Types (CredentialIndex, KeyIndex, CredentialRegistrationID)
+import Concordium.ID.Types (CredentialIndex, KeyIndex, CredentialRegistrationID, AccountThreshold)
 import Concordium.Types
 import Text.Printf
 import qualified Text.PrettyPrint.ANSI.Leijen as P
@@ -198,6 +198,12 @@ data AccountCmd
       -- If none are provided all existing ones will be used.
       adIndex :: !(Maybe Int)
     }
+  -- |Updated credentials and account threshold (i.e. how many credential holders that need to sign transactions)
+  | AccountUpdateCredentials
+    { aucNewCredInfos :: !(Maybe FilePath) -- File containing the new CredentialDeploymentInformation's
+    , aucRemoveCredIds :: !(Maybe FilePath) -- File containing the CredentialRegistrationID's for the credentials to be removed
+    , aucNewThreshold :: !AccountThreshold -- The new account threshold
+    , aucTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   deriving (Show)
 
 data ModuleCmd
@@ -653,6 +659,7 @@ accountCmds =
           (accountShowCmd <>
            accountListCmd <>
            accountUpdateKeysCmd <>
+           accountUpdateCredentialsCmd <>
            accountEncryptCmd <>
            accountDecryptCmd))
       (progDesc "Commands for inspecting and modifying accounts."))
@@ -718,6 +725,39 @@ accountUpdateKeysCmd =
         , "   }"
         , "where idx is the key index associated to the corresponding verify key." ]))
 
+accountUpdateCredentialsCmd :: Mod CommandFields AccountCmd
+accountUpdateCredentialsCmd =
+  command
+    "update-credentials"
+    (info
+      (AccountUpdateCredentials <$>
+        optional (strOption (long "new-credentials" <> metavar "FILE" <> help "File containing the new credential deployment informations.")) <*>
+        optional (strOption (long "remove-credentials" <> metavar "FILE" <> help "File containing credential registration ids of the credentials to be removed.")) <*>
+        option auto (long "new-threshold" <> metavar "THRESHOLD" <> help "New account threshold, i.e. how many credential holders needed to sign a transaction.") <*>
+        transactionOptsParser)
+      (progDescDoc $ docFromLines
+        [ "Add and/or remove credentials, and update account threshold. Expected format of the file containing new credentials:"
+        , "   {"
+        , "     \"cidx\": {"
+        , "       \"arData\": ...,"
+        , "       \"credId\": ...,"
+        , "       \"credentialPublicKeys\": {"
+        , "           \"keys\": {"
+        , "             \"kidx\": {"
+        , "                 \"schemeId\": ...,"
+        , "                 \"verifyKey\": ...,"
+        , "              },"
+        , "              ..."
+        , "           }"
+        , "       },"
+        , "       \"ipIdentity\": ...,"
+        , "       \"policy\": ...,"
+        , "       \"proofs\": ...,"
+        , "       \"revocationThreshold\": ...,"
+        , "     },"
+        , "     ..."
+        , "   }"
+        , "where cidx is the credential index and kidx is the key index of a verify key." ]))
 
 moduleCmds :: Mod CommandFields Cmd
 moduleCmds =
@@ -1036,23 +1076,26 @@ configAccountUpdateKeysCmd =
 expectedAddOrUpdateKeysFileFormat :: [String]
 expectedAddOrUpdateKeysFileFormat =
   ["   {"
-  , "     idx: {"
-  , "       \"encryptedSignKey\": {"
-  , "         \"metadata\": {"
-  , "           \"encryptionMethod\": \"AES-256\","
-  , "           \"iterations\": ...,"
-  , "           \"salt\": ...,"
-  , "           \"initializationVector\": ...,"
-  , "           \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\""
-  , "         },"
-  , "         \"cipherText\": ..."
-  , "       },"
-  , "       \"verifyKey\": ...,"
-  , "       \"schemeId\": \"Ed25519\""
+  , "     \"cidx\": {"
+  , "        \"kidx\": {"
+  , "          \"encryptedSignKey\": {"
+  , "            \"metadata\": {"
+  , "              \"encryptionMethod\": \"AES-256\","
+  , "              \"iterations\": ...,"
+  , "              \"salt\": ...,"
+  , "              \"initializationVector\": ...,"
+  , "              \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\""
+  , "            },"
+  , "            \"cipherText\": ..."
+  , "          },"
+  , "          \"verifyKey\": ...,"
+  , "          \"schemeId\": \"Ed25519\""
+  , "        },"
+  , "        ..."
   , "     },"
   , "     ..."
   , "   }"
-  , "where idx is the index of the respective key pair."
+  , "where cidx is the credential index and kidx is the index of a key pair."
   ]
 
 configAccountChangeKeyPasswordCmd :: Mod CommandFields ConfigAccountCmd
