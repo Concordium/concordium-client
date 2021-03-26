@@ -47,6 +47,18 @@ amountFromStringInform s =
     Just a -> Right a
     Nothing -> Left $ "Invalid GTU amount '" ++ s ++ "'. Amounts must be of the form n[.m] where m, if present,\n must have at least one and at most 6 digits."
 
+
+-- |Try to parse a KeyIndex from a string, and if failing, try to inform the user
+-- what the expected format is. This is intended to be used by the options
+-- parsers.
+indexFromStringInform :: String -> Either String IDTypes.KeyIndex
+indexFromStringInform s =
+   case readMaybe s :: Maybe Integer of
+    Just a -> if a >= 0 && a <= 255 then Right (IDTypes.KeyIndex (fromIntegral a)) else Left errString
+    Nothing -> Left errString
+  where errString = "Invalid KeyIndex. A KeyIndex must be an integer between 0 and 255 inclusive."
+
+
 -- |Try to parse a credential id from string, and if failing, try to inform the user
 -- what the expected format is. This is intended to be used by the options
 -- parsers.

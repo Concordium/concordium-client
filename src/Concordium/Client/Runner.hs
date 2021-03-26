@@ -66,6 +66,7 @@ import qualified Concordium.Crypto.VRF               as VRF
 import qualified Concordium.Types.Updates            as Updates
 import qualified Concordium.Types.Transactions       as Types
 import           Concordium.Types.HashableTo
+import           Concordium.Types.Parameters
 import qualified Concordium.Cost as Cost
 import qualified Concordium.Types.Execution          as Types
 import qualified Concordium.Types                    as Types
@@ -85,6 +86,7 @@ import           Data.IORef
 import           Data.Foldable
 import           Data.Aeson                          as AE
 import qualified Data.Aeson.Encode.Pretty            as AE
+import           Data.Aeson.Types                    as AE
 import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
@@ -110,7 +112,7 @@ import           System.IO
 import           System.Directory
 import           Text.Printf
 import           Text.Read (readMaybe)
-import Data.Time.Clock (addUTCTime)
+import Data.Time.Clock (addUTCTime, getCurrentTime, UTCTime)
 import Data.Ratio
 
 -- |Establish a new connection to the backend and run the provided computation.
@@ -225,7 +227,7 @@ processConfigCmd action baseCfgDir verbose =
             Left err -> logFatal [[i|cannot parse #{addr} as an address: #{err}|]]
             Right a -> return a
         nameAdded <- liftIO $ addAccountNameAndWrite verbose baseCfg name checkedAddr
-        logSuccess [[i|module reference #{addr} was successfully named '#{nameAdded}'|]]
+        logSuccess [[i|Account reference #{addr} was successfully named '#{nameAdded}'|]]
 
       ConfigAccountRemove account -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
@@ -368,6 +370,41 @@ processConfigCmd action baseCfgDir verbose =
                           ++ " will be updated on account " ++ Text.unpack addr]
               let accCfg' = accCfg { acKeys = keyDuplicates }
               writeAccountKeys baseCfg' accCfg' verbose
+
+      ConfigAccountChangeKeyPassword name cidx keyIndex -> do
+        logWarn [printf "Re-encrypting keys under a new password permanently overwrites the previous encrypted keys"
+                , "This is a destructive operation and cannot be undone"]
+
+        baseCfg <- getBaseConfig baseCfgDir verbose
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        (baseCfg', accountCfg) <- getAccountConfig (Just name) baseCfg Nothing Nothing Nothing AssumeInitialized
+        let keyMap = acKeys accountCfg
+        let ckeys = Map.lookup cidx keyMap
+        case ckeys of
+          Nothing -> logError [printf [i|No Credential found at Credential index #{cidx} for account '#{name}'|]]
+          Just enckeys -> do
+            let encKey = Map.lookup keyIndex enckeys
+            case encKey of
+              Nothing -> logError [printf [i|No key found with index #{keyIndex} for Credential index #{cidx} for account '#{name}'|]]
+              Just encKey' -> do
+                decPwd <- askPassword "Enter current encrypted key password"
+                plain <- runExceptT (decryptAccountKeyPair decPwd keyIndex encKey')
+                case plain of
+                  Left err -> logError [printf err]
+                  Right plainKey -> do
+                    createpwdresult <- createPasswordInteractive (Just "re-encrypt key under")
+                    case createpwdresult of
+                      Left err -> logError [printf err]
+                      Right encPwd -> do
+                        encKey2 <- encryptAccountKeyPair encPwd plainKey
+                        let newKeys = Map.insert cidx (Map.insert keyIndex encKey2 enckeys) keyMap
+                        let accCfg' = accountCfg { acKeys = newKeys }
+                        writeAccountKeys baseCfg' accCfg' verbose
+                        logInfo [printf [i|Key with Credential Index #{cidx}, and key index #{keyIndex} for account '#{name}' has been re-encrypted under the new password|]]
+
       ConfigAccountRemoveKeys addr cidx idxs -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
@@ -408,6 +445,7 @@ processConfigCmd action baseCfgDir verbose =
                             ++ showSetIdxs idxsToRemove
                             ++ " will be removed from account " ++ Text.unpack addr]
                   removeAccountKeys baseCfg accCfg cidx (Set.toList idxsToRemove) verbose
+
       ConfigAccountRemoveName name -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
@@ -418,10 +456,8 @@ processConfigCmd action baseCfgDir verbose =
         case Map.lookup name nameMap of
           Nothing -> logFatal [[i|the name '#{name}' is not in use|]]
           Just currentAddr -> do
-            logInfo [[i|removing mapping from '#{name}' to address '#{currentAddr}'|]]
+            logInfo [[i|removing mapping from '#{name}' to account address '#{currentAddr}'|]]
             void $ removeAccountNameAndWrite baseCfg name verbose
-
-
 
   where showMapIdxs = showIdxs . Map.keys
         showSetIdxs = showIdxs . Set.toList
@@ -500,14 +536,23 @@ processTransactionCmd action baseCfgDir verbose backend =
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
-      ttxCfg <- getTransferTransactionCfg baseCfg txOpts receiver amount
-      let txCfg = ttcTransactionCfg ttxCfg
+
+      receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
+
+      let pl = Types.encodePayload $ Types.Transfer (naAddr receiverAddress) amount
+      let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize pl
+      txCfg <- getTransactionCfg baseCfg txOpts nrgCost
+
+      let ttxCfg = TransferTransactionConfig
+                      { ttcTransactionCfg = txCfg
+                      , ttcReceiver = receiverAddress
+                      , ttcAmount = amount }
       when verbose $ do
         runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
         putStrLn ""
 
       let intOpts = toInteractionOpts txOpts
-      pl <- transferTransactionPayload ttxCfg (ioConfirm intOpts)
+      transferTransactionConfirm ttxCfg (ioConfirm intOpts)
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     TransactionSendWithSchedule receiver schedule txOpts -> do
@@ -515,8 +560,31 @@ processTransactionCmd action baseCfgDir verbose backend =
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
-      ttxCfg <- getTransferWithScheduleTransactionCfg baseCfg txOpts receiver schedule
-      let txCfg = twstcTransactionCfg ttxCfg
+
+      let realSchedule = case schedule of
+                       Right val -> val
+                       Left (total, interval, numIntervals, start) ->
+                         let chunks = total `div` fromIntegral numIntervals
+                             lastChunk = total `mod` fromIntegral numIntervals
+                             diff = case interval of
+                               COM.Minute -> 60 * 1000
+                               COM.Hour -> 60 * 60 * 1000
+                               COM.Day -> 24 * 60 * 60 * 1000
+                               COM.Week -> 7 * 24 * 60 * 60 * 1000
+                               COM.Month -> 30 * 24 * 60 * 60 * 1000
+                               COM.Year -> 365 * 24 * 60 * 60 * 1000
+                         in
+                           zip (iterate (+ diff) start) (replicate (numIntervals - 1) chunks ++ [chunks + lastChunk])
+      receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
+
+      let pl = Types.encodePayload $ Types.TransferWithSchedule (naAddr receiverAddress) realSchedule
+      let nrgCost _ = return $ Just $ transferWithScheduleEnergyCost (Types.payloadSize pl) (length realSchedule)
+      txCfg <- getTransactionCfg baseCfg txOpts nrgCost
+      let ttxCfg = TransferWithScheduleTransactionConfig
+                      { twstcTransactionCfg = txCfg
+                      , twstcReceiver = receiverAddress
+                      , twstcSchedule = realSchedule }
+
       when verbose $ do
         runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
         putStrLn ""
@@ -526,7 +594,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       case fromAddr == toAddr of
         False -> do
           let intOpts = toInteractionOpts txOpts
-          pl <- transferWithScheduleTransactionPayload ttxCfg (ioConfirm intOpts)
+          transferWithScheduleTransactionConfirm ttxCfg (ioConfirm intOpts)
           withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
         True -> do
           logWarn ["Scheduled transfers from an account to itself are not allowed."]
@@ -538,27 +606,38 @@ processTransactionCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      let nrgCost _ = return $ Just $ encryptedTransferEnergyCost
-      txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
+      accCfg <- getAccountCfgFromTxOpts baseCfg txOpts
+      let senderAddr = esdAddress accCfg
 
       encryptedSecretKey <-
-          case esdEncryptionKey . tcEncryptedSigningData $ txCfg of
+          case esdEncryptionKey accCfg of
             Nothing ->
-              logFatal ["Missing account encryption secret key for account: " ++ show (esdAddress . tcEncryptedSigningData $ txCfg)]
+              logFatal ["Missing account encryption secret key for account: " ++ show senderAddr]
             Just x -> return x
       secretKey <- decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey `withLogFatalIO` ("Couldn't decrypt account encryption secret key: " ++)
 
       receiverAcc <- getAccountAddressArg (bcAccountNameMap baseCfg) (Just receiver)
 
       withClient backend $ do
-        ttxCfg <- getEncryptedTransferTransactionCfg txCfg receiverAcc amount index secretKey
+        transferData <- getEncryptedAmountTransferData (naAddr senderAddr) receiverAcc amount index secretKey
+
+        let payload = Types.encodePayload $ Types.EncryptedAmountTransfer (naAddr receiverAcc) transferData
+        let nrgCost _ = return $ Just $ encryptedTransferEnergyCost $ Types.payloadSize payload
+        txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
+
+        let ettCfg = EncryptedTransferTransactionConfig{
+          ettTransferData = transferData,
+          ettTransactionCfg = txCfg,
+          ettReceiver = receiverAcc,
+          ettAmount = amount
+        }
         liftIO $ when verbose $ do
           runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
           putStrLn ""
 
         let intOpts = toInteractionOpts txOpts
-        pl <- encryptedTransferTransactionPayload ttxCfg (ioConfirm intOpts)
-        sendAndTailTransaction_ txCfg pl intOpts
+        encryptedTransferTransactionConfirm ettCfg (ioConfirm intOpts)
+        sendAndTailTransaction_ txCfg payload intOpts
 
     TransactionRegisterData file txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -576,7 +655,7 @@ processTransactionCmd action baseCfgDir verbose backend =
         let pl = registerDataTransactionPayload rdCfg
 
         withClient backend $ do
-          mTsr <- sendAndTailTransaction txCfg pl intOpts
+          mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
           let extractDataRegistered = extractFromTsr $ \case Types.DataRegistered rd -> Just rd
                                                              _ -> Nothing
           case extractDataRegistered mTsr of
@@ -745,57 +824,12 @@ data TransferTransactionConfig =
   , ttcReceiver :: NamedAddress
   , ttcAmount :: Types.Amount }
 
--- |Resolve configuration of a transfer transaction based on persisted config and CLI flags.
--- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
-getTransferTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Text -> Types.Amount -> IO TransferTransactionConfig
-getTransferTransactionCfg baseCfg txOpts receiver amount = do
-  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
-
-  receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
-
-  return TransferTransactionConfig
-    { ttcTransactionCfg = txCfg
-    , ttcReceiver = receiverAddress
-    , ttcAmount = amount }
-  where nrgCost _ = return $ Just simpleTransferEnergyCost
-
 -- |Resolved configuration for a transfer transaction.
 data TransferWithScheduleTransactionConfig =
   TransferWithScheduleTransactionConfig
   { twstcTransactionCfg :: TransactionConfig
   , twstcReceiver :: NamedAddress
   , twstcSchedule :: [(Time.Timestamp, Types.Amount)]}
-
--- |Resolve configuration of a transfer with schedule transaction based on persisted config and CLI flags.
--- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
-getTransferWithScheduleTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Text -> Either (Types.Amount, COM.Interval, Int, Time.Timestamp) [(Time.Timestamp, Types.Amount)] -> IO TransferWithScheduleTransactionConfig
-getTransferWithScheduleTransactionCfg baseCfg txOpts receiver preSchedule = do
-  let realSchedule = case preSchedule of
-                       Right val -> val
-                       Left (total, interval, numIntervals, start) ->
-                         let chunks = total `div` fromIntegral numIntervals
-                             lastChunk = total `mod` fromIntegral numIntervals
-                             diff = case interval of
-                               COM.Minute -> 60 * 1000
-                               COM.Hour -> 60 * 60 * 1000
-                               COM.Day -> 24 * 60 * 60 * 1000
-                               COM.Week -> 7 * 24 * 60 * 60 * 1000
-                               COM.Month -> 30 * 24 * 60 * 60 * 1000
-                               COM.Year -> 365 * 24 * 60 * 60 * 1000
-                         in
-                           zip (iterate (+ diff) start) (replicate (numIntervals - 1) chunks ++ [chunks + lastChunk])
-  let nrgCost _ = return $ Just $ transferWithScheduleEnergyCost (length realSchedule)
-
-  when (length realSchedule > 255) $ logFatal ["At most 255 releases can be scheduled."]
-
-  txCfg <- getTransactionCfg baseCfg txOpts nrgCost
-
-  receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
-
-  return TransferWithScheduleTransactionConfig
-    { twstcTransactionCfg = txCfg
-    , twstcReceiver = receiverAddress
-    , twstcSchedule = realSchedule }
 
 data EncryptedTransferTransactionConfig =
   EncryptedTransferTransactionConfig
@@ -804,10 +838,8 @@ data EncryptedTransferTransactionConfig =
   , ettAmount :: Types.Amount
   , ettTransferData :: !Enc.EncryptedAmountTransferData }
 
-getEncryptedTransferTransactionCfg :: TransactionConfig -> NamedAddress -> Types.Amount -> Maybe Int -> ElgamalSecretKey -> ClientMonad IO EncryptedTransferTransactionConfig
-getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx secretKey = do
-  let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ ettTransactionCfg
-
+getEncryptedAmountTransferData :: ID.AccountAddress -> NamedAddress -> Types.Amount -> Maybe Int -> ElgamalSecretKey -> ClientMonad IO Enc.EncryptedAmountTransferData
+getEncryptedAmountTransferData senderAddr ettReceiver ettAmount idx secretKey = do
   -- get encrypted amounts for the sender
   (bbHash, infoValue) <- logFatalOnError =<< withBestBlockHash Nothing (\bbHash -> ((bbHash,) <$>) <$> getAccountInfo (Text.pack . show $ senderAddr) bbHash)
   case AE.fromJSON infoValue of
@@ -849,7 +881,7 @@ getEncryptedTransferTransactionCfg ettTransactionCfg ettReceiver ettAmount idx s
               aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
           liftIO $ Enc.makeEncryptedAmountTransferData globalContext receiverPk secretKey aggAmount ettAmount >>= \case
             Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
-            Just ettTransferData -> return EncryptedTransferTransactionConfig{..}
+            Just ettTransferData -> return ettTransferData
 
 
 -- |Resolved configuration for a 'baker remove' transaction.
@@ -879,15 +911,55 @@ data BakerUpdateStakeTransactionConfig =
 
 -- |Resolve configuration of a 'baker update-stake' transaction based on persisted config and CLI flags.
 -- See the docs for getTransactionCfg for the behavior when no or a wrong amount of energy is allocated.
-getBakerUpdateStakeTransactionCfg :: TransactionConfig -> Types.Amount -> ClientMonad IO BakerUpdateStakeTransactionConfig
-getBakerUpdateStakeTransactionCfg txCfg newAmount = do
+-- Warns the user if they are staking a high proporition of their stake, or doing an action which might activate the baker cooldown
+getBakerUpdateStakeTransactionCfg :: TransactionConfig -> Types.Amount -> UTCTime -> ClientMonad IO BakerUpdateStakeTransactionConfig
+getBakerUpdateStakeTransactionCfg txCfg newAmount cooldownDate = do
   let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
   AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
-  when (isNothing airBaker) $ logFatal [[i|Account #{senderAddr} is not a baker, so cannot update its stake.|]]
-  when (airAmount < newAmount) $ logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the new amount requested to be staked (#{showGtu newAmount}).|]]
-  return BakerUpdateStakeTransactionConfig
-         { bustcNewAmount = newAmount
-         , bustcTransactionCfg = txCfg }
+  case airBaker of
+    Nothing -> logFatal [[i|Account #{senderAddr} is not a baker, so cannot update its stake.|]]
+    Just aibresult -> do
+      when (airAmount < newAmount) $ logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the new amount requested to be staked (#{showGtu newAmount}).|]]
+      -- Check if stake is being decreased, ask for confirmation if so if so
+      if (newAmount < abirStakedAmount aibresult)
+      then do
+        logWarn ["The new staked value appears to be lower than the amount currently staked on chain by this baker."]
+        logWarn ["Decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the GTU are made available."]
+        logWarn ["During this period it is not possible to update the baker's stake, or stop the baker."]
+        logWarn [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
+        confirmed <- askConfirmation $ Just "Confirm that you want to update the baker's stake"
+        unless confirmed exitTransactionCancelled
+        return BakerUpdateStakeTransactionConfig
+          { bustcNewAmount = newAmount
+          , bustcTransactionCfg = txCfg }
+      else do
+        logInfo ["Note that decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the GTU are made available."]
+        logInfo ["During this period it is not possible to update the baker's stake, or stop the baker."]
+        logInfo [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
+        -- Check if staked amount is greater than 95% of total GTU on the account, and warn user if so
+        if ((newAmount * 100) > (airAmount * 95))
+        then do
+          logWarn ["You are attempting to stake >95% of your total GTU on this account. Staked GTU is not available for spending."]
+          logWarn ["Be aware that updating or stopping your baker in the future will require some amount of non-staked GTU to pay for the transactions to do so."]
+          confirmed <- askConfirmation $ Just "Confirm that you wish to stake this much GTU"
+          unless confirmed exitTransactionCancelled
+          return BakerUpdateStakeTransactionConfig
+            { bustcNewAmount = newAmount
+            , bustcTransactionCfg = txCfg }
+        else
+          return BakerUpdateStakeTransactionConfig
+            { bustcNewAmount = newAmount
+            , bustcTransactionCfg = txCfg }
+-- |Returns the UTCTime date when the baker cooldown on reducing stake/removing a baker will end, using on chain parameters
+getBakerCooldown :: BlockSummaryResult -> ClientMonad IO UTCTime
+getBakerCooldown cpr = do
+  let cooldownEpochs = toInteger $ (bsurChainParameters $ bsrUpdates cpr) ^. cpBakerExtraCooldownEpochs
+  cs <- getFromJson =<< getConsensusStatus
+  let epochTime = (toInteger $ csrEpochDuration cs) % 1000
+  let cooldownTime = fromRational $ epochTime * ((cooldownEpochs + 2) % 1)
+  currTime <- liftIO getCurrentTime
+  let cooldownDate = addUTCTime cooldownTime currTime
+  return cooldownDate
 
 data BakerUpdateRestakeTransactionConfig =
   BakerUpdateRestakeTransactionConfig
@@ -934,33 +1006,18 @@ data AccountDecryptTransactionConfig =
     adTransferData :: Enc.SecToPubAmountTransferData
   }
 
--- |Resolve configuration for an 'update keys' transaction
-getAccountUpdateKeysTransactionCfg ::
-  BaseConfig
-  -> TransactionOpts (Maybe Types.Energy)
-  -> FilePath -- ^ File with the new credential keys.
-  -> ID.CredentialRegistrationID -- ^ ID of the credential we wish to update.
-  -> Int -- ^ The number of credentials on the account at the time the transaction is sent.
-  -> IO CredentialUpdateKeysTransactionCfg
-getAccountUpdateKeysTransactionCfg baseCfg txOpts f cid numCredentials = do
-  keys <- getFromJson =<< eitherDecodeFileStrict f
-  txCfg <- getTransactionCfg baseCfg txOpts (nrgCost $ length (ID.credKeys keys))
-  return $ CredentialUpdateKeysTransactionCfg txCfg keys cid
-  where nrgCost numKeys _ = return $ Just $ accountUpdateKeysEnergyCost numCredentials numKeys
-
 -- |Resolve configuration for transferring an amount from public to encrypted
 -- balance of an account.
-getAccountEncryptTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.Amount -> IO AccountEncryptTransactionConfig
-getAccountEncryptTransactionCfg baseCfg txOpts aeAmount = do
+getAccountEncryptTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.Amount -> Types.PayloadSize -> IO AccountEncryptTransactionConfig
+getAccountEncryptTransactionCfg baseCfg txOpts aeAmount payloadSize = do
   aeTransactionCfg <- getTransactionCfg baseCfg txOpts nrgCost
   return AccountEncryptTransactionConfig{..}
-  where nrgCost _ = return $ Just accountEncryptEnergyCost
+  where nrgCost _ = return $ Just $ accountEncryptEnergyCost payloadSize
 
 -- |Resolve configuration for transferring an amount from encrypted to public
 -- balance of an account.
-getAccountDecryptTransactionCfg :: TransactionConfig -> Types.Amount -> ElgamalSecretKey -> Maybe Int -> ClientMonad IO AccountDecryptTransactionConfig
-getAccountDecryptTransactionCfg adTransactionCfg adAmount secretKey idx = do
-  let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ adTransactionCfg
+getAccountDecryptTransferData :: ID.AccountAddress -> Types.Amount -> ElgamalSecretKey -> Maybe Int -> ClientMonad IO Enc.SecToPubAmountTransferData
+getAccountDecryptTransferData senderAddr adAmount secretKey idx = do
   (bbHash, infoValue) <- logFatalOnError =<< withBestBlockHash Nothing (\bbh -> ((bbh, ) <$>) <$> getAccountInfo (Text.pack . show $ senderAddr) bbh)
   case AE.fromJSON infoValue of
     AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
@@ -992,7 +1049,7 @@ getAccountDecryptTransactionCfg adTransactionCfg adAmount secretKey idx = do
           aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
       liftIO $ Enc.makeSecToPubAmountTransferData globalContext secretKey aggAmount adAmount >>= \case
         Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
-        Just adTransferData -> return AccountDecryptTransactionConfig{..}
+        Just adTransferData -> return adTransferData
 
 -- |Get the cryptographic parameters in a given block, and attempt to parse them.
 getParseCryptographicParameters :: Text -> ClientMonad IO (Either String GlobalContext)
@@ -1007,8 +1064,8 @@ getParseCryptographicParameters bHash = runExceptT $ do
 
 -- |Convert transfer transaction config into a valid payload,
 -- optionally asking the user for confirmation.
-transferTransactionPayload :: TransferTransactionConfig -> Bool -> IO Types.Payload
-transferTransactionPayload ttxCfg confirm = do
+transferTransactionConfirm :: TransferTransactionConfig -> Bool -> IO ()
+transferTransactionConfirm ttxCfg confirm = do
   let TransferTransactionConfig
         { ttcTransactionCfg = TransactionConfig
                               { tcEnergy = energy
@@ -1025,12 +1082,10 @@ transferTransactionPayload ttxCfg confirm = do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  return Types.Transfer { tToAddress = naAddr toAddress, tAmount = amount }
-
 -- |Convert transfer transaction config into a valid payload,
 -- optionally asking the user for confirmation.
-transferWithScheduleTransactionPayload :: TransferWithScheduleTransactionConfig -> Bool -> IO Types.Payload
-transferWithScheduleTransactionPayload ttxCfg confirm = do
+transferWithScheduleTransactionConfirm :: TransferWithScheduleTransactionConfig -> Bool -> IO ()
+transferWithScheduleTransactionConfirm ttxCfg confirm = do
   let TransferWithScheduleTransactionConfig
         { twstcTransactionCfg = TransactionConfig
                               { tcEnergy = energy
@@ -1048,10 +1103,8 @@ transferWithScheduleTransactionPayload ttxCfg confirm = do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  return Types.TransferWithSchedule { twsTo = naAddr toAddress, twsSchedule = schedule }
-
-encryptedTransferTransactionPayload :: MonadIO m => EncryptedTransferTransactionConfig -> Bool -> m Types.Payload
-encryptedTransferTransactionPayload EncryptedTransferTransactionConfig{..} confirm = do
+encryptedTransferTransactionConfirm :: MonadIO m => EncryptedTransferTransactionConfig -> Bool -> m ()
+encryptedTransferTransactionConfirm EncryptedTransferTransactionConfig{..} confirm = do
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
@@ -1067,8 +1120,6 @@ encryptedTransferTransactionPayload EncryptedTransferTransactionConfig{..} confi
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  return $ Types.EncryptedAmountTransfer (naAddr ettReceiver) ettTransferData
-
 -- |Convert 'baker add' transaction config into a valid payload,
 -- optionally asking the user for confirmation.
 bakerAddTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy)
@@ -1076,7 +1127,7 @@ bakerAddTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy)
                     -> Types.Amount -- ^How much to stake.
                     -> Bool -- ^Whether to restake earnings.
                     -> Bool -- ^Whether to confirm before sending or not.
-                    -> IO (BakerKeys, TransactionConfig, Types.Payload)
+                    -> IO (BakerKeys, TransactionConfig, Types.EncodedPayload)
 bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm = do
   encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
   bakerKeys <- eitherDecodeFileStrict f >>= getFromJson
@@ -1096,8 +1147,8 @@ bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm
   abProofSig <- Proofs.proveDlog25519Block challenge (BlockSig.KeyPair signatureSignKey abSignatureVerifyKey) `except` "cannot produce signature key proof"
   abProofAggregation <- Bls.proveKnowledgeOfSK challenge aggrSignKey
 
-  let payload = Types.AddBaker {abBakingStake = batcBakingStake, abRestakeEarnings = batcRestakeEarnings,..}
-      nrgCost _ = return . Just $ bakerAddEnergyCost (Types.payloadSize (Types.encodePayload payload))
+  let payload = Types.encodePayload (Types.AddBaker {abBakingStake = batcBakingStake, abRestakeEarnings = batcRestakeEarnings,..})
+      nrgCost _ = return . Just $ bakerAddEnergyCost (Types.payloadSize payload)
 
   txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
 
@@ -1117,8 +1168,8 @@ bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm
 
 -- |Convert 'baker remove' transaction config into a valid payload,
 -- optionally asking the user for confirmation.
-bakerRemoveTransactionPayload :: BakerRemoveTransactionConfig -> Bool -> IO Types.Payload
-bakerRemoveTransactionPayload brtxCfg confirm = do
+bakerRemoveTransactionConfirm :: BakerRemoveTransactionConfig -> Bool -> IO ()
+bakerRemoveTransactionConfirm brtxCfg confirm = do
   let BakerRemoveTransactionConfig
         { brtcTransactionCfg = TransactionConfig
                                { tcEnergy = energy }
@@ -1131,10 +1182,8 @@ bakerRemoveTransactionPayload brtxCfg confirm = do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  return Types.RemoveBaker
-
-bakerUpdateStakeTransactionPayload :: BakerUpdateStakeTransactionConfig -> Bool -> IO Types.Payload
-bakerUpdateStakeTransactionPayload brtxCfg confirm = do
+bakerUpdateStakeTransactionConfirm :: BakerUpdateStakeTransactionConfig -> Bool -> IO ()
+bakerUpdateStakeTransactionConfirm brtxCfg confirm = do
   let BakerUpdateStakeTransactionConfig
         { bustcTransactionCfg = TransactionConfig
                                { tcEnergy = energy }
@@ -1147,10 +1196,8 @@ bakerUpdateStakeTransactionPayload brtxCfg confirm = do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  return $ Types.UpdateBakerStake newAmount
-
-bakerUpdateRestakeTransactionPayload :: BakerUpdateRestakeTransactionConfig -> Bool -> IO Types.Payload
-bakerUpdateRestakeTransactionPayload burtxCfg confirm = do
+bakerUpdateRestakeTransactionConfirm :: BakerUpdateRestakeTransactionConfig -> Bool -> IO ()
+bakerUpdateRestakeTransactionConfirm burtxCfg confirm = do
   let BakerUpdateRestakeTransactionConfig
         { burTransactionCfg = TransactionConfig
                               { tcEnergy = energy }
@@ -1163,10 +1210,8 @@ bakerUpdateRestakeTransactionPayload burtxCfg confirm = do
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  return $ Types.UpdateBakerRestakeEarnings newRestake
-
-credentialUpdateKeysTransactionPayload :: CredentialUpdateKeysTransactionCfg -> Bool -> IO Types.Payload
-credentialUpdateKeysTransactionPayload CredentialUpdateKeysTransactionCfg{..} confirm = do
+credentialUpdateKeysTransactionConfirm :: CredentialUpdateKeysTransactionCfg -> Bool -> IO ()
+credentialUpdateKeysTransactionConfirm CredentialUpdateKeysTransactionCfg{..} confirm = do
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
@@ -1186,10 +1231,8 @@ credentialUpdateKeysTransactionPayload CredentialUpdateKeysTransactionCfg{..} co
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  return $ Types.UpdateCredentialKeys cuktcCredId cuktcKeys
-
-accountEncryptTransactionPayload :: AccountEncryptTransactionConfig -> Bool -> IO Types.Payload
-accountEncryptTransactionPayload AccountEncryptTransactionConfig{..} confirm = do
+accountEncryptTransactionConfirm :: AccountEncryptTransactionConfig -> Bool -> IO ()
+accountEncryptTransactionConfirm AccountEncryptTransactionConfig{..} confirm = do
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
@@ -1206,10 +1249,9 @@ accountEncryptTransactionPayload AccountEncryptTransactionConfig{..} confirm = d
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  return $ Types.TransferToEncrypted aeAmount
 
-accountDecryptTransactionPayload :: MonadIO m => AccountDecryptTransactionConfig -> Bool -> m Types.Payload
-accountDecryptTransactionPayload AccountDecryptTransactionConfig{..} confirm = do
+accountDecryptTransactionConfirm :: MonadIO m => AccountDecryptTransactionConfig -> Bool -> m ()
+accountDecryptTransactionConfirm AccountDecryptTransactionConfig{..} confirm = do
   let TransactionConfig
         { tcEnergy = energy
         , tcExpiry = expiry
@@ -1225,15 +1267,13 @@ accountDecryptTransactionPayload AccountDecryptTransactionConfig{..} confirm = d
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  return $ Types.TransferToPublic adTransferData
-
 
 -- |Encode, sign, and send transaction off to the baker.
 -- If confirmNonce is set, the user is asked to confirm using the next nonce
 -- if there are pending transactions.
 startTransaction :: (MonadFail m, MonadIO m)
   => TransactionConfig
-  -> Types.Payload
+  -> Types.EncodedPayload
   -> Bool
   -> Maybe AccountKeyMap -- ^ The decrypted account signing keys. If not provided, the encrypted keys
                          -- from the 'TransactionConfig' will be used, and for each the password will be queried.
@@ -1249,7 +1289,7 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
   accountKeyMap <- case maybeAccKeys of
                      Just acKeys' -> return acKeys'
                      Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys (Nothing) Nothing
-  let tx = encodeAndSignTransaction pl naAddr energy nonce expiry accountKeyMap
+  let tx = signEncodedTransaction pl naAddr energy nonce expiry accountKeyMap
 
   sendTransactionToBaker tx defaultNetId >>= \case
     Left err -> fail err
@@ -1280,7 +1320,7 @@ getNonce sender nonce confirm =
 -- |Send a transaction and optionally tail it (see 'tailTransaction' below).
 sendAndTailTransaction_ :: (MonadIO m, MonadFail m)
     => TransactionConfig -- ^ Information about the sender, and the context of transaction
-    -> Types.Payload -- ^ Payload of the transaction to send
+    -> Types.EncodedPayload -- ^ Payload of the transaction to send
     -> InteractionOpts -- ^ How interactive should sending and tailing be
     -> ClientMonad m ()
 sendAndTailTransaction_ txCfg pl intOpts = void $ sendAndTailTransaction txCfg pl intOpts
@@ -1290,7 +1330,7 @@ sendAndTailTransaction_ txCfg pl intOpts = void $ sendAndTailTransaction txCfg p
 -- otherwise the return value is `Nothing`.
 sendAndTailTransaction :: (MonadIO m, MonadFail m)
     => TransactionConfig -- ^ Information about the sender, and the context of transaction
-    -> Types.Payload -- ^ Payload of the transaction to send
+    -> Types.EncodedPayload -- ^ Payload of the transaction to send
     -> InteractionOpts -- ^ How interactive should sending and tailing be
     -> ClientMonad m (Maybe TransactionStatusResult)
 sendAndTailTransaction txCfg pl intOpts = do
@@ -1401,10 +1441,19 @@ processAccountCmd action baseCfgDir verbose backend =
       accCfg <- liftIO $ getAccountCfgFromTxOpts baseCfg txOpts
       let senderAddress = naAddr $ esdAddress accCfg
 
+
       withClient backend $ do
+        keys <- liftIO $ getFromJson =<< eitherDecodeFileStrict f
+        let pl = Types.encodePayload $ Types.UpdateCredentialKeys cid keys
+
         accInfo <- getAccountInfoOrDie senderAddress
-        aukCfg <- liftIO $ getAccountUpdateKeysTransactionCfg baseCfg txOpts f cid (Map.size (airCredentials accInfo))
-        let txCfg = cuktcTransactionCfg aukCfg
+        let numCredentials = Map.size $ airCredentials accInfo
+        let numKeys = length $ ID.credKeys keys
+        let nrgCost _ = return $ Just $ accountUpdateKeysEnergyCost (Types.payloadSize pl) numCredentials numKeys
+
+        txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
+
+        let aukCfg = CredentialUpdateKeysTransactionCfg txCfg keys cid
 
         -- TODO: Check that the credential exists on the chain before making the update.
 
@@ -1413,7 +1462,7 @@ processAccountCmd action baseCfgDir verbose backend =
           putStrLn ""
 
         let intOpts = toInteractionOpts txOpts
-        pl <- liftIO $ credentialUpdateKeysTransactionPayload aukCfg (ioConfirm intOpts)
+        liftIO $ credentialUpdateKeysTransactionConfirm aukCfg (ioConfirm intOpts)
         sendAndTailTransaction_ txCfg pl intOpts
 
     AccountEncrypt{..} -> do
@@ -1422,14 +1471,16 @@ processAccountCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      aetxCfg <- getAccountEncryptTransactionCfg baseCfg aeTransactionOpts aeAmount
+      let pl = Types.encodePayload $ Types.TransferToEncrypted aeAmount
+
+      aetxCfg <- getAccountEncryptTransactionCfg baseCfg aeTransactionOpts aeAmount (Types.payloadSize pl)
       let txCfg = aeTransactionCfg aetxCfg
       when verbose $ do
         runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
         putStrLn ""
 
       let intOpts = toInteractionOpts aeTransactionOpts
-      pl <- accountEncryptTransactionPayload aetxCfg (ioConfirm intOpts)
+      accountEncryptTransactionConfirm aetxCfg (ioConfirm intOpts)
       withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
 
     AccountDecrypt{..} -> do
@@ -1438,20 +1489,31 @@ processAccountCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      let nrgCost _ = return $ Just $  accountDecryptEnergyCost
-      txCfg <- liftIO (getTransactionCfg baseCfg adTransactionOpts nrgCost)
+      accCfg <- getAccountCfgFromTxOpts baseCfg adTransactionOpts
+      let senderAddr = esdAddress accCfg
 
-      encryptedSecretKey <- maybe (logFatal ["Missing account encryption secret key for account: " ++ show (esdAddress . tcEncryptedSigningData $ txCfg)]) return (esdEncryptionKey . tcEncryptedSigningData $ txCfg)
+      encryptedSecretKey <- maybe (logFatal ["Missing account encryption secret key for account: " ++ show senderAddr]) return (esdEncryptionKey accCfg)
       secretKey <- either (\e -> logFatal ["Couldn't decrypt account encryption secret key: " ++ e]) return =<< decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey
 
       withClient backend $ do
-        adtxCfg <- getAccountDecryptTransactionCfg txCfg adAmount secretKey adIndex
+        transferData <- getAccountDecryptTransferData (naAddr senderAddr) adAmount secretKey adIndex
+        let pl = Types.encodePayload $ Types.TransferToPublic transferData
+
+        let nrgCost _ = return $ Just $ accountDecryptEnergyCost $ Types.payloadSize pl
+        txCfg <- liftIO (getTransactionCfg baseCfg adTransactionOpts nrgCost)
+
+
+        let adtxCfg = AccountDecryptTransactionConfig{
+          adTransactionCfg = txCfg,
+          adTransferData = transferData
+        }
+
         when verbose $ do
           runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
           liftIO $ putStrLn ""
 
         let intOpts = toInteractionOpts adTransactionOpts
-        pl <- accountDecryptTransactionPayload adtxCfg (ioConfirm intOpts)
+        accountDecryptTransactionConfirm adtxCfg (ioConfirm intOpts)
         sendAndTailTransaction_ txCfg pl intOpts
 
 
@@ -1482,7 +1544,7 @@ processModuleCmd action baseCfgDir verbose backend =
           let pl = moduleDeployTransactionPayload mdCfg
 
           withClient backend $ do
-            mTsr <- sendAndTailTransaction txCfg pl intOpts
+            mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
             case extractModRef mTsr of
               Nothing -> return ()
               Just (Left err) -> logFatal ["module deployment failed:", err]
@@ -1531,6 +1593,19 @@ processModuleCmd action baseCfgDir verbose backend =
       modRef <- getModuleRefFromRefOrFile modRefOrFile
       nameAdded <- liftIO $ addModuleNameAndWrite verbose baseCfg modName modRef
       logSuccess [[i|module reference #{modRef} was successfully named '#{nameAdded}'|]]
+
+    ModuleRemoveName name -> do
+        baseCfg <- getBaseConfig baseCfgDir verbose
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        let nameMap = bcModuleNameMap baseCfg
+        case Map.lookup name nameMap of
+          Nothing -> logFatal [[i|the name '#{name}' is not in use|]]
+          Just currentAddr -> do
+            logInfo [[i|removing mapping from '#{name}' to contract address '#{currentAddr}'|]]
+            void $ removeModuleNameAndWrite baseCfg name verbose
 
   where extractModRef = extractFromTsr (\case
                                            Types.ModuleDeployed modRef -> Just modRef
@@ -1610,7 +1685,7 @@ processContractCmd action baseCfgDir verbose backend =
         let intOpts = toInteractionOpts txOpts
         let pl = contractInitTransactionPayload ciCfg
         withClient backend $ do
-          mTsr <- sendAndTailTransaction txCfg pl intOpts
+          mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
           case extractContractAddress mTsr of
             Nothing -> return ()
             Just (Left err) -> logFatal ["contract initialisation failed:", err]
@@ -1646,7 +1721,7 @@ processContractCmd action baseCfgDir verbose backend =
         let intOpts = toInteractionOpts txOpts
         let pl = contractUpdateTransactionPayload cuCfg
         withClient backend $ do
-          mTsr <- sendAndTailTransaction txCfg pl intOpts
+          mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
           case extractUpdate mTsr of
             Nothing -> return ()
             Just (Left err) -> logFatal ["updating contract instance failed:", err]
@@ -1660,6 +1735,19 @@ processContractCmd action baseCfgDir verbose backend =
       let contrAddr = mkContractAddress index subindex
       nameAdded <- liftIO $ addContractNameAndWrite verbose baseCfg contrName contrAddr
       logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{nameAdded}'|]]
+
+    ContractRemoveName name -> do
+        baseCfg <- getBaseConfig baseCfgDir verbose
+        when verbose $ do
+          runPrinter $ printBaseConfig baseCfg
+          putStrLn ""
+
+        let nameMap = bcContractNameMap baseCfg
+        case Map.lookup name nameMap of
+          Nothing -> logFatal [[i|the name '#{name}' is not in use|]]
+          Just currentAddr -> do
+            logInfo [[i|removing mapping from '#{name}' to contract address '#{currentAddr}'|]]
+            void $ removeContractNameAndWrite baseCfg name verbose
 
   where extractContractAddress = extractFromTsr (\case
                                                  Types.ContractInitialized {..} -> Just ecAddress
@@ -1967,36 +2055,41 @@ processConsensusCmd action _baseCfgDir verbose backend =
                     where
                       addrmap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
 
-    ConsensusChainUpdate rawUpdateFile authsFile keysFiles intOpts -> do
+    ConsensusChainUpdate rawUpdateFile keysFiles intOpts -> do
       let
         loadJSON :: (FromJSON a) => FilePath -> IO a
         loadJSON fn = AE.eitherDecodeFileStrict fn >>= \case
           Left err -> logFatal [fn ++ ": " ++ err]
           Right r -> return r
       rawUpdate@Updates.RawUpdateInstruction{..} <- loadJSON rawUpdateFile
-      auths <- loadJSON authsFile
+      eBlockSummaryJSON <- withClient backend $ withBestBlockHash Nothing getBlockSummary
+      keyCollectionStore :: Updates.UpdateKeysCollection <-
+        case eBlockSummaryJSON of
+          Right v -> case parse (withObject "BlockSummary" $ \o -> (o .: "updates") >>= (.: "keys")) v of
+                       AE.Success v' -> return v'
+                       AE.Error e -> logFatal [printf "Error parsing a JSON for block summary: '%s'" (show e)]
+          Left e -> logFatal [printf "Error getting block summary: '%s'" (show e)]
       keys <- mapM loadJSON keysFiles
       let
-        keySet = Updates.accessPublicKeys $ (case ruiPayload of
-            Updates.AuthorizationUpdatePayload{} -> Updates.asAuthorization
-            Updates.ProtocolUpdatePayload{} -> Updates.asProtocol
-            Updates.ElectionDifficultyUpdatePayload{} -> Updates.asParamElectionDifficulty
-            Updates.EuroPerEnergyUpdatePayload{} -> Updates.asParamEuroPerEnergy
-            Updates.MicroGTUPerEuroUpdatePayload{} -> Updates.asParamMicroGTUPerEuro
-            Updates.FoundationAccountUpdatePayload{} -> Updates.asParamFoundationAccount
-            Updates.MintDistributionUpdatePayload{} -> Updates.asParamMintDistribution
-            Updates.TransactionFeeDistributionUpdatePayload{} -> Updates.asParamTransactionFeeDistribution
-            Updates.GASRewardsUpdatePayload{} -> Updates.asParamGASRewards
-            Updates.BakerStakeThresholdUpdatePayload{} -> Updates.asBakerStakeThreshold
-                                            )
-          auths
-        keyLU key = let vk = SigScheme.correspondingVerifyKey key in
-          case vk `Vec.elemIndex` Updates.asKeys auths of
-            Nothing -> logFatal [printf "Authorizations file does not contain public key '%s'" (show vk)]
-            Just idx -> do
-              unless (fromIntegral idx `Set.member` keySet) $
-                logWarn [printf "Key with index %u (%s) is not authorized to perform this update type." idx (show vk)]
-              return (fromIntegral idx, key)
+        (keySet, th) = Updates.extractKeysIndices ruiPayload keyCollectionStore
+        keyLU :: SigScheme.KeyPair -> IO (Word16, SigScheme.KeyPair)
+        keyLU key =
+          let vk = SigScheme.correspondingVerifyKey key in
+            case ruiPayload of
+              Updates.RootUpdatePayload{} -> case vk `Vec.elemIndex` (Updates.hlkKeys . Updates.rootKeys $ keyCollectionStore) of
+                                               Nothing -> logFatal [printf "Current key collection at best block does not contain public key '%s'" (show vk)]
+                                               Just idx -> return (fromIntegral idx, key)
+              Updates.Level1UpdatePayload{} -> case vk `Vec.elemIndex` (Updates.hlkKeys . Updates.level1Keys $ keyCollectionStore) of
+                                                 Nothing -> logFatal [printf "Current key collection at best block does not contain public key '%s'" (show vk)]
+                                                 Just idx -> return (fromIntegral idx, key)
+              _ -> case vk `Vec.elemIndex` (Updates.asKeys . Updates.level2Keys $ keyCollectionStore) of
+                     Nothing -> logFatal [printf "Current key collection at best block does not contain public key '%s'" (show vk)]
+                     Just idx -> do
+                       unless (fromIntegral idx `Set.member` keySet) $
+                         logWarn [printf "Key with index %u (%s) is not authorized to perform this update type." idx (show vk)]
+                       return (fromIntegral idx, key)
+      when (length keys < fromIntegral th) $
+        logFatal [printf "Not enough keys provided for signing this operation, got %u, need %u" (length keys) (fromIntegral th :: Int)]
       keyMap <- Map.fromList <$> mapM keyLU keys
       let ui = Updates.makeUpdateInstruction rawUpdate keyMap
       when verbose $ logInfo ["Generated update instruction:", show ui]
@@ -2007,7 +2100,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
       let effectiveTimeOK = ruiEffectiveTime == 0 || ruiEffectiveTime > ruiTimeout
       unless effectiveTimeOK $
         logWarn [printf "Update effective time (%s) is not later than expiry time (%s)" (showTimeFormatted $ timeFromTransactionExpiryTime ruiEffectiveTime) (showTimeFormatted $ timeFromTransactionExpiryTime ruiTimeout)]
-      let authorized = Updates.checkAuthorizedUpdate auths ui
+      let authorized = Updates.checkAuthorizedUpdate keyCollectionStore ui
       unless authorized $ do
         logWarn ["The update instruction is not authorized by the keys used to sign it."]
       when (ioConfirm intOpts) $ unless (expiryOK && effectiveTimeOK && authorized) $ do
@@ -2105,45 +2198,70 @@ processBakerCmd action baseCfgDir verbose backend =
       let intOpts = toInteractionOpts txOpts
       withClient backend $ do
         (bakerKeys, txCfg, pl) <- bakerSetKeysTransaction baseCfg txOpts file (ioConfirm intOpts)
-        sendAndMaybeOutputCredentials bakerKeys file outfile txCfg pl intOpts
+        sendAndMaybeOutputCredentials bakerKeys file outfile txCfg (Types.encodePayload pl) intOpts
 
     BakerRemove txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
-      let nrgCost _ = return $ Just bakerRemoveEnergyCost
+      let pl = Types.encodePayload Types.RemoveBaker
+      let nrgCost _ = return $ Just $ bakerRemoveEnergyCost $ Types.payloadSize pl
       txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
       withClient backend $ do
-        brtcCfg <- getBakerRemoveTransactionCfg txCfg
-        let intOpts = toInteractionOpts txOpts
-        pl <- liftIO $ bakerRemoveTransactionPayload brtcCfg (ioConfirm intOpts)
-        sendAndTailTransaction_ txCfg pl intOpts
+        blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
+        case blockSummary of
+          Nothing -> do
+            logError ["No Block Found"]
+            exitTransactionCancelled
+          Just cpr -> do
+            -- Warn user that stopping a baker incurs the baker cooldown timer
+            cooldownDate <- getBakerCooldown cpr
+            logWarn ["Stopping a baker that is staking will lock the stake of the baker for a cooldown period before the GTU are made available."]
+            logWarn ["During this period it is not possible to update the baker's stake, or restart the baker."]
+            logWarn [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
+            confirmed <- askConfirmation $ Just "Confirm that you want to send the transaction to stop this baker"
+            unless confirmed exitTransactionCancelled
+
+            brtcCfg <- getBakerRemoveTransactionCfg txCfg
+            let intOpts = toInteractionOpts txOpts
+            () <- liftIO $ bakerRemoveTransactionConfirm brtcCfg (ioConfirm intOpts)
+            sendAndTailTransaction_ txCfg pl intOpts
 
     BakerUpdateStake newStake txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
-      let nrgCost _ = return $ Just bakerUpdateStakeEnergyCost
+      let pl = Types.encodePayload $ Types.UpdateBakerStake newStake
+      let nrgCost _ = return $ Just $ bakerUpdateStakeEnergyCost $ Types.payloadSize pl
       txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
       withClient backend $ do
-        brtcCfg <- getBakerUpdateStakeTransactionCfg txCfg newStake
-        let intOpts = toInteractionOpts txOpts
-        pl <- liftIO $ bakerUpdateStakeTransactionPayload brtcCfg (ioConfirm intOpts)
-        sendAndTailTransaction_ txCfg pl intOpts
+        blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
+        case blockSummary of
+          Nothing -> do
+            logError ["No Block Found"]
+            exitTransactionCancelled
+          Just cpr -> do
+            cooldownDate <- getBakerCooldown cpr
+            brtcCfg <- getBakerUpdateStakeTransactionCfg txCfg newStake cooldownDate
+            let intOpts = toInteractionOpts txOpts
+            () <- liftIO $ bakerUpdateStakeTransactionConfirm brtcCfg (ioConfirm intOpts)
+            sendAndTailTransaction_ txCfg pl intOpts
 
     BakerUpdateRestakeEarnings bureRestake txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
-      let nrgCost _ = return $ Just bakerUpdateRestakeEnergyCost
+
+      let pl = Types.encodePayload $ Types.UpdateBakerRestakeEarnings bureRestake
+      let nrgCost _ = return $ Just $ bakerUpdateRestakeEnergyCost $ Types.payloadSize pl
       txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
       withClient backend $ do
         burtCfg <- getBakerUpdateRestakeTransactionCfg txCfg bureRestake
         let intOpts = toInteractionOpts txOpts
-        pl <- liftIO $ bakerUpdateRestakeTransactionPayload burtCfg (ioConfirm intOpts)
+        liftIO $ bakerUpdateRestakeTransactionConfirm burtCfg (ioConfirm intOpts)
         sendAndTailTransaction_ txCfg pl intOpts
   where sendAndMaybeOutputCredentials bakerKeys infile outputFile txCfg pl intOpts = do
           let printToFile ident out = do
@@ -2514,9 +2632,20 @@ encodeAndSignTransaction ::
   -> Types.TransactionExpiryTime
   -> AccountKeyMap
   -> Types.BareBlockItem
-encodeAndSignTransaction txPayload sender energy nonce expiry accKeys = Types.NormalTransaction $
-  let encPayload = Types.encodePayload txPayload
-      header = Types.TransactionHeader{
+encodeAndSignTransaction txPayload = signEncodedTransaction (Types.encodePayload txPayload)
+
+-- |Sign an encoded transaction payload and a configuration into a "normal" transaction,
+-- which is ready to be sent.
+signEncodedTransaction ::
+     Types.EncodedPayload
+  -> Types.AccountAddress
+  -> Types.Energy
+  -> Types.Nonce
+  -> Types.TransactionExpiryTime
+  -> AccountKeyMap
+  -> Types.BareBlockItem
+signEncodedTransaction encPayload sender energy nonce expiry accKeys = Types.NormalTransaction $
+  let header = Types.TransactionHeader{
         thSender = sender,
         thPayloadSize = Types.payloadSize encPayload,
         thNonce = nonce,
