@@ -6,9 +6,9 @@ module Concordium.Client.Export where
 
 import Concordium.Client.Cli
 import Concordium.Client.Config
-import Concordium.Client.Encryption
 import Concordium.Client.Types.Account
 import Concordium.Client.Utils
+import Concordium.Utils.Encryption
 
 import qualified Concordium.ID.Types as IDTypes
 import Concordium.Crypto.SignatureScheme (KeyPair)

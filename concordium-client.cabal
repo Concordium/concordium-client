@@ -4,7 +4,7 @@ cabal-version: 2.0
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 9f86b7df0a716c195ed6f0c23fb4fa9f1da647b7fcc4b7cd53d303bdb5a3e2cd
+-- hash: 8b5417e23235bb18f4c1e793978a45ba5293acdc87c8b007eb5dca659cd65461
 
 name:           concordium-client
 version:        0.5.1
@@ -46,7 +46,6 @@ library
       Concordium.Client.Cli
       Concordium.Client.Commands
       Concordium.Client.Config
-      Concordium.Client.Encryption
       Concordium.Client.Export
       Concordium.Client.GRPC
       Concordium.Client.LegacyCommands
@@ -212,7 +211,6 @@ test-suite concordium-client-test
       SimpleClientTests.ConfigSpec
       SimpleClientTests.ConsensusSpec
       SimpleClientTests.ContractSpec
-      SimpleClientTests.EncryptionSpec
       SimpleClientTests.LogSpec
       SimpleClientTests.ParseSpec
       SimpleClientTests.QueryTransaction
@@ -227,6 +225,7 @@ test-suite concordium-client-test
     , QuickCheck >=2.13
     , aeson
     , base >=4.7 && <5
+    , base64-bytestring
     , bytestring
     , cereal
     , concordium-base

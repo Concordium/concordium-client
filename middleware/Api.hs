@@ -27,7 +27,6 @@ import           Lens.Micro.Platform ((^.), (^?), _Just)
 import           Data.Time.Clock.POSIX
 
 import           Concordium.Client.Commands as COM
-import           Concordium.Client.Encryption (Password(..))
 import           Concordium.Client.GRPC
 import qualified Concordium.Client.GRPC as GRPC
 import           Concordium.Client.Runner
@@ -36,6 +35,7 @@ import           Concordium.Client.Cli
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
 import           Concordium.Client.Types.Account
+import           Concordium.Utils.Encryption (Password(..))
 import           Control.Monad.Except
 import           Data.Word
 import qualified Proto.ConcordiumP2pRpc_Fields as CF
