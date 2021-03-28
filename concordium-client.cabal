@@ -4,7 +4,7 @@ cabal-version: 2.0
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 38a9b6e4bb073394e53d219a19661dce1d9a09d1c5b9d2a7e187d0fe07b0568f
+-- hash: 8b5417e23235bb18f4c1e793978a45ba5293acdc87c8b007eb5dca659cd65461
 
 name:           concordium-client
 version:        0.5.1
@@ -225,6 +225,7 @@ test-suite concordium-client-test
     , QuickCheck >=2.13
     , aeson
     , base >=4.7 && <5
+    , base64-bytestring
     , bytestring
     , cereal
     , concordium-base
