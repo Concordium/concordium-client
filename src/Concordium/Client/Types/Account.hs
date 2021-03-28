@@ -15,14 +15,14 @@ import Data.Text (Text)
 import qualified Data.Aeson as AE
 import Data.Aeson ((.=),(.:),(.:?), (.!=))
 
-import Concordium.Client.Utils
-import Concordium.Client.Encryption
 
+import Concordium.Client.Utils
 import qualified Concordium.Crypto.FFIDataTypes as CryptoFFI
 import qualified Concordium.ID.Types as ID
 import qualified Concordium.Types as Types
 import qualified Concordium.Crypto.SignatureScheme as SigScheme
 import qualified Concordium.Crypto.Ed25519Signature as Ed25519
+import Concordium.Utils.Encryption
 import Data.Serialize (decode, encode)
 import Data.ByteString (ByteString)
 

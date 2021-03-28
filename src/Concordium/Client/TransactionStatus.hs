@@ -53,8 +53,6 @@ getSimpleTransactionStatus trHash = do
               return ["outcome" .= String "transferSuccess", "to" .= addr, "amount" .= etAmount]
             TxReject (InvalidAccountReference _) ->
               return ["outcome" .= String "invalidTargetAccount"]
-            TxReject (ReceiverAccountNoCredential _) ->
-              return ["outcome" .= String "invalidTargetAccount"]
             TxReject (AmountTooLarge _ _) ->
               return ["outcome" .= String "nonExistentAmount"]
             TxReject OutOfEnergy ->

@@ -563,16 +563,6 @@ showRejectReason verbose = \case
       "contract instance does not exist"
   Types.RuntimeFailure ->
     "runtime failure"
-  Types.ReceiverAccountNoCredential a ->
-    if verbose then
-      printf "receiver account '%s' does not have a valid credential" (show a)
-    else
-      "receiver account does not have a valid credential"
-  Types.ReceiverContractNoCredential a ->
-    if verbose then
-      printf "receiver contract '%s' does not have a valid credential" (show a)
-    else
-      "receiver contract does not have a valid credential"
   Types.AmountTooLarge a amount ->
     if verbose then
       printf "account or contract '%s' does not have enough funds to transfer %s tokens" (show a) (show amount)
@@ -628,6 +618,9 @@ showRejectReason verbose = \case
   Types.RemoveFirstCredential -> [i|attempt to remove the first credential of the account|]
   Types.CredentialHolderDidNotSign -> [i|credential holder did not sign the credential key update|]
   Types.StakeUnderMinimumThresholdForBaking -> "the desired stake is under the minimum threshold for baking"
+  Types.NotAllowedMultipleCredentials -> "the account is not allowed to have multiple credentials"
+  Types.NotAllowedToReceiveEncrypted -> "the account is not allowed to receive encrypted transfers"
+  Types.NotAllowedToHandleEncrypted -> "the account is not allowed handle encrypted amounts"
 
 -- CONSENSUS
 

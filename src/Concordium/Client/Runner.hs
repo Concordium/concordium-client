@@ -63,7 +63,6 @@ import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.SignatureScheme   as SigScheme
 import qualified Concordium.Crypto.VRF               as VRF
-import qualified Concordium.Client.Encryption        as Password
 import qualified Concordium.Types.Updates            as Updates
 import qualified Concordium.Types.Transactions       as Types
 import           Concordium.Types.HashableTo
@@ -73,6 +72,7 @@ import qualified Concordium.Types.Execution          as Types
 import qualified Concordium.Types                    as Types
 import qualified Concordium.ID.Types                 as ID
 import           Concordium.ID.Parameters
+import qualified Concordium.Utils.Encryption         as Password
 import qualified Concordium.Wasm                     as Wasm
 import           Proto.ConcordiumP2pRpc
 import qualified Proto.ConcordiumP2pRpc_Fields       as CF

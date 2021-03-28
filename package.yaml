@@ -203,6 +203,7 @@ tests:
       - cereal
       - aeson
       - bytestring
+      - base64-bytestring
       - containers
       - hspec >= 2.6
       - hspec-expectations >= 0.8

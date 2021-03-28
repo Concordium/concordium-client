@@ -8,12 +8,12 @@ import qualified Concordium.Crypto.VRF as VRF
 import qualified Concordium.ID.Types as IDTypes
 import Concordium.Types
 import Concordium.Types.Parameters
+import Concordium.Utils.Encryption (Password(..))
 import qualified Concordium.ID.Types as ID
 
 import Concordium.Client.Parse
 import Concordium.Client.Types.TransactionStatus
 import Concordium.Client.Types.Account
-import Concordium.Client.Encryption
 
 import Control.Monad
 import Control.Monad.IO.Class
