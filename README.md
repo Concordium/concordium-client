@@ -1,4 +1,4 @@
-# Simple Client
+# Concordium Client
 
 Command line tool for interacting with a backend node participating in the P2P network.
 

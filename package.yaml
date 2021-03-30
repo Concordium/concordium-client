@@ -1,10 +1,12 @@
 name:                concordium-client
 version:             0.5.1
-github:              "githubuser/concordium-client"
+github:              "Concordium/concordium-client"
 license:             BSD3
-author:              "Concordium AG"
-maintainer:          "contact@concordium.com"
+author:              "Concordium"
+maintainer:          "developers@concordium.com"
 copyright:           "Concordium"
+license-file:        "LICENSE"
+license:             "Apache-2.0"
 build-type:          Custom
 extra-source-files:
 - README.md
@@ -35,7 +37,7 @@ ghc-options: -Wall
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/githubuser/concordium-client#readme>
+description:         Please see the README on GitHub at <https://github.com/Concordium/concordium-client#readme>
 
 flags:
   middleware:
