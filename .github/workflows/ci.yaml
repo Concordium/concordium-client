@@ -7,9 +7,27 @@ on:
   pull_request:
     branches:
       - main
+    paths:
+    - '.github/workflows/ci.yaml'
+    - '**.hs'
+    - 'stack*.yaml'
+    - 'package.yaml'
+    - 'concordium-client.cabal'
+    - 'deps/concordium-base'
+    - 'deps/grpc-api'
+
   push:
     branches:
       - main
+    paths:
+    - '.github/workflows/ci.yaml'
+    - '**.hs'
+    - 'stack*.yaml'
+    - 'package.yaml'
+    - 'concordium-client.cabal'
+    - 'deps/concordium-base'
+    - 'deps/grpc-api'
+
   workflow_dispatch: # allow manual trigger
 
 env:
@@ -36,19 +54,22 @@ jobs:
           ghc-version: ${{ env.GHC }}
       - name: Install protoc
         run: sudo apt -y install protobuf-compiler
-      - name: Cache cargo dependencies and targets
+      - name: Cache cargo and stack dependencies and targets
         uses: actions/cache@v2
         with:
           path: |
+            ~/.cargo/registry
+            ~/.cargo/git
             ~/.stack
             .stack-work
-            **/target
-          key: ${{ runner.os }}-rust-deps-${{ env.RUST }}-${{ hashFiles('stack.yaml', 'package.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-rust-deps-${{ env.RUST }}
-      - name: Build dependencies
-        run: ./build-deps.sh
-      - name: Stack build
+            deps/concordium-base/.stack-work/
+            deps/concordium-base/lib/
+            deps/concordium-base/rust-src/target/release/
+          # Cache based on dependency versions, as well as the contents of the rust dependencies.
+          # This is a bit hacky, but we do not currently version the packages religously, so we need to do something like this.
+          key: ${{ runner.os }}-rust-stack-deps-${{ env.RUST }}-${{ hashFiles('stack.yaml', 'package.yaml', 'deps/concordium-base/haskell-src/**.hs', 'deps/concordium-base/rust-src/Cargo.toml', 'deps/concordium-base/rust-src/**.rs') }}
+
+      - name: Stack build # build all the binaries and tests, but don't run the tests
         run: stack build --flag 'concordium-client:middleware' --test --no-run-tests
-      - name: Stack test
-        run: stack test --flag 'concordium-client:middleware'
+      - name: Stack test # run the tests
+        run: stack build --flag 'concordium-client:middleware' --test

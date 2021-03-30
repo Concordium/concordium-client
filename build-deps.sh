@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-
-RUST_SRC=./deps/concordium-base/rust-src
-
-if [ -d $RUST_SRC ]; then
-    cargo build --release --manifest-path $RUST_SRC/Cargo.toml
-    mkdir -p ./extra-libs
-    cp $RUST_SRC/target/release/*.so ./extra-libs
-fi
