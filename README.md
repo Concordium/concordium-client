@@ -1,5 +1,7 @@
 # Concordium Client
 
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](https://github.com/Concordium/.github/blob/main/.github/CODE_OF_CONDUCT.md)
+
 Command line tool for interacting with a backend node participating in the P2P network.
 
 The tool has commands to
