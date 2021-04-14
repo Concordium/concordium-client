@@ -42,13 +42,12 @@ pipeline {
                     ghc-variant: integer-simple
                     EOF
                     
-                    sed -i '' "s/lts-17.4/lts-16.20/g" stack.yaml
                     sed -i '' "s/default: False/default: True/g" deps/concordium-base/package.yaml
 
                     # Build project
                     # Note that we have to copy the haddock binary into the specified path or else stack will fail.
                     # As we don't spawn a fresh instance each time, I did build `cabal install haddock --install-method=copy` and then we can copy the binary into the required path. If it goes missing, just build it manually again
-                    (stack build --flag "scientific:integer-simple" --flag "cryptonite:-integer-gmp" --flag "integer-logarithms:-integer-gmp" --flag "hashable:-integer-gmp" || ( cp ~/.cabal/bin/haddock /Users/administrator/.stack/programs/x86_64-osx/ghc-custom-integer-simple-8.8.4/bin/haddock-8.8.4 && stack build --flag "scientific:integer-simple" --flag "cryptonite:-integer-gmp" --flag "integer-logarithms:-integer-gmp" --flag "hashable:-integer-gmp"))
+                    (stack build --compiler=ghc-8.8.4 --flag "scientific:integer-simple" --flag "cryptonite:-integer-gmp" --flag "integer-logarithms:-integer-gmp" --flag "hashable:-integer-gmp" || ( cp ~/.cabal/bin/haddock /Users/administrator/.stack/programs/x86_64-osx/ghc-custom-integer-simple-8.8.4/bin/haddock-8.8.4 && stack build --compiler=ghc-8.8.4 --flag "scientific:integer-simple" --flag "cryptonite:-integer-gmp" --flag "integer-logarithms:-integer-gmp" --flag "hashable:-integer-gmp"))
                            
                     mkdir out
 
