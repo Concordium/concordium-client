@@ -195,7 +195,11 @@ getAccountList hash = withUnaryBlock (call @"getAccountList") hash (to processJS
 getInstances :: Text -> ClientMonad IO (Either String Value)
 getInstances hash = withUnaryBlock (call @"getInstances") hash (to processJSON)
 
-getAccountInfo :: (MonadIO m) => Text -> Text -> ClientMonad m (Either String Value)
+-- |Retrieve the account information from the chain.
+getAccountInfo :: (MonadIO m)
+               => Text -- ^ Account identifier, either address or credential registration id.
+               -> Text -- ^ Block hash
+               -> ClientMonad m (Either String Value)
 getAccountInfo account hash = withUnary (call @"getAccountInfo") msg (to processJSON)
   where msg = defMessage & CF.blockHash .~ hash & CF.address .~ account
 
