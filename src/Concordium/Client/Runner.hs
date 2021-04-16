@@ -755,7 +755,7 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
       | energy < actualFee = do
           logWarn [ "insufficient energy allocated to the transaction"
                   , printf "transaction fee will be %s, but only %s has been allocated" (showNrg actualFee) (showNrg energy) ]
-          confirmed <- askConfirmation $ Just $ printf "Do you want to increase the energy allocation to %s?" (showNrg actualFee)
+          confirmed <- askConfirmation $ Just [i|Do you want to increase the energy allocation to #{showNrg actualFee}? Confirm|]
           return $ if confirmed then actualFee else energy
       | actualFee < energy = do
           logInfo [printf "%s allocated to the transaction, but only %s is needed" (showNrg energy) (showNrg actualFee)]
@@ -2180,7 +2180,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
       unless authorized $ do
         logWarn ["The update instruction is not authorized by the keys used to sign it."]
       when (ioConfirm intOpts) $ unless (expiryOK && effectiveTimeOK && authorized) $ do
-        confirmed <- askConfirmation $ Just "Proceed anyway [yN]?"
+        confirmed <- askConfirmation $ Just "Proceed anyway? Confirm"
         unless confirmed exitTransactionCancelled
       withClient backend $ do
         let

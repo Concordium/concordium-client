@@ -123,6 +123,8 @@ logStrLn :: MonadIO m => String -> m ()
 logStrLn = liftIO . hPutStrLn stderr
 
 -- |Ask the user to "confirm" on stdin and return the result.
+-- Note that this only appends " [yN]: " if the prompt does not end in
+-- one of ".,:;?!{}"
 askConfirmation :: MonadIO m => Maybe String -> m Bool
 askConfirmation prompt = liftIO $ do
   putStr $ prettyMsg " [yN]: " $ fromMaybe defaultPrompt prompt
