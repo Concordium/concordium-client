@@ -2255,15 +2255,29 @@ processBakerCmd action baseCfgDir verbose backend =
       withClient backend $ do
          let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
          AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
+         energyrate <- getNrgGtuRate
+         let gtuTransactionPrice = Types.computeCost energyrate (tcEnergy txCfg) 
          case airBaker of
            Just AccountInfoBakerResult{..} -> logFatal [[i|Account is already a baker with ID #{aibiIdentity abirAccountBakerInfo}.|]]
            Nothing -> do
-             -- TODO: this should also take into account the estimated cost for this transaction
-             if airAmount < initialStake
+             if (airAmount - gtuTransactionPrice) < initialStake
              then
-               logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the amount requested to be staked (#{showGtu initialStake}).|]]
+               logFatal [[i|Account balance (#{showGtu airAmount}) minus the cost of the transaction (#{showGtu gtuTransactionPrice}) is lower than the amount requested to be staked (#{showGtu initialStake}).|]]
              else do
                sendAndMaybeOutputCredentials bakerKeys accountKeysFile outputFile txCfg pl intOpts
+        where
+          -- General function to fetch NrgGtu rate
+          -- This functionality is going to be more generally used in an upcoming branch adding GTU prices to NRG printouts across the client.
+          -- Invoking it directly here to avoid extra work on compatability/refactoring in the future
+          getNrgGtuRate :: ClientMonad IO Types.EnergyRate
+          getNrgGtuRate = do 
+            blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
+            case blockSummary of
+              Nothing -> do
+                logError ["Failed to retrieve NRG-GTU rate from best block hash, unable to estimate GTU cost"]
+                return 0
+              Just bsr -> do
+                return $ _cpEnergyRate $ bsurChainParameters $ bsrUpdates bsr
 
     BakerSetKeys file txOpts outfile -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
