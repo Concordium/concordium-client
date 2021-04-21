@@ -1137,8 +1137,13 @@ bakerAddTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy)
                     -> IO (BakerKeys, TransactionConfig, Types.EncodedPayload)
 bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm = do
   encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
-  bakerKeys <- eitherDecodeFileStrict f >>= getFromJson
-
+   
+  bakerKeysMaybeEncrypted <- handleReadFile BS.readFile f
+  let pwdAction = askPassword ("Enter password for decrypting baker keys:")
+  bakerKeys <- Password.decodeMaybeEncrypted pwdAction bakerKeysMaybeEncrypted >>= \case
+         Left err -> logFatal [printf "error: %s" err]
+         Right v -> return v
+  
   let electionSignKey = bkElectionSignKey bakerKeys
       signatureSignKey = bkSigSignKey bakerKeys
       aggrSignKey = bkAggrSignKey bakerKeys
@@ -2227,8 +2232,11 @@ processBakerCmd action baseCfgDir verbose backend =
   case action of
     BakerGenerateKeys outputFile -> do
       keys <- generateBakerKeys
-      let out = AE.encodePretty keys
-
+      -- let out = AE.encodePretty keys
+      pwd <- askPassword "Enter password for encryption of baker keys (leave blank for no encryption): "
+      out <- case Password.getPassword pwd of
+        "" -> return $ AE.encodePretty keys
+        _ -> AE.encodePretty <$> Password.encryptJSON Password.AES256 Password.PBKDF2SHA256 keys pwd
       case outputFile of
         Nothing -> do
           -- TODO Store in config.
@@ -2239,14 +2247,14 @@ processBakerCmd action baseCfgDir verbose backend =
           logSuccess [ printf "keys written to file '%s'" f
                      , "DO NOT LOSE THIS FILE"
                      , printf "to add a baker to the chain using these keys, use 'concordium-client baker add %s'" f ]
-    BakerAdd accountKeysFile txOpts initialStake autoRestake outputFile -> do
+    BakerAdd bakerKeysFile txOpts initialStake autoRestake outputFile -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
       let intOpts = toInteractionOpts txOpts
-      (bakerKeys, txCfg, pl) <- bakerAddTransaction baseCfg txOpts accountKeysFile initialStake autoRestake (ioConfirm intOpts)
+      (bakerKeys, txCfg, pl) <- bakerAddTransaction baseCfg txOpts bakerKeysFile initialStake autoRestake (ioConfirm intOpts)
 
       when verbose $ do
         runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
@@ -2263,7 +2271,7 @@ processBakerCmd action baseCfgDir verbose backend =
              then
                logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the amount requested to be staked (#{showGtu initialStake}).|]]
              else do
-               sendAndMaybeOutputCredentials bakerKeys accountKeysFile outputFile txCfg pl intOpts
+               sendAndMaybeOutputCredentials bakerKeys bakerKeysFile outputFile txCfg pl intOpts
 
     BakerSetKeys file txOpts outfile -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -2385,7 +2393,11 @@ bakerSetKeysTransaction baseCfg txOpts fp confirm = do
   AccountInfoResult{..} <- getAccountInfoOrDie senderAddress
   when (isNothing airBaker) $ logFatal [printf "Account %s is not a baker, so cannot set its keys." (show senderAddress)]
   liftIO $ do
-    bsktcBakerKeys <- getFromJson =<< eitherDecodeFileStrict fp
+    bakerKeysMaybeEncrypted <- handleReadFile BS.readFile fp
+    let pwdAction = askPassword ("Enter password for decrypting baker keys:")
+    bsktcBakerKeys <- Password.decodeMaybeEncrypted pwdAction bakerKeysMaybeEncrypted >>= \case
+          Left err -> logFatal [printf "error: %s" err]
+          Right v -> return v
 
 
     let electionSignKey = bkElectionSignKey bsktcBakerKeys
