@@ -2236,7 +2236,12 @@ processBakerCmd action baseCfgDir verbose backend =
       pwd <- askPassword "Enter password for encryption of baker keys (leave blank for no encryption): "
       out <- case Password.getPassword pwd of
         "" -> return $ AE.encodePretty keys
-        _ -> AE.encodePretty <$> Password.encryptJSON Password.AES256 Password.PBKDF2SHA256 keys pwd
+        _ -> do 
+          pwd2 <- askPassword "Re-enter password for encryption of baker keys: "
+          if pwd == pwd2 then
+            AE.encodePretty <$> Password.encryptJSON Password.AES256 Password.PBKDF2SHA256 keys pwd
+          else 
+            logFatal ["The two passwords were not equal."]
       case outputFile of
         Nothing -> do
           -- TODO Store in config.
