@@ -1134,15 +1134,15 @@ bakerAddTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy)
                     -> Types.Amount -- ^How much to stake.
                     -> Bool -- ^Whether to restake earnings.
                     -> Bool -- ^Whether to confirm before sending or not.
-                    -> IO (BakerKeys, TransactionConfig, Types.EncodedPayload)
+                    -> IO (BakerKeys, TransactionConfig, Types.EncodedPayload, Bool)
 bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm = do
   encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
    
   bakerKeysMaybeEncrypted <- handleReadFile BS.readFile f
-  let pwdAction = askPassword ("Enter password for decrypting baker keys:")
-  bakerKeys <- Password.decodeMaybeEncrypted pwdAction bakerKeysMaybeEncrypted >>= \case
-         Left err -> logFatal [printf "error: %s" err]
-         Right v -> return v
+  let pwdAction = askPassword ("Enter password for decrypting baker keys: ")
+  (bakerKeys, wasEncrypted) <- Password.decodeMaybeEncrypted pwdAction bakerKeysMaybeEncrypted >>= \case
+         (Left err, _) -> logFatal [printf "error: %s" err]
+         (Right v, b) -> return (v, b)
   
   let electionSignKey = bkElectionSignKey bakerKeys
       signatureSignKey = bkSigSignKey bakerKeys
@@ -1172,7 +1172,7 @@ bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm
     confirmed <- askConfirmation Nothing
     unless confirmed exitTransactionCancelled
 
-  return (bakerKeys, txCfg, payload)
+  return (bakerKeys, txCfg, payload, wasEncrypted)
 
   where except c err = c >>= \case
           Just x -> return x
@@ -2232,10 +2232,11 @@ processBakerCmd action baseCfgDir verbose backend =
   case action of
     BakerGenerateKeys outputFile -> do
       keys <- generateBakerKeys
-      -- let out = AE.encodePretty keys
       pwd <- askPassword "Enter password for encryption of baker keys (leave blank for no encryption): "
       out <- case Password.getPassword pwd of
-        "" -> return $ AE.encodePretty keys
+        "" -> do 
+          logInfo [ printf "Empty password, not encrypting baker keys" ]
+          return $ AE.encodePretty keys
         _ -> do 
           pwd2 <- askPassword "Re-enter password for encryption of baker keys: "
           if pwd == pwd2 then
@@ -2259,7 +2260,7 @@ processBakerCmd action baseCfgDir verbose backend =
         putStrLn ""
 
       let intOpts = toInteractionOpts txOpts
-      (bakerKeys, txCfg, pl) <- bakerAddTransaction baseCfg txOpts bakerKeysFile initialStake autoRestake (ioConfirm intOpts)
+      (bakerKeys, txCfg, pl, wasEncrypted) <- bakerAddTransaction baseCfg txOpts bakerKeysFile initialStake autoRestake (ioConfirm intOpts)
 
       when verbose $ do
         runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
@@ -2276,7 +2277,7 @@ processBakerCmd action baseCfgDir verbose backend =
              then
                logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the amount requested to be staked (#{showGtu initialStake}).|]]
              else do
-               sendAndMaybeOutputCredentials bakerKeys bakerKeysFile outputFile txCfg pl intOpts
+               sendAndMaybeOutputCredentials bakerKeys wasEncrypted bakerKeysFile outputFile txCfg pl intOpts
 
     BakerSetKeys file txOpts outfile -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -2286,8 +2287,8 @@ processBakerCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts txOpts
       withClient backend $ do
-        (bakerKeys, txCfg, pl) <- bakerSetKeysTransaction baseCfg txOpts file (ioConfirm intOpts)
-        sendAndMaybeOutputCredentials bakerKeys file outfile txCfg (Types.encodePayload pl) intOpts
+        (bakerKeys, txCfg, pl, wasEncrypted) <- bakerSetKeysTransaction baseCfg txOpts file (ioConfirm intOpts)
+        sendAndMaybeOutputCredentials bakerKeys wasEncrypted file outfile txCfg (Types.encodePayload pl) intOpts
 
     BakerRemove txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -2352,13 +2353,24 @@ processBakerCmd action baseCfgDir verbose backend =
         let intOpts = toInteractionOpts txOpts
         liftIO $ bakerUpdateRestakeTransactionConfirm burtCfg (ioConfirm intOpts)
         sendAndTailTransaction_ txCfg pl intOpts
-  where sendAndMaybeOutputCredentials bakerKeys infile outputFile txCfg pl intOpts = do
-          let printToFile ident out = do
+  where sendAndMaybeOutputCredentials bakerKeys encrypted infile outputFile txCfg pl intOpts = do
+          let printToFile ident out = liftIO $ do
                   let credentials = BakerCredentials{
                         bcKeys = bakerKeys,
                         bcIdentity = ident
                       }
-                  liftIO $ handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose out (AE.encodePretty credentials)
+                  pwd <- askPassword "Enter password for encryption of baker credentials (leave blank for no encryption): "
+                  credentialsMaybeEncrypted <- case Password.getPassword pwd of
+                    "" -> do 
+                      logInfo [ printf "Empty password, not encrypting baker credentials" ]
+                      return $ AE.encodePretty credentials
+                    _ -> do 
+                      pwd2 <- askPassword "Re-enter password for encryption of baker credentials: "
+                      if pwd == pwd2 then
+                        AE.encodePretty <$> Password.encryptJSON Password.AES256 Password.PBKDF2SHA256 credentials pwd
+                      else 
+                        logFatal ["The two passwords were not equal."]
+                  handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose out credentialsMaybeEncrypted
           result <- sendAndTailTransaction txCfg pl intOpts
           case result of
             Nothing -> return ()
@@ -2366,19 +2378,15 @@ processBakerCmd action baseCfgDir verbose backend =
               case tsrState ts of
                 Finalized | SingleBlock _ summary <- parseTransactionBlockResult ts ->
                               case Types.tsResult summary of
-                                Types.TxSuccess [Types.BakerAdded{..}] ->
+                                Types.TxSuccess [Types.BakerAdded{..}] -> do
+                                  logInfo ["Baker with ID " ++ show ebaBakerId ++ " added."]
                                   case outputFile of
-                                    Nothing ->
-                                      logInfo ["Baker with ID " ++ show ebaBakerId ++ " added.",
-                                               printf "To use it add \"bakerId\": %s to the keys file %s." (show ebaBakerId) infile
-                                              ]
+                                    Nothing -> unless encrypted $ logInfo [printf "To use it add \"bakerId\": %s to the keys file %s." (show ebaBakerId) infile]
                                     Just outFile -> printToFile ebaBakerId outFile
-                                Types.TxSuccess [Types.BakerKeysUpdated{..}] ->
+                                Types.TxSuccess [Types.BakerKeysUpdated{..}] -> do
+                                  logInfo ["Keys for baker with ID " ++ show ebkuBakerId ++ " updated."]
                                   case outputFile of
-                                    Nothing ->
-                                      logInfo ["Keys for baker with ID " ++ show ebkuBakerId ++ " updated.",
-                                               printf "To use it add \"bakerId\": %s to the keys file %s." (show ebkuBakerId) infile
-                                              ]
+                                    Nothing -> unless encrypted $ logInfo [printf "To use it add \"bakerId\": %s to the keys file %s." (show ebkuBakerId) infile]
                                     Just outFile -> printToFile ebkuBakerId outFile
                                 Types.TxReject reason -> do
                                         logWarn [showRejectReason True reason]
@@ -2388,7 +2396,7 @@ processBakerCmd action baseCfgDir verbose backend =
                 _ ->
                   logFatal ["Unexpected status."]
 -- |Convert 'baker set-keys' transaction config into a valid payload.
-bakerSetKeysTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> Bool -> ClientMonad IO (BakerKeys, TransactionConfig, Types.Payload)
+bakerSetKeysTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> Bool -> ClientMonad IO (BakerKeys, TransactionConfig, Types.Payload, Bool)
 bakerSetKeysTransaction baseCfg txOpts fp confirm = do
   encSignData <- liftIO $ getAccountCfgFromTxOpts baseCfg txOpts
 
@@ -2400,9 +2408,9 @@ bakerSetKeysTransaction baseCfg txOpts fp confirm = do
   liftIO $ do
     bakerKeysMaybeEncrypted <- handleReadFile BS.readFile fp
     let pwdAction = askPassword ("Enter password for decrypting baker keys:")
-    bsktcBakerKeys <- Password.decodeMaybeEncrypted pwdAction bakerKeysMaybeEncrypted >>= \case
-          Left err -> logFatal [printf "error: %s" err]
-          Right v -> return v
+    (bsktcBakerKeys, wasEncrypted) <- Password.decodeMaybeEncrypted pwdAction bakerKeysMaybeEncrypted >>= \case
+         (Left err, _) -> logFatal [printf "error: %s" err]
+         (Right v, b) -> return (v, b)
 
 
     let electionSignKey = bkElectionSignKey bsktcBakerKeys
@@ -2431,7 +2439,7 @@ bakerSetKeysTransaction baseCfg txOpts fp confirm = do
       confirmed <- askConfirmation Nothing
       unless confirmed exitTransactionCancelled
 
-    return (bsktcBakerKeys, txCfg, payload)
+    return (bsktcBakerKeys, txCfg, payload, wasEncrypted)
   where except c err = c >>= \case
           Just x -> return x
           Nothing -> logFatal [err]
