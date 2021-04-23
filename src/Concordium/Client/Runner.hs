@@ -1245,7 +1245,7 @@ credentialUpdateKeysTransactionConfirm CredentialUpdateKeysTransactionCfg{..} co
   let logNewKeys = Map.foldrWithKey (\idx (SigScheme.VerifyKeyEd25519 key) l -> (printf "\t%s: %s" (show idx) (show key)) : l) [] (ID.credKeys cuktcKeys)
 
   logInfo $
-    [ printf "setting the following keys for credential %s on account:" (show cuktcCredId) (showNamedAddress addr) ] ++
+    [ [i|"setting the following keys for credential #{show cuktcCredId} on account #{showNamedAddress addr}:" |] ] ++
     logNewKeys ++
     [ printf "with threshold %s" (show (ID.credThreshold cuktcKeys))] ++
     [ printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
