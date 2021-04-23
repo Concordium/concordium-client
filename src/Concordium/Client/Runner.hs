@@ -1139,7 +1139,7 @@ bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm
   encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
    
   bakerKeysMaybeEncrypted <- handleReadFile BS.readFile f
-  let pwdAction = askPassword ("Enter password for decrypting baker keys: ")
+  let pwdAction = askPassword "Enter password for decrypting baker keys: "
   (bakerKeys, wasEncrypted) <- Password.decodeMaybeEncrypted pwdAction bakerKeysMaybeEncrypted >>= \case
          (Left err, _) -> logFatal [printf "error: %s" err]
          (Right v, b) -> return (v, b)
@@ -2413,7 +2413,7 @@ bakerSetKeysTransaction baseCfg txOpts fp confirm = do
   when (isNothing airBaker) $ logFatal [printf "Account %s is not a baker, so cannot set its keys." (show senderAddress)]
   liftIO $ do
     bakerKeysMaybeEncrypted <- handleReadFile BS.readFile fp
-    let pwdAction = askPassword ("Enter password for decrypting baker keys:")
+    let pwdAction = askPassword "Enter password for decrypting baker keys: "
     (bsktcBakerKeys, wasEncrypted) <- Password.decodeMaybeEncrypted pwdAction bakerKeysMaybeEncrypted >>= \case
          (Left err, _) -> logFatal [printf "error: %s" err]
          (Right v, b) -> return (v, b)
