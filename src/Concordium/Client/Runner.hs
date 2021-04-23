@@ -2232,17 +2232,20 @@ processBakerCmd action baseCfgDir verbose backend =
   case action of
     BakerGenerateKeys outputFile -> do
       keys <- generateBakerKeys
-      pwd <- askPassword "Enter password for encryption of baker keys (leave blank for no encryption): "
-      out <- case Password.getPassword pwd of
-        "" -> do 
-          logInfo [ printf "Empty password, not encrypting baker keys" ]
-          return $ AE.encodePretty keys
-        _ -> do 
-          pwd2 <- askPassword "Re-enter password for encryption of baker keys: "
-          if pwd == pwd2 then
-            AE.encodePretty <$> Password.encryptJSON Password.AES256 Password.PBKDF2SHA256 keys pwd
-          else 
-            logFatal ["The two passwords were not equal."]
+      let askUntilEqual = do
+                pwd <- askPassword "Enter password for encryption of baker keys (leave blank for no encryption): "
+                case Password.getPassword pwd of
+                  "" -> do 
+                    logInfo [ printf "Empty password, not encrypting baker keys" ]
+                    return $ AE.encodePretty keys
+                  _ -> do 
+                    pwd2 <- askPassword "Re-enter password for encryption of baker keys: "
+                    if pwd == pwd2 then
+                      AE.encodePretty <$> Password.encryptJSON Password.AES256 Password.PBKDF2SHA256 keys pwd
+                    else do
+                      logWarn ["The two passwords were not equal. Try again."]
+                      askUntilEqual
+      out <- askUntilEqual
       case outputFile of
         Nothing -> do
           -- TODO Store in config.
@@ -2354,22 +2357,25 @@ processBakerCmd action baseCfgDir verbose backend =
         liftIO $ bakerUpdateRestakeTransactionConfirm burtCfg (ioConfirm intOpts)
         sendAndTailTransaction_ txCfg pl intOpts
   where sendAndMaybeOutputCredentials bakerKeys encrypted infile outputFile txCfg pl intOpts = do
+          let askUntilEqual ident = do
+                let credentials = BakerCredentials{
+                      bcKeys = bakerKeys,
+                      bcIdentity = ident
+                    }
+                pwd <- askPassword "Enter password for encryption of baker credentials (leave blank for no encryption): "
+                case Password.getPassword pwd of
+                  "" -> do 
+                    logInfo [ printf "Empty password, not encrypting baker credentials" ]
+                    return $ AE.encodePretty credentials
+                  _ -> do 
+                    pwd2 <- askPassword "Re-enter password for encryption of baker credentials: "
+                    if pwd == pwd2 then
+                      AE.encodePretty <$> Password.encryptJSON Password.AES256 Password.PBKDF2SHA256 credentials pwd
+                    else do
+                      logWarn ["The two passwords were not equal. Try again"]
+                      askUntilEqual ident
           let printToFile ident out = liftIO $ do
-                  let credentials = BakerCredentials{
-                        bcKeys = bakerKeys,
-                        bcIdentity = ident
-                      }
-                  pwd <- askPassword "Enter password for encryption of baker credentials (leave blank for no encryption): "
-                  credentialsMaybeEncrypted <- case Password.getPassword pwd of
-                    "" -> do 
-                      logInfo [ printf "Empty password, not encrypting baker credentials" ]
-                      return $ AE.encodePretty credentials
-                    _ -> do 
-                      pwd2 <- askPassword "Re-enter password for encryption of baker credentials: "
-                      if pwd == pwd2 then
-                        AE.encodePretty <$> Password.encryptJSON Password.AES256 Password.PBKDF2SHA256 credentials pwd
-                      else 
-                        logFatal ["The two passwords were not equal."]
+                  credentialsMaybeEncrypted <- askUntilEqual ident
                   handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose out credentialsMaybeEncrypted
           result <- sendAndTailTransaction txCfg pl intOpts
           case result of
