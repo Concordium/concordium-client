@@ -1141,8 +1141,8 @@ bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm
   bakerKeysMaybeEncrypted <- handleReadFile BS.readFile f
   let pwdAction = askPassword "Enter password for decrypting baker keys: "
   (bakerKeys, wasEncrypted) <- Password.decodeMaybeEncrypted pwdAction bakerKeysMaybeEncrypted >>= \case
-         (Left err, _) -> logFatal [printf "error: %s" err]
-         (Right v, b) -> return (v, b)
+         Left err -> logFatal [printf "error: %s" err]
+         Right (v, b) -> return (v, b)
   
   let electionSignKey = bkElectionSignKey bakerKeys
       signatureSignKey = bkSigSignKey bakerKeys
@@ -2415,8 +2415,8 @@ bakerSetKeysTransaction baseCfg txOpts fp confirm = do
     bakerKeysMaybeEncrypted <- handleReadFile BS.readFile fp
     let pwdAction = askPassword "Enter password for decrypting baker keys: "
     (bsktcBakerKeys, wasEncrypted) <- Password.decodeMaybeEncrypted pwdAction bakerKeysMaybeEncrypted >>= \case
-         (Left err, _) -> logFatal [printf "error: %s" err]
-         (Right v, b) -> return (v, b)
+         Left err -> logFatal [printf "error: %s" err]
+         Right (v, b) -> return (v, b)
 
 
     let electionSignKey = bkElectionSignKey bsktcBakerKeys
