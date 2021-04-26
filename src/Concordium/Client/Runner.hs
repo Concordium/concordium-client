@@ -2230,7 +2230,7 @@ generateBakerKeys = do
 processBakerCmd :: BakerCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processBakerCmd action baseCfgDir verbose backend =
   case action of
-    BakerGenerateKeys outputFile -> do
+    BakerGenerateKeys outputFile maybeBakerId -> do
       keys <- generateBakerKeys
       let askUntilEqual = do
                 pwd <- askPassword "Enter password for encryption of baker keys (leave blank for no encryption): "
@@ -2246,6 +2246,7 @@ processBakerCmd action baseCfgDir verbose backend =
                       logWarn ["The two passwords were not equal. Try again."]
                       askUntilEqual
       out <- askUntilEqual
+      let publicBakerKeysJSON = AE.encodePretty . AE.object $ bakerPublicKeysToPairs keys maybeBakerId
       case outputFile of
         Nothing -> do
           -- TODO Store in config.
@@ -2253,9 +2254,11 @@ processBakerCmd action baseCfgDir verbose backend =
           logInfo [ printf "to add a baker to the chain using these keys, store it in a file and use 'concordium-client baker add FILE'" ]
         Just f -> do
           BSL.writeFile f out
+          BSL.writeFile (f ++ ".pub") publicBakerKeysJSON
           logSuccess [ printf "keys written to file '%s'" f
                      , "DO NOT LOSE THIS FILE"
                      , printf "to add a baker to the chain using these keys, use 'concordium-client baker add %s'" f ]
+          logSuccess [ printf "public parts of keys written to file '%s.pub'" f]
     BakerAdd bakerKeysFile txOpts initialStake autoRestake outputFile -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
