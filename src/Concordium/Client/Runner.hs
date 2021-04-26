@@ -2258,7 +2258,7 @@ processBakerCmd action baseCfgDir verbose backend =
           logSuccess [ printf "keys written to file '%s'" f
                      , "DO NOT LOSE THIS FILE"
                      , printf "to add a baker to the chain using these keys, use 'concordium-client baker add %s'" f ]
-          logSuccess [ printf "public parts of keys written to file '%s.pub'" f]
+          logSuccess [ printf "public keys written to file '%s.pub'" f]
     BakerAdd bakerKeysFile txOpts initialStake autoRestake outputFile -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
