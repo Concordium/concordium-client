@@ -354,7 +354,8 @@ data BlockCmd
 
 data BakerCmd
   = BakerGenerateKeys
-    { bgkFile :: !(Maybe FilePath) }
+    { bgkFile :: !(Maybe FilePath)
+    , bgkBakerId :: !(Maybe BakerId) }
   | BakerAdd
     { baFile :: !FilePath
     , baTransactionOpts :: !(TransactionOpts (Maybe Energy))
@@ -1223,7 +1224,8 @@ bakerGenerateKeysCmd =
     "generate-keys"
     (info
       (BakerGenerateKeys <$>
-        optional (strArgument (metavar "FILE" <> help "Target file of generated credentials.")))
+        optional (strArgument (metavar "FILE" <> help "Target file of generated credentials.")) <*>
+        optional (option auto (long "baker-id" <> metavar "BAKERID" <> help "Optionally provide the baker id.")))
       (progDescDoc $ docFromLines
         [ "Create baker credentials and write them to a file or stdout. Format:"
         , "    {"
