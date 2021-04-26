@@ -110,14 +110,17 @@ main = do
                   Just addrs -> addrs !! (fromIntegral n `mod` length addrs)
                   Nothing -> selfAddress
           let txBody n = encodePayload (Transfer (txRecepient n) 1)
-          let txHeader nonce = TransactionHeader {
+          let txHeader thExpiry nonce = TransactionHeader {
                 thSender = selfAddress,
                 thNonce = nonce,
                 thEnergyAmount = 1500,
                 thPayloadSize = payloadSize (txBody nonce),
-                thExpiry = TransactionTime maxBound
+                ..
                 }
-          let sign nonce () = return (txRecepient nonce, NormalTransaction $ signTransaction keysList (txHeader nonce) (txBody nonce), ())
+          let sign nonce () = do
+                -- set expiry for 1h from now so that the transaction will be accepted by the node.
+                ct <- utcTimeToTransactionTime <$> getCurrentTime
+                return (txRecepient nonce, NormalTransaction $ signTransaction keysList (txHeader (ct + 3600) nonce) (txBody nonce), ())
           go backend (logit txoptions) (tps txoptions) () sign (airNonce accInfo)
         True -> do
           globalParameters <- withClient backend (getBestBlockHash >>= getParseCryptographicParameters) >>= \case
@@ -149,16 +152,17 @@ main = do
                     aggAmount = makeAggregatedDecryptedAmount encryptedAmount decryptedAmount 0
                 Just eatd <- makeEncryptedAmountTransferData globalParameters encryptionKey encryptionSecretKey aggAmount 0
                 return (encodePayload (EncryptedAmountTransfer address eatd), (eatdRemainingAmount eatd, decryptedAmount))
-          let txHeader nonce body = TransactionHeader {
+          let txHeader thExpiry nonce body = TransactionHeader {
                 thSender = selfAddress,
                 thNonce = nonce,
                 thEnergyAmount = encryptedTransferEnergyCost (payloadSize body) (length keysList),
                 thPayloadSize = payloadSize body,
-                thExpiry = TransactionTime maxBound
+                ..
                 }
           let sign nonce carry = do
+                ct <- utcTimeToTransactionTime <$> getCurrentTime
                 (body, newSelfAmount) <- txBody nonce carry
-                return (fst (txRecepient nonce), NormalTransaction $ signTransaction keysList (txHeader nonce body) body, newSelfAmount)
+                return (fst (txRecepient nonce), NormalTransaction $ signTransaction keysList (txHeader (ct + 3600) nonce body) body, newSelfAmount)
           go backend (logit txoptions) (tps txoptions) (ownAmount, plain) sign (airNonce accInfo)
 
   where accountKeysParser = AE.withObject "Account keys" $ \v -> do
