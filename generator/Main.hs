@@ -118,6 +118,7 @@ main = do
                 ..
                 }
           let sign nonce () = do
+                -- set expiry for 1h from now so that the transaction will be accepted by the node.
                 ct <- utcTimeToTransactionTime <$> getCurrentTime
                 return (txRecepient nonce, NormalTransaction $ signTransaction keysList (txHeader (ct + 3600) nonce) (txBody nonce), ())
           go backend (logit txoptions) (tps txoptions) () sign (airNonce accInfo)
