@@ -1225,7 +1225,7 @@ bakerGenerateKeysCmd =
     (info
       (BakerGenerateKeys <$>
         optional (strArgument (metavar "FILE" <> help "Target file of generated credentials.")) <*>
-        optional (option auto (long "baker-id" <> metavar "BAKERID" <> help "Optionally provide the baker id.")))
+        optional (option auto (long "baker-id" <> metavar "BAKERID" <> help "Optionally provide the baker id to be written to FILE.pub together with the public baker keys.")))
       (progDescDoc $ docFromLines
         [ "Create baker credentials and write them to a file or stdout. Format:"
         , "    {"

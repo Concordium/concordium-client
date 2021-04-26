@@ -487,25 +487,24 @@ instance AE.FromJSON BakerKeys where
 
 bakerKeysToPairs :: BakerKeys -> [Pair]
 bakerKeysToPairs v = [ "aggregationSignKey" .= bkAggrSignKey v
-                    , "aggregationVerifyKey" .= bkAggrVerifyKey v
-                    , "electionPrivateKey" .= bkElectionSignKey v
-                    , "electionVerifyKey" .= bkElectionVerifyKey v
-                    , "signatureSignKey" .= bkSigSignKey v
-                    , "signatureVerifyKey" .= bkSigVerifyKey v ]
+                     , "aggregationVerifyKey" .= bkAggrVerifyKey v
+                     , "electionPrivateKey" .= bkElectionSignKey v
+                     , "electionVerifyKey" .= bkElectionVerifyKey v
+                     , "signatureSignKey" .= bkSigSignKey v
+                     , "signatureVerifyKey" .= bkSigVerifyKey v ]
 
 instance AE.ToJSON BakerKeys where
   toJSON = object . bakerKeysToPairs
 
 -- Helper function for generating JSON containing only the public parts of the baker keys
 bakerPublicKeysToPairs :: BakerKeys -> Maybe BakerId -> [Pair]
-bakerPublicKeysToPairs v mbid = case mbid of
-  Nothing -> ["aggregationVerifyKey" .= bkAggrVerifyKey v
-                    , "electionVerifyKey" .= bkElectionVerifyKey v
-                    , "signatureVerifyKey" .= bkSigVerifyKey v ]
-  Just bid -> ["aggregationVerifyKey" .= bkAggrVerifyKey v
-                    , "electionVerifyKey" .= bkElectionVerifyKey v
-                    , "signatureVerifyKey" .= bkSigVerifyKey v 
-                    , "bakerId" .= bid ]
+bakerPublicKeysToPairs v mbid = 
+  let p = ["aggregationVerifyKey" .= bkAggrVerifyKey v
+         , "electionVerifyKey" .= bkElectionVerifyKey v
+         , "signatureVerifyKey" .= bkSigVerifyKey v ] 
+  in case mbid of
+    Nothing -> p
+    Just bid -> ("bakerId" .= bid) :p
 
 -- |Hardcoded network ID.
 defaultNetId :: Int
