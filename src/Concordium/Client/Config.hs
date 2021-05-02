@@ -579,12 +579,12 @@ data NamedModuleRef =
 
 -- |Write the name map to a file in a pretty JSON format.
 writeNameMapAsJSON :: AE.ToJSON v => Verbose -> FilePath -> NameMap v -> IO ()
-writeNameMapAsJSON verbose file =  handledWriteFile file .  AE.encodePretty' config
+writeNameMapAsJSON verbose file = void . handledWriteFile file .  AE.encodePretty' config
   where config = AE.defConfig { AE.confCompare = compare }
         handledWriteFile = handleWriteFile BSL.writeFile AllowOverwrite verbose
 -- |Write the name map to a file in the expected format.
 writeNameMap :: Show v => Verbose -> FilePath -> NameMap v -> IO ()
-writeNameMap verbose file = handledWriteFile file . BSL.fromStrict . encodeUtf8 . T.pack . unlines . map f . M.toAscList
+writeNameMap verbose file = void . handledWriteFile file . BSL.fromStrict . encodeUtf8 . T.pack . unlines . map f . M.toAscList
   where f (name, val) = printf "%s = %s" name (show val)
         handledWriteFile = handleWriteFile BSL.writeFile AllowOverwrite verbose
 
@@ -597,7 +597,8 @@ data OverwriteSetting =
 -- |Write to a file with the provided function and handle IO errors with an appropriate logging of errors.
 -- Also ensures that the parent folders are created if missing.
 -- If `OverwriteSetting == PromptBeforeOverwrite` then the user is prompted to confirm.
-handleWriteFile :: (FilePath -> s -> IO ()) -> OverwriteSetting -> Verbose -> FilePath -> s -> IO ()
+-- Return True if write was attempted, and False otherwise.
+handleWriteFile :: (FilePath -> s -> IO ()) -> OverwriteSetting -> Verbose -> FilePath -> s -> IO Bool
 handleWriteFile wrtFile overwriteSetting verbose file contents = do
   writeConfirmed <- case overwriteSetting of
     AllowOverwrite -> return True
@@ -606,11 +607,14 @@ handleWriteFile wrtFile overwriteSetting verbose file contents = do
       if fileExists
         then logWarn [[i|'#{file}' already exists.|]] >> askConfirmation (Just "overwrite it")
         else return True
-  when writeConfirmed $ do
+  if writeConfirmed then do
     catchIOError (do
       createDirectoryIfMissing True $ takeDirectory file
       when verbose $ logInfo [[i|writing file '#{file}'|]]
       wrtFile file contents) logFatalOnErrors
+    return True
+  else
+    return False
   where logFatalOnErrors e
           | isDoesNotExistError e = logFatal [[i|the file '#{file}' does not exist and cannot be created|]]
           | isPermissionError e   = logFatal [[i|you do not have permissions to write to the file '#{file}'|]]
@@ -637,7 +641,7 @@ writeAccountKeys baseCfg accCfg verbose = do
           Nothing -> logFatal [ printf "Couldn't find credential with index "++ show cidx ++ "; map size=" ++ show (M.size cidmap)]
           Just cid -> do 
             let credDir = keysDir </> show cid
-            handleWriteFile AE.encodeFile AllowOverwrite verbose (credDir </> ".index") cidx
+            _ <- handleWriteFile AE.encodeFile AllowOverwrite verbose (credDir </> ".index") cidx
             forM_ (M.toList kpmap) $ \(kidx, kp) -> do
               let file = accountKeyFile credDir kidx
               -- NOTE: This writes the JSON in a compact way. If we want human-readable JSON, we should use pretty encoding.
@@ -648,7 +652,7 @@ writeAccountKeys baseCfg accCfg verbose = do
   case acEncryptionKey accCfg of
     Just k -> do
       let encKeyFile = accountEncryptionSecretKeyFile keysDir
-      handleWriteFile AE.encodeFile AllowOverwrite verbose encKeyFile k
+      void $ handleWriteFile AE.encodeFile AllowOverwrite verbose encKeyFile k
     Nothing -> logFatal [ printf "importing account without a secret encryption key provided" ]
 
   -- writeThresholdFile accCfgDir accCfg verbose

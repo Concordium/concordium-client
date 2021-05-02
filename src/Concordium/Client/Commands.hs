@@ -1224,10 +1224,13 @@ bakerGenerateKeysCmd =
     "generate-keys"
     (info
       (BakerGenerateKeys <$>
-        optional (strArgument (metavar "FILE" <> help "Target file of generated credentials.")) <*>
-        optional (option auto (long "baker-id" <> metavar "BAKERID" <> help "Optionally provide the baker id to be written to FILE.pub together with the public baker keys.")))
+        optional (strArgument (metavar "FILE" <> help "File to write keys to.")) <*>
+        optional (option auto (long "baker-id" <> metavar "BAKERID" <> help "Optionally provide the baker id to be included with generated baker keys.")))
       (progDescDoc $ docFromLines
-        [ "Create baker credentials and write them to a file or stdout. Format:"
+        [ "Create baker credentials and write them to a file or stdout.",
+          "If the output file is specified secret keys are written to it,"
+        , " and public keys are written to the file with the same name but '.pub.json' extension."
+        , "Format:"
         , "    {"
         , "      \"signatureSignKey\": ...,"
         , "      \"signatureVerifyKey\": ...,"
