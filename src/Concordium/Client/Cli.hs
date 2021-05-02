@@ -166,7 +166,7 @@ decryptAccountKeyMapInteractive encryptedKeyMap indexmap accDescr = runExceptT $
   let queryText credIndex keyIndex =
         -- if Map.size encryptedKeyMap <= 1
         -- then "Enter password for" ++ accText ++ "signing key: "
-        -- else 
+        -- else
           case accDescr of
                Nothing -> "Enter password for credential with index " ++ show credIndex ++ " and signing key with index " ++ show keyIndex ++ ": "
                Just descr -> "Enter password for signing key of " ++ descr ++ " with index " ++ show keyIndex ++ ": "
@@ -174,8 +174,8 @@ decryptAccountKeyMapInteractive encryptedKeyMap indexmap accDescr = runExceptT $
   let inputMap = case indexmap of
         Nothing -> encryptedKeyMap -- no map provided, use the full map
         Just im -> let filterCredentials = OrdMap.filterWithKey (\k _ -> OrdMap.member k im) encryptedKeyMap
-                       lookUpKey cidx kidx = 
-                         case OrdMap.lookup cidx im of 
+                       lookUpKey cidx kidx =
+                         case OrdMap.lookup cidx im of
                            Nothing -> False
                            Just keyIndexList -> kidx `elem` keyIndexList
                        newmap = OrdMap.mapWithKey (\credIndex m -> OrdMap.filterWithKey (\k _ -> lookUpKey credIndex k) m) filterCredentials
@@ -314,9 +314,9 @@ instance AE.FromJSON AccountInfoResult where
 ----------------------------------------------------------------------------------------------------
 -- Parses a limited subset of the BlockSummary GRPC call to extract the ChainParameters
 
-data BlockSummaryResult = BlockSummaryResult 
+data BlockSummaryResult = BlockSummaryResult
   { bsrUpdates :: !BlockSummaryUpdateResults
-  } 
+  }
 
 instance AE.FromJSON BlockSummaryResult where
   parseJSON = withObject "block summary" $ \v -> do
@@ -465,7 +465,10 @@ data BakerKeys =
   , bkAggrSignKey :: Bls.SecretKey
   , bkAggrVerifyKey :: Bls.PublicKey
   , bkElectionSignKey :: VRF.SecretKey
-  , bkElectionVerifyKey :: VRF.PublicKey }
+  , bkElectionVerifyKey :: VRF.PublicKey
+  -- |The id of the baker these keys belong to, if known.
+  , bkBakerId :: Maybe BakerId
+  }
 
 data BakerCredentials = BakerCredentials {
   bcKeys :: !BakerKeys,
@@ -483,6 +486,7 @@ instance AE.FromJSON BakerKeys where
     bkElectionVerifyKey <- v .: "electionVerifyKey"
     bkSigSignKey <- v .: "signatureSignKey"
     bkSigVerifyKey <- v .: "signatureVerifyKey"
+    bkBakerId <- v .: "bakerId"
     return BakerKeys {..}
 
 bakerKeysToPairs :: BakerKeys -> [Pair]
@@ -491,20 +495,20 @@ bakerKeysToPairs v = [ "aggregationSignKey" .= bkAggrSignKey v
                      , "electionPrivateKey" .= bkElectionSignKey v
                      , "electionVerifyKey" .= bkElectionVerifyKey v
                      , "signatureSignKey" .= bkSigSignKey v
-                     , "signatureVerifyKey" .= bkSigVerifyKey v ]
+                     , "signatureVerifyKey" .= bkSigVerifyKey v ] ++
+                     [ "bakerId" .= bid | bid <- maybeToList (bkBakerId v) ]
+
 
 instance AE.ToJSON BakerKeys where
   toJSON = object . bakerKeysToPairs
 
 -- Helper function for generating JSON containing only the public parts of the baker keys
-bakerPublicKeysToPairs :: BakerKeys -> Maybe BakerId -> [Pair]
-bakerPublicKeysToPairs v mbid = 
-  let p = ["aggregationVerifyKey" .= bkAggrVerifyKey v
-         , "electionVerifyKey" .= bkElectionVerifyKey v
-         , "signatureVerifyKey" .= bkSigVerifyKey v ] 
-  in case mbid of
-    Nothing -> p
-    Just bid -> ("bakerId" .= bid) :p
+bakerPublicKeysToPairs :: BakerKeys -> [Pair]
+bakerPublicKeysToPairs v =
+  ["aggregationVerifyKey" .= bkAggrVerifyKey v
+  , "electionVerifyKey" .= bkElectionVerifyKey v
+  , "signatureVerifyKey" .= bkSigVerifyKey v ] ++
+  [ "bakerId" .= bid | bid <- maybeToList (bkBakerId v) ]
 
 -- |Hardcoded network ID.
 defaultNetId :: Int

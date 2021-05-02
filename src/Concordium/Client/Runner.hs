@@ -2211,8 +2211,8 @@ processBlockCmd action _ backend =
       runPrinter $ printBlockInfo v
 
 -- |Generate a fresh set of baker keys.
-generateBakerKeys :: IO BakerKeys
-generateBakerKeys = do
+generateBakerKeys :: Maybe Types.BakerId -> IO BakerKeys
+generateBakerKeys bkBakerId = do
   -- Aggr/bls keys.
   aggrSk <- Bls.generateSecretKey
   let aggrPk = Bls.derivePublicKey aggrSk
@@ -2225,14 +2225,15 @@ generateBakerKeys = do
                    , bkElectionSignKey = elSk
                    , bkElectionVerifyKey = elPk
                    , bkSigSignKey = sigSk
-                   , bkSigVerifyKey = sigVk }
+                   , bkSigVerifyKey = sigVk
+                   , ..}
 
 -- |Process a 'baker ...' command.
 processBakerCmd :: BakerCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processBakerCmd action baseCfgDir verbose backend =
   case action of
     BakerGenerateKeys outputFile maybeBakerId -> do
-      keys <- generateBakerKeys
+      keys <- generateBakerKeys maybeBakerId
       let askUntilEqual = do
                 pwd <- askPassword "Enter password for encryption of baker keys (leave blank for no encryption): "
                 case Password.getPassword pwd of
@@ -2247,7 +2248,7 @@ processBakerCmd action baseCfgDir verbose backend =
                       logWarn ["The two passwords were not equal. Try again."]
                       askUntilEqual
       out <- askUntilEqual
-      let publicBakerKeysJSON = AE.encodePretty . AE.object $ bakerPublicKeysToPairs keys maybeBakerId
+      let publicBakerKeysJSON = AE.encodePretty . AE.object $ bakerPublicKeysToPairs keys
       case outputFile of
         Nothing -> do
           -- TODO Store in config.
