@@ -110,6 +110,7 @@ import           Network.GRPC.Client.Helpers
 import           Prelude                             hiding (fail, unlines)
 import           System.IO
 import           System.Directory
+import           System.FilePath
 import           Text.Printf
 import           Text.Read (readMaybe)
 import Data.Time.Clock (addUTCTime, getCurrentTime, UTCTime)
@@ -208,7 +209,7 @@ processConfigCmd action baseCfgDir verbose =
       exportedConfigBackup <- case Password.getPassword pwd of
         "" -> configExport configBackup Nothing
         _ -> configExport configBackup (Just pwd)
-      handleWriteFile BS.writeFile PromptBeforeOverwrite verbose fileName exportedConfigBackup
+      void $ handleWriteFile BS.writeFile PromptBeforeOverwrite verbose fileName exportedConfigBackup
 
     ConfigBackupImport fileName skipExistingAccounts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1658,8 +1659,8 @@ processModuleCmd action baseCfgDir verbose backend =
         "-" -> BS.putStr . Wasm.moduleSource $ wasmSource
         -- Write to file
         _   -> do
-          handleWriteFile BS.writeFile PromptBeforeOverwrite verbose outFile (Wasm.moduleSource wasmSource)
-          logSuccess [[i|wrote module source to the file '#{outFile}'|]]
+          success <- handleWriteFile BS.writeFile PromptBeforeOverwrite verbose outFile (Wasm.moduleSource wasmSource)
+          when success $ logSuccess [[i|wrote module source to the file '#{outFile}'|]]
 
     ModuleInspect modRefOrName schemaFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -2253,12 +2254,16 @@ processBakerCmd action baseCfgDir verbose backend =
           BSL8.putStrLn out
           logInfo [ printf "to add a baker to the chain using these keys, store it in a file and use 'concordium-client baker add FILE'" ]
         Just f -> do
-          BSL.writeFile f out
-          BSL.writeFile (f ++ ".pub") publicBakerKeysJSON
-          logSuccess [ printf "keys written to file '%s'" f
-                     , "DO NOT LOSE THIS FILE"
-                     , printf "to add a baker to the chain using these keys, use 'concordium-client baker add %s'" f ]
-          logSuccess [ printf "public keys written to file '%s.pub'" f]
+          keysSuccess <- handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose f out
+          when keysSuccess $ do
+            let pubFile = f -<.> ".pub.json"
+            logSuccess [ printf "keys written to file '%s'" f
+                       , "DO NOT LOSE THIS FILE"
+                       , printf "to add a baker to the chain using these keys, use 'concordium-client baker add %s'" f]
+            pubSuccess <- handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose pubFile publicBakerKeysJSON
+            when pubSuccess $ do
+              logSuccess [ printf "public keys written to file '%s'" pubFile]
+
     BakerAdd bakerKeysFile txOpts initialStake autoRestake outputFile -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
@@ -2379,7 +2384,7 @@ processBakerCmd action baseCfgDir verbose backend =
                       askUntilEqual ident
           let printToFile ident out = liftIO $ do
                   credentialsMaybeEncrypted <- askUntilEqual ident
-                  handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose out credentialsMaybeEncrypted
+                  void $ handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose out credentialsMaybeEncrypted
           result <- sendAndTailTransaction txCfg pl intOpts
           case result of
             Nothing -> return ()
