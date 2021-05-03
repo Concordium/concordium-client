@@ -787,7 +787,7 @@ warnSuspiciousExpiry expiryArg now
     logWarn [ "expiration time is in the past"
             , "the transaction will not be committed" ]
   | expiryArg < now + 30 =
-    logWarn [ printf "expiration time is in just %s seconds" (show $ now - expiryArg)
+    logWarn [ printf "expiration time is in just %s seconds" (show $ expiryArg - now)
             , "this may not be enough time for the transaction to be committed" ]
   | expiryArg > now + 3600 =
     logWarn [ "expiration time is in more than one hour" ]
