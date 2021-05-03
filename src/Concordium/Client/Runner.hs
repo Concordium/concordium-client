@@ -2257,7 +2257,7 @@ processBakerCmd action baseCfgDir verbose backend =
         Just f -> do
           keysSuccess <- handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose f out
           when keysSuccess $ do
-            let pubFile = f -<.> ".pub.json"
+            let pubFile = f -<.> (".pub" ++ takeExtension f)
             logSuccess [ printf "keys written to file '%s'" f
                        , "DO NOT LOSE THIS FILE"
                        , printf "to add a baker to the chain using these keys, use 'concordium-client baker add %s'" f]
