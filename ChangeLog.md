@@ -6,6 +6,8 @@
   optionally includes baker-id
 - fix printing of "expiry too soon warning" when the expiry is less than 30s
   from now.
+- produce an error when an invalid credential holder or invalid key is
+  specified in the 'signers' option of the 'send-gtu' command.
 
 ## 0.7.0
 - Add ContractName and ReceiveName to schema.
