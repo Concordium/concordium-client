@@ -816,10 +816,10 @@ getAccountCfgFromTxOpts baseCfg txOpts = do
                                                                         Nothing -> False
                                                                         Just keyList -> elem k keyList) m) newKeys
       _ <- Map.traverseWithKey (\c keyIndices -> case Map.lookup c newKeys of
-                                              Nothing -> logFatal [ "No credential holder with index: " ++ (show c)]
+                                              Nothing -> logFatal [ "No credential holder with index " ++ (show c) ++ "."]
                                               Just credHolderMap -> do
                                                                   let warnIfMissingKey keyIndex = case Map.lookup keyIndex credHolderMap of
-                                                                          Nothing -> logFatal [ "No key with index: " ++ (show keyIndex) ++ " for credential holder: " ++ (show c)]
+                                                                          Nothing -> logFatal [ "No key with index " ++ (show keyIndex) ++ " for credential holder " ++ (show c) ++ "."]
                                                                           Just _ -> return() -- Key found, do nothing. 
                                                                             -- We could add the key to a map in this case, replacing the intersection and mapWithKey steps above.
                                                                   mapM_ warnIfMissingKey keyIndices) chosenKeys
