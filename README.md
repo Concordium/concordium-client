@@ -33,7 +33,7 @@ All accounts have a "nonce" counter (starting from 1) which is incremented for e
 All transactions must include the current nonce value for the sending account to ensure that transactions
 are ordered and that two otherwise identical transactions can be distinguished (i.e. it guarantees that the transactions have different hashes).
 
-The current nonce for accont `ACCOUNT-ID` can be retrieved using the command `GetAccountInfo ACCOUNT-ID` (grep for `accountNonce`).
+The current nonce for account `ACCOUNT-ID` can be retrieved using the command `GetAccountInfo ACCOUNT-ID` (grep for `accountNonce`).
 
 If a transaction with a reused nonce is submitted, the following helpful error message is returned:
 ```
