@@ -815,6 +815,15 @@ getAccountCfgFromTxOpts baseCfg txOpts = do
       let filteredKeys = Map.mapWithKey (\c m -> Map.filterWithKey (\k _ -> case Map.lookup c chosenKeys of
                                                                         Nothing -> False
                                                                         Just keyList -> elem k keyList) m) newKeys
+      _ <- Map.traverseWithKey (\c keyIndices -> case Map.lookup c newKeys of
+                                              Nothing -> logFatal [ "No credential holder with index: " ++ (show c)]
+                                              Just credHolderMap -> do
+                                                                  let warnIfMissingKey keyIndex = case Map.lookup keyIndex credHolderMap of
+                                                                          Nothing -> logFatal [ "Key index: " ++ (show keyIndex) ++ " is undefined for credential holder: " ++ (show c)]
+                                                                          Just _ -> return() -- Key found, do nothing. 
+                                                                            -- We could add the key to a map in this case, replacing the intersection and mapWithKey steps above.
+                                                                  _ <- mapM (warnIfMissingKey) keyIndices
+                                                                  return ()) chosenKeys
       return EncryptedSigningData{esdKeys=filteredKeys, esdAddress = acAddr accCfg, esdEncryptionKey = acEncryptionKey accCfg}
 
 
