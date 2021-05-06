@@ -573,9 +573,10 @@ showRejectReason verbose = \case
   Types.OutOfEnergy ->
     "not enough energy"
   Types.RejectedInit{..} ->
-    [i|"contract init logic failed with code #{rejectReason}|]
+    [i|contract init logic failed with code #{rejectReason}|]
   Types.RejectedReceive{..} ->
-    [i|"contract #{receiveName} at #{showCompactPrettyJSON ContractAddress} failed with code #{rejectReason}|]
+    let (contractName, funcName) = Wasm.contractAndFunctionName receiveName
+    in [i|'#{funcName}' in '#{contractName}' at #{showCompactPrettyJSON contractAddress} failed with code #{rejectReason}|]
   Types.NonExistentRewardAccount a ->
     if verbose then
       printf "account '%s' does not exist (tried to set baker reward account)" (show a)
