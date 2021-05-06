@@ -8,6 +8,8 @@
   from now.
 - produce an error when an invalid credential holder or invalid key is
   specified in the 'signers' option of the 'send-gtu' command.
+- Improve error message for SC update failures.
+- Fix incorrect parsing of `ReceiveName` when the contract field contains a dot.
 
 ## 0.7.0
 - Add ContractName and ReceiveName to schema.
