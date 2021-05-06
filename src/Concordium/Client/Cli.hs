@@ -486,7 +486,7 @@ instance AE.FromJSON BakerKeys where
     bkElectionVerifyKey <- v .: "electionVerifyKey"
     bkSigSignKey <- v .: "signatureSignKey"
     bkSigVerifyKey <- v .: "signatureVerifyKey"
-    bkBakerId <- v .: "bakerId"
+    bkBakerId <- v .:? "bakerId"
     return BakerKeys {..}
 
 bakerKeysToPairs :: BakerKeys -> [Pair]
