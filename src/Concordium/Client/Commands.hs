@@ -719,12 +719,16 @@ accountUpdateKeysCmd =
       (progDescDoc $ docFromLines
         [ "Set keys for the credential. Expected format of the key file:"
         , "   {"
-        , "     idx: {"
-        , "       \"verifyKey\": ..."
+        , "     \"keys\" : {"
+        , "       idx: {"
+        , "         \"verifyKey\": ..."
+        , "       },"
+        , "       ..."
         , "     },"
-        , "     ..."
+        , "     \"threshold\": number"
         , "   }"
-        , "where idx is the key index associated to the corresponding verify key." ]))
+        , "where each key is given a numeric index idx and the threshold is at most the number of keys."
+        , "This replaces all existing keys for the credential with the new set." ]))
 
 accountUpdateCredentialsCmd :: Mod CommandFields AccountCmd
 accountUpdateCredentialsCmd =
@@ -749,7 +753,8 @@ accountUpdateCredentialsCmd =
         , "                 \"verifyKey\": ...,"
         , "              },"
         , "              ..."
-        , "           }"
+        , "           },"
+        , "           \"threshold\": ..."
         , "       },"
         , "       \"ipIdentity\": ...,"
         , "       \"policy\": ...,"
