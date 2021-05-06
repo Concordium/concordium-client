@@ -264,12 +264,15 @@ putJSONUsingSchema typ json = case (typ, json) of
     when (fieldCount /= 2) $ Left [i|Expected object with two fields 'contract' and 'func', but got: #{showPrettyJSON obj}.|]
     case (HM.lookup "contract" obj, HM.lookup "func" obj) of
       (Just (AE.String contractName), Just (AE.String funcName)) -> do
-        let nameWithDot = contractName <> "." <> funcName
+        let nameWithInit = "init_" <> contractName
+            nameWithDot = contractName <> "." <> funcName
             bytes = BS.unpack . Text.encodeUtf8 $ nameWithDot
             len = fromIntegral $ length bytes
             maxLen = maxSizeLen sl
+        -- Include 'obj' in the following errors to be explicit about where the errors occured.
+        unless (Wasm.isValidInitName nameWithInit) $ -- This check ensures that the contract name is valid on its own.
+          Left [i|'#{contractName}' is not a valid contract name.\nIn #{showPrettyJSON obj}.|]
         unless (Wasm.isValidReceiveName nameWithDot) $
-          -- Include 'obj' in the error to be explicit about where the error occured.
           Left [i|'#{contractName}' combined with '#{funcName}' is not a valid receive name.\nIn #{showPrettyJSON obj}.|]
         when (len > maxLen) $ Left $ tooLongError "ReceiveName" maxLen len
         let putLen = putLenWithSizeLen sl $ fromIntegral len

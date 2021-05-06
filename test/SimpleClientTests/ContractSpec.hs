@@ -228,6 +228,7 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
     fromToJSONFail (ReceiveName One) $ object [ "contract" .= AE.String "contrName"
                                                     , "func" .= AE.String "funcName"
                                                     , "extra" .= AE.String "extra"]
+    fromToJSONFail (ReceiveName One) $ object [ "contract" .= AE.String "contrName.withDot", "func" .= AE.String "funcName" ]
 
   where idx :: Word64
         idx = 42
