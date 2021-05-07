@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+## 1.0.0
+
 - baker generate-keys outputs public and private keys in separate files, and
   optionally includes baker-id
 - fix printing of "expiry too soon warning" when the expiry is less than 30s
