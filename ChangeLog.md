@@ -1,6 +1,7 @@
 # Changelog for concordium-client
 
 ## Unreleased changes
+- The `account show` command can receive a credential registration ID instead of a name or address.
 
 ## 1.0.1
 

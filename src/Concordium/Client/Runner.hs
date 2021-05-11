@@ -161,8 +161,8 @@ getFromJsonAndHandleError handleError r = do
     Error err -> handleError s err
     Success v -> return v
 
--- |Look up account from the provided name or address. If 'Nothing' is given, use the defaultAcccountName.
--- Fail if the name or address cannot be found.
+-- |Look up account from the provided name, address or credential registration ID. If 'Nothing' is given, use the defaultAcccountName.
+-- Fail if the address cannot be found.
 getAccountAddressArg :: AccountNameMap -> Maybe Text -> IO NamedAddress
 getAccountAddressArg m input =
   case getAccountAddress m $ fromMaybe defaultAccountName input of
