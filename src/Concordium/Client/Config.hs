@@ -926,7 +926,7 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
 -- If this lookup fails, return the address with name Nothing.
 -- Otherwise assume the input is a local name of an account, and try to look up its address.
 -- If this lookup fails, return Nothing.
-resolveAccountAddress :: AccountNameMap -> Text -> Maybe NamedAddress -- todo this should try resolving for CID as well.
+resolveAccountAddress :: AccountNameMap -> Text -> Maybe NamedAddress
 resolveAccountAddress m input = do
   -- try parsing input as CredentialRegistrationID.
   let input' = case deserializeBase16 input of 
