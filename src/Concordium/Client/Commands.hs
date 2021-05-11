@@ -671,7 +671,7 @@ accountShowCmd =
     "show"
     (info
        (AccountShow <$>
-         optional (strArgument (metavar "ACCOUNT" <> help "Name or address of the account.")) <*>
+         optional (strArgument (metavar "ACCOUNT" <> help "Name, credential registration ID, or address of the account.")) <*>
          optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")) <*>
          switch (long "encrypted" <> help "Show encrypted balance") <*>
          switch (long "decrypt-encrypted" <> help "Show the encrypted balance, but also decrypt all the amounts (potentially slow)."))
