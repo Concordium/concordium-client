@@ -1499,7 +1499,7 @@ processAccountCmd action baseCfgDir verbose backend =
         encKey <- liftIO $
           if showDecrypted
           then do
-            encKeys <- (\l -> [ acEncryptionKey v | v <- l, acAddr v == na, isJust (acEncryptionKey v) ] ) <$> getAllAccountConfigs baseCfg
+            encKeys <- (\l -> [ acEncryptionKey v | v <- l, naAddr (acAddr v) == resolvedAddress, isJust (acEncryptionKey v) ] ) <$> getAllAccountConfigs baseCfg
             case encKeys of
               [Just enc] -> do
                 decrypted <- decryptAccountEncryptionSecretKeyInteractive enc
