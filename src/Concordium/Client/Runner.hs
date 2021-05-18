@@ -1474,8 +1474,14 @@ processAccountCmd action baseCfgDir verbose backend =
 
       -- query account
       (bbh, accInfo) <- withClient backend $ do
-        (bbh, accInfoValue) <- withBestBlockHash block (\bbh -> (bbh,) <$> getAccountInfo accountIdentifier bbh)
-        accInfo <- getFromJson accInfoValue
+        (bbh, accInfoValue :: Either String Value) <- withBestBlockHash block (\bbh -> (bbh,) <$> getAccountInfo accountIdentifier bbh)
+        accInfo <- do 
+          case accInfoValue of
+            Left err -> logFatal [err]
+            Right aiv -> case AE.fromJSON aiv of
+                            AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
+                            AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show accountIdentifier]
+                            AE.Success (Just air) -> return air
         return (bbh, accInfo)
 
       -- derive the address of the account from the the initial credential
