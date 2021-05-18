@@ -4,9 +4,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Concordium.Client.Config where
 
-import Concordium.Crypto.ByteStringHelpers (deserializeBase16)
 import Concordium.Types as Types
-import Concordium.ID.Types (addressFromText, addressToBytes, addressFromRegId, KeyIndex, CredentialIndex)
+import Concordium.ID.Types (addressFromText, KeyIndex, CredentialIndex)
 import qualified Concordium.ID.Types as IDTypes
 import Concordium.Client.Cli
 import Concordium.Client.Utils
@@ -920,20 +919,15 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
         else do
           return Nothing
 
--- |Look up an account by name, address or credential registration ID:
--- If input is a well-formed credential registration ID, use the corresponding address.
+-- |Look up an account by name or address:
 -- If input is a well-formed account address, try to (reverse) look up its name in the map.
 -- If this lookup fails, return the address with name Nothing.
 -- Otherwise assume the input is a local name of an account, and try to look up its address.
 -- If this lookup fails, return Nothing.
 resolveAccountAddress :: AccountNameMap -> Text -> Maybe NamedAddress
 resolveAccountAddress m input = do
-  -- try parsing input as CredentialRegistrationID.
-  let input' = case deserializeBase16 input of 
-                  Nothing -> input
-                  Just cid -> decodeUtf8 $ addressToBytes (addressFromRegId cid) -- use corresponding address
   -- Try parsing input as account address.
-  (n, a) <- case addressFromText input' of
+  (n, a) <- case addressFromText input of
               Left _ -> do
                 -- Assume input is a name. Look it up in the map.
                 a <- M.lookup input m
@@ -948,7 +942,7 @@ resolveAccountAddress m input = do
 findAllNamesFor :: Eq v => NameMap v -> v -> [Text]
 findAllNamesFor m input = map fst $ filter ((== input) . snd) (M.toList m)
 
--- |Look up an account by name, address or credential registration ID. See doc for 'resolveAccountAddress'.
+-- |Look up an account by name or address. See doc for 'resolveAccountAddress'.
 -- If the lookup fails, an error is thrown.
 getAccountAddress :: (MonadError String m) => AccountNameMap -> Text -> m NamedAddress
 getAccountAddress m input =
