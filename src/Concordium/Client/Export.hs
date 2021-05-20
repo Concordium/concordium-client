@@ -18,7 +18,7 @@ import Control.Exception
 import Control.Monad.Except
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
-import Data.Aeson ((.:),(.=))
+import Data.Aeson ((.:),(.=),(.:?))
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LazyBS
 import qualified Data.Map.Strict as OrdMap
@@ -63,11 +63,16 @@ toKeysList :: GenesisAccountKeys -> [(IDTypes.CredentialIndex, [(IDTypes.KeyInde
 toKeysList GenesisAccountKeys{..} = take (fromIntegral gakThreshold) . fmap toKeysListCred . OrdMap.toAscList $ gakKeys
     where toKeysListCred (ci, GenesisCredentialKeys{..}) = (ci, take (fromIntegral gckThreshold) . OrdMap.toAscList $ gckKeys)
 
+-- |Environment for the export, e.g., staging, testnet, mainnet or something else.
+type Environment = Text
 
 -- | An export format used by wallets including accounts and identities.
 data WalletExport =
   WalletExport
-  { wepAccounts :: ![WalletExportAccount] }
+  { wepAccounts :: ![WalletExportAccount]
+  -- | Environment for the accounts in the export, e.g., staging, testnet, mainnet, or something else.
+  , wepEnvironment :: !Text
+  }
   deriving (Show)
 
 instance AE.FromJSON WalletExport where
@@ -79,10 +84,14 @@ instance AE.FromJSON WalletExport where
       fail $ printf "unsupported type '%s'" (t :: String)
     unless (version == 1) $
       fail $ printf "unsupported version '%s'" (version :: Int)
-
     val <- v .: "value"
     ids <- val .: "identities"
-    return WalletExport { wepAccounts = weiAccounts =<< ids }
+    -- We are trying to be explicit about the reason for failure here since the older format
+    -- did not have the environment field, and we want the error message to be better than "missing field".
+    wepEnvironment <- v .:? "environment" >>= \case
+      Nothing -> fail "Missing 'environment' field. Most likely this means the export file was produced by an older, unsupported, wallet version."
+      Just env -> return env
+    return WalletExport { wepAccounts = weiAccounts =<< ids, .. }
 
 -- | Used for parsing 'WalletExport'.
 newtype WalletExportIdentity =
@@ -133,11 +142,11 @@ decodeMobileFormattedAccountExport
                    -- which must include the fields of an 'EncryptedJSON WalletExport'.
   -> Maybe Text -- ^ Only return the account with the given name (if it exists, otherwise return none).
   -> Password -- ^ Password to decrypt the export and to encrypt the sign keys.
-  -> IO (Either String [AccountConfig]) -- ^ A list of resulting 'AccountConfig's or an error message on failure.
+  -> IO (Either String ([AccountConfig], Environment)) -- ^ A list of resulting 'AccountConfig's and their environment, or an error message on failure.
 decodeMobileFormattedAccountExport json accountName password = runExceptT $ do
   we :: EncryptedJSON WalletExport <- AE.eitherDecodeStrict json `embedErr` printf "cannot decode wallet export JSON: %s"
   WalletExport{..} <- decryptJSON we password `embedErr` (("cannot decrypt wallet export: " ++) . displayException)
-  accountCfgsFromWalletExportAccounts wepAccounts accountName password
+  (, wepEnvironment) <$> accountCfgsFromWalletExportAccounts wepAccounts accountName password
 
 -- | Convert one or all wallet export accounts to regular account configs.
 -- This encrypts all signing keys with the provided password.
