@@ -2,6 +2,9 @@
 
 ## Unreleased changes
 
+- support the new mobile wallet export format. This breaks compatibility with
+  the old format.
+
 ## 1.0.0
 
 - baker generate-keys outputs public and private keys in separate files, and

@@ -483,11 +483,14 @@ loadAccountImportFile format file name = do
   case format of
     FormatMobile -> do
       pwd <- askPassword "Enter encryption password: "
-      accCfgs <- decodeMobileFormattedAccountExport contents name pwd `withLogFatalIO` ("cannot import accounts: " ++)
-
-      logInfo ["loaded account(s):"]
+      (accCfgs, environment) <- decodeMobileFormattedAccountExport contents name pwd `withLogFatalIO` ("cannot import accounts: " ++)
+      let accountsMessage :: Text = if length accCfgs >= 2 then "accounts" else "account"
+      logInfo [[i|loaded the following #{accountsMessage} from the #{environment} chain:|]]
       forM_ accCfgs $ \AccountConfig{acAddr=NamedAddress{..}} -> logInfo [[i|- #{naAddr} #{showNameList naNames}|]]
-      logInfo ["all signing keys have been encrypted with the password used for this import."]
+      logInfo ["all signing keys have been encrypted with the password used for this import."
+              ,"Note that accounts are not transferable between different chains, e.g., from testnet to mainnet or vice-versa."
+              ]
+      putStrLn ""
 
       return accCfgs
     FormatGenesis -> do
