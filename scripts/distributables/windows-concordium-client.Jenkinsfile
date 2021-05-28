@@ -44,7 +44,7 @@ pipeline {
                     cp $(find $PWD/.stack-work/install -type f -name "concordium-client.exe") out/
 
                     # Push to s3
-                    aws s3 cp out/concordium-client.exe ${OUTFILE}
+                    aws s3 cp out/concordium-client.exe ${OUTFILE} --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
                 '''.stripIndent()
             }
         }
