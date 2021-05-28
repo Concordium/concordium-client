@@ -2297,9 +2297,12 @@ processBakerCmd action baseCfgDir verbose backend =
          case airBaker of
            Just AccountInfoBakerResult{..} -> logFatal [[i|Account is already a baker with ID #{aibiIdentity abirAccountBakerInfo}.|]]
            Nothing -> do
-             if (airAmount - gtuTransactionPrice) < initialStake
-             then
-               logFatal [[i|Account balance (#{showGtu airAmount}) minus the cost of the transaction (#{showGtu gtuTransactionPrice}) is lower than the amount requested to be staked (#{showGtu initialStake}).|]]
+             if airAmount - gtuTransactionPrice < initialStake
+             then do
+               logError [[i|Account balance (#{showGtu airAmount}) minus the cost of the transaction (#{showGtu gtuTransactionPrice}) is lower than the amount requested to be staked (#{showGtu initialStake}).|]]
+               confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
+               unless confirmed exitTransactionCancelled
+               sendAndMaybeOutputCredentials bakerKeys accountKeysFile outputFile txCfg pl intOpts
              else do
                sendAndMaybeOutputCredentials bakerKeys wasEncrypted bakerKeysFile outputFile txCfg pl intOpts
         where
@@ -2311,7 +2314,8 @@ processBakerCmd action baseCfgDir verbose backend =
             blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
             case blockSummary of
               Nothing -> do
-                logError ["Failed to retrieve NRG-GTU rate from best block hash, unable to estimate GTU cost"]
+                logError ["Failed to retrieve NRG-GTU rate from the chain using best block hash, unable to estimate GTU cost"]
+                logError ["Falling back to default behaviour, all GTU values derived from NRG will be set to 0"]
                 return 0
               Just bsr -> do
                 return $ _cpEnergyRate $ bsurChainParameters $ bsrUpdates bsr
