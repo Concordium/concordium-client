@@ -2302,7 +2302,7 @@ processBakerCmd action baseCfgDir verbose backend =
                logError [[i|Account balance (#{showGtu airAmount}) minus the cost of the transaction (#{showGtu gtuTransactionPrice}) is lower than the amount requested to be staked (#{showGtu initialStake}).|]]
                confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
                unless confirmed exitTransactionCancelled
-               sendAndMaybeOutputCredentials bakerKeys accountKeysFile outputFile txCfg pl intOpts
+               sendAndMaybeOutputCredentials bakerKeys wasEncrypted bakerKeysFile outputFile txCfg pl intOpts
              else do
                sendAndMaybeOutputCredentials bakerKeys wasEncrypted bakerKeysFile outputFile txCfg pl intOpts
         where
