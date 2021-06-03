@@ -166,6 +166,9 @@ data TransactionCmd
       -- | Options for transaction.
       trdTransactionOptions :: !(TransactionOpts (Maybe Energy))
     }
+  -- | Check the signatures of a transaction
+  | TransactionCheckSignature
+    { tcsFile :: !FilePath }
 
   deriving (Show)
 
@@ -531,7 +534,8 @@ transactionCmds =
            transactionWithScheduleCmd <>
            transactionDeployCredentialCmd <>
            transactionEncryptedTransferCmd <>
-           transactionRegisterDataCmd))
+           transactionRegisterDataCmd <>
+           transactionCheckSignatureCmd))
       (progDesc "Commands for submitting and inspecting transactions."))
 
 transactionSubmitCmd :: Mod CommandFields TransactionCmd
@@ -649,6 +653,16 @@ transactionRegisterDataCmd =
         strArgument (metavar "FILE" <> help "File containing the data to register.") <*>
         transactionOptsParser)
       (progDesc "Register data on the chain."))
+
+transactionCheckSignatureCmd :: Mod CommandFields TransactionCmd
+transactionCheckSignatureCmd =
+  command
+    "check-signature"
+    (info
+      (TransactionCheckSignature <$> 
+        strArgument (metavar "FILE" <> help "File containing the transaction to check."))
+      (progDesc "Check the signatures of a desktop-wallet exported transaction, using on-chain public keys.")
+    )
 
 accountCmds :: Mod CommandFields Cmd
 accountCmds =

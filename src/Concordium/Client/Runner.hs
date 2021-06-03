@@ -53,6 +53,7 @@ import           Concordium.Client.Types.Account
 import qualified Concordium.Client.Types.Contract.Info as CI
 import qualified Concordium.Client.Types.Contract.Parameter as CP
 import qualified Concordium.Client.Types.Contract.Schema as CS
+import           Concordium.Client.Types.DesktopWalletTransaction
 import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Client.Types.TransactionStatus
 import           Concordium.Common.Version
@@ -666,6 +667,58 @@ processTransactionCmd action baseCfgDir verbose backend =
             Nothing -> return ()
             Just (Left err) -> logFatal ["Registering data failed:", err]
             Just (Right _) -> logSuccess ["Data succesfully registered."]
+    
+    TransactionCheckSignature file -> eitherDecodeFileStrict file >>= \case
+        Left err -> logFatal ["Reading transaction failed:", err]
+        Right (DWTransaction DesktopWalletTransaction{..}) -> do
+          AccountInfoResult{..} <- withClient backend $
+            getAccountInfoOrDie (Types.thSender (Types.atrHeader dwtAccountTransaction))
+          let digest = Types.atrSignHash dwtAccountTransaction
+          let digestBytes = Types.transactionSignHashToByteString digest
+          when verbose $ logInfo [[i|Transaction hash: #{Types.transactionHash dwtAccountTransaction}|]]
+          logInfo [[i|Checking signatures on transaction with digest #{digest}...|]]
+          forM_ (Map.toAscList (Types.tsSignatures (Types.atrSignature dwtAccountTransaction))) $ \(credId, credSigs) -> do
+            case Map.lookup credId airCredentials of
+              Nothing -> logError [[i|Credential with id #{credId} does not exist.|]]
+              Just Versioned {vValue = cred} -> do
+                forM_ (Map.toAscList credSigs) $ \(keyInd, sig) ->
+                  case Map.lookup keyInd (ID.credKeys $ ID.credPubKeys cred) of
+                    Nothing -> logError [[i|Credential #{credId} does not have a key with index #{keyInd}.|]]
+                    Just pubKey -> if SigScheme.verify pubKey digestBytes sig then
+                        logSuccess [[i|Signature for credential #{credId} key #{keyInd} is correct.|]]
+                      else
+                        logError [[i|Signature for credential #{credId} key #{keyInd} is incorrect.|]]
+        Right (DWUpdateInstruction DesktopWalletUpdateInstruction{..}) -> do
+          eBlockSummaryJSON <- withClient backend $ withBestBlockHash Nothing getBlockSummary
+          kc@Updates.UpdateKeysCollection{..} <-
+            case eBlockSummaryJSON of
+              Right v -> case parse (withObject "BlockSummary" $ \o -> (o .: "updates") >>= (.: "keys")) v of
+                          AE.Success v' -> return v'
+                          AE.Error e -> logFatal [printf "Error parsing a JSON for block summary: '%s'" (show e)]
+              Left e -> logFatal [printf "Error getting block summary: '%s'" (show e)]
+          let checkKey = case Updates.ruiPayload dwRawUpdateInstruction of
+                Updates.RootUpdatePayload{} -> \k -> if k `Vec.elem` Updates.hlkKeys rootKeys then
+                    logSuccess [[i|Key #{k} is an authorized root key.|]]
+                  else
+                    logError [[i|Key #{k} is not an authorized root key.|]]
+                Updates.Level1UpdatePayload{} -> \k -> if k `Vec.elem` Updates.hlkKeys level1Keys then
+                    logSuccess [[i|Key #{k} is an authorized level-one key.|]]
+                  else
+                    logError [[i|Key #{k} is not an authorized level-one key.|]]
+                p -> let (authInds, _) = Updates.extractKeysIndices p kc in \k ->
+                        case Vec.elemIndex k (Updates.asKeys level2Keys) of
+                          Nothing -> logError [[i|Key #{k} is not an authorized level-two key.|]]
+                          Just ind
+                            | fromIntegral ind `Set.member` authInds -> logSuccess [[i|Key #{k} is an authorized level-two key for this update.|]]
+                            | otherwise -> logError [[i|Key #{k} is a level-two key, but is not authorized for this update.|]]                
+          logInfo [[i|Checking signatures on update instruction with digest #{dwSigningHash}...|]]
+          forM_ dwSignatures $ \UpdateSignature{..} ->
+            if SigScheme.verify usAuthorizationPublicKey (S.encode dwSigningHash) usSignature then do
+              logSuccess [[i|Verified signature #{usSignature} with key #{usAuthorizationPublicKey}.|]]
+              checkKey usAuthorizationPublicKey
+            else
+              logError [[i|Signature #{usSignature} does not match key #{usAuthorizationPublicKey}.|]]
+
 
 -- |Construct a transaction config for registering data.
 --  The data is read from the 'FilePath' provided.
