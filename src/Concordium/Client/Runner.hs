@@ -1503,7 +1503,7 @@ processAccountCmd action baseCfgDir verbose backend =
                 case decrypted of
                   Right v -> return (Just v)
                   _ -> logFatal [printf "Couldn't decrypt encryption key for account '%s' with the provided password" (show $ naAddr na)]
-              _ -> logFatal [printf "Tried to decrypt balance of account '%s' but this account is not present on the local store" (show $ naAddr na)]
+              _ -> logFatal [printf "Tried to decrypt balance of account '%s' but this account is not present in the local store" (show $ naAddr na)]
           else return Nothing
         cs <- getFromJson =<< getConsensusStatus
         case encKey of
