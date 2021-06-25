@@ -10,7 +10,7 @@ pipeline {
                 echo -n "$VERSION"
             '''.stripIndent()
         )
-        OUTFILE = "s3://client-distribution.concordium.com/macos/concordium-client_${VERSION}"
+        OUTFILE = "s3://distribution.concordium.software/tools/macos/concordium-client_${VERSION}"
     }
     stages {
         stage('precheck') {
@@ -61,7 +61,7 @@ pipeline {
             steps {
                 unstash 'release'
                 sh '''\
-                    aws s3 cp out/concordium-client ${OUTFILE}
+                    aws s3 cp out/concordium-client ${OUTFILE} --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
                 '''.stripIndent()
             }
         }

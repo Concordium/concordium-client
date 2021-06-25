@@ -60,6 +60,7 @@ import qualified Concordium.Common.Time as Time
 import qualified Concordium.Crypto.EncryptedTransfers as Enc
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
+import           Concordium.Crypto.ByteStringHelpers (deserializeBase16)
 import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.SignatureScheme   as SigScheme
 import qualified Concordium.Crypto.VRF               as VRF
@@ -162,7 +163,8 @@ getFromJsonAndHandleError handleError r = do
     Success v -> return v
 
 -- |Look up account from the provided name or address. If 'Nothing' is given, use the defaultAcccountName.
--- Fail if the name or address cannot be found.
+-- Fail if the address cannot be found.
+-- Should be kept consistent with processAccountCmd for AccountShow
 getAccountAddressArg :: AccountNameMap -> Maybe Text -> IO NamedAddress
 getAccountAddressArg m input =
   case getAccountAddress m $ fromMaybe defaultAccountName input of
@@ -1456,39 +1458,64 @@ tailTransaction hash = do
 processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processAccountCmd action baseCfgDir verbose backend =
   case action of
-    AccountShow address block showEncrypted showDecrypted -> do
+    AccountShow inputMaybe block showEncrypted showDecrypted -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-
-      na <- getAccountAddressArg (bcAccountNameMap baseCfg) address
-      encKey <-
-        if showDecrypted
-        then do
-          encKeys <- (\l -> [ acEncryptionKey v | v <- l, acAddr v == na, isJust (acEncryptionKey v) ] ) <$> getAllAccountConfigs baseCfg
-          case encKeys of
-            [Just enc] -> do
-              decrypted <- decryptAccountEncryptionSecretKeyInteractive enc
-              case decrypted of
-                Right v -> return (Just v)
-                _ -> logFatal [printf "Couldn't decrypt encryption key for account '%s' with the provided password" (show $ naAddr na)]
-            _ -> logFatal [printf "Tried to decrypt balance of account '%s' but this account is not present on the local store" (show $ naAddr na)]
-        else return Nothing
 
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      (v, dec, f) <- withClient backend $ do
-        (bbh, accInfoValue) <- withBestBlockHash block (\bbh -> (bbh,) <$> getAccountInfo (Text.pack $ show $ naAddr na) bbh)
+      -- if no input is given, use default account name. 
+      -- Should be kept consistent with 'getAccountAddressArg'
+      let input = case inputMaybe of
+                    Nothing -> defaultAccountName
+                    Just v -> v
+
+      accountIdentifier <- case deserializeBase16 input of 
+                Just (_ :: ID.CredentialRegistrationID) -> return input -- input is a wellformed credRegID
+                Nothing -> case ID.addressFromText input of
+                  Right _ -> return input -- input is a wellformed address
+                  Left _ -> case Map.lookup input (bcAccountNameMap baseCfg) of
+                    Just a -> return $ Text.pack $ show a -- input is the local name of an account
+                    Nothing -> logFatal [printf "The identifier '%s' is neither a credential registration ID, the address nor the name of an account" input]
+
+      (accInfo, na, dec, f) <- withClient backend $ do
+        -- query account
+        (bbh, accInfoValue :: Either String Value) <- withBestBlockHash block (\bbh -> (bbh,) <$> getAccountInfo accountIdentifier bbh)
+        accInfo <- do 
+          case accInfoValue of
+            Left err -> logFatal [err]
+            Right aiv -> case AE.fromJSON aiv of
+                            AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
+                            AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show accountIdentifier]
+                            AE.Success (Just air) -> return air
+        -- derive the address of the account from the the initial credential
+        resolvedAddress <- case Map.lookup (ID.CredentialIndex 0) (airCredentials accInfo) of
+                            Nothing -> logFatal [printf "No initial credential found for the account identified by '%s'" accountIdentifier ]
+                            Just v -> return $ ID.addressFromRegId $ ID.credId $ vValue v
+        -- reverse lookup local account names
+        let na = NamedAddress {naNames = findAllNamesFor (bcAccountNameMap baseCfg) resolvedAddress, naAddr = resolvedAddress}
+        
+        encKey <- liftIO $
+          if showDecrypted
+          then do
+            encKeys <- (\l -> [ acEncryptionKey v | v <- l, naAddr (acAddr v) == resolvedAddress, isJust (acEncryptionKey v) ] ) <$> getAllAccountConfigs baseCfg
+            case encKeys of
+              [Just enc] -> do
+                decrypted <- decryptAccountEncryptionSecretKeyInteractive enc
+                case decrypted of
+                  Right v -> return (Just v)
+                  _ -> logFatal [printf "Couldn't decrypt encryption key for account '%s' with the provided password" (show $ naAddr na)]
+              _ -> logFatal [printf "Tried to decrypt balance of account '%s' but this account is not present in the local store" (show $ naAddr na)]
+          else return Nothing
         cs <- getFromJson =<< getConsensusStatus
-        accInfo <- getFromJson accInfoValue
         case encKey of
-          Nothing -> return (accInfo, Nothing, \e ->  addUTCTime (fromRational ((toInteger e * toInteger (csrEpochDuration cs)) % 1000)) (csrGenesisTime cs))
+          Nothing -> return (accInfo, na, Nothing, \e ->  addUTCTime (fromRational ((toInteger e * toInteger (csrEpochDuration cs)) % 1000)) (csrGenesisTime cs))
           Just k -> do
             gc <- logFatalOnError =<< getParseCryptographicParameters bbh
-            return (accInfo, Just (k, gc), \e ->  addUTCTime (fromRational ((toInteger e * toInteger (csrEpochDuration cs)) % 1000)) (csrGenesisTime cs))
-      case v of
-        Nothing -> putStrLn "Account not found."
-        Just a -> runPrinter $ printAccountInfo f na a verbose (showEncrypted || showDecrypted) dec
+            return (accInfo, na, Just (k, gc), \e ->  addUTCTime (fromRational ((toInteger e * toInteger (csrEpochDuration cs)) % 1000)) (csrGenesisTime cs))
+
+      runPrinter $ printAccountInfo f na accInfo verbose (showEncrypted || showDecrypted) dec
 
     AccountList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose

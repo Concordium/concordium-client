@@ -5,7 +5,7 @@ pipeline {
         stage('build') {
             environment {
                 GHC_VERSION = '8.10.4'
-                BASE_OUTFILE = 's3://client-distribution.concordium.com/windows/concordium-client'
+                BASE_OUTFILE = 's3://distribution.concordium.software/tools/windows/concordium-client'
             }
             steps {
                 sh '''\
@@ -44,7 +44,7 @@ pipeline {
                     cp $(find $PWD/.stack-work/install -type f -name "concordium-client.exe") out/
 
                     # Push to s3
-                    aws s3 cp out/concordium-client.exe ${OUTFILE}
+                    aws s3 cp out/concordium-client.exe ${OUTFILE} --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
                 '''.stripIndent()
             }
         }

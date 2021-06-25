@@ -4,7 +4,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Concordium.Client.Config where
 
-
 import Concordium.Types as Types
 import Concordium.ID.Types (addressFromText, KeyIndex, CredentialIndex)
 import qualified Concordium.ID.Types as IDTypes

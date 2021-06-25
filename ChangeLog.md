@@ -1,6 +1,9 @@
 # Changelog for concordium-client
 
 ## Unreleased changes
+- The `account show` command can receive a credential registration ID instead of a name or address.
+
+## 1.0.1
 
 - support the new mobile wallet export format. This breaks compatibility with
   the old format.
