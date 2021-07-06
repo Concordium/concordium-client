@@ -22,7 +22,7 @@ pipeline {
                     fi    
 
                     # Ensure correct rust env
-                    rustup default 1.45.2-x86_64-pc-windows-gnu
+                    rustup default 1.53-x86_64-pc-windows-gnu
 
                     # Configure project to use custom GHC
                     # cygpath -w converts msys2 path to windows path
