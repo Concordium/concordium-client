@@ -1,4 +1,4 @@
-FROM rust:1.45.2 AS build-libs
+FROM rust:1.53 AS build-libs
 COPY ./deps/concordium-base/rust-src /build
 WORKDIR /build
 # Note that the shared libraries build here depend on a handful of system libraries.
