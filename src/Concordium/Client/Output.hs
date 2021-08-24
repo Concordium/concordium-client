@@ -25,6 +25,8 @@ import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import Data.Bool
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Short as BSS
+import qualified Data.ByteString.Lazy as BSL
 import Data.Functor
 import qualified Data.Map.Strict as Map
 import qualified Data.HashMap.Strict as HM
@@ -36,6 +38,10 @@ import qualified Data.Text as Text
 import Data.Time
 import Lens.Micro.Platform
 import Text.Printf
+import Codec.CBOR.Read
+import Codec.CBOR.JSON
+import qualified Data.ByteString.Lazy as BSL
+import qualified Data.Aeson as AE
 
 -- PRINTER
 
@@ -505,6 +511,12 @@ showEvent verbose = \case
     verboseOrNothing $ printf "Sent transfer with schedule %s" (intercalate ", " . map (\(a, b) -> showTimeFormatted (Time.timestampToUTCTime a) ++ ": " ++ showGtu b) $ etwsAmount)
   Types.DataRegistered{ } ->
     verboseOrNothing [i|Registered data on chain.|]
+  Types.TransferMemo{..} ->
+    let (Types.Memo bss) = tmMemo
+        str = case deserialiseFromBytes (decodeValue False) (BSL.fromStrict $ BSS.fromShort bss) of
+          Left _ -> printf "Could not decode memo. The hex value of the memo is %s." $ show tmMemo
+          Right (_, x) -> showCompactPrettyJSON x
+    in Just $ printf "Transfer memo: %s" str
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing

@@ -69,6 +69,8 @@ library:
     - base64-bytestring
     - bytestring
     - cereal
+    - cborg
+    - cborg-json
     - concordium-base
     - containers
     - cryptonite
