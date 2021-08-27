@@ -118,7 +118,9 @@ import           Text.Read (readMaybe)
 import Data.Time.Clock (addUTCTime, getCurrentTime, UTCTime)
 import Data.Ratio
 import Codec.CBOR.Write
+import Codec.CBOR.Encoding
 import Codec.CBOR.JSON
+import Data.ByteString (ByteString)
 
 -- |Establish a new connection to the backend and run the provided computation.
 -- Close a connection after completion of the computation. Establishing a
@@ -503,6 +505,20 @@ loadAccountImportFile format file name = do
      accCfg <- decodeGenesisFormattedAccountExport contents name pwd `withLogFatalIO` ("cannot import account: " ++)
      return [accCfg]
 
+-- Read a transaction memo as either a string or json from a file. 
+readMemoAsBytestring :: Either Text FilePath -> Backend -> IO ByteString
+readMemoAsBytestring memo backend = do
+  cs <- withClientJson backend getConsensusStatus
+  when (csrProtocolVersion cs == Types.P1) $ logWarn ["Protocol version 1 does not support transaction memos."]
+  toStrictByteString <$> case memo of
+    Left memoString -> do
+      return $ encodeString memoString
+    Right memoFile -> do
+      source <- handleReadFile BSL.readFile memoFile
+      case AE.eitherDecode source of
+        Left err -> fail $ "Error decoding JSON: " ++ err
+        Right value -> do 
+          return $ encodeValue value
 
 -- |Process a 'transaction ...' command.
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -551,15 +567,9 @@ processTransactionCmd action baseCfgDir verbose backend =
       let plDo = do
             res <- case maybeMemo of 
               Nothing -> return $ Types.Transfer (naAddr receiverAddress) amount
-              Just memoFile -> do 
-                cs <- withClientJson backend getConsensusStatus
-                when (csrProtocolVersion cs == Types.P1) $ logWarn ["Protocol version 1 does not support transaction memos."]
-                source <- handleReadFile BSL.readFile memoFile
-                case AE.eitherDecode source of
-                  Left err -> fail $ "Error decoding JSON: " ++ err
-                  Right value -> do 
-                    let bs = toStrictByteString . encodeValue $ value
-                    return $ Types.TransferWithMemo (naAddr receiverAddress) (Types.Memo $ BSS.toShort bs) amount
+              Just memo -> do
+                bs <- readMemoAsBytestring memo backend
+                return $ Types.TransferWithMemo (naAddr receiverAddress) (Types.Memo $ BSS.toShort bs) amount 
             return $ Types.encodePayload res
       pl <- plDo
       let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize pl
@@ -601,15 +611,9 @@ processTransactionCmd action baseCfgDir verbose backend =
       let plDo = do
             res <- case maybeMemo of 
               Nothing -> return $ Types.TransferWithSchedule (naAddr receiverAddress) realSchedule
-              Just memoFile -> do 
-                cs <- withClientJson backend getConsensusStatus
-                when (csrProtocolVersion cs == Types.P1) $ logWarn ["Protocol version 1 does not support transaction memos."]
-                source <- handleReadFile BSL.readFile memoFile
-                case AE.eitherDecode source of
-                  Left err -> fail $ "Error decoding JSON: " ++ err
-                  Right value -> do 
-                    let bs = toStrictByteString . encodeValue $ value
-                    return $ Types.TransferWithScheduleAndMemo (naAddr receiverAddress) (Types.Memo $ BSS.toShort bs) realSchedule
+              Just memo -> do
+                bs <- readMemoAsBytestring memo backend
+                return $ Types.TransferWithScheduleAndMemo (naAddr receiverAddress) (Types.Memo $ BSS.toShort bs) realSchedule
             return $ Types.encodePayload res
       pl <- plDo
       let nrgCost _ = return $ Just $ transferWithScheduleEnergyCost (Types.payloadSize pl) (length realSchedule)
@@ -658,15 +662,9 @@ processTransactionCmd action baseCfgDir verbose backend =
         let plDo = do
                 res <- case maybeMemo of 
                   Nothing -> return $ Types.EncryptedAmountTransfer (naAddr receiverAcc) transferData
-                  Just memoFile -> do 
-                    cs <- withClientJson backend getConsensusStatus
-                    when (csrProtocolVersion cs == Types.P1) $ logWarn ["Protocol version 1 does not support transaction memos."]
-                    source <- handleReadFile BSL.readFile memoFile
-                    case AE.eitherDecode source of
-                      Left err -> fail $ "Error decoding JSON: " ++ err
-                      Right value -> do 
-                        let bs = toStrictByteString . encodeValue $ value
-                        return $ Types.EncryptedAmountTransferWithMemo (naAddr receiverAcc) (Types.Memo $ BSS.toShort bs) transferData
+                  Just memo -> do
+                    bs <- readMemoAsBytestring memo backend
+                    return $ Types.EncryptedAmountTransferWithMemo (naAddr receiverAcc) (Types.Memo $ BSS.toShort bs) transferData
                 return $ Types.encodePayload res
         payload <- liftIO plDo
         let nrgCost _ = return $ Just $ encryptedTransferEnergyCost $ Types.payloadSize payload

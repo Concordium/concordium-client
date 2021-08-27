@@ -142,12 +142,12 @@ data TransactionCmd
   | TransactionSendGtu
     { tsgReceiver :: !Text
     , tsgAmount :: !Amount
-    , tsgMemo :: !(Maybe FilePath)
+    , tsgMemo :: !(Maybe (Either Text FilePath))
     , tsgOpts :: !(TransactionOpts (Maybe Energy)) }
   | TransactionSendWithSchedule
     { twsReceiver :: !Text
     , twsSchedule :: !(Either (Amount, Interval, Int, Timestamp) [(Timestamp, Amount)]) -- ^Eiher total amount, interval, number of intervals and starting time or a raw list of timestamps and amounts.
-    , tsgMemo :: !(Maybe FilePath)
+    , twsMemo :: !(Maybe (Either Text FilePath))
     , twsOpts :: !(TransactionOpts (Maybe Energy)) }
   | TransactionDeployCredential
     { tdcFile :: !FilePath
@@ -161,7 +161,7 @@ data TransactionCmd
       -- | Which indices to use as inputs to the encrypted amount transfer.
       -- If none are provided all existing ones will be used.
       tetIndex :: !(Maybe Int),
-      tsgMemo :: !(Maybe FilePath)}
+      tetMemo :: !(Maybe (Either Text FilePath))}
   -- | Register data on chain.
   | TransactionRegisterData
     { -- | File containing the data.
@@ -574,7 +574,7 @@ transactionSendGtuCmd =
       (TransactionSendGtu <$>
        strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
        option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
-       optional (strOption (long "memo" <> metavar "MEMO" <> help "Transaction memo.")) <*>
+       optional ((Left <$> strOption (long "memo" <> metavar "MEMO" <> help "Transaction memo.")) <|> (Right <$> strOption (long "memo-json" <> metavar "FILE" <> help "File with transaction memo."))) <*>
        transactionOptsParser)
       (progDesc "Transfer GTU from one account to another."))
 
@@ -594,7 +594,8 @@ transactionWithScheduleCmd =
        in
          TransactionSendWithSchedule <$>
          strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*> (implicit <|> explicit) <*>
-         optional (strOption (long "memo" <> metavar "MEMO" <> help "Transaction memo.")) <*> transactionOptsParser)
+         optional ((Left <$> strOption (long "memo" <> metavar "MEMO" <> help "Transaction memo.")) <|> (Right <$> strOption (long "memo-json" <> metavar "FILE" <> help "File with transaction memo."))) <*>
+         transactionOptsParser)
      (progDescDoc . Just $ fillCat [
          "Transfer GTU from one account to another with the provided schedule of releases.",
          "Releases can be specified in one of two ways, either as regular releases via intervals," <>
@@ -643,7 +644,7 @@ transactionEncryptedTransferCmd =
          strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
          option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
          optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which incoming encrypted amounts should be used.")) <*>
-         optional (strOption (long "memo" <> metavar "MEMO" <> help "Transaction memo.")))
+         optional ((Left <$> strOption (long "memo" <> metavar "MEMO" <> help "Transaction memo.")) <|> (Right <$> strOption (long "memo-json" <> metavar "FILE" <> help "File with transaction memo."))))
       (progDesc "Transfer GTU from the encrypted balance of the account to the encrypted balance of another account."))
 
 transactionRegisterDataCmd :: Mod CommandFields TransactionCmd
