@@ -360,7 +360,8 @@ data ConsensusStatusResult = ConsensusStatusResult
   , csrFinalizationCount :: Int
   , csrLastFinalizedTime :: Maybe UTCTime
   , csrFinalizationPeriodEMA :: Maybe Double
-  , csrFinalizationPeriodEMSD :: Maybe Double }
+  , csrFinalizationPeriodEMSD :: Maybe Double
+  , csrProtocolVersion :: ProtocolVersion }
 
 instance AE.FromJSON ConsensusStatusResult where
   parseJSON = withObject "Consensus state" $ \v -> do
@@ -390,6 +391,7 @@ instance AE.FromJSON ConsensusStatusResult where
     csrLastFinalizedTime <- v .: "lastFinalizedTime"
     csrFinalizationPeriodEMA <- v .: "finalizationPeriodEMA"
     csrFinalizationPeriodEMSD <- v .: "finalizationPeriodEMSD"
+    csrProtocolVersion <- v .:? "protocolVersion" .!= P1
     return $ ConsensusStatusResult {..}
 
 data BirkParametersResult = BirkParametersResult

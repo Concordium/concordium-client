@@ -2,6 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE GADTs #-}
 module Concordium.Client.Runner
   ( process
   , getAccountNonce
@@ -551,6 +552,8 @@ processTransactionCmd action baseCfgDir verbose backend =
             res <- case maybeMemo of 
               Nothing -> return $ Types.Transfer (naAddr receiverAddress) amount
               Just memoFile -> do 
+                cs <- withClientJson backend getConsensusStatus
+                when (csrProtocolVersion cs == Types.P1) $ logWarn ["Protocol version 1 does not support transaction memos."]
                 source <- handleReadFile BSL.readFile memoFile
                 case AE.eitherDecode source of
                   Left err -> fail $ "Error decoding JSON: " ++ err
@@ -599,6 +602,8 @@ processTransactionCmd action baseCfgDir verbose backend =
             res <- case maybeMemo of 
               Nothing -> return $ Types.TransferWithSchedule (naAddr receiverAddress) realSchedule
               Just memoFile -> do 
+                cs <- withClientJson backend getConsensusStatus
+                when (csrProtocolVersion cs == Types.P1) $ logWarn ["Protocol version 1 does not support transaction memos."]
                 source <- handleReadFile BSL.readFile memoFile
                 case AE.eitherDecode source of
                   Left err -> fail $ "Error decoding JSON: " ++ err
@@ -607,7 +612,6 @@ processTransactionCmd action baseCfgDir verbose backend =
                     return $ Types.TransferWithScheduleAndMemo (naAddr receiverAddress) (Types.Memo $ BSS.toShort bs) realSchedule
             return $ Types.encodePayload res
       pl <- plDo
-      -- let pl = Types.encodePayload $ Types.TransferWithSchedule (naAddr receiverAddress) realSchedule
       let nrgCost _ = return $ Just $ transferWithScheduleEnergyCost (Types.payloadSize pl) (length realSchedule)
       txCfg <- getTransactionCfg baseCfg txOpts nrgCost
       let ttxCfg = TransferWithScheduleTransactionConfig
@@ -655,6 +659,8 @@ processTransactionCmd action baseCfgDir verbose backend =
                 res <- case maybeMemo of 
                   Nothing -> return $ Types.EncryptedAmountTransfer (naAddr receiverAcc) transferData
                   Just memoFile -> do 
+                    cs <- withClientJson backend getConsensusStatus
+                    when (csrProtocolVersion cs == Types.P1) $ logWarn ["Protocol version 1 does not support transaction memos."]
                     source <- handleReadFile BSL.readFile memoFile
                     case AE.eitherDecode source of
                       Left err -> fail $ "Error decoding JSON: " ++ err
@@ -663,7 +669,6 @@ processTransactionCmd action baseCfgDir verbose backend =
                         return $ Types.EncryptedAmountTransferWithMemo (naAddr receiverAcc) (Types.Memo $ BSS.toShort bs) transferData
                 return $ Types.encodePayload res
         payload <- liftIO plDo
-        -- let payload = Types.encodePayload $ Types.EncryptedAmountTransfer (naAddr receiverAcc) transferData
         let nrgCost _ = return $ Just $ encryptedTransferEnergyCost $ Types.payloadSize payload
         txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
 

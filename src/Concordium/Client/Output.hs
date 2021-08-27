@@ -42,6 +42,7 @@ import Codec.CBOR.Read
 import Codec.CBOR.JSON
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Aeson as AE
+import System.Directory.Internal.Prelude (fromMaybe)
 
 -- PRINTER
 
@@ -658,7 +659,8 @@ printConsensusStatus r =
        , printf "Transactions per block:      %s" (showEm (printf "%8.3f" $ csrTransactionsPerBlockEMA r) (printf "%8.3f" $ csrTransactionsPerBlockEMSD r))
        , printf "Finalization count:          %s" (show $ csrFinalizationCount r)
        , printf "Last finalized time:         %s" (showMaybeUTC $ csrLastFinalizedTime r)
-       , printf "Finalization period:         %s" (showMaybeEmSeconds (csrFinalizationPeriodEMA r) (csrFinalizationPeriodEMSD r)) ]
+       , printf "Finalization period:         %s" (showMaybeEmSeconds (csrFinalizationPeriodEMA r) (csrFinalizationPeriodEMSD r))
+       , printf "Protocol version:            %s" (show $ csrProtocolVersion r) ]
 
 printBirkParameters :: Bool -> BirkParametersResult -> Map.Map IDTypes.AccountAddress Text -> Printer
 printBirkParameters includeBakers r addrmap = do
