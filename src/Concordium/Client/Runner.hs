@@ -121,6 +121,7 @@ import Codec.CBOR.Write
 import Codec.CBOR.Encoding
 import Codec.CBOR.JSON
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy.Char8 as BSL
 
 -- |Establish a new connection to the backend and run the provided computation.
 -- Close a connection after completion of the computation. Establishing a
@@ -505,20 +506,24 @@ loadAccountImportFile format file name = do
      accCfg <- decodeGenesisFormattedAccountExport contents name pwd `withLogFatalIO` ("cannot import account: " ++)
      return [accCfg]
 
--- Read a transaction memo as either a string or json from a file. 
-readMemoAsBytestring :: Either Text FilePath -> Backend -> IO ByteString
+-- Read a transaction memo as either
+-- - a CBOR encoded string,
+-- - CBOR encoded json (from a file), or
+-- - raw bytes (from a file). 
+readMemoAsBytestring :: MemoInput -> Backend -> IO ByteString
 readMemoAsBytestring memo backend = do
   cs <- withClientJson backend getConsensusStatus
   when (csrProtocolVersion cs == Types.P1) $ logWarn ["Protocol version 1 does not support transaction memos."]
-  toStrictByteString <$> case memo of
-    Left memoString -> do
-      return $ encodeString memoString
-    Right memoFile -> do
+  case memo of
+    MemoString memoString -> do
+      return $ toStrictByteString $ encodeString memoString
+    MemoJSON memoFile -> do
       source <- handleReadFile BSL.readFile memoFile
       case AE.eitherDecode source of
         Left err -> fail $ "Error decoding JSON: " ++ err
         Right value -> do 
-          return $ encodeValue value
+          return $ toStrictByteString $ encodeValue value
+    MemoRaw memoFile -> BSL.toStrict <$> handleReadFile BSL.readFile memoFile
 
 -- |Process a 'transaction ...' command.
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()

@@ -361,7 +361,10 @@ data ConsensusStatusResult = ConsensusStatusResult
   , csrLastFinalizedTime :: Maybe UTCTime
   , csrFinalizationPeriodEMA :: Maybe Double
   , csrFinalizationPeriodEMSD :: Maybe Double
-  , csrProtocolVersion :: ProtocolVersion }
+  , csrProtocolVersion :: ProtocolVersion
+  , csrGenesisIndex :: GenesisIndex
+  , csrCurrentEraGenesisBlock :: !BlockHash
+  , csrCurrentEraGenesisTime  :: !UTCTime }
 
 instance AE.FromJSON ConsensusStatusResult where
   parseJSON = withObject "Consensus state" $ \v -> do
@@ -392,6 +395,9 @@ instance AE.FromJSON ConsensusStatusResult where
     csrFinalizationPeriodEMA <- v .: "finalizationPeriodEMA"
     csrFinalizationPeriodEMSD <- v .: "finalizationPeriodEMSD"
     csrProtocolVersion <- v .:? "protocolVersion" .!= P1
+    csrGenesisIndex <- v .:? "genesisIndex" .!= 0
+    csrCurrentEraGenesisBlock <- v .:? "currentEraGenesisBlock" .!= csrGenesisBlock
+    csrCurrentEraGenesisTime <- v .:? "currentEraGenesisTime" .!= csrGenesisTime
     return $ ConsensusStatusResult {..}
 
 data BirkParametersResult = BirkParametersResult

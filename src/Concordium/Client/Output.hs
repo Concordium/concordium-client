@@ -514,9 +514,13 @@ showEvent verbose = \case
     verboseOrNothing [i|Registered data on chain.|]
   Types.TransferMemo{..} ->
     let (Types.Memo bss) = tmMemo
+        invalidCBOR = printf "Could not decode memo as valid CBOR. The hex value of the memo is %s." $ show tmMemo
         str = case deserialiseFromBytes (decodeValue False) (BSL.fromStrict $ BSS.fromShort bss) of
-          Left _ -> printf "Could not decode memo. The hex value of the memo is %s." $ show tmMemo
-          Right (_, x) -> showCompactPrettyJSON x
+          Left _ -> invalidCBOR
+          Right (rest, x) -> if rest == BSL.empty then
+                               showCompactPrettyJSON x
+                             else 
+                               invalidCBOR
     in Just $ printf "Transfer memo: %s" str
   where
     verboseOrNothing :: String -> Maybe String
@@ -660,7 +664,10 @@ printConsensusStatus r =
        , printf "Finalization count:          %s" (show $ csrFinalizationCount r)
        , printf "Last finalized time:         %s" (showMaybeUTC $ csrLastFinalizedTime r)
        , printf "Finalization period:         %s" (showMaybeEmSeconds (csrFinalizationPeriodEMA r) (csrFinalizationPeriodEMSD r))
-       , printf "Protocol version:            %s" (show $ csrProtocolVersion r) ]
+       , printf "Protocol version:            %s" (show $ csrProtocolVersion r)
+       , printf "Genesis index:               %s" (show $ csrGenesisIndex r)
+       , printf "Current era genesis block:   %s" (show $ csrCurrentEraGenesisBlock r)
+       , printf "Current era genesis time:    %s" (show $ csrCurrentEraGenesisTime r)]
 
 printBirkParameters :: Bool -> BirkParametersResult -> Map.Map IDTypes.AccountAddress Text -> Printer
 printBirkParameters includeBakers r addrmap = do
