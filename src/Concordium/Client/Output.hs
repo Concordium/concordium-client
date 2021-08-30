@@ -40,7 +40,6 @@ import Lens.Micro.Platform
 import Text.Printf
 import Codec.CBOR.Read
 import Codec.CBOR.JSON
--- import System.Directory.Internal.Prelude (fromMaybe)
 
 -- PRINTER
 
