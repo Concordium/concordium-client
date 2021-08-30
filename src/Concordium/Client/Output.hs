@@ -40,9 +40,7 @@ import Lens.Micro.Platform
 import Text.Printf
 import Codec.CBOR.Read
 import Codec.CBOR.JSON
-import qualified Data.ByteString.Lazy as BSL
-import qualified Data.Aeson as AE
-import System.Directory.Internal.Prelude (fromMaybe)
+-- import System.Directory.Internal.Prelude (fromMaybe)
 
 -- PRINTER
 
