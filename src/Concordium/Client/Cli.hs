@@ -366,20 +366,6 @@ data ConsensusStatusResult = ConsensusStatusResult
   , csrCurrentEraGenesisBlock :: !BlockHash
   , csrCurrentEraGenesisTime  :: !UTCTime }
 
--- The JSON fields protocolVersion, genesisIndex, currentEraGenesisBlock and currentEraGenesisTime
--- are introduced in protocol version 2, so if these are not returned by the node, we assume¨
--- that the node is running in protocol version 1. We therefore use the default values
--- * P1 for protocolVersion 
--- * 0 for genesisIndex since the first protocol update to increase the genesisIndex is
---   assumed to change the protocol version to 2, and thus we can assume that the
---   genesisIndex is 0, if it isn't returned by the node.
--- * csrGenesisBlock for currentEraGenesisBlock since the first protocol update
---   changes the protocol version to 2, meaning that if currentEraGenesisBlock
---   is not returned by the node, then the current genesis block is the very
---   first genesis block (since no regenesis would have happened yet)
--- * csrGenesisTime for currentEraGenesisTime since (again) no regenesis 
---   would have happened if currentEraGenesisTime is not returned by the node.
-
 instance AE.FromJSON ConsensusStatusResult where
   parseJSON = withObject "Consensus state" $ \v -> do
     csrBestBlock <- v .: "bestBlock"
@@ -408,10 +394,10 @@ instance AE.FromJSON ConsensusStatusResult where
     csrLastFinalizedTime <- v .: "lastFinalizedTime"
     csrFinalizationPeriodEMA <- v .: "finalizationPeriodEMA"
     csrFinalizationPeriodEMSD <- v .: "finalizationPeriodEMSD"
-    csrProtocolVersion <- v .:? "protocolVersion" .!= P1
-    csrGenesisIndex <- v .:? "genesisIndex" .!= 0
-    csrCurrentEraGenesisBlock <- v .:? "currentEraGenesisBlock" .!= csrGenesisBlock
-    csrCurrentEraGenesisTime <- v .:? "currentEraGenesisTime" .!= csrGenesisTime
+    csrProtocolVersion <- v .: "protocolVersion"
+    csrGenesisIndex <- v .: "genesisIndex"
+    csrCurrentEraGenesisBlock <- v .: "currentEraGenesisBlock"
+    csrCurrentEraGenesisTime <- v .: "currentEraGenesisTime"
     return $ ConsensusStatusResult {..}
 
 data BirkParametersResult = BirkParametersResult
