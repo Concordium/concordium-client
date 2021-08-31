@@ -121,7 +121,6 @@ import Codec.CBOR.Write
 import Codec.CBOR.Encoding
 import Codec.CBOR.JSON
 import Data.ByteString (ByteString)
-import qualified Data.ByteString.Lazy.Char8 as BSL
 
 -- |Establish a new connection to the backend and run the provided computation.
 -- Close a connection after completion of the computation. Establishing a
@@ -510,10 +509,10 @@ loadAccountImportFile format file name = do
 -- - a CBOR encoded string,
 -- - CBOR encoded json (from a file), or
 -- - raw bytes (from a file). 
-readMemoAsBytestring :: MemoInput -> Backend -> IO ByteString
-readMemoAsBytestring memo backend = do
-  cs <- withClientJson backend getConsensusStatus
-  when (csrProtocolVersion cs == Types.P1) $ logWarn ["Protocol version 1 does not support transaction memos."]
+-- Warn user if protocol version is 1.
+checkAndGetMemo :: MemoInput -> Types.ProtocolVersion -> IO ByteString
+checkAndGetMemo memo pv = do
+  when (pv == Types.P1) $ logWarn ["Protocol version 1 does not support transaction memos."]
   case memo of
     MemoString memoString -> do
       return $ toStrictByteString $ encodeString memoString
@@ -569,28 +568,29 @@ processTransactionCmd action baseCfgDir verbose backend =
 
       receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
 
-      let plDo = do
-            res <- case maybeMemo of 
-              Nothing -> return $ Types.Transfer (naAddr receiverAddress) amount
-              Just memo -> do
-                bs <- readMemoAsBytestring memo backend
-                return $ Types.TransferWithMemo (naAddr receiverAddress) (Types.Memo $ BSS.toShort bs) amount 
-            return $ Types.encodePayload res
-      pl <- plDo
-      let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize pl
-      txCfg <- getTransactionCfg baseCfg txOpts nrgCost
+      withClient backend $ do
+        cs <- getConsensusStatus >>= getFromJson
+        pl <- liftIO $ do
+              res <- case maybeMemo of 
+                Nothing -> return $ Types.Transfer (naAddr receiverAddress) amount
+                Just memo -> do
+                  bs <- checkAndGetMemo memo $ csrProtocolVersion cs
+                  return $ Types.TransferWithMemo (naAddr receiverAddress) (Types.Memo $ BSS.toShort bs) amount 
+              return $ Types.encodePayload res
+        let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize pl
+        txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
-      let ttxCfg = TransferTransactionConfig
-                      { ttcTransactionCfg = txCfg
-                      , ttcReceiver = receiverAddress
-                      , ttcAmount = amount }
-      when verbose $ do
-        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
-        putStrLn ""
+        let ttxCfg = TransferTransactionConfig
+                        { ttcTransactionCfg = txCfg
+                        , ttcReceiver = receiverAddress
+                        , ttcAmount = amount }
+        when verbose $ liftIO $ do
+          runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
+          putStrLn ""
 
-      let intOpts = toInteractionOpts txOpts
-      transferTransactionConfirm ttxCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+        let intOpts = toInteractionOpts txOpts
+        liftIO $ transferTransactionConfirm ttxCfg (ioConfirm intOpts)
+        sendAndTailTransaction_ txCfg pl intOpts
 
     TransactionSendWithSchedule receiver schedule maybeMemo txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -613,35 +613,36 @@ processTransactionCmd action baseCfgDir verbose backend =
                          in
                            zip (iterate (+ diff) start) (replicate (numIntervals - 1) chunks ++ [chunks + lastChunk])
       receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
-      let plDo = do
-            res <- case maybeMemo of 
-              Nothing -> return $ Types.TransferWithSchedule (naAddr receiverAddress) realSchedule
-              Just memo -> do
-                bs <- readMemoAsBytestring memo backend
-                return $ Types.TransferWithScheduleAndMemo (naAddr receiverAddress) (Types.Memo $ BSS.toShort bs) realSchedule
-            return $ Types.encodePayload res
-      pl <- plDo
-      let nrgCost _ = return $ Just $ transferWithScheduleEnergyCost (Types.payloadSize pl) (length realSchedule)
-      txCfg <- getTransactionCfg baseCfg txOpts nrgCost
-      let ttxCfg = TransferWithScheduleTransactionConfig
-                      { twstcTransactionCfg = txCfg
-                      , twstcReceiver = receiverAddress
-                      , twstcSchedule = realSchedule }
+      withClient backend $ do
+        cs <- getConsensusStatus >>= getFromJson
+        pl <- liftIO $ do
+              res <- case maybeMemo of 
+                Nothing -> return $ Types.TransferWithSchedule (naAddr receiverAddress) realSchedule
+                Just memo -> do
+                  bs <- checkAndGetMemo memo $ csrProtocolVersion cs
+                  return $ Types.TransferWithScheduleAndMemo (naAddr receiverAddress) (Types.Memo $ BSS.toShort bs) realSchedule
+              return $ Types.encodePayload res
+        let nrgCost _ = return $ Just $ transferWithScheduleEnergyCost (Types.payloadSize pl) (length realSchedule)
+        txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
+        let ttxCfg = TransferWithScheduleTransactionConfig
+                        { twstcTransactionCfg = txCfg
+                        , twstcReceiver = receiverAddress
+                        , twstcSchedule = realSchedule }
 
-      when verbose $ do
-        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
-        putStrLn ""
-      -- Check that sending and receiving accounts are not the same
-      let fromAddr = naAddr $ esdAddress ( tcEncryptedSigningData txCfg)
-      let toAddr = naAddr $ twstcReceiver ttxCfg
-      case fromAddr == toAddr of
-        False -> do
-          let intOpts = toInteractionOpts txOpts
-          transferWithScheduleTransactionConfirm ttxCfg (ioConfirm intOpts)
-          withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
-        True -> do
-          logWarn ["Scheduled transfers from an account to itself are not allowed."]
-          logWarn ["Transaction Cancelled"]
+        when verbose $ liftIO $ do
+          runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
+          putStrLn ""
+        -- Check that sending and receiving accounts are not the same
+        let fromAddr = naAddr $ esdAddress ( tcEncryptedSigningData txCfg)
+        let toAddr = naAddr $ twstcReceiver ttxCfg
+        case fromAddr == toAddr of
+          False -> do
+            let intOpts = toInteractionOpts txOpts
+            liftIO $ transferWithScheduleTransactionConfirm ttxCfg (ioConfirm intOpts)
+            sendAndTailTransaction_ txCfg pl intOpts
+          True -> liftIO $ do 
+            logWarn ["Scheduled transfers from an account to itself are not allowed."]
+            logWarn ["Transaction Cancelled"]
 
     TransactionEncryptedTransfer txOpts receiver amount index maybeMemo -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -663,15 +664,14 @@ processTransactionCmd action baseCfgDir verbose backend =
 
       withClient backend $ do
         transferData <- getEncryptedAmountTransferData (naAddr senderAddr) receiverAcc amount index secretKey
-
-        let plDo = do
+        cs <- getConsensusStatus >>= getFromJson
+        payload <- liftIO $ do
                 res <- case maybeMemo of 
                   Nothing -> return $ Types.EncryptedAmountTransfer (naAddr receiverAcc) transferData
                   Just memo -> do
-                    bs <- readMemoAsBytestring memo backend
+                    bs <- checkAndGetMemo memo $ csrProtocolVersion cs
                     return $ Types.EncryptedAmountTransferWithMemo (naAddr receiverAcc) (Types.Memo $ BSS.toShort bs) transferData
                 return $ Types.encodePayload res
-        payload <- liftIO plDo
         let nrgCost _ = return $ Just $ encryptedTransferEnergyCost $ Types.payloadSize payload
         txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
 

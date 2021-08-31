@@ -26,7 +26,7 @@ module Concordium.Client.Commands
 
 import Data.Text hiding (map, unlines)
 import Data.Version (showVersion)
-import Data.Word (Word64, Word8)
+import Data.Word (Word64)
 import Data.Time.Format.ISO8601
 import Network.HTTP2.Client
 import Options.Applicative

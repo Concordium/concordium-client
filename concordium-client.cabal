@@ -1,13 +1,11 @@
 cabal-version: 2.0
 
--- This file has been generated from package.yaml by hpack version 0.33.0.
+-- This file has been generated from package.yaml by hpack version 0.34.4.
 --
 -- see: https://github.com/sol/hpack
---
--- hash: ac4ef84a42a671516a8c239ff0ce630e628b542f933d0454683b63cc5ddb0758
 
 name:           concordium-client
-version:        1.0.1
+version:        1.1
 description:    Please see the README on GitHub at <https://github.com/Concordium/concordium-client#readme>
 homepage:       https://github.com/Concordium/concordium-client#readme
 bug-reports:    https://github.com/Concordium/concordium-client/issues
@@ -69,7 +67,14 @@ library
       Proto.ConcordiumP2pRpc Proto.ConcordiumP2pRpc_Fields
   hs-source-dirs:
       src
-  default-extensions: OverloadedStrings RecordWildCards GeneralizedNewtypeDeriving ScopedTypeVariables FlexibleContexts LambdaCase TupleSections
+  default-extensions:
+      OverloadedStrings
+      RecordWildCards
+      GeneralizedNewtypeDeriving
+      ScopedTypeVariables
+      FlexibleContexts
+      LambdaCase
+      TupleSections
   ghc-options: -Wall -Wcompat -Werror=missing-fields -Wredundant-constraints -O
   build-depends:
       aeson
@@ -121,7 +126,14 @@ executable concordium-client
       Paths_concordium_client
   hs-source-dirs:
       app
-  default-extensions: OverloadedStrings RecordWildCards GeneralizedNewtypeDeriving ScopedTypeVariables FlexibleContexts LambdaCase TupleSections
+  default-extensions:
+      OverloadedStrings
+      RecordWildCards
+      GeneralizedNewtypeDeriving
+      ScopedTypeVariables
+      FlexibleContexts
+      LambdaCase
+      TupleSections
   ghc-options: -Wall -Wcompat -Werror=missing-fields -Wredundant-constraints -O
   build-depends:
       base
@@ -142,7 +154,14 @@ executable middleware
       Paths_concordium_client
   hs-source-dirs:
       middleware
-  default-extensions: OverloadedStrings RecordWildCards GeneralizedNewtypeDeriving ScopedTypeVariables FlexibleContexts LambdaCase TupleSections
+  default-extensions:
+      OverloadedStrings
+      RecordWildCards
+      GeneralizedNewtypeDeriving
+      ScopedTypeVariables
+      FlexibleContexts
+      LambdaCase
+      TupleSections
   ghc-options: -Wall -threaded
   build-depends:
       aeson
@@ -185,7 +204,14 @@ executable tx-generator
       Paths_concordium_client
   hs-source-dirs:
       generator
-  default-extensions: OverloadedStrings RecordWildCards GeneralizedNewtypeDeriving ScopedTypeVariables FlexibleContexts LambdaCase TupleSections
+  default-extensions:
+      OverloadedStrings
+      RecordWildCards
+      GeneralizedNewtypeDeriving
+      ScopedTypeVariables
+      FlexibleContexts
+      LambdaCase
+      TupleSections
   ghc-options: -Wall -Wcompat -Werror=missing-fields -Wredundant-constraints -O -threaded
   build-depends:
       aeson
@@ -220,7 +246,14 @@ test-suite concordium-client-test
       Paths_concordium_client
   hs-source-dirs:
       test
-  default-extensions: OverloadedStrings RecordWildCards GeneralizedNewtypeDeriving ScopedTypeVariables FlexibleContexts LambdaCase TupleSections
+  default-extensions:
+      OverloadedStrings
+      RecordWildCards
+      GeneralizedNewtypeDeriving
+      ScopedTypeVariables
+      FlexibleContexts
+      LambdaCase
+      TupleSections
   ghc-options: -Wall -Wcompat -Werror=missing-fields -Wredundant-constraints -O
   build-depends:
       HUnit >=1.6
