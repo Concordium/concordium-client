@@ -21,6 +21,7 @@ module Concordium.Client.Commands
   , BakerCmd(..)
   , IdentityCmd(..)
   , IdentityShowCmd(..)
+  , MemoInput(..)
   ) where
 
 import Data.Text hiding (map, unlines)
@@ -133,6 +134,16 @@ data Interval = Minute -- 60 secs
               | Year -- 365 days
               deriving (Show, Read)
 
+data MemoInput = MemoString Text
+               | MemoJSON FilePath
+               | MemoRaw FilePath
+              deriving (Show, Read)
+
+memoInputParser :: Parser (Maybe MemoInput)
+memoInputParser = optional ((MemoString <$> strOption (long "memo" <> metavar "MEMO" <> help "Transaction memo.")) <|>
+       (MemoJSON <$> strOption (long "memo-json" <> metavar "FILE" <> help "File with transaction memo.")) <|>
+       (MemoRaw <$> strOption (long "memo-raw" <> metavar "FILE" <> help "File with raw bytes.")))
+
 data TransactionCmd
   = TransactionSubmit
     { tsFile :: !FilePath
@@ -142,10 +153,12 @@ data TransactionCmd
   | TransactionSendGtu
     { tsgReceiver :: !Text
     , tsgAmount :: !Amount
+    , tsgMemo :: !(Maybe MemoInput)
     , tsgOpts :: !(TransactionOpts (Maybe Energy)) }
   | TransactionSendWithSchedule
     { twsReceiver :: !Text
     , twsSchedule :: !(Either (Amount, Interval, Int, Timestamp) [(Timestamp, Amount)]) -- ^Eiher total amount, interval, number of intervals and starting time or a raw list of timestamps and amounts.
+    , twsMemo :: !(Maybe MemoInput)
     , twsOpts :: !(TransactionOpts (Maybe Energy)) }
   | TransactionDeployCredential
     { tdcFile :: !FilePath
@@ -158,7 +171,8 @@ data TransactionCmd
       tetAmount :: !Amount,
       -- | Which indices to use as inputs to the encrypted amount transfer.
       -- If none are provided all existing ones will be used.
-      tetIndex :: !(Maybe Int) }
+      tetIndex :: !(Maybe Int),
+      tetMemo :: !(Maybe MemoInput)}
   -- | Register data on chain.
   | TransactionRegisterData
     { -- | File containing the data.
@@ -571,6 +585,7 @@ transactionSendGtuCmd =
       (TransactionSendGtu <$>
        strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
        option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
+       memoInputParser <*>
        transactionOptsParser)
       (progDesc "Transfer GTU from one account to another."))
 
@@ -589,7 +604,9 @@ transactionWithScheduleCmd =
                      option (eitherReader eitherParseScheduleInform)  (long "schedule" <> metavar "schedule" <> help "Explicit schedule in the form of a comma separated list of elements of the form '3.0 at 2020-12-13T23:35:59Z' (send 3 GTU on December 13, 2020). Timestamps must be given in UTC.")
        in
          TransactionSendWithSchedule <$>
-         strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*> (implicit <|> explicit) <*> transactionOptsParser)
+         strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*> (implicit <|> explicit) <*>
+         memoInputParser <*>
+         transactionOptsParser)
      (progDescDoc . Just $ fillCat [
          "Transfer GTU from one account to another with the provided schedule of releases.",
          "Releases can be specified in one of two ways, either as regular releases via intervals," <>
@@ -637,7 +654,8 @@ transactionEncryptedTransferCmd =
          transactionOptsParser <*>
          strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
          option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
-         optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which incoming encrypted amounts should be used.")))
+         optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which incoming encrypted amounts should be used.")) <*>
+         memoInputParser)
       (progDesc "Transfer GTU from the encrypted balance of the account to the encrypted balance of another account."))
 
 transactionRegisterDataCmd :: Mod CommandFields TransactionCmd

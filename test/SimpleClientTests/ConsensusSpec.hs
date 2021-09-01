@@ -40,7 +40,11 @@ consensusStatusSpec = describe "status" $ do
     , "Transactions per block:         0.110 (EMA),   12.135 (EMSD)"
     , "Finalization count:          14"
     , "Last finalized time:         Sat, 24 Jan 1970 03:33:20 UTC"
-    , "Finalization period:         100000 ms (EMA), 200000 ms (EMSD)" ]
+    , "Finalization period:         100000 ms (EMA), 200000 ms (EMSD)"
+    , "Protocol version:            P1"
+    , "Genesis index:               0"
+    , "Current era genesis block:   0f71eeca9f0a497dc4427cab0544f2bcb820b328ad97be29181e212edea708fd"
+    , "Current era genesis time:    1970-01-12 13:46:40 UTC" ]
 
   specify "optional fields absent" $ p exampleStatusWithoutOptionalFields `shouldBe`
     [ "Best block:                  0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389"
@@ -62,7 +66,11 @@ consensusStatusSpec = describe "status" $ do
     , "Transactions per block:         0.110 (EMA),   12.130 (EMSD)"
     , "Finalization count:          14"
     , "Last finalized time:         none"
-    , "Finalization period:         none" ]
+    , "Finalization period:         none" 
+    , "Protocol version:            P1"
+    , "Genesis index:               0"
+    , "Current era genesis block:   0f71eeca9f0a497dc4427cab0544f2bcb820b328ad97be29181e212edea708fd"
+    , "Current era genesis time:    1970-01-12 13:46:40 UTC" ]
   where p = execWriter . printConsensusStatus
 
 consensusShowParametersSpec :: Spec
@@ -124,7 +132,11 @@ exampleStatusWithOptionalFields =
   , csrFinalizationPeriodEMSD = Just 200
   , csrGenesisTime = exampleTime1
   , csrSlotDuration = 100000
-  , csrEpochDuration = 100000 }
+  , csrEpochDuration = 100000
+  , csrProtocolVersion = P1
+  , csrGenesisIndex = 0
+  , csrCurrentEraGenesisBlock = exampleBlockHash2
+  , csrCurrentEraGenesisTime = exampleTime1 }
 
 exampleStatusWithoutOptionalFields :: ConsensusStatusResult
 exampleStatusWithoutOptionalFields =
@@ -154,7 +166,11 @@ exampleStatusWithoutOptionalFields =
   , csrFinalizationPeriodEMSD = Nothing
   , csrGenesisTime = exampleTime1
   , csrSlotDuration = 100000
-  , csrEpochDuration = 100000 }
+  , csrEpochDuration = 100000
+  , csrProtocolVersion = P1
+  , csrGenesisIndex = 0
+  , csrCurrentEraGenesisBlock = exampleBlockHash2
+  , csrCurrentEraGenesisTime = exampleTime1 }
 
 exampleBirkParameters :: BirkParametersResult
 exampleBirkParameters =
