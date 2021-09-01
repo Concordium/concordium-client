@@ -9,6 +9,7 @@
 - show transfer memo in transaction status
 - show protocolVersion, genesisIndex, currentEraGenesisBlock and currentEraGenesisTime in 
   consensus status
+- this version is only compatible with node version 1.1.0 and later.
 
 ## 1.0.1
 
