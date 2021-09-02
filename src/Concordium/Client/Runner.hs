@@ -805,7 +805,7 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
       | energy < actualFee = do
           logWarn [ "insufficient energy allocated to the transaction"
                   , printf "transaction fee will be %s, but only %s has been allocated" (showNrg actualFee) (showNrg energy) ]
-          confirmed <- askConfirmation $ Just $ printf "Do you want to increase the energy allocation to %s?" (showNrg actualFee)
+          confirmed <- askConfirmation $ Just [i|Do you want to increase the energy allocation to #{showNrg actualFee}? Confirm|]
           return $ if confirmed then actualFee else energy
       | actualFee < energy = do
           logInfo [printf "%s allocated to the transaction, but only %s is needed" (showNrg energy) (showNrg actualFee)]
@@ -2268,7 +2268,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
       unless authorized $ do
         logWarn ["The update instruction is not authorized by the keys used to sign it."]
       when (ioConfirm intOpts) $ unless (expiryOK && effectiveTimeOK && authorized) $ do
-        confirmed <- askConfirmation $ Just "Proceed anyway [yN]?"
+        confirmed <- askConfirmation $ Just "Proceed anyway? Confirm"
         unless confirmed exitTransactionCancelled
       withClient backend $ do
         let
@@ -2363,15 +2363,33 @@ processBakerCmd action baseCfgDir verbose backend =
       withClient backend $ do
          let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
          AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
+         energyrate <- getNrgGtuRate
+         let gtuTransactionPrice = Types.computeCost energyrate (tcEnergy txCfg) 
          case airBaker of
            Just AccountInfoBakerResult{..} -> logFatal [[i|Account is already a baker with ID #{aibiIdentity abirAccountBakerInfo}.|]]
            Nothing -> do
-             -- TODO: this should also take into account the estimated cost for this transaction
-             if airAmount < initialStake
-             then
-               logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the amount requested to be staked (#{showGtu initialStake}).|]]
+             if airAmount - gtuTransactionPrice < initialStake
+             then do
+               logError [[i|Account balance (#{showGtu airAmount}) minus the cost of the transaction (#{showGtu gtuTransactionPrice}) is lower than the amount requested to be staked (#{showGtu initialStake}).|]]
+               confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
+               unless confirmed exitTransactionCancelled
+               sendAndMaybeOutputCredentials bakerKeys wasEncrypted bakerKeysFile outputFile txCfg pl intOpts
              else do
                sendAndMaybeOutputCredentials bakerKeys wasEncrypted bakerKeysFile outputFile txCfg pl intOpts
+        where
+          -- General function to fetch NrgGtu rate
+          -- This functionality is going to be more generally used in an upcoming branch adding GTU prices to NRG printouts across the client.
+          -- Invoking it directly here to avoid extra work on compatability/refactoring in the future
+          getNrgGtuRate :: ClientMonad IO Types.EnergyRate
+          getNrgGtuRate = do 
+            blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
+            case blockSummary of
+              Nothing -> do
+                logError ["Failed to retrieve NRG-GTU rate from the chain using best block hash, unable to estimate GTU cost"]
+                logError ["Falling back to default behaviour, all GTU values derived from NRG will be set to 0"]
+                return 0
+              Just bsr -> do
+                return $ _cpEnergyRate $ bsurChainParameters $ bsrUpdates bsr
 
     BakerSetKeys file txOpts outfile -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
