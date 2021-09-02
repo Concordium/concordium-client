@@ -1479,22 +1479,25 @@ tailTransaction hash = do
   -- As the transaction is still expected to go back to being committed or
   -- (if for instance it expires) become absent, this seems acceptable
   -- from a UX perspective. Also, this is expected to be a very uncommon case.
+  
+  status <- if tsrState committedStatus == Finalized then -- if transaction is already finalized, there is no reason to print "Waiting for the transaction to be finalized..."
+    return committedStatus
+  else do
+    liftIO $ printf "[%s] Waiting for the transaction to be finalized..." =<< getLocalTimeOfDayFormatted
+    finalizedStatus <- awaitState 5 Finalized hash
+    liftIO $ putStrLn ""
 
-  liftIO $ printf "[%s] Waiting for the transaction to be finalized..." =<< getLocalTimeOfDayFormatted
-  finalizedStatus <- awaitState 5 Finalized hash
-  liftIO $ putStrLn ""
+    when (tsrState finalizedStatus == Absent) $
+      logFatal [ "transaction failed after it was committed"
+              , "response:\n" ++ showPrettyJSON committedStatus ]
 
-  when (tsrState finalizedStatus == Absent) $
-    logFatal [ "transaction failed after it was committed"
-             , "response:\n" ++ showPrettyJSON committedStatus ]
-
-  -- Print out finalized status if the outcome differs from that of the committed status.
-  when (tsrResults committedStatus /= tsrResults finalizedStatus) $
+    -- Print out finalized status.
     runPrinter $ printTransactionStatus finalizedStatus
 
+    return finalizedStatus
   liftIO $ printf "[%s] Transaction finalized.\n" =<< getLocalTimeOfDayFormatted
+  return status
 
-  return finalizedStatus
   where
     getLocalTimeOfDayFormatted = showTimeOfDay <$> getLocalTimeOfDay
 
