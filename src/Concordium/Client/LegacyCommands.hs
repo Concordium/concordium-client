@@ -383,7 +383,7 @@ unbanNodeCommand =
        (UnbanNode <$>
         optional (strOption (long "node-id" <> metavar "NODE-ID" <> help "ID of the node to be unbanned")) <*>
         optional (strOption (long "ip" <> metavar "NODE-IP" <> help "IP of the node to be banned")))
-       (progDesc "Unban a node. The node to ban can either be supplied via a node-id or via an IP."))
+       (progDesc "Unban a node. The node to unban can either be supplied via a node-id or via an IP."))
 
 joinNetworkCommand :: Mod CommandFields LegacyCmd
 joinNetworkCommand =

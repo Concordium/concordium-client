@@ -3,6 +3,14 @@
 ## Unreleased changes
 - The `account show` command can receive a credential registration ID instead of a name or address.
 
+## 1.1.0
+- support sending the three new transaction types, i.e. TransferWithMemo, EncryptedTransferWithMemo
+  and TransferWithScheduleAndMemo
+- show transfer memo in transaction status
+- show protocolVersion, genesisIndex, currentEraGenesisBlock and currentEraGenesisTime in 
+  consensus status
+- this version is only compatible with node version 1.1.0 and later.
+
 ## 1.0.1
 
 - support the new mobile wallet export format. This breaks compatibility with

@@ -25,6 +25,8 @@ import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import Data.Bool
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Short as BSS
+import qualified Data.ByteString.Lazy as BSL
 import Data.Functor
 import qualified Data.Map.Strict as Map
 import qualified Data.HashMap.Strict as HM
@@ -36,6 +38,8 @@ import qualified Data.Text as Text
 import Data.Time
 import Lens.Micro.Platform
 import Text.Printf
+import Codec.CBOR.Read
+import Codec.CBOR.JSON
 
 -- PRINTER
 
@@ -505,6 +509,16 @@ showEvent verbose = \case
     verboseOrNothing $ printf "Sent transfer with schedule %s" (intercalate ", " . map (\(a, b) -> showTimeFormatted (Time.timestampToUTCTime a) ++ ": " ++ showGtu b) $ etwsAmount)
   Types.DataRegistered{ } ->
     verboseOrNothing [i|Registered data on chain.|]
+  Types.TransferMemo{..} ->
+    let (Types.Memo bss) = tmMemo
+        invalidCBOR = printf "Could not decode memo as valid CBOR. The hex value of the memo is %s." $ show tmMemo
+        str = case deserialiseFromBytes (decodeValue False) (BSL.fromStrict $ BSS.fromShort bss) of
+          Left _ -> invalidCBOR
+          Right (rest, x) -> if rest == BSL.empty then
+                               showCompactPrettyJSON x
+                             else 
+                               invalidCBOR
+    in Just $ printf "Transfer memo: %s" str
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
@@ -646,7 +660,11 @@ printConsensusStatus r =
        , printf "Transactions per block:      %s" (showEm (printf "%8.3f" $ csrTransactionsPerBlockEMA r) (printf "%8.3f" $ csrTransactionsPerBlockEMSD r))
        , printf "Finalization count:          %s" (show $ csrFinalizationCount r)
        , printf "Last finalized time:         %s" (showMaybeUTC $ csrLastFinalizedTime r)
-       , printf "Finalization period:         %s" (showMaybeEmSeconds (csrFinalizationPeriodEMA r) (csrFinalizationPeriodEMSD r)) ]
+       , printf "Finalization period:         %s" (showMaybeEmSeconds (csrFinalizationPeriodEMA r) (csrFinalizationPeriodEMSD r))
+       , printf "Protocol version:            %s" (show $ csrProtocolVersion r)
+       , printf "Genesis index:               %s" (show $ csrGenesisIndex r)
+       , printf "Current era genesis block:   %s" (show $ csrCurrentEraGenesisBlock r)
+       , printf "Current era genesis time:    %s" (show $ csrCurrentEraGenesisTime r)]
 
 printBirkParameters :: Bool -> BirkParametersResult -> Map.Map IDTypes.AccountAddress Text -> Printer
 printBirkParameters includeBakers r addrmap = do
