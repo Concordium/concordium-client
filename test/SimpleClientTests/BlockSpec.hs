@@ -1,8 +1,8 @@
 module SimpleClientTests.BlockSpec where
 
-import Concordium.Client.Cli
 import Concordium.Client.Output
 import qualified Concordium.Types as Types
+import Concordium.Types.Queries (BlockInfo(..))
 
 import Control.Monad.Writer
 import Data.Time.Clock
@@ -22,6 +22,8 @@ blockSpec = describe "block" $ do
     , "Slot:                       1337"
     , "Slot time:                  Sat, 24 Jan 1970 03:33:20 UTC"
     , "Height:                     121"
+    , "Height since last genesis:  121"
+    , "Genesis index:              0"
     , "Baker:                      53"
     , "Transaction count:          10"
     , "Transaction energy cost:    101 NRG"
@@ -36,45 +38,53 @@ blockSpec = describe "block" $ do
     , "Slot:                       1337"
     , "Slot time:                  Sat, 24 Jan 1970 03:33:20 UTC"
     , "Height:                     121"
+    , "Height since last genesis:  121"
+    , "Genesis index:              0"
     , "Baker:                      none"
     , "Transaction count:          10"
     , "Transaction energy cost:    101 NRG"
     , "Transactions size:          11" ]
   where p = execWriter . printBlockInfo . Just
 
-exampleBlockInfoWithBaker :: BlockInfoResult
+exampleBlockInfoWithBaker :: BlockInfo
 exampleBlockInfoWithBaker =
-  BlockInfoResult
-  { birBlockHash = exampleBlockHash1
-  , birBlockParent = exampleBlockHash2
-  , birBlockLastFinalized = exampleBlockHash3
-  , birFinalized = False
-  , birBlockReceiveTime = exampleTime1
-  , birBlockArriveTime = exampleTime2
-  , birBlockSlot = 1337
-  , birBlockHeight = 121
-  , birBlockSlotTime = exampleTime3
-  , birBlockBaker = Just 53
-  , birTransactionCount = 10
-  , birTransactionEnergyCost = 101
-  , birTransactionsSize = 11 }
+  BlockInfo
+  { biBlockHash = exampleBlockHash1
+  , biBlockParent = exampleBlockHash2
+  , biBlockLastFinalized = exampleBlockHash3
+  , biFinalized = False
+  , biBlockReceiveTime = exampleTime1
+  , biBlockArriveTime = exampleTime2
+  , biBlockSlot = 1337
+  , biBlockHeight = 121
+  , biGenesisIndex = 0
+  , biEraBlockHeight = 121
+  , biBlockSlotTime = exampleTime3
+  , biBlockBaker = Just 53
+  , biTransactionCount = 10
+  , biTransactionEnergyCost = 101
+  , biTransactionsSize = 11
+  , biBlockStateHash = exampleStateHash }
 
-exampleBlockInfoWithoutBaker :: BlockInfoResult
+exampleBlockInfoWithoutBaker :: BlockInfo
 exampleBlockInfoWithoutBaker =
-  BlockInfoResult
-  { birBlockHash = exampleBlockHash1
-  , birBlockParent = exampleBlockHash2
-  , birBlockLastFinalized = exampleBlockHash3
-  , birFinalized = False
-  , birBlockReceiveTime = exampleTime1
-  , birBlockArriveTime = exampleTime2
-  , birBlockSlot = 1337
-  , birBlockSlotTime = exampleTime3
-  , birBlockHeight = 121
-  , birBlockBaker = Nothing
-  , birTransactionCount = 10
-  , birTransactionEnergyCost = 101
-  , birTransactionsSize = 11 }
+  BlockInfo
+  { biBlockHash = exampleBlockHash1
+  , biBlockParent = exampleBlockHash2
+  , biBlockLastFinalized = exampleBlockHash3
+  , biFinalized = False
+  , biBlockReceiveTime = exampleTime1
+  , biBlockArriveTime = exampleTime2
+  , biBlockSlot = 1337
+  , biBlockSlotTime = exampleTime3
+  , biBlockHeight = 121
+  , biGenesisIndex = 0
+  , biEraBlockHeight = 121
+  , biBlockBaker = Nothing
+  , biTransactionCount = 10
+  , biTransactionEnergyCost = 101
+  , biTransactionsSize = 11
+  , biBlockStateHash = exampleStateHash }
 
 exampleBlockHash1 :: Types.BlockHash
 exampleBlockHash1 = read "0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389"
@@ -84,6 +94,9 @@ exampleBlockHash2 = read "0f71eeca9f0a497dc4427cab0544f2bcb820b328ad97be29181e21
 
 exampleBlockHash3 :: Types.BlockHash
 exampleBlockHash3 = read "941c24374cd077de2120fb58732306c3115a08bb7b7cda120a04fecc412b1795"
+
+exampleStateHash :: Types.StateHash
+exampleStateHash = read "8cfbc61b88ffc60cf0b052d90314400630304736d7da7ae7dc0a445d7c7c86cd"
 
 exampleTime1 :: UTCTime
 exampleTime1 = parseTimeOrError False defaultTimeLocale "%s" "1000000"

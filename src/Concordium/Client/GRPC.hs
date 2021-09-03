@@ -267,10 +267,18 @@ getAncestors amount blockHash = withUnary (call @"getAncestors") msg (to process
 getBranches :: ClientMonad IO (Either String Value)
 getBranches = withUnaryNoMsg (call @"getBranches") (to processJSON)
 
-getBlocksAtHeight :: Types.BlockHeight -> ClientMonad IO (Either String Value)
-getBlocksAtHeight height = withUnary (call @"getBlocksAtHeight") msg (to processJSON)
-  where msg = defMessage &
-              CF.blockHeight .~ fromIntegral height
+-- |Query to get the blocks at the specified height.  Optionally, a genesis index may be provided.
+-- The block height is considered as relative to the genesis block at this index, or the initial
+-- genesis block (index 0) otherwise.  Optionally, a boolean may be specified determining whether
+-- to restrict to only blocks in the specified genesis era.  If unspecified, this defaults to
+-- 'False' (by the proto3 semantics).
+getBlocksAtHeight :: Types.BlockHeight -> Maybe Types.GenesisIndex -> Maybe Bool -> ClientMonad IO (Either String Value)
+getBlocksAtHeight height mFromGen mRestrict = withUnary (call @"getBlocksAtHeight") msg (to processJSON)
+  where msg = defMessage
+              & CF.blockHeight .~ fromIntegral height
+              & optionally (\fromGen -> CF.fromGenesisIndex .~ fromIntegral fromGen) mFromGen
+              & optionally (CF.restrictToGenesisIndex .~) mRestrict
+        optionally f v = maybe id f v
 
 getBannedPeers :: ClientMonad IO (Either String PeerListResponse)
 getBannedPeers = withUnaryNoMsg' (call @"getBannedPeers")

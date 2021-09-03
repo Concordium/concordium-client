@@ -11,6 +11,12 @@
 - warn the user when trying to deploy a wasm module of size > 65536 bytes
 - warn the user when adding a baker staking more than 95% of the amount on the account
 - correct printing of cooldown time in `account show`
+- The `raw GetBlocksAtHeight` command can take an optional genesis index, given by the
+  `--genesis-index <GENINDEX>` option.  If supplied, the height is considered relative to the
+  genesis block at this index. Additionally, the `--restrict` flag can be specified to only return
+  blocks that belong to the specified genesis index (or index 0, if the genesis index was not
+  specified).
+- show the genesis index and relative block height in `block show`
 
 ## 1.0.1
 

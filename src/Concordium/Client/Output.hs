@@ -19,6 +19,7 @@ import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Crypto.EncryptedTransfers as Enc
 import qualified Concordium.Wasm as Wasm
 import qualified Concordium.Common.Time as Time
+import Concordium.Types.Queries (BlockInfo(..))
 
 import Control.Monad.Writer
 import qualified Data.Aeson as AE
@@ -689,22 +690,24 @@ printBirkParameters includeBakers r addrmap = do
 
 -- BLOCK
 
-printBlockInfo :: Maybe BlockInfoResult -> Printer
+printBlockInfo :: Maybe BlockInfo -> Printer
 printBlockInfo Nothing = tell [ printf "Block not found." ]
 printBlockInfo (Just b) =
-  tell [ printf "Hash:                       %s" (show $ birBlockHash b)
-       , printf "Parent block:               %s" (show $ birBlockParent b)
-       , printf "Last finalized block:       %s" (show $ birBlockLastFinalized b)
-       , printf "Finalized:                  %s" (showYesNo $ birFinalized b)
-       , printf "Receive time:               %s" (showTimeFormatted $ birBlockReceiveTime b)
-       , printf "Arrive time:                %s" (showTimeFormatted $ birBlockArriveTime b)
-       , printf "Slot:                       %s" (show $ birBlockSlot b)
-       , printf "Slot time:                  %s" (showTimeFormatted $ birBlockSlotTime b)
-       , printf "Height:                     %s" (show $ birBlockHeight b)
-       , printf "Baker:                      %s" (showMaybe show $ birBlockBaker b)
-       , printf "Transaction count:          %d" (birTransactionCount b)
-       , printf "Transaction energy cost:    %s" (showNrg $ birTransactionEnergyCost b)
-       , printf "Transactions size:          %d" (birTransactionsSize b) ]
+  tell [ printf "Hash:                       %s" (show $ biBlockHash b)
+       , printf "Parent block:               %s" (show $ biBlockParent b)
+       , printf "Last finalized block:       %s" (show $ biBlockLastFinalized b)
+       , printf "Finalized:                  %s" (showYesNo $ biFinalized b)
+       , printf "Receive time:               %s" (showTimeFormatted $ biBlockReceiveTime b)
+       , printf "Arrive time:                %s" (showTimeFormatted $ biBlockArriveTime b)
+       , printf "Slot:                       %s" (show $ biBlockSlot b)
+       , printf "Slot time:                  %s" (showTimeFormatted $ biBlockSlotTime b)
+       , printf "Height:                     %s" (show $ biBlockHeight b)
+       , printf "Height since last genesis:  %s" (show $ biEraBlockHeight b)
+       , printf "Genesis index:              %s" (show $ biGenesisIndex b)
+       , printf "Baker:                      %s" (showMaybe show $ biBlockBaker b)
+       , printf "Transaction count:          %d" (biTransactionCount b)
+       , printf "Transaction energy cost:    %s" (showNrg $ biTransactionEnergyCost b)
+       , printf "Transactions size:          %d" (biTransactionsSize b) ]
 
 
 -- ID LAYER
