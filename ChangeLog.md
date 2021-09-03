@@ -2,19 +2,20 @@
 
 ## Unreleased changes
 - The `account show` command can receive a credential registration ID instead of a name or address.
-- The `raw GetBlocksAtHeight` command can take an optional genesis index, given by the
-  `--genesis-index <GENINDEX>` option.  If supplied, the height is considered relative to the
-  genesis block at this index. Additionally, the `--restrict` flag can be specified to only return
-  blocks that belong to the specified genesis index (or index 0, if the genesis index was not
-  specified).
-
-## 1.1.0
 - support sending the three new transaction types, i.e. TransferWithMemo, EncryptedTransferWithMemo
   and TransferWithScheduleAndMemo
 - show transfer memo in transaction status
 - show protocolVersion, genesisIndex, currentEraGenesisBlock and currentEraGenesisTime in 
   consensus status
 - this version is only compatible with node version 1.1.0 and later.
+- warn the user when trying to deploy a wasm module of size > 65536 bytes
+- warn the user when adding a baker staking more than 95% of the amount on the account
+- correct printing of cooldown time in `account show`
+- The `raw GetBlocksAtHeight` command can take an optional genesis index, given by the
+  `--genesis-index <GENINDEX>` option.  If supplied, the height is considered relative to the
+  genesis block at this index. Additionally, the `--restrict` flag can be specified to only return
+  blocks that belong to the specified genesis index (or index 0, if the genesis index was not
+  specified).
 
 ## 1.0.1
 
