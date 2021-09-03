@@ -96,7 +96,7 @@ servantApp nodeBackend = genericServe routesAsServer
 
   blocksByHeight :: Word64 -> Handler Aeson.Value
   blocksByHeight height = liftIO $
-    proxyGrpcCall nodeBackend (GRPC.getBlocksAtHeight Types.BlockHeight {theBlockHeight = height})
+    proxyGrpcCall nodeBackend (GRPC.getBlocksAtHeight Types.BlockHeight {theBlockHeight = height} Nothing Nothing)
 
   transactionStatus :: Text -> Handler Aeson.Value
   transactionStatus hash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getTransactionStatus hash)

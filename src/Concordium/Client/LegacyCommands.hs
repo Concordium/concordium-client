@@ -34,7 +34,9 @@ data LegacyCmd
       { legacyBlockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the information of a specific block and its transactions.
   | GetBlocksAtHeight
-      { legacyBlockHeight :: !BlockHeight
+      { legacyBlockHeight :: !BlockHeight,
+        legacyFromGenesisIndex :: !(Maybe GenesisIndex),
+        legacyRestrictToGenesis :: !(Maybe Bool)
       } -- ^ Queries the gRPC server for the list of blocks with a given height.
   | GetAccountList
       { legacyBlockHash :: !(Maybe Text)
@@ -235,7 +237,9 @@ getBlocksAtHeightCommand =
     "GetBlocksAtHeight"
     (info
       (GetBlocksAtHeight <$>
-       argument auto (metavar "HEIGHT" <> help "Height of the blocks to query.")
+       argument auto (metavar "HEIGHT" <> help "Height of the blocks to query.") <*>
+       optional (option auto (long "genesis-index" <> metavar "GENINDEX" <> help "Base genesis index")) <*>
+       flag Nothing (Just True) (long "restrict" <> help "Restrict to specified genesis index")
       )
       (progDesc "Query the gRPC server for all blocks at the given height."))
 

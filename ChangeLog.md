@@ -2,6 +2,11 @@
 
 ## Unreleased changes
 - The `account show` command can receive a credential registration ID instead of a name or address.
+- The `raw GetBlocksAtHeight` command can take an optional genesis index, given by the
+  `--genesis-index <GENINDEX>` option.  If supplied, the height is considered relative to the
+  genesis block at this index. Additionally, the `--restrict` flag can be specified to only return
+  blocks that belong to the specified genesis index (or index 0, if the genesis index was not
+  specified).
 
 ## 1.1.0
 - support sending the three new transaction types, i.e. TransferWithMemo, EncryptedTransferWithMemo
