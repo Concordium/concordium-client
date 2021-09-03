@@ -426,38 +426,6 @@ instance AE.FromJSON BirkParametersBakerResult where
     bpbrAccount <- v .: "bakerAccount"
     return $ BirkParametersBakerResult {..}
 
-data BlockInfoResult = BlockInfoResult
-  { birBlockHash :: BlockHash
-  , birBlockParent :: BlockHash
-  , birBlockLastFinalized :: BlockHash
-  , birBlockReceiveTime :: UTCTime
-  , birBlockArriveTime :: UTCTime
-  , birBlockSlot :: Word64
-  , birBlockSlotTime :: UTCTime
-  , birBlockHeight :: BlockHeight
-  , birBlockBaker :: Maybe BakerId
-  , birFinalized :: Bool
-  , birTransactionCount :: Integer
-  , birTransactionEnergyCost :: Energy
-  , birTransactionsSize :: Integer }
-
-instance AE.FromJSON BlockInfoResult where
-  parseJSON = withObject "Block info" $ \v -> do
-    birBlockHash <- v .: "blockHash"
-    birBlockParent <- v .: "blockParent"
-    birBlockLastFinalized <- v .: "blockLastFinalized"
-    birBlockReceiveTime <- v .: "blockReceiveTime"
-    birBlockArriveTime <- v .: "blockArriveTime"
-    birBlockSlot <- v .: "blockSlot"
-    birBlockSlotTime <- v .: "blockSlotTime"
-    birBlockHeight <- v .: "blockHeight"
-    birBlockBaker <- v .: "blockBaker"
-    birFinalized <- v .: "finalized"
-    birTransactionCount <- v .: "transactionCount"
-    birTransactionEnergyCost <- v .: "transactionEnergyCost"
-    birTransactionsSize <- v .: "transactionsSize"
-    return BlockInfoResult {..}
-
 data NextAccountNonce = NextAccountNonce
   { nanNonce :: Nonce
   , nanAllFinal :: Bool }

@@ -16,6 +16,7 @@
   genesis block at this index. Additionally, the `--restrict` flag can be specified to only return
   blocks that belong to the specified genesis index (or index 0, if the genesis index was not
   specified).
+- show the genesis index and relative block height in `block show`
 
 ## 1.0.1
 
