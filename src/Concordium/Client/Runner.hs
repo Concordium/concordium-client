@@ -76,6 +76,7 @@ import qualified Concordium.ID.Types                 as ID
 import           Concordium.ID.Parameters
 import qualified Concordium.Utils.Encryption         as Password
 import qualified Concordium.Wasm                     as Wasm
+import           Concordium.Constants
 import           Proto.ConcordiumP2pRpc
 import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 
@@ -2083,7 +2084,11 @@ contractInitTransactionPayload ContractInitTransactionCfg {..} =
 -- It defaults to our internal wasmVersion of 0, which essentially is the
 -- on-chain API version.
 getWasmModuleFromFile :: FilePath -> IO Wasm.WasmModule
-getWasmModuleFromFile moduleFile = Wasm.WasmModule 0 . Wasm.ModuleSource <$> handleReadFile BS.readFile moduleFile
+getWasmModuleFromFile moduleFile = do
+  source <- handleReadFile BS.readFile moduleFile
+  let moduleSize = BS.length source
+  when (moduleSize > fromIntegral maxWasmModuleSize) $ logWarn [[i|Module file #{moduleFile} of size #{moduleSize} bytes is bigger than the maximum of #{maxWasmModuleSize} bytes, and will most likely be rejected on chain.|]]
+  return $ Wasm.WasmModule 0 . Wasm.ModuleSource $ source
 
 -- |Load `Wasm.Parameter` through one of several ways, dependent on the arguments:
 --   * If binary file provided -> Read the file and wrap its contents in `Wasm.Parameter`.
