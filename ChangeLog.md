@@ -2,14 +2,15 @@
 
 ## Unreleased changes
 - The `account show` command can receive a credential registration ID instead of a name or address.
-
-## 1.1.0
 - support sending the three new transaction types, i.e. TransferWithMemo, EncryptedTransferWithMemo
   and TransferWithScheduleAndMemo
 - show transfer memo in transaction status
 - show protocolVersion, genesisIndex, currentEraGenesisBlock and currentEraGenesisTime in 
   consensus status
 - this version is only compatible with node version 1.1.0 and later.
+- warn the user when trying to deploy a wasm module of size > 65536 bytes
+- warn the user when adding a baker staking more than 95% of the amount on the account
+- correct printing of cooldown time in `account show`
 
 ## 1.0.1
 
