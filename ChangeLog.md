@@ -1,6 +1,8 @@
 # Changelog for concordium-client
 
 ## Unreleased changes
+
+## 1.1.0
 - The `account show` command can receive a credential registration ID instead of a name or address.
 - support sending the three new transaction types, i.e. TransferWithMemo, EncryptedTransferWithMemo
   and TransferWithScheduleAndMemo
