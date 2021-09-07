@@ -28,18 +28,13 @@ import qualified Data.Text.Encoding as Text
 -- Fails if decoding fails, state is already decoded, or the contract isn't included in the `ModuleSchema`.
 decodeContractStateUsingSchema :: ContractInfo -> CS.ModuleSchema -> Either String ContractInfo
 decodeContractStateUsingSchema cInfo@ContractInfo{..} schema@CS.ModuleSchema{..} = case ciState of
-  WithSchema _ _ -> Left "Contract state has already been decoded."
+  WithSchema{} -> Left "Contract state has already been decoded."
   JustBytes bytes -> case Map.lookup contractName contractSchemas of
     Nothing -> Left [i|A schema for the contract '#{contractName}' does not exist in the schema provided.|]
-    Just contract -> (\decodedState -> cInfo {ciState = WithSchema schema decodedState}) <$> S.runGet (getModelAsJSON contract) bytes
+    Just CS.ContractSchema{..} -> case state of
+      Nothing -> Right $ cInfo {ciState = WithSchema schema Nothing bytes}
+      Just typ -> (\decodedState -> cInfo {ciState = WithSchema schema (Just decodedState) bytes}) <$> S.runGet (CP.getJSONUsingSchema typ) bytes
   where contractName = contractNameFromInitName ciName
-
-        getModelAsJSON :: CS.ContractSchema -> S.Get AE.Value
-        getModelAsJSON CS.ContractSchema{..} = do
-          state' <- case state of
-              Nothing    -> return AE.Null
-              Just typ -> CP.getJSONUsingSchema typ
-          return $ AE.object ["state" .= state', "init" .= initSig, "receive" .= receiveSigs]
 
 -- |Get a contract name from an InitName, i.e. extracting the text and removing the "init_" prefix.
 -- If stripping the prefix fails, it simply returns the extracted text
@@ -73,8 +68,16 @@ data ContractInfo
 
 -- TODO: Use CS.ContractSchema to avoid having to lookup by contract name.
 data ContractState =
-    WithSchema !CS.ModuleSchema !AE.Value  -- ^ The module schema and the decoded contract state.
-  | JustBytes !ByteString                  -- ^ The binary-encoded contract state.
+    WithSchema
+    {
+      wsModuleSchema :: !CS.ModuleSchema, -- ^ The module schema
+      wsValue :: !(Maybe AE.Value), -- ^ The decoded contract state, if schema type found for the state.
+      wsBytes :: !ByteString -- ^ The binary-encoded contract state.
+    }   
+    | JustBytes
+    {
+      jbBytes :: !ByteString -- ^ The binary-encoded contract state.
+    } 
   deriving (Eq, Show)
 
 instance AE.FromJSON ContractInfo where
