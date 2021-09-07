@@ -51,6 +51,11 @@ extra-deps:
     - http2-grpc-proto-lens
     - http2-grpc-types
 
+- github: Concordium/cborg
+  commit: 34f5045951680175512723f5fe8039d47ca582bf
+  subdirs:
+    - cborg
+
 - ./deps/concordium-base
 
 # Override default flag values for local packages and extra-deps
@@ -83,3 +88,11 @@ extra-lib-dirs:
 flags:
   concordium-client:
     middleware: true
+
+ghc-variant: foo
+
+setup-info:
+  ghc:
+    linux64-custom-foo-tinfo6:
+        8.10.4:
+            url: "/home/abizjak/tmp/ghc-8.10.4/ghc-8.10.4-x86_64-unknown-linux.tar.xz"

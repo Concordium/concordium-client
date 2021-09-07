@@ -24,19 +24,8 @@ pipeline {
                     # Ensure correct rust env
                     rustup default 1.53-x86_64-pc-windows-gnu
 
-                    # Configure project to use custom GHC
-                    # cygpath -w converts msys2 path to windows path
-                    echo "setup-info: 
-                      ghc:  
-                        windows64-integersimple: 
-                          ${GHC_VERSION}:  
-                            url: https://s3-eu-west-1.amazonaws.com/static-libraries.concordium.com/ghc-8.10.4-x86_64-unknown-mingw32.tar.xz
-                            sha256: 6aa0ea598452e7b439d8ad1cd0cf3d7267317df4b266daf0359b1faabba6a588
-                            
-                    ghc-variant: integersimple" >> stack.yaml
-
                     # Build project
-                    stack build --flag "scientific:integer-simple" --flag "cryptonite:-integer-gmp" --flag "integer-logarithms:-integer-gmp" --flag "hashable:-integer-gmp" --force-dirty
+                    stack build --force-dirty
                     
                     mkdir out
 
