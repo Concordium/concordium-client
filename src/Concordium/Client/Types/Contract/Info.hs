@@ -11,7 +11,7 @@ import qualified Concordium.Client.Types.Contract.Schema as CS
 import qualified Concordium.Client.Types.Contract.Parameter as CP
 import qualified Concordium.Wasm as Wasm
 
-import Data.Aeson ((.=), (.:))
+import Data.Aeson ((.:))
 import qualified Data.Aeson as AE
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS

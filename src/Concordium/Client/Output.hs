@@ -30,7 +30,6 @@ import qualified Data.ByteString.Short as BSS
 import qualified Data.ByteString.Lazy as BSL
 import Data.Functor
 import qualified Data.Map.Strict as Map
-import qualified Data.HashMap.Strict as HM
 import Data.List (foldl', intercalate, nub)
 import Data.Maybe
 import Data.String.Interpolate (i)
