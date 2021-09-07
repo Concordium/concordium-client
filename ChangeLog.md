@@ -1,6 +1,7 @@
 # Changelog for concordium-client
 
 ## Unreleased changes
+- show smart contract state as raw bytes, if schema is provided but doesn't include the state type.
 
 ## 1.1.0
 - The `account show` command can receive a credential registration ID instead of a name or address.
