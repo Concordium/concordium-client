@@ -2,6 +2,7 @@ pipeline {
     agent { label 'jenkins-worker' }
     environment {
         GHC_VERSION = '8.8.4'
+        RUST_VERSION = '1.53'
         VERSION = sh(
             returnStdout: true, 
             script: '''\
@@ -29,6 +30,8 @@ pipeline {
             agent { label 'mac' }
             steps {
                 sh '''\
+                    # Install correct version of rust.
+                    rustup default $RUST_VERSION
                     # Ensure using custom version of ghc
                     # Stack is refusing for some reason to use the ghc installed by ghcup :/ so I'm installing it via stack.
                     rm -rf ~/.stack/*
