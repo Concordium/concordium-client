@@ -25,7 +25,7 @@ pipeline {
                     rustup default 1.53-x86_64-pc-windows-gnu
 
                     # Build project
-                    stack build --force-dirty
+                    stack build --force-dirty --flag concordium-client:-middleware
                     
                     mkdir out
 
