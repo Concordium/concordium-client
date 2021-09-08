@@ -71,7 +71,11 @@ data ContractState =
     WithSchema
     {
       wsModuleSchema :: !CS.ModuleSchema, -- ^ The module schema
-      wsValue :: !(Maybe AE.Value), -- ^ The decoded contract state, if schema type found for the state.
+      wsValue :: !(Maybe AE.Value),
+      -- ^ This is a Just containing the decoded contract state, if the state type is included in the schema.
+      --   If not, then this is Nothing. In this case we use the raw bytes to print the state when doing `contract show`.
+      --   The reason that JustBytes is not used in this case is that we still need the schema to print
+      --   the methods when doing `contract show`.
       wsBytes :: !ByteString -- ^ The binary-encoded contract state.
     }   
     | JustBytes
