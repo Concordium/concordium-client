@@ -24,11 +24,6 @@ extra-deps:
     - http2-grpc-proto-lens
     - http2-grpc-types
 
-- github: Concordium/cborg
-  commit: 34f5045951680175512723f5fe8039d47ca582bf
-  subdirs:
-    - cborg
-
 - ./deps/concordium-base
 
 extra-lib-dirs:
