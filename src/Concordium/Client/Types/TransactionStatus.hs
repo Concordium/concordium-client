@@ -35,4 +35,4 @@ instance FromJSON a => FromJSON (TransactionStatusResult' a) where
 instance ToJSON a => ToJSON (TransactionStatusResult' a) where
   toJSON TransactionStatusResult{..} =
     object $ ("status" .= tsrState):mapObject
-    where mapObject = ["outcomes" .= tsrResults | Map.null tsrResults]
+    where mapObject = ["outcomes" .= tsrResults | not (Map.null tsrResults)]
