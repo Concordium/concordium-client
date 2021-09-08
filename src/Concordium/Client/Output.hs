@@ -30,7 +30,6 @@ import qualified Data.ByteString.Short as BSS
 import qualified Data.ByteString.Lazy as BSL
 import Data.Functor
 import qualified Data.Map.Strict as Map
-import qualified Data.HashMap.Strict as HM
 import Data.List (foldl', intercalate, nub)
 import Data.Maybe
 import Data.String.Interpolate (i)
@@ -314,14 +313,11 @@ printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
     owner = showNamedAddress namedOwner
     state = case ciState of
       CI.JustBytes bs -> ["State(raw):", [i|    #{BS.unpack bs}|]]
-      CI.WithSchema _ (AE.Object obj) -> case HM.lookup "state" obj of
-                                   Nothing -> stateErrorMsg
-                                   Just state' -> ["State:", indentBy 4 $ showPrettyJSON state']
-      CI.WithSchema _ _ -> stateErrorMsg
-    stateErrorMsg = ["Could not display contract state."]
+      CI.WithSchema _ Nothing bs -> ["No schema type was found for the state.\nState(raw):", [i|    #{BS.unpack bs}|]]
+      CI.WithSchema _ (Just state') _ -> ["State:", indentBy 4 $ showPrettyJSON state']
     tellMethods = case ciState of
       CI.JustBytes _ -> tell $ toDashedList methodNames
-      CI.WithSchema CS.ModuleSchema{..} _ -> case Map.lookup contractName contractSchemas of
+      CI.WithSchema CS.ModuleSchema{..} _ _ -> case Map.lookup contractName contractSchemas of
         Nothing -> tell $ toDashedList methodNames
         Just CS.ContractSchema{receiveSigs=rcvSigs} -> tell . toDashedList . map (tryAppendSignature rcvSigs) $ methodNames
       where methodNames = map methodNameFromReceiveName ciMethods
