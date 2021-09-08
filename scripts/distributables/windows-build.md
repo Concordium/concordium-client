@@ -1,5 +1,10 @@
 # Windows build procedure
 
+The contents of this document is no longer used to build concordium-client.
+However we leave it here since it contains information that is difficult to
+find elsewhere, and if we ever need to have custom builds of ghc we will need to
+do something similar to this.
+
 ## Build custom GHC
 
 This is needed in order to link against `integer-simple` instead of `integer-gmp`.

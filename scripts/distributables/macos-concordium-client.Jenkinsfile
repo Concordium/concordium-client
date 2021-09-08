@@ -2,8 +2,9 @@ pipeline {
     agent { label 'jenkins-worker' }
     environment {
         GHC_VERSION = '8.8.4'
+        RUST_VERSION = '1.53'
         VERSION = sh(
-            returnStdout: true, 
+            returnStdout: true,
             script: '''\
                 # Extract version number if not set as parameter
                 [ -z "$VERSION" ] && VERSION=$(awk '/version: / { print $2; exit }' package.yaml)
@@ -29,26 +30,16 @@ pipeline {
             agent { label 'mac' }
             steps {
                 sh '''\
-                    # Ensure using custom version of ghc
-                    # Stack is refusing for some reason to use the ghc installed by ghcup :/ so I'm installing it via stack.
-                    rm -rf ~/.stack/*
-                    cat <<'EOF' > ~/.stack/config.yaml
-                    setup-info:
-                      ghc:
-                         macosx-custom-integer-simple:
-                             8.8.4:
-                                  url: "https://s3-eu-west-1.amazonaws.com/static-libraries.concordium.com/ghc-8.8.4-x86_64-apple-darwin.tar.xz"
+                    # Install correct version of rust.
+                    rustup default $RUST_VERSION
 
-                    ghc-variant: integer-simple
-                    EOF
-                    
+                    # due to a bug in stack and flag propagation we have to do this hack
                     sed -i '' "s/default: False/default: True/g" deps/concordium-base/package.yaml
+                    sed -i '' "s/default: False/default: True/g" deps/concordium-base/concordium-base.cabal
 
-                    # Build project
-                    # Note that we have to copy the haddock binary into the specified path or else stack will fail.
-                    # As we don't spawn a fresh instance each time, I did build `cabal install haddock --install-method=copy` and then we can copy the binary into the required path. If it goes missing, just build it manually again
-                    (stack build --compiler=ghc-8.8.4 --flag "scientific:integer-simple" --flag "cryptonite:-integer-gmp" --flag "integer-logarithms:-integer-gmp" --flag "hashable:-integer-gmp" || ( cp ~/.cabal/bin/haddock /Users/administrator/.stack/programs/x86_64-osx/ghc-custom-integer-simple-8.8.4/bin/haddock-8.8.4 && stack build --compiler=ghc-8.8.4 --flag "scientific:integer-simple" --flag "cryptonite:-integer-gmp" --flag "integer-logarithms:-integer-gmp" --flag "hashable:-integer-gmp"))
-                           
+                    # At present concordium-client does not build in a static build with any version of ghc more recent than 8.8.4.
+                    stack build --compiler=ghc-8.8.4 --flag concordium-client:-middleware
+
                     mkdir out
 
                     # Find executable

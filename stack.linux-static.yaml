@@ -1,4 +1,13 @@
+# NB: When updating the resolver to one that uses ghc 8.10.5 or higher also
+# remove the compiler override below.
 resolver: lts-17.4
+
+# At present (Sep 8 2021) we are using a stack resolver with ghc 8.10.4 as the
+# default compiler. However we are unable to build this version of GHC in the
+# alpine image due to a GHC issue fixed in 8.10.5. For this reason we override
+# the compiler version here. Once we update the stack resolver this should not
+# be necessary anymore.
+compiler: ghc-8.10.5
 
 packages:
 - .
@@ -24,11 +33,3 @@ flags:
   concordium-client:
     static: true
     middleware: false
-  hashable:
-    integer-gmp: false
-  scientific:
-    integer-simple: true
-  integer-logarithms:
-    integer-gmp: false
-  cryptonite:
-    integer-gmp: false
