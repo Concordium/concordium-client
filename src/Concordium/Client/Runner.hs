@@ -112,6 +112,7 @@ import           Lens.Micro.Platform
 import           Network.GRPC.Client.Helpers
 import           Prelude                             hiding (fail, unlines)
 import           System.IO
+import           System.Exit
 import           System.Directory
 import           System.FilePath
 import           Text.Printf
@@ -514,7 +515,7 @@ loadAccountImportFile format file name = do
 checkAndGetMemo :: MemoInput -> Types.ProtocolVersion -> IO ByteString
 checkAndGetMemo memo pv = do
   when (pv == Types.P1) $ logWarn ["Protocol version 1 does not support transaction memos."]
-  case memo of
+  bsMemo <- case memo of
     MemoString memoString -> do
       return $ toStrictByteString $ encodeString memoString
     MemoJSON memoFile -> do
@@ -524,6 +525,11 @@ checkAndGetMemo memo pv = do
         Right value -> do 
           return $ toStrictByteString $ encodeValue value
     MemoRaw memoFile -> BSL.toStrict <$> handleReadFile BSL.readFile memoFile
+  when (BS.length bsMemo > Types.maxMemoSize) $ do
+    logError [[i|size of the memo (#{BS.length bsMemo}B) exceeds maximum allowed size (#{Types.maxMemoSize}B). Transaction will fail.|]]
+    override <- askConfirmation (Just "Proceed anyway")
+    unless override exitFailure
+  return bsMemo
 
 -- |Process a 'transaction ...' command.
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
