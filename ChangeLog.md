@@ -1,6 +1,9 @@
 # Changelog for concordium-client
 
 ## Unreleased changes
+
+## 1.1.1
+
 - show smart contract state as raw bytes, if schema is provided but doesn't include the state type.
 - warn about sending transfers with oversized memos.
 - show amount in GTU instead of µGTU when trying to send an encrypted amount that is larger than 
