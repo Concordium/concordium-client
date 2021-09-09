@@ -937,7 +937,7 @@ getEncryptedAmountTransferData senderAddr ettReceiver ettAmount idx secretKey = 
               aggAmounts = foldl' (<>) _selfAmount inputEncAmounts
               totalEncryptedAmount = foldl' (+) selfDecrypted $ fmap decoder inputEncAmounts
           unless (totalEncryptedAmount >= ettAmount) $
-            logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (show ettAmount) (show totalEncryptedAmount)]
+            logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (Types.amountToString ettAmount) (Types.amountToString totalEncryptedAmount)]
           -- index indicating which encrypted amounts we used as input
           let aggIndex = case idx of
                 Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (length listOfEncryptedAmounts))
