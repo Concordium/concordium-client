@@ -1558,10 +1558,10 @@ processAccountCmd action baseCfgDir verbose backend =
           else return Nothing
         cs <- getFromJson =<< getConsensusStatus
         case encKey of
-          Nothing -> return (accInfo, na, Nothing, \e ->  addUTCTime (fromRational ((toInteger e * toInteger (csrEpochDuration cs)) % 1000)) (csrGenesisTime cs))
+          Nothing -> return (accInfo, na, Nothing, \e ->  addUTCTime (fromRational ((toInteger e * toInteger (csrEpochDuration cs)) % 1000)) (csrCurrentEraGenesisTime cs))
           Just k -> do
             gc <- logFatalOnError =<< getParseCryptographicParameters bbh
-            return (accInfo, na, Just (k, gc), \e ->  addUTCTime (fromRational ((toInteger e * toInteger (csrEpochDuration cs)) % 1000)) (csrGenesisTime cs))
+            return (accInfo, na, Just (k, gc), \e ->  addUTCTime (fromRational ((toInteger e * toInteger (csrEpochDuration cs)) % 1000)) (csrCurrentEraGenesisTime cs))
 
       runPrinter $ printAccountInfo f na accInfo verbose (showEncrypted || showDecrypted) dec
 
@@ -2369,21 +2369,25 @@ processBakerCmd action baseCfgDir verbose backend =
         putStrLn ""
 
       withClient backend $ do
-         let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
-         AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
-         energyrate <- getNrgGtuRate
-         let gtuTransactionPrice = Types.computeCost energyrate (tcEnergy txCfg) 
-         case airBaker of
-           Just AccountInfoBakerResult{..} -> logFatal [[i|Account is already a baker with ID #{aibiIdentity abirAccountBakerInfo}.|]]
-           Nothing -> do
-             if airAmount - gtuTransactionPrice < initialStake
-             then do
-               logError [[i|Account balance (#{showGtu airAmount}) minus the cost of the transaction (#{showGtu gtuTransactionPrice}) is lower than the amount requested to be staked (#{showGtu initialStake}).|]]
-               confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
-               unless confirmed exitTransactionCancelled
-               sendAndMaybeOutputCredentials bakerKeys wasEncrypted bakerKeysFile outputFile txCfg pl intOpts
-             else do
-               sendAndMaybeOutputCredentials bakerKeys wasEncrypted bakerKeysFile outputFile txCfg pl intOpts
+        let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
+        AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
+        energyrate <- getNrgGtuRate
+        let gtuTransactionPrice = Types.computeCost energyrate (tcEnergy txCfg) 
+        case airBaker of
+          Just AccountInfoBakerResult{..} -> logFatal [[i|Account is already a baker with ID #{aibiIdentity abirAccountBakerInfo}.|]]
+          Nothing -> do
+            let cannotAfford = airAmount - gtuTransactionPrice < initialStake
+            when cannotAfford $ do
+              logWarn [[i|Account balance (#{showGtu airAmount}) minus the cost of the transaction (#{showGtu gtuTransactionPrice}) is lower than the amount requested to be staked (#{showGtu initialStake}).|]]
+              confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
+              unless confirmed exitTransactionCancelled
+            -- Check if staked amount is greater than 95% of total GTU on the account, and warn user if so
+            when ((initialStake * 100) > (airAmount * 95) && not cannotAfford) $ do
+              logWarn ["You are attempting to stake >95% of your total GTU on this account. Staked GTU is not available for spending."]
+              logWarn ["Be aware that updating or stopping your baker in the future will require some amount of non-staked GTU to pay for the transactions to do so."]
+              confirmed <- askConfirmation $ Just "Confirm that you wish to stake this much GTU"
+              unless confirmed exitTransactionCancelled
+            sendAndMaybeOutputCredentials bakerKeys wasEncrypted bakerKeysFile outputFile txCfg pl intOpts
         where
           -- General function to fetch NrgGtu rate
           -- This functionality is going to be more generally used in an upcoming branch adding GTU prices to NRG printouts across the client.
