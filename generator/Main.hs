@@ -73,8 +73,8 @@ go backend logit tps startValue sign startNonce = do
           (addr, tx, nextValue') <- liftIO $ sign nextNonce nextValue
           _ <- sendTx tx
           liftIO $ do
-            when logit $ putStrLn $ "Sent transaction to " ++ show addr ++ " with nonce = " ++ show nextNonce
             ct <- getCurrentTime
+            when logit $ putStrLn $ "Sent transaction to " ++ show addr ++ " with nonce = " ++ show nextNonce ++ ", hash = " ++ show (getBlockItemHash tx) ++ ", time = " ++ show ct
             let toWait = diffUTCTime nextTime ct
             when (toWait > 0) $ threadDelay (truncate $ toWait * 1e6)
           loop (nextNonce + 1) nextValue' (addUTCTime delay nextTime)
