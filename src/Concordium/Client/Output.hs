@@ -40,6 +40,7 @@ import Lens.Micro.Platform
 import Text.Printf
 import Codec.CBOR.Read
 import Codec.CBOR.JSON
+import Codec.CBOR.Decoding (decodeString)
 
 -- PRINTER
 
@@ -509,13 +510,20 @@ showEvent verbose = \case
   Types.TransferMemo{..} ->
     let (Types.Memo bss) = tmMemo
         invalidCBOR = printf "Could not decode memo as valid CBOR. The hex value of the memo is %s." $ show tmMemo
-        str = case deserialiseFromBytes (decodeValue False) (BSL.fromStrict $ BSS.fromShort bss) of
+        bsl = BSL.fromStrict $ BSS.fromShort bss
+        str = case deserialiseFromBytes decodeString bsl of
+          Left _ -> json
+          Right (rest, x) -> if rest == BSL.empty then
+                               Text.unpack x
+                             else
+                               invalidCBOR
+        json = case deserialiseFromBytes (decodeValue False) bsl of
           Left _ -> invalidCBOR
           Right (rest, x) -> if rest == BSL.empty then
-                               showCompactPrettyJSON x
+                               showPrettyJSON x
                              else 
                                invalidCBOR
-    in Just $ printf "Transfer memo: %s" str
+    in Just $ printf "Transfer memo:\n%s" str
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
