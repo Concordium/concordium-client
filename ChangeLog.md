@@ -2,6 +2,10 @@
 
 ## Unreleased changes
 
+- show line breaks, tabs etc. in memo transfers (when it's CBOR encoded string), instead of escaping them
+- as `\n`, `\t` etc.
+- Display memo as JSON in a more readable way.
+
 ## 1.1.1
 
 - show smart contract state as raw bytes, if schema is provided but doesn't include the state type.
