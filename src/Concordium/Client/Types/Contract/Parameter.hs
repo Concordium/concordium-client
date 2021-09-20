@@ -6,6 +6,7 @@ module Concordium.Client.Types.Contract.Parameter where
 import Concordium.Client.Config (showCompactPrettyJSON, showPrettyJSON)
 import qualified Concordium.Types as T
 import Concordium.Client.Types.Contract.Schema
+import Concordium.Client.Utils
 import qualified Concordium.Wasm as Wasm
 import qualified Data.DoubleWord as DW
 
@@ -15,13 +16,12 @@ import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import qualified Data.Char as Char
 import qualified Data.HashMap.Strict as HM
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import Data.Scientific (Scientific, isFloating, toBoundedInteger)
 import qualified Data.Serialize as S
-import Data.String.Interpolate (i, iii)
+import Data.String.Interpolate (i)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
@@ -29,9 +29,7 @@ import qualified Data.Time as Time
 import qualified Data.Vector as V
 import Data.Word (Word8, Word16, Word32, Word64)
 import Lens.Micro.Platform ((^?), ix)
-import Text.Read (readMaybe)
 import Data.Time.Format.ISO8601 (iso8601ParseM, iso8601Show)
-import Data.Maybe (mapMaybe)
 import Data.Time (addUTCTime, diffUTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Ratio
@@ -366,45 +364,6 @@ putJSONUsingSchema typ json = case (typ, json) of
                     millis = numerator frac `div` denominator frac
             timeString = Text.unpack s
 
-    -- |Parse a string containing a list of duration measures separated by
-    -- spaces. A measure is a non-negative integer followed by a unit (no whitespace is allowed in between).
-    -- Every measure is accumulated into a duration. The string is allowed to contain
-    -- any number of measures with the same unit in no particular order.
-    -- The support units are: days (d), hours (h), minutes (m), seconds (s), milliseconds (ms).
-    -- Example: "1d 2h 3m 2d 1h" -> Right 270180000
-    textToDuration :: Text -> Either String Word64
-    textToDuration t = mapM measureToMs measures >>= Right . sum
-      where measures :: [String]
-            measures = map Text.unpack . Text.split (== ' ') $ t
-
-            measureToMs :: String -> Either String Word64
-            measureToMs m = do
-              let (digits, unit) = span Char.isDigit m
-
-              value <- word64FromString digits
-              unit' <- case unit of
-                "ms" -> Right 1
-                "s"  -> Right secInMs
-                "m"  -> Right minInMs
-                "h"  -> Right hrInMs
-                "d"  -> Right dayInMs
-                _    -> Left invalidMeasureErrorMsg
-              Right $ value * unit'
-
-              where
-                invalidMeasureErrorMsg = [iii|"Invalid measure of time '#{m}'.
-                                              Should be a non-negative integer followed by a unit (d, h, m, s, ms)."|]
-
-                -- Reading negative numbers directly to Word64 silently underflows, so this approach is necessary.
-                word64FromString :: String -> Either String Word64
-                word64FromString s = case readMaybe s :: Maybe Integer of
-                                      Nothing -> Left invalidMeasureErrorMsg
-                                      Just x -> if x >= word64MinBound && x <= word64MaxBound
-                                                  then Right . fromIntegral $ x
-                                                  else Left invalidMeasureErrorMsg
-                  where word64MinBound = 0
-                        word64MaxBound = fromIntegral (maxBound :: Word64)
-
 -- |Wrapper for Concordium.Types.Amount that uses a little-endian encoding
 -- for binary serialization. Show and JSON instances are inherited from
 -- the Amount type.
@@ -415,38 +374,3 @@ newtype AmountLE = AmountLE T.Amount
 instance S.Serialize AmountLE where
   get = S.label "AmountLE" $ AmountLE . T.Amount <$> S.getWord64le
   put (AmountLE T.Amount{..}) = S.putWord64le _amount
-
--- Time Units
-
-secInMs :: Word64
-secInMs = 1000
-
-minInMs :: Word64
-minInMs = 60 * secInMs
-
-hrInMs :: Word64
-hrInMs = 60 * minInMs
-
-dayInMs :: Word64
-dayInMs = 24 * hrInMs
-
--- |Convert a duration in milliseconds into text with a list of duration measures separated by a space.
--- A measure is a non-negative integer followed by the unit (with no whitespace in between).
--- The support units are: days (d), hours (h), minutes (m), seconds (s), milliseconds (ms).
--- Measures that are 0 are omitted from the output (see example, where 'd' and 'ms' are omitted).
--- Example: 5022000 -> "1h 23m 42s".
-durationToText :: Word64 -> Text
-durationToText t = Text.intercalate " " . mapMaybe showTimeUnit $
-                  [(d, "d"), (h, "h"), (m, "m"), (s, "s"), (ms, "ms")]
-  where
-    (d, rem0) = quotRem t dayInMs
-    (h, rem1) = quotRem rem0 hrInMs
-    (m, rem2) = quotRem rem1 minInMs
-    (s, ms)   = quotRem rem2 secInMs
-
-    -- Show the time unit if it is non-zero, otherwise return Nothing.
-    showTimeUnit :: (Word64, Text) -> Maybe Text
-    showTimeUnit (value, unit) =
-        if value == 0
-        then Nothing
-        else Just [i|#{value}#{unit}|]

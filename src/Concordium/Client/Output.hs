@@ -10,7 +10,7 @@ import Concordium.Client.Parse
 import Concordium.Client.Types.Account
 import Concordium.Client.Types.Contract.Info as CI
 import Concordium.Client.Types.Contract.Schema as CS
-import Concordium.Client.Types.Contract.Parameter(durationToText)
+import Concordium.Client.Utils(durationToText)
 import Concordium.Client.Types.TransactionStatus
 import Concordium.Common.Version
 import Concordium.ID.Parameters
