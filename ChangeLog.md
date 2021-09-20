@@ -3,7 +3,7 @@
 ## Unreleased changes
 
 - show line breaks, tabs etc. in memo transfers (when it's CBOR encoded string), instead of escaping them
-- as `\n`, `\t` etc.
+  as `\n`, `\t` etc.
 - Display memo as JSON in a more readable way.
 - Add time units to slot duration and epoch duration in consensus status.
 
