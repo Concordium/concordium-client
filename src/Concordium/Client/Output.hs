@@ -10,6 +10,7 @@ import Concordium.Client.Parse
 import Concordium.Client.Types.Account
 import Concordium.Client.Types.Contract.Info as CI
 import Concordium.Client.Types.Contract.Schema as CS
+import Concordium.Client.Types.Contract.Parameter(durationToText)
 import Concordium.Client.Types.TransactionStatus
 import Concordium.Common.Version
 import Concordium.ID.Parameters
@@ -32,6 +33,7 @@ import Data.Functor
 import qualified Data.Map.Strict as Map
 import Data.List (foldl', intercalate, nub)
 import Data.Maybe
+import Data.Word (Word64)
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -641,8 +643,8 @@ printConsensusStatus r =
   tell [ printf "Best block:                  %s" (show $ csrBestBlock r)
        , printf "Genesis block:               %s" (show $ csrGenesisBlock r)
        , printf "Genesis time:                %s" (show $ csrGenesisTime r)
-       , printf "Slot duration:               %s" (show $ csrSlotDuration r)
-       , printf "Epoch duration:              %s" (show $ csrEpochDuration r)
+       , printf "Slot duration:               %s" (showDuration $ csrSlotDuration r)
+       , printf "Epoch duration:              %s" (showDuration $ csrEpochDuration r)
        , printf "Last finalized block:        %s" (show $ csrLastFinalizedBlock r)
        , printf "Best block height:           %s" (show $ csrBestBlockHeight r)
        , printf "Last finalized block height: %s" (show $ csrLastFinalizedBlockHeight r)
@@ -816,6 +818,10 @@ showMaybeEmSeconds a d = case (a, d) of
 -- |Standardized method of displaying a number of seconds.
 showSeconds :: Double -> String
 showSeconds s = printf "%5d ms" (round $ 1000*s :: Int)
+
+-- |Standardized method of displaying a number of milliseconds in a nice way, e.g. "2h 15m 3s".
+showDuration :: Word64 -> String
+showDuration = Text.unpack . durationToText
 
 -- |Print a line for each entry in the provided map using the provided print function.
 printMap :: ((k, v) -> String) -> [(k, v)] -> Printer

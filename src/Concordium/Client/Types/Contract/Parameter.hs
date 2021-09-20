@@ -112,26 +112,6 @@ getJSONUsingSchema typ = case typ of
       where utcTime = addUTCTime diffTime (posixSecondsToUTCTime 0)
             diffTime = fromRational (toInteger millis % 1000)
 
-    -- |Convert a duration in milliseconds into text with a list of duration measures separated by a space.
-    -- A measure is a non-negative integer followed by the unit (with no whitespace in between).
-    -- The support units are: days (d), hours (h), minutes (m), seconds (s), milliseconds (ms).
-    -- Measures that are 0 are omitted from the output (see example, where 'd' and 'ms' are omitted).
-    -- Example: 5022000 -> "1h 23m 42s".
-    durationToText :: Word64 -> Text
-    durationToText t = Text.intercalate " " . mapMaybe showTimeUnit $
-                      [(d, "d"), (h, "h"), (m, "m"), (s, "s"), (ms, "ms")]
-      where
-        (d, rem0) = quotRem t dayInMs
-        (h, rem1) = quotRem rem0 hrInMs
-        (m, rem2) = quotRem rem1 minInMs
-        (s, ms)   = quotRem rem2 secInMs
-
-        -- Show the time unit if it is non-zero, otherwise return Nothing.
-        showTimeUnit :: (Word64, Text) -> Maybe Text
-        showTimeUnit (value, unit) =
-            if value == 0
-            then Nothing
-            else Just [i|#{value}#{unit}|]
 
     -- |Gets a string of the specified SizeLength. Fails if the string is not valid UTF8.
     getUtf8String :: SizeLength -> S.Get Text
@@ -449,3 +429,24 @@ hrInMs = 60 * minInMs
 
 dayInMs :: Word64
 dayInMs = 24 * hrInMs
+
+-- |Convert a duration in milliseconds into text with a list of duration measures separated by a space.
+-- A measure is a non-negative integer followed by the unit (with no whitespace in between).
+-- The support units are: days (d), hours (h), minutes (m), seconds (s), milliseconds (ms).
+-- Measures that are 0 are omitted from the output (see example, where 'd' and 'ms' are omitted).
+-- Example: 5022000 -> "1h 23m 42s".
+durationToText :: Word64 -> Text
+durationToText t = Text.intercalate " " . mapMaybe showTimeUnit $
+                  [(d, "d"), (h, "h"), (m, "m"), (s, "s"), (ms, "ms")]
+  where
+    (d, rem0) = quotRem t dayInMs
+    (h, rem1) = quotRem rem0 hrInMs
+    (m, rem2) = quotRem rem1 minInMs
+    (s, ms)   = quotRem rem2 secInMs
+
+    -- Show the time unit if it is non-zero, otherwise return Nothing.
+    showTimeUnit :: (Word64, Text) -> Maybe Text
+    showTimeUnit (value, unit) =
+        if value == 0
+        then Nothing
+        else Just [i|#{value}#{unit}|]
