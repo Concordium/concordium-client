@@ -511,14 +511,14 @@ showEvent verbose = \case
     let (Types.Memo bss) = tmMemo
         invalidCBOR = printf "Could not decode memo as valid CBOR. The hex value of the memo is %s." $ show tmMemo
         bsl = BSL.fromStrict $ BSS.fromShort bss
-        str = case deserialiseFromBytes decodeString bsl of
-          Left _ -> json
+        str = case deserialiseFromBytes decodeString bsl of -- Try to decode the memo as a CBOR string
+          Left _ -> json -- if not possible, try to decode as JSON
           Right (rest, x) -> if rest == BSL.empty then
                                Text.unpack x
                              else
                                invalidCBOR
         json = case deserialiseFromBytes (decodeValue False) bsl of
-          Left _ -> invalidCBOR
+          Left _ -> invalidCBOR -- if not possible, the memo is not written in valid CBOR
           Right (rest, x) -> if rest == BSL.empty then
                                showPrettyJSON x
                              else 
