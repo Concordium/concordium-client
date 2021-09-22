@@ -122,7 +122,6 @@ import Data.Ratio
 import Codec.CBOR.Write
 import Codec.CBOR.Encoding
 import Codec.CBOR.JSON
-import Data.ByteString (ByteString)
 
 -- |Establish a new connection to the backend and run the provided computation.
 -- Close a connection after completion of the computation. Establishing a
@@ -512,10 +511,10 @@ loadAccountImportFile format file name = do
 -- - CBOR encoded json (from a file), or
 -- - raw bytes (from a file). 
 -- Warn user if protocol version is 1.
-checkAndGetMemo :: MemoInput -> Types.ProtocolVersion -> IO ByteString
+checkAndGetMemo :: MemoInput -> Types.ProtocolVersion -> IO Types.Memo
 checkAndGetMemo memo pv = do
   when (pv == Types.P1) $ logWarn ["Protocol version 1 does not support transaction memos."]
-  bsMemo <- case memo of
+  bss <- BS.toShort <$> case memo of
     MemoString memoString -> do
       return $ toStrictByteString $ encodeString memoString
     MemoJSON memoFile -> do
@@ -524,12 +523,14 @@ checkAndGetMemo memo pv = do
         Left err -> fail $ "Error decoding JSON: " ++ err
         Right value -> do 
           return $ toStrictByteString $ encodeValue value
-    MemoRaw memoFile -> BSL.toStrict <$> handleReadFile BSL.readFile memoFile
-  when (BS.length bsMemo > Types.maxMemoSize) $ do
-    logError [[i|size of the memo (#{BS.length bsMemo}B) exceeds maximum allowed size (#{Types.maxMemoSize}B). Transaction will fail.|]]
-    override <- askConfirmation (Just "Proceed anyway")
-    unless override exitFailure
-  return bsMemo
+    MemoRaw memoFile -> handleReadFile BS.readFile memoFile
+  case Types.memoFromBSS bss of
+    Left err -> do
+      logError [[i|Failed parsing memo: #{err} Transaction will fail.|]]
+      override <- askConfirmation (Just "Proceed anyway")
+      unless override exitFailure
+      return $ Types.Memo bss
+    Right m -> return m
 
 -- |Process a 'transaction ...' command.
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -580,9 +581,9 @@ processTransactionCmd action baseCfgDir verbose backend =
         pl <- liftIO $ do
               res <- case maybeMemo of 
                 Nothing -> return $ Types.Transfer (naAddr receiverAddress) amount
-                Just memo -> do
-                  bs <- checkAndGetMemo memo $ csrProtocolVersion cs
-                  return $ Types.TransferWithMemo (naAddr receiverAddress) (Types.Memo $ BSS.toShort bs) amount 
+                Just memoInput -> do
+                  memo <- checkAndGetMemo memoInput $ csrProtocolVersion cs
+                  return $ Types.TransferWithMemo (naAddr receiverAddress) memo amount 
               return $ Types.encodePayload res
         let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize pl
         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
@@ -625,9 +626,9 @@ processTransactionCmd action baseCfgDir verbose backend =
         pl <- liftIO $ do
               res <- case maybeMemo of 
                 Nothing -> return $ Types.TransferWithSchedule (naAddr receiverAddress) realSchedule
-                Just memo -> do
-                  bs <- checkAndGetMemo memo $ csrProtocolVersion cs
-                  return $ Types.TransferWithScheduleAndMemo (naAddr receiverAddress) (Types.Memo $ BSS.toShort bs) realSchedule
+                Just memoInput -> do
+                  memo <- checkAndGetMemo memoInput $ csrProtocolVersion cs
+                  return $ Types.TransferWithScheduleAndMemo (naAddr receiverAddress) memo realSchedule
               return $ Types.encodePayload res
         let nrgCost _ = return $ Just $ transferWithScheduleEnergyCost (Types.payloadSize pl) (length realSchedule)
         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
@@ -675,9 +676,9 @@ processTransactionCmd action baseCfgDir verbose backend =
         payload <- liftIO $ do
                 res <- case maybeMemo of 
                   Nothing -> return $ Types.EncryptedAmountTransfer (naAddr receiverAcc) transferData
-                  Just memo -> do
-                    bs <- checkAndGetMemo memo $ csrProtocolVersion cs
-                    return $ Types.EncryptedAmountTransferWithMemo (naAddr receiverAcc) (Types.Memo $ BSS.toShort bs) transferData
+                  Just memoInput -> do
+                    memo <- checkAndGetMemo memoInput $ csrProtocolVersion cs
+                    return $ Types.EncryptedAmountTransferWithMemo (naAddr receiverAcc) memo transferData
                 return $ Types.encodePayload res
         let nrgCost _ = return $ Just $ encryptedTransferEnergyCost $ Types.payloadSize payload
         txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
@@ -702,7 +703,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       let txCfg = rdtcTransactionCfg rdCfg
       let nrg = tcEnergy txCfg
 
-      logInfo [[i|Register data from file '#{file}'. Allowing up to #{showNrg nrg} to be spent as transaction fee.|]]
+      logInfo [[i|Register data. Allowing up to #{showNrg nrg} to be spent as transaction fee.|]]
 
       registerConfirmed <- askConfirmation Nothing
       when registerConfirmed $ do
@@ -723,23 +724,36 @@ processTransactionCmd action baseCfgDir verbose backend =
 -- |Construct a transaction config for registering data.
 --  The data is read from the 'FilePath' provided.
 --  Fails if the data can't be read or it violates the size limit checked by 'Types.registeredDataFromBSS'.
-getRegisterDataTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> IO RegisterDataTransactionCfg
-getRegisterDataTransactionCfg baseCfg txOpts dataFile = do
-  bss <- BS.toShort <$> handleReadFile BS.readFile dataFile
-  case Types.registeredDataFromBSS bss of
-    Left err ->
-      logFatal [[i|Failed registering '#{dataFile}': #{err}|]]
-    Right rdtcData -> do
-      rdtcTransactionCfg <- getTransactionCfg baseCfg txOpts $ registerDataEnergyCost rdtcData
-      return RegisterDataTransactionCfg {..}
-    where
-      -- Calculate the energy cost for registering data.
-      registerDataEnergyCost :: Types.RegisteredData -> EncryptedSigningData -> IO (Maybe (Int -> Types.Energy))
-      registerDataEnergyCost rd encSignData = pure . Just . const $
-        Cost.registerDataCost + minimumCost payloadSize signatureCount
-        where
-          signatureCount = mapNumKeys (esdKeys encSignData)
-          payloadSize = Types.payloadSize . Types.encodePayload . Types.RegisterData $ rd
+getRegisterDataTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> RegisterDataInput -> IO RegisterDataTransactionCfg
+getRegisterDataTransactionCfg baseCfg txOpts dataInput = do
+  bss <- BS.toShort <$> case dataInput of
+    RegisterString string -> do
+      return $ toStrictByteString $ encodeString string
+    RegisterJSON file -> do
+      source <- handleReadFile BSL.readFile file
+      case AE.eitherDecode source of
+        Left err -> fail $ "Error decoding JSON: " ++ err
+        Right value -> do 
+          return $ toStrictByteString $ encodeValue value
+    RegisterRaw file -> handleReadFile BS.readFile file
+
+  rdtcData <- case Types.registeredDataFromBSS bss of
+    Left err -> do
+      logError [[i|Failed parsing data: #{err} Transaction will fail.|]]
+      override <- askConfirmation (Just "Proceed anyway")
+      unless override exitFailure
+      return $ Types.RegisteredData bss
+    Right rd -> return rd
+  rdtcTransactionCfg <- getTransactionCfg baseCfg txOpts $ registerDataEnergyCost rdtcData
+  return RegisterDataTransactionCfg {..}
+  where
+    -- Calculate the energy cost for registering data.
+    registerDataEnergyCost :: Types.RegisteredData -> EncryptedSigningData -> IO (Maybe (Int -> Types.Energy))
+    registerDataEnergyCost rd encSignData = pure . Just . const $
+      Cost.registerDataCost + minimumCost payloadSize signatureCount
+      where
+        signatureCount = mapNumKeys (esdKeys encSignData)
+        payloadSize = Types.payloadSize . Types.encodePayload . Types.RegisterData $ rd
 
 registerDataTransactionPayload :: RegisterDataTransactionCfg -> Types.Payload
 registerDataTransactionPayload RegisterDataTransactionCfg {..} = Types.RegisterData rdtcData
