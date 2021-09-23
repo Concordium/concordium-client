@@ -6,6 +6,8 @@
   as `\n`, `\t` etc.
 - Display memo as JSON in a more readable way.
 - Add time units to slot duration and epoch duration in consensus status.
+- Update `register-data` command to register data as CBOR encoded strings or JSON using the new flags
+  `--string` and `--json`. Raw data can still be registered using the new flag `--raw`.
 
 ## 1.1.1
 

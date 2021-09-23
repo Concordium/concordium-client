@@ -22,6 +22,7 @@ module Concordium.Client.Commands
   , IdentityCmd(..)
   , IdentityShowCmd(..)
   , MemoInput(..)
+  , RegisterDataInput(..)
   ) where
 
 import Data.Text hiding (map, unlines)
@@ -144,6 +145,17 @@ memoInputParser = optional ((MemoString <$> strOption (long "memo" <> metavar "M
        (MemoJSON <$> strOption (long "memo-json" <> metavar "FILE" <> help "File with transaction memo.")) <|>
        (MemoRaw <$> strOption (long "memo-raw" <> metavar "FILE" <> help "File with raw bytes.")))
 
+
+data RegisterDataInput = RegisterString Text
+               | RegisterJSON FilePath
+               | RegisterRaw FilePath
+              deriving (Show, Read)
+
+registerDataParser :: Parser RegisterDataInput
+registerDataParser = (RegisterString <$> strOption (long "string" <> metavar "STRING" <> help "String to be registered on chain.")) <|>
+       (RegisterJSON <$> strOption (long "json" <> metavar "FILE" <> help "File with JSON to registered on chain.")) <|>
+       (RegisterRaw <$> strOption (long "raw" <> metavar "FILE" <> help "File with raw bytes to be registered on chain."))
+
 data TransactionCmd
   = TransactionSubmit
     { tsFile :: !FilePath
@@ -176,7 +188,7 @@ data TransactionCmd
   -- | Register data on chain.
   | TransactionRegisterData
     { -- | File containing the data.
-      trdFile :: !FilePath,
+      trdData :: !RegisterDataInput,
       -- | Options for transaction.
       trdTransactionOptions :: !(TransactionOpts (Maybe Energy))
     }
@@ -664,7 +676,7 @@ transactionRegisterDataCmd =
     "register-data"
     (info
       (TransactionRegisterData <$>
-        strArgument (metavar "FILE" <> help "File containing the data to register.") <*>
+        registerDataParser <*>
         transactionOptsParser)
       (progDesc "Register data on the chain."))
 
