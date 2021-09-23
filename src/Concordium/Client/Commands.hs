@@ -153,7 +153,7 @@ data RegisterDataInput = RegisterString Text
 
 registerDataParser :: Parser RegisterDataInput
 registerDataParser = (RegisterString <$> strOption (long "string" <> metavar "STRING" <> help "String to be registered on chain.")) <|>
-       (RegisterJSON <$> strOption (long "json" <> metavar "FILE" <> help "File with json to registered on chain.")) <|>
+       (RegisterJSON <$> strOption (long "json" <> metavar "FILE" <> help "File with JSON to registered on chain.")) <|>
        (RegisterRaw <$> strOption (long "raw" <> metavar "FILE" <> help "File with raw bytes to be registered on chain."))
 
 data TransactionCmd
