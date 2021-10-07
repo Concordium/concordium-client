@@ -130,9 +130,9 @@ data SchemaType =
 
 instance Hashable SchemaType
 
--- |This should mostly match the format used in `getJSONUsingSchema` so the user can copy this and use it for
--- creating a parameter file in json format.
--- There are a few differences:
+-- |This should _mostly_ match the format used in `getJSONUsingSchema` so the
+-- user can copy this and use it for creating a parameter file in json format.
+-- It differs from the expected parameter format in the following ways:
 --   - Enums are shown with all of its variants in a list,
 --     but only one variant should be used in the parameter file.
 --   - All placeholders are surrounded with <> and shown as strings,
