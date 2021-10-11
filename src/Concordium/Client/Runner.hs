@@ -1257,6 +1257,15 @@ bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm
           Just x -> return x
           Nothing -> logFatal [err]
 
+-- |Query the chain for the minimum baker stake threshold. Fail if the chain cannot be reached.
+getBakerStakeThresholdOrDie :: ClientMonad IO Types.Amount
+getBakerStakeThresholdOrDie = do
+  blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
+  case blockSummary of
+    Nothing -> do
+      logFatal ["No Block Found"]
+    Just bs -> return $ (bsurChainParameters $ bsrUpdates bs) ^. cpBakerStakeThreshold
+
 getAccountUpdateCredentialsTransactionData ::
   Maybe FilePath -- ^ A file with new credentials.
   -> Maybe FilePath -- ^ A file with an array of credential registration ids to remove.
@@ -2397,6 +2406,11 @@ processBakerCmd action baseCfgDir verbose backend =
           Just AccountInfoBakerResult{..} -> logFatal [[i|Account is already a baker with ID #{aibiIdentity abirAccountBakerInfo}.|]]
           Nothing -> do
             let cannotAfford = airAmount - gtuTransactionPrice < initialStake
+            minimumBakerStake <- getBakerStakeThresholdOrDie
+            when (initialStake < minimumBakerStake) $ do
+              logWarn [[i|The staked amount (#{showGtu initialStake}) is lower than the minimum baker stake threshold (#{showGtu minimumBakerStake}).|]]
+              confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
+              unless confirmed exitTransactionCancelled
             when cannotAfford $ do
               logWarn [[i|Account balance (#{showGtu airAmount}) minus the cost of the transaction (#{showGtu gtuTransactionPrice}) is lower than the amount requested to be staked (#{showGtu initialStake}).|]]
               confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
