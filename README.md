@@ -1150,6 +1150,10 @@ Output: `OK`.
 
 Output: `OK`.
 
+#### `PeerDisconnect NODE-IP NODE-PORT`
+
+Output: `OK`.
+
 #### `GetPeerUptime`
 
 Retrieves the uptime of the backend node.

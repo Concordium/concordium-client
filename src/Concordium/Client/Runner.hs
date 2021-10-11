@@ -2644,6 +2644,7 @@ processLegacyCmd action backend =
     StartBaker -> withClient backend $ startBaker >>= printSuccess
     StopBaker -> withClient backend $ stopBaker >>= printSuccess
     PeerConnect ip port -> withClient backend $ peerConnect ip port >>= printSuccess
+    PeerDisconnect ip port -> withClient backend $ peerDisconnect ip port >>= printSuccess
     GetPeerUptime -> withClient backend $ getPeerUptime >>= (liftIO . print)
     BanNode nodeId nodeIp -> withClient backend $ banNode nodeId nodeIp >>= printSuccess
     UnbanNode nodeId nodeIp -> withClient backend $ unbanNode nodeId nodeIp >>= printSuccess
