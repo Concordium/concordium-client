@@ -71,6 +71,10 @@ data LegacyCmd
       { legacyIp     :: !Text
       , legacyPortPC :: !Int
       }
+  | PeerDisconnect
+      { legacyIp     :: !Text
+      , legacyPortPC :: !Int
+      }
   | GetPeerUptime
   | BanNode
       { legacyNodeId   :: !(Maybe Text)
@@ -127,6 +131,7 @@ legacyProgramOptions =
      startBakerCommand <>
      stopBakerCommand <>
      peerConnectCommand <>
+     peerDisconnectCommand <>
      getPeerUptimeCommand <>
      banNodeCommand <>
      unbanNodeCommand <>
@@ -359,6 +364,18 @@ peerConnectCommand =
           auto
           (metavar "PEER-PORT" <> help "Port of the peer we want to connect to"))
        (progDesc "Connect to a specified peer."))
+
+peerDisconnectCommand :: Mod CommandFields LegacyCmd
+peerDisconnectCommand =
+    command
+     "PeerDisconnect"
+    (info
+       (PeerDisconnect <$>
+        strArgument (metavar "PEER-IP" <> help "IP of the peer we want to disconnect from") <*>
+        argument
+          auto
+          (metavar "PEER-PORT" <> help "Port of the peer we want to disconnect from"))
+       (progDesc "Disconnect from a specified peer."))
 
 getPeerUptimeCommand :: Mod CommandFields LegacyCmd
 getPeerUptimeCommand =
