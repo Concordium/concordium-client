@@ -371,10 +371,10 @@ peerDisconnectCommand =
      "PeerDisconnect"
     (info
        (PeerDisconnect <$>
-        strArgument (metavar "PEER-IP" <> help "IP of the peer we want to disconnect from") <*>
+        strArgument (metavar "PEER-IP" <> help "IP of the peer we want to disconnect from.") <*>
         argument
           auto
-          (metavar "PEER-PORT" <> help "Port of the peer we want to disconnect from"))
+          (metavar "PEER-PORT" <> help "Port of the peer we want to disconnect from."))
        (progDesc "Disconnect from a specified peer."))
 
 getPeerUptimeCommand :: Mod CommandFields LegacyCmd
