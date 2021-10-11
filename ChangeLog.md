@@ -9,6 +9,7 @@
 - Update `register-data` command to register data as CBOR encoded strings or JSON using the new flags
   `--string` and `--json`. Raw data can still be registered using the new flag `--raw`.
 - Add `raw DisconnectPeer`, a dual to the existing `raw ConnectPeer`.
+- Warn user when trying to add a baker with stake below the minimum threshold.
 
 ## 1.1.1
 
