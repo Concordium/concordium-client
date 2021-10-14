@@ -13,7 +13,6 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Serialize as S
 import Data.String.Interpolate (i)
 import Data.Text (Text)
-import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Vector as V
 import Data.Word (Word8, Word32, Word64)
@@ -138,7 +137,6 @@ instance Hashable SchemaType
 --   - All placeholders are surrounded with <> and shown as strings,
 --     even when the expected value not is a string.
 --     Fx: "<UInt8>" which should be replaced with an unquoted number.
---   - Arrays include their required length, fx: [ "<UInt32>", "Array length: 12" ]
 instance AE.ToJSON SchemaType where
   toJSON = \case
     Unit -> AE.Array . V.fromList $ []
@@ -156,11 +154,11 @@ instance AE.ToJSON SchemaType where
     ContractAddress -> AE.object [ "index" .= AE.toJSON UInt64, "subindex" .= AE.toJSON UInt64 ]
     Timestamp -> AE.String "<Timestamp>"
     Duration -> AE.String "<Duration>"
-    Pair typA typB -> toJsonArray $ [AE.toJSON typA, AE.toJSON typB]
-    List _ typ -> toJsonArray $ [AE.toJSON typ]
-    Set _ typ -> toJsonArray $ [AE.toJSON typ]
-    Map _ typK typV -> toJsonArray $ [toJsonArray [(AE.toJSON typK), (AE.toJSON typV)]]
-    Array len typ -> toJsonArray [AE.toJSON typ, AE.String . Text.pack $ "Array length: " ++ show len]
+    Pair typA typB -> toJsonArray [AE.toJSON typA, AE.toJSON typB]
+    List _ typ -> toJsonArray [AE.toJSON typ]
+    Set _ typ -> toJsonArray [AE.toJSON typ]
+    Map _ typK typV -> toJsonArray [toJsonArray [AE.toJSON typK, AE.toJSON typV]]
+    Array _ typ -> toJsonArray [AE.toJSON typ]
     Struct fields -> AE.toJSON fields
     Enum variants -> AE.object ["Enum" .= (toJsonArray . map (\(k, v) -> AE.object [k .= v]) $ variants)]
     String _ -> AE.String "<String>"
