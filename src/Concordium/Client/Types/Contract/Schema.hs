@@ -292,7 +292,6 @@ getEmbeddedSchemaFromModule = do
             else S.skip sectionSize *> go
           -- Export section
           7 -> do
-            -- exports :: [(Text, ExportDescription)]
             exports <- getListOfWithLEB128Len (S.getTwoOf getTextWithLEB128Len getExportDescription)
 
             let functionExports = filter ((==) Func . snd) exports
@@ -301,6 +300,7 @@ getEmbeddedSchemaFromModule = do
               then return NothingFound
               else return . FunctionNamesFound . map fst $ functionExports
 
+          -- Any other type of section
           _ -> S.skip sectionSize *> go
 
 
