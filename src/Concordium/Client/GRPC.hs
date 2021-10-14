@@ -226,6 +226,12 @@ peerConnect ip peerPort = withUnary (call @"peerConnect") msg CF.value
               CF.ip .~ (defMessage & CF.value .~ ip) &
               CF.port .~ (defMessage & CF.value .~ fromIntegral peerPort)
 
+peerDisconnect :: Text -> Int -> ClientMonad IO (Either String Bool)
+peerDisconnect ip peerPort = withUnary (call @"peerDisconnect") msg CF.value
+  where msg = defMessage &
+              CF.ip .~ (defMessage & CF.value .~ ip) &
+              CF.port .~ (defMessage & CF.value .~ fromIntegral peerPort)
+
 getPeerUptime :: ClientMonad IO (Either String Word64)
 getPeerUptime = withUnaryNoMsg (call @"peerUptime") CF.value
 
