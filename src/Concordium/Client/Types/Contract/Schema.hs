@@ -1,6 +1,17 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE QuasiQuotes #-}
-module Concordium.Client.Types.Contract.Schema where
+module Concordium.Client.Types.Contract.Schema(ContractSchema(..),
+                                               Fields(..),
+                                               FuncName(..),
+                                               ModuleSchema(..),
+                                               SchemaType(..),
+                                               SizeLength(..),
+                                               decodeEmbeddedSchema,
+                                               decodeModuleSchema,
+                                               getListOfWithKnownLen,
+                                               getListOfWithSizeLen,
+                                               lookupSignatureForFunc,
+                                               putLenWithSizeLen) where
 
 import Control.Monad (unless)
 import Data.Aeson ((.=))
@@ -241,6 +252,12 @@ data FuncName
   | ReceiveFuncName !Text !Text -- ^ Name of a receive function.
   deriving Eq
 
+data ExtractedFromModule
+  = NothingFound
+  | FunctionNamesFound [Text]
+  | SchemaFound ModuleSchema
+  deriving Eq
+
 -- |Try to find an embedded `ModuleSchema` inside a WasmModule and decode it.
 -- Returns `Nothing` if no schema is embedded.
 getEmbeddedSchemaFromModule :: S.Get (Maybe ModuleSchema)
@@ -249,34 +266,67 @@ getEmbeddedSchemaFromModule = do
   unless (mhBs == wasmMagicHash) $ fail "Unknown magic value. This is likely not a Wasm module."
   vBs <- S.getByteString 4
   unless (vBs == wasmVersion) $ fail "Unsupported Wasm version."
-  go
+  extractedFromMod <- go
+  case extractedFromMod of
+    NothingFound -> return Nothing
+    FunctionNamesFound _names -> return Nothing
+    SchemaFound schema -> return . Just $ schema
 
   where
-    go :: S.Get (Maybe ModuleSchema)
+    go :: S.Get ExtractedFromModule
     go = do
       isEmpty <- S.isEmpty
-      -- Not all modules contain a schema.
-      -- We reached the end of input without finding the schema.
+      -- Not all modules contain a schema or export sections.
+      -- We reached the end of input without finding the schema or exported functions.
       if isEmpty then
-        return Nothing
+        return NothingFound
       else do
         sectionId <- S.label "sectionId" S.getWord8
         sectionSize <- S.label "sectionSize" $ fromIntegral <$> getLEB128Word32le
-        if sectionId == 0
-        then do
-          name <- S.label "Custom Section Name" getTextWithLEB128Len
-          if name == "concordium-schema-v1"
-          then Just <$> S.get
-          else S.skip sectionSize *> go
-        else S.skip sectionSize *> go
+        case sectionId of
+          -- Custom section
+          0 -> do
+            name <- S.label "Custom Section Name" getTextWithLEB128Len
+            if name == "concordium-schema-v1"
+            then SchemaFound <$> S.get
+            else S.skip sectionSize *> go
+          -- Export section
+          7 -> do
+            -- exports :: [(Text, ExportDescription)]
+            exports <- getListOfWithLEB128Len (S.getTwoOf getTextWithLEB128Len getExportDescription)
+
+            let functionExports = filter ((==) Func . snd) exports
+
+            if null functionExports
+              then return NothingFound
+              else return . FunctionNamesFound . map fst $ functionExports
+
+          _ -> S.skip sectionSize *> go
+
+
+    getExportDescription :: S.Get ExportDescription
+    getExportDescription = S.label "Export Description" $ do
+      tag <- S.getWord8
+      _ <- getLEB128Word32le -- Read and skip the indices
+      case tag of
+        0 -> return Func
+        1 -> return Table
+        2 -> return Memory
+        3 -> return Global
+        _ -> fail [i|"Invalid Export Description Tag: #{tag}"|]
 
     getTextWithLEB128Len :: S.Get Text
     getTextWithLEB128Len = S.label "Text with LEB128 Length" $ do
-      len <- getLEB128Word32le
-      txt <- Text.decodeUtf8' . BS.pack <$> getListOfWithKnownLen len S.get
+      txt <- Text.decodeUtf8' . BS.pack <$> getListOfWithLEB128Len S.get
       case txt of
         Left err -> fail [i|Could not decode Text with LEB128 len: #{err}|]
         Right txt' -> pure txt'
+
+    getListOfWithLEB128Len :: S.Get a -> S.Get [a]
+    getListOfWithLEB128Len getElem = S.label "List with LEB128 length" $ do
+      len <- getLEB128Word32le
+      getListOfWithKnownLen len getElem
+
 
     -- |Get a LEB128-encoded Word32. This uses an encoding compatible with the Wasm standard,
     -- which means that the encoding will use at most 5 bytes.
@@ -302,6 +352,14 @@ getEmbeddedSchemaFromModule = do
     wasmVersion :: BS.ByteString
     wasmVersion = BS.pack [0x01, 0x00, 0x00, 0x00]
 
+
+-- |The four types of exports allowed in WASM.
+data ExportDescription
+  = Func
+  | Table
+  | Memory
+  | Global
+  deriving Eq
 
 -- HELPERS
 
