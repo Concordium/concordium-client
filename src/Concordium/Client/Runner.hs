@@ -2165,17 +2165,17 @@ getSchemaFromFileOrModule schemaFile modSourceOrRef block = case (schemaFile, mo
           Left err -> logFatal [[i|Could not parse embedded schema from module:|], err]
           Right schema -> return schema
 
--- |Load and decode a schema from a file.
-getSchemaFromFile :: FilePath -> IO CS.ModuleSchema
-getSchemaFromFile schemaFile = do
-  schema <- CS.decodeModuleSchema <$> handleReadFile BS.readFile schemaFile
-  case schema of
-    Left err -> logFatal [[i|Could not decode schema from file '#{schemaFile}':|], err]
-    Right schema' -> pure schema'
+        -- |Load and decode a schema from a file.
+        getSchemaFromFile :: FilePath -> IO CS.ModuleSchema
+        getSchemaFromFile file = do
+          schema <- CS.decodeModuleSchema <$> handleReadFile BS.readFile file
+          case schema of
+            Left err -> logFatal [[i|Could not decode schema from file '#{schemaFile}':|], err]
+            Right schema' -> pure schema'
 
--- |Try to extract and decode a schema from a module.
-getSchemaFromModule :: BS.ByteString -> Either String (Maybe CS.ModuleSchema)
-getSchemaFromModule = CS.decodeEmbeddedSchema
+        -- |Try to extract and decode a schema from a module.
+        getSchemaFromModule :: BS.ByteString -> Either String (Maybe CS.ModuleSchema)
+        getSchemaFromModule = CS.decodeEmbeddedSchema
 
 -- |Try to parse the input as a module reference and assume it is a path if it fails.
 getModuleRefFromRefOrFile :: String -> IO Types.ModuleRef
