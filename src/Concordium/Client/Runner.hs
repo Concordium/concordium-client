@@ -1260,10 +1260,10 @@ bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm
 -- |Query the chain for the minimum baker stake threshold. Fail if the chain cannot be reached.
 getBakerStakeThresholdOrDie :: ClientMonad IO Types.Amount
 getBakerStakeThresholdOrDie = do
-  blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
+  blockSummary <- getFromJson =<< withLastFinalBlockHash Nothing getBlockSummary
   case blockSummary of
     Nothing -> do
-      logFatal ["No Block Found"]
+      logFatal ["Could not reach the node to retrieve the baker stake threshold."]
     Just bs -> return $ (bsurChainParameters $ bsrUpdates bs) ^. cpBakerStakeThreshold
 
 getAccountUpdateCredentialsTransactionData ::
@@ -2460,7 +2460,7 @@ processBakerCmd action baseCfgDir verbose backend =
         blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
         case blockSummary of
           Nothing -> do
-            logError ["No Block Found"]
+            logError ["Could not reach the node to get the baker cooldown period."]
             exitTransactionCancelled
           Just cpr -> do
             -- Warn user that stopping a baker incurs the baker cooldown timer
@@ -2488,7 +2488,7 @@ processBakerCmd action baseCfgDir verbose backend =
         blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
         case blockSummary of
           Nothing -> do
-            logError ["No Block Found"]
+            logError ["Could not reach the node to get the baker cooldown period."]
             exitTransactionCancelled
           Just cpr -> do
             cooldownDate <- getBakerCooldown cpr
