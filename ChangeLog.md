@@ -10,6 +10,9 @@
   `--string` and `--json`. Raw data can still be registered using the new flag `--raw`.
 - Add `raw DisconnectPeer`, a dual to the existing `raw ConnectPeer`.
 - Warn user when trying to add a baker with stake below the minimum threshold.
+- Improve how contract schemas are shown as JSON.
+  - Display complex types in arrays correctly.
+  - Use angle brackets to indicate placeholders, e.g. `"<UInt16>"` instead of `"UInt16"`.
 
 ## 1.1.1
 

@@ -13,7 +13,6 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Serialize as S
 import Data.String.Interpolate (i)
 import Data.Text (Text)
-import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Vector as V
 import Data.Word (Word8, Word32, Word64)
@@ -130,15 +129,44 @@ data SchemaType =
 
 instance Hashable SchemaType
 
--- |This should match the format used in `getJSONUsingSchema` so the user can copy this and use it for
--- creating a parameter file in json format. The only difference is for enums, in which all of its
--- variants are shown here, but only one should be used in the parameter file.
+-- |This should _mostly_ match the format used in `getJSONUsingSchema` so the
+-- user can copy this and use it for creating a parameter file in json format.
+-- It differs from the expected parameter format in the following ways:
+--   - Enums are shown with all of its variants in a list,
+--     but only one variant should be used in the parameter file.
+--   - All placeholders are surrounded with <> and shown as strings,
+--     even when the expected value is not a string.
+--     For example: "<UInt8>" which should be replaced with an unquoted number.
 instance AE.ToJSON SchemaType where
   toJSON = \case
+    Unit -> AE.Array . V.fromList $ []
+    Bool -> AE.String "<Bool>"
+    UInt8 -> AE.String "<UInt8>"
+    UInt16 -> AE.String "<UInt16>"
+    UInt32 -> AE.String "<UInt32>"
+    UInt64 -> AE.String "<UInt64>"
+    Int8 -> AE.String "<Int8>"
+    Int16 -> AE.String "<Int16>"
+    Int32 -> AE.String "<Int32>"
+    Int64 -> AE.String "<Int64>"
+    Amount -> AE.String "<Amount>"
+    AccountAddress -> AE.String "<AccountAddress>"
+    ContractAddress -> AE.object [ "index" .= AE.toJSON UInt64, "subindex" .= AE.toJSON UInt64 ]
+    Timestamp -> AE.String "<Timestamp>"
+    Duration -> AE.String "<Duration>"
+    Pair typA typB -> toJsonArray [AE.toJSON typA, AE.toJSON typB]
+    List _ typ -> toJsonArray [AE.toJSON typ]
+    Set _ typ -> toJsonArray [AE.toJSON typ]
+    Map _ typK typV -> toJsonArray [toJsonArray [AE.toJSON typK, AE.toJSON typV]]
+    Array _ typ -> toJsonArray [AE.toJSON typ]
     Struct fields -> AE.toJSON fields
-    Enum variants -> AE.object ["Enum" .= (AE.Array . V.fromList . map (\(k, v) -> AE.object [k .= v]) $ variants)]
-    Pair typA typB -> AE.Array . V.fromList $ [AE.toJSON typA, AE.toJSON typB]
-    x -> AE.String . Text.pack . show $ x
+    Enum variants -> AE.object ["Enum" .= (toJsonArray . map (\(k, v) -> AE.object [k .= v]) $ variants)]
+    String _ -> AE.String "<String>"
+    UInt128 -> AE.String "<UInt128>"
+    Int128 -> AE.String "<Int128>"
+    ContractName _ -> AE.object [ "contract" .= AE.String "<String>" ]
+    ReceiveName _ -> AE.object [ "contract" .= AE.String "<String>", "func" .= AE.String "<String>" ]
+    where toJsonArray = AE.Array . V.fromList
 
 instance S.Serialize SchemaType where
   get = S.label "SchemaType" $ do
