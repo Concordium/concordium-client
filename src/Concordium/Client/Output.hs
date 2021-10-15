@@ -340,17 +340,34 @@ printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
       where receiveNameText = Wasm.receiveName rcvName
 
 -- |Print module inspect info, i.e., the named moduleRef and its included contracts.
--- Signatures for the contracts' init functions are also printed, if available in the schema.
-printModuleInspectInfo :: NamedModuleRef -> CS.ModuleSchema -> Printer
-printModuleInspectInfo namedModRef CS.ModuleSchema{..} = do
+-- Combines the contract names from the ModuleSchema and the contract names from the list of exported function names.
+-- If the signature for a contract's init function exists in the schema, it is also printed.
+-- Otherwise, it just prints the contract name.
+printModuleInspectInfo :: NamedModuleRef
+                       -> Maybe CS.ModuleSchema
+                       -> [Text] -- ^ Exported function names. -- TODO: This should be `ContractNames` instead of [Text]
+                       -> Printer
+printModuleInspectInfo namedModRef moduleSchema exportedFuncNames = do
   tell [ [i|Module:    #{showNamedModuleRef namedModRef}|]
        , [i|Contracts:|]]
-  -- TODO: Should also print contracts without a schema. They can be found by parsing the Wasm module.
   tell contracts
 
   where
-    contracts = map showContract $ Map.toList contractSchemas
-    showContract (contractName, CS.ContractSchema{..}) = case initSig of
+    contractsFromSchema :: Map.Map Text (Maybe SchemaType)
+    contractsFromSchema = case moduleSchema of
+      Nothing -> Map.empty
+      Just CS.ModuleSchema{..} -> fmap initSig contractSchemas
+
+    -- Find the contract names and create a Map without any corresponding init signatures.
+    contractsFromExports :: Map.Map Text (Maybe SchemaType)
+    contractsFromExports = Map.fromList . map ((, Nothing) . Text.drop 5) . filter (Text.isPrefixOf "init_") $ exportedFuncNames
+
+    -- Combine the contracts from the schema and the exports, preferring the values from the schema map.
+    combinedContracts :: Map.Map Text (Maybe SchemaType)
+    combinedContracts = Map.union contractsFromSchema contractsFromExports
+
+    contracts = map showContract $ Map.toList combinedContracts
+    showContract (contractName, initSig) = case initSig of
       Nothing -> [i| - #{contractName}|]
       Just initSig' -> [i| - #{contractName}\n#{indentBy 4 $ showPrettyJSON initSig'}|]
 

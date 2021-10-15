@@ -30,6 +30,7 @@ import qualified Data.Text.Encoding as Text
 import qualified Data.Vector as V
 import Data.Word (Word8, Word32, Word64)
 import GHC.Generics
+import Data.Maybe(isJust)
 
 -- |Try to find an embedded schema in a module and decode it.
 decodeEmbeddedSchema :: BS.ByteString -> Either String (Maybe ModuleSchema)
@@ -40,7 +41,7 @@ decodeModuleSchema :: BS.ByteString -> Either String ModuleSchema
 decodeModuleSchema = S.decode
 
 -- |Try to find an embedded schema and a list of exported function names and decode them.
-decodeEmbeddedSchemaAndExports :: BS.ByteString -> Either String (Maybe ModuleSchema, Maybe [Text])
+decodeEmbeddedSchemaAndExports :: BS.ByteString -> Either String (Maybe ModuleSchema, [Text])
 decodeEmbeddedSchemaAndExports = S.runGet getEmbeddedSchemaAndExportsFromModule
 
 -- |Tries to find the signature, i.e. `SchemaType`, for a contract function by its name.
@@ -259,21 +260,21 @@ data FuncName
 
 -- |Try to find and decode an embedded `ModuleSchema` and a list of exported functions
 -- from inside a WasmModule.
-getEmbeddedSchemaAndExportsFromModule :: S.Get (Maybe ModuleSchema, Maybe [Text])
+getEmbeddedSchemaAndExportsFromModule :: S.Get (Maybe ModuleSchema, [Text])
 getEmbeddedSchemaAndExportsFromModule = do
   mhBs <- S.getByteString 4
   unless (mhBs == wasmMagicHash) $ fail "Unknown magic value. This is likely not a Wasm module."
   vBs <- S.getByteString 4
   unless (vBs == wasmVersion) $ fail "Unsupported Wasm version."
-  go (Nothing, Nothing)
+  go (Nothing, [])
 
   where
     -- |Try to extract a module schema and a list of exported function names from a WASM module.
     -- Both of which can exist at most once and can be located at any position.
-    go :: (Maybe ModuleSchema, Maybe [Text]) -> S.Get (Maybe ModuleSchema, Maybe [Text])
+    go :: (Maybe ModuleSchema, [Text]) -> S.Get (Maybe ModuleSchema, [Text])
     go schemaAndFuncNames@(mSchema, mFuncNames) = case schemaAndFuncNames of
       -- Return if both values are found.
-      (Just _, Just _) -> return schemaAndFuncNames
+      (Just _, _:_) -> return schemaAndFuncNames
       -- Otherwise, keep looking.
       _ -> do
         isEmpty <- S.isEmpty
@@ -291,7 +292,7 @@ getEmbeddedSchemaAndExportsFromModule = do
               then do
                 schemaFound <- S.get
                 -- Return if both the schema and funcNames are found, otherwise keep looking for the funcNames.
-                if isJust mFuncNames
+                if not $ null mFuncNames
                   then return (Just schemaFound, mFuncNames)
                   else go (Just schemaFound, mFuncNames)
               else S.skip sectionSize *> go schemaAndFuncNames
@@ -302,8 +303,8 @@ getEmbeddedSchemaAndExportsFromModule = do
 
               -- Return if both the schema and funcNames are found, otherwise keep looking for the schema.
               if isJust mSchema
-                then return (mSchema, Just funcNamesFound)
-                else go (mSchema, Just funcNamesFound)
+                then return (mSchema, funcNamesFound)
+                else go (mSchema, funcNamesFound)
 
             -- Any other type of section
             _ -> S.skip sectionSize *> go schemaAndFuncNames
