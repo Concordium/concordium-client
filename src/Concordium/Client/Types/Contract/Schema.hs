@@ -7,6 +7,7 @@ module Concordium.Client.Types.Contract.Schema(ContractSchema(..),
                                                SchemaType(..),
                                                SizeLength(..),
                                                decodeEmbeddedSchema,
+                                               decodeEmbeddedSchemaAndExports,
                                                decodeModuleSchema,
                                                getListOfWithKnownLen,
                                                getListOfWithSizeLen,
@@ -32,11 +33,15 @@ import GHC.Generics
 
 -- |Try to find an embedded schema in a module and decode it.
 decodeEmbeddedSchema :: BS.ByteString -> Either String (Maybe ModuleSchema)
-decodeEmbeddedSchema = S.runGet getEmbeddedSchemaFromModule
+decodeEmbeddedSchema = fmap fst . decodeEmbeddedSchemaAndExports
 
 -- |Decode a `ModuleSchema`.
 decodeModuleSchema :: BS.ByteString -> Either String ModuleSchema
 decodeModuleSchema = S.decode
+
+-- |Try to find an embedded schema and a list of exported function names and decode them.
+decodeEmbeddedSchemaAndExports :: BS.ByteString -> Either String (Maybe ModuleSchema, Maybe [Text])
+decodeEmbeddedSchemaAndExports = S.runGet getEmbeddedSchemaAndExportsFromModule
 
 -- |Tries to find the signature, i.e. `SchemaType`, for a contract function by its name.
 lookupSignatureForFunc :: ModuleSchema -> FuncName -> Maybe SchemaType
@@ -252,56 +257,56 @@ data FuncName
   | ReceiveFuncName !Text !Text -- ^ Name of a receive function.
   deriving Eq
 
-data ExtractedFromModule
-  = NothingFound
-  | FunctionNamesFound [Text]
-  | SchemaFound ModuleSchema
-  deriving Eq
-
--- |Try to find an embedded `ModuleSchema` inside a WasmModule and decode it.
--- Returns `Nothing` if no schema is embedded.
-getEmbeddedSchemaFromModule :: S.Get (Maybe ModuleSchema)
-getEmbeddedSchemaFromModule = do
+-- |Try to find and decode an embedded `ModuleSchema` and a list of exported functions
+-- from inside a WasmModule.
+getEmbeddedSchemaAndExportsFromModule :: S.Get (Maybe ModuleSchema, Maybe [Text])
+getEmbeddedSchemaAndExportsFromModule = do
   mhBs <- S.getByteString 4
   unless (mhBs == wasmMagicHash) $ fail "Unknown magic value. This is likely not a Wasm module."
   vBs <- S.getByteString 4
   unless (vBs == wasmVersion) $ fail "Unsupported Wasm version."
-  extractedFromMod <- go
-  case extractedFromMod of
-    NothingFound -> return Nothing
-    FunctionNamesFound _names -> return Nothing
-    SchemaFound schema -> return . Just $ schema
+  go (Nothing, Nothing)
 
   where
-    go :: S.Get ExtractedFromModule
-    go = do
-      isEmpty <- S.isEmpty
-      -- Not all modules contain a schema or export sections.
-      -- We reached the end of input without finding the schema or exported functions.
-      if isEmpty then
-        return NothingFound
-      else do
-        sectionId <- S.label "sectionId" S.getWord8
-        sectionSize <- S.label "sectionSize" $ fromIntegral <$> getLEB128Word32le
-        case sectionId of
-          -- Custom section
-          0 -> do
-            name <- S.label "Custom Section Name" getTextWithLEB128Len
-            if name == "concordium-schema-v1"
-            then SchemaFound <$> S.get
-            else S.skip sectionSize *> go
-          -- Export section
-          7 -> do
-            exports <- getListOfWithLEB128Len (S.getTwoOf getTextWithLEB128Len getExportDescription)
+    -- |Try to extract a module schema and a list of exported function names from a WASM module.
+    -- Both of which can exist at most once and can be located at any position.
+    go :: (Maybe ModuleSchema, Maybe [Text]) -> S.Get (Maybe ModuleSchema, Maybe [Text])
+    go schemaAndFuncNames@(mSchema, mFuncNames) = case schemaAndFuncNames of
+      -- Return if both values are found.
+      (Just _, Just _) -> return schemaAndFuncNames
+      -- Otherwise, keep looking.
+      _ -> do
+        isEmpty <- S.isEmpty
+        if isEmpty then
+          -- End of module reached; return the values found.
+          return schemaAndFuncNames
+        else do
+          sectionId <- S.label "sectionId" S.getWord8
+          sectionSize <- S.label "sectionSize" $ fromIntegral <$> getLEB128Word32le
+          case sectionId of
+            -- Custom section
+            0 -> do
+              name <- S.label "Custom Section Name" getTextWithLEB128Len
+              if name == "concordium-schema-v1"
+              then do
+                schemaFound <- S.get
+                -- Return if both the schema and funcNames are found, otherwise keep looking for the funcNames.
+                if isJust mFuncNames
+                  then return (Just schemaFound, mFuncNames)
+                  else go (Just schemaFound, mFuncNames)
+              else S.skip sectionSize *> go schemaAndFuncNames
+            -- Export section
+            7 -> do
+              exports <- getListOfWithLEB128Len (S.getTwoOf getTextWithLEB128Len getExportDescription)
+              let funcNamesFound = map fst . filter ((==) Func . snd) $ exports
 
-            let functionExports = filter ((==) Func . snd) exports
+              -- Return if both the schema and funcNames are found, otherwise keep looking for the schema.
+              if isJust mSchema
+                then return (mSchema, Just funcNamesFound)
+                else go (mSchema, Just funcNamesFound)
 
-            if null functionExports
-              then return NothingFound
-              else return . FunctionNamesFound . map fst $ functionExports
-
-          -- Any other type of section
-          _ -> S.skip sectionSize *> go
+            -- Any other type of section
+            _ -> S.skip sectionSize *> go schemaAndFuncNames
 
 
     getExportDescription :: S.Get ExportDescription
