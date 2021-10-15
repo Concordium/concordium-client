@@ -165,7 +165,7 @@ instance AE.ToJSON SchemaType where
     UInt128 -> AE.String "<UInt128>"
     Int128 -> AE.String "<Int128>"
     ContractName _ -> AE.object [ "contract" .= AE.String "<String>" ]
-    ReceiveName _ -> AE.object [ "contract" .= AE.String "<String>", "func" .= AE.toJSON "<String>" ]
+    ReceiveName _ -> AE.object [ "contract" .= AE.String "<String>", "func" .= AE.String "<String>" ]
     where toJsonArray = AE.Array . V.fromList
 
 instance S.Serialize SchemaType where
