@@ -135,8 +135,8 @@ instance Hashable SchemaType
 --   - Enums are shown with all of its variants in a list,
 --     but only one variant should be used in the parameter file.
 --   - All placeholders are surrounded with <> and shown as strings,
---     even when the expected value not is a string.
---     Fx: "<UInt8>" which should be replaced with an unquoted number.
+--     even when the expected value is not a string.
+--     For example: "<UInt8>" which should be replaced with an unquoted number.
 instance AE.ToJSON SchemaType where
   toJSON = \case
     Unit -> AE.Array . V.fromList $ []
@@ -164,8 +164,8 @@ instance AE.ToJSON SchemaType where
     String _ -> AE.String "<String>"
     UInt128 -> AE.String "<UInt128>"
     Int128 -> AE.String "<Int128>"
-    ContractName _ -> AE.object [ "contract" .= AE.toJSON (String Two) ]
-    ReceiveName _ -> AE.object [ "contract" .= AE.toJSON (String Two), "func" .= AE.toJSON (String Two) ]
+    ContractName _ -> AE.object [ "contract" .= AE.String "<String>" ]
+    ReceiveName _ -> AE.object [ "contract" .= AE.String "<String>", "func" .= AE.toJSON "<String>" ]
     where toJsonArray = AE.Array . V.fromList
 
 instance S.Serialize SchemaType where
