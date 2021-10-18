@@ -444,9 +444,9 @@ hostParser =
   strOption
     (long "grpc-ip" <>
      metavar "GRPC-IP" <>
-     value "localhost" <> -- default value
+     value "127.0.0.1" <> -- matches the default RPC listen address for the node
      showDefault <>
-     help "IP address on which the gRPC server is listening.")
+     help "Address on which the gRPC server is listening. Either an IP address or a hostname.")
 
 portParser :: Parser PortNumber
 portParser =
