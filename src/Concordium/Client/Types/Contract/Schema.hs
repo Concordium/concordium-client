@@ -258,8 +258,8 @@ data FuncName
   | ReceiveFuncName !Text !Text -- ^ Name of a receive function.
   deriving Eq
 
--- |Try to find and decode an embedded `ModuleSchema` and a list of exported functions
--- from inside a WasmModule.
+-- |Try to find and decode an embedded `ModuleSchema` and a list of exported function
+-- names from inside a Wasm module.
 getEmbeddedSchemaAndExportsFromModule :: S.Get (Maybe ModuleSchema, [Text])
 getEmbeddedSchemaAndExportsFromModule = do
   mhBs <- S.getByteString 4
@@ -269,7 +269,7 @@ getEmbeddedSchemaAndExportsFromModule = do
   go (Nothing, [])
 
   where
-    -- |Try to extract a module schema and a list of exported function names from a WASM module.
+    -- |Try to extract a module schema and a list of exported function names from a Wasm module.
     -- Both of which can exist at most once and can be located at any position.
     go :: (Maybe ModuleSchema, [Text]) -> S.Get (Maybe ModuleSchema, [Text])
     go schemaAndFuncNames@(mSchema, mFuncNames) = case schemaAndFuncNames of
@@ -285,7 +285,7 @@ getEmbeddedSchemaAndExportsFromModule = do
           sectionId <- S.label "sectionId" S.getWord8
           sectionSize <- S.label "sectionSize" $ fromIntegral <$> getLEB128Word32le
           case sectionId of
-            -- Custom section
+            -- Custom section (which is where we store the schema).
             0 -> do
               name <- S.label "Custom Section Name" getTextWithLEB128Len
               if name == "concordium-schema-v1"
@@ -299,6 +299,8 @@ getEmbeddedSchemaAndExportsFromModule = do
             -- Export section
             7 -> do
               exports <- getListOfWithLEB128Len (S.getTwoOf getTextWithLEB128Len getExportDescription)
+
+              -- Four types of exports exist. Filter out anything but function exports.
               let funcNamesFound = map fst . filter ((==) Func . snd) $ exports
 
               -- Return if both the schema and funcNames are found, otherwise keep looking for the schema.
@@ -309,11 +311,11 @@ getEmbeddedSchemaAndExportsFromModule = do
             -- Any other type of section
             _ -> S.skip sectionSize *> go schemaAndFuncNames
 
-
+    -- |Get an export description, which has a one-byte tag followed by a LEB128-Word32 index.
     getExportDescription :: S.Get ExportDescription
     getExportDescription = S.label "Export Description" $ do
       tag <- S.getWord8
-      _ <- getLEB128Word32le -- Read and skip the indices
+      _ <- getLEB128Word32le -- Read and skip the indices, as we do not need them.
       case tag of
         0 -> return Func
         1 -> return Table
@@ -321,6 +323,7 @@ getEmbeddedSchemaAndExportsFromModule = do
         3 -> return Global
         _ -> fail [i|"Invalid Export Description Tag: #{tag}"|]
 
+    -- |Get Text where the length is encoded as LEB128-Word32.
     getTextWithLEB128Len :: S.Get Text
     getTextWithLEB128Len = S.label "Text with LEB128 Length" $ do
       txt <- Text.decodeUtf8' . BS.pack <$> getListOfWithLEB128Len S.get
@@ -328,11 +331,11 @@ getEmbeddedSchemaAndExportsFromModule = do
         Left err -> fail [i|Could not decode Text with LEB128 len: #{err}|]
         Right txt' -> pure txt'
 
+    -- |Get a list of items where the length of the list is encoded as LEB128-Word32.
     getListOfWithLEB128Len :: S.Get a -> S.Get [a]
     getListOfWithLEB128Len getElem = S.label "List with LEB128 length" $ do
       len <- getLEB128Word32le
       getListOfWithKnownLen len getElem
-
 
     -- |Get a LEB128-encoded Word32. This uses an encoding compatible with the Wasm standard,
     -- which means that the encoding will use at most 5 bytes.
