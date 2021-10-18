@@ -170,10 +170,10 @@ getFromJsonAndHandleError handleError r = do
 
 -- |Look up account from the provided name or address. If 'Nothing' is given, use the defaultAcccountName.
 -- Fail if the address cannot be found.
--- Should be kept consistent with processAccountCmd for AccountShow
 getAccountAddressArg :: AccountNameMap -> Maybe Text -> IO NamedAddress
-getAccountAddressArg m input =
-  case getAccountAddress m $ fromMaybe defaultAccountName input of
+getAccountAddressArg m input = do
+  account <- getAccountOrDefault input
+  case getAccountAddress m account of
     Left err -> logFatal [err]
     Right v -> return v
 
@@ -1542,11 +1542,7 @@ processAccountCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      -- if no input is given, use default account name. 
-      -- Should be kept consistent with 'getAccountAddressArg'
-      let input = case inputMaybe of
-                    Nothing -> defaultAccountName
-                    Just v -> v
+      input <- getAccountOrDefault inputMaybe
 
       accountIdentifier <- case deserializeBase16 input of 
                 Just (_ :: ID.CredentialRegistrationID) -> return input -- input is a wellformed credRegID
