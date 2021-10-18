@@ -2155,12 +2155,12 @@ getSchemaFromFileOrModule :: Maybe FilePath -- ^ Optional schema file.
                           -> Text -- ^ A block hash.
                           -> ClientMonad IO (Maybe CS.ModuleSchema)
 getSchemaFromFileOrModule schemaFile modSourceOrRef block = case (schemaFile, modSourceOrRef) of
-  (Nothing, Left modSource) -> liftIO $ tryGetSchemaFromModuleSource modSource
+  (Nothing, Left modSource) -> liftIO $ getSchemaFromModuleOrDie modSource
   (Nothing, Right namedModRef) -> do
     Wasm.WasmModule{..} <- getWasmModule namedModRef block
-    liftIO $ tryGetSchemaFromModuleSource wasmSource
+    liftIO $ getSchemaFromModuleOrDie wasmSource
   (Just schemaFile', _) -> liftIO (Just <$> getSchemaFromFile schemaFile')
-  where tryGetSchemaFromModuleSource (Wasm.ModuleSource modSrc) = case CS.decodeEmbeddedSchema modSrc of
+  where getSchemaFromModuleOrDie (Wasm.ModuleSource modSrc) = case CS.decodeEmbeddedSchema modSrc of
           Left err -> logFatal [[i|Could not parse embedded schema from module:|], err]
           Right schema -> return schema
 
