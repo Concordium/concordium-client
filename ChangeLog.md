@@ -9,6 +9,8 @@
 - Update `register-data` command to register data as CBOR encoded strings or JSON using the new flags
   `--string` and `--json`. Raw data can still be registered using the new flag `--raw`.
 - Add `raw DisconnectPeer`, a dual to the existing `raw ConnectPeer`.
+- Improve `module inspect` so it shows all contracts from a module regardless of
+whether a schema is included or not. 
 
 ## 1.1.1
 
