@@ -345,7 +345,7 @@ printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
 -- Otherwise, it just prints the contract name.
 printModuleInspectInfo :: NamedModuleRef
                        -> Maybe CS.ModuleSchema
-                       -> [Text] -- ^ Exported function names. -- TODO: This should be `ContractNames` instead of [Text]
+                       -> [Text] -- ^ Exported function names.
                        -> Printer
 printModuleInspectInfo namedModRef moduleSchema exportedFuncNames = do
   tell [ [i|Module:    #{showNamedModuleRef namedModRef}|]
@@ -358,7 +358,7 @@ printModuleInspectInfo namedModRef moduleSchema exportedFuncNames = do
       Nothing -> Map.empty
       Just CS.ModuleSchema{..} -> fmap initSig contractSchemas
 
-    -- Find the contract names and create a Map without any corresponding init signatures.
+    -- Find the contract names, strip the `init_` prefix, and create a Map without any corresponding init signatures.
     contractsFromExports :: Map.Map Text (Maybe SchemaType)
     contractsFromExports = Map.fromList . map ((, Nothing) . Text.drop 5) . filter (Text.isPrefixOf "init_") $ exportedFuncNames
 

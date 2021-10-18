@@ -2148,6 +2148,7 @@ getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile modSourceOrR
 
 -- |Get a schema from a file or, alternatively, try to extract an embedded schema from a module.
 -- Logs fatally if an invalid schema is found (either from a file or embedded).
+-- The schema from the file will take precedence over an embedded schema in the module.
 -- Only returns `Nothing` if no schemaFile is provided and no embedded schema was found in the module.
 getSchemaFromFileOrModule :: Maybe FilePath -- ^ Optional schema file.
                           -> Either Wasm.ModuleSource NamedModuleRef -- ^ Either a Wasm Module or a reference to a module on chain.
@@ -2159,16 +2160,11 @@ getSchemaFromFileOrModule schemaFile modSourceOrRef block = case (schemaFile, mo
     Wasm.WasmModule{..} <- getWasmModule namedModRef block
     liftIO $ tryGetSchemaFromModuleSource wasmSource
   (Just schemaFile', _) -> liftIO (Just <$> getSchemaFromFile schemaFile')
-  where tryGetSchemaFromModuleSource (Wasm.ModuleSource modSrc) = case getSchemaFromModule modSrc of
+  where tryGetSchemaFromModuleSource (Wasm.ModuleSource modSrc) = case CS.decodeEmbeddedSchema modSrc of
           Left err -> logFatal [[i|Could not parse embedded schema from module:|], err]
           Right schema -> return schema
 
-
-        -- |Try to extract and decode a schema from a module.
-        getSchemaFromModule :: BS.ByteString -> Either String (Maybe CS.ModuleSchema)
-        getSchemaFromModule = CS.decodeEmbeddedSchema
-
--- |Load and decode a schema from a file.
+-- |Try to load and decode a schema from a file. Logs fatally if the file is not a valid Wasm module.
 getSchemaFromFile :: FilePath -> IO CS.ModuleSchema
 getSchemaFromFile schemaFile = do
   schema <- CS.decodeModuleSchema <$> handleReadFile BS.readFile schemaFile
@@ -2176,6 +2172,10 @@ getSchemaFromFile schemaFile = do
     Left err -> logFatal [[i|Could not decode schema from file '#{schemaFile}':|], err]
     Right schema' -> pure schema'
 
+-- |Get a schema and a list of exported function names from an optional schema file and a module reference.
+-- Logs fatally if an invalid schema is found (either from a file or embedded).
+-- The schema from the file will take precedence over an embedded schema in the module.
+-- It will only return `(Nothing, _)` if no schemafile is provided and no embedded schema was found in the module.
 getSchemaAndExports :: Maybe FilePath -- ^ Optional schema file.
                     -> NamedModuleRef -- ^ Module reference used for looking up a schema and exports.
                     -> Text -- ^ A block hash.
