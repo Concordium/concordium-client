@@ -168,12 +168,11 @@ getFromJsonAndHandleError handleError r = do
     Error err -> handleError s err
     Success v -> return v
 
--- |Look up account from the provided name or address. If 'Nothing' is given, use the defaultAcccountName.
+-- |Look up account from the provided name or address.
 -- Fail if the address cannot be found.
--- Should be kept consistent with processAccountCmd for AccountShow
-getAccountAddressArg :: AccountNameMap -> Maybe Text -> IO NamedAddress
-getAccountAddressArg m input =
-  case getAccountAddress m $ fromMaybe defaultAccountName input of
+getAccountAddressArg :: AccountNameMap -> Text -> IO NamedAddress
+getAccountAddressArg m account = do
+  case getAccountAddress m account of
     Left err -> logFatal [err]
     Right v -> return v
 
@@ -574,7 +573,7 @@ processTransactionCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
+      receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
 
       withClient backend $ do
         cs <- getConsensusStatus >>= getFromJson
@@ -620,7 +619,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                                COM.Year -> 365 * 24 * 60 * 60 * 1000
                          in
                            zip (iterate (+ diff) start) (replicate (numIntervals - 1) chunks ++ [chunks + lastChunk])
-      receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
+      receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
       withClient backend $ do
         cs <- getConsensusStatus >>= getFromJson
         pl <- liftIO $ do
@@ -668,7 +667,7 @@ processTransactionCmd action baseCfgDir verbose backend =
             Just x -> return x
       secretKey <- decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey `withLogFatalIO` ("Couldn't decrypt account encryption secret key: " ++)
 
-      receiverAcc <- getAccountAddressArg (bcAccountNameMap baseCfg) (Just receiver)
+      receiverAcc <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
 
       withClient backend $ do
         transferData <- getEncryptedAmountTransferData (naAddr senderAddr) receiverAcc amount index secretKey
@@ -1542,11 +1541,11 @@ processAccountCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      -- if no input is given, use default account name. 
-      -- Should be kept consistent with 'getAccountAddressArg'
-      let input = case inputMaybe of
-                    Nothing -> defaultAccountName
-                    Just v -> v
+      input <- case inputMaybe of
+        Nothing -> do
+          logInfo [[i|the ACCOUNT argument was not provided; using the default account name '#{defaultAccountName}'|]]
+          return defaultAccountName
+        Just acc -> return acc
 
       accountIdentifier <- case deserializeBase16 input of 
                 Just (_ :: ID.CredentialRegistrationID) -> return input -- input is a wellformed credRegID
@@ -1554,7 +1553,9 @@ processAccountCmd action baseCfgDir verbose backend =
                   Right _ -> return input -- input is a wellformed address
                   Left _ -> case Map.lookup input (bcAccountNameMap baseCfg) of
                     Just a -> return $ Text.pack $ show a -- input is the local name of an account
-                    Nothing -> logFatal [printf "The identifier '%s' is neither a credential registration ID, the address nor the name of an account" input]
+                    Nothing -> if isNothing inputMaybe
+                               then logFatal [[i|The ACCOUNT argument was not provided; so the default account name '#{defaultAccountName}' was used, but no account with that name exists.|]]
+                               else logFatal [[i|The identifier '#{input}' is neither a credential registration ID, the address nor the name of an account|]]
 
       (accInfo, na, dec, f) <- withClient backend $ do
         -- query account
