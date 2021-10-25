@@ -168,11 +168,10 @@ getFromJsonAndHandleError handleError r = do
     Error err -> handleError s err
     Success v -> return v
 
--- |Look up account from the provided name or address. If 'Nothing' is given, use the defaultAcccountName.
+-- |Look up account from the provided name or address.
 -- Fail if the address cannot be found.
-getAccountAddressArg :: AccountNameMap -> Maybe Text -> IO NamedAddress
-getAccountAddressArg m input = do
-  account <- getAccountOrDefault input
+getAccountAddressArg :: AccountNameMap -> Text -> IO NamedAddress
+getAccountAddressArg m account = do
   case getAccountAddress m account of
     Left err -> logFatal [err]
     Right v -> return v
@@ -574,7 +573,7 @@ processTransactionCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
+      receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
 
       withClient backend $ do
         cs <- getConsensusStatus >>= getFromJson
@@ -620,7 +619,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                                COM.Year -> 365 * 24 * 60 * 60 * 1000
                          in
                            zip (iterate (+ diff) start) (replicate (numIntervals - 1) chunks ++ [chunks + lastChunk])
-      receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
+      receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
       withClient backend $ do
         cs <- getConsensusStatus >>= getFromJson
         pl <- liftIO $ do
@@ -668,7 +667,7 @@ processTransactionCmd action baseCfgDir verbose backend =
             Just x -> return x
       secretKey <- decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey `withLogFatalIO` ("Couldn't decrypt account encryption secret key: " ++)
 
-      receiverAcc <- getAccountAddressArg (bcAccountNameMap baseCfg) (Just receiver)
+      receiverAcc <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
 
       withClient backend $ do
         transferData <- getEncryptedAmountTransferData (naAddr senderAddr) receiverAcc amount index secretKey
