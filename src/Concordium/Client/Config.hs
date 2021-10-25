@@ -841,7 +841,11 @@ getAccountConfig :: Maybe Text
                  -- This will also ask the user for an optional name mapping.
                  -> IO (BaseConfig, AccountConfig)
 getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
-  account' <- getAccountOrDefault account
+  account' <- case account of
+    Nothing -> do
+      logInfo [[i|"the --sender flag is not provided; using the default account name '#{defaultAccountName}'"|]]
+      return defaultAccountName
+    Just a -> return a
   namedAddr <- case getAccountAddress (bcAccountNameMap baseCfg) account' of
                  Left err -> logFatal [err]
                  Right v -> return v
@@ -914,15 +918,6 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
               return . Just $ a
         else do
           return Nothing
-
--- |Get the account (as provided with the `--sender` flag), or return the defaultAccountName.
--- Logs an info message when the default name is used.
-getAccountOrDefault :: Maybe Text -> IO Text
-getAccountOrDefault = \case
-  Nothing -> do
-    logInfo [printf "the --sender flag is not provided; using the default account name: \"%s\"" defaultAccountName]
-    return defaultAccountName
-  Just acc -> return acc
 
 -- |Look up an account by name or address:
 -- If input is a well-formed account address, try to (reverse) look up its name in the map.

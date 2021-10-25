@@ -1541,7 +1541,11 @@ processAccountCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      input <- getAccountOrDefault inputMaybe
+      input <- case inputMaybe of
+        Nothing -> do
+          logInfo [[i|"ACCOUNT argument not provided; using the default account name '#{defaultAccountName}'"|]]
+          return defaultAccountName
+        Just acc -> return acc
 
       accountIdentifier <- case deserializeBase16 input of 
                 Just (_ :: ID.CredentialRegistrationID) -> return input -- input is a wellformed credRegID
