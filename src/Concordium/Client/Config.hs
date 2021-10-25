@@ -843,11 +843,13 @@ getAccountConfig :: Maybe Text
 getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
   account' <- case account of
     Nothing -> do
-      logInfo [[i|"the --sender flag is not provided; using the default account name '#{defaultAccountName}'"|]]
+      logInfo [[i|the --sender flag is not provided; using the default account name '#{defaultAccountName}'|]]
       return defaultAccountName
     Just a -> return a
   namedAddr <- case getAccountAddress (bcAccountNameMap baseCfg) account' of
-                 Left err -> logFatal [err]
+                 Left err -> if isNothing account
+                             then logFatal [[i|The --sender flag was not provided; so the default account name '#{defaultAccountName}' was used, but no account with that name exists.|]]
+                             else logFatal [err]
                  Right v -> return v
 
   (bc, km, cidMap) <-

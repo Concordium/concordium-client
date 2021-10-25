@@ -1543,7 +1543,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       input <- case inputMaybe of
         Nothing -> do
-          logInfo [[i|"ACCOUNT argument not provided; using the default account name '#{defaultAccountName}'"|]]
+          logInfo [[i|the ACCOUNT argument was not provided; using the default account name '#{defaultAccountName}'|]]
           return defaultAccountName
         Just acc -> return acc
 
@@ -1553,7 +1553,9 @@ processAccountCmd action baseCfgDir verbose backend =
                   Right _ -> return input -- input is a wellformed address
                   Left _ -> case Map.lookup input (bcAccountNameMap baseCfg) of
                     Just a -> return $ Text.pack $ show a -- input is the local name of an account
-                    Nothing -> logFatal [printf "The identifier '%s' is neither a credential registration ID, the address nor the name of an account" input]
+                    Nothing -> if isNothing inputMaybe
+                               then logFatal [[i|The ACCOUNT argument was not provided; so the default account name '#{defaultAccountName}' was used, but no account with that name exists.|]]
+                               else logFatal [[i|The identifier '#{input}' is neither a credential registration ID, the address nor the name of an account|]]
 
       (accInfo, na, dec, f) <- withClient backend $ do
         -- query account
