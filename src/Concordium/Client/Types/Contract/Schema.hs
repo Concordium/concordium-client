@@ -1,18 +1,19 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE QuasiQuotes #-}
-module Concordium.Client.Types.Contract.Schema(ContractSchema(..),
-                                               Fields(..),
-                                               FuncName(..),
-                                               ModuleSchema(..),
-                                               SchemaType(..),
-                                               SizeLength(..),
-                                               decodeEmbeddedSchema,
-                                               decodeEmbeddedSchemaAndExports,
-                                               decodeModuleSchema,
-                                               getListOfWithKnownLen,
-                                               getListOfWithSizeLen,
-                                               lookupSignatureForFunc,
-                                               putLenWithSizeLen) where
+module Concordium.Client.Types.Contract.Schema(
+  ContractSchema(..),
+  Fields(..),
+  FuncName(..),
+  ModuleSchema(..),
+  SchemaType(..),
+  SizeLength(..),
+  decodeEmbeddedSchema,
+  decodeEmbeddedSchemaAndExports,
+  decodeModuleSchema,
+  getListOfWithKnownLen,
+  getListOfWithSizeLen,
+  lookupSignatureForFunc,
+  putLenWithSizeLen) where
 
 import Control.Monad (unless)
 import Data.Aeson ((.=))
