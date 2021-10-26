@@ -339,22 +339,15 @@ printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
       _ -> receiveNameText
       where receiveNameText = Wasm.receiveName rcvName
 
-
-printModuleInspectInfo :: NamedModuleRef
-                       -> Maybe CS.ModuleSchema
-                       -> [Text] -- ^ Exported function names.
-                       -> Printer
-printModuleInspectInfo = undefined
-
 -- |Print module inspect info, i.e., the named moduleRef and its included contracts.
 -- If the init or receive signatures for a contract exist in the schema, they are also printed.
 -- Otherwise, it just prints the method names.
 -- If the schema contains signatures for init or receive methods not in the module, a warning is displayed.
-printModuleInspectInfo2 :: NamedModuleRef
+printModuleInspectInfo :: NamedModuleRef
                         -> Maybe CS.ModuleSchema
                         -> [Text] -- ^ Exported function names.
                         -> Printer
-printModuleInspectInfo2 namedModRef moduleSchema exportedFuncNames = do
+printModuleInspectInfo namedModRef moduleSchema exportedFuncNames = do
   tell [ [i|Module:    #{showNamedModuleRef namedModRef}|]
        , [i|Contracts:|]]
   tell $ showMap mapWithSchemas
