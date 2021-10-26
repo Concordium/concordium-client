@@ -168,12 +168,11 @@ getFromJsonAndHandleError handleError r = do
     Error err -> handleError s err
     Success v -> return v
 
--- |Look up account from the provided name or address. If 'Nothing' is given, use the defaultAcccountName.
+-- |Look up account from the provided name or address.
 -- Fail if the address cannot be found.
--- Should be kept consistent with processAccountCmd for AccountShow
-getAccountAddressArg :: AccountNameMap -> Maybe Text -> IO NamedAddress
-getAccountAddressArg m input =
-  case getAccountAddress m $ fromMaybe defaultAccountName input of
+getAccountAddressArg :: AccountNameMap -> Text -> IO NamedAddress
+getAccountAddressArg m account = do
+  case getAccountAddress m account of
     Left err -> logFatal [err]
     Right v -> return v
 
@@ -574,7 +573,7 @@ processTransactionCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
+      receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
 
       withClient backend $ do
         cs <- getConsensusStatus >>= getFromJson
@@ -620,7 +619,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                                COM.Year -> 365 * 24 * 60 * 60 * 1000
                          in
                            zip (iterate (+ diff) start) (replicate (numIntervals - 1) chunks ++ [chunks + lastChunk])
-      receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) $ Just receiver
+      receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
       withClient backend $ do
         cs <- getConsensusStatus >>= getFromJson
         pl <- liftIO $ do
@@ -668,7 +667,7 @@ processTransactionCmd action baseCfgDir verbose backend =
             Just x -> return x
       secretKey <- decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey `withLogFatalIO` ("Couldn't decrypt account encryption secret key: " ++)
 
-      receiverAcc <- getAccountAddressArg (bcAccountNameMap baseCfg) (Just receiver)
+      receiverAcc <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
 
       withClient backend $ do
         transferData <- getEncryptedAmountTransferData (naAddr senderAddr) receiverAcc amount index secretKey
@@ -1257,6 +1256,15 @@ bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm
           Just x -> return x
           Nothing -> logFatal [err]
 
+-- |Query the chain for the minimum baker stake threshold. Fail if the chain cannot be reached.
+getBakerStakeThresholdOrDie :: ClientMonad IO Types.Amount
+getBakerStakeThresholdOrDie = do
+  blockSummary <- getFromJson =<< withLastFinalBlockHash Nothing getBlockSummary
+  case blockSummary of
+    Nothing -> do
+      logFatal ["Could not reach the node to retrieve the baker stake threshold."]
+    Just bs -> return $ (bsurChainParameters $ bsrUpdates bs) ^. cpBakerStakeThreshold
+
 getAccountUpdateCredentialsTransactionData ::
   Maybe FilePath -- ^ A file with new credentials.
   -> Maybe FilePath -- ^ A file with an array of credential registration ids to remove.
@@ -1533,11 +1541,11 @@ processAccountCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      -- if no input is given, use default account name. 
-      -- Should be kept consistent with 'getAccountAddressArg'
-      let input = case inputMaybe of
-                    Nothing -> defaultAccountName
-                    Just v -> v
+      input <- case inputMaybe of
+        Nothing -> do
+          logInfo [[i|the ACCOUNT argument was not provided; using the default account name '#{defaultAccountName}'|]]
+          return defaultAccountName
+        Just acc -> return acc
 
       accountIdentifier <- case deserializeBase16 input of 
                 Just (_ :: ID.CredentialRegistrationID) -> return input -- input is a wellformed credRegID
@@ -1545,7 +1553,9 @@ processAccountCmd action baseCfgDir verbose backend =
                   Right _ -> return input -- input is a wellformed address
                   Left _ -> case Map.lookup input (bcAccountNameMap baseCfg) of
                     Just a -> return $ Text.pack $ show a -- input is the local name of an account
-                    Nothing -> logFatal [printf "The identifier '%s' is neither a credential registration ID, the address nor the name of an account" input]
+                    Nothing -> if isNothing inputMaybe
+                               then logFatal [[i|The ACCOUNT argument was not provided; so the default account name '#{defaultAccountName}' was used, but no account with that name exists.|]]
+                               else logFatal [[i|The identifier '#{input}' is neither a credential registration ID, the address nor the name of an account|]]
 
       (accInfo, na, dec, f) <- withClient backend $ do
         -- query account
@@ -2418,6 +2428,11 @@ processBakerCmd action baseCfgDir verbose backend =
           Just AccountInfoBakerResult{..} -> logFatal [[i|Account is already a baker with ID #{aibiIdentity abirAccountBakerInfo}.|]]
           Nothing -> do
             let cannotAfford = airAmount - gtuTransactionPrice < initialStake
+            minimumBakerStake <- getBakerStakeThresholdOrDie
+            when (initialStake < minimumBakerStake) $ do
+              logWarn [[i|The staked amount (#{showGtu initialStake}) is lower than the minimum baker stake threshold (#{showGtu minimumBakerStake}).|]]
+              confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
+              unless confirmed exitTransactionCancelled
             when cannotAfford $ do
               logWarn [[i|Account balance (#{showGtu airAmount}) minus the cost of the transaction (#{showGtu gtuTransactionPrice}) is lower than the amount requested to be staked (#{showGtu initialStake}).|]]
               confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
@@ -2467,7 +2482,7 @@ processBakerCmd action baseCfgDir verbose backend =
         blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
         case blockSummary of
           Nothing -> do
-            logError ["No Block Found"]
+            logError ["Could not reach the node to get the baker cooldown period."]
             exitTransactionCancelled
           Just cpr -> do
             -- Warn user that stopping a baker incurs the baker cooldown timer
@@ -2495,7 +2510,7 @@ processBakerCmd action baseCfgDir verbose backend =
         blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
         case blockSummary of
           Nothing -> do
-            logError ["No Block Found"]
+            logError ["Could not reach the node to get the baker cooldown period."]
             exitTransactionCancelled
           Just cpr -> do
             cooldownDate <- getBakerCooldown cpr

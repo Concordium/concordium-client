@@ -1,14 +1,13 @@
+@Library('concordium-pipelines') _
 pipeline {
     agent any
-
-    parameters {
-        string(name: 'GENESIS_REF', defaultValue: '', description: 'Genesis ref - must be branch or tag, not SHA!')
+    environment {
+        ecr_repo_domain = '192549843005.dkr.ecr.eu-west-1.amazonaws.com'
     }
-
     stages {
         stage('ecr-login') {
             steps {
-                sh '$(aws --region eu-west-1 ecr get-login | sed -e \'s/-e none//g\')'
+                ecrLogin(env.ecr_repo_domain, 'eu-west-1')
             }
         }
         stage('build') {
@@ -19,6 +18,7 @@ pipeline {
                     }
                 }
                 sshagent (credentials: ['jenkins-gitlab-ssh']) {
+                    // TODO Inline script.
                     sh "./scripts/build-k8s-image.sh $params.GENESIS_REF"
                 }
 
