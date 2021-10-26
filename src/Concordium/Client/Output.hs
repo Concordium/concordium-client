@@ -339,29 +339,87 @@ printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
       _ -> receiveNameText
       where receiveNameText = Wasm.receiveName rcvName
 
--- |Print module inspect info, i.e., the named moduleRef and its included contracts. TODO: update
--- Combines the contract names from the ModuleSchema and the contract names from the list of exported function names.
--- If the signature for a contract's init function exists in the schema, it is also printed.
--- Otherwise, it just prints the contract name.
+
 printModuleInspectInfo :: NamedModuleRef
                        -> Maybe CS.ModuleSchema
                        -> [Text] -- ^ Exported function names.
                        -> Printer
-printModuleInspectInfo namedModRef moduleSchema exportedFuncNames = do
+printModuleInspectInfo = undefined
+
+-- |Print module inspect info, i.e., the named moduleRef and its included contracts.
+-- If the init or receive signatures for a contract exist in the schema, they are also printed.
+-- Otherwise, it just prints the method names.
+-- If the schema contains signatures for init or receive methods not in the module, a warning is displayed.
+printModuleInspectInfo2 :: NamedModuleRef
+                        -> Maybe CS.ModuleSchema
+                        -> [Text] -- ^ Exported function names.
+                        -> Printer
+printModuleInspectInfo2 namedModRef moduleSchema exportedFuncNames = do
   tell [ [i|Module:    #{showNamedModuleRef namedModRef}|]
        , [i|Contracts:|]]
-  tell $ showMap combinedMap
+  tell $ showMap mapWithSchemas
   tell $ showWarnings invalidSchemas
 
   where
 
-    mapFromExports :: Map.Map Text ContractSigs
-    mapFromExports = insertReceivesInMap funcNames $ mkMapFromInits funcNames
-      where funcNames = toFuncNames exportedFuncNames
+    -- Flow of the function:
+    --  Create a map of contractNames -> ContractSigs from the exported function names.
+    --  Insert receiveNames from the exported functions into the aforementioned map.
+    --  Insert the schemas into the map.
+    --    If extraneous schemas are found, these are collected.
+    -- Display the map and possibly a warning with the extraneous schemas.
 
-    (combinedMap, invalidSchemas) = case moduleSchema of
+    (mapWithSchemas, invalidSchemas) = case moduleSchema of
       Nothing -> (mapFromExports, [])
-      Just CS.ModuleSchema{..} -> combineWithSchema mapFromExports contractSchemas
+      Just CS.ModuleSchema{..} -> addSchemas mapFromExports contractSchemas
+
+    mapFromExports :: Map.Map Text ContractSigs
+    mapFromExports = insertReceiveNames funcNames $ mkMapFromInits funcNames
+      where funcNames = toFuncNames exportedFuncNames
+            toFuncNames :: [Text] -> [FuncName]
+            toFuncNames [] = []
+            toFuncNames (name : remaining)
+             | Wasm.isValidInitName name = (InitFuncName . Text.drop 5 $ name) : toFuncNames remaining
+             | Wasm.isValidReceiveName name = case Text.findIndex (== '.') name of
+                                            Nothing -> toFuncNames remaining -- Cannot happen, as a valid receive name always has a dot.
+                                            Just idx -> let (cname, fname) = Text.splitAt idx name
+                                                            fnameWithoutDot = Text.tail fname
+                                                        in ReceiveFuncName cname fnameWithoutDot : toFuncNames remaining
+             | otherwise = toFuncNames remaining -- Ignore other types of exported functions.
+
+            mkMapFromInits :: [FuncName] -> Map.Map Text ContractSigs
+            mkMapFromInits = Map.fromList . foldr mkInitTuples []
+              where mkInitTuples x xs = case x of
+                      InitFuncName name -> (name, ContractSigs { csInitSig = Nothing, csReceiveSigs = mempty }) : xs
+                      ReceiveFuncName _ _ -> xs
+
+            insertReceiveNames :: [FuncName] -> Map.Map Text ContractSigs -> Map.Map Text ContractSigs
+            insertReceiveNames [] m = m
+            insertReceiveNames (InitFuncName _:remaining) m = insertReceiveNames remaining m
+            insertReceiveNames (ReceiveFuncName cname fname:remaining) m = case Map.lookup cname m of
+                                                                            Nothing -> insertReceiveNames remaining m -- This should never happen, as we validate modules before they are put on chain.
+                                                                            Just ContractSigs {..} -> let updatedCsReceiveSigs = Map.insert fname Nothing csReceiveSigs
+                                                                                                          m' = Map.insert cname (ContractSigs {csInitSig = csInitSig, csReceiveSigs = updatedCsReceiveSigs}) m
+                                                                                                       in insertReceiveNames remaining m'
+
+    addSchemas :: Map.Map Text ContractSigs -> Map.Map Text ContractSchema -> (Map.Map Text ContractSigs, [FuncName])
+    addSchemas mSigs mSchema = go mSigs [] (Map.toList mSchema)
+      where
+            go :: Map.Map Text ContractSigs -> [FuncName] -> [(Text, ContractSchema)] -> (Map.Map Text ContractSigs, [FuncName])
+            go m errors [] = (m, errors)
+            go m errors ((cname, ContractSchema {..}):remaining) = case Map.lookup cname m of
+                                                                   Nothing -> let receiveErrors = map (ReceiveFuncName cname) . Map.keys $ receiveSigs
+                                                                                  errors' = InitFuncName cname : receiveErrors ++ errors
+                                                                              in go m errors' remaining -- Schema has init signature for a contract not in the module.
+                                                                   Just ContractSigs {..} -> let (updatedCsReceiveSigs, receiveErrors) = updateReceiveSigs cname csReceiveSigs [] (Map.toList receiveSigs)
+                                                                                                 m' = Map.insert cname (ContractSigs {csInitSig = initSig, csReceiveSigs = updatedCsReceiveSigs}) m
+                                                                                             in go m' (receiveErrors ++ errors) remaining
+
+            updateReceiveSigs :: Text -> Map.Map Text (Maybe SchemaType) -> [FuncName] -> [(Text, SchemaType)] -> (Map.Map Text (Maybe SchemaType), [FuncName])
+            updateReceiveSigs _ m errors [] = (m, errors)
+            updateReceiveSigs cname m errors ((fname, schema):remaining) = if Map.member fname m
+                                                                     then updateReceiveSigs cname (Map.insert fname (Just schema) m) errors remaining
+                                                                     else updateReceiveSigs cname m (ReceiveFuncName cname fname:errors) remaining -- Schema has signature for method not in the module.
 
     showMap :: Map.Map Text ContractSigs -> [String]
     showMap = go . sortOn fst . Map.toList
@@ -378,59 +436,21 @@ printModuleInspectInfo namedModRef moduleSchema exportedFuncNames = do
                                                            Nothing -> indentBy 4 [i| - #{fname}|] : showReceives remaining
                                                            Just schema -> [indentBy 4 [i| - #{fname}|], indentBy 8 $ showPrettyJSON schema] ++ showReceives remaining
 
-    -- TODO: Use FuncNames instead
-    showWarnings :: [Text] -> [String]
+    showWarnings :: [FuncName] -> [String]
     showWarnings [] = []
-    showWarnings xs = "\nThe schema contained signatures for the following methods that do not exist in the module:" : map (\x -> [i| - #{x}|]) xs
-
-    mkMapFromInits :: [FuncName] -> Map.Map Text ContractSigs
-    mkMapFromInits = Map.fromList . foldr mkInitTuples []
-      where mkInitTuples x xs = case x of
-              InitFuncName name -> (name, ContractSigs { csInitSig = Nothing, csReceiveSigs = mempty }) : xs
-              ReceiveFuncName _ _ -> xs
-
-    insertReceivesInMap :: [FuncName] -> Map.Map Text ContractSigs -> Map.Map Text ContractSigs
-    insertReceivesInMap [] m = m
-    insertReceivesInMap (InitFuncName _:remaining) m = insertReceivesInMap remaining m
-    insertReceivesInMap (ReceiveFuncName cname fname:remaining) m = case Map.lookup cname m of
-                                                                      Nothing -> insertReceivesInMap remaining m -- TODO: report error?
-                                                                      Just ContractSigs {..} -> let updatedCsReceiveSigs = Map.insert fname Nothing csReceiveSigs
-                                                                                                    m' = Map.insert cname (ContractSigs {csInitSig = csInitSig, csReceiveSigs = updatedCsReceiveSigs}) m
-                                                                                                in insertReceivesInMap remaining m'
-
-    toFuncNames :: [Text] -> [FuncName]
-    toFuncNames [] = []
-    toFuncNames (name : remaining)
-      | Wasm.isValidInitName name = (InitFuncName . Text.drop 5 $ name) : toFuncNames remaining
-      | Wasm.isValidReceiveName name = case Text.findIndex (== '.') name of
-                                    Nothing -> toFuncNames remaining -- Cannot happen, as a valid receive name always has a dot.
-                                    Just idx -> let (cname, fname) = Text.splitAt idx name
-                                                    fnameWithoutDot = Text.tail fname
-                                                in ReceiveFuncName cname fnameWithoutDot : toFuncNames remaining
-      | otherwise = toFuncNames remaining -- Should never happen. TODO: or is it allowed?
-
-
-    combineWithSchema :: Map.Map Text ContractSigs -> Map.Map Text ContractSchema -> (Map.Map Text ContractSigs, [Text])
-    combineWithSchema mSigs mSchema = go mSigs [] (Map.toList mSchema)
+    showWarnings xs = "\nWarning: The schema contained signatures for the following methods that do not exist in the module:" : map showFuncName xs
       where
-            go :: Map.Map Text ContractSigs -> [Text] -> [(Text, ContractSchema)] -> (Map.Map Text ContractSigs, [Text])
-            go m errors [] = (m, errors)
-            go m errors ((cname, ContractSchema {..}):remaining) = case Map.lookup cname m of
-                                                                   Nothing -> go m (cname:errors) remaining -- Schema has init signature for a contract not in the module.
-                                                                   Just ContractSigs {..} -> let (updatedCsReceiveSigs, receiveErrors) = updateReceiveSigs csReceiveSigs [] (Map.toList receiveSigs)
-                                                                                                 m' = Map.insert cname (ContractSigs {csInitSig = initSig, csReceiveSigs = updatedCsReceiveSigs}) m
-                                                                                               in go m' (receiveErrors ++ errors) remaining
+        showFuncName = \case
+                InitFuncName cname -> [i| - init_#{cname}|]
+                ReceiveFuncName cname fname -> [i| - #{cname}.#{fname}|]
 
-            updateReceiveSigs :: Map.Map Text (Maybe SchemaType) -> [Text] -> [(Text, SchemaType)] -> (Map.Map Text (Maybe SchemaType), [Text])
-            updateReceiveSigs m errors [] = (m, errors)
-            updateReceiveSigs m errors ((fname, schema):remaining) = if Map.member fname m
-                                                                     then updateReceiveSigs (Map.insert fname (Just schema) m) errors remaining
-                                                                     else updateReceiveSigs m (fname:errors) remaining -- Schema has signature for method not in the module.
-
+-- |Used for inspecting smart contract modules.
+-- Is similar to ContractSchema, but has a Maybe Value in the receiveSigs and does not have a state field.
 data ContractSigs = ContractSigs
   { csInitSig :: Maybe SchemaType
   , csReceiveSigs :: Map.Map Text (Maybe SchemaType)
   }
+
 -- |Indents each line in a string by the number of spaces specified.
 indentBy :: Int -> String -> String
 indentBy spaces = intercalate "\n" . map (replicate spaces ' ' <>) . lines
