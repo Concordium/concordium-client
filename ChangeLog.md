@@ -13,8 +13,10 @@
 - Improve how contract schemas are shown as JSON.
   - Display complex types in arrays correctly.
   - Use angle brackets to indicate placeholders, e.g. `"<UInt16>"` instead of `"UInt16"`.
-- Improve `module inspect` so it shows all contracts from a module regardless of
-whether a schema is included or not. 
+- Improve `module inspect`:
+  - Show all contracts from a module regardless of whether a schema is included
+  or not.
+  - Show the receive methods for contracts as well.
 
 ## 1.1.1
 
