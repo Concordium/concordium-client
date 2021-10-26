@@ -358,9 +358,9 @@ printModuleInspectInfo namedModRef moduleSchema exportedFuncNames = do
       Nothing -> Map.empty
       Just CS.ModuleSchema{..} -> fmap initSig contractSchemas
 
-    -- Find the contract names, strip the `init_` prefix, and create a Map without any corresponding init signatures.
+    -- Find the contract/init names, strip the `init_` prefix, and create a Map without any corresponding init signatures.
     contractsFromExports :: Map.Map Text (Maybe SchemaType)
-    contractsFromExports = Map.fromList . map ((, Nothing) . Text.drop 5) . filter (Text.isPrefixOf "init_") $ exportedFuncNames
+    contractsFromExports = Map.fromList . map ((, Nothing) . Text.drop 5) . filter Wasm.isValidInitName $ exportedFuncNames
 
     -- Combine the contracts from the schema and the exports, preferring the values from the schema map.
     combinedContracts :: Map.Map Text (Maybe SchemaType)
