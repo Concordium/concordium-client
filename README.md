@@ -2,6 +2,20 @@
 
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](https://github.com/Concordium/.github/blob/main/.github/CODE_OF_CONDUCT.md)
 
+### Table of contents
+
+- [Introduction](#introduction)
+- [Prerequisites](#prerequisites)
+- [Build](#build)
+- [Usage](#usage)
+  - [Commands](#commands)
+  - [Concepts and configuration](#concepts-and-configuration)
+- [Run tests](#run-tests)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Introduction
+
 Concordium Client is a command line tool for interacting with a Concordium node.
 
 The tool has commands to
@@ -48,7 +62,7 @@ Run using `stack run concordium-client -- [BACKEND] COMMAND [ARGS...]`, where
 * `ARGS` is the list of arguments provided to `COMMAND`.
 
 Whenever a command takes an optional `--block` parameter, it always defaults to
-the current "best" block.
+the current ["best" block](#best-block).
 
 For detailed and up to date descriptions of the commands and arguments, please
 [read our documentation](https://developer.concordium.software/), or use the
@@ -70,7 +84,7 @@ The commands are grouped by topic.
   - Commands for inspecting and changing local configuration. In particular
     regarding accounts and their names. Names for smart contract modules and
     contracts are handled in `module` and `contract`, respectively. For more
-    information, read the section on [Configuration](#Configuration) below.
+    information, read the section on [Configuration](#configuration) below.
 - `consensus`
   - Commands for inspecting the chain health (branching and finalization),
     baker election and statistics, and reward/minting parameters. 
@@ -81,13 +95,13 @@ The commands are grouped by topic.
     baker credentials.
 - `identity`
   - Commands for viewing information about identity providers and anonymity revokers.
-- `raw`:
+- `raw`
   - Commands that return raw JSON. Most of these commands have non-raw
     alternatives which are more polished and thus should be preferred.
 
-## Concepts and configuration
+### Concepts and configuration
 
-### "Best" block
+#### "Best" block
 
 Commands that operate on a specific block default to the "best" block if the parameter is omitted.
 
@@ -95,7 +109,7 @@ There is a bit of a race condition in the way this best block is queried:
 To get the best block, we make a call, and then we need a separate call to get the block info.
 In the meantime the best block could have in fact been pruned due to finalization.
 
-### Configuration
+#### Configuration
 
 Accounts, keys, module- and contract-names may be stored in config files on disk to avoid having to pass it as command line options.
 The config directory may be set using the `--config PATH` option and defaults to `$XDG_CONFIG_HOME/concordium`.
@@ -143,7 +157,6 @@ provided address/reference is invalid.
 So the maps cannot be used to map `address->address`, `reference->reference`,
 or `name->name`.
 
-For accounts the name `default` is special in that it 
 The tool will use the special account name `default` if an account is needed but
 not provided. 
 
@@ -155,8 +168,10 @@ stack test
 
 ## Contributing
 
-Pull requests are welcome. For major changes, please open an issue first to
-discuss what you would like to change.
+Pull requests are welcome. 
+
+For major changes, please open an issue first to discuss what you would like to
+change.
 
 Feel free to check our [issues-page](https://github.com/Concordium/concordium-client/issues).
 
