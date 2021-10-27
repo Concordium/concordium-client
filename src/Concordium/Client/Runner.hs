@@ -1781,10 +1781,8 @@ processModuleCmd action baseCfgDir verbose backend =
     ModuleInspect modRefOrName schemaFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedModRef <- getNamedModuleRef (bcModuleNameMap baseCfg) modRefOrName
-      schema <- withClient backend . withBestBlockHash block $ getSchemaFromFileOrModule schemaFile (Right namedModRef)
-      case schema of
-        Nothing -> logInfo ["Inspection failed: no schema provided and module does not contain an embedded schema"]
-        Just schema' -> runPrinter $ printModuleInspectInfo namedModRef schema'
+      (schema, exports) <- withClient backend . withBestBlockHash block $ getSchemaAndExports schemaFile namedModRef
+      runPrinter $ printModuleInspectInfo namedModRef schema exports
 
     ModuleName modRefOrFile modName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -2160,22 +2158,23 @@ getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile modSourceOrR
 
 -- |Get a schema from a file or, alternatively, try to extract an embedded schema from a module.
 -- Logs fatally if an invalid schema is found (either from a file or embedded).
+-- The schema from the file will take precedence over an embedded schema in the module.
 -- Only returns `Nothing` if no schemaFile is provided and no embedded schema was found in the module.
 getSchemaFromFileOrModule :: Maybe FilePath -- ^ Optional schema file.
-                          -> Either Wasm.ModuleSource NamedModuleRef -- ^ Either a
-                          -> Text
+                          -> Either Wasm.ModuleSource NamedModuleRef -- ^ Either a Wasm Module or a reference to a module on chain.
+                          -> Text -- ^ A block hash.
                           -> ClientMonad IO (Maybe CS.ModuleSchema)
 getSchemaFromFileOrModule schemaFile modSourceOrRef block = case (schemaFile, modSourceOrRef) of
-  (Nothing, Left modSource) -> liftIO $ tryGetSchemaFromModuleSource modSource
+  (Nothing, Left modSource) -> liftIO $ getSchemaFromModuleOrDie modSource
   (Nothing, Right namedModRef) -> do
     Wasm.WasmModule{..} <- getWasmModule namedModRef block
-    liftIO $ tryGetSchemaFromModuleSource wasmSource
+    liftIO $ getSchemaFromModuleOrDie wasmSource
   (Just schemaFile', _) -> liftIO (Just <$> getSchemaFromFile schemaFile')
-  where tryGetSchemaFromModuleSource (Wasm.ModuleSource modSrc) = case getSchemaFromModule modSrc of
+  where getSchemaFromModuleOrDie (Wasm.ModuleSource modSrc) = case CS.decodeEmbeddedSchema modSrc of
           Left err -> logFatal [[i|Could not parse embedded schema from module:|], err]
           Right schema -> return schema
 
--- |Load and decode a schema from a file.
+-- |Try to load and decode a schema from a file. Logs fatally if the file is not a valid Wasm module.
 getSchemaFromFile :: FilePath -> IO CS.ModuleSchema
 getSchemaFromFile schemaFile = do
   schema <- CS.decodeModuleSchema <$> handleReadFile BS.readFile schemaFile
@@ -2183,9 +2182,31 @@ getSchemaFromFile schemaFile = do
     Left err -> logFatal [[i|Could not decode schema from file '#{schemaFile}':|], err]
     Right schema' -> pure schema'
 
--- |Try to extract and decode a schema from a module.
-getSchemaFromModule :: BS.ByteString -> Either String (Maybe CS.ModuleSchema)
-getSchemaFromModule = CS.decodeEmbeddedSchema
+-- |Get a schema and a list of exported function names from an optional schema file and a module reference.
+-- Logs fatally if an invalid schema is found (either from a file or embedded).
+-- The schema from the file will take precedence over an embedded schema in the module.
+-- It will only return `(Nothing, _)` if no schemafile is provided and no embedded schema was found in the module.
+getSchemaAndExports :: Maybe FilePath -- ^ Optional schema file.
+                    -> NamedModuleRef -- ^ Module reference used for looking up a schema and exports.
+                    -> Text -- ^ A block hash.
+                    -> ClientMonad IO (Maybe CS.ModuleSchema, [Text])
+getSchemaAndExports schemaFile namedModRef block = do
+
+  preferredSchema <- case schemaFile of
+    Nothing -> return Nothing
+    Just schemaFile' -> fmap Just . liftIO . getSchemaFromFile $ schemaFile'
+
+  (schema, exports) <- do
+      Wasm.WasmModule{..} <- getWasmModule namedModRef block
+      liftIO $ getSchemaAndExportsOrDie wasmSource
+
+  if isJust preferredSchema
+  then return (preferredSchema, exports)
+  else return (schema, exports)
+
+  where getSchemaAndExportsOrDie (Wasm.ModuleSource modSrc) = case CS.decodeEmbeddedSchemaAndExports modSrc of
+          Left err -> logFatal [[i|Could not parse embedded schema or exports from module:|], err]
+          Right schemaAndExports -> return schemaAndExports
 
 -- |Try to parse the input as a module reference and assume it is a path if it fails.
 getModuleRefFromRefOrFile :: String -> IO Types.ModuleRef
