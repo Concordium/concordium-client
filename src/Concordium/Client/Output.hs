@@ -383,41 +383,63 @@ printModuleInspectInfo namedModRef moduleSchema exportedFuncNames = do
             mkMapFromInits :: [FuncName] -> Map.Map Text ContractSigs
             mkMapFromInits = Map.fromList . foldr mkInitTuples []
               where mkInitTuples x xs = case x of
-                      InitFuncName name -> (name, ContractSigs { csInitSig = Nothing, csReceiveSigs = mempty }) : xs
+                      InitFuncName name -> (name, ContractSigs { csInitSig = Nothing, csReceiveSigs = Map.empty }) : xs
                       ReceiveFuncName _ _ -> xs
 
             insertReceiveNames :: [FuncName] -> Map.Map Text ContractSigs -> Map.Map Text ContractSigs
-            insertReceiveNames [] m = m
-            insertReceiveNames (InitFuncName _:remaining) m = insertReceiveNames remaining m
-            insertReceiveNames (ReceiveFuncName cname fname:remaining) m = case Map.lookup cname m of
-                                                                            Nothing -> insertReceiveNames remaining m -- This should never happen, as we validate modules before they are put on chain.
-                                                                            Just ContractSigs {..} -> let updatedCsReceiveSigs = Map.insert fname Nothing csReceiveSigs
-                                                                                                          m' = Map.insert cname (ContractSigs {csInitSig = csInitSig, csReceiveSigs = updatedCsReceiveSigs}) m
-                                                                                                       in insertReceiveNames remaining m'
+            insertReceiveNames [] sigMap = sigMap
+            insertReceiveNames (InitFuncName _:remaining) sigMap = insertReceiveNames remaining sigMap
+            insertReceiveNames (ReceiveFuncName cname fname:remaining) sigMap = case Map.lookup cname sigMap of
+              Nothing -> insertReceiveNames remaining sigMap -- This should never happen, as we validate modules before they are put on chain.
+              Just ContractSigs {..} ->
+                let updatedCsReceiveSigs = Map.insert fname Nothing csReceiveSigs
+                    sigMap' = Map.insert cname (ContractSigs {csInitSig = csInitSig, csReceiveSigs = updatedCsReceiveSigs}) sigMap
+                in insertReceiveNames remaining sigMap'
 
     addSchemas :: Map.Map Text ContractSigs -> Map.Map Text ContractSchema -> (Map.Map Text ContractSigs, [FuncName])
     addSchemas mSigs mSchema = go mSigs [] (Map.toList mSchema)
       where
             go :: Map.Map Text ContractSigs -> [FuncName] -> [(Text, ContractSchema)] -> (Map.Map Text ContractSigs, [FuncName])
-            go m errors [] = (m, errors)
-            go m errors ((cname, ContractSchema {..}):remaining) = case Map.lookup cname m of
-                                                                   Nothing -> let receiveErrors = map (ReceiveFuncName cname) . Map.keys $ receiveSigs
-                                                                                  errors' = InitFuncName cname : receiveErrors ++ errors
-                                                                              in go m errors' remaining -- Schema has init signature for a contract not in the module.
-                                                                   Just ContractSigs {..} -> let (updatedCsReceiveSigs, receiveErrors) = updateReceiveSigs cname csReceiveSigs [] (Map.toList receiveSigs)
-                                                                                                 m' = Map.insert cname (ContractSigs {csInitSig = initSig, csReceiveSigs = updatedCsReceiveSigs}) m
-                                                                                             in go m' (receiveErrors ++ errors) remaining
+            go sigMap errors [] = (sigMap, errors)
+            go sigMap errors ((cname, ContractSchema {..}):remaining) =
+              case Map.lookup cname sigMap of
+                Nothing -> let receiveErrors = map (ReceiveFuncName cname) . Map.keys $ receiveSigs
+                               errors' = InitFuncName cname : receiveErrors ++ errors
+                           in go sigMap errors' remaining -- Schema has init signature for a contract not in the module.
+                Just ContractSigs {..} ->
+                  let (updatedCsReceiveSigs, receiveErrors) = updateReceiveSigs cname csReceiveSigs [] (Map.toList receiveSigs)
+                      sigMap' = Map.insert cname (ContractSigs {csInitSig = initSig, csReceiveSigs = updatedCsReceiveSigs}) sigMap
+                  in go sigMap' (receiveErrors ++ errors) remaining
 
-            updateReceiveSigs :: Text -> Map.Map Text (Maybe SchemaType) -> [FuncName] -> [(Text, SchemaType)] -> (Map.Map Text (Maybe SchemaType), [FuncName])
-            updateReceiveSigs _ m errors [] = (m, errors)
-            updateReceiveSigs cname m errors ((fname, schema):remaining) = if Map.member fname m
-                                                                     then updateReceiveSigs cname (Map.insert fname (Just schema) m) errors remaining
-                                                                     else updateReceiveSigs cname m (ReceiveFuncName cname fname:errors) remaining -- Schema has signature for method not in the module.
+            updateReceiveSigs :: Text -> Map.Map Text (Maybe SchemaType) -> [FuncName]
+                              -> [(Text, SchemaType)] -> (Map.Map Text (Maybe SchemaType), [FuncName])
+            updateReceiveSigs _ sigMap errors [] = (sigMap, errors)
+            updateReceiveSigs cname sigMap errors ((fname, schema):remaining) =
+              if Map.member fname sigMap
+              then updateReceiveSigs cname (Map.insert fname (Just schema) sigMap) errors remaining
+              else -- Schema has signature for method not in the module.
+                updateReceiveSigs cname sigMap (ReceiveFuncName cname fname:errors) remaining
 
+    -- |Show all the contract init and receive functions including optional signatures from the schema.
+    -- Example:
+    --  - contract-no-methods-no-schema
+    --  - contract-no-methods
+    --     {
+    --         "this-is": "<String>",
+    --         "the-init-sig": "<UInt32>"
+    --     }
+    --  - contract
+    --     ["<String>", "<Int32>"]
+    --     - func
+    --         ["<AccountAddress>"]
+    --     - func-no-schema
     showMap :: Map.Map Text ContractSigs -> [String]
     showMap = go . sortOn fst . Map.toList
       where go [] = []
-            go ((cname, ContractSigs{..}):remaining) = [[i| - #{cname}|]] ++ showInit csInitSig ++ showReceives (sortOn fst . Map.toList $ csReceiveSigs) ++ go remaining
+            go ((cname, ContractSigs{..}):remaining) = [[i| - #{cname}|]]
+                                                        ++ showInit csInitSig
+                                                        ++ showReceives (sortOn fst . Map.toList $ csReceiveSigs)
+                                                        ++ go remaining
 
             showInit :: Maybe SchemaType -> [String]
             showInit Nothing = []
@@ -425,13 +447,15 @@ printModuleInspectInfo namedModRef moduleSchema exportedFuncNames = do
 
             showReceives :: [(Text, Maybe SchemaType)] -> [String]
             showReceives [] = []
-            showReceives ((fname, mSchema):remaining) = case mSchema of
-                                                           Nothing -> indentBy 4 [i| - #{fname}|] : showReceives remaining
-                                                           Just schema -> [indentBy 4 [i| - #{fname}|], indentBy 8 $ showPrettyJSON schema] ++ showReceives remaining
+            showReceives ((fname, mSchema):remaining) =
+              case mSchema of
+                Nothing -> indentBy 4 [i| - #{fname}|] : showReceives remaining
+                Just schema -> [indentBy 4 [i| - #{fname}|], indentBy 8 $ showPrettyJSON schema] ++ showReceives remaining
 
     showWarnings :: [FuncName] -> [String]
     showWarnings [] = []
-    showWarnings xs = "\nWarning: The schema contained signatures for the following methods that do not exist in the module:" : map showFuncName xs
+    showWarnings xs =
+      "\nWarning: The schema contained signatures for the following methods that do not exist in the module:" : map showFuncName xs
       where
         showFuncName = \case
                 InitFuncName cname -> [i| - init_#{cname}|]

@@ -2200,9 +2200,9 @@ getSchemaAndExports schemaFile namedModRef block = do
       Wasm.WasmModule{..} <- getWasmModule namedModRef block
       liftIO $ getSchemaAndExportsOrDie wasmSource
 
-  case preferredSchema of
-    Just _ -> return (preferredSchema, exports)
-    Nothing -> return (schema, exports)
+  if isJust preferredSchema
+  then return (preferredSchema, exports)
+  else return (schema, exports)
 
   where getSchemaAndExportsOrDie (Wasm.ModuleSource modSrc) = case CS.decodeEmbeddedSchemaAndExports modSrc of
           Left err -> logFatal [[i|Could not parse embedded schema or exports from module:|], err]

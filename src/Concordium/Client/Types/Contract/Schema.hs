@@ -299,7 +299,10 @@ getEmbeddedSchemaAndExportsFromModule = do
 
   where
     -- |Try to extract a module schema and a list of exported function names from a Wasm module.
-    -- Both of which can exist at most once and can be located at any position.
+    -- According to the WASM specification, there can be at most one export section
+    -- and zero or more custom sections. The sections can be located at any position.
+    -- This function will fail if multiple custom sections have the name
+    -- 'concordium-schema-v1', which is where the schema is stored.
     go :: (Maybe ModuleSchema, [Text]) -> S.Get (Maybe ModuleSchema, [Text])
     go schemaAndFuncNames@(mSchema, mFuncNames) = case schemaAndFuncNames of
       -- Return if both values are found.
@@ -318,12 +321,15 @@ getEmbeddedSchemaAndExportsFromModule = do
             0 -> do
               name <- S.label "Custom Section Name" getTextWithLEB128Len
               if name == "concordium-schema-v1"
-              then do
-                schemaFound <- S.get
-                -- Return if both the schema and funcNames are found, otherwise keep looking for the funcNames.
-                if not $ null mFuncNames
-                  then return (Just schemaFound, mFuncNames)
-                  else go (Just schemaFound, mFuncNames)
+              then
+                if isJust mSchema
+                then fail "Module cannot contain multiple custom sections with the name 'concordium-schema-v1'."
+                else do
+                  schemaFound <- S.get
+                  -- Return if both the schema and funcNames are found, otherwise keep looking for the funcNames.
+                  if not $ null mFuncNames
+                    then return (Just schemaFound, mFuncNames)
+                    else go (Just schemaFound, mFuncNames)
               else S.skip sectionSize *> go schemaAndFuncNames
             -- Export section
             7 -> do
