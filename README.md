@@ -10,7 +10,6 @@
 - [Usage](#usage)
   - [Commands](#commands)
   - [Concepts and configuration](#concepts-and-configuration)
-- [Run tests](#run-tests)
 - [Contributing](#contributing)
 - [License](#license)
 
