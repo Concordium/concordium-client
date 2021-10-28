@@ -28,8 +28,12 @@ The tool has commands to
 
 ## Prerequisites
 
-* Install the Haskell tool Stack and compiler GHC via GHCUP:
-   * `curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh`
+* Install the Haskell tool Stack:
+   * Via [GHCup](https://www.haskell.org/ghcup/):`curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh`
+   * Or, by itself: `curl -sSL https://get.haskellstack.org/ | sh`
+
+* Install Rust version 1.53+:
+   * `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 
 * Install the [protoc](https://github.com/google/proto-lens/blob/master/docs/installing-protoc.md) tool for generating protobuf files:
    * MacOS: `brew install protobuf`
@@ -54,8 +58,6 @@ Run using `stack run concordium-client -- [BACKEND] COMMAND [ARGS...]`, where
 * `BACKEND` is the GRPC server on which to perform the actions/queries.
   It's specified using the flags `--grpc-ip`, `--grpc-port`, and `--grpc-target`
   (might be needed when calling through proxy like, say, on the testnet).
-  Nearly all commands require a backend to be specified. The exceptions being
-  commands that only alter local configuration files. 
 
 * `COMMAND` is a command from one of the categories described below in [Commands](#commands).
 
@@ -75,7 +77,8 @@ The commands are grouped by topic.
 - `transaction`
   - Commands for sending transactions and querying their status.
 - `account`
-  - Commands for inspecting and modyfying accounts.
+  - Commands for inspecting and modifying accounts on the chain. Local
+    configuration can be modified via `config account ...`.
 - `module`
   - Commands for deploying and inspecting smart contract modules.
 - `contract`
@@ -96,8 +99,8 @@ The commands are grouped by topic.
 - `identity`
   - Commands for viewing information about identity providers and anonymity revokers.
 - `raw`
-  - Commands that return raw JSON. Most of these commands have non-raw
-    alternatives which are more polished and thus should be preferred.
+  - Commands that correspond directly to the node's API. Most of these commands
+    have non-raw alternatives which are more polished and thus should be preferred.
 
 ### Concepts and configuration
 
@@ -107,12 +110,14 @@ Commands that operate on a specific block default to the "best" block if the par
 
 There is a bit of a race condition in the way this best block is queried:
 To get the best block, we make a call, and then we need a separate call to get the block info.
-In the meantime the best block could have in fact been pruned due to finalization.
+In the meantime, however, the best block could have been pruned due to finalization.
 
 #### Configuration
 
-Accounts, keys, module- and contract-names may be stored in config files on disk to avoid having to pass it as command line options.
-The config directory may be set using the `--config PATH` option and defaults to `$XDG_CONFIG_HOME/concordium`.
+Accounts, keys, module- and contract-names may be stored in config files on disk
+to avoid having to pass it as command line options.
+The config directory can be specified with the `--config PATH` option and
+defaults to `$XDG_CONFIG_HOME/concordium`.
 The variable `XDG_CONFIG_HOME` is defined by the
 [XDG standard](https://hackage.haskell.org/package/directory-1.3.6.0/docs/System-Directory.html#v:XdgConfig)
 as the location of user specific configuration.
@@ -151,7 +156,7 @@ There are three types for name aliases used in Concordium Client.
    - A mapping from *module names* to *module references*.
    
 The names may be used in place of the address/reference they are referring to.
-The tool will then look up and use the address or rerefence with that name.
+The tool will then look up and use the address or reference with that name.
 Note that the name maps are only consulted once and only if the
 provided address/reference is invalid.
 So the maps cannot be used to map `address->address`, `reference->reference`,
@@ -160,15 +165,11 @@ or `name->name`.
 The tool will use the special account name `default` if an account is needed but
 not provided. 
 
-## Run tests
-
-``` sh
-stack test
-```
-
 ## Contributing
 
-Pull requests are welcome. 
+To contribute create a new branch from main, make changes, and make a pull request.
+A person familiar with the codebase should be asked to review the changes before
+they are merged.
 
 For major changes, please open an issue first to discuss what you would like to
 change.
@@ -176,7 +177,5 @@ change.
 Feel free to check our [issues-page](https://github.com/Concordium/concordium-client/issues).
 
 ## License
-Copyright © 2021 [Concordium](https://concordium.com/).
 
-This project is licensed with [Apache 2.0](LICENSE).
-
+This project is licensed under [Apache 2.0](LICENSE).
