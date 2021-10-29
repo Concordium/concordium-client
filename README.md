@@ -25,7 +25,15 @@ The tool has commands to
 * query the state of the consensus protocol, and
 * inspect and manage the node.
 
+For more information, please [read our
+documentation](https://developer.concordium.software/en/mainnet/net/references/concordium-client.html).
+
+[Binary distributions are available for Linux, macOS, and
+Windows](https://developer.concordium.software/en/mainnet/net/installation/downloads.html#concordium-client).
+
 ## Prerequisites
+
+To build the tool from source, you need the following prerequisites:
 
 * Install the Haskell tool Stack:
    * Via [GHCup](https://www.haskell.org/ghcup/):`curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh`
@@ -33,14 +41,18 @@ The tool has commands to
 
 * Install Rust version 1.53+:
    * `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+   * On Windows: use the `x86_64-pc-windows-gnu` toolchain by choosing it during
+     installation or by running `rustup toolchain default stable-x86_64-pc-windows-gnu`.
 
 * Install the [protoc](https://github.com/google/proto-lens/blob/master/docs/installing-protoc.md) tool for generating protobuf files:
    * MacOS: `brew install protobuf`
    * Ubuntu 19.10: `sudo apt install protobuf-compiler`
+   * Windows: `stack exec -- pacman -S mingw-w64-x86_64-protobuf`
 
-* Install development libraries for PostgreSQL and LMDB:
-   * MacOS: `brew install postgresql lmdb`
-   * Ubuntu 19.10: `sudo apt install libpq-dev postgresql-common liblmdb-dev` 
+* Install development libraries for PostgreSQL:
+   * MacOS: `brew install postgresql`
+   * Ubuntu 19.10: `sudo apt install libpq-dev postgresql-common` 
+   * Windows: `stack exec -- pacman -S mingw-w64-x86_64-postgresql`
 
 * Initialize submodule dependencies after cloning (`git submodule update --init --recursive`).
 
