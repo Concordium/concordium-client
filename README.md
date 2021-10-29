@@ -78,7 +78,7 @@ Whenever a command takes an optional `--block` parameter, it always defaults to
 the current ["best" block](#best-block).
 
 For detailed and up to date descriptions of the commands and arguments, please
-[read our documentation](https://developer.concordium.software/), or use the
+[read our documentation](https://developer.concordium.software/en/mainnet/net/references/concordium-client.html), or use the
 `--help` flag in the tool.
 
 ### Commands
