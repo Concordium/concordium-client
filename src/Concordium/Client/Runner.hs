@@ -790,7 +790,8 @@ data TransactionConfig =
   { tcEncryptedSigningData :: EncryptedSigningData
   , tcNonce :: Maybe Types.Nonce
   , tcEnergy :: Types.Energy
-  , tcExpiry :: Types.TransactionExpiryTime }
+  , tcExpiry :: Types.TransactionExpiryTime
+  , tcAlias :: Maybe Word32 }
 
 -- |Resolve transaction config based on persisted config and CLI flags.
 -- If an energy cost function is provided and it returns a value which
@@ -819,7 +820,8 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
     { tcEncryptedSigningData = encSignData
     , tcNonce = toNonce txOpts
     , tcEnergy = energy
-    , tcExpiry = expiry }
+    , tcExpiry = expiry
+    , tcAlias = toAlias txOpts }
   where
     promptEnergyUpdate energy actualFee
       | energy < actualFee = do
@@ -846,7 +848,8 @@ getRequiredEnergyTransactionCfg baseCfg txOpts = do
     { tcEncryptedSigningData = encSignData
     , tcNonce = toNonce txOpts
     , tcEnergy = energy
-    , tcExpiry = expiry }
+    , tcExpiry = expiry
+    , tcAlias = toAlias txOpts }
 
 -- |Warn if expiry is in the past or very near or distant future.
 -- As the timestamps are unsigned, taking the simple difference might cause underflow.
@@ -1230,7 +1233,7 @@ bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm
       abSignatureVerifyKey = bkSigVerifyKey bakerKeys
       abAggregationVerifyKey = bkAggrVerifyKey bakerKeys
 
-  let senderAddress = naAddr $ esdAddress encSignData
+  let senderAddress = applyAlias (toAlias txOpts) $ naAddr $ esdAddress encSignData
 
   let challenge = Types.addBakerChallenge senderAddress abElectionVerifyKey abSignatureVerifyKey abAggregationVerifyKey
   abProofElection <- Proofs.proveDlog25519VRF challenge (VRF.KeyPair electionSignKey abElectionVerifyKey) `except` "cannot produce VRF key proof"
@@ -1423,12 +1426,14 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
         , tcExpiry = expiry
         , tcNonce = n
         , tcEncryptedSigningData = EncryptedSigningData { esdAddress = NamedAddress{..}, .. }
+        , ..
         } = txCfg
   nonce <- getNonce naAddr n confirmNonce
   accountKeyMap <- case maybeAccKeys of
                      Just acKeys' -> return acKeys'
                      Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys (Nothing) Nothing
-  let tx = signEncodedTransaction pl naAddr energy nonce expiry accountKeyMap
+  let sender = applyAlias tcAlias naAddr
+  let tx = signEncodedTransaction pl sender energy nonce expiry accountKeyMap
 
   sendTransactionToBaker tx defaultNetId >>= \case
     Left err -> fail err
@@ -1714,6 +1719,12 @@ processAccountCmd action baseCfgDir verbose backend =
         accountDecryptTransactionConfirm adtxCfg (ioConfirm intOpts)
         sendAndTailTransaction_ txCfg pl intOpts
 
+    AccountShowAlias addrOrName alias -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      case getAccountAddress (bcAccountNameMap baseCfg) addrOrName of
+        Left err -> logFatal [err]
+        Right namedAddr ->
+          putStrLn [i|The requested alias for address #{naAddr namedAddr} is #{applyAlias (Just alias) (naAddr namedAddr)}|]
 
 -- |Process a 'module ...' command.
 processModuleCmd :: ModuleCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -2583,7 +2594,7 @@ bakerSetKeysTransaction :: BaseConfig -> TransactionOpts (Maybe Types.Energy) ->
 bakerSetKeysTransaction baseCfg txOpts fp confirm = do
   encSignData <- liftIO $ getAccountCfgFromTxOpts baseCfg txOpts
 
-  let senderAddress = naAddr $ esdAddress encSignData
+  let senderAddress = applyAlias (toAlias txOpts) $ naAddr $ esdAddress encSignData
 
 
   AccountInfoResult{..} <- getAccountInfoOrDie senderAddress

@@ -27,7 +27,7 @@ module Concordium.Client.Commands
 
 import Data.Text hiding (map, unlines)
 import Data.Version (showVersion)
-import Data.Word (Word64)
+import Data.Word (Word32, Word64)
 import Data.Time.Format.ISO8601
 import Network.HTTP2.Client
 import Options.Applicative
@@ -230,6 +230,13 @@ data AccountCmd
     , aucRemoveCredIds :: !(Maybe FilePath) -- File containing the CredentialRegistrationID's for the credentials to be removed
     , aucNewThreshold :: !AccountThreshold -- The new account threshold
     , aucTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
+  -- |Show an alias for the account.
+  | AccountShowAlias
+    {
+      -- |Name or address of the account.
+      asaAddress :: !Text
+    , asaAlias :: !Word32
+    }
   deriving (Show)
 
 data ModuleCmd
@@ -348,6 +355,7 @@ data ContractCmd
 data TransactionOpts energyOrMaybe =
   TransactionOpts
   { toSender :: !(Maybe Text)
+  , toAlias :: !(Maybe Word32)
   , toKeys :: !(Maybe FilePath)
   , toSigners :: !(Maybe Text)
   , toNonce :: !(Maybe Nonce)
@@ -501,6 +509,7 @@ transactionOptsParserBuilder :: Parser energyOrMaybe -> Parser (TransactionOpts 
 transactionOptsParserBuilder energyOrMaybeParser =
   TransactionOpts <$>
     optional (strOption (long "sender" <> metavar "SENDER" <> help "Name or address of the transaction sender.")) <*>
+    optional (option (eitherReader aliasFromStringInform) (long "alias" <> metavar "ALIAS" <> help "Which alias to use as the sender address.")) <*>
     -- TODO Specify / refer to format of JSON file when new commands (e.g. account add-keys) that accept same format are
     -- added.
     optional (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file.")) <*>
@@ -692,7 +701,8 @@ accountCmds =
            accountUpdateKeysCmd <>
            accountUpdateCredentialsCmd <>
            accountEncryptCmd <>
-           accountDecryptCmd))
+           accountDecryptCmd <>
+           accountShowAliasCmd ))
       (progDesc "Commands for inspecting and modifying accounts."))
 
 accountShowCmd :: Mod CommandFields AccountCmd
@@ -794,6 +804,17 @@ accountUpdateCredentialsCmd =
         , "     ..."
         , "   }"
         , "where cidx is the credential index and kidx is the key index of a verify key." ]))
+
+accountShowAliasCmd :: Mod CommandFields AccountCmd
+accountShowAliasCmd =
+  command
+    "show-alias"
+    (info
+       (AccountShowAlias <$>
+         strArgument (metavar "ACCOUNT" <> help "Name or address of the account.") <*>
+         (option (eitherReader aliasFromStringInform) (long "alias" <> metavar "ALIAS" <> help "Which alias to generate.")))
+       (progDesc "Generate an alias based on an account address and counter."))
+
 
 moduleCmds :: Mod CommandFields Cmd
 moduleCmds =
