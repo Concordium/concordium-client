@@ -1434,7 +1434,8 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
                      Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys (Nothing) Nothing
   let sender = applyAlias tcAlias naAddr
   let tx = signEncodedTransaction pl sender energy nonce expiry accountKeyMap
-
+  when (isJust tcAlias) $
+      logInfo [[i|Using the alias #{sender} as the sender of the transaction instead of #{naAddr}.|]]
   sendTransactionToBaker tx defaultNetId >>= \case
     Left err -> fail err
     Right False -> fail "transaction not accepted by the baker"
