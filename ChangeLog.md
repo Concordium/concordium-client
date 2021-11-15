@@ -17,6 +17,8 @@
   - Show all contracts from a module regardless of whether a schema is included
   or not.
   - Show the receive methods for contracts as well.
+- Allow sending transactions where the sender is an account alias.
+- Add command for generating aliases of an address.
 
 ## 1.1.1
 

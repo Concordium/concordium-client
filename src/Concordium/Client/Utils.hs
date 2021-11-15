@@ -88,6 +88,22 @@ energyFromStringInform s =
         nrgMinBound = 0
         nrgMaxBound = fromIntegral (maxBound :: Energy)
 
+-- |Try to parse an account alias counter from a string, and, if failing, inform
+-- the user what the expected format and bounds are. This is intended to be used
+-- by the options parsers.
+aliasFromStringInform :: String -> Either String Word
+aliasFromStringInform s =
+  -- Reading negative numbers directly to Word silently underflows, so this approach is necessary.
+  case readMaybe s :: Maybe Integer of
+    Just a -> if a >= aliasMinBound && a <= aliasMaxBound
+              then Right . fromIntegral $ a
+              else Left errMsg
+    Nothing -> Left errMsg
+  where errMsg = [i|Invalid alias number '#{s}'. Alias must be an integer between #{aliasMinBound} and #{aliasMaxBound}, both inclusive.|]
+        aliasMinBound = 0
+        aliasMaxBound = 2^(8 * (IDTypes.accountAddressSize - accountAddressPrefixSize)) - 1
+
+
 -- |Try to parse the signature threshold from string with a meaningful error message if unsuccessful.
 thresholdFromStringInform :: String -> Either String IDTypes.SignatureThreshold
 thresholdFromStringInform s =
@@ -148,7 +164,7 @@ durationToText t = Text.intercalate " " . mapMaybe showTimeUnit $
         if value == 0
         then Nothing
         else Just [i|#{value}#{unit}|]
-        
+
 -- |Parse a string containing a list of duration measures separated by
 -- spaces. A measure is a non-negative integer followed by a unit (no whitespace is allowed in between).
 -- Every measure is accumulated into a duration. The string is allowed to contain
@@ -187,3 +203,7 @@ textToDuration t = mapM measureToMs measures >>= Right . sum
                                               else Left invalidMeasureErrorMsg
               where word64MinBound = 0
                     word64MaxBound = fromIntegral (maxBound :: Word64)
+
+applyAlias :: Maybe Word -> AccountAddress -> AccountAddress
+applyAlias Nothing addr = addr
+applyAlias (Just alias) addr = createAlias addr alias
