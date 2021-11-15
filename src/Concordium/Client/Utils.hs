@@ -1,15 +1,13 @@
 {-# LANGUAGE QuasiQuotes #-}
 module Concordium.Client.Utils where
 
-import Data.Bits
 import Control.Monad.Except
 import Concordium.Types
 import Concordium.Crypto.ByteStringHelpers
 import qualified Concordium.ID.Types as IDTypes
-import qualified Data.FixedByteString as FBS
 import Data.String.Interpolate (i)
 import qualified Data.Text as Text
-import Data.Word (Word32, Word64)
+import Data.Word (Word64)
 import Text.Read
 import Data.String.Interpolate (iii)
 import qualified Data.Char as Char
@@ -93,9 +91,9 @@ energyFromStringInform s =
 -- |Try to parse an account alias counter from a string, and, if failing, inform
 -- the user what the expected format and bounds are. This is intended to be used
 -- by the options parsers.
-aliasFromStringInform :: String -> Either String Word32
+aliasFromStringInform :: String -> Either String Word
 aliasFromStringInform s =
-  -- Reading negative numbers directly to Word32 silently underflows, so this approach is necessary.
+  -- Reading negative numbers directly to Word silently underflows, so this approach is necessary.
   case readMaybe s :: Maybe Integer of
     Just a -> if a >= aliasMinBound && a <= aliasMaxBound
               then Right . fromIntegral $ a
@@ -206,8 +204,6 @@ textToDuration t = mapM measureToMs measures >>= Right . sum
               where word64MinBound = 0
                     word64MaxBound = fromIntegral (maxBound :: Word64)
 
-applyAlias :: Maybe Word32 -> AccountAddress -> AccountAddress
+applyAlias :: Maybe Word -> AccountAddress -> AccountAddress
 applyAlias Nothing addr = addr
-applyAlias (Just alias) (IDTypes.AccountAddress addr) =
-      IDTypes.AccountAddress ((FBS.encodeInteger (toInteger alias) .&. mask) .|. (addr .&. (complement mask)))
-    where mask = FBS.encodeInteger 0xffffff
+applyAlias (Just alias) addr = createAlias addr alias

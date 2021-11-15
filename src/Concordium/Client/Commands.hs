@@ -27,7 +27,7 @@ module Concordium.Client.Commands
 
 import Data.Text hiding (map, unlines)
 import Data.Version (showVersion)
-import Data.Word (Word32, Word64)
+import Data.Word (Word64)
 import Data.Time.Format.ISO8601
 import Network.HTTP2.Client
 import Options.Applicative
@@ -235,7 +235,7 @@ data AccountCmd
     {
       -- |Name or address of the account.
       asaAddress :: !Text
-    , asaAlias :: !Word32
+    , asaAlias :: !Word
     }
   deriving (Show)
 
@@ -355,7 +355,7 @@ data ContractCmd
 data TransactionOpts energyOrMaybe =
   TransactionOpts
   { toSender :: !(Maybe Text)
-  , toAlias :: !(Maybe Word32)
+  , toAlias :: !(Maybe Word)
   , toKeys :: !(Maybe FilePath)
   , toSigners :: !(Maybe Text)
   , toNonce :: !(Maybe Nonce)

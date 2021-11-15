@@ -791,7 +791,7 @@ data TransactionConfig =
   , tcNonce :: Maybe Types.Nonce
   , tcEnergy :: Types.Energy
   , tcExpiry :: Types.TransactionExpiryTime
-  , tcAlias :: Maybe Word32 }
+  , tcAlias :: Maybe Word }
 
 -- |Resolve transaction config based on persisted config and CLI flags.
 -- If an energy cost function is provided and it returns a value which
@@ -1724,7 +1724,7 @@ processAccountCmd action baseCfgDir verbose backend =
       case getAccountAddress (bcAccountNameMap baseCfg) addrOrName of
         Left err -> logFatal [err]
         Right namedAddr ->
-          putStrLn [i|The requested alias for address #{naAddr namedAddr} is #{applyAlias (Just alias) (naAddr namedAddr)}|]
+          putStrLn [i|The requested alias for address #{naAddr namedAddr} is #{Types.createAlias (naAddr namedAddr) alias}|]
 
 -- |Process a 'module ...' command.
 processModuleCmd :: ModuleCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
