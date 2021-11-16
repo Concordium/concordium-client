@@ -131,6 +131,27 @@ There is a bit of a race condition in the way this best block is queried:
 To get the best block, we make a call, and then we need a separate call to get the block info.
 In the meantime, however, the best block could have been pruned due to finalization.
 
+#### Account aliases
+
+`concordium-client` can generate aliases of addresses. An alias for an address
+can be generated with
+```console
+concordium-client account show-alias ACCOUNT --alias N
+```
+where `ACCOUNT` is either a name of the account or an account address, and `N`
+is an integer between 0 and 16777215 (inclusive) (the integer can also be
+specified in hex). For example
+```console
+concordium-client account show-alias 4oM1reP5hVqT8Krvb9c1bJffoWW4ChTYDZVmbJwGtfGpGcDo5v --alias 0x010203
+```
+
+There is support for sending transactions via an alias of an account. Each
+transaction that creates a transaction supports an `--alias` option which
+generates an alias for the sender address and uses it when sending transactions
+instead of the given address. The `--alias` option has the same meaning as to
+the `account show-alias` command.
+
+
 #### Configuration
 
 Accounts, keys, module- and contract-names may be stored in config files on disk
