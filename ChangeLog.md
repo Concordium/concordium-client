@@ -1,6 +1,6 @@
 # Changelog for concordium-client
 
-## Unreleased changes
+## 3.0.0
 
 - show line breaks, tabs etc. in memo transfers (when it's CBOR encoded string), instead of escaping them
   as `\n`, `\t` etc.
