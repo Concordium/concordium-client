@@ -162,7 +162,7 @@ data TransactionCmd
     , tsInteractionOpts :: !InteractionOpts }
   | TransactionStatus
     { tsHash :: !Text }
-  | TransactionSendGtu
+  | TransactionSendCcd
     { tsgReceiver :: !Text
     , tsgAmount :: !Amount
     , tsgMemo :: !(Maybe MemoInput)
@@ -562,7 +562,7 @@ transactionCmds =
         hsubparser
           (transactionSubmitCmd <>
            transactionStatusCmd <>
-           transactionSendGtuCmd <>
+           transactionSendCcdCmd <>
            transactionWithScheduleCmd <>
            transactionDeployCredentialCmd <>
            transactionEncryptedTransferCmd <>
@@ -598,38 +598,38 @@ transactionStatusCmd =
         strArgument (metavar "TX-HASH" <> help "Hash of the transaction."))
       (progDesc "Get status of a transaction."))
 
-transactionSendGtuCmd :: Mod CommandFields TransactionCmd
-transactionSendGtuCmd =
+transactionSendCcdCmd :: Mod CommandFields TransactionCmd
+transactionSendCcdCmd =
   command
-    "send-gtu"
+    "send"
     (info
-      (TransactionSendGtu <$>
+      (TransactionSendCcd <$>
        strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
-       option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
+       option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> help "Amount of CCDs to send.") <*>
        memoInputParser <*>
        transactionOptsParser)
-      (progDesc "Transfer GTU from one account to another."))
+      (progDesc "Transfer CCD from one account to another."))
 
 transactionWithScheduleCmd :: Mod CommandFields TransactionCmd
 transactionWithScheduleCmd =
   command
-   "send-gtu-scheduled"
+   "send-scheduled"
    (info
      (let implicit = (\a b c d -> Left (a, b, c, d)) <$>
-                     option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Total amount of GTU to send.") <*>
+                     option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> help "Total amount of CCD to send.") <*>
                      option auto (long "every" <> metavar "INTERVAL" <> help "Interval between releases, one of 'Minute', 'Hour', 'Day', 'Week', 'Month' (30 days), or 'Year' (365 days). ") <*>
                      option auto (long "for" <> metavar "N" <> help "Number of releases.") <*>
                      option (eitherReader timeFromString) (long "starting" <> metavar "starting" <>
                                                            help "Start time of the first release, as a ISO8601 UTC time string, e.g., 2021-12-31T00:00:00Z.")
           explicit = Right <$>
-                     option (eitherReader eitherParseScheduleInform)  (long "schedule" <> metavar "schedule" <> help "Explicit schedule in the form of a comma separated list of elements of the form '3.0 at 2020-12-13T23:35:59Z' (send 3 GTU on December 13, 2020). Timestamps must be given in UTC.")
+                     option (eitherReader eitherParseScheduleInform)  (long "schedule" <> metavar "schedule" <> help "Explicit schedule in the form of a comma separated list of elements of the form '3.0 at 2020-12-13T23:35:59Z' (send 3 CCD on December 13, 2020). Timestamps must be given in UTC.")
        in
          TransactionSendWithSchedule <$>
          strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*> (implicit <|> explicit) <*>
          memoInputParser <*>
          transactionOptsParser)
      (progDescDoc . Just $ fillCat [
-         "Transfer GTU from one account to another with the provided schedule of releases.",
+         "Transfer CCD from one account to another with the provided schedule of releases.",
          "Releases can be specified in one of two ways, either as regular releases via intervals," <>
          softline <> "or as an explicit schedule at specific timestamps.",
          "",
@@ -638,7 +638,7 @@ transactionWithScheduleCmd =
          softline <> "the form of a '--schedule' flag, which takes a comma separated list of releases.",
          "Each release must be of the form 100 at 2020-12-13T23:23:23Z.",
          "",
-         "For example, to supply three releases, of 100, 150, and 200 GTU," <> softline <>
+         "For example, to supply three releases, of 100, 150, and 200 CCD," <> softline <>
          "on January 1, 2021, February 15, 2021, and December 31, 2021," <> softline <>
          "the following input would be used. All releases are at the beginning of" <> softline <> "the day in the UTC time zone.",
          "",
@@ -667,17 +667,16 @@ transactionWithScheduleCmd =
         Just time -> return (utcTimeToTimestamp time)
 
 transactionEncryptedTransferCmd :: Mod CommandFields TransactionCmd
-transactionEncryptedTransferCmd =
-  command
-    "send-gtu-encrypted"
-    (info
-      (TransactionEncryptedTransfer <$>
-         transactionOptsParser <*>
-         strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
-         option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "Amount of GTUs to send.") <*>
-         optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which incoming encrypted amounts should be used.")) <*>
-         memoInputParser)
-      (progDesc "Transfer GTU from the encrypted balance of the account to the encrypted balance of another account."))
+transactionEncryptedTransferCmd = command "send-shielded" sendEncryptedInfo
+  where sendEncryptedInfo :: ParserInfo TransactionCmd
+        sendEncryptedInfo = info
+            (TransactionEncryptedTransfer <$>
+             transactionOptsParser <*>
+             strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
+             option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> help "Amount of CCDs to send.") <*>
+             optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which incoming encrypted amounts should be used.")) <*>
+             memoInputParser)
+            (progDesc "Transfer CCD from the encrypted balance of the account to the encrypted balance of another account.")
 
 transactionRegisterDataCmd :: Mod CommandFields TransactionCmd
 transactionRegisterDataCmd =
@@ -729,21 +728,21 @@ accountListCmd =
 accountEncryptCmd :: Mod CommandFields AccountCmd
 accountEncryptCmd =
   command
-    "encrypt"
+    "shield"
     (info
       (AccountEncrypt <$>
         transactionOptsParser <*>
-        option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> help "The amount to transfer to encrypted balance."))
+        option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> help "The amount to transfer to encrypted balance."))
       (progDesc "Transfer an amount from public to encrypted balance of the account."))
 
 accountDecryptCmd :: Mod CommandFields AccountCmd
 accountDecryptCmd =
   command
-    "decrypt"
+    "unshield"
     (info
       (AccountDecrypt <$>
         transactionOptsParser <*>
-        option (maybeReader amountFromString) (long "amount" <> metavar "GTU-AMOUNT" <> help "The amount to transfer to public balance.") <*>
+        option (maybeReader amountFromString) (long "amount" <> metavar "CCD-AMOUNT" <> help "The amount to transfer to public balance.") <*>
         optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which encrypted amounts should be combined.")))
       (progDesc "Transfer an amount from encrypted to public balance of the account."))
 
@@ -946,8 +945,8 @@ contractInitCmd =
         optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to parse the params file.")) <*>
         optional (strOption (long "name" <> metavar "NAME" <> help "Name for the contract.")) <*>
         switch (long "path" <> help "Use when MODULE is a path to a module file.") <*>
-        option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> value 0
-                                                      <> help "Amount of GTU to transfer to the contract.") <*>
+        option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> value 0
+                                                      <> help "Amount of CCD to transfer to the contract.") <*>
         requiredEnergyTransactionOptsParser)
       (progDesc "Initialize contract from already deployed module, optionally naming the contract."))
 
@@ -967,8 +966,8 @@ contractUpdateCmd =
         optional (strOption (long "parameter-bin" <> metavar "FILE"
                              <> help "Binary file with parameters for receive function. This should _not_ be used if a schema is supplied (default: no parameters).")) <*>
         optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to parse the params file.")) <*>
-        option (eitherReader amountFromStringInform) (long "amount" <> metavar "GTU-AMOUNT" <> value 0
-                                                                <> help "Amount of GTU to transfer to the contract.") <*>
+        option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> value 0
+                                                                <> help "Amount of CCD to transfer to the contract.") <*>
         requiredEnergyTransactionOptsParser)
       (progDesc "Update an existing contract."))
 
@@ -1304,7 +1303,7 @@ bakerAddCmd =
       (BakerAdd <$>
         strArgument (metavar "FILE" <> help "File containing the baker credentials.") <*>
         transactionOptsParser <*>
-        option (eitherReader amountFromStringInform) (long "stake" <> metavar "GTU-AMOUNT" <> help "The amount of GTU to stake.") <*>
+        option (eitherReader amountFromStringInform) (long "stake" <> metavar "CCD-AMOUNT" <> help "The amount of CCD to stake.") <*>
         (not <$> switch (long "no-restake" <> help "If supplied, the earnings will not be added to the baker stake automatically.")) <*>
         optional (strOption (long "out" <> metavar "FILE" <> help "File to write the baker credentials to, in case of succesful transaction. These can be used to start the node."))
       )
@@ -1355,7 +1354,7 @@ bakerUpdateStakeCmd =
    "update-stake"
    (info
      (BakerUpdateStake <$>
-       option (eitherReader amountFromStringInform) (long "stake" <> metavar "GTU-AMOUNT" <> help "The amount of GTU to stake.") <*>
+       option (eitherReader amountFromStringInform) (long "stake" <> metavar "CCD-AMOUNT" <> help "The amount of CCD to stake.") <*>
        transactionOptsParser)
      (progDesc "Update the amount staked for the baker."))
 

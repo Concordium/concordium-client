@@ -49,7 +49,7 @@ amountFromStringInform :: String -> Either String Amount
 amountFromStringInform s =
   case amountFromString s of
     Just a -> Right a
-    Nothing -> Left $ "Invalid GTU amount '" ++ s ++ "'. Amounts must be of the form n[.m] where m, if present,\n must have at least one and at most 6 digits."
+    Nothing -> Left $ "Invalid CCD amount '" ++ s ++ "'. Amounts must be of the form n[.m] where m, if present,\n must have at least one and at most 6 digits."
 
 
 -- |Try to parse a KeyIndex from a string, and if failing, try to inform the user

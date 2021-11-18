@@ -296,7 +296,7 @@ data AccountInfoResult = AccountInfoResult
   , airCredentials :: !(OrdMap.Map IDTypes.CredentialIndex (Versioned IDTypes.AccountCredential))
     -- | Account's encrypted amount.
   , airEncryptedAmount :: !AccountEncryptedAmount
-    -- | The public key to use when sending encrypted transfers to the account.
+    -- | The public key to use when sending shielded transfers to the account.
   , airEncryptionKey :: !IDTypes.AccountEncryptionKey
   , airReleaseSchedule :: !AccountInfoReleaseSchedule
   }

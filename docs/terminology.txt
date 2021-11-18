@@ -4,13 +4,13 @@ Glossary:
 * Best branch/chain: The branch in the block tree that contains the most blocks (and all finalized blocks).
 * Node: A process running the P2P software.
 * Peer: A peer of a node is another node connected to it.
-* Transaction: A piece of information stored in a block on the chain. Can be GTU transfer, module or account deployment, etc.
+* Transaction: A piece of information stored in a block on the chain. Can be CCD transfer, module or account deployment, etc.
 * Consensus: Agreement on how blocks are generated and when they're valid and finalized.
 * Account: Accounts represent external users of the chain and are the ones who always initiate non-consensus related actions, i.e., sending transactions.
 * Reward account: Special account for bakers and finalizers that have some ability to change the parameters (e.g. keys) of the baker.
-* Account: An entity holding GTUs. Bakers, contracts, and other stakeholders have accounts.
+* Account: An entity holding CCDs. Bakers, contracts, and other stakeholders have accounts.
 * Module: An Acorn module that defines zero or more smart contracts.
-* Instance: An instance of a smart contract. Smart contracts may hold GTUs.
+* Instance: An instance of a smart contract. Smart contracts may hold CCDs.
 * Birk parameters: "lottery" state.
 * Skov: The tree layer which stores all the consensus information, e.g., which blocks exist, which are final etc.
 * Branch/parent/ancestor/child: Refers to relation between blocks as nodes in a tree in the usual way.

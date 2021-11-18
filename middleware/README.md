@@ -57,68 +57,6 @@ SIMPLEID_URL="http://localhost:8000" \
 middleware
 ```
 
-
-### Scenario: Development testing
-
-See the bottom of `middleware/Api.hs` for the `debugTestFullProvision` function.
-
-To run it:
-
-```
-cd concordium-client
-stack ghci --flag "concordium-client:middleware"
-# Pick middleware option
-```
-
-You can boot `ghci` with the supported ENV vars:
-
-```
-NODE_URL="localhost:11100" \
-SIMPLEID_URL="http://localhost:8000" \
-stack ghci --flag "concordium-client:middleware"
-```
-
-Then in GHCI you can do:
-
-```
-λ: :r
-...
-Ok, 16 modules loaded.
-λ: import Api
-λ: debugTestFullProvision
-```
-
-This will currently:
-
-- Call `simple_id_server` to generate an ID
-- Call `simple_id_server` to generate credentials for that ID
-- Bump the next nonce using ElasticSearch*
-- Call gRPC with a `DeployCredentials` transaction
-- Call gRPC with a `Transfer` for a GTU drop to the new account
-- Write the bare transaction into ElasticSearch
-
-<sub>&#42;This allows multiple transactions to be submitted in quick succession without colliding nonces</sub>
-
-
-Use `:r` to reload ghci again on further changes.
-
-The last thing you should see if successful is something like:
-
-```
-✅ Requesting GTU Drop for AddressAccount 3uVGUijtdD5JLJmmf3Q4pqe1y4H3PHfW469GphtprZuTfTRxex
-✅ got nonceQueryResponse, progressing...
-Installing hook for transaction 5dcaf8d6d204b54988328d1bf6899690d185d6354a261b82a30402b7da5e2a4b
-{
-    "status": "absent",
-    "results": [],
-    "expires": "2020-01-31T16:53:14.0571333Z",
-    "transactionHash": "5dcaf8d6d204b54988328d1bf6899690d185d6354a261b82a30402b7da5e2a4b"
-}
-✅ Transaction sent to the baker and hooked: 5dcaf8d6d204b54988328d1bf6899690d185d6354a261b82a30402b7da5e2a4b
-TransactionJSON {metadata ...
-... etc
-```
-
 ### Configuration and data directories
 
 Configuration and data directories can be customized via the `CFG_DIR` and
