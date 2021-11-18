@@ -674,9 +674,9 @@ transactionEncryptedTransferCmd = command "send-shielded" sendEncryptedInfo
              transactionOptsParser <*>
              strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.") <*>
              option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> help "Amount of CCDs to send.") <*>
-             optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which incoming encrypted amounts should be used.")) <*>
+             optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which incoming shielded amounts should be used.")) <*>
              memoInputParser)
-            (progDesc "Transfer CCD from the encrypted balance of the account to the encrypted balance of another account.")
+            (progDesc "Transfer CCD from the shielded balance of the account to the shielded balance of another account.")
 
 transactionRegisterDataCmd :: Mod CommandFields TransactionCmd
 transactionRegisterDataCmd =
@@ -732,8 +732,8 @@ accountEncryptCmd =
     (info
       (AccountEncrypt <$>
         transactionOptsParser <*>
-        option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> help "The amount to transfer to encrypted balance."))
-      (progDesc "Transfer an amount from public to encrypted balance of the account."))
+        option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> help "The amount to transfer to shielded balance."))
+      (progDesc "Transfer an amount from public to shielded balance of the account."))
 
 accountDecryptCmd :: Mod CommandFields AccountCmd
 accountDecryptCmd =
@@ -743,8 +743,8 @@ accountDecryptCmd =
       (AccountDecrypt <$>
         transactionOptsParser <*>
         option (maybeReader amountFromString) (long "amount" <> metavar "CCD-AMOUNT" <> help "The amount to transfer to public balance.") <*>
-        optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which encrypted amounts should be combined.")))
-      (progDesc "Transfer an amount from encrypted to public balance of the account."))
+        optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which shielded amounts should be combined.")))
+      (progDesc "Transfer an amount from shielded to public balance of the account."))
 
 accountUpdateKeysCmd :: Mod CommandFields AccountCmd
 accountUpdateKeysCmd =

@@ -1200,7 +1200,7 @@ encryptedTransferTransactionConfirm EncryptedTransferTransactionConfig{..} confi
         = ettTransactionCfg
 
   logInfo
-    [ printf "transferring %s CCD from encrypted balance of account %s to %s" (Types.amountToString ettAmount) (showNamedAddress addr) (showNamedAddress ettReceiver)
+    [ printf "transferring %s CCD from shielded balance of account %s to %s" (Types.amountToString ettAmount) (showNamedAddress addr) (showNamedAddress ettReceiver)
     , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
     , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
 
@@ -1383,7 +1383,7 @@ accountEncryptTransactionConfirm AccountEncryptTransactionConfig{..} confirm = d
 
 
   logInfo $
-    [ printf "transferring %s CCD from public to encrypted balance of account %s" (Types.amountToString aeAmount) (showNamedAddress addr)
+    [ printf "transferring %s CCD from public to shielded balance of account %s" (Types.amountToString aeAmount) (showNamedAddress addr)
     , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
     , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
 
@@ -1401,7 +1401,7 @@ accountDecryptTransactionConfirm AccountDecryptTransactionConfig{..} confirm = d
         = adTransactionCfg
 
   logInfo $
-    [ printf "transferring %s CCD from encrypted to public balance of account %s" (Types.amountToString (Enc.stpatdTransferAmount adTransferData)) (showNamedAddress addr)
+    [ printf "transferring %s CCD from shielded to public balance of account %s" (Types.amountToString (Enc.stpatdTransferAmount adTransferData)) (showNamedAddress addr)
     , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
     , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
 

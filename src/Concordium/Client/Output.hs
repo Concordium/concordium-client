@@ -306,7 +306,7 @@ printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
   tell [ [i|Contract:        #{contractName}|]
        , [i|Owner:           #{owner}|]
        , [i|ModuleReference: #{showNamedModuleRef namedModRef}|]
-       , [i|Balance:         #{Types.amountToString ciAmount} CCD|]
+       , [i|Balance:         #{showCcd ciAmount}|]
        , [i|State size:      #{ciSize} bytes|]]
   tell state
   tell [ [i|Methods:|]]
