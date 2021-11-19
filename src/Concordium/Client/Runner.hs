@@ -567,7 +567,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       -- TODO This works but output doesn't make sense if transaction is already committed/finalized.
       --      It should skip already completed steps.
       -- withClient backend $ tailTransaction_ hash
-    TransactionSendGtu receiver amount maybeMemo txOpts -> do
+    TransactionSendCcd receiver amount maybeMemo txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -1000,12 +1000,12 @@ getBakerUpdateStakeTransactionCfg txCfg newAmount cooldownDate = do
   case airBaker of
     Nothing -> logFatal [[i|Account #{senderAddr} is not a baker, so cannot update its stake.|]]
     Just aibresult -> do
-      when (airAmount < newAmount) $ logFatal [[i|Account balance (#{showGtu airAmount}) is lower than the new amount requested to be staked (#{showGtu newAmount}).|]]
+      when (airAmount < newAmount) $ logFatal [[i|Account balance (#{showCcd airAmount}) is lower than the new amount requested to be staked (#{showCcd newAmount}).|]]
       -- Check if stake is being decreased, ask for confirmation if so if so
       if (newAmount < abirStakedAmount aibresult)
       then do
         logWarn ["The new staked value appears to be lower than the amount currently staked on chain by this baker."]
-        logWarn ["Decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the GTU are made available."]
+        logWarn ["Decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the CCD are made available."]
         logWarn ["During this period it is not possible to update the baker's stake, or stop the baker."]
         logWarn [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
         confirmed <- askConfirmation $ Just "Confirm that you want to update the baker's stake"
@@ -1014,15 +1014,15 @@ getBakerUpdateStakeTransactionCfg txCfg newAmount cooldownDate = do
           { bustcNewAmount = newAmount
           , bustcTransactionCfg = txCfg }
       else do
-        logInfo ["Note that decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the GTU are made available."]
+        logInfo ["Note that decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the CCD are made available."]
         logInfo ["During this period it is not possible to update the baker's stake, or stop the baker."]
         logInfo [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
-        -- Check if staked amount is greater than 95% of total GTU on the account, and warn user if so
+        -- Check if staked amount is greater than 95% of total CCD on the account, and warn user if so
         if ((newAmount * 100) > (airAmount * 95))
         then do
-          logWarn ["You are attempting to stake >95% of your total GTU on this account. Staked GTU is not available for spending."]
-          logWarn ["Be aware that updating or stopping your baker in the future will require some amount of non-staked GTU to pay for the transactions to do so."]
-          confirmed <- askConfirmation $ Just "Confirm that you wish to stake this much GTU"
+          logWarn ["You are attempting to stake >95% of your total CCD on this account. Staked CCD is not available for spending."]
+          logWarn ["Be aware that updating or stopping your baker in the future will require some amount of non-staked CCD to pay for the transactions to do so."]
+          confirmed <- askConfirmation $ Just "Confirm that you wish to stake this much CCD"
           unless confirmed exitTransactionCancelled
           return BakerUpdateStakeTransactionConfig
             { bustcNewAmount = newAmount
@@ -1163,7 +1163,7 @@ transferTransactionConfirm ttxCfg confirm = do
         , ttcReceiver = toAddress }
         = ttxCfg
 
-  logSuccess [ printf "sending %s from %s to %s" (showGtu amount) (showNamedAddress fromAddress) (showNamedAddress toAddress)
+  logSuccess [ printf "sending %s from %s to %s" (showCcd amount) (showNamedAddress fromAddress) (showNamedAddress toAddress)
              , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
              , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiryTs) ]
   when confirm $ do
@@ -1183,8 +1183,8 @@ transferWithScheduleTransactionConfirm ttxCfg confirm = do
         , twstcReceiver = toAddress }
         = ttxCfg
 
-  logSuccess [ printf "sending GTUs from %s to %s" (showNamedAddress fromAddress) (showNamedAddress toAddress)
-             , printf "with the following release schedule:\n%swith a total amount of %s" (unlines $ map (\(a, b) -> showTimeFormatted (Time.timestampToUTCTime a) ++ ": " ++ showGtu b) schedule) (showGtu $ foldl' (\acc (_, x) -> acc + x) 0 schedule)
+  logSuccess [ printf "sending CCDs from %s to %s" (showNamedAddress fromAddress) (showNamedAddress toAddress)
+             , printf "with the following release schedule:\n%swith a total amount of %s" (unlines $ map (\(a, b) -> showTimeFormatted (Time.timestampToUTCTime a) ++ ": " ++ showCcd b) schedule) (showCcd $ foldl' (\acc (_, x) -> acc + x) 0 schedule)
              , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
              , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiryTs) ]
   when confirm $ do
@@ -1200,7 +1200,7 @@ encryptedTransferTransactionConfirm EncryptedTransferTransactionConfig{..} confi
         = ettTransactionCfg
 
   logInfo
-    [ printf "transferring %s GTU from encrypted balance of account %s to %s" (Types.amountToString ettAmount) (showNamedAddress addr) (showNamedAddress ettReceiver)
+    [ printf "transferring %s CCD from shielded balance of account %s to %s" (Types.amountToString ettAmount) (showNamedAddress addr) (showNamedAddress ettReceiver)
     , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
     , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
 
@@ -1246,7 +1246,7 @@ bakerAddTransaction baseCfg txOpts f batcBakingStake batcRestakeEarnings confirm
   txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
 
   logSuccess [ printf "adding baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
-             , printf "initial stake will be %s GTU" (Types.amountToString batcBakingStake)
+             , printf "initial stake will be %s CCD" (Types.amountToString batcBakingStake)
              , if batcRestakeEarnings then "Rewards will be automatically added to the baking stake." else "Rewards will _not_ be automatically added to the baking stake."
              , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy) ]
   when confirm $ do
@@ -1309,7 +1309,7 @@ bakerUpdateStakeTransactionConfirm brtxCfg confirm = do
         , bustcNewAmount = newAmount }
         = brtxCfg
 
-  logSuccess [ printf "submitting transaction to update stake of baker to '%s'" (showGtu newAmount)
+  logSuccess [ printf "submitting transaction to update stake of baker to '%s'" (showCcd newAmount)
              , printf "allowing up to %s to be spent as transaction fee" (showNrg energy) ]
   when confirm $ do
     confirmed <- askConfirmation Nothing
@@ -1383,7 +1383,7 @@ accountEncryptTransactionConfirm AccountEncryptTransactionConfig{..} confirm = d
 
 
   logInfo $
-    [ printf "transferring %s GTU from public to encrypted balance of account %s" (Types.amountToString aeAmount) (showNamedAddress addr)
+    [ printf "transferring %s CCD from public to shielded balance of account %s" (Types.amountToString aeAmount) (showNamedAddress addr)
     , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
     , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
 
@@ -1401,7 +1401,7 @@ accountDecryptTransactionConfirm AccountDecryptTransactionConfig{..} confirm = d
         = adTransactionCfg
 
   logInfo $
-    [ printf "transferring %s GTU from encrypted to public balance of account %s" (Types.amountToString (Enc.stpatdTransferAmount adTransferData)) (showNamedAddress addr)
+    [ printf "transferring %s CCD from shielded to public balance of account %s" (Types.amountToString (Enc.stpatdTransferAmount adTransferData)) (showNamedAddress addr)
     , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
     , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry) ]
 
@@ -1883,7 +1883,7 @@ processContractCmd action baseCfgDir verbose backend =
                                                   and additional energy is needed to complete the initialization|]]
 
       logInfo [ [i|initialize contract '#{contrName}' from module '#{citcModuleRef ciCfg}' with |]
-                  ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{Types.amountToString $ citcAmount ciCfg} GTU.|]
+                  ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{Types.amountToString $ citcAmount ciCfg} CCD.|]
               , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
               , [i|transaction expires on #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
 
@@ -1919,7 +1919,7 @@ processContractCmd action baseCfgDir verbose backend =
                                                   and additional energy is needed to complete the update|]]
 
       logInfo [ [i|update contract '#{cutcContrName cuCfg}' using the function '#{receiveName}' with |]
-                  ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{Types.amountToString $ cutcAmount cuCfg} GTU.|]
+                  ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{Types.amountToString $ cutcAmount cuCfg} CCD.|]
               , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
               , [i|transaction expires on #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
 
@@ -2442,31 +2442,31 @@ processBakerCmd action baseCfgDir verbose backend =
             let cannotAfford = airAmount - gtuTransactionPrice < initialStake
             minimumBakerStake <- getBakerStakeThresholdOrDie
             when (initialStake < minimumBakerStake) $ do
-              logWarn [[i|The staked amount (#{showGtu initialStake}) is lower than the minimum baker stake threshold (#{showGtu minimumBakerStake}).|]]
+              logWarn [[i|The staked amount (#{showCcd initialStake}) is lower than the minimum baker stake threshold (#{showCcd minimumBakerStake}).|]]
               confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
               unless confirmed exitTransactionCancelled
             when cannotAfford $ do
-              logWarn [[i|Account balance (#{showGtu airAmount}) minus the cost of the transaction (#{showGtu gtuTransactionPrice}) is lower than the amount requested to be staked (#{showGtu initialStake}).|]]
+              logWarn [[i|Account balance (#{showCcd airAmount}) minus the cost of the transaction (#{showCcd gtuTransactionPrice}) is lower than the amount requested to be staked (#{showCcd initialStake}).|]]
               confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
               unless confirmed exitTransactionCancelled
-            -- Check if staked amount is greater than 95% of total GTU on the account, and warn user if so
+            -- Check if staked amount is greater than 95% of total CCD on the account, and warn user if so
             when ((initialStake * 100) > (airAmount * 95) && not cannotAfford) $ do
-              logWarn ["You are attempting to stake >95% of your total GTU on this account. Staked GTU is not available for spending."]
-              logWarn ["Be aware that updating or stopping your baker in the future will require some amount of non-staked GTU to pay for the transactions to do so."]
-              confirmed <- askConfirmation $ Just "Confirm that you wish to stake this much GTU"
+              logWarn ["You are attempting to stake >95% of your total CCD on this account. Staked CCD is not available for spending."]
+              logWarn ["Be aware that updating or stopping your baker in the future will require some amount of non-staked CCD to pay for the transactions to do so."]
+              confirmed <- askConfirmation $ Just "Confirm that you wish to stake this much CCD"
               unless confirmed exitTransactionCancelled
             sendAndMaybeOutputCredentials bakerKeys wasEncrypted bakerKeysFile outputFile txCfg pl intOpts
         where
           -- General function to fetch NrgGtu rate
-          -- This functionality is going to be more generally used in an upcoming branch adding GTU prices to NRG printouts across the client.
+          -- This functionality is going to be more generally used in an upcoming branch adding CCD prices to NRG printouts across the client.
           -- Invoking it directly here to avoid extra work on compatability/refactoring in the future
           getNrgGtuRate :: ClientMonad IO Types.EnergyRate
           getNrgGtuRate = do 
             blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
             case blockSummary of
               Nothing -> do
-                logError ["Failed to retrieve NRG-GTU rate from the chain using best block hash, unable to estimate GTU cost"]
-                logError ["Falling back to default behaviour, all GTU values derived from NRG will be set to 0"]
+                logError ["Failed to retrieve NRG-CCD rate from the chain using best block hash, unable to estimate CCD cost"]
+                logError ["Falling back to default behaviour, all CCD values derived from NRG will be set to 0"]
                 return 0
               Just bsr -> do
                 return $ _cpEnergyRate $ bsurChainParameters $ bsrUpdates bsr
@@ -2499,7 +2499,7 @@ processBakerCmd action baseCfgDir verbose backend =
           Just cpr -> do
             -- Warn user that stopping a baker incurs the baker cooldown timer
             cooldownDate <- getBakerCooldown cpr
-            logWarn ["Stopping a baker that is staking will lock the stake of the baker for a cooldown period before the GTU are made available."]
+            logWarn ["Stopping a baker that is staking will lock the stake of the baker for a cooldown period before the CCD are made available."]
             logWarn ["During this period it is not possible to update the baker's stake, or restart the baker."]
             logWarn [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
             confirmed <- askConfirmation $ Just "Confirm that you want to send the transaction to stop this baker"

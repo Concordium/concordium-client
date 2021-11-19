@@ -1,5 +1,12 @@
 # Changelog for concordium-client
 
+## 3.0.1
+
+- rename GTU token to CCD
+- rename send-gtu, send-gtu-scheduled and send-gtu-encrypted to send,
+  send-scheduled and send-shielded.
+- rename account encrypt/decrypt to account shield/unshield
+
 ## 3.0.0
 
 - show line breaks, tabs etc. in memo transfers (when it's CBOR encoded string), instead of escaping them

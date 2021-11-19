@@ -161,14 +161,14 @@ printAccountInfo :: (Types.Epoch -> UTCTime) -> NamedAddress -> AccountInfoResul
 printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
   tell ([ [i|Local names:            #{showNameList $ naNames addr}|]
         , [i|Address:                #{naAddr addr}|]
-        , [i|Balance:                #{showGtu $ airAmount a}|]
+        , [i|Balance:                #{showCcd $ airAmount a}|]
         ] ++
        case totalRelease $ airReleaseSchedule a of
          0 -> []
-         tot -> (printf "Release schedule:       total %s" (showGtu tot)) :
+         tot -> (printf "Release schedule:       total %s" (showCcd tot)) :
                (map (\ReleaseScheduleItem{..} -> printf "   %s:               %s scheduled by the transactions: %s."
                                                 (showTimeFormatted (Time.timestampToUTCTime rsiTimestamp))
-                                                (showGtu rsiAmount)
+                                                (showCcd rsiAmount)
                                                 (intercalate ", " $ map show rsiTransactions))
                  (releaseSchedule $ airReleaseSchedule a))
        ++ [ printf "Nonce:                  %s" (show $ airNonce a)
@@ -198,7 +198,7 @@ printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
         Just (encKey, globalContext) -> do
              let table = Enc.computeTable globalContext (2^(16::Int))
                  decoder = Enc.decryptAmount table encKey
-                 printer x = let decoded = decoder x in "(" ++ showGtu decoded ++ ") " ++ showEncryptedAmount x
+                 printer x = let decoded = decoder x in "(" ++ showCcd decoded ++ ") " ++ showEncryptedAmount x
                  showableSelfDecryptedAmount = printer (Types._selfAmount $ airEncryptedAmount a)
                  incomingAmountsList = Types.getIncomingAmountsList $ airEncryptedAmount a
                  showableIncomingAmountsList =  printer <$>  incomingAmountsList
@@ -211,14 +211,14 @@ printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
     Nothing -> tell ["Baker: none"]
     Just bk -> do
       let bkid = [i|Baker: \##{show . aibiIdentity . abirAccountBakerInfo $ bk}|]
-          stkstr = [i| - Staked amount: #{showGtu . abirStakedAmount $ bk}|]
+          stkstr = [i| - Staked amount: #{showCcd . abirStakedAmount $ bk}|]
       case abirBakerPendingChange bk of
         NoChange -> tell [ bkid
                          , stkstr ]
         RemoveBaker e -> tell [ [i|#{bkid} to be removed at epoch #{e} (#{epochsToUTC e})|]
                               , stkstr ]
         ReduceStake n e -> tell [ bkid
-                                , [i|#{stkstr} to be updated to #{showGtu n} at epoch #{e} (#{epochsToUTC e})|] ]
+                                , [i|#{stkstr} to be updated to #{showCcd n} at epoch #{e} (#{epochsToUTC e})|] ]
       tell [[i| - Restake earnings: #{showYesNo . abirStakeEarnings $ bk}|]]
 
   tell [ "" ]
@@ -306,7 +306,7 @@ printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
   tell [ [i|Contract:        #{contractName}|]
        , [i|Owner:           #{owner}|]
        , [i|ModuleReference: #{showNamedModuleRef namedModRef}|]
-       , [i|Balance:         #{Types.amountToString ciAmount} GTU|]
+       , [i|Balance:         #{showCcd ciAmount}|]
        , [i|State size:      #{ciSize} bytes|]]
   tell state
   tell [ [i|Methods:|]]
@@ -560,7 +560,7 @@ showOutcomeCost :: Types.TransactionSummary -> String
 showOutcomeCost outcome = showCost (Types.tsCost outcome) (Types.tsEnergyCost outcome)
 
 showCost :: Types.Amount -> Types.Energy -> String
-showCost gtu nrg = printf "%s (%s)" (showGtu gtu) (showNrg nrg)
+showCost gtu nrg = printf "%s (%s)" (showCcd gtu) (showNrg nrg)
 
 showOutcomeResult :: Verbose -> Types.ValidResult -> [String]
 showOutcomeResult verbose = \case
@@ -598,7 +598,7 @@ showEvent verbose = \case
     verboseOrNothing $ printf "credential with registration '%s' deployed onto account '%s'" (show ecdRegId) (show ecdAccount)
   Types.BakerAdded{..} ->
     let restakeString :: String = if ebaRestakeEarnings then "Earnings are added to the stake." else "Earnings are not added to the stake."
-    in Just $ printf "baker %s added, staking %s GTU. %s" (showBaker ebaBakerId ebaAccount) (Types.amountToString ebaStake) restakeString
+    in Just $ printf "baker %s added, staking %s CCD. %s" (showBaker ebaBakerId ebaAccount) (Types.amountToString ebaStake) restakeString
   Types.BakerRemoved{..} ->
     verboseOrNothing $ printf "baker %s, removed" (showBaker ebrBakerId ebrAccount) (show ebrBakerId)
   Types.BakerStakeIncreased{..} ->
@@ -613,14 +613,14 @@ showEvent verbose = \case
     verboseOrNothing $ [i|credentials on account #{cuAccount} have been updated.\nCredentials #{cuRemovedCredIds} have been removed, and credentials #{cuNewCredIds} have been added.\nThe new account threshold is #{cuNewThreshold}.|]
 
   Types.CredentialKeysUpdated cid -> verboseOrNothing $ printf "credential keys updated for credential with credId %s" (show cid)
-  Types.NewEncryptedAmount{..} -> verboseOrNothing $ printf "encrypted amount received on account '%s' with index '%s'" (show neaAccount) (show neaNewIndex)
-  Types.EncryptedAmountsRemoved{..} -> verboseOrNothing $ printf "encrypted amounts removed on account '%s' up to index '%s' with a resulting self encrypted amount of '%s'" (show earAccount) (show earUpToIndex) (show earNewAmount)
+  Types.NewEncryptedAmount{..} -> verboseOrNothing $ printf "shielded amount received on account '%s' with index '%s'" (show neaAccount) (show neaNewIndex)
+  Types.EncryptedAmountsRemoved{..} -> verboseOrNothing $ printf "shielded amounts removed on account '%s' up to index '%s' with a resulting self shielded amount of '%s'" (show earAccount) (show earUpToIndex) (show earNewAmount)
   Types.AmountAddedByDecryption{..} -> verboseOrNothing $ printf "transferred '%s' tokens from the shielded balance to the public balance on account '%s'" (show aabdAmount) (show aabdAccount)
-  Types.EncryptedSelfAmountAdded{..} -> verboseOrNothing $ printf "transferred '%s' tokens from the public balance to the shielded balance on account '%s' with a resulting self encrypted balance of '%s'" (show eaaAmount) (show eaaAccount) (show eaaNewAmount)
+  Types.EncryptedSelfAmountAdded{..} -> verboseOrNothing $ printf "transferred '%s' tokens from the public balance to the shielded balance on account '%s' with a resulting self shielded balance of '%s'" (show eaaAmount) (show eaaAccount) (show eaaNewAmount)
   Types.UpdateEnqueued{..} ->
     verboseOrNothing $ printf "Enqueued chain update, effective at %s:\n%s" (showTimeFormatted (timeFromTransactionExpiryTime ueEffectiveTime)) (show uePayload)
   Types.TransferredWithSchedule{..} ->
-    verboseOrNothing $ printf "Sent transfer with schedule %s" (intercalate ", " . map (\(a, b) -> showTimeFormatted (Time.timestampToUTCTime a) ++ ": " ++ showGtu b) $ etwsAmount)
+    verboseOrNothing $ printf "Sent transfer with schedule %s" (intercalate ", " . map (\(a, b) -> showTimeFormatted (Time.timestampToUTCTime a) ++ ": " ++ showCcd b) $ etwsAmount)
   Types.DataRegistered{ } ->
     verboseOrNothing [i|Registered data on chain.|]
   Types.TransferMemo{..} ->
@@ -731,9 +731,9 @@ showRejectReason verbose = \case
   Types.InvalidAccountThreshold ->
     "account threshold exceeds the number of credentials"
   Types.InvalidEncryptedAmountTransferProof ->
-    "the proof for the encrypted transfer doesn't validate"
+    "the proof for the shielded transfer doesn't validate"
   Types.EncryptedAmountSelfTransfer acc ->
-    printf "attempted to make an encrypted transfer to the same account '%s'" (show acc)
+    printf "attempted to make a shielded transfer to the same account '%s'" (show acc)
   Types.InvalidTransferToPublicProof ->
     "the proof for the secret to public transfer doesn't validate"
   Types.InvalidIndexOnEncryptedTransfer ->
@@ -755,8 +755,8 @@ showRejectReason verbose = \case
   Types.CredentialHolderDidNotSign -> [i|credential holder did not sign the credential key update|]
   Types.StakeUnderMinimumThresholdForBaking -> "the desired stake is under the minimum threshold for baking"
   Types.NotAllowedMultipleCredentials -> "the account is not allowed to have multiple credentials"
-  Types.NotAllowedToReceiveEncrypted -> "the account is not allowed to receive encrypted transfers"
-  Types.NotAllowedToHandleEncrypted -> "the account is not allowed handle encrypted amounts"
+  Types.NotAllowedToReceiveEncrypted -> "the account is not allowed to receive shielded transfers"
+  Types.NotAllowedToHandleEncrypted -> "the account is not allowed handle shielded amounts"
 
 -- CONSENSUS
 
@@ -883,9 +883,9 @@ printAnonymityRevokers vals = do
 
 -- AMOUNT AND ENERGY
 
--- |Standardized method of displaying an amount as GTU.
-showGtu :: Types.Amount -> String
-showGtu = printf "%s GTU" . Types.amountToString
+-- |Standardized method of displaying an amount as CCD.
+showCcd :: Types.Amount -> String
+showCcd = printf "%s CCD" . Types.amountToString
 
 -- |Standardized method of displaying energy as NRG.
 showNrg :: Types.Energy -> String
