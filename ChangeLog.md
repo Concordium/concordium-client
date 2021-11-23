@@ -1,5 +1,8 @@
 # Changelog for concordium-client
 
+## 3.0.2
+- credentials revealing newly introduced attribute LEI can be deployed
+
 ## 3.0.1
 
 - rename GTU token to CCD
