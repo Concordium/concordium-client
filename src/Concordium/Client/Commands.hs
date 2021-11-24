@@ -712,8 +712,8 @@ accountShowCmd =
        (AccountShow <$>
          optional (strArgument (metavar "ACCOUNT" <> help "Name, credential registration ID, or address of the account.")) <*>
          optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")) <*>
-         switch (long "encrypted" <> help "Show encrypted balance") <*>
-         switch (long "decrypt-encrypted" <> help "Show the encrypted balance, but also decrypt all the amounts (potentially slow)."))
+         switch (long "shielded" <> help "Show the shielded balance.") <*>
+         switch (long "reveal-shielded" <> help "Show the shielded balance, and also reveal all the amounts (potentially slow)."))
        (progDesc "Display account details."))
 
 accountListCmd :: Mod CommandFields AccountCmd

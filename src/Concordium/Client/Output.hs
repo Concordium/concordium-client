@@ -183,7 +183,7 @@ printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
         let (_, balances) = foldl' (\(idx, strings) v -> (idx + 1, strings <> [printf "    %s: %s" (show idx) v]))
                                    (Types._startIndex $ airEncryptedAmount a, [])
                                    amms
-        tell ["Encrypted balance:"]
+        tell ["Shielded balance:"]
         tell $ case balances of
                  [] -> ["  Incoming amounts: []"]
                  _ -> ["  Incoming amounts:"] <> balances
