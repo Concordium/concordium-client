@@ -1,5 +1,9 @@
 # Changelog for concordium-client
 
+## 3.0.4
+- Rename `--encrypted` and `--decrypt-encrypted` flags to `account show` to
+  `--shielded` and `--reveal-shielded`.
+
 ## 3.0.3
 - support the same range of tag names for LEI as is supported by identity
   issuance command line tools. Previously only UNNAMED#13 was supported and now
