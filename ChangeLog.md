@@ -1,5 +1,10 @@
 # Changelog for concordium-client
 
+## 3.0.3
+- support the same range of tag names for LEI as is supported by identity
+  issuance command line tools. Previously only UNNAMED#13 was supported and now
+  both lei and the former are.
+
 ## 3.0.2
 - credentials revealing newly introduced attribute LEI can be deployed
 
