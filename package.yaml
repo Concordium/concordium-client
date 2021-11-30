@@ -134,7 +134,8 @@ executables:
       - -Wredundant-constraints
       - -O
     when:
-      - condition: ! os(windows)
+      - condition: ! os(windows) 
+        # the tool deadlocks on windows when -threaded is used
         ghc-options: -threaded
     when:
       - condition: flag(static)
