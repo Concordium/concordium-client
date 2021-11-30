@@ -133,7 +133,9 @@ executables:
       - -Werror=missing-fields
       - -Wredundant-constraints
       - -O
-
+    when:
+      - condition: ! os(windows)
+        ghc-options: -threaded
     when:
       - condition: flag(static)
         ld-options:
