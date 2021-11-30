@@ -212,7 +212,7 @@ executable tx-generator
       FlexibleContexts
       LambdaCase
       TupleSections
-  ghc-options: -Wall -Wcompat -Werror=missing-fields -Wredundant-constraints -O -threaded
+  ghc-options: -Wall -Wcompat -Werror=missing-fields -Wredundant-constraints -O
   build-depends:
       aeson
     , base

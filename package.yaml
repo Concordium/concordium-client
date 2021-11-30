@@ -133,7 +133,6 @@ executables:
       - -Werror=missing-fields
       - -Wredundant-constraints
       - -O
-      - -threaded
 
     when:
       - condition: flag(static)
