@@ -105,6 +105,7 @@ data LegacyCmd
     { legacyBlockHash :: !(Maybe Text) }
   | GetCryptographicParameters
     { legacyBlockHash :: !(Maybe Text) }
+  | GetChainParameters
   deriving (Show)
 
 legacyProgramOptions :: Parser LegacyCmd
@@ -114,6 +115,7 @@ legacyProgramOptions =
      getTransactionStatusCommand <>
      getTransactionStatusInBlockCommand <>
      getConsensusInfoCommand <>
+     getChainParametersCommand <>
      getBlockInfoCommand <>
      getBlockSummaryCommand <>
      getBlocksAtHeightCommand <>
@@ -206,7 +208,6 @@ getTransactionStatusInBlockCommand =
        (progDesc
           "Query the gRPC for the information about the execution of a transaction in a specific block."))
 
-
 getConsensusInfoCommand :: Mod CommandFields LegacyCmd
 getConsensusInfoCommand =
   command
@@ -214,6 +215,14 @@ getConsensusInfoCommand =
     (info
        (pure GetConsensusInfo)
        (progDesc "Query the gRPC server for the consensus information."))
+
+getChainParametersCommand :: Mod CommandFields LegacyCmd
+getChainParametersCommand =
+    command
+      "GetChainParameters"
+      (info
+        (pure GetChainParameters)
+        (progDesc "Query the gRPC server for the blockchain parameters."))
 
 getBlockInfoCommand :: Mod CommandFields LegacyCmd
 getBlockInfoCommand =

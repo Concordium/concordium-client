@@ -20,7 +20,7 @@ import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Crypto.EncryptedTransfers as Enc
 import qualified Concordium.Wasm as Wasm
 import qualified Concordium.Common.Time as Time
-import Concordium.Types.Queries (BlockInfo(..))
+import qualified Concordium.Types.Queries as Queries
 
 import Control.Monad.Writer
 import qualified Data.Aeson as AE
@@ -760,32 +760,32 @@ showRejectReason verbose = \case
 
 -- CONSENSUS
 
-printConsensusStatus :: ConsensusStatusResult -> Printer
+printConsensusStatus :: Queries.ConsensusStatus -> Printer
 printConsensusStatus r =
-  tell [ printf "Best block:                  %s" (show $ csrBestBlock r)
-       , printf "Genesis block:               %s" (show $ csrGenesisBlock r)
-       , printf "Genesis time:                %s" (show $ csrGenesisTime r)
-       , printf "Slot duration:               %s" (showDuration $ csrSlotDuration r)
-       , printf "Epoch duration:              %s" (showDuration $ csrEpochDuration r)
-       , printf "Last finalized block:        %s" (show $ csrLastFinalizedBlock r)
-       , printf "Best block height:           %s" (show $ csrBestBlockHeight r)
-       , printf "Last finalized block height: %s" (show $ csrLastFinalizedBlockHeight r)
-       , printf "Blocks received count:       %s" (show $ csrBlocksReceivedCount r)
-       , printf "Block last received time:    %s" (showMaybeUTC $ csrBlockLastReceivedTime r)
-       , printf "Block receive latency:       %s" (showEmSeconds (csrBlockReceiveLatencyEMA r) (csrBlockReceiveLatencyEMSD r))
-       , printf "Block receive period:        %s" (showMaybeEmSeconds (csrBlockReceivePeriodEMA r) (csrBlockReceivePeriodEMSD r))
-       , printf "Blocks verified count:       %s" (show $ csrBlocksVerifiedCount r)
-       , printf "Block last arrived time:     %s" (showMaybeUTC $ csrBlockLastArrivedTime r)
-       , printf "Block arrive latency:        %s" (showEmSeconds (csrBlockArriveLatencyEMA r) (csrBlockArriveLatencyEMSD r))
-       , printf "Block arrive period:         %s" (showMaybeEmSeconds (csrBlockArrivePeriodEMA r) (csrBlockArrivePeriodEMSD r))
-       , printf "Transactions per block:      %s" (showEm (printf "%8.3f" $ csrTransactionsPerBlockEMA r) (printf "%8.3f" $ csrTransactionsPerBlockEMSD r))
-       , printf "Finalization count:          %s" (show $ csrFinalizationCount r)
-       , printf "Last finalized time:         %s" (showMaybeUTC $ csrLastFinalizedTime r)
-       , printf "Finalization period:         %s" (showMaybeEmSeconds (csrFinalizationPeriodEMA r) (csrFinalizationPeriodEMSD r))
-       , printf "Protocol version:            %s" (show $ csrProtocolVersion r)
-       , printf "Genesis index:               %s" (show $ csrGenesisIndex r)
-       , printf "Current era genesis block:   %s" (show $ csrCurrentEraGenesisBlock r)
-       , printf "Current era genesis time:    %s" (show $ csrCurrentEraGenesisTime r)]
+  tell [ printf "Best block:                  %s" (show $ Queries.csBestBlock r)
+       , printf "Genesis block:               %s" (show $ Queries.csGenesisBlock r)
+       , printf "Genesis time:                %s" (show $ Queries.csGenesisTime r)
+       , printf "Slot duration:               %s" (showDuration $ Time.durationMillis $ Queries.csSlotDuration r)
+       , printf "Epoch duration:              %s" (showDuration $ Time.durationMillis $ Queries.csEpochDuration r)
+       , printf "Last finalized block:        %s" (show $ Queries.csLastFinalizedBlock r)
+       , printf "Best block height:           %s" (show $ Queries.csBestBlockHeight r)
+       , printf "Last finalized block height: %s" (show $ Queries.csLastFinalizedBlockHeight r)
+       , printf "Blocks received count:       %s" (show $ Queries.csBlocksReceivedCount r)
+       , printf "Block last received time:    %s" (showMaybeUTC $ Queries.csBlockLastReceivedTime r)
+       , printf "Block receive latency:       %s" (showEmSeconds (Queries.csBlockReceiveLatencyEMA r) (Queries.csBlockReceiveLatencyEMSD r))
+       , printf "Block receive period:        %s" (showMaybeEmSeconds (Queries.csBlockReceivePeriodEMA r) (Queries.csBlockReceivePeriodEMSD r))
+       , printf "Blocks verified count:       %s" (show $ Queries.csBlocksVerifiedCount r)
+       , printf "Block last arrived time:     %s" (showMaybeUTC $ Queries.csBlockLastArrivedTime r)
+       , printf "Block arrive latency:        %s" (showEmSeconds (Queries.csBlockArriveLatencyEMA r) (Queries.csBlockArriveLatencyEMSD r))
+       , printf "Block arrive period:         %s" (showMaybeEmSeconds (Queries.csBlockArrivePeriodEMA r) (Queries.csBlockArrivePeriodEMSD r))
+       , printf "Transactions per block:      %s" (showEm (printf "%8.3f" $ Queries.csTransactionsPerBlockEMA r) (printf "%8.3f" $ Queries.csTransactionsPerBlockEMSD r))
+       , printf "Finalization count:          %s" (show $ Queries.csFinalizationCount r)
+       , printf "Last finalized time:         %s" (showMaybeUTC $ Queries.csLastFinalizedTime r)
+       , printf "Finalization period:         %s" (showMaybeEmSeconds (Queries.csFinalizationPeriodEMA r) (Queries.csFinalizationPeriodEMSD r))
+       , printf "Protocol version:            %s" (show $ Queries.csProtocolVersion r)
+       , printf "Genesis index:               %s" (show $ Queries.csGenesisIndex r)
+       , printf "Current era genesis block:   %s" (show $ Queries.csCurrentEraGenesisBlock r)
+       , printf "Current era genesis time:    %s" (show $ Queries.csCurrentEraGenesisTime r)]
 
 printBirkParameters :: Bool -> BirkParametersResult -> Map.Map IDTypes.AccountAddress Text -> Printer
 printBirkParameters includeBakers r addrmap = do
@@ -810,24 +810,24 @@ printBirkParameters includeBakers r addrmap = do
 
 -- BLOCK
 
-printBlockInfo :: Maybe BlockInfo -> Printer
+printBlockInfo :: Maybe Queries.BlockInfo -> Printer
 printBlockInfo Nothing = tell [ printf "Block not found." ]
 printBlockInfo (Just b) =
-  tell [ printf "Hash:                       %s" (show $ biBlockHash b)
-       , printf "Parent block:               %s" (show $ biBlockParent b)
-       , printf "Last finalized block:       %s" (show $ biBlockLastFinalized b)
-       , printf "Finalized:                  %s" (showYesNo $ biFinalized b)
-       , printf "Receive time:               %s" (showTimeFormatted $ biBlockReceiveTime b)
-       , printf "Arrive time:                %s" (showTimeFormatted $ biBlockArriveTime b)
-       , printf "Slot:                       %s" (show $ biBlockSlot b)
-       , printf "Slot time:                  %s" (showTimeFormatted $ biBlockSlotTime b)
-       , printf "Height:                     %s" (show $ biBlockHeight b)
-       , printf "Height since last genesis:  %s" (show $ biEraBlockHeight b)
-       , printf "Genesis index:              %s" (show $ biGenesisIndex b)
-       , printf "Baker:                      %s" (showMaybe show $ biBlockBaker b)
-       , printf "Transaction count:          %d" (biTransactionCount b)
-       , printf "Transaction energy cost:    %s" (showNrg $ biTransactionEnergyCost b)
-       , printf "Transactions size:          %d" (biTransactionsSize b) ]
+  tell [ printf "Hash:                       %s" (show $ Queries.biBlockHash b)
+       , printf "Parent block:               %s" (show $ Queries.biBlockParent b)
+       , printf "Last finalized block:       %s" (show $ Queries.biBlockLastFinalized b)
+       , printf "Finalized:                  %s" (showYesNo $ Queries.biFinalized b)
+       , printf "Receive time:               %s" (showTimeFormatted $ Queries.biBlockReceiveTime b)
+       , printf "Arrive time:                %s" (showTimeFormatted $ Queries.biBlockArriveTime b)
+       , printf "Slot:                       %s" (show $ Queries.biBlockSlot b)
+       , printf "Slot time:                  %s" (showTimeFormatted $ Queries.biBlockSlotTime b)
+       , printf "Height:                     %s" (show $ Queries.biBlockHeight b)
+       , printf "Height since last genesis:  %s" (show $ Queries.biEraBlockHeight b)
+       , printf "Genesis index:              %s" (show $ Queries.biGenesisIndex b)
+       , printf "Baker:                      %s" (showMaybe show $ Queries.biBlockBaker b)
+       , printf "Transaction count:          %d" (Queries.biTransactionCount b)
+       , printf "Transaction energy cost:    %s" (showNrg $ Queries.biTransactionEnergyCost b)
+       , printf "Transactions size:          %d" (Queries.biTransactionsSize b) ]
 
 
 -- ID LAYER

@@ -37,6 +37,7 @@ import Concordium.Client.Types.Account
 import Concordium.Client.Utils
 import Concordium.Common.Time
 import Concordium.ID.Types (CredentialIndex, KeyIndex, CredentialRegistrationID, AccountThreshold)
+import Concordium.Types.Execution
 import Concordium.Types
 import Text.Printf
 import qualified Text.PrettyPrint.ANSI.Leijen as P
@@ -408,6 +409,17 @@ data BakerCmd
   | BakerUpdateRestakeEarnings
     { bursRestake :: !Bool
     , bursTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
+  | BakerConfigure
+    { bcFile :: !FilePath
+    , bcTransactionOpts :: !(TransactionOpts (Maybe Energy))
+    , bcCapital :: !(Maybe Amount)
+    , bcRestake :: !(Maybe Bool)
+    , bcOpenForDelegation :: !(Maybe OpenStatus)
+    , bcMetadataURL :: !(Maybe String)
+    , bcTransactionFeeCommission :: !(Maybe RewardFraction)
+    , bcBakingRewardCommission :: !(Maybe RewardFraction)
+    , bcFinalizationRewardCommission :: !(Maybe RewardFraction)
+    , outputFile :: !(Maybe FilePath) }
   deriving (Show)
 
 data IdentityCmd
@@ -1270,7 +1282,8 @@ bakerCmds =
            bakerRemoveCmd <>
            bakerSetKeysCmd <>
            bakerUpdateRestakeCmd <>
-           bakerUpdateStakeCmd))
+           bakerUpdateStakeCmd <>
+           bakerConfigureCmd))
       (progDesc "Commands for creating and deploying baker credentials."))
 
 bakerGenerateKeysCmd :: Mod CommandFields BakerCmd
@@ -1305,6 +1318,40 @@ bakerAddCmd =
         transactionOptsParser <*>
         option (eitherReader amountFromStringInform) (long "stake" <> metavar "CCD-AMOUNT" <> help "The amount of CCD to stake.") <*>
         (not <$> switch (long "no-restake" <> help "If supplied, the earnings will not be added to the baker stake automatically.")) <*>
+        optional (strOption (long "out" <> metavar "FILE" <> help "File to write the baker credentials to, in case of succesful transaction. These can be used to start the node."))
+      )
+      (progDesc "Deploy baker credentials to the chain."))
+
+allowedValuesOpenDelegationForAsString :: String
+allowedValuesOpenDelegationForAsString =
+    "'all' (delegators are allowed to join the pool), 'existing' (keep the existing delegators, but do not allow new delegators), 'none' (remove existing delegators and do not allow new delegators)"
+
+openStatusFromStringInform :: String -> Either String OpenStatus
+openStatusFromStringInform "all" = Right OpenForAll
+openStatusFromStringInform "existing" = Right ClosedForNew
+openStatusFromStringInform "none" = Right ClosedForAll
+openStatusFromStringInform s = Left $
+    "Unexpected SELECTION: '" ++ s ++ "'. The allowed values are: " ++ allowedValuesOpenDelegationForAsString
+
+helpOpenDelegationFor :: Mod OptionFields OpenStatus
+helpOpenDelegationFor = help $
+    "Select whether the baker will allow other parties (delegators) to delegate CCD to the pool. Available values for SELECTION are: " ++ allowedValuesOpenDelegationForAsString ++ ". Example: \"--open-delegation-for current\"."
+
+bakerConfigureCmd :: Mod CommandFields BakerCmd
+bakerConfigureCmd =
+  command
+    "configure"
+    (info
+      (BakerConfigure <$>
+        strArgument (metavar "FILE" <> help "File containing the baker credentials.") <*>
+        transactionOptsParser <*>
+        optional (option (eitherReader amountFromStringInform) (long "stake" <> metavar "CCD-AMOUNT" <> help "The amount of CCD to stake.")) <*>
+        optional (not <$> switch (long "no-restake" <> help "The earnings will not be added to the baker stake automatically.")) <*>
+        optional (option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> helpOpenDelegationFor)) <*>
+        optional (strOption (long "baker-url" <> metavar "URL" <> help "Provide a link to information about the baker.")) <*>
+        optional (option (eitherReader rewardFractionFromStringInform) (long "transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help "Fraction the baker takes in commision from delegators on transaction fee rewards.")) <*>
+        optional (option (eitherReader rewardFractionFromStringInform) (long "baking-reward-commission" <> metavar "DECIMAL-FRACTION" <> help "Fraction the baker takes in commision from delegators on baking rewards.")) <*>
+        optional (option (eitherReader rewardFractionFromStringInform) (long "finalization-commission" <> metavar "DECIMAL-FRACTION" <> help "Fraction the baker takes in commision from delegators on finalization rewards.")) <*>
         optional (strOption (long "out" <> metavar "FILE" <> help "File to write the baker credentials to, in case of succesful transaction. These can be used to start the node."))
       )
       (progDesc "Deploy baker credentials to the chain."))

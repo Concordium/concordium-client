@@ -65,6 +65,8 @@ import           Concordium.Crypto.ByteStringHelpers (deserializeBase16)
 import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.SignatureScheme   as SigScheme
 import qualified Concordium.Crypto.VRF               as VRF
+import           Concordium.Types.UpdateQueues       (currentParameters)
+import qualified Concordium.Types.Queries            as Queries
 import qualified Concordium.Types.Updates            as Updates
 import qualified Concordium.Types.Transactions       as Types
 import           Concordium.Types.HashableTo
@@ -581,7 +583,7 @@ processTransactionCmd action baseCfgDir verbose backend =
               res <- case maybeMemo of 
                 Nothing -> return $ Types.Transfer (naAddr receiverAddress) amount
                 Just memoInput -> do
-                  memo <- checkAndGetMemo memoInput $ csrProtocolVersion cs
+                  memo <- checkAndGetMemo memoInput $ Queries.csProtocolVersion cs
                   return $ Types.TransferWithMemo (naAddr receiverAddress) memo amount 
               return $ Types.encodePayload res
         let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize pl
@@ -626,7 +628,7 @@ processTransactionCmd action baseCfgDir verbose backend =
               res <- case maybeMemo of 
                 Nothing -> return $ Types.TransferWithSchedule (naAddr receiverAddress) realSchedule
                 Just memoInput -> do
-                  memo <- checkAndGetMemo memoInput $ csrProtocolVersion cs
+                  memo <- checkAndGetMemo memoInput $ Queries.csProtocolVersion cs
                   return $ Types.TransferWithScheduleAndMemo (naAddr receiverAddress) memo realSchedule
               return $ Types.encodePayload res
         let nrgCost _ = return $ Just $ transferWithScheduleEnergyCost (Types.payloadSize pl) (length realSchedule)
@@ -676,7 +678,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                 res <- case maybeMemo of 
                   Nothing -> return $ Types.EncryptedAmountTransfer (naAddr receiverAcc) transferData
                   Just memoInput -> do
-                    memo <- checkAndGetMemo memoInput $ csrProtocolVersion cs
+                    memo <- checkAndGetMemo memoInput $ Queries.csProtocolVersion cs
                     return $ Types.EncryptedAmountTransferWithMemo (naAddr receiverAcc) memo transferData
                 return $ Types.encodePayload res
         let nrgCost _ = return $ Just $ encryptedTransferEnergyCost $ Types.payloadSize payload
@@ -1031,16 +1033,28 @@ getBakerUpdateStakeTransactionCfg txCfg newAmount cooldownDate = do
           return BakerUpdateStakeTransactionConfig
             { bustcNewAmount = newAmount
             , bustcTransactionCfg = txCfg }
+
 -- |Returns the UTCTime date when the baker cooldown on reducing stake/removing a baker will end, using on chain parameters
-getBakerCooldown :: BlockSummaryResult -> ClientMonad IO UTCTime
-getBakerCooldown cpr = do
-  let cooldownEpochs = toInteger $ (bsurChainParameters $ bsrUpdates cpr) ^. cpBakerExtraCooldownEpochs
+getBakerCooldown :: Queries.BlockSummary -> ClientMonad IO UTCTime
+getBakerCooldown bs = do
   cs <- getFromJson =<< getConsensusStatus
-  let epochTime = (toInteger $ csrEpochDuration cs) % 1000
+  let epochTime = (toInteger $ Time.durationMillis $ Queries.csEpochDuration cs) % 1000
   let cooldownTime = fromRational $ epochTime * ((cooldownEpochs + 2) % 1)
   currTime <- liftIO getCurrentTime
   let cooldownDate = addUTCTime cooldownTime currTime
   return cooldownDate
+  where
+    cooldownEpochs = Queries.bsWithUpdates bs $ \spv ups ->
+        case chainParametersVersionFor spv of
+            SCPV0 -> cooldownEpochsV0 ups
+            SCPV1 -> cooldownEpochsV1 ups
+    cooldownEpochsV0 ups =
+        toInteger $ ups ^. currentParameters ^. cpCooldownParameters ^. cpBakerExtraCooldownEpochs
+    cooldownEpochsV1 ups =
+        let cp = ups ^. currentParameters
+            numPeriods = cp ^. cpCooldownParameters ^. cpPoolOwnerCooldown
+            periodEpochLen = cp ^. cpTimeParameters ^. tpRewardPeriodLength
+        in toInteger numPeriods * toInteger periodEpochLen
 
 data BakerUpdateRestakeTransactionConfig =
   BakerUpdateRestakeTransactionConfig
@@ -1266,7 +1280,10 @@ getBakerStakeThresholdOrDie = do
   case blockSummary of
     Nothing -> do
       logFatal ["Could not reach the node to retrieve the baker stake threshold."]
-    Just bs -> return $ (bsurChainParameters $ bsrUpdates bs) ^. cpBakerStakeThreshold
+    Just bs -> return $ Queries.bsWithUpdates bs $ \spv ups ->
+        case chainParametersVersionFor spv of
+            SCPV0 -> ups ^. currentParameters ^. cpPoolParameters ^. ppBakerStakeThreshold
+            SCPV1 -> ups ^. currentParameters ^. cpPoolParameters ^. ppMinimumEquityCapital
 
 getAccountUpdateCredentialsTransactionData ::
   Maybe FilePath -- ^ A file with new credentials.
@@ -1451,7 +1468,7 @@ getNonce sender nonce confirm =
   case nonce of
     Nothing -> do
       currentNonce <- getBestBlockHash >>= getAccountNonce sender
-      nextNonce <- nanNonce <$> (getNextAccountNonce (Text.pack $ show sender) >>= getFromJson)
+      nextNonce <- Queries.nanNonce <$> (getNextAccountNonce (Text.pack $ show sender) >>= getFromJson)
       liftIO $ when (currentNonce /= nextNonce) $ do
         logWarn [ printf "there is a pending transaction with nonce %s, but last committed one has %s" (show $ nextNonce-1) (show $ currentNonce-1)
                 , printf "this transaction will have nonce %s and might hang if the pending transaction fails" (show nextNonce) ]
@@ -1536,6 +1553,13 @@ tailTransaction hash = do
   where
     getLocalTimeOfDayFormatted = showTimeOfDay <$> getLocalTimeOfDay
 
+addCurrentEraGenesisTimeToEpochDuration :: Queries.ConsensusStatus -> Word64 -> UTCTime
+addCurrentEraGenesisTimeToEpochDuration cs e =
+    let d = Time.durationMillis $ Queries.csEpochDuration cs
+    in addUTCTime
+        (fromRational ((toInteger e * toInteger d) % 1000))
+        (Queries.csCurrentEraGenesisTime cs)
+
 -- |Process an 'account ...' command.
 processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processAccountCmd action baseCfgDir verbose backend =
@@ -1594,10 +1618,11 @@ processAccountCmd action baseCfgDir verbose backend =
           else return Nothing
         cs <- getFromJson =<< getConsensusStatus
         case encKey of
-          Nothing -> return (accInfo, na, Nothing, \e ->  addUTCTime (fromRational ((toInteger e * toInteger (csrEpochDuration cs)) % 1000)) (csrCurrentEraGenesisTime cs))
+          Nothing ->
+            return (accInfo, na, Nothing, addCurrentEraGenesisTimeToEpochDuration cs)
           Just k -> do
             gc <- logFatalOnError =<< getParseCryptographicParameters bbh
-            return (accInfo, na, Just (k, gc), \e ->  addUTCTime (fromRational ((toInteger e * toInteger (csrEpochDuration cs)) % 1000)) (csrCurrentEraGenesisTime cs))
+            return (accInfo, na, Just (k, gc), addCurrentEraGenesisTimeToEpochDuration cs)
 
       runPrinter $ printAccountInfo f na accInfo verbose (showEncrypted || showDecrypted) dec
 
@@ -2468,8 +2493,9 @@ processBakerCmd action baseCfgDir verbose backend =
                 logError ["Failed to retrieve NRG-CCD rate from the chain using best block hash, unable to estimate CCD cost"]
                 logError ["Falling back to default behaviour, all CCD values derived from NRG will be set to 0"]
                 return 0
-              Just bsr -> do
-                return $ _cpEnergyRate $ bsurChainParameters $ bsrUpdates bsr
+              Just bs ->
+                return $ Queries.bsWithUpdates bs $ \_ ups ->
+                    ups ^. currentParameters ^. energyRate
 
     BakerSetKeys file txOpts outfile -> do
       baseCfg <- getBaseConfig baseCfgDir verbose

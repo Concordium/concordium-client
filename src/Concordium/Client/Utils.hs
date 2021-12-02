@@ -7,11 +7,14 @@ import Concordium.Crypto.ByteStringHelpers
 import qualified Concordium.ID.Types as IDTypes
 import Data.String.Interpolate (i)
 import qualified Data.Text as Text
+import qualified Data.Text.Lazy as Lazy.Text
+import qualified Data.Text.Lazy.Encoding as Lazy.Text
 import Data.Word (Word64)
 import Text.Read
 import Data.String.Interpolate (iii)
 import qualified Data.Char as Char
 import Data.Maybe (mapMaybe)
+import Data.Aeson as AE
 
 -- | In the 'Left' case of an 'Either', transform the error using the given function and
 -- "rethrow" it in the current 'MonadError'.
@@ -51,6 +54,11 @@ amountFromStringInform s =
     Just a -> Right a
     Nothing -> Left $ "Invalid CCD amount '" ++ s ++ "'. Amounts must be of the form n[.m] where m, if present,\n must have at least one and at most 6 digits."
 
+rewardFractionFromStringInform :: String -> Either String RewardFraction
+rewardFractionFromStringInform s =
+  case AE.decode (Lazy.Text.encodeUtf8 $ Lazy.Text.pack s) of
+    Just a -> Right a
+    Nothing -> Left $ "Invalid decimal fraction '" ++ s ++ "'. A decimal fractions must be a decimal number n.m between 0 and 1 (both inclusive), and with at most 5 digits of precision."
 
 -- |Try to parse a KeyIndex from a string, and if failing, try to inform the user
 -- what the expected format is. This is intended to be used by the options

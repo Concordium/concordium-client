@@ -1,3 +1,5 @@
+{-# LANGUAGE DataKinds #-}
+
 module Concordium.Client.Cli where
 
 import Concordium.Common.Version
@@ -7,7 +9,6 @@ import qualified Concordium.Crypto.BlsSignature as Bls
 import qualified Concordium.Crypto.VRF as VRF
 import qualified Concordium.ID.Types as IDTypes
 import Concordium.Types
-import Concordium.Types.Parameters
 import Concordium.Utils.Encryption (Password(..))
 import qualified Concordium.ID.Types as ID
 
@@ -31,7 +32,6 @@ import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
 import Data.Time
 import Data.Time.Clock.POSIX
-import Data.Word
 import Prelude hiding (fail, log)
 import Text.PrettyPrint
 import Text.Printf
@@ -314,93 +314,6 @@ instance AE.FromJSON AccountInfoResult where
     return $ AccountInfoResult {..}) val
 
 ----------------------------------------------------------------------------------------------------
--- Parses a limited subset of the BlockSummary GRPC call to extract the ChainParameters
-
-data BlockSummaryResult = BlockSummaryResult
-  { bsrUpdates :: !BlockSummaryUpdateResults
-  }
-
-instance AE.FromJSON BlockSummaryResult where
-  parseJSON = withObject "block summary" $ \v -> do
-    bsrUpdates <- v .: "updates"
-    return $ BlockSummaryResult {..}
-
-data BlockSummaryUpdateResults = BlockSummaryUpdateResults
-  { bsurChainParameters :: !ChainParameters
-  }
-
-instance AE.FromJSON BlockSummaryUpdateResults where
-  parseJSON = withObject "updates" $ \v -> do
-    bsurChainParameters <- v .: "chainParameters"
-    return $ BlockSummaryUpdateResults {..}
-
-----------------------------------------------------------------------------------------------------
-
-data ConsensusStatusResult = ConsensusStatusResult
-  { csrBestBlock :: BlockHash
-  , csrGenesisBlock :: BlockHash
-  , csrGenesisTime :: UTCTime
-  , csrSlotDuration :: Word64
-  , csrEpochDuration :: Word64
-  , csrLastFinalizedBlock :: BlockHash
-  , csrBestBlockHeight :: Word64
-  , csrLastFinalizedBlockHeight :: Word64
-  , csrBlocksReceivedCount :: Int
-  , csrBlockLastReceivedTime :: Maybe UTCTime
-  , csrBlockReceiveLatencyEMA :: Double
-  , csrBlockReceiveLatencyEMSD :: Double
-  , csrBlockReceivePeriodEMA :: Maybe Double
-  , csrBlockReceivePeriodEMSD :: Maybe Double
-  , csrBlocksVerifiedCount :: Int
-  , csrBlockLastArrivedTime :: Maybe UTCTime
-  , csrBlockArriveLatencyEMA :: Double
-  , csrBlockArriveLatencyEMSD :: Double
-  , csrBlockArrivePeriodEMA :: Maybe Double
-  , csrBlockArrivePeriodEMSD :: Maybe Double
-  , csrTransactionsPerBlockEMA :: Double
-  , csrTransactionsPerBlockEMSD :: Double
-  , csrFinalizationCount :: Int
-  , csrLastFinalizedTime :: Maybe UTCTime
-  , csrFinalizationPeriodEMA :: Maybe Double
-  , csrFinalizationPeriodEMSD :: Maybe Double
-  , csrProtocolVersion :: ProtocolVersion
-  , csrGenesisIndex :: GenesisIndex
-  , csrCurrentEraGenesisBlock :: !BlockHash
-  , csrCurrentEraGenesisTime  :: !UTCTime }
-
-instance AE.FromJSON ConsensusStatusResult where
-  parseJSON = withObject "Consensus state" $ \v -> do
-    csrBestBlock <- v .: "bestBlock"
-    csrGenesisBlock <- v .: "genesisBlock"
-    csrGenesisTime <- v .: "genesisTime"
-    csrSlotDuration <- v .: "slotDuration"
-    csrEpochDuration <- v .: "epochDuration"
-    csrLastFinalizedBlock <- v .: "lastFinalizedBlock"
-    csrBestBlockHeight <- v .: "bestBlockHeight"
-    csrLastFinalizedBlockHeight <- v .: "lastFinalizedBlockHeight"
-    csrBlocksReceivedCount <- v .: "blocksReceivedCount"
-    csrBlockLastReceivedTime <- v .: "blockLastReceivedTime"
-    csrBlockReceiveLatencyEMA <- v .: "blockReceiveLatencyEMA"
-    csrBlockReceiveLatencyEMSD <- v .: "blockReceiveLatencyEMSD"
-    csrBlockReceivePeriodEMA <- v .: "blockReceivePeriodEMA"
-    csrBlockReceivePeriodEMSD <- v .: "blockReceivePeriodEMSD"
-    csrBlocksVerifiedCount <- v .: "blocksVerifiedCount"
-    csrBlockLastArrivedTime <- v .: "blockLastArrivedTime"
-    csrBlockArriveLatencyEMA <- v .: "blockArriveLatencyEMA"
-    csrBlockArriveLatencyEMSD <- v .: "blockArriveLatencyEMSD"
-    csrBlockArrivePeriodEMA <- v .: "blockArrivePeriodEMA"
-    csrBlockArrivePeriodEMSD <- v .: "blockArrivePeriodEMSD"
-    csrTransactionsPerBlockEMA <- v .: "transactionsPerBlockEMA"
-    csrTransactionsPerBlockEMSD <- v .: "transactionsPerBlockEMSD"
-    csrFinalizationCount <- v .: "finalizationCount"
-    csrLastFinalizedTime <- v .: "lastFinalizedTime"
-    csrFinalizationPeriodEMA <- v .: "finalizationPeriodEMA"
-    csrFinalizationPeriodEMSD <- v .: "finalizationPeriodEMSD"
-    csrProtocolVersion <- v .: "protocolVersion"
-    csrGenesisIndex <- v .: "genesisIndex"
-    csrCurrentEraGenesisBlock <- v .: "currentEraGenesisBlock"
-    csrCurrentEraGenesisTime <- v .: "currentEraGenesisTime"
-    return $ ConsensusStatusResult {..}
 
 data BirkParametersResult = BirkParametersResult
   { bprElectionNonce :: LeadershipElectionNonce
@@ -425,16 +338,6 @@ instance AE.FromJSON BirkParametersBakerResult where
     bpbrLotteryPower <- v .: "bakerLotteryPower"
     bpbrAccount <- v .: "bakerAccount"
     return $ BirkParametersBakerResult {..}
-
-data NextAccountNonce = NextAccountNonce
-  { nanNonce :: Nonce
-  , nanAllFinal :: Bool }
-
-instance AE.FromJSON NextAccountNonce where
-  parseJSON = withObject "next nonce" $ \v -> do
-    nanNonce <- v .: "nonce"
-    nanAllFinal <- v .: "allFinal"
-    return NextAccountNonce {..}
 
 data BakerKeys =
   BakerKeys
