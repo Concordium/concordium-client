@@ -1320,7 +1320,7 @@ bakerAddCmd =
         (not <$> switch (long "no-restake" <> help "If supplied, the earnings will not be added to the baker stake automatically.")) <*>
         optional (strOption (long "out" <> metavar "FILE" <> help "File to write the baker credentials to, in case of succesful transaction. These can be used to start the node."))
       )
-      (progDesc "Deploy baker credentials to the chain."))
+      (progDesc "Deploy baker credentials to the chain. This command works on nodes with protocol version <= 3."))
 
 allowedValuesOpenDelegationForAsString :: String
 allowedValuesOpenDelegationForAsString =
@@ -1335,7 +1335,7 @@ openStatusFromStringInform s = Left $
 
 helpOpenDelegationFor :: Mod OptionFields OpenStatus
 helpOpenDelegationFor = help $
-    "Select whether the baker will allow other parties (delegators) to delegate CCD to the pool. Available values for SELECTION are: " ++ allowedValuesOpenDelegationForAsString ++ ". Example: \"--open-delegation-for current\"."
+    "Select whether the baker will allow other parties (delegators) to delegate CCD to the pool. Available values for SELECTION are: " ++ allowedValuesOpenDelegationForAsString ++ ". Example: --open-delegation-for existing"
 
 bakerConfigureCmd :: Mod CommandFields BakerCmd
 bakerConfigureCmd =
@@ -1349,12 +1349,12 @@ bakerConfigureCmd =
         optional (not <$> switch (long "no-restake" <> help "The earnings will not be added to the baker stake automatically.")) <*>
         optional (option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> helpOpenDelegationFor)) <*>
         optional (strOption (long "baker-url" <> metavar "URL" <> help "Provide a link to information about the baker.")) <*>
-        optional (option (eitherReader rewardFractionFromStringInform) (long "transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help "Fraction the baker takes in commision from delegators on transaction fee rewards.")) <*>
-        optional (option (eitherReader rewardFractionFromStringInform) (long "baking-reward-commission" <> metavar "DECIMAL-FRACTION" <> help "Fraction the baker takes in commision from delegators on baking rewards.")) <*>
-        optional (option (eitherReader rewardFractionFromStringInform) (long "finalization-commission" <> metavar "DECIMAL-FRACTION" <> help "Fraction the baker takes in commision from delegators on finalization rewards.")) <*>
+        optional (option (eitherReader rewardFractionFromStringInform) (long "delagation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help "Fraction the baker takes in commision from delegators on transaction fee rewards. Command 'raw GetChainParameters' can be used to determine the range of allowed values for transaction fee commission.")) <*>
+        optional (option (eitherReader rewardFractionFromStringInform) (long "delagation-baking-commission" <> metavar "DECIMAL-FRACTION" <> help "Fraction the baker takes in commision from delegators on baking rewards. Command 'raw GetChainParameters' can be used to determine the range of allowed values for baking commission.")) <*>
+        optional (option (eitherReader rewardFractionFromStringInform) (long "delagation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help "Fraction the baker takes in commision from delegators on finalization rewards. Command 'raw GetChainParameters' can be used to determine the range of allowed values for finalization commission.")) <*>
         optional (strOption (long "out" <> metavar "FILE" <> help "File to write the baker credentials to, in case of succesful transaction. These can be used to start the node."))
       )
-      (progDesc "Deploy baker credentials to the chain."))
+      (progDesc "Configure baker information on the chain. This command works on nodes with protocol version >= 4. It can be used to add/remove baker."))
 
 bakerSetKeysCmd :: Mod CommandFields BakerCmd
 bakerSetKeysCmd =
@@ -1383,7 +1383,7 @@ bakerRemoveCmd =
     (info
       (BakerRemove <$>
         transactionOptsParser)
-      (progDesc "Remove a baker from the chain."))
+      (progDesc "Remove a baker from the chain. This command works on nodes with protocol version <= 3."))
 
 bakerUpdateRestakeCmd :: Mod CommandFields BakerCmd
 bakerUpdateRestakeCmd =

@@ -2406,6 +2406,15 @@ generateBakerKeys bkBakerId = do
                    , bkSigVerifyKey = sigVk
                    , ..}
 
+-- | If the node is running protocol version < 4, then cancel transaction and ask user to use
+-- 'baker configure' command instead.
+requireBakerConfigureTransactionOnP4 :: ClientMonad IO ()
+requireBakerConfigureTransactionOnP4 = do
+    cs <- getConsensusStatus >>= getFromJson
+    when (Queries.csProtocolVersion cs >= Types.P4) $ do
+      logError ["The node uses protocol version >= 4, use command 'baker configure' instead."]
+      exitTransactionCancelled
+
 -- |Process a 'baker ...' command.
 processBakerCmd :: BakerCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processBakerCmd action baseCfgDir verbose backend =
@@ -2449,14 +2458,16 @@ processBakerCmd action baseCfgDir verbose backend =
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-      let intOpts = toInteractionOpts txOpts
-      (bakerKeys, txCfg, pl, wasEncrypted) <- bakerAddTransaction baseCfg txOpts bakerKeysFile initialStake autoRestake (ioConfirm intOpts)
-
-      when verbose $ do
-        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
-        putStrLn ""
-
       withClient backend $ do
+        requireBakerConfigureTransactionOnP4
+
+        let intOpts = toInteractionOpts txOpts
+        (bakerKeys, txCfg, pl, wasEncrypted) <- liftIO $ bakerAddTransaction baseCfg txOpts bakerKeysFile initialStake autoRestake (ioConfirm intOpts)
+
+        when verbose $ do
+          liftIO $ runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
+          liftIO $ putStrLn ""
+
         let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
         AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
         energyrate <- getNrgGtuRate
@@ -2513,10 +2524,11 @@ processBakerCmd action baseCfgDir verbose backend =
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
-      let pl = Types.encodePayload Types.RemoveBaker
-      let nrgCost _ = return $ Just $ bakerRemoveEnergyCost $ Types.payloadSize pl
-      txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
       withClient backend $ do
+        requireBakerConfigureTransactionOnP4
+        let pl = Types.encodePayload Types.RemoveBaker
+        let nrgCost _ = return $ Just $ bakerRemoveEnergyCost $ Types.payloadSize pl
+        txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
         blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
         case blockSummary of
           Nothing -> do
@@ -2541,10 +2553,11 @@ processBakerCmd action baseCfgDir verbose backend =
       when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
-      let pl = Types.encodePayload $ Types.UpdateBakerStake newStake
-      let nrgCost _ = return $ Just $ bakerUpdateStakeEnergyCost $ Types.payloadSize pl
-      txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
       withClient backend $ do
+        requireBakerConfigureTransactionOnP4
+        let pl = Types.encodePayload $ Types.UpdateBakerStake newStake
+        let nrgCost _ = return $ Just $ bakerUpdateStakeEnergyCost $ Types.payloadSize pl
+        txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
         blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
         case blockSummary of
           Nothing -> do
