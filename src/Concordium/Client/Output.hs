@@ -611,6 +611,28 @@ showEvent verbose = \case
     verboseOrNothing $ printf "baker %s keys updated" (showBaker ebkuBakerId ebkuAccount)
   Types.CredentialsUpdated{..} ->
     verboseOrNothing $ [i|credentials on account #{cuAccount} have been updated.\nCredentials #{cuRemovedCredIds} have been removed, and credentials #{cuNewCredIds} have been added.\nThe new account threshold is #{cuNewThreshold}.|]
+  Types.BakerSetOpenStatus{..} ->
+    verboseOrNothing $ printf "baker %s open status changed to %s" (showBaker ebsosBakerId ebsosAccount) (show ebsosOpenStatus)
+  Types.BakerSetMetadataURL{..} ->
+    verboseOrNothing $ printf "baker %s URL changed to %s" (showBaker ebsmuBakerId ebsmuAccount) (show ebsmuMetadataURL)
+  Types.BakerSetTransactionFeeCommission{..} ->
+    verboseOrNothing $ printf "baker %s changed transaction fee commission to %s" (showBaker ebstfcBakerId ebstfcAccount) (show ebstfcTransactionFeeCommission)
+  Types.BakerSetBakingRewardCommission{..} ->
+    verboseOrNothing $ printf "baker %s changed baking reward commission to %s" (showBaker ebsbrcBakerId ebsbrcAccount) (show ebsbrcBakingRewardCommission)
+  Types.BakerSetFinalizationRewardCommission{..} ->
+    verboseOrNothing $ printf "baker %s changed finalization reward commission to %s" (showBaker ebsfrcBakerId ebsfrcAccount) (show ebsfrcFinalizationRewardCommission)
+  Types.DelegationStakeIncreased{..} ->
+    Just $ printf "delegator %s stake increased to %s" (showDelegator edsiDelegatorId edsiAccount) (Types.amountToString edsiNewStake)
+  Types.DelegationStakeDecreased{..} ->
+    Just $ printf "delegator %s stake decreased to %s" (showDelegator edsdDelegatorId edsdAccount) (Types.amountToString edsdNewStake)
+  Types.DelegationSetRestakeEarnings{..} ->
+    Just $ printf "delegator %s restake earnings changed to %s" (showDelegator edsreDelegatorId edsreAccount) (show edsreRestakeEarnings)
+  Types.DelegationSetDelegationTarget{..} ->
+    Just $ printf "delegator %s delegation target changed to %s" (showDelegator edsdtDelegatorId edsdtAccount) (showDelegationTarget edsdtDelegationTarget)
+  Types.DelegationAdded{..} ->
+    Just $ printf "delegator %s added" (showDelegator edaDelegatorId edaAccount)
+  Types.DelegationRemoved{..} ->
+    Just $ printf "delegator %s removed" (showDelegator edrDelegatorId edrAccount)
 
   Types.CredentialKeysUpdated cid -> verboseOrNothing $ printf "credential keys updated for credential with credId %s" (show cid)
   Types.NewEncryptedAmount{..} -> verboseOrNothing $ printf "shielded amount received on account '%s' with index '%s'" (show neaAccount) (show neaNewIndex)
@@ -651,6 +673,13 @@ showEvent verbose = \case
 
     showBaker :: Types.BakerId -> Types.AccountAddress -> String
     showBaker bid addr = show addr ++ " (ID " ++ show bid ++ ")"
+
+    showDelegator :: Types.DelegatorId -> Types.AccountAddress -> String
+    showDelegator did addr = show addr ++ " (ID " ++ show did ++ ")"
+
+    showDelegationTarget :: Types.DelegationTarget -> String
+    showDelegationTarget Types.DelegateToLPool = "L-Pool"
+    showDelegationTarget (Types.DelegateToBaker bid) = "Baker ID " ++ show bid
 
 
 -- |Return string representation of reject reason.
@@ -757,6 +786,15 @@ showRejectReason verbose = \case
   Types.NotAllowedMultipleCredentials -> "the account is not allowed to have multiple credentials"
   Types.NotAllowedToReceiveEncrypted -> "the account is not allowed to receive shielded transfers"
   Types.NotAllowedToHandleEncrypted -> "the account is not allowed handle shielded amounts"
+  Types.MissingBakerAddParameters -> "missing parameters to add new baker"
+  Types.UnexpectedBakerRemoveParameters -> "remove baker failed because of unexpected parameters"
+  Types.CommissionsNotInRangeForBaking -> "a commission fee was not within the allowed range"
+  Types.AlreadyADelegator -> "the account is already a delegator"
+  Types.InsufficientBalanceForDelegationStake -> "the balance on the account is insufficient to cover the desired stake"
+  Types.MissingDelegationAddParameters -> "missing parameters to add new delegator"
+  Types.UnexpectedDelegationRemoveParameters -> "remove delegator failed because of unexpected parameters"
+  Types.DelegatorInCooldown -> "change could not be completed because the delegator is in the cooldown period"
+  Types.NotADelegator addr -> printf "attempt to remove a delegator account %s that is not a delegator" (show addr)
 
 -- CONSENSUS
 

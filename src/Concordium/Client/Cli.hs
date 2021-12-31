@@ -195,7 +195,7 @@ decryptAccountEncryptionSecretKeyInteractive secret = do
   decryptAccountEncryptionSecretKey pwd secret
 
 -- |Standardized method of exiting the command because the transaction is cancelled.
-exitTransactionCancelled :: MonadIO m => m ()
+exitTransactionCancelled :: MonadIO m => m a
 exitTransactionCancelled = liftIO $ logExit ["transaction cancelled"]
 
 getLocalTimeOfDay :: IO TimeOfDay

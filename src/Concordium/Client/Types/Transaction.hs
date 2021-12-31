@@ -76,37 +76,26 @@ bakerAddEnergyCost ::
   -> Energy
 bakerAddEnergyCost psize numSigs = minimumCost psize numSigs + Cost.addBakerCost
 
--- |Cost of a baker set account transaction.
--- This must be kept in sync with the cost in Concordium.Scheduler.Cost
-bakerSetKeysEnergyCost ::
+-- |Cost of a baker configure transaction without keys.
+bakerConfigureEnergyCostWithoutKeys ::
   PayloadSize -- ^Size of the payload
   -> Int -- ^Number of signatures
   -> Energy
-bakerSetKeysEnergyCost psize numSigs = minimumCost psize numSigs + Cost.updateBakerKeysCost
+bakerConfigureEnergyCostWithoutKeys psize numSigs = minimumCost psize numSigs + Cost.configureBakerCostWithoutKeys
 
--- |Cost of a baker remove transaction.
--- This must be kept in sync with the cost in Concordium.Scheduler.Cost
-bakerRemoveEnergyCost ::
+-- |Cost of a baker configure transaction with keys.
+bakerConfigureEnergyCostWithKeys ::
   PayloadSize -- ^Size of the payload
   -> Int -- ^Number of signatures
   -> Energy
-bakerRemoveEnergyCost psize numSigs = minimumCost psize numSigs + Cost.removeBakerCost
+bakerConfigureEnergyCostWithKeys psize numSigs = minimumCost psize numSigs + Cost.configureBakerCostWithKeys
 
--- |Cost to update a baker's stake.
--- This must be kept in sync with the cost in Concordium.Scheduler.Cost
-bakerUpdateStakeEnergyCost ::
+-- |Cost of a delegation configure transaction.
+delegationConfigureEnergyCost ::
   PayloadSize -- ^Size of the payload
   -> Int -- ^Number of signatures
   -> Energy
-bakerUpdateStakeEnergyCost psize numSigs = minimumCost psize numSigs + Cost.updateBakerStakeCost
-
--- |Cost to update a baker's re-staking option.
--- This must be kept in sync with the cost in Concordium.Scheduler.Cost
-bakerUpdateRestakeEnergyCost ::
-  PayloadSize -- ^Size of the payload
-  -> Int -- ^Number of signatures
-  -> Energy
-bakerUpdateRestakeEnergyCost psize numSigs = minimumCost psize numSigs + Cost.updateBakerRestakeCost
+delegationConfigureEnergyCost psize numSigs = minimumCost psize numSigs + Cost.configureDelegationCost
 
 -- |Cost of moving funds from public to encrypted amount of an account.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
