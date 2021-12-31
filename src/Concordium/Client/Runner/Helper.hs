@@ -3,6 +3,7 @@ module Concordium.Client.Runner.Helper
   ( outputGRPC
   , outputGRPC'
   , printJSON
+  , printJSONValues
   , processJSON
   ) where
 
@@ -56,13 +57,12 @@ processJSON val = do
 
 printJSON :: MonadIO m => Either String Value -> m ()
 printJSON v =
-  liftIO $
   case v of
-    Left err       -> putStrLn err
+    Left err       -> liftIO $ putStrLn err
     Right jsonVals -> printJSONValues jsonVals
 
-printJSONValues :: Value -> IO ()
-printJSONValues = BSL8.putStrLn . encodePretty
+printJSONValues :: MonadIO m => Value -> m ()
+printJSONValues = liftIO . BSL8.putStrLn . encodePretty
 
 value :: BS.ByteString -> Value
 value s =

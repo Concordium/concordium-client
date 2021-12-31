@@ -66,7 +66,7 @@ import           Concordium.Crypto.ByteStringHelpers (deserializeBase16)
 import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.SignatureScheme   as SigScheme
 import qualified Concordium.Crypto.VRF               as VRF
-import           Concordium.Types.UpdateQueues       (currentParameters)
+import           Concordium.Types.UpdateQueues       as Types
 import qualified Concordium.Types.Queries            as Queries
 import qualified Concordium.Types.Updates            as Updates
 import qualified Concordium.Types.Transactions       as Types
@@ -983,9 +983,9 @@ getBakerCooldown bs = do
             Types.SCPV0 -> cooldownEpochsV0 ups
             Types.SCPV1 -> cooldownEpochsV1 ups
     cooldownEpochsV0 ups =
-        toInteger $ ups ^. currentParameters ^. cpCooldownParameters ^. cpBakerExtraCooldownEpochs
+        toInteger $ ups ^. Types.currentParameters ^. cpCooldownParameters ^. cpBakerExtraCooldownEpochs
     cooldownEpochsV1 ups =
-        let cp = ups ^. currentParameters
+        let cp = ups ^. Types.currentParameters
             numPeriods = cp ^. cpCooldownParameters ^. cpPoolOwnerCooldown
             periodEpochLen = cp ^. cpTimeParameters ^. tpRewardPeriodLength
         in toInteger numPeriods * toInteger periodEpochLen
@@ -1150,8 +1150,8 @@ getBakerStakeThresholdOrDie = do
       logFatal ["Could not reach the node to retrieve the baker stake threshold."]
     Just bs -> return $ Queries.bsWithUpdates bs $ \spv ups ->
         case Types.chainParametersVersionFor spv of
-            Types.SCPV0 -> ups ^. currentParameters ^. cpPoolParameters ^. ppBakerStakeThreshold
-            Types.SCPV1 -> ups ^. currentParameters ^. cpPoolParameters ^. ppMinimumEquityCapital
+            Types.SCPV0 -> ups ^. Types.currentParameters ^. cpPoolParameters ^. ppBakerStakeThreshold
+            Types.SCPV1 -> ups ^. Types.currentParameters ^. cpPoolParameters ^. ppMinimumEquityCapital
 
 getAccountUpdateCredentialsTransactionData ::
   Maybe FilePath -- ^ A file with new credentials.
@@ -2242,7 +2242,7 @@ getNrgGtuRate = do
       return 0
     Just bs ->
       return $ Queries.bsWithUpdates bs $ \_ ups ->
-          ups ^. currentParameters ^. energyRate
+          ups ^. Types.currentParameters ^. energyRate
 
 -- |Process the 'baker configure ...' command.
 processBakerConfigureCmd :: Maybe FilePath -> Verbose -> Backend -> TransactionOpts (Maybe Types.Energy)
@@ -2633,6 +2633,9 @@ processLegacyCmd action backend =
     GetIdentityProviders block -> withClient backend $ withBestBlockHash block getIdentityProviders >>= printJSON
     GetAnonymityRevokers block -> withClient backend $ withBestBlockHash block getAnonymityRevokers >>= printJSON
     GetCryptographicParameters block -> withClient backend $ withBestBlockHash block getCryptographicParameters >>= printJSON
+    GetChainParameters -> do
+      bs <- withClient backend $ getFromJson =<< withBestBlockHash Nothing getBlockSummary
+      Queries.bsWithUpdates bs $ const $ printJSONValues . toJSON . Types._currentParameters
   where
     printSuccess (Left x)  = liftIO . putStrLn $ x
     printSuccess (Right x) = liftIO $ if x then putStrLn "OK" else putStrLn "FAIL"
