@@ -137,7 +137,6 @@ executables:
       - condition: ! os(windows) 
         # the tool deadlocks on windows when -threaded is used
         ghc-options: -threaded
-    when:
       - condition: flag(static)
         ld-options:
         - -static

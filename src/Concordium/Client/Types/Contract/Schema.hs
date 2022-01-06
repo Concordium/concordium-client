@@ -294,7 +294,7 @@ getEmbeddedSchemaAndExportsFromModule = do
   mhBs <- S.getByteString 4
   unless (mhBs == wasmMagicHash) $ fail "Unknown magic value. This is likely not a Wasm module."
   vBs <- S.getByteString 4
-  unless (vBs == wasmVersion) $ fail "Unsupported Wasm version."
+  unless (vBs == wasmVersion0) $ fail "Unsupported Wasm version."
   go (Nothing, [])
 
   where
@@ -393,8 +393,8 @@ getEmbeddedSchemaAndExportsFromModule = do
     wasmMagicHash = BS.pack [0x00, 0x61, 0x73, 0x6D]
 
     -- |The currently supported version of the Wasm specification.
-    wasmVersion :: BS.ByteString
-    wasmVersion = BS.pack [0x01, 0x00, 0x00, 0x00]
+    wasmVersion0 :: BS.ByteString
+    wasmVersion0 = BS.pack [0x01, 0x00, 0x00, 0x00]
 
 
 -- |The four types of exports allowed in WASM.

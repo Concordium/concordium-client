@@ -302,29 +302,38 @@ printNameList variantName header format xs =
 -- Since ContractInfo comes directly from the node, the names are not included and must
 -- be provided separately.
 printContractInfo :: CI.ContractInfo -> NamedAddress -> NamedModuleRef -> Printer
-printContractInfo CI.ContractInfo{..} namedOwner namedModRef = do
-  tell [ [i|Contract:        #{contractName}|]
-       , [i|Owner:           #{owner}|]
-       , [i|ModuleReference: #{showNamedModuleRef namedModRef}|]
-       , [i|Balance:         #{showCcd ciAmount}|]
-       , [i|State size:      #{ciSize} bytes|]]
-  tell state
-  tell [ [i|Methods:|]]
-  tellMethods
+printContractInfo ci namedOwner namedModRef =
+  case ci of
+    CI.ContractInfoV0{..} -> do
+      tell [ [i|Contract:        #{contractName ciName}|]
+           , [i|Owner:           #{owner}|]
+           , [i|ModuleReference: #{showNamedModuleRef namedModRef}|]
+           , [i|Balance:         #{showCcd ciAmount}|]
+           , [i|State size:      #{ciSize} bytes|]]
+      tell (state ciState)
+      tell [ [i|Methods:|]]
+      tellMethods ciName ciState ciMethods
+    CI.ContractInfoV1{..} -> do
+      tell [ [i|Contract:        #{contractName ciName}|]
+           , [i|Owner:           #{owner}|]
+           , [i|ModuleReference: #{showNamedModuleRef namedModRef}|]
+           , [i|Balance:         #{showCcd ciAmount}|]]
+      tell [ [i|Methods:|]]
+      tell $ toDashedList (map methodNameFromReceiveName ciMethods)
   where
-    contractName = CI.contractNameFromInitName ciName
+    contractName = CI.contractNameFromInitName
     owner = showNamedAddress namedOwner
-    state = case ciState of
+    state s = case s of
       CI.JustBytes bs -> ["State(raw):", [i|    #{BS.unpack bs}|]]
       CI.WithSchema _ Nothing bs -> ["No schema type was found for the state.\nState(raw):", [i|    #{BS.unpack bs}|]]
       CI.WithSchema _ (Just state') _ -> ["State:", indentBy 4 $ showPrettyJSON state']
-    tellMethods = case ciState of
+    toDashedList = map (\x -> [i| - #{x}|])
+    tellMethods name s methods = case s of
       CI.JustBytes _ -> tell $ toDashedList methodNames
-      CI.WithSchema CS.ModuleSchema{..} _ _ -> case Map.lookup contractName contractSchemas of
+      CI.WithSchema CS.ModuleSchema{..} _ _ -> case Map.lookup (contractName name) contractSchemas of
         Nothing -> tell $ toDashedList methodNames
         Just CS.ContractSchema{receiveSigs=rcvSigs} -> tell . toDashedList . map (tryAppendSignature rcvSigs) $ methodNames
-      where methodNames = map methodNameFromReceiveName ciMethods
-            toDashedList = map (\x -> [i| - #{x}|])
+      where methodNames = map methodNameFromReceiveName methods
 
             tryAppendSignature :: Map.Map Text CS.SchemaType -> Text -> Text
             tryAppendSignature rcvSigs rcvName = case Map.lookup rcvName rcvSigs of

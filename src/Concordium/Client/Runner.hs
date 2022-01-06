@@ -106,6 +106,7 @@ import           Data.String.Interpolate (i, iii)
 import           Data.Text(Text)
 import qualified Data.Tuple                          as Tuple
 import qualified Data.Text                           as Text
+import qualified Data.Text.IO                        as TextIO
 import qualified Data.Vector                         as Vec
 import           Data.Word
 import           Lens.Micro.Platform
@@ -1862,10 +1863,10 @@ processContractCmd action baseCfgDir verbose backend =
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
       (schema, contrInfo, namedOwner, namedModRef) <- withClient backend . withBestBlockHash block $ \bb -> do
-        contrInfo@CI.ContractInfo{..} <- getContractInfo namedContrAddr bb
-        let namedModRef = NamedModuleRef {nmrRef = ciSourceModule, nmrNames = findAllNamesFor (bcModuleNameMap baseCfg) ciSourceModule}
+        contrInfo <- getContractInfo namedContrAddr bb
+        let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = findAllNamesFor (bcModuleNameMap baseCfg) (CI.ciSourceModule contrInfo)}
         schema <- getSchemaFromFileOrModule schemaFile (Right namedModRef) bb
-        let namedOwner = NamedAddress {naAddr = ciOwner, naNames = findAllNamesFor (bcAccountNameMap baseCfg) ciOwner}
+        let namedOwner = NamedAddress {naAddr = CI.ciOwner contrInfo, naNames = findAllNamesFor (bcAccountNameMap baseCfg) (CI.ciOwner contrInfo)}
         return (schema, contrInfo, namedOwner, namedModRef)
       displayContractInfo schema contrInfo namedOwner namedModRef
 
@@ -2034,9 +2035,9 @@ getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex rece
                                 paramsFileJSON paramsFileBinary schemaFile amount = do
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-  CI.ContractInfo{ciSourceModule = moduleRef,..} <- withClient backend . withBestBlockHash Nothing $ getContractInfo namedContrAddr
-  let namedModRef = NamedModuleRef {nmrRef = moduleRef, nmrNames = []}
-  let contrName = CI.contractNameFromInitName ciName
+  contrInfo <- withClient backend . withBestBlockHash Nothing $ getContractInfo namedContrAddr
+  let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = []}
+  let contrName = CI.contractNameFromInitName (CI.ciName contrInfo)
   params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef)
             (CS.ReceiveFuncName contrName receiveName)
   return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr)
@@ -2128,7 +2129,9 @@ getWasmModuleFromFile moduleFile = do
   source <- handleReadFile BS.readFile moduleFile
   let moduleSize = BS.length source
   when (moduleSize > fromIntegral maxWasmModuleSize) $ logWarn [[i|Module file #{moduleFile} of size #{moduleSize} bytes is bigger than the maximum of #{maxWasmModuleSize} bytes, and will most likely be rejected on chain.|]]
-  return $ Wasm.WasmModule 0 . Wasm.ModuleSource $ source
+  case S.decode source of
+    Right wm -> return wm
+    Left err -> logFatal [[i|Supplied file #{moduleFile} cannot be parsed as a smart contract module to be deployed: #{err}|]]
 
 -- |Load `Wasm.Parameter` through one of several ways, dependent on the arguments:
 --   * If binary file provided -> Read the file and wrap its contents in `Wasm.Parameter`.
@@ -2683,6 +2686,9 @@ processLegacyCmd action backend =
       withClient backend $ getNextAccountNonce account >>= printJSON
     GetInstanceInfo account block ->
       withClient backend $ withBestBlockHash block (getInstanceInfo account) >>= printJSON
+    InvokeContract contextFile block -> do
+      context <- TextIO.readFile contextFile
+      withClient backend $ withBestBlockHash block (invokeContract context) >>= printJSON
     GetRewardStatus block -> withClient backend $ withBestBlockHash block getRewardStatus >>= printJSON
     GetBirkParameters block ->
       withClient backend $ withBestBlockHash block getBirkParameters >>= printJSON

@@ -11,6 +11,7 @@ import qualified Concordium.Client.Types.Contract.Schema as CS
 import qualified Concordium.Client.Types.Contract.Parameter as CP
 import qualified Concordium.Wasm as Wasm
 
+import Data.Word (Word32)
 import Data.Aeson ((.:))
 import qualified Data.Aeson as AE
 import Data.ByteString (ByteString)
@@ -27,7 +28,8 @@ import qualified Data.Text.Encoding as Text
 -- |Tries to decode the `ContractState` using a `ModuleSchema`.
 -- Fails if decoding fails, state is already decoded, or the contract isn't included in the `ModuleSchema`.
 decodeContractStateUsingSchema :: ContractInfo -> CS.ModuleSchema -> Either String ContractInfo
-decodeContractStateUsingSchema cInfo@ContractInfo{..} schema@CS.ModuleSchema{..} = case ciState of
+decodeContractStateUsingSchema ContractInfoV1{..} _ = Left "V1 contracts cannot display the entire state."
+decodeContractStateUsingSchema cInfo@ContractInfoV0{..} schema@CS.ModuleSchema{..} = case ciState of
   WithSchema{} -> Left "Contract state has already been decoded."
   JustBytes bytes -> case Map.lookup contractName contractSchemas of
     Nothing -> Left [i|A schema for the contract '#{contractName}' does not exist in the schema provided.|]
@@ -49,7 +51,7 @@ contractNameFromInitName initName = case Text.stripPrefix "init_" initNameText o
 -- Must stay in sync.
 data ContractInfo
   -- |Info about a contract.
-  = ContractInfo
+  = ContractInfoV0
     { -- |The contract balance.
       ciAmount :: !T.Amount
       -- |The owner of the contract.
@@ -58,6 +60,17 @@ data ContractInfo
     , ciState :: !ContractState
       -- |The size of the contract state in bytes.
     , ciSize :: !Int
+      -- |The receive functions/methods.
+    , ciMethods :: ![Wasm.ReceiveName]
+      -- |The contract name.
+    , ciName :: !Wasm.InitName
+      -- |The corresponding source module.
+    , ciSourceModule :: !T.ModuleRef }
+  | ContractInfoV1
+    { -- |The contract balance.
+      ciAmount :: !T.Amount
+      -- |The owner of the contract.
+    , ciOwner  :: !T.AccountAddress
       -- |The receive functions/methods.
     , ciMethods :: ![Wasm.ReceiveName]
       -- |The contract name.
@@ -88,18 +101,22 @@ instance AE.FromJSON ContractInfo where
   parseJSON = AE.withObject "Info" $ \v -> do
     ciAmount            <- v .: "amount"
     ciOwner             <- v .: "owner"
-    (ciState, ciSize)   <- case HM.lookup "model" v of
-      Just (AE.String s) -> do
-        bs <- decodeBase16 s
-        return (JustBytes bs, BS.length bs)
-      Just x -> fail [i|Invalid Info, expected "model" field to be a String of base16 bytes, but got: #{x}|]
-      Nothing -> fail [i|Invalid Info, missing "model" field.|]
     ciMethods           <- v .: "methods"
     ciName              <- v .: "name"
     ciSourceModule      <- v .: "sourceModule"
-    return ContractInfo{..}
-    where decodeBase16 xs =
-            let (parsed, remaining) = BS16.decode . Text.encodeUtf8 $ xs in
-              if BS.null remaining
-              then return parsed
-              else fail [i|Invalid model. Parsed: '#{parsed}', but failed on the remaining: '#{remaining}'|]
+    (v AE..:! "version" AE..!= (0 :: Word32)) >>= \case
+      0 -> do
+        (ciState, ciSize) <- case HM.lookup "model" v of
+          Just (AE.String s) -> do
+            let decodeBase16 xs =
+                  let (parsed, remaining) = BS16.decode . Text.encodeUtf8 $ xs
+                  in if BS.null remaining
+                     then return parsed
+                     else fail [i|Invalid model. Parsed: '#{parsed}', but failed on the remaining: '#{remaining}'|]
+            bs <- decodeBase16 s
+            return (JustBytes bs, BS.length bs)
+          Just x -> fail [i|Invalid Info, expected "model" field to be a String of base16 bytes, but got: #{x}|]
+          Nothing -> fail [i|Invalid Info, missing "model" field.|]
+        return ContractInfoV0{..}
+      1 -> return ContractInfoV1{..}
+      n -> fail [i|Unsupported contract version #{n}.|]
