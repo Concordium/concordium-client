@@ -1781,14 +1781,15 @@ processModuleCmd action baseCfgDir verbose backend =
     ModuleShow modRefOrName outFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedModRef <- getNamedModuleRef (bcModuleNameMap baseCfg) modRefOrName
-      Wasm.WasmModule{..} <- withClient backend . withBestBlockHash block $ getWasmModule namedModRef
-      logInfo [[i|WASM Version of module: #{wasmVersion}|]]
+      wasmModule <- withClient backend . withBestBlockHash block $ getWasmModule namedModRef
+      logInfo [[i|WASM Version of module: #{Wasm.wasmVersion wasmModule}|]]
+      let wasmModuleBytes = S.encode wasmModule
       case outFile of
         -- Write to stdout
-        "-" -> BS.putStr . Wasm.moduleSource $ wasmSource
+        "-" -> BS.putStr wasmModuleBytes
         -- Write to file
         _   -> do
-          success <- handleWriteFile BS.writeFile PromptBeforeOverwrite verbose outFile (Wasm.moduleSource wasmSource)
+          success <- handleWriteFile BS.writeFile PromptBeforeOverwrite verbose outFile wasmModuleBytes
           when success $ logSuccess [[i|wrote module source to the file '#{outFile}'|]]
 
     ModuleInspect modRefOrName schemaFile block -> do
