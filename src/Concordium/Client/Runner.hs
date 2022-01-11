@@ -92,7 +92,6 @@ import           Data.IORef
 import           Data.Foldable
 import           Data.Aeson                          as AE
 import qualified Data.Aeson.Encode.Pretty            as AE
-import           Data.Aeson.Types                    as AE
 import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
@@ -2147,12 +2146,14 @@ processConsensusCmd action _baseCfgDir verbose backend =
           Right r -> return r
       rawUpdate@Updates.RawUpdateInstruction{..} <- loadJSON rawUpdateFile
       eBlockSummaryJSON <- withClient backend $ withBestBlockHash Nothing getBlockSummary
-      keyCollectionStore :: Updates.UpdateKeysCollection 'Types.ChainParametersV0 <-
+      Queries.BlockSummary {bsProtocolVersion = _ :: Types.SProtocolVersion pv, bsUpdates = eUpdates} <-
         case eBlockSummaryJSON of
-          Right v -> case parse (withObject "BlockSummary" $ \o -> (o .: "updates") >>= (.: "keys")) v of
-                       AE.Success v' -> return v'
-                       AE.Error e -> logFatal [printf "Error parsing a JSON for block summary: '%s'" (show e)]
+          Right jsn ->
+            case fromJSON jsn of
+              AE.Success bs -> return bs
+              AE.Error e -> logFatal [printf "Error parsing a JSON for block summary: '%s'" (show e)]
           Left e -> logFatal [printf "Error getting block summary: '%s'" (show e)]
+      let keyCollectionStore = eUpdates ^. Types.currentKeyCollection ^. Types.unhashed
       keys <- mapM loadJSON keysFiles
       let
         (keySet, th) = Updates.extractKeysIndices ruiPayload keyCollectionStore
@@ -2380,8 +2381,15 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts cbCapital cbRestakeEa
                         Nothing -> return . Just $ bakerConfigureEnergyCostWithoutKeys (Types.payloadSize payload)
                         Just _ -> return . Just $ bakerConfigureEnergyCostWithKeys (Types.payloadSize payload)
       txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
-      logSuccess [ printf "configuring baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
-                 , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy) ]
+      logSuccess
+        ([ printf "configuring baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
+         , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy) ]
+         ++ configureCapitalLogMsg
+         ++ configureRestateLogMsg
+         ++ configureOpenForDelegationLogMsg
+         ++ configureTransactionFeeCommissionLogMsg
+         ++ configureBakingRewardCommissionLogMsg
+         ++ configureFinalizationRewardCommissionLogMsg)
       when confirm $ do
         confirmed <- askConfirmation Nothing
         unless confirmed exitTransactionCancelled
@@ -2389,6 +2397,39 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts cbCapital cbRestakeEa
         runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData
         putStrLn ""
       return (bakerKeys, txCfg, payload)
+
+    configureCapitalLogMsg =
+      case cbCapital of
+        Nothing -> []
+        Just capital -> [printf "stake will be %s CCD" (Types.amountToString capital)]
+
+    configureRestateLogMsg =
+      case cbRestakeEarnings of
+        Nothing -> []
+        Just True -> ["rewards will be automatically added to the baking stake"]
+        Just False -> ["rewards will _not_ be automatically added to the baking stake"]
+
+    configureOpenForDelegationLogMsg =
+      case cbOpenForDelegation of
+        Nothing -> []
+        Just Types.OpenForAll -> ["baker pool will be open for delegation"]
+        Just Types.ClosedForNew -> ["baker pool will be closed for new delegators"]
+        Just Types.ClosedForAll -> ["baker pool will be closed for delegators and existing delegators will be moved to the L-pool"]
+
+    configureTransactionFeeCommissionLogMsg =
+      case cbTransactionFeeCommission of
+        Nothing -> []
+        Just fee -> [printf "transaction fee commission from delegators will be %s" (show fee)]
+
+    configureBakingRewardCommissionLogMsg =
+      case cbBakingRewardCommission of
+        Nothing -> []
+        Just fee -> [printf "baking reward commission from delegators will be %s" (show fee)]
+
+    configureFinalizationRewardCommissionLogMsg =
+      case cbFinalizationRewardCommission of
+        Nothing -> []
+        Just fee -> [printf "finalization reward commission from delegators will be %s" (show fee)]
 
     readInputKeysFile baseCfg = do
       encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
@@ -2467,11 +2508,8 @@ processBakerCmd action baseCfgDir verbose backend =
             when pubSuccess $ do
               logSuccess [ printf "public keys written to file '%s'" pubFile]
 
-    BakerAdd bakerKeysFile txOpts initialStake autoRestake openForDelegation metadataURL outputFile -> do
-      let transactionFeeCommission = Just $ Types.makeRewardFraction 10000 -- = 0.1
-          bakingRewardCommission = Just $ Types.makeRewardFraction 10000 -- = 0.1
-          finalizationRewardCommission = Just $ Types.makeRewardFraction 100000 -- = 1
-      processBakerConfigureCmd baseCfgDir verbose backend txOpts (Just initialStake) (Just autoRestake) (Just openForDelegation) metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission (Just bakerKeysFile) outputFile
+    BakerAdd bakerKeysFile txOpts initialStake autoRestake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission outputFile ->
+      processBakerConfigureCmd baseCfgDir verbose backend txOpts (Just initialStake) (Just autoRestake) (Just openForDelegation) (Just metadataURL) (Just transactionFeeCommission) (Just bakingRewardCommission) (Just finalizationRewardCommission) (Just bakerKeysFile) outputFile
 
     BakerConfigure txOpts capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission inputOutputKeyFiles -> do
       let inputKeysFile = fmap fst inputOutputKeyFiles
@@ -2544,8 +2582,13 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
       let payload = Types.encodePayload Types.ConfigureDelegation{..}
           nrgCost _ = return . Just $ delegationConfigureEnergyCost (Types.payloadSize payload)
       txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
-      logSuccess [ printf "configuring delegator with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
-                 , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy) ]
+      logSuccess
+        ([ printf "configuring delegator with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
+         , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy) ]
+         ++ configureCapitalLogMsg
+         ++ configureRestateLogMsg
+         ++ configureDelegationTargetLogMsg)
+
       when confirm $ do
         confirmed <- askConfirmation Nothing
         unless confirmed exitTransactionCancelled
@@ -2553,6 +2596,24 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
         runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData
         putStrLn ""
       return (txCfg, payload)
+
+    configureCapitalLogMsg =
+      case cdCapital of
+        Nothing -> []
+        Just capital -> [printf "stake will be %s CCD" (Types.amountToString capital)]
+
+    configureRestateLogMsg =
+      case cdRestakeEarnings of
+        Nothing -> []
+        Just True -> ["rewards will be automatically added to the baking stake"]
+        Just False -> ["rewards will _not_ be automatically added to the baking stake"]
+
+    configureDelegationTargetLogMsg =
+      case cdDelegationTarget of
+        Nothing -> []
+        Just Types.DelegateToLPool -> ["stake will be delegated to the L-pool"]
+        Just (Types.DelegateToBaker bid) -> [printf "stake will be delegated to baker %s" (show bid)]
+
 
 -- |Process a 'delegator ...' command.
 processDelegatorCmd :: DelegatorCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
