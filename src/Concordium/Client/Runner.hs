@@ -2012,10 +2012,10 @@ getContractInfo namedContrAddr block = do
 -- |Display contract info, optionally using a schema to decode the contract state.
 displayContractInfo :: Maybe CS.ModuleSchema -> CI.ContractInfo -> NamedAddress -> NamedModuleRef -> IO ()
 displayContractInfo schema contrInfo namedOwner namedModRef = case schema of
-  Nothing -> runPrinter $ printContractInfo contrInfo namedOwner namedModRef
-  Just schema' -> case CI.decodeContractStateUsingSchema contrInfo schema' of
+  Just schema'@CS.ModuleSchemaV0{} -> case CI.decodeContractStateUsingSchema contrInfo schema' of
     Left err' -> logFatal ["Parsing the contract model failed:", err']
     Right infoWithSchema -> runPrinter $ printContractInfo infoWithSchema namedOwner namedModRef
+  _ -> runPrinter $ printContractInfo contrInfo namedOwner namedModRef -- TODO: Get schemas for funcs in V1 contracts
 
 -- |Attempts to acquire the needed parts for updating a contract.
 -- The two primary parts are a contract address, which is acquired using `getNamedContractAddress`,
@@ -2160,7 +2160,7 @@ getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile modSourceOrR
         Just schema' -> getFromJSONParams jsonFile' schema'
     (Just _, Just _, _) -> logFatal ["--parameter-json and --parameter-bin cannot be used at the same time"]
   where getFromJSONParams :: FilePath -> CS.ModuleSchema -> IO Wasm.Parameter
-        getFromJSONParams jsonFile schema = case CS.lookupSignatureForFunc schema funcName of
+        getFromJSONParams jsonFile schema = case CS.lookupParameterSchemaForFunc schema funcName of
           Nothing -> logFatal [[i|the schema did not include the provided function|]]
           Just schemaForParams -> do
             jsonFileContents <- handleReadFile BSL8.readFile jsonFile
@@ -2193,7 +2193,7 @@ getSchemaFromFileOrModule schemaFile modSourceOrRef block = case (schemaFile, mo
 -- |Try to load and decode a schema from a file. Logs fatally if the file is not a valid Wasm module.
 getSchemaFromFile :: FilePath -> IO CS.ModuleSchema
 getSchemaFromFile schemaFile = do
-  schema <- CS.decodeModuleSchema <$> handleReadFile BS.readFile schemaFile
+  schema <- CS.decodeModuleSchema 1 <$> handleReadFile BS.readFile schemaFile -- TODO: Handle v0 contracts as well.
   case schema of
     Left err -> logFatal [[i|Could not decode schema from file '#{schemaFile}':|], err]
     Right schema' -> pure schema'

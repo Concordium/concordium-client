@@ -1,7 +1,8 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE QuasiQuotes #-}
 module Concordium.Client.Types.Contract.Schema(
-  ContractSchema(..),
+  ContractSchemaV0(..),
+  ContractSchemaV1(..),
   Fields(..),
   FuncName(..),
   ModuleSchema(..),
@@ -12,7 +13,7 @@ module Concordium.Client.Types.Contract.Schema(
   decodeModuleSchema,
   getListOfWithKnownLen,
   getListOfWithSizeLen,
-  lookupSignatureForFunc,
+  lookupParameterSchemaForFunc,
   putLenWithSizeLen) where
 
 import Control.Monad (unless)
@@ -37,52 +38,118 @@ decodeEmbeddedSchema :: BS.ByteString -> Either String (Maybe ModuleSchema)
 decodeEmbeddedSchema = fmap fst . decodeEmbeddedSchemaAndExports
 
 -- |Decode a `ModuleSchema`.
-decodeModuleSchema :: BS.ByteString -> Either String ModuleSchema
-decodeModuleSchema = S.decode
+decodeModuleSchema :: WasmVersion -> BS.ByteString -> Either String ModuleSchema
+decodeModuleSchema wasmVersion = S.runGet $ getModuleSchema wasmVersion
 
 -- |Try to find an embedded schema and a list of exported function names and decode them.
 decodeEmbeddedSchemaAndExports :: BS.ByteString -> Either String (Maybe ModuleSchema, [Text])
 decodeEmbeddedSchemaAndExports = S.runGet getEmbeddedSchemaAndExportsFromModule
 
 -- |Tries to find the signature, i.e. `SchemaType`, for a contract function by its name.
-lookupSignatureForFunc :: ModuleSchema -> FuncName -> Maybe SchemaType
-lookupSignatureForFunc ModuleSchema{..} funcName = case funcName of
-  InitFuncName contrName -> Map.lookup contrName contractSchemas >>= initSig
-  ReceiveFuncName contrName receiveName -> do
-    contract <- Map.lookup contrName contractSchemas
-    Map.lookup receiveName (receiveSigs contract)
+lookupParameterSchemaForFunc :: ModuleSchema -> FuncName -> Maybe SchemaType
+lookupParameterSchemaForFunc moduleSchema funcName =
+  case moduleSchema of
+    ModuleSchemaV0 {..} -> case funcName of
+      InitFuncName contrName -> Map.lookup contrName ms0ContractSchemas >>= cs0InitSig
+      ReceiveFuncName contrName receiveName -> do
+        contract <- Map.lookup contrName ms0ContractSchemas
+        Map.lookup receiveName (cs0ReceiveSigs contract)
+    ModuleSchemaV1 {..} -> case funcName of
+      InitFuncName contrName -> Map.lookup contrName ms1ContractSchemas >>= cs1InitSig >>= getParameterSchema
+      ReceiveFuncName contrName receiveName -> do
+        contract <- Map.lookup contrName ms1ContractSchemas
+        Map.lookup receiveName (cs1ReceiveSigs contract) >>= getParameterSchema
 
--- |Parallel to Module defined in contracts-common (Rust).
--- Must stay in sync.
-newtype ModuleSchema
-  = ModuleSchema { contractSchemas :: Map Text ContractSchema }
+-- |Represents the schema for a module.
+-- V0 is a parallel to `Module` defined in concordium-contracts-common version <= 2.
+-- V1 is a parallel to `Module` defined in concordium-contracts-common version > 2.
+data ModuleSchema
+  = ModuleSchemaV0 { ms0ContractSchemas :: Map Text ContractSchemaV0 }
+  | ModuleSchemaV1 { ms1ContractSchemas :: Map Text ContractSchemaV1 }
   deriving (Eq, Show, Generic)
 
 instance AE.ToJSON ModuleSchema
 
-instance S.Serialize ModuleSchema where
-  get = S.label "ModuleSchema" $ ModuleSchema <$> getMapOfWithSizeLen Four getText S.get
-  put ModuleSchema {..} = putMapOfWithSizeLen Four putText S.put contractSchemas
+type WasmVersion = Word32
 
--- |Parallel to ContractSchema defined in contracts-common (Rust).
--- Must stay in sync.
-data ContractSchema
-  =  ContractSchema -- ^ Describes the schemas of a smart contract.
-  {  state :: Maybe SchemaType -- ^ The optional contract state
-  ,  initSig :: Maybe SchemaType -- ^ Type signature for the init function
-  ,  receiveSigs :: Map Text SchemaType -- ^ Type signatures for the receive functions
+getModuleSchema :: WasmVersion -> S.Get ModuleSchema
+getModuleSchema wasmVersion = S.label "ModuleSchema" $
+  case wasmVersion of
+    0 -> ModuleSchemaV0 <$> getMapOfWithSizeLen Four getText S.get
+    1 -> ModuleSchemaV1 <$> getMapOfWithSizeLen Four getText S.get
+    _ -> fail [i|Invalid WasmVersion provided: #{wasmVersion}|] -- This should never happen.
+
+-- |Parallel to ContractSchema defined in concordium-contracts-common (Rust) version <= 2.
+data ContractSchemaV0
+  =  ContractSchemaV0 -- ^ Describes the schemas of a V0 smart contract.
+  {  cs0State :: Maybe SchemaType -- ^ The optional contract state.
+  ,  cs0InitSig :: Maybe SchemaType -- ^ Type signature for the init function.
+  ,  cs0ReceiveSigs :: Map Text SchemaType -- ^ Type signatures for the receive functions.
   }
   deriving (Eq, Show, Generic)
 
-instance AE.ToJSON ContractSchema
+instance AE.ToJSON ContractSchemaV0
 
-instance S.Serialize ContractSchema where
-  get = S.label "ContractSchema" $ do
-    state <- S.label "state" S.get
-    initSig <- S.label "initSig" S.get
-    receiveSigs <- S.label "receiveSigs" $ getMapOfWithSizeLen Four getText S.get
-    pure ContractSchema{..}
-  put ContractSchema {..} = S.put state <> S.put initSig <> putMapOfWithSizeLen Four putText S.put receiveSigs
+
+-- |Parallel to ContractSchema defined in concordium-contracts-common (Rust) version > 2.
+data ContractSchemaV1
+  = ContractSchemaV1 -- ^ Describes the schemas of a V1 smart contract.
+  { cs1InitSig :: Maybe FunctionSchema -- ^ Schema for the init function.
+  , cs1ReceiveSigs :: Map Text FunctionSchema -- ^ Schemas for the receive functions.
+  }
+  deriving (Eq, Show, Generic)
+
+instance AE.ToJSON ContractSchemaV1
+
+instance S.Serialize ContractSchemaV0 where
+  get = S.label "ContractSchemaV0" $ do
+    cs0State <- S.label "cs0State" S.get
+    cs0InitSig <- S.label "cs0InitSig" S.get
+    cs0ReceiveSigs <- S.label "cs0ReceiveSigs" $ getMapOfWithSizeLen Four getText S.get
+    pure ContractSchemaV0{..}
+  put ContractSchemaV0 {..} = S.put cs0State <> S.put cs0InitSig <> putMapOfWithSizeLen Four putText S.put cs0ReceiveSigs
+
+instance S.Serialize ContractSchemaV1 where
+  get = S.label "ContractSchemaV1" $ do
+    cs1InitSig <- S.label "cs1InitSig" S.get
+    cs1ReceiveSigs <- S.label "cs1ReceiveSigs" $ getMapOfWithSizeLen Four getText S.get
+    pure ContractSchemaV1{..}
+  put ContractSchemaV1 {..} = S.put cs1InitSig <> putMapOfWithSizeLen Four putText S.put cs1ReceiveSigs
+
+-- |Schema for a function in a V1 smart contract.
+-- Can contain a schema for the parameter, return value, or both.
+-- Parallel to the FunctionSchema defined in concordium-contract-common (Rust).
+data FunctionSchema
+  = Parameter SchemaType
+  | ReturnValue SchemaType
+  | Both { fsParameter :: SchemaType
+         , fsReturnValue :: SchemaType
+         }
+  deriving (Eq, Show, Generic)
+
+instance AE.ToJSON FunctionSchema
+
+getParameterSchema :: FunctionSchema -> Maybe SchemaType
+getParameterSchema = \case
+  Parameter schemaType -> Just schemaType
+  ReturnValue _ -> Nothing
+  Both {..} -> Just fsParameter
+
+instance S.Serialize FunctionSchema where
+  get = S.label "FunctionSchema" $ do
+    tag <- S.getWord8
+    case tag of
+      0 -> S.label "Parameter" $ Parameter <$> S.get
+      1 -> S.label "ReturnValue" $ ReturnValue <$> S.get
+      2 -> S.label "Both" $ do
+        fsParameter <- S.get
+        fsReturnValue <- S.get
+        return Both {..}
+      _ -> fail [i|Invalid FunctionSchema tag: #{tag}|]
+  put fs = case fs of
+    Parameter schemaType -> S.putWord8 0 <> S.put schemaType
+    ReturnValue schemaType -> S.putWord8 1 <> S.put schemaType
+    Both {..} -> S.putWord8 2 <> S.put fsParameter <> S.put fsReturnValue
 
 -- |Parallel to Fields defined in contracts-common (Rust).
 -- Must stay in sync.
@@ -320,17 +387,21 @@ getEmbeddedSchemaAndExportsFromModule = do
             -- Custom section (which is where we store the schema).
             0 -> do
               name <- S.label "Custom Section Name" getTextWithLEB128Len
-              if name == "concordium-schema-v1"
-              then
-                if isJust mSchema
-                then fail "Module cannot contain multiple custom sections with the name 'concordium-schema-v1'."
-                else do
-                  schemaFound <- S.get
-                  -- Return if both the schema and funcNames are found, otherwise keep looking for the funcNames.
-                  if not $ null mFuncNames
-                    then return (Just schemaFound, mFuncNames)
-                    else go (Just schemaFound, mFuncNames)
-              else S.skip sectionSize *> go schemaAndFuncNames
+              let mWasmVersion = case name of
+                                  "concordium-schema-v1" -> Just 0
+                                  "concordium-schema-v2" -> Just 1
+                                  _ -> Nothing
+              case mWasmVersion of
+                Just wasmVersion ->
+                  if isJust mSchema
+                  then fail "Module cannot contain multiple custom sections named 'concordium-schema-v1' or 'concordium-schema-v2'."
+                  else do
+                    schemaFound <- getModuleSchema wasmVersion
+                    -- Return if both the schema and funcNames are found, otherwise keep looking for the funcNames.
+                    if not $ null mFuncNames
+                      then return (Just schemaFound, mFuncNames)
+                      else go (Just schemaFound, mFuncNames)
+                Nothing -> S.skip sectionSize *> go schemaAndFuncNames
             -- Export section
             7 -> do
               exports <- getListOfWithLEB128Len (S.getTwoOf getTextWithLEB128Len getExportDescription)

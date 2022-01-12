@@ -25,17 +25,23 @@ import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 
+-- TODO: Update docs.
 -- |Tries to decode the `ContractState` using a `ModuleSchema`.
 -- Fails if decoding fails, state is already decoded, or the contract isn't included in the `ModuleSchema`.
 decodeContractStateUsingSchema :: ContractInfo -> CS.ModuleSchema -> Either String ContractInfo
-decodeContractStateUsingSchema ContractInfoV1{..} _ = Left "V1 contracts cannot display the entire state."
-decodeContractStateUsingSchema cInfo@ContractInfoV0{..} schema@CS.ModuleSchema{..} = case ciState of
-  WithSchema{} -> Left "Contract state has already been decoded."
-  JustBytes bytes -> case Map.lookup contractName contractSchemas of
-    Nothing -> Left [i|A schema for the contract '#{contractName}' does not exist in the schema provided.|]
-    Just CS.ContractSchema{..} -> case state of
-      Nothing -> Right $ cInfo {ciState = WithSchema schema Nothing bytes}
-      Just typ -> (\decodedState -> cInfo {ciState = WithSchema schema (Just decodedState) bytes}) <$> S.runGet (CP.getJSONUsingSchema typ) bytes
+decodeContractStateUsingSchema ContractInfoV1{} _ = Left "V1 contracts cannot display the entire state."
+decodeContractStateUsingSchema cInfo@ContractInfoV0{..} moduleSchema =
+  case moduleSchema of
+    CS.ModuleSchemaV1 _ -> Left "Internal error: Cannot use ModuleSchemaV1 with ContractInfoV0." -- Should never happen.
+    schema@CS.ModuleSchemaV0{..} ->
+      case ciState of
+      WithSchema{} -> Left "Contract state has already been decoded."
+      JustBytes bytes -> case Map.lookup contractName ms0ContractSchemas of
+        Nothing -> Left [i|A schema for the contract '#{contractName}' does not exist in the schema provided.|]
+        Just CS.ContractSchemaV0{..} -> case cs0State of
+          Nothing -> Right $ cInfo {ciState = WithSchema schema Nothing bytes}
+          Just typ -> (\decodedState -> cInfo {ciState = WithSchema schema (Just decodedState) bytes})
+            <$> S.runGet (CP.getJSONUsingSchema typ) bytes
   where contractName = contractNameFromInitName ciName
 
 -- |Get a contract name from an InitName, i.e. extracting the text and removing the "init_" prefix.
