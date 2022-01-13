@@ -27,7 +27,7 @@ module Concordium.Client.Commands
 
 import Data.Text hiding (map, unlines)
 import Data.Version (showVersion)
-import Data.Word (Word64)
+import Data.Word (Word32, Word64)
 import Data.Time.Format.ISO8601
 import Network.HTTP2.Client
 import Options.Applicative
@@ -246,6 +246,8 @@ data ModuleCmd
       mdModuleFile :: !FilePath
       -- |Local alias for the module reference.
     , mdName :: !(Maybe Text)
+      -- |Smart contract module version.
+    , mdWasmVersion :: !(Maybe Word32)
       -- |Options for transaction.
     , mdTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   -- |List all modules.
@@ -275,6 +277,8 @@ data ModuleCmd
       mnModule :: !String
       -- |Name for the module.
     , mnName :: !Text
+      -- |Optional Wasm version for the module.
+    , mnWasmVersion :: !(Maybe Word32)
     }
   -- |Remove a local name from the module name map
   | ModuleRemoveName
@@ -314,6 +318,8 @@ data ContractCmd
     , ciName :: !(Maybe Text)
       -- |Determines whether ciModule should be interpreted as a path.
     , ciPath :: !Bool
+      -- |Optional Wasm version for the module.
+    , ciWasmVersion :: !(Maybe Word32)
       -- |Amount to be send to contract (default: 0).
     , ciAmount :: !Amount
       -- |Options for transaction.
@@ -838,6 +844,7 @@ moduleDeployCmd =
       (ModuleDeploy <$>
         strArgument (metavar "FILE" <> help "Path to the smart contract module.") <*>
         optional (strOption (long "name" <> metavar "NAME" <> help "Name for the module.")) <*>
+        optional (option auto (long "wasm-version" <> metavar "WASM-VERSION" <> help "Optional Wasm version of the module (should only be used for modules built with cargo-concordium version < 2).")) <*>
         transactionOptsParser)
       (progDesc "Deploy a smart contract module on the chain, optionally naming the module."))
 
@@ -879,7 +886,8 @@ moduleNameCmd =
     (info
       (ModuleName <$>
         strArgument (metavar "MODULE" <> help "Module reference OR path to the module.") <*>
-        strOption (long "name" <> metavar "NAME" <> help "Name for the module."))
+        strOption (long "name" <> metavar "NAME" <> help "Name for the module.") <*>
+        optional (option auto (long "wasm-version" <> metavar "WASM-VERSION" <> help "Optional Wasm version of the module (should only be used for modules built with cargo-concordium version < 2).")))
       (progDesc "Name a module."))
 
 moduleRemoveNameCmd ::  Mod CommandFields ModuleCmd
@@ -945,6 +953,7 @@ contractInitCmd =
         optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to parse the params file.")) <*>
         optional (strOption (long "name" <> metavar "NAME" <> help "Name for the contract.")) <*>
         switch (long "path" <> help "Use when MODULE is a path to a module file.") <*>
+        optional (option auto (long "wasm-version" <> metavar "WASM-VERSION" <> help "Optional Wasm version of the module (should only be used for modules built with cargo-concordium version < 2).")) <*>
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> value 0
                                                       <> help "Amount of CCD to transfer to the contract.") <*>
         requiredEnergyTransactionOptsParser)
