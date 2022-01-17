@@ -55,7 +55,7 @@ data LegacyCmd
   | InvokeContract
       { legacyContextFile :: !FilePath,
         legacyBlockHash   :: !(Maybe Text)
-      } -- ^ Queries the gRPC server for the information of an instance on a specific block
+      } -- ^ Invokes a contract locally on the node.
   | GetRewardStatus
       { legacyBlockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the reward status on a specific block
