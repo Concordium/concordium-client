@@ -17,6 +17,7 @@ module Concordium.Client.Types.Contract.Schema(
   putLenWithSizeLen) where
 
 import Control.Monad (unless)
+import qualified Concordium.Wasm as Wasm
 import Data.Aeson ((.=))
 import qualified Data.Aeson as AE
 import qualified Data.Bits as Bits
@@ -34,16 +35,18 @@ import GHC.Generics
 import Data.Maybe(isJust)
 
 -- |Try to find an embedded schema in a module and decode it.
-decodeEmbeddedSchema :: BS.ByteString -> Either String (Maybe ModuleSchema)
+decodeEmbeddedSchema :: Wasm.WasmModule -> Either String (Maybe ModuleSchema)
 decodeEmbeddedSchema = fmap fst . decodeEmbeddedSchemaAndExports
 
 -- |Decode a `ModuleSchema`.
-decodeModuleSchema :: WasmVersion -> BS.ByteString -> Either String ModuleSchema
+decodeModuleSchema :: Wasm.WasmVersion -> BS.ByteString -> Either String ModuleSchema
 decodeModuleSchema wasmVersion = S.runGet $ getModuleSchema wasmVersion
 
 -- |Try to find an embedded schema and a list of exported function names and decode them.
-decodeEmbeddedSchemaAndExports :: BS.ByteString -> Either String (Maybe ModuleSchema, [Text])
-decodeEmbeddedSchemaAndExports = S.runGet getEmbeddedSchemaAndExportsFromModule
+decodeEmbeddedSchemaAndExports :: Wasm.WasmModule -> Either String (Maybe ModuleSchema, [Text])
+decodeEmbeddedSchemaAndExports wasmModule = S.runGet (getEmbeddedSchemaAndExportsFromModule wasmVersion) moduleSource
+  where moduleSource = Wasm.getModuleSource wasmModule
+        wasmVersion = Wasm.getVersion wasmModule
 
 -- |Tries to find the signature, i.e. `SchemaType`, for a contract function by its name.
 lookupParameterSchemaForFunc :: ModuleSchema -> FuncName -> Maybe SchemaType
@@ -70,14 +73,11 @@ data ModuleSchema
 
 instance AE.ToJSON ModuleSchema
 
-type WasmVersion = Word32
-
-getModuleSchema :: WasmVersion -> S.Get ModuleSchema
+getModuleSchema :: Wasm.WasmVersion -> S.Get ModuleSchema
 getModuleSchema wasmVersion = S.label "ModuleSchema" $
   case wasmVersion of
-    0 -> ModuleSchemaV0 <$> getMapOfWithSizeLen Four getText S.get
-    1 -> ModuleSchemaV1 <$> getMapOfWithSizeLen Four getText S.get
-    _ -> fail [i|Invalid WasmVersion provided: #{wasmVersion}|] -- This should never happen.
+    Wasm.V0 -> ModuleSchemaV0 <$> getMapOfWithSizeLen Four getText S.get
+    Wasm.V1 -> ModuleSchemaV1 <$> getMapOfWithSizeLen Four getText S.get
 
 -- |Parallel to ContractSchema defined in concordium-contracts-common (Rust) version <= 2.
 data ContractSchemaV0
@@ -89,7 +89,6 @@ data ContractSchemaV0
   deriving (Eq, Show, Generic)
 
 instance AE.ToJSON ContractSchemaV0
-
 
 -- |Parallel to ContractSchema defined in concordium-contracts-common (Rust) version > 2.
 data ContractSchemaV1
@@ -356,8 +355,8 @@ data FuncName
 
 -- |Try to find and decode an embedded `ModuleSchema` and a list of exported function
 -- names from inside a Wasm module.
-getEmbeddedSchemaAndExportsFromModule :: S.Get (Maybe ModuleSchema, [Text])
-getEmbeddedSchemaAndExportsFromModule = do
+getEmbeddedSchemaAndExportsFromModule :: Wasm.WasmVersion -> S.Get (Maybe ModuleSchema, [Text])
+getEmbeddedSchemaAndExportsFromModule wasmVersion = do
   mhBs <- S.getByteString 4
   unless (mhBs == wasmMagicHash) $ fail "Unknown magic value. This is likely not a Wasm module."
   vBs <- S.getByteString 4
@@ -365,6 +364,10 @@ getEmbeddedSchemaAndExportsFromModule = do
   go (Nothing, [])
 
   where
+    schemaIdentifier = case wasmVersion of
+        Wasm.V0 -> "concordium-schema-v1"
+        Wasm.V1 -> "concordium-schema-v2"
+
     -- |Try to extract a module schema and a list of exported function names from a Wasm module.
     -- According to the WASM specification, there can be at most one export section
     -- and zero or more custom sections. The sections can be located at any position.
@@ -387,21 +390,17 @@ getEmbeddedSchemaAndExportsFromModule = do
             -- Custom section (which is where we store the schema).
             0 -> do
               name <- S.label "Custom Section Name" getTextWithLEB128Len
-              let mWasmVersion = case name of
-                                  "concordium-schema-v1" -> Just 0
-                                  "concordium-schema-v2" -> Just 1
-                                  _ -> Nothing
-              case mWasmVersion of
-                Just wasmVersion ->
-                  if isJust mSchema
-                  then fail "Module cannot contain multiple custom sections named 'concordium-schema-v1' or 'concordium-schema-v2'."
-                  else do
-                    schemaFound <- getModuleSchema wasmVersion
-                    -- Return if both the schema and funcNames are found, otherwise keep looking for the funcNames.
-                    if not $ null mFuncNames
-                      then return (Just schemaFound, mFuncNames)
-                      else go (Just schemaFound, mFuncNames)
-                Nothing -> S.skip sectionSize *> go schemaAndFuncNames
+              if name == schemaIdentifier
+              then
+                if isJust mSchema
+                then fail [i|Module cannot contain multiple custom sections named '#{schemaIdentifier}'.|]
+                else do
+                  schemaFound <- getModuleSchema wasmVersion
+                  -- Return if both the schema and funcNames are found, otherwise keep looking for the funcNames.
+                  if not $ null mFuncNames
+                    then return (Just schemaFound, mFuncNames)
+                    else go (Just schemaFound, mFuncNames)
+              else S.skip sectionSize *> go schemaAndFuncNames
             -- Export section
             7 -> do
               exports <- getListOfWithLEB128Len (S.getTwoOf getTextWithLEB128Len getExportDescription)
