@@ -24,6 +24,7 @@ module Concordium.Client.Commands
   , MemoInput(..)
   , RegisterDataInput(..)
   , ParameterFileInput(..)
+  , InvokerInput(..)
   ) where
 
 import Data.Text hiding (map, unlines)
@@ -355,8 +356,7 @@ data ContractCmd
       -- |Amount to invoke the receive function with (default: 0).
     , civAmount :: !Amount
       -- |Account address or name to use as invoker.
-      -- TODO: Can also be a contract. Must exist on chain if provided. Otherwise addr 0 with sufficient funds is used.
-    , civInvoker :: !(Maybe Text)
+    , civInvoker :: !(Maybe InvokerInput)
       -- |Maximum energy allowed for the invocation (default: 10,000,000).
     , civMaxEnergy :: !(Maybe Energy)
       -- |Hash of the block (default: "best").
@@ -1009,8 +1009,7 @@ contractInvokeCmd =
         optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to parse the params file.")) <*>
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> value 0
                                                                 <> help "Amount of CCD to transfer to the contract.") <*>
-        optional (strOption (long "invoker" <> metavar "ACCOUNT"
-                             <> help "Name or address of the account used for the invocation.")) <*>
+        invokerParser <*>
         optional (option (eitherReader energyFromStringInform) (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on the invocation. (default: 10,000,000)")) <*>
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
       (progDesc "Simulate an invocation of an existing contract."))
@@ -1450,5 +1449,31 @@ data ParameterFileInput
   deriving Show
 
 parameterFileParser :: Parser (Maybe ParameterFileInput)
-parameterFileParser = optional ((ParameterJSON <$> strOption (long "parameter-json" <> metavar "FILE" <> help "JSON file with parameters for the receive function. This parameter format should be used if the schema is supplied (default: no parameter).")) <|>
-       (ParameterBinary <$> strOption (long "parameter-binary" <> metavar "FILE" <> help "Binary file with parameters for the receive function. This should _not_ be used if a schema is supplied (default: no parameter).")))
+parameterFileParser = optional ((ParameterJSON
+                                 <$> strOption (long "parameter-json"
+                                                <> metavar "FILE"
+                                                <> help "JSON file with parameters for the receive function. \
+                                                        \This parameter format should be used if the schema is supplied (default: no parameter).")) <|>
+       (ParameterBinary
+        <$> strOption (long "parameter-binary"
+                       <> metavar "FILE"
+                       <> help "Binary file with parameters for the receive function. \
+                               \This should _not_ be used if a schema is supplied (default: no parameter).")))
+
+data InvokerInput
+  = InvokerAccount Text
+  | InvokerContract
+  { icIndexOrName :: Text
+  , icSubindex :: Maybe Word64
+  } deriving Show
+
+invokerParser :: Parser (Maybe InvokerInput)
+invokerParser =
+    optional $ (InvokerAccount <$>
+                strOption (long "invoker-account"
+                           <> metavar "ACCOUNT"
+                           <> help "Name or address of an account used as invoker (default: uses address 0 with sufficient funds).")) <|>
+               (InvokerContract <$>
+                strOption (long "invoker-contract" <> metavar "INDEX-OR-NAME" <> help "Index of contract address OR contract name used as invoker.") <*>
+                optional (option auto (long "invoker-contract-subindex" <> metavar "SUBINDEX" <>
+                     help "Subindex of contract address used as invoker (default: 0)")))

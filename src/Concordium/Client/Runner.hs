@@ -1947,6 +1947,11 @@ processContractCmd action baseCfgDir verbose backend =
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
 
+      invoker' :: Maybe Types.Address <- case invoker of
+        Nothing -> return Nothing
+        Just (InvokerAccount nameOrAddr) -> Just . Types.AddressAccount . naAddr <$> getAccountAddressArg (bcAccountNameMap baseCfg) nameOrAddr
+        Just InvokerContract{..} -> Just . Types.AddressContract . ncaAddr <$> getNamedContractAddress (bcContractNameMap baseCfg) icIndexOrName icSubindex
+
       contrInfo <- withClient backend . withBestBlockHash block $ \bb -> getContractInfo namedContrAddr bb
       let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = []} -- Skip finding nmrNames, as they won't be shown.
 
@@ -1959,7 +1964,7 @@ processContractCmd action baseCfgDir verbose backend =
       let nrg = fromMaybe (Types.Energy 10_000_000) energy
 
       let invokeContext = InvokeContract.ContractContext
-                          { ccInvoker = Nothing -- TODO: use invoker
+                          { ccInvoker = invoker'
                           , ccContract = ncaAddr namedContrAddr
                           , ccAmount = amount
                           , ccMethod = wasmReceiveName
@@ -2247,6 +2252,7 @@ getSchemaFromFileOrModule schemaFile namedModRef block = case schemaFile of
   Nothing -> do
     wasmModule <- getWasmModule namedModRef block
     liftIO $ case CS.decodeEmbeddedSchema wasmModule of
+      -- TODO: Return Either instead of logFatal. In contract view/show we should just show a warning about this and then show the raw bytes.
       Left err -> logFatal [[i|Could not parse embedded schema from module:|], err]
       Right schema -> return schema
   Just schemaFile' -> liftIO (Just <$> getSchemaFromFile schemaFile')
