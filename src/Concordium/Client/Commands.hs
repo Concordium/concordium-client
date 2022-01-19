@@ -357,8 +357,8 @@ data ContractCmd
       -- |Account address or name to use as invoker.
       -- TODO: Can also be a contract. Must exist on chain if provided. Otherwise addr 0 with sufficient funds is used.
     , civInvoker :: !(Maybe Text)
-      -- |Maximum energy allowed for the invocation.
-    , civMaxEnergy :: !Energy
+      -- |Maximum energy allowed for the invocation (default: 10,000,000).
+    , civMaxEnergy :: !(Maybe Energy)
       -- |Hash of the block (default: "best").
     , civBlockHash :: !(Maybe Text)}
   -- |Add a local name to a contract.
@@ -1011,7 +1011,7 @@ contractInvokeCmd =
                                                                 <> help "Amount of CCD to transfer to the contract.") <*>
         optional (strOption (long "invoker" <> metavar "ACCOUNT"
                              <> help "Name or address of the account used for the invocation.")) <*>
-        option (eitherReader energyFromStringInform) (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on the invocation.") <*>
+        optional (option (eitherReader energyFromStringInform) (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on the invocation. (default: 10,000,000)")) <*>
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
       (progDesc "Simulate an invocation of an existing contract."))
 

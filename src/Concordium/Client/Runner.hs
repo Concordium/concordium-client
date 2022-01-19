@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE NumericUnderscores #-}
 module Concordium.Client.Runner
   ( process
   , getAccountNonce
@@ -42,7 +43,7 @@ module Concordium.Client.Runner
   ) where
 
 import           Concordium.Client.Utils
-import           Concordium.Client.Cli
+import           Concordium.Client.Cli as Cli
 import           Concordium.Client.Config
 import           Concordium.Client.Commands          as COM
 import           Concordium.Client.Export
@@ -65,6 +66,7 @@ import           Concordium.Crypto.ByteStringHelpers (deserializeBase16)
 import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.SignatureScheme   as SigScheme
 import qualified Concordium.Crypto.VRF               as VRF
+import qualified Concordium.Types.InvokeContract     as InvokeContract
 import qualified Concordium.Types.Updates            as Updates
 import qualified Concordium.Types.Transactions       as Types
 import           Concordium.Types.HashableTo
@@ -105,6 +107,7 @@ import           Data.String.Interpolate (i, iii)
 import           Data.Text(Text)
 import qualified Data.Tuple                          as Tuple
 import qualified Data.Text                           as Text
+import qualified Data.Text.Encoding                  as Text
 import qualified Data.Text.IO                        as TextIO
 import qualified Data.Vector                         as Vec
 import           Data.Word
@@ -115,6 +118,7 @@ import           System.IO
 import           System.Exit
 import           System.Directory
 import           System.FilePath
+import qualified System.Console.ANSI                 as ANSI
 import           Text.Printf
 import           Text.Read (readMaybe)
 import Data.Time.Clock (addUTCTime, getCurrentTime, UTCTime)
@@ -1950,19 +1954,55 @@ processContractCmd action baseCfgDir verbose backend =
       let wasmReceiveName = Wasm.ReceiveName [i|#{contractName}.#{receiveName}|]
       unless (wasmReceiveName `elem` CI.ciMethods contrInfo) $ logFatal [[i|The contract does not have a receive function named '#{receiveName}'.|]]
 
-      schema <- withClient backend . withBestBlockHash block $ getSchemaFromFileOrModule schemaFile namedModRef
-      wasmParameter <- getWasmParameter parameterFile schema (CS.ReceiveFuncName contractName receiveName)
+      modSchema <- withClient backend . withBestBlockHash block $ getSchemaFromFileOrModule schemaFile namedModRef
+      wasmParameter <- getWasmParameter parameterFile modSchema (CS.ReceiveFuncName contractName receiveName)
+      let nrg = fromMaybe (Types.Energy 10_000_000) energy
 
-      -- Construct bytes from binary or by using schema from file or module
-      -- Construct ContractContext
-      -- Convert context to json and text
-      -- Call invokeContract
-      -- Use schema to parse return result if possible
-          -- V0 contracts will only show rejectReason or events, not the rv.
-      -- Print return value
+      let invokeContext = InvokeContract.ContractContext
+                          { ccInvoker = Nothing -- TODO: use invoker
+                          , ccContract = ncaAddr namedContrAddr
+                          , ccAmount = amount
+                          , ccMethod = wasmReceiveName
+                          , ccParameter = wasmParameter
+                          , ccEnergy = nrg
+                          }
+      invokeContextArg <- case Text.decodeUtf8' . BSL.toStrict . AE.encode $ invokeContext of
+            Left _ -> logFatal ["Could not invoke contract due to internal error: decoding UTF-8 failed"] -- Should never happen.
+            Right text -> return text
 
-      -- invokeContract Text Text
-      undefined
+      withClient backend . withBestBlockHash block $ \bb -> do
+        res <- invokeContract invokeContextArg bb
+        case res of
+          Left err -> logFatal [[i|Invocation failed with error: #{err}|]]
+          Right jsonValue -> case AE.fromJSON jsonValue of
+            AE.Error jsonErr -> logFatal [[i|Invocation failed with error: #{jsonErr}|]]
+            AE.Success InvokeContract.Failure{..} ->
+              -- Logs in yellow to indicate that the invocation returned with a failure.
+              -- This might be what you expected from the contract, so logWarn or logFatal should not be used.
+              Cli.log Info (Just ANSI.Yellow) [[iii|Invocation resulted in failure:\n
+                                                    - Energy used: #{showNrg rcrUsedEnergy}\n
+                                                    - Reason: #{showRejectReason verbose rcrReason}|]]
+            AE.Success InvokeContract.Success{..} -> do
+              returnValueMsg <- case rcrReturnValue of
+                    Nothing -> return Text.empty
+                    Just rv -> case modSchema >>= \modSchema' -> CS.lookupReturnValueSchema modSchema' (CS.ReceiveFuncName contractName receiveName) of
+                      Nothing -> return [i|- Return value:\n  #{rv}\n|] -- Schema not provided or it doesn't contain the return value for this func.
+                      Just schemaForFunc -> case S.runGet (CP.getJSONUsingSchema schemaForFunc) rv of
+                        Left err -> do
+                          logWarn [[i|Could not parse the returned bytes using the schema:\n#{err}|]]
+                          if isJust schemaFile
+                            then logWarn ["Make sure you supply the correct schema for the contract with --schema"]
+                            else logWarn ["Try supplying a schema file with --schema"]
+                          return [i|- Return value:\n  #{rv}\n|]
+                        Right rvJSON -> return [i|- Return value:\n  #{showPrettyJSON rvJSON}\n|]
+              let eventsMsg = case mapMaybe (fmap (("  - " <>) . Text.pack) . showEvent verbose) rcrEvents of
+                                [] -> Text.empty
+                                evts -> [i|- Events:\n#{Text.intercalate "\n" evts}|]
+              logSuccess [[iii|Invocation resulted in success:\n
+                               - Energy used: #{showNrg rcrUsedEnergy}\n
+                               #{returnValueMsg}
+                               #{eventsMsg}
+                               |]]
 
     ContractName index subindex contrName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -2184,7 +2224,7 @@ getWasmParameter paramsFile schema funcName =
       Just schema' -> getFromJSONParams jsonParamFile schema'
     Just (ParameterBinary binaryParamFile) -> binaryParams binaryParamFile
   where getFromJSONParams :: FilePath -> CS.ModuleSchema -> IO Wasm.Parameter
-        getFromJSONParams jsonFile schema' = case CS.lookupParameterSchemaForFunc schema' funcName of
+        getFromJSONParams jsonFile schema' = case CS.lookupParameterSchema schema' funcName of
           Nothing -> logFatal [[i|the schema did not include the provided function|]]
           Just schemaForParams -> do
             jsonFileContents <- handleReadFile BSL8.readFile jsonFile

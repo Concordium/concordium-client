@@ -13,7 +13,8 @@ module Concordium.Client.Types.Contract.Schema(
   decodeModuleSchema,
   getListOfWithKnownLen,
   getListOfWithSizeLen,
-  lookupParameterSchemaForFunc,
+  lookupParameterSchema,
+  lookupReturnValueSchema,
   putLenWithSizeLen) where
 
 import Control.Monad (unless)
@@ -48,9 +49,9 @@ decodeEmbeddedSchemaAndExports wasmModule = S.runGet (getEmbeddedSchemaAndExport
   where moduleSource = Wasm.getModuleSource wasmModule
         wasmVersion = Wasm.getVersion wasmModule
 
--- |Tries to find the signature, i.e. `SchemaType`, for a contract function by its name.
-lookupParameterSchemaForFunc :: ModuleSchema -> FuncName -> Maybe SchemaType
-lookupParameterSchemaForFunc moduleSchema funcName =
+-- |Lookup schema for the parameter of a function.
+lookupParameterSchema :: ModuleSchema -> FuncName -> Maybe SchemaType
+lookupParameterSchema moduleSchema funcName =
   case moduleSchema of
     ModuleSchemaV0 {..} -> case funcName of
       InitFuncName contrName -> Map.lookup contrName ms0ContractSchemas >>= cs0InitSig
@@ -62,6 +63,18 @@ lookupParameterSchemaForFunc moduleSchema funcName =
       ReceiveFuncName contrName receiveName -> do
         contract <- Map.lookup contrName ms1ContractSchemas
         Map.lookup receiveName (cs1ReceiveSigs contract) >>= getParameterSchema
+
+-- |Lookup schema for the return value of a function.
+--  Always returns Nothing on V0 contracts as they do not have return values.
+lookupReturnValueSchema :: ModuleSchema -> FuncName -> Maybe SchemaType
+lookupReturnValueSchema moduleSchema funcName =
+  case moduleSchema of
+    ModuleSchemaV0 {} -> Nothing
+    ModuleSchemaV1 {..} -> case funcName of
+      InitFuncName contrName -> Map.lookup contrName ms1ContractSchemas >>= cs1InitSig >>= getReturnValueSchema
+      ReceiveFuncName contrName receiveName -> do
+        contract <- Map.lookup contrName ms1ContractSchemas
+        Map.lookup receiveName (cs1ReceiveSigs contract) >>= getReturnValueSchema
 
 -- |Represents the schema for a module.
 -- V0 is a parallel to `Module` defined in concordium-contracts-common version <= 2.
@@ -133,6 +146,12 @@ getParameterSchema = \case
   Parameter schemaType -> Just schemaType
   ReturnValue _ -> Nothing
   Both {..} -> Just fsParameter
+
+getReturnValueSchema :: FunctionSchema -> Maybe SchemaType
+getReturnValueSchema = \case
+  Parameter _ -> Nothing
+  ReturnValue schemaType -> Just schemaType
+  Both {..} -> Just fsReturnValue
 
 instance S.Serialize FunctionSchema where
   get = S.label "FunctionSchema" $ do
