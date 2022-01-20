@@ -1955,9 +1955,9 @@ processContractCmd action baseCfgDir verbose backend =
       contrInfo <- withClient backend . withBestBlockHash block $ \bb -> getContractInfo namedContrAddr bb
       let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = []} -- Skip finding nmrNames, as they won't be shown.
 
-      let contractName = CI.contractNameFromInitName $ CI.ciName contrInfo
+      let contractName = CI.getContractName contrInfo
       let wasmReceiveName = Wasm.ReceiveName [i|#{contractName}.#{receiveName}|]
-      unless (wasmReceiveName `elem` CI.ciMethods contrInfo) $ logFatal [[i|The contract does not have a receive function named '#{receiveName}'.|]]
+      unless (CI.hasReceiveMethod receiveName contrInfo) $ logFatal [[i|The contract does not have a receive function named '#{receiveName}'.|]]
 
       modSchema <- withClient backend . withBestBlockHash block $ getSchemaFromFileOrModule schemaFile namedModRef
       wasmParameter <- getWasmParameter parameterFile modSchema (CS.ReceiveFuncName contractName receiveName)
@@ -2079,10 +2079,10 @@ getContractInfo namedContrAddr block = do
 -- |Display contract info, optionally using a schema to decode the contract state.
 displayContractInfo :: Maybe CS.ModuleSchema -> CI.ContractInfo -> NamedAddress -> NamedModuleRef -> IO ()
 displayContractInfo schema contrInfo namedOwner namedModRef = case schema of
-  Just schema'@CS.ModuleSchemaV0{} -> case CI.decodeContractStateUsingSchema contrInfo schema' of
+  Just schema' -> case CI.addSchemaData contrInfo schema' of
     Left err' -> logFatal ["Parsing the contract model failed:", err']
     Right infoWithSchema -> runPrinter $ printContractInfo infoWithSchema namedOwner namedModRef
-  _ -> runPrinter $ printContractInfo contrInfo namedOwner namedModRef -- TODO: Get schemas for funcs in V1 contracts
+  Nothing -> runPrinter $ printContractInfo contrInfo namedOwner namedModRef
 
 -- |Attempts to acquire the needed parts for updating a contract.
 -- The two primary parts are a contract address, which is acquired using `getNamedContractAddress`,
@@ -2104,7 +2104,7 @@ getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex rece
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
   contrInfo <- withClient backend . withBestBlockHash Nothing $ getContractInfo namedContrAddr
   let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = []}
-  let contrName = CI.contractNameFromInitName (CI.ciName contrInfo)
+  let contrName = CI.getContractName contrInfo
   schema <- withClient backend . withBestBlockHash Nothing $ getSchemaFromFileOrModule schemaFile namedModRef
   params <- getWasmParameter paramsFile schema (CS.ReceiveFuncName contrName receiveName)
   return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr)
@@ -2248,19 +2248,20 @@ getSchemaFromFileOrModule :: Maybe FilePath -- ^ Optional schema file.
                           -> NamedModuleRef -- ^ A reference to a module on chain.
                           -> Text -- ^ A block hash.
                           -> ClientMonad IO (Maybe CS.ModuleSchema)
-getSchemaFromFileOrModule schemaFile namedModRef block = case schemaFile of
-  Nothing -> do
-    wasmModule <- getWasmModule namedModRef block
-    liftIO $ case CS.decodeEmbeddedSchema wasmModule of
-      -- TODO: Return Either instead of logFatal. In contract view/show we should just show a warning about this and then show the raw bytes.
-      Left err -> logFatal [[i|Could not parse embedded schema from module:|], err]
-      Right schema -> return schema
-  Just schemaFile' -> liftIO (Just <$> getSchemaFromFile schemaFile')
+getSchemaFromFileOrModule schemaFile namedModRef block = do
+  wasmModule <- getWasmModule namedModRef block
+  case schemaFile of
+    Nothing -> do
+      liftIO $ case CS.decodeEmbeddedSchema wasmModule of
+        -- TODO: Return Either instead of logFatal. In contract view/show we should just show a warning about this and then show the raw bytes.
+        Left err -> logFatal [[i|Could not parse embedded schema from module:|], err]
+        Right schema -> return schema
+    Just schemaFile' -> liftIO (Just <$> getSchemaFromFile (Wasm.getVersion wasmModule) schemaFile')
 
 -- |Try to load and decode a schema from a file. Logs fatally if the file is not a valid Wasm module.
-getSchemaFromFile :: FilePath -> IO CS.ModuleSchema
-getSchemaFromFile schemaFile = do
-  schema <- CS.decodeModuleSchema Wasm.V1 <$> handleReadFile BS.readFile schemaFile -- TODO: Handle v0 contracts as well.
+getSchemaFromFile :: Wasm.WasmVersion -> FilePath -> IO CS.ModuleSchema
+getSchemaFromFile wasmVersion schemaFile = do
+  schema <- CS.decodeModuleSchema wasmVersion <$> handleReadFile BS.readFile schemaFile
   case schema of
     Left err -> logFatal [[i|Could not decode schema from file '#{schemaFile}':|], err]
     Right schema' -> pure schema'
@@ -2274,14 +2275,11 @@ getSchemaAndExports :: Maybe FilePath -- ^ Optional schema file.
                     -> Text -- ^ A block hash.
                     -> ClientMonad IO (Maybe CS.ModuleSchema, [Text])
 getSchemaAndExports schemaFile namedModRef block = do
-
+  wasmModule <- getWasmModule namedModRef block
   preferredSchema <- case schemaFile of
     Nothing -> return Nothing
-    Just schemaFile' -> fmap Just . liftIO . getSchemaFromFile $ schemaFile'
-
-  (schema, exports) <- do
-      wasmModule <- getWasmModule namedModRef block
-      liftIO $ getSchemaAndExportsOrDie wasmModule
+    Just schemaFile' -> fmap Just . liftIO . getSchemaFromFile (Wasm.getVersion wasmModule) $ schemaFile'
+  (schema, exports) <- liftIO $ getSchemaAndExportsOrDie wasmModule
 
   if isJust preferredSchema
   then return (preferredSchema, exports)

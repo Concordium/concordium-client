@@ -8,11 +8,13 @@ module Concordium.Client.Types.Contract.Schema(
   ModuleSchema(..),
   SchemaType(..),
   SizeLength(..),
+  FunctionSchema(..),
   decodeEmbeddedSchema,
   decodeEmbeddedSchemaAndExports,
   decodeModuleSchema,
   getListOfWithKnownLen,
   getListOfWithSizeLen,
+  lookupFunctionSchema,
   lookupParameterSchema,
   lookupReturnValueSchema,
   putLenWithSizeLen) where
@@ -72,9 +74,15 @@ lookupReturnValueSchema moduleSchema funcName =
     ModuleSchemaV0 {} -> Nothing
     ModuleSchemaV1 {..} -> case funcName of
       InitFuncName contrName -> Map.lookup contrName ms1ContractSchemas >>= cs1InitSig >>= getReturnValueSchema
-      ReceiveFuncName contrName receiveName -> do
-        contract <- Map.lookup contrName ms1ContractSchemas
-        Map.lookup receiveName (cs1ReceiveSigs contract) >>= getReturnValueSchema
+      ReceiveFuncName contrName _ -> do
+        contrSchema <- Map.lookup contrName ms1ContractSchemas
+        lookupFunctionSchema contrSchema funcName >>= getReturnValueSchema
+
+-- |Lookup the 'FunctionSchema' for a function.
+lookupFunctionSchema :: ContractSchemaV1 -> FuncName -> Maybe FunctionSchema
+lookupFunctionSchema ContractSchemaV1{..} = \case
+  InitFuncName _ -> cs1InitSig
+  ReceiveFuncName _ rcvName -> Map.lookup rcvName cs1ReceiveSigs
 
 -- |Represents the schema for a module.
 -- V0 is a parallel to `Module` defined in concordium-contracts-common version <= 2.
@@ -86,6 +94,7 @@ data ModuleSchema
 
 instance AE.ToJSON ModuleSchema
 
+-- |Create a getter based on the wasm version.
 getModuleSchema :: Wasm.WasmVersion -> S.Get ModuleSchema
 getModuleSchema wasmVersion = S.label "ModuleSchema" $
   case wasmVersion of
@@ -141,12 +150,14 @@ data FunctionSchema
 
 instance AE.ToJSON FunctionSchema
 
+-- |Try to get the parameter schema.
 getParameterSchema :: FunctionSchema -> Maybe SchemaType
 getParameterSchema = \case
   Parameter schemaType -> Just schemaType
   ReturnValue _ -> Nothing
   Both {..} -> Just fsParameter
 
+-- |Try to get the return value schema.
 getReturnValueSchema :: FunctionSchema -> Maybe SchemaType
 getReturnValueSchema = \case
   Parameter _ -> Nothing

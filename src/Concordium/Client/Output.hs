@@ -305,48 +305,46 @@ printContractInfo :: CI.ContractInfo -> NamedAddress -> NamedModuleRef -> Printe
 printContractInfo ci namedOwner namedModRef =
   case ci of
     CI.ContractInfoV0{..} -> do
-      tell [ [i|Contract:        #{contractName ciName}|]
+      tell [ [i|Contract:        #{ciName}|]
            , [i|Owner:           #{owner}|]
            , [i|ModuleReference: #{showNamedModuleRef namedModRef}|]
            , [i|Balance:         #{showCcd ciAmount}|]
            , [i|State size:      #{ciSize} bytes|]]
-      tell (state ciState)
+      tell (showState ciSchemaDependentV0)
       tell [ [i|Methods:|]]
-      -- tellMethods ciName ciState ciMethods
+      tellMethodsV0 ciSchemaDependentV0
     CI.ContractInfoV1{..} -> do
-      tell [ [i|Contract:        #{contractName ciName}|]
+      tell [ [i|Contract:        #{ciName}|]
            , [i|Owner:           #{owner}|]
            , [i|ModuleReference: #{showNamedModuleRef namedModRef}|]
            , [i|Balance:         #{showCcd ciAmount}|]]
       tell [ [i|Methods:|]]
-      tell $ toDashedList (map methodNameFromReceiveName ciMethods)
+      tellMethodsV1 ciSchemaDependentV1
   where
-    contractName = CI.contractNameFromInitName
     owner = showNamedAddress namedOwner
-    state s = case s of
-      CI.JustBytes bs -> ["State(raw):", [i|    #{BS.unpack bs}|]]
-      CI.WithSchema _ Nothing bs -> ["No schema type was found for the state.\nState(raw):", [i|    #{BS.unpack bs}|]]
-      CI.WithSchema _ (Just state') _ -> ["State:", indentBy 4 $ showPrettyJSON state']
+    showState = \case
+      CI.NoSchemaV0{..} -> ["State(raw):", [i|    #{BS.unpack ns0State}|]]
+      CI.WithSchemaV0{..} -> case ws0State of
+        CI.Cs0Bytes bs -> ["No schema type was found for the state.\nState(raw):", [i|    #{BS.unpack bs}|]]
+        CI.Cs0JSON json -> ["State:", indentBy 4 $ showPrettyJSON json]
+
+    tellMethodsV0 = \case
+      CI.NoSchemaV0{..} -> tell $ toDashedList ns0Methods
+      CI.WithSchemaV0{..} -> tell $ toDashedList . map showMethod $ ws0Methods
+        where showMethod (rcvName, paramSchema) = case paramSchema of
+                Nothing -> rcvName
+                Just paramSchema' -> [i|#{rcvName}\n    Parameter:\n#{indentBy 4 $ showPrettyJSON paramSchema'}|]
+
+    tellMethodsV1 = \case
+      CI.NoSchemaV1{..} -> tell $ toDashedList ns1Methods
+      CI.WithSchemaV1{..} -> tell $ toDashedList . map showMethod $ ws1Methods
+      where showMethod (rcvName, funcSchema) = case funcSchema of
+                Nothing -> rcvName
+                Just (CI.Parameter paramSchema) -> [i|#{rcvName}\n    Parameter:\n#{indentBy 4 $ showPrettyJSON paramSchema}|]
+                Just (CI.ReturnValue rvSchema) -> [i|#{rcvName}\n    Return value:\n#{indentBy 4 $ showPrettyJSON rvSchema}|]
+                Just CI.Both{..} -> [i|#{rcvName}\n    Parameter:\n#{indentBy 4 $ showPrettyJSON fsjParameter}\n    Return value:\n#{indentBy 4 $ showPrettyJSON fsjReturnValue}|]
+
     toDashedList = map (\x -> [i| - #{x}|])
-    -- tellMethods name s methods = case s of
-    --   CI.JustBytes _ -> tell $ toDashedList methodNames
-    --   CI.WithSchema CS.ModuleSchema{..} _ _ -> case Map.lookup (contractName name) contractSchemas of
-    --     Nothing -> tell $ toDashedList methodNames
-    --     Just CS.ContractSchemaV0{cs0ReceiveSigs=rcvSigs} -> tell . toDashedList . map (tryAppendSignature rcvSigs) $ methodNames
-    --   where methodNames = map methodNameFromReceiveName methods
-
-    --         tryAppendSignature :: Map.Map Text CS.SchemaType -> Text -> Text
-    --         tryAppendSignature rcvSigs rcvName = case Map.lookup rcvName rcvSigs of
-    --           Nothing -> rcvName
-    --           Just schemaType -> rcvName <> "\n" <> Text.pack (indentBy 4 $ showPrettyJSON schemaType)
-
-    -- |Get a method name from a Receive name, i.e. extracting the text and removing the "<contractName>." prefix.
-    -- If the receiveName does not have the prefix, it simply returns the extracted text.
-    methodNameFromReceiveName :: Wasm.ReceiveName -> Text
-    methodNameFromReceiveName rcvName = case Text.split (=='.') receiveNameText of
-      [_contrName, methodName] -> methodName
-      _ -> receiveNameText
-      where receiveNameText = Wasm.receiveName rcvName
 
 -- |Print module inspect info, i.e., the named moduleRef and its included contracts.
 -- If the init or receive signatures for a contract exist in the schema, they are also printed.
