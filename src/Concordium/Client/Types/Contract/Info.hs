@@ -7,7 +7,6 @@ module Concordium.Client.Types.Contract.Info
   , constructModuleInspectInfo
   , ContractInfo(..)
   , ContractStateV0(..)
-  , FunctionSchemaJSON(..)
   , SchemaDependentV0(..)
   , SchemaDependentV1(..)
   , ModuleInspectInfo(..)
@@ -58,12 +57,12 @@ addSchemaData cInfo@ContractInfoV1{..} moduleSchema =
         NoSchemaV1{..} -> case Map.lookup ciName ms1ContractSchemas of
           Nothing -> Left [i|A schema for the contract '#{ciName}' does not exist in the schema provided.|]
           Just contrSchema ->
-            let ws1Methods = map (addJSONFuncSchemaToMethod contrSchema) ns1Methods
+            let ws1Methods = map (addFuncSchemaToMethod contrSchema) ns1Methods
                 withSchema = WithSchemaV1{..}
             in Right (cInfo {ciSchemaDependentV1 = withSchema})
-  where addJSONFuncSchemaToMethod :: CS.ContractSchemaV1 -> Text -> (Text, Maybe FunctionSchemaJSON)
-        addJSONFuncSchemaToMethod contrSchema rcvName = let mFuncSchema = toFunctionSchemaJSON <$> CS.lookupFunctionSchema contrSchema (CS.ReceiveFuncName ciName rcvName)
-                                            in (rcvName, mFuncSchema)
+  where addFuncSchemaToMethod :: CS.ContractSchemaV1 -> Text -> (Text, Maybe CS.FunctionSchema)
+        addFuncSchemaToMethod contrSchema rcvName = let mFuncSchema = CS.lookupFunctionSchema contrSchema (CS.ReceiveFuncName ciName rcvName)
+                                                    in (rcvName, mFuncSchema)
 addSchemaData cInfo@ContractInfoV0{..} moduleSchema =
   case moduleSchema of
     CS.ModuleSchemaV1 _ -> Left "Internal error: Cannot use ModuleSchemaV1 with ContractInfoV0." -- Should never happen.
@@ -78,12 +77,12 @@ addSchemaData cInfo@ContractInfoV0{..} moduleSchema =
                 Just schemaForState -> case S.runGet (CP.getJSONUsingSchema schemaForState) ns0State of
                   Left _ -> Cs0Bytes ns0State -- Could not parse the state using the schema. TODO: Ideally, log a warning.
                   Right jsonState -> Cs0JSON jsonState
-              ws0Methods = map addJSONSchemaToMethod ns0Methods
+              ws0Methods = map addSchemaToMethod ns0Methods
               withSchema = WithSchemaV0{..}
           in Right (cInfo {ciSchemaDependentV0 = withSchema})
-  where addJSONSchemaToMethod :: Text -> (Text, Maybe AE.Value)
-        addJSONSchemaToMethod rcvName = let mJSONSchema = AE.toJSON <$> CS.lookupParameterSchema moduleSchema (CS.ReceiveFuncName ciName rcvName)
-                                        in (rcvName, mJSONSchema)
+  where addSchemaToMethod :: Text -> (Text, Maybe CS.SchemaType)
+        addSchemaToMethod rcvName = let mSchema = CS.lookupParameterSchema moduleSchema (CS.ReceiveFuncName ciName rcvName)
+                                        in (rcvName, mSchema)
 
 -- |Get a contract name from an InitName, i.e. extracting the text and removing the "init_" prefix.
 -- If stripping the prefix fails, it simply returns the extracted text
@@ -157,35 +156,18 @@ data SchemaDependentV0
   }
   | WithSchemaV0
   { ws0State   :: !ContractStateV0
-  , ws0Methods :: ![(Text, Maybe AE.Value)]
+  , ws0Methods :: ![(Text, Maybe CS.SchemaType)]
   } deriving (Eq, Show)
 
 data SchemaDependentV1
   = NoSchemaV1   { ns1Methods :: ![Text] }
-  | WithSchemaV1 { ws1Methods :: ![(Text, Maybe FunctionSchemaJSON)]}
-  deriving (Eq, Show)
-
-data FunctionSchemaJSON
-  = Parameter AE.Value
-  | ReturnValue AE.Value
-  | Both { fsjParameter :: AE.Value
-         , fsjReturnValue :: AE.Value
-         }
+  | WithSchemaV1 { ws1Methods :: ![(Text, Maybe CS.FunctionSchema)]}
   deriving (Eq, Show)
 
 data ContractStateV0
   = Cs0Bytes !ByteString
   | Cs0JSON !AE.Value
   deriving (Eq, Show)
-
--- |Convert 'FunctionSchema' to 'FunctionSchemaJSON' by serializing the schematype as JSON.
-toFunctionSchemaJSON :: CS.FunctionSchema -> FunctionSchemaJSON
-toFunctionSchemaJSON = \case
-  CS.Parameter schemaType -> Parameter $ AE.toJSON schemaType
-  CS.ReturnValue schemaType -> ReturnValue $ AE.toJSON schemaType
-  CS.Both{..} -> Both { fsjParameter = AE.toJSON fsParameter
-                      , fsjReturnValue = AE.toJSON fsReturnValue
-                      }
 
 instance AE.FromJSON ContractInfo where
   parseJSON = AE.withObject "Info" $ \v -> do

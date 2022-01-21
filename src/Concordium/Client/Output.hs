@@ -329,22 +329,12 @@ printContractInfo ci namedOwner namedModRef =
         CI.Cs0JSON json -> ["State:", indentBy 4 $ showPrettyJSON json]
 
     tellMethodsV0 = \case
-      CI.NoSchemaV0{..} -> tell $ toDashedList ns0Methods
-      CI.WithSchemaV0{..} -> tell $ toDashedList . map showMethod $ ws0Methods
-        where showMethod (rcvName, paramSchema) = case paramSchema of
-                Nothing -> rcvName
-                Just paramSchema' -> [i|#{rcvName}\n    Parameter:\n#{indentBy 4 $ showPrettyJSON paramSchema'}|]
+      CI.NoSchemaV0{..} -> tell $ map (`showContractFuncV0` Nothing) ns0Methods
+      CI.WithSchemaV0{..} -> tell $ map (uncurry showContractFuncV0) ws0Methods
 
     tellMethodsV1 = \case
-      CI.NoSchemaV1{..} -> tell $ toDashedList ns1Methods
-      CI.WithSchemaV1{..} -> tell $ toDashedList . map showMethod $ ws1Methods
-      where showMethod (rcvName, funcSchema) = case funcSchema of
-                Nothing -> rcvName
-                Just (CI.Parameter paramSchema) -> [i|#{rcvName}\n    Parameter:\n#{indentBy 4 $ showPrettyJSON paramSchema}|]
-                Just (CI.ReturnValue rvSchema) -> [i|#{rcvName}\n    Return value:\n#{indentBy 4 $ showPrettyJSON rvSchema}|]
-                Just CI.Both{..} -> [i|#{rcvName}\n    Parameter:\n#{indentBy 4 $ showPrettyJSON fsjParameter}\n    Return value:\n#{indentBy 4 $ showPrettyJSON fsjReturnValue}|]
-
-    toDashedList = map (\x -> [i| - #{x}|])
+      CI.NoSchemaV1{..} -> tell $ map (`showContractFuncV1` Nothing) ns1Methods
+      CI.WithSchemaV1{..} -> tell $  map (uncurry showContractFuncV1) ws1Methods
 
 showContractFuncV0 :: Text -> Maybe CS.SchemaType -> String
 showContractFuncV0 funcName mParamSchema = case mParamSchema of
@@ -599,7 +589,7 @@ showEvent verbose = \case
           Left _ -> invalidCBOR -- if not possible, the memo is not written in valid CBOR
           Right (rest, x) -> if rest == BSL.empty then
                                showPrettyJSON x
-                             else 
+                             else
                                invalidCBOR
     in Just $ printf "Transfer memo:\n%s" str
   where
