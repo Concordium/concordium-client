@@ -4,11 +4,16 @@ module Concordium.Client.Types.Contract.Info
   , addSchemaData
   , getContractName
   , hasReceiveMethod
+  , constructModuleInspectInfo
   , ContractInfo(..)
   , ContractStateV0(..)
   , FunctionSchemaJSON(..)
   , SchemaDependentV0(..)
   , SchemaDependentV1(..)
+  , ModuleInspectInfo(..)
+  , ModuleInspectSigs(..)
+  , ContractSigsV0(..)
+  , ContractSigsV1(..)
   ) where
 
 import qualified Concordium.Types as T
@@ -29,6 +34,7 @@ import Data.String.Interpolate (i)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
+import qualified Concordium.Client.Config as Config
 
 -- |Try to include extra information in the contract info from the module schema.
 -- For V0 contracts:
@@ -206,3 +212,168 @@ instance AE.FromJSON ContractInfo where
       1 -> let ciSchemaDependentV1 = NoSchemaV1 { ns1Methods = methods }
            in return ContractInfoV1{..}
       n -> fail [i|Unsupported contract version #{n}.|]
+
+
+-- |Construct module inspect info.
+-- Works by:
+--  - Creating ModuleInspectSigs from the list of exported function names.
+--  - Inserting the signatures from the moduleSchema into the ModuleInspectSigs
+--     - And collect the function names for /extraneous/ schemas,
+--     - i.e. schemas for functions that are not exported in the module.
+constructModuleInspectInfo :: Config.NamedModuleRef
+                           -> Wasm.WasmVersion
+                           -> Maybe CS.ModuleSchema
+                           -> [Text] -- ^ Exported function names in module.
+                           -> ModuleInspectInfo
+constructModuleInspectInfo namedModRef wasmVersion moduleSchema exportedFuncNames =
+  ModuleInspectInfo { miiNamedModRef = namedModRef
+                    , miiWasmVersion = wasmVersion
+                    , miiModuleInspectSigs = moduleInspectSigs
+                    , miiExtraneousSchemas = extraneousSchemas
+                    }
+  where
+    moduleInspectSigsFromExports :: ModuleInspectSigs
+    moduleInspectSigsFromExports = case wasmVersion of
+      Wasm.V0 ->
+        let mkContrSchemaTuples x xs = case x of
+              CS.InitFuncName contrName -> (contrName, ContractSigsV0 { csv0InitSig = Nothing
+                                                                      , csv0ReceiveSigs = Map.empty
+                                                                      }) : xs
+              CS.ReceiveFuncName _ _ -> xs
+            cSigsWithoutReceives = Map.fromList . foldr mkContrSchemaTuples [] $ funcNames
+
+            insertReceiveNames :: [CS.FuncName] -> Map.Map Text ContractSigsV0 -> Map.Map Text ContractSigsV0
+            insertReceiveNames [] sigMap = sigMap
+            insertReceiveNames (CS.InitFuncName _:remaining) sigMap = insertReceiveNames remaining sigMap
+            insertReceiveNames (CS.ReceiveFuncName cname fname:remaining) sigMap = case Map.lookup cname sigMap of
+              Nothing -> insertReceiveNames remaining sigMap -- This should never happen, as we validate modules before they are put on chain.
+              Just cs0@ContractSigsV0{..} ->
+                let updatedCsReceiveSigs = Map.insert fname Nothing csv0ReceiveSigs
+                    sigMap' = Map.insert cname (cs0 {csv0ReceiveSigs = updatedCsReceiveSigs}) sigMap
+                in insertReceiveNames remaining sigMap'
+
+            mis0ContractSigs = insertReceiveNames funcNames cSigsWithoutReceives
+        in ModuleInspectSigsV0{..}
+      Wasm.V1 ->
+        let mkContrSchemaTuples x xs = case x of
+              CS.InitFuncName contrName -> (contrName, ContractSigsV1 { csv1InitSig = Nothing
+                                                                      , csv1ReceiveSigs = Map.empty
+                                                                      }) : xs
+              CS.ReceiveFuncName _ _ -> xs
+            cSigsWithoutReceives = Map.fromList . foldr mkContrSchemaTuples [] $ funcNames
+
+            insertReceiveNames :: [CS.FuncName] -> Map.Map Text ContractSigsV1 -> Map.Map Text ContractSigsV1
+            insertReceiveNames [] sigMap = sigMap
+            insertReceiveNames (CS.InitFuncName _:remaining) sigMap = insertReceiveNames remaining sigMap
+            insertReceiveNames (CS.ReceiveFuncName cname fname:remaining) sigMap = case Map.lookup cname sigMap of
+              Nothing -> insertReceiveNames remaining sigMap -- This should never happen, as we validate modules before they are put on chain.
+              Just cs1@ContractSigsV1{..} ->
+                let updatedCsReceiveSigs = Map.insert fname Nothing csv1ReceiveSigs
+                    sigMap' = Map.insert cname (cs1 {csv1ReceiveSigs = updatedCsReceiveSigs}) sigMap
+                in insertReceiveNames remaining sigMap'
+
+            mis1ContractSigs = insertReceiveNames funcNames cSigsWithoutReceives
+        in ModuleInspectSigsV1{..}
+
+    (moduleInspectSigs, extraneousSchemas) = case (moduleSchema, moduleInspectSigsFromExports) of
+      (Just CS.ModuleSchemaV0{..}, ModuleInspectSigsV0{..}) ->
+        let
+            addSchemas :: Map.Map Text ContractSigsV0 -> Map.Map Text CS.ContractSchemaV0 -> (Map.Map Text ContractSigsV0, [CS.FuncName])
+            addSchemas mSigs mSchema = go mSigs [] (Map.toList mSchema)
+              where
+                    go :: Map.Map Text ContractSigsV0 -> [CS.FuncName] -> [(Text, CS.ContractSchemaV0)] -> (Map.Map Text ContractSigsV0, [CS.FuncName])
+                    go sigMap errors [] = (sigMap, errors)
+                    go sigMap errors ((cname, CS.ContractSchemaV0{..}):remaining) =
+                      case Map.lookup cname sigMap of
+                        Nothing -> let receiveErrors = map (CS.ReceiveFuncName cname) . Map.keys $ cs0ReceiveSigs
+                                       errors' = CS.InitFuncName cname : receiveErrors ++ errors
+                                   in go sigMap errors' remaining -- Schema has init signature for a contract not in the module.
+                        Just ContractSigsV0{..} ->
+                          let (updatedCsReceiveSigs, receiveErrors) = updateReceiveSigs cname csv0ReceiveSigs [] (Map.toList cs0ReceiveSigs)
+                              sigMap' = Map.insert cname (ContractSigsV0 {csv0InitSig = cs0InitSig, csv0ReceiveSigs = updatedCsReceiveSigs}) sigMap
+                          in go sigMap' (receiveErrors ++ errors) remaining
+
+                    updateReceiveSigs :: Text -> Map.Map Text (Maybe CS.SchemaType) -> [CS.FuncName]
+                                      -> [(Text, CS.SchemaType)] -> (Map.Map Text (Maybe CS.SchemaType), [CS.FuncName])
+                    updateReceiveSigs _ sigMap errors [] = (sigMap, errors)
+                    updateReceiveSigs cname sigMap errors ((fname, schema):remaining) =
+                      if Map.member fname sigMap
+                      then updateReceiveSigs cname (Map.insert fname (Just schema) sigMap) errors remaining
+                      else -- Schema has signature for method not in the module.
+                        updateReceiveSigs cname sigMap (CS.ReceiveFuncName cname fname:errors) remaining
+            (updatedContractSigs, extraSchemas) = addSchemas mis0ContractSigs ms0ContractSchemas
+        in (ModuleInspectSigsV0 { mis0ContractSigs = updatedContractSigs}, extraSchemas)
+      (Just CS.ModuleSchemaV1{..}, ModuleInspectSigsV1{..}) ->
+        let
+            addSchemas :: Map.Map Text ContractSigsV1 -> Map.Map Text CS.ContractSchemaV1 -> (Map.Map Text ContractSigsV1, [CS.FuncName])
+            addSchemas mSigs mSchema = go mSigs [] (Map.toList mSchema)
+              where
+                    go :: Map.Map Text ContractSigsV1 -> [CS.FuncName] -> [(Text, CS.ContractSchemaV1)] -> (Map.Map Text ContractSigsV1, [CS.FuncName])
+                    go sigMap errors [] = (sigMap, errors)
+                    go sigMap errors ((cname, CS.ContractSchemaV1{..}):remaining) =
+                      case Map.lookup cname sigMap of
+                        Nothing -> let receiveErrors = map (CS.ReceiveFuncName cname) . Map.keys $ cs1ReceiveSigs
+                                       errors' = CS.InitFuncName cname : receiveErrors ++ errors
+                                   in go sigMap errors' remaining -- Schema has init signature for a contract not in the module.
+                        Just ContractSigsV1{..} ->
+                          let (updatedCsReceiveSigs, receiveErrors) = updateReceiveSigs cname csv1ReceiveSigs [] (Map.toList cs1ReceiveSigs)
+                              sigMap' = Map.insert cname (ContractSigsV1 {csv1InitSig = cs1InitSig, csv1ReceiveSigs = updatedCsReceiveSigs}) sigMap
+                          in go sigMap' (receiveErrors ++ errors) remaining
+
+                    updateReceiveSigs :: Text -> Map.Map Text (Maybe CS.FunctionSchema) -> [CS.FuncName]
+                                      -> [(Text, CS.FunctionSchema)] -> (Map.Map Text (Maybe CS.FunctionSchema), [CS.FuncName])
+                    updateReceiveSigs _ sigMap errors [] = (sigMap, errors)
+                    updateReceiveSigs cname sigMap errors ((fname, schema):remaining) =
+                      if Map.member fname sigMap
+                      then updateReceiveSigs cname (Map.insert fname (Just schema) sigMap) errors remaining
+                      else -- Schema has signature for method not in the module.
+                        updateReceiveSigs cname sigMap (CS.ReceiveFuncName cname fname:errors) remaining
+            (updatedContractSigs, extraSchemas) = addSchemas mis1ContractSigs ms1ContractSchemas
+        in (ModuleInspectSigsV1 { mis1ContractSigs = updatedContractSigs}, extraSchemas)
+      (Just CS.ModuleSchemaV0{}, ModuleInspectSigsV1{}) -> (moduleInspectSigsFromExports, []) -- Internal error: Should never happen.
+      (Just CS.ModuleSchemaV1{}, ModuleInspectSigsV0{}) -> (moduleInspectSigsFromExports, []) -- Internal error: Should never happen.
+      (Nothing, _) -> (moduleInspectSigsFromExports, []) -- No schema, just return the ModuleInspectSigs from exports.
+
+    funcNames :: [CS.FuncName]
+    funcNames = toFuncNames exportedFuncNames
+      where
+        toFuncNames :: [Text] -> [CS.FuncName]
+        toFuncNames [] = []
+        toFuncNames (name : remaining)
+          | Wasm.isValidInitName name = (CS.InitFuncName . Text.drop 5 $ name) : toFuncNames remaining
+          | Wasm.isValidReceiveName name =
+            case Text.findIndex (== '.') name of
+                                        Nothing -> toFuncNames remaining -- Cannot happen, as a valid receive name always has a dot.
+                                        Just idx -> let (cname, fname) = Text.splitAt idx name
+                                                        fnameWithoutDot = Text.tail fname
+                                                    in CS.ReceiveFuncName cname fnameWithoutDot : toFuncNames remaining
+          | otherwise = toFuncNames remaining -- Ignore other types of exported functions.
+
+-- |Data type with information used by 'module inspect' command.
+data ModuleInspectInfo
+  = ModuleInspectInfo
+  { miiNamedModRef :: Config.NamedModuleRef
+  , miiWasmVersion :: Wasm.WasmVersion
+  , miiModuleInspectSigs :: ModuleInspectSigs
+  , miiExtraneousSchemas :: [CS.FuncName]
+  }
+
+-- |Different from ModuleSchema in that it uses ContractSigsV0/1 instead (see their definition).
+data ModuleInspectSigs
+  = ModuleInspectSigsV0 { mis0ContractSigs :: Map.Map Text ContractSigsV0 }
+  | ModuleInspectSigsV1 { mis1ContractSigs :: Map.Map Text ContractSigsV1 }
+
+
+-- |Different from ContractSchemaV0 in that the receiveSigs have a Maybe SchemaType.
+data ContractSigsV0
+  =  ContractSigsV0
+  { csv0InitSig :: Maybe CS.SchemaType -- ^ Type signature for the init function.
+  , csv0ReceiveSigs :: Map.Map Text (Maybe CS.SchemaType) -- ^ Type signatures for the receive functions.
+  }
+
+-- |Different from ContractSchemaV1 in that the receiveSigs have a Maybe FunctionSchema.
+data ContractSigsV1
+  = ContractSigsV1
+  { csv1InitSig :: Maybe CS.FunctionSchema -- ^ Schema for the init function.
+  , csv1ReceiveSigs :: Map.Map Text (Maybe CS.FunctionSchema) -- ^ Schemas for the receive functions.
+  }
