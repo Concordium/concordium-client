@@ -795,6 +795,9 @@ showRejectReason verbose = \case
   Types.UnexpectedDelegationRemoveParameters -> "remove delegator failed because of unexpected parameters"
   Types.DelegatorInCooldown -> "change could not be completed because the delegator is in the cooldown period"
   Types.NotADelegator addr -> printf "attempt to remove a delegator account %s that is not a delegator" (show addr)
+  Types.StakeOverMaximumThresholdForPool -> "baking pool's total capital would become too large"
+  Types.PoolWouldBecomeOverDelegated -> "fraction of delegated capital to baking pool would become too large"
+  Types.DelegationTargetNotABaker bid -> printf "delegation target %s is not a baker id" (show bid)
 
 -- CONSENSUS
 
