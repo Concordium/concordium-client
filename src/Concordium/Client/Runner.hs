@@ -2081,11 +2081,15 @@ getContractInfo namedContrAddr block = do
 
 -- |Display contract info, optionally using a schema to decode the contract state.
 displayContractInfo :: Maybe CS.ModuleSchema -> CI.ContractInfo -> NamedAddress -> NamedModuleRef -> IO ()
-displayContractInfo schema contrInfo namedOwner namedModRef = case schema of
-  Just schema' -> case CI.addSchemaData contrInfo schema' of
-    Left err' -> logFatal ["Parsing the contract model failed:", err']
-    Right infoWithSchema -> runPrinter $ printContractInfo infoWithSchema namedOwner namedModRef
-  Nothing -> runPrinter $ printContractInfo contrInfo namedOwner namedModRef
+displayContractInfo schema contrInfo namedOwner namedModRef = do
+  cInfo <- case schema of
+    Just schema' -> case CI.addSchemaData contrInfo schema' of
+      Left err' -> do
+        logWarn [err', "Showing the contract without information from the schema"]
+        return contrInfo
+      Right infoWithSchema -> return infoWithSchema
+    Nothing -> return contrInfo
+  runPrinter $ printContractInfo cInfo namedOwner namedModRef
 
 -- |Attempts to acquire the needed parts for updating a contract.
 -- The two primary parts are a contract address, which is acquired using `getNamedContractAddress`,
