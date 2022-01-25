@@ -592,6 +592,11 @@ showEvent verbose = \case
                              else
                                invalidCBOR
     in Just $ printf "Transfer memo:\n%s" str
+  Types.Interrupted cAddr _ -> -- TODO: Include events?
+    verboseOrNothing [i|interrupted '#{cAddr}'.|]
+  Types.Resumed cAddr invokeSucceeded ->
+    let invokeMsg :: Text = if invokeSucceeded then "succeeded" else "failed"
+    in verboseOrNothing [i|resumed '#{cAddr}' after an interruption that #{invokeMsg}.|]
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
