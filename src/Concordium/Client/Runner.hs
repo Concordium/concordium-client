@@ -2251,9 +2251,9 @@ processBakerConfigureCmd :: Maybe FilePath -> Verbose -> Backend -> TransactionO
   -> Maybe Bool -- ^Select whether to restake earnings.
   -> Maybe Types.OpenStatus -- ^Open for delegation status.
   -> Maybe String -- ^URL to metadata about baker.
-  -> Maybe Types.RewardFraction -- ^Transaction fee commission.
-  -> Maybe Types.RewardFraction -- ^Baking reward commission.
-  -> Maybe Types.RewardFraction -- ^Finalization commission.
+  -> Maybe Types.AmountFraction -- ^Transaction fee commission.
+  -> Maybe Types.AmountFraction -- ^Baking reward commission.
+  -> Maybe Types.AmountFraction -- ^Finalization commission.
   -> Maybe FilePath -- ^File to read baker keys from.
   -> Maybe FilePath -- ^File to write baker keys to.
   -> IO ()

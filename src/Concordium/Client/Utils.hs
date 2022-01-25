@@ -54,8 +54,8 @@ amountFromStringInform s =
     Just a -> Right a
     Nothing -> Left $ "Invalid CCD amount '" ++ s ++ "'. Amounts must be of the form n[.m] where m, if present,\n must have at least one and at most 6 digits."
 
-rewardFractionFromStringInform :: String -> Either String RewardFraction
-rewardFractionFromStringInform s =
+amountFractionFromStringInform :: String -> Either String AmountFraction
+amountFractionFromStringInform s =
   case AE.decode (Lazy.Text.encodeUtf8 $ Lazy.Text.pack s) of
     Just a -> Right a
     Nothing -> Left $ "Invalid decimal fraction '" ++ s ++ "'. A decimal fractions must be a decimal number n.m between 0 and 1 (both inclusive), and with at most 5 digits of precision."
