@@ -1994,14 +1994,14 @@ processContractCmd action baseCfgDir verbose backend =
               returnValueMsg <- case rcrReturnValue of
                     Nothing -> return Text.empty
                     Just rv -> case modSchema >>= \modSchema' -> CS.lookupReturnValueSchema modSchema' (CS.ReceiveFuncName contractName receiveName) of
-                      Nothing -> return [i|- Return value:\n  #{rv}\n|] -- Schema not provided or it doesn't contain the return value for this func.
+                      Nothing -> return [i|- Return value (raw):\n  #{BS.unpack rv}\n|] -- Schema not provided or it doesn't contain the return value for this func.
                       Just schemaForFunc -> case S.runGet (CP.getJSONUsingSchema schemaForFunc) rv of
                         Left err -> do
                           logWarn [[i|Could not parse the returned bytes using the schema:\n#{err}|]]
                           if isJust schemaFile
                             then logWarn ["Make sure you supply the correct schema for the contract with --schema"]
                             else logWarn ["Try supplying a schema file with --schema"]
-                          return [i|- Return value:\n  #{rv}\n|]
+                          return [i|- Return value (raw):\n  #{BS.unpack rv}\n|]
                         Right rvJSON -> return [i|- Return value:\n  #{showPrettyJSON rvJSON}\n|]
               let eventsMsg = case mapMaybe (fmap (("  - " <>) . Text.pack) . showEvent verbose) rcrEvents of
                                 [] -> Text.empty
