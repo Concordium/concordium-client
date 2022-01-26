@@ -2034,8 +2034,14 @@ processContractCmd action baseCfgDir verbose backend =
   where extractContractAddress = extractFromTsr (\case
                                                  Types.ContractInitialized {..} -> Just ecAddress
                                                  _ -> Nothing)
+
+        -- |A successful contract update will contain at least one Updated event
+        --  and zero or more Interrupted, Resumed, and Transferred events.
         extractUpdate = extractFromTsr (\case
                                         Types.Updated {} -> Just ()
+                                        Types.Interrupted {} -> Just ()
+                                        Types.Resumed {} -> Just ()
+                                        Types.Transferred {} -> Just ()
                                         _ -> Nothing)
         paramsMsg = \case
             Nothing -> "no parameters."
