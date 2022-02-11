@@ -2218,11 +2218,12 @@ getWasmModuleFromFile moduleFile mWasmVersion = do
                           in  return $ wasmVersionBytes <> moduleSizeBytes <> source -- Prefix the wasmVersion and moduleSize.
   case S.decode source of
     Right wm -> return wm
-    -- TODO: Improve error message, so that it explains the --wasm-version parameter.
-    -- The module could be missing the version and length prefixes, or it could end up having them twice.
-    -- When it contains the prefixes twice, it tries to put it on the chain, but fails with: `Error: Module deployment failed: Typechecking error.`.
-    -- We should check whether it has the prefixes: wasmVersion, moduleSize, and wasmMagicValue.
-    Left err -> logFatal [[i|Supplied file #{moduleFile} cannot be parsed as a smart contract module to be deployed: #{err}|]]
+    Left err -> logFatal [[i|Supplied file #{moduleFile} cannot be parsed as a smart contract module to be deployed:\n#{err}|],
+                          if isJust mWasmVersion
+                          then [iii|\n\nNote: You used the --wasm-version flag, which will cause an 'Invalid WASM magic value' error,
+                                    if used with a smart contract module created with cargo-concordium version >= 2."|]
+                          else []
+                          ]
 
 -- |Load `Wasm.Parameter` through one of several ways, dependent on the arguments:
 --   * If binary file provided -> Read the file and wrap its contents in `Wasm.Parameter`.
