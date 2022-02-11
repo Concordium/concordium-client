@@ -8,7 +8,7 @@ import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Wasm as Wasm
 import Data.String.Interpolate (i, iii)
 import qualified Data.Text as Text
-import Data.Word (Word32, Word64)
+import Data.Word (Word64)
 import Text.Read
 import qualified Data.Char as Char
 import Data.Maybe (mapMaybe)
@@ -133,11 +133,14 @@ credentialIndexFromStringInform s =
 -- |Try to parse a WasmVersion.
 wasmVersionFromStringInform :: String -> Either String Wasm.WasmVersion
 wasmVersionFromStringInform s =
-  case readMaybe s :: Maybe Word32 of
-    Just v | v == 0 -> Right Wasm.V0
-           | v == 1 -> Right Wasm.V1
-           | otherwise -> Left "Wasm version must be between 0 and 1 (inclusive)"
-    Nothing -> Left "Wasm version must be an integer between 0 and 1 (inclusive)"
+  case s of
+    "v0" -> Right Wasm.V0
+    "V0" -> Right Wasm.V0
+    "0" -> Right Wasm.V0
+    "v1" -> Right Wasm.V1
+    "V1" -> Right Wasm.V1
+    "1" -> Right Wasm.V1
+    _ -> Left "Wasm version must be one of [v0, V0, 0, v1, V1, 1]."
 
 -- Time Units and durations
 

@@ -48,8 +48,8 @@ decodeModuleSchema wasmVersion = S.runGet $ getModuleSchema wasmVersion
 -- |Try to find an embedded schema and a list of exported function names and decode them.
 decodeEmbeddedSchemaAndExports :: Wasm.WasmModule -> Either String (Maybe ModuleSchema, [Text])
 decodeEmbeddedSchemaAndExports wasmModule = S.runGet (getEmbeddedSchemaAndExportsFromModule wasmVersion) moduleSource
-  where moduleSource = Wasm.getModuleSource wasmModule
-        wasmVersion = Wasm.getVersion wasmModule
+  where moduleSource = Wasm.wasmSource wasmModule
+        wasmVersion = Wasm.wasmVersion wasmModule
 
 -- |Lookup schema for the parameter of a function.
 lookupParameterSchema :: ModuleSchema -> FuncName -> Maybe SchemaType
@@ -390,7 +390,7 @@ getEmbeddedSchemaAndExportsFromModule wasmVersion = do
   mhBs <- S.getByteString 4
   unless (mhBs == wasmMagicHash) $ fail "Unknown magic value. This is likely not a Wasm module."
   vBs <- S.getByteString 4
-  unless (vBs == wasmVersion0) $ fail "Unsupported Wasm version."
+  unless (vBs == wasmSpecVersion) $ fail "Unsupported Wasm standard version."
   go (Nothing, [])
 
   where
@@ -493,8 +493,8 @@ getEmbeddedSchemaAndExportsFromModule wasmVersion = do
     wasmMagicHash = BS.pack [0x00, 0x61, 0x73, 0x6D]
 
     -- |The currently supported version of the Wasm specification.
-    wasmVersion0 :: BS.ByteString
-    wasmVersion0 = BS.pack [0x01, 0x00, 0x00, 0x00]
+    wasmSpecVersion :: BS.ByteString
+    wasmSpecVersion = BS.pack [0x01, 0x00, 0x00, 0x00]
 
 
 -- |The four types of exports allowed in WASM.

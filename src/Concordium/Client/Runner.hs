@@ -43,7 +43,7 @@ module Concordium.Client.Runner
   ) where
 
 import           Concordium.Client.Utils
-import           Concordium.Client.Cli as Cli
+import           Concordium.Client.Cli
 import           Concordium.Client.Config
 import           Concordium.Client.Commands          as COM
 import           Concordium.Client.Export
@@ -113,7 +113,7 @@ import qualified Data.Vector                         as Vec
 import           Data.Word
 import           Lens.Micro.Platform
 import           Network.GRPC.Client.Helpers
-import           Prelude                             hiding (fail, unlines)
+import           Prelude                             hiding (log, fail, unlines)
 import           System.IO
 import           System.Exit
 import           System.Directory
@@ -1785,7 +1785,7 @@ processModuleCmd action baseCfgDir verbose backend =
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedModRef <- getNamedModuleRef (bcModuleNameMap baseCfg) modRefOrName
       wasmModule <- withClient backend . withBestBlockHash block $ getWasmModule namedModRef
-      logInfo [[i|WASM Version of module: #{Wasm.getVersion wasmModule}|]]
+      logInfo [[i|WASM Version of module: #{Wasm.wasmVersion wasmModule}|]]
       let wasmModuleBytes = S.encode wasmModule
       case outFile of
         -- Write to stdout
@@ -1799,7 +1799,7 @@ processModuleCmd action baseCfgDir verbose backend =
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedModRef <- getNamedModuleRef (bcModuleNameMap baseCfg) modRefOrName
       wasmModule <- withClient backend . withBestBlockHash block $ getWasmModule namedModRef
-      let wasmVersion = Wasm.getVersion wasmModule
+      let wasmVersion = Wasm.wasmVersion wasmModule
       (schema, exports) <- withClient backend $ getSchemaAndExports schemaFile wasmModule
       let moduleInspectInfo = CI.constructModuleInspectInfo namedModRef wasmVersion schema exports
       runPrinter $ printModuleInspectInfo moduleInspectInfo
@@ -1987,9 +1987,9 @@ processContractCmd action baseCfgDir verbose backend =
             AE.Success InvokeContract.Failure{..} ->
               -- Logs in yellow to indicate that the invocation returned with a failure.
               -- This might be what you expected from the contract, so logWarn or logFatal should not be used.
-              Cli.log Info (Just ANSI.Yellow) [[iii|Invocation resulted in failure:\n
-                                                    - Energy used: #{showNrg rcrUsedEnergy}\n
-                                                    - Reason: #{showRejectReason verbose rcrReason}|]]
+              log Info (Just ANSI.Yellow) [[iii|Invocation resulted in failure:\n
+                                                - Energy used: #{showNrg rcrUsedEnergy}\n
+                                                - Reason: #{showRejectReason verbose rcrReason}|]]
             AE.Success InvokeContract.Success{..} -> do
               returnValueMsg <- case rcrReturnValue of
                     Nothing -> return Text.empty
@@ -2269,7 +2269,7 @@ getSchemaFromFileOrModule schemaFile namedModRef block = do
         -- TODO: Return Either instead of logFatal. In contract view/show we should just show a warning about this and then show the raw bytes.
         Left err -> logFatal [[i|Could not parse embedded schema from module:|], err]
         Right schema -> return schema
-    Just schemaFile' -> liftIO (Just <$> getSchemaFromFile (Wasm.getVersion wasmModule) schemaFile')
+    Just schemaFile' -> liftIO (Just <$> getSchemaFromFile (Wasm.wasmVersion wasmModule) schemaFile')
 
 -- |Try to load and decode a schema from a file. Logs fatally if the file is not a valid Wasm module.
 getSchemaFromFile :: Wasm.WasmVersion -> FilePath -> IO CS.ModuleSchema
@@ -2289,7 +2289,7 @@ getSchemaAndExports :: Maybe FilePath -- ^ Optional schema file.
 getSchemaAndExports schemaFile wasmModule = do
   preferredSchema <- case schemaFile of
     Nothing -> return Nothing
-    Just schemaFile' -> fmap Just . liftIO . getSchemaFromFile (Wasm.getVersion wasmModule) $ schemaFile'
+    Just schemaFile' -> fmap Just . liftIO . getSchemaFromFile (Wasm.wasmVersion wasmModule) $ schemaFile'
   (schema, exports) <- liftIO $ getSchemaAndExportsOrDie
 
   if isJust preferredSchema

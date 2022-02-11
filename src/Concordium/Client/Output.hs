@@ -417,8 +417,8 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
 
     showWasmVersion :: Wasm.WasmVersion -> String
     showWasmVersion = \case
-      Wasm.V0 -> "0"
-      Wasm.V1 -> "1"
+      Wasm.V0 -> "V0"
+      Wasm.V1 -> "V1"
 
 -- |Indents each line in a string by the number of spaces specified.
 indentBy :: Int -> String -> String
