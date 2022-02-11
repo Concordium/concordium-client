@@ -1443,23 +1443,31 @@ identityShowARsCmd =
 docFromLines :: [String] -> Maybe P.Doc
 docFromLines = Just . P.vsep . map P.text
 
+-- |A parameter file used for initializing, updating, and invoking smart contracts.
+--  For the JSON parameter a schema must be embedded in the module or supplied with the --schema flag.
+--  The schema is then used to serialize the JSON to binary.
 data ParameterFileInput
   = ParameterJSON FilePath
   | ParameterBinary FilePath
   deriving Show
 
+-- |Parse an optional parameter file.
+--  Either with '--parameter-json' or '--parameter-binary', but not both.
 parameterFileParser :: Parser (Maybe ParameterFileInput)
-parameterFileParser = optional ((ParameterJSON
-                                 <$> strOption (long "parameter-json"
-                                                <> metavar "FILE"
-                                                <> help "JSON file with parameters for the receive function. \
-                                                        \This parameter format should be used if the schema is supplied (default: no parameter).")) <|>
-       (ParameterBinary
-        <$> strOption (long "parameter-binary"
-                       <> metavar "FILE"
-                       <> help "Binary file with parameters for the receive function. \
-                               \This should _not_ be used if a schema is supplied (default: no parameter).")))
+parameterFileParser = optional
+  ((ParameterJSON
+      <$> strOption (long "parameter-json" <> metavar "FILE"
+          <> help "JSON file with parameters for the receive function. \
+                  \This parameter format should be used if the schema is supplied (default: no parameter)."))
+  <|>
+  (ParameterBinary
+      <$> strOption (long "parameter-binary" <> metavar "FILE"
+          <> help "Binary file with parameters for the receive function. \
+                   \This should _not_ be used if a schema is supplied (default: no parameter).")))
 
+-- |An invoker of a smart contract used with 'contract invoke'.
+--  The invoker can either be an account or a contract.
+--  For the contract, the subindex is optional and defaults to 0.
 data InvokerInput
   = InvokerAccount Text
   | InvokerContract
@@ -1467,6 +1475,9 @@ data InvokerInput
   , icSubindex :: Maybe Word64
   } deriving Show
 
+-- |Parse an optional invoker.
+--  Either with '--invoker-account' or '--invoker-contract', but not both.
+--  If the invoker is a contract, the subindex can be provided with '--invoker-contract-subindex'.
 invokerParser :: Parser (Maybe InvokerInput)
 invokerParser =
     optional $ (InvokerAccount <$>
@@ -1474,6 +1485,7 @@ invokerParser =
                            <> metavar "ACCOUNT"
                            <> help "Name or address of an account used as invoker (default: uses address 0 with sufficient funds).")) <|>
                (InvokerContract <$>
-                strOption (long "invoker-contract" <> metavar "INDEX-OR-NAME" <> help "Index of contract address OR contract name used as invoker.") <*>
+                strOption (long "invoker-contract" <> metavar "INDEX-OR-NAME" <>
+                           help "Index of contract address OR contract name used as invoker.") <*>
                 optional (option auto (long "invoker-contract-subindex" <> metavar "SUBINDEX" <>
                      help "Subindex of contract address used as invoker (default: 0)")))
