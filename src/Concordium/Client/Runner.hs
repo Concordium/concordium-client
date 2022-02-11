@@ -1869,13 +1869,12 @@ processContractCmd action baseCfgDir verbose backend =
     ContractShow indexOrName subindex schemaFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-      (schema, contrInfo, namedOwner, namedModRef) <- withClient backend . withBestBlockHash block $ \bb -> do
+      withClient backend . withBestBlockHash block $ \bb -> do
         contrInfo <- getContractInfo namedContrAddr bb
         let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = findAllNamesFor (bcModuleNameMap baseCfg) (CI.ciSourceModule contrInfo)}
         schema <- getSchemaFromFileOrModule schemaFile namedModRef bb
         let namedOwner = NamedAddress {naAddr = CI.ciOwner contrInfo, naNames = findAllNamesFor (bcAccountNameMap baseCfg) (CI.ciOwner contrInfo)}
-        return (schema, contrInfo, namedOwner, namedModRef)
-      displayContractInfo schema contrInfo namedOwner namedModRef
+        displayContractInfo schema contrInfo namedOwner namedModRef
 
     ContractInit modTBD contrName paramsFile schemaFile contrAlias isPath mWasmVersion amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -2092,14 +2091,14 @@ getContractInfo namedContrAddr block = do
       Success info -> pure info
 
 -- |Display contract info, optionally using a schema to decode the contract state.
-displayContractInfo :: Maybe CS.ModuleSchema -> CI.ContractInfo -> NamedAddress -> NamedModuleRef -> IO ()
+displayContractInfo :: Maybe CS.ModuleSchema -> CI.ContractInfo -> NamedAddress -> NamedModuleRef -> ClientMonad IO ()
 displayContractInfo schema contrInfo namedOwner namedModRef = do
   cInfo <- case schema of
-    Just schema' -> case CI.addSchemaData contrInfo schema' of
-      Left err' -> do
-        logWarn [err', "Showing the contract without information from the schema"]
-        return contrInfo
-      Right infoWithSchema -> return infoWithSchema
+    Just schema' -> do
+      mContrInfo <- CI.addSchemaData contrInfo schema'
+      case mContrInfo of
+        Nothing -> return contrInfo -- Adding schema data failed, just return the regular contract info.
+        Just infoWithSchemaData -> return infoWithSchemaData
     Nothing -> return contrInfo
   runPrinter $ printContractInfo cInfo namedOwner namedModRef
 

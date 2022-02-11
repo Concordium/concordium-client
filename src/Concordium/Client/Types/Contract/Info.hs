@@ -34,6 +34,8 @@ import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Concordium.Client.Config as Config
+import Concordium.Client.GRPC (ClientMonad)
+import Concordium.Client.Cli
 
 -- |Try to include extra information in the contract info from the module schema.
 -- For V0 contracts:
@@ -41,45 +43,56 @@ import qualified Concordium.Client.Config as Config
 --  - Include all available parameter schemas for receive methods.
 -- For V1 contracts:
 --  - Include all available function schemas for receive methods.
--- The included information is of type AE.Value, so that it can easily be printed.
 --
--- Returns left if:
---  - Information has already been added (should never happen).
---  - The version of module schema and contract info does not match (should never happen).
---  - The module schema doesn't contain the given contract.
-addSchemaData :: ContractInfo -> CS.ModuleSchema -> Either String ContractInfo
+-- Logs warnings if:
+--  - The contract is not included in the module schema.
+--  - The state could not be parsed using the schema (only for v0 contracts).
+--
+-- Logs fatally on internal errors that should never occur, namely:
+--  - Schema data has already been added.
+--  - The version of module schema and contract info does not match.
+addSchemaData :: ContractInfo -> CS.ModuleSchema -> ClientMonad IO (Maybe ContractInfo)
 addSchemaData cInfo@ContractInfoV1{..} moduleSchema =
   case moduleSchema of
-    CS.ModuleSchemaV0 _ -> Left "Internal error: Cannot use ModuleSchemaV0 with ContractInfoV1." -- Should never happen.
+    CS.ModuleSchemaV0 _ -> logFatal ["Internal error: Cannot use ModuleSchemaV0 with ContractInfoV1."] -- Should never happen.
     CS.ModuleSchemaV1{..} ->
       case ciSchemaDependentV1 of
-        WithSchemaV1{} -> Left "Internal error: Contract info has already been decoded." -- Should never happen.
+        WithSchemaV1{} -> logFatal ["Internal error: Contract info has already been decoded."] -- Should never happen.
         NoSchemaV1{..} -> case Map.lookup ciName ms1ContractSchemas of
-          Nothing -> Left [i|A schema for the contract '#{ciName}' does not exist in the schema provided.|]
+          Nothing -> do
+            logWarn [ [i|A schema for the contract '#{ciName}' does not exist in the schema provided.|]
+                    , "Showing the contract without information from the schema."]
+            return Nothing
           Just contrSchema ->
             let ws1Methods = map (addFuncSchemaToMethod contrSchema) ns1Methods
                 withSchema = WithSchemaV1{..}
-            in Right (cInfo {ciSchemaDependentV1 = withSchema})
+            in return $ Just (cInfo {ciSchemaDependentV1 = withSchema})
   where addFuncSchemaToMethod :: CS.ContractSchemaV1 -> Text -> (Text, Maybe CS.FunctionSchema)
         addFuncSchemaToMethod contrSchema rcvName = let mFuncSchema = CS.lookupFunctionSchema contrSchema (CS.ReceiveFuncName ciName rcvName)
                                                     in (rcvName, mFuncSchema)
 addSchemaData cInfo@ContractInfoV0{..} moduleSchema =
   case moduleSchema of
-    CS.ModuleSchemaV1 _ -> Left "Internal error: Cannot use ModuleSchemaV1 with ContractInfoV0." -- Should never happen.
+    CS.ModuleSchemaV1 _ -> logFatal ["Internal error: Cannot use ModuleSchemaV1 with ContractInfoV0."]  -- Should never happen.
     CS.ModuleSchemaV0{..} ->
       case ciSchemaDependentV0 of
-      WithSchemaV0{} -> Left "Internal error: Contract info has already been decoded." -- Should never happen.
+      WithSchemaV0{} -> logFatal ["Internal error: Contract info has already been decoded."] -- Should never happen.
       NoSchemaV0{..} -> case Map.lookup ciName ms0ContractSchemas of
-        Nothing -> Left [i|A schema for the contract '#{ciName}' does not exist in the schema provided.|]
-        Just CS.ContractSchemaV0{..} ->
-          let ws0State = case cs0State of -- Check the schema for state exists.
-                Nothing -> Cs0Bytes ns0State
+        Nothing -> do
+          logWarn [ [i|A schema for the contract '#{ciName}' does not exist in the schema provided.|]
+                  , "Showing the contract without information from the schema."]
+          return Nothing
+        Just CS.ContractSchemaV0{..} -> do
+          ws0State <- case cs0State of -- Check if the state exists in the schema.
+                Nothing -> return $ Cs0Bytes ns0State
                 Just schemaForState -> case S.runGet (CP.getJSONUsingSchema schemaForState) ns0State of
-                  Left _ -> Cs0Bytes ns0State -- Could not parse the state using the schema. TODO: Ideally, log a warning.
-                  Right jsonState -> Cs0JSON jsonState
-              ws0Methods = map addSchemaToMethod ns0Methods
-              withSchema = WithSchemaV0{..}
-          in Right (cInfo {ciSchemaDependentV0 = withSchema})
+                  Left _ -> do
+                    logWarn [ "Could not parse the state using the schema."
+                            , "Showing the contract without information from the schema."]
+                    return $ Cs0Bytes ns0State
+                  Right jsonState -> return $ Cs0JSON jsonState
+          let ws0Methods = map addSchemaToMethod ns0Methods
+          let withSchema = WithSchemaV0{..}
+          return $ Just (cInfo {ciSchemaDependentV0 = withSchema})
   where addSchemaToMethod :: Text -> (Text, Maybe CS.SchemaType)
         addSchemaToMethod rcvName = let mSchema = CS.lookupParameterSchema moduleSchema (CS.ReceiveFuncName ciName rcvName)
                                         in (rcvName, mSchema)
