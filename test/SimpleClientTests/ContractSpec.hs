@@ -1,14 +1,11 @@
 {-# LANGUAGE NumericUnderscores #-}
 module SimpleClientTests.ContractSpec where
 
-
-import Concordium.Client.Types.Contract.Info
 import Concordium.Client.Types.Contract.Schema
 import Concordium.Client.Types.Contract.Parameter
 
 import Data.Aeson (ToJSON, object, (.=))
 import qualified Data.Aeson as AE
-import qualified Data.ByteString as BS
 import Data.Either (isLeft)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -22,13 +19,7 @@ import Test.QuickCheck
 
 contractSpec :: Spec
 contractSpec = describe "contract" $ do
-  printSchemaSpec
   printParameterSpec
-
-printSchemaSpec :: Spec
-printSchemaSpec = describe "serialize ModuleSchema" $ do
-  it "decode is inverse of encode" $ withMaxSuccess 30 $
-    forAll (sized genModuleSchema) $ \c -> (S.decode . S.encode) c === Right c
 
 printParameterSpec :: Spec
 printParameterSpec = describe "serialize JSON params to bytes and deserialize to JSON works for:" $ do
@@ -262,14 +253,11 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
 
 -- ** Arbitrary Generators **
 
-genContractState :: Gen ContractState
-genContractState = JustBytes . BS.pack <$> listOf (arbitrary :: Gen Word8)
+genModuleSchemaV0 :: Int -> Gen ModuleSchema
+genModuleSchemaV0 n = ModuleSchemaV0 . Map.fromList <$> listOf (genTwoOf genText $ genContractSchema n)
 
-genModuleSchema :: Int -> Gen ModuleSchema
-genModuleSchema n = ModuleSchema . Map.fromList <$> listOf (genTwoOf genText $ genContractSchema n)
-
-genContractSchema :: Int -> Gen ContractSchema
-genContractSchema n = ContractSchema <$> genMaybeSchemaType <*> genMaybeSchemaType <*> genReceiveSigs
+genContractSchema :: Int -> Gen ContractSchemaV0
+genContractSchema n = ContractSchemaV0 <$> genMaybeSchemaType <*> genMaybeSchemaType <*> genReceiveSigs
   where genMaybeSchemaType :: Gen (Maybe SchemaType)
         genMaybeSchemaType = frequency [ (7, Just <$> genSchemaType (n'))
                                        , (1, pure Nothing) ]

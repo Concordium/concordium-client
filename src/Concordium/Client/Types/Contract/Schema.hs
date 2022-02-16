@@ -92,8 +92,6 @@ data ModuleSchema
   | ModuleSchemaV1 { ms1ContractSchemas :: Map Text ContractSchemaV1 }
   deriving (Eq, Show, Generic)
 
-instance AE.ToJSON ModuleSchema
-
 -- |Create a getter based on the wasm version.
 getModuleSchema :: Wasm.WasmVersion -> S.Get ModuleSchema
 getModuleSchema wasmVersion = S.label "ModuleSchema" $
