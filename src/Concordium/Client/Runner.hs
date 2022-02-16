@@ -2067,15 +2067,15 @@ processContractCmd action baseCfgDir verbose backend =
         mkReturnValueMsg rvBytes schemaFile modSchema contractName receiveName = case rvBytes of
           Nothing -> return Text.empty
           Just rv -> case modSchema >>= \modSchema' -> CS.lookupReturnValueSchema modSchema' (CS.ReceiveFuncName contractName receiveName) of
-            Nothing -> return [i|\n- Return value (raw):\n  #{BS.unpack rv}\n|] -- Schema not provided or it doesn't contain the return value for this func.
+            Nothing -> return [i|\n - Return value (raw):\n  #{BS.unpack rv}\n|] -- Schema not provided or it doesn't contain the return value for this func.
             Just schemaForFunc -> case S.runGet (CP.getJSONUsingSchema schemaForFunc) rv of
               Left err -> do
                 logWarn [[i|Could not parse the returned bytes using the schema:\n#{err}|]]
                 if isJust schemaFile
                   then logWarn ["Make sure you supply the correct schema for the contract with --schema"]
                   else logWarn ["Try supplying a schema file with --schema"]
-                return [i|\n- Return value (raw):\n  #{BS.unpack rv}\n|]
-              Right rvJSON -> return [i|\n- Return value:\n  #{showPrettyJSON rvJSON}\n|]
+                return [i|\n - Return value (raw):\n  #{BS.unpack rv}\n|]
+              Right rvJSON -> return [i|\n - Return value:\n#{indentBy 6 $ showPrettyJSON rvJSON}\n|]
 
 -- |Try to fetch info about the contract and deserialize it from JSON.
 -- Or, log fatally with appropriate error messages if anything goes wrong.
@@ -2232,10 +2232,8 @@ getWasmModuleFromFile moduleFile mWasmVersion = do
 
 -- |Load `Wasm.Parameter` through one of several ways, dependent on the arguments:
 --   * If binary file provided -> Read the file and wrap its contents in `Wasm.Parameter`.
---   * If JSON file provided   -> Try to get a schema using `getSchemaFromFileOrModule` and use it to encode the parameters
---                                into a `Wasm.Parameter`.
+--   * If JSON file provided   -> Try to use the schema to encode the parameters into a `Wasm.Parameter`.
 -- If invalid arguments are provided or something fails, appropriate warning or error messages are logged.
--- TODO: update docs.
 getWasmParameter :: Maybe ParameterFileInput -- ^ Optional parameter file in JSON or binary format.
                  -> Maybe CS.ModuleSchema -- ^ Optional module schema.
                  -> CS.FuncName -- ^ A func name used for finding the func signature in the schema.
@@ -2260,9 +2258,11 @@ getWasmParameter paramsFile schema funcName =
         binaryParams file = Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile file
 
 -- |Get a schema from a file or, alternatively, try to extract an embedded schema from a module.
--- Logs fatally if an invalid schema is found (either from a file or embedded).
 -- The schema from the file will take precedence over an embedded schema in the module.
--- Only returns `Nothing` if no schemaFile is provided and no embedded schema was found in the module.
+--
+-- Can logWarn and logFatal in the following situations:
+--   - Invalid schemafile: logs fatally.
+--   - No schemafile and invalid embedded schema: logs a warning and returns `Nothing`.
 getSchemaFromFileOrModule :: Maybe FilePath -- ^ Optional schema file.
                           -> NamedModuleRef -- ^ A reference to a module on chain.
                           -> Text -- ^ A block hash.
@@ -2272,8 +2272,9 @@ getSchemaFromFileOrModule schemaFile namedModRef block = do
   case schemaFile of
     Nothing -> do
       liftIO $ case CS.decodeEmbeddedSchema wasmModule of
-        -- TODO: Return Either instead of logFatal. In contract view/show we should just show a warning about this and then show the raw bytes.
-        Left err -> logFatal [[i|Could not parse embedded schema from module:|], err]
+        Left err -> do
+          logWarn [[i|Could not parse embedded schema from module:|], err]
+          return Nothing
         Right schema -> return schema
     Just schemaFile' -> liftIO (Just <$> getSchemaFromFile (Wasm.wasmVersion wasmModule) schemaFile')
 
@@ -2303,7 +2304,6 @@ getSchemaAndExports schemaFile wasmModule = do
   else return (schema, exports)
 
   where getSchemaAndExportsOrDie = case CS.decodeEmbeddedSchemaAndExports wasmModule of
-                      -- TODO: Log warning and return no module schema instead.
           Left err -> logFatal [[i|Could not parse embedded schema or exports from module:|], err]
           Right schemaAndExports -> return schemaAndExports
 

@@ -294,7 +294,6 @@ printNameList variantName header format xs =
   case xs of
     [] -> tell [[i|#{variantName}: #{showNone}|]]
     _  -> do
-      -- TODO: Use a proper formatter tool.
       tell header
       tell $ map format xs
 
