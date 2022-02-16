@@ -310,16 +310,16 @@ printContractInfo ci namedOwner namedModRef =
            , [i|ModuleReference: #{showNamedModuleRef namedModRef}|]
            , [i|Balance:         #{showCcd ciAmount}|]
            , [i|State size:      #{ciSize} bytes|]]
-      tell (showState ciSchemaDependentV0)
+      tell (showState ciMethodsAndState)
       tell [ [i|Methods:|]]
-      tellMethodsV0 ciSchemaDependentV0
+      tellMethodsV0 ciMethodsAndState
     CI.ContractInfoV1{..} -> do
       tell [ [i|Contract:        #{ciName}|]
            , [i|Owner:           #{owner}|]
            , [i|ModuleReference: #{showNamedModuleRef namedModRef}|]
            , [i|Balance:         #{showCcd ciAmount}|]]
       tell [ [i|Methods:|]]
-      tellMethodsV1 ciSchemaDependentV1
+      tellMethodsV1 ciMethods
   where
     owner = showNamedAddress namedOwner
     showState = \case

@@ -7,8 +7,8 @@ module Concordium.Client.Types.Contract.Info
   , constructModuleInspectInfo
   , ContractInfo(..)
   , ContractStateV0(..)
-  , SchemaDependentV0(..)
-  , SchemaDependentV1(..)
+  , MethodsAndState(..)
+  , Methods(..)
   , ModuleInspectInfo(..)
   , ModuleInspectSigs(..)
   , ContractSigsV0(..)
@@ -56,7 +56,7 @@ addSchemaData cInfo@ContractInfoV1{..} moduleSchema =
   case moduleSchema of
     CS.ModuleSchemaV0 _ -> logFatal ["Internal error: Cannot use ModuleSchemaV0 with ContractInfoV1."] -- Should never happen.
     CS.ModuleSchemaV1{..} ->
-      case ciSchemaDependentV1 of
+      case ciMethods of
         WithSchemaV1{} -> logFatal ["Internal error: Contract info has already been decoded."] -- Should never happen.
         NoSchemaV1{..} -> case Map.lookup ciName ms1ContractSchemas of
           Nothing -> do
@@ -66,7 +66,7 @@ addSchemaData cInfo@ContractInfoV1{..} moduleSchema =
           Just contrSchema ->
             let ws1Methods = map (addFuncSchemaToMethod contrSchema) ns1Methods
                 withSchema = WithSchemaV1{..}
-            in return $ Just (cInfo {ciSchemaDependentV1 = withSchema})
+            in return $ Just (cInfo {ciMethods = withSchema})
   where addFuncSchemaToMethod :: CS.ContractSchemaV1 -> Text -> (Text, Maybe CS.FunctionSchema)
         addFuncSchemaToMethod contrSchema rcvName = let mFuncSchema = CS.lookupFunctionSchema contrSchema (CS.ReceiveFuncName ciName rcvName)
                                                     in (rcvName, mFuncSchema)
@@ -74,7 +74,7 @@ addSchemaData cInfo@ContractInfoV0{..} moduleSchema =
   case moduleSchema of
     CS.ModuleSchemaV1 _ -> logFatal ["Internal error: Cannot use ModuleSchemaV1 with ContractInfoV0."]  -- Should never happen.
     CS.ModuleSchemaV0{..} ->
-      case ciSchemaDependentV0 of
+      case ciMethodsAndState of
       WithSchemaV0{} -> logFatal ["Internal error: Contract info has already been decoded."] -- Should never happen.
       NoSchemaV0{..} -> case Map.lookup ciName ms0ContractSchemas of
         Nothing -> do
@@ -92,7 +92,7 @@ addSchemaData cInfo@ContractInfoV0{..} moduleSchema =
                   Right jsonState -> return $ Cs0JSON jsonState
           let ws0Methods = map addSchemaToMethod ns0Methods
           let withSchema = WithSchemaV0{..}
-          return $ Just (cInfo {ciSchemaDependentV0 = withSchema})
+          return $ Just (cInfo {ciMethodsAndState = withSchema})
   where addSchemaToMethod :: Text -> (Text, Maybe CS.SchemaType)
         addSchemaToMethod rcvName = let mSchema = CS.lookupParameterSchema moduleSchema (CS.ReceiveFuncName ciName rcvName)
                                         in (rcvName, mSchema)
@@ -118,10 +118,10 @@ methodNameFromReceiveName rcvName = case Text.split (=='.') receiveNameText of
 hasReceiveMethod :: Text -> ContractInfo -> Bool
 hasReceiveMethod rcvName cInfo = rcvName `elem` methods
   where methods = case cInfo of
-          ContractInfoV0{..} -> case ciSchemaDependentV0 of
+          ContractInfoV0{..} -> case ciMethodsAndState of
             NoSchemaV0{..} -> ns0Methods
             WithSchemaV0{..} -> map fst ws0Methods
-          ContractInfoV1{..} -> case ciSchemaDependentV1 of
+          ContractInfoV1{..} -> case ciMethods of
             NoSchemaV1{..} -> ns1Methods
             WithSchemaV1{..} -> map fst ws1Methods
 
@@ -146,8 +146,8 @@ data ContractInfo
     , ciSourceModule :: !T.ModuleRef
       -- |The contract name.
     , ciName :: !Text
-      -- |TODO: Find better names.
-    , ciSchemaDependentV0 :: !SchemaDependentV0 }
+      -- |The methods and state of the contract.
+    , ciMethodsAndState :: !MethodsAndState }
   | ContractInfoV1
     { -- |The contract balance.
       ciAmount :: !T.Amount
@@ -157,12 +157,13 @@ data ContractInfo
     , ciName :: !Text
       -- |The corresponding source module.
     , ciSourceModule :: !T.ModuleRef
-      -- |TODO: Find better names.
-    , ciSchemaDependentV1 :: !SchemaDependentV1 }
+      -- |The methods of the contract.
+    , ciMethods :: !Methods }
   deriving (Eq, Show)
 
--- TODO: Find better names.
-data SchemaDependentV0
+-- |Methods and State for V0 Contracts.
+--  Additional information from the schema can be added with `addSchemaData`.
+data MethodsAndState
   = NoSchemaV0
   { ns0State   :: !ByteString
   , ns0Methods :: ![Text]
@@ -172,11 +173,15 @@ data SchemaDependentV0
   , ws0Methods :: ![(Text, Maybe CS.SchemaType)]
   } deriving (Eq, Show)
 
-data SchemaDependentV1
+-- |Methods for V1 Contracts.
+--  Additional information from the schema can be added with `addSchemaData`.
+data Methods
   = NoSchemaV1   { ns1Methods :: ![Text] }
   | WithSchemaV1 { ws1Methods :: ![(Text, Maybe CS.FunctionSchema)]}
   deriving (Eq, Show)
 
+-- |Contract state for a V0 contract.
+--  Can either be the raw bytes or a JSON value with the parsed state (parsed with a schema).
 data ContractStateV0
   = Cs0Bytes !ByteString
   | Cs0JSON !AE.Value
@@ -202,9 +207,9 @@ instance AE.FromJSON ContractInfo where
             return (bs, BS.length bs)
           Just x -> fail [i|Invalid Info, expected "model" field to be a String of base16 bytes, but got: #{x}|]
           Nothing -> fail [i|Invalid Info, missing "model" field.|]
-        let ciSchemaDependentV0 = NoSchemaV0 { ns0State = state, ns0Methods = methods}
+        let ciMethodsAndState = NoSchemaV0 { ns0State = state, ns0Methods = methods}
         return ContractInfoV0{..}
-      1 -> let ciSchemaDependentV1 = NoSchemaV1 { ns1Methods = methods }
+      1 -> let ciMethods = NoSchemaV1 { ns1Methods = methods }
            in return ContractInfoV1{..}
       n -> fail [i|Unsupported contract version #{n}.|]
 
