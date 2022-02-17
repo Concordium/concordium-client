@@ -2222,13 +2222,22 @@ getWasmModuleFromFile moduleFile mWasmVersion = do
                               moduleSizeBytes = S.encode ((fromIntegral $ BS.length source) :: Word32)
                           in  return $ wasmVersionBytes <> moduleSizeBytes <> source -- Prefix the wasmVersion and moduleSize.
   case S.decode source of
-    Right wm -> return wm
-    Left err -> logFatal [[i|Supplied file #{moduleFile} cannot be parsed as a smart contract module to be deployed:\n#{err}|],
-                          if isJust mWasmVersion
-                          then [iii|\n\nNote: You used the --wasm-version flag, which will cause an 'Invalid WASM magic value' error,
-                                    if used with a smart contract module created with cargo-concordium version >= 2."|]
-                          else []
-                          ]
+    Right wm -> if hasValidWasmMagic wm
+                then return wm
+                else logFatal $ [[iii|Supplied file '{moduleFile}' cannot be parsed as a smart contract module to be deployed:\n
+                                 The module does not have a valid wasm magic value.|]]
+                                 ++ if isJust mWasmVersion
+                                    then ["This is /very/ likely because you used the flag '--wasm-version' on a module \
+                                          \created with cargo-concordium version >= 2.\n\
+                                          \Try again without the '--wasm-version' flag."]
+                                    else []
+    Left err -> logFatal [[i|Supplied file '#{moduleFile}' cannot be parsed as a smart contract module to be deployed:\n#{err}|]]
+  where
+    hasValidWasmMagic :: Wasm.WasmModule -> Bool
+    hasValidWasmMagic wm = S.runGet getMagicBytes (Wasm.wasmSource wm) == Right wasmMagicValue
+      where wasmMagicValue = BS.pack [0x00, 0x61, 0x73, 0x6D]
+            getMagicBytes = S.getByteString 4
+
 
 -- |Load `Wasm.Parameter` through one of several ways, dependent on the arguments:
 --   * If binary file provided -> Read the file and wrap its contents in `Wasm.Parameter`.
