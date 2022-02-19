@@ -52,6 +52,10 @@ data LegacyCmd
       { legacyContractAddress :: !Text,
         legacyBlockHash       :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the information of an instance on a specific block
+  | InvokeContract
+      { legacyContextFile :: !FilePath,
+        legacyBlockHash   :: !(Maybe Text)
+      } -- ^ Invokes a contract locally on the node.
   | GetRewardStatus
       { legacyBlockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the reward status on a specific block
@@ -123,6 +127,7 @@ legacyProgramOptions =
      getAccountNonFinalizedCommand <>
      getNextAccountNonceCommand <>
      getInstanceInfoCommand <>
+     invokeContractCommand <>
      getRewardStatusCommand <>
      getBirkParametersCommand <>
      getModuleListCommand <>
@@ -309,6 +314,18 @@ getInstanceInfoCommand =
                                help "Hash of the block in which to do the query"))
        )
        (progDesc "Query the gRPC server for the information of an instance."))
+
+invokeContractCommand :: Mod CommandFields LegacyCmd
+invokeContractCommand =
+  command
+    "InvokeContract"
+    (info
+       (InvokeContract <$>
+        strArgument (metavar "CONTEXT" <> help "JSON file with the context.") <*>
+        optional (strArgument (metavar "BLOCK-HASH" <>
+                               help "Hash of the block in which to do the query,"))
+       )
+       (progDesc "Invoke a smart contract in the state of the given block."))
 
 getRewardStatusCommand :: Mod CommandFields LegacyCmd
 getRewardStatusCommand =

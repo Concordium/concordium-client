@@ -23,6 +23,8 @@ module Concordium.Client.Commands
   , IdentityShowCmd(..)
   , MemoInput(..)
   , RegisterDataInput(..)
+  , ParameterFileInput(..)
+  , InvokerInput(..)
   ) where
 
 import Data.Text hiding (map, unlines)
@@ -42,6 +44,7 @@ import Text.Printf
 import qualified Text.PrettyPrint.ANSI.Leijen as P
 import Control.Monad
 import Options.Applicative.Help.Pretty (hang, softline, fillCat)
+import qualified Concordium.Wasm as Wasm
 
 type Verbose = Bool
 
@@ -246,6 +249,8 @@ data ModuleCmd
       mdModuleFile :: !FilePath
       -- |Local alias for the module reference.
     , mdName :: !(Maybe Text)
+      -- |Optional Wasm version for the module.
+    , mdWasmVersion :: !(Maybe Wasm.WasmVersion)
       -- |Options for transaction.
     , mdTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   -- |List all modules.
@@ -275,6 +280,8 @@ data ModuleCmd
       mnModule :: !String
       -- |Name for the module.
     , mnName :: !Text
+      -- |Optional Wasm version for the module.
+    , mnWasmVersion :: !(Maybe Wasm.WasmVersion)
     }
   -- |Remove a local name from the module name map
   | ModuleRemoveName
@@ -304,16 +311,16 @@ data ContractCmd
       ciModule :: !String
       -- |Name of the contract to initialize. This corresponds to a specific init function.
     , ciContractName :: !Text
-      -- |Path to a JSON file containing parameters for the init function (only one type of parameter is allowed).
-    , ciParameterFileJSON :: !(Maybe FilePath)
-      -- |Path to a binary file containing parameters for the init function.
-    , ciParameterFileBinary :: !(Maybe FilePath)
+      -- |Optional path to a JSON or binary file containing parameters for the init function.
+    , ciParameterFileJSON :: !(Maybe ParameterFileInput)
       -- |Path to a contract schema.
     , ciSchema :: !(Maybe FilePath)
       -- |Local alias for the contract address.
     , ciName :: !(Maybe Text)
       -- |Determines whether ciModule should be interpreted as a path.
     , ciPath :: !Bool
+      -- |Optional Wasm version for the module.
+    , ciWasmVersion :: !(Maybe Wasm.WasmVersion)
       -- |Amount to be send to contract (default: 0).
     , ciAmount :: !Amount
       -- |Options for transaction.
@@ -326,16 +333,34 @@ data ContractCmd
     , cuAddressSubindex :: !(Maybe Word64)
       -- |Name of the receive function to use.
     , cuReceiveName :: !Text
-      -- |Path to a JSON file containing parameters for the receive function (only one type of parameter is allowed).
-    , cuParameterFileJSON :: !(Maybe FilePath)
-      -- |Path to a binary file containing parameters for the receive function.
-    , cuParameterFileBinary :: !(Maybe FilePath)
+      -- |Optional path to a JSON or binary file containing parameters for the receive function.
+    , cuParameterFileJSON :: !(Maybe ParameterFileInput)
       -- |Path to a contract schema.
     , cuSchema :: !(Maybe FilePath)
       -- |Amount to invoke the receive function with (default: 0).
     , cuAmount :: !Amount
       -- |Options for transaction.
     , cuTransactionOpts :: !(TransactionOpts Energy) }
+  -- |Invoke a contract locally and view its output.
+  | ContractInvoke
+    { -- |Index of the contract address OR a contract name.
+      civAddressIndexOrName :: !Text
+      -- |Subindex of the address fro the contract to invoke (default: 0).
+    , civAddressSubindex :: !(Maybe Word64)
+      -- |Name of the receive function to use.
+    , civReceiveName :: !Text
+      -- |Optional path to a JSON or binary file containing parameters for the receive function.
+    , civParameterFile :: !(Maybe ParameterFileInput)
+      -- |Path to a contract schema.
+    , civSchema :: !(Maybe FilePath)
+      -- |Amount to invoke the receive function with (default: 0).
+    , civAmount :: !Amount
+      -- |Account address or name to use as invoker.
+    , civInvoker :: !(Maybe InvokerInput)
+      -- |Maximum energy allowed for the invocation (default: 10,000,000).
+    , civMaxEnergy :: !(Maybe Energy)
+      -- |Hash of the block (default: "best").
+    , civBlockHash :: !(Maybe Text)}
   -- |Add a local name to a contract.
   | ContractName
     { -- |Index of the address for the contract.
@@ -838,6 +863,7 @@ moduleDeployCmd =
       (ModuleDeploy <$>
         strArgument (metavar "FILE" <> help "Path to the smart contract module.") <*>
         optional (strOption (long "name" <> metavar "NAME" <> help "Name for the module.")) <*>
+        optional (option (eitherReader wasmVersionFromStringInform) (long "wasm-version" <> metavar "WASM-VERSION" <> help "Optional Wasm version of the module (should only be used for modules built with cargo-concordium version < 2).")) <*>
         transactionOptsParser)
       (progDesc "Deploy a smart contract module on the chain, optionally naming the module."))
 
@@ -879,7 +905,8 @@ moduleNameCmd =
     (info
       (ModuleName <$>
         strArgument (metavar "MODULE" <> help "Module reference OR path to the module.") <*>
-        strOption (long "name" <> metavar "NAME" <> help "Name for the module."))
+        strOption (long "name" <> metavar "NAME" <> help "Name for the module.") <*>
+        optional (option (eitherReader wasmVersionFromStringInform) (long "wasm-version" <> metavar "WASM-VERSION" <> help "Optional Wasm version of the module (should only be used for modules built with cargo-concordium version < 2).")))
       (progDesc "Name a module."))
 
 moduleRemoveNameCmd ::  Mod CommandFields ModuleCmd
@@ -903,6 +930,7 @@ contractCmds =
            contractListCmd <>
            contractInitCmd <>
            contractUpdateCmd <>
+           contractInvokeCmd <>
            contractNameCmd <>
            contractRemoveNameCmd))
       (progDesc "Commands for inspecting and initializing smart contracts."))
@@ -938,13 +966,11 @@ contractInitCmd =
         strArgument (metavar "MODULE" <> help "Module reference OR module name OR (if --path is used) path to a module.") <*>
         strOption (long "contract" <> metavar "CONTRACT-NAME"
                              <> help "Name of the contract (i.e. init function) in the module.") <*>
-        optional (strOption (long "parameter-json" <> metavar "FILE"
-                             <> help "JSON file with parameters for init function. This parameter format should be used if a schema is supplied (default: no parameters).")) <*>
-        optional (strOption (long "parameter-bin" <> metavar "FILE"
-                             <> help "Binary file with parameters for init function. This should _not_ be used if a schema is supplied (default: no parameters).")) <*>
+        parameterFileParser <*>
         optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to parse the params file.")) <*>
         optional (strOption (long "name" <> metavar "NAME" <> help "Name for the contract.")) <*>
         switch (long "path" <> help "Use when MODULE is a path to a module file.") <*>
+        optional (option (eitherReader wasmVersionFromStringInform) (long "wasm-version" <> metavar "WASM-VERSION" <> help "Optional Wasm version of the module (should only be used for modules built with cargo-concordium version < 2).")) <*>
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> value 0
                                                       <> help "Amount of CCD to transfer to the contract.") <*>
         requiredEnergyTransactionOptsParser)
@@ -961,15 +987,32 @@ contractUpdateCmd =
                      help "Subindex of address for the contract on chain (default: 0)")) <*>
         strOption (long "func" <> metavar "RECEIVE-NAME"
                              <> help "Name of the specific receive function in the module.") <*>
-        optional (strOption (long "parameter-json" <> metavar "FILE"
-                             <> help "JSON file with parameters for receive function. This parameter format should be used if a schema is supplied (default: no parameters).")) <*>
-        optional (strOption (long "parameter-bin" <> metavar "FILE"
-                             <> help "Binary file with parameters for receive function. This should _not_ be used if a schema is supplied (default: no parameters).")) <*>
+        parameterFileParser <*>
         optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to parse the params file.")) <*>
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> value 0
                                                                 <> help "Amount of CCD to transfer to the contract.") <*>
         requiredEnergyTransactionOptsParser)
       (progDesc "Update an existing contract."))
+
+contractInvokeCmd :: Mod CommandFields ContractCmd
+contractInvokeCmd =
+  command
+    "invoke"
+    (info
+      (ContractInvoke <$>
+        strArgument (metavar "INDEX-OR-NAME" <> help "Index of the contract address OR a contract name.") <*>
+        optional (option auto (long "subindex" <> metavar "SUBINDEX" <>
+                     help "Subindex of address for the contract on chain (default: 0)")) <*>
+        strOption (long "func" <> metavar "RECEIVE-NAME"
+                             <> help "Name of the specific receive function in the module.") <*>
+        parameterFileParser <*>
+        optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to parse the params file.")) <*>
+        option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> value 0
+                                                                <> help "Amount of CCD to transfer to the contract.") <*>
+        invokerParser <*>
+        optional (option (eitherReader energyFromStringInform) (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on the invocation. (default: 10,000,000)")) <*>
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+      (progDesc "Simulate an invocation of an existing contract."))
 
 contractNameCmd :: Mod CommandFields ContractCmd
 contractNameCmd =
@@ -1399,3 +1442,50 @@ identityShowARsCmd =
 
 docFromLines :: [String] -> Maybe P.Doc
 docFromLines = Just . P.vsep . map P.text
+
+-- |A parameter file used for initializing, updating, and invoking smart contracts.
+--  For the JSON parameter a schema must be embedded in the module or supplied with the --schema flag.
+--  The schema is then used to serialize the JSON to binary.
+data ParameterFileInput
+  = ParameterJSON FilePath
+  | ParameterBinary FilePath
+  deriving Show
+
+-- |Parse an optional parameter file.
+--  Either with '--parameter-json' or '--parameter-binary', but not both.
+parameterFileParser :: Parser (Maybe ParameterFileInput)
+parameterFileParser = optional
+  ((ParameterJSON
+      <$> strOption (long "parameter-json" <> metavar "FILE"
+          <> help "JSON file with parameters for the receive function. \
+                  \This parameter format should be used if the schema is supplied (default: no parameter)."))
+  <|>
+  (ParameterBinary
+      <$> strOption (long "parameter-binary" <> metavar "FILE"
+          <> help "Binary file with parameters for the receive function. \
+                   \This should _not_ be used if a schema is supplied (default: no parameter).")))
+
+-- |An invoker of a smart contract used with 'contract invoke'.
+--  The invoker can either be an account or a contract.
+--  For the contract, the subindex is optional and defaults to 0.
+data InvokerInput
+  = InvokerAccount Text
+  | InvokerContract
+  { icIndexOrName :: Text
+  , icSubindex :: Maybe Word64
+  } deriving Show
+
+-- |Parse an optional invoker.
+--  Either with '--invoker-account' or '--invoker-contract', but not both.
+--  If the invoker is a contract, the subindex can be provided with '--invoker-contract-subindex'.
+invokerParser :: Parser (Maybe InvokerInput)
+invokerParser =
+    optional $ (InvokerAccount <$>
+                strOption (long "invoker-account"
+                           <> metavar "ACCOUNT"
+                           <> help "Name or address of an account used as invoker (default: uses address 0 with sufficient funds).")) <|>
+               (InvokerContract <$>
+                strOption (long "invoker-contract" <> metavar "INDEX-OR-NAME" <>
+                           help "Index of contract address OR contract name used as invoker.") <*>
+                optional (option auto (long "invoker-contract-subindex" <> metavar "SUBINDEX" <>
+                     help "Subindex of contract address used as invoker (default: 0)")))

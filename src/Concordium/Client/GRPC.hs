@@ -207,6 +207,11 @@ getInstanceInfo :: Text -> Text -> ClientMonad IO (Either String Value)
 getInstanceInfo account hash = withUnary (call @"getInstanceInfo") msg (to processJSON)
   where msg = defMessage & CF.blockHash .~ hash & CF.address .~ account
 
+invokeContract :: Text -> Text -> ClientMonad IO (Either String Value)
+invokeContract context block = withUnary (call @"invokeContract") msg (to processJSON)
+  where msg = defMessage & CF.blockHash .~ block & CF.context .~ context
+
+
 getRewardStatus :: Text -> ClientMonad IO (Either String Value)
 getRewardStatus hash = withUnaryBlock (call @"getRewardStatus") hash (to processJSON)
 

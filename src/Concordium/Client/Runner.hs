@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE NumericUnderscores #-}
 module Concordium.Client.Runner
   ( process
   , getAccountNonce
@@ -65,6 +66,7 @@ import           Concordium.Crypto.ByteStringHelpers (deserializeBase16)
 import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.SignatureScheme   as SigScheme
 import qualified Concordium.Crypto.VRF               as VRF
+import qualified Concordium.Types.InvokeContract     as InvokeContract
 import qualified Concordium.Types.Updates            as Updates
 import qualified Concordium.Types.Transactions       as Types
 import           Concordium.Types.HashableTo
@@ -76,7 +78,6 @@ import qualified Concordium.ID.Types                 as ID
 import           Concordium.ID.Parameters
 import qualified Concordium.Utils.Encryption         as Password
 import qualified Concordium.Wasm                     as Wasm
-import           Concordium.Constants
 import           Proto.ConcordiumP2pRpc
 import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 
@@ -106,15 +107,18 @@ import           Data.String.Interpolate (i, iii)
 import           Data.Text(Text)
 import qualified Data.Tuple                          as Tuple
 import qualified Data.Text                           as Text
+import qualified Data.Text.Encoding                  as Text
+import qualified Data.Text.IO                        as TextIO
 import qualified Data.Vector                         as Vec
 import           Data.Word
 import           Lens.Micro.Platform
 import           Network.GRPC.Client.Helpers
-import           Prelude                             hiding (fail, unlines)
+import           Prelude                             hiding (log, fail, unlines)
 import           System.IO
 import           System.Exit
 import           System.Directory
 import           System.FilePath
+import qualified System.Console.ANSI                 as ANSI
 import           Text.Printf
 import           Text.Read (readMaybe)
 import Data.Time.Clock (addUTCTime, getCurrentTime, UTCTime)
@@ -1731,10 +1735,10 @@ processAccountCmd action baseCfgDir verbose backend =
 processModuleCmd :: ModuleCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processModuleCmd action baseCfgDir verbose backend =
   case action of
-    ModuleDeploy modFile modName txOpts -> do
+    ModuleDeploy modFile modName mWasmVersion txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
 
-      mdCfg <- getModuleDeployTransactionCfg baseCfg txOpts modFile
+      mdCfg <- getModuleDeployTransactionCfg baseCfg txOpts modFile mWasmVersion
       let txCfg = mdtcTransactionCfg mdCfg
 
       let nrg = tcEnergy txCfg
@@ -1780,25 +1784,29 @@ processModuleCmd action baseCfgDir verbose backend =
     ModuleShow modRefOrName outFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedModRef <- getNamedModuleRef (bcModuleNameMap baseCfg) modRefOrName
-      Wasm.WasmModule{..} <- withClient backend . withBestBlockHash block $ getWasmModule namedModRef
-      logInfo [[i|WASM Version of module: #{wasmVersion}|]]
+      wasmModule <- withClient backend . withBestBlockHash block $ getWasmModule namedModRef
+      logInfo [[i|WASM Version of module: #{Wasm.wasmVersion wasmModule}|]]
+      let wasmModuleBytes = S.encode wasmModule
       case outFile of
         -- Write to stdout
-        "-" -> BS.putStr . Wasm.moduleSource $ wasmSource
+        "-" -> BS.putStr wasmModuleBytes
         -- Write to file
         _   -> do
-          success <- handleWriteFile BS.writeFile PromptBeforeOverwrite verbose outFile (Wasm.moduleSource wasmSource)
+          success <- handleWriteFile BS.writeFile PromptBeforeOverwrite verbose outFile wasmModuleBytes
           when success $ logSuccess [[i|wrote module source to the file '#{outFile}'|]]
 
     ModuleInspect modRefOrName schemaFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedModRef <- getNamedModuleRef (bcModuleNameMap baseCfg) modRefOrName
-      (schema, exports) <- withClient backend . withBestBlockHash block $ getSchemaAndExports schemaFile namedModRef
-      runPrinter $ printModuleInspectInfo namedModRef schema exports
+      wasmModule <- withClient backend . withBestBlockHash block $ getWasmModule namedModRef
+      let wasmVersion = Wasm.wasmVersion wasmModule
+      (schema, exports) <- withClient backend $ getSchemaAndExports schemaFile wasmModule
+      let moduleInspectInfo = CI.constructModuleInspectInfo namedModRef wasmVersion schema exports
+      runPrinter $ printModuleInspectInfo moduleInspectInfo
 
-    ModuleName modRefOrFile modName -> do
+    ModuleName modRefOrFile modName mWasmVersion -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      modRef <- getModuleRefFromRefOrFile modRefOrFile
+      modRef <- getModuleRefFromRefOrFile modRefOrFile mWasmVersion
       nameAdded <- liftIO $ addModuleNameAndWrite verbose baseCfg modName modRef
       logSuccess [[i|module reference #{modRef} was successfully named '#{nameAdded}'|]]
 
@@ -1819,9 +1827,9 @@ processModuleCmd action baseCfgDir verbose backend =
                                            Types.ModuleDeployed modRef -> Just modRef
                                            _ -> Nothing)
 
-getModuleDeployTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> IO ModuleDeployTransactionCfg
-getModuleDeployTransactionCfg baseCfg txOpts moduleFile = do
-  wasmModule <- getWasmModuleFromFile moduleFile
+getModuleDeployTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> Maybe Wasm.WasmVersion -> IO ModuleDeployTransactionCfg
+getModuleDeployTransactionCfg baseCfg txOpts moduleFile mWasmVersion = do
+  wasmModule <- getWasmModuleFromFile moduleFile mWasmVersion
   txCfg <- getTransactionCfg baseCfg txOpts $ moduleDeployEnergyCost wasmModule
   return $ ModuleDeployTransactionCfg txCfg wasmModule
 
@@ -1861,18 +1869,17 @@ processContractCmd action baseCfgDir verbose backend =
     ContractShow indexOrName subindex schemaFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-      (schema, contrInfo, namedOwner, namedModRef) <- withClient backend . withBestBlockHash block $ \bb -> do
-        contrInfo@CI.ContractInfo{..} <- getContractInfo namedContrAddr bb
-        let namedModRef = NamedModuleRef {nmrRef = ciSourceModule, nmrNames = findAllNamesFor (bcModuleNameMap baseCfg) ciSourceModule}
-        schema <- getSchemaFromFileOrModule schemaFile (Right namedModRef) bb
-        let namedOwner = NamedAddress {naAddr = ciOwner, naNames = findAllNamesFor (bcAccountNameMap baseCfg) ciOwner}
-        return (schema, contrInfo, namedOwner, namedModRef)
-      displayContractInfo schema contrInfo namedOwner namedModRef
+      withClient backend . withBestBlockHash block $ \bb -> do
+        contrInfo <- getContractInfo namedContrAddr bb
+        let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = findAllNamesFor (bcModuleNameMap baseCfg) (CI.ciSourceModule contrInfo)}
+        schema <- getSchemaFromFileOrModule schemaFile namedModRef bb
+        let namedOwner = NamedAddress {naAddr = CI.ciOwner contrInfo, naNames = findAllNamesFor (bcAccountNameMap baseCfg) (CI.ciOwner contrInfo)}
+        displayContractInfo schema contrInfo namedOwner namedModRef
 
-    ContractInit modTBD contrName paramsFileJSON paramsFileBinary schemaFile contrAlias isPath amount txOpts -> do
+    ContractInit modTBD contrName paramsFile schemaFile contrAlias isPath mWasmVersion amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      ciCfg <- getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath contrName
-                paramsFileJSON paramsFileBinary schemaFile amount
+      ciCfg <- getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath mWasmVersion contrName
+                paramsFile schemaFile amount
       let txCfg = citcTransactionCfg ciCfg
       let energy = tcEnergy txCfg
       let expiryTs = tcExpiry txCfg
@@ -1883,7 +1890,7 @@ processContractCmd action baseCfgDir verbose backend =
                                                   and additional energy is needed to complete the initialization|]]
 
       logInfo [ [i|initialize contract '#{contrName}' from module '#{citcModuleRef ciCfg}' with |]
-                  ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{Types.amountToString $ citcAmount ciCfg} CCD.|]
+                  ++ paramsMsg paramsFile ++ [i| Sending #{Types.amountToString $ citcAmount ciCfg} CCD.|]
               , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
               , [i|transaction expires on #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
 
@@ -1905,10 +1912,10 @@ processContractCmd action baseCfgDir verbose backend =
                   nameAdded <- liftIO $ addContractNameAndWrite verbose baseCfg contrAlias' contrAddr
                   logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{nameAdded}'|]]
 
-    ContractUpdate indexOrName subindex receiveName paramsFileJSON paramsFileBinary schemaFile amount txOpts -> do
+    ContractUpdate indexOrName subindex receiveName paramsFile schemaFile amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       cuCfg <- getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex
-                receiveName paramsFileJSON paramsFileBinary schemaFile amount
+                receiveName paramsFile schemaFile amount
       let txCfg = cutcTransactionCfg cuCfg
       let energy = tcEnergy txCfg
       let expiryTs = tcExpiry txCfg
@@ -1919,7 +1926,7 @@ processContractCmd action baseCfgDir verbose backend =
                                                   and additional energy is needed to complete the update|]]
 
       logInfo [ [i|update contract '#{cutcContrName cuCfg}' using the function '#{receiveName}' with |]
-                  ++ paramsMsg paramsFileJSON paramsFileBinary ++ [i| Sending #{Types.amountToString $ cutcAmount cuCfg} CCD.|]
+                  ++ paramsMsg paramsFile ++ [i| Sending #{Types.amountToString $ cutcAmount cuCfg} CCD.|]
               , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
               , [i|transaction expires on #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
 
@@ -1937,6 +1944,63 @@ processContractCmd action baseCfgDir verbose backend =
               namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
               logSuccess [[iii|successfully updated contract instance #{showNamedContractAddress namedContrAddr}
                                                 using the function '#{receiveName}'|]]
+
+    ContractInvoke indexOrName subindex receiveName parameterFile schemaFile amount invoker energy block -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
+
+      invoker' :: Maybe Types.Address <- case invoker of
+        Nothing -> return Nothing
+        Just (InvokerAccount nameOrAddr) -> Just . Types.AddressAccount . naAddr <$> getAccountAddressArg (bcAccountNameMap baseCfg) nameOrAddr
+        Just InvokerContract{..} -> Just . Types.AddressContract . ncaAddr <$> getNamedContractAddress (bcContractNameMap baseCfg) icIndexOrName icSubindex
+
+      contrInfo <- withClient backend . withBestBlockHash block $ \bb -> getContractInfo namedContrAddr bb
+      let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = []} -- Skip finding nmrNames, as they won't be shown.
+
+      let contractName = CI.getContractName contrInfo
+      let wasmReceiveName = Wasm.ReceiveName [i|#{contractName}.#{receiveName}|]
+      unless (CI.hasReceiveMethod receiveName contrInfo) $ logFatal [[i|The contract does not have a receive function named '#{receiveName}'.|]]
+
+      modSchema <- withClient backend . withBestBlockHash block $ getSchemaFromFileOrModule schemaFile namedModRef
+      wasmParameter <- getWasmParameter parameterFile modSchema (CS.ReceiveFuncName contractName receiveName)
+      let nrg = fromMaybe (Types.Energy 10_000_000) energy
+
+      let invokeContext = InvokeContract.ContractContext
+                          { ccInvoker = invoker'
+                          , ccContract = ncaAddr namedContrAddr
+                          , ccAmount = amount
+                          , ccMethod = wasmReceiveName
+                          , ccParameter = wasmParameter
+                          , ccEnergy = nrg
+                          }
+      invokeContextArg <- case Text.decodeUtf8' . BSL.toStrict . AE.encode $ invokeContext of
+            Left _ -> logFatal ["Could not invoke contract due to internal error: decoding UTF-8 failed"] -- Should never happen.
+            Right text -> return text
+
+      withClient backend . withBestBlockHash block $ \bb -> do
+        res <- invokeContract invokeContextArg bb
+        case res of
+          Left err -> logFatal [[i|Invocation failed with error: #{err}|]]
+          Right jsonValue -> case AE.fromJSON jsonValue of
+            AE.Error jsonErr -> logFatal [[i|Invocation failed with error: #{jsonErr}|]]
+            AE.Success InvokeContract.Failure{..} -> do
+              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName receiveName
+              -- Logs in cyan to indicate that the invocation returned with a failure.
+              -- This might be what you expected from the contract, so logWarn or logFatal should not be used.
+              log Info (Just ANSI.Cyan) [[iii|Invocation resulted in failure:\n
+                                                - Energy used: #{showNrg rcrUsedEnergy}\n
+                                                - Reason: #{showRejectReason verbose rcrReason}
+                                                #{returnValueMsg}|]]
+            AE.Success InvokeContract.Success{..} -> do
+              let eventsMsg = case mapMaybe (fmap (("  - " <>) . Text.pack) . showEvent verbose) rcrEvents of
+                                [] -> Text.empty
+                                evts -> [i|- Events:\n#{Text.intercalate "\n" evts}|]
+              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName receiveName
+              logSuccess [[iii|Invocation resulted in success:\n
+                               - Energy used: #{showNrg rcrUsedEnergy}
+                               #{returnValueMsg}
+                               #{eventsMsg}
+                               |]]
 
     ContractName index subindex contrName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1960,15 +2024,19 @@ processContractCmd action baseCfgDir verbose backend =
   where extractContractAddress = extractFromTsr (\case
                                                  Types.ContractInitialized {..} -> Just ecAddress
                                                  _ -> Nothing)
+
+        -- |A successful contract update will contain at least one Updated event
+        --  and zero or more Interrupted, Resumed, and Transferred events.
         extractUpdate = extractFromTsr (\case
                                         Types.Updated {} -> Just ()
+                                        Types.Interrupted {} -> Just ()
+                                        Types.Resumed {} -> Just ()
+                                        Types.Transferred {} -> Just ()
                                         _ -> Nothing)
-        paramsMsg paramsFileJSON paramsFileBinary = case (paramsFileJSON, paramsFileBinary) of
-            (Nothing, Nothing) -> "no parameters."
-            (Nothing, Just binFile) -> [i|binary parameters from '#{binFile}'.|]
-            (Just jsonFile, Nothing) -> [i|JSON parameters from '#{jsonFile}'.|]
-            -- This case should already have failed while creating the config.
-            _ -> ""
+        paramsMsg = \case
+            Nothing -> "no parameters."
+            Just (ParameterBinary binFile) -> [i|binary parameters from '#{binFile}'.|]
+            Just (ParameterJSON jsonFile) -> [i|JSON parameters from '#{jsonFile}'.|]
 
         -- |Calculates the minimum energy required for checking the signature of a contract initialization.
         -- The minimum will not cover the full initialization, but enough of it, so that a potential 'Not enough energy' error
@@ -1994,6 +2062,21 @@ processContractCmd action baseCfgDir verbose backend =
                           +  2 + (BSS.length . Wasm.parameter $ cutcParams) -- size length + length of the parameter
             signatureCount = mapNumKeys (esdKeys encSignData)
 
+        -- |Construct a message for displaying the return value of a smart contract invocation.
+        mkReturnValueMsg :: Maybe BS.ByteString -> Maybe FilePath -> Maybe CS.ModuleSchema -> Text -> Text -> ClientMonad IO Text
+        mkReturnValueMsg rvBytes schemaFile modSchema contractName receiveName = case rvBytes of
+          Nothing -> return Text.empty
+          Just rv -> case modSchema >>= \modSchema' -> CS.lookupReturnValueSchema modSchema' (CS.ReceiveFuncName contractName receiveName) of
+            Nothing -> return [i|\n - Return value (raw):\n  #{BS.unpack rv}\n|] -- Schema not provided or it doesn't contain the return value for this func.
+            Just schemaForFunc -> case S.runGet (CP.getJSONUsingSchema schemaForFunc) rv of
+              Left err -> do
+                logWarn [[i|Could not parse the returned bytes using the schema:\n#{err}|]]
+                if isJust schemaFile
+                  then logWarn ["Make sure you supply the correct schema for the contract with --schema"]
+                  else logWarn ["Try supplying a schema file with --schema"]
+                return [i|\n - Return value (raw):\n  #{BS.unpack rv}\n|]
+              Right rvJSON -> return [i|\n - Return value:\n#{indentBy 6 $ showPrettyJSON rvJSON}\n|]
+
 -- |Try to fetch info about the contract and deserialize it from JSON.
 -- Or, log fatally with appropriate error messages if anything goes wrong.
 getContractInfo :: NamedContractAddress -> Text -> ClientMonad IO CI.ContractInfo
@@ -2008,12 +2091,16 @@ getContractInfo namedContrAddr block = do
       Success info -> pure info
 
 -- |Display contract info, optionally using a schema to decode the contract state.
-displayContractInfo :: Maybe CS.ModuleSchema -> CI.ContractInfo -> NamedAddress -> NamedModuleRef -> IO ()
-displayContractInfo schema contrInfo namedOwner namedModRef = case schema of
-  Nothing -> runPrinter $ printContractInfo contrInfo namedOwner namedModRef
-  Just schema' -> case CI.decodeContractStateUsingSchema contrInfo schema' of
-    Left err' -> logFatal ["Parsing the contract model failed:", err']
-    Right infoWithSchema -> runPrinter $ printContractInfo infoWithSchema namedOwner namedModRef
+displayContractInfo :: Maybe CS.ModuleSchema -> CI.ContractInfo -> NamedAddress -> NamedModuleRef -> ClientMonad IO ()
+displayContractInfo schema contrInfo namedOwner namedModRef = do
+  cInfo <- case schema of
+    Just schema' -> do
+      mContrInfo <- CI.addSchemaData contrInfo schema'
+      case mContrInfo of
+        Nothing -> return contrInfo -- Adding schema data failed, just return the regular contract info.
+        Just infoWithSchemaData -> return infoWithSchemaData
+    Nothing -> return contrInfo
+  runPrinter $ printContractInfo cInfo namedOwner namedModRef
 
 -- |Attempts to acquire the needed parts for updating a contract.
 -- The two primary parts are a contract address, which is acquired using `getNamedContractAddress`,
@@ -2025,20 +2112,19 @@ getContractUpdateTransactionCfg :: Backend
                                 -> Text -- ^ Index of the contract address OR a contract name.
                                 -> Maybe Word64 -- ^ Optional subindex.
                                 -> Text -- ^ Name of the receive function to use.
-                                -> Maybe FilePath -- ^ Optional parameter file in JSON format.
-                                -> Maybe FilePath -- ^ Optional parameter file in binary format.
+                                -> Maybe ParameterFileInput -- ^ Optional parameter file.
                                 -> Maybe FilePath -- ^ Optional schema file.
                                 -> Types.Amount   -- ^ `Amount` to send to the contract.
                                 -> IO ContractUpdateTransactionCfg
 getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex receiveName
-                                paramsFileJSON paramsFileBinary schemaFile amount = do
+                                paramsFile schemaFile amount = do
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-  CI.ContractInfo{ciSourceModule = moduleRef,..} <- withClient backend . withBestBlockHash Nothing $ getContractInfo namedContrAddr
-  let namedModRef = NamedModuleRef {nmrRef = moduleRef, nmrNames = []}
-  let contrName = CI.contractNameFromInitName ciName
-  params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef)
-            (CS.ReceiveFuncName contrName receiveName)
+  contrInfo <- withClient backend . withBestBlockHash Nothing $ getContractInfo namedContrAddr
+  let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = []}
+  let contrName = CI.getContractName contrInfo
+  schema <- withClient backend . withBestBlockHash Nothing $ getSchemaFromFileOrModule schemaFile namedModRef
+  params <- getWasmParameter paramsFile schema (CS.ReceiveFuncName contrName receiveName)
   return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr)
            contrName (Wasm.ReceiveName [i|#{contrName}.#{receiveName}|]) params amount
 
@@ -2072,18 +2158,19 @@ getContractInitTransactionCfg :: Backend
                               -> TransactionOpts Types.Energy
                               -> String -- ^ Module reference OR module name OR (if isPath == True) path to the module (reference then calculated by hashing).
                               -> Bool   -- ^ isPath: if True, the previous argument is assumed to be a path.
+                              -> Maybe Wasm.WasmVersion -- ^ Optional WasmVersion for the module file.
                               -> Text   -- ^ Name of contract to init.
-                              -> Maybe FilePath -- ^ Optional parameter file in JSON format.
-                              -> Maybe FilePath -- ^ Optional parameter file in binary format.
+                              -> Maybe ParameterFileInput -- ^ Optional parameter file.
                               -> Maybe FilePath -- ^ Optional schema file.
                               -> Types.Amount   -- ^ `Amount` to send to the contract.
                               -> IO ContractInitTransactionCfg
-getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath contrName paramsFileJSON paramsFileBinary schemaFile amount = do
+getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath mWasmVersion contrName paramsFile schemaFile amount = do
   namedModRef <- if isPath
-            then (\ref -> NamedModuleRef {nmrRef = ref, nmrNames = []}) <$> getModuleRefFromFile modTBD
+            then (\ref -> NamedModuleRef {nmrRef = ref, nmrNames = []}) <$> getModuleRefFromFile modTBD mWasmVersion
             else getNamedModuleRef (bcModuleNameMap baseCfg) (Text.pack modTBD)
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
-  params <- getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile (Right namedModRef) (CS.InitFuncName contrName)
+  schema <- withClient backend . withBestBlockHash Nothing $ getSchemaFromFileOrModule schemaFile namedModRef
+  params <- getWasmParameter paramsFile schema (CS.InitFuncName contrName)
   return $ ContractInitTransactionCfg txCfg amount (nmrRef namedModRef) (Wasm.InitName [i|init_#{contrName}|]) params
 
 -- |Query the node for a module reference, and parse the result.
@@ -2121,42 +2208,54 @@ contractInitTransactionPayload ContractInitTransactionCfg {..} =
   Types.InitContract citcAmount citcModuleRef citcInitName citcParams
 
 -- |Load a WasmModule from the specified file path.
--- It defaults to our internal wasmVersion of 0, which essentially is the
--- on-chain API version.
-getWasmModuleFromFile :: FilePath -> IO Wasm.WasmModule
-getWasmModuleFromFile moduleFile = do
-  source <- handleReadFile BS.readFile moduleFile
-  let moduleSize = BS.length source
-  when (moduleSize > fromIntegral maxWasmModuleSize) $ logWarn [[i|Module file #{moduleFile} of size #{moduleSize} bytes is bigger than the maximum of #{maxWasmModuleSize} bytes, and will most likely be rejected on chain.|]]
-  return $ Wasm.WasmModule 0 . Wasm.ModuleSource $ source
+-- The module will be prefixed with the wasmVersion and moduleSize if wasmVersion is provided.
+-- This enables the use of wasm modules compiled with cargo-concordium version < 2, and modules compiled
+-- without cargo-concordium version >= 2.
+getWasmModuleFromFile :: FilePath -- ^ The module file.
+                      -> Maybe Wasm.WasmVersion -- ^ Optional wasmVersion.
+                      -> IO Wasm.WasmModule
+getWasmModuleFromFile moduleFile mWasmVersion = do
+  source <- handleReadFile BS.readFile moduleFile >>= \source ->
+    case mWasmVersion of
+      Nothing -> return source -- Module should already be prefixed with the wasmVersion and moduleSize.
+      Just wasmVersion -> let wasmVersionBytes = S.encode wasmVersion
+                              moduleSizeBytes = S.encode ((fromIntegral $ BS.length source) :: Word32)
+                          in  return $ wasmVersionBytes <> moduleSizeBytes <> source -- Prefix the wasmVersion and moduleSize.
+  case S.decode source of
+    Right wm -> if hasValidWasmMagic wm
+                then return wm
+                else logFatal $ [[iii|Supplied file '{moduleFile}' cannot be parsed as a smart contract module to be deployed:\n
+                                 The module does not have a valid wasm magic value.|]]
+                                 ++ if isJust mWasmVersion
+                                    then ["This is /very/ likely because you used the flag '--wasm-version' on a module \
+                                          \created with cargo-concordium version >= 2.\n\
+                                          \Try again without the '--wasm-version' flag."]
+                                    else []
+    Left err -> logFatal [[i|Supplied file '#{moduleFile}' cannot be parsed as a smart contract module to be deployed:\n#{err}|]]
+  where
+    hasValidWasmMagic :: Wasm.WasmModule -> Bool
+    hasValidWasmMagic wm = S.runGet getMagicBytes (Wasm.wasmSource wm) == Right wasmMagicValue
+      where wasmMagicValue = BS.pack [0x00, 0x61, 0x73, 0x6D]
+            getMagicBytes = S.getByteString 4
+
 
 -- |Load `Wasm.Parameter` through one of several ways, dependent on the arguments:
 --   * If binary file provided -> Read the file and wrap its contents in `Wasm.Parameter`.
---   * If JSON file provided   -> Try to get a schema using `getSchemaFromFileOrModule` and use it to encode the parameters
---                                into a `Wasm.Parameter`.
+--   * If JSON file provided   -> Try to use the schema to encode the parameters into a `Wasm.Parameter`.
 -- If invalid arguments are provided or something fails, appropriate warning or error messages are logged.
-getWasmParameter :: Backend
-                 -> Maybe FilePath -- ^ Optional parameter file in JSON format.
-                 -> Maybe FilePath -- ^ Optional parameter file in binary format.
-                 -> Maybe FilePath -- ^ Optional schema file.
-                 -> Either Wasm.ModuleSource NamedModuleRef -- ^ Module source OR a `NamedModuleRef`.
+getWasmParameter :: Maybe ParameterFileInput -- ^ Optional parameter file in JSON or binary format.
+                 -> Maybe CS.ModuleSchema -- ^ Optional module schema.
                  -> CS.FuncName -- ^ A func name used for finding the func signature in the schema.
                  -> IO Wasm.Parameter
-getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile modSourceOrRef funcName =
-  case (paramsFileJSON, paramsFileBinary, schemaFile) of
-    (Nothing, Nothing, Nothing) -> emptyParams
-    (Nothing, Nothing, Just _) -> logWarn ["ignoring the --schema as no --params were provided"] *> emptyParams
-    (Nothing, Just binaryFile, Nothing) -> binaryParams binaryFile
-    (_, Just binaryFile, Just _) -> logWarn ["ignoring the --schema as --parameter-bin was used"] *> binaryParams binaryFile
-    (Just jsonFile', Nothing, _) -> do
-      schema <- withClient backend . withBestBlockHash Nothing $ getSchemaFromFileOrModule schemaFile modSourceOrRef
-      case schema of
-        Nothing -> logFatal [[iii|could not parse the json parameter because the module does not include an embedded schema.
-                                  Supply a schema using the --schema flag|]]
-        Just schema' -> getFromJSONParams jsonFile' schema'
-    (Just _, Just _, _) -> logFatal ["--parameter-json and --parameter-bin cannot be used at the same time"]
+getWasmParameter paramsFile schema funcName =
+  case paramsFile of
+    Nothing -> emptyParams
+    Just (ParameterJSON jsonParamFile) -> case schema of
+      Nothing -> logFatal [[iii|could not parse the json parameter because a no schema was embedded in the module or provided with the --schema flag|]]
+      Just schema' -> getFromJSONParams jsonParamFile schema'
+    Just (ParameterBinary binaryParamFile) -> binaryParams binaryParamFile
   where getFromJSONParams :: FilePath -> CS.ModuleSchema -> IO Wasm.Parameter
-        getFromJSONParams jsonFile schema = case CS.lookupSignatureForFunc schema funcName of
+        getFromJSONParams jsonFile schema' = case CS.lookupParameterSchema schema' funcName of
           Nothing -> logFatal [[i|the schema did not include the provided function|]]
           Just schemaForParams -> do
             jsonFileContents <- handleReadFile BSL8.readFile jsonFile
@@ -2164,71 +2263,68 @@ getWasmParameter backend paramsFileJSON paramsFileBinary schemaFile modSourceOrR
             case params of
               Left errParams -> logFatal [[i|Could not decode parameters from file '#{jsonFile}' as JSON:|], errParams]
               Right params' -> pure . Wasm.Parameter . BS.toShort $ params'
-
         emptyParams = pure . Wasm.Parameter $ BSS.empty
         binaryParams file = Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile file
 
 -- |Get a schema from a file or, alternatively, try to extract an embedded schema from a module.
--- Logs fatally if an invalid schema is found (either from a file or embedded).
 -- The schema from the file will take precedence over an embedded schema in the module.
--- Only returns `Nothing` if no schemaFile is provided and no embedded schema was found in the module.
+--
+-- Can logWarn and logFatal in the following situations:
+--   - Invalid schemafile: logs fatally.
+--   - No schemafile and invalid embedded schema: logs a warning and returns `Nothing`.
 getSchemaFromFileOrModule :: Maybe FilePath -- ^ Optional schema file.
-                          -> Either Wasm.ModuleSource NamedModuleRef -- ^ Either a Wasm Module or a reference to a module on chain.
+                          -> NamedModuleRef -- ^ A reference to a module on chain.
                           -> Text -- ^ A block hash.
                           -> ClientMonad IO (Maybe CS.ModuleSchema)
-getSchemaFromFileOrModule schemaFile modSourceOrRef block = case (schemaFile, modSourceOrRef) of
-  (Nothing, Left modSource) -> liftIO $ getSchemaFromModuleOrDie modSource
-  (Nothing, Right namedModRef) -> do
-    Wasm.WasmModule{..} <- getWasmModule namedModRef block
-    liftIO $ getSchemaFromModuleOrDie wasmSource
-  (Just schemaFile', _) -> liftIO (Just <$> getSchemaFromFile schemaFile')
-  where getSchemaFromModuleOrDie (Wasm.ModuleSource modSrc) = case CS.decodeEmbeddedSchema modSrc of
-          Left err -> logFatal [[i|Could not parse embedded schema from module:|], err]
-          Right schema -> return schema
+getSchemaFromFileOrModule schemaFile namedModRef block = do
+  wasmModule <- getWasmModule namedModRef block
+  case schemaFile of
+    Nothing -> do
+      liftIO $ case CS.decodeEmbeddedSchema wasmModule of
+        Left err -> do
+          logWarn [[i|Could not parse embedded schema from module:|], err]
+          return Nothing
+        Right schema -> return schema
+    Just schemaFile' -> liftIO (Just <$> getSchemaFromFile (Wasm.wasmVersion wasmModule) schemaFile')
 
 -- |Try to load and decode a schema from a file. Logs fatally if the file is not a valid Wasm module.
-getSchemaFromFile :: FilePath -> IO CS.ModuleSchema
-getSchemaFromFile schemaFile = do
-  schema <- CS.decodeModuleSchema <$> handleReadFile BS.readFile schemaFile
+getSchemaFromFile :: Wasm.WasmVersion -> FilePath -> IO CS.ModuleSchema
+getSchemaFromFile wasmVersion schemaFile = do
+  schema <- CS.decodeModuleSchema wasmVersion <$> handleReadFile BS.readFile schemaFile
   case schema of
     Left err -> logFatal [[i|Could not decode schema from file '#{schemaFile}':|], err]
     Right schema' -> pure schema'
 
--- |Get a schema and a list of exported function names from an optional schema file and a module reference.
+-- |Get a schema and a list of exported function names from an optional schema file and a module.
 -- Logs fatally if an invalid schema is found (either from a file or embedded).
 -- The schema from the file will take precedence over an embedded schema in the module.
 -- It will only return `(Nothing, _)` if no schemafile is provided and no embedded schema was found in the module.
 getSchemaAndExports :: Maybe FilePath -- ^ Optional schema file.
-                    -> NamedModuleRef -- ^ Module reference used for looking up a schema and exports.
-                    -> Text -- ^ A block hash.
+                    -> Wasm.WasmModule -- ^ Module used for looking up a schema and exports.
                     -> ClientMonad IO (Maybe CS.ModuleSchema, [Text])
-getSchemaAndExports schemaFile namedModRef block = do
-
+getSchemaAndExports schemaFile wasmModule = do
   preferredSchema <- case schemaFile of
     Nothing -> return Nothing
-    Just schemaFile' -> fmap Just . liftIO . getSchemaFromFile $ schemaFile'
-
-  (schema, exports) <- do
-      Wasm.WasmModule{..} <- getWasmModule namedModRef block
-      liftIO $ getSchemaAndExportsOrDie wasmSource
+    Just schemaFile' -> fmap Just . liftIO . getSchemaFromFile (Wasm.wasmVersion wasmModule) $ schemaFile'
+  (schema, exports) <- liftIO $ getSchemaAndExportsOrDie
 
   if isJust preferredSchema
   then return (preferredSchema, exports)
   else return (schema, exports)
 
-  where getSchemaAndExportsOrDie (Wasm.ModuleSource modSrc) = case CS.decodeEmbeddedSchemaAndExports modSrc of
+  where getSchemaAndExportsOrDie = case CS.decodeEmbeddedSchemaAndExports wasmModule of
           Left err -> logFatal [[i|Could not parse embedded schema or exports from module:|], err]
           Right schemaAndExports -> return schemaAndExports
 
 -- |Try to parse the input as a module reference and assume it is a path if it fails.
-getModuleRefFromRefOrFile :: String -> IO Types.ModuleRef
-getModuleRefFromRefOrFile modRefOrFile = case readMaybe modRefOrFile of
+getModuleRefFromRefOrFile :: String -> Maybe Wasm.WasmVersion -> IO Types.ModuleRef
+getModuleRefFromRefOrFile modRefOrFile mWasmVersion = case readMaybe modRefOrFile of
   Just modRef -> pure modRef
-  Nothing -> getModuleRefFromFile modRefOrFile
+  Nothing -> getModuleRefFromFile modRefOrFile mWasmVersion
 
 -- |Load the module file and compute its hash, which is the reference.
-getModuleRefFromFile :: String -> IO Types.ModuleRef
-getModuleRefFromFile file = Types.ModuleRef . getHash <$> getWasmModuleFromFile file
+getModuleRefFromFile :: String -> Maybe Wasm.WasmVersion -> IO Types.ModuleRef
+getModuleRefFromFile file mWasmVersion = Types.ModuleRef . getHash <$> getWasmModuleFromFile file mWasmVersion
 
 -- |Get a NamedContractAddress from either a name or index and an optional subindex.
 -- LogWarn if subindex is provided with a contract name.
@@ -2683,6 +2779,9 @@ processLegacyCmd action backend =
       withClient backend $ getNextAccountNonce account >>= printJSON
     GetInstanceInfo account block ->
       withClient backend $ withBestBlockHash block (getInstanceInfo account) >>= printJSON
+    InvokeContract contextFile block -> do
+      context <- TextIO.readFile contextFile
+      withClient backend $ withBestBlockHash block (invokeContract context) >>= printJSON
     GetRewardStatus block -> withClient backend $ withBestBlockHash block getRewardStatus >>= printJSON
     GetBirkParameters block ->
       withClient backend $ withBestBlockHash block getBirkParameters >>= printJSON

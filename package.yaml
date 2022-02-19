@@ -1,5 +1,5 @@
 name:                concordium-client
-version:             3.0.4
+version:             4.0.0
 github:              "Concordium/concordium-client"
 author:              "Concordium"
 maintainer:          "developers@concordium.com"
@@ -137,7 +137,6 @@ executables:
       - condition: ! os(windows) 
         # the tool deadlocks on windows when -threaded is used
         ghc-options: -threaded
-    when:
       - condition: flag(static)
         ld-options:
         - -static

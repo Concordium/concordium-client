@@ -5,11 +5,11 @@ import Control.Monad.Except
 import Concordium.Types
 import Concordium.Crypto.ByteStringHelpers
 import qualified Concordium.ID.Types as IDTypes
-import Data.String.Interpolate (i)
+import qualified Concordium.Wasm as Wasm
+import Data.String.Interpolate (i, iii)
 import qualified Data.Text as Text
 import Data.Word (Word64)
 import Text.Read
-import Data.String.Interpolate (iii)
 import qualified Data.Char as Char
 import Data.Maybe (mapMaybe)
 
@@ -129,6 +129,18 @@ credentialIndexFromStringInform s =
            | a >= 0 -> Left "Credential index must be less than or equal to 255."
            | otherwise -> Left "Credential index must be non-negative."
     Nothing -> Left "Credential index must be an integer between 0 and 255 (inclusive)."
+
+-- |Try to parse a WasmVersion.
+wasmVersionFromStringInform :: String -> Either String Wasm.WasmVersion
+wasmVersionFromStringInform s =
+  case s of
+    "v0" -> Right Wasm.V0
+    "V0" -> Right Wasm.V0
+    "0" -> Right Wasm.V0
+    "v1" -> Right Wasm.V1
+    "V1" -> Right Wasm.V1
+    "1" -> Right Wasm.V1
+    _ -> Left "Wasm version must be one of [v0, V0, 0, v1, V1, 1]."
 
 -- Time Units and durations
 

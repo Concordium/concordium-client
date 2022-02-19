@@ -1,5 +1,13 @@
 # Changelog for concordium-client
 
+## Unreleased
+- Add support for v1 smart contracts.
+- Add `contract invoke` command for simulating contracts locally on the node.
+- Make `module deploy` expect modules with a version prefix.
+  - This prefix is automatically added when building with cargo-concordium
+    version >= 2.
+  - Add the flag `--wasm-version` to support modules without the version prefix.
+
 ## 3.0.4
 - Rename `--encrypted` and `--decrypt-encrypted` flags to `account show` to
   `--shielded` and `--reveal-shielded`.
