@@ -2208,9 +2208,9 @@ contractInitTransactionPayload ContractInitTransactionCfg {..} =
   Types.InitContract citcAmount citcModuleRef citcInitName citcParams
 
 -- |Load a WasmModule from the specified file path.
--- The module will be prefixed with the wasmVersion and moduleSize if provided the wasmVersion is provided.
--- This is enables the use of wasm modules compiled with cargo-concordium version < 2, and modules compiled
--- without cargo-concordium.
+-- The module will be prefixed with the wasmVersion and moduleSize if wasmVersion is provided.
+-- This enables the use of wasm modules compiled with cargo-concordium version < 2, and modules compiled
+-- without cargo-concordium version >= 2.
 getWasmModuleFromFile :: FilePath -- ^ The module file.
                       -> Maybe Wasm.WasmVersion -- ^ Optional wasmVersion.
                       -> IO Wasm.WasmModule

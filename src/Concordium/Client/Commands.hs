@@ -350,7 +350,7 @@ data ContractCmd
       -- |Name of the receive function to use.
     , civReceiveName :: !Text
       -- |Optional path to a JSON or binary file containing parameters for the receive function.
-    , civParameterFileJSON :: !(Maybe ParameterFileInput)
+    , civParameterFile :: !(Maybe ParameterFileInput)
       -- |Path to a contract schema.
     , civSchema :: !(Maybe FilePath)
       -- |Amount to invoke the receive function with (default: 0).
