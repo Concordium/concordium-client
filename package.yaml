@@ -1,5 +1,5 @@
 name:                concordium-client
-version:             3.0.0
+version:             4.0.0
 github:              "Concordium/concordium-client"
 author:              "Concordium"
 maintainer:          "developers@concordium.com"
@@ -133,9 +133,10 @@ executables:
       - -Werror=missing-fields
       - -Wredundant-constraints
       - -O
-      - -threaded
-
     when:
+      - condition: ! os(windows) 
+        # the tool deadlocks on windows when -threaded is used
+        ghc-options: -threaded
       - condition: flag(static)
         ld-options:
         - -static

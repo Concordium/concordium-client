@@ -1,5 +1,25 @@
 # Changelog for concordium-client
 
+## Unreleased
+- Add support for v1 smart contracts.
+- Add `contract invoke` command for simulating contracts locally on the node.
+- Make `module deploy` expect modules with a version prefix.
+  - This prefix is automatically added when building with cargo-concordium
+    version >= 2.
+  - Add the flag `--wasm-version` to support modules without the version prefix.
+
+## 3.0.4
+- Rename `--encrypted` and `--decrypt-encrypted` flags to `account show` to
+  `--shielded` and `--reveal-shielded`.
+
+## 3.0.3
+- support the same range of tag names for LEI as is supported by identity
+  issuance command line tools. Previously only UNNAMED#13 was supported and now
+  both lei and the former are.
+
+## 3.0.2
+- credentials revealing newly introduced attribute LEI can be deployed
+
 ## 3.0.1
 
 - rename GTU token to CCD
