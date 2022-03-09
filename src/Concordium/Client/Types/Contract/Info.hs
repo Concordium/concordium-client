@@ -3,6 +3,7 @@ module Concordium.Client.Types.Contract.Info
   ( contractNameFromInitName
   , addSchemaData
   , getContractName
+  , hasFallbackReceiveSupport
   , hasReceiveMethod
   , constructModuleInspectInfo
   , ContractInfo(..)
@@ -130,6 +131,13 @@ getContractName :: ContractInfo -> Text
 getContractName = \case
   ContractInfoV0{..} -> ciName
   ContractInfoV1{..} -> ciName
+
+-- |Returns True if the contract has fallback entrypoint support,
+-- False otherwise
+hasFallbackReceiveSupport :: ContractInfo -> Bool
+hasFallbackReceiveSupport = \case
+  ContractInfoV0{} -> False
+  ContractInfoV1{} -> True
 
 -- |This is returned by the node and specified in Concordium.Getters (from prototype repo).
 -- Must stay in sync.
