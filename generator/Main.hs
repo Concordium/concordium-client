@@ -7,6 +7,7 @@ import Concordium.Client.Runner
 import Concordium.Types.Transactions
 import Concordium.Types
 import Concordium.Types.Execution
+import Concordium.Types.Accounts
 import Concordium.ID.Types
 import Concordium.Crypto.EncryptedTransfers
 import Concordium.Client.Cli
@@ -121,7 +122,7 @@ main = do
                 -- set expiry for 1h from now so that the transaction will be accepted by the node.
                 ct <- utcTimeToTransactionTime <$> getCurrentTime
                 return (txRecepient nonce, NormalTransaction $ signTransaction keysList (txHeader (ct + 3600) nonce) (txBody nonce), ())
-          go backend (logit txoptions) (tps txoptions) () sign (airNonce accInfo)
+          go backend (logit txoptions) (tps txoptions) () sign (aiAccountNonce accInfo)
         True -> do
           globalParameters <- withClient backend (getBestBlockHash >>= getParseCryptographicParameters) >>= \case
               Left err -> die err
@@ -138,11 +139,11 @@ main = do
                     [] -> die "There must be at least one other receiver."
                     xs -> withClient backend $ forM xs $ \addr -> do
                       accInfo <- getAccountInfoOrDie addr
-                      return (addr, airEncryptionKey accInfo)
+                      return (addr, aiAccountEncryptionKey accInfo)
 
           accInfo <- withClient backend $ getAccountInfoOrDie selfAddress
 
-          let encAmount = airEncryptedAmount accInfo
+          let encAmount = aiAccountEncryptedAmount accInfo
           let ownAmount = _selfAmount encAmount
           let table = computeTable globalParameters (2^(16 :: Int))
           let plain = decryptAmount table encryptionSecretKey ownAmount
@@ -163,7 +164,7 @@ main = do
                 ct <- utcTimeToTransactionTime <$> getCurrentTime
                 (body, newSelfAmount) <- txBody nonce carry
                 return (fst (txRecepient nonce), NormalTransaction $ signTransaction keysList (txHeader (ct + 3600) nonce body) body, newSelfAmount)
-          go backend (logit txoptions) (tps txoptions) (ownAmount, plain) sign (airNonce accInfo)
+          go backend (logit txoptions) (tps txoptions) (ownAmount, plain) sign (aiAccountNonce accInfo)
 
   where accountKeysParser = AE.withObject "Account keys" $ \v -> do
           accountAddr <- v AE..: "address"

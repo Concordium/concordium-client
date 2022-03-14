@@ -48,6 +48,14 @@ data LegacyCmd
       { legacyAddress   :: !Text
       , legacyBlockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the information of an account on a specific block
+  | GetPoolStatus
+      { legacyPool :: !(Maybe BakerId),
+        legacyBlockHash       :: !(Maybe Text)
+      } -- ^ Queries the gRPC server for the status of a pool on a specific block
+  | GetBakerList
+      {
+        legacyBlockHash       :: !(Maybe Text)
+      } -- ^ Queries the gRPC server for the list of bakers on a specific block
   | GetInstanceInfo
       { legacyContractAddress :: !Text,
         legacyBlockHash       :: !(Maybe Text)
@@ -130,6 +138,8 @@ legacyProgramOptions =
      getNextAccountNonceCommand <>
      getInstanceInfoCommand <>
      invokeContractCommand <>
+     getPoolStatusCommand <>
+     getBakerListCommand <>
      getRewardStatusCommand <>
      getBirkParametersCommand <>
      getModuleListCommand <>
@@ -335,6 +345,28 @@ invokeContractCommand =
                                help "Hash of the block in which to do the query,"))
        )
        (progDesc "Invoke a smart contract in the state of the given block."))
+getPoolStatusCommand :: Mod CommandFields LegacyCmd
+getPoolStatusCommand =
+  command
+    "GetPoolStatus"
+    (info
+       (GetPoolStatus <$>
+        optional (option auto (long "pool" <> metavar "POOL" <> help "Baker ID of pool. If not provided, status of the L-pool is queried.")) <*>
+        optional (strArgument (metavar "BLOCK-HASH" <>
+                               help "Hash of the block in which to do the query"))
+       )
+       (progDesc "Query the gRPC server for the status of a baker pool or the L-pool."))
+
+getBakerListCommand :: Mod CommandFields LegacyCmd
+getBakerListCommand =
+  command
+    "GetBakerList"
+    (info
+       (GetBakerList <$>
+        optional (strArgument (metavar "BLOCK-HASH" <>
+                               help "Hash of the block in which to do the query"))
+       )
+       (progDesc "Query the gRPC server for the status of a baker pool or the L-pool."))
 
 getRewardStatusCommand :: Mod CommandFields LegacyCmd
 getRewardStatusCommand =

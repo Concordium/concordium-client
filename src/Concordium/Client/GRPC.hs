@@ -211,6 +211,13 @@ invokeContract :: Text -> Text -> ClientMonad IO (Either String Value)
 invokeContract context block = withUnary (call @"invokeContract") msg (to processJSON)
   where msg = defMessage & CF.blockHash .~ block & CF.context .~ context
 
+getPoolStatus :: Types.BakerId -> Bool -> Text -> ClientMonad IO (Either String Value)
+getPoolStatus bid lpool hash = withUnary (call @"getPoolStatus") msg (to processJSON)
+  where msg = defMessage & CF.blockHash .~ hash & CF.lPool .~ lpool & CF.bakerId .~ fromIntegral bid
+
+getBakerList :: Text -> ClientMonad IO (Either String Value)
+getBakerList hash = withUnary (call @"getBakerList") msg (to processJSON)
+  where msg = defMessage & CF.blockHash .~ hash
 
 getRewardStatus :: Text -> ClientMonad IO (Either String Value)
 getRewardStatus hash = withUnaryBlock (call @"getRewardStatus") hash (to processJSON)

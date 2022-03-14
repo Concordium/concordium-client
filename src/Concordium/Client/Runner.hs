@@ -72,6 +72,7 @@ import           Concordium.Types.UpdateQueues       as Types
 import qualified Concordium.Types.Queries            as Queries
 import qualified Concordium.Types.Updates            as Updates
 import qualified Concordium.Types.Transactions       as Types
+import qualified Concordium.Types.Accounts           as Types
 import           Concordium.Types.HashableTo
 import           Concordium.Types.Parameters
 import qualified Concordium.Cost as Cost
@@ -933,7 +934,7 @@ getEncryptedAmountTransferData senderAddr ettReceiver ettAmount idx secretKey = 
   case AE.fromJSON infoValue of
     AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
     AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
-    AE.Success (Just AccountInfoResult{airEncryptedAmount=a@Types.AccountEncryptedAmount{..}}) -> do
+    AE.Success (Just Types.AccountInfo{aiAccountEncryptedAmount=a@Types.AccountEncryptedAmount{..}}) -> do
       let listOfEncryptedAmounts = Types.getIncomingAmountsList a
       taker <- case idx of
                 Nothing -> return id
@@ -989,15 +990,40 @@ getBakerCooldown bs = do
     cooldownEpochsV0 ups =
         toInteger $ ups ^. Types.currentParameters . cpCooldownParameters . cpBakerExtraCooldownEpochs
 
+-- |Returns the UTCTime date when the delegator cooldown on reducing stake/removing delegation will end, using on chain parameters
+getDelegatorCooldown :: Queries.BlockSummary -> ClientMonad IO (Maybe UTCTime)
+getDelegatorCooldown bs = do
+  Queries.bsWithUpdates bs $ \spv ups ->
+    case Types.chainParametersVersionFor spv of
+        Types.SCPV0 -> do
+          return Nothing
+        Types.SCPV1 -> do
+          currTime <- liftIO getCurrentTime
+          let cooldownTime = fromIntegral . Types.durationSeconds $ ups ^. Types.currentParameters . cpCooldownParameters . cpDelegatorCooldown
+          return $ Just $ addUTCTime cooldownTime currTime
+
 -- |Query the chain for the given account. Fail if either the chain cannot be reached, or
 -- if the account does not exist.
-getAccountInfoOrDie :: ID.AccountAddress ->  ClientMonad IO AccountInfoResult
+getAccountInfoOrDie :: ID.AccountAddress ->  ClientMonad IO Types.AccountInfo
 getAccountInfoOrDie senderAddr = do
   infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getAccountInfo (Text.pack . show $ senderAddr))
   case AE.fromJSON infoValue of
     AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
     AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
     AE.Success (Just air) -> return air
+
+-- |Query the chain for the given pool. Fail if either the chain cannot be reached, or
+-- if the baker pool does not exist.
+getPoolStatusOrDie :: Maybe Types.BakerId ->  ClientMonad IO Queries.PoolStatus
+getPoolStatusOrDie mbid = do
+  let (bid, lpool) = case mbid of
+        Nothing -> (0, True)
+        Just bakerId -> (bakerId, False)
+  infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getPoolStatus bid lpool)
+  case AE.fromJSON infoValue of
+    AE.Error err -> logFatal ["Cannot decode pool status response from the node: " ++ err]
+    AE.Success Nothing -> logFatal [printf "Could not query pool status from the chain."]
+    AE.Success (Just ps) -> return ps
 
 data CredentialUpdateKeysTransactionCfg =
   CredentialUpdateKeysTransactionCfg
@@ -1042,7 +1068,7 @@ getAccountDecryptTransferData senderAddr adAmount secretKey idx = do
   case AE.fromJSON infoValue of
     AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
     AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
-    AE.Success (Just AccountInfoResult{airEncryptedAmount=a@Types.AccountEncryptedAmount{..}}) -> do
+    AE.Success (Just Types.AccountInfo{aiAccountEncryptedAmount=a@Types.AccountEncryptedAmount{..}}) -> do
       globalContext <- logFatalOnError =<< getParseCryptographicParameters bbHash
 
       let listOfEncryptedAmounts = Types.getIncomingAmountsList a
@@ -1421,7 +1447,7 @@ processAccountCmd action baseCfgDir verbose backend =
                             AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show accountIdentifier]
                             AE.Success (Just air) -> return air
         -- derive the address of the account from the the initial credential
-        resolvedAddress <- case Map.lookup (ID.CredentialIndex 0) (airCredentials accInfo) of
+        resolvedAddress <- case Map.lookup (ID.CredentialIndex 0) (Types.aiAccountCredentials accInfo) of
                             Nothing -> logFatal [printf "No initial credential found for the account identified by '%s'" accountIdentifier ]
                             Just v -> return $ ID.addressFromRegId $ ID.credId $ vValue v
         -- reverse lookup local account names
@@ -1470,7 +1496,7 @@ processAccountCmd action baseCfgDir verbose backend =
         let pl = Types.encodePayload $ Types.UpdateCredentialKeys cid keys
 
         accInfo <- getAccountInfoOrDie senderAddress
-        let numCredentials = Map.size $ airCredentials accInfo
+        let numCredentials = Map.size $ Types.aiAccountCredentials accInfo
         let numKeys = length $ ID.credKeys keys
         let nrgCost _ = return $ Just $ accountUpdateKeysEnergyCost (Types.payloadSize pl) numCredentials numKeys
 
@@ -1501,7 +1527,7 @@ processAccountCmd action baseCfgDir verbose backend =
       withClient backend $ do
         accInfo <- getAccountInfoOrDie senderAddress
         (epayload, numKeys, newCredentials, removedCredentials) <- liftIO $ getAccountUpdateCredentialsTransactionData cdisFile removeCidsFile newThreshold
-        let numExistingCredentials =  Map.size (airCredentials accInfo)
+        let numExistingCredentials =  Map.size (Types.aiAccountCredentials accInfo)
         let nrgCost _ = return $ Just $ accountUpdateCredentialsEnergyCost (Types.payloadSize epayload) numExistingCredentials numKeys
         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
         when verbose $ liftIO $ do
@@ -2411,11 +2437,13 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts cbCapital cbRestakeEa
 
     warnAboutBadCapital txCfg capital = do
       let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
-      AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
+      Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr
       warnIfCapitalIsSmall capital
-      cannotAfford <- warnIfCannotAfford txCfg capital airAmount
-      mapM_ (warnIfCapitalIsLowered capital) airBaker
-      unless cannotAfford (warnIfCapitalIsBig capital airAmount)
+      cannotAfford <- warnIfCannotAfford txCfg capital aiAccountAmount
+      case aiStakingInfo of
+        Types.AccountStakingBaker{..} -> warnIfCapitalIsLowered capital asiStakedAmount
+        _ -> return ()
+      unless cannotAfford (warnIfCapitalIsBig capital aiAccountAmount)
 
     warnIfCannotAfford txCfg capital amount = do
       energyrate <- getNrgGtuRate
@@ -2434,14 +2462,14 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts cbCapital cbRestakeEa
         confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
         unless confirmed exitTransactionCancelled
 
-    warnIfCapitalIsLowered capital aibresult = do
+    warnIfCapitalIsLowered capital stakedAmount = do
       blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
       cooldownDate <- case blockSummary of
         Just cpr -> getBakerCooldown cpr
         Nothing -> do
           logError ["Could not reach the node to get the baker cooldown period."]
           exitTransactionCancelled
-      if capital < abirStakedAmount aibresult
+      if capital < stakedAmount
       then do
         logWarn ["The new staked value appears to be lower than the amount currently staked on chain by this baker."]
         logWarn ["Decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the CCD are made available."]
@@ -2477,7 +2505,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts cbCapital cbRestakeEa
         ([ printf "configuring baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
          , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy) ]
          ++ configureCapitalLogMsg
-         ++ configureRestateLogMsg
+         ++ configureRestakeLogMsg
          ++ configureOpenForDelegationLogMsg
          ++ configureTransactionFeeCommissionLogMsg
          ++ configureBakingRewardCommissionLogMsg
@@ -2495,7 +2523,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts cbCapital cbRestakeEa
         Nothing -> []
         Just capital -> [printf "stake will be %s CCD" (Types.amountToString capital)]
 
-    configureRestateLogMsg =
+    configureRestakeLogMsg =
       case cbRestakeEarnings of
         Nothing -> []
         Just True -> ["rewards will be automatically added to the baking stake"]
@@ -2540,7 +2568,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts cbCapital cbRestakeEa
                   bkwpSignatureVerifyKey = bkSigVerifyKey keys
                   bkwpAggregationVerifyKey = bkAggrVerifyKey keys
                   senderAddress = applyAlias (toAlias txOpts) $ naAddr $ esdAddress encSignData
-                  challenge = Types.addBakerChallenge senderAddress bkwpElectionVerifyKey bkwpSignatureVerifyKey bkwpAggregationVerifyKey
+                  challenge = Types.configureBakerKeyChallenge senderAddress bkwpElectionVerifyKey bkwpSignatureVerifyKey bkwpAggregationVerifyKey
               bkwpProofElection <- Proofs.proveDlog25519VRF challenge (VRF.KeyPair electionSignKey bkwpElectionVerifyKey) `except` "cannot produce VRF key proof"
               bkwpProofSig <- Proofs.proveDlog25519Block challenge (BlockSig.KeyPair signatureSignKey bkwpSignatureVerifyKey) `except` "cannot produce signature key proof"
               bkwpProofAggregation <- Bls.proveKnowledgeOfSK challenge aggrSignKey
@@ -2549,6 +2577,417 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts cbCapital cbRestakeEa
     except c err = c >>= \case
       Just x -> return x
       Nothing -> logFatal [err]
+
+-- |Process the old 'baker add ...' command to add a baker in protocol version < 4.
+processBakerAddCmd :: Maybe FilePath -> Verbose -> Backend -> TransactionOpts (Maybe Types.Energy)
+  -> Types.Amount -- ^New stake/capital.
+  -> Bool -- ^Select whether to restake earnings.
+  -> FilePath -- ^File to read baker keys from.
+  -> Maybe FilePath -- ^File to write baker keys to.
+  -> IO ()
+processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarnings inputKeysFile outputKeysFile = do
+  let intOpts = toInteractionOpts txOpts
+  (bakerKeys, txCfg, pl) <- transactionForBakerAdd (ioConfirm intOpts)
+  withClient backend $ do
+    warnAboutBadCapital txCfg abBakingStake
+    result <- sendAndTailTransaction txCfg pl intOpts
+    events <- eventsFromTransactionResult result
+    mapM_ (tryPrintKeyUpdateEventToOutputFile bakerKeys) events
+  where
+    askUntilEqual credentials = do
+      pwd <- askPassword "Enter password for encryption of baker credentials (leave blank for no encryption): "
+      case Password.getPassword pwd of
+        "" -> do
+          logInfo [ printf "Empty password, not encrypting baker credentials" ]
+          return $ AE.encodePretty credentials
+        _ -> do
+          pwd2 <- askPassword "Re-enter password for encryption of baker credentials: "
+          if pwd == pwd2 then
+            AE.encodePretty <$> Password.encryptJSON Password.AES256 Password.PBKDF2SHA256 credentials pwd
+          else do
+            logWarn ["The two passwords were not equal. Try again"]
+            askUntilEqual credentials
+
+    printToOutputFile credentials out = liftIO $ do
+      credentialsMaybeEncrypted <- askUntilEqual credentials
+      void $ handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose out credentialsMaybeEncrypted
+
+    printToOutputFileIfJust bakerKeys bakerId =
+      case (outputKeysFile, bakerKeys) of
+        (Just outFile, (keys, _)) ->
+          printToOutputFile BakerCredentials{bcKeys = keys, bcIdentity = bakerId} outFile
+        _ ->
+          let encrypted = snd bakerKeys
+          in unless encrypted $
+                logInfo [printf "To use it add \"bakerId\": %s to the keys file %s." (show bakerId) inputKeysFile]
+
+    eventsFromTransactionResult Nothing = return []
+    eventsFromTransactionResult (Just result) = do
+      case tsrState result of
+        Finalized | SingleBlock _ summary <- parseTransactionBlockResult result -> do
+          case Types.tsResult summary of
+            Types.TxReject reason -> logWarn [showRejectReason True reason] >> return []
+            Types.TxSuccess es -> return es
+        Absent ->
+          logFatal ["Transaction is absent."]
+        _ ->
+          logFatal ["Unexpected status."]
+
+    tryPrintKeyUpdateEventToOutputFile bakerKeys Types.BakerAdded{..} = do
+      logInfo ["Baker with ID " ++ show ebaBakerId ++ " added."]
+      printToOutputFileIfJust bakerKeys ebaBakerId
+    tryPrintKeyUpdateEventToOutputFile _ _ = return ()
+
+    warnAboutBadCapital txCfg capital = do
+      let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
+      Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr
+      warnIfCapitalIsSmall capital
+      cannotAfford <- warnIfCannotAfford txCfg capital aiAccountAmount
+      unless cannotAfford (warnIfCapitalIsBig capital aiAccountAmount)
+
+    warnIfCannotAfford txCfg capital amount = do
+      energyrate <- getNrgGtuRate
+      let gtuTransactionPrice = Types.computeCost energyrate (tcEnergy txCfg)
+      let cannotAfford = amount - gtuTransactionPrice < capital
+      when cannotAfford $ do
+        logWarn [[i|Account balance (#{showCcd amount}) minus the cost of the transaction (#{showCcd gtuTransactionPrice}) is lower than the amount requested to be staked (#{showCcd capital}).|]]
+        confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
+        unless confirmed exitTransactionCancelled
+      return cannotAfford
+
+    warnIfCapitalIsSmall capital = do
+      minimumBakerStake <- getBakerStakeThresholdOrDie
+      when (capital < minimumBakerStake) $ do
+        logWarn [[i|The staked amount (#{showCcd capital}) is lower than the minimum baker stake threshold (#{showCcd minimumBakerStake}).|]]
+        confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
+        unless confirmed exitTransactionCancelled
+
+    warnIfCapitalIsBig capital amount =
+      when ((capital * 100) > (amount * 95)) $ do
+        logWarn ["You are attempting to stake >95% of your total CCD on this account. Staked CCD is not available for spending."]
+        logWarn ["Be aware that updating or stopping your baker in the future will require some amount of non-staked CCD to pay for the transactions to do so."]
+        confirmed <- askConfirmation $ Just "Confirm that you wish to stake this much CCD"
+        unless confirmed exitTransactionCancelled
+
+    transactionForBakerAdd confirm = do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+      (bakerKeys, Types.BakerKeysWithProofs {
+    bkwpElectionVerifyKey = abElectionVerifyKey,
+    bkwpProofElection = abProofElection,
+    bkwpSignatureVerifyKey = abSignatureVerifyKey,
+    bkwpProofSig = abProofSig,
+    bkwpAggregationVerifyKey = abAggregationVerifyKey,
+    bkwpProofAggregation = abProofAggregation
+  }) <- readInputKeysFile baseCfg
+      let payload = Types.encodePayload Types.AddBaker{..}
+          nrgCost _ = return . Just $ bakerAddEnergyCost $ Types.payloadSize payload
+            -- case cbKeysWithProofs of
+            --             Nothing -> return . Just $ bakerConfigureEnergyCostWithoutKeys (Types.payloadSize payload)
+            --             Just _ -> return . Just $ bakerConfigureEnergyCostWithKeys (Types.payloadSize payload)
+      txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
+      logSuccess
+        ([ printf "adding baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
+         , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy) ]
+         ++ configureCapitalLogMsg
+         ++ configureRestakeLogMsg)
+      when confirm $ do
+        confirmed <- askConfirmation Nothing
+        unless confirmed exitTransactionCancelled
+      when verbose $ do
+        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData
+        putStrLn ""
+      return (bakerKeys, txCfg, payload)
+
+    configureCapitalLogMsg = [printf "stake will be %s CCD" (Types.amountToString abBakingStake)]
+
+    configureRestakeLogMsg =
+      case abRestakeEarnings of
+        True -> ["rewards will be automatically added to the baking stake"]
+        False -> ["rewards will _not_ be automatically added to the baking stake"]
+
+    readInputKeysFile baseCfg = do
+      encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
+      bakerKeysMaybeEncrypted <- handleReadFile BS.readFile inputKeysFile
+      let pwdAction = askPassword "Enter password for decrypting baker keys: "
+      Password.decodeMaybeEncrypted pwdAction bakerKeysMaybeEncrypted >>= \case
+        Left err -> logFatal [printf "error: %s" err]
+        Right (keys, enc) -> do
+          let electionSignKey = bkElectionSignKey keys
+              signatureSignKey = bkSigSignKey keys
+              aggrSignKey = bkAggrSignKey keys
+              bkwpElectionVerifyKey = bkElectionVerifyKey keys
+              bkwpSignatureVerifyKey = bkSigVerifyKey keys
+              bkwpAggregationVerifyKey = bkAggrVerifyKey keys
+              senderAddress = applyAlias (toAlias txOpts) $ naAddr $ esdAddress encSignData
+              challenge = Types.addBakerChallenge senderAddress bkwpElectionVerifyKey bkwpSignatureVerifyKey bkwpAggregationVerifyKey
+          bkwpProofElection <- Proofs.proveDlog25519VRF challenge (VRF.KeyPair electionSignKey bkwpElectionVerifyKey) `except` "cannot produce VRF key proof"
+          bkwpProofSig <- Proofs.proveDlog25519Block challenge (BlockSig.KeyPair signatureSignKey bkwpSignatureVerifyKey) `except` "cannot produce signature key proof"
+          bkwpProofAggregation <- Bls.proveKnowledgeOfSK challenge aggrSignKey
+          return ((keys, enc), Types.BakerKeysWithProofs{..})
+
+    except c err = c >>= \case
+      Just x -> return x
+      Nothing -> logFatal [err]
+
+-- |Process the old 'baker set-key ...' command to set baker keys in protocol version < 4.
+processBakerSetKeysCmd :: Maybe FilePath -> Verbose -> Backend -> TransactionOpts (Maybe Types.Energy)
+  -> FilePath -- ^File to read baker keys from.
+  -> Maybe FilePath -- ^File to write baker keys to.
+  -> IO ()
+processBakerSetKeysCmd baseCfgDir verbose backend txOpts inputKeysFile outputKeysFile = do
+  let intOpts = toInteractionOpts txOpts
+  (bakerKeys, txCfg, pl) <- transactionForBakerSetKeys (ioConfirm intOpts)
+  withClient backend $ do
+    result <- sendAndTailTransaction txCfg pl intOpts
+    events <- eventsFromTransactionResult result
+    mapM_ (tryPrintKeyUpdateEventToOutputFile bakerKeys) events
+  where
+    askUntilEqual credentials = do
+      pwd <- askPassword "Enter password for encryption of baker credentials (leave blank for no encryption): "
+      case Password.getPassword pwd of
+        "" -> do
+          logInfo [ printf "Empty password, not encrypting baker credentials" ]
+          return $ AE.encodePretty credentials
+        _ -> do
+          pwd2 <- askPassword "Re-enter password for encryption of baker credentials: "
+          if pwd == pwd2 then
+            AE.encodePretty <$> Password.encryptJSON Password.AES256 Password.PBKDF2SHA256 credentials pwd
+          else do
+            logWarn ["The two passwords were not equal. Try again"]
+            askUntilEqual credentials
+
+    printToOutputFile credentials out = liftIO $ do
+      credentialsMaybeEncrypted <- askUntilEqual credentials
+      void $ handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose out credentialsMaybeEncrypted
+
+    printToOutputFileIfJust bakerKeys bakerId =
+      case (outputKeysFile, bakerKeys) of
+        (Just outFile, (keys, _)) ->
+          printToOutputFile BakerCredentials{bcKeys = keys, bcIdentity = bakerId} outFile
+        _ ->
+          let encrypted = snd bakerKeys
+          in unless encrypted $
+                logInfo [printf "To use it add \"bakerId\": %s to the keys file %s." (show bakerId) inputKeysFile]
+
+    eventsFromTransactionResult Nothing = return []
+    eventsFromTransactionResult (Just result) = do
+      case tsrState result of
+        Finalized | SingleBlock _ summary <- parseTransactionBlockResult result -> do
+          case Types.tsResult summary of
+            Types.TxReject reason -> logWarn [showRejectReason True reason] >> return []
+            Types.TxSuccess es -> return es
+        Absent ->
+          logFatal ["Transaction is absent."]
+        _ ->
+          logFatal ["Unexpected status."]
+
+    tryPrintKeyUpdateEventToOutputFile bakerKeys Types.BakerKeysUpdated{..} = do
+      logInfo ["Keys for baker with ID " ++ show ebkuBakerId ++ " updated."]
+      printToOutputFileIfJust bakerKeys ebkuBakerId
+    tryPrintKeyUpdateEventToOutputFile _ _ = return ()
+
+    transactionForBakerSetKeys confirm = do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+      (bakerKeys, Types.BakerKeysWithProofs {
+    bkwpElectionVerifyKey = ubkElectionVerifyKey,
+    bkwpProofElection = ubkProofElection,
+    bkwpSignatureVerifyKey = ubkSignatureVerifyKey,
+    bkwpProofSig = ubkProofSig,
+    bkwpAggregationVerifyKey = ubkAggregationVerifyKey,
+    bkwpProofAggregation = ubkProofAggregation
+  }) <- readInputKeysFile baseCfg
+      let payload = Types.encodePayload Types.UpdateBakerKeys{..}
+          nrgCost _ = return . Just $ bakerSetKeysEnergyCost $ Types.payloadSize payload
+      txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
+      logSuccess
+        ([ printf "setting new keys for baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
+         , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy) ])
+      when confirm $ do
+        confirmed <- askConfirmation Nothing
+        unless confirmed exitTransactionCancelled
+      when verbose $ do
+        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData
+        putStrLn ""
+      return (bakerKeys, txCfg, payload)
+
+    readInputKeysFile baseCfg = do
+      encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
+      bakerKeysMaybeEncrypted <- handleReadFile BS.readFile inputKeysFile
+      let pwdAction = askPassword "Enter password for decrypting baker keys: "
+      Password.decodeMaybeEncrypted pwdAction bakerKeysMaybeEncrypted >>= \case
+        Left err -> logFatal [printf "error: %s" err]
+        Right (keys, enc) -> do
+          let electionSignKey = bkElectionSignKey keys
+              signatureSignKey = bkSigSignKey keys
+              aggrSignKey = bkAggrSignKey keys
+              bkwpElectionVerifyKey = bkElectionVerifyKey keys
+              bkwpSignatureVerifyKey = bkSigVerifyKey keys
+              bkwpAggregationVerifyKey = bkAggrVerifyKey keys
+              senderAddress = applyAlias (toAlias txOpts) $ naAddr $ esdAddress encSignData
+              challenge = Types.addBakerChallenge senderAddress bkwpElectionVerifyKey bkwpSignatureVerifyKey bkwpAggregationVerifyKey
+          bkwpProofElection <- Proofs.proveDlog25519VRF challenge (VRF.KeyPair electionSignKey bkwpElectionVerifyKey) `except` "cannot produce VRF key proof"
+          bkwpProofSig <- Proofs.proveDlog25519Block challenge (BlockSig.KeyPair signatureSignKey bkwpSignatureVerifyKey) `except` "cannot produce signature key proof"
+          bkwpProofAggregation <- Bls.proveKnowledgeOfSK challenge aggrSignKey
+          return ((keys, enc), Types.BakerKeysWithProofs{..})
+
+    except c err = c >>= \case
+      Just x -> return x
+      Nothing -> logFatal [err]
+
+-- |Process the old 'baker set-key ...' command to set baker keys in protocol version < 4.
+processBakerRemoveCmd :: Maybe FilePath -> Verbose -> Backend -> TransactionOpts (Maybe Types.Energy)
+  -> IO ()
+processBakerRemoveCmd baseCfgDir verbose backend txOpts = do
+  let intOpts = toInteractionOpts txOpts
+  (txCfg, pl) <- transactionForBakerRemove (ioConfirm intOpts)
+  withClient backend $ do
+    warnAboutRemoving
+    sendAndTailTransaction_ txCfg pl intOpts
+  where
+
+    warnAboutRemoving = do
+      blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
+      cooldownDate <- case blockSummary of
+        Just cpr -> getBakerCooldown cpr
+        Nothing -> do
+          logError ["Could not reach the node to get the baker cooldown period."]
+          exitTransactionCancelled
+      logWarn ["Stopping a baker that is staking will lock the stake of the baker for a cooldown period before the CCD are made available."]
+      logWarn ["During this period it is not possible to update the baker's stake, or restart the baker."]
+      logWarn [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
+      confirmed <- askConfirmation $ Just "Confirm that you want to send the transaction to stop this baker"
+      unless confirmed exitTransactionCancelled
+
+    transactionForBakerRemove confirm = do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      let payload = Types.encodePayload Types.RemoveBaker
+          nrgCost _ = return . Just $ bakerRemoveEnergyCost $ Types.payloadSize payload
+      txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
+      logSuccess
+        ([ printf "submitting transaction to remove baker with %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
+         , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy) ])
+      when confirm $ do
+        confirmed <- askConfirmation Nothing
+        unless confirmed exitTransactionCancelled
+      when verbose $ do
+        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData
+        putStrLn ""
+      return (txCfg, payload)
+
+-- |Process the old 'baker update-stake ...' command in protocol version < 4.
+processBakerUpdateStakeBeforeP4Cmd :: Maybe FilePath -> Verbose -> Backend -> TransactionOpts (Maybe Types.Energy)
+  -> Types.Amount -- ^New stake
+  -> IO ()
+processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = do
+  let intOpts = toInteractionOpts txOpts
+  (txCfg, pl) <- transactionForBakerUpdateStake (ioConfirm intOpts)
+  withClient backend $ do
+    warnAboutBadCapital txCfg ubsStake
+    sendAndTailTransaction_ txCfg pl intOpts
+  where
+
+    warnAboutBadCapital txCfg capital = do
+      let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
+      Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr
+      warnIfCapitalIsSmall capital
+      cannotAfford <- warnIfCannotAfford txCfg capital aiAccountAmount
+      case aiStakingInfo of
+        Types.AccountStakingBaker{..} -> warnIfCapitalIsLowered capital asiStakedAmount
+        _ -> return ()
+      unless cannotAfford (warnIfCapitalIsBig capital aiAccountAmount)
+
+    warnIfCannotAfford txCfg capital amount = do
+      energyrate <- getNrgGtuRate
+      let gtuTransactionPrice = Types.computeCost energyrate (tcEnergy txCfg)
+      let cannotAfford = amount - gtuTransactionPrice < capital
+      when cannotAfford $ do
+        logWarn [[i|Account balance (#{showCcd amount}) minus the cost of the transaction (#{showCcd gtuTransactionPrice}) is lower than the amount requested to be staked (#{showCcd capital}).|]]
+        confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
+        unless confirmed exitTransactionCancelled
+      return cannotAfford
+
+    warnIfCapitalIsSmall capital = do
+      minimumBakerStake <- getBakerStakeThresholdOrDie
+      when (capital < minimumBakerStake) $ do
+        logWarn [[i|The staked amount (#{showCcd capital}) is lower than the minimum baker stake threshold (#{showCcd minimumBakerStake}).|]]
+        confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
+        unless confirmed exitTransactionCancelled
+
+    warnIfCapitalIsLowered capital stakedAmount = do
+      blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
+      cooldownDate <- case blockSummary of
+        Just cpr -> getBakerCooldown cpr
+        Nothing -> do
+          logError ["Could not reach the node to get the baker cooldown period."]
+          exitTransactionCancelled
+      if capital < stakedAmount
+      then do
+        logWarn ["The new staked value appears to be lower than the amount currently staked on chain by this baker."]
+        logWarn ["Decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the CCD are made available."]
+        logWarn ["During this period it is not possible to update the baker's stake, or stop the baker."]
+        logWarn [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
+        confirmed <- askConfirmation $ Just "Confirm that you want to update the baker's stake"
+        unless confirmed exitTransactionCancelled
+      else do
+        logInfo ["Note that decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the CCD are made available."]
+        logInfo ["During this period it is not possible to update the baker's stake, or stop the baker."]
+        logInfo [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
+
+    warnIfCapitalIsBig capital amount =
+      when ((capital * 100) > (amount * 95)) $ do
+        logWarn ["You are attempting to stake >95% of your total CCD on this account. Staked CCD is not available for spending."]
+        logWarn ["Be aware that updating or stopping your baker in the future will require some amount of non-staked CCD to pay for the transactions to do so."]
+        confirmed <- askConfirmation $ Just "Confirm that you wish to stake this much CCD"
+        unless confirmed exitTransactionCancelled
+
+    transactionForBakerUpdateStake confirm = do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      let payload = Types.encodePayload Types.UpdateBakerStake{..}
+          nrgCost _ = return . Just $ bakerUpdateStakeEnergyCost $ Types.payloadSize payload
+      txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
+      logSuccess
+        ([ printf "submitting transaction to update stake of baker to %s" (showCcd ubsStake)
+         , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy) ])
+      when confirm $ do
+        confirmed <- askConfirmation Nothing
+        unless confirmed exitTransactionCancelled
+      when verbose $ do
+        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData
+        putStrLn ""
+      return (txCfg, payload)
+
+-- |Process the old 'baker update-restake ...' command in protocol version < 4.
+processBakerUpdateRestakeCmd :: Maybe FilePath -> Verbose -> Backend -> TransactionOpts (Maybe Types.Energy)
+  -> Bool -- ^Whether to restake earnings
+  -> IO ()
+processBakerUpdateRestakeCmd baseCfgDir verbose backend txOpts ubreRestakeEarnings = do
+  let intOpts = toInteractionOpts txOpts
+  (txCfg, pl) <- transactionForBakerUpdateRestake (ioConfirm intOpts)
+  withClient backend $ do
+    sendAndTailTransaction_ txCfg pl intOpts
+  where
+
+    transactionForBakerUpdateRestake confirm = do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      let payload = Types.encodePayload Types.UpdateBakerRestakeEarnings{..}
+          nrgCost _ = return . Just $ bakerUpdateRestakeEnergyCost $ Types.payloadSize payload
+      txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
+      logSuccess
+        ([ printf "submitting transaction to change restaking switch of baker to %s" (show ubreRestakeEarnings)
+         , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy) ])
+      when confirm $ do
+        confirmed <- askConfirmation Nothing
+        unless confirmed exitTransactionCancelled
+      when verbose $ do
+        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData
+        putStrLn ""
+      return (txCfg, payload)
 
 -- |Process the 'baker update-stake ...' command.
 processBakerUpdateStakeCmd :: Maybe FilePath -> Verbose -> Backend -> TransactionOpts (Maybe Types.Energy)
@@ -2600,25 +3039,64 @@ processBakerCmd action baseCfgDir verbose backend =
             when pubSuccess $ do
               logSuccess [ printf "public keys written to file '%s'" pubFile]
 
-    BakerAdd bakerKeysFile txOpts initialStake autoRestake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission outputFile ->
-      processBakerConfigureCmd baseCfgDir verbose backend txOpts (Just initialStake) (Just autoRestake) (Just openForDelegation) (Just metadataURL) (Just transactionFeeCommission) (Just bakingRewardCommission) (Just finalizationRewardCommission) (Just bakerKeysFile) outputFile
+    BakerAdd bakerKeysFile txOpts initialStake autoRestake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission outputFile -> do
+      pv <- withClient backend $ do
+        cs <- getConsensusStatus >>= getFromJson
+        return $ Queries.csProtocolVersion cs
+      if pv < Types.P4
+        then
+          processBakerAddCmd baseCfgDir verbose backend txOpts initialStake autoRestake bakerKeysFile outputFile
+        else do
+          let allPresent = case (openForDelegation, metadataURL, transactionFeeCommission, bakingRewardCommission, finalizationRewardCommission) of
+                (Just _, Just _, Just _, Just _, Just _) -> True
+                _ -> False
+          when (not allPresent) $ do
+            logWarn $ ["To add a baker, all of the options\n"
+                 ++ "--open-delegation-for,\n"
+                 ++ "--baker-url,\n"
+                 ++ "--delegation-transaction-fee-commission,\n"
+                 ++ "--delegation-baking-commission,\n"
+                 ++ "--delegation-finalization-commission\nmust be present."]
+            confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
+            unless confirmed exitTransactionCancelled
+          processBakerConfigureCmd baseCfgDir verbose backend txOpts (Just initialStake) (Just autoRestake) openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission (Just bakerKeysFile) outputFile
 
     BakerConfigure txOpts capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission inputOutputKeyFiles -> do
       let inputKeysFile = fmap fst inputOutputKeyFiles
           outputKeysFile = fmap snd inputOutputKeyFiles
       processBakerConfigureCmd baseCfgDir verbose backend txOpts capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission inputKeysFile outputKeysFile
 
-    BakerSetKeys file txOpts outfile ->
-      processBakerConfigureCmd baseCfgDir verbose backend txOpts Nothing Nothing Nothing Nothing Nothing Nothing Nothing (Just file) outfile
+    BakerSetKeys file txOpts outfile -> do
+      pv <- withClient backend $ do
+        cs <- getConsensusStatus >>= getFromJson
+        return $ Queries.csProtocolVersion cs
+      if pv < Types.P4
+        then processBakerSetKeysCmd baseCfgDir verbose backend txOpts file outfile
+        else processBakerConfigureCmd baseCfgDir verbose backend txOpts Nothing Nothing Nothing Nothing Nothing Nothing Nothing (Just file) outfile
 
-    BakerRemove txOpts ->
-      processBakerConfigureCmd baseCfgDir verbose backend txOpts (Just 0) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+    BakerRemove txOpts -> do
+      pv <- withClient backend $ do
+        cs <- getConsensusStatus >>= getFromJson
+        return $ Queries.csProtocolVersion cs
+      if pv < Types.P4
+        then processBakerRemoveCmd baseCfgDir verbose backend txOpts
+        else processBakerConfigureCmd baseCfgDir verbose backend txOpts (Just 0) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
-    BakerUpdateStake newStake txOpts ->
-      processBakerUpdateStakeCmd baseCfgDir verbose backend txOpts newStake
+    BakerUpdateStake newStake txOpts -> do
+      pv <- withClient backend $ do
+        cs <- getConsensusStatus >>= getFromJson
+        return $ Queries.csProtocolVersion cs
+      if pv < Types.P4
+      then processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts newStake
+      else processBakerUpdateStakeCmd baseCfgDir verbose backend txOpts newStake
 
-    BakerUpdateRestakeEarnings restake txOpts ->
-      processBakerConfigureCmd baseCfgDir verbose backend txOpts Nothing (Just restake) Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+    BakerUpdateRestakeEarnings restake txOpts -> do
+      pv <- withClient backend $ do
+        cs <- getConsensusStatus >>= getFromJson
+        return $ Queries.csProtocolVersion cs
+      if pv < Types.P4
+      then processBakerUpdateRestakeCmd baseCfgDir verbose backend txOpts restake
+      else processBakerConfigureCmd baseCfgDir verbose backend txOpts Nothing (Just restake) Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
     BakerUpdateMetadataURL url txOpts ->
       processBakerConfigureCmd baseCfgDir verbose backend txOpts Nothing Nothing Nothing (Just url) Nothing Nothing Nothing Nothing Nothing
@@ -2636,15 +3114,68 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
   let intOpts = toInteractionOpts txOpts
   (txCfg, pl) <- transactionForDelegatorConfigure (ioConfirm intOpts)
   withClient backend $ do
+    warnInOldProtocol
     mapM_ (warnAboutBadCapital txCfg) cdCapital
     result <- sendAndTailTransaction txCfg pl intOpts
     warnAboutFailedResult result
   where
+    warnInOldProtocol = do
+      cs <- getConsensusStatus >>= getFromJson
+      when (Queries.csProtocolVersion cs < Types.P4) $ do
+        logWarn [[i|Delegation is not supported in protocol versions < 4.|]]
+        confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
+        unless confirmed exitTransactionCancelled
+    warnAboutPoolStatus capital alreadyDelegatedToBakerPool alreadyBakerId = do
+      case cdDelegationTarget of
+        Nothing -> return ()
+        Just Types.DelegateToLPool -> return ()
+        Just (Types.DelegateToBaker bid) -> do
+          poolStatus <- getPoolStatusOrDie $ Just bid
+          let alreadyDelegatedToThisBaker = case alreadyBakerId of
+                Just abid -> if abid == bid then alreadyDelegatedToBakerPool else 0
+                Nothing -> 0
+          case poolStatus of
+            Queries.BakerPoolStatus{..} -> when (psDelegatedCapital + capital - alreadyDelegatedToThisBaker > psDelegatedCapitalCap) $ do
+              logWarn [[i|Staked amount (#{showCcd capital}) plus the stake already delegated the pool is larger than the maximum allowed delegated stake).|]]
+              confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
+              unless confirmed exitTransactionCancelled
+            _ -> return () -- Should not happen
     warnAboutBadCapital txCfg capital = do
       let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
-      AccountInfoResult{..} <- getAccountInfoOrDie senderAddr
-      warnIfCannotAfford txCfg capital airAmount
-      -- TODO: Add airDelegator field and warn if capital is lowered (see configure delegator).
+      Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr
+      warnIfCannotAfford txCfg capital aiAccountAmount
+      (alreadyDelegatedToBakerPool, alreadyBakerId) <- case aiStakingInfo of
+            Types.AccountStakingDelegated{..} -> do
+                warnIfCapitalIsLowered capital asiStakedAmount
+                mbid <- case asiDelegationTarget of
+                  Types.DelegateToLPool -> return Nothing 
+                  Types.DelegateToBaker bid -> return $ Just bid
+                return (asiStakedAmount, mbid)
+            _ -> return (0, Nothing)
+      warnAboutPoolStatus capital alreadyDelegatedToBakerPool alreadyBakerId
+
+    warnIfCapitalIsLowered capital stakedAmount = do
+      blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
+      cooldownDate <- case blockSummary of
+        Just cpr -> getDelegatorCooldown cpr
+        Nothing -> do
+          logError ["Could not reach the node to get the delegator cooldown period."]
+          exitTransactionCancelled
+      let cooldownString :: String = case cooldownDate of
+            Just cd -> [i|The current baker cooldown would last until approximately #{cd}|]
+            Nothing -> [i||]
+      if capital < stakedAmount
+      then do
+        logWarn ["The new staked value appears to be lower than the amount currently staked on chain by this delegator."]
+        logWarn ["Decreasing the amount a delegator is staking will lock the stake of the delegator for a cooldown period before the CCD are made available."]
+        logWarn ["During this period it is not possible to update the delegator's stake, or stop the delegation of stake."]
+        logWarn [cooldownString]
+        confirmed <- askConfirmation $ Just "Confirm that you want to update the delegator's stake"
+        unless confirmed exitTransactionCancelled
+      else do
+        logInfo ["Note that decreasing the amount a delegator is staking will lock the stake of the deleator for a cooldown period before the CCD are made available."]
+        logInfo ["During this period it is not possible to update the delegator's stake, or stop the delegation of stake."]
+        logInfo [cooldownString]
 
     warnIfCannotAfford txCfg capital amount = do
       energyrate <- getNrgGtuRate
@@ -2678,7 +3209,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
         ([ printf "configuring delegator with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
          , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy) ]
          ++ configureCapitalLogMsg
-         ++ configureRestateLogMsg
+         ++ configureRestakeLogMsg
          ++ configureDelegationTargetLogMsg)
 
       when confirm $ do
@@ -2694,11 +3225,11 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
         Nothing -> []
         Just capital -> [printf "stake will be %s CCD" (Types.amountToString capital)]
 
-    configureRestateLogMsg =
+    configureRestakeLogMsg =
       case cdRestakeEarnings of
         Nothing -> []
-        Just True -> ["rewards will be automatically added to the baking stake"]
-        Just False -> ["rewards will _not_ be automatically added to the baking stake"]
+        Just True -> ["rewards will be automatically added to the delegated stake"]
+        Just False -> ["rewards will _not_ be automatically added to the delegated stake"]
 
     configureDelegationTargetLogMsg =
       case cdDelegationTarget of
@@ -2765,6 +3296,12 @@ processLegacyCmd action backend =
     InvokeContract contextFile block -> do
       context <- TextIO.readFile contextFile
       withClient backend $ withBestBlockHash block (invokeContract context) >>= printJSON
+    GetPoolStatus pool block ->
+      let (bid, lpool) = case pool of
+            Just bakerId -> (bakerId, False)
+            Nothing -> (0, True)
+      in withClient backend $ withBestBlockHash block (getPoolStatus bid lpool) >>= printJSON
+    GetBakerList block -> withClient backend $ withBestBlockHash block getBakerList >>= printJSON
     GetRewardStatus block -> withClient backend $ withBestBlockHash block getRewardStatus >>= printJSON
     GetBirkParameters block ->
       withClient backend $ withBestBlockHash block getBirkParameters >>= printJSON

@@ -16,6 +16,8 @@ import Concordium.Common.Version
 import Concordium.ID.Parameters
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Types
+import qualified Concordium.Types.Accounts as Types
+import qualified Concordium.Types.Accounts.Releases as Types
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Crypto.EncryptedTransfers as Enc
 import qualified Concordium.Wasm as Wasm
@@ -157,22 +159,22 @@ showRevealedAttributes as =
                   Just k -> Text.unpack k
     showAttr (t, IDTypes.AttributeValue v) = printf "%s=%s" (showTag t) (show v)
 
-printAccountInfo :: (Types.Epoch -> UTCTime) -> NamedAddress -> AccountInfoResult -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
+printAccountInfo :: (Types.Epoch -> UTCTime) -> NamedAddress -> Types.AccountInfo -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
 printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
   tell ([ [i|Local names:            #{showNameList $ naNames addr}|]
         , [i|Address:                #{naAddr addr}|]
-        , [i|Balance:                #{showCcd $ airAmount a}|]
+        , [i|Balance:                #{showCcd $ Types.aiAccountAmount a}|]
         ] ++
-       case totalRelease $ airReleaseSchedule a of
+       case Types.releaseTotal $ Types.aiAccountReleaseSchedule a of
          0 -> []
          tot -> (printf "Release schedule:       total %s" (showCcd tot)) :
-               (map (\ReleaseScheduleItem{..} -> printf "   %s:               %s scheduled by the transactions: %s."
-                                                (showTimeFormatted (Time.timestampToUTCTime rsiTimestamp))
-                                                (showCcd rsiAmount)
-                                                (intercalate ", " $ map show rsiTransactions))
-                 (releaseSchedule $ airReleaseSchedule a))
-       ++ [ printf "Nonce:                  %s" (show $ airNonce a)
-          , printf "Encryption public key:  %s" (show $ airEncryptionKey a)
+               (map (\Types.ScheduledRelease{..} -> printf "   %s:               %s scheduled by the transactions: %s."
+                                                (showTimeFormatted (Time.timestampToUTCTime releaseTimestamp))
+                                                (showCcd releaseAmount)
+                                                (intercalate ", " $ map show releaseTransactions))
+                 (Types.releaseSchedule $ Types.aiAccountReleaseSchedule a))
+       ++ [ printf "Nonce:                  %s" (show $ Types.aiAccountNonce a)
+          , printf "Encryption public key:  %s" (show $ Types.aiAccountEncryptionKey a)
           , "" ])
 
   if showEncrypted then
@@ -181,7 +183,7 @@ printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
       showEncryptedAmount = if verbose then show else \v -> take 20 (show v) ++ "..."
       showEncryptedBalance amms self = do
         let (_, balances) = foldl' (\(idx, strings) v -> (idx + 1, strings <> [printf "    %s: %s" (show idx) v]))
-                                   (Types._startIndex $ airEncryptedAmount a, [])
+                                   (Types._startIndex $ Types.aiAccountEncryptedAmount a, [])
                                    amms
         tell ["Shielded balance:"]
         tell $ case balances of
@@ -192,45 +194,59 @@ printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
     in
       case mEncKey of
         Nothing ->
-          let incomingAmounts = showEncryptedAmount <$> Types.getIncomingAmountsList (airEncryptedAmount a)
-              selfAmount = showEncryptedAmount $ airEncryptedAmount a ^. Types.selfAmount
+          let incomingAmounts = showEncryptedAmount <$> Types.getIncomingAmountsList (Types.aiAccountEncryptedAmount a)
+              selfAmount = showEncryptedAmount $ Types.aiAccountEncryptedAmount a ^. Types.selfAmount
           in showEncryptedBalance incomingAmounts selfAmount
         Just (encKey, globalContext) -> do
              let table = Enc.computeTable globalContext (2^(16::Int))
                  decoder = Enc.decryptAmount table encKey
                  printer x = let decoded = decoder x in "(" ++ showCcd decoded ++ ") " ++ showEncryptedAmount x
-                 showableSelfDecryptedAmount = printer (Types._selfAmount $ airEncryptedAmount a)
-                 incomingAmountsList = Types.getIncomingAmountsList $ airEncryptedAmount a
+                 showableSelfDecryptedAmount = printer (Types._selfAmount $ Types.aiAccountEncryptedAmount a)
+                 incomingAmountsList = Types.getIncomingAmountsList $ Types.aiAccountEncryptedAmount a
                  showableIncomingAmountsList =  printer <$>  incomingAmountsList
              showEncryptedBalance showableIncomingAmountsList showableSelfDecryptedAmount
     else return ()
 
 
 
-  case airBaker a of
-    Nothing -> tell ["Baker: none"]
-    Just bk -> do
-      let bkid = [i|Baker: \##{show . aibiIdentity . abirAccountBakerInfo $ bk}|]
-          stkstr = [i| - Staked amount: #{showCcd . abirStakedAmount $ bk}|]
-      case abirBakerPendingChange bk of
-        NoChange -> tell [ bkid
+  case Types.aiStakingInfo a of
+    Types.AccountStakingNone -> tell ["Baking or delegating stake: no"]
+    Types.AccountStakingBaker{..} -> do
+      let bkid = [i|Baker: \##{show . Types._bakerIdentity $ asiBakerInfo}|]
+          stkstr = [i| - Staked amount: #{showCcd asiStakedAmount}|]
+      case asiPendingChange of
+        Types.NoChange -> tell [ bkid
                          , stkstr ]
-        RemoveBaker e -> tell [ [i|#{bkid} to be removed at epoch #{e} (#{epochsToUTC e})|]
+        Types.RemoveStake t -> tell [ [i|#{bkid} to be removed at #{t}|]
                               , stkstr ]
-        ReduceStake n e -> tell [ bkid
-                                , [i|#{stkstr} to be updated to #{showCcd n} at epoch #{e} (#{epochsToUTC e})|] ]
-      tell [[i| - Restake earnings: #{showYesNo . abirStakeEarnings $ bk}|]]
+        Types.ReduceStake n t -> tell [ bkid
+                                , [i|#{stkstr} to be updated to #{showCcd n} at #{t}|] ]
+      tell [[i| - Restake earnings: #{showYesNo asiStakeEarnings}|]]
+    Types.AccountStakingDelegated{..} -> do
+      tell ["Delegating stake: yes"]
+      let targetStr = case asiDelegationTarget of
+            Types.DelegateToLPool -> "L-Pool"
+            Types.DelegateToBaker bid -> "Baker pool with ID " ++ show bid
+      let target = [i|Delegation target: #{targetStr}|]
+          stkstr = [i| - Staked amount: #{showCcd asiStakedAmount}|]
+      case asiDelegationPendingChange of
+        Types.NoChange -> tell [target, stkstr]
+        Types.RemoveStake t -> tell [ [i|#{target} to be removed at #{t}|]
+                              , stkstr ]
+        Types.ReduceStake n t -> tell [ target
+                                , [i|#{stkstr} to be updated to #{showCcd n} at #{t}|] ]
+      tell [[i| - Restake earnings: #{showYesNo asiStakeEarnings}|]]
 
   tell [ "" ]
 
-  if Map.null $ airCredentials a then
+  if Map.null $ Types.aiAccountCredentials a then
     tell ["Credentials: " ++ showNone]
   else do
     tell ["Credentials:"]
     if verbose then
-      tell $ [showPrettyJSON (airCredentials a)]
+      tell $ [showPrettyJSON (Types.aiAccountCredentials a)]
     else
-      forM_ (Map.toList (airCredentials a)) printVersionedCred
+      forM_ (Map.toList (Types.aiAccountCredentials a)) printVersionedCred
 
 -- |Print a versioned credential. This only prints the credential value, and not the
 -- associated version.

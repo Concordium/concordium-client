@@ -425,11 +425,11 @@ data BakerCmd
     , baTransactionOpts :: !(TransactionOpts (Maybe Energy))
     , baStake :: !Amount
     , baAutoAddEarnings :: !Bool
-    , baOpenForDelegation :: !OpenStatus
-    , baMetadataURL :: !String
-    , baTransactionFeeCommission :: !AmountFraction
-    , baBakingRewardCommission :: !AmountFraction
-    , baFinalizationRewardCommission :: !AmountFraction
+    , baOpenForDelegation :: !(Maybe OpenStatus)
+    , baMetadataURL :: !(Maybe String)
+    , baTransactionFeeCommission :: !(Maybe AmountFraction)
+    , baBakingRewardCommission :: !(Maybe AmountFraction)
+    , baFinalizationRewardCommission :: !(Maybe AmountFraction)
     , outputFile :: !(Maybe FilePath) }
   | BakerSetKeys
     { bsaKeysFile :: !FilePath
@@ -1410,11 +1410,11 @@ bakerAddCmd =
         transactionOptsParser <*>
         option (eitherReader amountFromStringInform) (long "stake" <> metavar "CCD-AMOUNT" <> help "The amount of CCD to stake.") <*>
         (not <$> switch (long "no-restake" <> help "If supplied, the earnings will not be added to the baker stake automatically.")) <*>
-        option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> helpOpenDelegationFor) <*>
-        strOption (long "baker-url" <> metavar "URL" <> help "A link to information about the baker.") <*>
-        option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission")) <*>
-        option (eitherReader amountFractionFromStringInform) (long "delegation-baking-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on baking rewards. " ++ rangesHelpString "baking reward commission")) <*>
-        option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission")) <*>
+        optional (option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> helpOpenDelegationFor)) <*>
+        optional (strOption (long "baker-url" <> metavar "URL" <> help "A link to information about the baker.")) <*>
+        optional (option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission"))) <*>
+        optional (option (eitherReader amountFractionFromStringInform) (long "delegation-baking-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on baking rewards. " ++ rangesHelpString "baking reward commission"))) <*>
+        optional (option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission"))) <*>
         optional (strOption (long "out" <> metavar "FILE" <> help "File to write the baker credentials to, in case of successful transaction. These can be used to start the node."))
       )
       (progDesc "Deploy baker credentials to the chain."))
