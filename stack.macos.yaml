@@ -1,0 +1,34 @@
+# NB: When updating the resolver to one that uses ghc 8.10.5 or higher also
+# remove the compiler override below.
+resolver: lts-17.4
+
+# At present (Mar 14 2022) we are using a stack resolver with ghc 8.10.4 as the
+# default compiler. However we are unable to use this version of GHC because 
+# it does not exist in macOS with M1 chip. For this reason we override
+# the compiler version here. Once we update the stack resolver this should not
+# be necessary anymore.
+compiler: ghc-8.10.5
+
+packages:
+- .
+
+extra-deps:
+# http2-client was never included in stackage
+- github: Concordium/http2-client
+  commit: 2ce0c0022d86782ac30287912c76eccfae18c6c6
+
+- github: Concordium/http2-grpc-haskell
+  commit: e3e62afa76fcd8ce9aed79e6498141a344d52fb4
+  subdirs:
+    - http2-client-grpc
+    - http2-grpc-proto-lens
+    - http2-grpc-types
+
+- ./deps/concordium-base
+
+extra-lib-dirs:
+- ./deps/concordium-base/rust-src/target/release
+
+flags:
+  concordium-client:
+    middleware: true
