@@ -6,7 +6,10 @@
 - Make `module deploy` expect modules with a version prefix.
   - This prefix is automatically added when building with cargo-concordium
     version >= 2.
-  - Add the flag `--wasm-version` to support modules without the version prefix.
+  - Add the flag `--contract-version` to support modules without the version
+    prefix.
+- `contract update` command now uses `--entrypoint` to specify the function to
+  invoke. This is renamed from the previous `--func`.
 
 ## 3.0.4
 - Rename `--encrypted` and `--decrypt-encrypted` flags to `account show` to
