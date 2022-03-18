@@ -10,7 +10,6 @@ import Concordium.Types.Execution
 import Concordium.Types.Accounts
 import Concordium.ID.Types
 import Concordium.Crypto.EncryptedTransfers
-import Concordium.Client.Cli
 import Concordium.Client.Types.Transaction(encryptedTransferEnergyCost)
 import Concordium.Client.Export(toKeysList)
 

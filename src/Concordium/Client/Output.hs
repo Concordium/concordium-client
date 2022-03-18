@@ -159,8 +159,8 @@ showRevealedAttributes as =
                   Just k -> Text.unpack k
     showAttr (t, IDTypes.AttributeValue v) = printf "%s=%s" (showTag t) (show v)
 
-printAccountInfo :: (Types.Epoch -> UTCTime) -> NamedAddress -> Types.AccountInfo -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
-printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
+printAccountInfo :: NamedAddress -> Types.AccountInfo -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
+printAccountInfo addr a verbose showEncrypted mEncKey= do
   tell ([ [i|Local names:            #{showNameList $ naNames addr}|]
         , [i|Address:                #{naAddr addr}|]
         , [i|Balance:                #{showCcd $ Types.aiAccountAmount a}|]

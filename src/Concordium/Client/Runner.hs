@@ -951,7 +951,7 @@ getEncryptedAmountTransferData senderAddr ettReceiver ettAmount idx secretKey = 
         AE.Success (Just air) -> do
           globalContext <- logFatalOnError =<< getParseCryptographicParameters bbHash
 
-          let receiverPk = ID._elgamalPublicKey $ airEncryptionKey air
+          let receiverPk = ID._elgamalPublicKey $ Types.aiAccountEncryptionKey air
           -- precomputed table for speeding up decryption
           let table = Enc.computeTable globalContext (2^(16::Int))
               decoder = Enc.decryptAmount table secretKey
@@ -1402,13 +1402,6 @@ tailTransaction hash = do
   where
     getLocalTimeOfDayFormatted = showTimeOfDay <$> getLocalTimeOfDay
 
-addCurrentEraGenesisTimeToEpochDuration :: Queries.ConsensusStatus -> Word64 -> UTCTime
-addCurrentEraGenesisTimeToEpochDuration cs e =
-    let d = Time.durationMillis $ Queries.csEpochDuration cs
-    in addUTCTime
-        (fromRational ((toInteger e * toInteger d) % 1000))
-        (Queries.csCurrentEraGenesisTime cs)
-
 -- |Process an 'account ...' command.
 processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processAccountCmd action baseCfgDir verbose backend =
@@ -1436,7 +1429,7 @@ processAccountCmd action baseCfgDir verbose backend =
                                then logFatal [[i|The ACCOUNT argument was not provided; so the default account name '#{defaultAccountName}' was used, but no account with that name exists.|]]
                                else logFatal [[i|The identifier '#{input}' is neither a credential registration ID, the address nor the name of an account|]]
 
-      (accInfo, na, dec, f) <- withClient backend $ do
+      (accInfo, na, dec) <- withClient backend $ do
         -- query account
         (bbh, accInfoValue :: Either String Value) <- withBestBlockHash block (\bbh -> (bbh,) <$> getAccountInfo accountIdentifier bbh)
         accInfo <- do 
@@ -1465,15 +1458,14 @@ processAccountCmd action baseCfgDir verbose backend =
                   _ -> logFatal [printf "Couldn't decrypt encryption key for account '%s' with the provided password" (show $ naAddr na)]
               _ -> logFatal [printf "Tried to decrypt balance of account '%s' but this account is not present in the local store" (show $ naAddr na)]
           else return Nothing
-        cs <- getFromJson =<< getConsensusStatus
         case encKey of
           Nothing ->
-            return (accInfo, na, Nothing, addCurrentEraGenesisTimeToEpochDuration cs)
+            return (accInfo, na, Nothing)
           Just k -> do
             gc <- logFatalOnError =<< getParseCryptographicParameters bbh
-            return (accInfo, na, Just (k, gc), addCurrentEraGenesisTimeToEpochDuration cs)
+            return (accInfo, na, Just (k, gc))
 
-      runPrinter $ printAccountInfo f na accInfo verbose (showEncrypted || showDecrypted) dec
+      runPrinter $ printAccountInfo na accInfo verbose (showEncrypted || showDecrypted) dec
 
     AccountList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose

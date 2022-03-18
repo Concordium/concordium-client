@@ -2,8 +2,6 @@
 
 module Concordium.Client.Cli where
 
-import Concordium.Common.Version
-import Concordium.Common.Time
 import qualified Concordium.Crypto.BlockSignature as BlockSig
 import qualified Concordium.Crypto.BlsSignature as Bls
 import qualified Concordium.Crypto.VRF as VRF
@@ -208,110 +206,6 @@ getCurrentTimeUnix = TransactionTime . round <$> getPOSIXTime
 
 timeFromTransactionExpiryTime :: TransactionExpiryTime -> UTCTime
 timeFromTransactionExpiryTime = posixSecondsToUTCTime . fromIntegral . ttsSeconds
-
-----------------------------------------------------------------------------------------------------
--- |One item in the release schedule, i.e., one release at a given timestamp
--- This must match the serialization in Concordium.Globalstate.Basic.BlockState.AccountReleaseSchedule
-data ReleaseScheduleItem = ReleaseScheduleItem {
-  rsiTimestamp :: !Timestamp,
-  rsiAmount :: !Amount,
-  rsiTransactions :: ![TransactionHash]
-  }
-    deriving(Show)
-
-instance AE.FromJSON ReleaseScheduleItem where
-  parseJSON = AE.withObject "ReleaseScheduleItem" $ \obj -> do
-    rsiTimestamp <- obj AE..: "timestamp"
-    rsiAmount <- obj AE..: "amount"
-    rsiTransactions <- obj AE..: "transactions"
-    return ReleaseScheduleItem{..}
-
-data AccountInfoReleaseSchedule = AccountInfoReleaseSchedule {
-  totalRelease :: !Amount,
-  releaseSchedule :: ![ReleaseScheduleItem]
-  }
-  deriving (Show)
-
-instance AE.FromJSON AccountInfoReleaseSchedule where
-  parseJSON = withObject "Account release schedule" $ \v -> do
-    totalRelease <- v .: "total"
-    releaseSchedule <- v .: "schedule"
-    return $ AccountInfoReleaseSchedule{..}
-
-data AccountInfoBakerInfo =  AccountInfoBakerInfo {
-  aibiIdentity :: !BakerId,
-  aibiElectionVerifyKey :: !BakerElectionVerifyKey,
-  aibiSignatureVerifyKey :: !BakerSignVerifyKey,
-  aibiAggregationVerifyKey :: !BakerAggregationVerifyKey
-  } deriving (Eq, Show)
-
-data AccountInfoBakerPendingChange
-  = NoChange
-  | ReduceStake !Amount !Epoch
-  | RemoveBaker !Epoch
-  deriving (Eq, Ord, Show)
-
-data AccountInfoBakerResult = AccountInfoBakerResult {
-  abirStakedAmount :: !Amount,
-  abirStakeEarnings :: !Bool,
-  abirAccountBakerInfo :: !AccountInfoBakerInfo,
-  abirBakerPendingChange :: !AccountInfoBakerPendingChange
-} deriving (Eq, Show)
-
-instance AE.FromJSON AccountInfoBakerResult where
-  parseJSON = withObject "Account baker" $ \v -> do
-    abirStakedAmount <- v .: "stakedAmount"
-    abirStakeEarnings <- v .: "restakeEarnings"
-    abirAccountBakerInfo <- do
-      aibiIdentity <- v .: "bakerId"
-      aibiElectionVerifyKey <- v .: "bakerElectionVerifyKey"
-      aibiSignatureVerifyKey <- v .: "bakerSignatureVerifyKey"
-      aibiAggregationVerifyKey <- v .: "bakerAggregationVerifyKey"
-      return AccountInfoBakerInfo{..}
-    abirBakerPendingChange <- (do
-                                  mPendingChange <- v .:? "pendingChange"
-                                  case mPendingChange of
-                                    Nothing -> return Nothing
-                                    Just val -> do
-                                      change :: String <- val .: "change"
-                                      case change of
-                                        "RemoveBaker" -> Just . RemoveBaker <$> val .: "epoch"
-                                        "ReduceStake" -> do
-                                          newStake <- val .: "newStake"
-                                          epoch <- val .: "epoch"
-                                          return . Just $ ReduceStake newStake epoch
-                                        _ -> fail "Unknown baker pending change") .!= NoChange
-    return AccountInfoBakerResult{..}
-
--- | Expected result of the 'getAccountInfo' endpoint, when non-null.
-data AccountInfoResult = AccountInfoResult
-  {
-    -- | Public amount on the account
-    airAmount :: !Amount
-    -- | Nonce the next transaction must use.
-  , airNonce :: !Nonce
-    -- | The baker information for the account.
-  , airBaker :: !(Maybe AccountInfoBakerResult)
-    -- | List of credentials on the account, latest first.
-  , airCredentials :: !(OrdMap.Map IDTypes.CredentialIndex (Versioned IDTypes.AccountCredential))
-    -- | Account's encrypted amount.
-  , airEncryptedAmount :: !AccountEncryptedAmount
-    -- | The public key to use when sending shielded transfers to the account.
-  , airEncryptionKey :: !IDTypes.AccountEncryptionKey
-  , airReleaseSchedule :: !AccountInfoReleaseSchedule
-  }
-  deriving (Show)
-
-instance AE.FromJSON AccountInfoResult where
-  parseJSON val = withObject "Account info" (\v -> do
-    airAmount <- v .: "accountAmount"
-    airNonce <- v .: "accountNonce"
-    airBaker <- v .:? "accountBaker"
-    airCredentials <- v .: "accountCredentials"
-    airEncryptedAmount <- v .: "accountEncryptedAmount"
-    airEncryptionKey <- v .: "accountEncryptionKey"
-    airReleaseSchedule <- v .: "accountReleaseSchedule"
-    return $ AccountInfoResult {..}) val
 
 ----------------------------------------------------------------------------------------------------
 

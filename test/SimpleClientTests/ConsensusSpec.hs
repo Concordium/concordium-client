@@ -4,6 +4,7 @@ import Concordium.Client.Cli
 import Concordium.ID.Types
 import Concordium.Client.Output
 import Concordium.Types
+import Concordium.Types.Queries
 
 import qualified Data.Map.Strict as Map
 
@@ -104,73 +105,73 @@ consensusShowParametersSpec = describe "show parameters" $ do
     Right acc1 = addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
     Right acc2 = addressFromText "4p2n8QQn5akq3XqAAJt2a5CsnGhDvUon6HExd2szrfkZCTD4FX"
 
-exampleStatusWithOptionalFields :: ConsensusStatusResult
+exampleStatusWithOptionalFields :: ConsensusStatus
 exampleStatusWithOptionalFields =
-  ConsensusStatusResult
-  { csrBestBlock = exampleBlockHash1
-  , csrGenesisBlock = exampleBlockHash2
-  , csrLastFinalizedBlock = exampleBlockHash3
-  , csrBestBlockHeight = 1
-  , csrLastFinalizedBlockHeight = 2
-  , csrBlocksReceivedCount = 3
-  , csrBlockLastReceivedTime = Just exampleTime1
-  , csrBlockReceiveLatencyEMA = 0.01
-  , csrBlockReceiveLatencyEMSD = 0.02
-  , csrBlockReceivePeriodEMA = Just 0.34
-  , csrBlockReceivePeriodEMSD = Just 5.6
-  , csrBlocksVerifiedCount = 5
-  , csrBlockLastArrivedTime = Just exampleTime2
-  , csrBlockArriveLatencyEMA = 0.0004
-  , csrBlockArriveLatencyEMSD = 0.00051
-  , csrBlockArrivePeriodEMA = Just 0.1234
-  , csrBlockArrivePeriodEMSD = Just 0.23451
-  , csrTransactionsPerBlockEMA = 0.11
-  , csrTransactionsPerBlockEMSD = 12.13456
-  , csrFinalizationCount = 14
-  , csrLastFinalizedTime = Just exampleTime3
-  , csrFinalizationPeriodEMA = Just 100
-  , csrFinalizationPeriodEMSD = Just 200
-  , csrGenesisTime = exampleTime1
-  , csrSlotDuration = 100000
-  , csrEpochDuration = 100000
-  , csrProtocolVersion = P1
-  , csrGenesisIndex = 0
-  , csrCurrentEraGenesisBlock = exampleBlockHash2
-  , csrCurrentEraGenesisTime = exampleTime1 }
+  ConsensusStatus
+  { csBestBlock = exampleBlockHash1
+  , csGenesisBlock = exampleBlockHash2
+  , csLastFinalizedBlock = exampleBlockHash3
+  , csBestBlockHeight = 1
+  , csLastFinalizedBlockHeight = 2
+  , csBlocksReceivedCount = 3
+  , csBlockLastReceivedTime = Just exampleTime1
+  , csBlockReceiveLatencyEMA = 0.01
+  , csBlockReceiveLatencyEMSD = 0.02
+  , csBlockReceivePeriodEMA = Just 0.34
+  , csBlockReceivePeriodEMSD = Just 5.6
+  , csBlocksVerifiedCount = 5
+  , csBlockLastArrivedTime = Just exampleTime2
+  , csBlockArriveLatencyEMA = 0.0004
+  , csBlockArriveLatencyEMSD = 0.00051
+  , csBlockArrivePeriodEMA = Just 0.1234
+  , csBlockArrivePeriodEMSD = Just 0.23451
+  , csTransactionsPerBlockEMA = 0.11
+  , csTransactionsPerBlockEMSD = 12.13456
+  , csFinalizationCount = 14
+  , csLastFinalizedTime = Just exampleTime3
+  , csFinalizationPeriodEMA = Just 100
+  , csFinalizationPeriodEMSD = Just 200
+  , csGenesisTime = exampleTime1
+  , csSlotDuration = 100000
+  , csEpochDuration = 100000
+  , csProtocolVersion = P1
+  , csGenesisIndex = 0
+  , csCurrentEraGenesisBlock = exampleBlockHash2
+  , csCurrentEraGenesisTime = exampleTime1 }
 
-exampleStatusWithoutOptionalFields :: ConsensusStatusResult
+exampleStatusWithoutOptionalFields :: ConsensusStatus
 exampleStatusWithoutOptionalFields =
-  ConsensusStatusResult
-  { csrBestBlock = exampleBlockHash1
-  , csrGenesisBlock = exampleBlockHash2
-  , csrLastFinalizedBlock = exampleBlockHash3
-  , csrBestBlockHeight = 1
-  , csrLastFinalizedBlockHeight = 2
-  , csrBlocksReceivedCount = 3
-  , csrBlockLastReceivedTime = Nothing
-  , csrBlockReceiveLatencyEMA = 0.01
-  , csrBlockReceiveLatencyEMSD = 0.02
-  , csrBlockReceivePeriodEMA = Nothing
-  , csrBlockReceivePeriodEMSD = Nothing
-  , csrBlocksVerifiedCount = 5
-  , csrBlockLastArrivedTime = Nothing
-  , csrBlockArriveLatencyEMA = 0.0004
-  , csrBlockArriveLatencyEMSD = 0.00051
-  , csrBlockArrivePeriodEMA = Nothing
-  , csrBlockArrivePeriodEMSD = Nothing
-  , csrTransactionsPerBlockEMA = 0.11
-  , csrTransactionsPerBlockEMSD = 12.13
-  , csrFinalizationCount = 14
-  , csrLastFinalizedTime = Nothing
-  , csrFinalizationPeriodEMA = Nothing
-  , csrFinalizationPeriodEMSD = Nothing
-  , csrGenesisTime = exampleTime1
-  , csrSlotDuration = 100000
-  , csrEpochDuration = 100000
-  , csrProtocolVersion = P1
-  , csrGenesisIndex = 0
-  , csrCurrentEraGenesisBlock = exampleBlockHash2
-  , csrCurrentEraGenesisTime = exampleTime1 }
+  ConsensusStatus
+  { csBestBlock = exampleBlockHash1
+  , csGenesisBlock = exampleBlockHash2
+  , csLastFinalizedBlock = exampleBlockHash3
+  , csBestBlockHeight = 1
+  , csLastFinalizedBlockHeight = 2
+  , csBlocksReceivedCount = 3
+  , csBlockLastReceivedTime = Nothing
+  , csBlockReceiveLatencyEMA = 0.01
+  , csBlockReceiveLatencyEMSD = 0.02
+  , csBlockReceivePeriodEMA = Nothing
+  , csBlockReceivePeriodEMSD = Nothing
+  , csBlocksVerifiedCount = 5
+  , csBlockLastArrivedTime = Nothing
+  , csBlockArriveLatencyEMA = 0.0004
+  , csBlockArriveLatencyEMSD = 0.00051
+  , csBlockArrivePeriodEMA = Nothing
+  , csBlockArrivePeriodEMSD = Nothing
+  , csTransactionsPerBlockEMA = 0.11
+  , csTransactionsPerBlockEMSD = 12.13
+  , csFinalizationCount = 14
+  , csLastFinalizedTime = Nothing
+  , csFinalizationPeriodEMA = Nothing
+  , csFinalizationPeriodEMSD = Nothing
+  , csGenesisTime = exampleTime1
+  , csSlotDuration = 100000
+  , csEpochDuration = 100000
+  , csProtocolVersion = P1
+  , csGenesisIndex = 0
+  , csCurrentEraGenesisBlock = exampleBlockHash2
+  , csCurrentEraGenesisTime = exampleTime1 }
 
 exampleBirkParameters :: BirkParametersResult
 exampleBirkParameters =

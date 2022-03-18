@@ -1,7 +1,6 @@
 {-# OPTIONS_GHC -Wno-deprecations #-}
 module SimpleClientTests.AccountSpec where
 
-import Concordium.Client.Cli
 import Concordium.Client.Config (AccountNameMap)
 import Concordium.Client.Output
 import Concordium.Client.Types.Account
@@ -16,6 +15,9 @@ import qualified Concordium.Crypto.VRF as VRF
 import Concordium.ID.DummyData(dummyCommitment)
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
+import Concordium.Types.Accounts
+import Concordium.Types.Accounts.Releases
+import Concordium.Types.Execution (OpenStatus(..), DelegationTarget(..))
 
 import Control.Monad.Writer
 import qualified Data.Aeson as AE
@@ -23,7 +25,6 @@ import qualified Data.Map.Strict as Map
 import Data.Maybe
 import qualified Data.Sequence as Seq
 import Data.Time.Clock
-import Data.Word (Word64)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Random
 import Test.Hspec
@@ -62,34 +63,56 @@ dummyTransactionHash1 = fromJust . AE.decode $ "\"f26a45adbb7d5cbefd9430d1eac665
 dummyTransactionHash2 :: Types.TransactionHash
 dummyTransactionHash2 = fromJust . AE.decode $ "\"b041315fe35a8bdf836647037c24c8e87402547c82aea568c66ee18aa3091326\""
 
-exampleBakerInfoResult :: AccountInfoBakerPendingChange -> AccountInfoBakerResult
-exampleBakerInfoResult pc = AccountInfoBakerResult
-  { abirStakedAmount = 100
-  , abirStakeEarnings = True
-  , abirAccountBakerInfo = AccountInfoBakerInfo {
-      aibiIdentity = 1,
-      aibiElectionVerifyKey = VRF.publicKey . fst $ VRF.randomKeyPair (mkStdGen 0),
-      aibiAggregationVerifyKey = derivePublicKey $ unsafePerformIO generateSecretKey,
-      aibiSignatureVerifyKey = snd $ unsafePerformIO newKeyPair
+exampleBakerPoolInfo :: BakerPoolInfo
+exampleBakerPoolInfo =
+  BakerPoolInfo
+    OpenForAll
+    (Types.UrlText "https://example.com" )
+    (Types.CommissionRates rate rate rate)
+  where
+    rate = Types.makeAmountFraction 1000
+
+exampleBakerInfoResult :: StakePendingChange' UTCTime -> AccountStakingInfo
+exampleBakerInfoResult pc = AccountStakingBaker
+  { asiStakedAmount = 100
+  , asiStakeEarnings = True
+  , asiBakerInfo = BakerInfo {
+      _bakerIdentity = 1,
+      _bakerElectionVerifyKey = VRF.publicKey . fst $ VRF.randomKeyPair (mkStdGen 0),
+      _bakerAggregationVerifyKey = derivePublicKey $ unsafePerformIO generateSecretKey,
+      _bakerSignatureVerifyKey = snd $ unsafePerformIO newKeyPair
       }
-  , abirBakerPendingChange = pc
+  , asiPendingChange = pc
+  , asiPoolInfo = Just exampleBakerPoolInfo
+  }
+
+exampleDelegatorStakingInfo :: StakePendingChange' UTCTime -> AccountStakingInfo
+exampleDelegatorStakingInfo pc = AccountStakingDelegated
+  { asiStakedAmount = 100
+  , asiStakeEarnings = False
+  , asiDelegationTarget = DelegateToLPool
+  , asiDelegationPendingChange = pc
   }
 
 -- The credentials will be given indices 0, 1, ..
-exampleAccountInfoResult :: Maybe AccountInfoBakerPendingChange -> [IDTypes.AccountCredential] -> AccountInfoResult
-exampleAccountInfoResult d cs = AccountInfoResult
-                                { airAmount = Types.Amount 1
-                                , airNonce = Types.Nonce 2
-                                , airBaker = exampleBakerInfoResult <$> d
-                                , airCredentials = Map.fromList . zip [0..] . map (Versioned 0) $ cs
-                                , airReleaseSchedule = AccountInfoReleaseSchedule 0 []
-                                , airEncryptedAmount = Types.AccountEncryptedAmount {
+exampleAccountInfoResult :: AccountStakingInfo -> [IDTypes.AccountCredential] -> AccountInfo
+exampleAccountInfoResult staking cs = AccountInfo
+                                { aiAccountAmount = Types.Amount 1
+                                , aiAccountNonce = Types.Nonce 2
+                                , aiStakingInfo = staking
+                                , aiAccountCredentials = Map.fromList . zip [0..] . map (Versioned 0) $ cs
+                                , aiAccountThreshold = 1
+                                , aiAccountReleaseSchedule = AccountReleaseSummary 0 []
+                                , aiAccountEncryptedAmount = Types.AccountEncryptedAmount {
                                     _startIndex = 3,
                                     _incomingEncryptedAmounts = Seq.fromList [encAmount1, encAmount2],
                                     _selfAmount = encAmount2,
                                     _aggregatedAmount = Nothing
                                     }
-                                , airEncryptionKey = dummyEncryptionPublicKey }
+                                , aiAccountEncryptionKey = dummyEncryptionPublicKey
+                                , aiAccountIndex = 27
+                                , aiAccountAddress = exampleAddress1
+                                }
 
 exampleCredentials :: IDTypes.Policy -> IDTypes.AccountCredential
 exampleCredentials p = IDTypes.NormalAC (IDTypes.CredentialDeploymentValues
@@ -151,22 +174,19 @@ printAccountListSpec = describe "printAccountList" $ do
       ]
   where p = execWriter . (printAccountList exampleAccountNameMap)
 
-exampleTime :: Word64 -> UTCTime
-exampleTime _ = unsafePerformIO getCurrentTime
-
 printAccountInfoSpec :: Spec
 printAccountInfoSpec = describe "printAccountInfo" $ do
-  specify "without baker nor credentials" $ p exampleNamedAddress (exampleAccountInfoResult Nothing []) `shouldBe`
+  specify "without baker nor credentials" $ p exampleNamedAddress (exampleAccountInfoResult AccountStakingNone []) `shouldBe`
     [ "Local names:            'example'"
     , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
     , "Balance:                0.000001 CCD"
     , "Nonce:                  2"
     , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
     , ""
-    , "Baker: none"
+    , "Baking or delegating stake: no"
     , ""
     , "Credentials: none" ]
-  specify "with baker" $ p exampleNamedAddress (exampleAccountInfoResult (Just NoChange) []) `shouldBe`
+  specify "with baker" $ p exampleNamedAddress (exampleAccountInfoResult (exampleBakerInfoResult NoChange) []) `shouldBe`
     [ "Local names:            'example'"
     , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
     , "Balance:                0.000001 CCD"
@@ -178,11 +198,24 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     ," - Restake earnings: yes"
     , ""
     , "Credentials: none" ]
-  specify "with release schedule" $ p exampleNamedAddress ((exampleAccountInfoResult Nothing []) { airReleaseSchedule = AccountInfoReleaseSchedule {
-                                                                                                 totalRelease = 100,
-                                                                                                 releaseSchedule = [ReleaseScheduleItem 1604417302000 33 [dummyTransactionHash1, dummyTransactionHash2],
-                                                                                                                    ReleaseScheduleItem 1604417342000 33 [dummyTransactionHash1],
-                                                                                                                    ReleaseScheduleItem 1604417382000 34 [dummyTransactionHash2]]
+  specify "with delegator" $ p exampleNamedAddress (exampleAccountInfoResult (exampleDelegatorStakingInfo NoChange) []) `shouldBe`
+    [ "Local names:            'example'"
+    , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+    , "Balance:                0.000001 CCD"
+    , "Nonce:                  2"
+    , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
+    , ""
+    , "Delegating stake: yes"
+    , "Delegation target: L-Pool"
+    ," - Staked amount: 0.000100 CCD"
+    ," - Restake earnings: no"
+    , ""
+    , "Credentials: none" ]
+  specify "with release schedule" $ p exampleNamedAddress ((exampleAccountInfoResult AccountStakingNone []) { aiAccountReleaseSchedule = AccountReleaseSummary {
+                                                                                                 releaseTotal = 100,
+                                                                                                 releaseSchedule = [ScheduledRelease 1604417302000 33 [dummyTransactionHash1, dummyTransactionHash2],
+                                                                                                                    ScheduledRelease 1604417342000 33 [dummyTransactionHash1],
+                                                                                                                    ScheduledRelease 1604417382000 34 [dummyTransactionHash2]]
                                                                                                  } }) `shouldBe`
     [ "Local names:            'example'"
     , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
@@ -194,17 +227,17 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     , "Nonce:                  2"
     , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
     , ""
-    , "Baker: none"
+    , "Baking or delegating stake: no"
     , ""
     , "Credentials: none" ]
-  specify "with one credential" $ p exampleNamedAddress (exampleAccountInfoResult Nothing [exampleCredentials examplePolicyWithoutItems]) `shouldBe`
+  specify "with one credential" $ p exampleNamedAddress (exampleAccountInfoResult AccountStakingNone [exampleCredentials examplePolicyWithoutItems]) `shouldBe`
     [ "Local names:            'example'"
     , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
     , "Balance:                0.000001 CCD"
     , "Nonce:                  2"
     , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
     , ""
-    , "Baker: none"
+    , "Baking or delegating stake: no"
     , ""
     , "Credentials:"
     , "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
@@ -212,7 +245,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     , "  - Expiration: Apr 2021"
     , "  - Type: normal"
     , "  - Revealed attributes: none" ]
-  specify "with two credentials" $ p exampleNamedAddress (exampleAccountInfoResult Nothing [ exampleCredentials examplePolicyWithoutItems
+  specify "with two credentials" $ p exampleNamedAddress (exampleAccountInfoResult AccountStakingNone [ exampleCredentials examplePolicyWithoutItems
                                                                                        , exampleCredentials examplePolicyWithTwoItems ]) `shouldBe`
     [ "Local names:            'example'"
     , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
@@ -220,7 +253,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     , "Nonce:                  2"
     , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
     , ""
-    , "Baker: none"
+    , "Baking or delegating stake: no"
     , ""
     , "Credentials:"
     , "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
@@ -234,14 +267,14 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     , "  - Type: normal"
     , "  - Revealed attributes: lastName=\"Value-1\", dob=\"Value-2\"" ]
   xspecify "with one credential - verbose" $
-    (execWriter $ printAccountInfo exampleTime exampleNamedAddress (exampleAccountInfoResult Nothing [exampleCredentials examplePolicyWithoutItems]) True False Nothing) `shouldBe`
+    (execWriter $ printAccountInfo exampleNamedAddress (exampleAccountInfoResult AccountStakingNone [exampleCredentials examplePolicyWithoutItems]) True False Nothing) `shouldBe`
       [ "Local names:            'example'"
       , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
       , "Balance:                0.000001 CCD"
       , "Nonce:                  2"
       , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
       , ""
-      , "Baker: none"
+      , "Baking or delegating stake: no"
       , ""
       , "Credentials:"
       , "{\n\
@@ -263,7 +296,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
         \    },\n\
         \    \"v\": 0\n\
         \}" ]
-  specify "show encrypted balance" $ penc exampleNamedAddress (exampleAccountInfoResult Nothing [exampleCredentials examplePolicyWithoutItems]) `shouldBe`
+  specify "show encrypted balance" $ penc exampleNamedAddress (exampleAccountInfoResult AccountStakingNone [exampleCredentials examplePolicyWithoutItems]) `shouldBe`
     [ "Local names:            'example'"
     , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
     , "Balance:                0.000001 CCD"
@@ -276,7 +309,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     , "    4: 9450b8ace9ad5a22e8ee..."
     , "  Self balance: 9450b8ace9ad5a22e8ee..."
     , ""
-    , "Baker: none"
+    , "Baking or delegating stake: no"
     , ""
     , "Credentials:"
     , "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
@@ -285,7 +318,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
     , "  - Type: normal"
     , "  - Revealed attributes: none" ]
   xspecify "show encrypted balance - verbose" $
-    (execWriter $ printAccountInfo exampleTime exampleNamedAddress (exampleAccountInfoResult Nothing [exampleCredentials examplePolicyWithoutItems]) True True Nothing) `shouldBe`
+    (execWriter $ printAccountInfo exampleNamedAddress (exampleAccountInfoResult AccountStakingNone [exampleCredentials examplePolicyWithoutItems]) True True Nothing) `shouldBe`
       [ "Local names:            'example'"
       , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
       , "Balance:                0.000001 CCD"
@@ -298,7 +331,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
       , "    4: 9450b8ace9ad5a22e8eea743244bf929e69de3d2c8445d34278d23c6c72dfbf2c1a6fc7fabd4eb3bd7752a0765255ea0963748ddc6bc87040627533b1a3ce76318734cf3cc9dd9b05fd8dfe5c31f51addc68f41b43f764a36f03097c1d1dda12926b233d1f2efdd8f1c143c7a63c5575e1a9f5fac7e265d33ba769f6396db6c91da16e9ddf85b1ec7fc0cbcb4afbd9e491a755540bdf8a42cb46e32f9de7c8986e77a6d111e9fac32524183415cce14ddff3ca5795b5abdc1ad0a1397853a4a3"
       , "  Self balance: 9450b8ace9ad5a22e8eea743244bf929e69de3d2c8445d34278d23c6c72dfbf2c1a6fc7fabd4eb3bd7752a0765255ea0963748ddc6bc87040627533b1a3ce76318734cf3cc9dd9b05fd8dfe5c31f51addc68f41b43f764a36f03097c1d1dda12926b233d1f2efdd8f1c143c7a63c5575e1a9f5fac7e265d33ba769f6396db6c91da16e9ddf85b1ec7fc0cbcb4afbd9e491a755540bdf8a42cb46e32f9de7c8986e77a6d111e9fac32524183415cce14ddff3ca5795b5abdc1ad0a1397853a4a3"
       , ""
-      , "Baker: none"
+      , "Baking or delegating stake: no"
       , ""
       , "Credentials:"
       , "{\n\
@@ -320,8 +353,8 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
         \    },\n\
         \    \"v\": 0\n\
         \}" ]
-  where p addr res = execWriter $ printAccountInfo exampleTime addr res False False Nothing
-        penc addr res = execWriter $ printAccountInfo exampleTime addr res False True Nothing
+  where p addr res = execWriter $ printAccountInfo addr res False False Nothing
+        penc addr res = execWriter $ printAccountInfo addr res False True Nothing
 
 printCredSpec :: Spec
 printCredSpec = describe "printCred" $ do
