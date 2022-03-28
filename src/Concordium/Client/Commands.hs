@@ -1410,7 +1410,7 @@ bakerAddCmd =
         transactionOptsParser <*>
         option (eitherReader amountFromStringInform) (long "stake" <> metavar "CCD-AMOUNT" <> help "The amount of CCD to stake.") <*>
         (not <$> switch (long "no-restake" <> help "If supplied, the earnings will not be added to the baker stake automatically.")) <*>
-        optional (option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> helpOpenDelegationFor)) <*>
+        optional (option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> help helpOpenDelegationFor)) <*>
         optional (strOption (long "baker-url" <> metavar "URL" <> help "A link to information about the baker.")) <*>
         optional (option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission"))) <*>
         optional (option (eitherReader amountFractionFromStringInform) (long "delegation-baking-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on baking rewards. " ++ rangesHelpString "baking reward commission"))) <*>
@@ -1430,8 +1430,8 @@ openStatusFromStringInform "none" = Right ClosedForAll
 openStatusFromStringInform s = Left $
     "Unexpected SELECTION '" ++ s ++ "'. The allowed values are: " ++ allowedValuesOpenDelegationForAsString
 
-helpOpenDelegationFor :: Mod OptionFields OpenStatus
-helpOpenDelegationFor = help $
+helpOpenDelegationFor :: String
+helpOpenDelegationFor =
     "Select whether the baker will allow other parties (delegators) to delegate CCD to the pool. Available values for SELECTION are: " ++ allowedValuesOpenDelegationForAsString ++ "."
 
 bakerConfigureCmd :: Mod CommandFields BakerCmd
@@ -1443,7 +1443,7 @@ bakerConfigureCmd =
         transactionOptsParser <*>
         optional (option (eitherReader amountFromStringInform) (long "stake" <> metavar "CCD-AMOUNT" <> help "The amount of CCD to stake.")) <*>
         optional (not <$> switch (long "no-restake" <> help "The earnings will not be added to the baker stake automatically.")) <*>
-        optional (option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> helpOpenDelegationFor)) <*>
+        optional (option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> help helpOpenDelegationFor)) <*>
         optional (strOption (long "baker-url" <> metavar "URL" <> help "A link to information about the baker.")) <*>
         optional (option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission"))) <*>
         optional (option (eitherReader amountFractionFromStringInform) (long "delegation-baking-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on baking rewards. " ++ rangesHelpString "baking reward commission"))) <*>
@@ -1471,7 +1471,7 @@ bakerUpdateOpenDelegationStatus =
    "update-delegation-status"
    (info
      (BakerUpdateOpenDelegationStatus <$>
-       option (eitherReader openStatusFromStringInform) (metavar "SELECTION" <> helpOpenDelegationFor) <*>
+       argument (eitherReader openStatusFromStringInform) (metavar "SELECTION" <> help helpOpenDelegationFor) <*>
        transactionOptsParser)
      (progDesc "Change whether to allow other parties to delegate stake to the baker."))
 
