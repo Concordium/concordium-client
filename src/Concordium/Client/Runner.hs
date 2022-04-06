@@ -62,7 +62,6 @@ import qualified Concordium.Common.Time as Time
 import qualified Concordium.Crypto.EncryptedTransfers as Enc
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
-import           Concordium.Crypto.ByteStringHelpers (deserializeBase16)
 import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.SignatureScheme   as SigScheme
 import qualified Concordium.Crypto.VRF               as VRF
@@ -1557,15 +1556,13 @@ processAccountCmd action baseCfgDir verbose backend =
           return defaultAccountName
         Just acc -> return acc
 
-      accountIdentifier <- case deserializeBase16 input of 
-                Just (_ :: ID.CredentialRegistrationID) -> return input -- input is a wellformed credRegID
-                Nothing -> case ID.addressFromText input of
-                  Right _ -> return input -- input is a wellformed address
-                  Left _ -> case Map.lookup input (bcAccountNameMap baseCfg) of
+      accountIdentifier <- case Types.decodeAccountIdentifier (Text.encodeUtf8 input) of
+                Just _ -> return input -- input is a wellformed account identifier
+                Nothing -> case Map.lookup input (bcAccountNameMap baseCfg) of
                     Just a -> return $ Text.pack $ show a -- input is the local name of an account
                     Nothing -> if isNothing inputMaybe
                                then logFatal [[i|The ACCOUNT argument was not provided; so the default account name '#{defaultAccountName}' was used, but no account with that name exists.|]]
-                               else logFatal [[i|The identifier '#{input}' is neither a credential registration ID, the address nor the name of an account|]]
+                               else logFatal [[i|The identifier '#{input}' is neither a credential registration ID, an account index, the address nor the name of an account|]]
 
       (accInfo, na, dec, f) <- withClient backend $ do
         -- query account
