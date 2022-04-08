@@ -2143,11 +2143,11 @@ getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex rece
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
   contrInfo <- withClient backend . withBestBlockHash Nothing $ getContractInfo namedContrAddr
-  _ <- checkAndGetContractReceiveName contrInfo receiveName
+  updatedReceiveName <- checkAndGetContractReceiveName contrInfo receiveName
   let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = []}
   let contrName = CI.getContractName contrInfo
   schema <- withClient backend . withBestBlockHash Nothing $ getSchemaFromFileOrModule schemaFile namedModRef
-  params <- getWasmParameter paramsFile schema (CS.ReceiveFuncName contrName receiveName)
+  params <- getWasmParameter paramsFile schema (CS.ReceiveFuncName contrName updatedReceiveName)
   return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr)
            contrName (Wasm.ReceiveName [i|#{contrName}.#{receiveName}|]) params amount
 
