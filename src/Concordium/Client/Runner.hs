@@ -1848,7 +1848,7 @@ data ModuleDeployTransactionCfg =
 moduleDeployTransactionPayload :: ModuleDeployTransactionCfg -> Types.Payload
 moduleDeployTransactionPayload ModuleDeployTransactionCfg {..} = Types.DeployModule mdtcModule
 
--- |Checks if the he given receive name is valid and if so, returns it back
+-- |Checks if the given receive name is valid and if so, returns it back
 -- or otherwise a fallback receive name for v1 contracts.
 checkAndGetContractReceiveName :: CI.ContractInfo -> Text -> IO Text
 checkAndGetContractReceiveName contrInfo receiveName = do
