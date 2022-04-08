@@ -133,7 +133,7 @@ getContractName = \case
   ContractInfoV1{..} -> ciName
 
 -- |Returns True if the contract has fallback entrypoint support,
--- False otherwise
+-- False otherwise.
 hasFallbackReceiveSupport :: ContractInfo -> Bool
 hasFallbackReceiveSupport = \case
   ContractInfoV0{} -> False
