@@ -10,6 +10,8 @@
     prefix.
 - `contract update` command now uses `--entrypoint` to specify the function to
   invoke. This is renamed from the previous `--func`.
+- When calling `contract update` or `contract invoke` with a non-existent
+  entrypoint the fallback entrypoint is called if one specified in the contract.
 
 ## 3.0.4
 - Rename `--encrypted` and `--decrypt-encrypted` flags to `account show` to
