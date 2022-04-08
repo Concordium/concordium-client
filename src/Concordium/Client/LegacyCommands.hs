@@ -277,7 +277,7 @@ getAccountInfoCommand =
     "GetAccountInfo"
     (info
        (GetAccountInfo <$>
-        strArgument (metavar "IDENTIFIER" <> help "Account address or credential id to be queried about.") <*>
+        strArgument (metavar "IDENTIFIER" <> help "Account address, account index or credential id to be queried about.") <*>
         optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block in which to do the query"))
        )
        (progDesc "Query the gRPC server for the information of an account."))
