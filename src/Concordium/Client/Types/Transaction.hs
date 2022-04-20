@@ -107,7 +107,7 @@ bakerConfigurePayloadSize hasCapital hasRestake hasPoolOpen hasKeys mMetadata ha
   + (if hasCapital then 8 else 0)
   + (if hasRestake then 1 else 0)
   + (if hasPoolOpen then 1 else 0)
-  + (if hasKeys then bakerKeysWithProofsSize else 0)
+  + (if hasKeys then fromIntegral bakerKeysWithProofsSize else 0)
   + maybe 0 fromIntegral mMetadata
   + (if hasTCom then 4 else 0)
   + (if hasBCom then 4 else 0)

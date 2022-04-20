@@ -759,16 +759,18 @@ showRejectReason verbose = \case
   Types.NotAllowedToReceiveEncrypted -> "the account is not allowed to receive shielded transfers"
   Types.NotAllowedToHandleEncrypted -> "the account is not allowed handle shielded amounts"
   Types.MissingBakerAddParameters -> "missing parameters to add new baker"
-  Types.UnexpectedBakerRemoveParameters -> "remove baker failed because of unexpected parameters"
-  Types.CommissionsNotInRangeForBaking -> "a commission fee was not within the allowed range"
+  Types.FinalizationRewardCommissionNotInRange -> "finalization reward commission was not within the allowed range"
+  Types.BakingRewardCommissionNotInRange -> "baking reward commission was not within the allowed range"
+  Types.TransactionFeeCommissionNotInRange -> "transaction fee commission fee was not within the allowed range"
   Types.AlreadyADelegator -> "the account is already a delegator"
   Types.InsufficientBalanceForDelegationStake -> "the balance on the account is insufficient to cover the desired stake"
   Types.MissingDelegationAddParameters -> "missing parameters to add new delegator"
-  Types.UnexpectedDelegationRemoveParameters -> "remove delegator failed because of unexpected parameters"
   Types.DelegatorInCooldown -> "change could not be completed because the delegator is in the cooldown period"
   Types.NotADelegator addr -> printf "attempt to remove a delegator account %s that is not a delegator" (show addr)
   Types.StakeOverMaximumThresholdForPool -> "baking pool's total capital would become too large"
   Types.PoolWouldBecomeOverDelegated -> "fraction of delegated capital to baking pool would become too large"
+  Types.PoolClosed -> "pool not open for delegation"
+  Types.InsufficientDelegationStake -> "not allowed to add delegator with 0 stake"
   Types.DelegationTargetNotABaker bid -> printf "delegation target %s is not a baker id" (show bid)
 
 -- CONSENSUS
