@@ -634,12 +634,12 @@ showRejectReason verbose = \case
       "account does not exist"
   Types.InvalidInitMethod m name ->
     if verbose then
-      printf "invalid init method '%s' of module '%s'" (show name) (show m)
+      [i|invalid init method '#{name}' of module '#{m}'|]
     else
       "invalid init method"
   Types.InvalidReceiveMethod m name ->
     if verbose then
-      printf "invalid receive method '%s' of module '%s'" (show name) (show m)
+      [i|invalid receive method '#{name}' of module '#{m}'|]
     else
       "invalid receive method"
   Types.InvalidModuleReference m ->
