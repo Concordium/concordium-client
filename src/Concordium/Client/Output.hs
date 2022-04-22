@@ -225,7 +225,7 @@ printAccountInfo addr a verbose showEncrypted mEncKey= do
     Types.AccountStakingDelegated{..} -> do
       tell ["Delegating stake: yes"]
       let targetStr = case asiDelegationTarget of
-            Types.DelegateToLPool -> "L-Pool"
+            Types.DelegatePassive -> "Passive delegation"
             Types.DelegateToBaker bid -> "Baker pool with ID " ++ show bid
       let target = [i|Delegation target: #{targetStr}|]
           stkstr = [i| - Staked amount: #{showCcd asiStakedAmount}|]
@@ -650,7 +650,7 @@ showEvent verbose = \case
     showDelegator did addr = show addr ++ " (ID " ++ show did ++ ")"
 
     showDelegationTarget :: Types.DelegationTarget -> String
-    showDelegationTarget Types.DelegateToLPool = "L-Pool"
+    showDelegationTarget Types.DelegatePassive = "Passive delegation"
     showDelegationTarget (Types.DelegateToBaker bid) = "Baker ID " ++ show bid
 
 

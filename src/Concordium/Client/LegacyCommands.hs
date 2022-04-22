@@ -351,11 +351,11 @@ getPoolStatusCommand =
     "GetPoolStatus"
     (info
        (GetPoolStatus <$>
-        optional (option auto (long "pool" <> metavar "POOL" <> help "Baker ID of pool. If not provided, status of the L-pool is queried.")) <*>
+        optional (option auto (long "pool" <> metavar "POOL" <> help "Baker ID of pool. If not provided, status of passive delegation is queried.")) <*>
         optional (strArgument (metavar "BLOCK-HASH" <>
                                help "Hash of the block in which to do the query"))
        )
-       (progDesc "Query the gRPC server for the status of a baker pool or the L-pool."))
+       (progDesc "Query the gRPC server for the status of a baker pool or passive delegation."))
 
 getBakerListCommand :: Mod CommandFields LegacyCmd
 getBakerListCommand =
@@ -366,7 +366,7 @@ getBakerListCommand =
         optional (strArgument (metavar "BLOCK-HASH" <>
                                help "Hash of the block in which to do the query"))
        )
-       (progDesc "Query the gRPC server for the status of a baker pool or the L-pool."))
+       (progDesc "Query the gRPC server for the list of bakers."))
 
 getRewardStatusCommand :: Mod CommandFields LegacyCmd
 getRewardStatusCommand =

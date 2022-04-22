@@ -212,8 +212,8 @@ invokeContract context block = withUnary (call @"invokeContract") msg (to proces
   where msg = defMessage & CF.blockHash .~ block & CF.context .~ context
 
 getPoolStatus :: Types.BakerId -> Bool -> Text -> ClientMonad IO (Either String Value)
-getPoolStatus bid lpool hash = withUnary (call @"getPoolStatus") msg (to processJSON)
-  where msg = defMessage & CF.blockHash .~ hash & CF.lPool .~ lpool & CF.bakerId .~ fromIntegral bid
+getPoolStatus bid passiveDelegation hash = withUnary (call @"getPoolStatus") msg (to processJSON)
+  where msg = defMessage & CF.blockHash .~ hash & CF.passiveDelegation .~ passiveDelegation & CF.bakerId .~ fromIntegral bid
 
 getBakerList :: Text -> ClientMonad IO (Either String Value)
 getBakerList hash = withUnary (call @"getBakerList") msg (to processJSON)

@@ -154,7 +154,7 @@ delegationConfigureEnergyCost psize numSigs = minimumCost psize numSigs + Cost.c
 
 -- |Payload size for a register delegation transaction
 registerDelegationPayloadSize
-  :: Bool -- ^Whether delegation is to the L-pool
+  :: Bool -- ^Whether delegation is passive
   -> PayloadSize
 registerDelegationPayloadSize True = 13
 registerDelegationPayloadSize False = 21
@@ -164,13 +164,13 @@ updateDelegationPayloadSize
   :: Bool -- ^Whether the amount is updated
   -> Bool -- ^Whether the restake is updated
   -> Bool -- ^Whether the target is updated
-  -> Bool -- ^Whether the target is the L-pool
+  -> Bool -- ^Whether the target is passive delegation
   -> PayloadSize
-updateDelegationPayloadSize updAmt updRestake updTarget targetLPool = 3 + amt + restake + target
+updateDelegationPayloadSize updAmt updRestake updTarget targetPassiveDelegation = 3 + amt + restake + target
   where
     amt = if updAmt then 8 else 0
     restake = if updRestake then 1 else 0
-    target = if updTarget then (if targetLPool then 1 else 9) else 0
+    target = if updTarget then (if targetPassiveDelegation then 1 else 9) else 0
 
 -- |Payload size for a remove delegation transaction
 removeDelegationPayloadSize :: PayloadSize

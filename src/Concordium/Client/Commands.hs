@@ -1421,7 +1421,7 @@ bakerAddCmd =
 
 allowedValuesOpenDelegationForAsString :: String
 allowedValuesOpenDelegationForAsString =
-    "'all' (delegators are allowed to join the pool), 'existing' (keep the existing delegators, but do not allow new delegators), 'none' (move existing delegators to the L-pool and do not allow new delegators)"
+    "'all' (delegators are allowed to join the pool), 'existing' (keep the existing delegators, but do not allow new delegators), 'none' (move existing delegators to passive delegation and do not allow new delegators)"
 
 openStatusFromStringInform :: String -> Either String OpenStatus
 openStatusFromStringInform "all" = Right OpenForAll
@@ -1526,10 +1526,10 @@ bakerUpdateStakeCmd =
 
 allowedValuesDelegationTargetAsString :: String
 allowedValuesDelegationTargetAsString =
-    "'LPool' (delegate stake to the L-Pool), BAKERID (delegate stake to BAKERID, where BAKERID is a baker id of a baker)"
+    "'Passive' (for passive delegation), BAKERID (delegate stake to baker pool with baker id BAKERID)"
 
 delegationTargetInformString :: String -> Either String DelegationTarget
-delegationTargetInformString "LPool" = Right DelegateToLPool
+delegationTargetInformString "Passive" = Right DelegatePassive
 delegationTargetInformString s
   | Prelude.all Char.isDigit s =
     let i = read s :: Integer
@@ -1541,7 +1541,7 @@ delegationTargetInformString s
 
 helpDelegationTarget :: Mod OptionFields DelegationTarget
 helpDelegationTarget = help $
-    "Select whether to delegate stake to the L-Pool or a baker. Available values for TARGET are: " ++ allowedValuesDelegationTargetAsString ++ "."
+    "Select whether to delegate stake passively or to a baker. Available values for TARGET are: " ++ allowedValuesDelegationTargetAsString ++ "."
 
 delegatorConfigureCmd :: Mod CommandFields DelegatorCmd
 delegatorConfigureCmd =

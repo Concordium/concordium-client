@@ -1016,10 +1016,10 @@ getAccountInfoOrDie senderAddr = do
 -- if the baker pool does not exist.
 getPoolStatusOrDie :: Maybe Types.BakerId ->  ClientMonad IO Queries.PoolStatus
 getPoolStatusOrDie mbid = do
-  let (bid, lpool) = case mbid of
+  let (bid, passiveDelegation) = case mbid of
         Nothing -> (0, True)
         Just bakerId -> (bakerId, False)
-  infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getPoolStatus bid lpool)
+  infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getPoolStatus bid passiveDelegation)
   case AE.fromJSON infoValue of
     AE.Error err -> logFatal ["Cannot decode pool status response from the node: " ++ err]
     AE.Success Nothing -> logFatal [printf "Could not query pool status from the chain."]
@@ -2526,7 +2526,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts cbCapital cbRestakeEa
         Nothing -> []
         Just Types.OpenForAll -> ["baker pool will be open for delegation"]
         Just Types.ClosedForNew -> ["baker pool will be closed for new delegators"]
-        Just Types.ClosedForAll -> ["baker pool will be closed for delegators and existing delegators will be moved to the L-pool"]
+        Just Types.ClosedForAll -> ["baker pool will be closed for delegators and existing delegators will be moved to passive delegation"]
 
     configureTransactionFeeCommissionLogMsg =
       case cbTransactionFeeCommission of
@@ -3100,7 +3100,7 @@ processBakerCmd action baseCfgDir verbose backend =
 processDelegatorConfigureCmd :: Maybe FilePath -> Verbose -> Backend -> TransactionOpts (Maybe Types.Energy)
   -> Maybe Types.Amount -- ^New stake/capital.
   -> Maybe Bool -- ^Select whether to restake earnings.
-  -> Maybe Types.DelegationTarget -- ^Delegation target: baker or L-Pool.
+  -> Maybe Types.DelegationTarget -- ^Delegation target: baker or passive delegation.
   -> IO ()
 processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdRestakeEarnings cdDelegationTarget = do
   let intOpts = toInteractionOpts txOpts
@@ -3120,7 +3120,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
     warnAboutPoolStatus capital alreadyDelegatedToBakerPool alreadyBakerId = do
       case cdDelegationTarget of
         Nothing -> return ()
-        Just Types.DelegateToLPool -> return ()
+        Just Types.DelegatePassive -> return ()
         Just (Types.DelegateToBaker bid) -> do
           poolStatus <- getPoolStatusOrDie $ Just bid
           let alreadyDelegatedToThisBaker = case alreadyBakerId of
@@ -3140,7 +3140,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
             Types.AccountStakingDelegated{..} -> do
                 warnIfCapitalIsLowered capital asiStakedAmount
                 mbid <- case asiDelegationTarget of
-                  Types.DelegateToLPool -> return Nothing 
+                  Types.DelegatePassive -> return Nothing
                   Types.DelegateToBaker bid -> return $ Just bid
                 return (asiStakedAmount, mbid)
             _ -> return (0, Nothing)
@@ -3226,7 +3226,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
     configureDelegationTargetLogMsg =
       case cdDelegationTarget of
         Nothing -> []
-        Just Types.DelegateToLPool -> ["stake will be delegated to the L-pool"]
+        Just Types.DelegatePassive -> ["stake will be delegated passively"]
         Just (Types.DelegateToBaker bid) -> [printf "stake will be delegated to baker %s" (show bid)]
 
 
@@ -3289,10 +3289,10 @@ processLegacyCmd action backend =
       context <- TextIO.readFile contextFile
       withClient backend $ withBestBlockHash block (invokeContract context) >>= printJSON
     GetPoolStatus pool block ->
-      let (bid, lpool) = case pool of
+      let (bid, passiveDelegation) = case pool of
             Just bakerId -> (bakerId, False)
             Nothing -> (0, True)
-      in withClient backend $ withBestBlockHash block (getPoolStatus bid lpool) >>= printJSON
+      in withClient backend $ withBestBlockHash block (getPoolStatus bid passiveDelegation) >>= printJSON
     GetBakerList block -> withClient backend $ withBestBlockHash block getBakerList >>= printJSON
     GetRewardStatus block -> withClient backend $ withBestBlockHash block getRewardStatus >>= printJSON
     GetBirkParameters block ->
