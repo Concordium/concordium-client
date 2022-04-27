@@ -571,7 +571,7 @@ processTransactionCmd action baseCfgDir verbose backend =
         Just hash -> return hash
       status <- withClient backend $ queryTransactionStatus hash
       when verbose $ logInfo [printf "Response: %s" (show status)]
-      runPrinter $ printTransactionStatus status
+      runPrinter $ printTransactionStatus status True
       -- TODO This works but output doesn't make sense if transaction is already committed/finalized.
       --      It should skip already completed steps.
       -- withClient backend $ tailTransaction_ hash
@@ -1372,7 +1372,7 @@ tailTransaction hash = do
     logFatal [ "transaction failed before it got committed"
              , "most likely because it was invalid" ]
 
-  runPrinter $ printTransactionStatus committedStatus
+  runPrinter $ printTransactionStatus committedStatus False
 
   -- If the transaction goes back to pending state after being committed
   -- to a branch which gets dropped later on, the command will currently
@@ -1393,7 +1393,7 @@ tailTransaction hash = do
               , "response:\n" ++ showPrettyJSON committedStatus ]
 
     -- Print out finalized status.
-    runPrinter $ printTransactionStatus finalizedStatus
+    runPrinter $ printTransactionStatus finalizedStatus False
 
     return finalizedStatus
   liftIO $ printf "[%s] Transaction finalized.\n" =<< getLocalTimeOfDayFormatted
@@ -2447,7 +2447,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts cbCapital cbRestakeEa
         unless confirmed exitTransactionCancelled
       return cannotAfford
 
-    warnIfCapitalIsSmall capital = do
+    warnIfCapitalIsSmall capital = when (capital /= 0) $ do
       minimumBakerStake <- getBakerStakeThresholdOrDie
       when (capital < minimumBakerStake) $ do
         logWarn [[i|The staked amount (#{showCcd capital}) is lower than the minimum baker stake threshold (#{showCcd minimumBakerStake}).|]]
@@ -2461,18 +2461,19 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts cbCapital cbRestakeEa
         Nothing -> do
           logError ["Could not reach the node to get the baker cooldown period."]
           exitTransactionCancelled
-      if capital < stakedAmount
-      then do
-        logWarn ["The new staked value appears to be lower than the amount currently staked on chain by this baker."]
-        logWarn ["Decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the CCD are made available."]
+      when (capital < stakedAmount) $ do
+        let removing = capital == 0
+        if removing then
+          logWarn ["This will remove the baker."]
+        else
+          logWarn ["The new staked value appears to be lower than the amount currently staked on chain by this baker."]
+        let decreaseOrRemove = if removing then "Removing a baker" else "Decreasing the amount a baker is staking"
+        logWarn [decreaseOrRemove ++ " will lock the stake of the baker for a cooldown period before the CCD are made available."]
         logWarn ["During this period it is not possible to update the baker's stake, or stop the baker."]
         logWarn [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
-        confirmed <- askConfirmation $ Just "Confirm that you want to update the baker's stake"
+        let confirmStr = if removing then "remove the baker" else "update the baker's stake"
+        confirmed <- askConfirmation $ Just $ "Confirm that you want to " ++ confirmStr
         unless confirmed exitTransactionCancelled
-      else do
-        logInfo ["Note that decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the CCD are made available."]
-        logInfo ["During this period it is not possible to update the baker's stake, or stop the baker."]
-        logInfo [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
 
     warnIfCapitalIsBig capital amount =
       when ((capital * 100) > (amount * 95)) $ do
@@ -3156,18 +3157,19 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
       let cooldownString :: String = case cooldownDate of
             Just cd -> [i|The current baker cooldown would last until approximately #{cd}|]
             Nothing -> [i||]
-      if capital < stakedAmount
-      then do
-        logWarn ["The new staked value appears to be lower than the amount currently staked on chain by this delegator."]
-        logWarn ["Decreasing the amount a delegator is staking will lock the stake of the delegator for a cooldown period before the CCD are made available."]
+      when (capital < stakedAmount) $ do
+        let removing = capital == 0
+        if removing then
+          logWarn ["This will remove the delegator."]
+        else
+          logWarn ["The new staked value appears to be lower than the amount currently staked on chain by this delegator."]
+        let decreaseOrRemove = if removing then "Removing a delegator" else "Decreasing the amount a delegator is staking"
+        logWarn [decreaseOrRemove ++ " will lock the stake of the delegator for a cooldown period before the CCD are made available."]
         logWarn ["During this period it is not possible to update the delegator's stake, or stop the delegation of stake."]
         logWarn [cooldownString]
-        confirmed <- askConfirmation $ Just "Confirm that you want to update the delegator's stake"
+        let confirmStr = if removing then "remove the delegator" else "update the delegator's stake"
+        confirmed <- askConfirmation $ Just $ "Confirm that you want to " ++ confirmStr
         unless confirmed exitTransactionCancelled
-      else do
-        logInfo ["Note that decreasing the amount a delegator is staking will lock the stake of the deleator for a cooldown period before the CCD are made available."]
-        logInfo ["During this period it is not possible to update the delegator's stake, or stop the delegation of stake."]
-        logInfo [cooldownString]
 
     warnIfCannotAfford txCfg capital amount = do
       energyrate <- getNrgGtuRate

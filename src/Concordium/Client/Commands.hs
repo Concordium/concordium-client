@@ -1442,7 +1442,8 @@ bakerConfigureCmd =
       (BakerConfigure <$>
         transactionOptsParser <*>
         optional (option (eitherReader amountFromStringInform) (long "stake" <> metavar "CCD-AMOUNT" <> help "The amount of CCD to stake.")) <*>
-        optional (not <$> switch (long "no-restake" <> help "The earnings will not be added to the baker stake automatically.")) <*>
+        optional (flag' True (long "restake" <> help "The earnings will be added to the baker stake automatically.")
+         <|> flag' False (long "no-restake" <> help "The earnings will not be added to the baker stake automatically.")) <*>
         optional (option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> help helpOpenDelegationFor)) <*>
         optional (strOption (long "baker-url" <> metavar "URL" <> help "A link to information about the baker.")) <*>
         optional (option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission"))) <*>
@@ -1551,7 +1552,8 @@ delegatorConfigureCmd =
       (DelegatorConfigure <$>
         transactionOptsParser <*>
         optional (option (eitherReader amountFromStringInform) (long "stake" <> metavar "CCD-AMOUNT" <> help "The amount of CCD to stake.")) <*>
-        optional (not <$> switch (long "no-restake" <> help "The earnings will not be added to the delegated stake automatically.")) <*>
+        optional (flag' True (long "restake" <> help "The earnings will be added to the delegated stake automatically.")
+         <|> flag' False (long "no-restake" <> help "The earnings will not be added to the delegated stake automatically.")) <*>
         optional (option (eitherReader delegationTargetInformString) (long "target" <> metavar "TARGET" <> helpDelegationTarget)))
       (progDesc "Configure delegator information on the chain."))
 

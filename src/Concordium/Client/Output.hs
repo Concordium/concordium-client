@@ -468,8 +468,8 @@ parseTransactionBlockResult status =
                              in MultipleBlocksUnambiguous hashes outcome
                 _ -> MultipleBlocksAmbiguous blocks
 
-printTransactionStatus :: TransactionStatusResult -> Printer
-printTransactionStatus status =
+printTransactionStatus :: TransactionStatusResult -> Bool -> Printer
+printTransactionStatus status verbose =
   case tsrState status of
     Received -> tell ["Transaction is pending."]
     Absent -> tell ["Transaction is absent."]
@@ -482,14 +482,14 @@ printTransactionStatus status =
                  "Transaction is committed into block %s with %s."
                  (show hash)
                  (showOutcomeFragment outcome)]
-          tell $ showOutcomeResult False $ Types.tsResult outcome
+          tell $ showOutcomeResult verbose $ Types.tsResult outcome
         MultipleBlocksUnambiguous hashes outcome -> do
           tell [printf
                  "Transaction is committed into %d blocks with %s:"
                  (length hashes)
                  (showOutcomeFragment outcome)]
           tell $ hashes <&> printf "- %s" . show
-          tell $ showOutcomeResult False $ Types.tsResult outcome
+          tell $ showOutcomeResult verbose $ Types.tsResult outcome
         MultipleBlocksAmbiguous blocks -> do
           tell [printf
                  "Transaction is committed into %d blocks:"
@@ -508,7 +508,7 @@ printTransactionStatus status =
                  "Transaction is finalized into block %s with %s."
                  (show hash)
                  (showOutcomeFragment outcome)]
-          tell $ showOutcomeResult False $ Types.tsResult outcome
+          tell $ showOutcomeResult verbose $ Types.tsResult outcome
         MultipleBlocksUnambiguous _ _ ->
           tell ["Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!"]
         MultipleBlocksAmbiguous _ ->
@@ -565,13 +565,13 @@ showEvent verbose = \case
     verboseOrNothing $ printf "credential with registration '%s' deployed onto account '%s'" (show ecdRegId) (show ecdAccount)
   Types.BakerAdded{..} ->
     let restakeString :: String = if ebaRestakeEarnings then "Earnings are added to the stake." else "Earnings are not added to the stake."
-    in Just $ printf "baker %s added, staking %s CCD. %s" (showBaker ebaBakerId ebaAccount) (Types.amountToString ebaStake) restakeString
+    in verboseOrNothing $ printf "baker %s added, staking %s CCD. %s" (showBaker ebaBakerId ebaAccount) (Types.amountToString ebaStake) restakeString
   Types.BakerRemoved{..} ->
     verboseOrNothing $ printf "baker %s, removed" (showBaker ebrBakerId ebrAccount) (show ebrBakerId)
   Types.BakerStakeIncreased{..} ->
-    Just $ printf "baker %s stake increased to %s" (showBaker ebsiBakerId ebsiAccount) (Types.amountToString ebsiNewStake)
+    verboseOrNothing $ printf "baker %s stake increased to %s" (showBaker ebsiBakerId ebsiAccount) (Types.amountToString ebsiNewStake)
   Types.BakerStakeDecreased{..} ->
-    Just $ printf "baker %s stake decreased to %s" (showBaker ebsiBakerId ebsiAccount) (Types.amountToString ebsiNewStake)
+    verboseOrNothing $ printf "baker %s stake decreased to %s" (showBaker ebsiBakerId ebsiAccount) (Types.amountToString ebsiNewStake)
   Types.BakerSetRestakeEarnings{..} ->
     verboseOrNothing $ printf "baker %s restake earnings %s" (showBaker ebsreBakerId ebsreAccount) (if ebsreRestakeEarnings then "set" :: String else "unset")
   Types.BakerKeysUpdated{..} ->
@@ -589,17 +589,17 @@ showEvent verbose = \case
   Types.BakerSetFinalizationRewardCommission{..} ->
     verboseOrNothing $ printf "baker %s changed finalization reward commission to %s" (showBaker ebsfrcBakerId ebsfrcAccount) (show ebsfrcFinalizationRewardCommission)
   Types.DelegationStakeIncreased{..} ->
-    Just $ printf "delegator %s stake increased to %s" (showDelegator edsiDelegatorId edsiAccount) (Types.amountToString edsiNewStake)
+    verboseOrNothing $ printf "delegator %s stake increased to %s" (showDelegator edsiDelegatorId edsiAccount) (Types.amountToString edsiNewStake)
   Types.DelegationStakeDecreased{..} ->
-    Just $ printf "delegator %s stake decreased to %s" (showDelegator edsdDelegatorId edsdAccount) (Types.amountToString edsdNewStake)
+    verboseOrNothing $ printf "delegator %s stake decreased to %s" (showDelegator edsdDelegatorId edsdAccount) (Types.amountToString edsdNewStake)
   Types.DelegationSetRestakeEarnings{..} ->
-    Just $ printf "delegator %s restake earnings changed to %s" (showDelegator edsreDelegatorId edsreAccount) (show edsreRestakeEarnings)
+    verboseOrNothing $ printf "delegator %s restake earnings changed to %s" (showDelegator edsreDelegatorId edsreAccount) (show edsreRestakeEarnings)
   Types.DelegationSetDelegationTarget{..} ->
-    Just $ printf "delegator %s delegation target changed to %s" (showDelegator edsdtDelegatorId edsdtAccount) (showDelegationTarget edsdtDelegationTarget)
+    verboseOrNothing $ printf "delegator %s delegation target changed to %s" (showDelegator edsdtDelegatorId edsdtAccount) (showDelegationTarget edsdtDelegationTarget)
   Types.DelegationAdded{..} ->
-    Just $ printf "delegator %s added" (showDelegator edaDelegatorId edaAccount)
+    verboseOrNothing $ printf "delegator %s added" (showDelegator edaDelegatorId edaAccount)
   Types.DelegationRemoved{..} ->
-    Just $ printf "delegator %s removed" (showDelegator edrDelegatorId edrAccount)
+    verboseOrNothing $ printf "delegator %s removed" (showDelegator edrDelegatorId edrAccount)
 
   Types.CredentialKeysUpdated cid -> verboseOrNothing $ printf "credential keys updated for credential with credId %s" (show cid)
   Types.NewEncryptedAmount{..} -> verboseOrNothing $ printf "shielded amount received on account '%s' with index '%s'" (show neaAccount) (show neaNewIndex)
