@@ -2357,6 +2357,7 @@ getNrgGtuRate = do
 
 -- |Process the 'baker configure ...' command.
 processBakerConfigureCmd :: Maybe FilePath -> Verbose -> Backend -> TransactionOpts (Maybe Types.Energy)
+  -> Bool -- ^Whether this was called via `baker configure`
   -> Maybe Types.Amount -- ^New stake/capital.
   -> Maybe Bool -- ^Select whether to restake earnings.
   -> Maybe Types.OpenStatus -- ^Open for delegation status.
@@ -2367,15 +2368,37 @@ processBakerConfigureCmd :: Maybe FilePath -> Verbose -> Backend -> TransactionO
   -> Maybe FilePath -- ^File to read baker keys from.
   -> Maybe FilePath -- ^File to write baker keys to.
   -> IO ()
-processBakerConfigureCmd baseCfgDir verbose backend txOpts cbCapital cbRestakeEarnings cbOpenForDelegation metadataURL cbTransactionFeeCommission cbBakingRewardCommission cbFinalizationRewardCommission inputKeysFile outputKeysFile = do
+processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCapital cbRestakeEarnings cbOpenForDelegation metadataURL cbTransactionFeeCommission cbBakingRewardCommission cbFinalizationRewardCommission inputKeysFile outputKeysFile = do
   let intOpts = toInteractionOpts txOpts
   (bakerKeys, txCfg, pl) <- transactionForBakerConfigure (ioConfirm intOpts)
   withClient backend $ do
+    when isBakerConfigure $ warnAboutMissingAddBakerParameters txCfg
     mapM_ (warnAboutBadCapital txCfg) cbCapital
     result <- sendAndTailTransaction txCfg pl intOpts
     events <- eventsFromTransactionResult result
     mapM_ (tryPrintKeyUpdateEventToOutputFile bakerKeys) events
   where
+    warnAboutMissingAddBakerParameters txCfg = do
+      let allPresent = case (cbOpenForDelegation, metadataURL, cbTransactionFeeCommission, cbBakingRewardCommission, cbFinalizationRewardCommission, cbRestakeEarnings, cbCapital, inputKeysFile) of
+                (Just _, Just _, Just _, Just _, Just _, Just _, Just _, Just _) -> True
+                _ -> False
+      when (not allPresent) $ do
+        let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
+        Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr
+        case aiStakingInfo of
+          Types.AccountStakingBaker{} -> return ()
+          _ -> do
+            logWarn $ ["To add a baker, all of the options\n"
+                  ++ "--stake,\n"
+                  ++ "--open-delegation-for,\n"
+                  ++ "--keys-in,\n"
+                  ++ "--keys-out,\n"
+                  ++ "--baker-url,\n"
+                  ++ "--delegation-transaction-fee-commission,\n"
+                  ++ "--delegation-baking-commission,\n"
+                  ++ "--delegation-finalization-commission\nmust be present. Furthermore, exactly one of the options --restake and --no-restake must be present."]
+            confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
+            unless confirmed exitTransactionCancelled
     askUntilEqual credentials = do
       pwd <- askPassword "Enter password for encryption of baker credentials (leave blank for no encryption): "
       case Password.getPassword pwd of
@@ -2993,7 +3016,7 @@ processBakerUpdateStakeCmd baseCfgDir verbose backend txOpts newStake = do
             askConfirmation $ Just "confirm that you want to remove baker"
           else return True
   when ok $
-    processBakerConfigureCmd baseCfgDir verbose backend txOpts (Just newStake) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+    processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just newStake) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
 -- |Process a 'baker ...' command.
 processBakerCmd :: BakerCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -3052,12 +3075,12 @@ processBakerCmd action baseCfgDir verbose backend =
                  ++ "--delegation-finalization-commission\nmust be present."]
             confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
             unless confirmed exitTransactionCancelled
-          processBakerConfigureCmd baseCfgDir verbose backend txOpts (Just initialStake) (Just autoRestake) openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission (Just bakerKeysFile) outputFile
+          processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just initialStake) (Just autoRestake) openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission (Just bakerKeysFile) outputFile
 
     BakerConfigure txOpts capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission inputOutputKeyFiles -> do
       let inputKeysFile = fmap fst inputOutputKeyFiles
           outputKeysFile = fmap snd inputOutputKeyFiles
-      processBakerConfigureCmd baseCfgDir verbose backend txOpts capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission inputKeysFile outputKeysFile
+      processBakerConfigureCmd baseCfgDir verbose backend txOpts True capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission inputKeysFile outputKeysFile
 
     BakerSetKeys file txOpts outfile -> do
       pv <- withClient backend $ do
@@ -3065,7 +3088,7 @@ processBakerCmd action baseCfgDir verbose backend =
         return $ Queries.csProtocolVersion cs
       if pv < Types.P4
         then processBakerSetKeysCmd baseCfgDir verbose backend txOpts file outfile
-        else processBakerConfigureCmd baseCfgDir verbose backend txOpts Nothing Nothing Nothing Nothing Nothing Nothing Nothing (Just file) outfile
+        else processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing Nothing Nothing Nothing Nothing Nothing Nothing (Just file) outfile
 
     BakerRemove txOpts -> do
       pv <- withClient backend $ do
@@ -3073,7 +3096,7 @@ processBakerCmd action baseCfgDir verbose backend =
         return $ Queries.csProtocolVersion cs
       if pv < Types.P4
         then processBakerRemoveCmd baseCfgDir verbose backend txOpts
-        else processBakerConfigureCmd baseCfgDir verbose backend txOpts (Just 0) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+        else processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just 0) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
     BakerUpdateStake newStake txOpts -> do
       pv <- withClient backend $ do
@@ -3089,13 +3112,13 @@ processBakerCmd action baseCfgDir verbose backend =
         return $ Queries.csProtocolVersion cs
       if pv < Types.P4
       then processBakerUpdateRestakeCmd baseCfgDir verbose backend txOpts restake
-      else processBakerConfigureCmd baseCfgDir verbose backend txOpts Nothing (Just restake) Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+      else processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing (Just restake) Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
     BakerUpdateMetadataURL url txOpts ->
-      processBakerConfigureCmd baseCfgDir verbose backend txOpts Nothing Nothing Nothing (Just url) Nothing Nothing Nothing Nothing Nothing
+      processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing Nothing Nothing (Just url) Nothing Nothing Nothing Nothing Nothing
 
     BakerUpdateOpenDelegationStatus status txOpts ->
-      processBakerConfigureCmd baseCfgDir verbose backend txOpts Nothing Nothing (Just status) Nothing Nothing Nothing Nothing Nothing Nothing
+      processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing Nothing (Just status) Nothing Nothing Nothing Nothing Nothing Nothing
 
 -- |Process a 'delegator configure ...' command.
 processDelegatorConfigureCmd :: Maybe FilePath -> Verbose -> Backend -> TransactionOpts (Maybe Types.Energy)
