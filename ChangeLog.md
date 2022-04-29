@@ -1,23 +1,28 @@
 # Changelog for concordium-client
 
 ## Unreleased
+
 - Add support for v1 smart contracts.
 - Add `contract invoke` command for simulating contracts locally on the node.
 - Make `module deploy` expect modules with a version prefix.
   - This prefix is automatically added when building with cargo-concordium
     version >= 2.
   - Add the flag `--wasm-version` to support modules without the version prefix.
+- Adds `consensus show-chain-parameters` subcommand to print the chain parameters.
 
 ## 3.0.4
+
 - Rename `--encrypted` and `--decrypt-encrypted` flags to `account show` to
   `--shielded` and `--reveal-shielded`.
 
 ## 3.0.3
+
 - support the same range of tag names for LEI as is supported by identity
   issuance command line tools. Previously only UNNAMED#13 was supported and now
   both lei and the former are.
 
 ## 3.0.2
+
 - credentials revealing newly introduced attribute LEI can be deployed
 
 ## 3.0.1
@@ -51,15 +56,16 @@
 
 - show smart contract state as raw bytes, if schema is provided but doesn't include the state type.
 - warn about sending transfers with oversized memos.
-- show amount in GTU instead of µGTU when trying to send an encrypted amount that is larger than 
+- show amount in GTU instead of µGTU when trying to send an encrypted amount that is larger than
   the encrypted balance.
 
 ## 1.1.0
+
 - The `account show` command can receive a credential registration ID instead of a name or address.
 - support sending the three new transaction types, i.e. TransferWithMemo, EncryptedTransferWithMemo
   and TransferWithScheduleAndMemo
 - show transfer memo in transaction status
-- show protocolVersion, genesisIndex, currentEraGenesisBlock and currentEraGenesisTime in 
+- show protocolVersion, genesisIndex, currentEraGenesisBlock and currentEraGenesisTime in
   consensus status
 - this version is only compatible with node version 1.1.0 and later.
 - warn the user when trying to deploy a wasm module of size > 65536 bytes
@@ -89,6 +95,7 @@
 - Fix incorrect parsing of `ReceiveName` when the contract field contains a dot.
 
 ## 0.7.0
+
 - Add ContractName and ReceiveName to schema.
 - Add UInt128 and Int128 to schema type.
 - Add 'transaction register-data' command.

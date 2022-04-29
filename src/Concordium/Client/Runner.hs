@@ -2248,6 +2248,17 @@ processConsensusCmd action _baseCfgDir verbose backend =
                     where
                       addrmap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
 
+    ConsensusShowChainParameters b -> do
+      eBlockSummaryJSON <- withClient backend $ withBestBlockHash b getBlockSummary
+      Queries.BlockSummary {..} <-
+        case eBlockSummaryJSON of
+          Right jsn ->
+            case fromJSON jsn of
+              AE.Success bs -> return bs
+              AE.Error e -> logFatal [printf "Error parsing a JSON for block summary: '%s'" (show e)]
+          Left e -> logFatal [printf "Error getting block summary: '%s'" (show e)]
+      printChainParameters (bsUpdates ^. currentParameters)
+
     ConsensusChainUpdate rawUpdateFile keysFiles intOpts -> do
       let
         loadJSON :: (FromJSON a) => FilePath -> IO a
