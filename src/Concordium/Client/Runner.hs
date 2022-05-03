@@ -84,6 +84,7 @@ import qualified Concordium.Utils.Encryption         as Password
 import qualified Concordium.Wasm                     as Wasm
 import           Proto.ConcordiumP2pRpc
 import qualified Proto.ConcordiumP2pRpc_Fields       as CF
+import qualified Data.Char as Char
 
 import           Control.Exception
 import           Control.Monad.Fail
@@ -2345,7 +2346,7 @@ generateBakerKeys bkBakerId = do
 -- This functionality is going to be more generally used in an upcoming branch adding CCD prices to NRG printouts across the client.
 getNrgGtuRate :: ClientMonad IO Types.EnergyRate
 getNrgGtuRate = do
-  blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
+  blockSummary <- getFromJson =<< withLastFinalBlockHash Nothing getBlockSummary
   case blockSummary of
     Nothing -> do
       logError ["Failed to retrieve NRG-CCD rate from the chain using best block hash, unable to estimate CCD cost"]
@@ -2388,15 +2389,15 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
         case aiStakingInfo of
           Types.AccountStakingBaker{} -> return ()
           _ -> do
-            logWarn $ ["To add a baker, all of the options\n"
-                  ++ "--stake,\n"
-                  ++ "--open-delegation-for,\n"
-                  ++ "--keys-in,\n"
-                  ++ "--keys-out,\n"
-                  ++ "--baker-url,\n"
-                  ++ "--delegation-transaction-fee-commission,\n"
-                  ++ "--delegation-baking-commission,\n"
-                  ++ "--delegation-finalization-commission\nmust be present. Furthermore, exactly one of the options --restake and --no-restake must be present."]
+            logWarn $ [init ("To add a baker, more options are necessary. The following are missing "
+                  ++ (if isNothing cbCapital then "\n--stake," else "")
+                  ++ (if isNothing cbOpenForDelegation then "\n--open-delegation-for," else "")
+                  ++ (if isNothing inputKeysFile then "\n--keys-in," else "")
+                  ++ (if isNothing metadataURL then "\n--baker-url," else "")
+                  ++ (if isNothing cbTransactionFeeCommission then "\n--delegation-transaction-fee-commission," else "")
+                  ++ (if isNothing cbBakingRewardCommission then "\n--delegation-baking-commission," else "")
+                  ++ (if isNothing cbFinalizationRewardCommission then "\n--delegation-finalization-commission," else ""))
+                  ++ (if isNothing cbRestakeEarnings then ". \nExactly one of the options --restake and --no-restake must be present" else "")]
             confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
             unless confirmed exitTransactionCancelled
     askUntilEqual credentials = do
@@ -3067,19 +3068,17 @@ processBakerCmd action baseCfgDir verbose backend =
                 (Just _, Just _, Just _, Just _, Just _) -> True
                 _ -> False
           when (not allPresent) $ do
-            logWarn $ ["To add a baker, all of the options\n"
-                 ++ "--open-delegation-for,\n"
-                 ++ "--baker-url,\n"
-                 ++ "--delegation-transaction-fee-commission,\n"
-                 ++ "--delegation-baking-commission,\n"
-                 ++ "--delegation-finalization-commission\nmust be present."]
+            logWarn $ [init $ "To add a baker, more options are necessary. The following are missing"
+                 ++ (if isNothing openForDelegation then "\n--open-delegation-for," else "")
+                 ++ (if isNothing metadataURL then "\n--baker-url," else "")
+                 ++ (if isNothing transactionFeeCommission then "\n--delegation-transaction-fee-commission," else "")
+                 ++ (if isNothing bakingRewardCommission then "\n--delegation-baking-commission," else "")
+                 ++ (if isNothing finalizationRewardCommission then "\n--delegation-finalization-commission," else "")]
             confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
             unless confirmed exitTransactionCancelled
           processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just initialStake) (Just autoRestake) openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission (Just bakerKeysFile) outputFile
 
-    BakerConfigure txOpts capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission inputOutputKeyFiles -> do
-      let inputKeysFile = fmap fst inputOutputKeyFiles
-          outputKeysFile = fmap snd inputOutputKeyFiles
+    BakerConfigure txOpts capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission inputKeysFile outputKeysFile ->
       processBakerConfigureCmd baseCfgDir verbose backend txOpts True capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission inputKeysFile outputKeysFile
 
     BakerSetKeys file txOpts outfile -> do
@@ -3259,12 +3258,38 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
 processDelegatorCmd :: DelegatorCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processDelegatorCmd action baseCfgDir verbose backend =
   case action of
-    DelegatorConfigure txOpts capital restake target ->
-      processDelegatorConfigureCmd baseCfgDir verbose backend txOpts capital restake target
+    DelegatorConfigure txOpts capital restake target -> do
+      delegationTarget <- makeTarget target
+      processDelegatorConfigureCmd baseCfgDir verbose backend txOpts capital restake delegationTarget
     DelegatorRemove txOpts ->
       processDelegatorConfigureCmd baseCfgDir verbose backend txOpts (Just 0) Nothing Nothing
-    DelegatorAdd txOpts capital restake target ->
-      processDelegatorConfigureCmd baseCfgDir verbose backend txOpts (Just capital) (Just restake) (Just target)
+    DelegatorAdd txOpts capital restake target -> do
+      delegationTarget <- makeTarget $ Just target
+      processDelegatorConfigureCmd baseCfgDir verbose backend txOpts (Just capital) (Just restake) delegationTarget
+  where
+    makeTarget Nothing = return Nothing
+    makeTarget (Just target) = do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      let maybeAddress = resolveAccountAddress (bcAccountNameMap baseCfg) target
+      case maybeAddress of
+        Nothing -> case Text.unpack target of
+          "Passive" -> return $ Just Types.DelegatePassive
+          s | Prelude.all Char.isDigit s ->
+            let n = read s :: Integer
+                w = fromIntegral n :: Word64
+            in if n >= 0 && n <= fromIntegral (maxBound :: Word64)
+                then return $ Just $ Types.DelegateToBaker $ Types.BakerId $ Types.AccountIndex w
+                else do
+                  logWarn $ ["The BAKERID '" ++ s ++ "'" ++ " is out of range."]
+                  exitTransactionCancelled
+          s -> do
+            logWarn $ ["Unexpected delegation target '" ++ s ++ "'. The allowed values are: " ++ COM.allowedValuesDelegationTargetAsString]
+            exitTransactionCancelled
+        Just na -> do
+          let address = naAddr na
+          withClient backend $ do
+            ai <- Types.aiAccountIndex <$> getAccountInfoOrDie address
+            return $ Just $ Types.DelegateToBaker $ Types.BakerId $ ai
 
 processIdentityCmd :: IdentityCmd -> Backend -> IO ()
 processIdentityCmd action backend =
@@ -3343,9 +3368,6 @@ processLegacyCmd action backend =
     GetIdentityProviders block -> withClient backend $ withBestBlockHash block getIdentityProviders >>= printJSON
     GetAnonymityRevokers block -> withClient backend $ withBestBlockHash block getAnonymityRevokers >>= printJSON
     GetCryptographicParameters block -> withClient backend $ withBestBlockHash block getCryptographicParameters >>= printJSON
-    GetChainParameters -> do
-      bs <- withClient backend $ getFromJson =<< withBestBlockHash Nothing getBlockSummary
-      Queries.bsWithUpdates bs $ const $ printJSONValues . toJSON . Types._currentParameters
   where
     printSuccess (Left x)  = liftIO . putStrLn $ x
     printSuccess (Right x) = liftIO $ if x then putStrLn "OK" else putStrLn "FAIL"

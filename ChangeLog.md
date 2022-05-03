@@ -7,6 +7,13 @@
   - This prefix is automatically added when building with cargo-concordium
     version >= 2.
   - Add the flag `--wasm-version` to support modules without the version prefix.
+- Related to delegation:
+  - Add commands `delegator add`, `delegator configure` and `delegator remove`.
+  - Add commands `baker configure` , `baker update-url` and `baker update-delegation-status`.
+  - Update existing commands `baker add`, `baker remove`, `baker set-key`, `baker update-restake`
+    and `baker update-stake` so that in Protocol version < 4, they generate the former P3
+    transaction, and in Protocol version 4, they generate the relevant "configure baker" transaction.
+  - Support raw queries `GetPoolStatus` and `GetBakerList`.
 
 ## 3.0.4
 - Rename `--encrypted` and `--decrypt-encrypted` flags to `account show` to
