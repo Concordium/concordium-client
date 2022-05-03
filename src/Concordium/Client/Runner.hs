@@ -2561,7 +2561,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
     configureCapitalLogMsg =
       case cbCapital of
         Nothing -> []
-        Just capital -> [printf "stake will be %s CCD" (Types.amountToString capital)]
+        Just capital -> [[i|stake will be #{Types.amountToString capital} CCD|]]
 
     configureRestakeLogMsg =
       case cbRestakeEarnings of
