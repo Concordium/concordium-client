@@ -6,7 +6,12 @@
 - Make `module deploy` expect modules with a version prefix.
   - This prefix is automatically added when building with cargo-concordium
     version >= 2.
-  - Add the flag `--wasm-version` to support modules without the version prefix.
+  - Add the flag `--contract-version` to support modules without the version
+    prefix.
+- `contract update` command now uses `--entrypoint` to specify the function to
+  invoke. This is renamed from the previous `--func`.
+- When calling `contract update` or `contract invoke` with a non-existent
+  entrypoint the fallback entrypoint is called if one specified in the contract.
 - Related to delegation:
   - Add commands `delegator add`, `delegator configure` and `delegator remove`.
   - Add commands `baker configure` , `baker update-url` and `baker update-delegation-status`.

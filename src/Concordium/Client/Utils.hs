@@ -139,8 +139,8 @@ credentialIndexFromStringInform s =
     Nothing -> Left "Credential index must be an integer between 0 and 255 (inclusive)."
 
 -- |Try to parse a WasmVersion.
-wasmVersionFromStringInform :: String -> Either String Wasm.WasmVersion
-wasmVersionFromStringInform s =
+contractVersionFromStringInform :: String -> Either String Wasm.WasmVersion
+contractVersionFromStringInform s =
   case s of
     "v0" -> Right Wasm.V0
     "V0" -> Right Wasm.V0
@@ -148,7 +148,7 @@ wasmVersionFromStringInform s =
     "v1" -> Right Wasm.V1
     "V1" -> Right Wasm.V1
     "1" -> Right Wasm.V1
-    _ -> Left "Wasm version must be one of [v0, V0, 0, v1, V1, 1]."
+    _ -> Left "Contract version must be one of [v0, V0, 0, v1, V1, 1]."
 
 -- Time Units and durations
 

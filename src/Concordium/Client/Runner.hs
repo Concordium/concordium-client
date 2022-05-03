@@ -63,7 +63,6 @@ import qualified Concordium.Common.Time as Time
 import qualified Concordium.Crypto.EncryptedTransfers as Enc
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
-import           Concordium.Crypto.ByteStringHelpers (deserializeBase16)
 import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.SignatureScheme   as SigScheme
 import qualified Concordium.Crypto.VRF               as VRF
@@ -1420,15 +1419,13 @@ processAccountCmd action baseCfgDir verbose backend =
           return defaultAccountName
         Just acc -> return acc
 
-      accountIdentifier <- case deserializeBase16 input of 
-                Just (_ :: ID.CredentialRegistrationID) -> return input -- input is a wellformed credRegID
-                Nothing -> case ID.addressFromText input of
-                  Right _ -> return input -- input is a wellformed address
-                  Left _ -> case Map.lookup input (bcAccountNameMap baseCfg) of
+      accountIdentifier <- case Types.decodeAccountIdentifier (Text.encodeUtf8 input) of
+                Just _ -> return input -- input is a wellformed account identifier
+                Nothing -> case Map.lookup input (bcAccountNameMap baseCfg) of
                     Just a -> return $ Text.pack $ show a -- input is the local name of an account
                     Nothing -> if isNothing inputMaybe
                                then logFatal [[i|The ACCOUNT argument was not provided; so the default account name '#{defaultAccountName}' was used, but no account with that name exists.|]]
-                               else logFatal [[i|The identifier '#{input}' is neither a credential registration ID, the address nor the name of an account|]]
+                               else logFatal [[i|The identifier '#{input}' is neither a credential registration ID, an account index, the address nor the name of an account|]]
 
       (accInfo, na, dec) <- withClient backend $ do
         -- query account
@@ -1714,6 +1711,31 @@ data ModuleDeployTransactionCfg =
 moduleDeployTransactionPayload :: ModuleDeployTransactionCfg -> Types.Payload
 moduleDeployTransactionPayload ModuleDeployTransactionCfg {..} = Types.DeployModule mdtcModule
 
+-- |Checks if the given receive name is valid and if so, returns it back
+-- or otherwise a fallback receive name for v1 contracts.
+checkAndGetContractReceiveName :: CI.ContractInfo -> Text -> IO Text
+checkAndGetContractReceiveName contrInfo receiveName = do
+  if CI.hasReceiveMethod receiveName contrInfo
+    then return receiveName
+    else
+      if not $ CI.hasFallbackReceiveSupport contrInfo
+        then confirmAbortOrContinue False
+        else let (_, fallbackReceiveName) = Wasm.contractAndFunctionName $ Wasm.makeFallbackReceiveName $ Wasm.ReceiveName (CI.getContractName contrInfo <> receiveName) in
+          if CI.hasReceiveMethod fallbackReceiveName contrInfo
+          then do
+            logInfo [[i|The contract does not have an entrypoint named '#{receiveName}'. The fallback entrypoint will be used instead.|]]
+            return fallbackReceiveName
+          else confirmAbortOrContinue True
+  where
+    confirmAbortOrContinue hasFallbackReceiveSupport = do
+      let fallback_msg :: String = if hasFallbackReceiveSupport
+                then " or a fallback entrypoint"
+                else ""
+      logWarn [[i|The contract does not have an entrypoint named '#{receiveName}'#{fallback_msg}.|]]
+      confirmed <- askConfirmation $ Just "Do you still want to continue? "
+      unless confirmed $ logFatal ["aborting..."]
+      return receiveName
+
 -- |Process a 'contract ...' command.
 processContractCmd :: ContractCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processContractCmd action baseCfgDir verbose backend =
@@ -1817,15 +1839,15 @@ processContractCmd action baseCfgDir verbose backend =
         Just (InvokerAccount nameOrAddr) -> Just . Types.AddressAccount . naAddr <$> getAccountAddressArg (bcAccountNameMap baseCfg) nameOrAddr
         Just InvokerContract{..} -> Just . Types.AddressContract . ncaAddr <$> getNamedContractAddress (bcContractNameMap baseCfg) icIndexOrName icSubindex
 
-      contrInfo <- withClient backend . withBestBlockHash block $ \bb -> getContractInfo namedContrAddr bb
+      contrInfo <- withClient backend . withBestBlockHash block $ getContractInfo namedContrAddr
       let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = []} -- Skip finding nmrNames, as they won't be shown.
 
       let contractName = CI.getContractName contrInfo
       let wasmReceiveName = Wasm.ReceiveName [i|#{contractName}.#{receiveName}|]
-      unless (CI.hasReceiveMethod receiveName contrInfo) $ logFatal [[i|The contract does not have a receive function named '#{receiveName}'.|]]
+      updatedReceiveName <- checkAndGetContractReceiveName contrInfo receiveName
 
       modSchema <- withClient backend . withBestBlockHash block $ getSchemaFromFileOrModule schemaFile namedModRef
-      wasmParameter <- getWasmParameter parameterFile modSchema (CS.ReceiveFuncName contractName receiveName)
+      wasmParameter <- getWasmParameter parameterFile modSchema (CS.ReceiveFuncName contractName updatedReceiveName)
       let nrg = fromMaybe (Types.Energy 10_000_000) energy
 
       let invokeContext = InvokeContract.ContractContext
@@ -1847,7 +1869,7 @@ processContractCmd action baseCfgDir verbose backend =
           Right jsonValue -> case AE.fromJSON jsonValue of
             AE.Error jsonErr -> logFatal [[i|Invocation failed with error: #{jsonErr}|]]
             AE.Success InvokeContract.Failure{..} -> do
-              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName receiveName
+              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName
               -- Logs in cyan to indicate that the invocation returned with a failure.
               -- This might be what you expected from the contract, so logWarn or logFatal should not be used.
               log Info (Just ANSI.Cyan) [[iii|Invocation resulted in failure:\n
@@ -1858,7 +1880,7 @@ processContractCmd action baseCfgDir verbose backend =
               let eventsMsg = case mapMaybe (fmap (("  - " <>) . Text.pack) . showEvent verbose) rcrEvents of
                                 [] -> Text.empty
                                 evts -> [i|- Events:\n#{Text.intercalate "\n" evts}|]
-              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName receiveName
+              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName
               logSuccess [[iii|Invocation resulted in success:\n
                                - Energy used: #{showNrg rcrUsedEnergy}
                                #{returnValueMsg}
@@ -1984,10 +2006,11 @@ getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex rece
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
   contrInfo <- withClient backend . withBestBlockHash Nothing $ getContractInfo namedContrAddr
+  updatedReceiveName <- checkAndGetContractReceiveName contrInfo receiveName
   let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = []}
   let contrName = CI.getContractName contrInfo
   schema <- withClient backend . withBestBlockHash Nothing $ getSchemaFromFileOrModule schemaFile namedModRef
-  params <- getWasmParameter paramsFile schema (CS.ReceiveFuncName contrName receiveName)
+  params <- getWasmParameter paramsFile schema (CS.ReceiveFuncName contrName updatedReceiveName)
   return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr)
            contrName (Wasm.ReceiveName [i|#{contrName}.#{receiveName}|]) params amount
 

@@ -778,7 +778,7 @@ accountShowCmd =
     "show"
     (info
        (AccountShow <$>
-         optional (strArgument (metavar "ACCOUNT" <> help "Name, credential registration ID, or address of the account.")) <*>
+         optional (strArgument (metavar "ACCOUNT" <> help "Name, credential registration ID, account index, or address of the account.")) <*>
          optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")) <*>
          switch (long "shielded" <> help "Show the shielded balance.") <*>
          switch (long "reveal-shielded" <> help "Show the shielded balance, and also reveal all the amounts (potentially slow)."))
@@ -898,6 +898,13 @@ moduleCmds =
            moduleRemoveNameCmd))
       (progDesc "Commands for inspecting and deploying modules."))
 
+-- |Parse a contract version.
+contractVersionOption :: Parser Wasm.WasmVersion
+contractVersionOption = option (eitherReader contractVersionFromStringInform)
+                               (long "contract-version" <>
+                                metavar "CONTRACT-VERSION" <>
+                                help "Optional version of the module (should only be used for modules built with cargo-concordium version < 2).")
+
 moduleDeployCmd :: Mod CommandFields ModuleCmd
 moduleDeployCmd =
   command
@@ -906,7 +913,7 @@ moduleDeployCmd =
       (ModuleDeploy <$>
         strArgument (metavar "FILE" <> help "Path to the smart contract module.") <*>
         optional (strOption (long "name" <> metavar "NAME" <> help "Name for the module.")) <*>
-        optional (option (eitherReader wasmVersionFromStringInform) (long "wasm-version" <> metavar "WASM-VERSION" <> help "Optional Wasm version of the module (should only be used for modules built with cargo-concordium version < 2).")) <*>
+        optional contractVersionOption <*>
         transactionOptsParser)
       (progDesc "Deploy a smart contract module on the chain, optionally naming the module."))
 
@@ -949,7 +956,7 @@ moduleNameCmd =
       (ModuleName <$>
         strArgument (metavar "MODULE" <> help "Module reference OR path to the module.") <*>
         strOption (long "name" <> metavar "NAME" <> help "Name for the module.") <*>
-        optional (option (eitherReader wasmVersionFromStringInform) (long "wasm-version" <> metavar "WASM-VERSION" <> help "Optional Wasm version of the module (should only be used for modules built with cargo-concordium version < 2).")))
+        optional contractVersionOption)
       (progDesc "Name a module."))
 
 moduleRemoveNameCmd ::  Mod CommandFields ModuleCmd
@@ -1013,7 +1020,7 @@ contractInitCmd =
         optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to parse the params file.")) <*>
         optional (strOption (long "name" <> metavar "NAME" <> help "Name for the contract.")) <*>
         switch (long "path" <> help "Use when MODULE is a path to a module file.") <*>
-        optional (option (eitherReader wasmVersionFromStringInform) (long "wasm-version" <> metavar "WASM-VERSION" <> help "Optional Wasm version of the module (should only be used for modules built with cargo-concordium version < 2).")) <*>
+        optional contractVersionOption <*>
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> value 0
                                                       <> help "Amount of CCD to transfer to the contract.") <*>
         requiredEnergyTransactionOptsParser)
@@ -1028,8 +1035,8 @@ contractUpdateCmd =
         strArgument (metavar "INDEX-OR-NAME" <> help "Index of the contract address OR a contract name.") <*>
         optional (option auto (long "subindex" <> metavar "SUBINDEX" <>
                      help "Subindex of address for the contract on chain (default: 0)")) <*>
-        strOption (long "func" <> metavar "RECEIVE-NAME"
-                             <> help "Name of the specific receive function in the module.") <*>
+        strOption (long "entrypoint" <> metavar "ENTRYPOINT-NAME"
+                             <> help "Name of the entrypoint of the contract to invoke.") <*>
         parameterFileParser <*>
         optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to parse the params file.")) <*>
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> value 0
@@ -1046,8 +1053,8 @@ contractInvokeCmd =
         strArgument (metavar "INDEX-OR-NAME" <> help "Index of the contract address OR a contract name.") <*>
         optional (option auto (long "subindex" <> metavar "SUBINDEX" <>
                      help "Subindex of address for the contract on chain (default: 0)")) <*>
-        strOption (long "func" <> metavar "RECEIVE-NAME"
-                             <> help "Name of the specific receive function in the module.") <*>
+        strOption (long "entrypoint" <> metavar "ENTRYPOINT-NAME"
+                             <> help "Name of the entrypoint of the contract to invoke.") <*>
         parameterFileParser <*>
         optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to parse the params file.")) <*>
         option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> value 0
