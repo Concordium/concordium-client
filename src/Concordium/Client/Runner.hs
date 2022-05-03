@@ -1022,7 +1022,7 @@ getPoolStatusOrDie mbid = do
   infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getPoolStatus bid passiveDelegation)
   case AE.fromJSON infoValue of
     AE.Error err -> logFatal ["Cannot decode pool status response from the node: " ++ err]
-    AE.Success Nothing -> logFatal [printf "Could not query pool status from the chain."]
+    AE.Success Nothing -> logFatal ["Could not query pool status from the chain."]
     AE.Success (Just ps) -> return ps
 
 data CredentialUpdateKeysTransactionCfg =
