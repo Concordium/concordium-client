@@ -1,6 +1,8 @@
 # Changelog for concordium-client
 
 ## Unreleased
+
+## 4.0.2
 - Add support for v1 smart contracts.
 - Add `contract invoke` command for simulating contracts locally on the node.
 - Make `module deploy` expect modules with a version prefix.
