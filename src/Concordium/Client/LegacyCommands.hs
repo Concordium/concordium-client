@@ -117,7 +117,6 @@ data LegacyCmd
     { legacyBlockHash :: !(Maybe Text) }
   | GetCryptographicParameters
     { legacyBlockHash :: !(Maybe Text) }
-  | GetChainParameters
   deriving (Show)
 
 legacyProgramOptions :: Parser LegacyCmd
@@ -127,7 +126,6 @@ legacyProgramOptions =
      getTransactionStatusCommand <>
      getTransactionStatusInBlockCommand <>
      getConsensusInfoCommand <>
-     getChainParametersCommand <>
      getBlockInfoCommand <>
      getBlockSummaryCommand <>
      getBlocksAtHeightCommand <>
@@ -231,14 +229,6 @@ getConsensusInfoCommand =
        (pure GetConsensusInfo)
        (progDesc "Query the gRPC server for the consensus information."))
 
-getChainParametersCommand :: Mod CommandFields LegacyCmd
-getChainParametersCommand =
-    command
-      "GetChainParameters"
-      (info
-        (pure GetChainParameters)
-        (progDesc "Query the gRPC server for the blockchain parameters."))
-
 getBlockInfoCommand :: Mod CommandFields LegacyCmd
 getBlockInfoCommand =
   command
@@ -296,7 +286,7 @@ getAccountInfoCommand =
     "GetAccountInfo"
     (info
        (GetAccountInfo <$>
-        strArgument (metavar "IDENTIFIER" <> help "Account address or credential id to be queried about.") <*>
+        strArgument (metavar "IDENTIFIER" <> help "Account address, account index or credential id to be queried about.") <*>
         optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block in which to do the query"))
        )
        (progDesc "Query the gRPC server for the information of an account."))

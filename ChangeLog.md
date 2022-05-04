@@ -2,13 +2,26 @@
 
 ## Unreleased
 
+## 4.0.2
 - Add support for v1 smart contracts.
 - Add `contract invoke` command for simulating contracts locally on the node.
 - Make `module deploy` expect modules with a version prefix.
   - This prefix is automatically added when building with cargo-concordium
     version >= 2.
-  - Add the flag `--wasm-version` to support modules without the version prefix.
-- Adds `consensus show-chain-parameters` subcommand to print the chain parameters.
+  - Add the flag `--contract-version` to support modules without the version
+    prefix.
+- `contract update` command now uses `--entrypoint` to specify the function to
+  invoke. This is renamed from the previous `--func`.
+- When calling `contract update` or `contract invoke` with a non-existent
+  entrypoint the fallback entrypoint is called if one specified in the contract.
+- Related to delegation:
+  - Add commands `delegator add`, `delegator configure` and `delegator remove`.
+  - Add commands `baker configure` , `baker update-url` and `baker update-delegation-status`.
+  - Update existing commands `baker add`, `baker remove`, `baker set-key`, `baker update-restake`
+    and `baker update-stake` so that in Protocol version < 4, they generate the former P3
+    transaction, and in Protocol version 4, they generate the relevant "configure baker" transaction.
+  - Support raw queries `GetPoolStatus` and `GetBakerList`.
+- Add `consensus show-chain-parameters` subcommand to print the chain parameters.
 
 ## 3.0.4
 

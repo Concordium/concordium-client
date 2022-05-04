@@ -63,7 +63,6 @@ import qualified Concordium.Common.Time as Time
 import qualified Concordium.Crypto.EncryptedTransfers as Enc
 import qualified Concordium.Crypto.BlockSignature    as BlockSig
 import qualified Concordium.Crypto.BlsSignature      as Bls
-import           Concordium.Crypto.ByteStringHelpers (deserializeBase16)
 import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.SignatureScheme   as SigScheme
 import qualified Concordium.Crypto.VRF               as VRF
@@ -84,6 +83,7 @@ import qualified Concordium.Utils.Encryption         as Password
 import qualified Concordium.Wasm                     as Wasm
 import           Proto.ConcordiumP2pRpc
 import qualified Proto.ConcordiumP2pRpc_Fields       as CF
+import qualified Data.Char as Char
 
 import           Control.Exception
 import           Control.Monad.Fail
@@ -1022,7 +1022,7 @@ getPoolStatusOrDie mbid = do
   infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getPoolStatus bid passiveDelegation)
   case AE.fromJSON infoValue of
     AE.Error err -> logFatal ["Cannot decode pool status response from the node: " ++ err]
-    AE.Success Nothing -> logFatal [printf "Could not query pool status from the chain."]
+    AE.Success Nothing -> logFatal ["Could not query pool status from the chain."]
     AE.Success (Just ps) -> return ps
 
 data CredentialUpdateKeysTransactionCfg =
@@ -1419,15 +1419,13 @@ processAccountCmd action baseCfgDir verbose backend =
           return defaultAccountName
         Just acc -> return acc
 
-      accountIdentifier <- case deserializeBase16 input of 
-                Just (_ :: ID.CredentialRegistrationID) -> return input -- input is a wellformed credRegID
-                Nothing -> case ID.addressFromText input of
-                  Right _ -> return input -- input is a wellformed address
-                  Left _ -> case Map.lookup input (bcAccountNameMap baseCfg) of
+      accountIdentifier <- case Types.decodeAccountIdentifier (Text.encodeUtf8 input) of
+                Just _ -> return input -- input is a wellformed account identifier
+                Nothing -> case Map.lookup input (bcAccountNameMap baseCfg) of
                     Just a -> return $ Text.pack $ show a -- input is the local name of an account
                     Nothing -> if isNothing inputMaybe
                                then logFatal [[i|The ACCOUNT argument was not provided; so the default account name '#{defaultAccountName}' was used, but no account with that name exists.|]]
-                               else logFatal [[i|The identifier '#{input}' is neither a credential registration ID, the address nor the name of an account|]]
+                               else logFatal [[i|The identifier '#{input}' is neither a credential registration ID, an account index, the address nor the name of an account|]]
 
       (accInfo, na, dec) <- withClient backend $ do
         -- query account
@@ -1713,6 +1711,31 @@ data ModuleDeployTransactionCfg =
 moduleDeployTransactionPayload :: ModuleDeployTransactionCfg -> Types.Payload
 moduleDeployTransactionPayload ModuleDeployTransactionCfg {..} = Types.DeployModule mdtcModule
 
+-- |Checks if the given receive name is valid and if so, returns it back
+-- or otherwise a fallback receive name for v1 contracts.
+checkAndGetContractReceiveName :: CI.ContractInfo -> Text -> IO Text
+checkAndGetContractReceiveName contrInfo receiveName = do
+  if CI.hasReceiveMethod receiveName contrInfo
+    then return receiveName
+    else
+      if not $ CI.hasFallbackReceiveSupport contrInfo
+        then confirmAbortOrContinue False
+        else let (_, fallbackReceiveName) = Wasm.contractAndFunctionName $ Wasm.makeFallbackReceiveName $ Wasm.ReceiveName (CI.getContractName contrInfo <> receiveName) in
+          if CI.hasReceiveMethod fallbackReceiveName contrInfo
+          then do
+            logInfo [[i|The contract does not have an entrypoint named '#{receiveName}'. The fallback entrypoint will be used instead.|]]
+            return fallbackReceiveName
+          else confirmAbortOrContinue True
+  where
+    confirmAbortOrContinue hasFallbackReceiveSupport = do
+      let fallback_msg :: String = if hasFallbackReceiveSupport
+                then " or a fallback entrypoint"
+                else ""
+      logWarn [[i|The contract does not have an entrypoint named '#{receiveName}'#{fallback_msg}.|]]
+      confirmed <- askConfirmation $ Just "Do you still want to continue? "
+      unless confirmed $ logFatal ["aborting..."]
+      return receiveName
+
 -- |Process a 'contract ...' command.
 processContractCmd :: ContractCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processContractCmd action baseCfgDir verbose backend =
@@ -1816,15 +1839,15 @@ processContractCmd action baseCfgDir verbose backend =
         Just (InvokerAccount nameOrAddr) -> Just . Types.AddressAccount . naAddr <$> getAccountAddressArg (bcAccountNameMap baseCfg) nameOrAddr
         Just InvokerContract{..} -> Just . Types.AddressContract . ncaAddr <$> getNamedContractAddress (bcContractNameMap baseCfg) icIndexOrName icSubindex
 
-      contrInfo <- withClient backend . withBestBlockHash block $ \bb -> getContractInfo namedContrAddr bb
+      contrInfo <- withClient backend . withBestBlockHash block $ getContractInfo namedContrAddr
       let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = []} -- Skip finding nmrNames, as they won't be shown.
 
       let contractName = CI.getContractName contrInfo
       let wasmReceiveName = Wasm.ReceiveName [i|#{contractName}.#{receiveName}|]
-      unless (CI.hasReceiveMethod receiveName contrInfo) $ logFatal [[i|The contract does not have a receive function named '#{receiveName}'.|]]
+      updatedReceiveName <- checkAndGetContractReceiveName contrInfo receiveName
 
       modSchema <- withClient backend . withBestBlockHash block $ getSchemaFromFileOrModule schemaFile namedModRef
-      wasmParameter <- getWasmParameter parameterFile modSchema (CS.ReceiveFuncName contractName receiveName)
+      wasmParameter <- getWasmParameter parameterFile modSchema (CS.ReceiveFuncName contractName updatedReceiveName)
       let nrg = fromMaybe (Types.Energy 10_000_000) energy
 
       let invokeContext = InvokeContract.ContractContext
@@ -1846,7 +1869,7 @@ processContractCmd action baseCfgDir verbose backend =
           Right jsonValue -> case AE.fromJSON jsonValue of
             AE.Error jsonErr -> logFatal [[i|Invocation failed with error: #{jsonErr}|]]
             AE.Success InvokeContract.Failure{..} -> do
-              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName receiveName
+              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName
               -- Logs in cyan to indicate that the invocation returned with a failure.
               -- This might be what you expected from the contract, so logWarn or logFatal should not be used.
               log Info (Just ANSI.Cyan) [[iii|Invocation resulted in failure:\n
@@ -1857,7 +1880,7 @@ processContractCmd action baseCfgDir verbose backend =
               let eventsMsg = case mapMaybe (fmap (("  - " <>) . Text.pack) . showEvent verbose) rcrEvents of
                                 [] -> Text.empty
                                 evts -> [i|- Events:\n#{Text.intercalate "\n" evts}|]
-              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName receiveName
+              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName
               logSuccess [[iii|Invocation resulted in success:\n
                                - Energy used: #{showNrg rcrUsedEnergy}
                                #{returnValueMsg}
@@ -1983,10 +2006,11 @@ getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex rece
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
   contrInfo <- withClient backend . withBestBlockHash Nothing $ getContractInfo namedContrAddr
+  updatedReceiveName <- checkAndGetContractReceiveName contrInfo receiveName
   let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = []}
   let contrName = CI.getContractName contrInfo
   schema <- withClient backend . withBestBlockHash Nothing $ getSchemaFromFileOrModule schemaFile namedModRef
-  params <- getWasmParameter paramsFile schema (CS.ReceiveFuncName contrName receiveName)
+  params <- getWasmParameter paramsFile schema (CS.ReceiveFuncName contrName updatedReceiveName)
   return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr)
            contrName (Wasm.ReceiveName [i|#{contrName}.#{receiveName}|]) params amount
 
@@ -2356,7 +2380,7 @@ generateBakerKeys bkBakerId = do
 -- This functionality is going to be more generally used in an upcoming branch adding CCD prices to NRG printouts across the client.
 getNrgGtuRate :: ClientMonad IO Types.EnergyRate
 getNrgGtuRate = do
-  blockSummary <- getFromJson =<< withBestBlockHash Nothing getBlockSummary
+  blockSummary <- getFromJson =<< withLastFinalBlockHash Nothing getBlockSummary
   case blockSummary of
     Nothing -> do
       logError ["Failed to retrieve NRG-CCD rate from the chain using best block hash, unable to estimate CCD cost"]
@@ -2399,15 +2423,15 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
         case aiStakingInfo of
           Types.AccountStakingBaker{} -> return ()
           _ -> do
-            logWarn $ ["To add a baker, all of the options\n"
-                  ++ "--stake,\n"
-                  ++ "--open-delegation-for,\n"
-                  ++ "--keys-in,\n"
-                  ++ "--keys-out,\n"
-                  ++ "--baker-url,\n"
-                  ++ "--delegation-transaction-fee-commission,\n"
-                  ++ "--delegation-baking-commission,\n"
-                  ++ "--delegation-finalization-commission\nmust be present. Furthermore, exactly one of the options --restake and --no-restake must be present."]
+            logWarn $ [init ("To add a baker, more options are necessary. The following are missing "
+                  ++ (if isNothing cbCapital then "\n--stake," else "")
+                  ++ (if isNothing cbOpenForDelegation then "\n--open-delegation-for," else "")
+                  ++ (if isNothing inputKeysFile then "\n--keys-in," else "")
+                  ++ (if isNothing metadataURL then "\n--baker-url," else "")
+                  ++ (if isNothing cbTransactionFeeCommission then "\n--delegation-transaction-fee-commission," else "")
+                  ++ (if isNothing cbBakingRewardCommission then "\n--delegation-baking-commission," else "")
+                  ++ (if isNothing cbFinalizationRewardCommission then "\n--delegation-finalization-commission," else ""))
+                  ++ (if isNothing cbRestakeEarnings then ". \nExactly one of the options --restake and --no-restake must be present" else "")]
             confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
             unless confirmed exitTransactionCancelled
     askUntilEqual credentials = do
@@ -2548,7 +2572,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
     configureCapitalLogMsg =
       case cbCapital of
         Nothing -> []
-        Just capital -> [printf "stake will be %s CCD" (Types.amountToString capital)]
+        Just capital -> [[i|stake will be #{Types.amountToString capital} CCD|]]
 
     configureRestakeLogMsg =
       case cbRestakeEarnings of
@@ -2711,9 +2735,6 @@ processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarn
   }) <- readInputKeysFile baseCfg
       let payload = Types.encodePayload Types.AddBaker{..}
           nrgCost _ = return . Just $ bakerAddEnergyCost $ Types.payloadSize payload
-            -- case cbKeysWithProofs of
-            --             Nothing -> return . Just $ bakerConfigureEnergyCostWithoutKeys (Types.payloadSize payload)
-            --             Just _ -> return . Just $ bakerConfigureEnergyCostWithKeys (Types.payloadSize payload)
       txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
       logSuccess
         ([ printf "adding baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
@@ -3066,7 +3087,7 @@ processBakerCmd action baseCfgDir verbose backend =
             when pubSuccess $ do
               logSuccess [ printf "public keys written to file '%s'" pubFile]
 
-    BakerAdd bakerKeysFile txOpts initialStake autoRestake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission outputFile -> do
+    BakerAdd bakerKeysFile txOpts initialStake autoRestake extraData outputFile -> do
       pv <- withClient backend $ do
         cs <- getConsensusStatus >>= getFromJson
         return $ Queries.csProtocolVersion cs
@@ -3074,23 +3095,23 @@ processBakerCmd action baseCfgDir verbose backend =
         then
           processBakerAddCmd baseCfgDir verbose backend txOpts initialStake autoRestake bakerKeysFile outputFile
         else do
-          let allPresent = case (openForDelegation, metadataURL, transactionFeeCommission, bakingRewardCommission, finalizationRewardCommission) of
-                (Just _, Just _, Just _, Just _, Just _) -> True
-                _ -> False
-          when (not allPresent) $ do
+          when (isNothing extraData) $ do
             logWarn $ ["To add a baker, all of the options\n"
                  ++ "--open-delegation-for,\n"
                  ++ "--baker-url,\n"
                  ++ "--delegation-transaction-fee-commission,\n"
                  ++ "--delegation-baking-commission,\n"
-                 ++ "--delegation-finalization-commission\nmust be present."]
+                 ++ "--delegation-finalization-commission\nmust be present"]
             confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
             unless confirmed exitTransactionCancelled
+          let openForDelegation = ebadOpenForDelegation <$> extraData
+              metadataURL = ebadMetadataURL <$> extraData
+              transactionFeeCommission = ebadTransactionFeeCommission <$> extraData
+              bakingRewardCommission = ebadBakingRewardCommission <$> extraData
+              finalizationRewardCommission = ebadFinalizationRewardCommission <$> extraData
           processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just initialStake) (Just autoRestake) openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission (Just bakerKeysFile) outputFile
 
-    BakerConfigure txOpts capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission inputOutputKeyFiles -> do
-      let inputKeysFile = fmap fst inputOutputKeyFiles
-          outputKeysFile = fmap snd inputOutputKeyFiles
+    BakerConfigure txOpts capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission inputKeysFile outputKeysFile ->
       processBakerConfigureCmd baseCfgDir verbose backend txOpts True capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission inputKeysFile outputKeysFile
 
     BakerSetKeys file txOpts outfile -> do
@@ -3270,12 +3291,38 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
 processDelegatorCmd :: DelegatorCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processDelegatorCmd action baseCfgDir verbose backend =
   case action of
-    DelegatorConfigure txOpts capital restake target ->
-      processDelegatorConfigureCmd baseCfgDir verbose backend txOpts capital restake target
+    DelegatorConfigure txOpts capital restake target -> do
+      delegationTarget <- makeTarget target
+      processDelegatorConfigureCmd baseCfgDir verbose backend txOpts capital restake delegationTarget
     DelegatorRemove txOpts ->
       processDelegatorConfigureCmd baseCfgDir verbose backend txOpts (Just 0) Nothing Nothing
-    DelegatorAdd txOpts capital restake target ->
-      processDelegatorConfigureCmd baseCfgDir verbose backend txOpts (Just capital) (Just restake) (Just target)
+    DelegatorAdd txOpts capital restake target -> do
+      delegationTarget <- makeTarget $ Just target
+      processDelegatorConfigureCmd baseCfgDir verbose backend txOpts (Just capital) (Just restake) delegationTarget
+  where
+    makeTarget Nothing = return Nothing
+    makeTarget (Just target) = do
+      baseCfg <- getBaseConfig baseCfgDir verbose
+      let maybeAddress = resolveAccountAddress (bcAccountNameMap baseCfg) target
+      case maybeAddress of
+        Nothing -> case Text.unpack target of
+          "Passive" -> return $ Just Types.DelegatePassive
+          s | Prelude.all Char.isDigit s ->
+            let n = read s :: Integer
+                w = fromIntegral n :: Word64
+            in if n >= 0 && n <= fromIntegral (maxBound :: Word64)
+                then return $ Just $ Types.DelegateToBaker $ Types.BakerId $ Types.AccountIndex w
+                else do
+                  logWarn $ ["The BAKERID '" ++ s ++ "'" ++ " is out of range."]
+                  exitTransactionCancelled
+          s -> do
+            logWarn $ ["Unexpected delegation target '" ++ s ++ "'. The allowed values are: " ++ COM.allowedValuesDelegationTargetAsString]
+            exitTransactionCancelled
+        Just na -> do
+          let address = naAddr na
+          withClient backend $ do
+            ai <- Types.aiAccountIndex <$> getAccountInfoOrDie address
+            return $ Just $ Types.DelegateToBaker $ Types.BakerId $ ai
 
 processIdentityCmd :: IdentityCmd -> Backend -> IO ()
 processIdentityCmd action backend =
@@ -3354,9 +3401,6 @@ processLegacyCmd action backend =
     GetIdentityProviders block -> withClient backend $ withBestBlockHash block getIdentityProviders >>= printJSON
     GetAnonymityRevokers block -> withClient backend $ withBestBlockHash block getAnonymityRevokers >>= printJSON
     GetCryptographicParameters block -> withClient backend $ withBestBlockHash block getCryptographicParameters >>= printJSON
-    GetChainParameters -> do
-      bs <- withClient backend $ getFromJson =<< withBestBlockHash Nothing getBlockSummary
-      Queries.bsWithUpdates bs $ const $ printJSONValues . toJSON . Types._currentParameters
   where
     printSuccess (Left x)  = liftIO . putStrLn $ x
     printSuccess (Right x) = liftIO $ if x then putStrLn "OK" else putStrLn "FAIL"
