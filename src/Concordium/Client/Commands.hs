@@ -406,6 +406,8 @@ data ConsensusCmd
   | ConsensusShowParameters
     { cspBlockHash :: !(Maybe Text)
     , cspIncludeBakers :: !Bool }
+  | ConsensusShowChainParameters
+    { cscpBlockHash :: !(Maybe Text) }
   | ConsensusChainUpdate
     { ccuUpdate :: !FilePath
     , ccuKeys :: ![FilePath]
@@ -1303,6 +1305,7 @@ consensusCmds =
       (ConsensusCmd <$>
         (hsubparser
           (consensusStatusCmd <>
+           consensusShowChainParametersCmd <>
            consensusShowParametersCmd) <|>
         hsubparser
           (commandGroup "internal" <> consensusChainUpdateCmd <> internal)))
@@ -1325,6 +1328,15 @@ consensusShowParametersCmd =
         optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")) <*>
         switch (long "include-bakers" <> help "Include the \"lottery power\" of individual bakers."))
       (progDesc "Show election parameters for given block."))
+
+consensusShowChainParametersCmd :: Mod CommandFields ConsensusCmd
+consensusShowChainParametersCmd =
+  command
+    "show-chain-parameters"
+    (info
+      (ConsensusShowChainParameters <$>
+        optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\").")))
+      (progDesc "Show chain parameters for given block."))
 
 consensusChainUpdateCmd :: Mod CommandFields ConsensusCmd
 consensusChainUpdateCmd =

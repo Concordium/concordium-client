@@ -1,6 +1,8 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
 module Concordium.Client.Output where
 
 import Concordium.Client.Cli
@@ -15,13 +17,15 @@ import Concordium.Client.Types.TransactionStatus
 import Concordium.Common.Version
 import Concordium.ID.Parameters
 import qualified Concordium.Types as Types
-import qualified Concordium.Types.Execution as Types
 import qualified Concordium.Types.Accounts as Types
 import qualified Concordium.Types.Accounts.Releases as Types
+import qualified Concordium.Types.Execution as Types
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Crypto.EncryptedTransfers as Enc
 import qualified Concordium.Wasm as Wasm
 import qualified Concordium.Common.Time as Time
+import Concordium.Types.Parameters
+import Concordium.Types.ProtocolVersion
 import qualified Concordium.Types.Queries as Queries
 
 import Control.Monad.Writer
@@ -36,6 +40,7 @@ import qualified Data.Map.Strict as Map
 import Data.List (foldl', intercalate, nub, sortOn)
 import Data.Maybe
 import Data.Word (Word64)
+import Data.Ratio
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -822,6 +827,118 @@ printBirkParameters includeBakers r addrmap = do
                                 else printf "%8.4f %%" (lp*100)
           accountName bkr = fromMaybe " " $ Map.lookup bkr addrmap
 
+
+-- | Prints the chain  parameters.
+printChainParameters :: ChainParameters' cpv -> Printer
+printChainParameters cp = do
+  case cp ^. cpCooldownParameters of
+    CooldownParametersV0 {} -> printChainParametersV0 cp
+    CooldownParametersV1 {} -> printChainParametersV1 cp
+
+-- | Prints the chain  parameters for version 0.
+printChainParametersV0 :: ChainParameters' 'ChainParametersV0 -> Printer
+printChainParametersV0 ChainParameters {..} = tell [
+  "Chain parameters: ",
+  [i|  - election difficulty: #{_cpElectionDifficulty}|],
+  [i|  - EUR per Energy rate: #{showExchangeRate (_erEuroPerEnergy _cpExchangeRates)}|],
+  [i|  - microCCD per EUR rate: #{showExchangeRate (_erMicroGTUPerEuro _cpExchangeRates)}|],
+  [i|  - EUR per CCD rate (approx): #{printf "%.4f" (realToFrac (1000000 / _erMicroGTUPerEuro _cpExchangeRates) :: Double) :: String}|],
+  [i|  - baker extra cooldown epochs: #{(_cpBakerExtraCooldownEpochs _cpCooldownParameters)}|],
+  [i|  - maximum credential deployments per block: #{_cpAccountCreationLimit}|],
+  [i|  - stake threshold to become a baker: #{showCcd (_ppBakerStakeThreshold _cpPoolParameters)}|],
+  [i|  - reward parameters:|],
+  [i|    + mint distribution:|],
+  [i|       * mint rate per slot: #{_cpRewardParameters ^. (mdMintPerSlot . mpsMintPerSlot)}|],
+  [i|       * baking reward: #{_cpRewardParameters ^. mdBakingReward}|],
+  [i|       * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|],
+  [i|    + transaction fee distribution:|],
+  [i|       * baker: #{_cpRewardParameters ^. tfdBaker}|],
+  [i|       * GAS account: #{_cpRewardParameters ^. tfdGASAccount}|],
+  [i|    + GAS rewards:|],
+  [i|       * baking a block: #{_cpRewardParameters ^. gasBaker}|],
+  [i|       * adding a finalization proof: #{_cpRewardParameters ^. gasFinalizationProof}|],
+  [i|       * adding a credential deployment: #{_cpRewardParameters ^. gasAccountCreation}|],
+  [i|       * adding a chain update: #{_cpRewardParameters ^. gasChainUpdate}|],
+  [i|  - foundation account index: #{_cpFoundationAccount}|]
+  ]
+
+-- | Prints the chain  parameters for version 1.
+printChainParametersV1 :: ChainParameters' 'ChainParametersV1 -> Printer
+printChainParametersV1 ChainParameters {..} = tell $ [
+  "Chain parameters: ",
+  [i|  - election difficulty: #{_cpElectionDifficulty}|],
+  [i|  - EUR per Energy rate: #{showExchangeRate (_erEuroPerEnergy _cpExchangeRates)}|],
+  [i|  - microCCD per EUR rate: #{showExchangeRate (_erMicroGTUPerEuro _cpExchangeRates)}|],
+  [i|  - EUR per CCD rate (approx): #{printf "%.4f" (realToFrac (1000000 / _erMicroGTUPerEuro _cpExchangeRates) :: Double) :: String}|]] ++
+  printCooldownParametersV1 _cpCooldownParameters
+  ++ [
+      [i|  - maximum credential deployments per block: #{_cpAccountCreationLimit}|]
+      ] ++
+  printPoolParametersV1 _cpPoolParameters ++
+  [
+    [i|  - reward parameters:|],
+    [i|    + mint distribution:|],
+    [i|       * mint rate per slot: #{_cpRewardParameters ^. mdMintPerSlot}|],
+    [i|       * baking reward: " ++ #{_cpRewardParameters ^. mdBakingReward}|],
+    [i|       * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|],
+    [i|    + transaction fee distribution:|],
+    [i|       * baker: #{_cpRewardParameters ^. tfdBaker}|],
+    [i|       * GAS account: #{_cpRewardParameters ^. tfdGASAccount}|],
+    [i|    + GAS rewards:|],
+    [i|       * baking a block: #{_cpRewardParameters ^. gasBaker}|],
+    [i|       * adding a finalization proof: #{_cpRewardParameters ^. gasFinalizationProof}|],
+    [i|       * adding a credential deployment: #{_cpRewardParameters ^. gasAccountCreation}|],
+    [i|       * adding a chain update: #{_cpRewardParameters ^. gasChainUpdate}|],
+    [i|  - foundation account index: #{_cpFoundationAccount}|]
+  ] ++
+  printTimeParametersV1 _cpTimeParameters ++
+  [[i|  - foundation account index: #{_cpFoundationAccount}|]]
+
+-- | Prints cool-down parameters.
+printCooldownParametersV1 :: CooldownParameters 'ChainParametersV1 -> [String]
+printCooldownParametersV1 cp = [
+  [i|  - pool owner cooldown epochs: #{cp ^. cpPoolOwnerCooldown}|],
+  [i|  - delegator cooldown epochs: #{cp ^. cpDelegatorCooldown}|]
+  ]
+
+-- | Prints time parameters.
+printTimeParametersV1 :: TimeParameters 'ChainParametersV1 -> [String]
+printTimeParametersV1 tp = [
+  [i|  - time parameters:|],
+  [i|    + reward period length (in epochs): #{tp ^. tpRewardPeriodLength}|],
+  [i|    + mint amount per reward period: #{tp ^. tpRewardPeriodLength}|]
+  ]
+
+-- | Prints pool parameters.
+printPoolParametersV1 :: PoolParameters 'ChainParametersV1 -> [String]
+printPoolParametersV1 pp = [
+  [i|  - Passive delegation parameters:|],
+  [i|    + finalization commission: #{pp ^. (ppPassiveCommissions . Types.finalizationCommission)}|],
+  [i|    + baking commission: #{pp ^. (ppPassiveCommissions . Types.bakingCommission)}|],
+  [i|    + transaction commission: #{pp ^. (ppPassiveCommissions . Types.transactionCommission)}|],
+  [i|  - baker pool parameters:|],
+  [i|    + allowed range for finalization commission: #{showInclusiveRange show (pp ^. (ppCommissionBounds . finalizationCommissionRange))}|],
+  [i|    + allowed range for baking commission: #{showInclusiveRange show (pp ^. (ppCommissionBounds . bakingCommissionRange))}|],
+  [i|    + allowed range for transaction commission: #{showInclusiveRange show (pp ^. (ppCommissionBounds . transactionCommissionRange))}|],
+  [i|    + minimum stake to be a baker: #{pp ^. ppMinimumEquityCapital}|],
+  [i|    + maximum fraction of total stake a pool is allowed hold: #{pp ^. ppCapitalBound}|],
+  [i|    + maximum factor a pool may stake relative to the baker's stake: #{pp ^. ppLeverageBound}|]
+  ]
+
+-- | Returns a string representation of the given 'InclusiveRange'.
+showInclusiveRange :: (a -> String) -> InclusiveRange a -> String
+showInclusiveRange toStr InclusiveRange {..} = "[" ++ toStr irMin ++ ", " ++ toStr irMax ++ "]"
+
+-- | Returns a string representation of the given 'Ratio'.
+showRatio :: (Show a, Integral a) => Ratio a -> String
+showRatio r =
+  let num = numerator r
+      den = denominator r
+   in show num ++ " / " ++ show den ++ " (approx " ++ show (realToFrac r :: Double) ++ ")"
+
+-- | Returns a string representation of the given exchange rate.
+showExchangeRate :: Types.ExchangeRate -> String
+showExchangeRate (Types.ExchangeRate r) = showRatio r
 
 -- BLOCK
 
