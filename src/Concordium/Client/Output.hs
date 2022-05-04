@@ -829,91 +829,101 @@ printBirkParameters includeBakers r addrmap = do
 
 
 -- | Prints the chain  parameters.
-printChainParameters :: ChainParameters' cpv -> IO ()
+printChainParameters :: ChainParameters' cpv -> Printer
 printChainParameters cp = do
   case cp ^. cpCooldownParameters of
     CooldownParametersV0 {} -> printChainParametersV0 cp
     CooldownParametersV1 {} -> printChainParametersV1 cp
 
 -- | Prints the chain  parameters for version 0.
-printChainParametersV0 :: ChainParameters' 'ChainParametersV0 -> IO ()
-printChainParametersV0 ChainParameters {..} = do
-  putStrLn ""
-  putStrLn "Chain parameters: "
-  putStrLn $ "  - election difficulty: " ++ show _cpElectionDifficulty
-  putStrLn $ "  - Euro per Energy rate: " ++ showExchangeRate (_erEuroPerEnergy _cpExchangeRates)
-  putStrLn $ "  - microGTU per Euro rate: " ++ showExchangeRate (_erMicroGTUPerEuro _cpExchangeRates)
-  putStrLn $ "  - baker extra cooldown epochs: " ++ show (_cpBakerExtraCooldownEpochs _cpCooldownParameters)
-  putStrLn $ "  - maximum credential deployments per block: " ++ show _cpAccountCreationLimit
-  putStrLn $ "  - stake threshold to become a baker: " ++ show (_ppBakerStakeThreshold _cpPoolParameters)
-  putStrLn "  - reward parameters:"
-  putStrLn "    + mint distribution:"
-  putStrLn $ "      * mint rate per slot: " ++ show (_cpRewardParameters ^. mdMintPerSlot)
-  putStrLn $ "      * baking reward: " ++ show (_cpRewardParameters ^. mdBakingReward)
-  putStrLn $ "      * finalization reward: " ++ show (_cpRewardParameters ^. mdFinalizationReward)
-  putStrLn "    + transaction fee distribution:"
-  putStrLn $ "      * baker: " ++ show (_cpRewardParameters ^. tfdBaker)
-  putStrLn $ "      * GAS account: " ++ show (_cpRewardParameters ^. tfdGASAccount)
-  putStrLn "    + GAS rewards:"
-  putStrLn $ "      * baking a block: " ++ show (_cpRewardParameters ^. gasBaker)
-  putStrLn $ "      * adding a finalization proof: " ++ show (_cpRewardParameters ^. gasFinalizationProof)
-  putStrLn $ "      * adding a credential deployment: " ++ show (_cpRewardParameters ^. gasAccountCreation)
-  putStrLn $ "      * adding a chain update: " ++ show (_cpRewardParameters ^. gasChainUpdate)
-  putStrLn $ "  - foundation account index: " ++ show _cpFoundationAccount
+printChainParametersV0 :: ChainParameters' 'ChainParametersV0 -> Printer
+printChainParametersV0 ChainParameters {..} = tell [
+  "Chain parameters: ",
+  [i|  - election difficulty: #{_cpElectionDifficulty}|],
+  [i|  - EUR per Energy rate: #{showExchangeRate (_erEuroPerEnergy _cpExchangeRates)}|],
+  [i|  - microCCD per EUR rate: #{showExchangeRate (_erMicroGTUPerEuro _cpExchangeRates)}|],
+  [i|  - EUR per CCD rate (approx): #{printf "%.4f" (realToFrac (1000000 / _erMicroGTUPerEuro _cpExchangeRates) :: Double) :: String}|],
+  [i|  - baker extra cooldown epochs: #{(_cpBakerExtraCooldownEpochs _cpCooldownParameters)}|],
+  [i|  - maximum credential deployments per block: #{_cpAccountCreationLimit}|],
+  [i|  - stake threshold to become a baker: #{showCcd (_ppBakerStakeThreshold _cpPoolParameters)}|],
+  [i|  - reward parameters:|],
+  [i|    + mint distribution:|],
+  [i|       * mint rate per slot: #{_cpRewardParameters ^. (mdMintPerSlot . mpsMintPerSlot)}|],
+  [i|       * baking reward: #{_cpRewardParameters ^. mdBakingReward}|],
+  [i|       * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|],
+  [i|    + transaction fee distribution:|],
+  [i|       * baker: #{_cpRewardParameters ^. tfdBaker}|],
+  [i|       * GAS account: #{_cpRewardParameters ^. tfdGASAccount}|],
+  [i|    + GAS rewards:|],
+  [i|       * baking a block: #{_cpRewardParameters ^. gasBaker}|],
+  [i|       * adding a finalization proof: #{_cpRewardParameters ^. gasFinalizationProof}|],
+  [i|       * adding a credential deployment: #{_cpRewardParameters ^. gasAccountCreation}|],
+  [i|       * adding a chain update: #{_cpRewardParameters ^. gasChainUpdate}|],
+  [i|  - foundation account index: #{_cpFoundationAccount}|]
+  ]
 
 -- | Prints the chain  parameters for version 1.
-printChainParametersV1 :: ChainParameters' 'ChainParametersV1 -> IO ()
-printChainParametersV1 ChainParameters {..} = do
-  putStrLn ""
-  putStrLn "Chain parameters: "
-  putStrLn $ "  - election difficulty: " ++ show _cpElectionDifficulty
-  putStrLn $ "  - Euro per Energy rate: " ++ showExchangeRate (_cpExchangeRates ^. euroPerEnergy)
-  putStrLn $ "  - microGTU per Euro rate: " ++ showExchangeRate (_cpExchangeRates ^. microGTUPerEuro)
+printChainParametersV1 :: ChainParameters' 'ChainParametersV1 -> Printer
+printChainParametersV1 ChainParameters {..} = tell $ [
+  "Chain parameters: ",
+  [i|  - election difficulty: #{_cpElectionDifficulty}|],
+  [i|  - EUR per Energy rate: #{showExchangeRate (_erEuroPerEnergy _cpExchangeRates)}|],
+  [i|  - microCCD per EUR rate: #{showExchangeRate (_erMicroGTUPerEuro _cpExchangeRates)}|],
+  [i|  - EUR per CCD rate (approx): #{printf "%.4f" (realToFrac (1000000 / _erMicroGTUPerEuro _cpExchangeRates) :: Double) :: String}|]] ++
   printCooldownParametersV1 _cpCooldownParameters
-  putStrLn $ "  - maximum credential deployments per block: " ++ show _cpAccountCreationLimit
-  printPoolParametersV1 _cpPoolParameters
-  putStrLn "  - reward parameters:"
-  putStrLn "    + mint distribution:"
-  putStrLn $ "      * baking reward: " ++ show (_cpRewardParameters ^. mdBakingReward)
-  putStrLn $ "      * finalization reward: " ++ show (_cpRewardParameters ^. mdFinalizationReward)
-  putStrLn "    + transaction fee distribution:"
-  putStrLn $ "      * baker: " ++ show (_cpRewardParameters ^. tfdBaker)
-  putStrLn $ "      * GAS account: " ++ show (_cpRewardParameters ^. tfdGASAccount)
-  putStrLn "    + GAS rewards:"
-  putStrLn $ "      * baking a block: " ++ show (_cpRewardParameters ^. gasBaker)
-  putStrLn $ "      * adding a finalization proof: " ++ show (_cpRewardParameters ^. gasFinalizationProof)
-  putStrLn $ "      * adding a credential deployment: " ++ show (_cpRewardParameters ^. gasAccountCreation)
-  putStrLn $ "      * adding a chain update: " ++ show (_cpRewardParameters ^. gasChainUpdate)
-  printTimeParametersV1 _cpTimeParameters
-  putStrLn $ "  - foundation account index: " ++ show _cpFoundationAccount
+  ++ [
+      [i|  - maximum credential deployments per block: #{_cpAccountCreationLimit}|]
+      ] ++
+  printPoolParametersV1 _cpPoolParameters ++
+  [
+    [i|  - reward parameters:|],
+    [i|    + mint distribution:|],
+    [i|       * mint rate per slot: #{_cpRewardParameters ^. mdMintPerSlot}|],
+    [i|       * baking reward: " ++ #{_cpRewardParameters ^. mdBakingReward}|],
+    [i|       * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|],
+    [i|    + transaction fee distribution:|],
+    [i|       * baker: #{_cpRewardParameters ^. tfdBaker}|],
+    [i|       * GAS account: #{_cpRewardParameters ^. tfdGASAccount}|],
+    [i|    + GAS rewards:|],
+    [i|       * baking a block: #{_cpRewardParameters ^. gasBaker}|],
+    [i|       * adding a finalization proof: #{_cpRewardParameters ^. gasFinalizationProof}|],
+    [i|       * adding a credential deployment: #{_cpRewardParameters ^. gasAccountCreation}|],
+    [i|       * adding a chain update: #{_cpRewardParameters ^. gasChainUpdate}|],
+    [i|  - foundation account index: #{_cpFoundationAccount}|]
+  ] ++
+  printTimeParametersV1 _cpTimeParameters ++
+  [[i|  - foundation account index: #{_cpFoundationAccount}|]]
 
 -- | Prints cool-down parameters.
-printCooldownParametersV1 :: CooldownParameters 'ChainParametersV1 -> IO ()
-printCooldownParametersV1 cp = do
-  putStrLn $ "  - pool owner cooldown epochs: " ++ show (cp ^. cpPoolOwnerCooldown)
-  putStrLn $ "  - delegator cooldown epochs: " ++ show (cp ^. cpDelegatorCooldown)
+printCooldownParametersV1 :: CooldownParameters 'ChainParametersV1 -> [String]
+printCooldownParametersV1 cp = [
+  [i|  - pool owner cooldown epochs: #{cp ^. cpPoolOwnerCooldown}|],
+  [i|  - delegator cooldown epochs: #{cp ^. cpDelegatorCooldown}|]
+  ]
 
 -- | Prints time parameters.
-printTimeParametersV1 :: TimeParameters 'ChainParametersV1 -> IO ()
-printTimeParametersV1 tp = do
-  putStrLn $ "  - time parameters:"
-  putStrLn $ "    + reward period length (in epochs): " ++ show (tp ^. tpRewardPeriodLength)
-  putStrLn $ "    + mint amount per reward period: " ++ show (tp ^. tpRewardPeriodLength)
+printTimeParametersV1 :: TimeParameters 'ChainParametersV1 -> [String]
+printTimeParametersV1 tp = [
+  [i|  - time parameters:|],
+  [i|    + reward period length (in epochs): #{tp ^. tpRewardPeriodLength}|],
+  [i|    + mint amount per reward period: #{tp ^. tpRewardPeriodLength}|]
+  ]
 
 -- | Prints pool parameters.
-printPoolParametersV1 :: PoolParameters 'ChainParametersV1 -> IO ()
-printPoolParametersV1 pp = do
-  putStrLn $ "  - Passive delegation parameters:"
-  putStrLn $ "    + finalization commission: " ++ show (pp ^. ppPassiveCommissions . Types.finalizationCommission)
-  putStrLn $ "    + baking commission: " ++ show (pp ^. ppPassiveCommissions . Types.bakingCommission)
-  putStrLn $ "    + transaction commission: " ++ show (pp ^. ppPassiveCommissions . Types.transactionCommission)
-  putStrLn $ "  - baker pool parameters:"
-  putStrLn $ "    + allowed (inclusive) range for finalization commission: " ++ showInclusiveRange show (pp ^. ppCommissionBounds . finalizationCommissionRange)
-  putStrLn $ "    + allowed (inclusive) range for baking commission: " ++ showInclusiveRange show (pp ^. ppCommissionBounds . bakingCommissionRange)
-  putStrLn $ "    + allowed (inclusive) range for transaction commission: " ++ showInclusiveRange show (pp ^. ppCommissionBounds . transactionCommissionRange)
-  putStrLn $ "    + minimum stake to be a baker: " ++ show (pp ^. ppMinimumEquityCapital)
-  putStrLn $ "    + maximum fraction of total stake a pool is allowed hold: " ++ show (pp ^. ppCapitalBound)
-  putStrLn $ "    + maximum factor a pool may stake relative to the baker's stake: " ++ show (pp ^. ppLeverageBound)
+printPoolParametersV1 :: PoolParameters 'ChainParametersV1 -> [String]
+printPoolParametersV1 pp = [
+  [i|  - Passive delegation parameters:|],
+  [i|    + finalization commission: #{pp ^. (ppPassiveCommissions . Types.finalizationCommission)}|],
+  [i|    + baking commission: #{pp ^. (ppPassiveCommissions . Types.bakingCommission)}|],
+  [i|    + transaction commission: #{pp ^. (ppPassiveCommissions . Types.transactionCommission)}|],
+  [i|  - baker pool parameters:|],
+  [i|    + allowed range for finalization commission: #{showInclusiveRange show (pp ^. (ppCommissionBounds . finalizationCommissionRange))}|],
+  [i|    + allowed range for baking commission: #{showInclusiveRange show (pp ^. (ppCommissionBounds . bakingCommissionRange))}|],
+  [i|    + allowed range for transaction commission: #{showInclusiveRange show (pp ^. (ppCommissionBounds . transactionCommissionRange))}|],
+  [i|    + minimum stake to be a baker: #{pp ^. ppMinimumEquityCapital}|],
+  [i|    + maximum fraction of total stake a pool is allowed hold: #{pp ^. ppCapitalBound}|],
+  [i|    + maximum factor a pool may stake relative to the baker's stake: #{pp ^. ppLeverageBound}|]
+  ]
 
 -- | Returns a string representation of the given 'InclusiveRange'.
 showInclusiveRange :: (a -> String) -> InclusiveRange a -> String

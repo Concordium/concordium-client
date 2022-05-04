@@ -2281,7 +2281,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
               AE.Success bs -> return bs
               AE.Error e -> logFatal [printf "Error parsing a JSON for block summary: '%s'" (show e)]
           Left e -> logFatal [printf "Error getting block summary: '%s'" (show e)]
-      printChainParameters (bsUpdates ^. currentParameters)
+      runPrinter $ printChainParameters (bsUpdates ^. currentParameters)
 
     ConsensusChainUpdate rawUpdateFile keysFiles intOpts -> do
       let
