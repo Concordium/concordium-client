@@ -2724,9 +2724,6 @@ processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarn
   }) <- readInputKeysFile baseCfg
       let payload = Types.encodePayload Types.AddBaker{..}
           nrgCost _ = return . Just $ bakerAddEnergyCost $ Types.payloadSize payload
-            -- case cbKeysWithProofs of
-            --             Nothing -> return . Just $ bakerConfigureEnergyCostWithoutKeys (Types.payloadSize payload)
-            --             Just _ -> return . Just $ bakerConfigureEnergyCostWithKeys (Types.payloadSize payload)
       txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
       logSuccess
         ([ printf "adding baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
@@ -3079,7 +3076,7 @@ processBakerCmd action baseCfgDir verbose backend =
             when pubSuccess $ do
               logSuccess [ printf "public keys written to file '%s'" pubFile]
 
-    BakerAdd bakerKeysFile txOpts initialStake autoRestake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission outputFile -> do
+    BakerAdd bakerKeysFile txOpts initialStake autoRestake extraData outputFile -> do
       pv <- withClient backend $ do
         cs <- getConsensusStatus >>= getFromJson
         return $ Queries.csProtocolVersion cs
@@ -3087,18 +3084,20 @@ processBakerCmd action baseCfgDir verbose backend =
         then
           processBakerAddCmd baseCfgDir verbose backend txOpts initialStake autoRestake bakerKeysFile outputFile
         else do
-          let allPresent = case (openForDelegation, metadataURL, transactionFeeCommission, bakingRewardCommission, finalizationRewardCommission) of
-                (Just _, Just _, Just _, Just _, Just _) -> True
-                _ -> False
-          when (not allPresent) $ do
-            logWarn $ [init $ "To add a baker, more options are necessary. The following are missing"
-                 ++ (if isNothing openForDelegation then "\n--open-delegation-for," else "")
-                 ++ (if isNothing metadataURL then "\n--baker-url," else "")
-                 ++ (if isNothing transactionFeeCommission then "\n--delegation-transaction-fee-commission," else "")
-                 ++ (if isNothing bakingRewardCommission then "\n--delegation-baking-commission," else "")
-                 ++ (if isNothing finalizationRewardCommission then "\n--delegation-finalization-commission," else "")]
+          when (isNothing extraData) $ do
+            logWarn $ ["To add a baker, all of the options\n"
+                 ++ "--open-delegation-for,\n"
+                 ++ "--baker-url,\n"
+                 ++ "--delegation-transaction-fee-commission,\n"
+                 ++ "--delegation-baking-commission,\n"
+                 ++ "--delegation-finalization-commission\nmust be present"]
             confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
             unless confirmed exitTransactionCancelled
+          let openForDelegation = ebadOpenForDelegation <$> extraData
+              metadataURL = ebadMetadataURL <$> extraData
+              transactionFeeCommission = ebadTransactionFeeCommission <$> extraData
+              bakingRewardCommission = ebadBakingRewardCommission <$> extraData
+              finalizationRewardCommission = ebadFinalizationRewardCommission <$> extraData
           processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just initialStake) (Just autoRestake) openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission (Just bakerKeysFile) outputFile
 
     BakerConfigure txOpts capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission inputKeysFile outputKeysFile ->

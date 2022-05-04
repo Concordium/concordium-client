@@ -27,6 +27,7 @@ module Concordium.Client.Commands
   , RegisterDataInput(..)
   , ParameterFileInput(..)
   , InvokerInput(..)
+  , ExtraBakerAddData(..)
   ) where
 
 import Data.Text hiding (map, unlines)
@@ -416,6 +417,15 @@ data BlockCmd
     { bsBlockHash :: !(Maybe Text) }
   deriving (Show)
 
+-- Extra data to add a baker in protocol version > 4
+data ExtraBakerAddData = ExtraBakerAddData {
+  ebadOpenForDelegation :: !OpenStatus,
+  ebadMetadataURL :: !String,
+  ebadTransactionFeeCommission :: !AmountFraction,
+  ebadBakingRewardCommission :: !AmountFraction,
+  ebadFinalizationRewardCommission :: !AmountFraction
+}  deriving (Show)
+
 data BakerCmd
   = BakerGenerateKeys
     { bgkFile :: !(Maybe FilePath)
@@ -425,12 +435,8 @@ data BakerCmd
     , baTransactionOpts :: !(TransactionOpts (Maybe Energy))
     , baStake :: !Amount
     , baAutoAddEarnings :: !Bool
-    , baOpenForDelegation :: !(Maybe OpenStatus)
-    , baMetadataURL :: !(Maybe String)
-    , baTransactionFeeCommission :: !(Maybe AmountFraction)
-    , baBakingRewardCommission :: !(Maybe AmountFraction)
-    , baFinalizationRewardCommission :: !(Maybe AmountFraction)
-    , outputFile :: !(Maybe FilePath) }
+    , baExtraData :: !(Maybe ExtraBakerAddData)
+    , baOutputFile :: !(Maybe FilePath) }
   | BakerSetKeys
     { bsaKeysFile :: !FilePath
     , bsaTransactionOpts :: !(TransactionOpts (Maybe Energy))
@@ -467,14 +473,14 @@ data DelegatorCmd
     { dcTransactionOpts :: !(TransactionOpts (Maybe Energy))
     , dcCapital :: !(Maybe Amount)
     , dcRestake :: !(Maybe Bool)
-    , cdDelegationTarget :: !(Maybe Text) }
+    , dcDelegationTarget :: !(Maybe Text) }
   | DelegatorRemove
     { drTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
   | DelegatorAdd
     { daTransactionOpts :: !(TransactionOpts (Maybe Energy))
     , daCapital :: !Amount
     , daRestake :: !Bool
-    , caDelegationTarget :: !Text }
+    , daDelegationTarget :: !Text }
   deriving (Show)
 
 data IdentityCmd
@@ -1418,11 +1424,11 @@ bakerAddCmd =
         transactionOptsParser <*>
         option (eitherReader amountFromStringInform) (long "stake" <> metavar "CCD-AMOUNT" <> help "The amount of CCD to stake.") <*>
         (not <$> switch (long "no-restake" <> help "If supplied, the earnings will not be added to the baker stake automatically.")) <*>
-        optional (option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> help helpOpenDelegationFor)) <*>
-        optional (strOption (long "baker-url" <> metavar "URL" <> help "A link to information about the baker.")) <*>
-        optional (option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission"))) <*>
-        optional (option (eitherReader amountFractionFromStringInform) (long "delegation-baking-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on baking rewards. " ++ rangesHelpString "baking reward commission"))) <*>
-        optional (option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission"))) <*>
+        optional (ExtraBakerAddData <$> (option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> help helpOpenDelegationFor)) <*>
+        (strOption (long "baker-url" <> metavar "URL" <> help "A link to information about the baker.")) <*>
+        (option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission"))) <*>
+        (option (eitherReader amountFractionFromStringInform) (long "delegation-baking-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on baking rewards. " ++ rangesHelpString "baking reward commission"))) <*>
+        (option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission")))) <*>
         optional (strOption (long "out" <> metavar "FILE" <> help "File to write the baker credentials to, in case of successful transaction. These can be used to start the node."))
       )
       (progDesc "Deploy baker credentials to the chain."))
