@@ -16,11 +16,13 @@ import Concordium.Common.Version
 import Concordium.ID.Parameters
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Types
+import qualified Concordium.Types.Accounts as Types
+import qualified Concordium.Types.Accounts.Releases as Types
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Crypto.EncryptedTransfers as Enc
 import qualified Concordium.Wasm as Wasm
 import qualified Concordium.Common.Time as Time
-import Concordium.Types.Queries (BlockInfo(..))
+import qualified Concordium.Types.Queries as Queries
 
 import Control.Monad.Writer
 import qualified Data.Aeson as AE
@@ -157,22 +159,22 @@ showRevealedAttributes as =
                   Just k -> Text.unpack k
     showAttr (t, IDTypes.AttributeValue v) = printf "%s=%s" (showTag t) (show v)
 
-printAccountInfo :: (Types.Epoch -> UTCTime) -> NamedAddress -> AccountInfoResult -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
-printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
+printAccountInfo :: NamedAddress -> Types.AccountInfo -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
+printAccountInfo addr a verbose showEncrypted mEncKey= do
   tell ([ [i|Local names:            #{showNameList $ naNames addr}|]
         , [i|Address:                #{naAddr addr}|]
-        , [i|Balance:                #{showCcd $ airAmount a}|]
+        , [i|Balance:                #{showCcd $ Types.aiAccountAmount a}|]
         ] ++
-       case totalRelease $ airReleaseSchedule a of
+       case Types.releaseTotal $ Types.aiAccountReleaseSchedule a of
          0 -> []
          tot -> (printf "Release schedule:       total %s" (showCcd tot)) :
-               (map (\ReleaseScheduleItem{..} -> printf "   %s:               %s scheduled by the transactions: %s."
-                                                (showTimeFormatted (Time.timestampToUTCTime rsiTimestamp))
-                                                (showCcd rsiAmount)
-                                                (intercalate ", " $ map show rsiTransactions))
-                 (releaseSchedule $ airReleaseSchedule a))
-       ++ [ printf "Nonce:                  %s" (show $ airNonce a)
-          , printf "Encryption public key:  %s" (show $ airEncryptionKey a)
+               (map (\Types.ScheduledRelease{..} -> printf "   %s:               %s scheduled by the transactions: %s."
+                                                (showTimeFormatted (Time.timestampToUTCTime releaseTimestamp))
+                                                (showCcd releaseAmount)
+                                                (intercalate ", " $ map show releaseTransactions))
+                 (Types.releaseSchedule $ Types.aiAccountReleaseSchedule a))
+       ++ [ printf "Nonce:                  %s" (show $ Types.aiAccountNonce a)
+          , printf "Encryption public key:  %s" (show $ Types.aiAccountEncryptionKey a)
           , "" ])
 
   if showEncrypted then
@@ -181,7 +183,7 @@ printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
       showEncryptedAmount = if verbose then show else \v -> take 20 (show v) ++ "..."
       showEncryptedBalance amms self = do
         let (_, balances) = foldl' (\(idx, strings) v -> (idx + 1, strings <> [printf "    %s: %s" (show idx) v]))
-                                   (Types._startIndex $ airEncryptedAmount a, [])
+                                   (Types._startIndex $ Types.aiAccountEncryptedAmount a, [])
                                    amms
         tell ["Shielded balance:"]
         tell $ case balances of
@@ -192,45 +194,59 @@ printAccountInfo epochsToUTC addr a verbose showEncrypted mEncKey= do
     in
       case mEncKey of
         Nothing ->
-          let incomingAmounts = showEncryptedAmount <$> Types.getIncomingAmountsList (airEncryptedAmount a)
-              selfAmount = showEncryptedAmount $ airEncryptedAmount a ^. Types.selfAmount
+          let incomingAmounts = showEncryptedAmount <$> Types.getIncomingAmountsList (Types.aiAccountEncryptedAmount a)
+              selfAmount = showEncryptedAmount $ Types.aiAccountEncryptedAmount a ^. Types.selfAmount
           in showEncryptedBalance incomingAmounts selfAmount
         Just (encKey, globalContext) -> do
              let table = Enc.computeTable globalContext (2^(16::Int))
                  decoder = Enc.decryptAmount table encKey
                  printer x = let decoded = decoder x in "(" ++ showCcd decoded ++ ") " ++ showEncryptedAmount x
-                 showableSelfDecryptedAmount = printer (Types._selfAmount $ airEncryptedAmount a)
-                 incomingAmountsList = Types.getIncomingAmountsList $ airEncryptedAmount a
+                 showableSelfDecryptedAmount = printer (Types._selfAmount $ Types.aiAccountEncryptedAmount a)
+                 incomingAmountsList = Types.getIncomingAmountsList $ Types.aiAccountEncryptedAmount a
                  showableIncomingAmountsList =  printer <$>  incomingAmountsList
              showEncryptedBalance showableIncomingAmountsList showableSelfDecryptedAmount
     else return ()
 
 
 
-  case airBaker a of
-    Nothing -> tell ["Baker: none"]
-    Just bk -> do
-      let bkid = [i|Baker: \##{show . aibiIdentity . abirAccountBakerInfo $ bk}|]
-          stkstr = [i| - Staked amount: #{showCcd . abirStakedAmount $ bk}|]
-      case abirBakerPendingChange bk of
-        NoChange -> tell [ bkid
+  case Types.aiStakingInfo a of
+    Types.AccountStakingNone -> tell ["Baking or delegating stake: no"]
+    Types.AccountStakingBaker{..} -> do
+      let bkid = [i|Baker: \##{show . Types._bakerIdentity $ asiBakerInfo}|]
+          stkstr = [i| - Staked amount: #{showCcd asiStakedAmount}|]
+      case asiPendingChange of
+        Types.NoChange -> tell [ bkid
                          , stkstr ]
-        RemoveBaker e -> tell [ [i|#{bkid} to be removed at epoch #{e} (#{epochsToUTC e})|]
+        Types.RemoveStake t -> tell [ [i|#{bkid} to be removed at #{t}|]
                               , stkstr ]
-        ReduceStake n e -> tell [ bkid
-                                , [i|#{stkstr} to be updated to #{showCcd n} at epoch #{e} (#{epochsToUTC e})|] ]
-      tell [[i| - Restake earnings: #{showYesNo . abirStakeEarnings $ bk}|]]
+        Types.ReduceStake n t -> tell [ bkid
+                                , [i|#{stkstr} to be updated to #{showCcd n} at #{t}|] ]
+      tell [[i| - Restake earnings: #{showYesNo asiStakeEarnings}|]]
+    Types.AccountStakingDelegated{..} -> do
+      tell ["Delegating stake: yes"]
+      let targetStr = case asiDelegationTarget of
+            Types.DelegatePassive -> "Passive delegation"
+            Types.DelegateToBaker bid -> "Baker pool with ID " ++ show bid
+      let target = [i|Delegation target: #{targetStr}|]
+          stkstr = [i| - Staked amount: #{showCcd asiStakedAmount}|]
+      case asiDelegationPendingChange of
+        Types.NoChange -> tell [target, stkstr]
+        Types.RemoveStake t -> tell [ [i|#{target} to be removed at #{t}|]
+                              , stkstr ]
+        Types.ReduceStake n t -> tell [ target
+                                , [i|#{stkstr} to be updated to #{showCcd n} at #{t}|] ]
+      tell [[i| - Restake earnings: #{showYesNo asiStakeEarnings}|]]
 
   tell [ "" ]
 
-  if Map.null $ airCredentials a then
+  if Map.null $ Types.aiAccountCredentials a then
     tell ["Credentials: " ++ showNone]
   else do
     tell ["Credentials:"]
     if verbose then
-      tell $ [showPrettyJSON (airCredentials a)]
+      tell $ [showPrettyJSON (Types.aiAccountCredentials a)]
     else
-      forM_ (Map.toList (airCredentials a)) printVersionedCred
+      forM_ (Map.toList (Types.aiAccountCredentials a)) printVersionedCred
 
 -- |Print a versioned credential. This only prints the credential value, and not the
 -- associated version.
@@ -452,8 +468,8 @@ parseTransactionBlockResult status =
                              in MultipleBlocksUnambiguous hashes outcome
                 _ -> MultipleBlocksAmbiguous blocks
 
-printTransactionStatus :: TransactionStatusResult -> Printer
-printTransactionStatus status =
+printTransactionStatus :: TransactionStatusResult -> Bool -> Printer
+printTransactionStatus status verbose =
   case tsrState status of
     Received -> tell ["Transaction is pending."]
     Absent -> tell ["Transaction is absent."]
@@ -466,14 +482,14 @@ printTransactionStatus status =
                  "Transaction is committed into block %s with %s."
                  (show hash)
                  (showOutcomeFragment outcome)]
-          tell $ showOutcomeResult False $ Types.tsResult outcome
+          tell $ showOutcomeResult verbose $ Types.tsResult outcome
         MultipleBlocksUnambiguous hashes outcome -> do
           tell [printf
                  "Transaction is committed into %d blocks with %s:"
                  (length hashes)
                  (showOutcomeFragment outcome)]
           tell $ hashes <&> printf "- %s" . show
-          tell $ showOutcomeResult False $ Types.tsResult outcome
+          tell $ showOutcomeResult verbose $ Types.tsResult outcome
         MultipleBlocksAmbiguous blocks -> do
           tell [printf
                  "Transaction is committed into %d blocks:"
@@ -492,7 +508,7 @@ printTransactionStatus status =
                  "Transaction is finalized into block %s with %s."
                  (show hash)
                  (showOutcomeFragment outcome)]
-          tell $ showOutcomeResult False $ Types.tsResult outcome
+          tell $ showOutcomeResult verbose $ Types.tsResult outcome
         MultipleBlocksUnambiguous _ _ ->
           tell ["Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!"]
         MultipleBlocksAmbiguous _ ->
@@ -549,19 +565,41 @@ showEvent verbose = \case
     verboseOrNothing $ printf "credential with registration '%s' deployed onto account '%s'" (show ecdRegId) (show ecdAccount)
   Types.BakerAdded{..} ->
     let restakeString :: String = if ebaRestakeEarnings then "Earnings are added to the stake." else "Earnings are not added to the stake."
-    in Just $ printf "baker %s added, staking %s CCD. %s" (showBaker ebaBakerId ebaAccount) (Types.amountToString ebaStake) restakeString
+    in verboseOrNothing $ printf "baker %s added, staking %s CCD. %s" (showBaker ebaBakerId ebaAccount) (Types.amountToString ebaStake) restakeString
   Types.BakerRemoved{..} ->
     verboseOrNothing $ printf "baker %s, removed" (showBaker ebrBakerId ebrAccount) (show ebrBakerId)
   Types.BakerStakeIncreased{..} ->
-    Just $ printf "baker %s stake increased to %s" (showBaker ebsiBakerId ebsiAccount) (Types.amountToString ebsiNewStake)
+    verboseOrNothing $ printf "baker %s stake increased to %s" (showBaker ebsiBakerId ebsiAccount) (Types.amountToString ebsiNewStake)
   Types.BakerStakeDecreased{..} ->
-    Just $ printf "baker %s stake decreased to %s" (showBaker ebsiBakerId ebsiAccount) (Types.amountToString ebsiNewStake)
+    verboseOrNothing $ printf "baker %s stake decreased to %s" (showBaker ebsiBakerId ebsiAccount) (Types.amountToString ebsiNewStake)
   Types.BakerSetRestakeEarnings{..} ->
     verboseOrNothing $ printf "baker %s restake earnings %s" (showBaker ebsreBakerId ebsreAccount) (if ebsreRestakeEarnings then "set" :: String else "unset")
   Types.BakerKeysUpdated{..} ->
     verboseOrNothing $ printf "baker %s keys updated" (showBaker ebkuBakerId ebkuAccount)
   Types.CredentialsUpdated{..} ->
     verboseOrNothing $ [i|credentials on account #{cuAccount} have been updated.\nCredentials #{cuRemovedCredIds} have been removed, and credentials #{cuNewCredIds} have been added.\nThe new account threshold is #{cuNewThreshold}.|]
+  Types.BakerSetOpenStatus{..} ->
+    verboseOrNothing $ printf "baker %s open status changed to %s" (showBaker ebsosBakerId ebsosAccount) (show ebsosOpenStatus)
+  Types.BakerSetMetadataURL{..} ->
+    verboseOrNothing $ printf "baker %s URL changed to %s" (showBaker ebsmuBakerId ebsmuAccount) (show ebsmuMetadataURL)
+  Types.BakerSetTransactionFeeCommission{..} ->
+    verboseOrNothing $ printf "baker %s changed transaction fee commission to %s" (showBaker ebstfcBakerId ebstfcAccount) (show ebstfcTransactionFeeCommission)
+  Types.BakerSetBakingRewardCommission{..} ->
+    verboseOrNothing $ printf "baker %s changed baking reward commission to %s" (showBaker ebsbrcBakerId ebsbrcAccount) (show ebsbrcBakingRewardCommission)
+  Types.BakerSetFinalizationRewardCommission{..} ->
+    verboseOrNothing $ printf "baker %s changed finalization reward commission to %s" (showBaker ebsfrcBakerId ebsfrcAccount) (show ebsfrcFinalizationRewardCommission)
+  Types.DelegationStakeIncreased{..} ->
+    verboseOrNothing $ printf "delegator %s stake increased to %s" (showDelegator edsiDelegatorId edsiAccount) (Types.amountToString edsiNewStake)
+  Types.DelegationStakeDecreased{..} ->
+    verboseOrNothing $ printf "delegator %s stake decreased to %s" (showDelegator edsdDelegatorId edsdAccount) (Types.amountToString edsdNewStake)
+  Types.DelegationSetRestakeEarnings{..} ->
+    verboseOrNothing $ printf "delegator %s restake earnings changed to %s" (showDelegator edsreDelegatorId edsreAccount) (show edsreRestakeEarnings)
+  Types.DelegationSetDelegationTarget{..} ->
+    verboseOrNothing $ printf "delegator %s delegation target changed to %s" (showDelegator edsdtDelegatorId edsdtAccount) (showDelegationTarget edsdtDelegationTarget)
+  Types.DelegationAdded{..} ->
+    verboseOrNothing $ printf "delegator %s added" (showDelegator edaDelegatorId edaAccount)
+  Types.DelegationRemoved{..} ->
+    verboseOrNothing $ printf "delegator %s removed" (showDelegator edrDelegatorId edrAccount)
 
   Types.CredentialKeysUpdated cid -> verboseOrNothing $ printf "credential keys updated for credential with credId %s" (show cid)
   Types.NewEncryptedAmount{..} -> verboseOrNothing $ printf "shielded amount received on account '%s' with index '%s'" (show neaAccount) (show neaNewIndex)
@@ -607,6 +645,13 @@ showEvent verbose = \case
 
     showBaker :: Types.BakerId -> Types.AccountAddress -> String
     showBaker bid addr = show addr ++ " (ID " ++ show bid ++ ")"
+
+    showDelegator :: Types.DelegatorId -> Types.AccountAddress -> String
+    showDelegator did addr = show addr ++ " (ID " ++ show did ++ ")"
+
+    showDelegationTarget :: Types.DelegationTarget -> String
+    showDelegationTarget Types.DelegatePassive = "Passive delegation"
+    showDelegationTarget (Types.DelegateToBaker bid) = "Baker ID " ++ show bid
 
 
 -- |Return string representation of reject reason.
@@ -713,35 +758,49 @@ showRejectReason verbose = \case
   Types.NotAllowedMultipleCredentials -> "the account is not allowed to have multiple credentials"
   Types.NotAllowedToReceiveEncrypted -> "the account is not allowed to receive shielded transfers"
   Types.NotAllowedToHandleEncrypted -> "the account is not allowed handle shielded amounts"
+  Types.MissingBakerAddParameters -> "missing parameters to add new baker"
+  Types.FinalizationRewardCommissionNotInRange -> "finalization reward commission was not within the allowed range"
+  Types.BakingRewardCommissionNotInRange -> "baking reward commission was not within the allowed range"
+  Types.TransactionFeeCommissionNotInRange -> "transaction fee commission fee was not within the allowed range"
+  Types.AlreadyADelegator -> "the account is already a delegator"
+  Types.InsufficientBalanceForDelegationStake -> "the balance on the account is insufficient to cover the desired stake"
+  Types.MissingDelegationAddParameters -> "missing parameters to add new delegator"
+  Types.DelegatorInCooldown -> "change could not be completed because the delegator is in the cooldown period"
+  Types.NotADelegator addr -> printf "attempt to remove a delegator account %s that is not a delegator" (show addr)
+  Types.StakeOverMaximumThresholdForPool -> "baking pool's total capital would become too large"
+  Types.PoolWouldBecomeOverDelegated -> "fraction of delegated capital to baking pool would become too large"
+  Types.PoolClosed -> "pool not open for delegation"
+  Types.InsufficientDelegationStake -> "not allowed to add delegator with 0 stake"
+  Types.DelegationTargetNotABaker bid -> printf "delegation target %s is not a baker id" (show bid)
 
 -- CONSENSUS
 
-printConsensusStatus :: ConsensusStatusResult -> Printer
+printConsensusStatus :: Queries.ConsensusStatus -> Printer
 printConsensusStatus r =
-  tell [ printf "Best block:                  %s" (show $ csrBestBlock r)
-       , printf "Genesis block:               %s" (show $ csrGenesisBlock r)
-       , printf "Genesis time:                %s" (show $ csrGenesisTime r)
-       , printf "Slot duration:               %s" (showDuration $ csrSlotDuration r)
-       , printf "Epoch duration:              %s" (showDuration $ csrEpochDuration r)
-       , printf "Last finalized block:        %s" (show $ csrLastFinalizedBlock r)
-       , printf "Best block height:           %s" (show $ csrBestBlockHeight r)
-       , printf "Last finalized block height: %s" (show $ csrLastFinalizedBlockHeight r)
-       , printf "Blocks received count:       %s" (show $ csrBlocksReceivedCount r)
-       , printf "Block last received time:    %s" (showMaybeUTC $ csrBlockLastReceivedTime r)
-       , printf "Block receive latency:       %s" (showEmSeconds (csrBlockReceiveLatencyEMA r) (csrBlockReceiveLatencyEMSD r))
-       , printf "Block receive period:        %s" (showMaybeEmSeconds (csrBlockReceivePeriodEMA r) (csrBlockReceivePeriodEMSD r))
-       , printf "Blocks verified count:       %s" (show $ csrBlocksVerifiedCount r)
-       , printf "Block last arrived time:     %s" (showMaybeUTC $ csrBlockLastArrivedTime r)
-       , printf "Block arrive latency:        %s" (showEmSeconds (csrBlockArriveLatencyEMA r) (csrBlockArriveLatencyEMSD r))
-       , printf "Block arrive period:         %s" (showMaybeEmSeconds (csrBlockArrivePeriodEMA r) (csrBlockArrivePeriodEMSD r))
-       , printf "Transactions per block:      %s" (showEm (printf "%8.3f" $ csrTransactionsPerBlockEMA r) (printf "%8.3f" $ csrTransactionsPerBlockEMSD r))
-       , printf "Finalization count:          %s" (show $ csrFinalizationCount r)
-       , printf "Last finalized time:         %s" (showMaybeUTC $ csrLastFinalizedTime r)
-       , printf "Finalization period:         %s" (showMaybeEmSeconds (csrFinalizationPeriodEMA r) (csrFinalizationPeriodEMSD r))
-       , printf "Protocol version:            %s" (show $ csrProtocolVersion r)
-       , printf "Genesis index:               %s" (show $ csrGenesisIndex r)
-       , printf "Current era genesis block:   %s" (show $ csrCurrentEraGenesisBlock r)
-       , printf "Current era genesis time:    %s" (show $ csrCurrentEraGenesisTime r)]
+  tell [ printf "Best block:                  %s" (show $ Queries.csBestBlock r)
+       , printf "Genesis block:               %s" (show $ Queries.csGenesisBlock r)
+       , printf "Genesis time:                %s" (show $ Queries.csGenesisTime r)
+       , printf "Slot duration:               %s" (showDuration $ Time.durationMillis $ Queries.csSlotDuration r)
+       , printf "Epoch duration:              %s" (showDuration $ Time.durationMillis $ Queries.csEpochDuration r)
+       , printf "Last finalized block:        %s" (show $ Queries.csLastFinalizedBlock r)
+       , printf "Best block height:           %s" (show $ Queries.csBestBlockHeight r)
+       , printf "Last finalized block height: %s" (show $ Queries.csLastFinalizedBlockHeight r)
+       , printf "Blocks received count:       %s" (show $ Queries.csBlocksReceivedCount r)
+       , printf "Block last received time:    %s" (showMaybeUTC $ Queries.csBlockLastReceivedTime r)
+       , printf "Block receive latency:       %s" (showEmSeconds (Queries.csBlockReceiveLatencyEMA r) (Queries.csBlockReceiveLatencyEMSD r))
+       , printf "Block receive period:        %s" (showMaybeEmSeconds (Queries.csBlockReceivePeriodEMA r) (Queries.csBlockReceivePeriodEMSD r))
+       , printf "Blocks verified count:       %s" (show $ Queries.csBlocksVerifiedCount r)
+       , printf "Block last arrived time:     %s" (showMaybeUTC $ Queries.csBlockLastArrivedTime r)
+       , printf "Block arrive latency:        %s" (showEmSeconds (Queries.csBlockArriveLatencyEMA r) (Queries.csBlockArriveLatencyEMSD r))
+       , printf "Block arrive period:         %s" (showMaybeEmSeconds (Queries.csBlockArrivePeriodEMA r) (Queries.csBlockArrivePeriodEMSD r))
+       , printf "Transactions per block:      %s" (showEm (printf "%8.3f" $ Queries.csTransactionsPerBlockEMA r) (printf "%8.3f" $ Queries.csTransactionsPerBlockEMSD r))
+       , printf "Finalization count:          %s" (show $ Queries.csFinalizationCount r)
+       , printf "Last finalized time:         %s" (showMaybeUTC $ Queries.csLastFinalizedTime r)
+       , printf "Finalization period:         %s" (showMaybeEmSeconds (Queries.csFinalizationPeriodEMA r) (Queries.csFinalizationPeriodEMSD r))
+       , printf "Protocol version:            %s" (show $ Queries.csProtocolVersion r)
+       , printf "Genesis index:               %s" (show $ Queries.csGenesisIndex r)
+       , printf "Current era genesis block:   %s" (show $ Queries.csCurrentEraGenesisBlock r)
+       , printf "Current era genesis time:    %s" (show $ Queries.csCurrentEraGenesisTime r)]
 
 printBirkParameters :: Bool -> BirkParametersResult -> Map.Map IDTypes.AccountAddress Text -> Printer
 printBirkParameters includeBakers r addrmap = do
@@ -766,24 +825,24 @@ printBirkParameters includeBakers r addrmap = do
 
 -- BLOCK
 
-printBlockInfo :: Maybe BlockInfo -> Printer
+printBlockInfo :: Maybe Queries.BlockInfo -> Printer
 printBlockInfo Nothing = tell [ printf "Block not found." ]
 printBlockInfo (Just b) =
-  tell [ printf "Hash:                       %s" (show $ biBlockHash b)
-       , printf "Parent block:               %s" (show $ biBlockParent b)
-       , printf "Last finalized block:       %s" (show $ biBlockLastFinalized b)
-       , printf "Finalized:                  %s" (showYesNo $ biFinalized b)
-       , printf "Receive time:               %s" (showTimeFormatted $ biBlockReceiveTime b)
-       , printf "Arrive time:                %s" (showTimeFormatted $ biBlockArriveTime b)
-       , printf "Slot:                       %s" (show $ biBlockSlot b)
-       , printf "Slot time:                  %s" (showTimeFormatted $ biBlockSlotTime b)
-       , printf "Height:                     %s" (show $ biBlockHeight b)
-       , printf "Height since last genesis:  %s" (show $ biEraBlockHeight b)
-       , printf "Genesis index:              %s" (show $ biGenesisIndex b)
-       , printf "Baker:                      %s" (showMaybe show $ biBlockBaker b)
-       , printf "Transaction count:          %d" (biTransactionCount b)
-       , printf "Transaction energy cost:    %s" (showNrg $ biTransactionEnergyCost b)
-       , printf "Transactions size:          %d" (biTransactionsSize b) ]
+  tell [ printf "Hash:                       %s" (show $ Queries.biBlockHash b)
+       , printf "Parent block:               %s" (show $ Queries.biBlockParent b)
+       , printf "Last finalized block:       %s" (show $ Queries.biBlockLastFinalized b)
+       , printf "Finalized:                  %s" (showYesNo $ Queries.biFinalized b)
+       , printf "Receive time:               %s" (showTimeFormatted $ Queries.biBlockReceiveTime b)
+       , printf "Arrive time:                %s" (showTimeFormatted $ Queries.biBlockArriveTime b)
+       , printf "Slot:                       %s" (show $ Queries.biBlockSlot b)
+       , printf "Slot time:                  %s" (showTimeFormatted $ Queries.biBlockSlotTime b)
+       , printf "Height:                     %s" (show $ Queries.biBlockHeight b)
+       , printf "Height since last genesis:  %s" (show $ Queries.biEraBlockHeight b)
+       , printf "Genesis index:              %s" (show $ Queries.biGenesisIndex b)
+       , printf "Baker:                      %s" (showMaybe show $ Queries.biBlockBaker b)
+       , printf "Transaction count:          %d" (Queries.biTransactionCount b)
+       , printf "Transaction energy cost:    %s" (showNrg $ Queries.biTransactionEnergyCost b)
+       , printf "Transactions size:          %d" (Queries.biTransactionsSize b) ]
 
 
 -- ID LAYER

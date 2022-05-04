@@ -1,6 +1,7 @@
 module Concordium.Client.Commands
   ( optsParser
   , backendParser
+  , allowedValuesDelegationTargetAsString
   , Verbose
   , Options(..)
   , Backend(..)
@@ -19,12 +20,14 @@ module Concordium.Client.Commands
   , ConsensusCmd(..)
   , BlockCmd(..)
   , BakerCmd(..)
+  , DelegatorCmd(..)
   , IdentityCmd(..)
   , IdentityShowCmd(..)
   , MemoInput(..)
   , RegisterDataInput(..)
   , ParameterFileInput(..)
   , InvokerInput(..)
+  , ExtraBakerAddData(..)
   ) where
 
 import Data.Text hiding (map, unlines)
@@ -39,6 +42,7 @@ import Concordium.Client.Types.Account
 import Concordium.Client.Utils
 import Concordium.Common.Time
 import Concordium.ID.Types (CredentialIndex, KeyIndex, CredentialRegistrationID, AccountThreshold)
+import Concordium.Types.Execution
 import Concordium.Types
 import Text.Printf
 import qualified Text.PrettyPrint.ANSI.Leijen as P
@@ -84,6 +88,8 @@ data Cmd
     { blockCmd :: BlockCmd }
   | BakerCmd
     { bakerCmd :: BakerCmd }
+  | DelegatorCmd
+    { delegatorCmd :: DelegatorCmd }
   | IdentityCmd
     { identityCmd :: IdentityCmd }
   deriving (Show)
@@ -411,6 +417,15 @@ data BlockCmd
     { bsBlockHash :: !(Maybe Text) }
   deriving (Show)
 
+-- Extra data to add a baker in protocol version > 4
+data ExtraBakerAddData = ExtraBakerAddData {
+  ebadOpenForDelegation :: !OpenStatus,
+  ebadMetadataURL :: !String,
+  ebadTransactionFeeCommission :: !AmountFraction,
+  ebadBakingRewardCommission :: !AmountFraction,
+  ebadFinalizationRewardCommission :: !AmountFraction
+}  deriving (Show)
+
 data BakerCmd
   = BakerGenerateKeys
     { bgkFile :: !(Maybe FilePath)
@@ -420,7 +435,8 @@ data BakerCmd
     , baTransactionOpts :: !(TransactionOpts (Maybe Energy))
     , baStake :: !Amount
     , baAutoAddEarnings :: !Bool
-    , outputFile :: Maybe FilePath }
+    , baExtraData :: !(Maybe ExtraBakerAddData)
+    , baOutputFile :: !(Maybe FilePath) }
   | BakerSetKeys
     { bsaKeysFile :: !FilePath
     , bsaTransactionOpts :: !(TransactionOpts (Maybe Energy))
@@ -433,6 +449,38 @@ data BakerCmd
   | BakerUpdateRestakeEarnings
     { bursRestake :: !Bool
     , bursTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
+  | BakerConfigure
+    { bcTransactionOpts :: !(TransactionOpts (Maybe Energy))
+    , bcCapital :: !(Maybe Amount)
+    , bcRestake :: !(Maybe Bool)
+    , bcOpenForDelegation :: !(Maybe OpenStatus)
+    , bcMetadataURL :: !(Maybe String)
+    , bcTransactionFeeCommission :: !(Maybe AmountFraction)
+    , bcBakingRewardCommission :: !(Maybe AmountFraction)
+    , bcFinalizationRewardCommission :: !(Maybe AmountFraction)
+    , bcInputKeyFile :: !(Maybe FilePath)
+    , bcOutputKeyFile :: !(Maybe FilePath) }
+  | BakerUpdateMetadataURL
+    { bumuMetadataURL :: !String
+    , bumuTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
+  | BakerUpdateOpenDelegationStatus
+    { bodsOpenForDelegation :: !OpenStatus
+    , bodsTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
+  deriving (Show)
+
+data DelegatorCmd
+  = DelegatorConfigure
+    { dcTransactionOpts :: !(TransactionOpts (Maybe Energy))
+    , dcCapital :: !(Maybe Amount)
+    , dcRestake :: !(Maybe Bool)
+    , dcDelegationTarget :: !(Maybe Text) }
+  | DelegatorRemove
+    { drTransactionOpts :: !(TransactionOpts (Maybe Energy)) }
+  | DelegatorAdd
+    { daTransactionOpts :: !(TransactionOpts (Maybe Energy))
+    , daCapital :: !Amount
+    , daRestake :: !Bool
+    , daDelegationTarget :: !Text }
   deriving (Show)
 
 data IdentityCmd
@@ -563,6 +611,7 @@ programOptions showAllOpts =
       consensusCmds <>
       blockCmds <>
       bakerCmds <>
+      delegatorCmds <>
       identityCmds <>
       rawCmds
      ) <*>
@@ -1320,8 +1369,23 @@ bakerCmds =
            bakerRemoveCmd <>
            bakerSetKeysCmd <>
            bakerUpdateRestakeCmd <>
-           bakerUpdateStakeCmd))
+           bakerUpdateStakeCmd <>
+           bakerUpdateUpdateMetadataURL <>
+           bakerUpdateOpenDelegationStatus <>
+           bakerConfigureCmd))
       (progDesc "Commands for creating and deploying baker credentials."))
+
+delegatorCmds :: Mod CommandFields Cmd
+delegatorCmds =
+  command
+    "delegator"
+    (info
+      (DelegatorCmd <$>
+        hsubparser
+          (delegatorAddCmd <>
+           delegatorRemoveCmd <>
+           delegatorConfigureCmd))
+      (progDesc "Commands for delegation."))
 
 bakerGenerateKeysCmd :: Mod CommandFields BakerCmd
 bakerGenerateKeysCmd =
@@ -1345,6 +1409,11 @@ bakerGenerateKeysCmd =
         , "      \"electionVerifyKey\": ..."
         , "    }" ]))
 
+rangesHelpString :: String -> String
+rangesHelpString name =
+    "Command 'raw GetChainParameters' can be used to determine the range of allowed values for "
+    ++ name ++ "."
+
 bakerAddCmd :: Mod CommandFields BakerCmd
 bakerAddCmd =
   command
@@ -1355,9 +1424,71 @@ bakerAddCmd =
         transactionOptsParser <*>
         option (eitherReader amountFromStringInform) (long "stake" <> metavar "CCD-AMOUNT" <> help "The amount of CCD to stake.") <*>
         (not <$> switch (long "no-restake" <> help "If supplied, the earnings will not be added to the baker stake automatically.")) <*>
-        optional (strOption (long "out" <> metavar "FILE" <> help "File to write the baker credentials to, in case of succesful transaction. These can be used to start the node."))
+        optional (ExtraBakerAddData <$> (option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> help helpOpenDelegationFor)) <*>
+        (strOption (long "baker-url" <> metavar "URL" <> help "A link to information about the baker.")) <*>
+        (option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission"))) <*>
+        (option (eitherReader amountFractionFromStringInform) (long "delegation-baking-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on baking rewards. " ++ rangesHelpString "baking reward commission"))) <*>
+        (option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission")))) <*>
+        optional (strOption (long "out" <> metavar "FILE" <> help "File to write the baker credentials to, in case of successful transaction. These can be used to start the node."))
       )
       (progDesc "Deploy baker credentials to the chain."))
+
+allowedValuesOpenDelegationForAsString :: String
+allowedValuesOpenDelegationForAsString =
+    " - 'all' (delegators are allowed to join the pool),\n"
+    ++ " - 'existing' (keep the existing delegators, but do not allow new delegators),\n"
+    ++ " - 'none' (move existing delegators to passive delegation and do not allow new delegators)"
+
+openStatusFromStringInform :: String -> Either String OpenStatus
+openStatusFromStringInform "all" = Right OpenForAll
+openStatusFromStringInform "existing" = Right ClosedForNew
+openStatusFromStringInform "none" = Right ClosedForAll
+openStatusFromStringInform s = Left $
+    "Unexpected SELECTION '" ++ s ++ "'. The allowed values are:\n" ++ allowedValuesOpenDelegationForAsString
+
+helpOpenDelegationFor :: String
+helpOpenDelegationFor =
+    "Select whether the baker will allow other parties (delegators) to delegate CCD to the pool. Available values for SELECTION are:\n" ++ allowedValuesOpenDelegationForAsString ++ "."
+
+bakerConfigureCmd :: Mod CommandFields BakerCmd
+bakerConfigureCmd =
+  command
+    "configure"
+    (info
+      (BakerConfigure <$>
+        transactionOptsParser <*>
+        optional (option (eitherReader amountFromStringInform) (long "stake" <> metavar "CCD-AMOUNT" <> help "The amount of CCD to stake.")) <*>
+        optional (flag' True (long "restake" <> help "The earnings will be added to the baker stake automatically.")
+         <|> flag' False (long "no-restake" <> help "The earnings will not be added to the baker stake automatically.")) <*>
+        optional (option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> help helpOpenDelegationFor)) <*>
+        optional (strOption (long "baker-url" <> metavar "URL" <> help "A link to information about the baker.")) <*>
+        optional (option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission"))) <*>
+        optional (option (eitherReader amountFractionFromStringInform) (long "delegation-baking-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on baking rewards. " ++ rangesHelpString "baking reward commission"))) <*>
+        optional (option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission"))) <*>
+        optional (strOption (long "keys-in" <> metavar "FILE" <> help "File containing baker credentials.")) <*>
+        optional (strOption (long "keys-out" <> metavar "FILE" <> help "File to write updated baker credentials to, in case of successful transaction. These can be used to start the node."))
+      )
+      (progDesc "Add a new baker, remove an existing baker or update an existing baker."))
+
+bakerUpdateUpdateMetadataURL :: Mod CommandFields BakerCmd
+bakerUpdateUpdateMetadataURL =
+  command
+   "update-url"
+   (info
+     (BakerUpdateMetadataURL <$>
+       strArgument (metavar "URL" <> help "Link to information about the baker.") <*>
+       transactionOptsParser)
+     (progDesc "Change link to information about the baker."))
+
+bakerUpdateOpenDelegationStatus :: Mod CommandFields BakerCmd
+bakerUpdateOpenDelegationStatus =
+  command
+   "update-delegation-status"
+   (info
+     (BakerUpdateOpenDelegationStatus <$>
+       argument (eitherReader openStatusFromStringInform) (metavar "SELECTION" <> help helpOpenDelegationFor) <*>
+       transactionOptsParser)
+     (progDesc "Change whether to allow other parties to delegate stake to the baker."))
 
 bakerSetKeysCmd :: Mod CommandFields BakerCmd
 bakerSetKeysCmd =
@@ -1407,6 +1538,47 @@ bakerUpdateStakeCmd =
        option (eitherReader amountFromStringInform) (long "stake" <> metavar "CCD-AMOUNT" <> help "The amount of CCD to stake.") <*>
        transactionOptsParser)
      (progDesc "Update the amount staked for the baker."))
+
+allowedValuesDelegationTargetAsString :: String
+allowedValuesDelegationTargetAsString =
+    "'Passive' (for passive delegation), BAKERID (delegate stake to baker pool with baker id BAKERID), ACCOUNT (delegate stake to baker with account ACCOUNT)"
+
+helpDelegationTarget :: Mod OptionFields Text
+helpDelegationTarget = help $
+    "Select whether to delegate stake passively or to a baker. Available values for TARGET are: " ++ allowedValuesDelegationTargetAsString ++ "."
+
+delegatorConfigureCmd :: Mod CommandFields DelegatorCmd
+delegatorConfigureCmd =
+  command
+    "configure"
+    (info
+      (DelegatorConfigure <$>
+        transactionOptsParser <*>
+        optional (option (eitherReader amountFromStringInform) (long "stake" <> metavar "CCD-AMOUNT" <> help "The amount of CCD to stake.")) <*>
+        optional (flag' True (long "restake" <> help "The earnings will be added to the delegated stake automatically.")
+         <|> flag' False (long "no-restake" <> help "The earnings will not be added to the delegated stake automatically.")) <*>
+        optional (strOption (long "target" <> metavar "TARGET" <> helpDelegationTarget)))
+      (progDesc "Configure delegator information on the chain."))
+
+delegatorRemoveCmd :: Mod CommandFields DelegatorCmd
+delegatorRemoveCmd =
+  command
+    "remove"
+    (info
+      (DelegatorRemove <$> transactionOptsParser)
+      (progDesc "Stop delegating."))
+
+delegatorAddCmd :: Mod CommandFields DelegatorCmd
+delegatorAddCmd =
+  command
+    "add"
+    (info
+      (DelegatorAdd <$>
+        transactionOptsParser <*>
+        option (eitherReader amountFromStringInform) (long "stake" <> metavar "CCD-AMOUNT" <> help "The amount of CCD to stake.") <*>
+        (not <$> switch (long "no-restake" <> help "The earnings will not be added to the delegated stake automatically.")) <*>
+        strOption (long "target" <> metavar "TARGET" <> helpDelegationTarget))
+      (progDesc "Add delegator to the chain."))
 
 identityCmds :: Mod CommandFields Cmd
 identityCmds =

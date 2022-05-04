@@ -1,6 +1,8 @@
 # Changelog for concordium-client
 
 ## Unreleased
+
+## 4.0.2
 - Add support for v1 smart contracts.
 - Add `contract invoke` command for simulating contracts locally on the node.
 - Make `module deploy` expect modules with a version prefix.
@@ -12,6 +14,13 @@
   invoke. This is renamed from the previous `--func`.
 - When calling `contract update` or `contract invoke` with a non-existent
   entrypoint the fallback entrypoint is called if one specified in the contract.
+- Related to delegation:
+  - Add commands `delegator add`, `delegator configure` and `delegator remove`.
+  - Add commands `baker configure` , `baker update-url` and `baker update-delegation-status`.
+  - Update existing commands `baker add`, `baker remove`, `baker set-key`, `baker update-restake`
+    and `baker update-stake` so that in Protocol version < 4, they generate the former P3
+    transaction, and in Protocol version 4, they generate the relevant "configure baker" transaction.
+  - Support raw queries `GetPoolStatus` and `GetBakerList`.
 
 ## 3.0.4
 - Rename `--encrypted` and `--decrypt-encrypted` flags to `account show` to

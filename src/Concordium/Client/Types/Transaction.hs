@@ -8,6 +8,7 @@ module Concordium.Client.Types.Transaction where
 import           Concordium.Client.Types.Account
 import qualified Concordium.ID.Types                 as IDTypes
 import           Concordium.Types
+import           Concordium.Types.Execution          (bakerKeysWithProofsSize)
 import           Concordium.Crypto.EncryptedTransfers
 import qualified Concordium.Cost as Cost
 
@@ -76,6 +77,42 @@ bakerAddEnergyCost ::
   -> Energy
 bakerAddEnergyCost psize numSigs = minimumCost psize numSigs + Cost.addBakerCost
 
+-- |Cost of a baker configure transaction without keys.
+bakerConfigureEnergyCostWithoutKeys ::
+  PayloadSize -- ^Size of the payload
+  -> Int -- ^Number of signatures
+  -> Energy
+bakerConfigureEnergyCostWithoutKeys psize numSigs = minimumCost psize numSigs + Cost.configureBakerCostWithoutKeys
+
+-- |Cost of a baker configure transaction with keys.
+bakerConfigureEnergyCostWithKeys ::
+  PayloadSize -- ^Size of the payload
+  -> Int -- ^Number of signatures
+  -> Energy
+bakerConfigureEnergyCostWithKeys psize numSigs = minimumCost psize numSigs + Cost.configureBakerCostWithKeys
+
+-- |The payload size of a configure baker transaction.
+bakerConfigurePayloadSize ::
+  Bool -- ^Capital
+  -> Bool -- ^Restake earnings
+  -> Bool -- ^Pool open status
+  -> Bool -- ^Keys
+  -> Maybe Int -- ^Metadata length
+  -> Bool -- ^Transaction fee commission
+  -> Bool -- ^Baking reward commission
+  -> Bool -- ^Finalization reward commission
+  -> PayloadSize
+bakerConfigurePayloadSize hasCapital hasRestake hasPoolOpen hasKeys mMetadata hasTCom hasBCom hasFCom =
+  3
+  + (if hasCapital then 8 else 0)
+  + (if hasRestake then 1 else 0)
+  + (if hasPoolOpen then 1 else 0)
+  + (if hasKeys then fromIntegral bakerKeysWithProofsSize else 0)
+  + maybe 0 fromIntegral mMetadata
+  + (if hasTCom then 4 else 0)
+  + (if hasBCom then 4 else 0)
+  + (if hasFCom then 4 else 0)
+
 -- |Cost of a baker set account transaction.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 bakerSetKeysEnergyCost ::
@@ -107,6 +144,37 @@ bakerUpdateRestakeEnergyCost ::
   -> Int -- ^Number of signatures
   -> Energy
 bakerUpdateRestakeEnergyCost psize numSigs = minimumCost psize numSigs + Cost.updateBakerRestakeCost
+
+-- |Cost of a delegation configure transaction.
+delegationConfigureEnergyCost ::
+  PayloadSize -- ^Size of the payload
+  -> Int -- ^Number of signatures
+  -> Energy
+delegationConfigureEnergyCost psize numSigs = minimumCost psize numSigs + Cost.configureDelegationCost
+
+-- |Payload size for a register delegation transaction
+registerDelegationPayloadSize
+  :: Bool -- ^Whether delegation is passive
+  -> PayloadSize
+registerDelegationPayloadSize True = 13
+registerDelegationPayloadSize False = 21
+
+-- |Payload size for an update delegation transaction
+updateDelegationPayloadSize
+  :: Bool -- ^Whether the amount is updated
+  -> Bool -- ^Whether the restake is updated
+  -> Bool -- ^Whether the target is updated
+  -> Bool -- ^Whether the target is passive delegation
+  -> PayloadSize
+updateDelegationPayloadSize updAmt updRestake updTarget targetPassiveDelegation = 3 + amt + restake + target
+  where
+    amt = if updAmt then 8 else 0
+    restake = if updRestake then 1 else 0
+    target = if updTarget then (if targetPassiveDelegation then 1 else 9) else 0
+
+-- |Payload size for a remove delegation transaction
+removeDelegationPayloadSize :: PayloadSize
+removeDelegationPayloadSize = 11
 
 -- |Cost of moving funds from public to encrypted amount of an account.
 -- This must be kept in sync with the cost in Concordium.Scheduler.Cost
