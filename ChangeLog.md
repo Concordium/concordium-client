@@ -1,6 +1,9 @@
 # Changelog for concordium-client
 
 ## Unreleased
+- Fix calculation of payload size of a configure baker transaction in
+  the function `bakerConfigurePayloadSize` in Transaction.hs used by
+  the wallet-proxy.
 
 ## 4.0.2
 - Add support for v1 smart contracts.
