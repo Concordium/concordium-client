@@ -4,6 +4,8 @@
 - Fix calculation of payload size of a configure baker transaction in
   the function `bakerConfigurePayloadSize` in Transaction.hs used by
   the wallet-proxy.
+- Fix help text of `baker add` and `baker configure` commands that referred to
+  `raw GetChainParameters`.
 
 ## 4.0.2
 - Add support for v1 smart contracts.
