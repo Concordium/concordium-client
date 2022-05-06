@@ -1423,7 +1423,7 @@ bakerGenerateKeysCmd =
 
 rangesHelpString :: String -> String
 rangesHelpString name =
-    "Command 'raw GetChainParameters' can be used to determine the range of allowed values for "
+    "Command 'consensus show-chain-parameters' can be used to determine the range of allowed values for "
     ++ name ++ "."
 
 bakerAddCmd :: Mod CommandFields BakerCmd

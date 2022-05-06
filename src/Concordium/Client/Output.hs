@@ -50,6 +50,7 @@ import Text.Printf
 import Codec.CBOR.Read
 import Codec.CBOR.JSON
 import Codec.CBOR.Decoding (decodeString)
+import Concordium.Common.Time (DurationSeconds(durationSeconds))
 
 -- PRINTER
 
@@ -838,91 +839,82 @@ printChainParameters cp = do
 -- | Prints the chain  parameters for version 0.
 printChainParametersV0 :: ChainParameters' 'ChainParametersV0 -> Printer
 printChainParametersV0 ChainParameters {..} = tell [
-  "Chain parameters: ",
-  [i|  - election difficulty: #{_cpElectionDifficulty}|],
-  [i|  - EUR per Energy rate: #{showExchangeRate (_erEuroPerEnergy _cpExchangeRates)}|],
-  [i|  - microCCD per EUR rate: #{showExchangeRate (_erMicroGTUPerEuro _cpExchangeRates)}|],
-  [i|  - EUR per CCD rate (approx): #{printf "%.4f" (realToFrac (1000000 / _erMicroGTUPerEuro _cpExchangeRates) :: Double) :: String}|],
-  [i|  - baker extra cooldown epochs: #{(_cpBakerExtraCooldownEpochs _cpCooldownParameters)}|],
-  [i|  - maximum credential deployments per block: #{_cpAccountCreationLimit}|],
-  [i|  - stake threshold to become a baker: #{showCcd (_ppBakerStakeThreshold _cpPoolParameters)}|],
-  [i|  - reward parameters:|],
-  [i|    + mint distribution:|],
-  [i|       * mint rate per slot: #{_cpRewardParameters ^. (mdMintPerSlot . mpsMintPerSlot)}|],
-  [i|       * baking reward: #{_cpRewardParameters ^. mdBakingReward}|],
-  [i|       * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|],
-  [i|    + transaction fee distribution:|],
-  [i|       * baker: #{_cpRewardParameters ^. tfdBaker}|],
-  [i|       * GAS account: #{_cpRewardParameters ^. tfdGASAccount}|],
-  [i|    + GAS rewards:|],
-  [i|       * baking a block: #{_cpRewardParameters ^. gasBaker}|],
-  [i|       * adding a finalization proof: #{_cpRewardParameters ^. gasFinalizationProof}|],
-  [i|       * adding a credential deployment: #{_cpRewardParameters ^. gasAccountCreation}|],
-  [i|       * adding a chain update: #{_cpRewardParameters ^. gasChainUpdate}|],
-  [i|  - foundation account index: #{_cpFoundationAccount}|]
+  [i|\# Baker parameters |],
+  [i|  + baker extra cooldown: #{(_cpBakerExtraCooldownEpochs _cpCooldownParameters)} epochs|],
+  [i|  + stake threshold to become a baker: #{showCcd (_ppBakerStakeThreshold _cpPoolParameters)}|],
+  "",
+  [i|\# Exchange rate parameters: |],
+  [i|  + EUR per CCD rate (approx): #{printf "%.4f" (realToFrac (1000000 / _erMicroGTUPerEuro _cpExchangeRates) :: Double) :: String}|],
+  [i|  + EUR per Energy rate: #{showExchangeRate (_erEuroPerEnergy _cpExchangeRates)}|],
+  [i|  + microCCD per EUR rate: #{showExchangeRate (_erMicroGTUPerEuro _cpExchangeRates)}|],
+  "",
+  [i|\# Parameters that affect rewards distribution:|],
+  [i|  + mint rate per slot: #{_cpRewardParameters ^. (mdMintPerSlot . mpsMintPerSlot)}|],
+  [i|  + mint distribution:|],
+  [i|     * baking reward: #{_cpRewardParameters ^. mdBakingReward}|],
+  [i|     * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|],
+  [i|  + transaction fee distribution:|],
+  [i|     * fraction for the baker: #{_cpRewardParameters ^. tfdBaker}|],
+  [i|     * fraction for the GAS account: #{_cpRewardParameters ^. tfdGASAccount}|],
+  [i|  + GAS account distribution:|],
+  [i|     * baking a block: #{_cpRewardParameters ^. gasBaker}|],
+  [i|     * adding a finalization proof: #{_cpRewardParameters ^. gasFinalizationProof}|],
+  [i|     * adding a credential deployment: #{_cpRewardParameters ^. gasAccountCreation}|],
+  [i|     * adding a chain update: #{_cpRewardParameters ^. gasChainUpdate}|],
+  "",
+  [i|\# Other parameters: |],
+  [i|  + election difficulty: #{_cpElectionDifficulty}|],
+  [i|  + foundation account index: #{_cpFoundationAccount}|],
+  [i|  + maximum credential deployments per block: #{_cpAccountCreationLimit}|]
   ]
 
 -- | Prints the chain  parameters for version 1.
 printChainParametersV1 :: ChainParameters' 'ChainParametersV1 -> Printer
-printChainParametersV1 ChainParameters {..} = tell $ [
-  "Chain parameters: ",
-  [i|  - election difficulty: #{_cpElectionDifficulty}|],
+printChainParametersV1 ChainParameters {..} = tell [
+  "",
+  [i|\# Parameters related to baker pools:|],
+  [i|  + minimum equity capital: #{showCcd (_cpPoolParameters ^. ppMinimumEquityCapital)}|],
+  [i|  + maximum fraction of total stake a pool is allowed hold: #{_cpPoolParameters ^. ppCapitalBound}|],
+  [i|  + maximum factor a pool may stake relative to the baker's stake: #{_cpPoolParameters ^. ppLeverageBound}|],
+  [i|  + pool owner cooldown duration: #{durationToText (durationSeconds (_cpCooldownParameters ^. cpPoolOwnerCooldown) * 1000)}|],
+  [i|  + allowed range for finalization commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . finalizationCommissionRange))}|],
+  [i|  + allowed range for baking commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . bakingCommissionRange))}|],
+  [i|  + allowed range for transaction commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . transactionCommissionRange))}|],
+  "",
+  [i|\# Passive delegation parameters:|],
+  [i|  + finalization commission: #{_cpPoolParameters ^. (ppPassiveCommissions . Types.finalizationCommission)}|],
+  [i|  + baking commission: #{_cpPoolParameters ^. (ppPassiveCommissions . Types.bakingCommission)}|],
+  [i|  + transaction commission: #{_cpPoolParameters ^. (ppPassiveCommissions . Types.transactionCommission)}|],
+  "",
+  [i|\# Parameters related to delegators: |],
+  [i|  + delegator cooldown duration: #{durationToText (durationSeconds (_cpCooldownParameters ^. cpDelegatorCooldown) * 1000)}|],
+  "",
+  [i|\# Exchange rate parameters: |],
+  [i|  - EUR per CCD rate (approx): #{printf "%.4f" (realToFrac (1000000 / _erMicroGTUPerEuro _cpExchangeRates) :: Double) :: String}|],
   [i|  - EUR per Energy rate: #{showExchangeRate (_erEuroPerEnergy _cpExchangeRates)}|],
   [i|  - microCCD per EUR rate: #{showExchangeRate (_erMicroGTUPerEuro _cpExchangeRates)}|],
-  [i|  - EUR per CCD rate (approx): #{printf "%.4f" (realToFrac (1000000 / _erMicroGTUPerEuro _cpExchangeRates) :: Double) :: String}|]] ++
-  printCooldownParametersV1 _cpCooldownParameters
-  ++ [
-      [i|  - maximum credential deployments per block: #{_cpAccountCreationLimit}|]
-      ] ++
-  printPoolParametersV1 _cpPoolParameters ++
-  [
-    [i|  - reward parameters:|],
-    [i|    + mint distribution:|],
-    [i|       * mint rate per slot: #{_cpRewardParameters ^. mdMintPerSlot}|],
-    [i|       * baking reward: " ++ #{_cpRewardParameters ^. mdBakingReward}|],
-    [i|       * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|],
-    [i|    + transaction fee distribution:|],
-    [i|       * baker: #{_cpRewardParameters ^. tfdBaker}|],
-    [i|       * GAS account: #{_cpRewardParameters ^. tfdGASAccount}|],
-    [i|    + GAS rewards:|],
-    [i|       * baking a block: #{_cpRewardParameters ^. gasBaker}|],
-    [i|       * adding a finalization proof: #{_cpRewardParameters ^. gasFinalizationProof}|],
-    [i|       * adding a credential deployment: #{_cpRewardParameters ^. gasAccountCreation}|],
-    [i|       * adding a chain update: #{_cpRewardParameters ^. gasChainUpdate}|],
-    [i|  - foundation account index: #{_cpFoundationAccount}|]
-  ] ++
-  printTimeParametersV1 _cpTimeParameters ++
-  [[i|  - foundation account index: #{_cpFoundationAccount}|]]
-
--- | Prints cool-down parameters.
-printCooldownParametersV1 :: CooldownParameters 'ChainParametersV1 -> [String]
-printCooldownParametersV1 cp = [
-  [i|  - pool owner cooldown epochs: #{cp ^. cpPoolOwnerCooldown}|],
-  [i|  - delegator cooldown epochs: #{cp ^. cpDelegatorCooldown}|]
-  ]
-
--- | Prints time parameters.
-printTimeParametersV1 :: TimeParameters 'ChainParametersV1 -> [String]
-printTimeParametersV1 tp = [
-  [i|  - time parameters:|],
-  [i|    + reward period length (in epochs): #{tp ^. tpRewardPeriodLength}|],
-  [i|    + mint amount per reward period: #{tp ^. tpRewardPeriodLength}|]
-  ]
-
--- | Prints pool parameters.
-printPoolParametersV1 :: PoolParameters 'ChainParametersV1 -> [String]
-printPoolParametersV1 pp = [
-  [i|  - Passive delegation parameters:|],
-  [i|    + finalization commission: #{pp ^. (ppPassiveCommissions . Types.finalizationCommission)}|],
-  [i|    + baking commission: #{pp ^. (ppPassiveCommissions . Types.bakingCommission)}|],
-  [i|    + transaction commission: #{pp ^. (ppPassiveCommissions . Types.transactionCommission)}|],
-  [i|  - baker pool parameters:|],
-  [i|    + allowed range for finalization commission: #{showInclusiveRange show (pp ^. (ppCommissionBounds . finalizationCommissionRange))}|],
-  [i|    + allowed range for baking commission: #{showInclusiveRange show (pp ^. (ppCommissionBounds . bakingCommissionRange))}|],
-  [i|    + allowed range for transaction commission: #{showInclusiveRange show (pp ^. (ppCommissionBounds . transactionCommissionRange))}|],
-  [i|    + minimum stake to be a baker: #{pp ^. ppMinimumEquityCapital}|],
-  [i|    + maximum fraction of total stake a pool is allowed hold: #{pp ^. ppCapitalBound}|],
-  [i|    + maximum factor a pool may stake relative to the baker's stake: #{pp ^. ppLeverageBound}|]
+  "",
+  [i|\# Parameters that affect rewards distribution:|],
+  [i|  + mint amount per reward period: #{_cpTimeParameters ^. tpMintPerPayday}|],
+  [i|  + mint distribution:|],
+  [i|     * baking reward: #{_cpRewardParameters ^. mdBakingReward}|],
+  [i|     * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|],
+  [i|  + transaction fee distribution:|],
+  [i|     * baker: #{_cpRewardParameters ^. tfdBaker}|],
+  [i|     * GAS account: #{_cpRewardParameters ^. tfdGASAccount}|],
+  [i|  + GAS rewards:|],
+  [i|     * baking a block: #{_cpRewardParameters ^. gasBaker}|],
+  [i|     * adding a finalization proof: #{_cpRewardParameters ^. gasFinalizationProof}|],
+  [i|     * adding a credential deployment: #{_cpRewardParameters ^. gasAccountCreation}|],
+  [i|     * adding a chain update: #{_cpRewardParameters ^. gasChainUpdate}|],
+  "",
+  [i|\# Time parameters:|],
+  [i|  + reward period length: #{_cpTimeParameters ^. tpRewardPeriodLength} epochs|],
+  "",
+  [i|\# Other parameters: |],
+  [i|  + election difficulty: #{_cpElectionDifficulty}|],
+  [i|  + foundation account index: #{_cpFoundationAccount}|],
+  [i|  + maximum credential deployments per block: #{_cpAccountCreationLimit}|]
   ]
 
 -- | Returns a string representation of the given 'InclusiveRange'.
