@@ -94,13 +94,13 @@ import           Data.IORef
 import           Data.Foldable
 import           Data.Aeson                          as AE
 import qualified Data.Aeson.Encode.Pretty            as AE
-import qualified Data.Aeson.KeyMap as KM
+import qualified Data.Aeson.KeyMap                   as KM
 import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
 import qualified Data.ByteString.Short               as BS (toShort)
 import qualified Data.ByteString.Short               as BSS
-import qualified Data.Map.Strict as Map
+import qualified Data.Map.Strict                     as Map
 import           Data.Maybe
 import qualified Data.List                           as L
 import qualified Data.Serialize                      as S
