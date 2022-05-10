@@ -1,6 +1,8 @@
 # Changelog for concordium-client
 
 ## Unreleased
+
+## 4.0.3
 - Fix calculation of payload size of a configure baker transaction in
   the function `bakerConfigurePayloadSize` in Transaction.hs used by
   the wallet-proxy.

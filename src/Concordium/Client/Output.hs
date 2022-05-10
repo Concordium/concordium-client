@@ -874,7 +874,7 @@ printChainParametersV1 ChainParameters {..} = tell [
   "",
   [i|\# Parameters related to baker pools:|],
   [i|  + minimum equity capital: #{showCcd (_cpPoolParameters ^. ppMinimumEquityCapital)}|],
-  [i|  + maximum fraction of total stake a pool is allowed hold: #{_cpPoolParameters ^. ppCapitalBound}|],
+  [i|  + maximum fraction of total stake a pool is allowed to hold: #{_cpPoolParameters ^. ppCapitalBound}|],
   [i|  + maximum factor a pool may stake relative to the baker's stake: #{_cpPoolParameters ^. ppLeverageBound}|],
   [i|  + pool owner cooldown duration: #{durationToText (durationSeconds (_cpCooldownParameters ^. cpPoolOwnerCooldown) * 1000)}|],
   [i|  + allowed range for finalization commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . finalizationCommissionRange))}|],
