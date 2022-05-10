@@ -1,6 +1,6 @@
 cabal-version: 2.0
 
--- This file has been generated from package.yaml by hpack version 0.34.4.
+-- This file has been generated from package.yaml by hpack version 0.34.6.
 --
 -- see: https://github.com/sol/hpack
 
@@ -64,6 +64,7 @@ library
   other-modules:
       Paths_concordium_client
   autogen-modules:
+      Paths_concordium_client
       Proto.ConcordiumP2pRpc Proto.ConcordiumP2pRpc_Fields
   hs-source-dirs:
       src
@@ -124,6 +125,8 @@ executable concordium-client
   main-is: Main.hs
   other-modules:
       Paths_concordium_client
+  autogen-modules:
+      Paths_concordium_client
   hs-source-dirs:
       app
   default-extensions:
@@ -151,6 +154,8 @@ executable middleware
       Config
       Http
       Server
+      Paths_concordium_client
+  autogen-modules:
       Paths_concordium_client
   hs-source-dirs:
       middleware
@@ -202,6 +207,8 @@ executable tx-generator
   main-is: Main.hs
   other-modules:
       Paths_concordium_client
+  autogen-modules:
+      Paths_concordium_client
   hs-source-dirs:
       generator
   default-extensions:
@@ -245,6 +252,8 @@ test-suite concordium-client-test
       SimpleClientTests.ParseSpec
       SimpleClientTests.QueryTransaction
       SimpleClientTests.TransactionSpec
+      Paths_concordium_client
+  autogen-modules:
       Paths_concordium_client
   hs-source-dirs:
       test

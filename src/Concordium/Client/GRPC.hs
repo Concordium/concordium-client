@@ -341,7 +341,7 @@ withUnaryCore method message k = do
       tryEstablish n = do
         logm $ "Trying to establish connection, n = " <> pack (show n)
         if n <= 0 then return Nothing
-        else try @ IOException (runExceptT (setupGrpcClient cfg)) >>= \case
+        else try @IOException (runExceptT (setupGrpcClient cfg)) >>= \case
                Right (Right client) -> return (Just client)
                _ -> do -- retry in case of error or exception, after waiting 1s
                  threadDelay 1000000
