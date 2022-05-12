@@ -3,13 +3,16 @@
 ## Unreleased
 
 ## 4.0.3
+
 - Fix calculation of payload size of a configure baker transaction in
   the function `bakerConfigurePayloadSize` in Transaction.hs used by
   the wallet-proxy.
 - Fix help text of `baker add` and `baker configure` commands that referred to
   `raw GetChainParameters`.
+- Upgrade resolver to version `lts-19.6` and ghc to version `9.0.2`.
 
 ## 4.0.2
+
 - Add support for v1 smart contracts.
 - Add `contract invoke` command for simulating contracts locally on the node.
 - Make `module deploy` expect modules with a version prefix.
