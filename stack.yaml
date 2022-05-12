@@ -78,8 +78,6 @@ extra-lib-dirs:
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
 allow-newer: true
-extra-include-dirs:
-- /Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk/usr/include/ffi/
 
 flags:
   concordium-client:
