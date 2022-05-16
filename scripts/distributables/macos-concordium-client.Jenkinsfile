@@ -1,7 +1,7 @@
 pipeline {
     agent { label 'jenkins-worker' }
     environment {
-        GHC_VERSION = '8.8.4'
+        GHC_VERSION = '9.0.2'
         RUST_VERSION = '1.53'
         VERSION = sh(
             returnStdout: true,
@@ -38,7 +38,7 @@ pipeline {
                     sed -i '' "s/default: False/default: True/g" deps/concordium-base/concordium-base.cabal
 
                     # At present concordium-client does not build in a static build with any version of ghc more recent than 8.8.4.
-                    stack build --compiler=ghc-8.8.4 --flag concordium-client:-middleware
+                    stack build --flag concordium-client:-middleware
 
                     mkdir out
 
