@@ -49,19 +49,11 @@ jobs:
           profile: minimal
           toolchain: ${{ env.RUST }}
           override: true
-      # - uses: haskell/actions/setup@v1
-      #   with:
-      #     ghc-version: ${{ env.GHC }}
-      #     enable-stack: true
-      #     stack-no-global: true
-      # - name: Install ghc
-      #   run: |
-      #     export BOOTSTRAP_HASKELL_NONINTERACTIVE=1
-      #     export BOOTSTRAP_HASKELL_NO_UPGRADE=1
-      #     export BOOTSTRAP_HASKELL_GHC_VERSION=9.0.2
-      #     curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
-      #     source /home/runner/.ghcup/env
-
+      - uses: haskell/actions/setup@v1
+        with:
+          ghc-version: ${{ env.GHC }}
+          enable-stack: true
+          stack-no-global: true
       - name: Install protoc
         run: sudo apt -y install protobuf-compiler
       - name: Cache cargo and stack dependencies and targets
@@ -80,12 +72,6 @@ jobs:
           key: ${{ runner.os }}-rust-stack-deps-${{ env.RUST }}-${{ hashFiles('stack.yaml', 'package.yaml', 'deps/concordium-base/haskell-src/**.hs', 'deps/concordium-base/rust-src/Cargo.toml', 'deps/concordium-base/rust-src/**.rs') }}
 
       - name: Stack build # build all the binaries and tests, but don't run the tests
-        run: |
-          export BOOTSTRAP_HASKELL_NONINTERACTIVE=1
-          export BOOTSTRAP_HASKELL_NO_UPGRADE=1
-          export BOOTSTRAP_HASKELL_GHC_VERSION=9.0.2
-          curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
-          source /home/runner/.ghcup/env
-          ghcup run --ghc 9.0.2 --cabal 3.6.2.0 --stack 2.7.5 --install -- stack build --flag 'concordium-client:middleware' --test --no-run-tests
+        run: stack build --flag 'concordium-client:middleware' --test --no-run-tests
       - name: Stack test # run the tests
         run: stack build --flag 'concordium-client:middleware' --test
