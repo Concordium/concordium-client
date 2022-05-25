@@ -1,9 +1,46 @@
 #!/usr/bin/env bash
 set -xeuo pipefail
 
-readonly version=${1:?"Please provide a version number (e.g. '1.0.2')"}
-year="$(date +"%Y")" # Used for copyright notices.
-readonly year
+function usage() {
+    echo "Builds, signs and notarizes the installer package for the concordium client."
+    echo ""
+    echo "Usage: $0 --version VERSION [--sign PKGFILE]"
+    echo "  --version: Version number (e.g. '1.0.2')."
+    echo "  --sign: Signs and notarizes the installer package without building."
+}
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+    --help)
+        usage
+        exit 0
+        ;;
+    --sign)
+        if [ -z "${2-}" ]; then
+            echo "ERROR: --sign requires a package file as an argument."
+            exit 1
+        fi
+        pkgFile="$2"
+        readonly SIGN=1
+        shift
+        ;;
+    --version)
+        readonly version="$2"
+        shift
+        ;;
+    *)
+        echo "Unknown option: $1"
+        usage
+        exit 1
+        ;;
+    esac
+    shift
+done
+
+if [ -z "${version-}" ]; then
+    echo "ERROR: --version is required."
+    exit 1
+fi
 
 readonly teamId="K762RM4LQ3"
 readonly developerIdApplication="Developer ID Application: Concordium Software Aps ($teamId)"
@@ -18,9 +55,7 @@ readonly clientDir="$macPackageDir/../../../"
 readonly buildDir="$macPackageDir/build"
 readonly payloadDir="$buildDir/payload"
 
-readonly pkgFile="$buildDir/packages/concordium-node.pkg"
-readonly productFile="$buildDir/packages/concordium-node-$version-unsigned.pkg"
-readonly signedProductFile="$buildDir/packages/concordium-node-$version.pkg"
+readonly pkgFile="$buildDir/concordium-client.pkg"
 
 ghcVersion="$(stack --stack-yaml "$clientDir/stack.yaml" ghc -- --version | cut -d' ' -f8)" # Get the GHC version used in Consensus.
 readonly ghcVersion
@@ -53,7 +88,6 @@ function cleanBuildDir() {
         rm -rf "${buildDir:?}"
         logInfo "Done"
     fi
-    mkdir -p "$buildDir"
 }
 
 # Create the 'build' folder from the 'template' folder.
@@ -134,51 +168,62 @@ function collectDylibs() {
     logInfo "Done"
 }
 
+# Extracts the installer package contents to the 'build' folder.
+function expandInstallerPackage() {
+    logInfo "Expanding package..."
+    pkgutil --expand "$1" "$buildDir"
+    cd "$buildDir"
+    mv Payload Payload.gz
+    gunzip Payload
+    cpio -iv <Payload
+    rm PackageInfo Bom Payload
+    mkdir "$payloadDir"
+    mv usr "$payloadDir"
+    logInfo "Done"
+}
+
+# Signs the binaries to be included in the installer with the developer certificate.
 function signBinaries() {
     logInfo "Signing binaries..."
 
     # Find and sign all the binaries and dylibs.
-    find "$payloadDir/Library" \
+    find "$payloadDir" \
         -type f \
         -execdir sudo codesign -f --entitlement "$buildDir/entitlements.plist" --options runtime -s "$developerIdApplication" {} \;
-
-    # Sign the installer plugin.
-    sudo codesign -f --options runtime -s "$developerIdApplication" \
-        "$buildDir/plugins/NodeConfigurationInstallerPlugin.bundle"
+    # -execdir sudo codesign -f --options runtime -s gdb_codesign {} \;
 
     logInfo "Done"
 }
 
-# Build the package.
-# Look in the README.md for descriptions of the different files.
-# The install-location is where to put the contents of the build/payload folder.
-function buildPackage() {
+# Signs the installer package with the developer certificate.
+function signInstallerPackage() {
+    logInfo "Signing installer package..."
+
+    # Find and sign all the binaries and dylibs.
+    sudo codesign -f --entitlement "$buildDir/entitlements.plist" --options runtime -s "$developerIdInstaller" "$pkgFile"
+    # sudo codesign -f --options runtime -s gdb_codesign "$pkgFile"
+
+    logInfo "Done"
+}
+
+# Builds the installer package.
+function buildInstallerPackage() {
     logInfo "Building package..."
-    mkdir -p "$buildDir/packages"
-    pkgbuild --identifier software.concordium.node \
+    pkgbuild --identifier software.concordium.client \
         --version "$version" \
-        --scripts "$buildDir/scripts" \
-        --component-plist "$buildDir/components.plist" \
-        --install-location "/" \
+        --install-location / \
         --root "$payloadDir" \
         "$pkgFile"
     logInfo "Done"
 }
 
-# Sign the product.
-function signProduct() {
-    logInfo "Signing product..."
-    productSign --sign "$developerIdInstaller" "$productFile" "$signedProductFile"
-    logInfo "Done"
-}
-
-# Notarize the product and wait for it to finish.
+# Notarizes the installer package and wait for it to finish.
 # If successful, a notarization 'ticket' will be created on Apple's servers for the product.
 # To enable offline installation without warnings, the ticket should be stapled onto the installer.
 function notarize() {
     logInfo "Notarizing..."
     xcrun notarytool submit \
-        "$signedProductFile" \
+        "$pkgFile" \
         --apple-id "$APPLEID" \
         --password "$APPLEIDPASS" \
         --team-id "$teamId" \
@@ -186,57 +231,40 @@ function notarize() {
     logInfo "Done"
 }
 
-# Staple the notarization ticket onto the installer.
-function staple() {
-    logInfo "Stapling..."
-    xcrun stapler staple "$signedProductFile"
-    logInfo "Done"
-}
-
+# Signs, builds and notarizes the installer package.
 function signBuildAndNotarizeInstaller() {
+    mv "$pkgFile" /tmp
+    cleanBuildDir
+    expandInstallerPackage /tmp/"$(basename "$pkgFile")"
     signBinaries
-    buildPackage
-    signProduct
-    notarize
+    buildInstallerPackage
+    signInstallerPackage
+    # notarize
     logInfo "Build complete"
-    logInfo "Installer located at:\n$signedProductFile"
+    logInfo "Installer located at:\n$pkgFile"
 }
 
+# Builds the concordium-client and creates the installer package.
 function buildInstaller() {
-    buildPackage
-    logInfo "Build complete"
-    logInfo "Installer located at:\n$productFile"
-}
-
-# Ask whether the installer should be signed or not.
-# Then performs the selected action.
-function promptToSignOrJustBuild() {
-    while true; do
-        read -rp "Do you wish to sign and notarize the installer [y/n]? " yn
-        case $yn in
-        [Yy]*)
-            signBuildAndNotarizeInstaller
-            break
-            ;;
-        [Nn]*)
-            buildInstaller
-            break
-            ;;
-        *) echo "Please answer yes or no." ;;
-        esac
-    done
-}
-
-function main() {
-    printVersions
     cleanBuildDir
     createBuildDir
     compile
     copyCompiledItemsToBuildDir
     getDylibbundler
     collectDylibs
-    pkgbuild --root ./payload --identifier com.Concordium.Software.Client --version "$version" --install-location / ConcordiumClient-"$version".pkg
-    # promptToSignOrJustBuild
+    buildInstallerPackage
+    logInfo "Build complete"
+    logInfo "Installer located at:\n$pkgFile"
+}
+
+function main() {
+    if [ -n "${SIGN-}" ]; then
+        signBuildAndNotarizeInstaller
+    else
+        printVersions
+        buildInstaller
+        signBuildAndNotarizeInstaller
+    fi
 }
 
 main
