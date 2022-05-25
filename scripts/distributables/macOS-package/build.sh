@@ -56,7 +56,6 @@ fi
 
 readonly teamId="K762RM4LQ3"
 readonly developerIdApplication="Developer ID Application: Concordium Software Aps ($teamId)"
-readonly developerIdInstaller="Developer ID Installer: Concordium Software Aps ($teamId)"
 
 # Get the location of this script.
 macPackageDir="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
@@ -200,7 +199,7 @@ function signBinaries() {
     # Find and sign all the binaries and dylibs.
     find "$payloadDir" \
         -type f \
-        -execdir sudo codesign -f --entitlement "$buildDir/entitlements.plist" --options runtime -s "$developerIdApplication" {} \;
+        -execdir sudo codesign -f --options runtime -s "$developerIdApplication" {} \;
     # -execdir sudo codesign -f --options runtime -s gdb_codesign {} \;
 
     logInfo "Done"
@@ -211,7 +210,7 @@ function signInstallerPackage() {
     logInfo "Signing installer package..."
 
     # Find and sign all the binaries and dylibs.
-    sudo codesign -f --entitlement "$buildDir/entitlements.plist" --options runtime -s "$developerIdInstaller" "$pkgFile"
+    sudo codesign -f --options runtime -s "$developerIdApplication" "$pkgFile"
     # sudo codesign -f --options runtime -s gdb_codesign "$pkgFile"
 
     logInfo "Done"
