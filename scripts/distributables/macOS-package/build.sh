@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-set -xeuo pipefail
+set -euo pipefail
 
+# Print the usage message
 function usage() {
     echo "Builds, signs and notarizes the installer package for the concordium client."
     echo ""
@@ -9,11 +10,15 @@ function usage() {
     echo "  --sign: Signs and notarizes the installer package without building."
 }
 
+# Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
     --help)
         usage
         exit 0
+        ;;
+    --build)
+        readonly BUILD=true
         ;;
     --sign)
         if [ -z "${2-}" ]; then
@@ -21,7 +26,7 @@ while [[ $# -gt 0 ]]; do
             exit 1
         fi
         pkgFile="$2"
-        readonly SIGN=1
+        readonly SIGN=true
         shift
         ;;
     --version)
@@ -37,8 +42,15 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
+# 'version' argument is required
 if [ -z "${version-}" ]; then
     echo "ERROR: --version is required."
+    exit 1
+fi
+
+# At least one of 'sign' and 'build' arguments is required
+if [ -z "${BUILD-}" ] && [ -z "${SIGN-}" ]; then
+    echo "ERROR: You should provide either --build or --sign or both."
     exit 1
 fi
 
@@ -54,8 +66,10 @@ readonly clientDir="$macPackageDir/../../../"
 
 readonly buildDir="$macPackageDir/build"
 readonly payloadDir="$buildDir/payload"
+readonly binDir="$payloadDir/usr/local/bin"
+readonly libDir="$payloadDir/usr/local/lib"
 
-readonly pkgFile="$buildDir/concordium-client.pkg"
+readonly pkgFile=${pkgFile-"$buildDir/concordium-client.pkg"}
 
 ghcVersion="$(stack --stack-yaml "$clientDir/stack.yaml" ghc -- --version | cut -d' ' -f8)" # Get the GHC version used in Consensus.
 readonly ghcVersion
@@ -95,8 +109,8 @@ function cleanBuildDir() {
 # and replaces a number of variables in the files.
 function createBuildDir() {
     logInfo "Creating build folder ..."
-    mkdir -p "$payloadDir/usr/local/bin"
-    mkdir -p "$payloadDir/usr/local/lib"
+    mkdir -p "$binDir"
+    mkdir -p "$libDir"
     logInfo "Done"
 }
 
@@ -111,7 +125,7 @@ function compile() {
 # Copy the compiled items (binaries and supporting data) to the build folder.
 function copyCompiledItemsToBuildDir() {
     logInfo "Copy concordium-client to '$buildDir/"
-    cp "$(stack path --local-install-root)/bin/concordium-client" "$payloadDir/usr/local/bin/"
+    cp "$(stack path --local-install-root)/bin/concordium-client" "$binDir"
     logInfo "Done"
 }
 
@@ -139,7 +153,7 @@ function collectDylibs() {
         local fileToFix=${1:?"Missing file to fix with dylibbundler"}
         cd "$buildDir"
         # Paths to search for dylibs are added with the '-s' flag.
-        dylibbundler --fix-file "$fileToFix" --bundle-deps --dest-dir "$payloadDir/usr/local/lib" --install-path "@executable_path/../lib/" --overwrite-dir \
+        dylibbundler --fix-file "$fileToFix" --bundle-deps --dest-dir "$libDir" --install-path "@executable_path/../lib/" --overwrite-dir \
             -s "$concordiumDylibDir" \
             -s "$stackSnapshotDir" \
             $stackLibDirs # Unquoted on purpose to use as arguments correctly
@@ -156,14 +170,7 @@ function collectDylibs() {
     readonly stackLibDirs
 
     logInfo " -- Processing concordium-client"
-    collectDylibsFor "$payloadDir/usr/local/bin/concordium-client" &>/dev/null
-    # local fileToFix="$payloadDir/usr/local/bin/concordium-client"
-    # cd "$buildDir"
-    # # Paths to search for dylibs are added with the '-s' flag.
-    # dylibbundler --fix-file "$fileToFix" --bundle-deps --dest-dir "./libs" --install-path "@executable_path/libs/" --overwrite-dir \
-    #     -s "$concordiumDylibDir" \
-    #     -s "$stackSnapshotDir" \
-    #     $stackLibDirs # Unquoted on purpose to use as arguments correctly
+    collectDylibsFor "$binDir/concordium-client" &>/dev/null
 
     logInfo "Done"
 }
@@ -173,10 +180,14 @@ function expandInstallerPackage() {
     logInfo "Expanding package..."
     pkgutil --expand "$1" "$buildDir"
     cd "$buildDir"
+    # Extract the payload content from the package.
     mv Payload Payload.gz
     gunzip Payload
-    cpio -iv <Payload
+    cpio -iv <Payload # creates a new folder 'usr'
+    # Remove the redundant files.
     rm PackageInfo Bom Payload
+    # Move the payload content to the 'payload' folder so that
+    # it has the same structure as if it was built from scratch.
     mkdir "$payloadDir"
     mv usr "$payloadDir"
     logInfo "Done"
@@ -233,13 +244,16 @@ function notarize() {
 
 # Signs, builds and notarizes the installer package.
 function signBuildAndNotarizeInstaller() {
-    mv "$pkgFile" /tmp
+    local tmpFile
+    tmpFile="/tmp/$(date +%s).pkg"
+    cp "$pkgFile" "$tmpFile"
     cleanBuildDir
-    expandInstallerPackage /tmp/"$(basename "$pkgFile")"
+    expandInstallerPackage "$tmpFile"
+    rm "$tmpFile"
     signBinaries
     buildInstallerPackage
     signInstallerPackage
-    # notarize
+    notarize
     logInfo "Build complete"
     logInfo "Installer located at:\n$pkgFile"
 }
@@ -258,11 +272,12 @@ function buildInstaller() {
 }
 
 function main() {
-    if [ -n "${SIGN-}" ]; then
-        signBuildAndNotarizeInstaller
-    else
+    if [ -n "${BUILD-}" ]; then
         printVersions
         buildInstaller
+    fi
+
+    if [ -n "${SIGN-}" ]; then
         signBuildAndNotarizeInstaller
     fi
 }
