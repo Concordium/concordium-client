@@ -573,7 +573,7 @@ showEvent verbose = \case
     let restakeString :: String = if ebaRestakeEarnings then "Earnings are added to the stake." else "Earnings are not added to the stake."
     in verboseOrNothing $ printf "baker %s added, staking %s CCD. %s" (showBaker ebaBakerId ebaAccount) (Types.amountToString ebaStake) restakeString
   Types.BakerRemoved{..} ->
-    verboseOrNothing $ printf "baker %s, removed" (showBaker ebrBakerId ebrAccount) (show ebrBakerId)
+    verboseOrNothing $ printf "baker %s, removed" (showBaker ebrBakerId ebrAccount)
   Types.BakerStakeIncreased{..} ->
     verboseOrNothing $ printf "baker %s stake increased to %s" (showBaker ebsiBakerId ebsiAccount) (Types.amountToString ebsiNewStake)
   Types.BakerStakeDecreased{..} ->
