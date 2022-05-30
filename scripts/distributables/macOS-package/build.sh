@@ -77,7 +77,7 @@ readonly libDir="$payloadDir/usr/local/lib"
 readonly pkgFile=${pkgFile-"$buildDir/concordium-client.pkg"}
 readonly signedPkgFile="${pkgFile%.*}-$version.pkg"
 
-ghcVersion="$(stack --stack-yaml "$clientDir/stack.yaml" ghc -- --version | cut -d' ' -f8)" # Get the GHC version used in Consensus.
+ghcVersion="$(stack --stack-yaml "$clientDir/stack.yaml" ghc -- --version | cut -d' ' -f8)" # Get the GHC version used.
 readonly ghcVersion
 
 if [ "$(arch)" == "arm64" ]; then
@@ -110,9 +110,6 @@ function cleanBuildDir() {
     fi
 }
 
-# Create the 'build' folder from the 'template' folder.
-# It copies the 'template' folder to 'build', creates a few new folders
-# and replaces a number of variables in the files.
 function createBuildDir() {
     logInfo "Creating build folder ..."
     mkdir -p "$binDir"
@@ -128,7 +125,7 @@ function compile() {
     logInfo "Done"
 }
 
-# Copy the compiled items (binaries and supporting data) to the build folder.
+# Copy the compiled binary to the build folder.
 function copyCompiledItemsToBuildDir() {
     logInfo "Copy concordium-client to '$buildDir/"
     cp "$(stack path --local-install-root)/bin/concordium-client" "$binDir"
@@ -199,7 +196,7 @@ function expandInstallerPackage() {
     logInfo "Done"
 }
 
-# Signs the binaries to be included in the installer with the developer certificate.
+# Signs the binaries to be included in the installer with the developer application certificate.
 function signBinaries() {
     logInfo "Signing binaries..."
 
@@ -211,7 +208,7 @@ function signBinaries() {
     logInfo "Done"
 }
 
-# Signs the installer package with the developer certificate.
+# Signs the installer package with the developer installer certificate.
 function signInstallerPackage() {
     logInfo "Signing installer package..."
     productSign --sign "$developerIdInstaller" "$pkgFile" "$signedPkgFile"
@@ -235,7 +232,7 @@ function buildInstallerPackage() {
 function notarize() {
     logInfo "Notarizing..."
     xcrun notarytool submit \
-        "$pkgFile" \
+        "$signedPkgFile" \
         --apple-id "$APPLEID" \
         --password "$APPLEIDPASS" \
         --team-id "$teamId" \
@@ -253,7 +250,7 @@ function staple() {
 # Signs, builds and notarizes the installer package.
 function signBuildAndNotarizeInstaller() {
     local tmpFile
-    tmpFile="/tmp/$(date +%s).pkg"
+    tmpFile="/tmp/concordium-client-$(date +%s).pkg"
     cp "$pkgFile" "$tmpFile"
     cleanBuildDir
     expandInstallerPackage "$tmpFile"
@@ -262,8 +259,9 @@ function signBuildAndNotarizeInstaller() {
     buildInstallerPackage
     signInstallerPackage
     notarize
-    logInfo "Build complete"
-    logInfo "Installer located at:\n$pkgFile"
+    staple
+    logInfo "Signing complete"
+    logInfo "Signed installer located at:\n$signedPkgFile"
 }
 
 # Builds the concordium-client and creates the installer package.
