@@ -96,8 +96,8 @@ readonly payloadDir="$buildDir/payload"
 readonly binDir="$payloadDir/usr/local/bin"
 readonly libDir="$payloadDir/usr/local/lib"
 
-readonly pkgFile=${pkgFile-"$buildDir/concordium-client-$version.pkg"}
-readonly signedPkgFile="${pkgFile%.*}-signed.pkg"
+readonly pkgFile=${pkgFile-"$buildDir/concordium-client-$version-unsigned.pkg"}
+readonly signedPkgFile="${pkgFile%.*}.pkg"
 
 ghcVersion="$(stack --stack-yaml "$clientDir/stack.yaml" ghc -- --version | cut -d' ' -f8)" # Get the GHC version used.
 readonly ghcVersion
