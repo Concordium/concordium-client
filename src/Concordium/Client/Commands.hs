@@ -503,7 +503,7 @@ internalUnless :: ShowAllOpts -> Mod f a
 internalUnless showAllOpts = if showAllOpts then idm else internal
 
 visibleHelper :: Parser (a -> a)
-visibleHelper = abortOption ShowHelpText $ mconcat
+visibleHelper = abortOption (ShowHelpText Nothing) $ mconcat
   [ long "help"
   , short 'h'
   , help "Show detailed help text." ]

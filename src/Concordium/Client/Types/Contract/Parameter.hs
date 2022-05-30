@@ -13,10 +13,12 @@ import qualified Data.DoubleWord as DW
 import Control.Monad (unless, when, zipWithM)
 import Data.Aeson (FromJSON, Result, ToJSON, (.=))
 import qualified Data.Aeson as AE
+import qualified Data.Aeson.Key as AE
+import qualified Data.Aeson.KeyMap as KM
 import qualified Data.Aeson.Types as AE
+import Data.Bifunctor (first)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import qualified Data.HashMap.Strict as HM
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import Data.Scientific (Scientific, isFloating, toBoundedInteger)
@@ -77,7 +79,7 @@ getJSONUsingSchema typ = case typ of
                       Just v -> return v
                       Nothing -> fail [i|Variant with index #{idx} does not exist for Enum.|]
     fields' <- getFieldsAsJSON fields
-    return $ AE.object [name .= fields']
+    return $ AE.object [AE.fromText name .= fields']
   String sl -> AE.toJSON <$> getUtf8String sl
   UInt128 -> AE.toJSON . show <$> DW.getWord128le
   Int128 -> AE.toJSON . show <$> DW.getInt128le
@@ -141,7 +143,7 @@ putJSONUsingSchema typ json = case (typ, json) of
 
   (AccountAddress, v@(AE.String _)) -> addTraceInfo $ (S.put :: S.Putter T.AccountAddress) <$> AE.parseEither AE.parseJSON v
 
-  (ContractAddress, AE.Object obj) -> addTraceInfo $ case HM.toList obj of
+  (ContractAddress, AE.Object obj) -> addTraceInfo $ case KM.toList obj of
     [("index", AE.Number idx)] -> putContrAddr idx 0
     [("index", AE.Number idx), ("subindex", AE.Number subidx)] -> putContrAddr idx subidx
     [("subindex", AE.Number subidx), ("index", AE.Number idx)] -> putContrAddr idx subidx
@@ -188,9 +190,9 @@ putJSONUsingSchema typ json = case (typ, json) of
 
   (Struct fields, val) -> addTraceInfo $ putJSONFields fields val
 
-  (enum@(Enum variants), AE.Object obj) -> case HM.toList obj of
+  (enum@(Enum variants), AE.Object obj) -> case KM.toList obj of
     [] -> Left [i|The object provided was empty, but it should have contained a variant of the following enum:\n#{showPrettyJSON enum}.|]
-    [(name, fields)] -> case lookupItemAndIndex name variants of
+    [(name, fields)] -> case lookupItemAndIndex name $ map (first AE.fromText) variants of
       Nothing -> Left [i|Enum variant '#{name}' does not exist in:\n#{showPrettyJSON enum}|]
       Just (fieldTypes, idx) -> do
         let putLen = if length variants <= 255
@@ -220,9 +222,9 @@ putJSONUsingSchema typ json = case (typ, json) of
       Right n -> pure $ DW.putInt128le n
 
   (ContractName sl, AE.Object obj) -> do
-    let fieldCount = length . HM.toList $ obj
+    let fieldCount = length . KM.toList $ obj
     when (fieldCount /= 1) $ Left [i|Expected object with a single field 'contract', but got: #{showPrettyJSON obj}.|]
-    case HM.lookup "contract" obj of
+    case KM.lookup "contract" obj of
       Just (AE.String contractName) -> do
         let nameWithInit = "init_" <> contractName
             bytes = BS.unpack . Text.encodeUtf8 $ nameWithInit
@@ -238,9 +240,9 @@ putJSONUsingSchema typ json = case (typ, json) of
       _ -> Left [i|Expected object with a field 'contract' of type String, but got: #{showPrettyJSON obj}.|]
 
   (ReceiveName sl, AE.Object obj) -> do
-    let fieldCount = length . HM.toList $ obj
+    let fieldCount = length . KM.toList $ obj
     when (fieldCount /= 2) $ Left [i|Expected object with two fields 'contract' and 'func', but got: #{showPrettyJSON obj}.|]
-    case (HM.lookup "contract" obj, HM.lookup "func" obj) of
+    case (KM.lookup "contract" obj, KM.lookup "func" obj) of
       (Just (AE.String contractName), Just (AE.String funcName)) -> do
         let nameWithInit = "init_" <> contractName
             nameWithDot = contractName <> "." <> funcName
@@ -264,7 +266,7 @@ putJSONUsingSchema typ json = case (typ, json) of
     putJSONFields :: Fields -> AE.Value -> Either String S.Put
     putJSONFields fields val = case (fields, val) of
       (Named pairs, AE.Object obj) -> do
-        let ls = HM.toList obj
+        let ls = KM.toList obj
         let actualLen = length ls
         let expectedLen = length pairs
         when (actualLen /= expectedLen)
@@ -318,14 +320,17 @@ putJSONUsingSchema typ json = case (typ, json) of
       Four  -> toInteger (maxBound :: Word32)
       Eight -> toInteger (maxBound :: Word64)
 
-    lookupAndPut :: [(Text, SchemaType)]     -- ^ The names and types for Named Fields.
-                 -> (Text, AE.Value)         -- ^ A field name and a value.
+    lookupAndPut :: [(Text, SchemaType)]       -- ^ The names and types for Named Fields.
+                 -> (AE.Key, AE.Value)         -- ^ A field name and a value.
                  -> Either String (Int, S.Put) -- ^ The index of the field in the particular Named Fields,
-                                             --   used for subsequent ordering,
-                                             --   and a putter for the value (or an error message).
-    lookupAndPut types (name, value) = case lookupItemAndIndex name types of
-          Nothing -> Left [i|'#{name}' is not a valid field in the type:\n#{showPrettyJSON (Named types)}.|]
-          Just (typ', idx) -> ((idx, ) <$> putJSONUsingSchema typ' value) `addTraceInfoOf` [i|In field '#{name}'.|]
+                                               --   used for subsequent ordering,
+                                               --   and a putter for the value (or an error message).
+    lookupAndPut types (key, value) =
+      case lookupItemAndIndex name types of
+        Nothing -> Left [i|'#{name}' is not a valid field in the type:\n#{showPrettyJSON (Named types)}.|]
+        Just (typ', idx) -> ((idx, ) <$> putJSONUsingSchema typ' value) `addTraceInfoOf` [i|In field '#{name}'.|]
+      where
+        name = AE.toText key
 
     lookupItemAndIndex :: Eq a => a -> [(a, b)] -> Maybe (b, Int)
     lookupItemAndIndex item thePairs = go item thePairs 0

@@ -1,13 +1,4 @@
-# NB: When updating the resolver to one that uses ghc 8.10.5 or higher also
-# remove the compiler override below.
-resolver: lts-17.4
-
-# At present (Sep 8 2021) we are using a stack resolver with ghc 8.10.4 as the
-# default compiler. However we are unable to build this version of GHC in the
-# alpine image due to a GHC issue fixed in 8.10.5. For this reason we override
-# the compiler version here. Once we update the stack resolver this should not
-# be necessary anymore.
-compiler: ghc-8.10.5
+resolver: lts-19.6
 
 packages:
 - .
@@ -15,10 +6,10 @@ packages:
 extra-deps:
 # http2-client was never included in stackage
 - github: Concordium/http2-client
-  commit: 2ce0c0022d86782ac30287912c76eccfae18c6c6
+  commit: 87c4306a624ff490ac9bd92e075ff09f14c341f4
 
 - github: Concordium/http2-grpc-haskell
-  commit: e3e62afa76fcd8ce9aed79e6498141a344d52fb4
+  commit: 6787bbe9445e841c02c8b1f699304be15b3c3e5a
   subdirs:
     - http2-client-grpc
     - http2-grpc-proto-lens

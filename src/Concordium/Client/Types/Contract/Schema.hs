@@ -23,6 +23,7 @@ import Control.Monad (unless)
 import qualified Concordium.Wasm as Wasm
 import Data.Aeson ((.=))
 import qualified Data.Aeson as AE
+import qualified Data.Aeson.Key as AE
 import qualified Data.Bits as Bits
 import qualified Data.ByteString as BS
 import Data.Hashable (Hashable)
@@ -189,7 +190,7 @@ data Fields
 instance Hashable Fields
 
 instance AE.ToJSON Fields where
-  toJSON (Named fields) = AE.object . map (\(name, value) -> name .= value) $ fields
+  toJSON (Named fields) = AE.object . map (\(name, value) -> AE.fromText name .= value) $ fields
   toJSON (Unnamed fields) = AE.toJSON fields
   toJSON None = AE.Array . V.fromList $ []
 
@@ -272,7 +273,7 @@ instance AE.ToJSON SchemaType where
     Map _ typK typV -> toJsonArray [toJsonArray [AE.toJSON typK, AE.toJSON typV]]
     Array _ typ -> toJsonArray [AE.toJSON typ]
     Struct fields -> AE.toJSON fields
-    Enum variants -> AE.object ["Enum" .= (toJsonArray . map (\(k, v) -> AE.object [k .= v]) $ variants)]
+    Enum variants -> AE.object ["Enum" .= (toJsonArray . map (\(k, v) -> AE.object [AE.fromText k .= v]) $ variants)]
     String _ -> AE.String "<String>"
     UInt128 -> AE.String "<UInt128>"
     Int128 -> AE.String "<Int128>"

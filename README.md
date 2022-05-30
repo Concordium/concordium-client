@@ -2,16 +2,23 @@
 
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](https://github.com/Concordium/.github/blob/main/.github/CODE_OF_CONDUCT.md)
 
-### Table of contents
+## Table of contents
 
-- [Introduction](#introduction)
-- [Prerequisites](#prerequisites)
-- [Build](#build)
-- [Usage](#usage)
-  - [Commands](#commands)
-  - [Concepts and configuration](#concepts-and-configuration)
-- [Contributing](#contributing)
-- [License](#license)
+- [Concordium Client](#concordium-client)
+  - [Table of contents](#table-of-contents)
+  - [Introduction](#introduction)
+  - [Prerequisites](#prerequisites)
+  - [Build](#build)
+    - [MacOS Specific](#macos-specific)
+    - [M1 MacOS Specific](#m1-macos-specific)
+  - [Usage](#usage)
+    - [Commands](#commands)
+    - [Concepts and configuration](#concepts-and-configuration)
+      - ["Best" block](#best-block)
+      - [Account aliases](#account-aliases)
+      - [Configuration](#configuration)
+  - [Contributing](#contributing)
+  - [License](#license)
 
 ## Introduction
 
@@ -19,11 +26,11 @@ Concordium Client is a command line tool for interacting with a Concordium node.
 
 The tool has commands to
 
-* deploy, initialize, and interact with smart contracts,
-* view and manage local configurations such as aliases for accounts, modules and contracts,
-* query data from the chain,
-* query the state of the consensus protocol, and
-* inspect and manage the node.
+- deploy, initialize, and interact with smart contracts,
+- view and manage local configurations such as aliases for accounts, modules and contracts,
+- query data from the chain,
+- query the state of the consensus protocol, and
+- inspect and manage the node.
 
 For more information, please [read our
 documentation](https://developer.concordium.software/en/mainnet/net/references/concordium-client.html).
@@ -35,34 +42,34 @@ Windows](https://developer.concordium.software/en/mainnet/net/installation/downl
 
 To build the tool from source, you need the following prerequisites:
 
-* Install the Haskell tool Stack:
-   * Via [GHCup](https://www.haskell.org/ghcup/):
-     * Unix: `curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh`
-     * Windows: [Follow the GHCup install guide](https://www.haskell.org/ghcup/install/#installation).
-   * Or, by itself:
-     * Unix: `curl -sSL https://get.haskellstack.org/ | sh`
-     * Windows: [Follow the Stack install guide](https://docs.haskellstack.org/en/stable/install_and_upgrade/).
+- Install the Haskell tool Stack:
+  - Via [GHCup](https://www.haskell.org/ghcup/):
+    - Unix: `curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh`
+    - Windows: [Follow the GHCup install guide](https://www.haskell.org/ghcup/install/#installation).
+  - Or, by itself:
+    - Unix: `curl -sSL https://get.haskellstack.org/ | sh`
+    - Windows: [Follow the Stack install guide](https://docs.haskellstack.org/en/stable/install_and_upgrade/).
 
-* Install Rust version 1.53+:
-   * Unix: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-   * Windows: [Follow the Rust install
+- Install Rust version 1.53+:
+  - Unix: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+  - Windows: [Follow the Rust install
      guide](https://www.rust-lang.org/tools/install)
-     * Use the `x86_64-pc-windows-gnu` toolchain by choosing it during
+    - Use the `x86_64-pc-windows-gnu` toolchain by choosing it during
        installation or by running `rustup toolchain default
        stable-x86_64-pc-windows-gnu`.
-   * *Recommended after installing: Set the default Rust version to 1.53 by running `rustup default 1.53`*.
+  - *Recommended after installing: Set the default Rust version to 1.53 by running `rustup default 1.53`*.
 
-* Install the [protoc](https://github.com/google/proto-lens/blob/master/docs/installing-protoc.md) tool for generating protobuf files:
-   * MacOS: `brew install protobuf`
-   * Ubuntu 19.10: `sudo apt install protobuf-compiler`
-   * Windows: `stack exec -- pacman -S mingw-w64-x86_64-protobuf`
+- Install the [protoc](https://github.com/google/proto-lens/blob/master/docs/installing-protoc.md) tool for generating protobuf files:
+  - MacOS: `brew install protobuf`
+  - Ubuntu 19.10: `sudo apt install protobuf-compiler`
+  - Windows: `stack exec -- pacman -S mingw-w64-x86_64-protobuf`
 
-* Install development libraries for PostgreSQL:
-   * MacOS: `brew install postgresql`
-   * Ubuntu 19.10: `sudo apt install libpq-dev postgresql-common` 
-   * Windows: `stack exec -- pacman -S mingw-w64-x86_64-postgresql`
+- Install development libraries for PostgreSQL:
+  - MacOS: `brew install postgresql`
+  - Ubuntu 19.10: `sudo apt install libpq-dev postgresql-common`
+  - Windows: `stack exec -- pacman -S mingw-w64-x86_64-postgresql`
 
-* Initialize submodule dependencies after cloning (`git submodule update --init --recursive`).
+- Initialize submodule dependencies after cloning (`git submodule update --init --recursive`).
 
 ## Build
 
@@ -70,17 +77,44 @@ To build the tool from source, you need the following prerequisites:
 stack build
 ```
 
+### MacOS Specific
+
+You may need to add the following entries to your `~/.stack/config.yaml` for the libraries installed via `brew`:
+
+```yaml
+extra-lib-dirs:
+- /opt/homebrew/lib
+
+extra-include-dirs:
+- /opt/homebrew/include/
+```
+
+### M1 MacOS Specific
+
+You may need to add the following entry to your `~/.stack/config.yaml` for the `libffi` include:
+
+```yaml
+extra-include-dirs:
+- /Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk/usr/include/ffi/
+```
+
+To determine the exact path to the `libffi` include directory, run the following command:
+
+```sh
+pkg-config --cflags libffi
+```
+
 ## Usage
 
 Run using `stack run concordium-client -- [BACKEND] COMMAND [ARGS...]`, where
 
-* `BACKEND` is the GRPC server on which to perform the actions/queries.
+- `BACKEND` is the GRPC server on which to perform the actions/queries.
   It's specified using the flags `--grpc-ip`, `--grpc-port`, and `--grpc-target`
   (might be needed when calling through proxy like, say, on the testnet).
 
-* `COMMAND` is a command from one of the categories described below in [Commands](#commands).
+- `COMMAND` is a command from one of the categories described below in [Commands](#commands).
 
-* `ARGS` is the list of arguments provided to `COMMAND`.
+- `ARGS` is the list of arguments provided to `COMMAND`.
 
 Whenever a command takes an optional `--block` parameter, it always defaults to
 the current ["best" block](#best-block).
@@ -109,7 +143,7 @@ The commands are grouped by topic.
     information, read the section on [Configuration](#configuration) below.
 - `consensus`
   - Commands for inspecting the chain health (branching and finalization),
-    baker election and statistics, and reward/minting parameters. 
+    baker election and statistics, and reward/minting parameters.
 - `block`
   - Commands for inspecting individual blocks.
 - `baker`
@@ -135,12 +169,15 @@ In the meantime, however, the best block could have been pruned due to finalizat
 
 `concordium-client` can generate aliases of addresses. An alias for an address
 can be generated with
+
 ```console
 concordium-client account show-alias ACCOUNT --alias N
 ```
+
 where `ACCOUNT` is either a name of the account or an account address, and `N`
 is an integer between 0 and 16777215 (inclusive) (the integer can also be
 specified in hex). For example
+
 ```console
 concordium-client account show-alias 4oM1reP5hVqT8Krvb9c1bJffoWW4ChTYDZVmbJwGtfGpGcDo5v --alias 0x010203
 ```
@@ -150,7 +187,6 @@ transaction that creates a transaction supports an `--alias` option which
 generates an alias for the sender address and uses it when sending transactions
 instead of the given address. The `--alias` option has the same meaning as to
 the `account show-alias` command.
-
 
 #### Configuration
 
@@ -163,12 +199,12 @@ The variable `XDG_CONFIG_HOME` is defined by the
 as the location of user specific configuration.
 If not set or empty, it has the following system-dependent defaults:
 
-* Unix: `$HOME/.config`
-* Windows: `%APPDATA%` (`C:\Users\<user>\AppData\Roaming`)
+- Unix: `$HOME/.config`
+- Windows: `%APPDATA%` (`C:\Users\<user>\AppData\Roaming`)
 
 The expected structure inside the config directory is
 
-```
+```console
 <configDir>
 ├── accounts
 │   ├── <account1>             # One folder per account.
@@ -188,13 +224,14 @@ The expected structure inside the config directory is
 ```
 
 There are three types for name aliases used in Concordium Client.
- - Account names:
-   - A mapping from *account names* to *account addresses*.
- - Contract names:
-   - A mapping from *contract names* to *contract addresses*.
- - Module names:
-   - A mapping from *module names* to *module references*.
-   
+
+- Account names:
+  - A mapping from *account names* to *account addresses*.
+- Contract names:
+  - A mapping from *contract names* to *contract addresses*.
+- Module names:
+  - A mapping from *module names* to *module references*.
+
 The names may be used in place of the address/reference they are referring to.
 The tool will then look up and use the address or reference with that name.
 Note that the name maps are only consulted once and only if the
@@ -203,7 +240,7 @@ So the maps cannot be used to map `address->address`, `reference->reference`,
 or `name->name`.
 
 The tool will use the special account name `default` if an account is needed but
-not provided. 
+not provided.
 
 ## Contributing
 

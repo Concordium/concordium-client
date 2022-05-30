@@ -24,10 +24,10 @@ import qualified Concordium.Wasm as Wasm
 import Data.Word (Word32)
 import Data.Aeson ((.:))
 import qualified Data.Aeson as AE
+import qualified Data.Aeson.KeyMap as KM
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as BS16
-import qualified Data.HashMap.Strict as HM
 import qualified Data.Map.Strict as Map
 import qualified Data.Serialize as S
 import Data.String.Interpolate (i)
@@ -204,13 +204,12 @@ instance AE.FromJSON ContractInfo where
     methods             <- fmap methodNameFromReceiveName <$> v .: "methods"
     (v AE..:! "version" AE..!= (0 :: Word32)) >>= \case
       0 -> do
-        (state, ciSize) <- case HM.lookup "model" v of
+        (state, ciSize) <- case KM.lookup "model" v of
           Just (AE.String s) -> do
             let decodeBase16 xs =
-                  let (parsed, remaining) = BS16.decode . Text.encodeUtf8 $ xs
-                  in if BS.null remaining
-                     then return parsed
-                     else fail [i|Invalid model. Parsed: '#{parsed}', but failed on the remaining: '#{remaining}'|]
+                  case BS16.decode . Text.encodeUtf8 $ xs of
+                    Right parsed -> return parsed
+                    Left err -> fail [i|Invalid model. #{err}'|]
             bs <- decodeBase16 s
             return (bs, BS.length bs)
           Just x -> fail [i|Invalid Info, expected "model" field to be a String of base16 bytes, but got: #{x}|]

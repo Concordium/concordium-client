@@ -1,7 +1,7 @@
 pipeline {
     agent { label 'jenkins-worker' }
     environment {
-        GHC_VERSION = '8.8.4'
+        GHC_VERSION = '9.0.2'
         RUST_VERSION = '1.53'
         VERSION = sh(
             returnStdout: true,
@@ -11,7 +11,8 @@ pipeline {
                 echo -n "$VERSION"
             '''.stripIndent()
         )
-        OUTFILE = "s3://distribution.concordium.software/tools/macos/concordium-client_${VERSION}"
+        PACKAGE = "concordium-client-${VERSION}-unsigned.pkg"
+        OUTFILE = "s3://distribution.concordium.software/tools/macos/${PACKAGE}"
     }
     stages {
         stage('precheck') {
@@ -33,26 +34,23 @@ pipeline {
                     # Install correct version of rust.
                     rustup default $RUST_VERSION
 
-                    # due to a bug in stack and flag propagation we have to do this hack
-                    sed -i '' "s/default: False/default: True/g" deps/concordium-base/package.yaml
-                    sed -i '' "s/default: False/default: True/g" deps/concordium-base/concordium-base.cabal
-
                     # At present concordium-client does not build in a static build with any version of ghc more recent than 8.8.4.
-                    stack build --compiler=ghc-8.8.4 --flag concordium-client:-middleware
+                    # Thus, we need to create an installer package.
+                    scripts/distributables/macOS-package/build.sh --build "$VERSION"
 
                     mkdir out
 
                     # Find executable
-                    cp $(find .stack-work/install -type f -name concordium-client) out/concordium-client
+                    cp scripts/distributables/macOS-package/build/${PACKAGE} out/concordium-client.pkg
                 '''.stripIndent()
-                stash includes: 'out/concordium-client', name: 'release'
+                stash includes: 'out/concordium-client.pkg', name: 'release'
             }
         }
         stage('Publish') {
             steps {
                 unstash 'release'
                 sh '''\
-                    aws s3 cp out/concordium-client ${OUTFILE} --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+                    aws s3 cp out/concordium-client.pkg ${OUTFILE} --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
                 '''.stripIndent()
             }
         }
