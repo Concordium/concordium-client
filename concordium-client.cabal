@@ -37,7 +37,7 @@ flag middleware
 flag static
   description: Use static linking.
   manual: True
-  default: True
+  default: False
 
 library
   exposed-modules:

@@ -9,7 +9,6 @@
   the wallet-proxy.
 - Fix help text of `baker add` and `baker configure` commands that referred to
   `raw GetChainParameters`.
-- Upgrade resolver to version `lts-19.6` and ghc to version `9.0.2`.
 
 ## 4.0.2
 
