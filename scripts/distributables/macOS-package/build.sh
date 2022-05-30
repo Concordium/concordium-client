@@ -104,7 +104,7 @@ readonly binDir="$payloadDir/usr/local/bin"
 readonly libDir="$payloadDir/usr/local/lib"
 
 readonly pkgFile=${pkgFile-"$buildDir/concordium-client-$version-unsigned.pkg"}
-readonly signedPkgFile="${pkgFile%.*}.pkg"
+readonly signedPkgFile="${pkgFile%-unsigned*}.pkg"
 
 ghcVersion="$(stack --stack-yaml "$clientDir/stack.yaml" ghc -- --version | cut -d' ' -f8)" # Get the GHC version used.
 readonly ghcVersion
@@ -191,7 +191,7 @@ function collectDylibs() {
             $stackLibDirs # Unquoted on purpose to use as arguments correctly
     }
 
-    logInfo "Collecting dylibs with dylibbundler (this will take a few minutes)..."
+    logInfo "Collecting dylibs with dylibbundler..."
 
     concordiumDylibDir=$(stack --stack-yaml "$clientDir/stack.yaml" path --local-install-root)"/lib/$ghcVariant"
     stackSnapshotDir=$(stack --stack-yaml "$clientDir/stack.yaml" path --snapshot-install-root)"/lib/$ghcVariant"
