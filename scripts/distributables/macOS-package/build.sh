@@ -4,11 +4,11 @@ set -euo pipefail
 # Print the usage message
 function usage() {
     echo ""
-    echo "Builds, signs and notarizes the installer package for the concordium client."
+    echo "Builds, signs and notarizes the installer package for the concordium client with a version number (e.g. '4.0.3')."
     echo ""
-    echo "Usage: $0 [ --build VERSION ] [ --build-sign VERSION ] [ --sign PKGFILE ]"
-    echo "  --build: Builds the client and its flat installer package with a version number (e.g. '1.0.2')."
-    echo "  --build-sign: Builds, signs and notarizes the client and its flat installer package with a version number (e.g. '1.0.2')."
+    echo "Usage: $0 [ --build VERSION ] [ --build-sign VERSION ] [ --sign PKGFILE VERSION ]"
+    echo "  --build: Builds the client and its flat installer package."
+    echo "  --build-sign: Builds, signs and notarizes the client and its flat installer package."
     echo "  --sign: Signs and notarizes the given installer package."
 }
 
@@ -61,8 +61,15 @@ while [[ $# -gt 0 ]]; do
             usage
             exit 1
         fi
+        if [ -z "${3-}" ]; then
+            echo "ERROR: --sign requires a version number as an argument."
+            usage
+            exit 1
+        fi
         pkgFile="${2-}"
+        readonly version="$3"
         readonly SIGN=true
+        shift
         shift
         ;;
     *)

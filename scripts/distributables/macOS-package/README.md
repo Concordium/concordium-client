@@ -30,7 +30,7 @@ For the APPLEIDPASS, setting up an [app-specific password](https://support.apple
 To sign and notarize the installer (.pkg) file from the build step, run:
 
 ``` sh
-./build.sh --sign <path-to-unsigned-pkg>
+./build.sh --sign <path-to-unsigned-pkg> <version>
 ```
 
 If you are building and signing on the same computer (as opposed to building
