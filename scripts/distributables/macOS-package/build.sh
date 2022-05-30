@@ -6,10 +6,10 @@ function usage() {
     echo ""
     echo "Builds, signs and notarizes the installer package for the concordium client."
     echo ""
-    echo "Usage: $0 --version VERSION [ --build ] [ --sign PKGFILE ]"
-    echo "  --version: Version number (e.g. '1.0.2')."
-    echo "  --build: Builds the client and its flat installer package."
-    echo "  --sign: Signs and notarizes the installer package."
+    echo "Usage: $0 [ --build VERSION ] [ --build-sign VERSION ] [ --sign PKGFILE ]"
+    echo "  --build: Builds the client and its flat installer package with a version number (e.g. '1.0.2')."
+    echo "  --build-sign: Builds, signs and notarizes the client and its flat installer package with a version number (e.g. '1.0.2')."
+    echo "  --sign: Signs and notarizes the given installer package."
 }
 
 # Parse arguments
@@ -20,20 +20,49 @@ while [[ $# -gt 0 ]]; do
         exit 0
         ;;
     --build)
+        if [ -n "${BUILD-}" ] || [ -n "${SIGN-}" ]; then
+            echo "ERROR: --build flag can not be used together with the other flags."
+            usage
+            exit 1
+        fi
+        if [ -z "${2-}" ]; then
+            echo "ERROR: --build requires a version number as an argument."
+            usage
+            exit 1
+        fi
+        readonly version="$2"
         readonly BUILD=true
+        shift
+        ;;
+    --build-sign)
+        if [ -n "${BUILD-}" ] || [ -n "${SIGN-}" ]; then
+            echo "ERROR: --build-sign flag can not be used together with the other flags."
+            usage
+            exit 1
+        fi
+        if [ -z "${2-}" ]; then
+            echo "ERROR: --build-sign requires a version number as an argument."
+            usage
+            exit 1
+        fi
+        readonly version="$2"
+        readonly BUILD=true
+        readonly SIGN=true
+        shift
         ;;
     --sign)
+        if [ -n "${BUILD-}" ] || [ -n "${SIGN-}" ]; then
+            echo "ERROR: --sign flag can not be used together with the other flags."
+            usage
+            exit 1
+        fi
         if [ -z "${2-}" ]; then
             echo "ERROR: --sign requires a package file as an argument."
             usage
             exit 1
         fi
-        pkgFile="$2"
+        pkgFile="${2-}"
         readonly SIGN=true
-        shift
-        ;;
-    --version)
-        readonly version="$2"
         shift
         ;;
     *)
@@ -45,16 +74,9 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-# 'version' argument is required
-if [ -z "${version-}" ]; then
-    echo "ERROR: --version is required."
-    usage
-    exit 1
-fi
-
 # At least one of 'sign' and 'build' arguments is required
 if [ -z "${BUILD-}" ] && [ -z "${SIGN-}" ]; then
-    echo "ERROR: You should provide either --build or --sign or both."
+    echo "ERROR: You should provide either --build, --build-sign or --sign."
     usage
     exit 1
 fi
@@ -74,8 +96,8 @@ readonly payloadDir="$buildDir/payload"
 readonly binDir="$payloadDir/usr/local/bin"
 readonly libDir="$payloadDir/usr/local/lib"
 
-readonly pkgFile=${pkgFile-"$buildDir/concordium-client.pkg"}
-readonly signedPkgFile="${pkgFile%.*}-$version.pkg"
+readonly pkgFile=${pkgFile-"$buildDir/concordium-client-$version.pkg"}
+readonly signedPkgFile="${pkgFile%.*}-signed.pkg"
 
 ghcVersion="$(stack --stack-yaml "$clientDir/stack.yaml" ghc -- --version | cut -d' ' -f8)" # Get the GHC version used.
 readonly ghcVersion
