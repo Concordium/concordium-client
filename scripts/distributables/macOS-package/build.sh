@@ -3,11 +3,13 @@ set -euo pipefail
 
 # Print the usage message
 function usage() {
+    echo ""
     echo "Builds, signs and notarizes the installer package for the concordium client."
     echo ""
-    echo "Usage: $0 --version VERSION [--sign PKGFILE]"
+    echo "Usage: $0 --version VERSION [ --build ] [ --sign PKGFILE ]"
     echo "  --version: Version number (e.g. '1.0.2')."
-    echo "  --sign: Signs and notarizes the installer package without building."
+    echo "  --build: Builds the client and its flat installer package."
+    echo "  --sign: Signs and notarizes the installer package."
 }
 
 # Parse arguments
@@ -23,6 +25,7 @@ while [[ $# -gt 0 ]]; do
     --sign)
         if [ -z "${2-}" ]; then
             echo "ERROR: --sign requires a package file as an argument."
+            usage
             exit 1
         fi
         pkgFile="$2"
@@ -45,17 +48,20 @@ done
 # 'version' argument is required
 if [ -z "${version-}" ]; then
     echo "ERROR: --version is required."
+    usage
     exit 1
 fi
 
 # At least one of 'sign' and 'build' arguments is required
 if [ -z "${BUILD-}" ] && [ -z "${SIGN-}" ]; then
     echo "ERROR: You should provide either --build or --sign or both."
+    usage
     exit 1
 fi
 
 readonly teamId="K762RM4LQ3"
 readonly developerIdApplication="Developer ID Application: Concordium Software Aps ($teamId)"
+readonly developerIdInstaller="Developer ID Installer: Concordium Software Aps ($teamId)"
 
 # Get the location of this script.
 macPackageDir="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
@@ -69,6 +75,7 @@ readonly binDir="$payloadDir/usr/local/bin"
 readonly libDir="$payloadDir/usr/local/lib"
 
 readonly pkgFile=${pkgFile-"$buildDir/concordium-client.pkg"}
+readonly signedPkgFile="${pkgFile%.*}-$version.pkg"
 
 ghcVersion="$(stack --stack-yaml "$clientDir/stack.yaml" ghc -- --version | cut -d' ' -f8)" # Get the GHC version used in Consensus.
 readonly ghcVersion
@@ -200,7 +207,6 @@ function signBinaries() {
     find "$payloadDir" \
         -type f \
         -execdir sudo codesign -f --options runtime -s "$developerIdApplication" {} \;
-    # -execdir sudo codesign -f --options runtime -s gdb_codesign {} \;
 
     logInfo "Done"
 }
@@ -208,11 +214,7 @@ function signBinaries() {
 # Signs the installer package with the developer certificate.
 function signInstallerPackage() {
     logInfo "Signing installer package..."
-
-    # Find and sign all the binaries and dylibs.
-    sudo codesign -f --options runtime -s "$developerIdApplication" "$pkgFile"
-    # sudo codesign -f --options runtime -s gdb_codesign "$pkgFile"
-
+    productSign --sign "$developerIdInstaller" "$pkgFile" "$signedPkgFile"
     logInfo "Done"
 }
 
@@ -238,6 +240,13 @@ function notarize() {
         --password "$APPLEIDPASS" \
         --team-id "$teamId" \
         --wait
+    logInfo "Done"
+}
+
+# Staple the notarization ticket onto the installer.
+function staple() {
+    logInfo "Stapling..."
+    xcrun stapler staple "$signedPkgFile"
     logInfo "Done"
 }
 
