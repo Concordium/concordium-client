@@ -147,9 +147,7 @@ executable middleware
   main-is: Main.hs
   other-modules:
       Api
-      Api.Types
       Config
-      Http
       Server
       Paths_concordium_client
   hs-source-dirs:

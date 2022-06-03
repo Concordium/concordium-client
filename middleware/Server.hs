@@ -2,7 +2,6 @@ module Server (module Server, addHeaders) where
 
 import           Control.Concurrent (forkIO)
 import           Control.Monad.Except
-import           Data.ByteString (ByteString)
 import           Data.Function ((&))
 import           Data.List.Split
 import qualified Data.Text as T
@@ -10,12 +9,7 @@ import           Network.Wai (Application, Middleware)
 import qualified Network.Wai.Handler.Warp as W
 import           Network.Wai.Middleware.AddHeaders (addHeaders)
 import           Network.Wai.Middleware.Cors (CorsResourcePolicy(..), cors)
-import qualified Network.Wai.Middleware.ForceSSL as M (forceSSL)
-import           Network.Wai.Middleware.Gzip (gzip, def)
-import           Network.Wai.Middleware.HttpAuth (basicAuth)
-import           Network.Wai.Middleware.Static (staticPolicy, policy, Policy)
 import           Network.Wai.Logger
-import           System.FilePath ((</>))
 import           Text.Read (readMaybe)
 import qualified Config
 import           Concordium.Client.GRPC
@@ -75,17 +69,6 @@ runHttp middlewares = do
 --    middlewares = compression . staticFiles "public" . allowCsrf . corsified
 --    runApp      = run port $ middlewares httpApp
 
-
-defaultMiddlewares :: Network.Wai.Application -> Network.Wai.Application
-defaultMiddlewares = compression . staticFiles "public" . allowCsrf . corsified
-
-
--- | Basic HTTP Auth
--- The following header will be set: @Access-Control-Allow-Headers: x-csrf-token@.
-auth :: ByteString -> ByteString -> Middleware
-auth username password = basicAuth (\u p -> pure $ u == username && p == password) "Authentication"
-
-
 -- | @x-csrf-token@ allowance.
 -- The following header will be set: @Access-Control-Allow-Headers: x-csrf-token@.
 allowCsrf :: Middleware
@@ -94,25 +77,6 @@ allowCsrf = addHeaders [("Access-Control-Allow-Headers", "x-csrf-token,authoriza
 -- | CORS middleware configured with 'appCorsResourcePolicy'.
 corsified :: Middleware
 corsified = cors (const $ Just appCorsResourcePolicy)
-
--- | Adds static files directory, i.e. `staticFiles "public"` to serve from public folder
--- | Uses `index.html` as the index file on directory listing, i.e. `public/`
-staticFiles :: String -> Middleware
-staticFiles path = staticPolicy $ addBaseWithIndex path "index.html"
-
--- | Middleware to route static files and look for a default on index
-addBaseWithIndex :: String -> String -> Policy
-addBaseWithIndex base fallback = policy
-  ( \req -> case req of
-    "" -> Just (base </> fallback)
-    _  -> Just (base </> req)
-  )
-
-compression :: Middleware
-compression = gzip def
-
-forceSSL :: Middleware
-forceSSL = M.forceSSL
 
 -- | Cors resource policy to be used with 'corsified' middleware.
 --
