@@ -256,11 +256,11 @@ printAccountInfo addr a verbose showEncrypted mEncKey= do
 
 -- |Print a versioned credential. This only prints the credential value, and not the
 -- associated version.
-printVersionedCred :: (IDTypes.CredentialIndex, (Versioned IDTypes.AccountCredential)) -> Printer
+printVersionedCred :: Show credTy => (IDTypes.CredentialIndex, (Versioned (IDTypes.AccountCredential' credTy))) -> Printer
 printVersionedCred (ci, vc) = printCred ci (vValue vc)
 
 -- |Print the registration id, expiry date, and revealed attributes of a credential.
-printCred :: IDTypes.CredentialIndex -> IDTypes.AccountCredential -> Printer
+printCred :: Show credTy => IDTypes.CredentialIndex -> IDTypes.AccountCredential' credTy -> Printer
 printCred ci c =
   tell [ printf "* %s:" (show $ IDTypes.credId c)
        , printf "  - Index: %s" (show ci)
