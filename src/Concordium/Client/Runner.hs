@@ -1440,7 +1440,7 @@ processAccountCmd action baseCfgDir verbose backend =
         -- derive the address of the account from the the initial credential
         resolvedAddress <- case Map.lookup (ID.CredentialIndex 0) (Types.aiAccountCredentials accInfo) of
                             Nothing -> logFatal [printf "No initial credential found for the account identified by '%s'" accountIdentifier ]
-                            Just v -> return $ ID.addressFromRegId $ ID.credId $ vValue v
+                            Just v -> return $ ID.addressFromRegIdRaw $ ID.credId $ vValue v
         -- reverse lookup local account names
         let na = NamedAddress {naNames = findAllNamesFor (bcAccountNameMap baseCfg) resolvedAddress, naAddr = resolvedAddress}
         
