@@ -95,7 +95,7 @@ exampleDelegatorStakingInfo pc = AccountStakingDelegated
   }
 
 -- The credentials will be given indices 0, 1, ..
-exampleAccountInfoResult :: AccountStakingInfo -> [IDTypes.AccountCredential] -> AccountInfo
+exampleAccountInfoResult :: AccountStakingInfo -> [IDTypes.RawAccountCredential] -> AccountInfo
 exampleAccountInfoResult staking cs = AccountInfo
                                 { aiAccountAmount = Types.Amount 1
                                 , aiAccountNonce = Types.Nonce 2
@@ -114,7 +114,7 @@ exampleAccountInfoResult staking cs = AccountInfo
                                 , aiAccountAddress = exampleAddress1
                                 }
 
-exampleCredentials :: IDTypes.Policy -> IDTypes.AccountCredential
+exampleCredentials :: IDTypes.Policy -> IDTypes.RawAccountCredential
 exampleCredentials p = IDTypes.NormalAC (IDTypes.CredentialDeploymentValues
                        {IDTypes.cdvPublicKeys = acc
                        , IDTypes.cdvCredId = regId
