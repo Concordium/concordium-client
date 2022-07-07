@@ -250,6 +250,25 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
 
   it "ByteList" $ do
     fromToJSONSucceed (ByteList One) $ AE.String "00000000"
+    fromToJSONSucceed (ByteList One) $ AE.String "ffffffff"
+    fromToJSONSucceed (ByteList One) $ AE.String "123456789abdef"
+    fromToJSONSucceed (ByteList One) $ AE.String ""
+    fromToJSONSucceed (ByteList One) $ AE.String $ Text.replicate 255 "10"
+
+    fromToJSONFail (ByteList One) $ AE.String $ Text.replicate 256 "10" -- Too long
+    fromToJSONFail (ByteList One) $ AE.String "0123456789abdef" -- Invalid base16 Uneven number of characters
+
+
+  it "ByteArray" $ do
+    fromToJSONSucceed (ByteArray 4) $ AE.String "00000000"
+    fromToJSONSucceed (ByteArray 4) $ AE.String "ffffffff"
+    fromToJSONSucceed (ByteArray 7) $ AE.String "123456789abdef"
+    fromToJSONSucceed (ByteArray 0) $ AE.String ""
+    fromToJSONSucceed (ByteArray 256) $ AE.String $ Text.replicate 256 "10"
+
+    fromToJSONFail (ByteArray 2) $ AE.String "abcdef" -- Too long
+    fromToJSONFail (ByteArray 2) $ AE.String "ab" -- Too few
+    fromToJSONFail (ByteArray 8) $ AE.String "0123456789abdef" -- Invalid base16 Uneven number of characters
 
 
   where idx :: Word64

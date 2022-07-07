@@ -36,7 +36,6 @@ import Data.Time.Format.ISO8601 (iso8601ParseM, iso8601Show)
 import Data.Time (addUTCTime, diffUTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Ratio
-import Numeric (showHex)
 import qualified Data.Bits as Bits
 import Text.Read (readMaybe)
 import GHC.Integer (remInteger, modInteger)
@@ -139,7 +138,7 @@ getJSONUsingSchema typ = case typ of
     return $ AE.toJSON $ toHex bytes
 
   where
-    toHex = BS.foldr showHex ""
+    toHex = Text.decodeUtf8 . BS16.encode
     getFieldsAsJSON :: Fields -> S.Get AE.Value
     getFieldsAsJSON fields = case fields of
       Named pairs -> AE.toJSON . Map.fromList <$> mapM getPair pairs
@@ -337,19 +336,20 @@ putJSONUsingSchema typ json = case (typ, json) of
           return $ putByte <> remainingBytes
 
   (ByteList sl, AE.String str) -> do
-    bytes <- BS16.decode (Text.encodeUtf8 str)
-    let len = fromIntegral $ length (BS.unpack bytes)
+    bytes <- BS16.decode $ Text.encodeUtf8 str
+    let len = fromIntegral $ BS.length bytes
     let maxLen = maxSizeLen sl
-    when (len > maxLen) $ Left $ tooLongError "ByteList" maxLen len
+    when (len > maxLen) $ Left $ tooLongError "ByteList" (fromIntegral maxLen) (fromIntegral len)
     let putLen = putLenWithSizeLen sl $ fromIntegral len
-    return $ putLen <> S.put bytes
+    let putBytes = mapM_ S.put $ BS.unpack bytes
+    return $ putLen <> putBytes
 
   (ByteArray expectedLen, AE.String str) -> do
     bytes <- BS16.decode (Text.encodeUtf8 str)
-    let actualLen = fromIntegral $ length (BS.unpack bytes)
+    let actualLen = fromIntegral $ BS.length bytes
     unless (actualLen == expectedLen) $ addTraceInfo
       $ Left [i|Expected length is #{expectedLen}, but actual length is #{actualLen}.|]
-    return $ S.put bytes
+    return $ mapM_ S.put $ BS.unpack bytes
 
   (type_, value) -> Left [i|Expected value of type #{showCompactPrettyJSON type_}, but got: #{showCompactPrettyJSON value}.|]
 
