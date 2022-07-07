@@ -34,7 +34,7 @@ import Data.String.Interpolate (i)
 import Data.Text (Text)
 import qualified Data.Text.Encoding as Text
 import qualified Data.Vector as V
-import Data.Word (Word8, Word32, Word64)
+import Data.Word (Word8, Word16, Word32, Word64)
 import GHC.Generics
 import Data.Maybe(isJust)
 
@@ -94,8 +94,32 @@ data ModuleSchema
   deriving (Eq, Show, Generic)
 
 -- |Create a getter based on the wasm version.
+-- Will first attempt to parse module schema as versioned and if it fails,
+-- it will attempt parsing based on the wasmVersion.
 getModuleSchema :: Wasm.WasmVersion -> S.Get ModuleSchema
-getModuleSchema wasmVersion = S.label "ModuleSchema" $
+getModuleSchema wasmVersion = S.label "ModuleSchema" $ do
+  prefix :: Word16 <- S.lookAhead S.get
+  if prefix /= maxBound then
+    getVersionedModuleSchema
+  else
+    getUnversionedModuleSchema wasmVersion
+
+-- |Getter for module schema with magic prefix and version.
+getVersionedModuleSchema :: S.Get ModuleSchema
+getVersionedModuleSchema = S.label "ModuleSchema" $ do
+  prefix :: Word16 <- S.get
+  if prefix /= maxBound then
+    fail "Schema is not prefixed with two full bytes"
+  else do
+    version :: Word8 <- S.get
+    case version of
+      0 -> getUnversionedModuleSchema Wasm.V0
+      1 -> getUnversionedModuleSchema Wasm.V1
+      _ -> fail "Unsupported schema version"
+
+-- |Create a getter based on the wasm version.
+getUnversionedModuleSchema :: Wasm.WasmVersion -> S.Get ModuleSchema
+getUnversionedModuleSchema wasmVersion = S.label "ModuleSchema" $
   case wasmVersion of
     Wasm.V0 -> ModuleSchemaV0 <$> getMapOfWithSizeLen Four getText S.get
     Wasm.V1 -> ModuleSchemaV1 <$> getMapOfWithSizeLen Four getText S.get
@@ -238,6 +262,10 @@ data SchemaType =
   | Int128
   | ContractName SizeLength
   | ReceiveName SizeLength
+  | ULeb128 Word32
+  | ILeb128 Word32
+  | ByteList SizeLength
+  | ByteArray Word32
   deriving (Eq, Generic, Show)
 
 instance Hashable SchemaType
@@ -279,6 +307,10 @@ instance AE.ToJSON SchemaType where
     Int128 -> AE.String "<Int128>"
     ContractName _ -> AE.object [ "contract" .= AE.String "<String>" ]
     ReceiveName _ -> AE.object [ "contract" .= AE.String "<String>", "func" .= AE.String "<String>" ]
+    ULeb128 _ -> AE.String "<String with unsigned integer>"
+    ILeb128 _ -> AE.String "<String with signed integer>"
+    ByteList _ -> AE.String "<String with lowercase hex>"
+    ByteArray _ -> AE.String "<String with lowercase hex>"
     where toJsonArray = AE.Array . V.fromList
 
 instance S.Serialize SchemaType where
@@ -312,6 +344,10 @@ instance S.Serialize SchemaType where
       24 -> S.label "Int128"  $ pure Int128
       25 -> S.label "ContractName" $ ContractName <$> S.get
       26 -> S.label "ReceiveName"  $ ReceiveName <$> S.get
+      27 -> S.label "ULeb128" $ ULeb128 <$> S.get
+      28 -> S.label "ILeb128"  $ ILeb128 <$> S.get
+      29 -> S.label "ByteList" $ ByteList <$> S.get
+      30 -> S.label "ByteArray"  $ ByteArray <$> S.get
       x  -> fail [i|Invalid SchemaType tag: #{x}|]
 
   put typ = case typ of
@@ -342,6 +378,10 @@ instance S.Serialize SchemaType where
     Int128  -> S.putWord8 24
     ContractName sl     -> S.putWord8 25 <> S.put sl
     ReceiveName sl      -> S.putWord8 26 <> S.put sl
+    ULeb128 sl          -> S.putWord8 27 <> S.put sl
+    ILeb128 sl          -> S.putWord8 28 <> S.put sl
+    ByteList sl         -> S.putWord8 29 <> S.put sl
+    ByteArray sl        -> S.putWord8 30 <> S.put sl
 
 -- |Parallel to SizeLength defined in contracts-common (Rust).
 -- Must stay in sync.
@@ -393,7 +433,7 @@ getEmbeddedSchemaAndExportsFromModule wasmVersion = do
   go (Nothing, [])
 
   where
-    schemaIdentifier = case wasmVersion of
+    schemaIdentifierUnversioned = case wasmVersion of
         Wasm.V0 -> "concordium-schema-v1"
         Wasm.V1 -> "concordium-schema-v2"
 
@@ -419,12 +459,12 @@ getEmbeddedSchemaAndExportsFromModule wasmVersion = do
             -- Custom section (which is where we store the schema).
             0 -> do
               name <- S.label "Custom Section Name" getTextWithLEB128Len
-              if name == schemaIdentifier
+              if name == schemaIdentifierUnversioned || name == "concordium-schema"
               then
                 if isJust mSchema
-                then fail [i|Module cannot contain multiple custom sections named '#{schemaIdentifier}'.|]
+                then fail [i|Module cannot contain multiple custom sections named 'concordium-schema' or '#{schemaIdentifierUnversioned}'.|]
                 else do
-                  schemaFound <- getModuleSchema wasmVersion
+                  schemaFound <- if name == "concordium-schema" then getVersionedModuleSchema else getUnversionedModuleSchema wasmVersion
                   -- Return if both the schema and funcNames are found, otherwise keep looking for the funcNames.
                   if not $ null mFuncNames
                     then return (Just schemaFound, mFuncNames)

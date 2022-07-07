@@ -19,6 +19,7 @@ import qualified Data.Aeson.Types as AE
 import Data.Bifunctor (first)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Base16 as BS16
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import Data.Scientific (Scientific, isFloating, toBoundedInteger)
@@ -35,6 +36,10 @@ import Data.Time.Format.ISO8601 (iso8601ParseM, iso8601Show)
 import Data.Time (addUTCTime, diffUTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Ratio
+import Numeric (showHex)
+import qualified Data.Bits as Bits
+import Text.Read (readMaybe)
+import GHC.Integer (remInteger, modInteger)
 
 -- |Serialize JSON parameter to binary using `SchemaType` or fail with an error message.
 encodeParameter :: SchemaType -> AE.Value -> Either String ByteString
@@ -96,8 +101,45 @@ getJSONUsingSchema typ = case typ of
       Just idx -> let (contractName, funcNameWithDot) = Text.splitAt idx rawName
                       funcName = Text.tail funcNameWithDot -- Safe, since we know it contains a dot.
                   in return $ AE.object ["contract" .= contractName, "func" .= funcName]
+  ULeb128 constraint -> AE.toJSON . show <$> leb128 0
+    where
+      leb128 :: Int -> S.Get Integer
+      leb128 byteCount = do
+        unless (byteCount < fromIntegral constraint) $ fail "Leb128 encoding violated the constraint on the number of bytes"
+        byte <- S.getWord8
+        let value = fromIntegral (Bits.clearBit byte 7)
+        let moreBytes = Bits.testBit byte 7
+        if moreBytes
+          then do
+            next <- leb128 (byteCount + 1)
+            return $ value + 128 * next
+          else return value
+  ILeb128 constraint -> do
+    AE.toJSON . show <$> ileb128 0 0
+    where
+      ileb128 :: Int -> Integer -> S.Get Integer
+      ileb128 byteCount acc = do
+        unless (byteCount < fromIntegral constraint) $ fail "Leb128 encoding violated the constraint on the number of bytes"
+        byte <- S.getWord8
+        let byteValue = fromIntegral (Bits.clearBit byte 7)
+        let value = acc + (2 ^ (7 * byteCount)) * byteValue
+        let moreBytes = Bits.testBit byte 7
+        if moreBytes
+          then do
+            ileb128 (byteCount + 1) value
+          else let isNegative = Bits.testBit byte 6
+               in return $ if isNegative
+                             then value - 2 ^ ((byteCount + 1) * 7)
+                             else value
+  ByteList sl -> do
+    byteList <- getListOfWithSizeLen sl S.getWord8
+    return $ AE.toJSON $ toHex $ BS.pack byteList
+  ByteArray len -> do
+    bytes <- S.getByteString (fromIntegral len)
+    return $ AE.toJSON $ toHex bytes
 
   where
+    toHex = BS.foldr showHex ""
     getFieldsAsJSON :: Fields -> S.Get AE.Value
     getFieldsAsJSON fields = case fields of
       Named pairs -> AE.toJSON . Map.fromList <$> mapM getPair pairs
@@ -259,6 +301,55 @@ putJSONUsingSchema typ json = case (typ, json) of
         let putBytes = mapM_ S.put bytes
         pure $ putLen <> putBytes
       _ -> Left [i|Expected object with fields 'contract' and 'func' of type String, but got: #{showPrettyJSON obj}.|]
+  (ULeb128 constraint, AE.String str) -> do
+    value :: Integer <- maybe (Left [i|Expected string containing an unsigned integer, but got: #{showPrettyJSON str}.|]) Right $ readMaybe $ Text.unpack str
+    unless (value >= 0) (Left [i|Expected string containing a positive integer, but got: #{showPrettyJSON str}.|])
+    uleb128 0 value
+    where
+      uleb128 :: Int -> Integer -> Either String S.Put
+      uleb128 byteCount value = do
+        unless (byteCount < fromIntegral constraint) (Left [i|The encoding of the integer is more than #{show constraint} and violates the constraint.|])
+        let byte :: Word8 = fromIntegral $ value `remInteger` 128
+        let remainingValue = value `Bits.shiftR` 7
+        let noMore = remainingValue == 0
+        if noMore then
+          return $ S.putWord8 byte
+        else do
+          let putByte = S.putWord8 $ byte `Bits.setBit` 7
+          remainingBytes <- uleb128 (byteCount + 1) remainingValue
+          return $ putByte <> remainingBytes
+
+  (ILeb128 constraint, AE.String str) -> do
+    value :: Integer <- maybe (Left [i|Expected string containing an unsigned integer, but got: #{showPrettyJSON str}.|]) Right $ readMaybe $ Text.unpack str
+    ileb128 0 value
+    where
+      ileb128 :: Int -> Integer -> Either String S.Put
+      ileb128 byteCount value = do
+        unless (byteCount < fromIntegral constraint) (Left [i|The encoding of the integer is more than #{show constraint} and violates the constraint.|])
+        let byte :: Word8 = fromIntegral $ value `modInteger` 128
+        let remainingValue = value `Bits.shiftR` 7
+        let noMore = (remainingValue == 0 && not (byte `Bits.testBit` 6)) || (remainingValue == -1 && byte `Bits.testBit` 6)
+        if noMore then
+          return $ S.putWord8 byte
+        else do
+          let putByte = S.putWord8 $ byte `Bits.setBit` 7
+          remainingBytes <- ileb128 (byteCount + 1) remainingValue
+          return $ putByte <> remainingBytes
+
+  (ByteList sl, AE.String str) -> do
+    bytes <- BS16.decode (Text.encodeUtf8 str)
+    let len = fromIntegral $ length (BS.unpack bytes)
+    let maxLen = maxSizeLen sl
+    when (len > maxLen) $ Left $ tooLongError "ByteList" maxLen len
+    let putLen = putLenWithSizeLen sl $ fromIntegral len
+    return $ putLen <> S.put bytes
+
+  (ByteArray expectedLen, AE.String str) -> do
+    bytes <- BS16.decode (Text.encodeUtf8 str)
+    let actualLen = fromIntegral $ length (BS.unpack bytes)
+    unless (actualLen == expectedLen) $ addTraceInfo
+      $ Left [i|Expected length is #{expectedLen}, but actual length is #{actualLen}.|]
+    return $ S.put bytes
 
   (type_, value) -> Left [i|Expected value of type #{showCompactPrettyJSON type_}, but got: #{showCompactPrettyJSON value}.|]
 

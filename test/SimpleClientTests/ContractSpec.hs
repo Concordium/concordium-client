@@ -24,7 +24,7 @@ contractSpec = describe "contract" $ do
 printParameterSpec :: Spec
 printParameterSpec = describe "serialize JSON params to bytes and deserialize to JSON works for:" $ do
   it "Unit" $ do
-    fromToJSONSucceed (Unit) $ AE.Null
+    fromToJSONSucceed Unit AE.Null
 
   it "Bool" $ do
     fromToJSONSucceed Bool $ AE.Bool False
@@ -220,6 +220,37 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
                                                     , "func" .= AE.String "funcName"
                                                     , "extra" .= AE.String "extra"]
     fromToJSONFail (ReceiveName One) $ object [ "contract" .= AE.String "contrName.withDot", "func" .= AE.String "funcName" ]
+
+  it "ULeb128" $ do
+    fromToJSONSucceed (ULeb128 1) $ AE.String "0"
+    fromToJSONSucceed (ULeb128 1) $ AE.String "10"
+    fromToJSONSucceed (ULeb128 2) $ AE.String "129"
+    fromToJSONSucceed (ULeb128 10) $ AE.String "18446744073709551615"
+    fromToJSONSucceed (ULeb128 37) $ AE.String "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+
+    fromToJSONFail (ULeb128 9) $ AE.String "18446744073709551615" -- Byte constraint violation
+
+
+  it "ILeb128" $ do
+    fromToJSONSucceed (ILeb128 1) $ AE.String "0"
+    fromToJSONSucceed (ILeb128 1) $ AE.String "10"
+    fromToJSONSucceed (ILeb128 2) $ AE.String "129"
+    fromToJSONSucceed (ILeb128 10) $ AE.String "18446744073709551615"
+    fromToJSONSucceed (ILeb128 37) $ AE.String "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+
+    fromToJSONFail (ILeb128 9) $ AE.String "18446744073709551615" -- Byte constraint violation
+
+    fromToJSONSucceed (ILeb128 1) $ AE.String "-1"
+    fromToJSONSucceed (ILeb128 1) $ AE.String "-10"
+    fromToJSONSucceed (ILeb128 2) $ AE.String "-129"
+    fromToJSONSucceed (ILeb128 10) $ AE.String "-18446744073709551615"
+    fromToJSONSucceed (ILeb128 37) $ AE.String "-115792089237316195423570985008687907853269984665640564039457584007913129639935"
+
+    fromToJSONFail (ILeb128 9) $ AE.String "-18446744073709551615" -- Byte constraint violation
+
+  it "ByteList" $ do
+    fromToJSONSucceed (ByteList One) $ AE.String "00000000"
+
 
   where idx :: Word64
         idx = 42
