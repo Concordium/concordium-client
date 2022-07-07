@@ -9,6 +9,8 @@
   the wallet-proxy.
 - Fix help text of `baker add` and `baker configure` commands that referred to
   `raw GetChainParameters`.
+- Add support for contract schemas containing version.
+- Add support for the contract schema types, ULeb128, ILeb128, ByteList and ByteArray.
 
 ## 4.0.2
 
