@@ -229,7 +229,8 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
     fromToJSONSucceed (ULeb128 37) $ AE.String "115792089237316195423570985008687907853269984665640564039457584007913129639935"
 
     fromToJSONFail (ULeb128 9) $ AE.String "18446744073709551615" -- Byte constraint violation
-
+    fromToJSONFail (ULeb128 2) $ AE.String "-123" -- Negative number 
+    fromToJSONFail (ULeb128 2) $ AE.String "ab" -- Not a number
 
   it "ILeb128" $ do
     fromToJSONSucceed (ILeb128 1) $ AE.String "0"
@@ -247,6 +248,7 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
     fromToJSONSucceed (ILeb128 37) $ AE.String "-115792089237316195423570985008687907853269984665640564039457584007913129639935"
 
     fromToJSONFail (ILeb128 9) $ AE.String "-18446744073709551615" -- Byte constraint violation
+    fromToJSONFail (ILeb128 2) $ AE.String "[]" -- Not a number
 
   it "ByteList" $ do
     fromToJSONSucceed (ByteList One) $ AE.String "00000000"
@@ -257,7 +259,7 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
 
     fromToJSONFail (ByteList One) $ AE.String $ Text.replicate 256 "10" -- Too long
     fromToJSONFail (ByteList One) $ AE.String "0123456789abdef" -- Invalid base16 Uneven number of characters
-
+    fromToJSONFail (ByteList One) $ AE.String "abcdefghjk" -- Not hex
 
   it "ByteArray" $ do
     fromToJSONSucceed (ByteArray 4) $ AE.String "00000000"
@@ -269,6 +271,7 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
     fromToJSONFail (ByteArray 2) $ AE.String "abcdef" -- Too long
     fromToJSONFail (ByteArray 2) $ AE.String "ab" -- Too few
     fromToJSONFail (ByteArray 8) $ AE.String "0123456789abdef" -- Invalid base16 Uneven number of characters
+    fromToJSONFail (ByteArray 2) $ AE.String "efgh" -- Not hex
 
 
   where idx :: Word64
