@@ -111,7 +111,7 @@ getJSONUsingSchema typ = case typ of
         if moreBytes
           then do
             next <- leb128 (byteCount + 1)
-            return $ value + 128 * next
+            return $! value + 128 * next
           else return value
   ILeb128 constraint -> do
     AE.toJSON . show <$> ileb128 0 0
@@ -127,9 +127,9 @@ getJSONUsingSchema typ = case typ of
           then do
             ileb128 (byteCount + 1) value
           else let isNegative = Bits.testBit byte 6
-               in return $ if isNegative
-                             then value - 2 ^ ((byteCount + 1) * 7)
-                             else value
+               in return $! if isNegative
+                              then value - 2 ^ ((byteCount + 1) * 7)
+                              else value
   ByteList sl -> do
     byteList <- getListOfWithSizeLen sl S.getWord8
     return $ AE.toJSON $ toHex $ BS.pack byteList
@@ -138,6 +138,7 @@ getJSONUsingSchema typ = case typ of
     return $ AE.toJSON $ toHex bytes
 
   where
+    -- Notice we can safely use the partial function decodeUft8, since the output of BS16.encode is always a valid UFT8 string
     toHex = Text.decodeUtf8 . BS16.encode
     getFieldsAsJSON :: Fields -> S.Get AE.Value
     getFieldsAsJSON fields = case fields of
@@ -307,7 +308,7 @@ putJSONUsingSchema typ json = case (typ, json) of
     where
       uleb128 :: Int -> Integer -> Either String S.Put
       uleb128 byteCount value = do
-        unless (byteCount < fromIntegral constraint) (Left [i|The encoding of the integer is more than #{show constraint} and violates the constraint.|])
+        unless (byteCount < fromIntegral constraint) (Left [i|The encoding of the unsigned integer uses more than #{show constraint} bytes and violates the constraint.|])
         let byte :: Word8 = fromIntegral $ value `remInteger` 128
         let remainingValue = value `Bits.shiftR` 7
         let noMore = remainingValue == 0
@@ -319,12 +320,12 @@ putJSONUsingSchema typ json = case (typ, json) of
           return $ putByte <> remainingBytes
 
   (ILeb128 constraint, AE.String str) -> do
-    value :: Integer <- maybe (Left [i|Expected string containing an unsigned integer, but got: #{showPrettyJSON str}.|]) Right $ readMaybe $ Text.unpack str
+    value :: Integer <- maybe (Left [i|Expected string containing a signed integer, but got: #{showPrettyJSON str}.|]) Right $ readMaybe $ Text.unpack str
     ileb128 0 value
     where
       ileb128 :: Int -> Integer -> Either String S.Put
       ileb128 byteCount value = do
-        unless (byteCount < fromIntegral constraint) (Left [i|The encoding of the integer is more than #{show constraint} and violates the constraint.|])
+        unless (byteCount < fromIntegral constraint) (Left [i|The encoding of the signed integer uses more than #{show constraint} bytes and violates the constraint.|])
         let byte :: Word8 = fromIntegral $ value `modInteger` 128
         let remainingValue = value `Bits.shiftR` 7
         let noMore = (remainingValue == 0 && not (byte `Bits.testBit` 6)) || (remainingValue == -1 && byte `Bits.testBit` 6)

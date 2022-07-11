@@ -94,12 +94,12 @@ data ModuleSchema
   deriving (Eq, Show, Generic)
 
 -- |Create a getter based on the wasm version.
--- Will first attempt to parse module schema as versioned and if it fails,
+-- Will first attempt to parse the module schema as versioned and if it fails,
 -- it will attempt parsing based on the wasmVersion.
 getModuleSchema :: Wasm.WasmVersion -> S.Get ModuleSchema
 getModuleSchema wasmVersion = S.label "ModuleSchema" $ do
   prefix :: Word16 <- S.lookAhead S.get
-  if prefix /= maxBound then
+  if prefix == maxBound then
     getVersionedModuleSchema
   else
     getUnversionedModuleSchema wasmVersion
@@ -109,13 +109,13 @@ getVersionedModuleSchema :: S.Get ModuleSchema
 getVersionedModuleSchema = S.label "ModuleSchema" $ do
   prefix :: Word16 <- S.get
   if prefix /= maxBound then
-    fail "Schema is not prefixed with two full bytes"
+    fail "Failed parsing versioned schema. A versioned schema must be prefixed with two maxed-out bytes."
   else do
     version :: Word8 <- S.get
     case version of
       0 -> getUnversionedModuleSchema Wasm.V0
       1 -> getUnversionedModuleSchema Wasm.V1
-      _ -> fail "Unsupported schema version"
+      v -> fail $ "Unsupported schema version: " ++ show v
 
 -- |Create a getter based on the wasm version.
 getUnversionedModuleSchema :: Wasm.WasmVersion -> S.Get ModuleSchema
