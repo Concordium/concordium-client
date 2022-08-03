@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 4.0.4
+
 - Add support for contract schemas containing the version.
 - Add support for the contract schema types, ULeb128, ILeb128, ByteList and ByteArray.
 
