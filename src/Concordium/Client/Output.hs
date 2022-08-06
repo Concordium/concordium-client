@@ -719,11 +719,6 @@ showRejectReason verbose = \case
   Types.RejectedReceive{..} ->
     let (contractName, funcName) = Wasm.contractAndFunctionName receiveName
     in [i|'#{funcName}' in '#{contractName}' at #{showCompactPrettyJSON contractAddress} failed with code #{rejectReason}|]
-  Types.NonExistentRewardAccount a ->
-    if verbose then
-      printf "account '%s' does not exist (tried to set baker reward account)" (show a)
-    else
-      "account does not exist"
   Types.InvalidProof ->
     "proof that baker owns relevant private keys is not valid"
   Types.DuplicateAggregationKey k ->

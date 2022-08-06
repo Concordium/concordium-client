@@ -50,14 +50,14 @@ To build the tool from source, you need the following prerequisites:
     - Unix: `curl -sSL https://get.haskellstack.org/ | sh`
     - Windows: [Follow the Stack install guide](https://docs.haskellstack.org/en/stable/install_and_upgrade/).
 
-- Install Rust version 1.53+:
+- Install Rust version 1.62+:
   - Unix: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
   - Windows: [Follow the Rust install
      guide](https://www.rust-lang.org/tools/install)
     - Use the `x86_64-pc-windows-gnu` toolchain by choosing it during
        installation or by running `rustup toolchain default
        stable-x86_64-pc-windows-gnu`.
-  - *Recommended after installing: Set the default Rust version to 1.53 by running `rustup default 1.53`*.
+  - *Recommended after installing: Set the default Rust version to 1.62 by running `rustup default 1.62`*.
 
 - Install the [protoc](https://github.com/google/proto-lens/blob/master/docs/installing-protoc.md) tool for generating protobuf files:
   - MacOS: `brew install protobuf`

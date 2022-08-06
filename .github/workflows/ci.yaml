@@ -31,7 +31,7 @@ on:
   workflow_dispatch: # allow manual trigger
 
 env:
-  RUST: 1.53
+  RUST: 1.62
   GHC: 9.0.2
 
 jobs:

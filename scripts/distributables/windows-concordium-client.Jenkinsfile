@@ -22,7 +22,7 @@ pipeline {
                     fi    
 
                     # Ensure correct rust env
-                    rustup default 1.53-x86_64-pc-windows-gnu
+                    rustup default 1.62-x86_64-pc-windows-gnu
 
                     # Build project
                     stack build --force-dirty --flag concordium-client:-middleware
