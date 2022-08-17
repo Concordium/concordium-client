@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix bug in contract schema parsing caused by endiannes confusion.
+
 ## 4.0.4
 
 - Add support for contract schemas containing the version.

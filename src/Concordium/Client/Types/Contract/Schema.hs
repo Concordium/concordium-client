@@ -344,10 +344,10 @@ instance S.Serialize SchemaType where
       24 -> S.label "Int128"  $ pure Int128
       25 -> S.label "ContractName" $ ContractName <$> S.get
       26 -> S.label "ReceiveName"  $ ReceiveName <$> S.get
-      27 -> S.label "ULeb128" $ ULeb128 <$> S.get
-      28 -> S.label "ILeb128"  $ ILeb128 <$> S.get
+      27 -> S.label "ULeb128" $ ULeb128 <$> S.getWord32le
+      28 -> S.label "ILeb128"  $ ILeb128 <$> S.getWord32le
       29 -> S.label "ByteList" $ ByteList <$> S.get
-      30 -> S.label "ByteArray"  $ ByteArray <$> S.get
+      30 -> S.label "ByteArray"  $ ByteArray <$> S.getWord32le
       x  -> fail [i|Invalid SchemaType tag: #{x}|]
 
   put typ = case typ of
@@ -378,10 +378,10 @@ instance S.Serialize SchemaType where
     Int128  -> S.putWord8 24
     ContractName sl     -> S.putWord8 25 <> S.put sl
     ReceiveName sl      -> S.putWord8 26 <> S.put sl
-    ULeb128 sl          -> S.putWord8 27 <> S.put sl
-    ILeb128 sl          -> S.putWord8 28 <> S.put sl
+    ULeb128 sl          -> S.putWord8 27 <> S.putWord32le sl
+    ILeb128 sl          -> S.putWord8 28 <> S.putWord32le sl
     ByteList sl         -> S.putWord8 29 <> S.put sl
-    ByteArray sl        -> S.putWord8 30 <> S.put sl
+    ByteArray sl        -> S.putWord8 30 <> S.putWord32le sl
 
 -- |Parallel to SizeLength defined in contracts-common (Rust).
 -- Must stay in sync.
