@@ -12,6 +12,7 @@ module Concordium.Client.Types.Contract.Schema(
   decodeEmbeddedSchema,
   decodeEmbeddedSchemaAndExports,
   decodeModuleSchema,
+  decodeVersionedModuleSchema,
   getListOfWithKnownLen,
   getListOfWithSizeLen,
   lookupFunctionSchema,
@@ -45,6 +46,10 @@ decodeEmbeddedSchema = fmap fst . decodeEmbeddedSchemaAndExports
 -- |Decode a `ModuleSchema`.
 decodeModuleSchema :: Wasm.WasmVersion -> BS.ByteString -> Either String ModuleSchema
 decodeModuleSchema wasmVersion = S.runGet $ getModuleSchema wasmVersion
+
+-- |Decode a `ModuleSchema` that is explicitly versioned.
+decodeVersionedModuleSchema :: BS.ByteString -> Either String ModuleSchema
+decodeVersionedModuleSchema = S.runGet getVersionedModuleSchema
 
 -- |Try to find an embedded schema and a list of exported function names and decode them.
 decodeEmbeddedSchemaAndExports :: Wasm.WasmModule -> Either String (Maybe ModuleSchema, [Text])

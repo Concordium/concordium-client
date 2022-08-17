@@ -242,6 +242,7 @@ test-suite concordium-client-test
       SimpleClientTests.LogSpec
       SimpleClientTests.ParseSpec
       SimpleClientTests.QueryTransaction
+      SimpleClientTests.SchemaParsingSpec
       SimpleClientTests.TransactionSpec
       Paths_concordium_client
   hs-source-dirs:
