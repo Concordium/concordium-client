@@ -11,6 +11,7 @@ import SimpleClientTests.BlockSpec
 import SimpleClientTests.LogSpec
 import SimpleClientTests.ParseSpec
 import SimpleClientTests.BackupSpec
+import SimpleClientTests.SchemaParsingSpec
 
 tests :: Spec
 tests = do
@@ -23,3 +24,4 @@ tests = do
   blockSpec
   logSpec
   parseSpec
+  schemaParsingSpec
