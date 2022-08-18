@@ -12,8 +12,11 @@ import Concordium.Client.Types.Contract.Schema
 import Test.Hspec
 import Test.HUnit
 
--- Test that parsing a parameter that contains a set, a 32-byte array and an
--- enum works correctly.
+-- Test that parsing a parameter that contains a
+-- - ULEB128 value in the amount field.
+-- - a set of 32-byte bytearrays
+-- - an Option<32-byte bytearray> value
+-- works correctly.
 schemaParsingSpec :: Spec
 schemaParsingSpec = specify "Parse schema" $ do
   schemaBytes <- BS.readFile "test/data/schema0.schema"
