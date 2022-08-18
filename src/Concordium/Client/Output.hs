@@ -362,12 +362,12 @@ showContractFuncV0 funcName mParamSchema = case mParamSchema of
   Nothing -> [i|- #{funcName}|]
   Just paramSchema -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON paramSchema}|]
 
-showContractFuncV1 :: Text -> Maybe CS.FunctionSchema -> String
+showContractFuncV1 :: Text -> Maybe CS.FunctionSchemaV1 -> String
 showContractFuncV1 funcName mFuncSchema = case mFuncSchema of
   Nothing -> [i|- #{funcName}|]
   Just (CS.Parameter paramSchema) -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON paramSchema}|]
   Just (CS.ReturnValue rvSchema) -> [i|- #{funcName}\n    Return value:\n#{indentBy 8 $ showPrettyJSON rvSchema}|]
-  Just CS.Both{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fsParameter}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fsReturnValue}|]
+  Just CS.Both{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fs1Parameter}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs1ReturnValue}|]
 
 -- |Print module inspect info, i.e., the named moduleRef and its included contracts.
 -- If the init or receive signatures for a contract exist in the schema, they are also printed.
@@ -423,7 +423,7 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
                                                           ++ showReceives (sortOn fst . Map.toList $ csv1ReceiveSigs)
                                                           ++ go remaining
 
-            showReceives :: [(Text, Maybe CS.FunctionSchema)] -> [String]
+            showReceives :: [(Text, Maybe CS.FunctionSchemaV1)] -> [String]
             showReceives [] = []
             showReceives ((fname, mSchema):remaining) = indentBy 4 (showContractFuncV1 fname mSchema) : showReceives remaining
 

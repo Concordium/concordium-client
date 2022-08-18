@@ -68,8 +68,8 @@ addSchemaData cInfo@ContractInfoV1{..} moduleSchema =
             let ws1Methods = map (addFuncSchemaToMethod contrSchema) ns1Methods
                 withSchema = WithSchemaV1{..}
             in return $ Just (cInfo {ciMethods = withSchema})
-  where addFuncSchemaToMethod :: CS.ContractSchemaV1 -> Text -> (Text, Maybe CS.FunctionSchema)
-        addFuncSchemaToMethod contrSchema rcvName = let mFuncSchema = CS.lookupFunctionSchema contrSchema (CS.ReceiveFuncName ciName rcvName)
+  where addFuncSchemaToMethod :: CS.ContractSchemaV1 -> Text -> (Text, Maybe CS.FunctionSchemaV1)
+        addFuncSchemaToMethod contrSchema rcvName = let mFuncSchema = CS.lookupFunctionSchemaV1 contrSchema (CS.ReceiveFuncName ciName rcvName)
                                                     in (rcvName, mFuncSchema)
 addSchemaData cInfo@ContractInfoV0{..} moduleSchema =
   case moduleSchema of
@@ -185,7 +185,7 @@ data MethodsAndState
 --  Additional information from the schema can be added with `addSchemaData`.
 data Methods
   = NoSchemaV1   { ns1Methods :: ![Text] }
-  | WithSchemaV1 { ws1Methods :: ![(Text, Maybe CS.FunctionSchema)]}
+  | WithSchemaV1 { ws1Methods :: ![(Text, Maybe CS.FunctionSchemaV1)]}
   deriving (Eq, Show)
 
 -- |Contract state for a V0 contract.
@@ -327,8 +327,8 @@ constructModuleInspectInfo namedModRef wasmVersion moduleSchema exportedFuncName
                               sigMap' = Map.insert cname (ContractSigsV1 {csv1InitSig = cs1InitSig, csv1ReceiveSigs = updatedCsReceiveSigs}) sigMap
                           in go sigMap' (receiveErrors ++ errors) remaining
 
-                    updateReceiveSigs :: Text -> Map.Map Text (Maybe CS.FunctionSchema) -> [CS.FuncName]
-                                      -> [(Text, CS.FunctionSchema)] -> (Map.Map Text (Maybe CS.FunctionSchema), [CS.FuncName])
+                    updateReceiveSigs :: Text -> Map.Map Text (Maybe CS.FunctionSchemaV1) -> [CS.FuncName]
+                                      -> [(Text, CS.FunctionSchemaV1)] -> (Map.Map Text (Maybe CS.FunctionSchemaV1), [CS.FuncName])
                     updateReceiveSigs _ sigMap errors [] = (sigMap, errors)
                     updateReceiveSigs cname sigMap errors ((fname, schema):remaining) =
                       if Map.member fname sigMap
@@ -369,6 +369,7 @@ data ModuleInspectInfo
 data ModuleInspectSigs
   = ModuleInspectSigsV0 { mis0ContractSigs :: Map.Map Text ContractSigsV0 }
   | ModuleInspectSigsV1 { mis1ContractSigs :: Map.Map Text ContractSigsV1 }
+  | ModuleInspectSigsV2 { mis2ContractSigs :: Map.Map Text ContractSigsV2 }
 
 
 -- |Different from ContractSchemaV0 in that the receiveSigs have a Maybe SchemaType.
@@ -378,9 +379,16 @@ data ContractSigsV0
   , csv0ReceiveSigs :: Map.Map Text (Maybe CS.SchemaType) -- ^ Type signatures for the receive functions.
   }
 
--- |Different from ContractSchemaV1 in that the receiveSigs have a Maybe FunctionSchema.
+-- |Different from ContractSchemaV1 in that the receiveSigs have a Maybe FunctionSchemaV1.
 data ContractSigsV1
   = ContractSigsV1
-  { csv1InitSig :: Maybe CS.FunctionSchema -- ^ Schema for the init function.
-  , csv1ReceiveSigs :: Map.Map Text (Maybe CS.FunctionSchema) -- ^ Schemas for the receive functions.
+  { csv1InitSig :: Maybe CS.FunctionSchemaV1 -- ^ Schema for the init function.
+  , csv1ReceiveSigs :: Map.Map Text (Maybe CS.FunctionSchemaV1) -- ^ Schemas for the receive functions.
+  }
+
+-- |Different from ContractSchemaV2 in that the receiveSigs have a Maybe FunctionSchemaV2.
+data ContractSigsV2
+  = ContractSigsV2
+  { csv2InitSig :: Maybe CS.FunctionSchemaV2 -- ^ Schema for the init function.
+  , csv2ReceiveSigs :: Map.Map Text (Maybe CS.FunctionSchemaV2) -- ^ Schemas for the receive functions.
   }
