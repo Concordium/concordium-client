@@ -3,6 +3,7 @@
 module Concordium.Client.Types.Contract.Schema(
   ContractSchemaV0(..),
   ContractSchemaV1(..),
+  ContractSchemaV2(..),
   Fields(..),
   FuncName(..),
   ModuleSchema(..),
