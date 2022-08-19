@@ -59,21 +59,37 @@ addSchemaData cInfo@ContractInfoV1{..} moduleSchema =
     CS.ModuleSchemaV0 _ -> logFatal ["Internal error: Cannot use ModuleSchemaV0 with ContractInfoV1."] -- Should never happen.
     CS.ModuleSchemaV1{..} ->
       case ciMethods of
-        WithSchemaV1{} -> logFatal ["Internal error: Contract info has already been decoded."] -- Should never happen.
         NoSchemaV1{..} -> case Map.lookup ciName ms1ContractSchemas of
           Nothing -> do
             logWarn [ [i|A schema for the contract '#{ciName}' does not exist in the schema provided.|]
                     , "Showing the contract without information from the schema."]
             return Nothing
           Just contrSchema ->
-            let ws1Methods = map (addFuncSchemaToMethod contrSchema) ns1Methods
+            let ws1Methods = map (addFuncSchemaToMethodV1 contrSchema) ns1Methods
                 withSchema = WithSchemaV1{..}
             in return $ Just (cInfo {ciMethods = withSchema})
-  where addFuncSchemaToMethod :: CS.ContractSchemaV1 -> Text -> (Text, Maybe CS.FunctionSchemaV1)
-        addFuncSchemaToMethod contrSchema rcvName = let mFuncSchema = CS.lookupFunctionSchemaV1 contrSchema (CS.ReceiveFuncName ciName rcvName)
+        _ -> logFatal ["Internal error: Contract info has already been decoded."] -- Matches WithSchema1 / WithSchema2. Should never happen.
+    CS.ModuleSchemaV2{..} ->
+      case ciMethods of
+        NoSchemaV1{..} -> case Map.lookup ciName ms2ContractSchemas of
+          Nothing -> do
+            logWarn [ [i|A schema for the contract '#{ciName}' does not exist in the schema provided.|]
+                    , "Showing the contract without information from the schema."]
+            return Nothing
+          Just contrSchema ->
+            let ws2Methods = map (addFuncSchemaToMethodV2 contrSchema) ns1Methods
+                withSchema = WithSchemaV2{..}
+            in return $ Just (cInfo {ciMethods = withSchema})
+        _ -> logFatal ["Internal error: Contract info has already been decoded."] -- Matches WithSchema1 / WithSchema2. Should never happen.
+  where addFuncSchemaToMethodV1 :: CS.ContractSchemaV1 -> Text -> (Text, Maybe CS.FunctionSchemaV1)
+        addFuncSchemaToMethodV1 contrSchema rcvName = let mFuncSchema = CS.lookupFunctionSchemaV1 contrSchema (CS.ReceiveFuncName ciName rcvName)
+                                                    in (rcvName, mFuncSchema)
+        addFuncSchemaToMethodV2 :: CS.ContractSchemaV2 -> Text -> (Text, Maybe CS.FunctionSchemaV2)
+        addFuncSchemaToMethodV2 contrSchema rcvName = let mFuncSchema = CS.lookupFunctionSchemaV2 contrSchema (CS.ReceiveFuncName ciName rcvName)
                                                     in (rcvName, mFuncSchema)
 addSchemaData cInfo@ContractInfoV0{..} moduleSchema =
   case moduleSchema of
+    CS.ModuleSchemaV2 _ -> logFatal ["Internal error: Cannot use ModuleSchemaV2 with ContractInfoV0."]  -- Should never happen.
     CS.ModuleSchemaV1 _ -> logFatal ["Internal error: Cannot use ModuleSchemaV1 with ContractInfoV0."]  -- Should never happen.
     CS.ModuleSchemaV0{..} ->
       case ciMethodsAndState of
@@ -126,6 +142,7 @@ hasReceiveMethod rcvName cInfo = rcvName `elem` methods
           ContractInfoV1{..} -> case ciMethods of
             NoSchemaV1{..} -> ns1Methods
             WithSchemaV1{..} -> map fst ws1Methods
+            WithSchemaV2{..} -> map fst ws2Methods
 
 -- |Get the contract name (without the 'init_' prefix).
 getContractName :: ContractInfo -> Text
@@ -184,9 +201,11 @@ data MethodsAndState
 
 -- |Methods for V1 Contracts.
 --  Additional information from the schema can be added with `addSchemaData`.
+--  The schemas can be either of version 1 or 2.
 data Methods
   = NoSchemaV1   { ns1Methods :: ![Text] }
   | WithSchemaV1 { ws1Methods :: ![(Text, Maybe CS.FunctionSchemaV1)]}
+  | WithSchemaV2 { ws2Methods :: ![(Text, Maybe CS.FunctionSchemaV2)]}
   deriving (Eq, Show)
 
 -- |Contract state for a V0 contract.

@@ -356,6 +356,7 @@ printContractInfo ci namedOwner namedModRef =
     tellMethodsV1 = \case
       CI.NoSchemaV1{..} -> tell $ map (`showContractFuncV1` Nothing) ns1Methods
       CI.WithSchemaV1{..} -> tell $  map (uncurry showContractFuncV1) ws1Methods
+      CI.WithSchemaV2{..} -> tell $  map (uncurry showContractFuncV2) ws2Methods
 
 showContractFuncV0 :: Text -> Maybe CS.SchemaType -> String
 showContractFuncV0 funcName mParamSchema = case mParamSchema of

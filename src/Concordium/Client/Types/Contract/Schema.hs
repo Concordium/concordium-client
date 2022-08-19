@@ -18,6 +18,7 @@ module Concordium.Client.Types.Contract.Schema(
   getListOfWithKnownLen,
   getListOfWithSizeLen,
   lookupFunctionSchemaV1,
+  lookupFunctionSchemaV2,
   lookupParameterSchema,
   lookupReturnValueSchema,
   lookupErrorSchema,
@@ -293,7 +294,7 @@ getReturnValueSchemaV2 fs = let (_, rv, _) = getMaybeSchemas fs in rv
 
 -- |Try to get the error schema of a FunctionSchemaV2.
 getErrorSchemaV2 :: FunctionSchemaV2 -> Maybe SchemaType
-getErrorSchemaV2 fs = let (_, _, error) = getMaybeSchemas fs in error
+getErrorSchemaV2 fs = let (_, _, err) = getMaybeSchemas fs in err
 
 -- |Get the schemas for parameter, return value, and error as a triple of Maybes.
 getMaybeSchemas :: FunctionSchemaV2 -> (Maybe SchemaType, Maybe SchemaType, Maybe SchemaType)
@@ -301,7 +302,7 @@ getMaybeSchemas = \case
   Param param -> (Just param, Nothing, Nothing)
   Rv rv -> (Nothing, Just rv, Nothing)
   ParamRv {..} -> (Just fs2Parameter, Just fs2ReturnValue, Nothing)
-  Error error -> (Nothing, Nothing, Just error)
+  Error err -> (Nothing, Nothing, Just err)
   ParamError {..} -> (Just fs2Parameter, Nothing, Just fs2Error)
   RvError {..} -> (Nothing, Just fs2ReturnValue, Just fs2Error)
   ParamRvError {..} -> (Just fs2Parameter, Just fs2ReturnValue, Just fs2Error)
