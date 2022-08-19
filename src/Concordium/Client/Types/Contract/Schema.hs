@@ -219,7 +219,7 @@ instance S.Serialize ContractSchemaV2 where
 
 -- |V1 Schema for a function in a V1 smart contract.
 -- Can contain a schema for the parameter, return value, or both.
--- Parallel to the FunctionSchemaV1 defined in concordium-contract-common (Rust).
+-- Parallel to the schema::FunctionV1 defined in concordium-contract-common (Rust).
 data FunctionSchemaV1
   = Parameter SchemaType
   | ReturnValue SchemaType
@@ -262,7 +262,7 @@ instance S.Serialize FunctionSchemaV1 where
 
 -- |V2 Schema for a function in a V1 smart contract.
 -- Can contain a schema for the parameter, return value, error, or a combination of these.
--- Parallel to the FunctionSchemaV2 defined in concordium-contract-common (Rust).
+-- Parallel to the schema::FunctionV2 defined in concordium-contract-common (Rust).
 data FunctionSchemaV2
   = Param SchemaType
   | Rv SchemaType
