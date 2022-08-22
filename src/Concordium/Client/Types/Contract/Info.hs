@@ -285,7 +285,7 @@ constructModuleInspectInfo namedModRef wasmVersion moduleSchema exportedFuncName
             insertReceiveNames [] sigMap = sigMap
             insertReceiveNames (CS.InitFuncName _:remaining) sigMap = insertReceiveNames remaining sigMap
             insertReceiveNames (CS.ReceiveFuncName cname fname:remaining) sigMap = case Map.lookup cname sigMap of
-              Nothing -> insertReceiveNames remaining sigMap -- This should never happen, as we validate modules before they are put on chain.
+              Nothing -> insertReceiveNames remaining sigMap
               Just cs0@ContractSigsV0{..} ->
                 let updatedCsReceiveSigs = Map.insert fname Nothing csv0ReceiveSigs
                     sigMap' = Map.insert cname (cs0 {csv0ReceiveSigs = updatedCsReceiveSigs}) sigMap
@@ -305,7 +305,7 @@ constructModuleInspectInfo namedModRef wasmVersion moduleSchema exportedFuncName
             insertReceiveNames [] sigMap = sigMap
             insertReceiveNames (CS.InitFuncName _:remaining) sigMap = insertReceiveNames remaining sigMap
             insertReceiveNames (CS.ReceiveFuncName cname fname:remaining) sigMap = case Map.lookup cname sigMap of
-              Nothing -> insertReceiveNames remaining sigMap -- This should never happen, as we validate modules before they are put on chain.
+              Nothing -> insertReceiveNames remaining sigMap
               Just cs1@ContractSigsV1{..} ->
                 let updatedCsReceiveSigs = Map.insert fname Nothing csv1ReceiveSigs
                     sigMap' = Map.insert cname (cs1 {csv1ReceiveSigs = updatedCsReceiveSigs}) sigMap
@@ -325,7 +325,7 @@ constructModuleInspectInfo namedModRef wasmVersion moduleSchema exportedFuncName
             insertReceiveNames [] sigMap = sigMap
             insertReceiveNames (CS.InitFuncName _:remaining) sigMap = insertReceiveNames remaining sigMap
             insertReceiveNames (CS.ReceiveFuncName cname fname:remaining) sigMap = case Map.lookup cname sigMap of
-              Nothing -> insertReceiveNames remaining sigMap -- This should never happen, as we validate modules before they are put on chain.
+              Nothing -> insertReceiveNames remaining sigMap
               Just cs2@ContractSigsV2{..} ->
                 let updatedCsReceiveSigs = Map.insert fname Nothing csv2ReceiveSigs
                     sigMap' = Map.insert cname (cs2 {csv2ReceiveSigs = updatedCsReceiveSigs}) sigMap
