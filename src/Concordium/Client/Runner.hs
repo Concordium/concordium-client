@@ -1869,7 +1869,7 @@ processContractCmd action baseCfgDir verbose backend =
           Right jsonValue -> case AE.fromJSON jsonValue of
             AE.Error jsonErr -> logFatal [[i|Invocation failed with error: #{jsonErr}|]]
             AE.Success InvokeContract.Failure{..} -> do
-              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName
+              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName True
               -- Logs in cyan to indicate that the invocation returned with a failure.
               -- This might be what you expected from the contract, so logWarn or logFatal should not be used.
               log Info (Just ANSI.Cyan) [[iii|Invocation resulted in failure:\n
@@ -1880,7 +1880,7 @@ processContractCmd action baseCfgDir verbose backend =
               let eventsMsg = case mapMaybe (fmap (("  - " <>) . Text.pack) . showEvent verbose) rcrEvents of
                                 [] -> Text.empty
                                 evts -> [i|- Events:\n#{Text.intercalate "\n" evts}|]
-              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName
+              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName False
               logSuccess [[iii|Invocation resulted in success:\n
                                - Energy used: #{showNrg rcrUsedEnergy}
                                #{returnValueMsg}
@@ -1948,19 +1948,22 @@ processContractCmd action baseCfgDir verbose backend =
             signatureCount = mapNumKeys (esdKeys encSignData)
 
         -- |Construct a message for displaying the return value of a smart contract invocation.
-        mkReturnValueMsg :: Maybe BS.ByteString -> Maybe FilePath -> Maybe CS.ModuleSchema -> Text -> Text -> ClientMonad IO Text
-        mkReturnValueMsg rvBytes schemaFile modSchema contractName receiveName = case rvBytes of
+        --  The 'isError' parameter determines whether the returned bytes should be parsed with the error schema or the return value schema.
+        mkReturnValueMsg :: Maybe BS.ByteString -> Maybe FilePath -> Maybe CS.ModuleSchema -> Text -> Text -> Bool -> ClientMonad IO Text
+        mkReturnValueMsg rvBytes schemaFile modSchema contractName receiveName isError = case rvBytes of
           Nothing -> return Text.empty
-          Just rv -> case modSchema >>= \modSchema' -> CS.lookupReturnValueSchema modSchema' (CS.ReceiveFuncName contractName receiveName) of
-            Nothing -> return [i|\n - Return value (raw):\n  #{BS.unpack rv}\n|] -- Schema not provided or it doesn't contain the return value for this func.
+          Just rv -> case modSchema >>= \modSchema' -> lookupSchema modSchema' (CS.ReceiveFuncName contractName receiveName) of
+            Nothing -> return [i|\n - #{valueType} value (raw):\n  #{BS.unpack rv}\n|] -- Schema not provided or it doesn't contain the return value for this func.
             Just schemaForFunc -> case S.runGet (CP.getJSONUsingSchema schemaForFunc) rv of
               Left err -> do
                 logWarn [[i|Could not parse the returned bytes using the schema:\n#{err}|]]
                 if isJust schemaFile
                   then logWarn ["Make sure you supply the correct schema for the contract with --schema"]
                   else logWarn ["Try supplying a schema file with --schema"]
-                return [i|\n - Return value (raw):\n  #{BS.unpack rv}\n|]
-              Right rvJSON -> return [i|\n - Return value:\n#{indentBy 6 $ showPrettyJSON rvJSON}\n|]
+                return [i|\n - #{valueType} value (raw):\n  #{BS.unpack rv}\n|]
+              Right rvJSON -> return [i|\n - #{valueType} value:\n#{indentBy 6 $ showPrettyJSON rvJSON}\n|]
+          where
+              (lookupSchema, valueType) = if isError then (CS.lookupErrorSchema, "Error"::Text) else (CS.lookupReturnValueSchema, "Return"::Text)
 
 -- |Try to fetch info about the contract and deserialize it from JSON.
 -- Or, log fatally with appropriate error messages if anything goes wrong.

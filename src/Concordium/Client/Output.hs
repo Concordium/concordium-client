@@ -356,18 +356,31 @@ printContractInfo ci namedOwner namedModRef =
     tellMethodsV1 = \case
       CI.NoSchemaV1{..} -> tell $ map (`showContractFuncV1` Nothing) ns1Methods
       CI.WithSchemaV1{..} -> tell $  map (uncurry showContractFuncV1) ws1Methods
+      CI.WithSchemaV2{..} -> tell $  map (uncurry showContractFuncV2) ws2Methods
 
 showContractFuncV0 :: Text -> Maybe CS.SchemaType -> String
 showContractFuncV0 funcName mParamSchema = case mParamSchema of
   Nothing -> [i|- #{funcName}|]
   Just paramSchema -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON paramSchema}|]
 
-showContractFuncV1 :: Text -> Maybe CS.FunctionSchema -> String
+showContractFuncV1 :: Text -> Maybe CS.FunctionSchemaV1 -> String
 showContractFuncV1 funcName mFuncSchema = case mFuncSchema of
   Nothing -> [i|- #{funcName}|]
   Just (CS.Parameter paramSchema) -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON paramSchema}|]
   Just (CS.ReturnValue rvSchema) -> [i|- #{funcName}\n    Return value:\n#{indentBy 8 $ showPrettyJSON rvSchema}|]
-  Just CS.Both{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fsParameter}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fsReturnValue}|]
+  Just CS.Both{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fs1Parameter}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs1ReturnValue}|]
+
+showContractFuncV2 :: Text -> Maybe CS.FunctionSchemaV2 -> String
+showContractFuncV2 funcName mFuncSchema = case mFuncSchema of
+  Nothing -> [i|- #{funcName}|]
+  Just (CS.Param paramSchema) -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON paramSchema}|]
+  Just (CS.Rv rvSchema) -> [i|- #{funcName}\n    Return value:\n#{indentBy 8 $ showPrettyJSON rvSchema}|]
+  Just CS.ParamRv{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fs2Parameter}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}|]
+  Just (CS.Error errorSchema) -> [i|- #{funcName}\n    Error:\n#{indentBy 8 $ showPrettyJSON errorSchema}|]
+  Just CS.ParamError{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fs2Parameter}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
+  Just CS.RvError{..} -> [i|- #{funcName}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
+  Just CS.ParamRvError{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fs2Parameter}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
+
 
 -- |Print module inspect info, i.e., the named moduleRef and its included contracts.
 -- If the init or receive signatures for a contract exist in the schema, they are also printed.
@@ -383,7 +396,7 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
 
   where
     -- |Show all the contract init and receive functions including optional signatures from the schema.
-    -- Only V1 contracts can have the Return value section.
+    -- Only V1 contracts can have the Return value and Error section.
     -- Example:
     --  - contract-no-methods-no-schema
     --  - contract-no-methods
@@ -397,6 +410,19 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
     --            ["<String>", "<Int32>"]
     --        Return value:
     --            "<Bool>"
+    --        Error:
+    --            {
+    --                "Enum": [
+    --                    {
+    --                        "SomeError": [
+    --                            "<String>"
+    --                        ]
+    --                    },
+    --                    {
+    --                        "ParseError": []
+    --                    }
+    --               ]
+    --            }
     --     - func
     --           Parameter:
     --               ["<AccountAddress>"]
@@ -404,6 +430,7 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
     showModuleInspectSigs = \case
       CI.ModuleInspectSigsV0{..} -> showContractSigsV0 mis0ContractSigs
       CI.ModuleInspectSigsV1{..} -> showContractSigsV1 mis1ContractSigs
+      CI.ModuleInspectSigsV2{..} -> showContractSigsV2 mis2ContractSigs
 
     showContractSigsV0 :: Map.Map Text CI.ContractSigsV0 -> [String]
     showContractSigsV0 = go . sortOn fst . Map.toList
@@ -423,9 +450,20 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
                                                           ++ showReceives (sortOn fst . Map.toList $ csv1ReceiveSigs)
                                                           ++ go remaining
 
-            showReceives :: [(Text, Maybe CS.FunctionSchema)] -> [String]
+            showReceives :: [(Text, Maybe CS.FunctionSchemaV1)] -> [String]
             showReceives [] = []
             showReceives ((fname, mSchema):remaining) = indentBy 4 (showContractFuncV1 fname mSchema) : showReceives remaining
+
+    showContractSigsV2 :: Map.Map Text CI.ContractSigsV2 -> [String]
+    showContractSigsV2 = go . sortOn fst . Map.toList
+      where go [] = []
+            go ((cname, CI.ContractSigsV2{..}):remaining) = [showContractFuncV2 cname csv2InitSig]
+                                                          ++ showReceives (sortOn fst . Map.toList $ csv2ReceiveSigs)
+                                                          ++ go remaining
+
+            showReceives :: [(Text, Maybe CS.FunctionSchemaV2)] -> [String]
+            showReceives [] = []
+            showReceives ((fname, mSchema):remaining) = indentBy 4 (showContractFuncV2 fname mSchema) : showReceives remaining
 
     showWarnings :: [FuncName] -> [String]
     showWarnings [] = []
