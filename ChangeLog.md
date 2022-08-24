@@ -2,10 +2,14 @@
 
 ## Unreleased
 
+## 4.1.0
+
 - Fix bug in contract schema parsing caused by endiannes confusion.
 - Add support for smart contract schema V2.
   - V2 schemas offer the same options as V1, but can also include a schema for
     the error type.
+  - This enables concordium-client to interact with contracts and schemas
+    using `concordium-std` version 4.
 
 ## 4.0.4
 
