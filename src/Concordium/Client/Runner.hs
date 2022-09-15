@@ -712,21 +712,23 @@ processTransactionCmd action baseCfgDir verbose backend =
 
       logInfo [[i|Register data. Allowing up to #{showNrg nrg} to be spent as transaction fee.|]]
 
-      registerConfirmed <- askConfirmation Nothing
-      when registerConfirmed $ do
-        logInfo ["Registering data..."]
+      when (ioConfirm . toInteractionOpts $ txOpts) $ do
+         confirmed <- askConfirmation Nothing
+         unless confirmed exitTransactionCancelled
 
-        let intOpts = toInteractionOpts txOpts
-        let pl = registerDataTransactionPayload rdCfg
+      logInfo ["Registering data..."]
 
-        withClient backend $ do
-          mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
-          let extractDataRegistered = extractFromTsr $ \case Types.DataRegistered rd -> Just rd
-                                                             _ -> Nothing
-          case extractDataRegistered mTsr of
-            Nothing -> return ()
-            Just (Left err) -> logFatal ["Registering data failed:", err]
-            Just (Right _) -> logSuccess ["Data succesfully registered."]
+      let intOpts = toInteractionOpts txOpts
+      let pl = registerDataTransactionPayload rdCfg
+
+      withClient backend $ do
+        mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
+        let extractDataRegistered = extractFromTsr $ \case Types.DataRegistered rd -> Just rd
+                                                           _ -> Nothing
+        case extractDataRegistered mTsr of
+          Nothing -> return ()
+          Just (Left err) -> logFatal ["Registering data failed:", err]
+          Just (Right _) -> logSuccess ["Data succesfully registered."]
 
 -- |Construct a transaction config for registering data.
 --  The data is read from the 'FilePath' provided.
@@ -1609,26 +1611,27 @@ processModuleCmd action baseCfgDir verbose backend =
       logInfo [ msgIntro
               , [i|allowing up to #{showNrg nrg} to be spent as transaction fee|]]
 
-      deployConfirmed <- askConfirmation Nothing
+      when (ioConfirm . toInteractionOpts $ txOpts) $ do
+         confirmed <- askConfirmation Nothing
+         unless confirmed exitTransactionCancelled
 
-      when deployConfirmed $ do
-          logInfo ["deploying module..."]
+      logInfo ["deploying module..."]
 
-          let intOpts = toInteractionOpts txOpts
-          let pl = moduleDeployTransactionPayload mdCfg
+      let intOpts = toInteractionOpts txOpts
+      let pl = moduleDeployTransactionPayload mdCfg
 
-          withClient backend $ do
-            mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
-            case extractModRef mTsr of
+      withClient backend $ do
+        mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
+        case extractModRef mTsr of
+          Nothing -> return ()
+          Just (Left err) -> logFatal ["module deployment failed:", err]
+          Just (Right modRef) -> do
+            logSuccess [[i|module successfully deployed with reference: '#{modRef}'|]]
+            case modName of
               Nothing -> return ()
-              Just (Left err) -> logFatal ["module deployment failed:", err]
-              Just (Right modRef) -> do
-                logSuccess [[i|module successfully deployed with reference: '#{modRef}'|]]
-                case modName of
-                  Nothing -> return ()
-                  Just modName' -> do
-                    nameAdded <- liftIO $ addModuleNameAndWrite verbose baseCfg modName' modRef
-                    logSuccess [[i|module reference #{modRef} was successfully named '#{nameAdded}'|]]
+              Just modName' -> do
+                nameAdded <- liftIO $ addModuleNameAndWrite verbose baseCfg modName' modRef
+                logSuccess [[i|module reference #{modRef} was successfully named '#{nameAdded}'|]]
 
     ModuleList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1779,23 +1782,24 @@ processContractCmd action baseCfgDir verbose backend =
               , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
               , [i|transaction expires on #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
 
-      initConfirmed <- askConfirmation Nothing
+      when (ioConfirm . toInteractionOpts $ txOpts) $ do
+         confirmed <- askConfirmation Nothing
+         unless confirmed exitTransactionCancelled
 
-      when initConfirmed $ do
-        let intOpts = toInteractionOpts txOpts
-        let pl = contractInitTransactionPayload ciCfg
-        withClient backend $ do
-          mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
-          case extractContractAddress mTsr of
-            Nothing -> return ()
-            Just (Left err) -> logFatal ["contract initialisation failed:", err]
-            Just (Right contrAddr) -> do
-              logSuccess [[i|contract successfully initialized with address: #{showCompactPrettyJSON contrAddr}|]]
-              case contrAlias of
-                Nothing -> return ()
-                Just contrAlias' -> do
-                  nameAdded <- liftIO $ addContractNameAndWrite verbose baseCfg contrAlias' contrAddr
-                  logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{nameAdded}'|]]
+      let intOpts = toInteractionOpts txOpts
+      let pl = contractInitTransactionPayload ciCfg
+      withClient backend $ do
+        mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
+        case extractContractAddress mTsr of
+          Nothing -> return ()
+          Just (Left err) -> logFatal ["contract initialisation failed:", err]
+          Just (Right contrAddr) -> do
+            logSuccess [[i|contract successfully initialized with address: #{showCompactPrettyJSON contrAddr}|]]
+            case contrAlias of
+              Nothing -> return ()
+              Just contrAlias' -> do
+                nameAdded <- liftIO $ addContractNameAndWrite verbose baseCfg contrAlias' contrAddr
+                logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{nameAdded}'|]]
 
     ContractUpdate indexOrName subindex receiveName paramsFile schemaFile amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1815,20 +1819,21 @@ processContractCmd action baseCfgDir verbose backend =
               , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
               , [i|transaction expires on #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
 
-      updateConfirmed <- askConfirmation Nothing
+      when (ioConfirm . toInteractionOpts $ txOpts) $ do
+         confirmed <- askConfirmation Nothing
+         unless confirmed exitTransactionCancelled
 
-      when updateConfirmed $ do
-        let intOpts = toInteractionOpts txOpts
-        let pl = contractUpdateTransactionPayload cuCfg
-        withClient backend $ do
-          mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
-          case extractUpdate mTsr of
-            Nothing -> return ()
-            Just (Left err) -> logFatal ["updating contract instance failed:", err]
-            Just (Right _) -> do
-              namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-              logSuccess [[iii|successfully updated contract instance #{showNamedContractAddress namedContrAddr}
-                                                using the function '#{receiveName}'|]]
+      let intOpts = toInteractionOpts txOpts
+      let pl = contractUpdateTransactionPayload cuCfg
+      withClient backend $ do
+        mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
+        case extractUpdate mTsr of
+          Nothing -> return ()
+          Just (Left err) -> logFatal ["updating contract instance failed:", err]
+          Just (Right _) -> do
+            namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
+            logSuccess [[iii|successfully updated contract instance #{showNamedContractAddress namedContrAddr}
+                                              using the function '#{receiveName}'|]]
 
     ContractInvoke indexOrName subindex receiveName parameterFile schemaFile amount invoker energy block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
