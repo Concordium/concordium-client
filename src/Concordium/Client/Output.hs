@@ -596,13 +596,13 @@ showEvent verbose = \case
   Types.ModuleDeployed ref->
     verboseOrNothing $ printf "module '%s' deployed" (show ref)
   Types.ContractInitialized{..} ->
-    verboseOrNothing $ printf "initialized contract '%s' using init function '%s' from module '%s' with '%s' tokens"
-                              (show ecAddress) (show ecInitName) (show ecRef) (show ecAmount)
+    verboseOrNothing $ printf "initialized contract '%s' using init function '%s' from module '%s' with %s"
+                              (show ecAddress) (show ecInitName) (show ecRef) (showCcd ecAmount)
   Types.Updated{..} ->
-    verboseOrNothing $ printf "sent message to function '%s' with '%s' and '%s' tokens from %s to %s"
-                              (show euReceiveName) (show euMessage) (show euAmount) (showAddress euInstigator) (showAddress $ Types.AddressContract euAddress)
+    verboseOrNothing $ printf "sent message to function '%s' with '%s' and %s from %s to %s"
+                              (show euReceiveName) (show euMessage) (showCcd euAmount) (showAddress euInstigator) (showAddress $ Types.AddressContract euAddress)
   Types.Transferred{..} ->
-    verboseOrNothing $ printf "transferred %s tokens from %s to %s" (show etAmount) (showAddress etFrom) (showAddress etTo)
+    verboseOrNothing $ printf "transferred %s from %s to %s" (showCcd etAmount) (showAddress etFrom) (showAddress etTo)
   Types.AccountCreated addr ->
     verboseOrNothing $ printf "account '%s' created" (show addr)
   Types.CredentialDeployed{..} ->
@@ -613,9 +613,9 @@ showEvent verbose = \case
   Types.BakerRemoved{..} ->
     verboseOrNothing $ printf "baker %s, removed" (showBaker ebrBakerId ebrAccount)
   Types.BakerStakeIncreased{..} ->
-    verboseOrNothing $ printf "baker %s stake increased to %s" (showBaker ebsiBakerId ebsiAccount) (Types.amountToString ebsiNewStake)
+    verboseOrNothing $ printf "baker %s stake increased to %s" (showBaker ebsiBakerId ebsiAccount) (showCcd ebsiNewStake)
   Types.BakerStakeDecreased{..} ->
-    verboseOrNothing $ printf "baker %s stake decreased to %s" (showBaker ebsiBakerId ebsiAccount) (Types.amountToString ebsiNewStake)
+    verboseOrNothing $ printf "baker %s stake decreased to %s" (showBaker ebsiBakerId ebsiAccount) (showCcd ebsiNewStake)
   Types.BakerSetRestakeEarnings{..} ->
     verboseOrNothing $ printf "baker %s restake earnings %s" (showBaker ebsreBakerId ebsreAccount) (if ebsreRestakeEarnings then "set" :: String else "unset")
   Types.BakerKeysUpdated{..} ->
@@ -633,9 +633,9 @@ showEvent verbose = \case
   Types.BakerSetFinalizationRewardCommission{..} ->
     verboseOrNothing $ printf "baker %s changed finalization reward commission to %s" (showBaker ebsfrcBakerId ebsfrcAccount) (show ebsfrcFinalizationRewardCommission)
   Types.DelegationStakeIncreased{..} ->
-    verboseOrNothing $ printf "delegator %s stake increased to %s" (showDelegator edsiDelegatorId edsiAccount) (Types.amountToString edsiNewStake)
+    verboseOrNothing $ printf "delegator %s stake increased to %s" (showDelegator edsiDelegatorId edsiAccount) (showCcd edsiNewStake)
   Types.DelegationStakeDecreased{..} ->
-    verboseOrNothing $ printf "delegator %s stake decreased to %s" (showDelegator edsdDelegatorId edsdAccount) (Types.amountToString edsdNewStake)
+    verboseOrNothing $ printf "delegator %s stake decreased to %s" (showDelegator edsdDelegatorId edsdAccount) (showCcd edsdNewStake)
   Types.DelegationSetRestakeEarnings{..} ->
     verboseOrNothing $ printf "delegator %s restake earnings changed to %s" (showDelegator edsreDelegatorId edsreAccount) (show edsreRestakeEarnings)
   Types.DelegationSetDelegationTarget{..} ->
@@ -648,8 +648,8 @@ showEvent verbose = \case
   Types.CredentialKeysUpdated cid -> verboseOrNothing $ printf "credential keys updated for credential with credId %s" (show cid)
   Types.NewEncryptedAmount{..} -> verboseOrNothing $ printf "shielded amount received on account '%s' with index '%s'" (show neaAccount) (show neaNewIndex)
   Types.EncryptedAmountsRemoved{..} -> verboseOrNothing $ printf "shielded amounts removed on account '%s' up to index '%s' with a resulting self shielded amount of '%s'" (show earAccount) (show earUpToIndex) (show earNewAmount)
-  Types.AmountAddedByDecryption{..} -> verboseOrNothing $ printf "transferred '%s' tokens from the shielded balance to the public balance on account '%s'" (show aabdAmount) (show aabdAccount)
-  Types.EncryptedSelfAmountAdded{..} -> verboseOrNothing $ printf "transferred '%s' tokens from the public balance to the shielded balance on account '%s' with a resulting self shielded balance of '%s'" (show eaaAmount) (show eaaAccount) (show eaaNewAmount)
+  Types.AmountAddedByDecryption{..} -> verboseOrNothing $ printf "transferred %s from the shielded balance to the public balance on account '%s'" (showCcd aabdAmount) (show aabdAccount)
+  Types.EncryptedSelfAmountAdded{..} -> verboseOrNothing $ printf "transferred %s from the public balance to the shielded balance on account '%s' with a resulting self shielded balance of '%s'" (showCcd eaaAmount) (show eaaAccount) (show eaaNewAmount)
   Types.UpdateEnqueued{..} ->
     verboseOrNothing $ printf "Enqueued chain update, effective at %s:\n%s" (showTimeFormatted (timeFromTransactionExpiryTime ueEffectiveTime)) (show uePayload)
   Types.TransferredWithSchedule{..} ->
@@ -745,7 +745,7 @@ showRejectReason verbose = \case
     "runtime failure"
   Types.AmountTooLarge a amount ->
     if verbose then
-      printf "account or contract '%s' does not have enough funds to transfer %s tokens" (show a) (show amount)
+      printf "account or contract '%s' does not have enough funds to transfer %s" (show a) (showCcd amount)
     else
       "insufficient funds"
   Types.SerializationFailure ->
