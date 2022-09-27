@@ -166,10 +166,14 @@ instance AE.FromJSON WalletExportAccount where
       , weaCredMap = OrdMap.singleton 0 (IDTypes.credId credential)
       , weaEncryptionKey = e }
 
--- | Decode, decrypt and parse a mobile wallet export, reencrypting the singing keys with the same password.
+-- | Decode, potentially decrypt and parse a wallet export. The function asks
+-- for the password when it is needed. If importing the old mobile wallet export
+-- then the keys are encrypted using the same password that is used for
+-- decrypting the export.w
 decodeMobileFormattedAccountExport
-  :: BS.ByteString -- ^ JSON with encrypted accounts and identities,
-                   -- which must include the fields of an 'EncryptedJSON WalletExport'.
+  :: BS.ByteString
+  -- ^ JSON with accounts and identities, this can either be encrypted or not. If it is encrypted it must be encrypted
+  -- using the format expected of an 'EncryptedJSON WalletExport'.
   -> Maybe Text -- ^ Only return the account with the given name (if it exists, otherwise return none).
   -> IO Password -- ^ Action to ask for password to decrypt the export or to encrypt the sign keys.
   -> IO (Either String ([AccountConfig], Environment)) -- ^ A list of resulting 'AccountConfig's and their environment, or an error message on failure.
