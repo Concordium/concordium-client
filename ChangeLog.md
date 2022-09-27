@@ -4,6 +4,7 @@
 
 - Fix handling of `--no-confirm` in `contract init`, `contract update`, `module
   deploy`, and `register data` transactions. This flag is now respected.
+- Add support for importing accounts exported by the browser extension wallet.
 
 ## 4.1.0
 

@@ -497,7 +497,7 @@ loadAccountImportFile format file name = do
   contents <- handleReadFile BS.readFile file
   case format of
     FormatMobile -> do
-      pwd <- askPassword "Enter encryption password: "
+      let pwd = askPassword "Enter encryption password: "
       (accCfgs, environment) <- decodeMobileFormattedAccountExport contents name pwd `withLogFatalIO` ("cannot import accounts: " ++)
       let accountsMessage :: Text = if length accCfgs >= 2 then "accounts" else "account"
       logInfo [[i|loaded the following #{accountsMessage} from the #{environment} chain:|]]

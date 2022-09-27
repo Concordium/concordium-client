@@ -652,7 +652,7 @@ writeAccountKeys baseCfg accCfg verbose = do
     Just k -> do
       let encKeyFile = accountEncryptionSecretKeyFile keysDir
       void $ handleWriteFile AE.encodeFile AllowOverwrite verbose encKeyFile k
-    Nothing -> logFatal [ printf "importing account without a secret encryption key provided" ]
+    Nothing -> logWarn [ printf "importing account without a secret encryption key provided. This account will not support encrypted transfers" ]
 
   -- writeThresholdFile accCfgDir accCfg verbose
   logSuccess ["the keys were successfully written to disk"]
@@ -883,7 +883,7 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
         m <- autoinit bc dir addr
         case m of
           Just b -> return (b, Nothing)
-          Nothing -> (bc,) . Just <$> loadEncryptionSecretKey dir
+          Nothing -> (bc,) <$> loadEncryptionSecretKey dir
       e@(Just _) -> return (bc, e)
 
   return (bc', AccountConfig {
@@ -987,10 +987,13 @@ loadKeyMap accountDir = do
 loadCredId :: FilePath -> IO IDTypes.CredentialRegistrationID
 loadCredId credDir = do logFatalOnError $ credIdFromStringInform $ takeBaseName credDir
 
-loadEncryptionSecretKey :: FilePath -> IO EncryptedAccountEncryptionSecretKey
+loadEncryptionSecretKey :: FilePath -> IO (Maybe EncryptedAccountEncryptionSecretKey)
 loadEncryptionSecretKey keysDir = do
   let file = accountEncryptionSecretKeyFile keysDir
-  AE.eitherDecodeFileStrict' file `withLogFatalIO` (\e -> "cannot load encryption secret key file " ++ file ++ " " ++ e)
+  fileEx <- doesFileExist file
+  if fileEx then
+    Just <$> AE.eitherDecodeFileStrict' file `withLogFatalIO` (\e -> "cannot load encryption secret key file " ++ file ++ " " ++ e)
+  else return Nothing
 
 loadCredentialIndex :: FilePath -> IO CredentialIndex
 loadCredentialIndex credDir = do
