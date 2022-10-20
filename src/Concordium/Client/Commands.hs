@@ -66,7 +66,8 @@ data Backend =
     , grpcPort   :: !PortNumber
     , grpcAuthenticationToken :: !String
     , grpcTarget :: !(Maybe String)
-    , grpcRetryNum :: !Int }
+    , grpcRetryNum :: !Int
+    , grpcUseTls :: !Bool }
   deriving (Show)
 
 data Cmd
@@ -520,7 +521,7 @@ versionOption =
   infoOption (showVersion version) (hidden <> long "version" <> help "Show version.")
 
 backendParser :: Parser Backend
-backendParser = GRPC <$> hostParser <*> portParser <*> grpcAuthenticationTokenParser <*> targetParser <*> retryNumParser
+backendParser = GRPC <$> hostParser <*> portParser <*> grpcAuthenticationTokenParser <*> targetParser <*> retryNumParser <*> tlsParser
 
 hostParser :: Parser HostName
 hostParser =
@@ -568,6 +569,12 @@ retryNumParser =
      showDefault <>
      metavar "GRPC-RETRY" <>
      help "How many times to retry the connection if it fails the first time.")
+
+tlsParser :: Parser Bool
+tlsParser =
+  switch
+    (long "secure" <>
+     help "Enable TLS.")
 
 -- |Parse transactionOpts with an optional energy flag
 transactionOptsParser :: Parser (TransactionOpts (Maybe Energy))

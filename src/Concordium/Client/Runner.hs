@@ -136,7 +136,7 @@ import Codec.CBOR.JSON
 -- they should be made in the context of the same 'withClient' so they reuse it.
 withClient :: Backend -> ClientMonad IO a -> IO a
 withClient bkend comp = do
-  let config = GrpcConfig (COM.grpcHost bkend) (COM.grpcPort bkend) (COM.grpcAuthenticationToken bkend) (COM.grpcTarget bkend) (COM.grpcRetryNum bkend) Nothing
+  let config = GrpcConfig (COM.grpcHost bkend) (COM.grpcPort bkend) (COM.grpcAuthenticationToken bkend) (COM.grpcTarget bkend) (COM.grpcRetryNum bkend) Nothing (COM.grpcUseTls bkend)
   runExceptT (mkGrpcClient config Nothing) >>= \case
       Left err -> logFatal ["Cannot establish connection to the node: " ++ show err]
       Right client -> do

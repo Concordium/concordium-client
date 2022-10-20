@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add a `--secure` flag to enable connecting to gRPC using TLS.
+  All commands that query the node support this.
+
 ## 4.2.0
 
 - Fix handling of `--no-confirm` in `contract init`, `contract update`, `module
