@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Concordium.Client.Types.GRPC (
     GRPCResult
   , GRPCResponse(..)
