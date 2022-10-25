@@ -10,14 +10,15 @@ import Concordium.Types.Execution
 import Concordium.Types
 
 import Concordium.Client.GRPC
+import Concordium.Client.Types.GRPC
 
 getSimpleTransactionStatus :: MonadIO m => TransactionHash -> ClientMonad m (Either String Value)
 getSimpleTransactionStatus trHash = do
     eitherStatus <- getTransactionStatus (Text.pack $ show trHash)
     return $
       eitherStatus >>= \case
-        Null -> return $ object ["status" .= String "absent"]
-        Object o ->
+        GRPCResponse _ Null -> return $ object ["status" .= String "absent"]
+        GRPCResponse _ (Object o) ->
           parseEither (.: "status") o >>= \case
             "received" -> return $ object ["status" .= String "received"]
             "finalized" -> HM.toList <$> parseEither (.: "outcomes") o >>= \case

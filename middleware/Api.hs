@@ -16,6 +16,7 @@ import           Servant.Server.Generic
 
 import           Concordium.Client.GRPC
 import qualified Concordium.Client.GRPC as GRPC
+import           Concordium.Client.Types.GRPC
 
 import qualified Concordium.Types as Types
 import           Control.Monad.Except
@@ -53,20 +54,20 @@ servantApp nodeBackend = genericServe routesAsServer
   routesAsServer = Routes {..} :: Routes AsServer
 
   consensusStatus :: Handler Aeson.Value
-  consensusStatus = liftIO $ proxyGrpcCall nodeBackend GRPC.getConsensusStatus
+  consensusStatus = liftIO $ proxyGrpcCall nodeBackend $ fmap grpcResponse <$> GRPC.getConsensusStatus
 
   blockSummary :: Text -> Handler Aeson.Value
-  blockSummary blockhash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getBlockSummary blockhash)
+  blockSummary blockhash = liftIO $ proxyGrpcCall nodeBackend $ fmap grpcResponse <$> (GRPC.getBlockSummary blockhash)
 
   blockInfo :: Text -> Handler Aeson.Value
-  blockInfo blockhash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getBlockInfo blockhash)
+  blockInfo blockhash = liftIO $ proxyGrpcCall nodeBackend $ fmap grpcResponse <$> (GRPC.getBlockInfo blockhash)
 
   blocksByHeight :: Word64 -> Handler Aeson.Value
   blocksByHeight height = liftIO $
-    proxyGrpcCall nodeBackend (GRPC.getBlocksAtHeight Types.BlockHeight {theBlockHeight = height} Nothing Nothing)
+    proxyGrpcCall nodeBackend $ fmap grpcResponse <$> (GRPC.getBlocksAtHeight Types.BlockHeight {theBlockHeight = height} Nothing Nothing)
 
   transactionStatus :: Text -> Handler Aeson.Value
-  transactionStatus hash = liftIO $ proxyGrpcCall nodeBackend (GRPC.getTransactionStatus hash)
+  transactionStatus hash = liftIO $ proxyGrpcCall nodeBackend $ fmap grpcResponse <$> (GRPC.getTransactionStatus hash)
 
 proxyGrpcCall :: EnvData -> ClientMonad IO (Either a Aeson.Value) -> IO Aeson.Value
 proxyGrpcCall nodeBackend query = do

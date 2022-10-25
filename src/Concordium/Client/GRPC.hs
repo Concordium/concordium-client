@@ -19,6 +19,7 @@ import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 import           Concordium.Client.Runner.Helper
 
 import           Concordium.Client.Cli
+import           Concordium.Client.Types.GRPC
 import           Concordium.Types.Transactions(BareBlockItem, putVersionedBareBlockItemV0)
 import           Concordium.Types as Types
 import           Concordium.ID.Types as IDTypes
@@ -93,7 +94,7 @@ instance (MonadIO m) => TransactionStatusQuery (ClientMonad m) where
     tx <- case r of
             Left err -> error $ "RPC error: " ++ err
             Right tx -> return tx
-    case fromJSON tx of
+    case fromJSON (grpcResponse tx) of
       Error err -> error $ printf "cannot parse '%s' as JSON: %s" (show tx) err
       Success v -> return v
   wait t = liftIO $ do
@@ -130,135 +131,135 @@ mkGrpcClient config mLogger =
        let logger = fromMaybe (const (return ())) mLogger
        return $! EnvData (retryNum config) cfg lock ioref logger
 
-getNodeInfo :: ClientMonad IO (Either String NodeInfoResponse)
+getNodeInfo :: ClientMonad IO (GRPCResult NodeInfoResponse)
 getNodeInfo = withUnaryNoMsg' (call @"nodeInfo")
 
-getPeerTotalSent :: ClientMonad IO (Either String Word64)
-getPeerTotalSent = withUnaryNoMsg (call @"peerTotalSent") CF.value
+getPeerTotalSent :: ClientMonad IO (GRPCResult Word64)
+getPeerTotalSent = withUnaryNoMsg (call @"peerTotalSent") (to value')
 
-getPeerTotalReceived :: ClientMonad IO (Either String Word64)
-getPeerTotalReceived = withUnaryNoMsg (call @"peerTotalReceived") CF.value
+getPeerTotalReceived :: ClientMonad IO (GRPCResult Word64)
+getPeerTotalReceived = withUnaryNoMsg (call @"peerTotalReceived") (to value')
 
-getPeerVersion :: ClientMonad IO (Either String Text)
-getPeerVersion = withUnaryNoMsg (call @"peerVersion") CF.value
+getPeerVersion :: ClientMonad IO (GRPCResult Text)
+getPeerVersion = withUnaryNoMsg (call @"peerVersion") (to value')
 
-getPeerStats :: Bool -> ClientMonad IO (Either String PeerStatsResponse)
+getPeerStats :: Bool -> ClientMonad IO (GRPCResult PeerStatsResponse)
 getPeerStats bootstrapper = withUnary' (call @"peerStats") msg
   where msg = defMessage & CF.includeBootstrappers .~ bootstrapper
 
-getPeerList :: Bool -> ClientMonad IO (Either String PeerListResponse)
+getPeerList :: Bool -> ClientMonad IO (GRPCResult PeerListResponse)
 getPeerList bootstrapper = withUnary' (call @"peerList") msg
   where msg = defMessage & CF.includeBootstrappers .~ bootstrapper
 
 -- |Return Right True if baker successfully started,
-startBaker :: ClientMonad IO (Either String Bool)
-startBaker = withUnaryNoMsg (call @"startBaker") CF.value
+startBaker :: ClientMonad IO (GRPCResult Bool)
+startBaker = withUnaryNoMsg (call @"startBaker") (to value')
 
 -- |Return Right True if baker successfully stopped.
-stopBaker :: ClientMonad IO (Either String Bool)
-stopBaker = withUnaryNoMsg (call @"stopBaker") CF.value
+stopBaker :: ClientMonad IO (GRPCResult Bool)
+stopBaker = withUnaryNoMsg (call @"stopBaker") (to value')
 
 sendTransactionToBaker ::
-     (MonadIO m) => BareBlockItem -> Int -> ClientMonad m (Either String Bool)
+     (MonadIO m) => BareBlockItem -> Int -> ClientMonad m (GRPCResult Bool)
 sendTransactionToBaker t nid = do
   let msg = defMessage & CF.networkId .~ fromIntegral nid & CF.payload .~ S.runPut (putVersionedBareBlockItemV0 t)
-  withUnary (call @"sendTransaction") msg CF.value
+  withUnary (call @"sendTransaction") msg (to value')
 
-getTransactionStatus :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
-getTransactionStatus txh = withUnary (call @"getTransactionStatus") msg (to processJSON)
+getTransactionStatus :: (MonadIO m) => Text -> ClientMonad m (GRPCResult Value)
+getTransactionStatus txh = withUnary (call @"getTransactionStatus") msg (to processJSON')
   where msg = defMessage & CF.transactionHash .~ txh
 
-getTransactionStatusInBlock :: (MonadIO m) => Text -> Text -> ClientMonad m (Either String Value)
-getTransactionStatusInBlock txh bh = withUnary (call @"getTransactionStatusInBlock") msg (to processJSON)
+getTransactionStatusInBlock :: (MonadIO m) => Text -> Text -> ClientMonad m (GRPCResult Value)
+getTransactionStatusInBlock txh bh = withUnary (call @"getTransactionStatusInBlock") msg (to processJSON')
   where msg = defMessage & CF.transactionHash .~ txh & CF.blockHash .~ bh
 
-getAccountNonFinalizedTransactions :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
-getAccountNonFinalizedTransactions addr = withUnary (call @"getAccountNonFinalizedTransactions") msg (to processJSON)
+getAccountNonFinalizedTransactions :: (MonadIO m) => Text -> ClientMonad m (GRPCResult Value)
+getAccountNonFinalizedTransactions addr = withUnary (call @"getAccountNonFinalizedTransactions") msg (to processJSON')
   where msg = defMessage & CF.accountAddress .~ addr
 
-getNextAccountNonce :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
-getNextAccountNonce addr = withUnary (call @"getNextAccountNonce") msg (to processJSON)
+getNextAccountNonce :: (MonadIO m) => Text -> ClientMonad m (GRPCResult Value)
+getNextAccountNonce addr = withUnary (call @"getNextAccountNonce") msg (to processJSON')
   where msg = defMessage & CF.accountAddress .~ addr
 
-getBlockSummary :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
-getBlockSummary hash = withUnaryBlock (call @"getBlockSummary") hash (to processJSON)
+getBlockSummary :: (MonadIO m) => Text -> ClientMonad m (GRPCResult Value)
+getBlockSummary hash = withUnaryBlock (call @"getBlockSummary") hash (to processJSON')
 
-getConsensusStatus :: (MonadIO m) => ClientMonad m (Either String Value)
-getConsensusStatus = withUnaryNoMsg (call @"getConsensusStatus") (to processJSON)
+getConsensusStatus :: (MonadIO m) => ClientMonad m (GRPCResult Value)
+getConsensusStatus = withUnaryNoMsg (call @"getConsensusStatus") (to processJSON')
 
-getBlockInfo :: Text -> ClientMonad IO (Either String Value)
-getBlockInfo hash = withUnaryBlock (call @"getBlockInfo") hash (to processJSON)
+getBlockInfo :: Text -> ClientMonad IO (GRPCResult Value)
+getBlockInfo hash = withUnaryBlock (call @"getBlockInfo") hash (to processJSON')
 
-getAccountList :: Text -> ClientMonad IO (Either String Value)
-getAccountList hash = withUnaryBlock (call @"getAccountList") hash (to processJSON)
+getAccountList :: Text -> ClientMonad IO (GRPCResult Value)
+getAccountList hash = withUnaryBlock (call @"getAccountList") hash (to processJSON')
 
-getInstances :: Text -> ClientMonad IO (Either String Value)
-getInstances hash = withUnaryBlock (call @"getInstances") hash (to processJSON)
+getInstances :: Text -> ClientMonad IO (GRPCResult Value)
+getInstances hash = withUnaryBlock (call @"getInstances") hash (to processJSON')
 
 -- |Retrieve the account information from the chain.
 getAccountInfo :: (MonadIO m)
                => Text -- ^ Account identifier, address, index or credential registration id.
                -> Text -- ^ Block hash
-               -> ClientMonad m (Either String Value)
-getAccountInfo account hash = withUnary (call @"getAccountInfo") msg (to processJSON)
+               -> ClientMonad m (GRPCResult Value)
+getAccountInfo account hash = withUnary (call @"getAccountInfo") msg (to processJSON')
   where msg = defMessage & CF.blockHash .~ hash & CF.address .~ account
 
-getInstanceInfo :: Text -> Text -> ClientMonad IO (Either String Value)
-getInstanceInfo account hash = withUnary (call @"getInstanceInfo") msg (to processJSON)
+getInstanceInfo :: Text -> Text -> ClientMonad IO (GRPCResult Value)
+getInstanceInfo account hash = withUnary (call @"getInstanceInfo") msg (to processJSON')
   where msg = defMessage & CF.blockHash .~ hash & CF.address .~ account
 
-invokeContract :: Text -> Text -> ClientMonad IO (Either String Value)
-invokeContract context block = withUnary (call @"invokeContract") msg (to processJSON)
+invokeContract :: Text -> Text -> ClientMonad IO (GRPCResult Value)
+invokeContract context block = withUnary (call @"invokeContract") msg (to processJSON')
   where msg = defMessage & CF.blockHash .~ block & CF.context .~ context
 
-getPoolStatus :: Types.BakerId -> Bool -> Text -> ClientMonad IO (Either String Value)
-getPoolStatus bid passiveDelegation hash = withUnary (call @"getPoolStatus") msg (to processJSON)
+getPoolStatus :: Types.BakerId -> Bool -> Text -> ClientMonad IO (GRPCResult Value)
+getPoolStatus bid passiveDelegation hash = withUnary (call @"getPoolStatus") msg (to processJSON')
   where msg = defMessage & CF.blockHash .~ hash & CF.passiveDelegation .~ passiveDelegation & CF.bakerId .~ fromIntegral bid
 
-getBakerList :: Text -> ClientMonad IO (Either String Value)
-getBakerList hash = withUnary (call @"getBakerList") msg (to processJSON)
+getBakerList :: Text -> ClientMonad IO (GRPCResult Value)
+getBakerList hash = withUnary (call @"getBakerList") msg (to processJSON')
   where msg = defMessage & CF.blockHash .~ hash
 
-getRewardStatus :: Text -> ClientMonad IO (Either String Value)
-getRewardStatus hash = withUnaryBlock (call @"getRewardStatus") hash (to processJSON)
+getRewardStatus :: Text -> ClientMonad IO (GRPCResult Value)
+getRewardStatus hash = withUnaryBlock (call @"getRewardStatus") hash (to processJSON')
 
-getBirkParameters :: Text -> ClientMonad IO (Either String Value)
-getBirkParameters hash = withUnaryBlock (call @"getBirkParameters") hash (to processJSON)
+getBirkParameters :: Text -> ClientMonad IO (GRPCResult Value)
+getBirkParameters hash = withUnaryBlock (call @"getBirkParameters") hash (to processJSON')
 
-getModuleList :: Text -> ClientMonad IO (Either String Value)
-getModuleList hash = withUnaryBlock (call @"getModuleList") hash (to processJSON)
+getModuleList :: Text -> ClientMonad IO (GRPCResult Value)
+getModuleList hash = withUnaryBlock (call @"getModuleList") hash (to processJSON')
 
-getModuleSource :: Text -> Text -> ClientMonad IO (Either String BS8.ByteString)
-getModuleSource modRef hash = withUnary (call @"getModuleSource") msg CF.value
+getModuleSource :: Text -> Text -> ClientMonad IO (GRPCResult BS8.ByteString)
+getModuleSource modRef hash = withUnary (call @"getModuleSource") msg (to value')
   where msg = defMessage & CF.blockHash .~ hash & CF.moduleRef .~ modRef
 
-peerConnect :: Text -> Int -> ClientMonad IO (Either String Bool)
-peerConnect ip peerPort = withUnary (call @"peerConnect") msg CF.value
+peerConnect :: Text -> Int -> ClientMonad IO (GRPCResult Bool)
+peerConnect ip peerPort = withUnary (call @"peerConnect") msg (to value')
   where msg = defMessage &
               CF.ip .~ (defMessage & CF.value .~ ip) &
               CF.port .~ (defMessage & CF.value .~ fromIntegral peerPort)
 
-peerDisconnect :: Text -> Int -> ClientMonad IO (Either String Bool)
-peerDisconnect ip peerPort = withUnary (call @"peerDisconnect") msg CF.value
+peerDisconnect :: Text -> Int -> ClientMonad IO (GRPCResult Bool)
+peerDisconnect ip peerPort = withUnary (call @"peerDisconnect") msg (to value')
   where msg = defMessage &
               CF.ip .~ (defMessage & CF.value .~ ip) &
               CF.port .~ (defMessage & CF.value .~ fromIntegral peerPort)
 
-getPeerUptime :: ClientMonad IO (Either String Word64)
-getPeerUptime = withUnaryNoMsg (call @"peerUptime") CF.value
+getPeerUptime :: ClientMonad IO (GRPCResult Word64)
+getPeerUptime = withUnaryNoMsg (call @"peerUptime") (to value')
 
 banNode :: Maybe Text -- ^ Node ID
           -> Maybe Text -- ^ IP address
-          -> ClientMonad IO (Either String Bool)
-banNode identifier ip = withUnary (call @"banNode") msg CF.value
+          -> ClientMonad IO (GRPCResult Bool)
+banNode identifier ip = withUnary (call @"banNode") msg (to value')
   where msg = defMessage &
               CF.maybe'nodeId .~ (textToStringValue <$> identifier) &
               CF.maybe'ip .~ (textToStringValue <$> ip)
 
 unbanNode :: Maybe Text -- ^ Node ID
             -> Maybe Text -- ^ IP address
-            -> ClientMonad IO (Either String Bool)
-unbanNode identifier ip = withUnary (call @"unbanNode") msg CF.value
+            -> ClientMonad IO (GRPCResult Bool)
+unbanNode identifier ip = withUnary (call @"unbanNode") msg (to value')
   where msg = defMessage &
               CF.maybe'nodeId .~ (textToStringValue <$> identifier) &
               CF.maybe'ip .~ (textToStringValue <$> ip)
@@ -266,60 +267,60 @@ unbanNode identifier ip = withUnary (call @"unbanNode") msg CF.value
 textToStringValue :: Text -> StringValue
 textToStringValue x = defMessage & CF.value .~ x
 
-joinNetwork :: Int -> ClientMonad IO (Either String Bool)
-joinNetwork net = withUnary (call @"joinNetwork") msg CF.value
+joinNetwork :: Int -> ClientMonad IO (GRPCResult Bool)
+joinNetwork net = withUnary (call @"joinNetwork") msg (to value')
     where msg = defMessage &
                 CF.networkId .~ (defMessage & CF.value .~ fromIntegral net)
 
-leaveNetwork :: Int -> ClientMonad IO (Either String Bool)
-leaveNetwork net = withUnary (call @"leaveNetwork") msg CF.value
+leaveNetwork :: Int -> ClientMonad IO (GRPCResult Bool)
+leaveNetwork net = withUnary (call @"leaveNetwork") msg (to value')
   where msg = defMessage &
               CF.networkId .~ (defMessage & CF.value .~ fromIntegral net)
 
-getAncestors :: Int -> Text -> ClientMonad IO (Either String Value)
-getAncestors amount blockHash = withUnary (call @"getAncestors") msg (to processJSON)
+getAncestors :: Int -> Text -> ClientMonad IO (GRPCResult Value)
+getAncestors amount blockHash = withUnary (call @"getAncestors") msg (to processJSON')
   where msg = defMessage &
               CF.blockHash .~ blockHash &
               CF.amount .~ fromIntegral amount
 
-getBranches :: ClientMonad IO (Either String Value)
-getBranches = withUnaryNoMsg (call @"getBranches") (to processJSON)
+getBranches :: ClientMonad IO (GRPCResult Value)
+getBranches = withUnaryNoMsg (call @"getBranches") (to processJSON')
 
 -- |Query to get the blocks at the specified height.  Optionally, a genesis index may be provided.
 -- The block height is considered as relative to the genesis block at this index, or the initial
 -- genesis block (index 0) otherwise.  Optionally, a boolean may be specified determining whether
 -- to restrict to only blocks in the specified genesis era.  If unspecified, this defaults to
 -- 'False' (by the proto3 semantics).
-getBlocksAtHeight :: Types.BlockHeight -> Maybe Types.GenesisIndex -> Maybe Bool -> ClientMonad IO (Either String Value)
-getBlocksAtHeight height mFromGen mRestrict = withUnary (call @"getBlocksAtHeight") msg (to processJSON)
+getBlocksAtHeight :: Types.BlockHeight -> Maybe Types.GenesisIndex -> Maybe Bool -> ClientMonad IO (GRPCResult Value)
+getBlocksAtHeight height mFromGen mRestrict = withUnary (call @"getBlocksAtHeight") msg (to processJSON')
   where msg = defMessage
               & CF.blockHeight .~ fromIntegral height
               & optionally (\fromGen -> CF.fromGenesisIndex .~ fromIntegral fromGen) mFromGen
               & optionally (CF.restrictToGenesisIndex .~) mRestrict
         optionally f v = maybe id f v
 
-getBannedPeers :: ClientMonad IO (Either String PeerListResponse)
+getBannedPeers :: ClientMonad IO (GRPCResult PeerListResponse)
 getBannedPeers = withUnaryNoMsg' (call @"getBannedPeers")
 
-shutdown :: ClientMonad IO (Either String Bool)
-shutdown = withUnaryNoMsg (call @"shutdown") CF.value
+shutdown :: ClientMonad IO (GRPCResult Bool)
+shutdown = withUnaryNoMsg (call @"shutdown") (to value')
 
-dumpStart :: ClientMonad IO (Either String Bool)
-dumpStart = withUnaryNoMsg (call @"dumpStart") CF.value
+dumpStart :: ClientMonad IO (GRPCResult Bool)
+dumpStart = withUnaryNoMsg (call @"dumpStart") (to value')
 
-dumpStop :: ClientMonad IO (Either String Bool)
-dumpStop = withUnaryNoMsg (call @"dumpStop") CF.value
+dumpStop :: ClientMonad IO (GRPCResult Bool)
+dumpStop = withUnaryNoMsg (call @"dumpStop") (to value')
 
-getIdentityProviders :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
-getIdentityProviders hash = withUnary (call @"getIdentityProviders") msg (to processJSON)
+getIdentityProviders :: (MonadIO m) => Text -> ClientMonad m (GRPCResult Value)
+getIdentityProviders hash = withUnary (call @"getIdentityProviders") msg (to processJSON')
   where msg = defMessage & CF.blockHash .~ hash
 
-getAnonymityRevokers :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
-getAnonymityRevokers hash = withUnary (call @"getAnonymityRevokers") msg (to processJSON)
+getAnonymityRevokers :: (MonadIO m) => Text -> ClientMonad m (GRPCResult Value)
+getAnonymityRevokers hash = withUnary (call @"getAnonymityRevokers") msg (to processJSON')
   where msg = defMessage & CF.blockHash .~ hash
 
-getCryptographicParameters :: (MonadIO m) => Text -> ClientMonad m (Either String Value)
-getCryptographicParameters hash = withUnary (call @"getCryptographicParameters") msg (to processJSON)
+getCryptographicParameters :: (MonadIO m) => Text -> ClientMonad m (GRPCResult Value)
+getCryptographicParameters hash = withUnary (call @"getCryptographicParameters") msg (to processJSON')
   where msg = defMessage & CF.blockHash .~ hash
 
 -- | Setup the GRPC client and run a rawUnary call with the provided message to the provided method,
@@ -327,7 +328,7 @@ getCryptographicParameters hash = withUnary (call @"getCryptographicParameters")
 withUnaryCore :: forall m n b. (HasMethod P2P m, MonadIO n)
           => RPC P2P m
           -> MethodInput P2P m
-          -> (Either String (MethodOutput P2P m) -> b)
+          -> (GRPCResult (MethodOutput P2P m) -> b)
           -> ClientMonad n b
 withUnaryCore method message k = do
   clientRef <- asks grpc
@@ -393,15 +394,15 @@ withUnaryCore method message k = do
 -- | Setup the GRPC client and run a rawUnary call to the provided method.
 withUnaryCoreNoMsg :: forall m n b. (HasMethod P2P m, MonadIO n)
           => RPC P2P m
-          -> (Either String (MethodOutput P2P m) -> b)
-          -> ClientMonad n b
+          -> (GRPCResult (MethodOutput P2P m) -> (CIHeaderList, b))
+          -> ClientMonad n (CIHeaderList, b)
 withUnaryCoreNoMsg method = withUnaryCore method defMessage
 
 -- | Call a method with a given message and use a Getter on the output.
 withUnary :: forall m n b. (HasMethod P2P m, MonadIO n)
           => RPC P2P m
           -> MethodInput P2P m
-          -> SimpleGetter (MethodOutput P2P m) b
+          -> SimpleGetter (GRPCResponse (MethodOutput P2P m)) b
           -> ClientMonad n (Either String b)
 withUnary method message k = withUnaryCore method message (\x -> (^. k) <$> x)
 
@@ -409,13 +410,13 @@ withUnary method message k = withUnaryCore method message (\x -> (^. k) <$> x)
 withUnary' :: forall m n. (HasMethod P2P m, MonadIO n)
            => RPC P2P m
            -> MethodInput P2P m
-           -> ClientMonad n (Either String (MethodOutput P2P m))
+           -> ClientMonad n (GRPCResult (MethodOutput P2P m))
 withUnary' method message = withUnary method message (to id)
 
 -- | Call a method without a message using the given lens
 withUnaryNoMsg :: forall m n b. (HasMethod P2P m, MonadIO n)
                => RPC P2P m
-               -> SimpleGetter (MethodOutput P2P m) b
+               -> SimpleGetter (GRPCResponse (MethodOutput P2P m)) b
                -> ClientMonad n (Either String b)
 withUnaryNoMsg method = withUnary method defMessage
 
@@ -426,14 +427,14 @@ withUnaryBlock :: forall m n b. (HasMethod P2P m,
                                    Field.HasField (MethodInput P2P m) "blockHash" Text)
                => RPC P2P m
                -> Text
-               -> SimpleGetter (MethodOutput P2P m) b
+               -> SimpleGetter (GRPCResponse (MethodOutput P2P m)) b
                -> ClientMonad n (Either String b)
 withUnaryBlock method hash = withUnary method (defMessage & CF.blockHash .~ hash)
 
 -- | Call a method with an empty message using the `id` lens on the output.
 withUnaryNoMsg' :: forall m n. (HasMethod P2P m, MonadIO n)
                 => RPC P2P m
-                -> ClientMonad n (Either String (MethodOutput P2P m))
+                -> ClientMonad n (GRPCResult (MethodOutput P2P m))
 withUnaryNoMsg' method = withUnary' method defMessage
 
 call :: forall m . RPC P2P m
@@ -446,7 +447,7 @@ getBestBlockHash =
   getConsensusStatus >>= \case
     Left err -> fail err
     Right v ->
-      case parse readBestBlock v of
+      case parse readBestBlock (grpcResponse v) of
         Success bh -> return bh
         Error err  -> fail err
 
@@ -455,7 +456,7 @@ getLastFinalBlockHash =
   getConsensusStatus >>= \case
     Left err -> fail err
     Right v ->
-      case parse readLastFinalBlock v of
+      case parse readLastFinalBlock (grpcResponse v) of
         Success bh -> return bh
         Error err  -> fail err
 
@@ -464,7 +465,7 @@ getAccountNonce addr blockhash =
   getAccountInfo (fromString $ show addr) blockhash >>= \case
     Left err -> fail err
     Right aval ->
-      case parseNullable readAccountNonce aval of
+      case parseNullable readAccountNonce (grpcResponse aval) of
         Error err     -> fail err
         Success Nothing -> fail $ printf "account '%s' not found" (show addr)
         Success (Just nonce) -> return nonce
@@ -474,7 +475,7 @@ getAccountNonceBestGuess addr =
   getNextAccountNonce (pack (show addr)) >>= \case
     Left err -> fail err
     Right nonceObj ->
-      case parse nonceGuessParser nonceObj of
+      case parse nonceGuessParser (grpcResponse nonceObj) of
         AE.Success p -> return p
         AE.Error s -> fail s
 
@@ -489,7 +490,7 @@ getAccountCredentials addr =
   withBestBlockHash Nothing (getAccountInfo (pack (show addr))) >>= \case
     Left err -> fail err
     Right v ->
-      case parseNullable accountCredParser v of
+      case parseNullable accountCredParser (grpcResponse v) of
         AE.Success p -> return (fromMaybe [] p)
         AE.Error s -> fail s
       where accountCredParser = withObject "Account credential parser" $ \obj -> obj .: "accountCredentials"
@@ -500,7 +501,7 @@ getModuleSet blockhash =
   getModuleList blockhash >>= \case
     Left err -> fail err
     Right v ->
-      case fromJSON v of
+      case fromJSON (grpcResponse v) of
         AE.Error s -> fail s
         AE.Success xs -> return $ Set.fromList (fmap Types.ModuleRef xs)
 

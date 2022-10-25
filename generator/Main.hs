@@ -4,6 +4,7 @@ module Main where
 
 import Concordium.Client.Commands
 import Concordium.Client.Runner
+import Concordium.Client.Types.GRPC
 import Concordium.Types.Transactions
 import Concordium.Types
 import Concordium.Types.Execution
@@ -58,8 +59,8 @@ sendTx :: MonadIO m => BareBlockItem -> ClientMonad m BareBlockItem
 sendTx tx =
   sendTransactionToBaker tx 100 >>= \case
     Left err -> liftIO $ die err
-    Right False -> liftIO $ die "Could not send transaction (rejected)."
-    Right True -> return tx
+    Right (GRPCResponse _ False) -> liftIO $ die "Could not send transaction (rejected)."
+    Right (GRPCResponse _ True) -> return tx
 
 iterateM_ :: Monad m => (a -> m a) -> a -> m b
 iterateM_ f a = f a >>= iterateM_ f
