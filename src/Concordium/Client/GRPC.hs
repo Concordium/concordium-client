@@ -113,6 +113,10 @@ liftClientIO comp = ClientMonad {_runClientMonad = ReaderT (\_ -> do
 runClient :: EnvData -> ClientMonad m a -> m (Either ClientError a)
 runClient config comp = runExceptT $ runReaderT (_runClientMonad comp) config
 
+runClientWithExtraHeaders :: [(BS8.ByteString, BS8.ByteString)] -> EnvData -> ClientMonad m a -> m (Either ClientError a)
+runClientWithExtraHeaders hds cfg comp = runExceptT $ runReaderT (_runClientMonad comp) cfgWithHeaders
+  where cfgWithHeaders = cfg { config = (config cfg) { _grpcClientConfigHeaders = _grpcClientConfigHeaders (config cfg) ++ hds } }
+
 mkGrpcClient :: GrpcConfig -> Maybe LoggerMethod -> ClientIO EnvData
 mkGrpcClient config mLogger =
   let auth = ("authentication", BS8.pack $ grpcAuthenticationToken config)
