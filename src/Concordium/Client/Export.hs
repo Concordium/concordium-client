@@ -75,23 +75,53 @@ data WalletExport =
   }
   deriving (Show)
 
-instance AE.FromJSON WalletExport where
-  parseJSON = AE.withObject "Wallet Export" $ \v -> do
+-- |Parse export from the wallet. The data that is exported depends a bit on
+-- which wallet it is, so the parser requires some context which is why this is
+-- a separate function, and not a @FromJSON@ instance.
+parseWalletExport ::
+  -- |The name of the account to import. The old mobile wallet export does not
+  -- require this, but for the new mobile wallet export it is required, and parsing
+  -- will fail if this is not provided.
+  Maybe Text ->
+  -- |The JSON value to be parsed.
+  AE.Value ->
+  AE.Parser WalletExport
+parseWalletExport mName = AE.withObject "Wallet Export" $ \v -> do
     -- Validate type and version.
     t <- v .: "type"
-    version <- v .: "v"
-    unless (t == "concordium-mobile-wallet-data") $
-      fail $ printf "unsupported type '%s'" (t :: String)
-    unless (version == 1) $
-      fail $ printf "unsupported version '%s'" (version :: Int)
-    val <- v .: "value"
-    ids <- val .: "identities"
-    -- We are trying to be explicit about the reason for failure here since the older format
-    -- did not have the environment field, and we want the error message to be better than "missing field".
-    wepEnvironment <- v .:? "environment" >>= \case
-      Nothing -> fail "Missing 'environment' field. Most likely this means the export file was produced by an older, unsupported, wallet version."
-      Just env -> return env
-    return WalletExport { wepAccounts = weiAccounts =<< ids, .. }
+    case t of
+      "concordium-mobile-wallet-data" -> do
+        version <- v .: "v"
+        unless (version == 1) $
+          fail $ printf "unsupported mobile wallet export version '%s'" (version :: Int)
+        val <- v .: "value"
+        ids <- val .: "identities"
+        -- We are trying to be explicit about the reason for failure here since the older format
+        -- did not have the environment field, and we want the error message to be better than "missing field".
+        wepEnvironment <- v .:? "environment" >>= \case
+          Nothing -> fail "Missing 'environment' field. Most likely this means the export file was produced by an older, unsupported, wallet version."
+          Just env -> return env
+        return WalletExport { wepAccounts = weiAccounts =<< ids, .. }
+
+      "concordium-browser-wallet-account" -> do
+        weaName <- case mName of
+          Nothing -> fail "To import an account from the browser wallet you have to provide a name using the `--name` option."
+          Just n -> return n
+        version <- v .: "v"
+        unless (version == 0) $
+          fail $ printf "unsupported browser extension export version '%s'" (version :: Int)
+        val <- v .: "value"
+        wepEnvironment <- v .: "environment"
+        keys <- val .: "accountKeys"
+        asdKeys <- mapM parseCredKeys =<< (keys .: "keys")
+        asdThreshold <- keys .: "threshold"
+        weaCredMap <- val .: "credentials"
+        asdAddress <- val .: "address"
+        let weaKeys = AccountSigningData{..}
+        return WalletExport { wepAccounts = [WalletExportAccount{weaEncryptionKey = Nothing, ..}], .. }
+      other -> fail $ printf "unsupported type '%s'" (other :: String)
+
+      where parseCredKeys = AE.withObject "Credential keys" (.: "keys")
 
 -- | Used for parsing 'WalletExport'.
 newtype WalletExportIdentity =
@@ -109,7 +139,7 @@ data WalletExportAccount =
   { weaName :: !Text
   , weaKeys :: !AccountSigningData
   , weaCredMap :: !(OrdMap.Map IDTypes.CredentialIndex IDTypes.CredentialRegistrationID)
-  , weaEncryptionKey :: !ElgamalSecretKey }
+  , weaEncryptionKey :: !(Maybe ElgamalSecretKey) }
   deriving (Show)
 
 instance AE.FromJSON WalletExportAccount where
@@ -136,17 +166,30 @@ instance AE.FromJSON WalletExportAccount where
       , weaCredMap = OrdMap.singleton 0 (IDTypes.credId credential)
       , weaEncryptionKey = e }
 
--- | Decode, decrypt and parse a mobile wallet export, reencrypting the singing keys with the same password.
+-- | Decode, potentially decrypt and parse a wallet export. The function asks
+-- for the password when it is needed. If importing the old mobile wallet export
+-- then the keys are encrypted using the same password that is used for
+-- decrypting the export.w
 decodeMobileFormattedAccountExport
-  :: BS.ByteString -- ^ JSON with encrypted accounts and identities,
-                   -- which must include the fields of an 'EncryptedJSON WalletExport'.
+  :: BS.ByteString
+  -- ^ JSON with accounts and identities, this can either be encrypted or not. If it is encrypted it must be encrypted
+  -- using the format expected of an 'EncryptedJSON WalletExport'.
   -> Maybe Text -- ^ Only return the account with the given name (if it exists, otherwise return none).
-  -> Password -- ^ Password to decrypt the export and to encrypt the sign keys.
+  -> IO Password -- ^ Action to ask for password to decrypt the export or to encrypt the sign keys.
   -> IO (Either String ([AccountConfig], Environment)) -- ^ A list of resulting 'AccountConfig's and their environment, or an error message on failure.
-decodeMobileFormattedAccountExport json accountName password = runExceptT $ do
-  we :: EncryptedJSON WalletExport <- AE.eitherDecodeStrict json `embedErr` printf "cannot decode wallet export JSON: %s"
-  WalletExport{..} <- decryptJSON we password `embedErr` (("cannot decrypt wallet export: " ++) . displayException)
-  (, wepEnvironment) <$> accountCfgsFromWalletExportAccounts wepAccounts accountName password
+decodeMobileFormattedAccountExport jsonBS accountName passwordAct = runExceptT $ do
+  jsonValue <- AE.eitherDecodeStrict jsonBS `embedErr` printf "cannot decode wallet export: %s"
+  if isLikelyEncrypted jsonValue then do
+    we :: EncryptedJSON WalletExport <- AE.eitherDecodeStrict jsonBS `embedErr` printf "cannot decode wallet export JSON: %s"
+    password <- liftIO passwordAct
+    WalletExport{..} <- decryptJSONWith we password (parseWalletExport accountName) `embedErr` (("cannot decrypt wallet export: " ++) . displayException)
+    (, wepEnvironment) <$> accountCfgsFromWalletExportAccounts wepAccounts accountName password
+  else do
+    case AE.parseEither (parseWalletExport accountName) jsonValue of
+      Left err -> throwError [i|Cannot decode wallet export: #{err}|]
+      Right WalletExport{..} -> do
+          password <- liftIO passwordAct
+          (, wepEnvironment) <$> accountCfgsFromWalletExportAccounts wepAccounts accountName password
 
 -- | Convert one or all wallet export accounts to regular account configs.
 -- This encrypts all signing keys with the provided password.
@@ -170,7 +213,9 @@ accountCfgFromWalletExportAccount :: Password -> WalletExportAccount -> ExceptT 
 accountCfgFromWalletExportAccount pwd WalletExportAccount { weaKeys = AccountSigningData{..}, .. } = do
   name <- liftIO $ ensureValidName weaName
   acKeys <- liftIO $ encryptAccountKeyMap pwd asdKeys
-  acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd weaEncryptionKey)
+  acEncryptionKey <- case weaEncryptionKey of
+    Nothing -> return Nothing
+    Just ek -> liftIO . fmap Just $ encryptAccountEncryptionSecretKey pwd ek
   return $ AccountConfig
     { acAddr = NamedAddress { naNames = [name], naAddr = asdAddress }
     , acCids = weaCredMap

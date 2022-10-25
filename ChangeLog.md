@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Add a `--secure` flag to enable connecting to gRPC using TLS.
+  All commands that query the node support this.
+
+## 4.2.0
+
+- Fix handling of `--no-confirm` in `contract init`, `contract update`, `module
+  deploy`, and `register data` transactions. This flag is now respected.
+- Add support for importing accounts exported by the browser extension wallet.
+- Make the output of CCD amounts consistent when printing transaction outcomes.
+  The output should now always `x.y CCD` for some `x` and `y`.
+
+## 4.1.0
+
+- Fix bug in contract schema parsing caused by endiannes confusion.
+- Add support for smart contract schema V2.
+  - V2 schemas offer the same options as V1, but can also include a schema for
+    the error type.
+  - This enables concordium-client to interact with contracts and schemas
+    using `concordium-std` version 4.
+
 ## 4.0.4
 
 - Add support for contract schemas containing the version.

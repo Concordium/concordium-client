@@ -66,7 +66,8 @@ data Backend =
     , grpcPort   :: !PortNumber
     , grpcAuthenticationToken :: !String
     , grpcTarget :: !(Maybe String)
-    , grpcRetryNum :: !Int }
+    , grpcRetryNum :: !Int
+    , grpcUseTls :: !Bool }
   deriving (Show)
 
 data Cmd
@@ -520,7 +521,7 @@ versionOption =
   infoOption (showVersion version) (hidden <> long "version" <> help "Show version.")
 
 backendParser :: Parser Backend
-backendParser = GRPC <$> hostParser <*> portParser <*> grpcAuthenticationTokenParser <*> targetParser <*> retryNumParser
+backendParser = GRPC <$> hostParser <*> portParser <*> grpcAuthenticationTokenParser <*> targetParser <*> retryNumParser <*> tlsParser
 
 hostParser :: Parser HostName
 hostParser =
@@ -568,6 +569,12 @@ retryNumParser =
      showDefault <>
      metavar "GRPC-RETRY" <>
      help "How many times to retry the connection if it fails the first time.")
+
+tlsParser :: Parser Bool
+tlsParser =
+  switch
+    (long "secure" <>
+     help "Enable TLS.")
 
 -- |Parse transactionOpts with an optional energy flag
 transactionOptsParser :: Parser (TransactionOpts (Maybe Energy))
@@ -1191,7 +1198,7 @@ configAccountImportCmd showAllOpts =
     "import"
     (info
       (ConfigAccountImport <$>
-        strArgument (metavar "FILE" <> help "Account file exported from the wallet. By default all accounts will be imported.") <*>
+        strArgument (metavar "FILE" <> help "File with one or more accounts exported from the wallet.") <*>
         optional (strOption (long "name" <> metavar "NAME" <> help nameOptionHelp)) <*>
         option readAccountExportFormat (internalUnless showAllOpts <> long "format" <> metavar "FORMAT" <> value FormatMobile <> help "Export format. Supported values are 'mobile' and 'genesis' (default: 'mobile').") <*>
         switch (long "skip-existing" <> short 's' <> help "Automatically skip importing accounts when the keydirectory already exists")

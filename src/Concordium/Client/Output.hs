@@ -356,18 +356,31 @@ printContractInfo ci namedOwner namedModRef =
     tellMethodsV1 = \case
       CI.NoSchemaV1{..} -> tell $ map (`showContractFuncV1` Nothing) ns1Methods
       CI.WithSchemaV1{..} -> tell $  map (uncurry showContractFuncV1) ws1Methods
+      CI.WithSchemaV2{..} -> tell $  map (uncurry showContractFuncV2) ws2Methods
 
 showContractFuncV0 :: Text -> Maybe CS.SchemaType -> String
 showContractFuncV0 funcName mParamSchema = case mParamSchema of
   Nothing -> [i|- #{funcName}|]
   Just paramSchema -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON paramSchema}|]
 
-showContractFuncV1 :: Text -> Maybe CS.FunctionSchema -> String
+showContractFuncV1 :: Text -> Maybe CS.FunctionSchemaV1 -> String
 showContractFuncV1 funcName mFuncSchema = case mFuncSchema of
   Nothing -> [i|- #{funcName}|]
   Just (CS.Parameter paramSchema) -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON paramSchema}|]
   Just (CS.ReturnValue rvSchema) -> [i|- #{funcName}\n    Return value:\n#{indentBy 8 $ showPrettyJSON rvSchema}|]
-  Just CS.Both{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fsParameter}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fsReturnValue}|]
+  Just CS.Both{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fs1Parameter}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs1ReturnValue}|]
+
+showContractFuncV2 :: Text -> Maybe CS.FunctionSchemaV2 -> String
+showContractFuncV2 funcName mFuncSchema = case mFuncSchema of
+  Nothing -> [i|- #{funcName}|]
+  Just (CS.Param paramSchema) -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON paramSchema}|]
+  Just (CS.Rv rvSchema) -> [i|- #{funcName}\n    Return value:\n#{indentBy 8 $ showPrettyJSON rvSchema}|]
+  Just CS.ParamRv{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fs2Parameter}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}|]
+  Just (CS.Error errorSchema) -> [i|- #{funcName}\n    Error:\n#{indentBy 8 $ showPrettyJSON errorSchema}|]
+  Just CS.ParamError{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fs2Parameter}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
+  Just CS.RvError{..} -> [i|- #{funcName}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
+  Just CS.ParamRvError{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fs2Parameter}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
+
 
 -- |Print module inspect info, i.e., the named moduleRef and its included contracts.
 -- If the init or receive signatures for a contract exist in the schema, they are also printed.
@@ -383,7 +396,7 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
 
   where
     -- |Show all the contract init and receive functions including optional signatures from the schema.
-    -- Only V1 contracts can have the Return value section.
+    -- Only V1 contracts can have the Return value and Error section.
     -- Example:
     --  - contract-no-methods-no-schema
     --  - contract-no-methods
@@ -397,6 +410,19 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
     --            ["<String>", "<Int32>"]
     --        Return value:
     --            "<Bool>"
+    --        Error:
+    --            {
+    --                "Enum": [
+    --                    {
+    --                        "SomeError": [
+    --                            "<String>"
+    --                        ]
+    --                    },
+    --                    {
+    --                        "ParseError": []
+    --                    }
+    --               ]
+    --            }
     --     - func
     --           Parameter:
     --               ["<AccountAddress>"]
@@ -404,6 +430,7 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
     showModuleInspectSigs = \case
       CI.ModuleInspectSigsV0{..} -> showContractSigsV0 mis0ContractSigs
       CI.ModuleInspectSigsV1{..} -> showContractSigsV1 mis1ContractSigs
+      CI.ModuleInspectSigsV2{..} -> showContractSigsV2 mis2ContractSigs
 
     showContractSigsV0 :: Map.Map Text CI.ContractSigsV0 -> [String]
     showContractSigsV0 = go . sortOn fst . Map.toList
@@ -423,9 +450,20 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
                                                           ++ showReceives (sortOn fst . Map.toList $ csv1ReceiveSigs)
                                                           ++ go remaining
 
-            showReceives :: [(Text, Maybe CS.FunctionSchema)] -> [String]
+            showReceives :: [(Text, Maybe CS.FunctionSchemaV1)] -> [String]
             showReceives [] = []
             showReceives ((fname, mSchema):remaining) = indentBy 4 (showContractFuncV1 fname mSchema) : showReceives remaining
+
+    showContractSigsV2 :: Map.Map Text CI.ContractSigsV2 -> [String]
+    showContractSigsV2 = go . sortOn fst . Map.toList
+      where go [] = []
+            go ((cname, CI.ContractSigsV2{..}):remaining) = [showContractFuncV2 cname csv2InitSig]
+                                                          ++ showReceives (sortOn fst . Map.toList $ csv2ReceiveSigs)
+                                                          ++ go remaining
+
+            showReceives :: [(Text, Maybe CS.FunctionSchemaV2)] -> [String]
+            showReceives [] = []
+            showReceives ((fname, mSchema):remaining) = indentBy 4 (showContractFuncV2 fname mSchema) : showReceives remaining
 
     showWarnings :: [FuncName] -> [String]
     showWarnings [] = []
@@ -558,13 +596,13 @@ showEvent verbose = \case
   Types.ModuleDeployed ref->
     verboseOrNothing $ printf "module '%s' deployed" (show ref)
   Types.ContractInitialized{..} ->
-    verboseOrNothing $ printf "initialized contract '%s' using init function '%s' from module '%s' with '%s' tokens"
-                              (show ecAddress) (show ecInitName) (show ecRef) (show ecAmount)
+    verboseOrNothing $ printf "initialized contract '%s' using init function '%s' from module '%s' with %s"
+                              (show ecAddress) (show ecInitName) (show ecRef) (showCcd ecAmount)
   Types.Updated{..} ->
-    verboseOrNothing $ printf "sent message to function '%s' with '%s' and '%s' tokens from %s to %s"
-                              (show euReceiveName) (show euMessage) (show euAmount) (showAddress euInstigator) (showAddress $ Types.AddressContract euAddress)
+    verboseOrNothing $ printf "sent message to function '%s' with '%s' and %s from %s to %s"
+                              (show euReceiveName) (show euMessage) (showCcd euAmount) (showAddress euInstigator) (showAddress $ Types.AddressContract euAddress)
   Types.Transferred{..} ->
-    verboseOrNothing $ printf "transferred %s tokens from %s to %s" (show etAmount) (showAddress etFrom) (showAddress etTo)
+    verboseOrNothing $ printf "transferred %s from %s to %s" (showCcd etAmount) (showAddress etFrom) (showAddress etTo)
   Types.AccountCreated addr ->
     verboseOrNothing $ printf "account '%s' created" (show addr)
   Types.CredentialDeployed{..} ->
@@ -575,9 +613,9 @@ showEvent verbose = \case
   Types.BakerRemoved{..} ->
     verboseOrNothing $ printf "baker %s, removed" (showBaker ebrBakerId ebrAccount)
   Types.BakerStakeIncreased{..} ->
-    verboseOrNothing $ printf "baker %s stake increased to %s" (showBaker ebsiBakerId ebsiAccount) (Types.amountToString ebsiNewStake)
+    verboseOrNothing $ printf "baker %s stake increased to %s" (showBaker ebsiBakerId ebsiAccount) (showCcd ebsiNewStake)
   Types.BakerStakeDecreased{..} ->
-    verboseOrNothing $ printf "baker %s stake decreased to %s" (showBaker ebsiBakerId ebsiAccount) (Types.amountToString ebsiNewStake)
+    verboseOrNothing $ printf "baker %s stake decreased to %s" (showBaker ebsiBakerId ebsiAccount) (showCcd ebsiNewStake)
   Types.BakerSetRestakeEarnings{..} ->
     verboseOrNothing $ printf "baker %s restake earnings %s" (showBaker ebsreBakerId ebsreAccount) (if ebsreRestakeEarnings then "set" :: String else "unset")
   Types.BakerKeysUpdated{..} ->
@@ -595,9 +633,9 @@ showEvent verbose = \case
   Types.BakerSetFinalizationRewardCommission{..} ->
     verboseOrNothing $ printf "baker %s changed finalization reward commission to %s" (showBaker ebsfrcBakerId ebsfrcAccount) (show ebsfrcFinalizationRewardCommission)
   Types.DelegationStakeIncreased{..} ->
-    verboseOrNothing $ printf "delegator %s stake increased to %s" (showDelegator edsiDelegatorId edsiAccount) (Types.amountToString edsiNewStake)
+    verboseOrNothing $ printf "delegator %s stake increased to %s" (showDelegator edsiDelegatorId edsiAccount) (showCcd edsiNewStake)
   Types.DelegationStakeDecreased{..} ->
-    verboseOrNothing $ printf "delegator %s stake decreased to %s" (showDelegator edsdDelegatorId edsdAccount) (Types.amountToString edsdNewStake)
+    verboseOrNothing $ printf "delegator %s stake decreased to %s" (showDelegator edsdDelegatorId edsdAccount) (showCcd edsdNewStake)
   Types.DelegationSetRestakeEarnings{..} ->
     verboseOrNothing $ printf "delegator %s restake earnings changed to %s" (showDelegator edsreDelegatorId edsreAccount) (show edsreRestakeEarnings)
   Types.DelegationSetDelegationTarget{..} ->
@@ -610,8 +648,8 @@ showEvent verbose = \case
   Types.CredentialKeysUpdated cid -> verboseOrNothing $ printf "credential keys updated for credential with credId %s" (show cid)
   Types.NewEncryptedAmount{..} -> verboseOrNothing $ printf "shielded amount received on account '%s' with index '%s'" (show neaAccount) (show neaNewIndex)
   Types.EncryptedAmountsRemoved{..} -> verboseOrNothing $ printf "shielded amounts removed on account '%s' up to index '%s' with a resulting self shielded amount of '%s'" (show earAccount) (show earUpToIndex) (show earNewAmount)
-  Types.AmountAddedByDecryption{..} -> verboseOrNothing $ printf "transferred '%s' tokens from the shielded balance to the public balance on account '%s'" (show aabdAmount) (show aabdAccount)
-  Types.EncryptedSelfAmountAdded{..} -> verboseOrNothing $ printf "transferred '%s' tokens from the public balance to the shielded balance on account '%s' with a resulting self shielded balance of '%s'" (show eaaAmount) (show eaaAccount) (show eaaNewAmount)
+  Types.AmountAddedByDecryption{..} -> verboseOrNothing $ printf "transferred %s from the shielded balance to the public balance on account '%s'" (showCcd aabdAmount) (show aabdAccount)
+  Types.EncryptedSelfAmountAdded{..} -> verboseOrNothing $ printf "transferred %s from the public balance to the shielded balance on account '%s' with a resulting self shielded balance of '%s'" (showCcd eaaAmount) (show eaaAccount) (show eaaNewAmount)
   Types.UpdateEnqueued{..} ->
     verboseOrNothing $ printf "Enqueued chain update, effective at %s:\n%s" (showTimeFormatted (timeFromTransactionExpiryTime ueEffectiveTime)) (show uePayload)
   Types.TransferredWithSchedule{..} ->
@@ -707,7 +745,7 @@ showRejectReason verbose = \case
     "runtime failure"
   Types.AmountTooLarge a amount ->
     if verbose then
-      printf "account or contract '%s' does not have enough funds to transfer %s tokens" (show a) (show amount)
+      printf "account or contract '%s' does not have enough funds to transfer %s" (show a) (showCcd amount)
     else
       "insufficient funds"
   Types.SerializationFailure ->

@@ -3,20 +3,25 @@
 module Concordium.Client.Types.Contract.Schema(
   ContractSchemaV0(..),
   ContractSchemaV1(..),
+  ContractSchemaV2(..),
   Fields(..),
   FuncName(..),
   ModuleSchema(..),
   SchemaType(..),
   SizeLength(..),
-  FunctionSchema(..),
+  FunctionSchemaV1(..),
+  FunctionSchemaV2(..),
   decodeEmbeddedSchema,
   decodeEmbeddedSchemaAndExports,
   decodeModuleSchema,
+  decodeVersionedModuleSchema,
   getListOfWithKnownLen,
   getListOfWithSizeLen,
-  lookupFunctionSchema,
+  lookupFunctionSchemaV1,
+  lookupFunctionSchemaV2,
   lookupParameterSchema,
   lookupReturnValueSchema,
+  lookupErrorSchema,
   putLenWithSizeLen) where
 
 import Control.Monad (unless)
@@ -46,6 +51,10 @@ decodeEmbeddedSchema = fmap fst . decodeEmbeddedSchemaAndExports
 decodeModuleSchema :: Wasm.WasmVersion -> BS.ByteString -> Either String ModuleSchema
 decodeModuleSchema wasmVersion = S.runGet $ getModuleSchema wasmVersion
 
+-- |Decode a `ModuleSchema` that is explicitly versioned.
+decodeVersionedModuleSchema :: BS.ByteString -> Either String ModuleSchema
+decodeVersionedModuleSchema = S.runGet getVersionedModuleSchema
+
 -- |Try to find an embedded schema and a list of exported function names and decode them.
 decodeEmbeddedSchemaAndExports :: Wasm.WasmModule -> Either String (Maybe ModuleSchema, [Text])
 decodeEmbeddedSchemaAndExports wasmModule = S.runGet (getEmbeddedSchemaAndExportsFromModule wasmVersion) moduleSource
@@ -62,10 +71,15 @@ lookupParameterSchema moduleSchema funcName =
         contract <- Map.lookup contrName ms0ContractSchemas
         Map.lookup receiveName (cs0ReceiveSigs contract)
     ModuleSchemaV1 {..} -> case funcName of
-      InitFuncName contrName -> Map.lookup contrName ms1ContractSchemas >>= cs1InitSig >>= getParameterSchema
+      InitFuncName contrName -> Map.lookup contrName ms1ContractSchemas >>= cs1InitSig >>= getParameterSchemaV1
       ReceiveFuncName contrName receiveName -> do
         contract <- Map.lookup contrName ms1ContractSchemas
-        Map.lookup receiveName (cs1ReceiveSigs contract) >>= getParameterSchema
+        Map.lookup receiveName (cs1ReceiveSigs contract) >>= getParameterSchemaV1
+    ModuleSchemaV2 {..} -> case funcName of
+      InitFuncName contrName -> Map.lookup contrName ms2ContractSchemas >>= cs2InitSig >>= getParameterSchemaV2
+      ReceiveFuncName contrName receiveName -> do
+        contract <- Map.lookup contrName ms2ContractSchemas
+        Map.lookup receiveName (cs2ReceiveSigs contract) >>= getParameterSchemaV2
 
 -- |Lookup schema for the return value of a function.
 --  Always returns Nothing on V0 contracts as they do not have return values.
@@ -74,16 +88,40 @@ lookupReturnValueSchema moduleSchema funcName =
   case moduleSchema of
     ModuleSchemaV0 {} -> Nothing
     ModuleSchemaV1 {..} -> case funcName of
-      InitFuncName contrName -> Map.lookup contrName ms1ContractSchemas >>= cs1InitSig >>= getReturnValueSchema
+      InitFuncName contrName -> Map.lookup contrName ms1ContractSchemas >>= cs1InitSig >>= getReturnValueSchemaV1
       ReceiveFuncName contrName _ -> do
         contrSchema <- Map.lookup contrName ms1ContractSchemas
-        lookupFunctionSchema contrSchema funcName >>= getReturnValueSchema
+        lookupFunctionSchemaV1 contrSchema funcName >>= getReturnValueSchemaV1
+    ModuleSchemaV2 {..} -> case funcName of
+      InitFuncName contrName -> Map.lookup contrName ms2ContractSchemas >>= cs2InitSig >>= getReturnValueSchemaV2
+      ReceiveFuncName contrName _ -> do
+        contrSchema <- Map.lookup contrName ms2ContractSchemas
+        lookupFunctionSchemaV2 contrSchema funcName >>= getReturnValueSchemaV2
 
--- |Lookup the 'FunctionSchema' for a function.
-lookupFunctionSchema :: ContractSchemaV1 -> FuncName -> Maybe FunctionSchema
-lookupFunctionSchema ContractSchemaV1{..} = \case
+-- |Lookup schema for the error of a function.
+--  Always returns Nothing on schemas with version < 2 as they don't have error schemas.
+lookupErrorSchema :: ModuleSchema -> FuncName -> Maybe SchemaType
+lookupErrorSchema moduleSchema funcName =
+  case moduleSchema of
+    ModuleSchemaV0 {} -> Nothing
+    ModuleSchemaV1 {} -> Nothing
+    ModuleSchemaV2 {..} -> case funcName of
+      InitFuncName contrName -> Map.lookup contrName ms2ContractSchemas >>= cs2InitSig >>= getReturnValueSchemaV2
+      ReceiveFuncName contrName _ -> do
+        contrSchema <- Map.lookup contrName ms2ContractSchemas
+        lookupFunctionSchemaV2 contrSchema funcName >>= getErrorSchemaV2
+
+-- |Lookup the 'FunctionSchemaV1' of a 'ContractSchemaV1'.
+lookupFunctionSchemaV1 :: ContractSchemaV1 -> FuncName -> Maybe FunctionSchemaV1
+lookupFunctionSchemaV1 ContractSchemaV1{..} = \case
   InitFuncName _ -> cs1InitSig
   ReceiveFuncName _ rcvName -> Map.lookup rcvName cs1ReceiveSigs
+
+-- |Lookup the 'FunctionSchemaV2' of a 'ContractSchemaV2'.
+lookupFunctionSchemaV2 :: ContractSchemaV2 -> FuncName -> Maybe FunctionSchemaV2
+lookupFunctionSchemaV2 ContractSchemaV2{..} = \case
+  InitFuncName _ -> cs2InitSig
+  ReceiveFuncName _ rcvName -> Map.lookup rcvName cs2ReceiveSigs
 
 -- |Represents the schema for a module.
 -- V0 is a parallel to `Module` defined in concordium-contracts-common version <= 2.
@@ -91,6 +129,7 @@ lookupFunctionSchema ContractSchemaV1{..} = \case
 data ModuleSchema
   = ModuleSchemaV0 { ms0ContractSchemas :: Map Text ContractSchemaV0 }
   | ModuleSchemaV1 { ms1ContractSchemas :: Map Text ContractSchemaV1 }
+  | ModuleSchemaV2 { ms2ContractSchemas :: Map Text ContractSchemaV2 }
   deriving (Eq, Show, Generic)
 
 -- |Create a getter based on the wasm version.
@@ -113,8 +152,9 @@ getVersionedModuleSchema = S.label "ModuleSchema" $ do
   else do
     version :: Word8 <- S.get
     case version of
-      0 -> getUnversionedModuleSchema Wasm.V0
-      1 -> getUnversionedModuleSchema Wasm.V1
+      0 -> ModuleSchemaV0 <$> getMapOfWithSizeLen Four getText S.get
+      1 -> ModuleSchemaV1 <$> getMapOfWithSizeLen Four getText S.get
+      2 -> ModuleSchemaV2 <$> getMapOfWithSizeLen Four getText S.get
       v -> fail $ "Unsupported schema version: " ++ show v
 
 -- |Create a getter based on the wasm version.
@@ -124,7 +164,7 @@ getUnversionedModuleSchema wasmVersion = S.label "ModuleSchema" $
     Wasm.V0 -> ModuleSchemaV0 <$> getMapOfWithSizeLen Four getText S.get
     Wasm.V1 -> ModuleSchemaV1 <$> getMapOfWithSizeLen Four getText S.get
 
--- |Parallel to ContractSchema defined in concordium-contracts-common (Rust) version <= 2.
+-- |Parallel to schema::ContractV0 defined in concordium-contracts-common (Rust) version <= 2.
 data ContractSchemaV0
   =  ContractSchemaV0 -- ^ Describes the schemas of a V0 smart contract.
   {  cs0State :: Maybe SchemaType -- ^ The optional contract state.
@@ -135,15 +175,25 @@ data ContractSchemaV0
 
 instance AE.ToJSON ContractSchemaV0
 
--- |Parallel to ContractSchema defined in concordium-contracts-common (Rust) version > 2.
+-- |Parallel to schema::ContractV1 defined in concordium-contracts-common (Rust) version > 2.
 data ContractSchemaV1
   = ContractSchemaV1 -- ^ Describes the schemas of a V1 smart contract.
-  { cs1InitSig :: Maybe FunctionSchema -- ^ Schema for the init function.
-  , cs1ReceiveSigs :: Map Text FunctionSchema -- ^ Schemas for the receive functions.
+  { cs1InitSig :: Maybe FunctionSchemaV1 -- ^ Schema for the init function.
+  , cs1ReceiveSigs :: Map Text FunctionSchemaV1 -- ^ Schemas for the receive functions.
   }
   deriving (Eq, Show, Generic)
 
 instance AE.ToJSON ContractSchemaV1
+
+-- |Parallel to schema::ContractV2 defined in concordium-contracts-common (Rust) version > 2.
+data ContractSchemaV2
+  = ContractSchemaV2 -- ^ Describes the schemas of a V1 smart contract.
+  { cs2InitSig :: Maybe FunctionSchemaV2 -- ^ Schema for the init function.
+  , cs2ReceiveSigs :: Map Text FunctionSchemaV2 -- ^ Schemas for the receive functions.
+  }
+  deriving (Eq, Show, Generic)
+
+instance AE.ToJSON ContractSchemaV2
 
 instance S.Serialize ContractSchemaV0 where
   get = S.label "ContractSchemaV0" $ do
@@ -160,48 +210,136 @@ instance S.Serialize ContractSchemaV1 where
     pure ContractSchemaV1{..}
   put ContractSchemaV1 {..} = S.put cs1InitSig <> putMapOfWithSizeLen Four putText S.put cs1ReceiveSigs
 
--- |Schema for a function in a V1 smart contract.
+instance S.Serialize ContractSchemaV2 where
+  get = S.label "ContractSchemaV2" $ do
+    cs2InitSig <- S.label "cs2InitSig" S.get
+    cs2ReceiveSigs <- S.label "cs2ReceiveSigs" $ getMapOfWithSizeLen Four getText S.get
+    pure ContractSchemaV2{..}
+  put ContractSchemaV2 {..} = S.put cs2InitSig <> putMapOfWithSizeLen Four putText S.put cs2ReceiveSigs
+
+-- |V1 Schema for a function in a V1 smart contract.
 -- Can contain a schema for the parameter, return value, or both.
--- Parallel to the FunctionSchema defined in concordium-contract-common (Rust).
-data FunctionSchema
+-- Parallel to the schema::FunctionV1 defined in concordium-contract-common (Rust).
+data FunctionSchemaV1
   = Parameter SchemaType
   | ReturnValue SchemaType
-  | Both { fsParameter :: SchemaType
-         , fsReturnValue :: SchemaType
+  | Both { fs1Parameter :: SchemaType
+         , fs1ReturnValue :: SchemaType
          }
   deriving (Eq, Show, Generic)
 
-instance AE.ToJSON FunctionSchema
+instance AE.ToJSON FunctionSchemaV1
 
--- |Try to get the parameter schema.
-getParameterSchema :: FunctionSchema -> Maybe SchemaType
-getParameterSchema = \case
+-- |Try to get the parameter schema of a FunctionSchemaV1.
+getParameterSchemaV1 :: FunctionSchemaV1 -> Maybe SchemaType
+getParameterSchemaV1 = \case
   Parameter schemaType -> Just schemaType
   ReturnValue _ -> Nothing
-  Both {..} -> Just fsParameter
+  Both {..} -> Just fs1Parameter
 
--- |Try to get the return value schema.
-getReturnValueSchema :: FunctionSchema -> Maybe SchemaType
-getReturnValueSchema = \case
+-- |Try to get the return value schema of a FunctionSchemaV1.
+getReturnValueSchemaV1 :: FunctionSchemaV1 -> Maybe SchemaType
+getReturnValueSchemaV1 = \case
   Parameter _ -> Nothing
   ReturnValue schemaType -> Just schemaType
-  Both {..} -> Just fsReturnValue
+  Both {..} -> Just fs1ReturnValue
 
-instance S.Serialize FunctionSchema where
-  get = S.label "FunctionSchema" $ do
+instance S.Serialize FunctionSchemaV1 where
+  get = S.label "FunctionSchemaV1" $ do
     tag <- S.getWord8
     case tag of
       0 -> S.label "Parameter" $ Parameter <$> S.get
       1 -> S.label "ReturnValue" $ ReturnValue <$> S.get
       2 -> S.label "Both" $ do
-        fsParameter <- S.get
-        fsReturnValue <- S.get
+        fs1Parameter <- S.get
+        fs1ReturnValue <- S.get
         return Both {..}
-      _ -> fail [i|Invalid FunctionSchema tag: #{tag}|]
+      _ -> fail [i|Invalid FunctionSchemaV1 tag: #{tag}|]
   put fs = case fs of
     Parameter schemaType -> S.putWord8 0 <> S.put schemaType
     ReturnValue schemaType -> S.putWord8 1 <> S.put schemaType
-    Both {..} -> S.putWord8 2 <> S.put fsParameter <> S.put fsReturnValue
+    Both {..} -> S.putWord8 2 <> S.put fs1Parameter <> S.put fs1ReturnValue
+
+-- |V2 Schema for a function in a V1 smart contract.
+-- Can contain a schema for the parameter, return value, error, or a combination of these.
+-- Parallel to the schema::FunctionV2 defined in concordium-contract-common (Rust).
+data FunctionSchemaV2
+  = Param SchemaType
+  | Rv SchemaType
+  | ParamRv { fs2Parameter :: SchemaType
+            , fs2ReturnValue :: SchemaType
+            }
+  | Error SchemaType
+  | ParamError { fs2Parameter :: SchemaType
+               , fs2Error :: SchemaType
+               }
+  | RvError { fs2ReturnValue :: SchemaType
+            , fs2Error :: SchemaType
+            }
+  | ParamRvError { fs2Parameter :: SchemaType
+                 , fs2ReturnValue :: SchemaType
+                 , fs2Error :: SchemaType
+                 }
+  deriving (Eq, Show, Generic)
+
+instance AE.ToJSON FunctionSchemaV2
+
+-- |Try to get the parameter schema of a FunctionSchemaV2.
+getParameterSchemaV2 :: FunctionSchemaV2 -> Maybe SchemaType
+getParameterSchemaV2 fs = let (param, _, _) = getMaybeSchemas fs in param
+
+-- |Try to get the return value schema of a FunctionSchemaV2.
+getReturnValueSchemaV2 :: FunctionSchemaV2 -> Maybe SchemaType
+getReturnValueSchemaV2 fs = let (_, rv, _) = getMaybeSchemas fs in rv
+
+-- |Try to get the error schema of a FunctionSchemaV2.
+getErrorSchemaV2 :: FunctionSchemaV2 -> Maybe SchemaType
+getErrorSchemaV2 fs = let (_, _, err) = getMaybeSchemas fs in err
+
+-- |Get the schemas for parameter, return value, and error as a triple of Maybes.
+getMaybeSchemas :: FunctionSchemaV2 -> (Maybe SchemaType, Maybe SchemaType, Maybe SchemaType)
+getMaybeSchemas = \case
+  Param param -> (Just param, Nothing, Nothing)
+  Rv rv -> (Nothing, Just rv, Nothing)
+  ParamRv {..} -> (Just fs2Parameter, Just fs2ReturnValue, Nothing)
+  Error err -> (Nothing, Nothing, Just err)
+  ParamError {..} -> (Just fs2Parameter, Nothing, Just fs2Error)
+  RvError {..} -> (Nothing, Just fs2ReturnValue, Just fs2Error)
+  ParamRvError {..} -> (Just fs2Parameter, Just fs2ReturnValue, Just fs2Error)
+
+instance S.Serialize FunctionSchemaV2 where
+  get = S.label "FunctionSchemaV1" $ do
+    tag <- S.getWord8
+    case tag of
+      0 -> S.label "Param" $ Param <$> S.get
+      1 -> S.label "Rv" $ Rv<$> S.get
+      2 -> S.label "ParamRv" $ do
+        fs2Parameter <- S.get
+        fs2ReturnValue <- S.get
+        return ParamRv {..}
+      3 -> S.label "Error" $ Error <$> S.get
+      4 -> S.label "ParamError" $ do
+        fs2Parameter <- S.get
+        fs2Error <- S.get
+        return ParamError {..}
+      5 -> S.label "RvError" $ do
+        fs2ReturnValue <- S.get
+        fs2Error <- S.get
+        return RvError {..}
+      6 -> S.label "ParamRvError" $ do
+        fs2Parameter <- S.get
+        fs2ReturnValue <- S.get
+        fs2Error <- S.get
+        return ParamRvError {..}
+      _ -> fail [i|Invalid FunctionSchemaV2 tag: #{tag}|]
+  put fs = case fs of
+    Param schemaType -> S.putWord8 0 <> S.put schemaType
+    Rv schemaType -> S.putWord8 1 <> S.put schemaType
+    ParamRv {..} -> S.putWord8 2 <> S.put fs2Parameter <> S.put fs2ReturnValue
+    Error schemaType -> S.putWord8 3 <> S.put schemaType
+    ParamError {..} -> S.putWord8 4 <> S.put fs2Parameter <> S.put fs2Error
+    RvError {..} -> S.putWord8 5 <> S.put fs2ReturnValue <> S.put fs2Error
+    ParamRvError {..} -> S.putWord8 6 <> S.put fs2Parameter <> S.put fs2ReturnValue <> S.put fs2Error
 
 -- |Parallel to Fields defined in contracts-common (Rust).
 -- Must stay in sync.
@@ -344,10 +482,10 @@ instance S.Serialize SchemaType where
       24 -> S.label "Int128"  $ pure Int128
       25 -> S.label "ContractName" $ ContractName <$> S.get
       26 -> S.label "ReceiveName"  $ ReceiveName <$> S.get
-      27 -> S.label "ULeb128" $ ULeb128 <$> S.get
-      28 -> S.label "ILeb128"  $ ILeb128 <$> S.get
+      27 -> S.label "ULeb128" $ ULeb128 <$> S.getWord32le
+      28 -> S.label "ILeb128"  $ ILeb128 <$> S.getWord32le
       29 -> S.label "ByteList" $ ByteList <$> S.get
-      30 -> S.label "ByteArray"  $ ByteArray <$> S.get
+      30 -> S.label "ByteArray"  $ ByteArray <$> S.getWord32le
       x  -> fail [i|Invalid SchemaType tag: #{x}|]
 
   put typ = case typ of
@@ -378,10 +516,10 @@ instance S.Serialize SchemaType where
     Int128  -> S.putWord8 24
     ContractName sl     -> S.putWord8 25 <> S.put sl
     ReceiveName sl      -> S.putWord8 26 <> S.put sl
-    ULeb128 sl          -> S.putWord8 27 <> S.put sl
-    ILeb128 sl          -> S.putWord8 28 <> S.put sl
+    ULeb128 sl          -> S.putWord8 27 <> S.putWord32le sl
+    ILeb128 sl          -> S.putWord8 28 <> S.putWord32le sl
     ByteList sl         -> S.putWord8 29 <> S.put sl
-    ByteArray sl        -> S.putWord8 30 <> S.put sl
+    ByteArray sl        -> S.putWord8 30 <> S.putWord32le sl
 
 -- |Parallel to SizeLength defined in contracts-common (Rust).
 -- Must stay in sync.

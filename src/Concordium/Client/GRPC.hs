@@ -61,6 +61,8 @@ data GrpcConfig =
     , retryNum :: !Int
     -- |Timeout of each RPC call (defaults to 5min if not given).
     , timeout :: !(Maybe Int)
+    -- |Whether to use TLS or not.
+    , useTls :: !Bool
     }
 
 data EnvData =
@@ -124,7 +126,7 @@ mkGrpcClient config mLogger =
         case target config of
           Just t  -> [auth, ("target", BS8.pack t)]
           Nothing -> [auth]
-      cfg = (grpcClientConfigSimple (host config) (port config) False)
+      cfg = (grpcClientConfigSimple (host config) (port config) (useTls config))
                  { _grpcClientConfigCompression = uncompressed
                  , _grpcClientConfigHeaders = header
                  , _grpcClientConfigTimeout = Timeout (fromMaybe 300 (timeout config))

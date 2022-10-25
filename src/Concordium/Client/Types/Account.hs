@@ -10,8 +10,10 @@ import Control.Monad
 import Control.Monad.Except
 import Control.Exception
 
+import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
+import qualified Data.Text as Text
 import qualified Data.Aeson as AE
 import Data.Aeson ((.=),(.:),(.:?), (.!=))
 
@@ -30,7 +32,14 @@ import Data.ByteString (ByteString)
 -- * Accounts
 
 data NamedAddress = NamedAddress { naNames :: [Text], naAddr :: ID.AccountAddress }
-  deriving (Show, Eq)
+  deriving (Eq)
+
+-- The Show instance of NamedAddress is used in some error reporting, so we try
+-- to make it reasonably nice.
+instance Show NamedAddress where
+  show NamedAddress{..} = show naAddr ++ showNames
+      where showNames | List.null naNames = ""
+                      | otherwise = " (" ++ (List.intercalate ", " . map (\n -> "'" ++ Text.unpack n ++ "'") $ naNames) ++ ")"
 
 instance AE.ToJSON NamedAddress where
   toJSON (NamedAddress naNames naAddr) = AE.object ["names" .= naNames, "address" .= naAddr]

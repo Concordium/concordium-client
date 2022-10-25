@@ -138,7 +138,7 @@ import Codec.CBOR.JSON
 -- they should be made in the context of the same 'withClient' so they reuse it.
 withClient :: Backend -> ClientMonad IO a -> IO a
 withClient bkend comp = do
-  let config = GrpcConfig (COM.grpcHost bkend) (COM.grpcPort bkend) (COM.grpcAuthenticationToken bkend) (COM.grpcTarget bkend) (COM.grpcRetryNum bkend) Nothing
+  let config = GrpcConfig (COM.grpcHost bkend) (COM.grpcPort bkend) (COM.grpcAuthenticationToken bkend) (COM.grpcTarget bkend) (COM.grpcRetryNum bkend) Nothing (COM.grpcUseTls bkend)
   runExceptT (mkGrpcClient config Nothing) >>= \case
       Left err -> logFatal ["Cannot establish connection to the node: " ++ show err]
       Right client -> do
@@ -502,7 +502,7 @@ loadAccountImportFile format file name = do
   contents <- handleReadFile BS.readFile file
   case format of
     FormatMobile -> do
-      pwd <- askPassword "Enter encryption password: "
+      let pwd = askPassword "Enter encryption password: "
       (accCfgs, environment) <- decodeMobileFormattedAccountExport contents name pwd `withLogFatalIO` ("cannot import accounts: " ++)
       let accountsMessage :: Text = if length accCfgs >= 2 then "accounts" else "account"
       logInfo [[i|loaded the following #{accountsMessage} from the #{environment} chain:|]]
@@ -717,21 +717,23 @@ processTransactionCmd action baseCfgDir verbose backend =
 
       logInfo [[i|Register data. Allowing up to #{showNrg nrg} to be spent as transaction fee.|]]
 
-      registerConfirmed <- askConfirmation Nothing
-      when registerConfirmed $ do
-        logInfo ["Registering data..."]
+      when (ioConfirm . toInteractionOpts $ txOpts) $ do
+         confirmed <- askConfirmation Nothing
+         unless confirmed exitTransactionCancelled
 
-        let intOpts = toInteractionOpts txOpts
-        let pl = registerDataTransactionPayload rdCfg
+      logInfo ["Registering data..."]
 
-        withClient backend $ do
-          mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
-          let extractDataRegistered = extractFromTsr $ \case Types.DataRegistered rd -> Just rd
-                                                             _ -> Nothing
-          case extractDataRegistered mTsr of
-            Nothing -> return ()
-            Just (Left err) -> logFatal ["Registering data failed:", err]
-            Just (Right _) -> logSuccess ["Data succesfully registered."]
+      let intOpts = toInteractionOpts txOpts
+      let pl = registerDataTransactionPayload rdCfg
+
+      withClient backend $ do
+        mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
+        let extractDataRegistered = extractFromTsr $ \case Types.DataRegistered rd -> Just rd
+                                                           _ -> Nothing
+        case extractDataRegistered mTsr of
+          Nothing -> return ()
+          Just (Left err) -> logFatal ["Registering data failed:", err]
+          Just (Right _) -> logSuccess ["Data succesfully registered."]
 
 -- |Construct a transaction config for registering data.
 --  The data is read from the 'FilePath' provided.
@@ -1614,26 +1616,27 @@ processModuleCmd action baseCfgDir verbose backend =
       logInfo [ msgIntro
               , [i|allowing up to #{showNrg nrg} to be spent as transaction fee|]]
 
-      deployConfirmed <- askConfirmation Nothing
+      when (ioConfirm . toInteractionOpts $ txOpts) $ do
+         confirmed <- askConfirmation Nothing
+         unless confirmed exitTransactionCancelled
 
-      when deployConfirmed $ do
-          logInfo ["deploying module..."]
+      logInfo ["deploying module..."]
 
-          let intOpts = toInteractionOpts txOpts
-          let pl = moduleDeployTransactionPayload mdCfg
+      let intOpts = toInteractionOpts txOpts
+      let pl = moduleDeployTransactionPayload mdCfg
 
-          withClient backend $ do
-            mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
-            case extractModRef mTsr of
+      withClient backend $ do
+        mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
+        case extractModRef mTsr of
+          Nothing -> return ()
+          Just (Left err) -> logFatal ["module deployment failed:", err]
+          Just (Right modRef) -> do
+            logSuccess [[i|module successfully deployed with reference: '#{modRef}'|]]
+            case modName of
               Nothing -> return ()
-              Just (Left err) -> logFatal ["module deployment failed:", err]
-              Just (Right modRef) -> do
-                logSuccess [[i|module successfully deployed with reference: '#{modRef}'|]]
-                case modName of
-                  Nothing -> return ()
-                  Just modName' -> do
-                    nameAdded <- liftIO $ addModuleNameAndWrite verbose baseCfg modName' modRef
-                    logSuccess [[i|module reference #{modRef} was successfully named '#{nameAdded}'|]]
+              Just modName' -> do
+                nameAdded <- liftIO $ addModuleNameAndWrite verbose baseCfg modName' modRef
+                logSuccess [[i|module reference #{modRef} was successfully named '#{nameAdded}'|]]
 
     ModuleList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1784,23 +1787,24 @@ processContractCmd action baseCfgDir verbose backend =
               , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
               , [i|transaction expires on #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
 
-      initConfirmed <- askConfirmation Nothing
+      when (ioConfirm . toInteractionOpts $ txOpts) $ do
+         confirmed <- askConfirmation Nothing
+         unless confirmed exitTransactionCancelled
 
-      when initConfirmed $ do
-        let intOpts = toInteractionOpts txOpts
-        let pl = contractInitTransactionPayload ciCfg
-        withClient backend $ do
-          mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
-          case extractContractAddress mTsr of
-            Nothing -> return ()
-            Just (Left err) -> logFatal ["contract initialisation failed:", err]
-            Just (Right contrAddr) -> do
-              logSuccess [[i|contract successfully initialized with address: #{showCompactPrettyJSON contrAddr}|]]
-              case contrAlias of
-                Nothing -> return ()
-                Just contrAlias' -> do
-                  nameAdded <- liftIO $ addContractNameAndWrite verbose baseCfg contrAlias' contrAddr
-                  logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{nameAdded}'|]]
+      let intOpts = toInteractionOpts txOpts
+      let pl = contractInitTransactionPayload ciCfg
+      withClient backend $ do
+        mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
+        case extractContractAddress mTsr of
+          Nothing -> return ()
+          Just (Left err) -> logFatal ["contract initialisation failed:", err]
+          Just (Right contrAddr) -> do
+            logSuccess [[i|contract successfully initialized with address: #{showCompactPrettyJSON contrAddr}|]]
+            case contrAlias of
+              Nothing -> return ()
+              Just contrAlias' -> do
+                nameAdded <- liftIO $ addContractNameAndWrite verbose baseCfg contrAlias' contrAddr
+                logSuccess [[i|contract address #{showCompactPrettyJSON contrAddr} was successfully named '#{nameAdded}'|]]
 
     ContractUpdate indexOrName subindex receiveName paramsFile schemaFile amount txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1820,20 +1824,21 @@ processContractCmd action baseCfgDir verbose backend =
               , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
               , [i|transaction expires on #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]]
 
-      updateConfirmed <- askConfirmation Nothing
+      when (ioConfirm . toInteractionOpts $ txOpts) $ do
+         confirmed <- askConfirmation Nothing
+         unless confirmed exitTransactionCancelled
 
-      when updateConfirmed $ do
-        let intOpts = toInteractionOpts txOpts
-        let pl = contractUpdateTransactionPayload cuCfg
-        withClient backend $ do
-          mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
-          case extractUpdate mTsr of
-            Nothing -> return ()
-            Just (Left err) -> logFatal ["updating contract instance failed:", err]
-            Just (Right _) -> do
-              namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-              logSuccess [[iii|successfully updated contract instance #{showNamedContractAddress namedContrAddr}
-                                                using the function '#{receiveName}'|]]
+      let intOpts = toInteractionOpts txOpts
+      let pl = contractUpdateTransactionPayload cuCfg
+      withClient backend $ do
+        mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
+        case extractUpdate mTsr of
+          Nothing -> return ()
+          Just (Left err) -> logFatal ["updating contract instance failed:", err]
+          Just (Right _) -> do
+            namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
+            logSuccess [[iii|successfully updated contract instance #{showNamedContractAddress namedContrAddr}
+                                              using the function '#{receiveName}'|]]
 
     ContractInvoke indexOrName subindex receiveName parameterFile schemaFile amount invoker energy block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1874,7 +1879,7 @@ processContractCmd action baseCfgDir verbose backend =
           Right (GRPCResponse _ jsonValue) -> case AE.fromJSON jsonValue of
             AE.Error jsonErr -> logFatal [[i|Invocation failed with error: #{jsonErr}|]]
             AE.Success InvokeContract.Failure{..} -> do
-              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName
+              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName True
               -- Logs in cyan to indicate that the invocation returned with a failure.
               -- This might be what you expected from the contract, so logWarn or logFatal should not be used.
               log Info (Just ANSI.Cyan) [[iii|Invocation resulted in failure:\n
@@ -1885,7 +1890,7 @@ processContractCmd action baseCfgDir verbose backend =
               let eventsMsg = case mapMaybe (fmap (("  - " <>) . Text.pack) . showEvent verbose) rcrEvents of
                                 [] -> Text.empty
                                 evts -> [i|- Events:\n#{Text.intercalate "\n" evts}|]
-              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName
+              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName False
               logSuccess [[iii|Invocation resulted in success:\n
                                - Energy used: #{showNrg rcrUsedEnergy}
                                #{returnValueMsg}
@@ -1953,19 +1958,22 @@ processContractCmd action baseCfgDir verbose backend =
             signatureCount = mapNumKeys (esdKeys encSignData)
 
         -- |Construct a message for displaying the return value of a smart contract invocation.
-        mkReturnValueMsg :: Maybe BS.ByteString -> Maybe FilePath -> Maybe CS.ModuleSchema -> Text -> Text -> ClientMonad IO Text
-        mkReturnValueMsg rvBytes schemaFile modSchema contractName receiveName = case rvBytes of
+        --  The 'isError' parameter determines whether the returned bytes should be parsed with the error schema or the return value schema.
+        mkReturnValueMsg :: Maybe BS.ByteString -> Maybe FilePath -> Maybe CS.ModuleSchema -> Text -> Text -> Bool -> ClientMonad IO Text
+        mkReturnValueMsg rvBytes schemaFile modSchema contractName receiveName isError = case rvBytes of
           Nothing -> return Text.empty
-          Just rv -> case modSchema >>= \modSchema' -> CS.lookupReturnValueSchema modSchema' (CS.ReceiveFuncName contractName receiveName) of
-            Nothing -> return [i|\n - Return value (raw):\n  #{BS.unpack rv}\n|] -- Schema not provided or it doesn't contain the return value for this func.
+          Just rv -> case modSchema >>= \modSchema' -> lookupSchema modSchema' (CS.ReceiveFuncName contractName receiveName) of
+            Nothing -> return [i|\n - #{valueType} value (raw):\n  #{BS.unpack rv}\n|] -- Schema not provided or it doesn't contain the return value for this func.
             Just schemaForFunc -> case S.runGet (CP.getJSONUsingSchema schemaForFunc) rv of
               Left err -> do
                 logWarn [[i|Could not parse the returned bytes using the schema:\n#{err}|]]
                 if isJust schemaFile
                   then logWarn ["Make sure you supply the correct schema for the contract with --schema"]
                   else logWarn ["Try supplying a schema file with --schema"]
-                return [i|\n - Return value (raw):\n  #{BS.unpack rv}\n|]
-              Right rvJSON -> return [i|\n - Return value:\n#{indentBy 6 $ showPrettyJSON rvJSON}\n|]
+                return [i|\n - #{valueType} value (raw):\n  #{BS.unpack rv}\n|]
+              Right rvJSON -> return [i|\n - #{valueType} value:\n#{indentBy 6 $ showPrettyJSON rvJSON}\n|]
+          where
+              (lookupSchema, valueType) = if isError then (CS.lookupErrorSchema, "Error"::Text) else (CS.lookupReturnValueSchema, "Return"::Text)
 
 -- |Try to fetch info about the contract and deserialize it from JSON.
 -- Or, log fatally with appropriate error messages if anything goes wrong.

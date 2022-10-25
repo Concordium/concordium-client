@@ -5,7 +5,7 @@ cabal-version: 2.0
 -- see: https://github.com/sol/hpack
 
 name:           concordium-client
-version:        4.0.4
+version:        4.2.0
 description:    Please see the README on GitHub at <https://github.com/Concordium/concordium-client#readme>
 homepage:       https://github.com/Concordium/concordium-client#readme
 bug-reports:    https://github.com/Concordium/concordium-client/issues
@@ -242,6 +242,7 @@ test-suite concordium-client-test
       SimpleClientTests.LogSpec
       SimpleClientTests.ParseSpec
       SimpleClientTests.QueryTransaction
+      SimpleClientTests.SchemaParsingSpec
       SimpleClientTests.TransactionSpec
       Paths_concordium_client
   hs-source-dirs:

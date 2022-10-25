@@ -38,7 +38,7 @@ runHttp middlewares = do
         _ ->
           error $ "Could not parse host:port for given NODE_URL: " ++ T.unpack nodeUrl
 
-    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, grpcAuthenticationToken = (T.unpack grpcAdminToken), target = Nothing, retryNum = 5, timeout = Nothing }
+    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, grpcAuthenticationToken = (T.unpack grpcAdminToken), target = Nothing, retryNum = 5, timeout = Nothing, useTls = False }
 
   runExceptT (mkGrpcClient grpcConfig Nothing) >>= \case
     Left err -> fail (show err) -- cannot connect to grpc server
