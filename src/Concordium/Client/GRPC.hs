@@ -364,7 +364,10 @@ withUnaryCore method message k = do
               return Nothing
             Just client -> do
               logm "Network client exists, running query."
-              let runRPC = runExceptT (rawUnary method client message) >>=
+              -- Overwrite the headers in the client with existing ones in the config.
+              -- This makes it possible to supply per-request headers.
+              let client' = client {_grpcClientHeaders = (_grpcClientConfigHeaders cfg)}
+              let runRPC = runExceptT (rawUnary method client' message) >>=
                            \case Left _ -> return Nothing -- client error
                                  Right (Left _) -> return Nothing -- too much concurrency
                                  Right (Right x) -> return (Just x)
