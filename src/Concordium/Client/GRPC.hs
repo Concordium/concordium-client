@@ -37,6 +37,7 @@ import           Lens.Micro.Platform
 import           Data.IORef
 import           Data.Aeson as AE
 import           Data.Aeson.Types as AE
+import qualified Data.CaseInsensitive as CI
 import qualified Data.HashSet as Set
 import           Data.Text
 import           Data.String
@@ -115,9 +116,10 @@ liftClientIO comp = ClientMonad {_runClientMonad = ReaderT (\_ -> do
 runClient :: EnvData -> ClientMonad m a -> m (Either ClientError a)
 runClient config comp = runExceptT $ runReaderT (_runClientMonad comp) config
 
-runClientWithExtraHeaders :: [(BS8.ByteString, BS8.ByteString)] -> EnvData -> ClientMonad m a -> m (Either ClientError a)
+runClientWithExtraHeaders :: GRPCHeaderList -> EnvData -> ClientMonad m a -> m (Either ClientError a)
 runClientWithExtraHeaders hds cfg comp = runExceptT $ runReaderT (_runClientMonad comp) cfgWithHeaders
-  where cfgWithHeaders = cfg { config = (config cfg) { _grpcClientConfigHeaders = _grpcClientConfigHeaders (config cfg) ++ hds } }
+  where headerList = Prelude.map (\(k,v) -> (CI.original k, v)) hds
+        cfgWithHeaders = cfg { config = (config cfg) { _grpcClientConfigHeaders = _grpcClientConfigHeaders (config cfg) ++ headerList } }
 
 mkGrpcClient :: GrpcConfig -> Maybe LoggerMethod -> ClientIO EnvData
 mkGrpcClient config mLogger =
