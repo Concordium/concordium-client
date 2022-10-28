@@ -4,7 +4,7 @@ module Main where
 
 import Concordium.Client.Commands
 import Concordium.Client.Runner
-import Concordium.Client.Types.GRPC
+import Concordium.Client.Runner.Helper
 import Concordium.Types.Transactions
 import Concordium.Types
 import Concordium.Types.Execution

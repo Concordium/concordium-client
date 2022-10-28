@@ -57,7 +57,6 @@ import           Concordium.Client.Types.Account
 import qualified Concordium.Client.Types.Contract.Info as CI
 import qualified Concordium.Client.Types.Contract.Parameter as CP
 import qualified Concordium.Client.Types.Contract.Schema as CS
-import           Concordium.Client.Types.GRPC
 import           Concordium.Client.Types.Transaction as CT
 import           Concordium.Client.Types.TransactionStatus
 import           Concordium.Common.Version
@@ -164,7 +163,7 @@ getFromJson = getFromJsonAndHandleError onError
   where onError val err = logFatal ["cannot convert '" ++ show val ++ "': " ++ err]
 
 getFromJson' :: (MonadIO m, FromJSON a) => GRPCResult Value -> m a
-getFromJson' = getFromJson . fmap grpcResponse
+getFromJson' = getFromJson . fmap grpcResponseVal
 
 -- |Helper function for parsing JSON Value, logFatal if the Either is Left,
 -- and use the provided function to handle Error in fromJSON.
@@ -938,7 +937,7 @@ getEncryptedAmountTransferData :: ID.AccountAddress -> NamedAddress -> Types.Amo
 getEncryptedAmountTransferData senderAddr ettReceiver ettAmount idx secretKey = do
   -- get encrypted amounts for the sender
   (bbHash, infoValue) <- logFatalOnError =<< withBestBlockHash Nothing (\bbHash -> ((bbHash,) <$>) <$> getAccountInfo (Text.pack . show $ senderAddr) bbHash)
-  case AE.fromJSON $ grpcResponse infoValue of
+  case AE.fromJSON $ grpcResponseVal infoValue of
     AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
     AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
     AE.Success (Just Types.AccountInfo{aiAccountEncryptedAmount=a@Types.AccountEncryptedAmount{..}}) -> do
@@ -952,7 +951,7 @@ getEncryptedAmountTransferData senderAddr ettReceiver ettAmount idx secretKey = 
                   else return $ take (v - fromIntegral _startIndex)
       -- get receiver's public encryption key
       infoValueReceiver <- logFatalOnError =<< withBestBlockHash (Just bbHash) (getAccountInfo (Text.pack . show $ naAddr ettReceiver))
-      case AE.fromJSON $ grpcResponse infoValueReceiver of
+      case AE.fromJSON $ grpcResponseVal infoValueReceiver of
         AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
         AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show $ naAddr ettReceiver]
         AE.Success (Just air) -> do
@@ -1014,7 +1013,7 @@ getDelegatorCooldown bs = do
 getAccountInfoOrDie :: ID.AccountAddress ->  ClientMonad IO Types.AccountInfo
 getAccountInfoOrDie senderAddr = do
   infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getAccountInfo (Text.pack . show $ senderAddr))
-  case AE.fromJSON $ grpcResponse infoValue of
+  case AE.fromJSON $ grpcResponseVal infoValue of
     AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
     AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
     AE.Success (Just air) -> return air
@@ -1027,7 +1026,7 @@ getPoolStatusOrDie mbid = do
         Nothing -> (0, True)
         Just bakerId -> (bakerId, False)
   infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getPoolStatus bid passiveDelegation)
-  case AE.fromJSON $ grpcResponse infoValue of
+  case AE.fromJSON $ grpcResponseVal infoValue of
     AE.Error err -> logFatal ["Cannot decode pool status response from the node: " ++ err]
     AE.Success Nothing -> logFatal ["Could not query pool status from the chain."]
     AE.Success (Just ps) -> return ps
@@ -1072,7 +1071,7 @@ getAccountEncryptTransactionCfg baseCfg txOpts aeAmount payloadSize = do
 getAccountDecryptTransferData :: ID.AccountAddress -> Types.Amount -> ElgamalSecretKey -> Maybe Int -> ClientMonad IO Enc.SecToPubAmountTransferData
 getAccountDecryptTransferData senderAddr adAmount secretKey idx = do
   (bbHash, infoValue) <- logFatalOnError =<< withBestBlockHash Nothing (\bbh -> ((bbh, ) <$>) <$> getAccountInfo (Text.pack . show $ senderAddr) bbh)
-  case AE.fromJSON $ grpcResponse infoValue of
+  case AE.fromJSON $ grpcResponseVal infoValue of
     AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
     AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
     AE.Success (Just Types.AccountInfo{aiAccountEncryptedAmount=a@Types.AccountEncryptedAmount{..}}) -> do
@@ -1108,7 +1107,7 @@ getAccountDecryptTransferData senderAddr adAmount secretKey idx = do
 getParseCryptographicParameters :: Text -> ClientMonad IO (Either String GlobalContext)
 getParseCryptographicParameters bHash = runExceptT $ do
   vglobalContext <- liftEither =<< (lift . getCryptographicParameters $ bHash)
-  case AE.fromJSON $ grpcResponse vglobalContext of
+  case AE.fromJSON $ grpcResponseVal vglobalContext of
     AE.Error err -> throwError err
     AE.Success Nothing -> throwError "The given block does not exist."
     AE.Success (Just Versioned{..}) -> do
@@ -1440,7 +1439,7 @@ processAccountCmd action baseCfgDir verbose backend =
         accInfo <- do 
           case accInfoValue of
             Left err -> logFatal [err]
-            Right aiv -> case AE.fromJSON $ grpcResponse aiv of
+            Right aiv -> case AE.fromJSON $ grpcResponseVal aiv of
                             AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
                             AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show accountIdentifier]
                             AE.Success (Just air) -> return air
@@ -1474,7 +1473,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
     AccountList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      accs <- withClientJson backend $ fmap grpcResponse <$>  withBestBlockHash block getAccountList
+      accs <- withClientJson backend $ fmap grpcResponseVal <$>  withBestBlockHash block getAccountList
       runPrinter $ printAccountList (bcAccountNameMap baseCfg) accs
 
     AccountUpdateKeys f cid txOpts -> do
@@ -1642,7 +1641,7 @@ processModuleCmd action baseCfgDir verbose backend =
       baseCfg <- getBaseConfig baseCfgDir verbose
       (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getModuleList bb
       v <- getFromJsonAndHandleError (\_ _ -> logFatal ["could not retrieve the list of modules",
-                                   "the provided block hash is invalid:", Text.unpack bestBlock]) $ grpcResponse <$> res
+                                   "the provided block hash is invalid:", Text.unpack bestBlock]) $ grpcResponseVal <$> res
       case v of
         Nothing -> logFatal ["could not retrieve the list of modules",
                                "the provided block does not exist:", Text.unpack bestBlock]
@@ -1752,7 +1751,7 @@ processContractCmd action baseCfgDir verbose backend =
       baseCfg <- getBaseConfig baseCfgDir verbose
       (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getInstances bb
       v <- getFromJsonAndHandleError (\_ _ -> logFatal ["could not retrieve the list of contracts",
-                                   "the provided block hash is invalid:", Text.unpack bestBlock]) $ grpcResponse <$> res
+                                   "the provided block hash is invalid:", Text.unpack bestBlock]) $ grpcResponseVal <$> res
       case v of
         Nothing -> logFatal ["could not retrieve the list of contracts",
                                "the provided block does not exist:", Text.unpack bestBlock]
@@ -1984,7 +1983,7 @@ getContractInfo namedContrAddr block = do
     Left err -> logFatal ["I/O error:", err]
     -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
     Right (GRPCResponse _ AE.Null) -> logFatal [[i|the contract instance #{showNamedContractAddress namedContrAddr} does not exist in block #{block}|]]
-    Right contrInfo -> case AE.fromJSON $ grpcResponse contrInfo of
+    Right contrInfo -> case AE.fromJSON $ grpcResponseVal contrInfo of
       Error err -> logFatal ["Could not decode contract info:", err]
       Success info -> pure info
 
@@ -2084,7 +2083,7 @@ getWasmModule namedModRef block = do
   case res of
     Left err -> logFatal ["I/O error:", err]
     Right (GRPCResponse _ "") -> logFatal [[i|the module reference #{showNamedModuleRef namedModRef} does not exist in block #{block}|]]
-    Right unparsedWasmMod -> case S.decode $ grpcResponse unparsedWasmMod of
+    Right unparsedWasmMod -> case S.decode $ grpcResponseVal unparsedWasmMod of
       Left err' -> logFatal [[i|could not decode Wasm Module:|], err']
       Right wasmMod -> return wasmMod
 
@@ -2274,11 +2273,11 @@ processConsensusCmd :: ConsensusCmd -> Maybe FilePath -> Verbose -> Backend -> I
 processConsensusCmd action _baseCfgDir verbose backend =
   case action of
     ConsensusStatus -> do
-      v <- withClientJson backend $ fmap grpcResponse <$> getConsensusStatus
+      v <- withClientJson backend $ fmap grpcResponseVal <$> getConsensusStatus
       runPrinter $ printConsensusStatus v
     ConsensusShowParameters b includeBakers -> do
       baseCfg <- getBaseConfig _baseCfgDir verbose
-      v <- withClientJson backend $ fmap grpcResponse <$> withBestBlockHash b getBirkParameters
+      v <- withClientJson backend $ fmap grpcResponseVal <$> withBestBlockHash b getBirkParameters
       case v of
         Nothing -> putStrLn "Block not found."
         Just p -> runPrinter $ printBirkParameters includeBakers p addrmap
@@ -2290,7 +2289,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
       Queries.BlockSummary {..} <-
         case eBlockSummaryJSON of
           Right jsn ->
-            case fromJSON $ grpcResponse jsn of
+            case fromJSON $ grpcResponseVal jsn of
               AE.Success bs -> return bs
               AE.Error e -> logFatal [printf "Error parsing a JSON for block summary: '%s'" (show e)]
           Left e -> logFatal [printf "Error getting block summary: '%s'" (show e)]
@@ -2307,7 +2306,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
       Queries.BlockSummary {bsProtocolVersion = _ :: Types.SProtocolVersion pv, bsUpdates = eUpdates} <-
         case eBlockSummaryJSON of
           Right jsn ->
-            case fromJSON $ grpcResponse jsn of
+            case fromJSON $ grpcResponseVal jsn of
               AE.Success bs -> return bs
               AE.Error e -> logFatal [printf "Error parsing a JSON for block summary: '%s'" (show e)]
           Left e -> logFatal [printf "Error getting block summary: '%s'" (show e)]
@@ -2368,7 +2367,7 @@ processBlockCmd action _ backend =
       when (maybe False (isNothing . parseTransactionHash) b) $
         logFatal [printf "invalid block hash '%s'" (fromJust b)]
 
-      v <- withClientJson backend $ fmap grpcResponse <$> withBestBlockHash b getBlockInfo
+      v <- withClientJson backend $ fmap grpcResponseVal <$> withBestBlockHash b getBlockInfo
       runPrinter $ printBlockInfo v
 
 -- |Generate a fresh set of baker keys.
@@ -2981,7 +2980,7 @@ processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = 
         unless confirmed exitTransactionCancelled
 
     warnIfCapitalIsLowered capital stakedAmount = do
-      blockSummary <- getFromJson . fmap grpcResponse =<< withBestBlockHash Nothing getBlockSummary -- TODO: Can we write this better since GRPCResponse is functor
+      blockSummary <- getFromJson . fmap grpcResponseVal =<< withBestBlockHash Nothing getBlockSummary -- TODO: Can we write this better since GRPCResponse is functor
       cooldownDate <- case blockSummary of
         Just cpr -> getBakerCooldown cpr
         Nothing -> do
@@ -3346,12 +3345,12 @@ processIdentityShowCmd :: IdentityShowCmd -> Backend -> IO ()
 processIdentityShowCmd action backend =
   case action of
     IdentityShowIPs block -> do
-      v <- withClientJson backend $ fmap grpcResponse <$> withBestBlockHash block getIdentityProviders
+      v <- withClientJson backend $ fmap grpcResponseVal <$> withBestBlockHash block getIdentityProviders
       case v of
         Nothing -> putStrLn "No response received from the gRPC server."
         Just a -> runPrinter $ printIdentityProviders a
     IdentityShowARs block -> do
-      v <- withClientJson backend $ withBestBlockHash block $ fmap (fmap grpcResponse) . getAnonymityRevokers
+      v <- withClientJson backend $ withBestBlockHash block $ fmap (fmap grpcResponseVal) . getAnonymityRevokers
       case v of
         Nothing -> putStrLn "No response received from the gRPC server."
         Just a -> runPrinter $ printAnonymityRevokers a
@@ -3365,59 +3364,59 @@ processLegacyCmd action backend =
       t <- withClient backend $ processTransaction source nid
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (getBlockItemHash t)
-    GetConsensusInfo -> withClient backend $ getConsensusStatus >>= printJSON'
-    GetBlockInfo every block -> withClient backend $ withBestBlockHash block getBlockInfo >>= if every then loop . fmap grpcResponse else printJSON'
-    GetBlockSummary block -> withClient backend $ withBestBlockHash block getBlockSummary >>= printJSON'
-    GetBlocksAtHeight height gen restr -> withClient backend $ getBlocksAtHeight height gen restr >>= printJSON'
-    GetAccountList block -> withClient backend $ withBestBlockHash block getAccountList >>= printJSON'
-    GetInstances block -> withClient backend $ withBestBlockHash block getInstances >>= printJSON'
-    GetTransactionStatus txhash -> withClient backend $ getTransactionStatus txhash >>= printJSON'
-    GetTransactionStatusInBlock txhash block -> withClient backend $ getTransactionStatusInBlock txhash block >>= printJSON'
+    GetConsensusInfo -> withClient backend $ getConsensusStatus >>= printJSON . fmap grpcResponseVal
+    GetBlockInfo every block -> withClient backend $ withBestBlockHash block getBlockInfo >>= if every then loop . fmap grpcResponseVal else printJSON . fmap grpcResponseVal
+    GetBlockSummary block -> withClient backend $ withBestBlockHash block getBlockSummary >>= printJSON . fmap grpcResponseVal
+    GetBlocksAtHeight height gen restr -> withClient backend $ getBlocksAtHeight height gen restr >>= printJSON . fmap grpcResponseVal
+    GetAccountList block -> withClient backend $ withBestBlockHash block getAccountList >>= printJSON . fmap grpcResponseVal
+    GetInstances block -> withClient backend $ withBestBlockHash block getInstances >>= printJSON . fmap grpcResponseVal
+    GetTransactionStatus txhash -> withClient backend $ getTransactionStatus txhash >>= printJSON . fmap grpcResponseVal
+    GetTransactionStatusInBlock txhash block -> withClient backend $ getTransactionStatusInBlock txhash block >>= printJSON . fmap grpcResponseVal
     GetAccountInfo account block ->
-      withClient backend $ withBestBlockHash block (getAccountInfo account) >>= printJSON'
+      withClient backend $ withBestBlockHash block (getAccountInfo account) >>= printJSON . fmap grpcResponseVal
     GetAccountNonFinalized account ->
-      withClient backend $ getAccountNonFinalizedTransactions account >>= printJSON'
+      withClient backend $ getAccountNonFinalizedTransactions account >>= printJSON . fmap grpcResponseVal
     GetNextAccountNonce account ->
-      withClient backend $ getNextAccountNonce account >>= printJSON'
+      withClient backend $ getNextAccountNonce account >>= printJSON . fmap grpcResponseVal
     GetInstanceInfo account block ->
-      withClient backend $ withBestBlockHash block (getInstanceInfo account) >>= printJSON'
+      withClient backend $ withBestBlockHash block (getInstanceInfo account) >>= printJSON . fmap grpcResponseVal
     InvokeContract contextFile block -> do
       context <- TextIO.readFile contextFile
-      withClient backend $ withBestBlockHash block (invokeContract context) >>= printJSON'
+      withClient backend $ withBestBlockHash block (invokeContract context) >>= printJSON . fmap grpcResponseVal
     GetPoolStatus pool block ->
       let (bid, passiveDelegation) = case pool of
             Just bakerId -> (bakerId, False)
             Nothing -> (0, True)
-      in withClient backend $ withBestBlockHash block (getPoolStatus bid passiveDelegation) >>= printJSON'
-    GetBakerList block -> withClient backend $ withBestBlockHash block getBakerList >>= printJSON'
-    GetRewardStatus block -> withClient backend $ withBestBlockHash block getRewardStatus >>= printJSON'
+      in withClient backend $ withBestBlockHash block (getPoolStatus bid passiveDelegation) >>= printJSON . fmap grpcResponseVal
+    GetBakerList block -> withClient backend $ withBestBlockHash block getBakerList >>= printJSON . fmap grpcResponseVal
+    GetRewardStatus block -> withClient backend $ withBestBlockHash block getRewardStatus >>= printJSON . fmap grpcResponseVal
     GetBirkParameters block ->
-      withClient backend $ withBestBlockHash block getBirkParameters >>= printJSON'
-    GetModuleList block -> withClient backend $ withBestBlockHash block getModuleList >>= printJSON'
-    GetNodeInfo -> withClient backend $ getNodeInfo >>= printNodeInfo . fmap grpcResponse
+      withClient backend $ withBestBlockHash block getBirkParameters >>= printJSON . fmap grpcResponseVal
+    GetModuleList block -> withClient backend $ withBestBlockHash block getModuleList >>= printJSON . fmap grpcResponseVal
+    GetNodeInfo -> withClient backend $ getNodeInfo >>= printNodeInfo . fmap grpcResponseVal
     GetPeerData bootstrapper -> withClient backend $ getPeerData bootstrapper >>= printPeerData
     StartBaker -> withClient backend $ startBaker >>= printSuccess'
     StopBaker -> withClient backend $ stopBaker >>= printSuccess'
     PeerConnect ip port -> withClient backend $ peerConnect ip port >>= printSuccess'
     PeerDisconnect ip port -> withClient backend $ peerDisconnect ip port >>= printSuccess'
-    GetPeerUptime -> withClient backend $ getPeerUptime >>= (liftIO . print) . fmap grpcResponse
+    GetPeerUptime -> withClient backend $ getPeerUptime >>= (liftIO . print) . fmap grpcResponseVal
     BanNode nodeId nodeIp -> withClient backend $ banNode nodeId nodeIp >>= printSuccess'
     UnbanNode nodeId nodeIp -> withClient backend $ unbanNode nodeId nodeIp >>= printSuccess'
     JoinNetwork netId -> withClient backend $ joinNetwork netId >>= printSuccess'
     LeaveNetwork netId -> withClient backend $ leaveNetwork netId >>= printSuccess'
-    GetAncestors amount blockHash -> withClient backend $ withBestBlockHash blockHash (getAncestors amount) >>= printJSON'
-    GetBranches -> withClient backend $ getBranches >>= printJSON'
-    GetBannedPeers -> withClient backend $ getBannedPeers >>= (liftIO . print) . fmap grpcResponse
+    GetAncestors amount blockHash -> withClient backend $ withBestBlockHash blockHash (getAncestors amount) >>= printJSON . fmap grpcResponseVal
+    GetBranches -> withClient backend $ getBranches >>= printJSON . fmap grpcResponseVal
+    GetBannedPeers -> withClient backend $ getBannedPeers >>= (liftIO . print) . fmap grpcResponseVal
     Shutdown -> withClient backend $ shutdown >>= printSuccess'
     DumpStart -> withClient backend $ dumpStart >>= printSuccess'
     DumpStop -> withClient backend $ dumpStop >>= printSuccess'
-    GetIdentityProviders block -> withClient backend $ withBestBlockHash block getIdentityProviders >>= printJSON'
-    GetAnonymityRevokers block -> withClient backend $ withBestBlockHash block getAnonymityRevokers >>= printJSON'
-    GetCryptographicParameters block -> withClient backend $ withBestBlockHash block getCryptographicParameters >>= printJSON'
+    GetIdentityProviders block -> withClient backend $ withBestBlockHash block getIdentityProviders >>= printJSON . fmap grpcResponseVal
+    GetAnonymityRevokers block -> withClient backend $ withBestBlockHash block getAnonymityRevokers >>= printJSON . fmap grpcResponseVal
+    GetCryptographicParameters block -> withClient backend $ withBestBlockHash block getCryptographicParameters >>= printJSON . fmap grpcResponseVal
   where
     printSuccess (Left x)  = liftIO . putStrLn $ x
     printSuccess (Right x) = liftIO $ if x then putStrLn "OK" else putStrLn "FAIL"
-    printSuccess' = printSuccess . fmap grpcResponse
+    printSuccess' = printSuccess . fmap grpcResponseVal
 
 -- |Look up block infos all the way to genesis.
 loop :: Either String Value -> ClientMonad IO ()
@@ -3430,7 +3429,7 @@ loop v =
           printJSON v
           case KM.lookup "blockSlot" m of
             Just (AE.Number x) | x > 0 ->
-              fmap grpcResponse <$> getBlockInfo parent >>= loop
+              fmap grpcResponseVal <$> getBlockInfo parent >>= loop
             _ -> return () -- Genesis block reached.
         _ -> error "Unexpected return value for block parent."
     _ -> error "Unexptected return value for getBlockInfo."
@@ -3487,11 +3486,11 @@ getPeerData bootstrapper = do
   peerStats' <- getPeerStats bootstrapper
   peerList' <- getPeerList bootstrapper
   return $ do
-    totalSent <- grpcResponse <$> totalSent'
-    totalReceived <- grpcResponse <$> totalReceived'
-    version <- grpcResponse <$> version'
-    peerStats <- grpcResponse <$> peerStats'
-    peerList <- grpcResponse <$> peerList'
+    totalSent <- grpcResponseVal <$> totalSent'
+    totalReceived <- grpcResponseVal <$> totalReceived'
+    version <- grpcResponseVal <$> version'
+    peerStats <- grpcResponseVal <$> peerStats'
+    peerList <- grpcResponseVal <$> peerList'
     return PeerData{..}
 
 printNodeInfo :: MonadIO m => Either String NodeInfoResponse -> m ()
@@ -3527,7 +3526,7 @@ instance FromJSON StatusOfPeers
 getStatusOfPeers :: ClientMonad IO (Either String StatusOfPeers)
 getStatusOfPeers = do
   -- False means we don't include the bootstrap nodes here, since they are not running consensus.
-  fmap grpcResponse <$> getPeerList False <&> \case
+  fmap grpcResponseVal <$> getPeerList False <&> \case
     Left err -> (Left err)
     Right peerList -> Right $
       L.foldl' (\status peerElem ->

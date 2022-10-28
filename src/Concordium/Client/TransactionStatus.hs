@@ -10,7 +10,7 @@ import Concordium.Types.Execution
 import Concordium.Types
 
 import Concordium.Client.GRPC
-import Concordium.Client.Types.GRPC
+import Concordium.Client.Runner.Helper
 
 getSimpleTransactionStatus :: MonadIO m => TransactionHash -> ClientMonad m (Either String Value)
 getSimpleTransactionStatus trHash = do

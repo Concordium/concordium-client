@@ -1,16 +1,18 @@
 {-# LANGUAGE DataKinds        #-}
+{-# LANGUAGE DeriveFunctor    #-}
+
 module Concordium.Client.Runner.Helper
   ( outputGRPC
   , outputGRPC'
   , printJSON
-  , printJSON'
   , printJSONValues
-  , processJSON
-  , processJSON'
-  , value'
+  , getJSON
+  , getValue
+  , GRPCResult
+  , GRPCResponse(..)
+  , GRPCHeaderList
   ) where
 
-import Concordium.Client.Types.GRPC
 import           Control.Monad.IO.Class
 import           Data.Aeson
 import           Data.Aeson.Encode.Pretty
@@ -20,9 +22,22 @@ import qualified Data.ProtoLens.Field          as Field
 import           Data.Text                     (Text)
 import           Data.Text.Encoding
 import           Lens.Micro.Platform
+import           Network.GRPC.Client
 import qualified Network.URI.Encode            (decode)
 import           Prelude                       hiding (fail)
 import qualified Proto.ConcordiumP2pRpc_Fields as CF
+
+-- |The response contains headers and a response value.
+data GRPCResponse a = GRPCResponse
+  { grpcHeaders :: CIHeaderList,
+    grpcResponseVal :: a
+  } deriving (Show, Functor)
+
+-- |Result of running a GRPC request. Either the request fails or there is a response.
+type GRPCResult a = Either String (GRPCResponse a)
+
+-- |Headers in GRPC call response.
+type GRPCHeaderList = CIHeaderList
 
 -- The complexity of the first parameter comes from the return type of
 -- rawUnary. See the documentation
@@ -53,13 +68,9 @@ outputGRPC' ret =
         Right v -> Right (GRPCResponse hds v)
     Left e -> Left $ "Unable to send consensus query: " ++ show e
 
-processJSON :: (Field.HasField a "value" Text) => a -> Value
-processJSON val = do
-  let r = val ^. CF.value
-  value . encodeUtf8 $ r
-
-processJSON' :: (Field.HasField a "value" Text) => GRPCResponse a -> GRPCResponse Value
-processJSON' = fmap processJSON
+-- |Decode JSON from response. Assumes that the response from a GRPC call has a @value!@ field containing the JSON.
+getJSON :: (Field.HasField a "value" Text) => SimpleGetter (GRPCResponse a) (GRPCResponse Value)
+getJSON  = to (fmap (value . encodeUtf8 <$> (^. CF.value)))
 
 printJSON :: MonadIO m => Either String Value -> m ()
 printJSON v =
@@ -67,17 +78,16 @@ printJSON v =
     Left err       -> liftIO $ putStrLn err
     Right jsonVals -> printJSONValues jsonVals
 
-printJSON' :: MonadIO m => GRPCResult Value -> m ()
-printJSON' = printJSON . fmap grpcResponse
-
 printJSONValues :: MonadIO m => Value -> m ()
 printJSONValues = liftIO . BSL8.putStrLn . encodePretty
 
+-- |Decode a JSON string
 value :: BS.ByteString -> Value
 value s =
   case eitherDecodeStrict' s of
     Right v -> v
     Left err -> error ("Error in gRPC output decoding as a json: " ++ err)
 
-value' :: forall a b. (Field.HasField a "value" b) => GRPCResponse a -> GRPCResponse b
-value' = fmap (^. CF.value)
+-- |Extract a value from the response. This assumes that the response from a GRPC call has a @value!@ field.
+getValue :: forall a b. (Field.HasField a "value" b) => SimpleGetter (GRPCResponse a) (GRPCResponse b)
+getValue = to (fmap (^. CF.value))
