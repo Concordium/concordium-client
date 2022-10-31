@@ -93,6 +93,7 @@ library
     , concordium-base
     , concurrent-extra >=0.7
     , containers
+    , cookie
     , cryptonite
     , directory
     , filepath

@@ -90,6 +90,7 @@ import           Control.Exception
 import           Control.Monad.Fail
 import           Control.Monad.Except
 import           Control.Monad.Reader                hiding (fail)
+import           Control.Monad.State.Strict
 import           GHC.Generics
 import           Data.IORef
 import           Data.Foldable
@@ -141,7 +142,7 @@ withClient bkend comp = do
   runExceptT (mkGrpcClient config Nothing) >>= \case
       Left err -> logFatal ["Cannot establish connection to the node: " ++ show err]
       Right client -> do
-        let body = runExceptT ((runReaderT . _runClientMonad) comp $! client) >>= \case
+        let body = evalStateT (runExceptT ((runReaderT . _runClientMonad) comp $! client)) Map.empty >>= \case
               Left err -> fail (show err)
               Right x -> return x
         let closeOrFail Nothing = return ()
