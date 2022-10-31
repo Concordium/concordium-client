@@ -2980,7 +2980,7 @@ processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = 
         unless confirmed exitTransactionCancelled
 
     warnIfCapitalIsLowered capital stakedAmount = do
-      blockSummary <- getFromJson . fmap grpcResponseVal =<< withBestBlockHash Nothing getBlockSummary -- TODO: Can we write this better since GRPCResponse is functor
+      blockSummary <- getFromJson . fmap grpcResponseVal =<< withBestBlockHash Nothing getBlockSummary
       cooldownDate <- case blockSummary of
         Just cpr -> getBakerCooldown cpr
         Nothing -> do

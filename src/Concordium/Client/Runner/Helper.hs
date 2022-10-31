@@ -68,7 +68,7 @@ outputGRPC' ret =
         Right v -> Right (GRPCResponse hds v)
     Left e -> Left $ "Unable to send consensus query: " ++ show e
 
--- |Decode JSON from response. Assumes that the response from a GRPC call has a @value!@ field containing the JSON.
+-- |Decode JSON from response. Assumes that the response from a GRPC call has a @value@ field containing the JSON.
 getJSON :: (Field.HasField a "value" Text) => SimpleGetter (GRPCResponse a) (GRPCResponse Value)
 getJSON  = to (fmap (value . encodeUtf8 <$> (^. CF.value)))
 
@@ -88,6 +88,6 @@ value s =
     Right v -> v
     Left err -> error ("Error in gRPC output decoding as a json: " ++ err)
 
--- |Extract a value from the response. This assumes that the response from a GRPC call has a @value!@ field.
+-- |Extract a value from the response. This assumes that the response from a GRPC call has a @value@ field.
 getValue :: forall a b. (Field.HasField a "value" b) => SimpleGetter (GRPCResponse a) (GRPCResponse b)
 getValue = to (fmap (^. CF.value))
