@@ -47,6 +47,7 @@ module Concordium.Client.Runner
 import           Concordium.Client.Utils
 import           Concordium.Client.Cli
 import           Concordium.Client.Config
+
 import           Concordium.Client.Commands          as COM
 import           Concordium.Client.Export
 import           Concordium.Client.GRPC
