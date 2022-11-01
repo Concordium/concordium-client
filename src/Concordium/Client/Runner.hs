@@ -2155,7 +2155,7 @@ getWasmParameter paramsFile schema funcName =
     Just (ParameterBinary binaryParamFile) -> binaryParams binaryParamFile
   where getFromJSONParams :: FilePath -> CS.ModuleSchema -> IO Wasm.Parameter
         getFromJSONParams jsonFile schema' = case CS.lookupParameterSchema schema' funcName of
-          Nothing -> logFatal [[i|The json parameter could not be used because there was not schema for it.|]]
+          Nothing -> logFatal [[i|The JSON parameter could not be used because there was no schema for it.|]]
           Just schemaForParams -> do
             jsonFileContents <- handleReadFile BSL8.readFile jsonFile
             let params = AE.eitherDecode jsonFileContents >>= CP.encodeParameter schemaForParams
