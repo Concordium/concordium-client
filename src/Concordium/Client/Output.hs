@@ -675,6 +675,8 @@ showEvent verbose = \case
     in Just $ printf "Transfer memo:\n%s" str
   Types.Interrupted cAddr _ ->
     verboseOrNothing [i|interrupted '#{cAddr}'.|]
+  Types.Upgraded{..} ->
+    verboseOrNothing [i|upgraded contract instance at '#{euAddress}' from '#{euFrom}' to '#{euTo}'.|]
   Types.Resumed cAddr invokeSucceeded ->
     let invokeMsg :: Text = if invokeSucceeded then "succeeded" else "failed"
     in verboseOrNothing [i|resumed '#{cAddr}' after an interruption that #{invokeMsg}.|]
