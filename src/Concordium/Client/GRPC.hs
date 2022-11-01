@@ -116,9 +116,10 @@ liftClientIO comp = ClientMonad {_runClientMonad = ReaderT (\_ -> do
 runClient :: Monad m => EnvData -> ClientMonad m a -> m (Either ClientError a)
 runClient config comp = evalStateT (runExceptT $ runReaderT (_runClientMonad comp) config) (Map.empty :: CookieHeaders)
 
--- |runClient but with additional headers added to the GRPCRequest.
-runClientWithExtraHeaders :: CookieHeaders -> EnvData -> ClientMonad m a -> m (Either ClientError a, CookieHeaders)
-runClientWithExtraHeaders hds cfg comp = runStateT (runExceptT $ runReaderT (_runClientMonad comp) cfg) hds
+-- |runClient but with additional cookies added to the GRPCRequest.
+-- The updated set of cookies (set via set-cookie headers)  are returned.
+runClientWithCookies :: CookieHeaders -> EnvData -> ClientMonad m a -> m (Either ClientError a, CookieHeaders)
+runClientWithCookies hds cfg comp = runStateT (runExceptT $ runReaderT (_runClientMonad comp) cfg) hds
 
 mkGrpcClient :: GrpcConfig -> Maybe LoggerMethod -> ClientIO EnvData
 mkGrpcClient config mLogger =
