@@ -87,13 +87,13 @@ library
     , base16-bytestring
     , base64-bytestring
     , bytestring
-    , case-insensitive >=1.2.1.0
     , cborg
     , cborg-json
     , cereal
     , concordium-base
     , concurrent-extra >=0.7
     , containers
+    , cookie
     , cryptonite
     , directory
     , filepath
