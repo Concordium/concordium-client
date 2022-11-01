@@ -28,7 +28,7 @@ import qualified Control.Concurrent.ReadWriteLock as RW
 import           Control.Concurrent.Async
 import           Control.Concurrent
 import           Control.Monad.Fail
-import           Control.Monad.IO.Class
+import           Control.Monad.State.Strict
 import           Control.Monad.Reader                hiding (fail)
 import qualified Data.Serialize                      as S
 import           Lens.Micro.Platform
@@ -36,13 +36,14 @@ import           Lens.Micro.Platform
 import           Data.IORef
 import           Data.Aeson as AE
 import           Data.Aeson.Types as AE
-import qualified Data.CaseInsensitive as CI
 import qualified Data.HashSet as Set
+import qualified Data.Map.Strict as Map
 import           Data.Text
 import           Data.String
 import           Data.Word
 import           Data.Maybe
 import           Text.Printf
+import qualified Web.Cookie as Cookie
 
 import           Prelude                             hiding (fail, mod, null, unlines)
 import Proto.Google.Protobuf.Wrappers
@@ -80,7 +81,7 @@ data EnvData =
 -- |Monad in which the program would run
 newtype ClientMonad m a =
   ClientMonad
-    { _runClientMonad :: ReaderT EnvData (ExceptT ClientError m) a
+    { _runClientMonad :: ReaderT EnvData (ExceptT ClientError (StateT CookieHeaders m)) a
     }
   deriving ( Functor
            , Applicative
@@ -112,14 +113,13 @@ liftClientIO comp = ClientMonad {_runClientMonad = ReaderT (\_ -> do
                                                            )}
 
 -- |Execute the computation with the given environment (using the established connection).
-runClient :: EnvData -> ClientMonad m a -> m (Either ClientError a)
-runClient config comp = runExceptT $ runReaderT (_runClientMonad comp) config
+runClient :: Monad m => EnvData -> ClientMonad m a -> m (Either ClientError a)
+runClient config comp = evalStateT (runExceptT $ runReaderT (_runClientMonad comp) config) (Map.empty :: CookieHeaders)
 
--- |runClient but with additional headers added to the GRPCRequest.
-runClientWithExtraHeaders :: GRPCHeaderList -> EnvData -> ClientMonad m a -> m (Either ClientError a)
-runClientWithExtraHeaders hds cfg comp = runExceptT $ runReaderT (_runClientMonad comp) cfgWithHeaders
-  where headerList = Prelude.map (\(k,v) -> (CI.original k, v)) hds
-        cfgWithHeaders = cfg { config = (config cfg) { _grpcClientConfigHeaders = _grpcClientConfigHeaders (config cfg) ++ headerList } }
+-- |runClient but with additional cookies added to the GRPCRequest.
+-- The updated set of cookies (set via set-cookie headers)  are returned.
+runClientWithCookies :: CookieHeaders -> EnvData -> ClientMonad m a -> m (Either ClientError a, CookieHeaders)
+runClientWithCookies hds cfg comp = runStateT (runExceptT $ runReaderT (_runClientMonad comp) cfg) hds
 
 mkGrpcClient :: GrpcConfig -> Maybe LoggerMethod -> ClientIO EnvData
 mkGrpcClient config mLogger =
@@ -168,31 +168,31 @@ stopBaker :: ClientMonad IO (GRPCResult Bool)
 stopBaker = withUnaryNoMsg (call @"stopBaker") getValue
 
 sendTransactionToBaker ::
-     (MonadIO m) => BareBlockItem -> Int -> ClientMonad m (GRPCResult Bool)
+     MonadIO m => BareBlockItem -> Int -> ClientMonad m (GRPCResult Bool)
 sendTransactionToBaker t nid = do
   let msg = defMessage & CF.networkId .~ fromIntegral nid & CF.payload .~ S.runPut (putVersionedBareBlockItemV0 t)
   withUnary (call @"sendTransaction") msg getValue
 
-getTransactionStatus :: (MonadIO m) => Text -> ClientMonad m (GRPCResult Value)
+getTransactionStatus :: MonadIO m => Text -> ClientMonad m (GRPCResult Value)
 getTransactionStatus txh = withUnary (call @"getTransactionStatus") msg getJSON
   where msg = defMessage & CF.transactionHash .~ txh
 
-getTransactionStatusInBlock :: (MonadIO m) => Text -> Text -> ClientMonad m (GRPCResult Value)
+getTransactionStatusInBlock :: MonadIO m => Text -> Text -> ClientMonad m (GRPCResult Value)
 getTransactionStatusInBlock txh bh = withUnary (call @"getTransactionStatusInBlock") msg getJSON
   where msg = defMessage & CF.transactionHash .~ txh & CF.blockHash .~ bh
 
-getAccountNonFinalizedTransactions :: (MonadIO m) => Text -> ClientMonad m (GRPCResult Value)
+getAccountNonFinalizedTransactions :: MonadIO m => Text -> ClientMonad m (GRPCResult Value)
 getAccountNonFinalizedTransactions addr = withUnary (call @"getAccountNonFinalizedTransactions") msg getJSON
   where msg = defMessage & CF.accountAddress .~ addr
 
-getNextAccountNonce :: (MonadIO m) => Text -> ClientMonad m (GRPCResult Value)
+getNextAccountNonce :: MonadIO m => Text -> ClientMonad m (GRPCResult Value)
 getNextAccountNonce addr = withUnary (call @"getNextAccountNonce") msg getJSON
   where msg = defMessage & CF.accountAddress .~ addr
 
-getBlockSummary :: (MonadIO m) => Text -> ClientMonad m (GRPCResult Value)
+getBlockSummary :: MonadIO m => Text -> ClientMonad m (GRPCResult Value)
 getBlockSummary hash = withUnaryBlock (call @"getBlockSummary") hash getJSON
 
-getConsensusStatus :: (MonadIO m) => ClientMonad m (GRPCResult Value)
+getConsensusStatus :: MonadIO m => ClientMonad m (GRPCResult Value)
 getConsensusStatus = withUnaryNoMsg (call @"getConsensusStatus") getJSON
 
 getBlockInfo :: Text -> ClientMonad IO (GRPCResult Value)
@@ -205,7 +205,7 @@ getInstances :: Text -> ClientMonad IO (GRPCResult Value)
 getInstances hash = withUnaryBlock (call @"getInstances") hash getJSON
 
 -- |Retrieve the account information from the chain.
-getAccountInfo :: (MonadIO m)
+getAccountInfo :: MonadIO m
                => Text -- ^ Account identifier, address, index or credential registration id.
                -> Text -- ^ Block hash
                -> ClientMonad m (GRPCResult Value)
@@ -319,17 +319,20 @@ dumpStart = withUnaryNoMsg (call @"dumpStart") getValue
 dumpStop :: ClientMonad IO (GRPCResult Bool)
 dumpStop = withUnaryNoMsg (call @"dumpStop") getValue
 
-getIdentityProviders :: (MonadIO m) => Text -> ClientMonad m (GRPCResult Value)
+getIdentityProviders :: MonadIO m => Text -> ClientMonad m (GRPCResult Value)
 getIdentityProviders hash = withUnary (call @"getIdentityProviders") msg getJSON
   where msg = defMessage & CF.blockHash .~ hash
 
-getAnonymityRevokers :: (MonadIO m) => Text -> ClientMonad m (GRPCResult Value)
+getAnonymityRevokers :: MonadIO m => Text -> ClientMonad m (GRPCResult Value)
 getAnonymityRevokers hash = withUnary (call @"getAnonymityRevokers") msg getJSON
   where msg = defMessage & CF.blockHash .~ hash
 
-getCryptographicParameters :: (MonadIO m) => Text -> ClientMonad m (GRPCResult Value)
+getCryptographicParameters :: MonadIO m => Text -> ClientMonad m (GRPCResult Value)
 getCryptographicParameters hash = withUnary (call @"getCryptographicParameters") msg getJSON
   where msg = defMessage & CF.blockHash .~ hash
+
+-- |Cookie headers that may be returned by the node in a query.
+type CookieHeaders = Map.Map BS8.ByteString BS8.ByteString
 
 -- | Setup the GRPC client and run a rawUnary call with the provided message to the provided method,
 -- the output is interpreted using the function given in the third parameter.
@@ -343,6 +346,7 @@ withUnaryCore method message k = do
   cfg <- asks config
   lock <- asks rwlock
   logm <- asks logger
+  cookies <- ClientMonad (lift get)
   let Timeout timeoutSeconds = _grpcClientConfigTimeout cfg
 
   -- try to establish a connection
@@ -368,7 +372,7 @@ withUnaryCore method message k = do
               logm "Network client exists, running query."
               -- Overwrite the headers in the client with existing ones in the config.
               -- This makes it possible to supply per-request headers.
-              let client' = client {_grpcClientHeaders = (_grpcClientConfigHeaders cfg)}
+              let client' = client {_grpcClientHeaders = _grpcClientConfigHeaders cfg ++ fmap (\(x, y) -> ("Cookie", x <> "=" <> y)) (Map.toList cookies)}
               let runRPC = runExceptT (rawUnary method client' message) >>=
                            \case Left _ -> return Nothing -- client error
                                  Right (Left _) -> return Nothing -- too much concurrency
@@ -398,9 +402,25 @@ withUnaryCore method message k = do
       if tryAgain then do
           liftIO (logm "Reestablished connection, trying again.")
           ret' <- liftIO tryRun
-          return (k (outputGRPC ret'))
+          let response = outputGRPC ret'
+          addHeaders response
+          return (k response)
       else return (k (Left "Cannot establish connection to GRPC endpoint."))
-    Just v -> return (k (outputGRPC' v))
+    Just v ->
+        let response = outputGRPC' v
+        in do
+            addHeaders response
+            return (k response)
+
+  where addHeaders response = case response of
+                Right GRPCResponse{..} -> do
+                    ClientMonad $ do
+                        forM_ grpcHeaders $ \(hn, hv) ->
+                            when (hn == "set-cookie") $
+                                let c = Cookie.parseSetCookie hv
+                                in modify' (Map.insert (Cookie.setCookieName c) (Cookie.setCookieValue c))
+                Left _ -> return ()
+
 
 -- | Setup the GRPC client and run a rawUnary call to the provided method.
 withUnaryCoreNoMsg :: forall m n b. (HasMethod P2P m, MonadIO n)
@@ -533,13 +553,13 @@ nullable p v = case v of
                 Null -> return Nothing
                 _ -> Just <$> p v
 
-withBestBlockHash :: (MonadIO m, MonadFail m) => Maybe Text -> (Text -> ClientMonad m b) -> ClientMonad m b
+withBestBlockHash :: (MonadFail m, MonadIO m) => Maybe Text -> (Text -> ClientMonad m b) -> ClientMonad m b
 withBestBlockHash v c =
   case v of
     Nothing -> getBestBlockHash >>= c
     Just x -> c x
 
-withLastFinalBlockHash :: (MonadIO m, MonadFail m) => Maybe Text -> (Text -> ClientMonad m b) -> ClientMonad m b
+withLastFinalBlockHash :: (MonadFail m, MonadIO m) => Maybe Text -> (Text -> ClientMonad m b) -> ClientMonad m b
 withLastFinalBlockHash v c =
   case v of
     Nothing -> getLastFinalBlockHash >>= c
