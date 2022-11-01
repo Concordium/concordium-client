@@ -84,6 +84,15 @@ getJSONUsingSchema typ = case typ of
                       Nothing -> fail [i|Variant with index #{idx} does not exist for Enum.|]
     fields' <- getFieldsAsJSON fields
     return $ AE.object [AE.fromText name .= fields']
+  EnumTag variants -> do
+    idx <- if length variants <= 255
+           then fromIntegral <$> S.getWord8
+           else fromIntegral <$> S.getWord32le -- VHTODO: Check how indices are serialized.
+    (name, fields) <- case variants Map.!? idx of
+                      Just v -> return v
+                      Nothing -> fail [i|Variant with index #{idx} does not exist for EnumTag.|]
+    fields' <- getFieldsAsJSON fields
+    return $ AE.object [AE.fromText (Text.pack $ show idx) .= (name, fields')]
   String sl -> AE.toJSON <$> getUtf8String sl
   UInt128 -> AE.toJSON . show <$> DW.getWord128le
   Int128 -> AE.toJSON . show <$> DW.getInt128le

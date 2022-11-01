@@ -4,6 +4,7 @@ module Concordium.Client.Types.Contract.Schema(
   ContractSchemaV0(..),
   ContractSchemaV1(..),
   ContractSchemaV2(..),
+  ContractSchemaV3(..),
   Fields(..),
   FuncName(..),
   ModuleSchema(..),
@@ -36,7 +37,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Serialize as S
 import Data.String.Interpolate (i)
-import Data.Text (Text)
+import Data.Text (Text, pack)
 import qualified Data.Text.Encoding as Text
 import qualified Data.Vector as V
 import Data.Word (Word8, Word16, Word32, Word64)
@@ -80,6 +81,11 @@ lookupParameterSchema moduleSchema funcName =
       ReceiveFuncName contrName receiveName -> do
         contract <- Map.lookup contrName ms2ContractSchemas
         Map.lookup receiveName (cs2ReceiveSigs contract) >>= getParameterSchemaV2
+    ModuleSchemaV3 {..} -> case funcName of
+      InitFuncName contrName -> Map.lookup contrName ms3ContractSchemas >>= cs3InitSig >>= getParameterSchemaV2
+      ReceiveFuncName contrName receiveName -> do
+        contract <- Map.lookup contrName ms3ContractSchemas
+        Map.lookup receiveName (cs3ReceiveSigs contract) >>= getParameterSchemaV2
 
 -- |Lookup schema for the return value of a function.
 --  Always returns Nothing on V0 contracts as they do not have return values.
@@ -97,6 +103,11 @@ lookupReturnValueSchema moduleSchema funcName =
       ReceiveFuncName contrName _ -> do
         contrSchema <- Map.lookup contrName ms2ContractSchemas
         lookupFunctionSchemaV2 contrSchema funcName >>= getReturnValueSchemaV2
+    ModuleSchemaV3 {..} -> case funcName of
+      InitFuncName contrName -> Map.lookup contrName ms3ContractSchemas >>= cs3InitSig >>= getReturnValueSchemaV2
+      ReceiveFuncName contrName _ -> do
+        contrSchema <- Map.lookup contrName ms3ContractSchemas
+        lookupFunctionSchemaV3 contrSchema funcName >>= getReturnValueSchemaV2
 
 -- |Lookup schema for the error of a function.
 --  Always returns Nothing on schemas with version < 2 as they don't have error schemas.
@@ -110,6 +121,21 @@ lookupErrorSchema moduleSchema funcName =
       ReceiveFuncName contrName _ -> do
         contrSchema <- Map.lookup contrName ms2ContractSchemas
         lookupFunctionSchemaV2 contrSchema funcName >>= getErrorSchemaV2
+    ModuleSchemaV3 {..} -> case funcName of
+      InitFuncName contrName -> Map.lookup contrName ms3ContractSchemas >>= cs3InitSig >>= getReturnValueSchemaV2
+      ReceiveFuncName contrName _ -> do
+        contrSchema <- Map.lookup contrName ms3ContractSchemas
+        lookupFunctionSchemaV3 contrSchema funcName >>= getErrorSchemaV2
+
+-- |Lookup event schema for a contract
+--  Always returns Nothing on schemas with version < 3 as they don't have event schemas.
+lookupEventSchema :: ModuleSchema -> Text -> Maybe SchemaType
+lookupEventSchema moduleSchema contrName =
+  case moduleSchema of
+    ModuleSchemaV0 {} -> Nothing
+    ModuleSchemaV1 {} -> Nothing
+    ModuleSchemaV2 {} -> Nothing
+    ModuleSchemaV3 {..} -> Map.lookup contrName ms3ContractSchemas >>= cs3EventSchemas
 
 -- |Lookup the 'FunctionSchemaV1' of a 'ContractSchemaV1'.
 lookupFunctionSchemaV1 :: ContractSchemaV1 -> FuncName -> Maybe FunctionSchemaV1
@@ -123,6 +149,12 @@ lookupFunctionSchemaV2 ContractSchemaV2{..} = \case
   InitFuncName _ -> cs2InitSig
   ReceiveFuncName _ rcvName -> Map.lookup rcvName cs2ReceiveSigs
 
+-- |Lookup the 'FunctionSchemaV2' of a 'ContractSchemaV3'.
+lookupFunctionSchemaV3 :: ContractSchemaV3 -> FuncName -> Maybe FunctionSchemaV2
+lookupFunctionSchemaV3 ContractSchemaV3{..} = \case
+  InitFuncName _ -> cs3InitSig
+  ReceiveFuncName _ rcvName -> Map.lookup rcvName cs3ReceiveSigs
+
 -- |Represents the schema for a module.
 -- V0 is a parallel to `Module` defined in concordium-contracts-common version <= 2.
 -- V1 is a parallel to `Module` defined in concordium-contracts-common version > 2.
@@ -130,6 +162,7 @@ data ModuleSchema
   = ModuleSchemaV0 { ms0ContractSchemas :: Map Text ContractSchemaV0 }
   | ModuleSchemaV1 { ms1ContractSchemas :: Map Text ContractSchemaV1 }
   | ModuleSchemaV2 { ms2ContractSchemas :: Map Text ContractSchemaV2 }
+  | ModuleSchemaV3 { ms3ContractSchemas :: Map Text ContractSchemaV3 }
   deriving (Eq, Show, Generic)
 
 -- |Create a getter based on the wasm version.
@@ -195,6 +228,17 @@ data ContractSchemaV2
 
 instance AE.ToJSON ContractSchemaV2
 
+-- |Parallel to schema::ContractV3 defined in concordium-contracts-common (Rust) version > 2.
+data ContractSchemaV3
+  = ContractSchemaV3 -- ^ Describes the schemas of a V1 smart contract.
+  { cs3InitSig :: Maybe FunctionSchemaV2 -- ^ Schema for the init function.
+  , cs3ReceiveSigs :: Map Text FunctionSchemaV2 -- ^ Schemas for the receive functions.
+  , cs3EventSchemas :: Maybe SchemaType -- ^ Schemas for the events
+  }
+  deriving (Eq, Show, Generic)
+
+instance AE.ToJSON ContractSchemaV3
+
 instance S.Serialize ContractSchemaV0 where
   get = S.label "ContractSchemaV0" $ do
     cs0State <- S.label "cs0State" S.get
@@ -216,6 +260,14 @@ instance S.Serialize ContractSchemaV2 where
     cs2ReceiveSigs <- S.label "cs2ReceiveSigs" $ getMapOfWithSizeLen Four getText S.get
     pure ContractSchemaV2{..}
   put ContractSchemaV2 {..} = S.put cs2InitSig <> putMapOfWithSizeLen Four putText S.put cs2ReceiveSigs
+
+instance S.Serialize ContractSchemaV3 where
+  get = S.label "ContractSchemaV3" $ do
+    cs3InitSig <- S.label "cs3InitSig" S.get
+    cs3ReceiveSigs <- S.label "cs3ReceiveSigs" $ getMapOfWithSizeLen Four getText S.get
+    cs3EventSchemas <- S.label "cs3EventSigs" S.get -- TODO: Add the event schema serialization here
+    pure ContractSchemaV3{..}
+  put ContractSchemaV3 {..} = S.put cs3InitSig <> putMapOfWithSizeLen Four putText S.put cs3ReceiveSigs
 
 -- |V1 Schema for a function in a V1 smart contract.
 -- Can contain a schema for the parameter, return value, or both.
@@ -404,6 +456,7 @@ data SchemaType =
   | ILeb128 Word32
   | ByteList SizeLength
   | ByteArray Word32
+  | EnumTag (Map Word8 (Text, Fields))
   deriving (Eq, Generic, Show)
 
 instance Hashable SchemaType
@@ -449,6 +502,7 @@ instance AE.ToJSON SchemaType where
     ILeb128 _ -> AE.String "<String with signed integer>"
     ByteList _ -> AE.String "<String with lowercase hex>"
     ByteArray _ -> AE.String "<String with lowercase hex>"
+    EnumTag variants -> AE.object ["EnumTag" .= (toJsonArray . map (\(k, v) -> AE.object [AE.fromText k .= v]) $ (\(k,v) -> (pack $ show k, v)) <$> Map.toList variants)]
     where toJsonArray = AE.Array . V.fromList
 
 instance S.Serialize SchemaType where
@@ -486,7 +540,10 @@ instance S.Serialize SchemaType where
       28 -> S.label "ILeb128"  $ ILeb128 <$> S.getWord32le
       29 -> S.label "ByteList" $ ByteList <$> S.get
       30 -> S.label "ByteArray"  $ ByteArray <$> S.getWord32le
+      31 -> S.label "EnumTag" $ EnumTag <$> getMapOfWithSizeLen Four S.getWord8 (S.getTwoOf getText S.get)
       x  -> fail [i|Invalid SchemaType tag: #{x}|]
+
+
 
   put typ = case typ of
     Unit -> S.putWord8 0
@@ -520,6 +577,7 @@ instance S.Serialize SchemaType where
     ILeb128 sl          -> S.putWord8 28 <> S.putWord32le sl
     ByteList sl         -> S.putWord8 29 <> S.put sl
     ByteArray sl        -> S.putWord8 30 <> S.putWord32le sl
+    EnumTag m           -> S.putWord8 31 <> putMapOfWithSizeLen Four S.putWord8 (S.putTwoOf putText S.put) m
 
 -- |Parallel to SizeLength defined in contracts-common (Rust).
 -- Must stay in sync.
