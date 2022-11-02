@@ -189,6 +189,7 @@ getVersionedModuleSchema = S.label "ModuleSchema" $ do
       0 -> ModuleSchemaV0 <$> getMapOfWithSizeLen Four getText S.get
       1 -> ModuleSchemaV1 <$> getMapOfWithSizeLen Four getText S.get
       2 -> ModuleSchemaV2 <$> getMapOfWithSizeLen Four getText S.get
+      3 -> ModuleSchemaV3 <$> getMapOfWithSizeLen Four getText S.get
       v -> fail $ "Unsupported schema version: " ++ show v
 
 -- |Create a getter based on the wasm version.

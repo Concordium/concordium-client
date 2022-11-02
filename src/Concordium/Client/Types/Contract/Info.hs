@@ -15,6 +15,7 @@ module Concordium.Client.Types.Contract.Info
   , ContractSigsV0(..)
   , ContractSigsV1(..)
   , ContractSigsV2(..)
+  , ContractSigsV3(..)
   ) where
 
 import qualified Concordium.Types as T
@@ -81,14 +82,31 @@ addSchemaData cInfo@ContractInfoV1{..} moduleSchema =
                 withSchema = WithSchemaV2{..}
             in return $ Just (cInfo {ciMethods = withSchema})
         _ -> logFatal ["Internal error: Contract info has already been decoded."] -- Matches WithSchema1 / WithSchema2. Should never happen.
+    CS.ModuleSchemaV3{..} ->
+      case ciMethods of
+        NoSchemaV1{..} -> case Map.lookup ciName ms3ContractSchemas of
+          Nothing -> do
+            logWarn [ [i|A schema for the contract '#{ciName}' does not exist in the schema provided.|]
+                    , "Showing the contract without information from the schema."]
+            return Nothing
+          Just contrSchema ->
+            let ws2Methods = map (addFuncSchemaToMethodV3 contrSchema) ns1Methods
+                withSchema = WithSchemaV2{..}
+            in return $ Just (cInfo {ciMethods = withSchema})
+        _ -> logFatal ["Internal error: Contract info has already been decoded."] -- Matches WithSchema1 / WithSchema2. Should never happen.
   where addFuncSchemaToMethodV1 :: CS.ContractSchemaV1 -> Text -> (Text, Maybe CS.FunctionSchemaV1)
         addFuncSchemaToMethodV1 contrSchema rcvName = let mFuncSchema = CS.lookupFunctionSchemaV1 contrSchema (CS.ReceiveFuncName ciName rcvName)
                                                     in (rcvName, mFuncSchema)
         addFuncSchemaToMethodV2 :: CS.ContractSchemaV2 -> Text -> (Text, Maybe CS.FunctionSchemaV2)
         addFuncSchemaToMethodV2 contrSchema rcvName = let mFuncSchema = CS.lookupFunctionSchemaV2 contrSchema (CS.ReceiveFuncName ciName rcvName)
                                                     in (rcvName, mFuncSchema)
+        addFuncSchemaToMethodV3 :: CS.ContractSchemaV3 -> Text -> (Text, Maybe CS.FunctionSchemaV2)
+        addFuncSchemaToMethodV3 contrSchema rcvName = let mFuncSchema = CS.lookupFunctionSchemaV3 contrSchema (CS.ReceiveFuncName ciName rcvName)
+                                                    in (rcvName, mFuncSchema)
+
 addSchemaData cInfo@ContractInfoV0{..} moduleSchema =
   case moduleSchema of
+    CS.ModuleSchemaV3 _ -> logFatal ["Internal error: Cannot use ModuleSchemaV3 with ContractInfoV0."]  -- Should never happen.
     CS.ModuleSchemaV2 _ -> logFatal ["Internal error: Cannot use ModuleSchemaV2 with ContractInfoV0."]  -- Should never happen.
     CS.ModuleSchemaV1 _ -> logFatal ["Internal error: Cannot use ModuleSchemaV1 with ContractInfoV0."]  -- Should never happen.
     CS.ModuleSchemaV0{..} ->
@@ -241,7 +259,7 @@ instance AE.FromJSON ContractInfo where
       n -> fail [i|Unsupported contract version #{n}.|]
 
 -- | Version of a module schema.
-data ModuleSchemaVersion = SchemaV0 | SchemaV1 | SchemaV2
+data ModuleSchemaVersion = SchemaV0 | SchemaV1 | SchemaV2 | SchemaV3
 
 -- |Construct module inspect info.
 -- Works by:
@@ -333,6 +351,27 @@ constructModuleInspectInfo namedModRef wasmVersion moduleSchema exportedFuncName
 
             mis2ContractSigs = insertReceiveNames funcNames cSigsWithoutReceives
         in ModuleInspectSigsV2{..}
+      SchemaV3 ->
+        let mkContrSchemaTuples x xs = case x of
+              CS.InitFuncName contrName -> (contrName, ContractSigsV3 { csv3InitSig = Nothing
+                                                                      , csv3ReceiveSigs = Map.empty
+                                                                      , cs3EventSchemas = Nothing
+                                                                      }) : xs
+              CS.ReceiveFuncName _ _ -> xs
+            cSigsWithoutReceives = Map.fromList . foldr mkContrSchemaTuples [] $ funcNames
+
+            insertReceiveNames :: [CS.FuncName] -> Map.Map Text ContractSigsV3 -> Map.Map Text ContractSigsV3
+            insertReceiveNames [] sigMap = sigMap
+            insertReceiveNames (CS.InitFuncName _:remaining) sigMap = insertReceiveNames remaining sigMap
+            insertReceiveNames (CS.ReceiveFuncName cname fname:remaining) sigMap = case Map.lookup cname sigMap of
+              Nothing -> insertReceiveNames remaining sigMap
+              Just cs3@ContractSigsV3{..} ->
+                let updatedCsReceiveSigs = Map.insert fname Nothing csv3ReceiveSigs
+                    sigMap' = Map.insert cname (cs3 {csv3ReceiveSigs = updatedCsReceiveSigs}) sigMap
+                in insertReceiveNames remaining sigMap'
+
+            mis3ContractSigs = insertReceiveNames funcNames cSigsWithoutReceives
+        in ModuleInspectSigsV3{..}
 
     -- Creates a ModuleInspectSigs and a list of extraneous schemas from module schema and the exported func names.
     mkModInspectWithSchema modSchema = case modSchema of
@@ -420,6 +459,34 @@ constructModuleInspectInfo namedModRef wasmVersion moduleSchema exportedFuncName
                         updateReceiveSigs cname sigMap (CS.ReceiveFuncName cname fname:errors) remaining
             (updatedContractSigs, extraSchemas) = addSchemas mis2ContractSigs ms2ContractSchemas
         in (ModuleInspectSigsV2 { mis2ContractSigs = updatedContractSigs}, extraSchemas)
+      CS.ModuleSchemaV3{..} ->
+        let
+            ModuleInspectSigsV3{..} = moduleInspectSigsFromExports SchemaV3 -- We know this becomes a ModuleInspectSigsV3
+            addSchemas :: Map.Map Text ContractSigsV3 -> Map.Map Text CS.ContractSchemaV3 -> (Map.Map Text ContractSigsV3, [CS.FuncName])
+            addSchemas mSigs mSchema = go mSigs [] (Map.toList mSchema)
+              where
+                    go :: Map.Map Text ContractSigsV3 -> [CS.FuncName] -> [(Text, CS.ContractSchemaV3)] -> (Map.Map Text ContractSigsV3, [CS.FuncName])
+                    go sigMap errors [] = (sigMap, errors)
+                    go sigMap errors ((cname, CS.ContractSchemaV3{..}):remaining) =
+                      case Map.lookup cname sigMap of
+                        Nothing -> let receiveErrors = map (CS.ReceiveFuncName cname) . Map.keys $ cs3ReceiveSigs
+                                       errors' = CS.InitFuncName cname : receiveErrors ++ errors
+                                   in go sigMap errors' remaining -- Schema has init signature for a contract not in the module.
+                        Just ContractSigsV3{..} ->
+                          let (updatedCsReceiveSigs, receiveErrors) = updateReceiveSigs cname csv3ReceiveSigs [] (Map.toList cs3ReceiveSigs)
+                              sigMap' = Map.insert cname (ContractSigsV3 {csv3InitSig = cs3InitSig, csv3ReceiveSigs = updatedCsReceiveSigs, cs3EventSchemas = cs3EventSchemas}) sigMap
+                          in go sigMap' (receiveErrors ++ errors) remaining
+
+                    updateReceiveSigs :: Text -> Map.Map Text (Maybe CS.FunctionSchemaV2) -> [CS.FuncName]
+                                      -> [(Text, CS.FunctionSchemaV2)] -> (Map.Map Text (Maybe CS.FunctionSchemaV2), [CS.FuncName])
+                    updateReceiveSigs _ sigMap errors [] = (sigMap, errors)
+                    updateReceiveSigs cname sigMap errors ((fname, schema):remaining) =
+                      if Map.member fname sigMap
+                      then updateReceiveSigs cname (Map.insert fname (Just schema) sigMap) errors remaining
+                      else -- Schema has signature for method not in the module.
+                        updateReceiveSigs cname sigMap (CS.ReceiveFuncName cname fname:errors) remaining
+            (updatedContractSigs, extraSchemas) = addSchemas mis3ContractSigs ms3ContractSchemas
+        in (ModuleInspectSigsV3 { mis3ContractSigs = updatedContractSigs}, extraSchemas)
 
     funcNames :: [CS.FuncName]
     funcNames = toFuncNames exportedFuncNames
@@ -450,6 +517,7 @@ data ModuleInspectSigs
   = ModuleInspectSigsV0 { mis0ContractSigs :: Map.Map Text ContractSigsV0 }
   | ModuleInspectSigsV1 { mis1ContractSigs :: Map.Map Text ContractSigsV1 }
   | ModuleInspectSigsV2 { mis2ContractSigs :: Map.Map Text ContractSigsV2 }
+  | ModuleInspectSigsV3 { mis3ContractSigs :: Map.Map Text ContractSigsV3 }
 
 
 -- |Different from ContractSchemaV0 in that the receiveSigs have a Maybe SchemaType.
@@ -471,4 +539,12 @@ data ContractSigsV2
   = ContractSigsV2
   { csv2InitSig :: Maybe CS.FunctionSchemaV2 -- ^ Schema for the init function.
   , csv2ReceiveSigs :: Map.Map Text (Maybe CS.FunctionSchemaV2) -- ^ Schemas for the receive functions.
+  }
+
+-- |Different from ContractSchemaV3 in that the receiveSigs have a Maybe FunctionSchemaV2.
+data ContractSigsV3
+  = ContractSigsV3
+  { csv3InitSig :: Maybe CS.FunctionSchemaV2 -- ^ Schema for the init function.
+  , csv3ReceiveSigs :: Map.Map Text (Maybe CS.FunctionSchemaV2) -- ^ Schemas for the receive functions.
+  , cs3EventSchemas :: Maybe CS.SchemaType -- ^ Schemas for the events
   }
