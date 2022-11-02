@@ -20,6 +20,7 @@ import Data.Bifunctor (first)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as BS16
+import Data.Char (ord)
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import Data.Scientific (Scientific, isFloating, toBoundedInteger)
@@ -35,7 +36,7 @@ import Lens.Micro.Platform ((^?), ix)
 import Data.Time.Format.ISO8601 (iso8601ParseM, iso8601Show)
 import Data.Time (addUTCTime, diffUTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
-import Data.Ratio
+import Data.Ratio ( (%), denominator, numerator )
 import qualified Data.Bits as Bits
 import Text.Read (readMaybe)
 import GHC.Integer (remInteger, modInteger)
@@ -253,6 +254,23 @@ putJSONUsingSchema typ json = case (typ, json) of
         pure $ putLen <> putJSONFields'
     _ -> Left [i|#{obj} had too many fields. It should contain a single variant of the following enum:\n#{showPrettyJSON enum}.|]
 
+  (enumTag@(EnumTag variants), AE.Object obj) -> case KM.toList obj of
+    [] -> Left [i|The object provided was empty, but it should have contained a variant of the following tagged enum:\n#{showPrettyJSON enumTag}.|]
+    [(tag, val@(AE.Array vec))] -> case AE.toString tag of
+      [c] -> let idx = ((fromIntegral . ord) c :: Word8) in case V.toList vec of -- VHTODO: Is this sort of conversion OK? Would be nice if we could simply convert Key to Word8 somehow, or have Map Word8 Value...
+        [nameVal, fieldsVal] -> case nameVal of 
+          AE.String name -> case variants Map.!? idx of
+            Nothing -> Left [i|No enum variant corresponds to tag '#{tag}' in:\n#{showPrettyJSON enumTag}|]
+            Just (schemaName, schemaFieldTypes) -> do
+              when (schemaName /= name) $ Left [i|Name '#{name}' does not match name '#{schemaName}' of enum variant with tag '#{tag}' in schema.|]
+              let putLen = S.putWord8 $ fromIntegral idx -- There's always at most 2^8 variants, so no need to check like in Enum.
+              putJSONFields' <- putJSONFields schemaFieldTypes fieldsVal `addTraceInfoOf` [i|In tagged enum variant '#{name}'.|]
+              pure $ putLen <> putJSONFields'
+          _ -> Left [i|Expected first element of #{val} to be a string.|]
+        _ -> Left [i|{val} should be an array of length 2.|]
+      _ -> Left [i|Tag '#{tag}'| is not an 8-bit integer.|]
+    _ -> Left [i|#{obj} had too many fields. It should contain a single variant of the following tagged enum:\n#{showPrettyJSON enumTag}.|]
+ 
   (String sl, AE.String str) -> do
     let bytes = BS.unpack . Text.encodeUtf8 $ str
         len = fromIntegral $ length bytes

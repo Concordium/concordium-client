@@ -20,6 +20,7 @@ module Concordium.Client.Types.Contract.Schema(
   getListOfWithSizeLen,
   lookupFunctionSchemaV1,
   lookupFunctionSchemaV2,
+  lookupFunctionSchemaV3,
   lookupParameterSchema,
   lookupReturnValueSchema,
   lookupErrorSchema,
