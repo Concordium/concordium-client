@@ -431,6 +431,7 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
       CI.ModuleInspectSigsV0{..} -> showContractSigsV0 mis0ContractSigs
       CI.ModuleInspectSigsV1{..} -> showContractSigsV1 mis1ContractSigs
       CI.ModuleInspectSigsV2{..} -> showContractSigsV2 mis2ContractSigs
+      CI.ModuleInspectSigsV3{..} -> showContractSigsV3 mis3ContractSigs
 
     showContractSigsV0 :: Map.Map Text CI.ContractSigsV0 -> [String]
     showContractSigsV0 = go . sortOn fst . Map.toList
@@ -465,6 +466,23 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
             showReceives [] = []
             showReceives ((fname, mSchema):remaining) = indentBy 4 (showContractFuncV2 fname mSchema) : showReceives remaining
 
+    showContractSigsV3 :: Map.Map Text CI.ContractSigsV3 -> [String]
+    showContractSigsV3 = go . sortOn fst . Map.toList
+      where go [] = []
+            go ((cname, CI.ContractSigsV3{..}):remaining) = [showContractFuncV2 cname csv3InitSig]
+                                                          ++ showReceives (sortOn fst . Map.toList $ csv3ReceiveSigs)
+                                                          ++ showEvents cs3EventSchemas
+                                                          ++ go remaining
+
+            showReceives :: [(Text, Maybe CS.FunctionSchemaV2)] -> [String]
+            showReceives [] = []
+            showReceives ((fname, mSchema):remaining) = indentBy 4 (showContractFuncV2 fname mSchema) : showReceives remaining
+
+            showEvents :: Maybe SchemaType -> [String]
+            showEvents es = case es of
+              Nothing -> []
+              Just _ -> [] -- VHTODO: Include JSON representation of event schema here.
+  
     showWarnings :: [FuncName] -> [String]
     showWarnings [] = []
     showWarnings xs =
