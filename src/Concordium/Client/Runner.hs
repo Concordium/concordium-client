@@ -1888,7 +1888,7 @@ processContractCmd action baseCfgDir verbose backend =
                                                 - Reason: #{showRejectReason verbose rcrReason}
                                                 #{returnValueMsg}|]]
             AE.Success InvokeContract.Success{..} -> do
-              let eventsMsg = case mapMaybe (fmap (("  - " <>) . Text.pack) . showEvent verbose) rcrEvents of
+              let eventsMsg = case mapMaybe (fmap (("  - " <>) . Text.pack) . showEvent verbose Nothing) rcrEvents of
                                 [] -> Text.empty
                                 evts -> [i|- Events:\n#{Text.intercalate "\n" evts}|]
               returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName False

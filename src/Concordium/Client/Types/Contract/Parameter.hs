@@ -45,6 +45,10 @@ import GHC.Integer (remInteger, modInteger)
 encodeParameter :: SchemaType -> AE.Value -> Either String ByteString
 encodeParameter typ params = S.runPut <$> putJSONUsingSchema typ params
 
+-- |Deserialize binary to JSON using `SchemaType` or fail with an error message.
+decodeParameter :: SchemaType -> ByteString -> Either String AE.Value
+decodeParameter typ = S.runGet $ getJSONUsingSchema typ
+
 -- |Create a `Serialize.Get` for decoding binary as specified by a `SchemaType` into JSON.
 -- The `SchemaType` is pattern matched and for each variant, the corresponding binary
 -- deserialization is used followed by the corresponding JSON serialization.

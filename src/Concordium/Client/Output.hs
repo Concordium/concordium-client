@@ -11,6 +11,7 @@ import Concordium.Client.Config
 import Concordium.Client.Parse
 import Concordium.Client.Types.Account
 import Concordium.Client.Types.Contract.Info as CI
+import qualified Concordium.Client.Types.Contract.Parameter as PA
 import Concordium.Client.Types.Contract.Schema as CS
 import Concordium.Client.Utils(durationToText)
 import Concordium.Client.Types.TransactionStatus
@@ -35,12 +36,14 @@ import Data.Bool
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Short as BSS
 import qualified Data.ByteString.Lazy as BSL
+import Data.Either (partitionEithers)
 import Data.Functor
 import qualified Data.Map.Strict as Map
 import Data.List (foldl', intercalate, nub, sortOn)
 import Data.Maybe
 import Data.Word (Word64)
 import Data.Ratio
+import qualified Data.Serialize as SE
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -51,6 +54,7 @@ import Codec.CBOR.Read
 import Codec.CBOR.JSON
 import Codec.CBOR.Decoding (decodeString)
 import Concordium.Common.Time (DurationSeconds(durationSeconds))
+import Concordium.Types.Execution (Event(ecEvents))
 
 -- PRINTER
 
@@ -391,17 +395,10 @@ showContractFuncV2 funcName mFuncSchema = case mFuncSchema of
   Just CS.RvError{..} -> [i|- #{funcName}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
   Just CS.ParamRvError{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fs2Parameter}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
 
-<<<<<<< HEAD
 showContractEventV3 :: Maybe SchemaType -> String
 showContractEventV3 stM = case stM of
   Nothing -> [i||]
   Just st -> [i| #{showPrettyJSON st}|]
-=======
-showContractEventSchema :: Maybe CS.SchemaType -> String
-showContractEventSchema eSchema = case eSchema of
-  Nothing -> [i|- |]
-  Just es -> [i|- Event:\n#{indentBy 8 $ showPrettyJSON es}|]
->>>>>>> d58024c (Include and print schema information for V3 contracts.)
 
 -- |Print module inspect info, i.e., the named moduleRef and its included contracts.
 -- If the init or receive signatures for a contract exist in the schema, they are also printed.
@@ -492,24 +489,17 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
       where go [] = []
             go ((cname, CI.ContractSigsV3{..}):remaining) = [showContractFuncV2 cname csv3InitSig]
                                                           ++ showReceives (sortOn fst . Map.toList $ csv3ReceiveSigs)
-<<<<<<< HEAD
                                                           ++ showEvents cs3EventSchema
-=======
-                                                          ++ [indentBy 4 (showContractEventSchema cs3EventSchemas)]
->>>>>>> d58024c (Include and print schema information for V3 contracts.)
                                                           ++ go remaining
 
             showReceives :: [(Text, Maybe CS.FunctionSchemaV2)] -> [String]
             showReceives [] = []
             showReceives ((fname, mSchema):remaining) = indentBy 4 (showContractFuncV2 fname mSchema) : showReceives remaining
-<<<<<<< HEAD
 
             showEvents :: Maybe CS.SchemaType -> [String]
             showEvents stM = case stM of
               Nothing -> []
               Just st -> [indentBy 4 "Events:", indentBy 8 $ showContractEventV3 $ Just st]
-=======
->>>>>>> d58024c (Include and print schema information for V3 contracts.)
   
     showWarnings :: [FuncName] -> [String]
     showWarnings [] = []
@@ -621,7 +611,7 @@ showCost gtu nrg = printf "%s (%s)" (showCcd gtu) (showNrg nrg)
 
 showOutcomeResult :: Verbose -> Types.ValidResult -> [String]
 showOutcomeResult verbose = \case
-  Types.TxSuccess es -> mapMaybe (showEvent verbose) es
+  Types.TxSuccess es -> mapMaybe (showEvent verbose Nothing) es
   Types.TxReject r ->
     if verbose
     then [showRejectReason True r]
@@ -637,16 +627,16 @@ showOutcomeResult verbose = \case
 -- of text that they confirmed manually.
 -- The verbose version is used by 'transaction status' and the non-trivial cases of the above
 -- where there are multiple distinct outcomes.
-showEvent :: Verbose -> Types.Event -> Maybe String
-showEvent verbose = \case
+showEvent :: Verbose -> Maybe SchemaType -> Types.Event -> Maybe String
+showEvent verbose eventSchema = \case
   Types.ModuleDeployed ref->
     verboseOrNothing $ printf "module '%s' deployed" (show ref)
   Types.ContractInitialized{..} ->
     verboseOrNothing $ printf "initialized contract '%s' using init function '%s' from module '%s' with %s"
-                              (show ecAddress) (show ecInitName) (show ecRef) (showCcd ecAmount)
+                              (show ecAddress) (show ecInitName) (show ecRef) (showCcd ecAmount) <> showLoggedEvents eventSchema ecEvents
   Types.Updated{..} ->
     verboseOrNothing $ printf "sent message to function '%s' with '%s' and %s from %s to %s"
-                              (show euReceiveName) (show euMessage) (showCcd euAmount) (showAddress euInstigator) (showAddress $ Types.AddressContract euAddress)
+                              (show euReceiveName) (show euMessage) (showCcd euAmount) (showAddress euInstigator) (showAddress $ Types.AddressContract euAddress) <> showLoggedEvents eventSchema euEvents
   Types.Transferred{..} ->
     verboseOrNothing $ printf "transferred %s from %s to %s" (showCcd etAmount) (showAddress etFrom) (showAddress etTo)
   Types.AccountCreated addr ->
@@ -719,8 +709,8 @@ showEvent verbose = \case
                              else
                                invalidCBOR
     in Just $ printf "Transfer memo:\n%s" str
-  Types.Interrupted cAddr _ ->
-    verboseOrNothing [i|interrupted '#{cAddr}'.|]
+  Types.Interrupted cAddr ev ->
+    verboseOrNothing $ [i|interrupted '#{cAddr}'.|] <> showLoggedEvents eventSchema ev
   Types.Upgraded{..} ->
     verboseOrNothing [i|upgraded contract instance at '#{euAddress}' from '#{euFrom}' to '#{euTo}'.|]
   Types.Resumed cAddr invokeSucceeded ->
@@ -745,6 +735,13 @@ showEvent verbose = \case
     showDelegationTarget Types.DelegatePassive = "Passive delegation"
     showDelegationTarget (Types.DelegateToBaker bid) = "Baker ID " ++ show bid
 
+    showLoggedEvents :: Maybe SchemaType -> [Wasm.ContractEvent] -> String
+    showLoggedEvents stM evs = case stM of
+      Nothing -> "No event schema was provided."
+      Just st -> do
+        let (errs, vals) = partitionEithers $ map (PA.decodeParameter st . SE.runPut  . SE.put) evs -- VHTODO: Exporting put and get from Wasm. Can it be avoided somehow?
+        let jsonRes = showSortedPrettyJSON vals
+        unlines errs <> jsonRes -- VHTODO: Make this look nice; test and format.
 
 -- |Return string representation of reject reason.
 -- If verbose is true, the string includes the details from the fields of the reason.
