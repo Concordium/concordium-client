@@ -391,10 +391,17 @@ showContractFuncV2 funcName mFuncSchema = case mFuncSchema of
   Just CS.RvError{..} -> [i|- #{funcName}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
   Just CS.ParamRvError{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fs2Parameter}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
 
+<<<<<<< HEAD
 showContractEventV3 :: Maybe SchemaType -> String
 showContractEventV3 stM = case stM of
   Nothing -> [i||]
   Just st -> [i| #{showPrettyJSON st}|]
+=======
+showContractEventSchema :: Maybe CS.SchemaType -> String
+showContractEventSchema eSchema = case eSchema of
+  Nothing -> [i|- |]
+  Just es -> [i|- Event:\n#{indentBy 8 $ showPrettyJSON es}|]
+>>>>>>> d58024c (Include and print schema information for V3 contracts.)
 
 -- |Print module inspect info, i.e., the named moduleRef and its included contracts.
 -- If the init or receive signatures for a contract exist in the schema, they are also printed.
@@ -485,17 +492,24 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
       where go [] = []
             go ((cname, CI.ContractSigsV3{..}):remaining) = [showContractFuncV2 cname csv3InitSig]
                                                           ++ showReceives (sortOn fst . Map.toList $ csv3ReceiveSigs)
+<<<<<<< HEAD
                                                           ++ showEvents cs3EventSchema
+=======
+                                                          ++ [indentBy 4 (showContractEventSchema cs3EventSchemas)]
+>>>>>>> d58024c (Include and print schema information for V3 contracts.)
                                                           ++ go remaining
 
             showReceives :: [(Text, Maybe CS.FunctionSchemaV2)] -> [String]
             showReceives [] = []
             showReceives ((fname, mSchema):remaining) = indentBy 4 (showContractFuncV2 fname mSchema) : showReceives remaining
+<<<<<<< HEAD
 
             showEvents :: Maybe CS.SchemaType -> [String]
             showEvents stM = case stM of
               Nothing -> []
               Just st -> [indentBy 4 "Events:", indentBy 8 $ showContractEventV3 $ Just st]
+=======
+>>>>>>> d58024c (Include and print schema information for V3 contracts.)
   
     showWarnings :: [FuncName] -> [String]
     showWarnings [] = []
