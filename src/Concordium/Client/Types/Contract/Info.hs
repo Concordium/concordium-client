@@ -467,14 +467,14 @@ constructModuleInspectInfo namedModRef wasmVersion moduleSchema exportedFuncName
               where
                     go :: Map.Map Text ContractSigsV3 -> [CS.FuncName] -> [(Text, CS.ContractSchemaV3)] -> (Map.Map Text ContractSigsV3, [CS.FuncName])
                     go sigMap errors [] = (sigMap, errors)
-                    go sigMap errors ((cname, CS.ContractSchemaV3{..}):remaining) =
+                    go sigMap errors ((cname, cs@CS.ContractSchemaV3{..}):remaining) =
                       case Map.lookup cname sigMap of
                         Nothing -> let receiveErrors = map (CS.ReceiveFuncName cname) . Map.keys $ cs3ReceiveSigs
                                        errors' = CS.InitFuncName cname : receiveErrors ++ errors
                                    in go sigMap errors' remaining -- Schema has init signature for a contract not in the module.
                         Just ContractSigsV3{..} ->
                           let (updatedCsReceiveSigs, receiveErrors) = updateReceiveSigs cname csv3ReceiveSigs [] (Map.toList cs3ReceiveSigs)
-                              sigMap' = Map.insert cname (ContractSigsV3 {csv3InitSig = cs3InitSig, csv3ReceiveSigs = updatedCsReceiveSigs, cs3EventSchemas = cs3EventSchemas}) sigMap
+                              sigMap' = Map.insert cname (ContractSigsV3 {csv3InitSig = cs3InitSig, csv3ReceiveSigs = updatedCsReceiveSigs, cs3EventSchemas = CS.cs3EventSchemas cs}) sigMap
                           in go sigMap' (receiveErrors ++ errors) remaining
 
                     updateReceiveSigs :: Text -> Map.Map Text (Maybe CS.FunctionSchemaV2) -> [CS.FuncName]

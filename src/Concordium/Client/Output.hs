@@ -381,6 +381,10 @@ showContractFuncV2 funcName mFuncSchema = case mFuncSchema of
   Just CS.RvError{..} -> [i|- #{funcName}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
   Just CS.ParamRvError{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fs2Parameter}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
 
+showContractEventSchema :: Maybe CS.SchemaType -> String
+showContractEventSchema eSchema = case eSchema of
+  Nothing -> [i|- |]
+  Just es -> [i|- Event:\n#{indentBy 8 $ showPrettyJSON es}|]
 
 -- |Print module inspect info, i.e., the named moduleRef and its included contracts.
 -- If the init or receive signatures for a contract exist in the schema, they are also printed.
@@ -471,17 +475,12 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
       where go [] = []
             go ((cname, CI.ContractSigsV3{..}):remaining) = [showContractFuncV2 cname csv3InitSig]
                                                           ++ showReceives (sortOn fst . Map.toList $ csv3ReceiveSigs)
-                                                          ++ showEvents cs3EventSchemas
+                                                          ++ [indentBy 4 (showContractEventSchema cs3EventSchemas)]
                                                           ++ go remaining
 
             showReceives :: [(Text, Maybe CS.FunctionSchemaV2)] -> [String]
             showReceives [] = []
             showReceives ((fname, mSchema):remaining) = indentBy 4 (showContractFuncV2 fname mSchema) : showReceives remaining
-
-            showEvents :: Maybe SchemaType -> [String]
-            showEvents es = case es of
-              Nothing -> []
-              Just _ -> [] -- VHTODO: Include JSON representation of event schema here.
   
     showWarnings :: [FuncName] -> [String]
     showWarnings [] = []

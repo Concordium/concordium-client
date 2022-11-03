@@ -1,6 +1,6 @@
 cabal-version: 2.0
 
--- This file has been generated from package.yaml by hpack version 0.34.4.
+-- This file has been generated from package.yaml by hpack version 0.35.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -64,6 +64,7 @@ library
   other-modules:
       Paths_concordium_client
   autogen-modules:
+      Paths_concordium_client
       Proto.ConcordiumP2pRpc Proto.ConcordiumP2pRpc_Fields
   hs-source-dirs:
       src
@@ -87,6 +88,7 @@ library
     , base16-bytestring
     , base64-bytestring
     , bytestring
+    , case-insensitive >=1.2.1.0
     , cborg
     , cborg-json
     , cereal
@@ -124,6 +126,8 @@ executable concordium-client
   main-is: Main.hs
   other-modules:
       Paths_concordium_client
+  autogen-modules:
+      Paths_concordium_client
   hs-source-dirs:
       app
   default-extensions:
@@ -139,9 +143,9 @@ executable concordium-client
       base
     , concordium-client
     , optparse-applicative
+  default-language: Haskell2010
   if flag(static)
     ld-options: -static
-  default-language: Haskell2010
 
 executable middleware
   main-is: Main.hs
@@ -149,6 +153,8 @@ executable middleware
       Api
       Config
       Server
+      Paths_concordium_client
+  autogen-modules:
       Paths_concordium_client
   hs-source-dirs:
       middleware
@@ -190,15 +196,17 @@ executable middleware
     , wai-logger
     , wai-middleware-static
     , warp
+  default-language: Haskell2010
   if flag(middleware)
     buildable: True
   else
     buildable: False
-  default-language: Haskell2010
 
 executable tx-generator
   main-is: Main.hs
   other-modules:
+      Paths_concordium_client
+  autogen-modules:
       Paths_concordium_client
   hs-source-dirs:
       generator
@@ -221,11 +229,11 @@ executable tx-generator
     , mtl
     , optparse-applicative
     , time
+  default-language: Haskell2010
   if os(windows)
     ghc-options: -threaded
   if flag(static)
     ld-options: -static
-  default-language: Haskell2010
 
 test-suite concordium-client-test
   type: exitcode-stdio-1.0
@@ -244,6 +252,8 @@ test-suite concordium-client-test
       SimpleClientTests.QueryTransaction
       SimpleClientTests.SchemaParsingSpec
       SimpleClientTests.TransactionSpec
+      Paths_concordium_client
+  autogen-modules:
       Paths_concordium_client
   hs-source-dirs:
       test
