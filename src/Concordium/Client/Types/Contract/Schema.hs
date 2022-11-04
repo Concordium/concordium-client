@@ -12,6 +12,7 @@ module Concordium.Client.Types.Contract.Schema(
   SizeLength(..),
   FunctionSchemaV1(..),
   FunctionSchemaV2(..),
+  EventSchemaV3,
   decodeEmbeddedSchema,
   decodeEmbeddedSchemaAndExports,
   decodeModuleSchema,
@@ -21,6 +22,7 @@ module Concordium.Client.Types.Contract.Schema(
   lookupFunctionSchemaV1,
   lookupFunctionSchemaV2,
   lookupFunctionSchemaV3,
+  lookupEventSchema,
   lookupParameterSchema,
   lookupReturnValueSchema,
   lookupErrorSchema,
@@ -136,7 +138,7 @@ lookupEventSchema moduleSchema contrName =
     ModuleSchemaV0 {} -> Nothing
     ModuleSchemaV1 {} -> Nothing
     ModuleSchemaV2 {} -> Nothing
-    ModuleSchemaV3 {..} -> Map.lookup contrName ms3ContractSchemas >>= cs3EventSchemas
+    ModuleSchemaV3 {..} -> Map.lookup contrName ms3ContractSchemas >>= cs3EventSchema
 
 -- |Lookup the 'FunctionSchemaV1' of a 'ContractSchemaV1'.
 lookupFunctionSchemaV1 :: ContractSchemaV1 -> FuncName -> Maybe FunctionSchemaV1
@@ -235,7 +237,7 @@ data ContractSchemaV3
   = ContractSchemaV3 -- ^ Describes the schemas of a V1 smart contract.
   { cs3InitSig :: Maybe FunctionSchemaV2 -- ^ Schema for the init function.
   , cs3ReceiveSigs :: Map Text FunctionSchemaV2 -- ^ Schemas for the receive functions.
-  , cs3EventSchemas :: Maybe SchemaType -- ^ Schemas for the events
+  , cs3EventSchema :: Maybe SchemaType -- ^ Schemas for the events
   }
   deriving (Eq, Show, Generic)
 
@@ -267,7 +269,7 @@ instance S.Serialize ContractSchemaV3 where
   get = S.label "ContractSchemaV3" $ do
     cs3InitSig <- S.label "cs3InitSig" S.get
     cs3ReceiveSigs <- S.label "cs3ReceiveSigs" $ getMapOfWithSizeLen Four getText S.get
-    cs3EventSchemas <- S.label "cs3EventSigs" S.get -- TODO: Add the event schema serialization here
+    cs3EventSchema <- S.label "cs3EventSigs" S.get -- TODO: Add the event schema serialization here
     pure ContractSchemaV3{..}
   put ContractSchemaV3 {..} = S.put cs3InitSig <> putMapOfWithSizeLen Four putText S.put cs3ReceiveSigs
 
@@ -335,6 +337,9 @@ data FunctionSchemaV2
                  , fs2Error :: SchemaType
                  }
   deriving (Eq, Show, Generic)
+
+-- |V3 Schema for events in a V1 smart contract
+type EventSchemaV3 = SchemaType
 
 instance AE.ToJSON FunctionSchemaV2
 
