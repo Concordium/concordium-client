@@ -39,7 +39,6 @@ import qualified Data.Text.Encoding as Text
 import qualified Concordium.Client.Config as Config
 import Concordium.Client.GRPC (ClientMonad)
 import Concordium.Client.Cli
-import Concordium.Types.Execution (Event)
 
 -- |Try to include extra information in the contract info from the module schema.
 -- For V0 contracts:
@@ -225,12 +224,13 @@ data MethodsAndState
 -- |Method and event schemas for V1 Contracts.
 --  Additional information from the schema can be added with `addSchemaData`.
 --  The schemas can be either of version 1, 2 or 3.
-data Methods -- VHTODO: Rename to schema?
+data Methods 
   = NoSchemaV1   { ns1Methods :: ![Text] }
   | WithSchemaV1 { ws1Methods :: ![(Text, Maybe CS.FunctionSchemaV1)]}
   | WithSchemaV2 { ws2Methods :: ![(Text, Maybe CS.FunctionSchemaV2)]}
   | WithSchemaV3 { ws3Methods :: ![(Text, Maybe CS.FunctionSchemaV2)], ws3Event :: !(Maybe CS.EventSchemaV3) }
   deriving (Eq, Show)
+-- ^ TODO: The name implies method signatures, but this now includes event signatures. Should these be renamed to schema?
 
 -- |Contract state for a V0 contract.
 --  Can either be the raw bytes or a JSON value with the parsed state (parsed with a schema).
@@ -473,14 +473,14 @@ constructModuleInspectInfo namedModRef wasmVersion moduleSchema exportedFuncName
               where
                     go :: Map.Map Text ContractSigsV3 -> [CS.FuncName] -> [(Text, CS.ContractSchemaV3)] -> (Map.Map Text ContractSigsV3, [CS.FuncName])
                     go sigMap errors [] = (sigMap, errors)
-                    go sigMap errors ((cname, cs@CS.ContractSchemaV3{..}):remaining) =
+                    go sigMap errors ((cname, CS.ContractSchemaV3{..}):remaining) =
                       case Map.lookup cname sigMap of
                         Nothing -> let receiveErrors = map (CS.ReceiveFuncName cname) . Map.keys $ cs3ReceiveSigs
                                        errors' = CS.InitFuncName cname : receiveErrors ++ errors
                                    in go sigMap errors' remaining -- Schema has init signature for a contract not in the module.
-                        Just ContractSigsV3{..} ->
-                          let (updatedCsReceiveSigs, receiveErrors) = updateReceiveSigs cname csv3ReceiveSigs [] (Map.toList cs3ReceiveSigs)
-                              sigMap' = Map.insert cname (ContractSigsV3 {csv3InitSig = cs3InitSig, csv3ReceiveSigs = updatedCsReceiveSigs, cs3EventSchema = CS.cs3EventSchema cs}) sigMap
+                        Just cs ->
+                          let (updatedCsReceiveSigs, receiveErrors) = updateReceiveSigs cname (csv3ReceiveSigs cs) [] (Map.toList cs3ReceiveSigs)
+                              sigMap' = Map.insert cname (ContractSigsV3 {csv3InitSig = cs3InitSig, csv3ReceiveSigs = updatedCsReceiveSigs, cs3EventSchema = cs3EventSchema}) sigMap
                           in go sigMap' (receiveErrors ++ errors) remaining
 
                     updateReceiveSigs :: Text -> Map.Map Text (Maybe CS.FunctionSchemaV2) -> [CS.FuncName]
