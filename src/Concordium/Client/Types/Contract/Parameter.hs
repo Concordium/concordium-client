@@ -86,9 +86,7 @@ getJSONUsingSchema typ = case typ of
     fields' <- getFieldsAsJSON fields
     return $ AE.object [AE.fromText name .= fields']
   TaggedEnum variants -> do
-    idx <- if length variants <= 255
-           then fromIntegral <$> S.getWord8
-           else fromIntegral <$> S.getWord32le -- VHTODO: Check how indices are serialized.
+    idx <- fromIntegral <$> S.getWord8
     (name, fields) <- case variants Map.!? idx of
                       Just v -> return v
                       Nothing -> fail [i|Variant with index #{idx} does not exist for TaggedEnum.|]
@@ -257,7 +255,7 @@ putJSONUsingSchema typ json = case (typ, json) of
   (tEnum@(TaggedEnum variants), AE.Object obj) -> case KM.toList obj of
     [] -> Left [i|The object provided was empty, but it should have contained a variant of the following tagged enum:\n#{showPrettyJSON tEnum}.|]
     [(tag, val@(AE.Array vec))] -> case AE.toString tag of
-      [c] -> let idx = ((fromIntegral . ord) c :: Word8) in case V.toList vec of -- VHTODO: Is this sort of conversion OK? Would be nice if we could simply convert Key to Word8 somehow, or have Map Word8 Value...
+      [c] -> let idx = ((fromIntegral . ord) c :: Word8) in case V.toList vec of -- TODO: Is this sort of conversion OK?
         [nameVal, fieldsVal] -> case nameVal of 
           AE.String name -> case variants Map.!? idx of
             Nothing -> Left [i|No enum variant corresponds to tag '#{tag}' in:\n#{showPrettyJSON tEnum}|]

@@ -495,7 +495,7 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
             showEvents :: Maybe CS.SchemaType -> [String]
             showEvents stM = case stM of
               Nothing -> []
-              Just st -> [indentBy 4 $ "Events:", indentBy 8 $ showContractEventV3 $ Just st]
+              Just st -> [indentBy 4 "Events:", indentBy 8 $ showContractEventV3 $ Just st]
   
     showWarnings :: [FuncName] -> [String]
     showWarnings [] = []
@@ -710,7 +710,6 @@ showEvent verbose = \case
   Types.Resumed cAddr invokeSucceeded ->
     let invokeMsg :: Text = if invokeSucceeded then "succeeded" else "failed"
     in verboseOrNothing [i|resumed '#{cAddr}' after an interruption that #{invokeMsg}.|]
-  Types.Upgraded{..} -> verboseOrNothing $ printf "asd" -- VHTODO: Add this?
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
