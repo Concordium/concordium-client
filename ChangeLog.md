@@ -5,6 +5,7 @@
 - Add support for protocol version 5.
 - Add a `--secure` flag to enable connecting to gRPC using TLS.
   All commands that query the node support this.
+- Add support of V3 schema contracts in `contract show` and `module inspect`.
 
 ## 4.2.0
 
