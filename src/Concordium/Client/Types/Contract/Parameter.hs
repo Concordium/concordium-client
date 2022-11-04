@@ -85,13 +85,13 @@ getJSONUsingSchema typ = case typ of
                       Nothing -> fail [i|Variant with index #{idx} does not exist for Enum.|]
     fields' <- getFieldsAsJSON fields
     return $ AE.object [AE.fromText name .= fields']
-  EnumTag variants -> do
+  TaggedEnum variants -> do
     idx <- if length variants <= 255
            then fromIntegral <$> S.getWord8
            else fromIntegral <$> S.getWord32le -- VHTODO: Check how indices are serialized.
     (name, fields) <- case variants Map.!? idx of
                       Just v -> return v
-                      Nothing -> fail [i|Variant with index #{idx} does not exist for EnumTag.|]
+                      Nothing -> fail [i|Variant with index #{idx} does not exist for TaggedEnum.|]
     fields' <- getFieldsAsJSON fields
     return $ AE.object [AE.fromText (Text.pack $ show idx) .= (name, fields')]
   String sl -> AE.toJSON <$> getUtf8String sl
@@ -254,13 +254,13 @@ putJSONUsingSchema typ json = case (typ, json) of
         pure $ putLen <> putJSONFields'
     _ -> Left [i|#{obj} had too many fields. It should contain a single variant of the following enum:\n#{showPrettyJSON enum}.|]
 
-  (enumTag@(EnumTag variants), AE.Object obj) -> case KM.toList obj of
-    [] -> Left [i|The object provided was empty, but it should have contained a variant of the following tagged enum:\n#{showPrettyJSON enumTag}.|]
+  (tEnum@(TaggedEnum variants), AE.Object obj) -> case KM.toList obj of
+    [] -> Left [i|The object provided was empty, but it should have contained a variant of the following tagged enum:\n#{showPrettyJSON tEnum}.|]
     [(tag, val@(AE.Array vec))] -> case AE.toString tag of
       [c] -> let idx = ((fromIntegral . ord) c :: Word8) in case V.toList vec of -- VHTODO: Is this sort of conversion OK? Would be nice if we could simply convert Key to Word8 somehow, or have Map Word8 Value...
         [nameVal, fieldsVal] -> case nameVal of 
           AE.String name -> case variants Map.!? idx of
-            Nothing -> Left [i|No enum variant corresponds to tag '#{tag}' in:\n#{showPrettyJSON enumTag}|]
+            Nothing -> Left [i|No enum variant corresponds to tag '#{tag}' in:\n#{showPrettyJSON tEnum}|]
             Just (schemaName, schemaFieldTypes) -> do
               when (schemaName /= name) $ Left [i|Name '#{name}' does not match name '#{schemaName}' of enum variant with tag '#{tag}' in schema.|]
               let putLen = S.putWord8 $ fromIntegral idx -- There's always at most 2^8 variants, so no need to check like in Enum.
@@ -269,7 +269,7 @@ putJSONUsingSchema typ json = case (typ, json) of
           _ -> Left [i|Expected first element of #{val} to be a string.|]
         _ -> Left [i|{val} should be an array of length 2.|]
       _ -> Left [i|Tag '#{tag}'| is not an 8-bit integer.|]
-    _ -> Left [i|#{obj} had too many fields. It should contain a single variant of the following tagged enum:\n#{showPrettyJSON enumTag}.|]
+    _ -> Left [i|#{obj} had too many fields. It should contain a single variant of the following tagged enum:\n#{showPrettyJSON tEnum}.|]
  
   (String sl, AE.String str) -> do
     let bytes = BS.unpack . Text.encodeUtf8 $ str

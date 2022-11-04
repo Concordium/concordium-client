@@ -341,8 +341,7 @@ printContractInfo ci namedOwner namedModRef =
            , [i|Balance:         #{showCcd ciAmount}|]]
       tell [ [i|Methods:|]]
       tellMethodsV1 ciMethods
-      tell [ [i|Events:|]]
-      tellEventsV1 ciMethods -- VHTODO: Make this look nice.
+      tellEventsV1 ciMethods
   where
     owner = showNamedAddress namedOwner
     showState = \case
@@ -365,7 +364,9 @@ printContractInfo ci namedOwner namedModRef =
       CI.NoSchemaV1{} -> return ()
       CI.WithSchemaV1{} -> return ()
       CI.WithSchemaV2{} -> return ()
-      CI.WithSchemaV3{..} -> tell [showContractEventV3 ws3Event] -- VHTODO: Make this look nice.
+      CI.WithSchemaV3{..} -> do
+        tell [ [i|Events:|]]
+        tell [indentBy 4 $ showContractEventV3 ws3Event]
 
 showContractFuncV0 :: Text -> Maybe CS.SchemaType -> String
 showContractFuncV0 funcName mParamSchema = case mParamSchema of
@@ -393,7 +394,7 @@ showContractFuncV2 funcName mFuncSchema = case mFuncSchema of
 showContractEventV3 :: Maybe SchemaType -> String
 showContractEventV3 stM = case stM of
   Nothing -> [i||]
-  Just st -> [i| #{indentBy 4 $ showPrettyJSON st}|] -- VHTODO: Make this look nice.
+  Just st -> [i| #{showPrettyJSON st}|]
 
 -- |Print module inspect info, i.e., the named moduleRef and its included contracts.
 -- If the init or receive signatures for a contract exist in the schema, they are also printed.
@@ -491,10 +492,10 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
             showReceives [] = []
             showReceives ((fname, mSchema):remaining) = indentBy 4 (showContractFuncV2 fname mSchema) : showReceives remaining
 
-            showEvents :: Maybe SchemaType -> [String]
-            showEvents es = case es of
+            showEvents :: Maybe CS.SchemaType -> [String]
+            showEvents stM = case stM of
               Nothing -> []
-              Just _ -> [] -- VHTODO: Include JSON representation of event schema here.
+              Just st -> [indentBy 4 $ "Events:", indentBy 8 $ showContractEventV3 $ Just st]
   
     showWarnings :: [FuncName] -> [String]
     showWarnings [] = []
