@@ -341,6 +341,8 @@ printContractInfo ci namedOwner namedModRef =
            , [i|Balance:         #{showCcd ciAmount}|]]
       tell [ [i|Methods:|]]
       tellMethodsV1 ciMethods
+      tell [ [i|Events:|]]
+      tellEventsV1 ciMethods -- VHTODO: Make this look nice.
   where
     owner = showNamedAddress namedOwner
     showState = \case
@@ -357,6 +359,13 @@ printContractInfo ci namedOwner namedModRef =
       CI.NoSchemaV1{..} -> tell $ map (`showContractFuncV1` Nothing) ns1Methods
       CI.WithSchemaV1{..} -> tell $  map (uncurry showContractFuncV1) ws1Methods
       CI.WithSchemaV2{..} -> tell $  map (uncurry showContractFuncV2) ws2Methods
+      CI.WithSchemaV3{..} -> tell $  map (uncurry showContractFuncV2) ws3Methods
+
+    tellEventsV1 = \case
+      CI.NoSchemaV1{} -> return ()
+      CI.WithSchemaV1{} -> return ()
+      CI.WithSchemaV2{} -> return ()
+      CI.WithSchemaV3{..} -> tell [showContractEventV3 ws3Event] -- VHTODO: Make this look nice.
 
 showContractFuncV0 :: Text -> Maybe CS.SchemaType -> String
 showContractFuncV0 funcName mParamSchema = case mParamSchema of
@@ -381,6 +390,10 @@ showContractFuncV2 funcName mFuncSchema = case mFuncSchema of
   Just CS.RvError{..} -> [i|- #{funcName}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
   Just CS.ParamRvError{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fs2Parameter}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
 
+showContractEventV3 :: Maybe SchemaType -> String
+showContractEventV3 stM = case stM of
+  Nothing -> [i||]
+  Just st -> [i| #{indentBy 4 $ showPrettyJSON st}|] -- VHTODO: Make this look nice.
 
 -- |Print module inspect info, i.e., the named moduleRef and its included contracts.
 -- If the init or receive signatures for a contract exist in the schema, they are also printed.
@@ -471,7 +484,7 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
       where go [] = []
             go ((cname, CI.ContractSigsV3{..}):remaining) = [showContractFuncV2 cname csv3InitSig]
                                                           ++ showReceives (sortOn fst . Map.toList $ csv3ReceiveSigs)
-                                                          ++ showEvents cs3EventSchemas
+                                                          ++ showEvents cs3EventSchema
                                                           ++ go remaining
 
             showReceives :: [(Text, Maybe CS.FunctionSchemaV2)] -> [String]
@@ -698,6 +711,7 @@ showEvent verbose = \case
   Types.Resumed cAddr invokeSucceeded ->
     let invokeMsg :: Text = if invokeSucceeded then "succeeded" else "failed"
     in verboseOrNothing [i|resumed '#{cAddr}' after an interruption that #{invokeMsg}.|]
+  Types.Upgraded{..} -> verboseOrNothing $ printf "asd" -- VHTODO: Add this?
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
