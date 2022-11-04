@@ -463,7 +463,7 @@ data SchemaType =
   | ILeb128 Word32
   | ByteList SizeLength
   | ByteArray Word32
-  | EnumTag (Map Word8 (Text, Fields))
+  | TaggedEnum (Map Word8 (Text, Fields))
   deriving (Eq, Generic, Show)
 
 instance Hashable SchemaType
@@ -509,7 +509,7 @@ instance AE.ToJSON SchemaType where
     ILeb128 _ -> AE.String "<String with signed integer>"
     ByteList _ -> AE.String "<String with lowercase hex>"
     ByteArray _ -> AE.String "<String with lowercase hex>"
-    EnumTag variants -> AE.object ["EnumTag" .= (toJsonArray . map (\(k, v) -> AE.object [AE.fromText k .= v]) $ (\(k,v) -> (pack $ show k, v)) <$> Map.toList variants)]
+    TaggedEnum variants -> AE.object ["TaggedEnum" .= (toJsonArray . map (\(k, v) -> AE.object [AE.fromText k .= v]) $ (\(k,v) -> (pack $ show k, v)) <$> Map.toList variants)]
     where toJsonArray = AE.Array . V.fromList
 
 instance S.Serialize SchemaType where
@@ -547,7 +547,7 @@ instance S.Serialize SchemaType where
       28 -> S.label "ILeb128"  $ ILeb128 <$> S.getWord32le
       29 -> S.label "ByteList" $ ByteList <$> S.get
       30 -> S.label "ByteArray"  $ ByteArray <$> S.getWord32le
-      31 -> S.label "EnumTag" $ EnumTag <$> getMapOfWithSizeLen Four S.getWord8 (S.getTwoOf getText S.get)
+      31 -> S.label "TaggedEnum" $ TaggedEnum <$> getMapOfWithSizeLen Four S.getWord8 (S.getTwoOf getText S.get)
       x  -> fail [i|Invalid SchemaType tag: #{x}|]
 
 
@@ -584,7 +584,7 @@ instance S.Serialize SchemaType where
     ILeb128 sl          -> S.putWord8 28 <> S.putWord32le sl
     ByteList sl         -> S.putWord8 29 <> S.put sl
     ByteArray sl        -> S.putWord8 30 <> S.putWord32le sl
-    EnumTag m           -> S.putWord8 31 <> putMapOfWithSizeLen Four S.putWord8 (S.putTwoOf putText S.put) m
+    TaggedEnum m           -> S.putWord8 31 <> putMapOfWithSizeLen Four S.putWord8 (S.putTwoOf putText S.put) m
 
 -- |Parallel to SizeLength defined in contracts-common (Rust).
 -- Must stay in sync.
