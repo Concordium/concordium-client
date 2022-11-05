@@ -571,13 +571,38 @@ processTransactionCmd action baseCfgDir verbose backend =
         when (ioTail intOpts) $ do
           tailTransaction_ hash
 --          logSuccess [ "credential deployed successfully" ]
-    TransactionStatus h -> do
+    TransactionStatus h schemaFile -> do
       hash <- case parseTransactionHash h of
         Nothing -> logFatal [printf "invalid transaction hash '%s'" h]
         Just hash -> return hash
       status <- withClient backend $ queryTransactionStatus hash
       when verbose $ logInfo [printf "Response: %s" (show status)]
-      runPrinter $ printTransactionStatus status True
+      -- Get schema for the transaction contract
+      let cAddr = extractFromTsr (\case Types.ContractInitialized {..} -> Just ecAddress
+                                        Types.Updated {..} -> Just euAddress
+                                        Types.Interrupted {..} -> Just iAddress
+                                        _ -> Nothing) $ Just status
+      schema <- case cAddr of
+        Just (Right ca) -> do
+          let caT = (Text.pack . show . Types.contractIndex) ca
+          baseCfg <- getBaseConfig baseCfgDir verbose
+          namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) caT Nothing
+          withClient backend . withBestBlockHash Nothing $ \bb -> do
+            contrInfo <- getContractInfo namedContrAddr bb
+            let cName = CI.ciName contrInfo
+            let namedModRef = NamedModuleRef { nmrRef = CI.ciSourceModule contrInfo, 
+                                               nmrNames = findAllNamesFor (bcModuleNameMap baseCfg) (CI.ciSourceModule contrInfo)}
+            getSchemaFromFileOrModule schemaFile namedModRef bb >>= \case
+              Just (CS.ModuleSchemaV3 m) -> return $ case m Map.!? cName of
+                  Just CS.ContractSchemaV3{..} -> Just cs3EventSchema
+                  Nothing -> Nothing
+              _ -> return Nothing
+        _ -> return Nothing
+      case schema of
+        (Just sch) -> do
+          runPrinter $ printTransactionStatus status True sch
+        _ -> runPrinter $ printTransactionStatus status True Nothing
+      
       -- TODO This works but output doesn't make sense if transaction is already committed/finalized.
       --      It should skip already completed steps.
       -- withClient backend $ tailTransaction_ hash
@@ -1380,7 +1405,7 @@ tailTransaction hash = do
     logFatal [ "transaction failed before it got committed"
              , "most likely because it was invalid" ]
 
-  runPrinter $ printTransactionStatus committedStatus False
+  runPrinter $ printTransactionStatus committedStatus False Nothing
 
   -- If the transaction goes back to pending state after being committed
   -- to a branch which gets dropped later on, the command will currently
@@ -1401,7 +1426,7 @@ tailTransaction hash = do
               , "response:\n" ++ showPrettyJSON committedStatus ]
 
     -- Print out finalized status.
-    runPrinter $ printTransactionStatus finalizedStatus False
+    runPrinter $ printTransactionStatus finalizedStatus False Nothing
 
     return finalizedStatus
   liftIO $ printf "[%s] Transaction finalized.\n" =<< getLocalTimeOfDayFormatted

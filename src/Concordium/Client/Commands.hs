@@ -171,7 +171,9 @@ data TransactionCmd
     { tsFile :: !FilePath
     , tsInteractionOpts :: !InteractionOpts }
   | TransactionStatus
-    { tsHash :: !Text }
+    { tsHash :: !Text
+      -- |Path to a contract schema, used to display the transaction event info.
+    , tsSchema :: !(Maybe FilePath )}
   | TransactionSendCcd
     { tsgReceiver :: !Text
     , tsgAmount :: !Amount
@@ -678,7 +680,8 @@ transactionStatusCmd =
     "status"
     (info
       (TransactionStatus <$>
-        strArgument (metavar "TX-HASH" <> help "Hash of the transaction."))
+        strArgument (metavar "TX-HASH" <> help "Hash of the transaction.") <*>
+        optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to display the contract info.")))
       (progDesc "Get status of a transaction."))
 
 transactionSendCcdCmd :: Mod CommandFields TransactionCmd

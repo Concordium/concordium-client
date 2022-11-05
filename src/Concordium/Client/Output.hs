@@ -548,8 +548,8 @@ parseTransactionBlockResult status =
                              in MultipleBlocksUnambiguous hashes outcome
                 _ -> MultipleBlocksAmbiguous blocks
 
-printTransactionStatus :: TransactionStatusResult -> Bool -> Printer
-printTransactionStatus status verbose =
+printTransactionStatus :: TransactionStatusResult -> Bool -> Maybe SchemaType -> Printer
+printTransactionStatus status verbose stM =
   case tsrState status of
     Received -> tell ["Transaction is pending."]
     Absent -> tell ["Transaction is absent."]
@@ -562,14 +562,14 @@ printTransactionStatus status verbose =
                  "Transaction is committed into block %s with %s."
                  (show hash)
                  (showOutcomeFragment outcome)]
-          tell $ showOutcomeResult verbose $ Types.tsResult outcome
+          tell $ showOutcomeResult verbose stM $ Types.tsResult outcome
         MultipleBlocksUnambiguous hashes outcome -> do
           tell [printf
                  "Transaction is committed into %d blocks with %s:"
                  (length hashes)
                  (showOutcomeFragment outcome)]
           tell $ hashes <&> printf "- %s" . show
-          tell $ showOutcomeResult verbose $ Types.tsResult outcome
+          tell $ showOutcomeResult verbose stM $ Types.tsResult outcome
         MultipleBlocksAmbiguous blocks -> do
           tell [printf
                  "Transaction is committed into %d blocks:"
@@ -578,7 +578,7 @@ printTransactionStatus status verbose =
             tell [ printf "- %s with %s:"
                      (show hash)
                      (showOutcomeFragment outcome) ]
-            tell $ (showOutcomeResult True $ Types.tsResult outcome) <&> ("  * " ++)
+            tell $ (showOutcomeResult True stM $ Types.tsResult outcome) <&> ("  * " ++)
     Finalized ->
       case parseTransactionBlockResult status of
         NoBlocks ->
@@ -588,7 +588,7 @@ printTransactionStatus status verbose =
                  "Transaction is finalized into block %s with %s."
                  (show hash)
                  (showOutcomeFragment outcome)]
-          tell $ showOutcomeResult verbose $ Types.tsResult outcome
+          tell $ showOutcomeResult verbose stM $ Types.tsResult outcome
         MultipleBlocksUnambiguous _ _ ->
           tell ["Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!"]
         MultipleBlocksAmbiguous _ ->
@@ -609,9 +609,9 @@ showOutcomeCost outcome = showCost (Types.tsCost outcome) (Types.tsEnergyCost ou
 showCost :: Types.Amount -> Types.Energy -> String
 showCost gtu nrg = printf "%s (%s)" (showCcd gtu) (showNrg nrg)
 
-showOutcomeResult :: Verbose -> Types.ValidResult -> [String]
-showOutcomeResult verbose = \case
-  Types.TxSuccess es -> mapMaybe (showEvent verbose Nothing) es
+showOutcomeResult :: Verbose -> Maybe SchemaType -> Types.ValidResult -> [String]
+showOutcomeResult verbose stM = \case
+  Types.TxSuccess es -> mapMaybe (showEvent verbose stM) es
   Types.TxReject r ->
     if verbose
     then [showRejectReason True r]
@@ -628,15 +628,15 @@ showOutcomeResult verbose = \case
 -- The verbose version is used by 'transaction status' and the non-trivial cases of the above
 -- where there are multiple distinct outcomes.
 showEvent :: Verbose -> Maybe SchemaType -> Types.Event -> Maybe String
-showEvent verbose eventSchema = \case
+showEvent verbose stM = \case
   Types.ModuleDeployed ref->
     verboseOrNothing $ printf "module '%s' deployed" (show ref)
   Types.ContractInitialized{..} ->
     verboseOrNothing $ printf "initialized contract '%s' using init function '%s' from module '%s' with %s"
-                              (show ecAddress) (show ecInitName) (show ecRef) (showCcd ecAmount) <> showLoggedEvents eventSchema ecEvents
+                              (show ecAddress) (show ecInitName) (show ecRef) (showCcd ecAmount) <> showLoggedEvents stM ecEvents
   Types.Updated{..} ->
     verboseOrNothing $ printf "sent message to function '%s' with '%s' and %s from %s to %s"
-                              (show euReceiveName) (show euMessage) (showCcd euAmount) (showAddress euInstigator) (showAddress $ Types.AddressContract euAddress) <> showLoggedEvents eventSchema euEvents
+                              (show euReceiveName) (show euMessage) (showCcd euAmount) (showAddress euInstigator) (showAddress $ Types.AddressContract euAddress) <> showLoggedEvents stM euEvents
   Types.Transferred{..} ->
     verboseOrNothing $ printf "transferred %s from %s to %s" (showCcd etAmount) (showAddress etFrom) (showAddress etTo)
   Types.AccountCreated addr ->
@@ -710,7 +710,7 @@ showEvent verbose eventSchema = \case
                                invalidCBOR
     in Just $ printf "Transfer memo:\n%s" str
   Types.Interrupted cAddr ev ->
-    verboseOrNothing $ [i|interrupted '#{cAddr}'.|] <> showLoggedEvents eventSchema ev
+    verboseOrNothing $ [i|interrupted '#{cAddr}'.|] <> showLoggedEvents stM ev
   Types.Upgraded{..} ->
     verboseOrNothing [i|upgraded contract instance at '#{euAddress}' from '#{euFrom}' to '#{euTo}'.|]
   Types.Resumed cAddr invokeSucceeded ->
@@ -736,12 +736,18 @@ showEvent verbose eventSchema = \case
     showDelegationTarget (Types.DelegateToBaker bid) = "Baker ID " ++ show bid
 
     showLoggedEvents :: Maybe SchemaType -> [Wasm.ContractEvent] -> String
-    showLoggedEvents stM evs = case stM of
-      Nothing -> "No event schema was provided."
-      Just st -> do
-        let (errs, vals) = partitionEithers $ map (PA.decodeParameter st . SE.runPut  . SE.put) evs -- VHTODO: Exporting put and get from Wasm. Can it be avoided somehow?
-        let jsonRes = showSortedPrettyJSON vals
-        unlines errs <> jsonRes -- VHTODO: Make this look nice; test and format.
+    showLoggedEvents st evs = "\n" <> case evs of
+      [] -> "No contract events were logged in this transaction."
+      _ -> case st of 
+        Nothing -> [i|#{length evs} contract events were logged. No V3 event schema was found in contract nor provided.|]
+        Just st' -> do
+          let (_, vals) =
+                partitionEithers $ map (\(Wasm.ContractEvent ev) ->
+                  (PA.decodeParameter st' . SE.runPut . SE.putShortByteString) ev) evs
+          let jsonRes = showSortedPrettyJSON vals
+          [i|#{length evs} contract events were logged in this transaction|]
+            <> [i|, of which #{length vals} were succesfully parsed with schema|]
+            <> if length vals > 0 then ":\n" <> jsonRes else "."
 
 -- |Return string representation of reject reason.
 -- If verbose is true, the string includes the details from the fields of the reason.
