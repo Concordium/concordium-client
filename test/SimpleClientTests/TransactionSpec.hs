@@ -268,4 +268,4 @@ printTransactionStatusTests = describe "print transaction status" $ do
     specify "correct output" $
       p TransactionStatusResult { tsrState = Finalized, tsrResults = Map.fromList [(exampleBlockHash1, outcomeSuccess1a), (exampleBlockHash2, outcomeSuccess1b)]} `shouldBe`
         [ "Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!" ]
-  where p = \x -> execWriter $ printTransactionStatus x False
+  where p = \x -> execWriter $ printTransactionStatus x False Nothing
