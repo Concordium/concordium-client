@@ -269,7 +269,7 @@ instance S.Serialize ContractSchemaV3 where
   get = S.label "ContractSchemaV3" $ do
     cs3InitSig <- S.label "cs3InitSig" S.get
     cs3ReceiveSigs <- S.label "cs3ReceiveSigs" $ getMapOfWithSizeLen Four getText S.get
-    cs3EventSchema <- S.label "cs3EventSigs" S.get -- TODO: Add the event schema serialization here
+    cs3EventSchema <- S.label "cs3EventSigs" S.get
     pure ContractSchemaV3{..}
   put ContractSchemaV3 {..} = S.put cs3InitSig <> putMapOfWithSizeLen Four putText S.put cs3ReceiveSigs
 
@@ -509,7 +509,9 @@ instance AE.ToJSON SchemaType where
     ILeb128 _ -> AE.String "<String with signed integer>"
     ByteList _ -> AE.String "<String with lowercase hex>"
     ByteArray _ -> AE.String "<String with lowercase hex>"
-    TaggedEnum variants -> AE.object ["TaggedEnum" .= (toJsonArray . map (\(k, v) -> AE.object [AE.fromText k .= v]) $ (\(k,v) -> (pack $ show k, v)) <$> Map.toList variants)]
+    TaggedEnum variants -> AE.object ["TaggedEnum" .=
+      (toJsonArray . map (\(k, v) -> AE.object [AE.fromText k .= v]) $
+      (\(k,v) -> (pack $ show k, v)) <$> Map.toList variants)]
     where toJsonArray = AE.Array . V.fromList
 
 instance S.Serialize SchemaType where
@@ -550,8 +552,6 @@ instance S.Serialize SchemaType where
       31 -> S.label "TaggedEnum" $ TaggedEnum <$> getMapOfWithSizeLen Four S.getWord8 (S.getTwoOf getText S.get)
       x  -> fail [i|Invalid SchemaType tag: #{x}|]
 
-
-
   put typ = case typ of
     Unit -> S.putWord8 0
     Bool -> S.putWord8 1
@@ -584,7 +584,7 @@ instance S.Serialize SchemaType where
     ILeb128 sl          -> S.putWord8 28 <> S.putWord32le sl
     ByteList sl         -> S.putWord8 29 <> S.put sl
     ByteArray sl        -> S.putWord8 30 <> S.putWord32le sl
-    TaggedEnum m           -> S.putWord8 31 <> putMapOfWithSizeLen Four S.putWord8 (S.putTwoOf putText S.put) m
+    TaggedEnum m        -> S.putWord8 31 <> putMapOfWithSizeLen Four S.putWord8 (S.putTwoOf putText S.put) m
 
 -- |Parallel to SizeLength defined in contracts-common (Rust).
 -- Must stay in sync.
