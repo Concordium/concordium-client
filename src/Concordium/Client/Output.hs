@@ -455,46 +455,31 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
     showContractSigsV0 = go . sortOn fst . Map.toList
       where go [] = []
             go ((cname, CI.ContractSigsV0{..}):remaining) = [showContractFuncV0 cname csv0InitSig]
-                                                          ++ showReceives (sortOn fst . Map.toList $ csv0ReceiveSigs)
+                                                          ++ showReceives showContractFuncV0 (sortOn fst . Map.toList $ csv0ReceiveSigs)
                                                           ++ go remaining
-
-            showReceives :: [(Text, Maybe SchemaType)] -> [String]
-            showReceives [] = []
-            showReceives ((fname, mSchema):remaining) = indentBy 4 (showContractFuncV0 fname mSchema) : showReceives remaining
 
     showContractSigsV1 :: Map.Map Text CI.ContractSigsV1 -> [String]
     showContractSigsV1 = go . sortOn fst . Map.toList
       where go [] = []
             go ((cname, CI.ContractSigsV1{..}):remaining) = [showContractFuncV1 cname csv1InitSig]
-                                                          ++ showReceives (sortOn fst . Map.toList $ csv1ReceiveSigs)
+                                                          ++ showReceives showContractFuncV1 (sortOn fst . Map.toList $ csv1ReceiveSigs)
                                                           ++ go remaining
-
-            showReceives :: [(Text, Maybe CS.FunctionSchemaV1)] -> [String]
-            showReceives [] = []
-            showReceives ((fname, mSchema):remaining) = indentBy 4 (showContractFuncV1 fname mSchema) : showReceives remaining
 
     showContractSigsV2 :: Map.Map Text CI.ContractSigsV2 -> [String]
     showContractSigsV2 = go . sortOn fst . Map.toList
       where go [] = []
             go ((cname, CI.ContractSigsV2{..}):remaining) = [showContractFuncV2 cname csv2InitSig]
-                                                          ++ showReceives (sortOn fst . Map.toList $ csv2ReceiveSigs)
+                                                          ++ showReceives showContractFuncV2 (sortOn fst . Map.toList $ csv2ReceiveSigs)
                                                           ++ go remaining
 
-            showReceives :: [(Text, Maybe CS.FunctionSchemaV2)] -> [String]
-            showReceives [] = []
-            showReceives ((fname, mSchema):remaining) = indentBy 4 (showContractFuncV2 fname mSchema) : showReceives remaining
-
+    -- Display init and receive function and event signatures for a contract with a V3 schema.
     showContractSigsV3 :: Map.Map Text CI.ContractSigsV3 -> [String]
     showContractSigsV3 = go . sortOn fst . Map.toList
       where go [] = []
             go ((cname, CI.ContractSigsV3{..}):remaining) = [showContractFuncV2 cname csv3InitSig]
-                                                          ++ showReceives (sortOn fst . Map.toList $ csv3ReceiveSigs)
+                                                          ++ showReceives showContractFuncV2 (sortOn fst . Map.toList $ csv3ReceiveSigs)
                                                           ++ showEvents cs3EventSchema
                                                           ++ go remaining
-
-            showReceives :: [(Text, Maybe CS.FunctionSchemaV2)] -> [String]
-            showReceives [] = []
-            showReceives ((fname, mSchema):remaining) = indentBy 4 (showContractFuncV2 fname mSchema) : showReceives remaining
 
             showEvents :: Maybe CS.SchemaType -> [String]
             showEvents stM = case stM of
@@ -514,6 +499,11 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
     showWasmVersion = \case
       Wasm.V0 -> "V0"
       Wasm.V1 -> "V1"
+
+    showReceives :: (a -> b -> String) -> [(a, b)] -> [String]
+    showReceives showContractFunc = fmap (indentBy 4 . uncurry showContractFunc)
+
+    
 
 -- |Indents each line in a string by the number of spaces specified.
 indentBy :: Int -> String -> String
