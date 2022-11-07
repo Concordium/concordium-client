@@ -4,6 +4,7 @@ import           Control.Concurrent (forkIO)
 import           Control.Monad.Except
 import           Data.Function ((&))
 import           Data.List.Split
+import           Data.Maybe
 import qualified Data.Text as T
 import           Network.Wai (Application, Middleware)
 import qualified Network.Wai.Handler.Warp as W
@@ -27,6 +28,8 @@ runHttp middlewares = do
   nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:11100"
   grpcAdminToken <- Config.lookupEnvText "RPC_PASSWORD" "rpcadmin"
 
+  secure <- Config.lookupEnvTextWithoutDefault "MIDDLEWARE_USE_TLS"
+
   let
     (nodeHost, nodePort) =
       case splitOn ":" (T.unpack nodeUrl) of
@@ -38,7 +41,7 @@ runHttp middlewares = do
         _ ->
           error $ "Could not parse host:port for given NODE_URL: " ++ T.unpack nodeUrl
 
-    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, grpcAuthenticationToken = (T.unpack grpcAdminToken), target = Nothing, retryNum = 5, timeout = Nothing, useTls = False }
+    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, grpcAuthenticationToken = (T.unpack grpcAdminToken), target = Nothing, retryNum = 5, timeout = Nothing, useTls = isJust secure }
 
   runExceptT (mkGrpcClient grpcConfig Nothing) >>= \case
     Left err -> fail (show err) -- cannot connect to grpc server
@@ -50,6 +53,7 @@ runHttp middlewares = do
           putStrLn $ "NODE_URL: " ++ show nodeUrl
           putStrLn $ "gRPC authentication token: " ++ show grpcAdminToken
           putStrLn $ "Server started: http://localhost:" ++ show serverPort
+          when (isJust secure) $ putStrLn "Using TLS to connect to the node."
 
         run l = W.defaultSettings
                   & W.setBeforeMainLoop printStatus
