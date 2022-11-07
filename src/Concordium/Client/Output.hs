@@ -34,6 +34,7 @@ import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import Data.Bool
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Builder as BSB
 import qualified Data.ByteString.Short as BSS
 import qualified Data.ByteString.Lazy as BSL
 import Data.Either (partitionEithers)
@@ -538,6 +539,7 @@ parseTransactionBlockResult status =
                              in MultipleBlocksUnambiguous hashes outcome
                 _ -> MultipleBlocksAmbiguous blocks
 
+-- Print transaction status, optionally parsing contract events with a schema.
 printTransactionStatus :: TransactionStatusResult -> Bool -> Maybe SchemaType -> Printer
 printTransactionStatus status verbose stM =
   case tsrState status of
@@ -727,17 +729,20 @@ showEvent verbose stM = \case
 
     showLoggedEvents :: Maybe SchemaType -> [Wasm.ContractEvent] -> String
     showLoggedEvents st evs = "\n" <> case evs of
-      [] -> "No contract events were logged in this transaction."
+      [] -> "No contract events were emitted."
       _ -> case st of 
-        Nothing -> [i|#{length evs} contract events were logged. No V3 event schema was found in contract nor provided.|]
+        Nothing -> do
+          ([i|#{length evs} contract events were emitted. No event schema found in contract nor provided by user. Got:\n|] :: String)
+            <> intercalate "\n" ["Event(raw): "
+            <> show (BSB.toLazyByteString . BSB.byteStringHex $ SE.runPut $ SE.putShortByteString e) | (Wasm.ContractEvent e) <- evs]
         Just st' -> do
           let (_, vals) =
                 partitionEithers $ map (\(Wasm.ContractEvent ev) ->
                   (PA.decodeParameter st' . SE.runPut . SE.putShortByteString) ev) evs
           let jsonRes = showSortedPrettyJSON vals
-          [i|#{length evs} contract events were logged in this transaction|]
+          [i|#{length evs} contract events were emitted|]
             <> [i|, of which #{length vals} were succesfully parsed with schema|]
-            <> if length vals > 0 then ":\n" <> jsonRes else "."
+            <> if length vals > 0 then ". Got:\n" <> jsonRes else "."
 
 -- |Return string representation of reject reason.
 -- If verbose is true, the string includes the details from the fields of the reason.
