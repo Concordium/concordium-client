@@ -47,7 +47,6 @@ module Concordium.Client.Runner
 import           Concordium.Client.Utils
 import           Concordium.Client.Cli
 import           Concordium.Client.Config
-
 import           Concordium.Client.Commands          as COM
 import           Concordium.Client.Export
 import           Concordium.Client.GRPC
@@ -572,37 +571,34 @@ processTransactionCmd action baseCfgDir verbose backend =
           tailTransaction_ hash
 --          logSuccess [ "credential deployed successfully" ]
     TransactionStatus h schemaFile -> do
+      baseCfg <- getBaseConfig baseCfgDir verbose
       hash <- case parseTransactionHash h of
         Nothing -> logFatal [printf "invalid transaction hash '%s'" h]
         Just hash -> return hash
-      status <- withClient backend $ queryTransactionStatus hash
-      when verbose $ logInfo [printf "Response: %s" (show status)]
-      -- Get schema for the transaction contract
-      let cAddr = extractFromTsr (\case Types.ContractInitialized {..} -> Just ecAddress
-                                        Types.Updated {..} -> Just euAddress
-                                        Types.Interrupted {..} -> Just iAddress
-                                        _ -> Nothing) $ Just status
-      schema <- case cAddr of
-        Just (Right ca) -> do
-          let caT = (Text.pack . show . Types.contractIndex) ca
-          baseCfg <- getBaseConfig baseCfgDir verbose
-          namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) caT Nothing
-          withClient backend . withBestBlockHash Nothing $ \bb -> do
+
+      withClient backend . withBestBlockHash Nothing $ \bb -> do
+        status <- queryTransactionStatus hash
+        when verbose $ logInfo [printf "Response: %s" (show status)]
+        -- Get schema for the transaction contract
+        let cAddr = extractFromTsr (\case Types.ContractInitialized {..} -> Just ecAddress
+                                          Types.Updated {..} -> Just euAddress
+                                          Types.Interrupted {..} -> Just iAddress
+                                          _ -> Nothing) $ Just status
+        case cAddr of
+          Just (Right ca) -> do
+            let namedContrAddr = NamedContractAddress ca []
             contrInfo <- getContractInfo namedContrAddr bb
             let cName = CI.ciName contrInfo
             let namedModRef = NamedModuleRef { nmrRef = CI.ciSourceModule contrInfo, 
                                                nmrNames = findAllNamesFor (bcModuleNameMap baseCfg) (CI.ciSourceModule contrInfo)}
-            getSchemaFromFileOrModule schemaFile namedModRef bb >>= \case
-              Just (CS.ModuleSchemaV3 m) -> return $ case m Map.!? cName of
-                  Just CS.ContractSchemaV3{..} -> Just cs3EventSchema
-                  Nothing -> Nothing
+            schema <- getSchemaFromFileOrModule schemaFile namedModRef bb >>= \case
+              Just (CS.ModuleSchemaV3 m) -> case m Map.!? cName of
+                  Just CS.ContractSchemaV3{..} -> return cs3EventSchema
+                  Nothing -> return Nothing
               _ -> return Nothing
-        _ -> return Nothing
-      case schema of
-        (Just sch) -> do
-          runPrinter $ printTransactionStatus status True sch
-        _ -> runPrinter $ printTransactionStatus status True Nothing
-      
+            runPrinter $ printTransactionStatus status True schema
+          _ -> runPrinter $ printTransactionStatus status True Nothing
+
       -- TODO This works but output doesn't make sense if transaction is already committed/finalized.
       --      It should skip already completed steps.
       -- withClient backend $ tailTransaction_ hash
