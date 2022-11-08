@@ -46,6 +46,7 @@ import Concordium.Client.Cli
 --  - Include all available parameter schemas for receive methods.
 -- For V1 contracts:
 --  - Include all available function schemas for receive methods.
+--  - In case of a V3 schema, include event schema.
 --
 -- Logs warnings if:
 --  - The contract is not included in the module schema.
@@ -91,10 +92,10 @@ addSchemaData cInfo@ContractInfoV1{..} moduleSchema =
             return Nothing
           Just contrSchema ->
             let ws3Methods = map (addFuncSchemaToMethodV3 contrSchema) ns1Methods
-                ws3Event = addEventSchemaToMethodV3 contrSchema
+                ws3Event = CS.cs3EventSchema contrSchema
                 withSchema = WithSchemaV3{..}
             in return $ Just (cInfo {ciMethods = withSchema})
-        _ -> logFatal ["Internal error: Contract info has already been decoded."] -- Matches WithSchema1 / WithSchema2. Should never happen.
+        _ -> logFatal ["Internal error: Contract info has already been decoded."] -- Matches WithSchema*. Should never happen.
   where addFuncSchemaToMethodV1 :: CS.ContractSchemaV1 -> Text -> (Text, Maybe CS.FunctionSchemaV1)
         addFuncSchemaToMethodV1 contrSchema rcvName = let mFuncSchema = CS.lookupFunctionSchemaV1 contrSchema (CS.ReceiveFuncName ciName rcvName)
                                                     in (rcvName, mFuncSchema)
@@ -104,8 +105,6 @@ addSchemaData cInfo@ContractInfoV1{..} moduleSchema =
         addFuncSchemaToMethodV3 :: CS.ContractSchemaV3 -> Text -> (Text, Maybe CS.FunctionSchemaV2)
         addFuncSchemaToMethodV3 contrSchema rcvName = let mFuncSchema = CS.lookupFunctionSchemaV3 contrSchema (CS.ReceiveFuncName ciName rcvName)
                                                     in (rcvName, mFuncSchema)
-        addEventSchemaToMethodV3 :: CS.ContractSchemaV3 -> Maybe CS.EventSchemaV3
-        addEventSchemaToMethodV3 = CS.cs3EventSchema
 
 addSchemaData cInfo@ContractInfoV0{..} moduleSchema =
   case moduleSchema of
@@ -224,13 +223,13 @@ data MethodsAndState
 -- |Method and event schemas for V1 Contracts.
 --  Additional information from the schema can be added with `addSchemaData`.
 --  The schemas can be either of version 1, 2 or 3.
+--  Event schemas are only present in V3 schemas.
 data Methods 
   = NoSchemaV1   { ns1Methods :: ![Text] }
   | WithSchemaV1 { ws1Methods :: ![(Text, Maybe CS.FunctionSchemaV1)]}
   | WithSchemaV2 { ws2Methods :: ![(Text, Maybe CS.FunctionSchemaV2)]}
   | WithSchemaV3 { ws3Methods :: ![(Text, Maybe CS.FunctionSchemaV2)], ws3Event :: !(Maybe CS.EventSchemaV3) }
   deriving (Eq, Show)
--- ^ TODO: The name implies method signatures, but this now includes event signatures. Should these be renamed to schema?
 
 -- |Contract state for a V0 contract.
 --  Can either be the raw bytes or a JSON value with the parsed state (parsed with a schema).
@@ -552,5 +551,5 @@ data ContractSigsV3
   = ContractSigsV3
   { csv3InitSig :: Maybe CS.FunctionSchemaV2 -- ^ Schema for the init function.
   , csv3ReceiveSigs :: Map.Map Text (Maybe CS.FunctionSchemaV2) -- ^ Schemas for the receive functions.
-  , cs3EventSchema :: Maybe CS.SchemaType -- ^ Schemas for the events
+  , cs3EventSchema :: Maybe CS.SchemaType -- ^ Schemas for the events.
   }
