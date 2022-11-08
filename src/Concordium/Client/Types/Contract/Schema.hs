@@ -46,6 +46,7 @@ import qualified Data.Vector as V
 import Data.Word (Word8, Word16, Word32, Word64)
 import GHC.Generics
 import Data.Maybe(isJust)
+import Control.Arrow (Arrow(first))
 
 -- |Try to find an embedded schema in a module and decode it.
 decodeEmbeddedSchema :: Wasm.WasmModule -> Either String (Maybe ModuleSchema)
@@ -232,12 +233,12 @@ data ContractSchemaV2
 
 instance AE.ToJSON ContractSchemaV2
 
--- |Parallel to schema::ContractV3 defined in concordium-contracts-common (Rust) version > 2.
+-- |Parallel to schema::ContractV3 defined in concordium-contracts-common (Rust) version >= 5.
 data ContractSchemaV3
   = ContractSchemaV3 -- ^ Describes the schemas of a V1 smart contract.
   { cs3InitSig :: Maybe FunctionSchemaV2 -- ^ Schema for the init function.
   , cs3ReceiveSigs :: Map Text FunctionSchemaV2 -- ^ Schemas for the receive functions.
-  , cs3EventSchema :: Maybe SchemaType -- ^ Schemas for the events
+  , cs3EventSchema :: Maybe SchemaType -- ^ Schemas for the events.
   }
   deriving (Eq, Show, Generic)
 
@@ -338,7 +339,7 @@ data FunctionSchemaV2
                  }
   deriving (Eq, Show, Generic)
 
--- |V3 Schema for events in a V1 smart contract
+-- |V3 Schema for events in a V1 smart contract.
 type EventSchemaV3 = SchemaType
 
 instance AE.ToJSON FunctionSchemaV2
@@ -509,9 +510,11 @@ instance AE.ToJSON SchemaType where
     ILeb128 _ -> AE.String "<String with signed integer>"
     ByteList _ -> AE.String "<String with lowercase hex>"
     ByteArray _ -> AE.String "<String with lowercase hex>"
-    TaggedEnum variants -> AE.object ["TaggedEnum" .=
-      (toJsonArray . map (\(k, v) -> AE.object [AE.fromText k .= v]) $
-      (\(k,v) -> (pack $ show k, v)) <$> Map.toList variants)]
+    TaggedEnum taggedVariants ->
+      let
+        variants = first (pack . show) <$> Map.toList taggedVariants
+      in
+        AE.object ["TaggedEnum" .= (toJsonArray . map (\(k, v) -> AE.object [AE.fromText k .= v]) $ variants)]
     where toJsonArray = AE.Array . V.fromList
 
 instance S.Serialize SchemaType where
