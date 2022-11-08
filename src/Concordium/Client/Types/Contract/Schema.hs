@@ -514,7 +514,7 @@ instance AE.ToJSON SchemaType where
       let
         variants = first (pack . show) <$> Map.toList taggedVariants
       in
-        AE.object ["TaggedEnum" .= (toJsonArray . map (\(k, v) -> AE.object [AE.fromText k .= v]) $ variants)]
+        AE.object ["TaggedEnum" .= (toJsonArray . map (\(_k, (name, value)) -> AE.object [AE.fromText name .= value]) $ variants)]
     where toJsonArray = AE.Array . V.fromList
 
 instance S.Serialize SchemaType where
@@ -784,7 +784,7 @@ putLenWithSizeLen sl len = case sl of
 
 -- * Map *
 
-getMapOfWithSizeLen :: Ord k => SizeLength -> S.Get k -> S.Get v -> S.Get (Map k v)
+getMapOfWithSizeLen :: Ord k => SizeLength -> S.Get k -> S.Get v -> S.Get (Map k v) -- VHTODO: Add check for duplicates in keys.
 getMapOfWithSizeLen sl gt gv = S.label "Map" $ Map.fromList <$> getListOfWithSizeLen sl (S.getTwoOf gt gv)
 
 putMapOfWithSizeLen :: SizeLength -> S.Putter k -> S.Putter v -> S.Putter (Map k v)

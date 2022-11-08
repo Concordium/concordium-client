@@ -20,7 +20,6 @@ import Data.Bifunctor (first)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as BS16
-import Data.Char (ord)
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import Data.Scientific (Scientific, isFloating, toBoundedInteger)
@@ -95,7 +94,7 @@ getJSONUsingSchema typ = case typ of
                       Just v -> return v
                       Nothing -> fail [i|Variant with index #{idx} does not exist for TaggedEnum.|]
     fields' <- getFieldsAsJSON fields
-    return $ AE.object [AE.fromText (Text.pack $ show idx) .= (name, fields')]
+    return $ AE.object [AE.fromText name .= fields']
   String sl -> AE.toJSON <$> getUtf8String sl
   UInt128 -> AE.toJSON . show <$> DW.getWord128le
   Int128 -> AE.toJSON . show <$> DW.getInt128le
@@ -258,20 +257,15 @@ putJSONUsingSchema typ json = case (typ, json) of
 
   (tEnum@(TaggedEnum variants), AE.Object obj) -> case KM.toList obj of
     [] -> Left [i|The object provided was empty, but it should have contained a variant of the following tagged enum:\n#{showPrettyJSON tEnum}.|]
-    [(tag, val@(AE.Array vec))] -> case AE.toString tag of
-      [c] -> let idx = ((fromIntegral . ord) c :: Word8) in case V.toList vec of -- TODO: Is this sort of conversion OK?
-        [nameVal, fieldsVal] -> case nameVal of 
-          AE.String name -> case variants Map.!? idx of
-            Nothing -> Left [i|No enum variant corresponds to tag '#{tag}' in:\n#{showPrettyJSON tEnum}|]
-            Just (schemaName, schemaFieldTypes) -> do
-              when (schemaName /= name) $ Left [i|Name '#{name}' does not match name '#{schemaName}' of enum variant with tag '#{tag}' in schema.|]
-              let putLen = S.putWord8 $ fromIntegral idx -- There's always at most 2^8 variants, so no need to check like in Enum.
-              putJSONFields' <- putJSONFields schemaFieldTypes fieldsVal `addTraceInfoOf` [i|In tagged enum variant '#{name}'.|]
-              pure $ putLen <> putJSONFields'
-          _ -> Left [i|Expected first element of #{val} to be a string.|]
-        _ -> Left [i|{val} should be an array of length 2.|]
-      _ -> Left [i|Tag '#{tag}'| is not an 8-bit integer.|]
+    [(name, fields)] -> case lookupItemAndIndex name $ map (first AE.fromText . snd) variantList of
+      Nothing -> Left [i|Tagged enum variant '#{name}' does not exist in:\n#{showPrettyJSON tEnum}|]
+      Just (fieldTypes, idx) -> do
+        let tag = S.putWord8 $ fst $ variantList !! fromIntegral idx
+        putJSONFields' <- putJSONFields fieldTypes fields `addTraceInfoOf` [i|In enum variant '#{name}'.|]
+        pure $ tag <> putJSONFields'
     _ -> Left [i|#{obj} had too many fields. It should contain a single variant of the following tagged enum:\n#{showPrettyJSON tEnum}.|]
+    where
+      variantList = Map.toList variants
  
   (String sl, AE.String str) -> do
     let bytes = BS.unpack . Text.encodeUtf8 $ str
