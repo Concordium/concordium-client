@@ -11,6 +11,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Serialize as S
 import Data.Text (Text)
+import Data.Char (chr)
 import qualified Data.Text as Text
 import qualified Data.Vector as V
 import Data.Word (Word8, Word64)
@@ -178,6 +179,15 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
     fromToJSONSucceed enumType $ object ["a" .= object ["a.1" .= AE.Bool True]]
     fromToJSONSucceed enumType $ object ["b" .= toArray [AE.Bool True]]
     fromToJSONSucceed enumType $ object ["c" .= toArray []]
+
+  it "TaggedEnum" $ do
+    let taggedEnumType = TaggedEnum $ Map.fromList [ (251, ("a" :: Text, Named [("a.1", Bool)]))
+                                                   , (255, ("b" :: Text, Unnamed [Bool]))
+                                                   , (1,   ("c" :: Text, None))]
+
+    fromToJSONSucceed taggedEnumType $ object [ [chr 251] .= ("a" :: Text, object ["a.1" .= AE.Bool True])]
+    fromToJSONSucceed taggedEnumType $ object [ [chr 255] .= ("b" :: Text, toArray [AE.Bool True])]
+    fromToJSONSucceed taggedEnumType $ object [ [chr 1]   .= ("c" :: Text, toArray [])]
 
   it "String" $ do
     fromToJSONSucceed (String One) $ AE.String "something"
