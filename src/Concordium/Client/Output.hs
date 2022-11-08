@@ -37,7 +37,6 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BSB
 import qualified Data.ByteString.Short as BSS
 import qualified Data.ByteString.Lazy as BSL
-import Data.Either (partitionEithers)
 import Data.Functor
 import qualified Data.Map.Strict as Map
 import Data.List (foldl', intercalate, nub, sortOn)
@@ -56,6 +55,7 @@ import Codec.CBOR.JSON
 import Codec.CBOR.Decoding (decodeString)
 import Concordium.Common.Time (DurationSeconds(durationSeconds))
 import Concordium.Types.Execution (Event(ecEvents))
+import Data.Bifunctor (Bifunctor(bimap))
 
 -- PRINTER
 
@@ -624,11 +624,11 @@ showEvent verbose stM = \case
   Types.ModuleDeployed ref->
     verboseOrNothing $ printf "module '%s' deployed" (show ref)
   Types.ContractInitialized{..} ->
-    verboseOrNothing $ printf "initialized contract '%s' using init function '%s' from module '%s' with %s"
-                              (show ecAddress) (show ecInitName) (show ecRef) (showCcd ecAmount) <> showLoggedEvents stM ecEvents
+    verboseOrNothing $ printf "initialized contract '%s' using init function '%s' from module '%s' with %s\n"
+                              (show ecAddress) (show ecInitName) (show ecRef) (showCcd ecAmount) <> showLoggedEvents ecEvents
   Types.Updated{..} ->
-    verboseOrNothing $ printf "sent message to function '%s' with '%s' and %s from %s to %s"
-                              (show euReceiveName) (show euMessage) (showCcd euAmount) (showAddress euInstigator) (showAddress $ Types.AddressContract euAddress) <> showLoggedEvents stM euEvents
+    verboseOrNothing $ printf "sent message to function '%s' with '%s' and %s from %s to %s\n"
+                              (show euReceiveName) (show euMessage) (showCcd euAmount) (showAddress euInstigator) (showAddress $ Types.AddressContract euAddress) <> showLoggedEvents euEvents
   Types.Transferred{..} ->
     verboseOrNothing $ printf "transferred %s from %s to %s" (showCcd etAmount) (showAddress etFrom) (showAddress etTo)
   Types.AccountCreated addr ->
@@ -702,7 +702,7 @@ showEvent verbose stM = \case
                                invalidCBOR
     in Just $ printf "Transfer memo:\n%s" str
   Types.Interrupted cAddr ev ->
-    verboseOrNothing $ [i|interrupted '#{cAddr}'.|] <> showLoggedEvents stM ev
+    verboseOrNothing $ [i|interrupted '#{cAddr}'.\n|] <> showLoggedEvents ev
   Types.Upgraded{..} ->
     verboseOrNothing [i|upgraded contract instance at '#{euAddress}' from '#{euFrom}' to '#{euTo}'.|]
   Types.Resumed cAddr invokeSucceeded ->
@@ -727,23 +727,20 @@ showEvent verbose stM = \case
     showDelegationTarget Types.DelegatePassive = "Passive delegation"
     showDelegationTarget (Types.DelegateToBaker bid) = "Baker ID " ++ show bid
 
-    showLoggedEvents :: Maybe SchemaType -> [Wasm.ContractEvent] -> String
-    showLoggedEvents st evs = "\n" <> case evs of
-      [] -> "No contract events were emitted."
-      _ -> case st of 
-        Nothing -> do
-          ([i|#{length evs} contract events were emitted. No event schema found in contract nor provided by user. Got:\n|] :: String)
-            <> intercalate "\n" ["Event(raw): "
-            <> show (BSB.toLazyByteString . BSB.byteStringHex $ SE.runPut $ SE.putShortByteString e) | (Wasm.ContractEvent e) <- evs]
-        Just st' -> do
-          let (_, vals) =
-                partitionEithers $ map (\(Wasm.ContractEvent ev) ->
-                  (PA.decodeParameter st' . SE.runPut . SE.putShortByteString) ev) evs
-          let jsonRes = showSortedPrettyJSON vals
-          [i|#{length evs} contract events were emitted|]
-            <> [i|, of which #{length vals} were succesfully parsed with schema|]
-            <> if length vals > 0 then ". Got:\n" <> jsonRes else "."
-
+    showLoggedEvents :: [Wasm.ContractEvent] -> String
+    showLoggedEvents [] = "No contract events were emitted "
+    showLoggedEvents evs = [i|#{length evs} contract events were emitted. |]
+      <> if isNothing stM then "No" else "An" <> " event schema is present. Got:\n"
+      <> intercalate "\n" [ [i|Event(raw): '#{hex}'\nEvent(JSON): '#{json}'|] | (hex, json) <- loggedEvents ]
+        where
+          toHex (Wasm.ContractEvent bs) = show . BSB.toLazyByteString . BSB.byteStringHex $ SE.runPut $ SE.putShortByteString bs
+          decode :: Wasm.ContractEvent -> Maybe AE.Value
+          decode (Wasm.ContractEvent bs) =
+            stM >>= \st' -> (preview _Right . PA.decodeParameter st' . SE.runPut . SE.putShortByteString) bs
+          toString :: Maybe AE.Value -> String
+          toString = \case Nothing -> "Unable to parse."; Just j -> showSortedPrettyJSON j
+          loggedEvents = map (bimap toHex (toString . decode)) (zip evs evs)
+          
 -- |Return string representation of reject reason.
 -- If verbose is true, the string includes the details from the fields of the reason.
 -- Otherwise, only the fields that are not known from the transaction request are included.
