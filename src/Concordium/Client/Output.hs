@@ -624,11 +624,12 @@ showEvent verbose stM = \case
   Types.ModuleDeployed ref->
     verboseOrNothing $ printf "module '%s' deployed" (show ref)
   Types.ContractInitialized{..} ->
-    verboseOrNothing $ printf "initialized contract '%s' using init function '%s' from module '%s' with %s\n"
-                              (show ecAddress) (show ecInitName) (show ecRef) (showCcd ecAmount) <> showLoggedEvents ecEvents
+    verboseOrNothing $ [i|initialized contract '#{ecAddress}' using init function '#{ecInitName}' from module '#{ecRef}' |]
+                    <> [i|with #{ecAmount}\n#{showLoggedEvents ecEvents}|]
   Types.Updated{..} ->
-    verboseOrNothing $ printf "sent message to function '%s' with '%s' and %s from %s to %s\n"
-                              (show euReceiveName) (show euMessage) (showCcd euAmount) (showAddress euInstigator) (showAddress $ Types.AddressContract euAddress) <> showLoggedEvents euEvents
+    verboseOrNothing $ [i|sent message to function '#{euReceiveName}' with '#{euMessage}' and #{showCcd euAmount} |]
+                    <> [i|from #{showAddress euInstigator} to #{showAddress $ Types.AddressContract euAddress}\n|]
+                    <> [i|#{showLoggedEvents euEvents}|]
   Types.Transferred{..} ->
     verboseOrNothing $ printf "transferred %s from %s to %s" (showCcd etAmount) (showAddress etFrom) (showAddress etTo)
   Types.AccountCreated addr ->
@@ -702,7 +703,7 @@ showEvent verbose stM = \case
                                invalidCBOR
     in Just $ printf "Transfer memo:\n%s" str
   Types.Interrupted cAddr ev ->
-    verboseOrNothing $ [i|interrupted '#{cAddr}'.\n|] <> showLoggedEvents ev
+    verboseOrNothing $ [i|interrupted '#{cAddr}'.\n#{showLoggedEvents ev}|]
   Types.Upgraded{..} ->
     verboseOrNothing [i|upgraded contract instance at '#{euAddress}' from '#{euFrom}' to '#{euTo}'.|]
   Types.Resumed cAddr invokeSucceeded ->
