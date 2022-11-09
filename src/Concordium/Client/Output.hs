@@ -729,18 +729,22 @@ showEvent verbose stM = \case
 
     showLoggedEvents :: [Wasm.ContractEvent] -> String
     showLoggedEvents [] = "No contract events were emitted "
-    showLoggedEvents evs = [i|#{length evs} contract events were emitted. |]
-      <> if isNothing stM then "No" else "An" <> " event schema is present. Got:\n"
-      <> intercalate "\n" [ [i|Event(raw): '#{hex}'\nEvent(JSON): '#{json}'|] | (hex, json) <- loggedEvents ]
+    showLoggedEvents evs = [i|#{length evs} contract events were emitted|]
+      <> if isNothing stM
+         then [i| but no event schema was provided nor found in the contract module. |]
+         else [i|, of which #{length $ filter isJust $ map snd loggedEvents} were succesfully parsed using schema. |]
+      <> [i|Got:\n|]
+      <> intercalate "\n" [ [i|Event(raw): #{hex}\nEvent(JSON):\n#{indentBy 4 $ fromMaybe' json}|] | (hex, json) <- loggedEvents ]
         where
+          fromMaybe' :: Maybe AE.Value -> String
+          fromMaybe' = \case Nothing -> "Unable to decode."; Just j -> showSortedPrettyJSON j
+          toHex :: Wasm.ContractEvent  -> String
           toHex (Wasm.ContractEvent bs) = show . BSB.toLazyByteString . BSB.byteStringHex $ SE.runPut $ SE.putShortByteString bs
-          decode :: Wasm.ContractEvent -> Maybe AE.Value
-          decode (Wasm.ContractEvent bs) =
+          toJSON' :: Wasm.ContractEvent -> Maybe AE.Value
+          toJSON' (Wasm.ContractEvent bs) =
             stM >>= \st' -> (preview _Right . PA.decodeParameter st' . SE.runPut . SE.putShortByteString) bs
-          toString :: Maybe AE.Value -> String
-          toString = \case Nothing -> "Unable to parse."; Just j -> showSortedPrettyJSON j
-          loggedEvents = map (bimap toHex (toString . decode)) (zip evs evs)
-          
+          loggedEvents = map (bimap toHex toJSON') (zip evs evs)
+
 -- |Return string representation of reject reason.
 -- If verbose is true, the string includes the details from the fields of the reason.
 -- Otherwise, only the fields that are not known from the transaction request are included.

@@ -47,6 +47,7 @@ import Data.Word (Word8, Word16, Word32, Word64)
 import GHC.Generics
 import Data.Maybe(isJust)
 import Control.Arrow (Arrow(first))
+import Data.List (nub)
 
 -- |Try to find an embedded schema in a module and decode it.
 decodeEmbeddedSchema :: Wasm.WasmModule -> Either String (Maybe ModuleSchema)
@@ -552,8 +553,13 @@ instance S.Serialize SchemaType where
       28 -> S.label "ILeb128"  $ ILeb128 <$> S.getWord32le
       29 -> S.label "ByteList" $ ByteList <$> S.get
       30 -> S.label "ByteArray"  $ ByteArray <$> S.getWord32le
-      31 -> S.label "TaggedEnum" $ TaggedEnum <$> getMapOfWithSizeLen Four S.getWord8 (S.getTwoOf getText S.get)
+      31 -> S.label "TaggedEnum" $ TaggedEnum
+        <$> getMapOfWithSizeLenAndPred tEnumPred Four S.getWord8 (S.getTwoOf getText S.get)
       x  -> fail [i|Invalid SchemaType tag: #{x}|]
+    where
+      -- Predicate for tagged enums. Tags and texts should be unique.
+      tEnumPred :: (Ord a, Ord b) => [(a, (b, c))] -> Bool
+      tEnumPred ls = allUnique (map fst ls) && allUnique (map (fst . snd) ls)
 
   put typ = case typ of
     Unit -> S.putWord8 0
@@ -784,8 +790,21 @@ putLenWithSizeLen sl len = case sl of
 
 -- * Map *
 
-getMapOfWithSizeLen :: Ord k => SizeLength -> S.Get k -> S.Get v -> S.Get (Map k v) -- VHTODO: Add check for duplicates in keys.
-getMapOfWithSizeLen sl gt gv = S.label "Map" $ Map.fromList <$> getListOfWithSizeLen sl (S.getTwoOf gt gv)
+allUnique :: (Ord a) => [a] -> Bool
+allUnique xs = length (nub xs) /= length xs
+
+-- |Get a map with a specied size length. Fails if each element in the list of
+-- deserialized map tuples mapped over f is not unique.
+getMapOfWithSizeLenAndPred :: (Ord k) => ([(k,v)] -> Bool) -> SizeLength -> S.Get k -> S.Get v -> S.Get (Map k v)
+getMapOfWithSizeLenAndPred p sl gt gv = do
+  ls <- getListOfWithSizeLen sl (S.getTwoOf gt gv)
+  if p ls
+  then S.label "Map" $ pure $ Map.fromList ls
+  else error "Uniqueness constraint failes in deserialization of map."
+
+-- |Get a map with a specied size length.
+getMapOfWithSizeLen :: (Ord k) => SizeLength -> S.Get k -> S.Get v -> S.Get (Map k v)
+getMapOfWithSizeLen = getMapOfWithSizeLenAndPred (const True)
 
 putMapOfWithSizeLen :: SizeLength -> S.Putter k -> S.Putter v -> S.Putter (Map k v)
 putMapOfWithSizeLen sl pv pk = putListOfWithSizeLen sl (S.putTwoOf pv pk) . Map.toList
