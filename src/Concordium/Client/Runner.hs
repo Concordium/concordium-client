@@ -589,8 +589,7 @@ processTransactionCmd action baseCfgDir verbose backend =
             let namedContrAddr = NamedContractAddress ca []
             contrInfo <- getContractInfo namedContrAddr bb
             let cName = CI.ciName contrInfo
-            let namedModRef = NamedModuleRef { nmrRef = CI.ciSourceModule contrInfo, 
-                                               nmrNames = findAllNamesFor (bcModuleNameMap baseCfg) (CI.ciSourceModule contrInfo)}
+            let namedModRef = NamedModuleRef { nmrRef = CI.ciSourceModule contrInfo, nmrNames = [] }
             schema <- getSchemaFromFileOrModule schemaFile namedModRef bb >>= \case
               Just (CS.ModuleSchemaV3 m) -> case m Map.!? cName of
                   Just CS.ContractSchemaV3{..} -> return cs3EventSchema
