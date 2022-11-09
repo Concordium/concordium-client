@@ -792,19 +792,19 @@ putLenWithSizeLen sl len = case sl of
 
 -- * Map *
 
--- |Get a map with a specied size length. Fails if each element in the list of
--- deserialized map tuples mapped over f is not unique.
+-- |Get a map with a specified size length. Fails if the predicate is false when applied to the list of tuples in the map.
 getMapOfWithSizeLenAndPred :: (Ord k) => ([(k,v)] -> Bool) -> SizeLength -> S.Get k -> S.Get v -> S.Get (Map k v)
 getMapOfWithSizeLenAndPred p sl gt gv = do
   ls <- getListOfWithSizeLen sl (S.getTwoOf gt gv)
   if p ls
   then S.label "Map" $ pure $ Map.fromList ls
-  else error "Uniqueness constraint failed in deserialization of map."
+  else error "Predicate failed in deserialization of map."
 
--- |Get a map with a specied size length.
+-- |Get a map with a specified size length.
 getMapOfWithSizeLen :: (Ord k) => SizeLength -> S.Get k -> S.Get v -> S.Get (Map k v)
 getMapOfWithSizeLen = getMapOfWithSizeLenAndPred (const True)
 
+-- |Put a map with a specified size length.
 putMapOfWithSizeLen :: SizeLength -> S.Putter k -> S.Putter v -> S.Putter (Map k v)
 putMapOfWithSizeLen sl pv pk = putListOfWithSizeLen sl (S.putTwoOf pv pk) . Map.toList
 
@@ -818,6 +818,6 @@ getText = do
     Left err -> fail [i|Could not decode Text: #{err}|]
     Right txt' -> pure txt'
 
--- Serialize text in utf8 encoding. The liength is output as 4 bytes, little endian.
+-- Serialize text in utf8 encoding. The length is output as 4 bytes, little endian.
 putText :: S.Putter Text
 putText = putListOfWithSizeLen Four S.put . BS.unpack . Text.encodeUtf8
