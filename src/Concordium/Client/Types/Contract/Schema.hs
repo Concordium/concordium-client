@@ -558,6 +558,8 @@ instance S.Serialize SchemaType where
       x  -> fail [i|Invalid SchemaType tag: #{x}|]
     where
       -- Predicate for tagged enums. Tags and variant names should be unique.
+      allUnique :: (Ord a) => [a] -> Bool
+      allUnique xs = length (nub xs) == length xs
       tEnumPred :: (Ord a, Ord b) => [(a, (b, c))] -> Bool
       tEnumPred ls = allUnique (map fst ls) && allUnique (map (fst . snd) ls)
 
@@ -790,9 +792,6 @@ putLenWithSizeLen sl len = case sl of
 
 -- * Map *
 
-allUnique :: (Ord a) => [a] -> Bool
-allUnique xs = length (nub xs) /= length xs
-
 -- |Get a map with a specied size length. Fails if each element in the list of
 -- deserialized map tuples mapped over f is not unique.
 getMapOfWithSizeLenAndPred :: (Ord k) => ([(k,v)] -> Bool) -> SizeLength -> S.Get k -> S.Get v -> S.Get (Map k v)
@@ -800,7 +799,7 @@ getMapOfWithSizeLenAndPred p sl gt gv = do
   ls <- getListOfWithSizeLen sl (S.getTwoOf gt gv)
   if p ls
   then S.label "Map" $ pure $ Map.fromList ls
-  else error "Uniqueness constraint failes in deserialization of map."
+  else error "Uniqueness constraint failed in deserialization of map."
 
 -- |Get a map with a specied size length.
 getMapOfWithSizeLen :: (Ord k) => SizeLength -> S.Get k -> S.Get v -> S.Get (Map k v)
