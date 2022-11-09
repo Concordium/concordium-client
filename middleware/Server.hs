@@ -27,7 +27,7 @@ runHttp middlewares = do
 
   nodeUrl <- Config.lookupEnvText "NODE_URL" "localhost:11100"
   grpcAdminToken <- Config.lookupEnvText "RPC_PASSWORD" "rpcadmin"
-
+  to <- Config.lookupEnv "MIDDLEWARE_REQUEST_TIMEOUT" 15
   secure <- Config.lookupEnvTextWithoutDefault "MIDDLEWARE_USE_TLS"
 
   let
@@ -41,7 +41,7 @@ runHttp middlewares = do
         _ ->
           error $ "Could not parse host:port for given NODE_URL: " ++ T.unpack nodeUrl
 
-    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, grpcAuthenticationToken = (T.unpack grpcAdminToken), target = Nothing, retryNum = 5, timeout = Nothing, useTls = isJust secure }
+    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, grpcAuthenticationToken = (T.unpack grpcAdminToken), target = Nothing, retryNum = 5, timeout = Just to, useTls = isJust secure }
 
   runExceptT (mkGrpcClient grpcConfig Nothing) >>= \case
     Left err -> fail (show err) -- cannot connect to grpc server

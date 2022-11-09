@@ -25,6 +25,7 @@ variables
 - `RPC_PASSWORD` (defaults to `rpcadmin`) the token to access to node's GRPC interface.
 - `MIDDLEWARE_USE_TLS` if this variable is set (to anything) then the connection
   to the node will be established using TLS. The default is to use an insecure connection.
+- `MIDDLEWARE_REQUEST_TIMEOUT` timeout of each GRPC request to the node.
 
 The middleware can be run either with `stack exec middleware` after it is built,
 or `stack run middleware` which will build and run it.
