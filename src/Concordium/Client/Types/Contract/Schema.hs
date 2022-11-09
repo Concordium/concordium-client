@@ -557,7 +557,7 @@ instance S.Serialize SchemaType where
         <$> getMapOfWithSizeLenAndPred tEnumPred Four S.getWord8 (S.getTwoOf getText S.get)
       x  -> fail [i|Invalid SchemaType tag: #{x}|]
     where
-      -- Predicate for tagged enums. Tags and texts should be unique.
+      -- Predicate for tagged enums. Tags and variant names should be unique.
       tEnumPred :: (Ord a, Ord b) => [(a, (b, c))] -> Bool
       tEnumPred ls = allUnique (map fst ls) && allUnique (map (fst . snd) ls)
 
