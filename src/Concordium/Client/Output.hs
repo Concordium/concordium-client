@@ -627,7 +627,7 @@ showEvent verbose stM = \case
     verboseOrNothing $ [i|initialized contract '#{ecAddress}' using init function '#{ecInitName}' from module '#{ecRef}' |]
                     <> [i|with #{ecAmount}\n#{showLoggedEvents ecEvents}|]
   Types.Updated{..} ->
-    verboseOrNothing $ [i|sent message to function '#{euReceiveName}' with '#{euMessage}' and #{showCcd euAmount} |]
+    verboseOrNothing $ [i|sent message to function '#{euReceiveName}' with '#{show euMessage}' and #{showCcd euAmount} |]
                     <> [i|from #{showAddress euInstigator} to #{showAddress $ Types.AddressContract euAddress}\n|]
                     <> [i|#{showLoggedEvents euEvents}|]
   Types.Transferred{..} ->
@@ -735,7 +735,10 @@ showEvent verbose stM = \case
          then [i| but no event schema was provided nor found in the contract module. |]
          else [i|, of which #{length $ filter isJust $ map snd loggedEvents} were succesfully parsed using schema. |]
       <> [i|Got:\n|]
-      <> intercalate "\n" [ [i|Event(raw): #{hex}\nEvent(JSON):\n#{indentBy 4 $ fromMaybe' json}|] | (hex, json) <- loggedEvents ]
+      <> intercalate "\n" [ if isJust json
+                            then [i|Event(parsed):\n#{indentBy 4 $ fromMaybe' json}|]
+                            else [i|Event(raw): #{hex}\n|]
+                            | (hex, json) <- loggedEvents ]
         where
           fromMaybe' :: Maybe AE.Value -> String
           fromMaybe' = \case Nothing -> "Unable to decode."; Just j -> showSortedPrettyJSON j
