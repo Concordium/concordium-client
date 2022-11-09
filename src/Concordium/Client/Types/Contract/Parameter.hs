@@ -261,7 +261,7 @@ putJSONUsingSchema typ json = case (typ, json) of
       Nothing -> Left [i|Tagged enum variant '#{name}' does not exist in:\n#{showPrettyJSON tEnum}|]
       Just (fieldTypes, idx) -> do
         let tag = S.putWord8 $ fst $ variantList !! fromIntegral idx
-        putJSONFields' <- putJSONFields fieldTypes fields `addTraceInfoOf` [i|In enum variant '#{name}'.|]
+        putJSONFields' <- putJSONFields fieldTypes fields `addTraceInfoOf` [i|In tagged enum variant '#{name}'.|]
         pure $ tag <> putJSONFields'
     _ -> Left [i|#{obj} had too many fields. It should contain a single variant of the following tagged enum:\n#{showPrettyJSON tEnum}.|]
     where
