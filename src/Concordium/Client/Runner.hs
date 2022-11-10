@@ -544,6 +544,27 @@ checkAndGetMemo memo pv = do
       return $ Types.Memo bss
     Right m -> return m
 
+-- |Get the contract V3 event schema associated with a transaction if present.
+getEventSchema :: Bool -> Maybe FilePath -> TransactionStatusResult -> Text -> ClientMonad IO (Maybe CS.SchemaType)
+getEventSchema verbose schemaFile status bHash = do
+  when verbose $ logInfo [printf "Response: %s" (show status)]
+  -- Get schema for the transaction contract
+  let cAddr = extractFromTsr (\case Types.ContractInitialized {..} -> Just ecAddress
+                                    Types.Updated {..} -> Just euAddress
+                                    Types.Interrupted {..} -> Just iAddress
+                                    _ -> Nothing) $ Just status
+  case cAddr of
+    Just (Right ca) -> do
+      contrInfo <- getContractInfo (NamedContractAddress ca []) bHash
+      let cName = CI.ciName contrInfo
+      let namedModRef = NamedModuleRef { nmrRef = CI.ciSourceModule contrInfo, nmrNames = [] }
+      getSchemaFromFileOrModule schemaFile namedModRef bHash >>= \case
+        Just (CS.ModuleSchemaV3 m) -> case m Map.!? cName of
+          Just CS.ContractSchemaV3{..} -> return cs3EventSchema
+          Nothing -> return Nothing
+        _ -> return Nothing
+    _ -> return Nothing
+
 -- |Process a 'transaction ...' command.
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processTransactionCmd action baseCfgDir verbose backend =
@@ -570,33 +591,15 @@ processTransactionCmd action baseCfgDir verbose backend =
         when (ioTail intOpts) $ do
           tailTransaction_ hash
 --          logSuccess [ "credential deployed successfully" ]
+
     TransactionStatus h schemaFile -> do
-      baseCfg <- getBaseConfig baseCfgDir verbose
       hash <- case parseTransactionHash h of
         Nothing -> logFatal [printf "invalid transaction hash '%s'" h]
         Just hash -> return hash
-
       withClient backend . withBestBlockHash Nothing $ \bb -> do
         status <- queryTransactionStatus hash
-        when verbose $ logInfo [printf "Response: %s" (show status)]
-        -- Get schema for the transaction contract
-        let cAddr = extractFromTsr (\case Types.ContractInitialized {..} -> Just ecAddress
-                                          Types.Updated {..} -> Just euAddress
-                                          Types.Interrupted {..} -> Just iAddress
-                                          _ -> Nothing) $ Just status
-        case cAddr of
-          Just (Right ca) -> do
-            let namedContrAddr = NamedContractAddress ca []
-            contrInfo <- getContractInfo namedContrAddr bb
-            let cName = CI.ciName contrInfo
-            let namedModRef = NamedModuleRef { nmrRef = CI.ciSourceModule contrInfo, nmrNames = [] }
-            schema <- getSchemaFromFileOrModule schemaFile namedModRef bb >>= \case
-              Just (CS.ModuleSchemaV3 m) -> case m Map.!? cName of
-                  Just CS.ContractSchemaV3{..} -> return cs3EventSchema
-                  Nothing -> return Nothing
-              _ -> return Nothing
-            runPrinter $ printTransactionStatus status True schema
-          _ -> runPrinter $ printTransactionStatus status True Nothing
+        schema <- getEventSchema verbose schemaFile status bb
+        runPrinter $ printTransactionStatus status True schema
 
       -- TODO This works but output doesn't make sense if transaction is already committed/finalized.
       --      It should skip already completed steps.
