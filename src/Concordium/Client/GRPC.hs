@@ -212,7 +212,7 @@ getAccountInfo :: MonadIO m
 getAccountInfo account hash = withUnary (call @"getAccountInfo") msg getJSON
   where msg = defMessage & CF.blockHash .~ hash & CF.address .~ account
 
-getInstanceInfo :: Text -> Text -> ClientMonad IO (GRPCResult Value)
+getInstanceInfo :: (MonadIO m) => Text -> Text -> ClientMonad m (GRPCResult Value)
 getInstanceInfo account hash = withUnary (call @"getInstanceInfo") msg getJSON
   where msg = defMessage & CF.blockHash .~ hash & CF.address .~ account
 
@@ -237,7 +237,7 @@ getBirkParameters hash = withUnaryBlock (call @"getBirkParameters") hash getJSON
 getModuleList :: Text -> ClientMonad IO (GRPCResult Value)
 getModuleList hash = withUnaryBlock (call @"getModuleList") hash getJSON
 
-getModuleSource :: Text -> Text -> ClientMonad IO (GRPCResult BS8.ByteString)
+getModuleSource :: (MonadIO m) => Text -> Text -> ClientMonad m (GRPCResult BS8.ByteString)
 getModuleSource modRef hash = withUnary (call @"getModuleSource") msg getValue
   where msg = defMessage & CF.blockHash .~ hash & CF.moduleRef .~ modRef
 

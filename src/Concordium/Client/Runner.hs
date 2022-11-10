@@ -545,8 +545,8 @@ checkAndGetMemo memo pv = do
     Right m -> return m
 
 -- |Get the contract V3 event schema associated with a transaction if present.
-getEventSchema :: Bool -> Maybe FilePath -> TransactionStatusResult -> Text -> ClientMonad IO (Maybe CS.SchemaType)
-getEventSchema verbose schemaFile status bHash = do
+getEventSchema :: (MonadIO m, MonadFail m) => Bool -> Maybe FilePath -> TransactionStatusResult -> Maybe Text -> ClientMonad m (Maybe CS.SchemaType)
+getEventSchema verbose schemaFile status bHashM = do
   when verbose $ logInfo [printf "Response: %s" (show status)]
   -- Get schema for the transaction contract
   let cAddr = extractFromTsr (\case Types.ContractInitialized {..} -> Just ecAddress
@@ -555,14 +555,15 @@ getEventSchema verbose schemaFile status bHash = do
                                     _ -> Nothing) $ Just status
   case cAddr of
     Just (Right ca) -> do
-      contrInfo <- getContractInfo (NamedContractAddress ca []) bHash
-      let cName = CI.ciName contrInfo
-      let namedModRef = NamedModuleRef { nmrRef = CI.ciSourceModule contrInfo, nmrNames = [] }
-      getSchemaFromFileOrModule schemaFile namedModRef bHash >>= \case
-        Just (CS.ModuleSchemaV3 m) -> case m Map.!? cName of
-          Just CS.ContractSchemaV3{..} -> return cs3EventSchema
-          Nothing -> return Nothing
-        _ -> return Nothing
+      withBestBlockHash bHashM $ \bb -> do
+        contrInfo <- getContractInfo (NamedContractAddress ca []) bb
+        let cName = CI.ciName contrInfo
+        let namedModRef = NamedModuleRef { nmrRef = CI.ciSourceModule contrInfo, nmrNames = [] }
+        getSchemaFromFileOrModule schemaFile namedModRef bb >>= \case
+          Just (CS.ModuleSchemaV3 m) -> case m Map.!? cName of
+            Just CS.ContractSchemaV3{..} -> return cs3EventSchema
+            Nothing -> return Nothing
+          _ -> return Nothing
     _ -> return Nothing
 
 -- |Process a 'transaction ...' command.
@@ -598,7 +599,7 @@ processTransactionCmd action baseCfgDir verbose backend =
         Just hash -> return hash
       withClient backend . withBestBlockHash Nothing $ \bb -> do
         status <- queryTransactionStatus hash
-        schema <- getEventSchema verbose schemaFile status bb
+        schema <- getEventSchema verbose schemaFile status $ Just bb
         runPrinter $ printTransactionStatus status True schema
 
       -- TODO This works but output doesn't make sense if transaction is already committed/finalized.
@@ -1384,12 +1385,12 @@ sendAndTailTransaction txCfg pl intOpts = do
   else return Nothing
 
 -- |Continuously query and display transaction status until the transaction is finalized.
-tailTransaction_ :: (MonadIO m) => Types.TransactionHash -> ClientMonad m ()
+tailTransaction_ :: (MonadIO m, MonadFail m) => Types.TransactionHash -> ClientMonad m ()
 tailTransaction_ hash = void $ tailTransaction hash
 
 -- |Continuously query and display transaction status until the transaction is finalized.
 -- Returns the TransactionStatusResult of the finalized status.
-tailTransaction :: (MonadIO m) => Types.TransactionHash -> ClientMonad m TransactionStatusResult
+tailTransaction :: (MonadIO m, MonadFail m) => Types.TransactionHash-> ClientMonad m TransactionStatusResult
 tailTransaction hash = do
   logInfo [ "waiting for the transaction to be committed and finalized"
           , "you may skip this step by interrupting the command using Ctrl-C (pass flag '--no-wait' to do this by default)"
@@ -1403,7 +1404,9 @@ tailTransaction hash = do
     logFatal [ "transaction failed before it got committed"
              , "most likely because it was invalid" ]
 
-  runPrinter $ printTransactionStatus committedStatus False Nothing
+  schema <- getEventSchema False Nothing committedStatus Nothing
+
+  runPrinter $ printTransactionStatus committedStatus False schema
 
   -- If the transaction goes back to pending state after being committed
   -- to a branch which gets dropped later on, the command will currently
@@ -2001,7 +2004,7 @@ processContractCmd action baseCfgDir verbose backend =
 
 -- |Try to fetch info about the contract and deserialize it from JSON.
 -- Or, log fatally with appropriate error messages if anything goes wrong.
-getContractInfo :: NamedContractAddress -> Text -> ClientMonad IO CI.ContractInfo
+getContractInfo :: (MonadIO m) => NamedContractAddress -> Text -> ClientMonad m CI.ContractInfo
 getContractInfo namedContrAddr block = do
   res <- getInstanceInfo (Text.pack . showCompactPrettyJSON . ncaAddr $ namedContrAddr) block
   case res of
@@ -2099,9 +2102,10 @@ getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath mWasmVersion 
 -- |Query the node for a module reference, and parse the result.
 -- Terminate program execution if either the module cannot be obtained,
 -- or the result cannot be parsed.
-getWasmModule :: NamedModuleRef -- ^On-chain reference of the module.
+getWasmModule :: (MonadIO m)
+              => NamedModuleRef -- ^On-chain reference of the module.
               -> Text -- ^Hash of the block to query in.
-              -> ClientMonad IO Wasm.WasmModule
+              -> ClientMonad m Wasm.WasmModule
 getWasmModule namedModRef block = do
   res <- getModuleSource (Text.pack . show $ nmrRef namedModRef) block
 
@@ -2195,10 +2199,11 @@ getWasmParameter paramsFile schema funcName =
 -- Can logWarn and logFatal in the following situations:
 --   - Invalid schemafile: logs fatally.
 --   - No schemafile and invalid embedded schema: logs a warning and returns `Nothing`.
-getSchemaFromFileOrModule :: Maybe FilePath -- ^ Optional schema file.
+getSchemaFromFileOrModule :: (MonadIO m)
+                          => Maybe FilePath -- ^ Optional schema file.
                           -> NamedModuleRef -- ^ A reference to a module on chain.
                           -> Text -- ^ A block hash.
-                          -> ClientMonad IO (Maybe CS.ModuleSchema)
+                          -> ClientMonad m (Maybe CS.ModuleSchema)
 getSchemaFromFileOrModule schemaFile namedModRef block = do
   wasmModule <- getWasmModule namedModRef block
   case schemaFile of
