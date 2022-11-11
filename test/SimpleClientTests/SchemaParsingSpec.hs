@@ -88,7 +88,7 @@ schemaV3Parsing2 = specify "Deserializing and serializing a bytestring using a m
       Right bytes -> do
         when (bytes /= bs) $ assertFailure ""
 
--- | Serializing cargo-concordium JSON output using a module schema containing a TaggedEnum yields the corresponding expected raw output.
+-- | Serializing JSON output using a module schema containing a TaggedEnum yields the corresponding expected raw output.
 schemaV3Parsing3 :: Spec
 schemaV3Parsing3 = specify "Serialize JSON using a module schema containing TaggedEnum" $ do
   schema <- getSchema
