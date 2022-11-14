@@ -51,7 +51,7 @@ deserializeWithSchema :: SchemaType -> ByteString -> Either String AE.Value
 deserializeWithSchema typ = S.runGet $ do
   json <- getJSONUsingSchema typ
   theEnd <- S.isEmpty
-  unless theEnd $ fail "Unable to parse entire input using schema."
+  unless theEnd $ fail "Could not parse entire bytestring using schema."
   return json
 
 -- |Create a `Serialize.Get` for decoding binary as specified by a `SchemaType` into JSON.

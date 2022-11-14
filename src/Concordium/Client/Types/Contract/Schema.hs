@@ -798,7 +798,7 @@ getMapOfWithSizeLenAndPred p sl gt gv = do
   ls <- getListOfWithSizeLen sl (S.getTwoOf gt gv)
   if p ls
   then S.label "Map" $ pure $ Map.fromList ls
-  else error "Predicate failed in deserialization of map."
+  else fail "Predicate failed in deserialization of map."
 
 -- |Get a map with a specified size length.
 getMapOfWithSizeLen :: (Ord k) => SizeLength -> S.Get k -> S.Get v -> S.Get (Map k v)
