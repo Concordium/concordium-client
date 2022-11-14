@@ -56,6 +56,7 @@ import Codec.CBOR.Decoding (decodeString)
 import Concordium.Common.Time (DurationSeconds(durationSeconds))
 import Concordium.Types.Execution (Event(ecEvents))
 import Data.Bifunctor (Bifunctor(bimap))
+import Data.Tuple (swap)
 
 -- PRINTER
 
@@ -540,8 +541,15 @@ parseTransactionBlockResult status =
                 _ -> MultipleBlocksAmbiguous blocks
 
 -- Print transaction status, optionally parsing contract events with a schema.
-printTransactionStatus :: TransactionStatusResult -> Bool -> Maybe SchemaType -> Printer
-printTransactionStatus status verbose stM =
+-- Since the transaction may be present in multiple blocks before it is finalized,
+-- the events and schemas possibly differ for different blocks. A map containing
+-- information  of blocks containing the transaction will be
+-- the transaction wi
+printTransactionStatus :: TransactionStatusResult
+                       -> Bool
+                       -> Maybe (Map.Map Types.BlockHash [(Types.Event, Maybe CS.SchemaType)])
+                       -> Printer
+printTransactionStatus status verbose eventsAndSchemas =
   case tsrState status of
     Received -> tell ["Transaction is pending."]
     Absent -> tell ["Transaction is absent."]
@@ -554,14 +562,16 @@ printTransactionStatus status verbose stM =
                  "Transaction is committed into block %s with %s."
                  (show hash)
                  (showOutcomeFragment outcome)]
-          tell $ showOutcomeResult verbose stM $ Types.tsResult outcome
+          tell $ showOutcomeResult verbose (lookupEventsAndSchemas hash) $ Types.tsResult outcome
         MultipleBlocksUnambiguous hashes outcome -> do
           tell [printf
                  "Transaction is committed into %d blocks with %s:"
                  (length hashes)
                  (showOutcomeFragment outcome)]
           tell $ hashes <&> printf "- %s" . show
-          tell $ showOutcomeResult verbose stM $ Types.tsResult outcome
+          case hashes of
+            hash:_ -> tell $ showOutcomeResult verbose (lookupEventsAndSchemas hash) $ Types.tsResult outcome
+            _ -> return ()
         MultipleBlocksAmbiguous blocks -> do
           tell [printf
                  "Transaction is committed into %d blocks:"
@@ -570,7 +580,7 @@ printTransactionStatus status verbose stM =
             tell [ printf "- %s with %s:"
                      (show hash)
                      (showOutcomeFragment outcome) ]
-            tell $ (showOutcomeResult True stM $ Types.tsResult outcome) <&> ("  * " ++)
+            tell $ showOutcomeResult True (lookupEventsAndSchemas hash) (Types.tsResult outcome) <&> ("  * " ++)
     Finalized ->
       case parseTransactionBlockResult status of
         NoBlocks ->
@@ -580,12 +590,16 @@ printTransactionStatus status verbose stM =
                  "Transaction is finalized into block %s with %s."
                  (show hash)
                  (showOutcomeFragment outcome)]
-          tell $ showOutcomeResult verbose stM $ Types.tsResult outcome
+          tell $ showOutcomeResult verbose (lookupEventsAndSchemas hash) $ Types.tsResult outcome
         MultipleBlocksUnambiguous _ _ ->
           tell ["Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!"]
         MultipleBlocksAmbiguous _ ->
           tell ["Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!"]
    where
+     -- Look up event and schema data associated with the transaction in block with hash h.
+     lookupEventsAndSchemas :: Types.BlockHash -> Maybe [(Event, Maybe SchemaType)]
+     lookupEventsAndSchemas h = eventsAndSchemas >>= (Map.!? h)
+
      showOutcomeFragment :: Types.TransactionSummary -> String
      showOutcomeFragment outcome = printf
                                      "status \"%s\" and cost %s"
@@ -601,13 +615,24 @@ showOutcomeCost outcome = showCost (Types.tsCost outcome) (Types.tsEnergyCost ou
 showCost :: Types.Amount -> Types.Energy -> String
 showCost gtu nrg = printf "%s (%s)" (showCcd gtu) (showNrg nrg)
 
-showOutcomeResult :: Verbose -> Maybe SchemaType -> Types.ValidResult -> [String]
-showOutcomeResult verbose stM = \case
-  Types.TxSuccess es -> mapMaybe (showEvent verbose stM) es
+-- | Get a list of strings summarizing the outcome of a transaction.
+showOutcomeResult :: Verbose
+                  -> Maybe [(Types.Event, Maybe CS.SchemaType)]
+                  -> Types.ValidResult
+                  -> [String]
+showOutcomeResult verbose eventsAndSchemasM = \case
+  Types.TxSuccess es -> case eventsAndSchemasM of
+        Nothing -> []
+        Just eventsAndSchemas ->
+          let
+            -- A map would be more suitable here, but event does not derive Ord.
+            eventsAndSchemas' = filter ((`elem` es) . fst) eventsAndSchemas
+          in
+            mapMaybe (uncurry (showEvent verbose) . swap) eventsAndSchemas'
   Types.TxReject r ->
     if verbose
     then [showRejectReason True r]
-    else [printf "Transaction rejected: %s." (showRejectReason False r)]
+    else [[i|Transaction rejected: #{showRejectReason False r}.|]]
 
 -- |Return string representation of outcome event if verbose or if the event includes
 -- relevant information that wasn't part of the transaction request. Otherwise return Nothing.
@@ -625,7 +650,7 @@ showEvent verbose stM = \case
     verboseOrNothing $ printf "module '%s' deployed" (show ref)
   Types.ContractInitialized{..} ->
     verboseOrNothing $ [i|initialized contract '#{ecAddress}' using init function '#{ecInitName}' from module '#{ecRef}' |]
-                    <> [i|with #{ecAmount}\n#{showLoggedEvents ecEvents}|]
+                    <> [i|with #{showCcd ecAmount}\n#{showLoggedEvents ecEvents}|]
   Types.Updated{..} ->
     verboseOrNothing $ [i|sent message to function '#{euReceiveName}' with '#{show euMessage}' and #{showCcd euAmount} |]
                     <> [i|from #{showAddress euInstigator} to #{showAddress $ Types.AddressContract euAddress}\n|]
@@ -729,25 +754,29 @@ showEvent verbose stM = \case
     showDelegationTarget (Types.DelegateToBaker bid) = "Baker ID " ++ show bid
 
     showLoggedEvents :: [Wasm.ContractEvent] -> String
-    showLoggedEvents [] = "No contract events were emitted "
+    showLoggedEvents [] = "No contract events were emitted."
     showLoggedEvents evs = [i|#{length evs} contract events were emitted|]
-      <> if isNothing stM
-         then [i| but no event schema was provided nor found in the contract module. |]
-         else [i|, of which #{length $ filter isJust $ map snd loggedEvents} were succesfully parsed using schema. |]
-      <> [i|Got:\n|]
-      <> intercalate "\n" [ if isJust json
-                            then [i|Event(parsed):\n#{indentBy 4 $ fromMaybe' json}|]
-                            else [i|Event(raw): #{hex}\n|]
-                            | (hex, json) <- loggedEvents ]
-        where
-          fromMaybe' :: Maybe AE.Value -> String
-          fromMaybe' = \case Nothing -> "Unable to decode."; Just j -> showSortedPrettyJSON j
-          toHex :: Wasm.ContractEvent  -> String
-          toHex (Wasm.ContractEvent bs) = show . BSB.toLazyByteString . BSB.byteStringHex $ SE.runPut $ SE.putShortByteString bs
-          toJSON' :: Wasm.ContractEvent -> Maybe AE.Value
-          toJSON' (Wasm.ContractEvent bs) =
-            stM >>= \st' -> (preview _Right . PA.decodeParameter st' . SE.runPut . SE.putShortByteString) bs
-          loggedEvents = map (bimap toHex toJSON') (zip evs evs)
+        <> (if isNothing stM
+            then [i| but no event schema was provided nor found in the contract module. |]
+            else [i|, of which #{length $ filter isJust $ map toJSON' evs} were succesfully parsed. |])
+        <> [i|Got:\n|] <> unlines (map eventToString evs)
+      where
+        -- Show a hexadecimal string representation of contract event data.
+        toHex :: Wasm.ContractEvent -> String
+        toHex (Wasm.ContractEvent bs) = show . BSB.toLazyByteString . BSB.byteStringHex $ SE.runPut $ SE.putShortByteString bs
+        -- Attempt to decode the contract event if the schema is provided.
+        -- If there is no schema, or decoding fails @Nothing@ is returned.
+        toJSON' :: Wasm.ContractEvent -> Maybe String
+        toJSON' (Wasm.ContractEvent bs) = do
+          st <- stM
+          case PA.decodeParameter st (BSS.fromShort bs) of
+            Left _ -> Nothing
+            Right x -> Just $ showPrettyJSON x
+        -- Show a string representation of the contract event.
+        eventToString :: Wasm.ContractEvent -> String
+        eventToString e = case toJSON' e of
+          Nothing -> [i|Event(raw): #{toHex e}\n|]
+          Just json -> [i|Event(parsed):\n#{indentBy 4 json}|] 
 
 -- |Return string representation of reject reason.
 -- If verbose is true, the string includes the details from the fields of the reason.
