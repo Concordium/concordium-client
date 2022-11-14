@@ -2240,7 +2240,7 @@ getWasmParameter paramsFile schema funcName =
           Nothing -> logFatal [[i|The JSON parameter could not be used because there was no schema for it.|]]
           Just schemaForParams -> do
             jsonFileContents <- handleReadFile BSL8.readFile jsonFile
-            let params = AE.eitherDecode jsonFileContents >>= CP.encodeParameter schemaForParams
+            let params = AE.eitherDecode jsonFileContents >>= CP.serializeWithSchema schemaForParams
             case params of
               Left errParams -> logFatal [[i|Could not decode parameters from file '#{jsonFile}' as JSON:|], errParams]
               Right params' -> pure . Wasm.Parameter . BS.toShort $ params'

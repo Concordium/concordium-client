@@ -41,12 +41,18 @@ import Text.Read (readMaybe)
 import GHC.Integer (remInteger, modInteger)
 
 -- |Serialize JSON parameter to binary using `SchemaType` or fail with an error message.
-encodeParameter :: SchemaType -> AE.Value -> Either String ByteString
-encodeParameter typ params = S.runPut <$> putJSONUsingSchema typ params
+serializeWithSchema :: SchemaType -> AE.Value -> Either String ByteString
+serializeWithSchema typ params = S.runPut <$> putJSONUsingSchema typ params
 
--- |Deserialize binary to JSON using `SchemaType` or fail with an error message.
-decodeParameter :: SchemaType -> ByteString -> Either String AE.Value
-decodeParameter typ = S.runGet $ getJSONUsingSchema typ
+-- |Deserialize bytestring to JSON using `SchemaType` or fail with an error message
+-- if either the bytestring could not be parsed, or if a non-empty tail of the
+-- bytestring was not consumed.
+deserializeWithSchema :: SchemaType -> ByteString -> Either String AE.Value
+deserializeWithSchema typ = S.runGet $ do
+  json <- getJSONUsingSchema typ
+  theEnd <- S.isEmpty
+  unless theEnd $ fail "Unable to parse entire input using schema."
+  return json
 
 -- |Create a `Serialize.Get` for decoding binary as specified by a `SchemaType` into JSON.
 -- The `SchemaType` is pattern matched and for each variant, the corresponding binary

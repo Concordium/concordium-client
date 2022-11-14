@@ -622,16 +622,22 @@ showOutcomeResult :: Verbose
                   -> Types.ValidResult
                   -> [String]
 showOutcomeResult verbose eventsAndSchemasM = \case
-  Types.TxSuccess es -> case eventsAndSchemasM of
-        Nothing -> []
+  Types.TxSuccess es ->
+    let 
+      events = case eventsAndSchemasM of
+        Nothing -> map (, Nothing) es
         Just eventsAndSchemas ->
           let
-            -- Using a map would be more suitable here, but event does not derive Ord.
+            -- Using a map would be more appropriate here, but event does not derive Ord.
             (evsWithSchema, evsWithoutSchema) = partition (`elem` map fst eventsAndSchemas) es
+            -- Events with schemas
             evs = filter ((`elem` evsWithSchema) . fst) eventsAndSchemas
+            -- Events without schemas
             evs' = map (, Nothing) evsWithoutSchema
           in
-            mapMaybe (uncurry (showEvent verbose) . swap) (evs <> evs')
+            evs <> evs'
+    in
+      mapMaybe (uncurry (showEvent verbose) . swap) events
   Types.TxReject r ->
     if verbose
     then [showRejectReason True r]
@@ -772,7 +778,7 @@ showEvent verbose stM = \case
         toJSON' :: Wasm.ContractEvent -> Maybe String
         toJSON' (Wasm.ContractEvent bs) = do
           st <- stM
-          case PA.decodeParameter st (BSS.fromShort bs) of
+          case PA.deserializeWithSchema st (BSS.fromShort bs) of
             Left _ -> Nothing
             Right x -> Just $ showPrettyJSON x
         -- Show a string representation of the contract event.
