@@ -484,7 +484,7 @@ acquireRead RWLock{..} = mask_ go
         go
 
 -- |Acquire a write lock. This will block when there are active readers or
--- writers. When this is operation is blocked it also blocks new readers from
+-- writers. When this operation is blocked it also blocks new readers from
 -- acquiring the lock.
 acquireWrite :: RWLock -> IO ()
 acquireWrite RWLock{..} = mask_ $ go False
