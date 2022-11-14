@@ -19,8 +19,8 @@ schemaParsingSpec :: Spec
 schemaParsingSpec = describe "Smart contract schemas" $ do
   schemaV1Parsing
   schemaV2Parsing
+  schemaV3Parsing1
   schemaV3Parsing2
-  schemaV3Parsing3
 
 -- Test that parsing a parameter that contains a
 -- - ULEB128 value in the amount field.
@@ -73,7 +73,7 @@ getSchema = do
     Nothing -> assertFailure "No schema for named contract 'cis2_wCCD'."
 
 -- | Test that deserializing and serializing a bytestring using a module schema containing TaggedEnum is the identity function.
-schemaV3Parsing2 :: Spec
+schemaV3Parsing1 :: Spec
 schemaV3Parsing2 = specify "Deserializing and serializing a bytestring using a module schema containing TaggedEnum is the identity function" $ do
   schema <- getSchema
   -- Assert that raw inputs can be deserialized to JSON according to schema.
@@ -90,7 +90,7 @@ schemaV3Parsing2 = specify "Deserializing and serializing a bytestring using a m
         when (bytes /= bs) $ assertFailure ""
 
 -- | Test that serializing JSON output using a module schema containing a TaggedEnum yields the corresponding expected raw output.
-schemaV3Parsing3 :: Spec
+schemaV3Parsing2 :: Spec
 schemaV3Parsing3 = specify "Serialize JSON using a module schema containing TaggedEnum" $ do
   schema <- getSchema
   -- Assert that we can parse and serialize all JSON files according to schema.
