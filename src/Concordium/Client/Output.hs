@@ -39,7 +39,7 @@ import qualified Data.ByteString.Short as BSS
 import qualified Data.ByteString.Lazy as BSL
 import Data.Functor
 import qualified Data.Map.Strict as Map
-import Data.List (foldl', intercalate, nub, sortOn)
+import Data.List (foldl', intercalate, nub, sortOn, partition)
 import Data.Maybe
 import Data.Word (Word64)
 import Data.Ratio
@@ -55,7 +55,6 @@ import Codec.CBOR.JSON
 import Codec.CBOR.Decoding (decodeString)
 import Concordium.Common.Time (DurationSeconds(durationSeconds))
 import Concordium.Types.Execution (Event(ecEvents))
-import Data.Bifunctor (Bifunctor(bimap))
 import Data.Tuple (swap)
 
 -- PRINTER
@@ -540,11 +539,12 @@ parseTransactionBlockResult status =
                              in MultipleBlocksUnambiguous hashes outcome
                 _ -> MultipleBlocksAmbiguous blocks
 
--- Print transaction status, optionally parsing contract events with a schema.
+-- Print transaction status, optionally parsing the contract events with a schema.
 -- Since the transaction may be present in multiple blocks before it is finalized,
--- the events and schemas possibly differ for different blocks. A map containing
--- information  of blocks containing the transaction will be
--- the transaction wi
+-- the event schema information is passed as a map, from blockhashes to pairs of
+-- events and associated schemas. For each block in which the transaction is present,
+-- the schema information associated with its blockhash in the map is used to print
+-- the events.
 printTransactionStatus :: TransactionStatusResult
                        -> Bool
                        -> Maybe (Map.Map Types.BlockHash [(Types.Event, Maybe CS.SchemaType)])
@@ -625,10 +625,12 @@ showOutcomeResult verbose eventsAndSchemasM = \case
         Nothing -> []
         Just eventsAndSchemas ->
           let
-            -- A map would be more suitable here, but event does not derive Ord.
-            eventsAndSchemas' = filter ((`elem` es) . fst) eventsAndSchemas
+            -- Using a map would be more suitable here, but event does not derive Ord.
+            (evsWithSchema, evsWithoutSchema) = partition (`elem` map fst eventsAndSchemas) es
+            evs = filter ((`elem` evsWithSchema) . fst) eventsAndSchemas
+            evs' = map (, Nothing) evsWithoutSchema
           in
-            mapMaybe (uncurry (showEvent verbose) . swap) eventsAndSchemas'
+            mapMaybe (uncurry (showEvent verbose) . swap) (evs <> evs')
   Types.TxReject r ->
     if verbose
     then [showRejectReason True r]
@@ -728,7 +730,7 @@ showEvent verbose stM = \case
                                invalidCBOR
     in Just $ printf "Transfer memo:\n%s" str
   Types.Interrupted cAddr ev ->
-    verboseOrNothing $ [i|interrupted '#{cAddr}'.\n#{showLoggedEvents ev}|]
+    verboseOrNothing [i|interrupted '#{cAddr}'.\n#{showLoggedEvents ev}|]
   Types.Upgraded{..} ->
     verboseOrNothing [i|upgraded contract instance at '#{euAddress}' from '#{euFrom}' to '#{euTo}'.|]
   Types.Resumed cAddr invokeSucceeded ->
@@ -759,7 +761,7 @@ showEvent verbose stM = \case
         <> (if isNothing stM
             then [i| but no event schema was provided nor found in the contract module. |]
             else [i|, of which #{length $ filter isJust $ map toJSON' evs} were succesfully parsed. |])
-        <> [i|Got:\n|] <> unlines (map eventToString evs)
+        <> [i|Got:\n|] <> intercalate "\n" (map eventToString evs)
       where
         -- Show a hexadecimal string representation of contract event data.
         toHex :: Wasm.ContractEvent -> String
@@ -775,7 +777,7 @@ showEvent verbose stM = \case
         -- Show a string representation of the contract event.
         eventToString :: Wasm.ContractEvent -> String
         eventToString e = case toJSON' e of
-          Nothing -> [i|Event(raw): #{toHex e}\n|]
+          Nothing -> [i|Event(raw): #{toHex e}|]
           Just json -> [i|Event(parsed):\n#{indentBy 4 json}|] 
 
 -- |Return string representation of reject reason.
