@@ -95,7 +95,6 @@ library:
     - microlens-platform
     - transformers
     - uri-encode >= 1.5
-    - concurrent-extra >= 0.7
     - async >= 2.2
     - vector >= 0.12
     - string-interpolate

@@ -24,7 +24,6 @@ import           Concordium.Types as Types
 import           Concordium.ID.Types as IDTypes
 
 import           Control.Exception
-import qualified Control.Concurrent.ReadWriteLock as RW
 import           Control.Concurrent.Async
 import           Control.Concurrent
 import           Control.Monad.Fail
@@ -73,9 +72,29 @@ data EnvData =
       -- 0 means only try once.
       retryTimes :: !Int,
       config :: !GrpcClientConfig,
-      rwlock :: RW.RWLock,
-      grpc :: !(IORef (Maybe GrpcClient)),
-      logger :: LoggerMethod
+      rwlock :: !RWLock,
+      -- |A shared reference to a connection together with a generation counter.
+      -- All queries will reuse this single connection as much as possible. This
+      -- is @Nothing@ if no connection is yet established. When we reconnect we
+      -- increase the generation counter. The reason for the generation counter
+      -- is so that if multiple queries are in-flight at the time the connection
+      -- is reset, we only reconnect once, and then retry the queries.
+      grpc :: !(IORef (Maybe (Word64, GrpcClient))),
+      logger :: LoggerMethod,
+      -- |A flag indicating that all the in-flight queries should be killed.
+      -- |This is a workaround for the inadequate behaviour of the grpc library
+      -- which does not handle disconnects from the server very well, and in
+      -- particular it does not handle the server sending GoAway frames. Ideally
+      -- in that scenario the library would either try to reconnect itself, or,
+      -- alternatively, trigger a normal error that we could recover from and
+      -- re-establish the connection. None of the two happen. So instead we
+      -- install our own custom GoAway handler that kills all in-flight queries,
+      -- and then re-establishes the connection.
+      --
+      -- This MVar will be empty when queries are progressing. When the queries
+      -- need to be killed then we write to it. When we successfully
+      -- re-establish the connection then the the MVar is again emptied.
+      killConnection :: !(MVar ())
     }
 
 -- |Monad in which the program would run
@@ -134,10 +153,11 @@ mkGrpcClient config mLogger =
                  , _grpcClientConfigTimeout = Timeout (fromMaybe 300 (timeout config))
                  }
    in liftIO $ do
-       lock <- RW.new
+       lock <- initializeLock
        ioref <- newIORef Nothing -- don't start the connection just now
+       killConnection <- newEmptyMVar
        let logger = fromMaybe (const (return ())) mLogger
-       return $! EnvData (retryNum config) cfg lock ioref logger
+       return $! EnvData (retryNum config) cfg lock ioref logger killConnection
 
 getNodeInfo :: ClientMonad IO (GRPCResult NodeInfoResponse)
 getNodeInfo = withUnaryNoMsg' (call @"nodeInfo")
@@ -334,6 +354,200 @@ getCryptographicParameters hash = withUnary (call @"getCryptographicParameters")
 -- |Cookie headers that may be returned by the node in a query.
 type CookieHeaders = Map.Map BS8.ByteString BS8.ByteString
 
+
+-- |A reader-writer lock that strongly prefer writers. More precisely this means the following
+-- - readers and writers are mutually exclusive
+-- - multiple readers may hold the lock at the same time if there is no writer
+-- - at most one writer may hold the lock
+--
+-- If a writer tries to acquire a lock it will either
+-- - succeed if there are no current readers or writers
+-- - block after recording the intent to lock. While there are pending writers no new readers can acquire the lock.
+--
+-- If multiple writers are blocking on the lock they will be served in an
+-- unspecified order and in principle it is possible that with heavy write
+-- contention some writers would be starved. This is not the case for the
+-- use-case we have.
+--
+-- Let ⊤ mean that the MVar is full and ⊥ that it is empty. The fields of the lock satisfy the following
+-- properties.
+-- - there are exactly waitingWriters threads blocking on acquireWrite
+-- - rwlState == Free if and only if rwlReadLock == ⊤ and rwlWriteLock == ⊤
+-- - rwlReadLock == ⊥ if and only if there is an active reader.
+-- - rwlWriteLock == ⊥ if and only if there is an active writer.
+--
+-- Transitions between states are governed by the following transition system
+-- where AW/RW and AR/RR mean acquire write, release write and acquire read,
+-- release read, respectively. The WR and WW mean that the thread that
+-- executed the transition is blocked waiting for rwlReadLock and rwlWriteLock MVar to be full.
+-- (Free 0, ⊤, ⊤) -AR-> (ReadLocked 1 0, ⊥, ⊤)
+-- (Free (n+1), ⊤, ⊤) -AR-> (Free (n+1), ⊤, ⊤)
+-- (Free 0, ⊤, ⊤) -AW-> (WriteLocked 0, ⊤, ⊥)
+-- (Free (n+1), ⊤, ⊤) -AW-> (WriteLocked n, ⊤, ⊥)
+--
+-- (ReadLocked n 0, ⊥, ⊤) -AR-> (ReadLocked (n+1) 0, ⊥, ⊤)
+-- (ReadLocked n (m+1), ⊥, ⊤) -AR-> (ReadLocked n (m+1), ⊥, ⊤), WR
+-- (ReadLocked n m, ⊥, ⊤) -AW-> (ReadLocked n (m+1), ⊥, ⊤), WW
+-- (ReadLocked 1 m, ⊥, ⊤) -RR-> (Free m, ⊤, ⊤)
+-- (ReadLocked (n+1) m, ⊥, ⊤) -RR-> (ReadLocked n m, ⊥, ⊤)
+--
+-- (WriteLocked n, ⊤, ⊥) -AR-> (WriteLocked n, ⊤, ⊥)
+-- (WriteLocked n, ⊤, ⊥) -AW-> (WriteLocked (n+1), ⊤, ⊥), WR
+-- (WriteLocked n, ⊤, ⊥) -RW-> (Free n, ⊤, ⊤), WW
+--
+-- No other state should be reachable.
+--
+-- Additionally, rwlReadLock and rwlWriteLock can only be modified while the
+-- rwlState MVar is held.
+data RWLock = RWLock {
+  -- |The state the lock is currently in.
+  rwlState :: !(MVar RWState),
+  -- |An MVar used to signal threads that are waiting for all active readers to
+  -- wake up. This is empty when there is at least one active reader and full
+  -- otherwise.
+  rwlReadLock :: !(MVar ()),
+  -- |An MVar used to signal waiting readers and writers to wake up. This is
+  -- empty when there is an active writer, and full otherwise. Readers wait on
+  -- this MVar when there is an active writer.
+  rwlWriteLock :: !(MVar ())
+  }
+
+
+-- |State of a reader-writer lock.
+data RWState =
+   -- |Nobody has acquired the lock.
+  Free {
+      -- |The lock is not acquired, but there might be pending writers that want to acquire it.
+      waitingWriters :: !Word64
+      }
+  -- |There is at least one active reader.
+  | ReadLocked {
+      -- |The number of readers that are currently active.
+      readers :: !Word64,
+      -- |The number of pending writers.
+      waitingWriters :: !Word64
+      }
+  -- |The lock is acquired by a single writer.
+  | WriteLocked {
+      -- |The number of writers that are pending (that is, currently blocked on this lock).
+      waitingWriters :: !Word64
+      }
+    deriving(Show)
+
+-- |Initialize a lock in the unlocked state.
+initializeLock :: IO RWLock
+initializeLock = do
+  rwlState <- newMVar (Free 0)
+  rwlReadLock <- newMVar ()
+  rwlWriteLock <- newMVar ()
+  return RWLock{..}
+
+-- |Acquire a read lock. This will block until there are no pending writers
+-- waiting to acquire the lock.
+acquireRead :: RWLock -> IO ()
+acquireRead RWLock{..} = mask_ go
+  where
+    go = takeMVar rwlState >>= \case
+      st@(Free waitingWriters)
+        | waitingWriters == 0 -> do
+            -- the lock is free and there are no waiting writers. Acquire a read lock.
+            takeMVar rwlReadLock
+            putMVar rwlState (ReadLocked 1 0)
+        | otherwise -> do
+            -- the lock is free, but there are waiting writers. We do nothing and try again.
+            -- Due to fairness of MVars next time another thread will make progress
+            -- so we are going to end up after a finite number of iterations, in a WriteLocked state.
+            putMVar rwlState st
+            -- Since this branch seems to be compiled into a loop without
+            -- allocations by GHC with -O2 we need to explicitly yield to allow others
+            -- to make progress. Otherwise with sufficient contention this loop ends up
+            -- starving other threads since they are never scheduled. This then also means
+            -- the loop never terminates since no other thread transitions from the Free
+            -- to WriteLocked state.
+            yield
+            go
+      st@(ReadLocked n waitingWriters)
+          | waitingWriters == 0 ->
+            -- No waiting writers, add another reader.
+            putMVar rwlState $! ReadLocked (n + 1) 0
+          | otherwise -> do
+              -- Some readers hold the lock, but there are waiting writers.
+              -- We do nothing and wait until there are no more readers and attempt again.
+              -- At that point we are likely to end up in WriteLocked state.
+              putMVar rwlState st
+              readMVar rwlReadLock
+              go
+      lockState@(WriteLocked _) -> do
+        -- There is an active writer. Do nothing and wait until the writer is done.
+        putMVar rwlState lockState
+        readMVar rwlWriteLock
+        go
+
+-- |Acquire a write lock. This will block when there are active readers or
+-- writers. When this is operation is blocked it also blocks new readers from
+-- acquiring the lock.
+acquireWrite :: RWLock -> IO ()
+acquireWrite RWLock{..} = mask_ $ go False
+  where
+    -- the boolean flag indicates whether this is a first iteration of the loop (False) or not (True)
+    go alreadyWaiting = takeMVar rwlState >>= \case
+      (Free waitingWriters) -> do
+        -- The lock is free, take it.
+        takeMVar rwlWriteLock
+        putMVar rwlState $! WriteLocked (waitingWriters - if alreadyWaiting then 1 else 0)
+      (ReadLocked n waitingWriters) -> do
+        -- There are active readers. Queue ourselves up and wait until all existing readers
+        -- are done. This will block all subsequent readers from acquiring the lock.
+        putMVar rwlState $! ReadLocked n (waitingWriters + if alreadyWaiting then 0 else 1)
+        readMVar rwlReadLock
+        go True
+      (WriteLocked waitingWriters) -> do
+        -- There is an active writer. Queue ourselves up so that readers are
+        -- blocked from acquiring the lock and wait until the current writer is done.
+        putMVar rwlState $! WriteLocked (waitingWriters + if alreadyWaiting then 0 else 1)
+        readMVar rwlWriteLock
+        go True
+
+-- |Release the write lock. The lock is assumed to be in write state, otherwise
+-- this function will raise an exception.
+releaseWrite :: RWLock -> IO ()
+releaseWrite RWLock{..} = mask_ $
+   takeMVar rwlState >>= \case
+    (WriteLocked waitingWriters) -> do
+      putMVar rwlWriteLock ()
+      putMVar rwlState (Free waitingWriters)
+    lockState -> do
+      putMVar rwlState lockState
+      error $ "releaseWrite: attempting to release while in state: " ++ show lockState
+
+
+-- |Release the read lock. The lock is assumed to be in read state, otherwise
+-- this function will raise an exception. Note that since multiple readers may
+-- acquire the read lock at the same time this either decrements the read count
+-- and leaves the lock in read state, or unlocks it if called when there is only
+-- a single active reader.
+releaseRead :: RWLock -> IO ()
+releaseRead RWLock{..} = mask_ $
+  takeMVar rwlState >>= \case
+    (ReadLocked 1 waitingWriters) -> do
+      putMVar rwlReadLock ()
+      putMVar rwlState (Free waitingWriters)
+    (ReadLocked n waitingWriters) -> putMVar rwlState $! ReadLocked (n - 1) waitingWriters
+    lockState -> do
+      putMVar rwlState lockState
+      error $ "releaseRead: attempting to release read when in state: " ++ show lockState
+
+-- |Acquire the write lock and execute the action. The lock will be released
+-- even if the action raises an exception. See 'acquireWrite' for more details.
+withWriteLock :: RWLock -> IO a -> IO a
+withWriteLock ls = bracket_ (acquireWrite ls) (releaseWrite ls)
+
+-- |Acquire the read lock and execute the action. The lock will be released even
+-- if the action raises an exception. See 'acquireRead' for more details.
+withReadLock :: RWLock -> IO a -> IO a
+withReadLock ls = bracket_ (acquireRead ls) (releaseRead ls)
+
+
 -- | Setup the GRPC client and run a rawUnary call with the provided message to the provided method,
 -- the output is interpreted using the function given in the third parameter.
 withUnaryCore :: forall m n b. (HasMethod P2P m, MonadIO n)
@@ -347,66 +561,91 @@ withUnaryCore method message k = do
   lock <- asks rwlock
   logm <- asks logger
   cookies <- ClientMonad (lift get)
+  mv <- asks killConnection
   let Timeout timeoutSeconds = _grpcClientConfigTimeout cfg
 
   -- try to establish a connection
   let tryEstablish :: Int -> IO (Maybe GrpcClient)
       tryEstablish n = do
         logm $ "Trying to establish connection, n = " <> pack (show n)
+        let cfg' = cfg { _grpcClientConfigGoAwayHandler = \x -> do
+                           liftIO (logm ("Receive GOAWAY message: " <> fromString (show x)))
+                           -- use tryPutMVar instead of putMVar since multiple queries might do this at the same time.
+                           -- That should not matter since once an MVar is set we will kill the existing client.
+                           _ <- liftIO (tryPutMVar mv ())
+                           return ()
+                           }
         if n <= 0 then return Nothing
-        else try @IOException (runExceptT (setupGrpcClient cfg)) >>= \case
+        else try @IOException (runExceptT (setupGrpcClient cfg')) >>= \case
                Right (Right client) -> return (Just client)
                _ -> do -- retry in case of error or exception, after waiting 1s
                  threadDelay 1000000
                  tryEstablish (n-1)
 
   let tryRun =
-        RW.withRead lock $ do
+        withReadLock lock $ do
           logm "Running gRPC query."
           mclient <- readIORef clientRef
           case mclient of
             Nothing -> do
               logm "No network client."
-              return Nothing
-            Just client -> do
-              logm "Network client exists, running query."
-              -- Overwrite the headers in the client with existing ones in the config.
-              -- This makes it possible to supply per-request headers.
-              let client' = client {_grpcClientHeaders = _grpcClientConfigHeaders cfg ++ fmap (\(x, y) -> ("Cookie", x <> "=" <> y)) (Map.toList cookies)}
-              let runRPC = runExceptT (rawUnary method client' message) >>=
-                           \case Left _ -> return Nothing -- client error
-                                 Right (Left _) -> return Nothing -- too much concurrency
-                                 Right (Right x) -> return (Just x)
-              race (threadDelay (timeoutSeconds * 1000000)) runRPC >>=
-                 \case Left () -> Nothing <$ logm "Timeout out."
-                       Right x -> return x
+              -- using 0 here means that the generation check below will always
+              -- yield False, in case the connection is established by another
+              -- query from this point until the retry. And thus that client
+              -- will be used next time.
+              return (0, Nothing)
+            Just (gen, client) -> do
+              -- if the MVar is not set then we are free to attempt a new query.
+              -- If it is set then it means a GOAWAY frame is being handled. We
+              -- fail here (the Just () branch) and will try the next time after
+              -- a new client has been established.
+              tryTakeMVar mv >>= \case
+                Nothing -> do
+                  logm "Network client exists, running query."
+                  -- Overwrite the headers in the client with existing ones in the config.
+                  -- This makes it possible to supply per-request headers.
+                  let client' = client {_grpcClientHeaders = _grpcClientConfigHeaders cfg ++ fmap (\(x, y) -> ("Cookie", x <> "=" <> y)) (Map.toList cookies)}
+                  let runRPC = runExceptT (rawUnary method client' message) >>=
+                               \case Left err -> Nothing <$ logm ("Network error: " <> fromString (show err))  -- client error
+                                     Right (Left err) -> Nothing <$ logm ("Too much concurrency: " <> fromString (show err))
+                                     Right (Right x) -> return (Just x)
+                  race (race (readMVar mv) (threadDelay (timeoutSeconds * 1000000))) runRPC >>=
+                     \case Left (Left ()) -> (gen, Nothing) <$ logm "Terminating query because GOAWAY received."
+                           Left (Right ()) -> (gen, Nothing) <$ logm "Terminating query because it timed out."
+                           Right x -> return (gen, x)
+                Just () -> return (gen, Nothing) -- fail this round, go again after the client is established.
 
   ret <- liftIO tryRun
 
   case ret of
-    Nothing -> do -- failed, need to establish connection
+    (usedGen, Nothing) -> do -- failed, need to establish connection
       liftIO (logm "gRPC call failed. Will try to reestablish connection.")
       retryNum <- asks retryTimes
-      tryAgain <- liftIO $ RW.withWrite lock $ do
-        readIORef clientRef >>= \case
-          Nothing -> return ()
-          Just oldClient -> void (runExceptT (close oldClient)) -- FIXME: We ignore failure closing connection here.
-        tryEstablish (retryNum + 1) >>= \case
-          Nothing -> do
-            atomicWriteIORef clientRef Nothing
-            return False
-          Just newClient -> do
-            logm "Established a connection."
-            atomicWriteIORef clientRef (Just newClient)
-            return True
+      tryAgain <- liftIO $! withWriteLock lock $ do
+        reEstablish <- readIORef clientRef >>= \case
+          Nothing -> return (Just 1)
+          Just (curGen, oldClient) | usedGen >= curGen -> do
+              void (runExceptT (close oldClient)) -- FIXME: We ignore failure closing connection here.
+              return (Just (curGen + 1))
+          Just _ -> return Nothing
+        case reEstablish of
+          Nothing -> return True
+          Just newGen -> tryEstablish (retryNum + 1) >>= \case
+            Nothing -> do
+              atomicWriteIORef clientRef Nothing
+              return False
+            Just newClient -> do
+              logm "Established a connection."
+              atomicWriteIORef clientRef (Just (newGen, newClient))
+              return True
       if tryAgain then do
           liftIO (logm "Reestablished connection, trying again.")
-          ret' <- liftIO tryRun
+          (_, ret') <- liftIO tryRun
           let response = outputGRPC ret'
           addHeaders response
           return (k response)
       else return (k (Left "Cannot establish connection to GRPC endpoint."))
-    Just v ->
+    (_, Just v) ->
         let response = outputGRPC' v
         in do
             addHeaders response
