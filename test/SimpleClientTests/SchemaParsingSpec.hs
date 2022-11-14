@@ -57,10 +57,11 @@ schemaV2Parsing = specify "Parse v2 schema" $ do
           Right _ -> return ()
 
 
--- | Module schema V3 tests 
-prefix :: String
+-- | Module schema V3 test data prefix.
+prefix :: FilePath
 prefix = "test/data/cis2_wCCD/"
 
+-- | Read and parse the schema file used for testing
 getSchema :: IO SchemaType
 getSchema = do
   schemaBytes <- BS.readFile $ prefix <> "cis2_wCCD_schema.bin"
@@ -71,7 +72,7 @@ getSchema = do
     Just schema -> return schema
     Nothing -> assertFailure "No schema for named contract 'cis2_wCCD'."
 
--- | Deserializing and serializing a bytestring using a module schema containing TaggedEnum is the identity function.
+-- | Test that deserializing and serializing a bytestring using a module schema containing TaggedEnum is the identity function.
 schemaV3Parsing2 :: Spec
 schemaV3Parsing2 = specify "Deserializing and serializing a bytestring using a module schema containing TaggedEnum is the identity function" $ do
   schema <- getSchema
@@ -88,7 +89,7 @@ schemaV3Parsing2 = specify "Deserializing and serializing a bytestring using a m
       Right bytes -> do
         when (bytes /= bs) $ assertFailure ""
 
--- | Serializing JSON output using a module schema containing a TaggedEnum yields the corresponding expected raw output.
+-- | Test that serializing JSON output using a module schema containing a TaggedEnum yields the corresponding expected raw output.
 schemaV3Parsing3 :: Spec
 schemaV3Parsing3 = specify "Serialize JSON using a module schema containing TaggedEnum" $ do
   schema <- getSchema
