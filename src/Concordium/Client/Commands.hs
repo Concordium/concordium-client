@@ -681,7 +681,7 @@ transactionStatusCmd =
     (info
       (TransactionStatus <$>
         strArgument (metavar "TX-HASH" <> help "Hash of the transaction.") <*>
-        optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file, used to display the contract info.")))
+        optional (strOption (long "schema" <> metavar "SCHEMA" <> help "Path to a schema file used to display smart contract events.")))
       (progDesc "Get status of a transaction."))
 
 transactionSendCcdCmd :: Mod CommandFields TransactionCmd
