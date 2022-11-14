@@ -396,6 +396,7 @@ showContractFuncV2 funcName mFuncSchema = case mFuncSchema of
   Just CS.RvError{..} -> [i|- #{funcName}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
   Just CS.ParamRvError{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fs2Parameter}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
 
+-- |Print a V3 event schema.
 showContractEventV3 :: Maybe SchemaType -> String
 showContractEventV3 stM = case stM of
   Nothing -> [i||]
