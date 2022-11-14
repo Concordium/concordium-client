@@ -47,7 +47,7 @@ import Data.Word (Word8, Word16, Word32, Word64)
 import GHC.Generics
 import Data.Maybe(isJust)
 import Control.Arrow (Arrow(first))
-import Data.List (nub)
+import Data.List (sort, group)
 
 -- |Try to find an embedded schema in a module and decode it.
 decodeEmbeddedSchema :: Wasm.WasmModule -> Either String (Maybe ModuleSchema)
@@ -154,7 +154,7 @@ lookupFunctionSchemaV2 ContractSchemaV2{..} = \case
   InitFuncName _ -> cs2InitSig
   ReceiveFuncName _ rcvName -> Map.lookup rcvName cs2ReceiveSigs
 
--- |Lookup the 'FunctionSchemaV2' of a 'ContractSchemaV3'.
+-- |Look up either the schema of an init or a receive function.
 lookupFunctionSchemaV3 :: ContractSchemaV3 -> FuncName -> Maybe FunctionSchemaV2
 lookupFunctionSchemaV3 ContractSchemaV3{..} = \case
   InitFuncName _ -> cs3InitSig
@@ -559,7 +559,7 @@ instance S.Serialize SchemaType where
     where
       -- Predicate for tagged enums. Tags and variant names should be unique.
       allUnique :: (Ord a) => [a] -> Bool
-      allUnique xs = length (nub xs) == length xs
+      allUnique xs = length ((group . sort) xs) == length xs
       tEnumPred :: (Ord a, Ord b) => [(a, (b, c))] -> Bool
       tEnumPred ls = allUnique (map fst ls) && allUnique (map (fst . snd) ls)
 
