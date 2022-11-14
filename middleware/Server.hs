@@ -6,6 +6,7 @@ import           Data.Function ((&))
 import           Data.List.Split
 import           Data.Maybe
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import           Network.Wai (Application, Middleware)
 import qualified Network.Wai.Handler.Warp as W
 import           Network.Wai.Middleware.AddHeaders (addHeaders)
@@ -41,9 +42,9 @@ runHttp middlewares = do
         _ ->
           error $ "Could not parse host:port for given NODE_URL: " ++ T.unpack nodeUrl
 
-    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, grpcAuthenticationToken = (T.unpack grpcAdminToken), target = Nothing, retryNum = 5, timeout = Just to, useTls = isJust secure }
+    grpcConfig = GrpcConfig { host = nodeHost, port = nodePort, grpcAuthenticationToken = T.unpack grpcAdminToken, target = Nothing, retryNum = 5, timeout = Just to, useTls = isJust secure }
 
-  runExceptT (mkGrpcClient grpcConfig Nothing) >>= \case
+  runExceptT (mkGrpcClient grpcConfig (Just T.putStrLn)) >>= \case
     Left err -> fail (show err) -- cannot connect to grpc server
     Right nodeBackend -> do
       let

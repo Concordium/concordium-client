@@ -91,7 +91,6 @@ library
     , cborg-json
     , cereal
     , concordium-base
-    , concurrent-extra >=0.7
     , containers
     , cookie
     , cryptonite

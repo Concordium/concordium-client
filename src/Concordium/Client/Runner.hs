@@ -150,7 +150,7 @@ withClient bkend comp = do
               runExceptT (close ref) >>= \case
                 Left err -> logFatal ["Error closing connection: " ++ show err]
                 Right () -> return ()
-        let closeConnection = closeOrFail =<< (readIORef $ grpc client)
+        let closeConnection = closeOrFail =<< (fmap (fmap snd) . readIORef $ grpc client)
         finally body closeConnection
 
 withClientJson :: (FromJSON a) => Backend -> ClientMonad IO (Either String Value) -> IO a
