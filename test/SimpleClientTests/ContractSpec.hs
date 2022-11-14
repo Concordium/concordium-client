@@ -304,7 +304,7 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
         accAddr = "47JNHkJZo9ShomDypbiSJzdGN7FNxo8MwtUFsPa49KGvejf7Wh"
 
         fromToJSON :: SchemaType -> AE.Value -> Either String AE.Value
-        fromToJSON typ originalJSON = encodeParameter typ originalJSON >>= S.runGet (getJSONUsingSchema typ)
+        fromToJSON typ originalJSON = serializeWithSchema typ originalJSON >>= S.runGet (getJSONUsingSchema typ)
 
         fromToJSONSucceed :: SchemaType -> AE.Value -> Expectation
         fromToJSONSucceed typ originalJSON = fromToJSON typ originalJSON `shouldBe` Right originalJSON

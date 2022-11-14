@@ -78,12 +78,12 @@ schemaV3Parsing2 = specify "Deserializing and serializing a bytestring using a m
   -- Assert that raw inputs can be deserialized to JSON according to schema.
   json <- forM [0,1] $ \(i :: Integer) -> do
     eventBytes <- BS.readFile $ prefix <> "event" <> show i <> ".bin"
-    case decodeParameter schema eventBytes of
+    case deserializeWithSchema schema eventBytes of
       Left err -> assertFailure $ "Unable to decode event " <> show i <> ": " <> err
       Right val -> return (i, eventBytes, val)
   -- Assert that deserialized values can be encoded to the 
   forM_ json $ \(i, bs, val) -> do
-    case encodeParameter schema val of
+    case serializeWithSchema schema val of
       Left err -> assertFailure $ "Unable to encode event " <> show i <> ": " <> err
       Right bytes -> do
         when (bytes /= bs) $ assertFailure ""
