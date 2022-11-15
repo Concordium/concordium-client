@@ -558,9 +558,9 @@ checkAndGetMemo memo pv = do
 -- the best blockhash. The schema from the file will take precedence
 -- over an embedded schema in the module.
 getContractInfoWithSchemas :: (MonadIO m, MonadFail m)
-              => Maybe FilePath
-              -> Maybe Types.BlockHash
-              -> Types.Event
+              => Maybe FilePath -- ^ Path pointing to a schema file.
+              -> Maybe Types.BlockHash -- ^ Blockhash of the block to retrieve the contract info from.
+              -> Types.Event -- ^ The event for which the contract info will be retrieved.
              -> ClientMonad m (Maybe CI.ContractInfo)
 getContractInfoWithSchemas schemaFile blockHashM ev = do
   -- Get contract address.
@@ -582,17 +582,17 @@ getContractInfoWithSchemas schemaFile blockHashM ev = do
           Just schema -> CI.addSchemaData contrInfo schema
     _ -> return Nothing
 
--- |Get the contract info for all events of a transaction.
--- Returns a map from blockhashes of blocks in which the transaction is present to
--- events of the transaction in that block. Each event figures in a pair with
--- an optional contract info containing contract schema info associated with in that block,
--- if any.
--- Optionally takes a path to a schema file to be parsed and returned. The schema from
--- the file will then take precedence over embedded schemas in the module and will thus
--- be included in its place for all events.
+-- |Get `ContractInfo` for all events in all blocks in which a transaction is present.
+-- Returns a map from blockhashes of blocks in which the transaction is present to the
+-- events of the transaction in that block. Each event figures in a pair with an optional
+-- `ContractInfo` value containing contract schema info associated with each event of the
+-- transaction in that block.
+-- Optionally takes a path to a schema file to be parsed and returned. The schema contained
+-- in the file will then take precedence over schemas embedded in the module of the and will
+-- thus be included in the `ContractInfo` for all events.
 getTxContractInfoWithSchemas :: (MonadIO m, MonadFail m)
-               => Maybe FilePath
-               -> TransactionStatusResult
+               => Maybe FilePath -- ^ Path pointing to a schema file.
+               -> TransactionStatusResult -- ^ The transaction result for which the contract info will be retrieved.
                -> ClientMonad m (Map.Map Types.BlockHash [(Types.Event, Maybe CI.ContractInfo)])
 getTxContractInfoWithSchemas schemaFile status = do
   -- Which blocks should be used in the ContractInfo queries?
