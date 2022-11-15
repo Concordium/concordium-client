@@ -131,6 +131,7 @@ import Data.Ratio
 import Codec.CBOR.Write
 import Codec.CBOR.Encoding
 import Codec.CBOR.JSON
+import Control.Arrow (Arrow(second))
 
 -- |Establish a new connection to the backend and run the provided computation.
 -- Close a connection after completion of the computation. Establishing a
@@ -544,6 +545,79 @@ checkAndGetMemo memo pv = do
       return $ Types.Memo bss
     Right m -> return m
 
+-- | Attempt to get event schema associated with an event.
+-- Optionally takes a path to a schema file to be parsed and returned.
+-- Optionally takes a blockhash of the block in which the contract
+-- contract module containing the schema resides, or defaults to using
+-- the best blockhash. The schema from the file will take precedence
+-- over an embedded schema in the module.
+getSchemaType :: (MonadIO m, MonadFail m)
+              => Maybe FilePath
+              -> Maybe Types.BlockHash
+              -> Types.Event
+             -> ClientMonad m (Maybe CS.SchemaType)
+getSchemaType schemaFile blockHashM ev = do
+  -- Get contract address.
+  let cAM = case ev of
+              Types.ContractInitialized{..} -> Just ecAddress
+              Types.Updated{..} -> Just euAddress
+              Types.Interrupted{..} -> Just iAddress
+              _ -> Nothing
+  -- Get schema.
+  schema <- case cAM of
+    Just ca -> do
+      let blockHashTextM = Text.pack . show <$> blockHashM
+      withBestBlockHash blockHashTextM $ \bh -> do
+        contrInfo <- getContractInfo (NamedContractAddress ca []) bh
+        let cName = CI.ciName contrInfo
+        let namedModRef = NamedModuleRef { nmrRef = CI.ciSourceModule contrInfo, nmrNames = [] }
+        getSchemaFromFileOrModule schemaFile namedModRef bh >>= \case
+          Just (CS.ModuleSchemaV3 m) -> case m Map.!? cName of
+            Just CS.ContractSchemaV3{..} -> return $ Just cs3EventSchema
+            Nothing -> return Nothing
+          _ -> return Nothing
+    _ -> return Nothing
+  return $ join schema
+
+-- |Get the transaction events and their associated contract module V3 event schemas if
+-- any.
+-- Returns a map from blockhashes of blocks in which the transaction is present to
+-- events of the transaction in that block. Each event figures in a pair with
+-- an optional event schema of the V3 contract schema associated with in that block,
+-- if any.
+-- Optionally takes a path to a schema file to be parsed and returned. The schema from
+-- the file will then take precedence over embedded schemas in the module and will thus
+-- be included in its place for all events.
+getTxEventsAndSchemas :: (MonadIO m, MonadFail m)
+               => Maybe FilePath
+               -> TransactionStatusResult
+               -> ClientMonad m (Map.Map Types.BlockHash [(Types.Event, Maybe CS.SchemaType)])
+getTxEventsAndSchemas schemaFile status = do
+  -- Which blocks should be used in the ContractInfo queries?
+  let bhEvents = [ (bh, evsE) | (bh, Right evsE) <- extractFromTsr' getEvents status ]
+  -- Get event schemas for all blocks and events.
+  bhToEv <- forM bhEvents $ \(bh, evs) -> do
+    evToSt <- forM evs $ \ev -> do
+      st <- getSchemaType schemaFile (Just bh) ev
+      return (ev, st)
+    return (bh, evToSt)
+  return $ Map.fromList bhToEv
+  where
+    getEvents :: Types.TransactionSummary -> Either String [Types.Event]
+    getEvents tSum = case Types.tsResult tSum of
+            Types.TxSuccess {..} -> Right vrEvents
+            Types.TxReject {..}  -> Left $ showRejectReason True vrRejectReason
+    
+    -- A different variant of extractFromTsr' which also takes into
+    -- account MultipleBlocksUnambiguous and MultipleBlocksAmbiguous.
+    extractFromTsr' :: (Types.TransactionSummary -> a) -> TransactionStatusResult -> [(Types.BlockHash, a)]
+    extractFromTsr' f tsr =
+      case parseTransactionBlockResult tsr of
+          NoBlocks -> []
+          SingleBlock bh ts -> [(bh, f ts)] 
+          MultipleBlocksUnambiguous bhs ts -> map (, f ts) bhs
+          MultipleBlocksAmbiguous bhts -> map (second f) bhts
+
 -- |Process a 'transaction ...' command.
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processTransactionCmd action baseCfgDir verbose backend =
@@ -559,7 +633,7 @@ processTransactionCmd action baseCfgDir verbose backend =
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
-          tailTransaction_ hash
+          tailTransaction_ verbose hash
 --          logSuccess [ "transaction successfully completed" ]
     TransactionDeployCredential fname intOpts -> do
       source <- handleReadFile BSL.readFile fname
@@ -568,15 +642,18 @@ processTransactionCmd action baseCfgDir verbose backend =
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
-          tailTransaction_ hash
+          tailTransaction_ verbose hash
 --          logSuccess [ "credential deployed successfully" ]
-    TransactionStatus h -> do
+
+    TransactionStatus h schemaFile -> do
       hash <- case parseTransactionHash h of
         Nothing -> logFatal [printf "invalid transaction hash '%s'" h]
         Just hash -> return hash
-      status <- withClient backend $ queryTransactionStatus hash
-      when verbose $ logInfo [printf "Response: %s" (show status)]
-      runPrinter $ printTransactionStatus status True
+      withClient backend $ do
+        status <- queryTransactionStatus hash
+        eventsAndSchemas <- getTxEventsAndSchemas schemaFile status 
+        runPrinter $ printTransactionStatus status True $ Just eventsAndSchemas
+
       -- TODO This works but output doesn't make sense if transaction is already committed/finalized.
       --      It should skip already completed steps.
       -- withClient backend $ tailTransaction_ hash
@@ -610,7 +687,7 @@ processTransactionCmd action baseCfgDir verbose backend =
 
         let intOpts = toInteractionOpts txOpts
         liftIO $ transferTransactionConfirm ttxCfg (ioConfirm intOpts)
-        sendAndTailTransaction_ txCfg pl intOpts
+        sendAndTailTransaction_ verbose txCfg pl intOpts
 
     TransactionSendWithSchedule receiver schedule maybeMemo txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -659,7 +736,7 @@ processTransactionCmd action baseCfgDir verbose backend =
           False -> do
             let intOpts = toInteractionOpts txOpts
             liftIO $ transferWithScheduleTransactionConfirm ttxCfg (ioConfirm intOpts)
-            sendAndTailTransaction_ txCfg pl intOpts
+            sendAndTailTransaction_ verbose txCfg pl intOpts
           True -> liftIO $ do 
             logWarn ["Scheduled transfers from an account to itself are not allowed."]
             logWarn ["Transaction Cancelled"]
@@ -707,7 +784,7 @@ processTransactionCmd action baseCfgDir verbose backend =
 
         let intOpts = toInteractionOpts txOpts
         encryptedTransferTransactionConfirm ettCfg (ioConfirm intOpts)
-        sendAndTailTransaction_ txCfg payload intOpts
+        sendAndTailTransaction_ verbose txCfg payload intOpts
 
     TransactionRegisterData file txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -727,7 +804,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       let pl = registerDataTransactionPayload rdCfg
 
       withClient backend $ do
-        mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
+        mTsr <- sendAndTailTransaction verbose txCfg (Types.encodePayload pl) intOpts
         let extractDataRegistered = extractFromTsr $ \case Types.DataRegistered rd -> Just rd
                                                            _ -> Nothing
         case extractDataRegistered mTsr of
@@ -1337,36 +1414,38 @@ getNonce sender nonce confirm =
 
 -- |Send a transaction and optionally tail it (see 'tailTransaction' below).
 sendAndTailTransaction_ :: (MonadIO m, MonadFail m)
-    => TransactionConfig -- ^ Information about the sender, and the context of transaction
+    => Bool -- ^ Whether the output should be verbose
+    -> TransactionConfig -- ^ Information about the sender, and the context of transaction
     -> Types.EncodedPayload -- ^ Payload of the transaction to send
     -> InteractionOpts -- ^ How interactive should sending and tailing be
     -> ClientMonad m ()
-sendAndTailTransaction_ txCfg pl intOpts = void $ sendAndTailTransaction txCfg pl intOpts
+sendAndTailTransaction_ verbose txCfg pl intOpts = void $ sendAndTailTransaction verbose txCfg pl intOpts
 
 -- |Send a transaction and optionally tail it (see 'tailTransaction' below).
 -- If tailed, it returns the TransactionStatusResult of the finalized status,
 -- otherwise the return value is `Nothing`.
 sendAndTailTransaction :: (MonadIO m, MonadFail m)
-    => TransactionConfig -- ^ Information about the sender, and the context of transaction
+    => Bool -- ^ Whether the output should be verbose
+    -> TransactionConfig -- ^ Information about the sender, and the context of transaction
     -> Types.EncodedPayload -- ^ Payload of the transaction to send
     -> InteractionOpts -- ^ How interactive should sending and tailing be
     -> ClientMonad m (Maybe TransactionStatusResult)
-sendAndTailTransaction txCfg pl intOpts = do
+sendAndTailTransaction verbose txCfg pl intOpts = do
   tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
   let hash = getBlockItemHash tx
   logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
   if ioTail intOpts
-  then Just <$> tailTransaction hash
+  then Just <$> tailTransaction verbose hash
   else return Nothing
 
 -- |Continuously query and display transaction status until the transaction is finalized.
-tailTransaction_ :: (MonadIO m) => Types.TransactionHash -> ClientMonad m ()
-tailTransaction_ hash = void $ tailTransaction hash
+tailTransaction_ :: (MonadIO m, MonadFail m) => Bool -> Types.TransactionHash -> ClientMonad m ()
+tailTransaction_ verbose hash = void $ tailTransaction verbose hash
 
 -- |Continuously query and display transaction status until the transaction is finalized.
 -- Returns the TransactionStatusResult of the finalized status.
-tailTransaction :: (MonadIO m) => Types.TransactionHash -> ClientMonad m TransactionStatusResult
-tailTransaction hash = do
+tailTransaction :: (MonadIO m, MonadFail m) => Bool -> Types.TransactionHash-> ClientMonad m TransactionStatusResult
+tailTransaction verbose hash = do
   logInfo [ "waiting for the transaction to be committed and finalized"
           , "you may skip this step by interrupting the command using Ctrl-C (pass flag '--no-wait' to do this by default)"
           , printf "the transaction will still get processed and may be queried using\n  'concordium-client transaction status %s'" (show hash) ]
@@ -1379,7 +1458,8 @@ tailTransaction hash = do
     logFatal [ "transaction failed before it got committed"
              , "most likely because it was invalid" ]
 
-  runPrinter $ printTransactionStatus committedStatus False
+  committedEventsAndSchemas <- getTxEventsAndSchemas Nothing committedStatus
+  runPrinter $ printTransactionStatus committedStatus verbose $ Just committedEventsAndSchemas
 
   -- If the transaction goes back to pending state after being committed
   -- to a branch which gets dropped later on, the command will currently
@@ -1400,7 +1480,8 @@ tailTransaction hash = do
               , "response:\n" ++ showPrettyJSON committedStatus ]
 
     -- Print out finalized status.
-    runPrinter $ printTransactionStatus finalizedStatus False
+    finalizedEventsAndSchemas <- getTxEventsAndSchemas Nothing finalizedStatus
+    runPrinter $ printTransactionStatus finalizedStatus verbose $ Just finalizedEventsAndSchemas
 
     return finalizedStatus
   liftIO $ printf "[%s] Transaction finalized.\n" =<< getLocalTimeOfDayFormatted
@@ -1509,7 +1590,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
         let intOpts = toInteractionOpts txOpts
         liftIO $ credentialUpdateKeysTransactionConfirm aukCfg (ioConfirm intOpts)
-        sendAndTailTransaction_ txCfg pl intOpts
+        sendAndTailTransaction_ verbose txCfg pl intOpts
 
     AccountUpdateCredentials cdisFile removeCidsFile newThreshold txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1538,7 +1619,7 @@ processAccountCmd action baseCfgDir verbose backend =
                 , auctcRemoveCredIds = removedCredentials
                 , auctcNewThreshold = newThreshold }
         liftIO $ accountUpdateCredentialsTransactionConfirm aucCfg (ioConfirm intOpts)
-        sendAndTailTransaction_ txCfg epayload intOpts
+        sendAndTailTransaction_ verbose txCfg epayload intOpts
 
     AccountEncrypt{..} -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1556,7 +1637,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
       let intOpts = toInteractionOpts aeTransactionOpts
       accountEncryptTransactionConfirm aetxCfg (ioConfirm intOpts)
-      withClient backend $ sendAndTailTransaction_ txCfg pl intOpts
+      withClient backend $ sendAndTailTransaction_ verbose txCfg pl intOpts
 
     AccountDecrypt{..} -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1589,7 +1670,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
         let intOpts = toInteractionOpts adTransactionOpts
         accountDecryptTransactionConfirm adtxCfg (ioConfirm intOpts)
-        sendAndTailTransaction_ txCfg pl intOpts
+        sendAndTailTransaction_ verbose txCfg pl intOpts
 
     AccountShowAlias addrOrName alias -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1626,7 +1707,7 @@ processModuleCmd action baseCfgDir verbose backend =
       let pl = moduleDeployTransactionPayload mdCfg
 
       withClient backend $ do
-        mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
+        mTsr <- sendAndTailTransaction verbose txCfg (Types.encodePayload pl) intOpts
         case extractModRef mTsr of
           Nothing -> return ()
           Just (Left err) -> logFatal ["module deployment failed:", err]
@@ -1794,7 +1875,7 @@ processContractCmd action baseCfgDir verbose backend =
       let intOpts = toInteractionOpts txOpts
       let pl = contractInitTransactionPayload ciCfg
       withClient backend $ do
-        mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
+        mTsr <- sendAndTailTransaction verbose txCfg (Types.encodePayload pl) intOpts
         case extractContractAddress mTsr of
           Nothing -> return ()
           Just (Left err) -> logFatal ["contract initialisation failed:", err]
@@ -1831,7 +1912,7 @@ processContractCmd action baseCfgDir verbose backend =
       let intOpts = toInteractionOpts txOpts
       let pl = contractUpdateTransactionPayload cuCfg
       withClient backend $ do
-        mTsr <- sendAndTailTransaction txCfg (Types.encodePayload pl) intOpts
+        mTsr <- sendAndTailTransaction verbose txCfg (Types.encodePayload pl) intOpts
         case extractUpdate mTsr of
           Nothing -> return ()
           Just (Left err) -> logFatal ["updating contract instance failed:", err]
@@ -1887,7 +1968,7 @@ processContractCmd action baseCfgDir verbose backend =
                                                 - Reason: #{showRejectReason verbose rcrReason}
                                                 #{returnValueMsg}|]]
             AE.Success InvokeContract.Success{..} -> do
-              let eventsMsg = case mapMaybe (fmap (("  - " <>) . Text.pack) . showEvent verbose) rcrEvents of
+              let eventsMsg = case mapMaybe (fmap (("  - " <>) . Text.pack) . showEvent verbose Nothing) rcrEvents of
                                 [] -> Text.empty
                                 evts -> [i|- Events:\n#{Text.intercalate "\n" evts}|]
               returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName False
@@ -1977,7 +2058,7 @@ processContractCmd action baseCfgDir verbose backend =
 
 -- |Try to fetch info about the contract and deserialize it from JSON.
 -- Or, log fatally with appropriate error messages if anything goes wrong.
-getContractInfo :: NamedContractAddress -> Text -> ClientMonad IO CI.ContractInfo
+getContractInfo :: (MonadIO m) => NamedContractAddress -> Text -> ClientMonad m CI.ContractInfo
 getContractInfo namedContrAddr block = do
   res <- getInstanceInfo (Text.pack . showCompactPrettyJSON . ncaAddr $ namedContrAddr) block
   case res of
@@ -2075,9 +2156,10 @@ getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath mWasmVersion 
 -- |Query the node for a module reference, and parse the result.
 -- Terminate program execution if either the module cannot be obtained,
 -- or the result cannot be parsed.
-getWasmModule :: NamedModuleRef -- ^On-chain reference of the module.
+getWasmModule :: (MonadIO m)
+              => NamedModuleRef -- ^On-chain reference of the module.
               -> Text -- ^Hash of the block to query in.
-              -> ClientMonad IO Wasm.WasmModule
+              -> ClientMonad m Wasm.WasmModule
 getWasmModule namedModRef block = do
   res <- getModuleSource (Text.pack . show $ nmrRef namedModRef) block
 
@@ -2158,7 +2240,7 @@ getWasmParameter paramsFile schema funcName =
           Nothing -> logFatal [[i|The JSON parameter could not be used because there was no schema for it.|]]
           Just schemaForParams -> do
             jsonFileContents <- handleReadFile BSL8.readFile jsonFile
-            let params = AE.eitherDecode jsonFileContents >>= CP.encodeParameter schemaForParams
+            let params = AE.eitherDecode jsonFileContents >>= CP.serializeWithSchema schemaForParams
             case params of
               Left errParams -> logFatal [[i|Could not decode parameters from file '#{jsonFile}' as JSON:|], errParams]
               Right params' -> pure . Wasm.Parameter . BS.toShort $ params'
@@ -2171,10 +2253,11 @@ getWasmParameter paramsFile schema funcName =
 -- Can logWarn and logFatal in the following situations:
 --   - Invalid schemafile: logs fatally.
 --   - No schemafile and invalid embedded schema: logs a warning and returns `Nothing`.
-getSchemaFromFileOrModule :: Maybe FilePath -- ^ Optional schema file.
+getSchemaFromFileOrModule :: (MonadIO m)
+                          => Maybe FilePath -- ^ Optional schema file.
                           -> NamedModuleRef -- ^ A reference to a module on chain.
                           -> Text -- ^ A block hash.
-                          -> ClientMonad IO (Maybe CS.ModuleSchema)
+                          -> ClientMonad m (Maybe CS.ModuleSchema)
 getSchemaFromFileOrModule schemaFile namedModRef block = do
   wasmModule <- getWasmModule namedModRef block
   case schemaFile of
@@ -2358,7 +2441,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
           Right (GRPCResponse _ False) -> fail "update instruction not accepted by the node"
           Right (GRPCResponse _ True) -> logSuccess [printf "update instruction '%s' sent to the baker" (show hash)]
         when (ioTail intOpts) $
-          tailTransaction_ hash
+          tailTransaction_ verbose hash
 
 -- |Process a 'block ...' command.
 processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
@@ -2422,7 +2505,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
   withClient backend $ do
     when isBakerConfigure $ warnAboutMissingAddBakerParameters txCfg
     mapM_ (warnAboutBadCapital txCfg) cbCapital
-    result <- sendAndTailTransaction txCfg pl intOpts
+    result <- sendAndTailTransaction verbose txCfg pl intOpts
     events <- eventsFromTransactionResult result
     mapM_ (tryPrintKeyUpdateEventToOutputFile bakerKeys) events
   where
@@ -2654,7 +2737,7 @@ processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarn
   (bakerKeys, txCfg, pl) <- transactionForBakerAdd (ioConfirm intOpts)
   withClient backend $ do
     warnAboutBadCapital txCfg abBakingStake
-    result <- sendAndTailTransaction txCfg pl intOpts
+    result <- sendAndTailTransaction verbose txCfg pl intOpts
     events <- eventsFromTransactionResult result
     mapM_ (tryPrintKeyUpdateEventToOutputFile bakerKeys) events
   where
@@ -2802,7 +2885,7 @@ processBakerSetKeysCmd baseCfgDir verbose backend txOpts inputKeysFile outputKey
   let intOpts = toInteractionOpts txOpts
   (bakerKeys, txCfg, pl) <- transactionForBakerSetKeys (ioConfirm intOpts)
   withClient backend $ do
-    result <- sendAndTailTransaction txCfg pl intOpts
+    result <- sendAndTailTransaction verbose txCfg pl intOpts
     events <- eventsFromTransactionResult result
     mapM_ (tryPrintKeyUpdateEventToOutputFile bakerKeys) events
   where
@@ -2909,7 +2992,7 @@ processBakerRemoveCmd baseCfgDir verbose backend txOpts = do
   (txCfg, pl) <- transactionForBakerRemove (ioConfirm intOpts)
   withClient backend $ do
     warnAboutRemoving
-    sendAndTailTransaction_ txCfg pl intOpts
+    sendAndTailTransaction_ verbose txCfg pl intOpts
   where
 
     warnAboutRemoving = do
@@ -2950,7 +3033,7 @@ processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = 
   (txCfg, pl) <- transactionForBakerUpdateStake (ioConfirm intOpts)
   withClient backend $ do
     warnAboutBadCapital txCfg ubsStake
-    sendAndTailTransaction_ txCfg pl intOpts
+    sendAndTailTransaction_ verbose txCfg pl intOpts
   where
 
     warnAboutBadCapital txCfg capital = do
@@ -3031,7 +3114,7 @@ processBakerUpdateRestakeCmd baseCfgDir verbose backend txOpts ubreRestakeEarnin
   let intOpts = toInteractionOpts txOpts
   (txCfg, pl) <- transactionForBakerUpdateRestake (ioConfirm intOpts)
   withClient backend $ do
-    sendAndTailTransaction_ txCfg pl intOpts
+    sendAndTailTransaction_ verbose txCfg pl intOpts
   where
 
     transactionForBakerUpdateRestake confirm = do
@@ -3177,7 +3260,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
   withClient backend $ do
     warnInOldProtocol
     mapM_ (warnAboutBadCapital txCfg) cdCapital
-    result <- sendAndTailTransaction txCfg pl intOpts
+    result <- sendAndTailTransaction verbose txCfg pl intOpts
     warnAboutFailedResult result
   where
     warnInOldProtocol = do

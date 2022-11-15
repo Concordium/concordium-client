@@ -179,6 +179,15 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
     fromToJSONSucceed enumType $ object ["b" .= toArray [AE.Bool True]]
     fromToJSONSucceed enumType $ object ["c" .= toArray []]
 
+  it "TaggedEnum" $ do
+    let taggedEnumType = TaggedEnum $ Map.fromList [ (251, ("a" :: Text, Named [("a.1", Bool)]))
+                                                   , (255, ("b" :: Text, Unnamed [Bool]))
+                                                   , (1,   ("c" :: Text, None))]
+
+    fromToJSONSucceed taggedEnumType $ object ["a" .= object ["a.1" .= AE.Bool True]]
+    fromToJSONSucceed taggedEnumType $ object ["b" .= toArray [AE.Bool True]]
+    fromToJSONSucceed taggedEnumType $ object ["c" .= toArray []]
+
   it "String" $ do
     fromToJSONSucceed (String One) $ AE.String "something"
     fromToJSONSucceed (String One) $ AE.String "UTF-8: 😀🦄✅"
@@ -295,7 +304,7 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
         accAddr = "47JNHkJZo9ShomDypbiSJzdGN7FNxo8MwtUFsPa49KGvejf7Wh"
 
         fromToJSON :: SchemaType -> AE.Value -> Either String AE.Value
-        fromToJSON typ originalJSON = encodeParameter typ originalJSON >>= S.runGet (getJSONUsingSchema typ)
+        fromToJSON typ originalJSON = serializeWithSchema typ originalJSON >>= S.runGet (getJSONUsingSchema typ)
 
         fromToJSONSucceed :: SchemaType -> AE.Value -> Expectation
         fromToJSONSucceed typ originalJSON = fromToJSON typ originalJSON `shouldBe` Right originalJSON

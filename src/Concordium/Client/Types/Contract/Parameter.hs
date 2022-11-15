@@ -35,14 +35,24 @@ import Lens.Micro.Platform ((^?), ix)
 import Data.Time.Format.ISO8601 (iso8601ParseM, iso8601Show)
 import Data.Time (addUTCTime, diffUTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
-import Data.Ratio
+import Data.Ratio ( (%), denominator, numerator )
 import qualified Data.Bits as Bits
 import Text.Read (readMaybe)
 import GHC.Integer (remInteger, modInteger)
 
 -- |Serialize JSON parameter to binary using `SchemaType` or fail with an error message.
-encodeParameter :: SchemaType -> AE.Value -> Either String ByteString
-encodeParameter typ params = S.runPut <$> putJSONUsingSchema typ params
+serializeWithSchema :: SchemaType -> AE.Value -> Either String ByteString
+serializeWithSchema typ params = S.runPut <$> putJSONUsingSchema typ params
+
+-- |Deserialize bytestring to JSON using `SchemaType` or fail with an error message
+-- if either the bytestring could not be parsed, or if a non-empty tail of the
+-- bytestring was not consumed.
+deserializeWithSchema :: SchemaType -> ByteString -> Either String AE.Value
+deserializeWithSchema typ = S.runGet $ do
+  json <- getJSONUsingSchema typ
+  theEnd <- S.isEmpty
+  unless theEnd $ fail "Could not parse entire bytestring using schema."
+  return json
 
 -- |Create a `Serialize.Get` for decoding binary as specified by a `SchemaType` into JSON.
 -- The `SchemaType` is pattern matched and for each variant, the corresponding binary
@@ -82,6 +92,13 @@ getJSONUsingSchema typ = case typ of
     (name, fields) <- case variants ^? ix idx of
                       Just v -> return v
                       Nothing -> fail [i|Variant with index #{idx} does not exist for Enum.|]
+    fields' <- getFieldsAsJSON fields
+    return $ AE.object [AE.fromText name .= fields']
+  TaggedEnum variants -> do
+    idx <- fromIntegral <$> S.getWord8
+    (name, fields) <- case variants Map.!? idx of
+                      Just v -> return v
+                      Nothing -> fail [i|Variant with index #{idx} does not exist for TaggedEnum.|]
     fields' <- getFieldsAsJSON fields
     return $ AE.object [AE.fromText name .= fields']
   String sl -> AE.toJSON <$> getUtf8String sl
@@ -244,6 +261,18 @@ putJSONUsingSchema typ json = case (typ, json) of
         pure $ putLen <> putJSONFields'
     _ -> Left [i|#{obj} had too many fields. It should contain a single variant of the following enum:\n#{showPrettyJSON enum}.|]
 
+  (tEnum@(TaggedEnum variants), AE.Object obj) -> case KM.toList obj of
+    [] -> Left [i|The object provided was empty, but it should have contained a variant of the following tagged enum:\n#{showPrettyJSON tEnum}.|]
+    [(name, fields)] -> case lookupItemAndIndex name $ map (first AE.fromText . snd) variantList of
+      Nothing -> Left [i|Tagged enum variant '#{name}' does not exist in:\n#{showPrettyJSON tEnum}|]
+      Just (fieldTypes, idx) -> do
+        let tag = S.putWord8 $ fst $ variantList !! fromIntegral idx
+        putJSONFields' <- putJSONFields fieldTypes fields `addTraceInfoOf` [i|In tagged enum variant '#{name}'.|]
+        pure $ tag <> putJSONFields'
+    _ -> Left [i|#{obj} had too many fields. It should contain a single variant of the following tagged enum:\n#{showPrettyJSON tEnum}.|]
+    where
+      variantList = Map.toList variants
+ 
   (String sl, AE.String str) -> do
     let bytes = BS.unpack . Text.encodeUtf8 $ str
         len = fromIntegral $ length bytes

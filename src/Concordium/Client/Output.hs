@@ -11,6 +11,7 @@ import Concordium.Client.Config
 import Concordium.Client.Parse
 import Concordium.Client.Types.Account
 import Concordium.Client.Types.Contract.Info as CI
+import qualified Concordium.Client.Types.Contract.Parameter as PA
 import Concordium.Client.Types.Contract.Schema as CS
 import Concordium.Client.Utils(durationToText)
 import Concordium.Client.Types.TransactionStatus
@@ -33,14 +34,16 @@ import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import Data.Bool
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Builder as BSB
 import qualified Data.ByteString.Short as BSS
 import qualified Data.ByteString.Lazy as BSL
 import Data.Functor
 import qualified Data.Map.Strict as Map
-import Data.List (foldl', intercalate, nub, sortOn)
+import Data.List (foldl', intercalate, nub, sortOn, partition)
 import Data.Maybe
 import Data.Word (Word64)
 import Data.Ratio
+import qualified Data.Serialize as SE
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -51,6 +54,8 @@ import Codec.CBOR.Read
 import Codec.CBOR.JSON
 import Codec.CBOR.Decoding (decodeString)
 import Concordium.Common.Time (DurationSeconds(durationSeconds))
+import Concordium.Types.Execution (Event(ecEvents))
+import Data.Tuple (swap)
 
 -- PRINTER
 
@@ -341,6 +346,7 @@ printContractInfo ci namedOwner namedModRef =
            , [i|Balance:         #{showCcd ciAmount}|]]
       tell [ [i|Methods:|]]
       tellMethodsV1 ciMethods
+      tellEventsV1 ciMethods
   where
     owner = showNamedAddress namedOwner
     showState = \case
@@ -357,6 +363,15 @@ printContractInfo ci namedOwner namedModRef =
       CI.NoSchemaV1{..} -> tell $ map (`showContractFuncV1` Nothing) ns1Methods
       CI.WithSchemaV1{..} -> tell $  map (uncurry showContractFuncV1) ws1Methods
       CI.WithSchemaV2{..} -> tell $  map (uncurry showContractFuncV2) ws2Methods
+      CI.WithSchemaV3{..} -> tell $  map (uncurry showContractFuncV2) ws3Methods
+
+    tellEventsV1 = \case
+      CI.NoSchemaV1{} -> return ()
+      CI.WithSchemaV1{} -> return ()
+      CI.WithSchemaV2{} -> return ()
+      CI.WithSchemaV3{..} -> do
+        tell [ [i|Events:|]]
+        tell [indentBy 4 $ showContractEventV3 ws3Event]
 
 showContractFuncV0 :: Text -> Maybe CS.SchemaType -> String
 showContractFuncV0 funcName mParamSchema = case mParamSchema of
@@ -381,6 +396,11 @@ showContractFuncV2 funcName mFuncSchema = case mFuncSchema of
   Just CS.RvError{..} -> [i|- #{funcName}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
   Just CS.ParamRvError{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fs2Parameter}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
 
+-- |Print a V3 event schema.
+showContractEventV3 :: Maybe SchemaType -> String
+showContractEventV3 stM = case stM of
+  Nothing -> [i||]
+  Just st -> [i| #{showPrettyJSON st}|]
 
 -- |Print module inspect info, i.e., the named moduleRef and its included contracts.
 -- If the init or receive signatures for a contract exist in the schema, they are also printed.
@@ -431,40 +451,43 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
       CI.ModuleInspectSigsV0{..} -> showContractSigsV0 mis0ContractSigs
       CI.ModuleInspectSigsV1{..} -> showContractSigsV1 mis1ContractSigs
       CI.ModuleInspectSigsV2{..} -> showContractSigsV2 mis2ContractSigs
+      CI.ModuleInspectSigsV3{..} -> showContractSigsV3 mis3ContractSigs
 
     showContractSigsV0 :: Map.Map Text CI.ContractSigsV0 -> [String]
     showContractSigsV0 = go . sortOn fst . Map.toList
       where go [] = []
             go ((cname, CI.ContractSigsV0{..}):remaining) = [showContractFuncV0 cname csv0InitSig]
-                                                          ++ showReceives (sortOn fst . Map.toList $ csv0ReceiveSigs)
+                                                          ++ showReceives showContractFuncV0 (sortOn fst . Map.toList $ csv0ReceiveSigs)
                                                           ++ go remaining
-
-            showReceives :: [(Text, Maybe SchemaType)] -> [String]
-            showReceives [] = []
-            showReceives ((fname, mSchema):remaining) = indentBy 4 (showContractFuncV0 fname mSchema) : showReceives remaining
 
     showContractSigsV1 :: Map.Map Text CI.ContractSigsV1 -> [String]
     showContractSigsV1 = go . sortOn fst . Map.toList
       where go [] = []
             go ((cname, CI.ContractSigsV1{..}):remaining) = [showContractFuncV1 cname csv1InitSig]
-                                                          ++ showReceives (sortOn fst . Map.toList $ csv1ReceiveSigs)
+                                                          ++ showReceives showContractFuncV1 (sortOn fst . Map.toList $ csv1ReceiveSigs)
                                                           ++ go remaining
-
-            showReceives :: [(Text, Maybe CS.FunctionSchemaV1)] -> [String]
-            showReceives [] = []
-            showReceives ((fname, mSchema):remaining) = indentBy 4 (showContractFuncV1 fname mSchema) : showReceives remaining
 
     showContractSigsV2 :: Map.Map Text CI.ContractSigsV2 -> [String]
     showContractSigsV2 = go . sortOn fst . Map.toList
       where go [] = []
             go ((cname, CI.ContractSigsV2{..}):remaining) = [showContractFuncV2 cname csv2InitSig]
-                                                          ++ showReceives (sortOn fst . Map.toList $ csv2ReceiveSigs)
+                                                          ++ showReceives showContractFuncV2 (sortOn fst . Map.toList $ csv2ReceiveSigs)
                                                           ++ go remaining
 
-            showReceives :: [(Text, Maybe CS.FunctionSchemaV2)] -> [String]
-            showReceives [] = []
-            showReceives ((fname, mSchema):remaining) = indentBy 4 (showContractFuncV2 fname mSchema) : showReceives remaining
+    -- Display init and receive function and event signatures for a contract with a V3 schema.
+    showContractSigsV3 :: Map.Map Text CI.ContractSigsV3 -> [String]
+    showContractSigsV3 = go . sortOn fst . Map.toList
+      where go [] = []
+            go ((cname, CI.ContractSigsV3{..}):remaining) = [showContractFuncV2 cname csv3InitSig]
+                                                          ++ showReceives showContractFuncV2 (sortOn fst . Map.toList $ csv3ReceiveSigs)
+                                                          ++ showEvents cs3EventSchema
+                                                          ++ go remaining
 
+            showEvents :: Maybe CS.SchemaType -> [String]
+            showEvents stM = case stM of
+              Nothing -> []
+              Just st -> [indentBy 4 "Events:", indentBy 8 $ showContractEventV3 $ Just st]
+  
     showWarnings :: [FuncName] -> [String]
     showWarnings [] = []
     showWarnings xs =
@@ -478,6 +501,11 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
     showWasmVersion = \case
       Wasm.V0 -> "V0"
       Wasm.V1 -> "V1"
+
+    showReceives :: (a -> b -> String) -> [(a, b)] -> [String]
+    showReceives showContractFunc = fmap (indentBy 4 . uncurry showContractFunc)
+
+    
 
 -- |Indents each line in a string by the number of spaces specified.
 indentBy :: Int -> String -> String
@@ -512,8 +540,17 @@ parseTransactionBlockResult status =
                              in MultipleBlocksUnambiguous hashes outcome
                 _ -> MultipleBlocksAmbiguous blocks
 
-printTransactionStatus :: TransactionStatusResult -> Bool -> Printer
-printTransactionStatus status verbose =
+-- Print transaction status, optionally parsing the contract events with a schema.
+-- Since the transaction may be present in multiple blocks before it is finalized,
+-- the event schema information is passed as a map, from blockhashes to pairs of
+-- events and associated schemas. For each block in which the transaction is present,
+-- the schema information associated with its blockhash in the map is used to print
+-- the events.
+printTransactionStatus :: TransactionStatusResult
+                       -> Bool
+                       -> Maybe (Map.Map Types.BlockHash [(Types.Event, Maybe CS.SchemaType)])
+                       -> Printer
+printTransactionStatus status verbose eventsAndSchemas =
   case tsrState status of
     Received -> tell ["Transaction is pending."]
     Absent -> tell ["Transaction is absent."]
@@ -526,14 +563,16 @@ printTransactionStatus status verbose =
                  "Transaction is committed into block %s with %s."
                  (show hash)
                  (showOutcomeFragment outcome)]
-          tell $ showOutcomeResult verbose $ Types.tsResult outcome
+          tell $ showOutcomeResult verbose (lookupEventsAndSchemas hash) $ Types.tsResult outcome
         MultipleBlocksUnambiguous hashes outcome -> do
           tell [printf
                  "Transaction is committed into %d blocks with %s:"
                  (length hashes)
                  (showOutcomeFragment outcome)]
           tell $ hashes <&> printf "- %s" . show
-          tell $ showOutcomeResult verbose $ Types.tsResult outcome
+          case hashes of
+            hash:_ -> tell $ showOutcomeResult verbose (lookupEventsAndSchemas hash) $ Types.tsResult outcome
+            _ -> return ()
         MultipleBlocksAmbiguous blocks -> do
           tell [printf
                  "Transaction is committed into %d blocks:"
@@ -542,7 +581,7 @@ printTransactionStatus status verbose =
             tell [ printf "- %s with %s:"
                      (show hash)
                      (showOutcomeFragment outcome) ]
-            tell $ (showOutcomeResult True $ Types.tsResult outcome) <&> ("  * " ++)
+            tell $ showOutcomeResult True (lookupEventsAndSchemas hash) (Types.tsResult outcome) <&> ("  * " ++)
     Finalized ->
       case parseTransactionBlockResult status of
         NoBlocks ->
@@ -552,12 +591,16 @@ printTransactionStatus status verbose =
                  "Transaction is finalized into block %s with %s."
                  (show hash)
                  (showOutcomeFragment outcome)]
-          tell $ showOutcomeResult verbose $ Types.tsResult outcome
+          tell $ showOutcomeResult verbose (lookupEventsAndSchemas hash) $ Types.tsResult outcome
         MultipleBlocksUnambiguous _ _ ->
           tell ["Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!"]
         MultipleBlocksAmbiguous _ ->
           tell ["Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!"]
    where
+     -- Look up event and schema data associated with the transaction in block with hash h.
+     lookupEventsAndSchemas :: Types.BlockHash -> Maybe [(Event, Maybe SchemaType)]
+     lookupEventsAndSchemas h = eventsAndSchemas >>= (Map.!? h)
+
      showOutcomeFragment :: Types.TransactionSummary -> String
      showOutcomeFragment outcome = printf
                                      "status \"%s\" and cost %s"
@@ -573,13 +616,32 @@ showOutcomeCost outcome = showCost (Types.tsCost outcome) (Types.tsEnergyCost ou
 showCost :: Types.Amount -> Types.Energy -> String
 showCost gtu nrg = printf "%s (%s)" (showCcd gtu) (showNrg nrg)
 
-showOutcomeResult :: Verbose -> Types.ValidResult -> [String]
-showOutcomeResult verbose = \case
-  Types.TxSuccess es -> mapMaybe (showEvent verbose) es
+-- | Get a list of strings summarizing the outcome of a transaction.
+showOutcomeResult :: Verbose
+                  -> Maybe [(Types.Event, Maybe CS.SchemaType)]
+                  -> Types.ValidResult
+                  -> [String]
+showOutcomeResult verbose eventsAndSchemasM = \case
+  Types.TxSuccess es ->
+    let 
+      events = case eventsAndSchemasM of
+        Nothing -> map (, Nothing) es
+        Just eventsAndSchemas ->
+          let
+            -- Using a map would be more appropriate here, but event does not derive Ord.
+            (evsWithSchema, evsWithoutSchema) = partition (`elem` map fst eventsAndSchemas) es
+            -- Events with schemas
+            evs = filter ((`elem` evsWithSchema) . fst) eventsAndSchemas
+            -- Events without schemas
+            evs' = map (, Nothing) evsWithoutSchema
+          in
+            evs <> evs'
+    in
+      mapMaybe (uncurry (showEvent verbose) . swap) events
   Types.TxReject r ->
     if verbose
     then [showRejectReason True r]
-    else [printf "Transaction rejected: %s." (showRejectReason False r)]
+    else [[i|Transaction rejected: #{showRejectReason False r}.|]]
 
 -- |Return string representation of outcome event if verbose or if the event includes
 -- relevant information that wasn't part of the transaction request. Otherwise return Nothing.
@@ -591,16 +653,17 @@ showOutcomeResult verbose = \case
 -- of text that they confirmed manually.
 -- The verbose version is used by 'transaction status' and the non-trivial cases of the above
 -- where there are multiple distinct outcomes.
-showEvent :: Verbose -> Types.Event -> Maybe String
-showEvent verbose = \case
+showEvent :: Verbose -> Maybe SchemaType -> Types.Event -> Maybe String
+showEvent verbose stM = \case
   Types.ModuleDeployed ref->
     verboseOrNothing $ printf "module '%s' deployed" (show ref)
   Types.ContractInitialized{..} ->
-    verboseOrNothing $ printf "initialized contract '%s' using init function '%s' from module '%s' with %s"
-                              (show ecAddress) (show ecInitName) (show ecRef) (showCcd ecAmount)
+    verboseOrNothing $ [i|initialized contract '#{ecAddress}' using init function '#{ecInitName}' from module '#{ecRef}' |]
+                    <> [i|with #{showCcd ecAmount}\n#{showLoggedEvents ecEvents}|]
   Types.Updated{..} ->
-    verboseOrNothing $ printf "sent message to function '%s' with '%s' and %s from %s to %s"
-                              (show euReceiveName) (show euMessage) (showCcd euAmount) (showAddress euInstigator) (showAddress $ Types.AddressContract euAddress)
+    verboseOrNothing $ [i|sent message to function '#{euReceiveName}' with '#{show euMessage}' and #{showCcd euAmount} |]
+                    <> [i|from #{showAddress euInstigator} to #{showAddress $ Types.AddressContract euAddress}\n|]
+                    <> [i|#{showLoggedEvents euEvents}|]
   Types.Transferred{..} ->
     verboseOrNothing $ printf "transferred %s from %s to %s" (showCcd etAmount) (showAddress etFrom) (showAddress etTo)
   Types.AccountCreated addr ->
@@ -673,8 +736,8 @@ showEvent verbose = \case
                              else
                                invalidCBOR
     in Just $ printf "Transfer memo:\n%s" str
-  Types.Interrupted cAddr _ ->
-    verboseOrNothing [i|interrupted '#{cAddr}'.|]
+  Types.Interrupted cAddr ev ->
+    verboseOrNothing [i|interrupted '#{cAddr}'.\n#{showLoggedEvents ev}|]
   Types.Upgraded{..} ->
     verboseOrNothing [i|upgraded contract instance at '#{euAddress}' from '#{euFrom}' to '#{euTo}'.|]
   Types.Resumed cAddr invokeSucceeded ->
@@ -699,6 +762,30 @@ showEvent verbose = \case
     showDelegationTarget Types.DelegatePassive = "Passive delegation"
     showDelegationTarget (Types.DelegateToBaker bid) = "Baker ID " ++ show bid
 
+    showLoggedEvents :: [Wasm.ContractEvent] -> String
+    showLoggedEvents [] = "No contract events were emitted."
+    showLoggedEvents evs = [i|#{length evs} contract events were emitted|]
+        <> (if isNothing stM
+            then [i| but no event schema was provided nor found in the contract module. |]
+            else [i|, of which #{length $ filter isJust $ map toJSON' evs} were succesfully parsed. |])
+        <> [i|Got:\n|] <> intercalate "\n" (map eventToString evs)
+      where
+        -- Show a hexadecimal string representation of contract event data.
+        toHex :: Wasm.ContractEvent -> String
+        toHex (Wasm.ContractEvent bs) = show . BSB.toLazyByteString . BSB.byteStringHex $ SE.runPut $ SE.putShortByteString bs
+        -- Attempt to decode the contract event if the schema is provided.
+        -- If there is no schema, or decoding fails @Nothing@ is returned.
+        toJSON' :: Wasm.ContractEvent -> Maybe String
+        toJSON' (Wasm.ContractEvent bs) = do
+          st <- stM
+          case PA.deserializeWithSchema st (BSS.fromShort bs) of
+            Left _ -> Nothing
+            Right x -> Just $ showPrettyJSON x
+        -- Show a string representation of the contract event.
+        eventToString :: Wasm.ContractEvent -> String
+        eventToString e = case toJSON' e of
+          Nothing -> [i|Event(raw): #{toHex e}|]
+          Just json -> [i|Event(parsed):\n#{indentBy 4 json}|] 
 
 -- |Return string representation of reject reason.
 -- If verbose is true, the string includes the details from the fields of the reason.

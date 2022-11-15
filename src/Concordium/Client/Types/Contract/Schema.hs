@@ -4,6 +4,7 @@ module Concordium.Client.Types.Contract.Schema(
   ContractSchemaV0(..),
   ContractSchemaV1(..),
   ContractSchemaV2(..),
+  ContractSchemaV3(..),
   Fields(..),
   FuncName(..),
   ModuleSchema(..),
@@ -11,6 +12,7 @@ module Concordium.Client.Types.Contract.Schema(
   SizeLength(..),
   FunctionSchemaV1(..),
   FunctionSchemaV2(..),
+  EventSchemaV3,
   decodeEmbeddedSchema,
   decodeEmbeddedSchemaAndExports,
   decodeModuleSchema,
@@ -19,6 +21,8 @@ module Concordium.Client.Types.Contract.Schema(
   getListOfWithSizeLen,
   lookupFunctionSchemaV1,
   lookupFunctionSchemaV2,
+  lookupFunctionSchemaV3,
+  lookupEventSchema,
   lookupParameterSchema,
   lookupReturnValueSchema,
   lookupErrorSchema,
@@ -36,12 +40,14 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Serialize as S
 import Data.String.Interpolate (i)
-import Data.Text (Text)
+import Data.Text (Text, pack)
 import qualified Data.Text.Encoding as Text
 import qualified Data.Vector as V
 import Data.Word (Word8, Word16, Word32, Word64)
 import GHC.Generics
 import Data.Maybe(isJust)
+import Control.Arrow (Arrow(first))
+import Data.List (sort, group)
 
 -- |Try to find an embedded schema in a module and decode it.
 decodeEmbeddedSchema :: Wasm.WasmModule -> Either String (Maybe ModuleSchema)
@@ -80,6 +86,11 @@ lookupParameterSchema moduleSchema funcName =
       ReceiveFuncName contrName receiveName -> do
         contract <- Map.lookup contrName ms2ContractSchemas
         Map.lookup receiveName (cs2ReceiveSigs contract) >>= getParameterSchemaV2
+    ModuleSchemaV3 {..} -> case funcName of
+      InitFuncName contrName -> Map.lookup contrName ms3ContractSchemas >>= cs3InitSig >>= getParameterSchemaV2
+      ReceiveFuncName contrName receiveName -> do
+        contract <- Map.lookup contrName ms3ContractSchemas
+        Map.lookup receiveName (cs3ReceiveSigs contract) >>= getParameterSchemaV2
 
 -- |Lookup schema for the return value of a function.
 --  Always returns Nothing on V0 contracts as they do not have return values.
@@ -97,6 +108,11 @@ lookupReturnValueSchema moduleSchema funcName =
       ReceiveFuncName contrName _ -> do
         contrSchema <- Map.lookup contrName ms2ContractSchemas
         lookupFunctionSchemaV2 contrSchema funcName >>= getReturnValueSchemaV2
+    ModuleSchemaV3 {..} -> case funcName of
+      InitFuncName contrName -> Map.lookup contrName ms3ContractSchemas >>= cs3InitSig >>= getReturnValueSchemaV2
+      ReceiveFuncName contrName _ -> do
+        contrSchema <- Map.lookup contrName ms3ContractSchemas
+        lookupFunctionSchemaV3 contrSchema funcName >>= getReturnValueSchemaV2
 
 -- |Lookup schema for the error of a function.
 --  Always returns Nothing on schemas with version < 2 as they don't have error schemas.
@@ -110,6 +126,21 @@ lookupErrorSchema moduleSchema funcName =
       ReceiveFuncName contrName _ -> do
         contrSchema <- Map.lookup contrName ms2ContractSchemas
         lookupFunctionSchemaV2 contrSchema funcName >>= getErrorSchemaV2
+    ModuleSchemaV3 {..} -> case funcName of
+      InitFuncName contrName -> Map.lookup contrName ms3ContractSchemas >>= cs3InitSig >>= getReturnValueSchemaV2
+      ReceiveFuncName contrName _ -> do
+        contrSchema <- Map.lookup contrName ms3ContractSchemas
+        lookupFunctionSchemaV3 contrSchema funcName >>= getErrorSchemaV2
+
+-- |Lookup event schema for a contract
+--  Always returns Nothing on schemas with version < 3 as they don't have event schemas.
+lookupEventSchema :: ModuleSchema -> Text -> Maybe SchemaType
+lookupEventSchema moduleSchema contrName =
+  case moduleSchema of
+    ModuleSchemaV0 {} -> Nothing
+    ModuleSchemaV1 {} -> Nothing
+    ModuleSchemaV2 {} -> Nothing
+    ModuleSchemaV3 {..} -> Map.lookup contrName ms3ContractSchemas >>= cs3EventSchema
 
 -- |Lookup the 'FunctionSchemaV1' of a 'ContractSchemaV1'.
 lookupFunctionSchemaV1 :: ContractSchemaV1 -> FuncName -> Maybe FunctionSchemaV1
@@ -123,6 +154,12 @@ lookupFunctionSchemaV2 ContractSchemaV2{..} = \case
   InitFuncName _ -> cs2InitSig
   ReceiveFuncName _ rcvName -> Map.lookup rcvName cs2ReceiveSigs
 
+-- |Look up either the schema of an init or a receive function.
+lookupFunctionSchemaV3 :: ContractSchemaV3 -> FuncName -> Maybe FunctionSchemaV2
+lookupFunctionSchemaV3 ContractSchemaV3{..} = \case
+  InitFuncName _ -> cs3InitSig
+  ReceiveFuncName _ rcvName -> Map.lookup rcvName cs3ReceiveSigs
+
 -- |Represents the schema for a module.
 -- V0 is a parallel to `Module` defined in concordium-contracts-common version <= 2.
 -- V1 is a parallel to `Module` defined in concordium-contracts-common version > 2.
@@ -130,6 +167,7 @@ data ModuleSchema
   = ModuleSchemaV0 { ms0ContractSchemas :: Map Text ContractSchemaV0 }
   | ModuleSchemaV1 { ms1ContractSchemas :: Map Text ContractSchemaV1 }
   | ModuleSchemaV2 { ms2ContractSchemas :: Map Text ContractSchemaV2 }
+  | ModuleSchemaV3 { ms3ContractSchemas :: Map Text ContractSchemaV3 }
   deriving (Eq, Show, Generic)
 
 -- |Create a getter based on the wasm version.
@@ -155,6 +193,7 @@ getVersionedModuleSchema = S.label "ModuleSchema" $ do
       0 -> ModuleSchemaV0 <$> getMapOfWithSizeLen Four getText S.get
       1 -> ModuleSchemaV1 <$> getMapOfWithSizeLen Four getText S.get
       2 -> ModuleSchemaV2 <$> getMapOfWithSizeLen Four getText S.get
+      3 -> ModuleSchemaV3 <$> getMapOfWithSizeLen Four getText S.get
       v -> fail $ "Unsupported schema version: " ++ show v
 
 -- |Create a getter based on the wasm version.
@@ -164,7 +203,8 @@ getUnversionedModuleSchema wasmVersion = S.label "ModuleSchema" $
     Wasm.V0 -> ModuleSchemaV0 <$> getMapOfWithSizeLen Four getText S.get
     Wasm.V1 -> ModuleSchemaV1 <$> getMapOfWithSizeLen Four getText S.get
 
--- |Parallel to schema::ContractV0 defined in concordium-contracts-common (Rust) version <= 2.
+-- |Function signatures of a smart contract with event schema V0.
+-- Parallel to schema::ContractV0 defined in concordium-contracts-common (Rust) version <= 2.
 data ContractSchemaV0
   =  ContractSchemaV0 -- ^ Describes the schemas of a V0 smart contract.
   {  cs0State :: Maybe SchemaType -- ^ The optional contract state.
@@ -175,7 +215,8 @@ data ContractSchemaV0
 
 instance AE.ToJSON ContractSchemaV0
 
--- |Parallel to schema::ContractV1 defined in concordium-contracts-common (Rust) version > 2.
+-- |Function signatures of a smart contract with event schema V1.
+-- Parallel to schema::ContractV1 defined in concordium-contracts-common (Rust) version > 2.
 data ContractSchemaV1
   = ContractSchemaV1 -- ^ Describes the schemas of a V1 smart contract.
   { cs1InitSig :: Maybe FunctionSchemaV1 -- ^ Schema for the init function.
@@ -185,7 +226,8 @@ data ContractSchemaV1
 
 instance AE.ToJSON ContractSchemaV1
 
--- |Parallel to schema::ContractV2 defined in concordium-contracts-common (Rust) version > 2.
+-- |Function signatures of a smart contract with event schema V2.
+-- Parallel to schema::ContractV2 defined in concordium-contracts-common (Rust) version > 2.
 data ContractSchemaV2
   = ContractSchemaV2 -- ^ Describes the schemas of a V1 smart contract.
   { cs2InitSig :: Maybe FunctionSchemaV2 -- ^ Schema for the init function.
@@ -194,6 +236,18 @@ data ContractSchemaV2
   deriving (Eq, Show, Generic)
 
 instance AE.ToJSON ContractSchemaV2
+
+-- |Function and event signatures of a smart contract with event schema V3.
+-- Parallel to schema::ContractV3 defined in concordium-contracts-common (Rust) version >= 5.
+data ContractSchemaV3
+  = ContractSchemaV3 -- ^ Describes the schemas of a V1 smart contract.
+  { cs3InitSig :: Maybe FunctionSchemaV2 -- ^ Schema for the init function.
+  , cs3ReceiveSigs :: Map Text FunctionSchemaV2 -- ^ Schemas for the receive functions.
+  , cs3EventSchema :: Maybe SchemaType -- ^ Schemas for the events.
+  }
+  deriving (Eq, Show, Generic)
+
+instance AE.ToJSON ContractSchemaV3
 
 instance S.Serialize ContractSchemaV0 where
   get = S.label "ContractSchemaV0" $ do
@@ -216,6 +270,14 @@ instance S.Serialize ContractSchemaV2 where
     cs2ReceiveSigs <- S.label "cs2ReceiveSigs" $ getMapOfWithSizeLen Four getText S.get
     pure ContractSchemaV2{..}
   put ContractSchemaV2 {..} = S.put cs2InitSig <> putMapOfWithSizeLen Four putText S.put cs2ReceiveSigs
+
+instance S.Serialize ContractSchemaV3 where
+  get = S.label "ContractSchemaV3" $ do
+    cs3InitSig <- S.label "cs3InitSig" S.get
+    cs3ReceiveSigs <- S.label "cs3ReceiveSigs" $ getMapOfWithSizeLen Four getText S.get
+    cs3EventSchema <- S.label "cs3EventSigs" S.get
+    pure ContractSchemaV3{..}
+  put ContractSchemaV3 {..} = S.put cs3InitSig <> putMapOfWithSizeLen Four putText S.put cs3ReceiveSigs
 
 -- |V1 Schema for a function in a V1 smart contract.
 -- Can contain a schema for the parameter, return value, or both.
@@ -281,6 +343,9 @@ data FunctionSchemaV2
                  , fs2Error :: SchemaType
                  }
   deriving (Eq, Show, Generic)
+
+-- |V3 Schema for events in a V1 smart contract.
+type EventSchemaV3 = SchemaType
 
 instance AE.ToJSON FunctionSchemaV2
 
@@ -404,6 +469,7 @@ data SchemaType =
   | ILeb128 Word32
   | ByteList SizeLength
   | ByteArray Word32
+  | TaggedEnum (Map Word8 (Text, Fields))
   deriving (Eq, Generic, Show)
 
 instance Hashable SchemaType
@@ -449,6 +515,11 @@ instance AE.ToJSON SchemaType where
     ILeb128 _ -> AE.String "<String with signed integer>"
     ByteList _ -> AE.String "<String with lowercase hex>"
     ByteArray _ -> AE.String "<String with lowercase hex>"
+    TaggedEnum taggedVariants ->
+      let
+        variants = first (pack . show) <$> Map.toList taggedVariants
+      in
+        AE.object ["TaggedEnum" .= (toJsonArray . map (\(_k, (name, value)) -> AE.object [AE.fromText name .= value]) $ variants)]
     where toJsonArray = AE.Array . V.fromList
 
 instance S.Serialize SchemaType where
@@ -486,7 +557,15 @@ instance S.Serialize SchemaType where
       28 -> S.label "ILeb128"  $ ILeb128 <$> S.getWord32le
       29 -> S.label "ByteList" $ ByteList <$> S.get
       30 -> S.label "ByteArray"  $ ByteArray <$> S.getWord32le
+      31 -> S.label "TaggedEnum" $ TaggedEnum
+        <$> getMapOfWithSizeLenAndPred tEnumPred Four S.getWord8 (S.getTwoOf getText S.get)
       x  -> fail [i|Invalid SchemaType tag: #{x}|]
+    where
+      -- Predicate for tagged enums. Tags and variant names should be unique.
+      allUnique :: (Ord a) => [a] -> Bool
+      allUnique xs = length ((group . sort) xs) == length xs
+      tEnumPred :: (Ord a, Ord b) => [(a, (b, c))] -> Bool
+      tEnumPred ls = allUnique (map fst ls) && allUnique (map (fst . snd) ls)
 
   put typ = case typ of
     Unit -> S.putWord8 0
@@ -520,6 +599,7 @@ instance S.Serialize SchemaType where
     ILeb128 sl          -> S.putWord8 28 <> S.putWord32le sl
     ByteList sl         -> S.putWord8 29 <> S.put sl
     ByteArray sl        -> S.putWord8 30 <> S.putWord32le sl
+    TaggedEnum m        -> S.putWord8 31 <> putMapOfWithSizeLen Four S.putWord8 (S.putTwoOf putText S.put) m
 
 -- |Parallel to SizeLength defined in contracts-common (Rust).
 -- Must stay in sync.
@@ -716,9 +796,19 @@ putLenWithSizeLen sl len = case sl of
 
 -- * Map *
 
-getMapOfWithSizeLen :: Ord k => SizeLength -> S.Get k -> S.Get v -> S.Get (Map k v)
-getMapOfWithSizeLen sl gt gv = S.label "Map" $ Map.fromList <$> getListOfWithSizeLen sl (S.getTwoOf gt gv)
+-- |Get a map with a specified size length. Fails if the predicate is false when applied to the list of tuples in the map.
+getMapOfWithSizeLenAndPred :: (Ord k) => ([(k,v)] -> Bool) -> SizeLength -> S.Get k -> S.Get v -> S.Get (Map k v)
+getMapOfWithSizeLenAndPred p sl gt gv = do
+  ls <- getListOfWithSizeLen sl (S.getTwoOf gt gv)
+  if p ls
+  then S.label "Map" $ pure $ Map.fromList ls
+  else fail "Predicate failed in deserialization of map."
 
+-- |Get a map with a specified size length.
+getMapOfWithSizeLen :: (Ord k) => SizeLength -> S.Get k -> S.Get v -> S.Get (Map k v)
+getMapOfWithSizeLen = getMapOfWithSizeLenAndPred (const True)
+
+-- |Put a map with a specified size length.
 putMapOfWithSizeLen :: SizeLength -> S.Putter k -> S.Putter v -> S.Putter (Map k v)
 putMapOfWithSizeLen sl pv pk = putListOfWithSizeLen sl (S.putTwoOf pv pk) . Map.toList
 
@@ -732,6 +822,6 @@ getText = do
     Left err -> fail [i|Could not decode Text: #{err}|]
     Right txt' -> pure txt'
 
--- Serialize text in utf8 encoding. The liength is output as 4 bytes, little endian.
+-- Serialize text in utf8 encoding. The length is output as 4 bytes, little endian.
 putText :: S.Putter Text
 putText = putListOfWithSizeLen Four S.put . BS.unpack . Text.encodeUtf8

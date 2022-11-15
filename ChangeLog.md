@@ -5,6 +5,13 @@
 - Add support for protocol version 5.
 - Add a `--secure` flag to enable connecting to gRPC using TLS.
   All commands that query the node support this.
+- Add support of contract schema V3.
+	  - V3 schemas offer the same options as V2, but also optionally includes a schema for contract events.
+	  - `transaction status` now displays contract events, and a schema can be provided with `--schema`, which 
+	    will be used to parse the contract events. By default events are parsed with the schema embedded in the
+      contract, if present.
+	  - This enables concordium-client to interact with contracts and schemas 
+	    using `concordium-std` version 5.
 
 ## 4.2.0
 
