@@ -203,7 +203,7 @@ getUnversionedModuleSchema wasmVersion = S.label "ModuleSchema" $
     Wasm.V0 -> ModuleSchemaV0 <$> getMapOfWithSizeLen Four getText S.get
     Wasm.V1 -> ModuleSchemaV1 <$> getMapOfWithSizeLen Four getText S.get
 
--- |Function and event signatures of a smart contract with event schema V0.
+-- |Function signatures of a smart contract with event schema V0.
 -- Parallel to schema::ContractV0 defined in concordium-contracts-common (Rust) version <= 2.
 data ContractSchemaV0
   =  ContractSchemaV0 -- ^ Describes the schemas of a V0 smart contract.
@@ -215,7 +215,7 @@ data ContractSchemaV0
 
 instance AE.ToJSON ContractSchemaV0
 
--- |Function and event signatures of a smart contract with event schema V1.
+-- |Function signatures of a smart contract with event schema V1.
 -- Parallel to schema::ContractV1 defined in concordium-contracts-common (Rust) version > 2.
 data ContractSchemaV1
   = ContractSchemaV1 -- ^ Describes the schemas of a V1 smart contract.
@@ -226,7 +226,7 @@ data ContractSchemaV1
 
 instance AE.ToJSON ContractSchemaV1
 
--- |Function and event signatures of a smart contract with event schema V2.
+-- |Function signatures of a smart contract with event schema V2.
 -- Parallel to schema::ContractV2 defined in concordium-contracts-common (Rust) version > 2.
 data ContractSchemaV2
   = ContractSchemaV2 -- ^ Describes the schemas of a V1 smart contract.
