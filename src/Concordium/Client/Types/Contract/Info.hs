@@ -3,6 +3,7 @@ module Concordium.Client.Types.Contract.Info
   ( contractNameFromInitName
   , addSchemaData
   , getContractName
+  , getEventSchema
   , hasFallbackReceiveSupport
   , hasReceiveMethod
   , constructModuleInspectInfo
@@ -39,6 +40,7 @@ import qualified Data.Text.Encoding as Text
 import qualified Concordium.Client.Config as Config
 import Concordium.Client.GRPC (ClientMonad)
 import Concordium.Client.Cli
+import Control.Monad.Cont (MonadIO)
 
 -- |Try to include extra information in the contract info from the module schema.
 -- For V0 contracts:
@@ -55,7 +57,7 @@ import Concordium.Client.Cli
 -- Logs fatally on internal errors that should never occur, namely:
 --  - Schema data has already been added.
 --  - The version of module schema and contract info does not match.
-addSchemaData :: ContractInfo -> CS.ModuleSchema -> ClientMonad IO (Maybe ContractInfo)
+addSchemaData :: (MonadIO m) => ContractInfo -> CS.ModuleSchema -> ClientMonad m (Maybe ContractInfo)
 addSchemaData cInfo@ContractInfoV1{..} moduleSchema =
   case moduleSchema of
     CS.ModuleSchemaV0 _ -> logFatal ["Internal error: Cannot use ModuleSchemaV0 with ContractInfoV1."] -- Should never happen.
@@ -177,6 +179,16 @@ hasFallbackReceiveSupport :: ContractInfo -> Bool
 hasFallbackReceiveSupport = \case
   ContractInfoV0{} -> False
   ContractInfoV1{} -> True
+
+-- |Get the event schema of a contract.
+getEventSchema :: ContractInfo -> Maybe CS.SchemaType
+getEventSchema = \case
+  ContractInfoV0{} -> Nothing
+  ContractInfoV1{..} -> case ciMethods of
+    NoSchemaV1 _ -> Nothing
+    WithSchemaV1 _ -> Nothing
+    WithSchemaV2 _ -> Nothing
+    WithSchemaV3{..} -> ws3Event
 
 -- |This is returned by the node and specified in Concordium.Getters (from prototype repo).
 -- Must stay in sync.

@@ -132,6 +132,7 @@ import Codec.CBOR.Write
 import Codec.CBOR.Encoding
 import Codec.CBOR.JSON
 import Control.Arrow (Arrow(second))
+import Concordium.Client.Types.Contract.Info (addSchemaData)
 
 -- |Establish a new connection to the backend and run the provided computation.
 -- Close a connection after completion of the computation. Establishing a
@@ -545,60 +546,62 @@ checkAndGetMemo memo pv = do
       return $ Types.Memo bss
     Right m -> return m
 
--- | Attempt to get event schema associated with an event.
+
+-- | Returns contract info with schemas associated with an event.
+-- Returns @Nothing@ if the event provided is not one of
+--   - Concordium.Types.ContractInitialized
+--   - Concordium.Types.Updated
+--   - Concordium.Types.Interrupted
+-- or fails if the contract could not be retrieved.
 -- Optionally takes a path to a schema file to be parsed and returned.
 -- Optionally takes a blockhash of the block in which the contract
 -- contract module containing the schema resides, or defaults to using
 -- the best blockhash. The schema from the file will take precedence
 -- over an embedded schema in the module.
-getSchemaType :: (MonadIO m, MonadFail m)
+getContractInfoWithSchemas :: (MonadIO m, MonadFail m)
               => Maybe FilePath
               -> Maybe Types.BlockHash
               -> Types.Event
-             -> ClientMonad m (Maybe CS.SchemaType)
-getSchemaType schemaFile blockHashM ev = do
+             -> ClientMonad m (Maybe CI.ContractInfo)
+getContractInfoWithSchemas schemaFile blockHashM ev = do
   -- Get contract address.
   let cAM = case ev of
               Types.ContractInitialized{..} -> Just ecAddress
               Types.Updated{..} -> Just euAddress
               Types.Interrupted{..} -> Just iAddress
               _ -> Nothing
-  -- Get schema.
-  schema <- case cAM of
+  -- Get module schema.
+  case cAM of
     Just ca -> do
       let blockHashTextM = Text.pack . show <$> blockHashM
       withBestBlockHash blockHashTextM $ \bh -> do
         contrInfo <- getContractInfo (NamedContractAddress ca []) bh
-        let cName = CI.ciName contrInfo
         let namedModRef = NamedModuleRef { nmrRef = CI.ciSourceModule contrInfo, nmrNames = [] }
-        getSchemaFromFileOrModule schemaFile namedModRef bh >>= \case
-          Just (CS.ModuleSchemaV3 m) -> case m Map.!? cName of
-            Just CS.ContractSchemaV3{..} -> return $ Just cs3EventSchema
-            Nothing -> return Nothing
-          _ -> return Nothing
+        schemaM <- getSchemaFromFileOrModule schemaFile namedModRef bh
+        case schemaM of
+          Nothing -> return $ Just contrInfo
+          Just schema -> CI.addSchemaData contrInfo schema
     _ -> return Nothing
-  return $ join schema
 
--- |Get the transaction events and their associated contract module V3 event schemas if
--- any.
+-- |Get the contract info for all events of a transaction.
 -- Returns a map from blockhashes of blocks in which the transaction is present to
 -- events of the transaction in that block. Each event figures in a pair with
--- an optional event schema of the V3 contract schema associated with in that block,
+-- an optional contract info containing contract schema info associated with in that block,
 -- if any.
 -- Optionally takes a path to a schema file to be parsed and returned. The schema from
 -- the file will then take precedence over embedded schemas in the module and will thus
 -- be included in its place for all events.
-getTxEventsAndSchemas :: (MonadIO m, MonadFail m)
+getTxContractInfoWithSchemas :: (MonadIO m, MonadFail m)
                => Maybe FilePath
                -> TransactionStatusResult
-               -> ClientMonad m (Map.Map Types.BlockHash [(Types.Event, Maybe CS.SchemaType)])
-getTxEventsAndSchemas schemaFile status = do
+               -> ClientMonad m (Map.Map Types.BlockHash [(Types.Event, Maybe CI.ContractInfo)])
+getTxContractInfoWithSchemas schemaFile status = do
   -- Which blocks should be used in the ContractInfo queries?
   let bhEvents = [ (bh, evsE) | (bh, Right evsE) <- extractFromTsr' getEvents status ]
   -- Get event schemas for all blocks and events.
   bhToEv <- forM bhEvents $ \(bh, evs) -> do
     evToSt <- forM evs $ \ev -> do
-      st <- getSchemaType schemaFile (Just bh) ev
+      st <- getContractInfoWithSchemas schemaFile (Just bh) ev
       return (ev, st)
     return (bh, evToSt)
   return $ Map.fromList bhToEv
@@ -651,8 +654,8 @@ processTransactionCmd action baseCfgDir verbose backend =
         Just hash -> return hash
       withClient backend $ do
         status <- queryTransactionStatus hash
-        eventsAndSchemas <- getTxEventsAndSchemas schemaFile status 
-        runPrinter $ printTransactionStatus status True $ Just eventsAndSchemas
+        contrInfoWithSchemas <- getTxContractInfoWithSchemas schemaFile status 
+        runPrinter $ printTransactionStatus status True $ Just contrInfoWithSchemas
 
       -- TODO This works but output doesn't make sense if transaction is already committed/finalized.
       --      It should skip already completed steps.
@@ -1458,8 +1461,8 @@ tailTransaction verbose hash = do
     logFatal [ "transaction failed before it got committed"
              , "most likely because it was invalid" ]
 
-  committedEventsAndSchemas <- getTxEventsAndSchemas Nothing committedStatus
-  runPrinter $ printTransactionStatus committedStatus verbose $ Just committedEventsAndSchemas
+  committedContrInfoWithSchemas <- getTxContractInfoWithSchemas Nothing committedStatus
+  runPrinter $ printTransactionStatus committedStatus verbose $ Just committedContrInfoWithSchemas
 
   -- If the transaction goes back to pending state after being committed
   -- to a branch which gets dropped later on, the command will currently
@@ -1480,8 +1483,8 @@ tailTransaction verbose hash = do
               , "response:\n" ++ showPrettyJSON committedStatus ]
 
     -- Print out finalized status.
-    finalizedEventsAndSchemas <- getTxEventsAndSchemas Nothing finalizedStatus
-    runPrinter $ printTransactionStatus finalizedStatus verbose $ Just finalizedEventsAndSchemas
+    finalizedContrInfoWithSchemas <- getTxContractInfoWithSchemas Nothing finalizedStatus
+    runPrinter $ printTransactionStatus finalizedStatus verbose $ Just finalizedContrInfoWithSchemas
 
     return finalizedStatus
   liftIO $ printf "[%s] Transaction finalized.\n" =<< getLocalTimeOfDayFormatted

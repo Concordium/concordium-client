@@ -545,9 +545,9 @@ parseTransactionBlockResult status =
 -- the events.
 printTransactionStatus :: TransactionStatusResult
                        -> Bool
-                       -> Maybe (Map.Map Types.BlockHash [(Types.Event, Maybe CS.SchemaType)])
+                       -> Maybe (Map.Map Types.BlockHash [(Types.Event, Maybe CI.ContractInfo)])
                        -> Printer
-printTransactionStatus status verbose eventsAndSchemas =
+printTransactionStatus status verbose contrInfoWithSchemas =
   case tsrState status of
     Received -> tell ["Transaction is pending."]
     Absent -> tell ["Transaction is absent."]
@@ -560,7 +560,7 @@ printTransactionStatus status verbose eventsAndSchemas =
                  "Transaction is committed into block %s with %s."
                  (show hash)
                  (showOutcomeFragment outcome)]
-          tell $ showOutcomeResult verbose (lookupEventsAndSchemas hash) $ Types.tsResult outcome
+          tell $ showOutcomeResult verbose (lookupContrInfo hash) $ Types.tsResult outcome
         MultipleBlocksUnambiguous hashes outcome -> do
           tell [printf
                  "Transaction is committed into %d blocks with %s:"
@@ -568,7 +568,7 @@ printTransactionStatus status verbose eventsAndSchemas =
                  (showOutcomeFragment outcome)]
           tell $ hashes <&> printf "- %s" . show
           case hashes of
-            hash:_ -> tell $ showOutcomeResult verbose (lookupEventsAndSchemas hash) $ Types.tsResult outcome
+            hash:_ -> tell $ showOutcomeResult verbose (lookupContrInfo hash) $ Types.tsResult outcome
             _ -> return ()
         MultipleBlocksAmbiguous blocks -> do
           tell [printf
@@ -578,7 +578,7 @@ printTransactionStatus status verbose eventsAndSchemas =
             tell [ printf "- %s with %s:"
                      (show hash)
                      (showOutcomeFragment outcome) ]
-            tell $ showOutcomeResult True (lookupEventsAndSchemas hash) (Types.tsResult outcome) <&> ("  * " ++)
+            tell $ showOutcomeResult True (lookupContrInfo hash) (Types.tsResult outcome) <&> ("  * " ++)
     Finalized ->
       case parseTransactionBlockResult status of
         NoBlocks ->
@@ -588,15 +588,15 @@ printTransactionStatus status verbose eventsAndSchemas =
                  "Transaction is finalized into block %s with %s."
                  (show hash)
                  (showOutcomeFragment outcome)]
-          tell $ showOutcomeResult verbose (lookupEventsAndSchemas hash) $ Types.tsResult outcome
+          tell $ showOutcomeResult verbose (lookupContrInfo hash) $ Types.tsResult outcome
         MultipleBlocksUnambiguous _ _ ->
           tell ["Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!"]
         MultipleBlocksAmbiguous _ ->
           tell ["Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!"]
    where
      -- Look up event and schema data associated with the transaction in block with hash h.
-     lookupEventsAndSchemas :: Types.BlockHash -> Maybe [(Event, Maybe SchemaType)]
-     lookupEventsAndSchemas h = eventsAndSchemas >>= (Map.!? h)
+     lookupContrInfo :: Types.BlockHash -> Maybe [(Event, Maybe CI.ContractInfo)]
+     lookupContrInfo h = contrInfoWithSchemas >>= (Map.!? h)
 
      showOutcomeFragment :: Types.TransactionSummary -> String
      showOutcomeFragment outcome = printf
@@ -615,26 +615,24 @@ showCost gtu nrg = printf "%s (%s)" (showCcd gtu) (showNrg nrg)
 
 -- | Get a list of strings summarizing the outcome of a transaction.
 showOutcomeResult :: Verbose
-                  -> Maybe [(Types.Event, Maybe CS.SchemaType)]
+                  -> Maybe [(Types.Event, Maybe CI.ContractInfo)]
                   -> Types.ValidResult
                   -> [String]
-showOutcomeResult verbose eventsAndSchemasM = \case
+showOutcomeResult verbose contrInfoWithEventsM = \case
   Types.TxSuccess es ->
-    let
-      -- Get events and their associated schemas.
-      events = case eventsAndSchemasM of
+    let 
+      cInfos = case contrInfoWithEventsM of
         Nothing -> map (, Nothing) es
-        Just eventsAndSchemas ->
+        Just contrInfoWithEvents ->
           let
-            -- Using a map would be more appropriate here, but event does not derive Ord.
-            (evsWithSchema, evsWithoutSchema) = partition (`elem` map fst eventsAndSchemas) es
+            (evsWithCInfo, evsWithoutCInfo) = partition (`elem` map fst contrInfoWithEvents) es
             -- Events with schemas can be found in eventsAndSchemas.
-            evs = filter ((`elem` evsWithSchema) . fst) eventsAndSchemas
+            evs = filter ((`elem` evsWithCInfo) . fst) contrInfoWithEvents
             -- Events without schemas should still be displayed, but do not have a schema.
-            evs' = map (, Nothing) evsWithoutSchema
+            evs' = map (, Nothing) evsWithoutCInfo
           in
             evs <> evs'
-      (_, output) = foldl' fEventHelper (0,[]) events
+      (_, output) = foldl' fEventHelper (0,[]) cInfos
     in
       catMaybes output
   Types.TxReject r ->
@@ -649,8 +647,8 @@ showOutcomeResult verbose eventsAndSchemasM = \case
     --
     -- The reason for using a @Maybe String@ is that the output is only produced
     -- if the verbose flag is set.
-    fEventHelper :: (Int, [Maybe String]) -> (Event, Maybe SchemaType) ->  (Int, [Maybe String])
-    fEventHelper (idt, out) (ev, stM') = 
+    fEventHelper :: (Int, [Maybe String]) -> (Event, Maybe CI.ContractInfo) ->  (Int, [Maybe String])
+    fEventHelper (idt, out) (ev, cInfo) = 
       let
         -- compute the new indentation level for the current event (idtCurrent) and
         -- the indentation level for the following events (idtFollowing)
@@ -664,7 +662,7 @@ showOutcomeResult verbose eventsAndSchemasM = \case
           Types.Resumed{} -> (idt - 4, idt - 4)
           _ -> (idt, idt)
 
-        evStringM = fmap (indentBy idtCurrent) (showEvent verbose stM' ev)
+        evStringM = fmap (indentBy idtCurrent) (showEvent verbose cInfo ev)
       in
         (idtFollowing, out <> [evStringM])
 
@@ -678,8 +676,8 @@ showOutcomeResult verbose eventsAndSchemasM = \case
 -- of text that they confirmed manually.
 -- The verbose version is used by 'transaction status' and the non-trivial cases of the above
 -- where there are multiple distinct outcomes.
-showEvent :: Verbose -> Maybe SchemaType -> Types.Event -> Maybe String
-showEvent verbose stM = \case
+showEvent :: Verbose -> Maybe CI.ContractInfo -> Types.Event -> Maybe String
+showEvent verbose ciM = \case
   Types.ModuleDeployed ref->
     verboseOrNothing $ printf "module '%s' deployed" (show ref)
   Types.ContractInitialized{..} ->
@@ -790,16 +788,18 @@ showEvent verbose stM = \case
     showLoggedEvents :: [Wasm.ContractEvent] -> String
     showLoggedEvents [] = "No contract events were emitted."
     showLoggedEvents evs = [i|#{length evs} contract events were emitted|]
-        <> (if isNothing stM
+        <> (if isNothing eventSchemaM
             then [i| but no event schema was provided nor found in the contract module. |]
             else [i|, of which #{length $ filter isJust $ map toJSON' evs} were succesfully parsed. |])
         <> [i|Got:\n|] <> intercalate "\n" (map eventToString evs)
       where
+        -- Event schema associated with the contract, if any.
+        eventSchemaM = getEventSchema =<< ciM
         -- Attempt to decode the contract event if the schema is provided.
         -- If there is no schema, or decoding fails @Nothing@ is returned.
         toJSON' :: Wasm.ContractEvent -> Maybe String
         toJSON' (Wasm.ContractEvent bs) = do
-          st <- stM
+          st <- eventSchemaM
           case PA.deserializeWithSchema st (BSS.fromShort bs) of
             Left _ -> Nothing
             Right x -> Just $ showPrettyJSON x
