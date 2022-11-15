@@ -3,8 +3,8 @@
 ## Unreleased
 
 -- Receive function parameters are now displayed as JSON in `transaction status`
-   when they can be parsed by a smart contract schemas embedded in the module or
-   supplied by the user using the `--schema` option.
+   whenever they could be succesfully parsed by a smart contract schema embedded
+   in the module or supplied by the user using the `--schema` option.
 
 ## 5.0.1
 
