@@ -34,7 +34,6 @@ import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
 import Data.Bool
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Builder as BSB
 import qualified Data.ByteString.Short as BSS
 import qualified Data.ByteString.Lazy as BSL
 import Data.Functor
@@ -770,9 +769,6 @@ showEvent verbose stM = \case
             else [i|, of which #{length $ filter isJust $ map toJSON' evs} were succesfully parsed. |])
         <> [i|Got:\n|] <> intercalate "\n" (map eventToString evs)
       where
-        -- Show a hexadecimal string representation of contract event data.
-        toHex :: Wasm.ContractEvent -> String
-        toHex (Wasm.ContractEvent bs) = show . BSB.toLazyByteString . BSB.byteStringHex $ SE.runPut $ SE.putShortByteString bs
         -- Attempt to decode the contract event if the schema is provided.
         -- If there is no schema, or decoding fails @Nothing@ is returned.
         toJSON' :: Wasm.ContractEvent -> Maybe String
@@ -784,7 +780,7 @@ showEvent verbose stM = \case
         -- Show a string representation of the contract event.
         eventToString :: Wasm.ContractEvent -> String
         eventToString e = case toJSON' e of
-          Nothing -> [i|Event(raw): #{toHex e}|]
+          Nothing -> [i|Event(raw): #{show e}|]
           Just json -> [i|Event(parsed):\n#{indentBy 4 json}|] 
 
 -- |Return string representation of reject reason.
