@@ -643,18 +643,30 @@ showOutcomeResult verbose eventsAndSchemasM = \case
     else [[i|Transaction rejected: #{showRejectReason False r}.|]]
   where
     -- Helper for folding over events and schemas, collecting showEvent outputs.
-    -- This is as to indent or unindent output on `Interrupted`, resp. `Resumed` .
+    -- This is as to indent or unindent output on `Interrupted`, resp.
+    -- `Resumed`. The accumulator @(Int, [Maybe String])@ is a pair of current
+    -- indentation level and the list of outputs that have been accumulated.
+    --
+    -- The reason for using a @Maybe String@ is that the output is only produced
+    -- if the verbose flag is set.
     fEventHelper :: (Int, [Maybe String]) -> (Event, Maybe SchemaType) ->  (Int, [Maybe String])
     fEventHelper (idt, out) (ev, stM') = 
       let
-        (idt', idt'') = case ev of
+        -- compute the new indentation level for the current event (idtCurrent) and
+        -- the indentation level for the following events (idtFollowing)
+        (idtFollowing, idtCurrent) = case ev of
+          -- output the interrupted event at the current indentation level, but
+          -- indent everything after by 4 more spaces.
           Types.Interrupted{} -> (idt + 4, idt)
+          -- Indent the resumed event 4 fewer spaces than the current
+          -- indentation level. Also lower the indentation level of the
+          -- following events by the same amount.
           Types.Resumed{} -> (idt - 4, idt - 4)
           _ -> (idt, idt)
 
-        evStringM = fmap (indentBy idt'') (showEvent verbose stM' ev)
+        evStringM = fmap (indentBy idtCurrent) (showEvent verbose stM' ev)
       in
-        (idt', out <> [evStringM])
+        (idtFollowing, out <> [evStringM])
 
 -- |Return string representation of outcome event if verbose or if the event includes
 -- relevant information that wasn't part of the transaction request. Otherwise return Nothing.
