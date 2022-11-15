@@ -38,7 +38,7 @@ import qualified Data.ByteString.Short as BSS
 import qualified Data.ByteString.Lazy as BSL
 import Data.Functor
 import qualified Data.Map.Strict as Map
-import Data.List (foldl', intercalate, nub, sortOn, partition)
+import Data.List (foldl', intercalate, nub, sortOn, partition, find)
 import Data.Maybe
 import Data.Word (Word64)
 import Data.Ratio
@@ -684,7 +684,7 @@ showEvent verbose ciM = \case
     verboseOrNothing $ [i|initialized contract '#{ecAddress}' using init function '#{ecInitName}' from module '#{ecRef}' |]
                     <> [i|with #{showCcd ecAmount}\n#{showLoggedEvents ecEvents}|]
   Types.Updated{..} ->
-    verboseOrNothing $ [i|sent message to function '#{euReceiveName}' with '#{show euMessage}' and #{showCcd euAmount} |]
+    verboseOrNothing $ [i|sent message to function '#{euReceiveName}' with '#{showParameter euReceiveName euMessage}' and #{showCcd euAmount} |]
                     <> [i|from #{showAddress euInstigator} to #{showAddress $ Types.AddressContract euAddress}\n|]
                     <> [i|#{showLoggedEvents euEvents}|]
   Types.Transferred{..} ->
@@ -785,29 +785,56 @@ showEvent verbose ciM = \case
     showDelegationTarget Types.DelegatePassive = "Passive delegation"
     showDelegationTarget (Types.DelegateToBaker bid) = "Baker ID " ++ show bid
 
+    -- Attempt to decode a bytestring according to a schema.
+    -- If there is no schema, or decoding fails @Nothing@ is returned.
+    toJSON' :: Maybe CS.SchemaType -> BSS.ShortByteString -> Maybe String
+    toJSON' stM bs = do
+      st <- stM
+      case PA.deserializeWithSchema st (BSS.fromShort bs) of
+        Left _ -> Nothing
+        Right x -> Just $ showPrettyJSON x
+
     showLoggedEvents :: [Wasm.ContractEvent] -> String
     showLoggedEvents [] = "No contract events were emitted."
     showLoggedEvents evs = [i|#{length evs} contract events were emitted|]
         <> (if isNothing eventSchemaM
             then [i| but no event schema was provided nor found in the contract module. |]
-            else [i|, of which #{length $ filter isJust $ map toJSON' evs} were succesfully parsed. |])
+            else [i|, of which #{length $ filter isJust $ map ceToJSON evs} were succesfully parsed. |])
         <> [i|Got:\n|] <> intercalate "\n" (map eventToString evs)
       where
         -- Event schema associated with the contract, if any.
         eventSchemaM = getEventSchema =<< ciM
-        -- Attempt to decode the contract event if the schema is provided.
-        -- If there is no schema, or decoding fails @Nothing@ is returned.
-        toJSON' :: Wasm.ContractEvent -> Maybe String
-        toJSON' (Wasm.ContractEvent bs) = do
-          st <- eventSchemaM
-          case PA.deserializeWithSchema st (BSS.fromShort bs) of
-            Left _ -> Nothing
-            Right x -> Just $ showPrettyJSON x
+
+        -- Attempt to convert a contract event to JSON.
+        ceToJSON :: Wasm.ContractEvent -> Maybe String
+        ceToJSON (Wasm.ContractEvent bs) = toJSON' eventSchemaM bs
+
         -- Show a string representation of the contract event.
         eventToString :: Wasm.ContractEvent -> String
-        eventToString e = case toJSON' e of
-          Nothing -> [i|Event(raw): #{show e}|]
-          Just json -> [i|Event(parsed):\n#{indentBy 4 json}|] 
+        eventToString (Wasm.ContractEvent bs) = case toJSON' eventSchemaM bs of
+          Nothing -> [i|Event(raw): #{show bs}|]
+          Just json -> [i|Event(parsed):\n#{indentBy 4 json}|]
+    
+    -- Display a parameter according to a receive name schema.
+    showParameter :: Wasm.ReceiveName -> Wasm.Parameter -> String
+    showParameter rn param = case ciM of
+      Nothing -> hexParam
+      Just ci -> case ci of
+          CI.ContractInfoV0{..} -> case ciMethodsAndState of
+            CI.WithSchemaV0{..} -> case find ((rName ==) . fst) ws0Methods of
+              Nothing -> hexParam
+              Just (_, st) -> ""
+            _ -> []
+          CI.ContractInfoV1{..} -> case ciMethods of
+            CI.WithSchemaV1{..} -> ws1Methods
+            CI.WithSchemaV2{..} -> ws2Methods
+            CI.WithSchemaV3{..} -> ws3Methods
+            _ -> []
+      where
+        -- Receive name as text.
+        rName = Wasm.receiveName rn
+        -- Hexadecimal representation.
+        hexParam = show param
 
 -- |Return string representation of reject reason.
 -- If verbose is true, the string includes the details from the fields of the reason.
