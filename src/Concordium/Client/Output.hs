@@ -621,7 +621,7 @@ showOutcomeResult :: Verbose
 showOutcomeResult verbose eventsAndSchemasM = \case
   Types.TxSuccess es ->
     let
-      -- Get events with their associated schemas.
+      -- Get events and their associated schemas.
       events = case eventsAndSchemasM of
         Nothing -> map (, Nothing) es
         Just eventsAndSchemas ->
@@ -634,7 +634,7 @@ showOutcomeResult verbose eventsAndSchemasM = \case
             evs' = map (, Nothing) evsWithoutSchema
           in
             evs <> evs'
-      (_, output) = foldr fEventHelper (0,[]) events
+      (_, output) = foldl' fEventHelper (0,[]) events
     in
       catMaybes output
   Types.TxReject r ->
@@ -644,16 +644,17 @@ showOutcomeResult verbose eventsAndSchemasM = \case
   where
     -- Helper for folding over events and schemas, collecting showEvent outputs.
     -- This is as to indent or unindent output on `Interrupted`, resp. `Resumed` .
-    fEventHelper :: (Event, Maybe SchemaType) ->  (Int, [Maybe String]) -> (Int, [Maybe String])
-    fEventHelper (ev, stM') (idt, out) = 
+    fEventHelper :: (Int, [Maybe String]) -> (Event, Maybe SchemaType) ->  (Int, [Maybe String])
+    fEventHelper (idt, out) (ev, stM') = 
       let
-        idt' = case ev of
-          Types.Interrupted{} -> idt - 4
-          Types.Resumed{} -> idt + 4
-          _ -> idt
-        evStringM = fmap (indentBy idt') (showEvent verbose stM' ev)
+        (idt', idt'') = case ev of
+          Types.Interrupted{} -> (idt + 4, idt)
+          Types.Resumed{} -> (idt - 4, idt - 4)
+          _ -> (idt, idt)
+
+        evStringM = fmap (indentBy idt'') (showEvent verbose stM' ev)
       in
-        (idt', evStringM:out)
+        (idt', out <> [evStringM])
 
 -- |Return string representation of outcome event if verbose or if the event includes
 -- relevant information that wasn't part of the transaction request. Otherwise return Nothing.
