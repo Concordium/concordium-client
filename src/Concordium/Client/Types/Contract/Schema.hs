@@ -19,6 +19,8 @@ module Concordium.Client.Types.Contract.Schema(
   decodeVersionedModuleSchema,
   getListOfWithKnownLen,
   getListOfWithSizeLen,
+  getParameterSchemaV1,
+  getParameterSchemaV2,
   lookupFunctionSchemaV1,
   lookupFunctionSchemaV2,
   lookupFunctionSchemaV3,

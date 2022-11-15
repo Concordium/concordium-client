@@ -38,7 +38,7 @@ import qualified Data.ByteString.Short as BSS
 import qualified Data.ByteString.Lazy as BSL
 import Data.Functor
 import qualified Data.Map.Strict as Map
-import Data.List (foldl', intercalate, nub, sortOn, partition, find)
+import Data.List (foldl', intercalate, nub, sortOn, partition)
 import Data.Maybe
 import Data.Word (Word64)
 import Data.Ratio
@@ -53,6 +53,7 @@ import Codec.CBOR.JSON
 import Codec.CBOR.Decoding (decodeString)
 import Concordium.Common.Time (DurationSeconds(durationSeconds))
 import Concordium.Types.Execution (Event(ecEvents))
+import Data.Either (isLeft, rights, lefts)
 
 -- PRINTER
 
@@ -537,15 +538,19 @@ parseTransactionBlockResult status =
                              in MultipleBlocksUnambiguous hashes outcome
                 _ -> MultipleBlocksAmbiguous blocks
 
--- Print transaction status, optionally parsing the contract events with a schema.
+-- |Print transaction status, optionally decoding events and parameters according
+-- to contract module schema.
 -- Since the transaction may be present in multiple blocks before it is finalized,
--- the event schema information is passed as a map, from blockhashes to pairs of
--- events and associated schemas. For each block in which the transaction is present,
--- the schema information associated with its blockhash in the map is used to print
--- the events.
+-- the schema information is passed as a map from blockhashes to pairs of events and
+-- its associated contract information. For a block in which the transaction is
+-- present, `printTransactionSchema` looks up its blockhash in the map and retrieves
+-- the relevant schema information from the `ContractInfo` associated with each event.
+-- If a parameter or event could not be decoded either because a schema was not present
+-- in the contract information or because the decoding failed, a hexadecimal string
+-- representing the raw data will be shown instead.
 printTransactionStatus :: TransactionStatusResult
                        -> Bool
-                       -> Maybe (Map.Map Types.BlockHash [(Types.Event, Maybe CI.ContractInfo)])
+                       -> Maybe (Map.Map Types.BlockHash [(Types.Event, Maybe CI.ContractInfo)]) 
                        -> Printer
 printTransactionStatus status verbose contrInfoWithSchemas =
   case tsrState status of
@@ -614,9 +619,9 @@ showCost :: Types.Amount -> Types.Energy -> String
 showCost gtu nrg = printf "%s (%s)" (showCcd gtu) (showNrg nrg)
 
 -- | Get a list of strings summarizing the outcome of a transaction.
-showOutcomeResult :: Verbose
-                  -> Maybe [(Types.Event, Maybe CI.ContractInfo)]
-                  -> Types.ValidResult
+showOutcomeResult :: Verbose -- ^ Whether the output should be verbose.
+                  -> Maybe [(Types.Event, Maybe CI.ContractInfo)]  -- ^ Map holding contract info that should be used for displaying events of the outcome.
+                  -> Types.ValidResult -- ^ The transaction outcome to show.
                   -> [String]
 showOutcomeResult verbose contrInfoWithEventsM = \case
   Types.TxSuccess es ->
@@ -632,7 +637,7 @@ showOutcomeResult verbose contrInfoWithEventsM = \case
             evs' = map (, Nothing) evsWithoutCInfo
           in
             evs <> evs'
-      (_, output) = foldl' fEventHelper (0,[]) cInfos
+      (_, output) = foldl' fHelper (0,[]) cInfos
     in
       catMaybes output
   Types.TxReject r ->
@@ -647,8 +652,8 @@ showOutcomeResult verbose contrInfoWithEventsM = \case
     --
     -- The reason for using a @Maybe String@ is that the output is only produced
     -- if the verbose flag is set.
-    fEventHelper :: (Int, [Maybe String]) -> (Event, Maybe CI.ContractInfo) ->  (Int, [Maybe String])
-    fEventHelper (idt, out) (ev, cInfo) = 
+    fHelper :: (Int, [Maybe String]) -> (Event, Maybe CI.ContractInfo) ->  (Int, [Maybe String])
+    fHelper (idt, out) (ev, cInfo) =
       let
         -- compute the new indentation level for the current event (idtCurrent) and
         -- the indentation level for the following events (idtFollowing)
@@ -676,7 +681,10 @@ showOutcomeResult verbose contrInfoWithEventsM = \case
 -- of text that they confirmed manually.
 -- The verbose version is used by 'transaction status' and the non-trivial cases of the above
 -- where there are multiple distinct outcomes.
-showEvent :: Verbose -> Maybe CI.ContractInfo -> Types.Event -> Maybe String
+showEvent :: Verbose -- ^ Whether the output should be verbose.
+          -> Maybe CI.ContractInfo -- ^ Contract information holding schema information to be used for displaying the event.
+          -> Types.Event -- ^ The event to show.
+          -> Maybe String
 showEvent verbose ciM = \case
   Types.ModuleDeployed ref->
     verboseOrNothing $ printf "module '%s' deployed" (show ref)
@@ -684,7 +692,7 @@ showEvent verbose ciM = \case
     verboseOrNothing $ [i|initialized contract '#{ecAddress}' using init function '#{ecInitName}' from module '#{ecRef}' |]
                     <> [i|with #{showCcd ecAmount}\n#{showLoggedEvents ecEvents}|]
   Types.Updated{..} ->
-    verboseOrNothing $ [i|sent message to function '#{euReceiveName}' with '#{showParameter euReceiveName euMessage}' and #{showCcd euAmount} |]
+    verboseOrNothing $ [i|sent message to function '#{euReceiveName}' with #{showParameter euReceiveName euMessage} and #{showCcd euAmount} |]
                     <> [i|from #{showAddress euInstigator} to #{showAddress $ Types.AddressContract euAddress}\n|]
                     <> [i|#{showLoggedEvents euEvents}|]
   Types.Transferred{..} ->
@@ -794,47 +802,43 @@ showEvent verbose ciM = \case
         Left _ -> Nothing
         Right x -> Just $ showPrettyJSON x
 
+    -- Show events logged in a contract.
     showLoggedEvents :: [Wasm.ContractEvent] -> String
     showLoggedEvents [] = "No contract events were emitted."
     showLoggedEvents evs = [i|#{length evs} contract events were emitted|]
         <> (if isNothing eventSchemaM
             then [i| but no event schema was provided nor found in the contract module. |]
-            else [i|, of which #{length $ filter isJust $ map ceToJSON evs} were succesfully parsed. |])
-        <> [i|Got:\n|] <> intercalate "\n" (map eventToString evs)
+            else [i|, of which #{length $ filter isLeft $ map eventToString evs} were succesfully parsed. |])
+        <> [i|Got:\n|] <> intercalate "\n" (rights (map eventToString evs) <> lefts (map eventToString evs))
       where
         -- Event schema associated with the contract, if any.
         eventSchemaM = getEventSchema =<< ciM
 
-        -- Attempt to convert a contract event to JSON.
-        ceToJSON :: Wasm.ContractEvent -> Maybe String
-        ceToJSON (Wasm.ContractEvent bs) = toJSON' eventSchemaM bs
-
         -- Show a string representation of the contract event.
-        eventToString :: Wasm.ContractEvent -> String
-        eventToString (Wasm.ContractEvent bs) = case toJSON' eventSchemaM bs of
-          Nothing -> [i|Event(raw): #{show bs}|]
-          Just json -> [i|Event(parsed):\n#{indentBy 4 json}|]
+        eventToString :: Wasm.ContractEvent -> Either String String
+        eventToString ce@(Wasm.ContractEvent bs) = case toJSON' eventSchemaM bs of
+          Nothing -> Left [i|Event (raw): '#{ce}'|]
+          Just json -> Right [i|Event:\n#{indentBy 4 $ "'" <> json <> "'"}|]
     
-    -- Display a parameter according to a receive name schema.
+    -- Show a parameter according to a receive name schema.
     showParameter :: Wasm.ReceiveName -> Wasm.Parameter -> String
     showParameter rn param = case ciM of
       Nothing -> hexParam
-      Just ci -> case ci of
-          CI.ContractInfoV0{..} -> case ciMethodsAndState of
-            CI.WithSchemaV0{..} -> case find ((rName ==) . fst) ws0Methods of
-              Nothing -> hexParam
-              Just (_, st) -> ""
-            _ -> []
-          CI.ContractInfoV1{..} -> case ciMethods of
-            CI.WithSchemaV1{..} -> ws1Methods
-            CI.WithSchemaV2{..} -> ws2Methods
-            CI.WithSchemaV3{..} -> ws3Methods
-            _ -> []
+      Just ci -> 
+        let
+          paramSchemaM = CI.getParameterSchema ci rName
+        in
+          parameterToString paramSchemaM param
       where
-        -- Receive name as text.
-        rName = Wasm.receiveName rn
+        -- Method name as text.
+        rName = CI.methodNameFromReceiveName rn
         -- Hexadecimal representation.
         hexParam = show param
+        -- Show a string representation of a function parameter.
+        parameterToString :: Maybe CS.SchemaType -> Wasm.Parameter -> String
+        parameterToString stM pa@(Wasm.Parameter bs) = case toJSON' stM bs of
+          Nothing -> [i|parameter (raw): '#{pa}'|]
+          Just json -> [i|parameter:\n#{indentBy 4 $ "'" <> json <> "'"}|]
 
 -- |Return string representation of reject reason.
 -- If verbose is true, the string includes the details from the fields of the reason.

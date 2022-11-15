@@ -132,7 +132,6 @@ import Codec.CBOR.Write
 import Codec.CBOR.Encoding
 import Codec.CBOR.JSON
 import Control.Arrow (Arrow(second))
-import Concordium.Client.Types.Contract.Info (addSchemaData)
 
 -- |Establish a new connection to the backend and run the provided computation.
 -- Close a connection after completion of the computation. Establishing a

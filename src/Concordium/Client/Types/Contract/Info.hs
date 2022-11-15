@@ -4,8 +4,10 @@ module Concordium.Client.Types.Contract.Info
   , addSchemaData
   , getContractName
   , getEventSchema
+  , getParameterSchema
   , hasFallbackReceiveSupport
   , hasReceiveMethod
+  , methodNameFromReceiveName
   , constructModuleInspectInfo
   , ContractInfo(..)
   , ContractStateV0(..)
@@ -31,6 +33,7 @@ import qualified Data.Aeson.KeyMap as KM
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as BS16
+import Data.List (find)
 import qualified Data.Map.Strict as Map
 import qualified Data.Serialize as S
 import Data.String.Interpolate (i)
@@ -189,6 +192,23 @@ getEventSchema = \case
     WithSchemaV1 _ -> Nothing
     WithSchemaV2 _ -> Nothing
     WithSchemaV3{..} -> ws3Event
+
+-- |Get the parameter schema for a receive method.
+getParameterSchema :: ContractInfo -> Text -> Maybe CS.SchemaType
+getParameterSchema ci rcvName = case ci of
+    ContractInfoV0{..} -> case ciMethodsAndState of
+      NoSchemaV0{} -> Nothing
+      WithSchemaV0{..} -> findRcvName ws0Methods
+    ContractInfoV1{..} -> case ciMethods of
+      NoSchemaV1{} -> Nothing
+      WithSchemaV1{..} -> CS.getParameterSchemaV1 =<< findRcvName ws1Methods
+      WithSchemaV2{..} -> CS.getParameterSchemaV2 =<< findRcvName ws2Methods
+      WithSchemaV3{..} -> CS.getParameterSchemaV2 =<< findRcvName ws3Methods
+  where
+    findRcvName ls = case find ((rcvName ==) . fst) ls of
+      Nothing -> Nothing
+      Just (_, v) -> v
+
 
 -- |This is returned by the node and specified in Concordium.Getters (from prototype repo).
 -- Must stay in sync.
