@@ -824,11 +824,7 @@ showEvent verbose ciM = \case
     showParameter :: Wasm.ReceiveName -> Wasm.Parameter -> String
     showParameter rn param = case ciM of
       Nothing -> hexParam
-      Just ci -> 
-        let
-          paramSchemaM = CI.getParameterSchema ci rName
-        in
-          parameterToString paramSchemaM param
+      Just ci -> parameterToString (CI.getParameterSchema ci rName) param
       where
         -- Method name as text.
         rName = CI.methodNameFromReceiveName rn
