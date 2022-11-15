@@ -42,7 +42,6 @@ import Data.List (foldl', intercalate, nub, sortOn, partition)
 import Data.Maybe
 import Data.Word (Word64)
 import Data.Ratio
-import qualified Data.Serialize as SE
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import qualified Data.Text as Text
