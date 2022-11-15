@@ -517,7 +517,8 @@ data ModuleInspectInfo
   , miiExtraneousSchemas :: [CS.FuncName]
   }
 
--- |Different from ModuleSchema in that it uses ContractSigsV0/1 instead (see their definition).
+-- |Module signatures of a smart contract module with event schema V*.
+-- Identical to `ModuleSchema` in that it uses `ContractSigsV*` instead of `ContractV*` (see their definition).
 data ModuleInspectSigs
   = ModuleInspectSigsV0 { mis0ContractSigs :: Map.Map Text ContractSigsV0 }
   | ModuleInspectSigsV1 { mis1ContractSigs :: Map.Map Text ContractSigsV1 }
@@ -525,31 +526,47 @@ data ModuleInspectSigs
   | ModuleInspectSigsV3 { mis3ContractSigs :: Map.Map Text ContractSigsV3 }
 
 
--- |Different from ContractSchemaV0 in that the receiveSigs have a Maybe SchemaType.
+-- |Function signatures of a smart contract with event schema V0.
+-- Identical to `ContractSchemaV0`, except that the values of `csv0ReceiveSigs` are wrapped in `Maybe` to
+-- indicate, whether a schema specifying the type of the the receive function is present. This is needed
+-- as `csv0ReceiveSigs` may contain receive function names for which a schema was neither provided in the
+-- contract module nor user schema file.
 data ContractSigsV0
   =  ContractSigsV0
-  { csv0InitSig :: Maybe CS.SchemaType -- ^ Type signature for the init function.
-  , csv0ReceiveSigs :: Map.Map Text (Maybe CS.SchemaType) -- ^ Type signatures for the receive functions.
+  { csv0InitSig :: Maybe CS.SchemaType -- ^ Possibly a type signature for the init function.
+  , csv0ReceiveSigs :: Map.Map Text (Maybe CS.SchemaType) -- ^ Names and possibly type signatures for the receive functions.
   }
 
--- |Different from ContractSchemaV1 in that the receiveSigs have a Maybe FunctionSchemaV1.
+-- |Function signatures of a smart contract with event schema V1.
+-- Identical to `ContractSchemaV1`, except that the values of `csv1ReceiveSigs` are wrapped in `Maybe` to
+-- indicate, whether a schema specifying the type of the the receive function is present. This is needed
+-- as `csv1ReceiveSigs` may contain receive function names for which a schema was neither provided in the
+-- contract module nor user schema file.
 data ContractSigsV1
   = ContractSigsV1
-  { csv1InitSig :: Maybe CS.FunctionSchemaV1 -- ^ Schema for the init function.
-  , csv1ReceiveSigs :: Map.Map Text (Maybe CS.FunctionSchemaV1) -- ^ Schemas for the receive functions.
+  { csv1InitSig :: Maybe CS.FunctionSchemaV1 -- ^ Possibly a schema for the init function.
+  , csv1ReceiveSigs :: Map.Map Text (Maybe CS.FunctionSchemaV1) -- ^ Names and possibly schemas for the receive functions.
   }
 
--- |Different from ContractSchemaV2 in that the receiveSigs have a Maybe FunctionSchemaV2.
+-- |Function signatures of a smart contract with event schema V2.
+-- Identical to `ContractSchemaV2`, except that the values of `csv2ReceiveSigs` are wrapped in `Maybe` to
+-- indicate, whether a schema specifying the type of the the receive function is present. This is needed
+-- as `csv2ReceiveSigs` may contain receive function names for which a schema was neither provided in the
+-- contract module nor user schema file.
 data ContractSigsV2
   = ContractSigsV2
-  { csv2InitSig :: Maybe CS.FunctionSchemaV2 -- ^ Schema for the init function.
-  , csv2ReceiveSigs :: Map.Map Text (Maybe CS.FunctionSchemaV2) -- ^ Schemas for the receive functions.
+  { csv2InitSig :: Maybe CS.FunctionSchemaV2 -- ^ Possibly a schema for the init function.
+  , csv2ReceiveSigs :: Map.Map Text (Maybe CS.FunctionSchemaV2) -- ^ Names and possibly schemas for the receive functions.
   }
 
--- |Different from ContractSchemaV3 in that the receiveSigs have a Maybe FunctionSchemaV2.
+-- |Function and event signatures of a smart contract with event schema V3.
+-- Identical to ContractSchemaV3, except that the values of `csv3ReceiveSigs` are wrapped in `Maybe` to
+-- indicate, whether a schema specifying the type of the the receive function is present. This is needed
+-- as `csv3ReceiveSigs` may contain receive function names for which a schema was neither provided in the
+-- contract module nor user schema file.
 data ContractSigsV3
   = ContractSigsV3
-  { csv3InitSig :: Maybe CS.FunctionSchemaV2 -- ^ Schema for the init function.
-  , csv3ReceiveSigs :: Map.Map Text (Maybe CS.FunctionSchemaV2) -- ^ Schemas for the receive functions.
-  , cs3EventSchema :: Maybe CS.SchemaType -- ^ Schemas for the events.
+  { csv3InitSig :: Maybe CS.FunctionSchemaV2 -- ^ Possibly a schema for the init function.
+  , csv3ReceiveSigs :: Map.Map Text (Maybe CS.FunctionSchemaV2) -- ^ Names and possibly schemas for the receive functions.
+  , cs3EventSchema :: Maybe CS.SchemaType -- ^ Possibly schema for events.
   }

@@ -203,7 +203,8 @@ getUnversionedModuleSchema wasmVersion = S.label "ModuleSchema" $
     Wasm.V0 -> ModuleSchemaV0 <$> getMapOfWithSizeLen Four getText S.get
     Wasm.V1 -> ModuleSchemaV1 <$> getMapOfWithSizeLen Four getText S.get
 
--- |Parallel to schema::ContractV0 defined in concordium-contracts-common (Rust) version <= 2.
+-- |Function and event signatures of a smart contract with event schema V0.
+-- Parallel to schema::ContractV0 defined in concordium-contracts-common (Rust) version <= 2.
 data ContractSchemaV0
   =  ContractSchemaV0 -- ^ Describes the schemas of a V0 smart contract.
   {  cs0State :: Maybe SchemaType -- ^ The optional contract state.
@@ -214,7 +215,8 @@ data ContractSchemaV0
 
 instance AE.ToJSON ContractSchemaV0
 
--- |Parallel to schema::ContractV1 defined in concordium-contracts-common (Rust) version > 2.
+-- |Function and event signatures of a smart contract with event schema V1.
+-- Parallel to schema::ContractV1 defined in concordium-contracts-common (Rust) version > 2.
 data ContractSchemaV1
   = ContractSchemaV1 -- ^ Describes the schemas of a V1 smart contract.
   { cs1InitSig :: Maybe FunctionSchemaV1 -- ^ Schema for the init function.
@@ -224,7 +226,8 @@ data ContractSchemaV1
 
 instance AE.ToJSON ContractSchemaV1
 
--- |Parallel to schema::ContractV2 defined in concordium-contracts-common (Rust) version > 2.
+-- |Function and event signatures of a smart contract with event schema V2.
+-- Parallel to schema::ContractV2 defined in concordium-contracts-common (Rust) version > 2.
 data ContractSchemaV2
   = ContractSchemaV2 -- ^ Describes the schemas of a V1 smart contract.
   { cs2InitSig :: Maybe FunctionSchemaV2 -- ^ Schema for the init function.
@@ -234,7 +237,8 @@ data ContractSchemaV2
 
 instance AE.ToJSON ContractSchemaV2
 
--- |Parallel to schema::ContractV3 defined in concordium-contracts-common (Rust) version >= 5.
+-- |Function and event signatures of a smart contract with event schema V3.
+-- Parallel to schema::ContractV3 defined in concordium-contracts-common (Rust) version >= 5.
 data ContractSchemaV3
   = ContractSchemaV3 -- ^ Describes the schemas of a V1 smart contract.
   { cs3InitSig :: Maybe FunctionSchemaV2 -- ^ Schema for the init function.
