@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+
+## 5.0.1
+
 - Add support for protocol version 5.
 - Add a `--secure` flag to enable connecting to gRPC using TLS.
   All commands that query the node support this.
