@@ -53,7 +53,6 @@ import Codec.CBOR.JSON
 import Codec.CBOR.Decoding (decodeString)
 import Concordium.Common.Time (DurationSeconds(durationSeconds))
 import Concordium.Types.Execution (Event(ecEvents))
-import Data.Tuple (swap)
 
 -- PRINTER
 
@@ -621,25 +620,40 @@ showOutcomeResult :: Verbose
                   -> [String]
 showOutcomeResult verbose eventsAndSchemasM = \case
   Types.TxSuccess es ->
-    let 
+    let
+      -- Get events with their associated schemas.
       events = case eventsAndSchemasM of
         Nothing -> map (, Nothing) es
         Just eventsAndSchemas ->
           let
             -- Using a map would be more appropriate here, but event does not derive Ord.
             (evsWithSchema, evsWithoutSchema) = partition (`elem` map fst eventsAndSchemas) es
-            -- Events with schemas
+            -- Events with schemas can be found in eventsAndSchemas.
             evs = filter ((`elem` evsWithSchema) . fst) eventsAndSchemas
-            -- Events without schemas
+            -- Events without schemas should still be displayed, but do not have a schema.
             evs' = map (, Nothing) evsWithoutSchema
           in
             evs <> evs'
+      (_, output) = foldr fEventHelper (0,[]) events
     in
-      mapMaybe (uncurry (showEvent verbose) . swap) events
+      catMaybes output
   Types.TxReject r ->
     if verbose
     then [showRejectReason True r]
     else [[i|Transaction rejected: #{showRejectReason False r}.|]]
+  where
+    -- Helper for folding over events and schemas, collecting showEvent outputs.
+    -- This is as to indent or unindent output on `Interrupted`, resp. `Resumed` .
+    fEventHelper :: (Event, Maybe SchemaType) ->  (Int, [Maybe String]) -> (Int, [Maybe String])
+    fEventHelper (ev, stM') (idt, out) = 
+      let
+        idt' = case ev of
+          Types.Interrupted{} -> idt - 4
+          Types.Resumed{} -> idt + 4
+          _ -> idt
+        evStringM = fmap (indentBy idt') (showEvent verbose stM' ev)
+      in
+        (idt', evStringM:out)
 
 -- |Return string representation of outcome event if verbose or if the event includes
 -- relevant information that wasn't part of the transaction request. Otherwise return Nothing.
