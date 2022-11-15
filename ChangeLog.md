@@ -12,6 +12,7 @@
       contract, if present.
 	  - This enables concordium-client to interact with contracts and schemas 
 	    using `concordium-std` version 5.
+- Printing of parameters as raw, hexadecimal output.
 
 ## 4.2.0
 
