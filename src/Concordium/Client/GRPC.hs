@@ -123,14 +123,6 @@ instance (MonadIO m) => TransactionStatusQuery (ClientMonad m) where
     putChar '.'
     threadDelay $ t*1000000
 
-liftClientIO :: MonadIO m => ClientIO a -> ClientMonad m a
-liftClientIO comp = ClientMonad {_runClientMonad = ReaderT (\_ -> do
-                                                               r <- liftIO (runClientIO comp)
-                                                               case r of
-                                                                 Left err -> throwError err
-                                                                 Right res -> return res
-                                                           )}
-
 -- |Execute the computation with the given environment (using the established connection).
 runClient :: Monad m => EnvData -> ClientMonad m a -> m (Either ClientError a)
 runClient config comp = evalStateT (runExceptT $ runReaderT (_runClientMonad comp) config) (Map.empty :: CookieHeaders)
@@ -625,13 +617,19 @@ withUnaryCore method message k = do
         reEstablish <- readIORef clientRef >>= \case
           Nothing -> return (Just 1)
           Just (curGen, oldClient) | usedGen >= curGen -> do
-              void (runExceptT (close oldClient)) -- FIXME: We ignore failure
-              -- closing connection here. clear the GOAWAY signal. Since this is
-              -- happening under a write lock it will clear out the MVar since
-              -- the MVar is only set under a read lock. The reason for using
-              -- tryTakeMVar instead of takeMVar is that we could be in this
-              -- state because a query timed out, not necessarily because we got
-              -- a GOAWAY messages.
+              err <- try @SomeException (runExceptT (close oldClient))
+              case err of
+                 Left exc -> logm (fromString ("An exception occurred while closing the connection: " ++ show exc))
+                 Right (Left cerr) -> logm (fromString ("An error occurred while closing the connection: " ++ show cerr))
+                 Right (Right ()) -> return ()
+              -- We close the connection here regardless of whether errors or
+              -- exceptions occurred.
+              --
+              -- Clear the GOAWAY signal. Since this is happening under a write
+              -- lock it will clear out the MVar since the MVar is only set
+              -- under a read lock. The reason for using tryTakeMVar instead of
+              -- takeMVar is that we could be in this state because a query
+              -- timed out, not necessarily because we got a GOAWAY messages.
               _ <- tryTakeMVar mv
               return (Just (curGen + 1))
           Just _ -> return Nothing
