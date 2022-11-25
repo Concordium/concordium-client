@@ -53,7 +53,7 @@ import Codec.CBOR.JSON
 import Codec.CBOR.Decoding (decodeString)
 import Concordium.Common.Time (DurationSeconds(durationSeconds))
 import Concordium.Types.Execution (Event(ecEvents))
-import Data.Either (isLeft, rights, lefts)
+import Data.Either (isLeft)
 
 -- PRINTER
 
@@ -795,8 +795,10 @@ showEvent verbose ciM = \case
 
     -- Attempt to decode a bytestring according to a schema.
     -- If there is no schema, or decoding fails @Nothing@ is returned.
-    toJSON' :: Maybe CS.SchemaType -> BSS.ShortByteString -> Maybe String
-    toJSON' stM bs = do
+    -- Note that the reason that the error message is discarded is that
+    -- has no relevance to the user.
+    toJSONString :: Maybe CS.SchemaType -> BSS.ShortByteString -> Maybe String
+    toJSONString stM bs = do
       st <- stM
       case PA.deserializeWithSchema st (BSS.fromShort bs) of
         Left _ -> Nothing
@@ -808,33 +810,36 @@ showEvent verbose ciM = \case
     showLoggedEvents evs = [i|#{length evs} contract events were emitted|]
         <> (if isNothing eventSchemaM
             then [i| but no event schema was provided nor found in the contract module. |]
-            else [i|, of which #{length $ filter isLeft $ map eventToString evs} were succesfully parsed. |])
-        <> [i|Got:\n|] <> intercalate "\n" (rights (map eventToString evs) <> lefts (map eventToString evs))
+            else [i|, of which #{length $ filter isLeft $ map showContractEvent evs} were succesfully parsed. |])
+        <> [i|Got:\n|] <> intercalate "\n" (map fromEither (map showContractEvent evs))
       where
+        fromEither :: Either a a -> a
+        fromEither (Left v) = v
+        fromEither (Right v) = v
         -- Event schema associated with the contract, if any.
+        eventSchemaM :: Maybe CS.SchemaType
         eventSchemaM = getEventSchema =<< ciM
-
         -- Show a string representation of the contract event.
-        eventToString :: Wasm.ContractEvent -> Either String String
-        eventToString ce@(Wasm.ContractEvent bs) = case toJSON' eventSchemaM bs of
+        -- Returns @Right@ containing a JSON representation of the event if a schema was present
+        -- and the event could be succesfully parsed using it.
+        -- Returns @Left@ containing a hexadecimal representation of the raw event data otherwise.
+        showContractEvent :: Wasm.ContractEvent -> Either String String
+        showContractEvent ce@(Wasm.ContractEvent bs) = case toJSONString eventSchemaM bs of
           Nothing -> Left [i|Event (raw): '#{ce}'|]
           Just json -> Right [i|Event:\n#{indentBy 4 $ "'" <> json <> "'"}|]
     
-    -- Show a parameter according to a receive name schema.
+    -- Show a parameter according to a receive name schema, if present.
     showParameter :: Wasm.ReceiveName -> Wasm.Parameter -> String
-    showParameter rn param = case ciM of
-      Nothing -> hexParam
-      Just ci -> parameterToString (CI.getParameterSchema ci rName) param
-      where
-        -- Method name as text.
-        rName = CI.methodNameFromReceiveName rn
-        -- Hexadecimal representation.
-        hexParam = show param
-        -- Show a string representation of a function parameter.
-        parameterToString :: Maybe CS.SchemaType -> Wasm.Parameter -> String
-        parameterToString stM pa@(Wasm.Parameter bs) = case toJSON' stM bs of
+    showParameter rn pa@(Wasm.Parameter bs) = case toJSONString rSchemaM bs of
           Nothing -> [i|parameter (raw): '#{pa}'|]
           Just json -> [i|parameter:\n#{indentBy 4 $ "'" <> json <> "'"}|]
+      where
+        -- Receive method name as text.
+        rName = CI.methodNameFromReceiveName rn
+        -- If contract info is present, try go get the receive name schema.
+        rSchemaM = case ciM of
+          Nothing -> Nothing
+          Just ci -> CI.getParameterSchema ci rName
 
 -- |Return string representation of reject reason.
 -- If verbose is true, the string includes the details from the fields of the reason.

@@ -584,12 +584,12 @@ getContractInfoWithSchemas schemaFile blockHashM ev = do
 
 -- |Get `ContractInfo` for all events in all blocks in which a transaction is present.
 -- Returns a map from blockhashes of blocks in which the transaction is present to the
--- events of the transaction in that block. Each event figures in a pair with an optional
--- `ContractInfo` value containing contract schema info associated with each event of the
--- transaction in that block.
--- Optionally takes a path to a schema file to be parsed and returned. The schema contained
--- in the file will then take precedence over schemas embedded in the module of the and will
--- thus be included in the `ContractInfo` for all events.
+-- events of the transaction in that block. Each event appears in a pair with an optional
+-- `ContractInfo` value containing contract schema info associated with the event of the
+-- transaction in that block, if present.
+-- Optionally takes a path to a schema file to be parsed. If a schema is contained in the
+-- file, it will take precedence over any schemas that may be embedded in the module and
+-- will therefore be present in the `ContractInfo` for all events.
 getTxContractInfoWithSchemas :: (MonadIO m, MonadFail m)
                => Maybe FilePath -- ^ Path pointing to a schema file.
                -> TransactionStatusResult -- ^ The transaction result for which the contract info will be retrieved.
