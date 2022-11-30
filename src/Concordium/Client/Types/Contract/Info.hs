@@ -3,8 +3,11 @@ module Concordium.Client.Types.Contract.Info
   ( contractNameFromInitName
   , addSchemaData
   , getContractName
+  , getEventSchema
+  , getParameterSchema
   , hasFallbackReceiveSupport
   , hasReceiveMethod
+  , methodNameFromReceiveName
   , constructModuleInspectInfo
   , ContractInfo(..)
   , ContractStateV0(..)
@@ -30,6 +33,7 @@ import qualified Data.Aeson.KeyMap as KM
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as BS16
+import Data.List (find)
 import qualified Data.Map.Strict as Map
 import qualified Data.Serialize as S
 import Data.String.Interpolate (i)
@@ -39,6 +43,7 @@ import qualified Data.Text.Encoding as Text
 import qualified Concordium.Client.Config as Config
 import Concordium.Client.GRPC (ClientMonad)
 import Concordium.Client.Cli
+import Control.Monad.Cont (MonadIO)
 
 -- |Try to include extra information in the contract info from the module schema.
 -- For V0 contracts:
@@ -55,7 +60,7 @@ import Concordium.Client.Cli
 -- Logs fatally on internal errors that should never occur, namely:
 --  - Schema data has already been added.
 --  - The version of module schema and contract info does not match.
-addSchemaData :: ContractInfo -> CS.ModuleSchema -> ClientMonad IO (Maybe ContractInfo)
+addSchemaData :: (MonadIO m) => ContractInfo -> CS.ModuleSchema -> ClientMonad m (Maybe ContractInfo)
 addSchemaData cInfo@ContractInfoV1{..} moduleSchema =
   case moduleSchema of
     CS.ModuleSchemaV0 _ -> logFatal ["Internal error: Cannot use ModuleSchemaV0 with ContractInfoV1."] -- Should never happen.
@@ -177,6 +182,33 @@ hasFallbackReceiveSupport :: ContractInfo -> Bool
 hasFallbackReceiveSupport = \case
   ContractInfoV0{} -> False
   ContractInfoV1{} -> True
+
+-- |Get the event schema of a contract.
+getEventSchema :: ContractInfo -> Maybe CS.SchemaType
+getEventSchema = \case
+  ContractInfoV0{} -> Nothing
+  ContractInfoV1{..} -> case ciMethods of
+    NoSchemaV1 _ -> Nothing
+    WithSchemaV1 _ -> Nothing
+    WithSchemaV2 _ -> Nothing
+    WithSchemaV3{..} -> ws3Event
+
+-- |Get the parameter schema for a receive method.
+getParameterSchema :: ContractInfo -> Text -> Maybe CS.SchemaType
+getParameterSchema ci rcvName = case ci of
+    ContractInfoV0{..} -> case ciMethodsAndState of
+      NoSchemaV0{} -> Nothing
+      WithSchemaV0{..} -> findRcvName ws0Methods
+    ContractInfoV1{..} -> case ciMethods of
+      NoSchemaV1{} -> Nothing
+      WithSchemaV1{..} -> CS.getParameterSchemaV1 =<< findRcvName ws1Methods
+      WithSchemaV2{..} -> CS.getParameterSchemaV2 =<< findRcvName ws2Methods
+      WithSchemaV3{..} -> CS.getParameterSchemaV2 =<< findRcvName ws3Methods
+  where
+    findRcvName ls = case find ((rcvName ==) . fst) ls of
+      Nothing -> Nothing
+      Just (_, v) -> v
+
 
 -- |This is returned by the node and specified in Concordium.Getters (from prototype repo).
 -- Must stay in sync.
