@@ -796,7 +796,7 @@ showEvent verbose ciM = \case
     -- Attempt to decode a bytestring according to a schema.
     -- If there is no schema, or decoding fails @Nothing@ is returned.
     -- Note that the reason that the error message is discarded is that
-    -- has no relevance to the user.
+    -- it has no relevance to the user.
     toJSONString :: Maybe CS.SchemaType -> BSS.ShortByteString -> Maybe String
     toJSONString stM bs = do
       st <- stM
