@@ -32,7 +32,7 @@ on:
 
 env:
   RUST: 1.62
-  GHC: 9.0.2
+  GHC: 9.2.5
 
 jobs:
   concordium-client-build-and-test:

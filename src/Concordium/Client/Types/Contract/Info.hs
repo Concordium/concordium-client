@@ -413,118 +413,133 @@ constructModuleInspectInfo namedModRef wasmVersion moduleSchema exportedFuncName
     -- Creates a ModuleInspectSigs and a list of extraneous schemas from module schema and the exported func names.
     mkModInspectWithSchema modSchema = case modSchema of
       CS.ModuleSchemaV0{..} ->
-        let
-            ModuleInspectSigsV0{..} = moduleInspectSigsFromExports SchemaV0 -- We know this becomes a ModuleInspectSigsV0
-            addSchemas :: Map.Map Text ContractSigsV0 -> Map.Map Text CS.ContractSchemaV0 -> (Map.Map Text ContractSigsV0, [CS.FuncName])
-            addSchemas mSigs mSchema = go mSigs [] (Map.toList mSchema)
-              where
-                    go :: Map.Map Text ContractSigsV0 -> [CS.FuncName] -> [(Text, CS.ContractSchemaV0)] -> (Map.Map Text ContractSigsV0, [CS.FuncName])
-                    go sigMap errors [] = (sigMap, errors)
-                    go sigMap errors ((cname, CS.ContractSchemaV0{..}):remaining) =
-                      case Map.lookup cname sigMap of
-                        Nothing -> let receiveErrors = map (CS.ReceiveFuncName cname) . Map.keys $ cs0ReceiveSigs
-                                       errors' = CS.InitFuncName cname : receiveErrors ++ errors
-                                   in go sigMap errors' remaining -- Schema has init signature for a contract not in the module.
-                        Just ContractSigsV0{..} ->
-                          let (updatedCsReceiveSigs, receiveErrors) = updateReceiveSigs cname csv0ReceiveSigs [] (Map.toList cs0ReceiveSigs)
-                              sigMap' = Map.insert cname (ContractSigsV0 {csv0InitSig = cs0InitSig, csv0ReceiveSigs = updatedCsReceiveSigs}) sigMap
-                          in go sigMap' (receiveErrors ++ errors) remaining
+        -- We know this becomes a ModuleInspectSigsV0.
+        case moduleInspectSigsFromExports SchemaV0 of
+          ModuleInspectSigsV0{..} ->
+            let
+              addSchemas :: Map.Map Text ContractSigsV0 -> Map.Map Text CS.ContractSchemaV0 -> (Map.Map Text ContractSigsV0, [CS.FuncName])
+              addSchemas mSigs mSchema = go mSigs [] (Map.toList mSchema)
+                where
+                      go :: Map.Map Text ContractSigsV0 -> [CS.FuncName] -> [(Text, CS.ContractSchemaV0)] -> (Map.Map Text ContractSigsV0, [CS.FuncName])
+                      go sigMap errors [] = (sigMap, errors)
+                      go sigMap errors ((cname, CS.ContractSchemaV0{..}):remaining) =
+                        case Map.lookup cname sigMap of
+                          Nothing -> let receiveErrors = map (CS.ReceiveFuncName cname) . Map.keys $ cs0ReceiveSigs
+                                         errors' = CS.InitFuncName cname : receiveErrors ++ errors
+                                     in go sigMap errors' remaining -- Schema has init signature for a contract not in the module.
+                          Just ContractSigsV0{..} ->
+                            let (updatedCsReceiveSigs, receiveErrors) = updateReceiveSigs cname csv0ReceiveSigs [] (Map.toList cs0ReceiveSigs)
+                                sigMap' = Map.insert cname (ContractSigsV0 {csv0InitSig = cs0InitSig, csv0ReceiveSigs = updatedCsReceiveSigs}) sigMap
+                            in go sigMap' (receiveErrors ++ errors) remaining
 
-                    updateReceiveSigs :: Text -> Map.Map Text (Maybe CS.SchemaType) -> [CS.FuncName]
-                                      -> [(Text, CS.SchemaType)] -> (Map.Map Text (Maybe CS.SchemaType), [CS.FuncName])
-                    updateReceiveSigs _ sigMap errors [] = (sigMap, errors)
-                    updateReceiveSigs cname sigMap errors ((fname, schema):remaining) =
-                      if Map.member fname sigMap
-                      then updateReceiveSigs cname (Map.insert fname (Just schema) sigMap) errors remaining
-                      else -- Schema has signature for method not in the module.
-                        updateReceiveSigs cname sigMap (CS.ReceiveFuncName cname fname:errors) remaining
-            (updatedContractSigs, extraSchemas) = addSchemas mis0ContractSigs ms0ContractSchemas
-        in (ModuleInspectSigsV0 { mis0ContractSigs = updatedContractSigs}, extraSchemas)
+                      updateReceiveSigs :: Text -> Map.Map Text (Maybe CS.SchemaType) -> [CS.FuncName]
+                                        -> [(Text, CS.SchemaType)] -> (Map.Map Text (Maybe CS.SchemaType), [CS.FuncName])
+                      updateReceiveSigs _ sigMap errors [] = (sigMap, errors)
+                      updateReceiveSigs cname sigMap errors ((fname, schema):remaining) =
+                        if Map.member fname sigMap
+                        then updateReceiveSigs cname (Map.insert fname (Just schema) sigMap) errors remaining
+                        else -- Schema has signature for method not in the module.
+                          updateReceiveSigs cname sigMap (CS.ReceiveFuncName cname fname:errors) remaining
+              (updatedContractSigs, extraSchemas) = addSchemas mis0ContractSigs ms0ContractSchemas
+            in (ModuleInspectSigsV0 { mis0ContractSigs = updatedContractSigs}, extraSchemas)
+          -- This will not happen, see the comment above.
+          _ -> error "moduleInspectSigsFromExports SchemaV0 should be ModuleInspectSigsV0"
       CS.ModuleSchemaV1{..} ->
-        let
-            ModuleInspectSigsV1{..} = moduleInspectSigsFromExports SchemaV1 -- We know this becomes a ModuleInspectSigsV1
-            addSchemas :: Map.Map Text ContractSigsV1 -> Map.Map Text CS.ContractSchemaV1 -> (Map.Map Text ContractSigsV1, [CS.FuncName])
-            addSchemas mSigs mSchema = go mSigs [] (Map.toList mSchema)
-              where
-                    go :: Map.Map Text ContractSigsV1 -> [CS.FuncName] -> [(Text, CS.ContractSchemaV1)] -> (Map.Map Text ContractSigsV1, [CS.FuncName])
-                    go sigMap errors [] = (sigMap, errors)
-                    go sigMap errors ((cname, CS.ContractSchemaV1{..}):remaining) =
-                      case Map.lookup cname sigMap of
-                        Nothing -> let receiveErrors = map (CS.ReceiveFuncName cname) . Map.keys $ cs1ReceiveSigs
-                                       errors' = CS.InitFuncName cname : receiveErrors ++ errors
-                                   in go sigMap errors' remaining -- Schema has init signature for a contract not in the module.
-                        Just ContractSigsV1{..} ->
-                          let (updatedCsReceiveSigs, receiveErrors) = updateReceiveSigs cname csv1ReceiveSigs [] (Map.toList cs1ReceiveSigs)
-                              sigMap' = Map.insert cname (ContractSigsV1 {csv1InitSig = cs1InitSig, csv1ReceiveSigs = updatedCsReceiveSigs}) sigMap
-                          in go sigMap' (receiveErrors ++ errors) remaining
+        -- We know this becomes a ModuleInspectSigsV1.
+        case moduleInspectSigsFromExports SchemaV1 of
+          ModuleInspectSigsV1{..} ->
+            let
+              addSchemas :: Map.Map Text ContractSigsV1 -> Map.Map Text CS.ContractSchemaV1 -> (Map.Map Text ContractSigsV1, [CS.FuncName])
+              addSchemas mSigs mSchema = go mSigs [] (Map.toList mSchema)
+                where
+                      go :: Map.Map Text ContractSigsV1 -> [CS.FuncName] -> [(Text, CS.ContractSchemaV1)] -> (Map.Map Text ContractSigsV1, [CS.FuncName])
+                      go sigMap errors [] = (sigMap, errors)
+                      go sigMap errors ((cname, CS.ContractSchemaV1{..}):remaining) =
+                        case Map.lookup cname sigMap of
+                          Nothing -> let receiveErrors = map (CS.ReceiveFuncName cname) . Map.keys $ cs1ReceiveSigs
+                                         errors' = CS.InitFuncName cname : receiveErrors ++ errors
+                                     in go sigMap errors' remaining -- Schema has init signature for a contract not in the module.
+                          Just ContractSigsV1{..} ->
+                            let (updatedCsReceiveSigs, receiveErrors) = updateReceiveSigs cname csv1ReceiveSigs [] (Map.toList cs1ReceiveSigs)
+                                sigMap' = Map.insert cname (ContractSigsV1 {csv1InitSig = cs1InitSig, csv1ReceiveSigs = updatedCsReceiveSigs}) sigMap
+                            in go sigMap' (receiveErrors ++ errors) remaining
 
-                    updateReceiveSigs :: Text -> Map.Map Text (Maybe CS.FunctionSchemaV1) -> [CS.FuncName]
-                                      -> [(Text, CS.FunctionSchemaV1)] -> (Map.Map Text (Maybe CS.FunctionSchemaV1), [CS.FuncName])
-                    updateReceiveSigs _ sigMap errors [] = (sigMap, errors)
-                    updateReceiveSigs cname sigMap errors ((fname, schema):remaining) =
-                      if Map.member fname sigMap
-                      then updateReceiveSigs cname (Map.insert fname (Just schema) sigMap) errors remaining
-                      else -- Schema has signature for method not in the module.
-                        updateReceiveSigs cname sigMap (CS.ReceiveFuncName cname fname:errors) remaining
-            (updatedContractSigs, extraSchemas) = addSchemas mis1ContractSigs ms1ContractSchemas
-        in (ModuleInspectSigsV1 { mis1ContractSigs = updatedContractSigs}, extraSchemas)
+                      updateReceiveSigs :: Text -> Map.Map Text (Maybe CS.FunctionSchemaV1) -> [CS.FuncName]
+                                        -> [(Text, CS.FunctionSchemaV1)] -> (Map.Map Text (Maybe CS.FunctionSchemaV1), [CS.FuncName])
+                      updateReceiveSigs _ sigMap errors [] = (sigMap, errors)
+                      updateReceiveSigs cname sigMap errors ((fname, schema):remaining) =
+                        if Map.member fname sigMap
+                        then updateReceiveSigs cname (Map.insert fname (Just schema) sigMap) errors remaining
+                        else -- Schema has signature for method not in the module.
+                          updateReceiveSigs cname sigMap (CS.ReceiveFuncName cname fname:errors) remaining
+              (updatedContractSigs, extraSchemas) = addSchemas mis1ContractSigs ms1ContractSchemas
+            in (ModuleInspectSigsV1 { mis1ContractSigs = updatedContractSigs}, extraSchemas)
+          -- This will not happen, see the comment above.
+          _ -> error "moduleInspectSigsFromExports SchemaV1 should be ModuleInspectSigsV1"
       CS.ModuleSchemaV2{..} ->
-        let
-            ModuleInspectSigsV2{..} = moduleInspectSigsFromExports SchemaV2 -- We know this becomes a ModuleInspectSigsV2
-            addSchemas :: Map.Map Text ContractSigsV2 -> Map.Map Text CS.ContractSchemaV2 -> (Map.Map Text ContractSigsV2, [CS.FuncName])
-            addSchemas mSigs mSchema = go mSigs [] (Map.toList mSchema)
-              where
-                    go :: Map.Map Text ContractSigsV2 -> [CS.FuncName] -> [(Text, CS.ContractSchemaV2)] -> (Map.Map Text ContractSigsV2, [CS.FuncName])
-                    go sigMap errors [] = (sigMap, errors)
-                    go sigMap errors ((cname, CS.ContractSchemaV2{..}):remaining) =
-                      case Map.lookup cname sigMap of
-                        Nothing -> let receiveErrors = map (CS.ReceiveFuncName cname) . Map.keys $ cs2ReceiveSigs
-                                       errors' = CS.InitFuncName cname : receiveErrors ++ errors
-                                   in go sigMap errors' remaining -- Schema has init signature for a contract not in the module.
-                        Just ContractSigsV2{..} ->
-                          let (updatedCsReceiveSigs, receiveErrors) = updateReceiveSigs cname csv2ReceiveSigs [] (Map.toList cs2ReceiveSigs)
-                              sigMap' = Map.insert cname (ContractSigsV2 {csv2InitSig = cs2InitSig, csv2ReceiveSigs = updatedCsReceiveSigs}) sigMap
-                          in go sigMap' (receiveErrors ++ errors) remaining
+        -- We know this becomes a ModuleInspectSigsV2.
+        case moduleInspectSigsFromExports SchemaV2 of
+          ModuleInspectSigsV2{..} ->
+            let
+                addSchemas :: Map.Map Text ContractSigsV2 -> Map.Map Text CS.ContractSchemaV2 -> (Map.Map Text ContractSigsV2, [CS.FuncName])
+                addSchemas mSigs mSchema = go mSigs [] (Map.toList mSchema)
+                  where
+                        go :: Map.Map Text ContractSigsV2 -> [CS.FuncName] -> [(Text, CS.ContractSchemaV2)] -> (Map.Map Text ContractSigsV2, [CS.FuncName])
+                        go sigMap errors [] = (sigMap, errors)
+                        go sigMap errors ((cname, CS.ContractSchemaV2{..}):remaining) =
+                          case Map.lookup cname sigMap of
+                            Nothing -> let receiveErrors = map (CS.ReceiveFuncName cname) . Map.keys $ cs2ReceiveSigs
+                                           errors' = CS.InitFuncName cname : receiveErrors ++ errors
+                                       in go sigMap errors' remaining -- Schema has init signature for a contract not in the module.
+                            Just ContractSigsV2{..} ->
+                              let (updatedCsReceiveSigs, receiveErrors) = updateReceiveSigs cname csv2ReceiveSigs [] (Map.toList cs2ReceiveSigs)
+                                  sigMap' = Map.insert cname (ContractSigsV2 {csv2InitSig = cs2InitSig, csv2ReceiveSigs = updatedCsReceiveSigs}) sigMap
+                              in go sigMap' (receiveErrors ++ errors) remaining
 
-                    updateReceiveSigs :: Text -> Map.Map Text (Maybe CS.FunctionSchemaV2) -> [CS.FuncName]
-                                      -> [(Text, CS.FunctionSchemaV2)] -> (Map.Map Text (Maybe CS.FunctionSchemaV2), [CS.FuncName])
-                    updateReceiveSigs _ sigMap errors [] = (sigMap, errors)
-                    updateReceiveSigs cname sigMap errors ((fname, schema):remaining) =
-                      if Map.member fname sigMap
-                      then updateReceiveSigs cname (Map.insert fname (Just schema) sigMap) errors remaining
-                      else -- Schema has signature for method not in the module.
-                        updateReceiveSigs cname sigMap (CS.ReceiveFuncName cname fname:errors) remaining
-            (updatedContractSigs, extraSchemas) = addSchemas mis2ContractSigs ms2ContractSchemas
-        in (ModuleInspectSigsV2 { mis2ContractSigs = updatedContractSigs}, extraSchemas)
+                        updateReceiveSigs :: Text -> Map.Map Text (Maybe CS.FunctionSchemaV2) -> [CS.FuncName]
+                                          -> [(Text, CS.FunctionSchemaV2)] -> (Map.Map Text (Maybe CS.FunctionSchemaV2), [CS.FuncName])
+                        updateReceiveSigs _ sigMap errors [] = (sigMap, errors)
+                        updateReceiveSigs cname sigMap errors ((fname, schema):remaining) =
+                          if Map.member fname sigMap
+                          then updateReceiveSigs cname (Map.insert fname (Just schema) sigMap) errors remaining
+                          else -- Schema has signature for method not in the module.
+                            updateReceiveSigs cname sigMap (CS.ReceiveFuncName cname fname:errors) remaining
+                (updatedContractSigs, extraSchemas) = addSchemas mis2ContractSigs ms2ContractSchemas
+            in (ModuleInspectSigsV2 { mis2ContractSigs = updatedContractSigs}, extraSchemas)
+          -- This will not happen, see the comment above.
+          _ -> error "moduleInspectSigsFromExports SchemaV2 should be ModuleInspectSigsV2"
       CS.ModuleSchemaV3{..} ->
-        let
-            ModuleInspectSigsV3{..} = moduleInspectSigsFromExports SchemaV3 -- We know this becomes a ModuleInspectSigsV3
-            addSchemas :: Map.Map Text ContractSigsV3 -> Map.Map Text CS.ContractSchemaV3 -> (Map.Map Text ContractSigsV3, [CS.FuncName])
-            addSchemas mSigs mSchema = go mSigs [] (Map.toList mSchema)
-              where
-                    go :: Map.Map Text ContractSigsV3 -> [CS.FuncName] -> [(Text, CS.ContractSchemaV3)] -> (Map.Map Text ContractSigsV3, [CS.FuncName])
-                    go sigMap errors [] = (sigMap, errors)
-                    go sigMap errors ((cname, CS.ContractSchemaV3{..}):remaining) =
-                      case Map.lookup cname sigMap of
-                        Nothing -> let receiveErrors = map (CS.ReceiveFuncName cname) . Map.keys $ cs3ReceiveSigs
-                                       errors' = CS.InitFuncName cname : receiveErrors ++ errors
-                                   in go sigMap errors' remaining -- Schema has init signature for a contract not in the module.
-                        Just cs ->
-                          let (updatedCsReceiveSigs, receiveErrors) = updateReceiveSigs cname (csv3ReceiveSigs cs) [] (Map.toList cs3ReceiveSigs)
-                              sigMap' = Map.insert cname (ContractSigsV3 {csv3InitSig = cs3InitSig, csv3ReceiveSigs = updatedCsReceiveSigs, cs3EventSchema = cs3EventSchema}) sigMap
-                          in go sigMap' (receiveErrors ++ errors) remaining
+        -- We know this becomes a ModuleInspectSigsV3.
+        case moduleInspectSigsFromExports SchemaV3 of
+          ModuleInspectSigsV3{..} ->
+            let
+                addSchemas :: Map.Map Text ContractSigsV3 -> Map.Map Text CS.ContractSchemaV3 -> (Map.Map Text ContractSigsV3, [CS.FuncName])
+                addSchemas mSigs mSchema = go mSigs [] (Map.toList mSchema)
+                  where
+                        go :: Map.Map Text ContractSigsV3 -> [CS.FuncName] -> [(Text, CS.ContractSchemaV3)] -> (Map.Map Text ContractSigsV3, [CS.FuncName])
+                        go sigMap errors [] = (sigMap, errors)
+                        go sigMap errors ((cname, CS.ContractSchemaV3{..}):remaining) =
+                          case Map.lookup cname sigMap of
+                            Nothing -> let receiveErrors = map (CS.ReceiveFuncName cname) . Map.keys $ cs3ReceiveSigs
+                                           errors' = CS.InitFuncName cname : receiveErrors ++ errors
+                                       in go sigMap errors' remaining -- Schema has init signature for a contract not in the module.
+                            Just cs ->
+                              let (updatedCsReceiveSigs, receiveErrors) = updateReceiveSigs cname (csv3ReceiveSigs cs) [] (Map.toList cs3ReceiveSigs)
+                                  sigMap' = Map.insert cname (ContractSigsV3 {csv3InitSig = cs3InitSig, csv3ReceiveSigs = updatedCsReceiveSigs, cs3EventSchema = cs3EventSchema}) sigMap
+                              in go sigMap' (receiveErrors ++ errors) remaining
 
-                    updateReceiveSigs :: Text -> Map.Map Text (Maybe CS.FunctionSchemaV2) -> [CS.FuncName]
-                                      -> [(Text, CS.FunctionSchemaV2)] -> (Map.Map Text (Maybe CS.FunctionSchemaV2), [CS.FuncName])
-                    updateReceiveSigs _ sigMap errors [] = (sigMap, errors)
-                    updateReceiveSigs cname sigMap errors ((fname, schema):remaining) =
-                      if Map.member fname sigMap
-                      then updateReceiveSigs cname (Map.insert fname (Just schema) sigMap) errors remaining
-                      else -- Schema has signature for method not in the module.
-                        updateReceiveSigs cname sigMap (CS.ReceiveFuncName cname fname:errors) remaining
-            (updatedContractSigs, extraSchemas) = addSchemas mis3ContractSigs ms3ContractSchemas
-        in (ModuleInspectSigsV3 { mis3ContractSigs = updatedContractSigs}, extraSchemas)
-
+                        updateReceiveSigs :: Text -> Map.Map Text (Maybe CS.FunctionSchemaV2) -> [CS.FuncName]
+                                          -> [(Text, CS.FunctionSchemaV2)] -> (Map.Map Text (Maybe CS.FunctionSchemaV2), [CS.FuncName])
+                        updateReceiveSigs _ sigMap errors [] = (sigMap, errors)
+                        updateReceiveSigs cname sigMap errors ((fname, schema):remaining) =
+                          if Map.member fname sigMap
+                          then updateReceiveSigs cname (Map.insert fname (Just schema) sigMap) errors remaining
+                          else -- Schema has signature for method not in the module.
+                            updateReceiveSigs cname sigMap (CS.ReceiveFuncName cname fname:errors) remaining
+                (updatedContractSigs, extraSchemas) = addSchemas mis3ContractSigs ms3ContractSchemas
+            in (ModuleInspectSigsV3 { mis3ContractSigs = updatedContractSigs}, extraSchemas)
+          -- This will not happen, see the comment above.
+          _ -> error "moduleInspectSigsFromExports SchemaV3 should be ModuleInspectSigsV3"
     funcNames :: [CS.FuncName]
     funcNames = toFuncNames exportedFuncNames
       where

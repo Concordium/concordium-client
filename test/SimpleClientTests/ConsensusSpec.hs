@@ -102,8 +102,12 @@ consensusShowParametersSpec = describe "show parameters" $ do
   where 
     p includeBakers bparams = execWriter . printBirkParameters includeBakers bparams
     addrmap = Map.fromList [(acc1, "account1"), (acc2, "account2")]
-    Right acc1 = addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-    Right acc2 = addressFromText "4p2n8QQn5akq3XqAAJt2a5CsnGhDvUon6HExd2szrfkZCTD4FX"
+    acc1 = case addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6" of
+             Right addr -> addr
+             Left err -> error err
+    acc2 = case addressFromText "4p2n8QQn5akq3XqAAJt2a5CsnGhDvUon6HExd2szrfkZCTD4FX" of
+             Right addr -> addr
+             Left err -> error err
 
 exampleStatusWithOptionalFields :: ConsensusStatus
 exampleStatusWithOptionalFields =
@@ -212,13 +216,19 @@ exampleNonce :: LeadershipElectionNonce
 exampleNonce = read "50ab4065c5a8194fbd7f3acf06267c7d8023fce9b3b658a74f3a927599eb9322"
 
 exampleAccountAddress1 :: AccountAddress
-Right exampleAccountAddress1 = addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+exampleAccountAddress1 = case addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6" of
+                           Right addr -> addr
+                           Left err -> error err
 
 exampleAccountAddress2 :: AccountAddress
-Right exampleAccountAddress2 = addressFromText "4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y"
+exampleAccountAddress2 = case addressFromText "4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y" of
+                           Right addr -> addr
+                           Left err -> error err
 
 exampleAccountAddress3 :: AccountAddress
-Right exampleAccountAddress3 = addressFromText "4p2n8QQn5akq3XqAAJt2a5CsnGhDvUon6HExd2szrfkZCTD4FX"
+exampleAccountAddress3 = case addressFromText "4p2n8QQn5akq3XqAAJt2a5CsnGhDvUon6HExd2szrfkZCTD4FX" of
+                           Right addr -> addr
+                           Left err -> error err
 
 exampleBlockHash1 :: BlockHash
 exampleBlockHash1 = read "0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389"

@@ -25,11 +25,17 @@ fromBase64 bs =
 
 
 exampleAccountAddress1 :: IDTypes.AccountAddress
-Right exampleAccountAddress1 = IDTypes.addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+exampleAccountAddress1 = case IDTypes.addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6" of
+                           Right addr -> addr
+                           -- This does not happen
+                           Left err -> error err
 
 -- some value that has the right format, it does not matter what it is.
 someCredId :: IDTypes.CredentialRegistrationID
-Just someCredId = AE.decode "\"96f89a557352b0aa7596b12f3ccf4cc5973066e31e2c57a8b9dc096fdcff6dd8967e27a7a6e9d41fcc0d553b62650148\""
+someCredId = case AE.decode "\"96f89a557352b0aa7596b12f3ccf4cc5973066e31e2c57a8b9dc096fdcff6dd8967e27a7a6e9d41fcc0d553b62650148\"" of
+               Just id' -> id'
+               -- This does not happen
+               Nothing -> error "unable to decode"
 
 -- |dummy accountconfig, for testing export/import
 exampleAccountConfigWithKeysAndName :: AccountConfig
@@ -71,14 +77,13 @@ exampleAccountConfigWithKeysAndName =
           },
       etCipherText = fromBase64 "pYvIywCAMLhvag1EJmGVuVezGsNvYn24zBnB6TCTkwEwOH50AOrx8NAZnVuQteZMQ7k7Kd7a1RorSxIQI1H/WX+Usi8f3VLnzdZFJmbk4Cme+dcgAbI+wWr0hisgrCDl"
       }}
-  where -- s1 = "6d00a10ccac23d2fd0bea163756487288fd19ff3810e1d3f73b686e60d801915"
-        v1 = "c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027"
-        -- s2 = "9b301aa72d991d720750935de632983f1854d701ada3e5b763215d0802d5541c"
-        v2 = "f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213"
-        -- (Just sk1) = BSH.deserializeBase16 s1
-        (Just vk1) = BSH.deserializeBase16 v1
-        -- (Just sk2) = BSH.deserializeBase16 s2
-        (Just vk2) = BSH.deserializeBase16 v2
+  where
+    v1 = "c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027"
+    v2 = "f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213"
+    (vk1, vk2) = case (BSH.deserializeBase16 v1, BSH.deserializeBase16 v2) of
+                   (Just v', Just v'') -> (v', v'')
+                   -- This does not happen
+                   _ -> error "unable to deserialize"
 
 exampleContractNameMap :: ContractNameMap
 exampleContractNameMap = Map.fromList [("contrA", mkContrAddr 0 0), ("contrB", mkContrAddr 42 0), ("contrC", mkContrAddr 42 4200)]

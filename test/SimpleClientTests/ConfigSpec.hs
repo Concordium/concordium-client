@@ -63,7 +63,10 @@ parseAccountNameMapEntrySpec = describe "parseAccountNameEntryMap" $ do
     in p input `shouldBe` (Left $ printf "invalid mapping format '%s' (should be '<name> = <address>')" input)
   where p = parseAccountNameMapEntry
         s = "35FtQ8HgRShXLGUer7k8wtovjKAcSQ2Ys8RQPx27KfRA7zf7i4"
-        (Right a) = IDTypes.addressFromText s
+        a = case IDTypes.addressFromText s of
+              Right addr -> addr
+              -- This does not happen
+              Left err -> error err
 
 parseAccountNameMapSpec :: Spec
 parseAccountNameMapSpec = describe "parseAccountNameMap" $ do
@@ -82,8 +85,14 @@ parseAccountNameMapSpec = describe "parseAccountNameMap" $ do
     parseAccountNameMap ["n@me = " ++ s1] `shouldBe` Left (invalidNameMsg "n@me")
   where s1 = "35FtQ8HgRShXLGUer7k8wtovjKAcSQ2Ys8RQPx27KfRA7zf7i4"
         s2 = "4RDhNeQB7DUKcKNStBQfLjU6y32HYDMxsJef2ATVncKRYJWoCV"
-        (Right a1) = IDTypes.addressFromText $ pack s1
-        (Right a2) = IDTypes.addressFromText $ pack s2
+        a1 = case IDTypes.addressFromText $ pack s1 of
+          Right addr -> addr
+          -- This does not happen
+          Left err -> error err
+        a2 = case IDTypes.addressFromText $ pack s2 of
+          Right addr -> addr
+          -- This does not happen
+          Left err -> error err
 
 resolveAccountAddressSpec :: Spec
 resolveAccountAddressSpec = describe "resolveAccountAddress" $ do
@@ -98,8 +107,14 @@ resolveAccountAddressSpec = describe "resolveAccountAddress" $ do
   where r = resolveAccountAddress
         s1 = "35FtQ8HgRShXLGUer7k8wtovjKAcSQ2Ys8RQPx27KfRA7zf7i4"
         s2 = "4RDhNeQB7DUKcKNStBQfLjU6y32HYDMxsJef2ATVncKRYJWoCV"
-        (Right a1) = IDTypes.addressFromText s1
-        (Right a2) = IDTypes.addressFromText s2
+        a1 = case IDTypes.addressFromText s1 of
+          Right addr -> addr
+          -- This does not happen
+          Left err -> error err
+        a2 = case IDTypes.addressFromText s2 of
+          Right addr -> addr
+          -- This does not happen
+          Left err -> error err
 
 printSpec :: Spec
 printSpec = describe "print" $ do
@@ -219,14 +234,13 @@ exampleSelectedKeyConfigWithKeysAndName =
           },
       etCipherText = fromBase64 "pYvIywCAMLhvag1EJmGVuVezGsNvYn24zBnB6TCTkwEwOH50AOrx8NAZnVuQteZMQ7k7Kd7a1RorSxIQI1H/WX+Usi8f3VLnzdZFJmbk4Cme+dcgAbI+wWr0hisgrCDl"
       }}
-  where -- s1 = "6d00a10ccac23d2fd0bea163756487288fd19ff3810e1d3f73b686e60d801915"
+  where
         v1 = "c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027"
-        -- s2 = "9b301aa72d991d720750935de632983f1854d701ada3e5b763215d0802d5541c"
         v2 = "f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213"
-        -- (Just sk1) = BSH.deserializeBase16 s1
-        (Just vk1) = BSH.deserializeBase16 v1
-        -- (Just sk2) = BSH.deserializeBase16 s2
-        (Just vk2) = BSH.deserializeBase16 v2
+        (vk1, vk2) = case (BSH.deserializeBase16 v1, BSH.deserializeBase16 v2) of
+                       (Just v', Just v'') -> (v',v'')
+                       -- This does not happen
+                       _ -> error "unable to deserialize"
 
 exampleAccountConfigWithoutKeysAndName :: EncryptedSigningData
 exampleAccountConfigWithoutKeysAndName =
@@ -236,10 +250,14 @@ exampleAccountConfigWithoutKeysAndName =
   , esdEncryptionKey = Nothing}
 
 exampleAccountAddress1 :: IDTypes.AccountAddress
-Right exampleAccountAddress1 = IDTypes.addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
+exampleAccountAddress1 = case IDTypes.addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6" of
+  Right addr -> addr
+  Left err -> error err
 
 exampleAccountAddress2 :: IDTypes.AccountAddress
-Right exampleAccountAddress2 = IDTypes.addressFromText "4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y"
+exampleAccountAddress2 = case IDTypes.addressFromText "4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y" of
+  Right addr -> addr
+  Left err -> error err
 
 exampleContractAddress1 :: Types.ContractAddress
 exampleContractAddress1 = Types.ContractAddress (Types.ContractIndex 0) (Types.ContractSubindex 0)

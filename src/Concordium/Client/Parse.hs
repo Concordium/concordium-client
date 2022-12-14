@@ -11,7 +11,7 @@ import Concordium.Types
 
 import Control.Monad.Except
 import Data.Text
-import Data.Time hiding (parseTime)
+import Data.Time
 import Data.Word
 import Text.Read
 import Text.Printf

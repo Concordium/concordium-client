@@ -31,7 +31,7 @@ brew install autoconf automake libtool protobuf xz
 
 ```bash
 # clone ghc source
-git clone -b ghc-9.0.2-release https://gitlab.haskell.org/ghc/ghc.git --recurse-submodules
+git clone -b ghc-9.2.5-release https://gitlab.haskell.org/ghc/ghc.git --recurse-submodules
 (
     cd ghc
     ./boot
@@ -48,10 +48,10 @@ EOF
     ./configure
     make -j5
     make binary-dist
-    #ghc is built now in a file named ghc-9.0.2-x86_64-apple-darwin.tar.xz
+    #ghc is built now in a file named ghc-9.2.5-x86_64-apple-darwin.tar.xz
     
     # install this ghc using ghcup
-    ghcup install ghc -u "file:///$HOME/ghc/ghc-9.0.2-x86_64-apple-darwin.tar.xz" ghc-simple
+    ghcup install ghc -u "file:///$HOME/ghc/ghc-9.2.5-x86_64-apple-darwin.tar.xz" ghc-simple
     # remove the other ghc and set this one
     ghcup rm ghc 8.10.7 && ghcup set ghc ghc-simple
     # for some reason haddock is not even built with this script, perhaps because we set HADDOCK_DOCS = NO.
@@ -74,7 +74,7 @@ stack build --flag "scientific:integer-simple" --flag "cryptonite:-integer-gmp" 
 
 ```bash
 find `pwd`/.stack-work/install -type f -name "concordium-client" | xargs otool -L 
-.stack-work/install/x86_64-osx/0ef06d07420f8754f5c7ad00371d13de56196d064e091f90862b54ccc0637e4f/9.0.2/bin/concordium-client:
+.stack-work/install/x86_64-osx/0ef06d07420f8754f5c7ad00371d13de56196d064e091f90862b54ccc0637e4f/9.2.5/bin/concordium-client:
     /usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1281.100.1)
     /usr/lib/libz.1.dylib (compatibility version 1.0.0, current version 1.2.11)
     /usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)
