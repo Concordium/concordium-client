@@ -104,9 +104,13 @@ consensusShowParametersSpec = describe "show parameters" $ do
     addrmap = Map.fromList [(acc1, "account1"), (acc2, "account2")]
     acc1 = case addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6" of
              Right addr -> addr
+             -- This does not happen since the format
+             -- of the text is that of a valid address.
              Left err -> error err
     acc2 = case addressFromText "4p2n8QQn5akq3XqAAJt2a5CsnGhDvUon6HExd2szrfkZCTD4FX" of
              Right addr -> addr
+             -- This does not happen since the format
+             -- of the text is that of a valid address.
              Left err -> error err
 
 exampleStatusWithOptionalFields :: ConsensusStatus
@@ -218,16 +222,22 @@ exampleNonce = read "50ab4065c5a8194fbd7f3acf06267c7d8023fce9b3b658a74f3a927599e
 exampleAccountAddress1 :: AccountAddress
 exampleAccountAddress1 = case addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6" of
                            Right addr -> addr
+                           -- This does not happen since the format
+                           -- of the text is that of a valid address.
                            Left err -> error err
 
 exampleAccountAddress2 :: AccountAddress
 exampleAccountAddress2 = case addressFromText "4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y" of
                            Right addr -> addr
+                           -- This does not happen since the format
+                           -- of the text is that of a valid address.
                            Left err -> error err
 
 exampleAccountAddress3 :: AccountAddress
 exampleAccountAddress3 = case addressFromText "4p2n8QQn5akq3XqAAJt2a5CsnGhDvUon6HExd2szrfkZCTD4FX" of
                            Right addr -> addr
+                           -- This does not happen since the format
+                           -- of the text is that of a valid address.
                            Left err -> error err
 
 exampleBlockHash1 :: BlockHash

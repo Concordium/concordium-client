@@ -22,6 +22,8 @@ exampleAddress1 = "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
 exampleAccountAddr1 :: Types.AccountAddress
 exampleAccountAddr1 = case IDTypes.addressFromText exampleAddress1 of
                         Right addr -> addr
+                        -- This does not happen since the format
+                        -- of the text is that of a valid address.
                         Left err -> error err
 
 exampleAddress2 :: Text
@@ -30,6 +32,8 @@ exampleAddress2 = "4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa"
 exampleAccountAddr2 :: Types.AccountAddress
 exampleAccountAddr2 = case IDTypes.addressFromText exampleAddress2 of
                         Right addr -> addr
+                        -- This does not happen since the format
+                        -- of the text is that of a valid address.
                         Left err -> error err
 
 exampleTransactionHash :: Types.TransactionHash

@@ -15,6 +15,7 @@ import qualified Data.Aeson as AE
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base64 as BS64
 import qualified Data.Map.Strict as Map
+import qualified Data.Maybe as MA
 import Test.Hspec
 
 fromBase64 :: BS.ByteString -> Base64ByteString
@@ -27,15 +28,17 @@ fromBase64 bs =
 exampleAccountAddress1 :: IDTypes.AccountAddress
 exampleAccountAddress1 = case IDTypes.addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6" of
                            Right addr -> addr
-                           -- This does not happen
+                           -- This does not happen since the format
+                           -- of the text is that of a valid address.
                            Left err -> error err
 
 -- some value that has the right format, it does not matter what it is.
+-- Safe, since the format of the text is that of a valid registration
+-- ID, and hence it is always decoded.
 someCredId :: IDTypes.CredentialRegistrationID
-someCredId = case AE.decode "\"96f89a557352b0aa7596b12f3ccf4cc5973066e31e2c57a8b9dc096fdcff6dd8967e27a7a6e9d41fcc0d553b62650148\"" of
-               Just id' -> id'
-               -- This does not happen
-               Nothing -> error "unable to decode"
+someCredId = MA.fromMaybe
+                (error "unable to decode")
+                $ AE.decode "\"96f89a557352b0aa7596b12f3ccf4cc5973066e31e2c57a8b9dc096fdcff6dd8967e27a7a6e9d41fcc0d553b62650148\""
 
 -- |dummy accountconfig, for testing export/import
 exampleAccountConfigWithKeysAndName :: AccountConfig
@@ -82,7 +85,7 @@ exampleAccountConfigWithKeysAndName =
     v2 = "f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213"
     (vk1, vk2) = case (BSH.deserializeBase16 v1, BSH.deserializeBase16 v2) of
                    (Just v', Just v'') -> (v', v'')
-                   -- This does not happen
+                   -- This does not happen since string literals are base 16.
                    _ -> error "unable to deserialize"
 
 exampleContractNameMap :: ContractNameMap

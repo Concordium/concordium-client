@@ -65,7 +65,9 @@ parseAccountNameMapEntrySpec = describe "parseAccountNameEntryMap" $ do
         s = "35FtQ8HgRShXLGUer7k8wtovjKAcSQ2Ys8RQPx27KfRA7zf7i4"
         a = case IDTypes.addressFromText s of
               Right addr -> addr
-              -- This does not happen
+              -- This does not happen since the format
+              -- of the text is that of an account name
+              -- map entry.
               Left err -> error err
 
 parseAccountNameMapSpec :: Spec
@@ -87,11 +89,13 @@ parseAccountNameMapSpec = describe "parseAccountNameMap" $ do
         s2 = "4RDhNeQB7DUKcKNStBQfLjU6y32HYDMxsJef2ATVncKRYJWoCV"
         a1 = case IDTypes.addressFromText $ pack s1 of
           Right addr -> addr
-          -- This does not happen
+          -- This does not happen since the format
+          -- of the text is that of a valid address.
           Left err -> error err
         a2 = case IDTypes.addressFromText $ pack s2 of
           Right addr -> addr
-          -- This does not happen
+          -- This does not happen since the format
+          -- of the text is that of a valid address.
           Left err -> error err
 
 resolveAccountAddressSpec :: Spec
@@ -109,11 +113,13 @@ resolveAccountAddressSpec = describe "resolveAccountAddress" $ do
         s2 = "4RDhNeQB7DUKcKNStBQfLjU6y32HYDMxsJef2ATVncKRYJWoCV"
         a1 = case IDTypes.addressFromText s1 of
           Right addr -> addr
-          -- This does not happen
+          -- This does not happen since the format
+          -- of the text is that of a valid address.
           Left err -> error err
         a2 = case IDTypes.addressFromText s2 of
           Right addr -> addr
-          -- This does not happen
+          -- This does not happen since the format
+          -- of the text is that of a valid address.
           Left err -> error err
 
 printSpec :: Spec
@@ -239,7 +245,9 @@ exampleSelectedKeyConfigWithKeysAndName =
         v2 = "f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213"
         (vk1, vk2) = case (BSH.deserializeBase16 v1, BSH.deserializeBase16 v2) of
                        (Just v', Just v'') -> (v',v'')
-                       -- This does not happen
+                       -- This does not happen since the formats of
+                       -- v1 and v2 are base 16 strings and hence
+                       -- they are always deserialized.
                        _ -> error "unable to deserialize"
 
 exampleAccountConfigWithoutKeysAndName :: EncryptedSigningData

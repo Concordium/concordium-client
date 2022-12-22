@@ -35,13 +35,15 @@ exampleNamedAddress = NamedAddress ["example"] exampleAddress1
 exampleAddress1 :: IDTypes.AccountAddress
 exampleAddress1 = case IDTypes.addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6" of
                     Right addr -> addr
-                    -- This does not happen
+                    -- This does not happen since the format
+                    -- of the text is that of a valid address.
                     Left str -> error str
 
 exampleAddress2 :: IDTypes.AccountAddress
 exampleAddress2 = case IDTypes.addressFromText "4P6vppapjvwAxGf5o1dXUhgwpW3Tvpc6vHj75MJHD6Z3RUmMpJ"  of
                     Right addr -> addr
-                    -- This does not happen
+                    -- This does not happen since the format of
+                    -- the text is that of a valid address.
                     Left str -> error str
 
 exampleAccountNameMap :: AccountNameMap
@@ -142,7 +144,9 @@ exampleCredentials p = IDTypes.NormalAC (IDTypes.CredentialDeploymentValues
         shareS = "a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46fa1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f"
         (regId, share) = case (BSH.deserializeBase16 regIdS, BSH.deserializeBase16 shareS) of
           (Just regId', Just shareS') -> (regId', shareS')
-          -- This does not happen
+          -- This does not happen since the formats of
+          -- regIds and shareS are base 16 strings and
+          -- hence they are always deserialized.
           _ -> error "unable to deserialize"
 
 examplePolicyWithoutItems :: IDTypes.Policy

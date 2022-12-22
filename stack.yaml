@@ -33,10 +33,6 @@ resolver: lts-20.4
 #  - auto-update
 #  - wai
 
-# FIXME: A lot of dependency contraints are not satisfied when building, after
-# bumping the resolver, but adding this allows for building. 
-# allow-newer: true
-
 packages:
 - .
 # Dependency packages to be pulled from upstream that are not in the resolver
