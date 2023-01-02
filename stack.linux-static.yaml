@@ -6,10 +6,10 @@ packages:
 extra-deps:
 # http2-client was never included in stackage
 - github: Concordium/http2-client
-  commit: 87c4306a624ff490ac9bd92e075ff09f14c341f4
+  commit: 75623c0ef961a7642521d5671c2a406aec3420b6
 
 - github: Concordium/http2-grpc-haskell
-  commit: 6787bbe9445e841c02c8b1f699304be15b3c3e5a
+  commit: cbfa67776fa2247a5e013f3a275b5164e00c5e10
   subdirs:
     - http2-client-grpc
     - http2-grpc-proto-lens
