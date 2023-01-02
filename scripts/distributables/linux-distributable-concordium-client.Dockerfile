@@ -11,13 +11,13 @@ ARG RUST_VERSION=1.62
 RUN wget -qO - https://sh.rustup.rs | sh -s -- --profile minimal --default-toolchain ${RUST_VERSION} -y
 
 ARG GHC_VERSION=9.2.5
-RUN wget -q https://s3-eu-west-1.amazonaws.com/static-libraries.concordium.com/ghc-${GHC_VERSION}-x86_64-alpine-linux-integer-gmp.tar.xz && \
-        tar -xf ghc-${GHC_VERSION}-x86_64-alpine-linux-integer-gmp.tar.xz && \
-        cd ghc-${GHC_VERSION}-x86_64-alpine-linux && \
+RUN wget -q https://s3-eu-west-1.amazonaws.com/static-libraries.concordium.com/ghc-${GHC_VERSION}-x86_64-unknown-linux-integer-gmp.tar.xz && \
+        tar -xf ghc-${GHC_VERSION}-x86_64-unknown-linux-integer-gmp.tar.xz && \
+        cd ghc-${GHC_VERSION}-x86_64-unknown-linux && \
         ./configure && \
         make install && \
         cd .. && \
-        rm -rf ghc-${GHC_VERSION}-x86_64-alpine-linux-integer-gmp.tar.xz ghc-${GHC_VERSION}-x86_64-alpine-linux
+        rm -rf ghc-${GHC_VERSION}-x86_64-unknown-linux-integer-gmp.tar.xz ghc-${GHC_VERSION}-x86_64-unknown-linux
 
 ARG STACK_VERSION=2.7.5
 RUN wget -q https://github.com/commercialhaskell/stack/releases/download/v${STACK_VERSION}/stack-${STACK_VERSION}-linux-x86_64.tar.gz && \
