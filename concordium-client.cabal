@@ -278,3 +278,4 @@ test-suite concordium-client-test
     , unordered-containers
     , vector
   default-language: Haskell2010
+

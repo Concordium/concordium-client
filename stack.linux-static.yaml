@@ -1,4 +1,4 @@
-resolver: lts-19.6
+resolver: lts-20.4
 
 packages:
 - .
@@ -6,10 +6,10 @@ packages:
 extra-deps:
 # http2-client was never included in stackage
 - github: Concordium/http2-client
-  commit: 87c4306a624ff490ac9bd92e075ff09f14c341f4
+  commit: 8087dfd416118064934affb35caab811a8a70233
 
 - github: Concordium/http2-grpc-haskell
-  commit: 6787bbe9445e841c02c8b1f699304be15b3c3e5a
+  commit: 7f4f4955cd64d867b9fda951600a445653f5b098
   subdirs:
     - http2-client-grpc
     - http2-grpc-proto-lens

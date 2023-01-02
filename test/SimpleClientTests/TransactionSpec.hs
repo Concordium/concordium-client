@@ -20,13 +20,21 @@ exampleAddress1 :: Text
 exampleAddress1 = "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
 
 exampleAccountAddr1 :: Types.AccountAddress
-Right exampleAccountAddr1 = IDTypes.addressFromText exampleAddress1
+exampleAccountAddr1 = case IDTypes.addressFromText exampleAddress1 of
+                        Right addr -> addr
+                        -- This does not happen since the format
+                        -- of the text is that of a valid address.
+                        Left err -> error err
 
 exampleAddress2 :: Text
 exampleAddress2 = "4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa"
 
 exampleAccountAddr2 :: Types.AccountAddress
-Right exampleAccountAddr2 = IDTypes.addressFromText exampleAddress2
+exampleAccountAddr2 = case IDTypes.addressFromText exampleAddress2 of
+                        Right addr -> addr
+                        -- This does not happen since the format
+                        -- of the text is that of a valid address.
+                        Left err -> error err
 
 exampleTransactionHash :: Types.TransactionHash
 exampleTransactionHash = read "c20911f59cda41c116f528531e815a3b561861b96014b379e8a52f1cbbafd2e4"
