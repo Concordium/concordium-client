@@ -144,9 +144,9 @@ exampleCredentials p = IDTypes.NormalAC (IDTypes.CredentialDeploymentValues
         shareS = "a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46fa1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f"
         (regId, share) = case (BSH.deserializeBase16 regIdS, BSH.deserializeBase16 shareS) of
           (Just regId', Just shareS') -> (regId', shareS')
-          -- This does not happen since the formats of
-          -- regIds and shareS are base 16 strings and
-          -- hence they are always deserialized.
+          -- This does not happen since regIds and shareS are
+          -- validly generated base 16 strings and hence they
+          -- are deserialized.
           _ -> error "unable to deserialize"
 
 examplePolicyWithoutItems :: IDTypes.Policy

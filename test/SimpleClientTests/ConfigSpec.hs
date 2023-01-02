@@ -245,9 +245,9 @@ exampleSelectedKeyConfigWithKeysAndName =
         v2 = "f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213"
         (vk1, vk2) = case (BSH.deserializeBase16 v1, BSH.deserializeBase16 v2) of
                        (Just v', Just v'') -> (v',v'')
-                       -- This does not happen since the formats of
-                       -- v1 and v2 are base 16 strings and hence
-                       -- they are always deserialized.
+                       -- This does not happen since regIds and shareS are
+                       -- validly generated base 16 strings and hence they
+                       -- are deserialized.
                        _ -> error "unable to deserialize"
 
 exampleAccountConfigWithoutKeysAndName :: EncryptedSigningData
