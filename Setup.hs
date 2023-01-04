@@ -22,7 +22,6 @@ autoConfHook desc flags = do
 
 main =
     defaultMainWithHooks $
-        generatingProtos "deps/grpc-api/vs/concordium" $
             generatingProtos
                 "deps/grpc-api"
                 simpleUserHooks
