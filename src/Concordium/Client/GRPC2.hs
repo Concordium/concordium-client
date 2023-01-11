@@ -6,6 +6,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 
 {- |Part of the implementation of the GRPC2 interface. This module constructs
     responses to queries that are handled by the Haskell part of the code.
