@@ -2524,6 +2524,71 @@ instance FromProto Proto.NextAccountSequenceNumber where
         nanAllFinal = nasn ^. ProtoFields.allFinal
     }
 
+instance FromProto Proto.ProtocolVersion where
+    type Output' Proto.ProtocolVersion = ProtocolVersion
+    fromProto = \case
+        Proto.PROTOCOL_VERSION_1 -> P1
+        Proto.PROTOCOL_VERSION_2 -> P2
+        Proto.PROTOCOL_VERSION_3 -> P3
+        Proto.PROTOCOL_VERSION_4 -> P4
+        Proto.PROTOCOL_VERSION_5 -> P5
+        Proto.PROTOCOL_VERSION_6 -> P6
+        Proto.ProtocolVersion'Unrecognized _ -> error "ouch"
+
+instance FromProto Proto.Duration where
+    type Output' Proto.Duration = Duration
+    fromProto = Duration . deMkWord64
+
+
+instance FromProto Proto.BlockHeight where
+    type Output' Proto.BlockHeight = BlockHeight
+    fromProto = BlockHeight . deMkWord64
+
+instance FromProto Proto.AbsoluteBlockHeight where
+    type Output' Proto.AbsoluteBlockHeight = AbsoluteBlockHeight
+    fromProto = AbsoluteBlockHeight . deMkWord64
+
+instance FromProto Proto.GenesisIndex where
+    type Output' Proto.GenesisIndex = GenesisIndex
+    fromProto = GenesisIndex . deMkWord32
+
+instance FromProto Proto.ConsensusInfo where
+    type Output' Proto.ConsensusInfo = QueryTypes.ConsensusStatus
+    fromProto ci = QueryTypes.ConsensusStatus{
+        csBestBlock = fromProto $ ci ^. ProtoFields.bestBlock,
+        csGenesisBlock = fromProto $ ci ^. ProtoFields.genesisBlock,
+        csGenesisTime = snd . fromProto $ ci ^. ProtoFields.genesisTime,
+        csSlotDuration = fromProto $ ci ^. ProtoFields.slotDuration,
+        csEpochDuration = fromProto $ ci ^. ProtoFields.epochDuration,
+        csLastFinalizedBlock = fromProto $ ci ^. ProtoFields.lastFinalizedBlock,
+        csBestBlockHeight = fromProto $ ci ^. ProtoFields.bestBlockHeight,
+        csLastFinalizedBlockHeight = fromProto $ ci ^. ProtoFields.lastFinalizedBlockHeight,
+        csBlocksReceivedCount = fromIntegral $ ci ^. ProtoFields.blocksReceivedCount,
+        csBlocksVerifiedCount = fromIntegral $ ci ^. ProtoFields.blocksVerifiedCount,
+        csBlockLastReceivedTime = fmap (snd . fromProto) $ ci ^. ProtoFields.maybe'blockLastReceivedTime,
+        csBlockReceiveLatencyEMA = ci ^. ProtoFields.blockReceiveLatencyEma,
+        csBlockReceiveLatencyEMSD = ci ^. ProtoFields.blockReceiveLatencyEmsd,
+        csBlockReceivePeriodEMA = ci ^. ProtoFields.maybe'blockReceivePeriodEma,
+        csBlockReceivePeriodEMSD = ci ^. ProtoFields.maybe'blockReceivePeriodEmsd,
+        csBlockLastArrivedTime = fmap (snd . fromProto) $ ci ^. ProtoFields.maybe'blockLastArrivedTime,
+        csBlockArriveLatencyEMA = ci ^. ProtoFields.blockArriveLatencyEma,
+        csBlockArriveLatencyEMSD = ci ^. ProtoFields.blockArriveLatencyEmsd,
+        csBlockArrivePeriodEMA = ci ^. ProtoFields.maybe'blockArrivePeriodEma,
+        csBlockArrivePeriodEMSD = ci ^. ProtoFields.maybe'blockArrivePeriodEmsd,
+        csTransactionsPerBlockEMA = ci ^. ProtoFields.transactionsPerBlockEma,
+        csTransactionsPerBlockEMSD = ci ^. ProtoFields.transactionsPerBlockEmsd,
+        csFinalizationCount = fromIntegral $ ci ^. ProtoFields.finalizationCount,
+        csLastFinalizedTime = fmap (snd . fromProto) $ ci ^. ProtoFields.maybe'lastFinalizedTime,
+        csFinalizationPeriodEMA = ci ^. ProtoFields.maybe'finalizationPeriodEma,
+        csFinalizationPeriodEMSD = ci ^. ProtoFields.maybe'finalizationPeriodEmsd,
+        csProtocolVersion = fromProto $ ci ^. ProtoFields.protocolVersion,
+        csGenesisIndex = fromProto $ ci ^. ProtoFields.genesisIndex,
+        csCurrentEraGenesisBlock = fromProto $ ci ^. ProtoFields.currentEraGenesisBlock,
+        csCurrentEraGenesisTime = snd . fromProto $ ci ^. ProtoFields.currentEraGenesisTime
+    }
+
+getConsensusInfoV2 :: (MonadIO m) => ClientMonad m (GRPCResult Wasm.WasmModule)
+getConsensusInfoV2 = withUnaryCoreV2 (callV2 @"getModuleSource") defMessage (fmap fromProto <$>)
 
 getModuleSourceV2 :: (MonadIO m) => ModuleRef -> BlockHashInput -> ClientMonad m (GRPCResult Wasm.WasmModule)
 getModuleSourceV2 modRef hash = withUnaryCoreV2 (callV2 @"getModuleSource") msg (fmap fromProto <$>)
