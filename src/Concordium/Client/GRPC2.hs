@@ -17,6 +17,7 @@
 module Concordium.Client.GRPC2 (
     ToProto (..),
     FromProto (..),
+    getAccountInfoV2
 ) where
 
 -- Refactor these after migrating to GRPC V2; here for now due to many namespace conflicts.
@@ -92,6 +93,8 @@ import Data.Sequence (Seq (Empty))
 import Data.String
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Proto.V2.Concordium.Service qualified as CS
+import qualified Data.ProtoLens.Encoding.Bytes as S
+import Concordium.Wasm (ModuleSource)
 
 {- |A helper function that can be used to construct a value of a protobuf
  "wrapper" type by serializing the provided value @a@ using its serialize
@@ -2459,6 +2462,64 @@ instance ToProto BlockHashInput where
         LastFinal -> Proto.make $ ProtoFields.lastFinal .= defMessage
         Given bh -> Proto.make $ ProtoFields.given .= toProto bh
 
+instance FromProto Proto.BlockHash where
+    type Output' Proto.BlockHash = BlockHash
+    fromProto bh = BlockHash $ deMkSerialize bh
+
+instance FromProto Proto.ModuleRef where
+    type Output' Proto.ModuleRef = ModuleRef
+    fromProto mr = ModuleRef {
+        moduleRef = Hash $ FBS.fromByteString (mr ^. ProtoFields.value)
+    }
+
+instance FromProto Proto.VersionedModuleSource where
+    type Output' Proto.VersionedModuleSource = Wasm.WasmModule
+    fromProto vms =
+        case (vms ^? ProtoFields.v0, vms ^? ProtoFields.v1) of
+          (Just v0, Nothing) -> Wasm.WasmModuleV0 $ deMkSerialize v0
+          (Nothing, Just v1) -> Wasm.WasmModuleV1 $ deMkSerialize v1
+          _ -> error "whoops"
+instance FromProto Proto.ContractStateV0 where
+    type Output' Proto.ContractStateV0 = Wasm.ContractState
+    fromProto cs = Wasm.ContractState {
+        contractState = cs ^. ProtoFields.value
+    }
+instance FromProto Proto.ReceiveName where
+    type Output' Proto.ReceiveName = Wasm.ReceiveName
+    fromProto name = Wasm.ReceiveName $ name ^. ProtoFields.value
+
+instance FromProto Proto.InitName where
+    type Output' Proto.InitName = Wasm.InitName
+    fromProto name = Wasm.InitName $ name ^. ProtoFields.value
+
+instance FromProto Proto.InstanceInfo where
+    type Output' Proto.InstanceInfo = Wasm.InstanceInfo
+    fromProto ii =
+        case (ii ^? ProtoFields.v0, ii ^? ProtoFields.v1) of
+          (Just v0, Nothing) ->
+            Wasm.InstanceInfoV0 {
+                iiModel = fromProto $ v0 ^. ProtoFields.model,
+                iiOwner = fromProto $ v0 ^. ProtoFields.owner,
+                iiAmount = fromProto $ v0 ^. ProtoFields.amount,
+                iiMethods = Set.fromList $ fmap fromProto $ v0 ^. ProtoFields.methods,
+                iiName = fromProto $ v0 ^. ProtoFields.name,
+                iiSourceModule = fromProto $ v0 ^. ProtoFields.sourceModule
+            }
+          (Nothing, Just v1) ->
+            Wasm.InstanceInfoV1 {
+                iiOwner = fromProto $ v1 ^. ProtoFields.owner,
+                iiAmount = fromProto $ v1 ^. ProtoFields.amount,
+                iiMethods = Set.fromList $ fmap fromProto $ v1 ^. ProtoFields.methods,
+                iiName = fromProto $ v1 ^. ProtoFields.name,
+                iiSourceModule = fromProto $ v1 ^. ProtoFields.sourceModule
+            }
+          _ -> error "whoops"
+
+
+getModuleSourceV2 :: (MonadIO m) => ModuleRef -> BlockHashInput -> ClientMonad m (GRPCResult Wasm.WasmModule)
+getModuleSourceV2 modRef hash = withUnaryCoreV2 (callV2 @"getModuleSource") msg (fmap fromProto <$>)
+  where msg = defMessage & ProtoFields.blockHash .~ toProto hash & ProtoFields.moduleRef .~ toProto modRef
+
 -- |Retrieve the account information from the chain.
 getAccountInfoV2 ::
     MonadIO m =>
@@ -2467,14 +2528,14 @@ getAccountInfoV2 ::
     -- | Block hash
     BlockHashInput ->
     ClientMonad m (GRPCResult Concordium.Types.AccountInfo)
-getAccountInfoV2 account hash = do
-    result <- withUnaryCoreV2 (callV2 @"getAccountInfo") msg id
-    return $ fmap fromProto <$> result
+getAccountInfoV2 account blockHash = withUnaryCoreV2 (callV2 @"getAccountInfo") msg (fmap fromProto <$>)
   where
-    msg = defMessage & ProtoFields.blockHash .~ toProto hash & ProtoFields.accountIdentifier .~ toProto account
+    msg = defMessage & ProtoFields.blockHash .~ toProto blockHash & ProtoFields.accountIdentifier .~ toProto account
 
-getInstanceInfoV2 :: (MonadIO m) => Proto.InstanceInfoRequest -> ClientMonad m (GRPCResult Proto.InstanceInfo)
-getInstanceInfoV2 = withUnaryV2' (callV2 @"getInstanceInfo")
+getInstanceInfoV2 :: (MonadIO m) => ContractAddress -> BlockHashInput -> ClientMonad m (GRPCResult Wasm.InstanceInfo)
+getInstanceInfoV2 cAddress blockHash = withUnaryCoreV2 (callV2 @"getInstanceInfo") msg (fmap fromProto <$>)
+  where
+    msg = defMessage & ProtoFields.blockHash .~ toProto blockHash & ProtoFields.address .~ toProto cAddress
 
 {- | Setup the GRPC client and run a rawUnary call with the provided message to the provided method,
  the output is interpreted using the function given in the third parameter.
