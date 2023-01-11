@@ -95,6 +95,8 @@ import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Proto.V2.Concordium.Service qualified as CS
 import qualified Data.ProtoLens.Encoding.Bytes as S
 import Concordium.Wasm (ModuleSource)
+import Concordium.Types.Parameters (CryptographicParameters)
+import Concordium.Types.Queries (NextAccountNonce)
 
 {- |A helper function that can be used to construct a value of a protobuf
  "wrapper" type by serializing the provided value @a@ using its serialize
@@ -2515,6 +2517,13 @@ instance FromProto Proto.InstanceInfo where
             }
           _ -> error "whoops"
 
+instance FromProto Proto.NextAccountSequenceNumber where
+    type Output' Proto.NextAccountSequenceNumber = QueryTypes.NextAccountNonce
+    fromProto nasn = QueryTypes.NextAccountNonce {
+        nanNonce = fromProto $ nasn ^. ProtoFields.sequenceNumber,
+        nanAllFinal = nasn ^. ProtoFields.allFinal
+    }
+
 
 getModuleSourceV2 :: (MonadIO m) => ModuleRef -> BlockHashInput -> ClientMonad m (GRPCResult Wasm.WasmModule)
 getModuleSourceV2 modRef hash = withUnaryCoreV2 (callV2 @"getModuleSource") msg (fmap fromProto <$>)
@@ -2536,6 +2545,18 @@ getInstanceInfoV2 :: (MonadIO m) => ContractAddress -> BlockHashInput -> ClientM
 getInstanceInfoV2 cAddress blockHash = withUnaryCoreV2 (callV2 @"getInstanceInfo") msg (fmap fromProto <$>)
   where
     msg = defMessage & ProtoFields.blockHash .~ toProto blockHash & ProtoFields.address .~ toProto cAddress
+
+getNextSequenceNumberV2 :: (MonadIO m) => AccountAddress -> ClientMonad m (GRPCResult QueryTypes.NextAccountNonce)
+getNextSequenceNumberV2 accAddress = withUnaryCoreV2 (callV2 @"getNextAccountSequenceNumber") msg (fmap fromProto <$>)
+  where
+    msg = toProto accAddress
+
+{- FIXME: Should we still use GlobalContext for these internally?
+getCryptographicParametersV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult CryptographicParameters)
+getCryptographicParametersV2 blockHash = withUnaryCoreV2 (callV2 @"getCryptographicParameters") msg (fmap fromProto <$>)
+  where
+    msg = toProto blockHash
+-}
 
 {- | Setup the GRPC client and run a rawUnary call with the provided message to the provided method,
  the output is interpreted using the function given in the third parameter.
