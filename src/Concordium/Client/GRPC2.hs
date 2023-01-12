@@ -1,12 +1,12 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE ImportQualifiedPost #-}
 
 {- |Part of the implementation of the GRPC2 interface. This module constructs
     responses to queries that are handled by the Haskell part of the code.
@@ -17,7 +17,7 @@
 module Concordium.Client.GRPC2 (
     ToProto (..),
     FromProto (..),
-    getAccountInfoV2
+    getAccountInfoV2,
 ) where
 
 -- Refactor these after migrating to GRPC V2; here for now due to many namespace conflicts.
@@ -79,24 +79,25 @@ import Network.HTTP2.Client
 import Web.Cookie qualified as Cookie
 
 import Concordium.Types.Accounts qualified as Concordium.Types
+import Concordium.Types.Parameters (CryptographicParameters)
+import Concordium.Types.Queries (NextAccountNonce)
+import Concordium.Wasm (ModuleSource)
 import Control.Concurrent.Async
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.Bifunctor (Bifunctor (bimap))
 import Data.Either (fromRight)
 import Data.IORef
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, fromMaybe)
 import Data.ProtoLens (defMessage)
+import Data.ProtoLens.Encoding.Bytes qualified as S
 import Data.ProtoLens.Field qualified as Field
 import Data.ProtoLens.Service.Types
 import Data.Sequence (Seq (Empty))
 import Data.String
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Proto.V2.Concordium.Service qualified as CS
-import qualified Data.ProtoLens.Encoding.Bytes as S
-import Concordium.Wasm (ModuleSource)
-import Concordium.Types.Parameters (CryptographicParameters)
-import Concordium.Types.Queries (NextAccountNonce)
+import qualified Control.Monad.Cont as Wasm
 
 {- |A helper function that can be used to construct a value of a protobuf
  "wrapper" type by serializing the provided value @a@ using its serialize
@@ -2150,12 +2151,14 @@ data BlockHashInput = Best | LastFinal | Given BlockHash
 
 -- |An account identifier input
 type AccountIdentifierInput = AccountIdentifier
+
 instance FromProto Proto.AccountIndex where
     type Output' Proto.AccountIndex = AccountIndex
     fromProto = AccountIndex . deMkWord64
 instance FromProto Proto.AccountAddress where
     type Output' Proto.AccountAddress = AccountAddress
     fromProto = deMkSerialize
+
 instance FromProto Proto.CredentialRegistrationId where
     type Output' Proto.CredentialRegistrationId = RawCredentialRegistrationID
     fromProto = deMkSerialize
@@ -2177,10 +2180,6 @@ instance ToProto AccountIdentifierInput where
 instance FromProto Proto.SequenceNumber where
     type Output' Proto.SequenceNumber = Nonce
     fromProto = Nonce . deMkWord64
-
-instance FromProto Proto.Amount where
-    type Output' Proto.Amount = Amount
-    fromProto = Amount . deMkWord64
 
 instance FromProto Proto.ReleaseSchedule where
     type Output' Proto.ReleaseSchedule = AccountReleaseSummary
@@ -2470,22 +2469,24 @@ instance FromProto Proto.BlockHash where
 
 instance FromProto Proto.ModuleRef where
     type Output' Proto.ModuleRef = ModuleRef
-    fromProto mr = ModuleRef {
-        moduleRef = Hash $ FBS.fromByteString (mr ^. ProtoFields.value)
-    }
+    fromProto mr =
+        ModuleRef
+            { moduleRef = Hash $ FBS.fromByteString (mr ^. ProtoFields.value)
+            }
 
 instance FromProto Proto.VersionedModuleSource where
     type Output' Proto.VersionedModuleSource = Wasm.WasmModule
     fromProto vms =
         case (vms ^? ProtoFields.v0, vms ^? ProtoFields.v1) of
-          (Just v0, Nothing) -> Wasm.WasmModuleV0 $ deMkSerialize v0
-          (Nothing, Just v1) -> Wasm.WasmModuleV1 $ deMkSerialize v1
-          _ -> error "whoops"
+            (Just v0, Nothing) -> Wasm.WasmModuleV0 $ deMkSerialize v0
+            (Nothing, Just v1) -> Wasm.WasmModuleV1 $ deMkSerialize v1
+            _ -> error "whoops"
 instance FromProto Proto.ContractStateV0 where
     type Output' Proto.ContractStateV0 = Wasm.ContractState
-    fromProto cs = Wasm.ContractState {
-        contractState = cs ^. ProtoFields.value
-    }
+    fromProto cs =
+        Wasm.ContractState
+            { contractState = cs ^. ProtoFields.value
+            }
 instance FromProto Proto.ReceiveName where
     type Output' Proto.ReceiveName = Wasm.ReceiveName
     fromProto name = Wasm.ReceiveName $ name ^. ProtoFields.value
@@ -2498,31 +2499,32 @@ instance FromProto Proto.InstanceInfo where
     type Output' Proto.InstanceInfo = Wasm.InstanceInfo
     fromProto ii =
         case (ii ^? ProtoFields.v0, ii ^? ProtoFields.v1) of
-          (Just v0, Nothing) ->
-            Wasm.InstanceInfoV0 {
-                iiModel = fromProto $ v0 ^. ProtoFields.model,
-                iiOwner = fromProto $ v0 ^. ProtoFields.owner,
-                iiAmount = fromProto $ v0 ^. ProtoFields.amount,
-                iiMethods = Set.fromList $ fmap fromProto $ v0 ^. ProtoFields.methods,
-                iiName = fromProto $ v0 ^. ProtoFields.name,
-                iiSourceModule = fromProto $ v0 ^. ProtoFields.sourceModule
-            }
-          (Nothing, Just v1) ->
-            Wasm.InstanceInfoV1 {
-                iiOwner = fromProto $ v1 ^. ProtoFields.owner,
-                iiAmount = fromProto $ v1 ^. ProtoFields.amount,
-                iiMethods = Set.fromList $ fmap fromProto $ v1 ^. ProtoFields.methods,
-                iiName = fromProto $ v1 ^. ProtoFields.name,
-                iiSourceModule = fromProto $ v1 ^. ProtoFields.sourceModule
-            }
-          _ -> error "whoops"
+            (Just v0, Nothing) ->
+                Wasm.InstanceInfoV0
+                    { iiModel = fromProto $ v0 ^. ProtoFields.model
+                    , iiOwner = fromProto $ v0 ^. ProtoFields.owner
+                    , iiAmount = fromProto $ v0 ^. ProtoFields.amount
+                    , iiMethods = Set.fromList $ fmap fromProto $ v0 ^. ProtoFields.methods
+                    , iiName = fromProto $ v0 ^. ProtoFields.name
+                    , iiSourceModule = fromProto $ v0 ^. ProtoFields.sourceModule
+                    }
+            (Nothing, Just v1) ->
+                Wasm.InstanceInfoV1
+                    { iiOwner = fromProto $ v1 ^. ProtoFields.owner
+                    , iiAmount = fromProto $ v1 ^. ProtoFields.amount
+                    , iiMethods = Set.fromList $ fmap fromProto $ v1 ^. ProtoFields.methods
+                    , iiName = fromProto $ v1 ^. ProtoFields.name
+                    , iiSourceModule = fromProto $ v1 ^. ProtoFields.sourceModule
+                    }
+            _ -> error "whoops"
 
 instance FromProto Proto.NextAccountSequenceNumber where
     type Output' Proto.NextAccountSequenceNumber = QueryTypes.NextAccountNonce
-    fromProto nasn = QueryTypes.NextAccountNonce {
-        nanNonce = fromProto $ nasn ^. ProtoFields.sequenceNumber,
-        nanAllFinal = nasn ^. ProtoFields.allFinal
-    }
+    fromProto nasn =
+        QueryTypes.NextAccountNonce
+            { nanNonce = fromProto $ nasn ^. ProtoFields.sequenceNumber
+            , nanAllFinal = nasn ^. ProtoFields.allFinal
+            }
 
 instance FromProto Proto.ProtocolVersion where
     type Output' Proto.ProtocolVersion = ProtocolVersion
@@ -2539,7 +2541,6 @@ instance FromProto Proto.Duration where
     type Output' Proto.Duration = Duration
     fromProto = Duration . deMkWord64
 
-
 instance FromProto Proto.BlockHeight where
     type Output' Proto.BlockHeight = BlockHeight
     fromProto = BlockHeight . deMkWord64
@@ -2554,45 +2555,442 @@ instance FromProto Proto.GenesisIndex where
 
 instance FromProto Proto.ConsensusInfo where
     type Output' Proto.ConsensusInfo = QueryTypes.ConsensusStatus
-    fromProto ci = QueryTypes.ConsensusStatus{
-        csBestBlock = fromProto $ ci ^. ProtoFields.bestBlock,
-        csGenesisBlock = fromProto $ ci ^. ProtoFields.genesisBlock,
-        csGenesisTime = snd . fromProto $ ci ^. ProtoFields.genesisTime,
-        csSlotDuration = fromProto $ ci ^. ProtoFields.slotDuration,
-        csEpochDuration = fromProto $ ci ^. ProtoFields.epochDuration,
-        csLastFinalizedBlock = fromProto $ ci ^. ProtoFields.lastFinalizedBlock,
-        csBestBlockHeight = fromProto $ ci ^. ProtoFields.bestBlockHeight,
-        csLastFinalizedBlockHeight = fromProto $ ci ^. ProtoFields.lastFinalizedBlockHeight,
-        csBlocksReceivedCount = fromIntegral $ ci ^. ProtoFields.blocksReceivedCount,
-        csBlocksVerifiedCount = fromIntegral $ ci ^. ProtoFields.blocksVerifiedCount,
-        csBlockLastReceivedTime = fmap (snd . fromProto) $ ci ^. ProtoFields.maybe'blockLastReceivedTime,
-        csBlockReceiveLatencyEMA = ci ^. ProtoFields.blockReceiveLatencyEma,
-        csBlockReceiveLatencyEMSD = ci ^. ProtoFields.blockReceiveLatencyEmsd,
-        csBlockReceivePeriodEMA = ci ^. ProtoFields.maybe'blockReceivePeriodEma,
-        csBlockReceivePeriodEMSD = ci ^. ProtoFields.maybe'blockReceivePeriodEmsd,
-        csBlockLastArrivedTime = fmap (snd . fromProto) $ ci ^. ProtoFields.maybe'blockLastArrivedTime,
-        csBlockArriveLatencyEMA = ci ^. ProtoFields.blockArriveLatencyEma,
-        csBlockArriveLatencyEMSD = ci ^. ProtoFields.blockArriveLatencyEmsd,
-        csBlockArrivePeriodEMA = ci ^. ProtoFields.maybe'blockArrivePeriodEma,
-        csBlockArrivePeriodEMSD = ci ^. ProtoFields.maybe'blockArrivePeriodEmsd,
-        csTransactionsPerBlockEMA = ci ^. ProtoFields.transactionsPerBlockEma,
-        csTransactionsPerBlockEMSD = ci ^. ProtoFields.transactionsPerBlockEmsd,
-        csFinalizationCount = fromIntegral $ ci ^. ProtoFields.finalizationCount,
-        csLastFinalizedTime = fmap (snd . fromProto) $ ci ^. ProtoFields.maybe'lastFinalizedTime,
-        csFinalizationPeriodEMA = ci ^. ProtoFields.maybe'finalizationPeriodEma,
-        csFinalizationPeriodEMSD = ci ^. ProtoFields.maybe'finalizationPeriodEmsd,
-        csProtocolVersion = fromProto $ ci ^. ProtoFields.protocolVersion,
-        csGenesisIndex = fromProto $ ci ^. ProtoFields.genesisIndex,
-        csCurrentEraGenesisBlock = fromProto $ ci ^. ProtoFields.currentEraGenesisBlock,
-        csCurrentEraGenesisTime = snd . fromProto $ ci ^. ProtoFields.currentEraGenesisTime
+    fromProto ci =
+        QueryTypes.ConsensusStatus
+            { csBestBlock = fromProto $ ci ^. ProtoFields.bestBlock
+            , csGenesisBlock = fromProto $ ci ^. ProtoFields.genesisBlock
+            , csGenesisTime = snd . fromProto $ ci ^. ProtoFields.genesisTime
+            , csSlotDuration = fromProto $ ci ^. ProtoFields.slotDuration
+            , csEpochDuration = fromProto $ ci ^. ProtoFields.epochDuration
+            , csLastFinalizedBlock = fromProto $ ci ^. ProtoFields.lastFinalizedBlock
+            , csBestBlockHeight = fromProto $ ci ^. ProtoFields.bestBlockHeight
+            , csLastFinalizedBlockHeight = fromProto $ ci ^. ProtoFields.lastFinalizedBlockHeight
+            , csBlocksReceivedCount = fromIntegral $ ci ^. ProtoFields.blocksReceivedCount
+            , csBlocksVerifiedCount = fromIntegral $ ci ^. ProtoFields.blocksVerifiedCount
+            , csBlockLastReceivedTime = fmap (snd . fromProto) $ ci ^. ProtoFields.maybe'blockLastReceivedTime
+            , csBlockReceiveLatencyEMA = ci ^. ProtoFields.blockReceiveLatencyEma
+            , csBlockReceiveLatencyEMSD = ci ^. ProtoFields.blockReceiveLatencyEmsd
+            , csBlockReceivePeriodEMA = ci ^. ProtoFields.maybe'blockReceivePeriodEma
+            , csBlockReceivePeriodEMSD = ci ^. ProtoFields.maybe'blockReceivePeriodEmsd
+            , csBlockLastArrivedTime = fmap (snd . fromProto) $ ci ^. ProtoFields.maybe'blockLastArrivedTime
+            , csBlockArriveLatencyEMA = ci ^. ProtoFields.blockArriveLatencyEma
+            , csBlockArriveLatencyEMSD = ci ^. ProtoFields.blockArriveLatencyEmsd
+            , csBlockArrivePeriodEMA = ci ^. ProtoFields.maybe'blockArrivePeriodEma
+            , csBlockArrivePeriodEMSD = ci ^. ProtoFields.maybe'blockArrivePeriodEmsd
+            , csTransactionsPerBlockEMA = ci ^. ProtoFields.transactionsPerBlockEma
+            , csTransactionsPerBlockEMSD = ci ^. ProtoFields.transactionsPerBlockEmsd
+            , csFinalizationCount = fromIntegral $ ci ^. ProtoFields.finalizationCount
+            , csLastFinalizedTime = fmap (snd . fromProto) $ ci ^. ProtoFields.maybe'lastFinalizedTime
+            , csFinalizationPeriodEMA = ci ^. ProtoFields.maybe'finalizationPeriodEma
+            , csFinalizationPeriodEMSD = ci ^. ProtoFields.maybe'finalizationPeriodEmsd
+            , csProtocolVersion = fromProto $ ci ^. ProtoFields.protocolVersion
+            , csGenesisIndex = fromProto $ ci ^. ProtoFields.genesisIndex
+            , csCurrentEraGenesisBlock = fromProto $ ci ^. ProtoFields.currentEraGenesisBlock
+            , csCurrentEraGenesisTime = snd . fromProto $ ci ^. ProtoFields.currentEraGenesisTime
+            }
+
+instance FromProto Proto.Slot where
+    type Output' Proto.Slot = Slot
+    fromProto = Slot . deMkWord64
+
+instance FromProto Proto.StateHash where
+    type Output' Proto.StateHash = StateHash
+    fromProto = StateHashV0 . deMkSerialize
+
+instance FromProto Proto.Energy where
+    type Output' Proto.Energy = Energy
+    fromProto = Energy . deMkWord64
+
+instance FromProto Proto.BlockInfo where
+    type Output' Proto.BlockInfo = QueryTypes.BlockInfo
+    fromProto bi =
+        QueryTypes.BlockInfo
+            { biBlockHash = fromProto $ bi ^. ProtoFields.hash
+            , biBlockHeight = fromProto $ bi ^. ProtoFields.height
+            , biBlockParent = fromProto $ bi ^. ProtoFields.parentBlock
+            , biBlockLastFinalized = fromProto $ bi ^. ProtoFields.lastFinalizedBlock
+            , biGenesisIndex = fromProto $ bi ^. ProtoFields.genesisIndex
+            , biEraBlockHeight = fromProto $ bi ^. ProtoFields.eraBlockHeight
+            , biBlockReceiveTime = snd . fromProto $ bi ^. ProtoFields.receiveTime
+            , biBlockArriveTime = snd . fromProto $ bi ^. ProtoFields.arriveTime
+            , biBlockSlot = fromProto $ bi ^. ProtoFields.slotNumber
+            , biBlockSlotTime = snd . fromProto $ bi ^. ProtoFields.slotTime
+            , biBlockBaker = fmap fromProto $ bi ^. ProtoFields.maybe'baker
+            , biFinalized = bi ^. ProtoFields.finalized
+            , biTransactionCount = fromIntegral $ bi ^. ProtoFields.transactionCount
+            , biTransactionEnergyCost = fromProto $ bi ^. ProtoFields.transactionsEnergyCost
+            , biTransactionsSize = fromIntegral $ bi ^. ProtoFields.transactionsSize
+            , biBlockStateHash = fromProto $ bi ^. ProtoFields.stateHash
+            }
+
+instance FromProto Proto.Amount where
+    type Output' Proto.Amount = Amount
+    fromProto = Amount . deMkWord64
+
+instance FromProto Proto.PoolCurrentPaydayInfo where
+    type Output' Proto.PoolCurrentPaydayInfo = QueryTypes.CurrentPaydayBakerPoolStatus
+    fromProto cpi =
+        QueryTypes.CurrentPaydayBakerPoolStatus
+            { bpsBlocksBaked = fromIntegral $ cpi ^. ProtoFields.blocksBaked
+            , bpsFinalizationLive = cpi ^. ProtoFields.finalizationLive
+            , bpsTransactionFeesEarned = fromProto $ cpi ^. ProtoFields.transactionFeesEarned
+            , bpsEffectiveStake = fromProto $ cpi ^. ProtoFields.effectiveStake
+            , bpsLotteryPower = cpi ^. ProtoFields.lotteryPower
+            , bpsBakerEquityCapital = fromProto $ cpi ^. ProtoFields.bakerEquityCapital
+            , bpsDelegatedCapital = fromProto $ cpi ^. ProtoFields.delegatedCapital
+            }
+
+instance FromProto Proto.PoolInfoResponse where
+    type Output' Proto.PoolInfoResponse = QueryTypes.PoolStatus
+    fromProto pir =
+        QueryTypes.BakerPoolStatus
+            { psBakerId = fromProto $ pir ^. ProtoFields.baker
+            , psBakerAddress = fromProto $ pir ^. ProtoFields.address
+            , psBakerEquityCapital = fromProto $ pir ^. ProtoFields.equityCapital
+            , psDelegatedCapital = fromProto $ pir ^. ProtoFields.delegatedCapital
+            , psDelegatedCapitalCap = fromProto $ pir ^. ProtoFields.delegatedCapitalCap
+            , psPoolInfo = fromProto $ pir ^. ProtoFields.poolInfo
+            , psBakerStakePendingChange = fromJust $ fmap fromProto $ pir ^. ProtoFields.maybe'equityPendingChange
+            , psCurrentPaydayStatus = fmap fromProto $ pir ^. ProtoFields.maybe'currentPaydayInfo
+            , psAllPoolTotalCapital = fromProto $ pir ^. ProtoFields.allPoolTotalCapital
+            }
+
+instance FromProto Proto.PassiveDelegationInfo where
+    type Output' Proto.PassiveDelegationInfo = QueryTypes.PoolStatus
+    fromProto pdi =
+        QueryTypes.PassiveDelegationStatus
+            { psDelegatedCapital = fromProto $ pdi ^. ProtoFields.delegatedCapital
+            , psCommissionRates = fromProto $ pdi ^. ProtoFields.commissionRates
+            , psCurrentPaydayTransactionFeesEarned = fromProto $ pdi ^. ProtoFields.currentPaydayTransactionFeesEarned
+            , psCurrentPaydayDelegatedCapital = fromProto $ pdi ^. ProtoFields.currentPaydayDelegatedCapital
+            , psAllPoolTotalCapital = fromProto $ pdi ^. ProtoFields.allPoolTotalCapital
+            }
+
+instance FromProto (Maybe Proto.PoolPendingChange) where
+    type Output' (Maybe Proto.PoolPendingChange) = QueryTypes.PoolPendingChange
+    fromProto = maybe QueryTypes.PPCNoChange fromProto
+
+instance FromProto Proto.PoolPendingChange where
+    type Output' Proto.PoolPendingChange = QueryTypes.PoolPendingChange
+    fromProto ppc =
+        case (ppc ^? ProtoFields.reduce, ppc ^? ProtoFields.remove) of
+            (Just reduce, Nothing) ->
+                QueryTypes.PPCReduceBakerCapital
+                    { ppcBakerEquityCapital = fromProto $ reduce ^. ProtoFields.reducedEquityCapital
+                    , ppcEffectiveTime = snd . fromProto $ reduce ^. ProtoFields.effectiveTime
+                    }
+            (Nothing, Just remove) ->
+                QueryTypes.PPCRemovePool
+                    { ppcEffectiveTime = snd . fromProto $ remove ^. ProtoFields.effectiveTime
+                    }
+            _ -> error "whoopsie"
+
+instance FromProto Proto.BlocksAtHeightResponse where
+    type Output' Proto.BlocksAtHeightResponse = [BlockHash]
+    fromProto bahr = fmap fromProto $ bahr ^. ProtoFields.blocks
+
+data BlockHeightInput
+    = Relative
+        { rGenesisIndex :: GenesisIndex
+        , rBlockHeight :: BlockHeight
+        , rRestrict :: Bool
+        }
+    | Absolute
+        { aBlockHeight :: AbsoluteBlockHeight
+        }
+
+instance ToProto BlockHeightInput where
+    type Output BlockHeightInput = Proto.BlocksAtHeightRequest
+    toProto Relative {..} =
+        Proto.make $
+          ProtoFields.relative .= Proto.make ( do
+            ProtoFields.genesisIndex .= toProto rGenesisIndex
+            ProtoFields.height .= toProto rBlockHeight
+            ProtoFields.restrict .= rRestrict )
+    toProto Absolute {..} =
+        Proto.make $
+            ProtoFields.absolute .= Proto.make (ProtoFields.height .= toProto aBlockHeight)
+
+instance FromProto Proto.MintRate where
+    type Output' Proto.MintRate = MintRate
+    fromProto mr =
+        MintRate
+            { mrMantissa = mr ^. ProtoFields.mantissa
+            , mrExponent = fromIntegral $ mr ^. ProtoFields.exponent
+            }
+
+instance FromProto Proto.TokenomicsInfo where
+    type Output' Proto.TokenomicsInfo = QueryTypes.RewardStatus
+    fromProto ti =
+        case (ti ^? ProtoFields.v0, ti ^? ProtoFields.v1) of
+            (Just v0, Nothing) ->
+                QueryTypes.RewardStatusV0
+                    { rsTotalAmount = fromProto $ v0 ^. ProtoFields.totalAmount
+                    , rsTotalEncryptedAmount = fromProto $ v0 ^. ProtoFields.totalEncryptedAmount
+                    , rsBakingRewardAccount = fromProto $ v0 ^. ProtoFields.bakingRewardAccount
+                    , rsFinalizationRewardAccount = fromProto $ v0 ^. ProtoFields.finalizationRewardAccount
+                    , rsGasAccount = fromProto $ v0 ^. ProtoFields.gasAccount
+                    , rsProtocolVersion = fromProto $ v0 ^. ProtoFields.protocolVersion
+                    }
+            (Nothing, Just v1) ->
+                QueryTypes.RewardStatusV1
+                    { rsTotalAmount = fromProto $ v1 ^. ProtoFields.totalAmount
+                    , rsTotalEncryptedAmount = fromProto $ v1 ^. ProtoFields.totalEncryptedAmount
+                    , rsBakingRewardAccount = fromProto $ v1 ^. ProtoFields.bakingRewardAccount
+                    , rsFinalizationRewardAccount = fromProto $ v1 ^. ProtoFields.finalizationRewardAccount
+                    , rsGasAccount = fromProto $ v1 ^. ProtoFields.gasAccount
+                    , rsFoundationTransactionRewards = fromProto $ v1 ^. ProtoFields.foundationTransactionRewards
+                    , rsNextPaydayTime = snd . fromProto $ v1 ^. ProtoFields.nextPaydayTime
+                    , rsNextPaydayMintRate = fromProto $ v1 ^. ProtoFields.nextPaydayMintRate
+                    , rsTotalStakedCapital = fromProto $ v1 ^. ProtoFields.totalStakedCapital
+                    , rsProtocolVersion = fromProto $ v1 ^. ProtoFields.protocolVersion
+                    }
+            _ -> error "UwU"
+
+data InvokeInstanceInput = InvokeInstanceInput
+    { iiBlockHash :: BlockHashInput
+    , iiInvoker :: Maybe Address
+    , iiInstance :: ContractAddress
+    , iiAmount :: Amount
+    , iiEntrypoint :: Wasm.ReceiveName
+    , iiParameter :: Wasm.Parameter
+    , iiEnergy :: Energy
     }
+
+instance FromProto Proto.ContractEvent where
+    type Output' Proto.ContractEvent = Wasm.ContractEvent
+    fromProto ce = Wasm.ContractEvent . BSS.toShort $ ce ^. ProtoFields.value
+
+
+instance FromProto Proto.Parameter where
+    type Output' Proto.Parameter = Wasm.Parameter
+    fromProto p = Wasm.Parameter . BSS.toShort $ p ^. ProtoFields.value
+
+instance FromProto Proto.Address where
+    type Output' Proto.Address = Address
+    fromProto addr =
+        case (addr ^? ProtoFields.account, addr ^? ProtoFields.contract) of
+            (Just aAddr, Nothing) -> AddressAccount $ fromProto aAddr
+            (Nothing, Just cAddr) -> AddressContract $ fromProto cAddr
+            _ -> error "nope"
+
+instance FromProto Proto.ContractAddress where
+    type Output' Proto.ContractAddress = ContractAddress
+    fromProto ca = ContractAddress {
+        contractIndex = ContractIndex $ ca ^. ProtoFields.index,
+        contractSubindex = ContractSubindex $ ca ^. ProtoFields.subindex
+    }
+
+instance FromProto Proto.ContractVersion where
+    type Output' Proto.ContractVersion = Wasm.WasmVersion
+    fromProto cv = case cv of
+        Proto.V0 -> Wasm.V0
+        Proto.V1 -> Wasm.V1
+        _ -> error "dangit"
+
+instance FromProto Proto.ContractTraceElement where
+    type Output' Proto.ContractTraceElement = Event
+    fromProto cte =
+        case ( cte ^? ProtoFields.updated
+             , cte ^? ProtoFields.transferred
+             , cte ^? ProtoFields.interrupted
+             , cte ^? ProtoFields.resumed
+             , cte ^? ProtoFields.upgraded
+             ) of
+            (Just updated, Nothing, Nothing, Nothing, Nothing) ->
+                Updated
+                        { euContractVersion = fromProto $ updated ^. ProtoFields.contractVersion
+                        , euAddress = fromProto $ updated ^. ProtoFields.address
+                        , euInstigator = fromProto $ updated ^. ProtoFields.instigator
+                        , euAmount = fromProto $ updated ^. ProtoFields.amount
+                        , euMessage = fromProto $ updated ^. ProtoFields.parameter
+                        , euReceiveName = fromProto $ updated ^. ProtoFields.receiveName
+                        , euEvents = fmap fromProto $ updated ^. ProtoFields.events
+                        }
+            (Nothing, Just transferred, Nothing, Nothing, Nothing) ->
+                Transferred
+                        { etFrom = AddressContract $ fromProto $ transferred ^. ProtoFields.sender
+                        , etAmount = fromProto $ transferred ^. ProtoFields.amount
+                        , etTo = AddressAccount $ fromProto $ transferred ^. ProtoFields.receiver
+                        }
+            (Nothing, Nothing, Just interrupted, Nothing, Nothing) ->
+               Interrupted
+                        { iAddress = fromProto $ interrupted ^. ProtoFields.address
+                        , iEvents = fmap fromProto $ interrupted ^. ProtoFields.events
+                        }
+            (Nothing, Nothing, Nothing, Just resumed, Nothing) ->
+                Resumed
+                        { rAddress = fromProto $ resumed ^. ProtoFields.address
+                        , rSuccess = resumed ^. ProtoFields.success
+                        }
+            (Nothing, Nothing, Nothing, Nothing, Just upgraded) ->
+                Upgraded
+                        { euAddress = fromProto $ upgraded ^. ProtoFields.address
+                        , euFrom = fromProto $ upgraded ^. ProtoFields.from
+                        , euTo = fromProto $ upgraded ^. ProtoFields.to
+                        }
+            _ -> error "bad"
+
+
+{- 
+instance FromProto Proto.RejectReason where
+    type Output' Proto.RejectReason = RejectReason
+    fromProto rr
+        | Just _ <- rr ^? ProtoFields.moduleNotWf = ModuleNotWF
+        | Just ae <- rr ^? ProtoFields.moduleHashAlreadyExists =  ModuleHashAlreadyExists $ fromProto ae
+        | Just ar <- rr ^? ProtoFields.invalidAccountReference = InvalidAccountReference . fromProto $ ar
+        | Just iim $ rr ^? ProtoFields.invalidInitMethod =
+            InvalidInitMethod {
+                moduleRef = fromProto $ iim ^. ProtoFields.moduleRef,
+                Wasm.initName = fromProto $ iim ^. ProtoFields.initName
+            }
+        | Just iim <- rr ^? ProtoFields.invalidReceiveMethod =
+            InvalidInitMethod {
+                moduleRef = fromProto $ iim ^. ProtoFields.moduleRef,
+                receiveName = fromProto $ iim ^. ProtoFields.receiveName
+            }
+        | Just imr <- rr ^? ProtoFields.invalidModuleReference =
+            InvalidModuleReference {
+                moduleRef = fromProto imr
+            }
+        | Just ica <- rr ^? ProtoFields.invalidContractAddress =
+            InvalidContractAddress {
+                contractAddress = fromProto ica
+            }
+        | Just rf <- rr ^? ProtoFields.runtimeFailure = RuntimeFailure
+        | Just atl <- rr ^? ProtoFields.amountTooLarge =
+            AmountTooLarge {
+                addr = atl ^. ProtoFields.address,
+                amount = atl ^. ProtoFields. amount
+            }
+        | Just  <- rr ^? ProtoFields.invalidReceiveMethod =
+            InvalidReceiveMethod {
+                    moduleRef = fromProto $ bi ^. ProtoFields.moduleRef,
+                    receiveName = fromProto $ bi ^. ProtoFields.receiveName
+            }
+        | Just sf <- rr ^? ProtoFields.serializationFailure = SerializationFailure
+        | Just ooe <- rr ^? ProtoFields.outOfEnergy = OutOfEnergy 
+        | Just ri <- rr ^? ProtoFields.rejectedInit =
+            RejectedInit {
+                rejectReason = ri ^. ProtoFields.rejectReason ^. ProtoFields.rejectedInit
+            }
+        | Just  <- rr ^? ProtoFields. =
+             {
+                
+            }
+        | Just  <- rr ^? ProtoFields. =
+             {
+                
+            }
+        RejectedReceive{..} ->
+            Proto.make $
+                ProtoFields.rejectedReceive
+                    .= Proto.make
+                        ( do
+                            ProtoFields.rejectReason .= rejectReason
+                            ProtoFields.contractAddress .= toProto contractAddress
+                            ProtoFields.receiveName .= toProto receiveName
+                            ProtoFields.parameter .= toProto parameter
+                        )
+        InvalidProof -> Proto.make $ ProtoFields.invalidProof .= Proto.defMessage
+        AlreadyABaker bakerId -> Proto.make $ ProtoFields.alreadyABaker .= toProto bakerId
+        NotABaker addr -> Proto.make $ ProtoFields.notABaker .= toProto addr
+        InsufficientBalanceForBakerStake -> Proto.make $ ProtoFields.insufficientBalanceForBakerStake .= Proto.defMessage
+        StakeUnderMinimumThresholdForBaking -> Proto.make $ ProtoFields.stakeUnderMinimumThresholdForBaking .= Proto.defMessage
+        BakerInCooldown -> Proto.make $ ProtoFields.bakerInCooldown .= Proto.defMessage
+        DuplicateAggregationKey k -> Proto.make $ ProtoFields.duplicateAggregationKey .= mkSerialize k
+        NonExistentCredentialID -> Proto.make $ ProtoFields.nonExistentCredentialId .= Proto.defMessage
+        KeyIndexAlreadyInUse -> Proto.make $ ProtoFields.keyIndexAlreadyInUse .= Proto.defMessage
+        InvalidAccountThreshold -> Proto.make $ ProtoFields.invalidAccountThreshold .= Proto.defMessage
+        InvalidCredentialKeySignThreshold -> Proto.make $ ProtoFields.invalidCredentialKeySignThreshold .= Proto.defMessage
+        InvalidEncryptedAmountTransferProof -> Proto.make $ ProtoFields.invalidEncryptedAmountTransferProof .= Proto.defMessage
+        InvalidTransferToPublicProof -> Proto.make $ ProtoFields.invalidTransferToPublicProof .= Proto.defMessage
+        EncryptedAmountSelfTransfer addr -> Proto.make $ ProtoFields.encryptedAmountSelfTransfer .= toProto addr
+        InvalidIndexOnEncryptedTransfer -> Proto.make $ ProtoFields.invalidIndexOnEncryptedTransfer .= Proto.defMessage
+        ZeroScheduledAmount -> Proto.make $ ProtoFields.zeroScheduledAmount .= Proto.defMessage
+        NonIncreasingSchedule -> Proto.make $ ProtoFields.nonIncreasingSchedule .= Proto.defMessage
+        FirstScheduledReleaseExpired -> Proto.make $ ProtoFields.firstScheduledReleaseExpired .= Proto.defMessage
+        ScheduledSelfTransfer addr -> Proto.make $ ProtoFields.scheduledSelfTransfer .= toProto addr
+        InvalidCredentials -> Proto.make $ ProtoFields.invalidCredentials .= Proto.defMessage
+        DuplicateCredIDs ids -> Proto.make $ ProtoFields.duplicateCredIds . ProtoFields.ids .= (toProto <$> ids)
+        NonExistentCredIDs ids -> Proto.make $ ProtoFields.nonExistentCredIds . ProtoFields.ids .= (toProto <$> ids)
+        RemoveFirstCredential -> Proto.make $ ProtoFields.removeFirstCredential .= Proto.defMessage
+        CredentialHolderDidNotSign -> Proto.make $ ProtoFields.credentialHolderDidNotSign .= Proto.defMessage
+        NotAllowedMultipleCredentials -> Proto.make $ ProtoFields.notAllowedMultipleCredentials .= Proto.defMessage
+        NotAllowedToReceiveEncrypted -> Proto.make $ ProtoFields.notAllowedToReceiveEncrypted .= Proto.defMessage
+        NotAllowedToHandleEncrypted -> Proto.make $ ProtoFields.notAllowedToHandleEncrypted .= Proto.defMessage
+        MissingBakerAddParameters -> Proto.make $ ProtoFields.missingBakerAddParameters .= Proto.defMessage
+        FinalizationRewardCommissionNotInRange -> Proto.make $ ProtoFields.finalizationRewardCommissionNotInRange .= Proto.defMessage
+        BakingRewardCommissionNotInRange -> Proto.make $ ProtoFields.bakingRewardCommissionNotInRange .= Proto.defMessage
+        TransactionFeeCommissionNotInRange -> Proto.make $ ProtoFields.transactionFeeCommissionNotInRange .= Proto.defMessage
+        AlreadyADelegator -> Proto.make $ ProtoFields.alreadyADelegator .= Proto.defMessage
+        InsufficientBalanceForDelegationStake -> Proto.make $ ProtoFields.insufficientBalanceForDelegationStake .= Proto.defMessage
+        MissingDelegationAddParameters -> Proto.make $ ProtoFields.missingDelegationAddParameters .= Proto.defMessage
+        InsufficientDelegationStake -> Proto.make $ ProtoFields.insufficientDelegationStake .= Proto.defMessage
+        DelegatorInCooldown -> Proto.make $ ProtoFields.delegatorInCooldown .= Proto.defMessage
+        NotADelegator addr -> Proto.make $ ProtoFields.notADelegator .= toProto addr
+        DelegationTargetNotABaker bakerId -> Proto.make $ ProtoFields.delegationTargetNotABaker .= toProto bakerId
+        StakeOverMaximumThresholdForPool -> Proto.make $ ProtoFields.stakeOverMaximumThresholdForPool .= Proto.defMessage
+        PoolWouldBecomeOverDelegated -> Proto.make $ ProtoFields.poolWouldBecomeOverDelegated .= Proto.defMessage
+        PoolClosed -> Proto.make $ ProtoFields.poolClosed .= Proto.defMessage
+
+      
+instance FromProto Proto.InvokeInstanceResponse where
+    type Output' Proto.InvokeInstanceResponse = InvokeContract.InvokeContractResult
+    fromProto iir =
+        case (iir ^? ProtoFields.success, iir ^? ProtoFields.failure) of
+            (Just success, Nothing) ->
+                InvokeContract.Success
+                    { rcrReturnValue = success ^. ProtoFields.maybe'returnValue
+                    , rcrUsedEnergy = fromProto $ success ^. ProtoFields.usedEnergy
+                    , rcrEvents = fmap fromProto $ success ^. ProtoFields.effects
+                    }
+            (Nothing, Just failure) ->
+                InvokeContract.Failure
+                    { rcrReturnValue = failure ^. ProtoFields.maybe'returnValue
+                    , rcrUsedEnergy = fromProto $ failure ^. ProtoFields.usedEnergy
+                    , rcrReason = fromProto $ failure ^. ProtoFields.reason
+                    }
+            _ -> error "ouchie"
+
+invokeInstanceV2 :: (MonadIO m) => InvokeInstanceInput -> ClientMonad m (GRPCResult (Either ConversionError InvokeContract.InvokeContractResult))
+invokeInstanceV2 iiInput = withUnaryCoreV2 (callV2 @"invokeInstance") msg (fmap fromProto <$>)
+  where
+    msg = toProto iiInput
+-}
+
+getTokenomicsInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult QueryTypes.RewardStatus)
+getTokenomicsInfoV2 blockHash = withUnaryCoreV2 (callV2 @"getTokenomicsInfo") msg (fmap fromProto <$>)
+  where
+    msg = toProto blockHash
+
+getBlocksAtHeightV2 :: (MonadIO m) => BlockHeightInput -> ClientMonad m (GRPCResult [BlockHash])
+getBlocksAtHeightV2 blockHeight = withUnaryCoreV2 (callV2 @"getBlocksAtHeight") msg (fmap fromProto <$>)
+  where
+    msg = toProto blockHeight
+
+getPassiveDelegationInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult QueryTypes.PoolStatus)
+getPassiveDelegationInfoV2 blockHash = withUnaryCoreV2 (callV2 @"getPassiveDelegationInfo") msg (fmap fromProto <$>)
+  where
+    msg = toProto blockHash
+
+getPoolInfoV2 :: (MonadIO m) => BlockHashInput -> BakerId -> ClientMonad m (GRPCResult QueryTypes.PoolStatus)
+getPoolInfoV2 blockHash baker = withUnaryCoreV2 (callV2 @"getPoolInfo") msg (fmap fromProto <$>)
+  where
+    msg = defMessage & ProtoFields.blockHash .~ toProto blockHash & ProtoFields.baker .~ toProto baker
+
+getBlockInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult QueryTypes.BlockInfo)
+getBlockInfoV2 blockHash = withUnaryCoreV2 (callV2 @"getBlockInfo") msg (fmap fromProto <$>)
+  where
+    msg = toProto blockHash
 
 getConsensusInfoV2 :: (MonadIO m) => ClientMonad m (GRPCResult Wasm.WasmModule)
 getConsensusInfoV2 = withUnaryCoreV2 (callV2 @"getModuleSource") defMessage (fmap fromProto <$>)
 
 getModuleSourceV2 :: (MonadIO m) => ModuleRef -> BlockHashInput -> ClientMonad m (GRPCResult Wasm.WasmModule)
 getModuleSourceV2 modRef hash = withUnaryCoreV2 (callV2 @"getModuleSource") msg (fmap fromProto <$>)
-  where msg = defMessage & ProtoFields.blockHash .~ toProto hash & ProtoFields.moduleRef .~ toProto modRef
+  where
+    msg = defMessage & ProtoFields.blockHash .~ toProto hash & ProtoFields.moduleRef .~ toProto modRef
 
 -- |Retrieve the account information from the chain.
 getAccountInfoV2 ::
