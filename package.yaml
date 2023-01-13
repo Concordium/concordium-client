@@ -10,7 +10,7 @@ build-type:          Custom
 extra-source-files:
 - README.md
 - ChangeLog.md
-- deps/grpc-api/concordium_p2p_rpc.proto
+- deps/concordium-base/concordium-grpc-api/concordium_p2p_rpc.proto
 
 custom-setup:
   dependencies:
