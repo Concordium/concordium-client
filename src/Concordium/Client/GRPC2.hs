@@ -3083,54 +3083,112 @@ instance FromProto Proto.NextUpdateSequenceNumbers where
         _nusnTimeParameters <- fromProto =<< nums ^? ProtoFields.timeParameters
         return QueryTypes.NextUpdateSequenceNumbers{..}
 
+type IpAddress = Text
+type Peer = IpAddress
+type Port = Int16
+
+instance ToProto IpAddress where
+    type Output IpAddress = Proto.IpAddress
+    toProto ip = Proto.make $ ProtoFields.value .= ip
+
+instance ToProto Port where
+    type Output Port = Proto.Port
+    toProto ip = Proto.make $ ProtoFields.value .= fromIntegral ip
+
+instance FromProto Proto.IpAddress where
+    type Output' Proto.IpAddress = IpAddress
+    fromProto peer = peer ^? ProtoFields.value
+
+instance FromProto Proto.BannedPeer where
+    type Output' Proto.BannedPeer = Peer
+    fromProto peer = fromProto =<< peer ^? ProtoFields.ipAddress
+
+instance FromProto Proto.BannedPeers where
+    type Output' Proto.BannedPeers = [Peer]
+    fromProto peers = mapM fromProto =<< peers ^? ProtoFields.peers
+
+dumpStopV2 :: (MonadIO m) => ClientMonad m (GRPCResult ())
+dumpStopV2 = withUnaryCoreV2 (callV2 @"dumpStop") defMessage ((fmap . fmap . const) ())
+
+dumpStartV2 :: (MonadIO m) => Text -> Bool -> ClientMonad m (GRPCResult ())
+dumpStartV2 file raw = withUnaryCoreV2 (callV2 @"dumpStart") msg ((fmap . fmap . const) ())
+  where
+    msg = defMessage & ProtoFields.file .~ file & ProtoFields.raw .~ raw
+
+unbanPeerV2 :: (MonadIO m) => Peer -> ClientMonad m (GRPCResult ())
+unbanPeerV2 peer = withUnaryCoreV2 (callV2 @"unbanPeer") msg ((fmap . fmap . const) ())
+  where
+    msg = defMessage & ProtoFields.ipAddress .~ toProto peer
+
+banPeerV2 :: (MonadIO m) => Peer -> ClientMonad m (GRPCResult ())
+banPeerV2 peer = withUnaryCoreV2 (callV2 @"banPeer") msg ((fmap . fmap . const) ())
+  where
+    msg = defMessage & ProtoFields.ipAddress .~ toProto peer
+
+getBannedPeersV2 :: (MonadIO m) => ClientMonad m (GRPCResult (Maybe [Peer]))
+getBannedPeersV2 = withUnaryCoreV2 (callV2 @"getBannedPeers") defMessage ((fmap . fmap) fromProto)
+
+peerDisconnectV2 :: (MonadIO m) => IpAddress -> Port -> ClientMonad m (GRPCResult ())
+peerDisconnectV2 ip port = withUnaryCoreV2 (callV2 @"peerDisconnect") msg ((fmap . fmap . const) ())
+  where
+    msg = defMessage & ProtoFields.ip .~ toProto ip & ProtoFields.port .~ toProto port
+
+peerConnectV2 :: (MonadIO m) => IpAddress -> Port -> ClientMonad m (GRPCResult ())
+peerConnectV2 ip port = withUnaryCoreV2 (callV2 @"peerConnect") msg ((fmap . fmap . const) ())
+  where
+    msg = defMessage & ProtoFields.ip .~ toProto ip & ProtoFields.port .~ toProto port
+
+shutdownV2 :: (MonadIO m) => ClientMonad m (GRPCResult ())
+shutdownV2 = withUnaryCoreV2 (callV2 @"shutdown") defMessage ((fmap . fmap . const) ()) -- FIXME: Consider wrapper which just ignores output for these.
+
 getNextUpdateSequenceNumbersV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe QueryTypes.NextUpdateSequenceNumbers))
-getNextUpdateSequenceNumbersV2 blockHash = withUnaryCoreV2 (callV2 @"getNextUpdateSequenceNumbers") msg (fmap fromProto <$>)
+getNextUpdateSequenceNumbersV2 blockHash = withUnaryCoreV2 (callV2 @"getNextUpdateSequenceNumbers") msg ((fmap . fmap) fromProto)
   where
     msg = toProto blockHash
 
 getElectionInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe QueryTypes.BlockBirkParameters))
-getElectionInfoV2 blockHash = withUnaryCoreV2 (callV2 @"getElectionInfo") msg (fmap fromProto <$>)
+getElectionInfoV2 blockHash = withUnaryCoreV2 (callV2 @"getElectionInfo") msg ((fmap . fmap) fromProto)
   where
     msg = toProto blockHash
 
 getBranchesV2 :: (MonadIO m) => ClientMonad m (GRPCResult (Maybe QueryTypes.Branch))
-getBranchesV2 = withUnaryCoreV2 (callV2 @"getBranches") defMessage (fmap fromProto <$>)
+getBranchesV2 = withUnaryCoreV2 (callV2 @"getBranches") defMessage ((fmap . fmap) fromProto)
 
 invokeInstanceV2 :: (MonadIO m) => InvokeInstanceInput -> ClientMonad m (GRPCResult (Maybe InvokeContract.InvokeContractResult))
-invokeInstanceV2 iiInput = withUnaryCoreV2 (callV2 @"invokeInstance") msg (fmap fromProto <$>)
+invokeInstanceV2 iiInput = withUnaryCoreV2 (callV2 @"invokeInstance") msg ((fmap . fmap) fromProto)
   where
     msg = toProto iiInput
 
 getTokenomicsInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe QueryTypes.RewardStatus))
-getTokenomicsInfoV2 blockHash = withUnaryCoreV2 (callV2 @"getTokenomicsInfo") msg (fmap fromProto <$>)
+getTokenomicsInfoV2 blockHash = withUnaryCoreV2 (callV2 @"getTokenomicsInfo") msg ((fmap . fmap) fromProto)
   where
     msg = toProto blockHash
 
 getBlocksAtHeightV2 :: (MonadIO m) => BlockHeightInput -> ClientMonad m (GRPCResult (Maybe [BlockHash]))
-getBlocksAtHeightV2 blockHeight = withUnaryCoreV2 (callV2 @"getBlocksAtHeight") msg (fmap fromProto <$>)
+getBlocksAtHeightV2 blockHeight = withUnaryCoreV2 (callV2 @"getBlocksAtHeight") msg ((fmap . fmap) fromProto)
   where
     msg = toProto blockHeight
 
 getPassiveDelegationInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe QueryTypes.PoolStatus))
-getPassiveDelegationInfoV2 blockHash = withUnaryCoreV2 (callV2 @"getPassiveDelegationInfo") msg (fmap fromProto <$>)
+getPassiveDelegationInfoV2 blockHash = withUnaryCoreV2 (callV2 @"getPassiveDelegationInfo") msg ((fmap . fmap) fromProto)
   where
     msg = toProto blockHash
 
 getPoolInfoV2 :: (MonadIO m) => BlockHashInput -> BakerId -> ClientMonad m (GRPCResult (Maybe QueryTypes.PoolStatus))
-getPoolInfoV2 blockHash baker = withUnaryCoreV2 (callV2 @"getPoolInfo") msg (fmap fromProto <$>)
+getPoolInfoV2 blockHash baker = withUnaryCoreV2 (callV2 @"getPoolInfo") msg ((fmap . fmap) fromProto)
   where
     msg = defMessage & ProtoFields.blockHash .~ toProto blockHash & ProtoFields.baker .~ toProto baker
 
 getBlockInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe QueryTypes.BlockInfo))
-getBlockInfoV2 blockHash = withUnaryCoreV2 (callV2 @"getBlockInfo") msg (fmap fromProto <$>)
+getBlockInfoV2 blockHash = withUnaryCoreV2 (callV2 @"getBlockInfo") msg ((fmap . fmap) fromProto)
   where
     msg = toProto blockHash
 
 getConsensusInfoV2 :: (MonadIO m) => ClientMonad m (GRPCResult (Maybe Wasm.WasmModule))
-getConsensusInfoV2 = withUnaryCoreV2 (callV2 @"getModuleSource") defMessage (fmap fromProto <$>)
+getConsensusInfoV2 = withUnaryCoreV2 (callV2 @"getModuleSource") defMessage ((fmap . fmap) fromProto)
 
 getModuleSourceV2 :: (MonadIO m) => ModuleRef -> BlockHashInput -> ClientMonad m (GRPCResult (Maybe Wasm.WasmModule))
-getModuleSourceV2 modRef hash = withUnaryCoreV2 (callV2 @"getModuleSource") msg (fmap fromProto <$>)
+getModuleSourceV2 modRef hash = withUnaryCoreV2 (callV2 @"getModuleSource") msg ((fmap . fmap) fromProto)
   where
     msg = defMessage & ProtoFields.blockHash .~ toProto hash & ProtoFields.moduleRef .~ toProto modRef
 
@@ -3142,17 +3200,17 @@ getAccountInfoV2 ::
     -- | Block hash
     BlockHashInput ->
     ClientMonad m (GRPCResult (Maybe Concordium.Types.AccountInfo))
-getAccountInfoV2 account blockHash = withUnaryCoreV2 (callV2 @"getAccountInfo") msg (fmap fromProto <$>)
+getAccountInfoV2 account blockHash = withUnaryCoreV2 (callV2 @"getAccountInfo") msg ((fmap . fmap) fromProto)
   where
     msg = defMessage & ProtoFields.blockHash .~ toProto blockHash & ProtoFields.accountIdentifier .~ toProto account
 
 getInstanceInfoV2 :: (MonadIO m) => ContractAddress -> BlockHashInput -> ClientMonad m (GRPCResult (Maybe Wasm.InstanceInfo))
-getInstanceInfoV2 cAddress blockHash = withUnaryCoreV2 (callV2 @"getInstanceInfo") msg (fmap fromProto <$>)
+getInstanceInfoV2 cAddress blockHash = withUnaryCoreV2 (callV2 @"getInstanceInfo") msg ((fmap . fmap) fromProto)
   where
     msg = defMessage & ProtoFields.blockHash .~ toProto blockHash & ProtoFields.address .~ toProto cAddress
 
 getNextSequenceNumberV2 :: (MonadIO m) => AccountAddress -> ClientMonad m (GRPCResult (Maybe QueryTypes.NextAccountNonce))
-getNextSequenceNumberV2 accAddress = withUnaryCoreV2 (callV2 @"getNextAccountSequenceNumber") msg (fmap fromProto <$>)
+getNextSequenceNumberV2 accAddress = withUnaryCoreV2 (callV2 @"getNextAccountSequenceNumber") msg ((fmap . fmap) fromProto)
   where
     msg = toProto accAddress
 
