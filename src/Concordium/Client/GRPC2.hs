@@ -83,12 +83,13 @@ import Concordium.Types.Parameters (CryptographicParameters)
 import Concordium.Types.Queries (NextAccountNonce)
 import Concordium.Wasm (ModuleSource)
 import Control.Concurrent.Async
+import Control.Monad.Cont qualified as Wasm
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.Bifunctor (Bifunctor (bimap))
 import Data.Either (fromRight)
 import Data.IORef
-import Data.Maybe (fromJust, fromMaybe, catMaybes, mapMaybe)
+import Data.Maybe (catMaybes, fromJust, fromMaybe, mapMaybe)
 import Data.ProtoLens (defMessage)
 import Data.ProtoLens.Encoding.Bytes qualified as S
 import Data.ProtoLens.Field qualified as Field
@@ -97,10 +98,10 @@ import Data.Sequence (Seq (Empty))
 import Data.String
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Proto.V2.Concordium.Service qualified as CS
-import qualified Control.Monad.Cont as Wasm
+import Proto.V2.Concordium.Types (ElectionInfo)
+import Proto.V2.Concordium.Types qualified as ProtoFields
 import Proto.V2.Concordium.Types_Fields (schedule)
-import qualified Proto.V2.Concordium.Types_Fields as Proto
-import qualified Proto.V2.Concordium.Types as ProtoFields
+import Proto.V2.Concordium.Types_Fields qualified as Proto
 
 {- |A helper function that can be used to construct a value of a protobuf
  "wrapper" type by serializing the provided value @a@ using its serialize
@@ -2193,10 +2194,10 @@ instance FromProto Proto.ReleaseSchedule where
     type Output' Proto.ReleaseSchedule = AccountReleaseSummary
     fromProto ars = do
         releaseTotal <- fromProto =<< ars ^? ProtoFields.total
-        releaseSchedule <- do 
+        releaseSchedule <- do
             schedules <- ars ^? ProtoFields.schedules
             mapM fromProto schedules
-        return AccountReleaseSummary {..}
+        return AccountReleaseSummary{..}
 
 instance FromProto Proto.Timestamp where
     type Output' Proto.Timestamp = (Timestamp, UTCTime)
@@ -2220,7 +2221,7 @@ instance FromProto Proto.Release where
         releaseTransactions <- do
             ts <- r ^? ProtoFields.transactions
             mapM fromProto ts
-        return ScheduledRelease {..}
+        return ScheduledRelease{..}
 
 instance FromProto Proto.AccountThreshold where
     type Output' Proto.AccountThreshold = AccountThreshold
@@ -2242,7 +2243,7 @@ instance FromProto Proto.EncryptedBalance where
             na <- eb ^? ProtoFields.numAggregated
             return $ return (aa, na)
         let _incomingEncryptedAmounts = Empty -- FIXME: Field is not included in other direction. Should it be?
-        return AccountEncryptedAmount {..}
+        return AccountEncryptedAmount{..}
 
 instance FromProto Proto.EncryptionKey where
     type Output' Proto.EncryptionKey = AccountEncryptionKey
@@ -2271,7 +2272,7 @@ instance FromProto Proto.StakePendingChange where
                 return $ bimap (ReduceStake ns) (ReduceStake ns) et
             Proto.StakePendingChange'Remove remove -> do
                 rm <- fromProto remove
-                return $ bimap RemoveStake RemoveStake rm
+                return $ bimap RemoveStake RemoveStake rm
 
 instance FromProto Proto.BakerInfo where
     type Output' Proto.BakerInfo = BakerInfo
@@ -2280,7 +2281,7 @@ instance FromProto Proto.BakerInfo where
         _bakerElectionVerifyKey <- fromProto =<< bInfo ^? ProtoFields.electionKey
         _bakerSignatureVerifyKey <- fromProto =<< bInfo ^? ProtoFields.signatureKey
         _bakerAggregationVerifyKey <- fromProto =<< bInfo ^? ProtoFields.aggregationKey
-        return BakerInfo {..}
+        return BakerInfo{..}
 
 instance FromProto Proto.BakerSignatureVerifyKey where
     type Output' Proto.BakerSignatureVerifyKey = BakerSignVerifyKey
@@ -2315,7 +2316,7 @@ instance FromProto Proto.BakerPoolInfo where
         _poolOpenStatus <- fromProto =<< poolInfo ^? ProtoFields.openStatus
         _poolMetadataUrl <- fromProto =<< poolInfo ^? ProtoFields.url
         _poolCommissionRates <- fromProto =<< poolInfo ^? ProtoFields.commissionRates
-        return BakerPoolInfo {..}
+        return BakerPoolInfo{..}
 
 instance FromProto Proto.AmountFraction where
     type Output' Proto.AmountFraction = AmountFraction
@@ -2327,7 +2328,7 @@ instance FromProto Proto.CommissionRates where
         _finalizationCommission <- fromProto =<< commissionRates ^? ProtoFields.finalization
         _bakingCommission <- fromProto =<< commissionRates ^? ProtoFields.baking
         _transactionCommission <- fromProto =<< commissionRates ^? ProtoFields.transaction
-        return CommissionRates {..}
+        return CommissionRates{..}
 
 instance FromProto Proto.AccountStakingInfo where
     type Output' Proto.AccountStakingInfo = AccountStakingInfo
@@ -2341,7 +2342,7 @@ instance FromProto Proto.AccountStakingInfo where
                 asiDelegationPendingChange <- do
                     ch <- fromProto =<< delegator ^? ProtoFields.pendingChange
                     return $ snd ch
-                return AccountStakingDelegated {..}
+                return AccountStakingDelegated{..}
             Proto.AccountStakingInfo'Baker' baker -> do
                 asiStakedAmount <- fromProto =<< baker ^? ProtoFields.stakedAmount
                 asiStakeEarnings <- baker ^? ProtoFields.restakeEarnings
@@ -2350,7 +2351,7 @@ instance FromProto Proto.AccountStakingInfo where
                     pc <- fromProto =<< baker ^? ProtoFields.pendingChange
                     return $ snd pc
                 asiPoolInfo <- fromProto <$> baker ^? ProtoFields.poolInfo
-                return AccountStakingBaker  {..}
+                return AccountStakingBaker{..}
 
 instance FromProto Proto.ArThreshold where
     type Output' Proto.ArThreshold = Threshold
@@ -2361,14 +2362,14 @@ instance FromProto (Map.Map Word32 Proto.ChainArData) where
     fromProto m = do
         converted <- mapM convert $ Map.toAscList m
         return $ Map.fromAscList converted
-        where
-            convert :: (Word32, Proto.ChainArData) -> Maybe (ArIdentity, ChainArData)
-            convert (arId, chainArData) = do
-                arBytes <- chainArData ^? ProtoFields.encIdCredPubShare
-                encId <- case S.decode arBytes of
-                           Left _ -> Nothing
-                           Right val -> val
-                return (ArIdentity arId, encId)
+      where
+        convert :: (Word32, Proto.ChainArData) -> Maybe (ArIdentity, ChainArData)
+        convert (arId, chainArData) = do
+            arBytes <- chainArData ^? ProtoFields.encIdCredPubShare
+            encId <- case S.decode arBytes of
+                Left _ -> Nothing
+                Right val -> val
+            return (ArIdentity arId, encId)
 
 instance FromProto Proto.Commitment where
     type Output' Proto.Commitment = Commitment
@@ -2382,15 +2383,15 @@ instance FromProto Proto.CredentialCommitments where
         cmmMaxAccounts <- fromProto =<< cdc ^? ProtoFields.maxAccounts
         cmmAttributes <-
             fmap Map.fromAscList
-            . mapM convert
-            . Map.toAscList
-            =<< cdc ^? ProtoFields.attributes
+                . mapM convert
+                . Map.toAscList
+                =<< cdc ^? ProtoFields.attributes
         cmmIdCredSecSharingCoeff <- mapM fromProto =<< cdc ^? ProtoFields.idCredSecSharingCoeff
-        return CredentialDeploymentCommitments {..}
-        where
-            convert (aTag, comm) = do
-                c <- fromProto comm
-                return (AttributeTag $ fromIntegral aTag, c)
+        return CredentialDeploymentCommitments{..}
+      where
+        convert (aTag, comm) = do
+            c <- fromProto comm
+            return (AttributeTag $ fromIntegral aTag, c)
 
 instance FromProto Proto.AccountCredential where
     type Output' Proto.AccountCredential = RawAccountCredential
@@ -2402,7 +2403,7 @@ instance FromProto Proto.AccountCredential where
                 icdvRegId <- fromProto =<< initial ^? ProtoFields.credId
                 icdvIpId <- fromProto =<< initial ^? ProtoFields.ipId
                 icdvPolicy <- fromProto =<< initial ^? ProtoFields.policy
-                return $ InitialAC InitialCredentialDeploymentValues {..}
+                return $ InitialAC InitialCredentialDeploymentValues{..}
             Proto.AccountCredential'Normal normal -> do
                 cdvPublicKeys <- fromProto =<< normal ^? ProtoFields.keys
                 cdvCredId <- fromProto =<< normal ^? ProtoFields.credId
@@ -2411,14 +2412,14 @@ instance FromProto Proto.AccountCredential where
                 cdvThreshold <- fromProto =<< normal ^? ProtoFields.arThreshold
                 cdvArData <- fromProto =<< normal ^? ProtoFields.arData
                 commitments <- fromProto =<< normal ^? ProtoFields.commitments
-                return $ NormalAC CredentialDeploymentValues {..} commitments
+                return $ NormalAC CredentialDeploymentValues{..} commitments
 
 instance FromProto Proto.YearMonth where
     type Output' Proto.YearMonth = YearMonth
     fromProto yearMonth = do
         ymYear <- fromIntegral <$> yearMonth ^? ProtoFields.year
         ymMonth <- fromIntegral <$> yearMonth ^? ProtoFields.month
-        return YearMonth {..}
+        return YearMonth{..}
 
 instance FromProto Proto.Policy where
     type Output' Proto.Policy = Policy
@@ -2427,17 +2428,17 @@ instance FromProto Proto.Policy where
         pValidTo <- fromProto =<< p ^? ProtoFields.validTo
         pItems <-
             fmap Map.fromAscList
-            . mapM convert
-            . Map.toAscList
-            =<< p ^? ProtoFields.attributes
-        return Policy {..}
+                . mapM convert
+                . Map.toAscList
+                =<< p ^? ProtoFields.attributes
+        return Policy{..}
       where
         versionTag = 0 -- FIXME: Which version?
         convert (aTag, aVal) = do
             val <- case S.runGet (S.getShortByteString versionTag) aVal of
-                     Left _ -> Nothing
-                     Right v -> Just v
-            return (AttributeTag $ fromIntegral aTag , AttributeValue val)
+                Left _ -> Nothing
+                Right v -> Just v
+            return (AttributeTag $ fromIntegral aTag, AttributeValue val)
 
 instance FromProto Proto.IdentityProviderIdentity where
     type Output' Proto.IdentityProviderIdentity = IdentityProviderIdentity
@@ -2448,20 +2449,21 @@ instance FromProto Proto.CredentialPublicKeys where
     fromProto cpk = do
         credKeys <-
             fmap Map.fromAscList
-            . mapM convert
-            . Map.toAscList
-            =<< cpk ^? ProtoFields.keys
+                . mapM convert
+                . Map.toAscList
+                =<< cpk ^? ProtoFields.keys
         credThreshold <-
             SignatureThreshold
-            . deMkWord8
-            <$> cpk ^? ProtoFields.threshold
-        return CredentialPublicKeys {..}
+                . deMkWord8
+                <$> cpk
+                ^? ProtoFields.threshold
+        return CredentialPublicKeys{..}
       where
         convert (ki, pKey) = do
             key <- pKey ^? ProtoFields.ed25519Key
             k <- case S.decode key of
-                   Left _ -> Nothing
-                   Right k -> return k
+                Left _ -> Nothing
+                Right k -> return k
             return (fromIntegral ki, VerifyKeyEd25519 k)
 
 instance FromProto Proto.AccountInfo where
@@ -2470,7 +2472,8 @@ instance FromProto Proto.AccountInfo where
         aiAccountNonce <- fromProto =<< ai ^? ProtoFields.sequenceNumber
         aiAccountAmount <- fromProto =<< ai ^? ProtoFields.amount
         aiAccountReleaseSchedule <- fromProto =<< ai ^? ProtoFields.schedule
-        aiAccountCredentials <- do 
+        aiAccountCredentials <-
+            do
                 fmap Map.fromAscList
                 . mapM convert
                 . Map.toAscList
@@ -2481,7 +2484,7 @@ instance FromProto Proto.AccountInfo where
         aiAccountIndex <- fromProto =<< ai ^? ProtoFields.index
         aiStakingInfo <- fromProto =<< ai ^. ProtoFields.maybe'stake
         aiAccountAddress <- fromProto =<< ai ^? ProtoFields.address
-        return AccountInfo {..}
+        return AccountInfo{..}
       where
         versionTag = 0
         convert (key, val) = do
@@ -2504,7 +2507,7 @@ instance FromProto Proto.ModuleRef where
     fromProto mr = do
         modRef <- mr ^? ProtoFields.value
         let moduleRef = Hash $ FBS.fromByteString modRef
-        return ModuleRef {..}
+        return ModuleRef{..}
 
 instance FromProto Proto.VersionedModuleSource where
     type Output' Proto.VersionedModuleSource = Wasm.WasmModule
@@ -2539,8 +2542,8 @@ instance FromProto Proto.InstanceInfo where
                     Set.fromList <$> mapM fromProto methods
                 iiName <- fromProto =<< v0 ^? ProtoFields.name
                 iiSourceModule <- fromProto =<< v0 ^? ProtoFields.sourceModule
-                return Wasm.InstanceInfoV0 {..}
-            Proto.InstanceInfo'V1' v1  -> do
+                return Wasm.InstanceInfoV0{..}
+            Proto.InstanceInfo'V1' v1 -> do
                 iiOwner <- fromProto =<< v1 ^? ProtoFields.owner
                 iiAmount <- fromProto =<< v1 ^? ProtoFields.amount
                 iiMethods <- do
@@ -2548,14 +2551,14 @@ instance FromProto Proto.InstanceInfo where
                     Set.fromList <$> mapM fromProto methods
                 iiName <- fromProto =<< v1 ^? ProtoFields.name
                 iiSourceModule <- fromProto =<< v1 ^? ProtoFields.sourceModule
-                return Wasm.InstanceInfoV1 {..}
+                return Wasm.InstanceInfoV1{..}
 
 instance FromProto Proto.NextAccountSequenceNumber where
     type Output' Proto.NextAccountSequenceNumber = QueryTypes.NextAccountNonce
     fromProto asn = do
         nanNonce <- fromProto =<< asn ^? ProtoFields.sequenceNumber
         nanAllFinal <- asn ^? ProtoFields.allFinal
-        return QueryTypes.NextAccountNonce {..}
+        return QueryTypes.NextAccountNonce{..}
 
 instance FromProto Proto.ProtocolVersion where
     type Output' Proto.ProtocolVersion = ProtocolVersion
@@ -2619,7 +2622,7 @@ instance FromProto Proto.ConsensusInfo where
         csGenesisIndex <- fromProto =<< ci ^? ProtoFields.genesisIndex
         csCurrentEraGenesisBlock <- fromProto =<< ci ^? ProtoFields.currentEraGenesisBlock
         csCurrentEraGenesisTime <- fmap snd $ fromProto =<< ci ^? ProtoFields.currentEraGenesisTime
-        return QueryTypes.ConsensusStatus {..}
+        return QueryTypes.ConsensusStatus{..}
 
 instance FromProto Proto.Slot where
     type Output' Proto.Slot = Slot
@@ -2652,7 +2655,7 @@ instance FromProto Proto.BlockInfo where
         biTransactionEnergyCost <- fromProto =<< bi ^? ProtoFields.transactionsEnergyCost
         biTransactionsSize <- fromIntegral <$> bi ^? ProtoFields.transactionsSize
         biBlockStateHash <- fromProto =<< bi ^? ProtoFields.stateHash
-        return QueryTypes.BlockInfo {..}
+        return QueryTypes.BlockInfo{..}
 
 instance FromProto Proto.Amount where
     type Output' Proto.Amount = Amount
@@ -2668,7 +2671,7 @@ instance FromProto Proto.PoolCurrentPaydayInfo where
         bpsLotteryPower <- cpi ^? ProtoFields.lotteryPower
         bpsBakerEquityCapital <- fromProto =<< cpi ^? ProtoFields.bakerEquityCapital
         bpsDelegatedCapital <- fromProto =<< cpi ^? ProtoFields.delegatedCapital
-        return QueryTypes.CurrentPaydayBakerPoolStatus {..}
+        return QueryTypes.CurrentPaydayBakerPoolStatus{..}
 
 instance FromProto Proto.PoolInfoResponse where
     type Output' Proto.PoolInfoResponse = QueryTypes.PoolStatus
@@ -2679,10 +2682,10 @@ instance FromProto Proto.PoolInfoResponse where
         psDelegatedCapital <- fromProto =<< pir ^? ProtoFields.delegatedCapital
         psDelegatedCapitalCap <- fromProto =<< pir ^? ProtoFields.delegatedCapitalCap
         psPoolInfo <- fromProto =<< pir ^? ProtoFields.poolInfo
-        psBakerStakePendingChange <- fromJust $ fmap fromProto =<<pir ^? ProtoFields.maybe'equityPendingChange
+        psBakerStakePendingChange <- fromJust $ fmap fromProto =<< pir ^? ProtoFields.maybe'equityPendingChange
         psCurrentPaydayStatus <- fmap fromProto =<< pir ^? ProtoFields.maybe'currentPaydayInfo
         psAllPoolTotalCapital <- fromProto =<< pir ^? ProtoFields.allPoolTotalCapital
-        return QueryTypes.BakerPoolStatus {..}
+        return QueryTypes.BakerPoolStatus{..}
 
 instance FromProto Proto.PassiveDelegationInfo where
     type Output' Proto.PassiveDelegationInfo = QueryTypes.PoolStatus
@@ -2692,7 +2695,7 @@ instance FromProto Proto.PassiveDelegationInfo where
         psCurrentPaydayTransactionFeesEarned <- fromProto =<< pdi ^? ProtoFields.currentPaydayTransactionFeesEarned
         psCurrentPaydayDelegatedCapital <- fromProto =<< pdi ^? ProtoFields.currentPaydayDelegatedCapital
         psAllPoolTotalCapital <- fromProto =<< pdi ^? ProtoFields.allPoolTotalCapital
-        return QueryTypes.PassiveDelegationStatus {..}   
+        return QueryTypes.PassiveDelegationStatus{..}
 
 instance FromProto (Maybe Proto.PoolPendingChange) where
     type Output' (Maybe Proto.PoolPendingChange) = QueryTypes.PoolPendingChange
@@ -2706,10 +2709,10 @@ instance FromProto Proto.PoolPendingChange where
             Proto.PoolPendingChange'Reduce' reduce -> do
                 ppcBakerEquityCapital <- fromProto =<< reduce ^? ProtoFields.reducedEquityCapital
                 ppcEffectiveTime <- fmap snd $ fromProto =<< reduce ^? ProtoFields.effectiveTime
-                return QueryTypes.PPCReduceBakerCapital {..}
+                return QueryTypes.PPCReduceBakerCapital{..}
             Proto.PoolPendingChange'Remove' remove -> do
                 ppcEffectiveTime <- fmap snd $ fromProto =<< remove ^? ProtoFields.effectiveTime
-                return QueryTypes.PPCRemovePool {..}
+                return QueryTypes.PPCRemovePool{..}
 
 instance FromProto Proto.BlocksAtHeightResponse where
     type Output' Proto.BlocksAtHeightResponse = [BlockHash]
@@ -2727,13 +2730,16 @@ data BlockHeightInput
 
 instance ToProto BlockHeightInput where
     type Output BlockHeightInput = Proto.BlocksAtHeightRequest
-    toProto Relative {..} =
+    toProto Relative{..} =
         Proto.make $
-          ProtoFields.relative .= Proto.make ( do
-            ProtoFields.genesisIndex .= toProto rGenesisIndex
-            ProtoFields.height .= toProto rBlockHeight
-            ProtoFields.restrict .= rRestrict )
-    toProto Absolute {..} =
+            ProtoFields.relative
+                .= Proto.make
+                    ( do
+                        ProtoFields.genesisIndex .= toProto rGenesisIndex
+                        ProtoFields.height .= toProto rBlockHeight
+                        ProtoFields.restrict .= rRestrict
+                    )
+    toProto Absolute{..} =
         Proto.make $
             ProtoFields.absolute .= Proto.make (ProtoFields.height .= toProto aBlockHeight)
 
@@ -2742,7 +2748,7 @@ instance FromProto Proto.MintRate where
     fromProto mr = do
         mrMantissa <- mr ^? ProtoFields.mantissa
         mrExponent <- fromIntegral <$> mr ^? ProtoFields.exponent
-        return MintRate {..}
+        return MintRate{..}
 
 instance FromProto Proto.TokenomicsInfo where
     type Output' Proto.TokenomicsInfo = QueryTypes.RewardStatus
@@ -2756,7 +2762,7 @@ instance FromProto Proto.TokenomicsInfo where
                 rsFinalizationRewardAccount <- fromProto =<< v0 ^? ProtoFields.finalizationRewardAccount
                 rsGasAccount <- fromProto =<< v0 ^? ProtoFields.gasAccount
                 rsProtocolVersion <- fromProto =<< v0 ^? ProtoFields.protocolVersion
-                return QueryTypes.RewardStatusV0 {..}
+                return QueryTypes.RewardStatusV0{..}
             Proto.TokenomicsInfo'V1' v1 -> do
                 rsTotalAmount <- fromProto =<< v1 ^? ProtoFields.totalAmount
                 rsTotalEncryptedAmount <- fromProto =<< v1 ^? ProtoFields.totalEncryptedAmount
@@ -2768,7 +2774,7 @@ instance FromProto Proto.TokenomicsInfo where
                 rsNextPaydayMintRate <- fromProto =<< v1 ^? ProtoFields.nextPaydayMintRate
                 rsTotalStakedCapital <- fromProto =<< v1 ^? ProtoFields.totalStakedCapital
                 rsProtocolVersion <- fromProto =<< v1 ^? ProtoFields.protocolVersion
-                return QueryTypes.RewardStatusV1 {..}
+                return QueryTypes.RewardStatusV1{..}
 
 data InvokeInstanceInput = InvokeInstanceInput
     { iiBlockHash :: BlockHashInput
@@ -2807,7 +2813,7 @@ message InvokeInstanceRequest {
 
 instance ToProto InvokeInstanceInput where
     type Output InvokeInstanceInput = Proto.InvokeInstanceRequest
-    toProto InvokeInstanceInput {..} =
+    toProto InvokeInstanceInput{..} =
         Proto.make $ do
             ProtoFields.blockHash .= toProto iiBlockHash
             ProtoFields.invoker .= toProto iiInvoker
@@ -2838,7 +2844,7 @@ instance FromProto Proto.ContractAddress where
     fromProto ca = do
         contractIndex <- ContractIndex <$> ca ^? ProtoFields.index
         contractSubindex <- ContractSubindex <$> ca ^? ProtoFields.subindex
-        return ContractAddress {..}
+        return ContractAddress{..}
 
 instance FromProto Proto.ContractVersion where
     type Output' Proto.ContractVersion = Wasm.WasmVersion
@@ -2860,7 +2866,7 @@ instance FromProto Proto.ContractTraceElement where
                 euMessage <- fromProto =<< updated ^? ProtoFields.parameter
                 euReceiveName <- fromProto =<< updated ^? ProtoFields.receiveName
                 euEvents <- mapM fromProto =<< updated ^? ProtoFields.events
-                return Updated {..}
+                return Updated{..}
             Proto.ContractTraceElement'Transferred' transferred -> do
                 etFrom <- fmap AddressContract $ fromProto =<< transferred ^? ProtoFields.sender
                 etAmount <- fromProto =<< transferred ^? ProtoFields.amount
@@ -2868,17 +2874,17 @@ instance FromProto Proto.ContractTraceElement where
                 return Transferred{..}
             Proto.ContractTraceElement'Interrupted' interrupted -> do
                 iAddress <- fromProto =<< interrupted ^? ProtoFields.address
-                iEvents <- mapM fromProto =<< interrupted ^? ProtoFields.events        
-                return Interrupted {..}
+                iEvents <- mapM fromProto =<< interrupted ^? ProtoFields.events
+                return Interrupted{..}
             Proto.ContractTraceElement'Resumed' resumed -> do
                 rAddress <- fromProto =<< resumed ^? ProtoFields.address
-                rSuccess <- resumed ^? ProtoFields.success        
-                return Resumed {..}
+                rSuccess <- resumed ^? ProtoFields.success
+                return Resumed{..}
             Proto.ContractTraceElement'Upgraded' upgraded -> do
                 euAddress <- fromProto =<< upgraded ^? ProtoFields.address
                 euFrom <- fromProto =<< upgraded ^? ProtoFields.from
                 euTo <- fromProto =<< upgraded ^? ProtoFields.to
-                return Upgraded {..}
+                return Upgraded{..}
 instance FromProto Proto.RejectReason where
     type Output' Proto.RejectReason = RejectReason
     fromProto rReason = do
@@ -2894,7 +2900,7 @@ instance FromProto Proto.RejectReason where
                 moduleRef <- fromProto =<< rr ^? ProtoFields.moduleRef
                 initName <- fromProto =<< rr ^? ProtoFields.initName
                 return $ InvalidInitMethod moduleRef initName
-            Proto.RejectReason'InvalidReceiveMethod' rr  -> do
+            Proto.RejectReason'InvalidReceiveMethod' rr -> do
                 moduleRef <- fromProto =<< rr ^? ProtoFields.moduleRef
                 receiveName <- fromProto =<< rr ^? ProtoFields.receiveName
                 return $ InvalidReceiveMethod moduleRef receiveName
@@ -2919,7 +2925,7 @@ instance FromProto Proto.RejectReason where
                 contractAddress <- fromProto =<< rr ^? ProtoFields.contractAddress
                 receiveName <- fromProto =<< rr ^? ProtoFields.receiveName
                 parameter <- fromProto =<< rr ^? ProtoFields.parameter
-                return RejectedReceive {..}
+                return RejectedReceive{..}
             Proto.RejectReason'InvalidProof _ ->
                 return InvalidProof
             Proto.RejectReason'AlreadyABaker bakerId ->
@@ -3003,11 +3009,11 @@ instance FromProto Proto.RejectReason where
             Proto.RejectReason'PoolWouldBecomeOverDelegated _ -> Nothing
             -- PoolClosed -> Proto.make $ ProtoFields.poolClosed .= Proto.defMessage
             Proto.RejectReason'PoolClosed _ -> Nothing
-        where
-            credIdFromRaw (RawCredentialRegistrationID fbs) =
-                case S.decode (FBS.toByteString fbs) of
-                    Left _ -> Nothing
-                    Right c -> c
+      where
+        credIdFromRaw (RawCredentialRegistrationID fbs) =
+            case S.decode (FBS.toByteString fbs) of
+                Left _ -> Nothing
+                Right c -> c
 
 instance FromProto Proto.InvokeInstanceResponse where
     type Output' Proto.InvokeInstanceResponse = InvokeContract.InvokeContractResult
@@ -3018,13 +3024,77 @@ instance FromProto Proto.InvokeInstanceResponse where
                 rcrReturnValue <- success ^? ProtoFields.maybe'returnValue
                 rcrUsedEnergy <- fromProto =<< success ^? ProtoFields.usedEnergy
                 rcrEvents <- mapM fromProto =<< success ^? ProtoFields.effects
-                return InvokeContract.Success {..}
+                return InvokeContract.Success{..}
             Proto.InvokeInstanceResponse'Failure' failure -> do
                 rcrReturnValue <- failure ^? ProtoFields.maybe'returnValue
                 rcrUsedEnergy <- fromProto =<< failure ^? ProtoFields.usedEnergy
                 rcrReason <- fromProto =<< failure ^? ProtoFields.reason
-                return InvokeContract.Failure {..}
+                return InvokeContract.Failure{..}
 
+instance FromProto Proto.Branch where
+    type Output' Proto.Branch = QueryTypes.Branch
+    fromProto branch = do
+        branchBlockHash <- fromProto =<< branch ^? ProtoFields.blockHash
+        branchChildren <- mapM fromProto =<< branch ^? ProtoFields.children
+        return QueryTypes.Branch{..}
+
+instance FromProto Proto.ElectionInfo'Baker where
+    type Output' Proto.ElectionInfo'Baker = QueryTypes.BakerSummary
+    fromProto baker = do
+        bsBakerId <- fromProto =<< baker ^? ProtoFields.baker
+        bsBakerAccount <- fromProto <$> baker ^? ProtoFields.account
+        bsBakerLotteryPower <- baker ^? ProtoFields.lotteryPower
+        return QueryTypes.BakerSummary{..}
+
+instance FromProto Proto.ElectionDifficulty where
+    type Output' Proto.ElectionDifficulty = ElectionDifficulty
+    fromProto eDiff =
+        ElectionDifficulty . fromIntegral <$> eDiff ^? (ProtoFields.value . ProtoFields.partsPerHundredThousand)
+
+instance FromProto Proto.ElectionInfo where
+    type Output' Proto.ElectionInfo = QueryTypes.BlockBirkParameters
+    fromProto eInfo = do
+        bbpBakers <-
+            mapM fromProto
+                . Vec.fromList
+                =<< eInfo ^? ProtoFields.bakerElectionInfo
+        bbpElectionDifficulty <- fromProto =<< eInfo ^? ProtoFields.electionDifficulty
+        bbpElectionNonce <- deMkSerialize =<< eInfo ^? ProtoFields.electionNonce
+        return QueryTypes.BlockBirkParameters{..}
+
+instance FromProto Proto.NextUpdateSequenceNumbers where
+    type Output' Proto.NextUpdateSequenceNumbers = QueryTypes.NextUpdateSequenceNumbers
+    fromProto nums = do
+        _nusnRootKeys <- fromProto =<< nums ^? ProtoFields.rootKeys
+        _nusnLevel1Keys <- fromProto =<< nums ^? ProtoFields.level1Keys
+        _nusnLevel2Keys <- fromProto =<< nums ^? ProtoFields.level2Keys
+        _nusnProtocol <- fromProto =<< nums ^? ProtoFields.protocol
+        _nusnElectionDifficulty <- fromProto =<< nums ^? ProtoFields.electionDifficulty
+        _nusnEuroPerEnergy <- fromProto =<< nums ^? ProtoFields.euroPerEnergy
+        _nusnMicroCCDPerEuro <- fromProto =<< nums ^? ProtoFields.microCcdPerEuro
+        _nusnFoundationAccount <- fromProto =<< nums ^? ProtoFields.foundationAccount
+        _nusnMintDistribution <- fromProto =<< nums ^? ProtoFields.mintDistribution
+        _nusnTransactionFeeDistribution <- fromProto =<< nums ^? ProtoFields.transactionFeeDistribution
+        _nusnGASRewards <- fromProto =<< nums ^? ProtoFields.gasRewards
+        _nusnPoolParameters <- fromProto =<< nums ^? ProtoFields.poolParameters
+        _nusnAddAnonymityRevoker <- fromProto =<< nums ^? ProtoFields.addAnonymityRevoker
+        _nusnAddIdentityProvider <- fromProto =<< nums ^? ProtoFields.addIdentityProvider
+        _nusnCooldownParameters <- fromProto =<< nums ^? ProtoFields.cooldownParameters
+        _nusnTimeParameters <- fromProto =<< nums ^? ProtoFields.timeParameters
+        return QueryTypes.NextUpdateSequenceNumbers{..}
+
+getNextUpdateSequenceNumbersV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe QueryTypes.NextUpdateSequenceNumbers))
+getNextUpdateSequenceNumbersV2 blockHash = withUnaryCoreV2 (callV2 @"getNextUpdateSequenceNumbers") msg (fmap fromProto <$>)
+  where
+    msg = toProto blockHash
+
+getElectionInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe QueryTypes.BlockBirkParameters))
+getElectionInfoV2 blockHash = withUnaryCoreV2 (callV2 @"getElectionInfo") msg (fmap fromProto <$>)
+  where
+    msg = toProto blockHash
+
+getBranchesV2 :: (MonadIO m) => ClientMonad m (GRPCResult (Maybe QueryTypes.Branch))
+getBranchesV2 = withUnaryCoreV2 (callV2 @"getBranches") defMessage (fmap fromProto <$>)
 
 invokeInstanceV2 :: (MonadIO m) => InvokeInstanceInput -> ClientMonad m (GRPCResult (Maybe InvokeContract.InvokeContractResult))
 invokeInstanceV2 iiInput = withUnaryCoreV2 (callV2 @"invokeInstance") msg (fmap fromProto <$>)
