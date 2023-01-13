@@ -19,7 +19,7 @@ RUN wget -q https://s3-eu-west-1.amazonaws.com/static-libraries.concordium.com/g
         cd .. && \
         rm -rf ghc-${GHC_VERSION}-x86_64-unknown-linux-integer-gmp.tar.xz ghc-${GHC_VERSION}-x86_64-unknown-linux
 
-ARG STACK_VERSION=2.7.5
+ARG STACK_VERSION=2.9.1
 RUN wget -q https://github.com/commercialhaskell/stack/releases/download/v${STACK_VERSION}/stack-${STACK_VERSION}-linux-x86_64.tar.gz && \
         tar -xf stack-${STACK_VERSION}-linux-x86_64.tar.gz && \
         mkdir -p $HOME/.stack/bin && \
