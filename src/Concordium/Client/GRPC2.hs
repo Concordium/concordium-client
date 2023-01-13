@@ -100,6 +100,7 @@ import Proto.V2.Concordium.Service qualified as CS
 import qualified Control.Monad.Cont as Wasm
 import Proto.V2.Concordium.Types_Fields (schedule)
 import qualified Proto.V2.Concordium.Types_Fields as Proto
+import qualified Proto.V2.Concordium.Types as ProtoFields
 
 {- |A helper function that can be used to construct a value of a protobuf
  "wrapper" type by serializing the provided value @a@ using its serialize
@@ -2771,7 +2772,7 @@ instance FromProto Proto.TokenomicsInfo where
 
 data InvokeInstanceInput = InvokeInstanceInput
     { iiBlockHash :: BlockHashInput
-    , iiInvoker :: Maybe Address
+    , iiInvoker :: Address
     , iiInstance :: ContractAddress
     , iiAmount :: Amount
     , iiEntrypoint :: Wasm.ReceiveName
@@ -2779,10 +2780,46 @@ data InvokeInstanceInput = InvokeInstanceInput
     , iiEnergy :: Energy
     }
 
+{-
+// Request for InvokeInstance.
+message InvokeInstanceRequest {
+  // Block to invoke the contract. The invocation will be at the end of the given block.
+  BlockHashInput block_hash = 1;
+  // Invoker of the contract. If this is not supplied then the contract will be
+  // invoked by an account with address 0, no credentials and sufficient amount
+  // of CCD to cover the transfer amount. If given, the relevant address (either
+  // account or contract) must exist in the blockstate.
+  optional Address invoker = 2;
+  // Address of the contract instance to invoke.
+  ContractAddress instance = 3;
+  // Amount to invoke the smart contract instance with.
+  Amount amount = 4;
+  // The entrypoint of the smart contract instance to invoke.
+  ReceiveName entrypoint = 5;
+  // The parameter bytes to include in the invocation of the entrypoint.
+  Parameter parameter = 6;
+  // And what amount of energy to allow for execution. This cannot exceed
+  // `100_000_000_000`, but in practice it should be much less. The maximum
+  // block energy is typically in the range of a few million.
+  Energy energy = 7;
+}
+-}
+
+instance ToProto InvokeInstanceInput where
+    type Output InvokeInstanceInput = Proto.InvokeInstanceRequest
+    toProto InvokeInstanceInput {..} =
+        Proto.make $ do
+            ProtoFields.blockHash .= toProto iiBlockHash
+            ProtoFields.invoker .= toProto iiInvoker
+            ProtoFields.instance' .= toProto iiInstance
+            ProtoFields.amount .= toProto iiAmount
+            ProtoFields.entrypoint .= toProto iiEntrypoint
+            ProtoFields.parameter .= toProto iiParameter
+            ProtoFields.energy .= toProto iiEnergy
+
 instance FromProto Proto.ContractEvent where
     type Output' Proto.ContractEvent = Wasm.ContractEvent
     fromProto ce = return . Wasm.ContractEvent . BSS.toShort $ ce ^. ProtoFields.value
-
 
 instance FromProto Proto.Parameter where
     type Output' Proto.Parameter = Wasm.Parameter
@@ -2842,134 +2879,157 @@ instance FromProto Proto.ContractTraceElement where
                 euFrom <- fromProto =<< upgraded ^? ProtoFields.from
                 euTo <- fromProto =<< upgraded ^? ProtoFields.to
                 return Upgraded {..}
-
-
-{- 
 instance FromProto Proto.RejectReason where
     type Output' Proto.RejectReason = RejectReason
-    fromProto rr
-        | Just _ <- rr ^? ProtoFields.moduleNotWf = ModuleNotWF
-        | Just ae <- rr ^? ProtoFields.moduleHashAlreadyExists =  ModuleHashAlreadyExists $ fromProto ae
-        | Just ar <- rr ^? ProtoFields.invalidAccountReference = InvalidAccountReference . fromProto $ ar
-        | Just iim $ rr ^? ProtoFields.invalidInitMethod =
-            InvalidInitMethod {
-                moduleRef = fromProto $ iim ^. ProtoFields.moduleRef,
-                Wasm.initName = fromProto $ iim ^. ProtoFields.initName
-            }
-        | Just iim <- rr ^? ProtoFields.invalidReceiveMethod =
-            InvalidInitMethod {
-                moduleRef = fromProto $ iim ^. ProtoFields.moduleRef,
-                receiveName = fromProto $ iim ^. ProtoFields.receiveName
-            }
-        | Just imr <- rr ^? ProtoFields.invalidModuleReference =
-            InvalidModuleReference {
-                moduleRef = fromProto imr
-            }
-        | Just ica <- rr ^? ProtoFields.invalidContractAddress =
-            InvalidContractAddress {
-                contractAddress = fromProto ica
-            }
-        | Just rf <- rr ^? ProtoFields.runtimeFailure = RuntimeFailure
-        | Just atl <- rr ^? ProtoFields.amountTooLarge =
-            AmountTooLarge {
-                addr = atl ^. ProtoFields.address,
-                amount = atl ^. ProtoFields. amount
-            }
-        | Just  <- rr ^? ProtoFields.invalidReceiveMethod =
-            InvalidReceiveMethod {
-                    moduleRef = fromProto $ bi ^. ProtoFields.moduleRef,
-                    receiveName = fromProto $ bi ^. ProtoFields.receiveName
-            }
-        | Just sf <- rr ^? ProtoFields.serializationFailure = SerializationFailure
-        | Just ooe <- rr ^? ProtoFields.outOfEnergy = OutOfEnergy 
-        | Just ri <- rr ^? ProtoFields.rejectedInit =
-            RejectedInit {
-                rejectReason = ri ^. ProtoFields.rejectReason ^. ProtoFields.rejectedInit
-            }
-        | Just  <- rr ^? ProtoFields. =
-             {
-                
-            }
-        | Just  <- rr ^? ProtoFields. =
-             {
-                
-            }
-        RejectedReceive{..} ->
-            Proto.make $
-                ProtoFields.rejectedReceive
-                    .= Proto.make
-                        ( do
-                            ProtoFields.rejectReason .= rejectReason
-                            ProtoFields.contractAddress .= toProto contractAddress
-                            ProtoFields.receiveName .= toProto receiveName
-                            ProtoFields.parameter .= toProto parameter
-                        )
-        InvalidProof -> Proto.make $ ProtoFields.invalidProof .= Proto.defMessage
-        AlreadyABaker bakerId -> Proto.make $ ProtoFields.alreadyABaker .= toProto bakerId
-        NotABaker addr -> Proto.make $ ProtoFields.notABaker .= toProto addr
-        InsufficientBalanceForBakerStake -> Proto.make $ ProtoFields.insufficientBalanceForBakerStake .= Proto.defMessage
-        StakeUnderMinimumThresholdForBaking -> Proto.make $ ProtoFields.stakeUnderMinimumThresholdForBaking .= Proto.defMessage
-        BakerInCooldown -> Proto.make $ ProtoFields.bakerInCooldown .= Proto.defMessage
-        DuplicateAggregationKey k -> Proto.make $ ProtoFields.duplicateAggregationKey .= mkSerialize k
-        NonExistentCredentialID -> Proto.make $ ProtoFields.nonExistentCredentialId .= Proto.defMessage
-        KeyIndexAlreadyInUse -> Proto.make $ ProtoFields.keyIndexAlreadyInUse .= Proto.defMessage
-        InvalidAccountThreshold -> Proto.make $ ProtoFields.invalidAccountThreshold .= Proto.defMessage
-        InvalidCredentialKeySignThreshold -> Proto.make $ ProtoFields.invalidCredentialKeySignThreshold .= Proto.defMessage
-        InvalidEncryptedAmountTransferProof -> Proto.make $ ProtoFields.invalidEncryptedAmountTransferProof .= Proto.defMessage
-        InvalidTransferToPublicProof -> Proto.make $ ProtoFields.invalidTransferToPublicProof .= Proto.defMessage
-        EncryptedAmountSelfTransfer addr -> Proto.make $ ProtoFields.encryptedAmountSelfTransfer .= toProto addr
-        InvalidIndexOnEncryptedTransfer -> Proto.make $ ProtoFields.invalidIndexOnEncryptedTransfer .= Proto.defMessage
-        ZeroScheduledAmount -> Proto.make $ ProtoFields.zeroScheduledAmount .= Proto.defMessage
-        NonIncreasingSchedule -> Proto.make $ ProtoFields.nonIncreasingSchedule .= Proto.defMessage
-        FirstScheduledReleaseExpired -> Proto.make $ ProtoFields.firstScheduledReleaseExpired .= Proto.defMessage
-        ScheduledSelfTransfer addr -> Proto.make $ ProtoFields.scheduledSelfTransfer .= toProto addr
-        InvalidCredentials -> Proto.make $ ProtoFields.invalidCredentials .= Proto.defMessage
-        DuplicateCredIDs ids -> Proto.make $ ProtoFields.duplicateCredIds . ProtoFields.ids .= (toProto <$> ids)
-        NonExistentCredIDs ids -> Proto.make $ ProtoFields.nonExistentCredIds . ProtoFields.ids .= (toProto <$> ids)
-        RemoveFirstCredential -> Proto.make $ ProtoFields.removeFirstCredential .= Proto.defMessage
-        CredentialHolderDidNotSign -> Proto.make $ ProtoFields.credentialHolderDidNotSign .= Proto.defMessage
-        NotAllowedMultipleCredentials -> Proto.make $ ProtoFields.notAllowedMultipleCredentials .= Proto.defMessage
-        NotAllowedToReceiveEncrypted -> Proto.make $ ProtoFields.notAllowedToReceiveEncrypted .= Proto.defMessage
-        NotAllowedToHandleEncrypted -> Proto.make $ ProtoFields.notAllowedToHandleEncrypted .= Proto.defMessage
-        MissingBakerAddParameters -> Proto.make $ ProtoFields.missingBakerAddParameters .= Proto.defMessage
-        FinalizationRewardCommissionNotInRange -> Proto.make $ ProtoFields.finalizationRewardCommissionNotInRange .= Proto.defMessage
-        BakingRewardCommissionNotInRange -> Proto.make $ ProtoFields.bakingRewardCommissionNotInRange .= Proto.defMessage
-        TransactionFeeCommissionNotInRange -> Proto.make $ ProtoFields.transactionFeeCommissionNotInRange .= Proto.defMessage
-        AlreadyADelegator -> Proto.make $ ProtoFields.alreadyADelegator .= Proto.defMessage
-        InsufficientBalanceForDelegationStake -> Proto.make $ ProtoFields.insufficientBalanceForDelegationStake .= Proto.defMessage
-        MissingDelegationAddParameters -> Proto.make $ ProtoFields.missingDelegationAddParameters .= Proto.defMessage
-        InsufficientDelegationStake -> Proto.make $ ProtoFields.insufficientDelegationStake .= Proto.defMessage
-        DelegatorInCooldown -> Proto.make $ ProtoFields.delegatorInCooldown .= Proto.defMessage
-        NotADelegator addr -> Proto.make $ ProtoFields.notADelegator .= toProto addr
-        DelegationTargetNotABaker bakerId -> Proto.make $ ProtoFields.delegationTargetNotABaker .= toProto bakerId
-        StakeOverMaximumThresholdForPool -> Proto.make $ ProtoFields.stakeOverMaximumThresholdForPool .= Proto.defMessage
-        PoolWouldBecomeOverDelegated -> Proto.make $ ProtoFields.poolWouldBecomeOverDelegated .= Proto.defMessage
-        PoolClosed -> Proto.make $ ProtoFields.poolClosed .= Proto.defMessage
+    fromProto rReason = do
+        r <- rReason ^. Proto.maybe'reason
+        case r of
+            Proto.RejectReason'ModuleNotWf _ ->
+                return ModuleNotWF
+            Proto.RejectReason'ModuleHashAlreadyExists mr ->
+                ModuleHashAlreadyExists <$> fromProto mr
+            Proto.RejectReason'InvalidAccountReference addr ->
+                InvalidAccountReference <$> fromProto addr
+            Proto.RejectReason'InvalidInitMethod' rr -> do
+                moduleRef <- fromProto =<< rr ^? ProtoFields.moduleRef
+                initName <- fromProto =<< rr ^? ProtoFields.initName
+                return $ InvalidInitMethod moduleRef initName
+            Proto.RejectReason'InvalidReceiveMethod' rr  -> do
+                moduleRef <- fromProto =<< rr ^? ProtoFields.moduleRef
+                receiveName <- fromProto =<< rr ^? ProtoFields.receiveName
+                return $ InvalidReceiveMethod moduleRef receiveName
+            Proto.RejectReason'InvalidModuleReference mr ->
+                InvalidModuleReference <$> fromProto mr
+            Proto.RejectReason'InvalidContractAddress cAddr ->
+                InvalidContractAddress <$> fromProto cAddr
+            Proto.RejectReason'RuntimeFailure _ ->
+                return RuntimeFailure
+            Proto.RejectReason'AmountTooLarge' rr -> do
+                addr <- fromProto =<< rr ^? ProtoFields.address
+                amt <- fromProto =<< rr ^? ProtoFields.amount
+                return $ AmountTooLarge addr amt
+            Proto.RejectReason'SerializationFailure _ ->
+                return SerializationFailure
+            Proto.RejectReason'OutOfEnergy _ ->
+                return OutOfEnergy
+            Proto.RejectReason'RejectedInit' rr ->
+                RejectedInit <$> rr ^? ProtoFields.rejectReason
+            Proto.RejectReason'RejectedReceive' rr -> do
+                rejectReason <- rr ^? ProtoFields.rejectReason
+                contractAddress <- fromProto =<< rr ^? ProtoFields.contractAddress
+                receiveName <- fromProto =<< rr ^? ProtoFields.receiveName
+                parameter <- fromProto =<< rr ^? ProtoFields.parameter
+                return RejectedReceive {..}
+            Proto.RejectReason'InvalidProof _ ->
+                return InvalidProof
+            Proto.RejectReason'AlreadyABaker bakerId ->
+                AlreadyABaker <$> fromProto bakerId
+            Proto.RejectReason'NotABaker aAddr ->
+                NotABaker <$> fromProto aAddr
+            Proto.RejectReason'InsufficientBalanceForBakerStake _ ->
+                return InsufficientBalanceForBakerStake
+            Proto.RejectReason'StakeUnderMinimumThresholdForBaking _ ->
+                return StakeUnderMinimumThresholdForBaking
+            Proto.RejectReason'BakerInCooldown _ ->
+                return BakerInCooldown
+            Proto.RejectReason'DuplicateAggregationKey key ->
+                DuplicateAggregationKey <$> deMkSerialize key
+            Proto.RejectReason'NonExistentCredentialId _ ->
+                return NonExistentCredentialID
+            Proto.RejectReason'KeyIndexAlreadyInUse _ ->
+                return KeyIndexAlreadyInUse
+            Proto.RejectReason'InvalidAccountThreshold _ ->
+                return InvalidAccountThreshold
+            Proto.RejectReason'InvalidCredentialKeySignThreshold _ ->
+                return InvalidCredentialKeySignThreshold
+            Proto.RejectReason'InvalidEncryptedAmountTransferProof _ ->
+                return InvalidEncryptedAmountTransferProof
+            Proto.RejectReason'InvalidTransferToPublicProof _ ->
+                return InvalidTransferToPublicProof
+            Proto.RejectReason'EncryptedAmountSelfTransfer aAddr ->
+                EncryptedAmountSelfTransfer <$> fromProto aAddr
+            Proto.RejectReason'InvalidIndexOnEncryptedTransfer _ ->
+                return InvalidIndexOnEncryptedTransfer
+            Proto.RejectReason'ZeroScheduledAmount _ ->
+                return ZeroScheduledAmount
+            Proto.RejectReason'NonIncreasingSchedule _ ->
+                return NonIncreasingSchedule
+            Proto.RejectReason'FirstScheduledReleaseExpired _ ->
+                return FirstScheduledReleaseExpired
+            Proto.RejectReason'ScheduledSelfTransfer aAddr ->
+                ScheduledSelfTransfer <$> fromProto aAddr
+            Proto.RejectReason'InvalidCredentials _ ->
+                return InvalidCredentials
+            Proto.RejectReason'DuplicateCredIds' rr -> do
+                raw <- mapM fromProto =<< rr ^? ProtoFields.ids
+                credIds <- mapM credIdFromRaw raw
+                return $ DuplicateCredIDs credIds
+            Proto.RejectReason'NonExistentCredIds' _ -> Nothing
+            -- NonExistentCredIDs ids -> Proto.make $ ProtoFields.nonExistentCredIds . ProtoFields.ids .= (toProto <$> ids)
+            Proto.RejectReason'RemoveFirstCredential _ -> Nothing
+            -- RemoveFirstCredential -> Proto.make $ ProtoFields.removeFirstCredential .= Proto.defMessage
+            Proto.RejectReason'CredentialHolderDidNotSign _ -> Nothing
+            -- NotAllowedMultipleCredentials -> Proto.make $ ProtoFields.notAllowedMultipleCredentials .= Proto.defMessage
+            Proto.RejectReason'NotAllowedMultipleCredentials _ -> Nothing
+            -- NotAllowedToReceiveEncrypted -> Proto.make $ ProtoFields.notAllowedToReceiveEncrypted .= Proto.defMessage
+            Proto.RejectReason'NotAllowedToReceiveEncrypted _ -> Nothing
+            -- NotAllowedToHandleEncrypted -> Proto.make $ ProtoFields.notAllowedToHandleEncrypted .= Proto.defMessage
+            Proto.RejectReason'NotAllowedToHandleEncrypted _ -> Nothing
+            -- MissingBakerAddParameters -> Proto.make $ ProtoFields.missingBakerAddParameters .= Proto.defMessage
+            Proto.RejectReason'MissingBakerAddParameters _ -> Nothing
+            -- FinalizationRewardCommissionNotInRange -> Proto.make $ ProtoFields.finalizationRewardCommissionNotInRange .= Proto.defMessage
+            Proto.RejectReason'FinalizationRewardCommissionNotInRange _ -> Nothing
+            -- BakingRewardCommissionNotInRange -> Proto.make $ ProtoFields.bakingRewardCommissionNotInRange .= Proto.defMessage
+            Proto.RejectReason'BakingRewardCommissionNotInRange _ -> Nothing
+            -- TransactionFeeCommissionNotInRange -> Proto.make $ ProtoFields.transactionFeeCommissionNotInRange .= Proto.defMessage
+            Proto.RejectReason'TransactionFeeCommissionNotInRange _ -> Nothing
+            -- AlreadyADelegator -> Proto.make $ ProtoFields.alreadyADelegator .= Proto.defMessage
+            Proto.RejectReason'AlreadyADelegator _ -> Nothing
+            -- InsufficientBalanceForDelegationStake -> Proto.make $ ProtoFields.insufficientBalanceForDelegationStake .= Proto.defMessage
+            Proto.RejectReason'InsufficientBalanceForDelegationStake _ -> Nothing
+            -- MissingDelegationAddParameters -> Proto.make $ ProtoFields.missingDelegationAddParameters .= Proto.defMessage
+            Proto.RejectReason'MissingDelegationAddParameters _ -> Nothing
+            -- InsufficientDelegationStake -> Proto.make $ ProtoFields.insufficientDelegationStake .= Proto.defMessage
+            Proto.RejectReason'InsufficientDelegationStake _ -> Nothing
+            -- DelegatorInCooldown -> Proto.make $ ProtoFields.delegatorInCooldown .= Proto.defMessage
+            Proto.RejectReason'DelegatorInCooldown _ -> Nothing
+            -- NotADelegator addr -> Proto.make $ ProtoFields.notADelegator .= toProto addr
+            Proto.RejectReason'NotADelegator _ -> Nothing
+            -- DelegationTargetNotABaker bakerId -> Proto.make $ ProtoFields.delegationTargetNotABaker .= toProto bakerId
+            Proto.RejectReason'DelegationTargetNotABaker _ -> Nothing
+            -- StakeOverMaximumThresholdForPool -> Proto.make $ ProtoFields.stakeOverMaximumThresholdForPool .= Proto.defMessage
+            Proto.RejectReason'StakeOverMaximumThresholdForPool _ -> Nothing
+            -- PoolWouldBecomeOverDelegated -> Proto.make $ ProtoFields.poolWouldBecomeOverDelegated .= Proto.defMessage
+            Proto.RejectReason'PoolWouldBecomeOverDelegated _ -> Nothing
+            -- PoolClosed -> Proto.make $ ProtoFields.poolClosed .= Proto.defMessage
+            Proto.RejectReason'PoolClosed _ -> Nothing
+        where
+            credIdFromRaw (RawCredentialRegistrationID fbs) =
+                case S.decode (FBS.toByteString fbs) of
+                    Left _ -> Nothing
+                    Right c -> c
 
-      
 instance FromProto Proto.InvokeInstanceResponse where
     type Output' Proto.InvokeInstanceResponse = InvokeContract.InvokeContractResult
-    fromProto iir =
-        case (iir ^? ProtoFields.success, iir ^? ProtoFields.failure) of
-            (Just success, Nothing) ->
-                InvokeContract.Success
-                    { rcrReturnValue = success ^. ProtoFields.maybe'returnValue
-                    , rcrUsedEnergy = fromProto $ success ^. ProtoFields.usedEnergy
-                    , rcrEvents = fmap fromProto $ success ^. ProtoFields.effects
-                    }
-            (Nothing, Just failure) ->
-                InvokeContract.Failure
-                    { rcrReturnValue = failure ^. ProtoFields.maybe'returnValue
-                    , rcrUsedEnergy = fromProto $ failure ^. ProtoFields.usedEnergy
-                    , rcrReason = fromProto $ failure ^. ProtoFields.reason
-                    }
-            _ -> error "ouchie"
+    fromProto icResult = do
+        icr <- icResult ^. Proto.maybe'result
+        case icr of
+            Proto.InvokeInstanceResponse'Success' success -> do
+                rcrReturnValue <- success ^? ProtoFields.maybe'returnValue
+                rcrUsedEnergy <- fromProto =<< success ^? ProtoFields.usedEnergy
+                rcrEvents <- mapM fromProto =<< success ^? ProtoFields.effects
+                return InvokeContract.Success {..}
+            Proto.InvokeInstanceResponse'Failure' failure -> do
+                rcrReturnValue <- failure ^? ProtoFields.maybe'returnValue
+                rcrUsedEnergy <- fromProto =<< failure ^? ProtoFields.usedEnergy
+                rcrReason <- fromProto =<< failure ^? ProtoFields.reason
+                return InvokeContract.Failure {..}
 
-invokeInstanceV2 :: (MonadIO m) => InvokeInstanceInput -> ClientMonad m (GRPCResult (Either ConversionError InvokeContract.InvokeContractResult))
+
+invokeInstanceV2 :: (MonadIO m) => InvokeInstanceInput -> ClientMonad m (GRPCResult (Maybe InvokeContract.InvokeContractResult))
 invokeInstanceV2 iiInput = withUnaryCoreV2 (callV2 @"invokeInstance") msg (fmap fromProto <$>)
   where
     msg = toProto iiInput
--}
 
 getTokenomicsInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe QueryTypes.RewardStatus))
 getTokenomicsInfoV2 blockHash = withUnaryCoreV2 (callV2 @"getTokenomicsInfo") msg (fmap fromProto <$>)
