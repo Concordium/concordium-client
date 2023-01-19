@@ -1137,10 +1137,11 @@ printChainParametersV2 ChainParameters {..} = tell [
   [i|\# Time parameters:|],
   [i|  + reward period length: #{_cpTimeParameters ^. tpRewardPeriodLength} epochs|],
   "",
-  [i|\# Other parameters: |],
+  [i|\# Consensus parameters: |],
   [i|  + timeout parameters: #{_cpConsensusParameters ^. cpTimeoutParameters}|],
   [i|  + minimum block time: #{_cpConsensusParameters ^. cpMinBlockTime}|],
   [i|  + block energy limit: #{_cpConsensusParameters ^. cpBlockEnergyLimit}|],
+  [i|\# Other parameters: |],
   [i|  + foundation account index: #{_cpFoundationAccount}|],
   [i|  + maximum credential deployments per block: #{_cpAccountCreationLimit}|]
   ]
