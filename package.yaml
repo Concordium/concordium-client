@@ -10,10 +10,7 @@ build-type:          Custom
 extra-source-files:
 - README.md
 - ChangeLog.md
-- deps/grpc-api/concordium_p2p_rpc.proto
-- deps/grpc-api/v2/concordium/health.proto
-- deps/grpc-api/v2/concordium/service.proto
-- deps/grpc-api/v2/concordium/types.proto
+- deps/concordium-base/concordium-grpc-api/concordium_p2p_rpc.proto
 
 custom-setup:
   dependencies:
@@ -106,12 +103,6 @@ library:
   generated-exposed-modules:
     Proto.ConcordiumP2pRpc
     Proto.ConcordiumP2pRpc_Fields
-    Proto.V2.Concordium.Health
-    Proto.V2.Concordium.Health_Fields
-    Proto.V2.Concordium.Service
-    Proto.V2.Concordium.Service_Fields
-    Proto.V2.Concordium.Types
-    Proto.V2.Concordium.Types_Fields
 
 executables:
   concordium-client:
