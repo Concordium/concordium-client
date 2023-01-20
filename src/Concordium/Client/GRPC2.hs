@@ -6,8 +6,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 {- |Part of the implementation of the GRPC2 interface. This module constructs
@@ -16,23 +14,17 @@
    This module only provides foreign exports, and should not be imported from
    other Haskell code.
 -}
-module Concordium.Client.GRPC2 (
-    ToProto (..),
-    FromProto (..),
-    getAccountInfoV2,
-) where
+module Concordium.Client.GRPC2 where
 
 -- Refactor these after migrating to GRPC V2; here for now due to many namespace conflicts.
 import Control.Concurrent
 import Data.Bits (shiftL, shiftR)
 import Data.ByteString qualified as BS
 import Data.ByteString.Short qualified as BSS
-import Data.ByteString.Unsafe qualified as BS
 import Data.Coerce
 import Data.FixedByteString qualified as FBS
 import Data.Int
 import Data.Map.Strict qualified as Map
-import Data.ProtoLens qualified as Proto
 import Data.ProtoLens.Combinators qualified as Proto
 import Data.ProtoLens.Field qualified
 import Data.Ratio qualified as Ratio
@@ -40,12 +32,10 @@ import Data.Serialize qualified as S
 import Data.Set qualified as Set
 import Data.Vector qualified as Vec
 import Data.Word
-import Foreign hiding (shiftL, shiftR)
 import Lens.Micro.Platform
 
-import qualified Proto.V2.Concordium.Types as Proto
-import qualified Proto.V2.Concordium.Types_Fields as ProtoFields
-
+import Proto.V2.Concordium.Types qualified as Proto
+import Proto.V2.Concordium.Types_Fields qualified as ProtoFields
 
 import Concordium.Crypto.EncryptedTransfers
 import Concordium.ID.Types
@@ -53,11 +43,10 @@ import Concordium.Types
 import Concordium.Types.Accounts
 import Concordium.Types.Queries qualified as QueryTypes
 import Concordium.Types.Transactions qualified as Transactions
-import Concordium.Types.Transactions qualified as TxTypes
 
 import Concordium.Common.Time
 import Concordium.Common.Version
-import Concordium.Crypto.SHA256 (DigestSize, Hash (Hash))
+import Concordium.Crypto.SHA256 (Hash (Hash))
 import Concordium.Crypto.SignatureScheme (Signature (..), VerifyKey (..))
 import Concordium.ID.AnonymityRevoker qualified as ArInfo
 import Concordium.ID.IdentityProvider qualified as IpInfo
@@ -69,7 +58,6 @@ import Concordium.Types.Parameters qualified as Parameters
 import Concordium.Types.Updates qualified as Updates
 import Concordium.Wasm qualified as Wasm
 import Data.Text (Text, pack)
-import Data.Text.Encoding qualified as Text
 import Data.Time (UTCTime)
 
 import Concordium.Client.GRPC
@@ -81,37 +69,25 @@ import Network.GRPC.HTTP2.ProtoLens
 import Network.HTTP2.Client
 import Web.Cookie qualified as Cookie
 
+import Concordium.GRPC2
 import Concordium.Types.Accounts qualified as Concordium.Types
-import Concordium.Types.Parameters (CryptographicParameters)
-import Concordium.Types.ProtocolVersion (ProtocolVersion)
-import Concordium.Types.Queries (NextAccountNonce)
-import Concordium.Types.SeedState qualified as ProtoFields
 import Concordium.Types.Updates (UpdateInstruction (uiSignHash))
-import Concordium.Wasm (ModuleSource)
 import Control.Concurrent.Async
-import Control.Monad.Cont qualified as Wasm
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.Bifunctor (Bifunctor (bimap))
 import Data.ByteString (ByteString)
-import Data.Either (fromRight)
 import Data.IORef
-import Data.Kind (Type)
 import Data.Maybe (fromJust, maybeToList)
 import Data.ProtoLens (defMessage)
-import Data.ProtoLens.Encoding.Bytes qualified as S
 import Data.ProtoLens.Field qualified as Field
 import Data.ProtoLens.Service.Types
 import Data.Sequence (Seq (Empty))
 import Data.String
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Proto.V2.Concordium.Service qualified as CS
-import Proto.V2.Concordium.Types (ElectionInfo)
 import Proto.V2.Concordium.Types qualified as ProtoFields
-import Proto.V2.Concordium.Types_Fields (schedule)
 import Proto.V2.Concordium.Types_Fields qualified as Proto
-import Data.Aeson (ToJSON)
-import Concordium.GRPC2
 
 {- |A helper function that serves as an inverse to `mkSerialize`,
 
