@@ -8,12 +8,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-{- |Part of the implementation of the GRPC2 interface. This module constructs
-    responses to queries that are handled by the Haskell part of the code.
-
-   This module only provides foreign exports, and should not be imported from
-   other Haskell code.
--}
+-- |Part of the implementation of the GRPC2 interface.
 module Concordium.Client.GRPC2 where
 
 -- Refactor these after migrating to GRPC V2; here for now due to many namespace conflicts.
@@ -88,6 +83,9 @@ import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Proto.V2.Concordium.Service qualified as CS
 import Proto.V2.Concordium.Types qualified as ProtoFields
 import Proto.V2.Concordium.Types_Fields qualified as Proto
+import Concordium.ID.IdentityProvider (ipInfoCreate)
+import qualified Concordium.ID.Types as IpInfo
+import qualified Concordium.ID.Types as ArInfo
 
 {- |A helper function that serves as an inverse to `mkSerialize`,
 
@@ -1510,51 +1508,26 @@ instance FromProto Proto.Memo where
 instance FromProto Proto.ArInfo where
     type Output' Proto.ArInfo = ArInfo.ArInfo
     fromProto arInfo = do
+        arIdentity <- deMkWord32 <$> arInfo ^? ProtoFields.identity
+        arPubKey <- arInfo ^? ProtoFields.publicKey . ProtoFields.value
         arD <- arInfo ^? ProtoFields.description
         arName <- arD ^? ProtoFields.name
         arUrl <- arD ^? ProtoFields.url
-        arDescription <- arInfo ^? ProtoFields.publicKey
-        arId <- deMkWord32 <$> arInfo ^? ProtoFields.identity
-        jsonString <- do
-            Nothing
-        Nothing
+        arDescription <- arD ^? ProtoFields.description
+        ArInfo.arInfoCreate (ArInfo.ArIdentity arIdentity) arPubKey arName arUrl arDescription
 
-{- FIXME: Some FFI type which is deserialized. Ensure how to go about converting it back.
-    ProtoFields.identity .= mkWord32 (ArInfo.arIdentity ai)
-    ProtoFields.description
-        .= Proto.make
-            ( do
-                ProtoFields.name .= ArInfo.arName ai
-                ProtoFields.url .= ArInfo.arUrl ai
-                ProtoFields.description .= ArInfo.arDescription ai
-            )
-    ProtoFields.publicKey . ProtoFields.value .= ArInfo.arPublicKey ai
--}
 instance FromProto Proto.IpInfo where
     type Output' Proto.IpInfo = IpInfo.IpInfo
     fromProto ipInfo = do
-        ipVerifyKey <- ipInfo ^? ProtoFields.verifyKey
-        ipCdiVerifyKey <- ipInfo ^? ProtoFields.cdiVerifyKey
+        ipVerifyKey <- ipInfo ^? ProtoFields.verifyKey . ProtoFields.value
+        ipCdiVerifyKey <- ipInfo ^? ProtoFields.cdiVerifyKey . ProtoFields.value
         ipD <- ipInfo ^? ProtoFields.description
-        ipIdentity <- ipInfo ^? ProtoFields.identity
+        ipIdentity <- deMkWord32 <$> ipInfo ^? ProtoFields.identity
         ipName <- ipD ^? ProtoFields.name
         ipUrl <- ipD ^? ProtoFields.url
         ipDescription <- ipD ^? ProtoFields.description
-        Nothing
+        ipInfoCreate (IpInfo.IP_ID ipIdentity) ipVerifyKey ipCdiVerifyKey ipName ipUrl ipDescription
 
-{- FIXME: Some FFI type which is deserialized. Ensure how to go about converting it back.
-    ProtoFields.identity .= mkWord32 (ArInfo.arIdentity ai)
-    ProtoFields.identity .= mkWord32 (IpInfo.ipIdentity ii)
-    ProtoFields.description
-        .= Proto.make
-            ( do
-                ProtoFields.name .= IpInfo.ipName ii
-                ProtoFields.url .= IpInfo.ipUrl ii
-                ProtoFields.description .= IpInfo.ipDescription ii
-            )
-    ProtoFields.verifyKey . ProtoFields.value .= IpInfo.ipVerifyKey ii
-    ProtoFields.cdiVerifyKey . ProtoFields.value .= IpInfo.ipCdiVerifyKey ii
--}
 instance FromProto Proto.BakerStakeThreshold where
     type Output' Proto.BakerStakeThreshold = Parameters.PoolParameters 'ChainParametersV0
     fromProto pParams = fmap Parameters.PoolParametersV0 . fromProto =<< pParams ^? ProtoFields.bakerStakeThreshold
