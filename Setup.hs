@@ -20,10 +20,7 @@ autoConfHook desc flags = do
             in confHook simpleUserHooks desc extraFlags
     _ -> confHook simpleUserHooks desc flags
 
-main =
-    defaultMainWithHooks $
-            generatingProtos
-                "deps/concordium-base/concordium-grpc-api"
-                simpleUserHooks
-                    { confHook = autoConfHook
-                    }
+main = defaultMainWithHooks $ generatingProtos "deps/concordium-base/concordium-grpc-api" simpleUserHooks
+  {
+    confHook = autoConfHook
+  }

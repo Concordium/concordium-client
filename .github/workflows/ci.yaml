@@ -55,7 +55,10 @@ jobs:
           enable-stack: true
           stack-no-global: true
       - name: Install protoc
-        run: sudo apt -y install protobuf-compiler
+        run: |
+          wget https://github.com/protocolbuffers/protobuf/releases/download/v3.15.3/protoc-3.15.3-linux-x86_64.zip
+          unzip protoc-3.15.3-linux-x86_64.zip
+          sudo mv ./bin/protoc /usr/bin/protoc
       - name: Cache cargo and stack dependencies and targets
         uses: actions/cache@v2
         with:
