@@ -34,6 +34,7 @@ import Proto.V2.Concordium.Types_Fields qualified as ProtoFields
 
 import Concordium.Crypto.EncryptedTransfers
 import Concordium.ID.Types
+
 import Concordium.Types
 import Concordium.Types.Accounts
 import Concordium.Types.Queries qualified as QueryTypes
@@ -65,7 +66,12 @@ import Network.HTTP2.Client
 import Web.Cookie qualified as Cookie
 
 import Concordium.GRPC2
+import Concordium.ID.IdentityProvider (createIpInfo)
+import Concordium.ID.AnonymityRevoker (createArInfo, ArInfo)
+import Concordium.ID.Parameters (createGlobalContext)
+import Concordium.ID.Types(IdentityProviderIdentity(..))
 import Concordium.Types.Accounts qualified as Concordium.Types
+import Concordium.Types.Parameters (CryptographicParameters)
 import Concordium.Types.Updates (UpdateInstruction (uiSignHash))
 import Control.Concurrent.Async
 import Control.Monad.Reader
@@ -83,9 +89,6 @@ import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Proto.V2.Concordium.Service qualified as CS
 import Proto.V2.Concordium.Types qualified as ProtoFields
 import Proto.V2.Concordium.Types_Fields qualified as Proto
-import Concordium.ID.IdentityProvider (ipInfoCreate)
-import qualified Concordium.ID.Types as IpInfo
-import qualified Concordium.ID.Types as ArInfo
 
 {- |A helper function that serves as an inverse to `mkSerialize`,
 
@@ -1514,7 +1517,7 @@ instance FromProto Proto.ArInfo where
         arName <- arD ^? ProtoFields.name
         arUrl <- arD ^? ProtoFields.url
         arDescription <- arD ^? ProtoFields.description
-        ArInfo.arInfoCreate (ArInfo.ArIdentity arIdentity) arPubKey arName arUrl arDescription
+        createArInfo (ArIdentity arIdentity) arPubKey arName arUrl arDescription
 
 instance FromProto Proto.IpInfo where
     type Output' Proto.IpInfo = IpInfo.IpInfo
@@ -1526,7 +1529,7 @@ instance FromProto Proto.IpInfo where
         ipName <- ipD ^? ProtoFields.name
         ipUrl <- ipD ^? ProtoFields.url
         ipDescription <- ipD ^? ProtoFields.description
-        ipInfoCreate (IpInfo.IP_ID ipIdentity) ipVerifyKey ipCdiVerifyKey ipName ipUrl ipDescription
+        createIpInfo (IP_ID ipIdentity) ipVerifyKey ipCdiVerifyKey ipName ipUrl ipDescription
 
 instance FromProto Proto.BakerStakeThreshold where
     type Output' Proto.BakerStakeThreshold = Parameters.PoolParameters 'ChainParametersV0
@@ -2289,6 +2292,20 @@ instance ToProto PreAccountTransaction where
             ProtoFields.header .= toProto header
             ProtoFields.payload .= toProto payload
 
+instance FromProto Proto.CryptographicParameters where
+    type Output' Proto.CryptographicParameters = CryptographicParameters
+    fromProto cParams =
+        do
+            genString <- cParams ^? ProtoFields.genesisString
+            bpGens <- cParams ^? ProtoFields.bulletproofGenerators
+            occKey <- cParams ^? ProtoFields.onChainCommitmentKey
+            createGlobalContext genString bpGens occKey
+
+getCryptographicParametersV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe CryptographicParameters))
+getCryptographicParametersV2 bHash = withUnaryCoreV2 (callV2 @"getCryptographicParameters") msg ((fmap . fmap) fromProto)
+  where
+    msg = toProto bHash
+
 getAccountTransactionSignHashV2 :: (MonadIO m) => PreAccountTransaction -> ClientMonad m (GRPCResult (Maybe AccountTransactionSignHash))
 getAccountTransactionSignHashV2 paTransaction = withUnaryCoreV2 (callV2 @"getAccountTransactionSignHash") msg ((fmap . fmap) fromProto)
   where
@@ -2298,9 +2315,9 @@ getBlockChainParametersV2 ::
     (MonadIO m) =>
     BlockHashInput ->
     ClientMonad m (GRPCResult (Maybe ChainParameterOutput))
-getBlockChainParametersV2 tHash = withUnaryCoreV2 (callV2 @"getBlockChainParameters") msg ((fmap . fmap) fromProto)
+getBlockChainParametersV2 bHash = withUnaryCoreV2 (callV2 @"getBlockChainParameters") msg ((fmap . fmap) fromProto)
   where
-    msg = defMessage
+    msg = toProto bHash
 
 getNodeInfoV2 :: (MonadIO m) => ClientMonad m (GRPCResult (Maybe NodeInfo))
 getNodeInfoV2 = withUnaryCoreV2 (callV2 @"getNodeInfo") msg ((fmap . fmap) fromProto)
