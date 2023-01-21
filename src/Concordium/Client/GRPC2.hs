@@ -176,7 +176,7 @@ fromProtoError :: Maybe a
 fromProtoError = Nothing
 
 -- |A block hash input
-data BlockHashInput = Best | LastFinal | Given BlockHash
+data BlockHashInput = Best | LastFinal | Given !BlockHash
 
 -- |An account identifier input
 type AccountIdentifierInput = AccountIdentifier
@@ -755,12 +755,12 @@ instance FromProto Proto.BlocksAtHeightResponse where
 
 data BlockHeightInput
     = Relative
-        { rGenesisIndex :: GenesisIndex
-        , rBlockHeight :: BlockHeight
-        , rRestrict :: Bool
+        { rGenesisIndex :: !GenesisIndex
+        , rBlockHeight :: !BlockHeight
+        , rRestrict :: !Bool
         }
     | Absolute
-        { aBlockHeight :: AbsoluteBlockHeight
+        { aBlockHeight :: !AbsoluteBlockHeight
         }
 
 instance ToProto BlockHeightInput where
@@ -812,13 +812,13 @@ instance FromProto Proto.TokenomicsInfo where
                 return QueryTypes.RewardStatusV1{..}
 
 data InvokeInstanceInput = InvokeInstanceInput
-    { iiBlockHash :: BlockHashInput
-    , iiInvoker :: Address
-    , iiInstance :: ContractAddress
-    , iiAmount :: Amount
-    , iiEntrypoint :: Wasm.ReceiveName
-    , iiParameter :: Wasm.Parameter
-    , iiEnergy :: Energy
+    { iiBlockHash :: !BlockHashInput
+    , iiInvoker :: !Address
+    , iiInstance :: !ContractAddress
+    , iiAmount :: !Amount
+    , iiEntrypoint :: !Wasm.ReceiveName
+    , iiParameter :: !Wasm.Parameter
+    , iiEnergy :: !Energy
     }
 
 instance ToProto InvokeInstanceInput where
@@ -1925,10 +1925,10 @@ instance FromProto Proto.BlockFinalizationSummary where
                 Just FinalizationSummary{..}
 
 data FinalizationSummary = FinalizationSummary
-    { blockHash :: BlockHash
-    , finIndex :: FinalizationIndex
-    , delay :: BlockHeight
-    , finalizers :: [QueryTypes.FinalizationSummaryParty]
+    { blockHash :: !BlockHash
+    , finIndex :: !FinalizationIndex
+    , delay :: !BlockHeight
+    , finalizers :: ![QueryTypes.FinalizationSummaryParty]
     }
 
 type BlockFinalizationSummary = Maybe FinalizationSummary
@@ -1936,15 +1936,15 @@ type BlockFinalizationSummary = Maybe FinalizationSummary
 data PeerCatchupStatus = UpToDate | Pending | CatchingUp
 
 data NetworkStats = NetworkStats
-    { packetsSent :: Integer
-    , packetsReceived :: Integer
-    , latency :: Integer
+    { packetsSent :: !Integer
+    , packetsReceived :: !Integer
+    , latency :: !Integer
     }
 data PeerInfo = PeerInfo
-    { peerId :: Text
-    , socketAddress :: IpSocketAddress
-    , networkStats :: NetworkStats
-    , consensusInfo :: Maybe PeerCatchupStatus
+    { peerId :: !Text
+    , socketAddress :: !IpSocketAddress
+    , networkStats :: !NetworkStats
+    , consensusInfo :: !(Maybe PeerCatchupStatus)
     }
 
 type PeersInfo = [PeerInfo]
@@ -2009,7 +2009,7 @@ data PassiveCommitteeInfo
     | AddedButWrongKeys
 
 data BakerConsensusInfoStatus
-    = PassiveBaker PassiveCommitteeInfo
+    = PassiveBaker !PassiveCommitteeInfo
     | ActiveBakerCommitteeInfo
     | ActiveFinalizerCommitteeInfo
 
@@ -2029,8 +2029,8 @@ instance FromProto Proto.NodeInfo'BakerConsensusInfo where
         return BakerConsensusInfo{..}
 
 data BakerConsensusInfo = BakerConsensusInfo
-    { bakerId :: Integer
-    , status :: BakerConsensusInfoStatus
+    { bakerId :: !Integer
+    , status :: !BakerConsensusInfoStatus
     }
 
 instance FromProto Proto.NodeInfo where
@@ -2054,7 +2054,7 @@ instance FromProto Proto.NodeInfo where
         networkInfo <- fromProto =<< nInfo ^? ProtoFields.networkInfo
         return NodeInfo{..}
 
-data NodeDetails = NodeNotRunning | NodePassive | NodeActive BakerConsensusInfo
+data NodeDetails = NodeNotRunning | NodePassive | NodeActive !BakerConsensusInfo
 
 instance FromProto Proto.NodeInfo'NetworkInfo where
     type Output' Proto.NodeInfo'NetworkInfo = NetworkInfo
@@ -2067,19 +2067,19 @@ instance FromProto Proto.NodeInfo'NetworkInfo where
         return NetworkInfo{..}
 
 data NetworkInfo = NetworkInfo
-    { nodeId :: Text
-    , peerTotalSent :: Integer
-    , peerTotalReceived :: Integer
-    , avgBpsIn :: Integer
-    , avgBpsOut :: Integer
+    { nodeId :: !Text
+    , peerTotalSent :: !Integer
+    , peerTotalReceived :: !Integer
+    , avgBpsIn :: !Integer
+    , avgBpsOut :: !Integer
     }
 
 data NodeInfo = NodeInfo
-    { peerVersion :: Text
-    , localTime :: Timestamp
-    , peerUptime :: Duration
-    , networkInfo :: NetworkInfo
-    , details :: Maybe NodeDetails
+    { peerVersion :: !Text
+    , localTime :: !Timestamp
+    , peerUptime :: !Duration
+    , networkInfo :: !NetworkInfo
+    , details :: !(Maybe NodeDetails)
     }
 
 instance FromProto Proto.ChainParametersV0 where
@@ -2155,8 +2155,8 @@ instance FromProto Proto.CredentialsPerBlockLimit where
 
 -- FIXME: Pertains to the next FIXME comment.
 data ChainParameterOutput
-    = ChainParameterOutputV0 (Parameters.ChainParameters' 'ChainParametersV0)
-    | ChainParameterOutputV1 (Parameters.ChainParameters' 'ChainParametersV1)
+    = ChainParameterOutputV0 !(Parameters.ChainParameters' 'ChainParametersV0)
+    | ChainParameterOutputV1 !(Parameters.ChainParameters' 'ChainParametersV1)
 
 instance FromProto Proto.ChainParameters where
     type
@@ -2174,8 +2174,8 @@ instance FromProto Proto.ChainParameters where
             Proto.ChainParameters'V1 v1 -> ChainParameterOutputV1 <$> fromProto v1
 
 data VersionedModuleSource
-    = ModuleSourceV0 ByteString
-    | ModuleSourceV1 ByteString
+    = ModuleSourceV0 !ByteString
+    | ModuleSourceV1 !ByteString
 
 type AccountTransactionSignHash = ByteString
 
@@ -2184,43 +2184,43 @@ instance FromProto Proto.AccountTransactionSignHash where
     fromProto atsHash = atsHash ^? ProtoFields.value
 
 data AccountTransactionPayload
-    = Raw ByteString
+    = Raw !ByteString
     | VersionedModuleSourcePayload
-        VersionedModuleSource
+        !VersionedModuleSource
     | InitContractPayload
-        { amount :: Amount
-        , moduleRef :: ModuleRef
-        , initName :: Wasm.InitName
-        , parameter :: Wasm.Parameter
+        { amount :: !Amount
+        , moduleRef :: !ModuleRef
+        , initName :: !Wasm.InitName
+        , parameter :: !Wasm.Parameter
         }
     | UpdateContractPayload
-        { amount :: Amount
-        , address :: ContractAddress
-        , receiveName :: Wasm.ReceiveName
-        , parameter :: Wasm.Parameter
+        { amount :: !Amount
+        , address :: !ContractAddress
+        , receiveName :: !Wasm.ReceiveName
+        , parameter :: !Wasm.Parameter
         }
     | TransferPayload
-        { amount :: Amount
-        , receiver :: AccountAddress
+        { amount :: !Amount
+        , receiver :: !AccountAddress
         }
     | TransferWithMemoPayload
-        { amount :: Amount
-        , receiver :: AccountAddress
-        , memo :: Memo
+        { amount :: !Amount
+        , receiver :: !AccountAddress
+        , memo :: !Memo
         }
     | RegisteredDataPayload
-        RegisteredData
+        !RegisteredData
 
 data AccountTransactionHeader = AccountTransactionHeader
-    { sender :: AccountAddress
-    , sequenceNumber :: Nonce
-    , energyAmount :: Energy
-    , expiry :: TransactionTime
+    { sender :: !AccountAddress
+    , sequenceNumber :: !Nonce
+    , energyAmount :: !Energy
+    , expiry :: !TransactionTime
     }
 
 data PreAccountTransaction = PreAccountTransaction
-    { header :: AccountTransactionHeader
-    , payload :: AccountTransactionPayload
+    { header :: !AccountTransactionHeader
+    , payload :: !AccountTransactionPayload
     }
 
 instance ToProto AccountTransactionPayload where
@@ -2345,9 +2345,9 @@ sendBlockItemV2 sbiInput = withUnaryCoreV2 (callV2 @"sendBlockItem") msg ((fmap 
     msg = toProto sbiInput
 
 data SendBlockItemInput
-    = AccountTransaction Transactions.AccountTransaction
-    | AccountCreation Transactions.AccountCreation
-    | UpdateInstruction Updates.UpdateInstruction
+    = AccountTransaction !Transactions.AccountTransaction
+    | AccountCreation !Transactions.AccountCreation
+    | UpdateInstruction !Updates.UpdateInstruction
 
 instance ToProto SendBlockItemInput where
     type Output SendBlockItemInput = Proto.SendBlockItemRequest
