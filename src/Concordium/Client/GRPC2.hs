@@ -65,8 +65,8 @@ import Network.HTTP2.Client
 import Web.Cookie qualified as Cookie
 
 import Concordium.GRPC2
-import Concordium.ID.IdentityProvider (createIpInfo)
 import Concordium.ID.AnonymityRevoker (createArInfo)
+import Concordium.ID.IdentityProvider (createIpInfo)
 import Concordium.ID.Parameters (createGlobalContext)
 import Concordium.Types.Accounts qualified as Concordium.Types
 import Concordium.Types.Parameters (CryptographicParameters)
@@ -148,9 +148,10 @@ deMkWord16 ::
     Maybe Word16
 deMkWord16 val =
     if v <= 65_535
-    then return $ fromIntegral v
-    else Nothing
-        where v = val ^. ProtoFields.value
+        then return $ fromIntegral v
+        else Nothing
+  where
+    v = val ^. ProtoFields.value
 
 -- |Like 'mkWord32', but for Word8 fields instead.
 deMkWord8 ::
@@ -163,9 +164,10 @@ deMkWord8 ::
     Maybe Word8
 deMkWord8 val =
     if v <= 255
-    then return $ fromIntegral v
-    else Nothing
-        where v = val ^. ProtoFields.value
+        then return $ fromIntegral v
+        else Nothing
+  where
+    v = val ^. ProtoFields.value
 
 {- |A helper class analogous to something like Aeson's FromJSON.
  It exists to make it more manageable to convert the Protobuf types to
@@ -824,7 +826,9 @@ data InvokeInstanceInput = InvokeInstanceInput
     , iiEntrypoint :: !Wasm.ReceiveName
     , iiParameter :: !Wasm.Parameter
     , iiEnergy :: !Energy
-    }
+    } -- FIXME: As mentioned by Aleš, this exists as ContractContext
+      --        however that lacks a field for the BlockHashInput.
+      --        which is why this input type is here (for now).
 
 instance ToProto InvokeInstanceInput where
     type Output InvokeInstanceInput = Proto.InvokeInstanceRequest
