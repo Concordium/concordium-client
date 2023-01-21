@@ -13,7 +13,6 @@ module Concordium.Client.GRPC2 where
 
 -- Refactor these after migrating to GRPC V2; here for now due to many namespace conflicts.
 import Control.Concurrent
-import Data.Bits (shiftL, shiftR)
 import Data.ByteString qualified as BS
 import Data.ByteString.Short qualified as BSS
 import Data.Coerce
@@ -67,9 +66,8 @@ import Web.Cookie qualified as Cookie
 
 import Concordium.GRPC2
 import Concordium.ID.IdentityProvider (createIpInfo)
-import Concordium.ID.AnonymityRevoker (createArInfo, ArInfo)
+import Concordium.ID.AnonymityRevoker (createArInfo)
 import Concordium.ID.Parameters (createGlobalContext)
-import Concordium.ID.Types(IdentityProviderIdentity(..))
 import Concordium.Types.Accounts qualified as Concordium.Types
 import Concordium.Types.Parameters (CryptographicParameters)
 import Concordium.Types.Updates (UpdateInstruction (uiSignHash))
@@ -147,8 +145,12 @@ deMkWord16 ::
         Word32
     ) =>
     b ->
-    Word16
-deMkWord16 val = fromIntegral $ shiftR (shiftL (val ^. ProtoFields.value) 16) 16
+    Maybe Word16
+deMkWord16 val =
+    if v <= 65_535
+    then return $ fromIntegral v
+    else Nothing
+        where v = val ^. ProtoFields.value
 
 -- |Like 'mkWord32', but for Word8 fields instead.
 deMkWord8 ::
@@ -158,8 +160,12 @@ deMkWord8 ::
         Word32
     ) =>
     b ->
-    Word8
-deMkWord8 val = fromIntegral $ shiftR (shiftL (val ^. ProtoFields.value) 24) 24
+    Maybe Word8
+deMkWord8 val =
+    if v <= 255
+    then return $ fromIntegral v
+    else Nothing
+        where v = val ^. ProtoFields.value
 
 {- |A helper class analogous to something like Aeson's FromJSON.
  It exists to make it more manageable to convert the Protobuf types to
@@ -256,7 +262,7 @@ instance FromProto Proto.Release where
 
 instance FromProto Proto.AccountThreshold where
     type Output' Proto.AccountThreshold = AccountThreshold
-    fromProto = return . AccountThreshold . deMkWord8
+    fromProto = fmap AccountThreshold . deMkWord8
 
 instance FromProto Proto.EncryptedAmount where
     type Output' Proto.EncryptedAmount = EncryptedAmount
@@ -390,7 +396,7 @@ instance FromProto Proto.AccountStakingInfo where
 
 instance FromProto Proto.ArThreshold where
     type Output' Proto.ArThreshold = Threshold
-    fromProto = return . Threshold . deMkWord8
+    fromProto = fmap Threshold . deMkWord8
 
 instance FromProto (Map.Map Word32 Proto.ChainArData) where
     type Output' (Map.Map Word32 Proto.ChainArData) = Map.Map ArIdentity ChainArData
@@ -488,10 +494,9 @@ instance FromProto Proto.CredentialPublicKeys where
                 . Map.toAscList
                 =<< cpk ^? ProtoFields.keys
         credThreshold <-
-            SignatureThreshold
+            fmap SignatureThreshold
                 . deMkWord8
-                <$> cpk
-                ^? ProtoFields.threshold
+                =<< cpk ^? ProtoFields.threshold
         return CredentialPublicKeys{..}
       where
         convert (ki, pKey) = do
@@ -2151,7 +2156,7 @@ instance FromProto Proto.Epoch where
 
 instance FromProto Proto.CredentialsPerBlockLimit where
     type Output' Proto.CredentialsPerBlockLimit = CredentialsPerBlockLimit
-    fromProto = return . deMkWord16
+    fromProto = deMkWord16
 
 -- FIXME: Pertains to the next FIXME comment.
 data ChainParameterOutput
