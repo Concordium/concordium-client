@@ -1062,12 +1062,14 @@ getEncryptedAmountTransferData senderAddr ettReceiver ettAmount idx secretKey = 
 getBakerCooldown :: Queries.BlockSummary -> ClientMonad IO UTCTime
 getBakerCooldown bs = do
   cooldownTime <- Queries.bsWithUpdates bs $ \spv ups ->
-        case Types.chainParametersVersionFor spv of
-            Types.SCPV0 -> do
+        case Types.sChainParametersVersionFor spv of
+            Types.SChainParametersV0 -> do
                 cs <- getFromJson' =<< getConsensusStatus
                 let epochTime = toInteger (Time.durationMillis $ Queries.csEpochDuration cs) % 1000
                 return . fromRational $ epochTime * ((cooldownEpochsV0 ups + 2) % 1)
-            Types.SCPV1 -> return .fromIntegral . Types.durationSeconds $
+            Types.SChainParametersV1 -> return .fromIntegral . Types.durationSeconds $
+                ups ^. Types.currentParameters . cpCooldownParameters . cpPoolOwnerCooldown
+            Types.SChainParametersV2 -> return .fromIntegral . Types.durationSeconds $
                 ups ^. Types.currentParameters . cpCooldownParameters . cpPoolOwnerCooldown
   currTime <- liftIO getCurrentTime
   let cooldownDate = addUTCTime cooldownTime currTime
@@ -1080,10 +1082,14 @@ getBakerCooldown bs = do
 getDelegatorCooldown :: Queries.BlockSummary -> ClientMonad IO (Maybe UTCTime)
 getDelegatorCooldown bs = do
   Queries.bsWithUpdates bs $ \spv ups ->
-    case Types.chainParametersVersionFor spv of
-        Types.SCPV0 -> do
+    case Types.sChainParametersVersionFor spv of
+        Types.SChainParametersV0 -> do
           return Nothing
-        Types.SCPV1 -> do
+        Types.SChainParametersV1 -> do
+          currTime <- liftIO getCurrentTime
+          let cooldownTime = fromIntegral . Types.durationSeconds $ ups ^. Types.currentParameters . cpCooldownParameters . cpDelegatorCooldown
+          return $ Just $ addUTCTime cooldownTime currTime
+        Types.SChainParametersV2 -> do
           currTime <- liftIO getCurrentTime
           let cooldownTime = fromIntegral . Types.durationSeconds $ ups ^. Types.currentParameters . cpCooldownParameters . cpDelegatorCooldown
           return $ Just $ addUTCTime cooldownTime currTime
@@ -1260,9 +1266,10 @@ getBakerStakeThresholdOrDie = do
     Nothing -> do
       logFatal ["Could not reach the node to retrieve the baker stake threshold."]
     Just bs -> return $ Queries.bsWithUpdates bs $ \spv ups ->
-        case Types.chainParametersVersionFor spv of
-            Types.SCPV0 -> ups ^. Types.currentParameters ^. cpPoolParameters ^. ppBakerStakeThreshold
-            Types.SCPV1 -> ups ^. Types.currentParameters ^. cpPoolParameters ^. ppMinimumEquityCapital
+        case Types.sChainParametersVersionFor spv of
+            Types.SChainParametersV0 -> ups ^. Types.currentParameters ^. cpPoolParameters ^. ppBakerStakeThreshold
+            Types.SChainParametersV1 -> ups ^. Types.currentParameters ^. cpPoolParameters ^. ppMinimumEquityCapital
+            Types.SChainParametersV2 -> ups ^. Types.currentParameters ^. cpPoolParameters ^. ppMinimumEquityCapital
 
 getAccountUpdateCredentialsTransactionData ::
   Maybe FilePath -- ^ A file with new credentials.
