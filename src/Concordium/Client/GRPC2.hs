@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
+-- FIXME: My fourmulo is acting up, so I need to add this for now. I will remove it later.
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE Rank2Types #-}
@@ -418,7 +419,11 @@ instance FromProto Proto.AccountStakingInfo where
 
 instance FromProto Proto.ArThreshold where
     type Output' Proto.ArThreshold = Threshold
-    fromProto = fmap Threshold . deMkWord8
+    fromProto t =
+        -- This can not be 0.
+        if t == 0
+            then Nothing
+            else fmap Threshold . deMkWord8
 
 instance FromProto (Map.Map Word32 Proto.ChainArData) where
     type Output' (Map.Map Word32 Proto.ChainArData) = Map.Map ArIdentity ChainArData
@@ -528,7 +533,10 @@ instance FromProto Proto.CredentialPublicKeys where
             fmap SignatureThreshold
                 . deMkWord8
                 =<< cpk ^? ProtoFields.threshold
-        return CredentialPublicKeys{..}
+        -- This can not be 0.
+        if credThreshold == 0
+            then Nothing
+            else return CredentialPublicKeys{..}
       where
         convert (ki, pKey) = do
             key <- pKey ^? ProtoFields.ed25519Key
@@ -896,14 +904,12 @@ instance ToProto InvokeInstanceInput where
 
 instance FromProto Proto.ContractEvent where
     type Output' Proto.ContractEvent = Wasm.ContractEvent
-
     -- FIXME: Can we just use deMkSerialize here? Types check out, but fromShort
     -- is used in the other direction...
     fromProto ce = return . Wasm.ContractEvent . BSS.toShort $ ce ^. ProtoFields.value
 
 instance FromProto Proto.Parameter where
     type Output' Proto.Parameter = Wasm.Parameter
-
     -- FIXME: There are protocol-dependent limits on the length. Can something
     -- be done to enforce this here?
     -- FIXME: Can we just use deMkSerialize here? Types check out, but fromShort
@@ -1321,7 +1327,6 @@ instance FromProto Proto.BakerKeysEvent where
 
 instance FromProto Proto.RegisteredData where
     type Output' Proto.RegisteredData = RegisteredData
-
     -- FIXME: Can we just use deMkSerialize here? Types check out, but fromShort
     -- is used in the other direction...
     fromProto rData = RegisteredData . BSS.toShort <$> rData ^? ProtoFields.value
@@ -1335,7 +1340,6 @@ instance FromProto Proto.NewRelease where
 
 instance FromProto Proto.Memo where
     type Output' Proto.Memo = Memo
-
     -- FIXME: Can we just use deMkSerialize here? Types check out, but fromShort
     -- is used in the other direction...
     fromProto memo = Memo . BSS.toShort <$> memo ^? ProtoFields.value
@@ -1443,7 +1447,11 @@ instance FromProto Proto.AccessStructure where
         accessThreshold <- fromProto =<< aStructure ^? ProtoFields.accessThreshold
         return Updates.AccessStructure{..}
       where
-        fromProtoUpdateKeysIndex i = fromIntegral <$> i ^? ProtoFields.value
+        fromProtoUpdateKeysIndex i = do
+            i' <- i ^? ProtoFields.value
+            if i' > (maxBound :: Word16)
+                then Nothing
+                else fromIntegral i
 
 instance FromProto Proto.AuthorizationsV0 where
     type Output' Proto.AuthorizationsV0 = Updates.Authorizations 'ChainParametersV0
