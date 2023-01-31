@@ -11,12 +11,10 @@
 -- |Part of the implementation of the GRPC2 interface.
 module Concordium.Client.GRPC2 where
 
--- Refactor these after migrating to GRPC V2; here for now due to many namespace conflicts.
 import Control.Concurrent
 import Data.ByteString qualified as BS
 import Data.ByteString.Short qualified as BSS
 import Data.Coerce
-import Data.FixedByteString qualified as FBS
 import Data.Int
 import Data.Map.Strict qualified as Map
 import Data.ProtoLens.Combinators qualified as Proto
@@ -41,7 +39,6 @@ import Concordium.Types.Transactions qualified as Transactions
 
 import Concordium.Common.Time
 import Concordium.Common.Version
-import Concordium.Crypto.SHA256 (Hash (Hash))
 import Concordium.Crypto.SignatureScheme (Signature (..), VerifyKey (..))
 import Concordium.ID.AnonymityRevoker qualified as ArInfo
 import Concordium.ID.IdentityProvider qualified as IpInfo
@@ -64,17 +61,16 @@ import Network.GRPC.HTTP2.ProtoLens
 import Network.HTTP2.Client
 import Web.Cookie qualified as Cookie
 
-import Concordium.GRPC2
+import Concordium.GRPC2 hiding (Output')
 import Concordium.ID.AnonymityRevoker (createArInfo)
 import Concordium.ID.IdentityProvider (createIpInfo)
 import Concordium.ID.Parameters (createGlobalContext)
 import Concordium.Types.Accounts qualified as Concordium.Types
+import Concordium.Types.InvokeContract (ContractContext (ContractContext))
 import Concordium.Types.Parameters (CryptographicParameters)
-import Concordium.Types.Updates (UpdateInstruction (uiSignHash))
 import Control.Concurrent.Async
 import Control.Monad.Reader
 import Control.Monad.State.Strict
-import Data.Bifunctor (Bifunctor (bimap))
 import Data.ByteString (ByteString)
 import Data.IORef
 import Data.Maybe (fromJust, maybeToList)
@@ -83,31 +79,30 @@ import Data.ProtoLens.Field qualified as Field
 import Data.ProtoLens.Service.Types
 import Data.Sequence (Seq (Empty))
 import Data.String
-import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Data.Text qualified as Text
 import Proto.V2.Concordium.Service qualified as CS
 import Proto.V2.Concordium.Types qualified as ProtoFields
 import Proto.V2.Concordium.Types_Fields qualified as Proto
 
-{- |A helper function that serves as an inverse to `mkSerialize`,
-
- Converts a protocol buffer wrapper type to a native Haskell type
- which is a member of `Serialize`.
-
- More concretely, the wrapper type should be of the form
-
- > message Wrapper {
- >    bytes value = 1
- > }
-
- where the name @Wrapper@ can be arbitrary, but the @value@ field must exist,
- and it must have type @bytes@.
--}
+-- |A helper function that serves as an inverse to `mkSerialize`,
+--
+-- Converts a protocol buffer wrapper type to a native Haskell type
+-- which is a member of `Serialize`.
+--
+-- More concretely, the wrapper type should be of the form
+--
+-- > message Wrapper {
+-- >    bytes value = 1
+-- > }
+--
+-- where the name @Wrapper@ can be arbitrary, but the @value@ field must exist,
+-- and it must have type @bytes@.
 deMkSerialize ::
     ( Data.ProtoLens.Field.HasField
         b
         "value"
-        BS.ByteString
-    , S.Serialize a
+        BS.ByteString,
+      S.Serialize a
     ) =>
     b ->
     Maybe a
@@ -147,7 +142,7 @@ deMkWord16 ::
     b ->
     Maybe Word16
 deMkWord16 val =
-    if v <= 65_535
+    if v <= fromIntegral (maxBound :: Word16)
         then return $ fromIntegral v
         else Nothing
   where
@@ -163,27 +158,47 @@ deMkWord8 ::
     b ->
     Maybe Word8
 deMkWord8 val =
-    if v <= 255
+    if v <= fromIntegral (maxBound :: Word8)
         then return $ fromIntegral v
         else Nothing
   where
     v = val ^. ProtoFields.value
 
-{- |A helper class analogous to something like Aeson's FromJSON.
- It exists to make it more manageable to convert the Protobuf types to
- their internal Haskell type equivalents.
--}
+-- |Validate a protocol buffer message with an `url` Text field.
+-- Returns @Nothing@ if the string is too long and the text
+-- wrapped in @UrlText@ otherwise.
+deMkUrlText ::
+    ( Data.ProtoLens.Field.HasField
+        b
+        "url"
+        Text
+    ) =>
+    b ->
+    Maybe UrlText
+deMkUrlText val =
+    if Text.length v <= fromIntegral maxUrlTextLength
+        then return $ UrlText v
+        else Nothing
+  where
+    v = val ^. ProtoFields.url
+
+-- |A helper class analogous to something like Aeson's FromJSON.
+-- It exists to make it more manageable to convert the Protobuf
+-- types to their internal Haskell type equivalents.
 class FromProto a where
     -- |The corresponding Haskell type.
     type Output' a
 
-    -- |A conversion function from the protobuf type to its Haskell equivalent.
+    -- |A conversion function from the protobuf type to its Haskell
+    -- equivalent. Returns Nothing if the conversion failed.
     fromProto :: a -> Maybe (Output' a)
 
-fromProtoError :: Maybe a
-fromProtoError = Nothing
-
--- |A block hash input
+-- |A block identifier.
+-- A block is either identified via a hash, or as one of the special
+-- blocks at a given time (last final or best block). Queries which
+-- just need the recent state can use `LastFinal` or `Best` to get the
+-- result without first establishing what the last final or best block
+-- is.
 data BlockHashInput = Best | LastFinal | Given !BlockHash
 
 -- |An account identifier input
@@ -203,11 +218,6 @@ instance FromProto Proto.CredentialRegistrationId where
         raw <- deMkSerialize crId
         nonRaw <- credIdFromRaw raw
         return (nonRaw, raw)
-      where
-        credIdFromRaw (RawCredentialRegistrationID fbs) =
-            case S.decode (FBS.toByteString fbs) of
-                Left _ -> Nothing
-                Right c -> c
 
 instance FromProto Proto.AccountIdentifierInput where
     type Output' Proto.AccountIdentifierInput = AccountIdentifierInput
@@ -227,7 +237,14 @@ instance ToProto AccountIdentifierInput where
 
 instance FromProto Proto.SequenceNumber where
     type Output' Proto.SequenceNumber = Nonce
-    fromProto = return . Nonce . deMkWord64
+
+    -- The nonce can not be 0.
+    fromProto sn =
+        if word == 0
+            then Nothing
+            else return $ Nonce word
+      where
+        word = deMkWord64 sn
 
 instance FromProto Proto.ReleaseSchedule where
     type Output' Proto.ReleaseSchedule = AccountReleaseSummary
@@ -239,11 +256,10 @@ instance FromProto Proto.ReleaseSchedule where
         return AccountReleaseSummary{..}
 
 instance FromProto Proto.Timestamp where
-    type Output' Proto.Timestamp = (Timestamp, UTCTime)
+    type Output' Proto.Timestamp = Timestamp
     fromProto t = do
         time <- fromIntegral <$> t ^? ProtoFields.value
-        let utcTime = posixSecondsToUTCTime (fromIntegral time / 1_000.0)
-        return (Timestamp time, utcTime)
+        return $ Timestamp time
 
 instance FromProto Proto.TransactionHash where
     type Output' Proto.TransactionHash = TransactionHashV0
@@ -255,8 +271,7 @@ instance FromProto Proto.Release where
         releaseAmount <- fromProto =<< r ^? ProtoFields.amount
         releaseTimestamp <- do
             time <- r ^? ProtoFields.timestamp
-            (ts, _) <- fromProto time
-            return ts
+            fromProto time
         releaseTransactions <- do
             ts <- r ^? ProtoFields.transactions
             mapM fromProto ts
@@ -277,11 +292,13 @@ instance FromProto Proto.EncryptedBalance where
         _startIndex <- do
             si <- eb ^? ProtoFields.startIndex
             return $ EncryptedAmountAggIndex . fromIntegral $ si
-        _aggregatedAmount <- do
-            aa <- fromProto =<< eb ^? ProtoFields.aggregatedAmount
-            na <- eb ^? ProtoFields.numAggregated
-            return $ return (aa, na)
-        let _incomingEncryptedAmounts = Empty -- FIXME: Field is not included in other direction. Should it be?
+        let _aggregatedAmount = do
+                aa <- fromProto =<< eb ^. ProtoFields.maybe'aggregatedAmount
+                na <- eb ^. ProtoFields.maybe'numAggregated
+                return (aa, na)
+        -- FIXME: This was not present previously due to a node bug.
+        -- Bump submodule and fix before merging.
+        let _incomingEncryptedAmounts = Empty
         return AccountEncryptedAmount{..}
 
 instance FromProto Proto.EncryptionKey where
@@ -305,17 +322,17 @@ instance FromProto Proto.DelegationTarget where
             Proto.DelegationTarget'Baker baker -> DelegateToBaker <$> fromProto baker
 
 instance FromProto Proto.StakePendingChange where
-    type Output' Proto.StakePendingChange = (StakePendingChange' Timestamp, StakePendingChange' UTCTime)
+    type Output' Proto.StakePendingChange = StakePendingChange' Timestamp
     fromProto pc = do
         spc <- pc ^. Proto.maybe'change
         case spc of
             Proto.StakePendingChange'Reduce' reduce -> do
                 ns <- fromProto =<< reduce ^? ProtoFields.newStake
-                et <- fromProto =<< reduce ^? ProtoFields.effectiveTime
-                return $ bimap (ReduceStake ns) (ReduceStake ns) et
+                ts <- fromProto =<< reduce ^? ProtoFields.effectiveTime
+                return $ ReduceStake ns ts
             Proto.StakePendingChange'Remove remove -> do
                 rm <- fromProto remove
-                return $ bimap RemoveStake RemoveStake rm
+                return $ RemoveStake rm
 
 instance FromProto Proto.BakerInfo where
     type Output' Proto.BakerInfo = BakerInfo
@@ -341,29 +358,30 @@ instance FromProto Proto.BakerAggregationVerifyKey where
 instance FromProto Proto.OpenStatus where
     type Output' Proto.OpenStatus = OpenStatus
     fromProto = \case
-        Proto.OPEN_STATUS_OPEN_FOR_ALL ->
-            return OpenForAll
-        Proto.OPEN_STATUS_CLOSED_FOR_NEW ->
-            return ClosedForNew
-        Proto.OPEN_STATUS_CLOSED_FOR_ALL ->
-            return ClosedForAll
-        _ -> fromProtoError
-
-instance FromProto Text where
-    type Output' Text = UrlText
-    fromProto = return . UrlText
+        Proto.OPEN_STATUS_OPEN_FOR_ALL -> return OpenForAll
+        Proto.OPEN_STATUS_CLOSED_FOR_NEW -> return ClosedForNew
+        Proto.OPEN_STATUS_CLOSED_FOR_ALL -> return ClosedForAll
+        ProtoFields.OpenStatus'Unrecognized _ -> Nothing
 
 instance FromProto Proto.BakerPoolInfo where
     type Output' Proto.BakerPoolInfo = BakerPoolInfo
     fromProto poolInfo = do
         _poolOpenStatus <- fromProto =<< poolInfo ^? ProtoFields.openStatus
-        _poolMetadataUrl <- fromProto =<< poolInfo ^? ProtoFields.url
+        _poolMetadataUrl <- deMkUrlText poolInfo
         _poolCommissionRates <- fromProto =<< poolInfo ^? ProtoFields.commissionRates
         return BakerPoolInfo{..}
 
 instance FromProto Proto.AmountFraction where
     type Output' Proto.AmountFraction = AmountFraction
-    fromProto amountFraction = makeAmountFraction <$> amountFraction ^? ProtoFields.partsPerHundredThousand
+
+    -- This must not exceed 100000. We check it here since
+    -- `makePartsPerHundredThousand` referenced in
+    -- `makeAmountFraction` assumes this.
+    fromProto amountFraction = do
+        af <- amountFraction ^? ProtoFields.partsPerHundredThousand
+        if af > 100_000
+            then Nothing
+            else return $ makeAmountFraction af
 
 instance FromProto Proto.CommissionRates where
     type Output' Proto.CommissionRates = CommissionRates
@@ -382,18 +400,20 @@ instance FromProto Proto.AccountStakingInfo where
                 asiStakedAmount <- fromProto =<< delegator ^? ProtoFields.stakedAmount
                 asiStakeEarnings <- delegator ^? ProtoFields.restakeEarnings
                 asiDelegationTarget <- fromProto =<< delegator ^? ProtoFields.target
-                asiDelegationPendingChange <- do
-                    ch <- fromProto =<< delegator ^? ProtoFields.pendingChange
-                    return $ snd ch
+                asiDelegationPendingChange <-
+                    case delegator ^. ProtoFields.maybe'pendingChange of
+                        Nothing -> return NoChange
+                        Just ch -> fmap timestampToUTCTime <$> fromProto ch
                 return AccountStakingDelegated{..}
             Proto.AccountStakingInfo'Baker' baker -> do
                 asiStakedAmount <- fromProto =<< baker ^? ProtoFields.stakedAmount
                 asiStakeEarnings <- baker ^? ProtoFields.restakeEarnings
                 asiBakerInfo <- fromProto =<< baker ^? ProtoFields.bakerInfo
-                asiPendingChange <- do
-                    pc <- fromProto =<< baker ^? ProtoFields.pendingChange
-                    return $ snd pc
-                asiPoolInfo <- fromProto <$> baker ^? ProtoFields.poolInfo
+                asiPendingChange <-
+                    case baker ^. ProtoFields.maybe'pendingChange of
+                        Nothing -> return NoChange
+                        Just ch -> fmap timestampToUTCTime <$> fromProto ch
+                let asiPoolInfo = fromProto =<< baker ^. ProtoFields.maybe'poolInfo
                 return AccountStakingBaker{..}
 
 instance FromProto Proto.ArThreshold where
@@ -476,12 +496,21 @@ instance FromProto Proto.Policy where
                 =<< p ^? ProtoFields.attributes
         return Policy{..}
       where
-        versionTag = 0 -- FIXME: Which version?
-        convert (aTag, aVal) = do
-            val <- case S.runGet (S.getShortByteString versionTag) aVal of
-                Left _ -> Nothing
-                Right v -> Just v
-            return (AttributeTag $ fromIntegral aTag, AttributeValue val)
+        -- \|Convert a tag and a bytestring pair to an attribute tag and attribute value pair.
+        -- The length of the bytestring should be at most 31 and the tag should fit in an `Word8`.
+        convert (aTag, aVal) =
+            -- FIXME: Should we check that aTag matches
+            --        the length of the bytestring? It is
+            --        not clear to me whether this equals
+            --        the length.
+            if fromIntegral aTag <= (maxBound :: Word8)
+                then do
+                    -- FIXME: Should we get aTag bytes here?
+                    val <- case S.runGet (S.getShortByteString $ fromIntegral aTag) aVal of
+                        Left _ -> Nothing
+                        Right v -> Just v
+                    return (AttributeTag $ fromIntegral aTag, AttributeValue val)
+                else Nothing
 
 instance FromProto Proto.IdentityProviderIdentity where
     type Output' Proto.IdentityProviderIdentity = IdentityProviderIdentity
@@ -506,7 +535,10 @@ instance FromProto Proto.CredentialPublicKeys where
             k <- case S.decode key of
                 Left _ -> Nothing
                 Right k -> return k
-            return (fromIntegral ki, VerifyKeyEd25519 k)
+            -- Ensure that the index fits in a Word8.
+            if fromIntegral ki > (maxBound :: Word8)
+                then Nothing
+                else return (fromIntegral ki, VerifyKeyEd25519 k)
 
 instance FromProto Proto.AccountInfo where
     type Output' Proto.AccountInfo = AccountInfo
@@ -524,14 +556,20 @@ instance FromProto Proto.AccountInfo where
         aiAccountEncryptedAmount <- fromProto =<< ai ^? ProtoFields.encryptedBalance
         aiAccountEncryptionKey <- fromProto =<< ai ^? ProtoFields.encryptionKey
         aiAccountIndex <- fromProto =<< ai ^? ProtoFields.index
-        aiStakingInfo <- fromProto =<< ai ^. ProtoFields.maybe'stake
+        aiStakingInfo <-
+            case ai ^. ProtoFields.maybe'stake of
+                Nothing -> return AccountStakingNone
+                Just asi -> fromProto asi
         aiAccountAddress <- fromProto =<< ai ^? ProtoFields.address
         return AccountInfo{..}
       where
         versionTag = 0
         convert (key, val) = do
             v <- fromProto val
-            return (CredentialIndex $ fromIntegral key, Versioned versionTag v)
+            -- Ensure that the index fits in a Word8.
+            if fromIntegral key > (maxBound :: Word8)
+                then Nothing
+                else return (CredentialIndex $ fromIntegral key, Versioned versionTag v)
 
 instance ToProto BlockHashInput where
     type Output BlockHashInput = Proto.BlockHashInput
@@ -547,8 +585,7 @@ instance FromProto Proto.BlockHash where
 instance FromProto Proto.ModuleRef where
     type Output' Proto.ModuleRef = ModuleRef
     fromProto mr = do
-        modRef <- mr ^? ProtoFields.value
-        let moduleRef = Hash $ FBS.fromByteString modRef
+        moduleRef <- deMkSerialize mr
         return ModuleRef{..}
 
 instance FromProto Proto.VersionedModuleSource where
@@ -556,18 +593,31 @@ instance FromProto Proto.VersionedModuleSource where
     fromProto vmSource = do
         vms <- vmSource ^. Proto.maybe'module'
         case vms of
-            Proto.VersionedModuleSource'V0 v0 -> Wasm.WasmModuleV0 <$> deMkSerialize v0
-            Proto.VersionedModuleSource'V1 v1 -> Wasm.WasmModuleV0 <$> deMkSerialize v1
+            Proto.VersionedModuleSource'V0 v0 ->
+                Wasm.WasmModuleV0 . Wasm.WasmModuleV . Wasm.ModuleSource <$> (v0 ^? Proto.value)
+            Proto.VersionedModuleSource'V1 v1 ->
+                Wasm.WasmModuleV1 . Wasm.WasmModuleV . Wasm.ModuleSource <$> (v1 ^? Proto.value)
 
 instance FromProto Proto.ContractStateV0 where
     type Output' Proto.ContractStateV0 = Wasm.ContractState
-    fromProto cs = do Wasm.ContractState <$> cs ^? ProtoFields.value
+    fromProto cs = Wasm.ContractState <$> cs ^? ProtoFields.value
+
 instance FromProto Proto.ReceiveName where
     type Output' Proto.ReceiveName = Wasm.ReceiveName
+
+    -- FIXME: Validation needed here, and I might be wrong;
+    -- but I believe the description in `types.proto` is
+    -- ambiguous, and may not reflect the reality of things.
+    -- Where do I find a good definition of this?
     fromProto name = Wasm.ReceiveName <$> name ^? ProtoFields.value
 
 instance FromProto Proto.InitName where
     type Output' Proto.InitName = Wasm.InitName
+
+    -- FIXME: Validation needed here, and I might be wrong;
+    -- but I believe the description in `types.proto` is
+    -- ambiguous, and may not reflect the reality of things.
+    -- Where do I find a good definition of this?
     fromProto name = Wasm.InitName <$> name ^? ProtoFields.value
 
 instance FromProto Proto.InstanceInfo where
@@ -611,7 +661,7 @@ instance FromProto Proto.ProtocolVersion where
         Proto.PROTOCOL_VERSION_4 -> return P4
         Proto.PROTOCOL_VERSION_5 -> return P5
         Proto.PROTOCOL_VERSION_6 -> return P6
-        Proto.ProtocolVersion'Unrecognized _ -> fromProtoError
+        Proto.ProtocolVersion'Unrecognized _ -> Nothing
 
 instance FromProto Proto.Duration where
     type Output' Proto.Duration = Duration
@@ -634,9 +684,7 @@ instance FromProto Proto.ConsensusInfo where
     fromProto ci = do
         csBestBlock <- fromProto =<< ci ^? ProtoFields.bestBlock
         csGenesisBlock <- fromProto =<< ci ^? ProtoFields.genesisBlock
-        csGenesisTime <- do
-            gt <- fromProto =<< ci ^? ProtoFields.genesisTime
-            return $ snd gt
+        csGenesisTime <- fmap timestampToUTCTime . fromProto =<< ci ^? ProtoFields.genesisTime
         csSlotDuration <- fromProto =<< ci ^? ProtoFields.slotDuration
         csEpochDuration <- fromProto =<< ci ^? ProtoFields.epochDuration
         csLastFinalizedBlock <- fromProto =<< ci ^? ProtoFields.lastFinalizedBlock
@@ -644,26 +692,26 @@ instance FromProto Proto.ConsensusInfo where
         csLastFinalizedBlockHeight <- fromProto =<< ci ^? ProtoFields.lastFinalizedBlockHeight
         csBlocksReceivedCount <- fromIntegral <$> ci ^? ProtoFields.blocksReceivedCount
         csBlocksVerifiedCount <- fromIntegral <$> ci ^? ProtoFields.blocksVerifiedCount
-        let csBlockLastReceivedTime = fmap snd $ fromProto =<< ci ^. ProtoFields.maybe'blockLastReceivedTime
+        let csBlockLastReceivedTime = fmap timestampToUTCTime . fromProto =<< ci ^. ProtoFields.maybe'blockLastReceivedTime
         csBlockReceiveLatencyEMA <- ci ^? ProtoFields.blockReceiveLatencyEma
         csBlockReceiveLatencyEMSD <- ci ^? ProtoFields.blockReceiveLatencyEmsd
-        csBlockReceivePeriodEMA <- ci ^? ProtoFields.maybe'blockReceivePeriodEma
-        csBlockReceivePeriodEMSD <- ci ^? ProtoFields.maybe'blockReceivePeriodEmsd
-        let csBlockLastArrivedTime = fmap snd $ fromProto =<< ci ^. ProtoFields.maybe'blockLastArrivedTime
+        let csBlockReceivePeriodEMA = ci ^. ProtoFields.maybe'blockReceivePeriodEma
+        let csBlockReceivePeriodEMSD = ci ^. ProtoFields.maybe'blockReceivePeriodEmsd
+        let csBlockLastArrivedTime = fmap timestampToUTCTime . fromProto =<< ci ^. ProtoFields.maybe'blockLastArrivedTime
         csBlockArriveLatencyEMA <- ci ^? ProtoFields.blockArriveLatencyEma
         csBlockArriveLatencyEMSD <- ci ^? ProtoFields.blockArriveLatencyEmsd
-        csBlockArrivePeriodEMA <- ci ^? ProtoFields.maybe'blockArrivePeriodEma
-        csBlockArrivePeriodEMSD <- ci ^? ProtoFields.maybe'blockArrivePeriodEmsd
+        let csBlockArrivePeriodEMA = ci ^. ProtoFields.maybe'blockArrivePeriodEma
+        let csBlockArrivePeriodEMSD = ci ^. ProtoFields.maybe'blockArrivePeriodEmsd
         csTransactionsPerBlockEMA <- ci ^? ProtoFields.transactionsPerBlockEma
         csTransactionsPerBlockEMSD <- ci ^? ProtoFields.transactionsPerBlockEmsd
         csFinalizationCount <- fromIntegral <$> ci ^? ProtoFields.finalizationCount
-        let csLastFinalizedTime = fmap snd $ fromProto =<< ci ^. ProtoFields.maybe'lastFinalizedTime
-        csFinalizationPeriodEMA <- ci ^? ProtoFields.maybe'finalizationPeriodEma
-        csFinalizationPeriodEMSD <- ci ^? ProtoFields.maybe'finalizationPeriodEmsd
+        let csLastFinalizedTime = fmap timestampToUTCTime . fromProto =<< ci ^. ProtoFields.maybe'lastFinalizedTime
+        let csFinalizationPeriodEMA = ci ^. ProtoFields.maybe'finalizationPeriodEma
+        let csFinalizationPeriodEMSD = ci ^. ProtoFields.maybe'finalizationPeriodEmsd
         csProtocolVersion <- fromProto =<< ci ^? ProtoFields.protocolVersion
         csGenesisIndex <- fromProto =<< ci ^? ProtoFields.genesisIndex
         csCurrentEraGenesisBlock <- fromProto =<< ci ^? ProtoFields.currentEraGenesisBlock
-        csCurrentEraGenesisTime <- fmap snd $ fromProto =<< ci ^? ProtoFields.currentEraGenesisTime
+        csCurrentEraGenesisTime <- fmap timestampToUTCTime . fromProto =<< ci ^? ProtoFields.currentEraGenesisTime
         return QueryTypes.ConsensusStatus{..}
 
 instance FromProto Proto.Slot where
@@ -687,11 +735,11 @@ instance FromProto Proto.BlockInfo where
         biBlockLastFinalized <- fromProto =<< bi ^? ProtoFields.lastFinalizedBlock
         biGenesisIndex <- fromProto =<< bi ^? ProtoFields.genesisIndex
         biEraBlockHeight <- fromProto =<< bi ^? ProtoFields.eraBlockHeight
-        biBlockReceiveTime <- fmap snd $ fromProto =<< bi ^? ProtoFields.receiveTime
-        biBlockArriveTime <- fmap snd $ fromProto =<< bi ^? ProtoFields.arriveTime
+        biBlockReceiveTime <- fmap timestampToUTCTime . fromProto =<< bi ^? ProtoFields.receiveTime
+        biBlockArriveTime <- fmap timestampToUTCTime . fromProto =<< bi ^? ProtoFields.arriveTime
         biBlockSlot <- fromProto =<< bi ^? ProtoFields.slotNumber
-        biBlockSlotTime <- fmap snd $ fromProto =<< bi ^? ProtoFields.slotTime
-        biBlockBaker <- fmap fromProto =<< bi ^? ProtoFields.maybe'baker
+        biBlockSlotTime <- fmap timestampToUTCTime . fromProto =<< bi ^? ProtoFields.slotTime
+        let biBlockBaker = fromProto =<< bi ^. ProtoFields.maybe'baker
         biFinalized <- bi ^? ProtoFields.finalized
         biTransactionCount <- fromIntegral <$> bi ^? ProtoFields.transactionCount
         biTransactionEnergyCost <- fromProto =<< bi ^? ProtoFields.transactionsEnergyCost
@@ -724,8 +772,11 @@ instance FromProto Proto.PoolInfoResponse where
         psDelegatedCapital <- fromProto =<< pir ^? ProtoFields.delegatedCapital
         psDelegatedCapitalCap <- fromProto =<< pir ^? ProtoFields.delegatedCapitalCap
         psPoolInfo <- fromProto =<< pir ^? ProtoFields.poolInfo
-        psBakerStakePendingChange <- fromJust $ fmap fromProto =<< pir ^? ProtoFields.maybe'equityPendingChange
-        psCurrentPaydayStatus <- fmap fromProto =<< pir ^? ProtoFields.maybe'currentPaydayInfo
+        psBakerStakePendingChange <-
+            case pir ^. ProtoFields.maybe'equityPendingChange of
+                Nothing -> return QueryTypes.PPCNoChange
+                Just ppc -> fromProto ppc
+        let psCurrentPaydayStatus = fromProto =<< pir ^. ProtoFields.maybe'currentPaydayInfo
         psAllPoolTotalCapital <- fromProto =<< pir ^? ProtoFields.allPoolTotalCapital
         return QueryTypes.BakerPoolStatus{..}
 
@@ -739,10 +790,6 @@ instance FromProto Proto.PassiveDelegationInfo where
         psAllPoolTotalCapital <- fromProto =<< pdi ^? ProtoFields.allPoolTotalCapital
         return QueryTypes.PassiveDelegationStatus{..}
 
-instance FromProto (Maybe Proto.PoolPendingChange) where
-    type Output' (Maybe Proto.PoolPendingChange) = QueryTypes.PoolPendingChange
-    fromProto = maybe (return QueryTypes.PPCNoChange) fromProto
-
 instance FromProto Proto.PoolPendingChange where
     type Output' Proto.PoolPendingChange = QueryTypes.PoolPendingChange
     fromProto ppChange = do
@@ -750,23 +797,34 @@ instance FromProto Proto.PoolPendingChange where
         case ppc of
             Proto.PoolPendingChange'Reduce' reduce -> do
                 ppcBakerEquityCapital <- fromProto =<< reduce ^? ProtoFields.reducedEquityCapital
-                ppcEffectiveTime <- fmap snd $ fromProto =<< reduce ^? ProtoFields.effectiveTime
+                ppcEffectiveTime <- fmap timestampToUTCTime . fromProto =<< reduce ^? ProtoFields.effectiveTime
                 return QueryTypes.PPCReduceBakerCapital{..}
             Proto.PoolPendingChange'Remove' remove -> do
-                ppcEffectiveTime <- fmap snd $ fromProto =<< remove ^? ProtoFields.effectiveTime
+                ppcEffectiveTime <- fmap timestampToUTCTime . fromProto =<< remove ^? ProtoFields.effectiveTime
                 return QueryTypes.PPCRemovePool{..}
 
 instance FromProto Proto.BlocksAtHeightResponse where
     type Output' Proto.BlocksAtHeightResponse = [BlockHash]
     fromProto bahr = mapM fromProto =<< bahr ^? ProtoFields.blocks
 
+-- |Input for `getBlocksAtHeightV2`.
 data BlockHeightInput
-    = Relative
-        { rGenesisIndex :: !GenesisIndex
-        , rBlockHeight :: !BlockHeight
-        , rRestrict :: !Bool
+    = -- |The height of a block relative to a genesis index. This differs from the
+      -- absolute block height in that it counts height from the protocol update
+      -- corresponding to the provided genesis index.
+      Relative
+        { -- |Genesis index.
+          rGenesisIndex :: !GenesisIndex,
+          -- |Block height starting from the genesis block at the genesis index.
+          rBlockHeight :: !BlockHeight,
+          -- |Whether to return results only from the specified genesis index (`True`),
+          -- or allow results from more recent genesis indices as well (`False`).
+          rRestrict :: !Bool
         }
-    | Absolute
+    | -- |The absolute height of a block. This is the number of ancestors of a block
+      -- since the genesis block. In particular, the chain genesis block has absolute
+      -- height 0.
+      Absolute
         { aBlockHeight :: !AbsoluteBlockHeight
         }
 
@@ -790,7 +848,10 @@ instance FromProto Proto.MintRate where
     fromProto mr = do
         mrMantissa <- mr ^? ProtoFields.mantissa
         mrExponent <- fromIntegral <$> mr ^? ProtoFields.exponent
-        return MintRate{..}
+        -- Ensure that the exponent fits in a Word8.
+        if mrExponent > (maxBound :: Word8)
+            then Nothing
+            else return MintRate{..}
 
 instance FromProto Proto.TokenomicsInfo where
     type Output' Proto.TokenomicsInfo = QueryTypes.RewardStatus
@@ -812,42 +873,41 @@ instance FromProto Proto.TokenomicsInfo where
                 rsFinalizationRewardAccount <- fromProto =<< v1 ^? ProtoFields.finalizationRewardAccount
                 rsGasAccount <- fromProto =<< v1 ^? ProtoFields.gasAccount
                 rsFoundationTransactionRewards <- fromProto =<< v1 ^? ProtoFields.foundationTransactionRewards
-                rsNextPaydayTime <- fmap snd $ fromProto =<< v1 ^? ProtoFields.nextPaydayTime
+                rsNextPaydayTime <- fmap timestampToUTCTime . fromProto =<< v1 ^? ProtoFields.nextPaydayTime
                 rsNextPaydayMintRate <- fromProto =<< v1 ^? ProtoFields.nextPaydayMintRate
                 rsTotalStakedCapital <- fromProto =<< v1 ^? ProtoFields.totalStakedCapital
                 rsProtocolVersion <- fromProto =<< v1 ^? ProtoFields.protocolVersion
                 return QueryTypes.RewardStatusV1{..}
 
-data InvokeInstanceInput = InvokeInstanceInput
-    { iiBlockHash :: !BlockHashInput
-    , iiInvoker :: !Address
-    , iiInstance :: !ContractAddress
-    , iiAmount :: !Amount
-    , iiEntrypoint :: !Wasm.ReceiveName
-    , iiParameter :: !Wasm.Parameter
-    , iiEnergy :: !Energy
-    } -- FIXME: As mentioned by Aleš, this exists as ContractContext
-      --        however that lacks a field for the BlockHashInput.
-      --        which is why this input type is here (for now).
+-- |Input for `invokeInstanceV2`.
+type InvokeInstanceInput = (BlockHashInput, ContractContext)
 
 instance ToProto InvokeInstanceInput where
     type Output InvokeInstanceInput = Proto.InvokeInstanceRequest
-    toProto InvokeInstanceInput{..} =
+    toProto (bhi, ContractContext{..}) =
         Proto.make $ do
-            ProtoFields.blockHash .= toProto iiBlockHash
-            ProtoFields.invoker .= toProto iiInvoker
-            ProtoFields.instance' .= toProto iiInstance
-            ProtoFields.amount .= toProto iiAmount
-            ProtoFields.entrypoint .= toProto iiEntrypoint
-            ProtoFields.parameter .= toProto iiParameter
-            ProtoFields.energy .= toProto iiEnergy
+            ProtoFields.blockHash .= toProto bhi
+            ProtoFields.maybe'invoker .= fmap toProto ccInvoker
+            ProtoFields.instance' .= toProto ccContract
+            ProtoFields.amount .= toProto ccAmount
+            ProtoFields.entrypoint .= toProto ccMethod
+            ProtoFields.parameter .= toProto ccParameter
+            ProtoFields.energy .= toProto ccEnergy
 
 instance FromProto Proto.ContractEvent where
     type Output' Proto.ContractEvent = Wasm.ContractEvent
+
+    -- FIXME: Can we just use deMkSerialize here? Types check out, but fromShort
+    -- is used in the other direction...
     fromProto ce = return . Wasm.ContractEvent . BSS.toShort $ ce ^. ProtoFields.value
 
 instance FromProto Proto.Parameter where
     type Output' Proto.Parameter = Wasm.Parameter
+
+    -- FIXME: There are protocol-dependent limits on the length. Can something
+    -- be done to enforce this here?
+    -- FIXME: Can we just use deMkSerialize here? Types check out, but fromShort
+    -- is used in the other direction...
     fromProto p = return . Wasm.Parameter . BSS.toShort $ p ^. ProtoFields.value
 
 instance FromProto Proto.Address where
@@ -870,7 +930,7 @@ instance FromProto Proto.ContractVersion where
     fromProto cv = case cv of
         Proto.V0 -> return Wasm.V0
         Proto.V1 -> return Wasm.V1
-        Proto.ContractVersion'Unrecognized _ -> fromProtoError
+        Proto.ContractVersion'Unrecognized _ -> Nothing
 
 instance FromProto Proto.ContractTraceElement where
     type Output' Proto.ContractTraceElement = Event
@@ -1031,11 +1091,6 @@ instance FromProto Proto.RejectReason where
                 return PoolWouldBecomeOverDelegated
             Proto.RejectReason'PoolClosed _ -> do
                 return PoolClosed
-      where
-        credIdFromRaw (RawCredentialRegistrationID fbs) =
-            case S.decode (FBS.toByteString fbs) of
-                Left _ -> Nothing
-                Right c -> c
 
 instance FromProto Proto.InvokeInstanceResponse where
     type Output' Proto.InvokeInstanceResponse = InvokeContract.InvokeContractResult
@@ -1043,12 +1098,12 @@ instance FromProto Proto.InvokeInstanceResponse where
         icr <- icResult ^. Proto.maybe'result
         case icr of
             Proto.InvokeInstanceResponse'Success' success -> do
-                rcrReturnValue <- success ^? ProtoFields.maybe'returnValue
+                let rcrReturnValue = success ^. ProtoFields.maybe'returnValue
                 rcrUsedEnergy <- fromProto =<< success ^? ProtoFields.usedEnergy
                 rcrEvents <- mapM fromProto =<< success ^? ProtoFields.effects
                 return InvokeContract.Success{..}
             Proto.InvokeInstanceResponse'Failure' failure -> do
-                rcrReturnValue <- failure ^? ProtoFields.maybe'returnValue
+                let rcrReturnValue = failure ^. ProtoFields.maybe'returnValue
                 rcrUsedEnergy <- fromProto =<< failure ^? ProtoFields.usedEnergy
                 rcrReason <- fromProto =<< failure ^? ProtoFields.reason
                 return InvokeContract.Failure{..}
@@ -1070,8 +1125,16 @@ instance FromProto Proto.ElectionInfo'Baker where
 
 instance FromProto Proto.ElectionDifficulty where
     type Output' Proto.ElectionDifficulty = ElectionDifficulty
-    fromProto eDiff =
-        ElectionDifficulty . fromIntegral <$> eDiff ^? (ProtoFields.value . ProtoFields.partsPerHundredThousand)
+    fromProto eDiff = do
+        af <- eDiff ^? (ProtoFields.value . ProtoFields.partsPerHundredThousand)
+        -- This must be strictly less than 100_000.
+        if af >= 100_000
+            then Nothing
+            else return $ makeElectionDifficultyUnchecked af
+
+instance FromProto Proto.LeadershipElectionNonce where
+    type Output' Proto.LeadershipElectionNonce = LeadershipElectionNonce
+    fromProto = deMkSerialize
 
 instance FromProto Proto.ElectionInfo where
     type Output' Proto.ElectionInfo = QueryTypes.BlockBirkParameters
@@ -1081,7 +1144,7 @@ instance FromProto Proto.ElectionInfo where
                 . Vec.fromList
                 =<< eInfo ^? ProtoFields.bakerElectionInfo
         bbpElectionDifficulty <- fromProto =<< eInfo ^? ProtoFields.electionDifficulty
-        bbpElectionNonce <- deMkSerialize =<< eInfo ^? ProtoFields.electionNonce
+        bbpElectionNonce <- fromProto =<< eInfo ^? ProtoFields.electionNonce
         return QueryTypes.BlockBirkParameters{..}
 
 instance FromProto Proto.NextUpdateSequenceNumbers where
@@ -1105,9 +1168,16 @@ instance FromProto Proto.NextUpdateSequenceNumbers where
         _nusnTimeParameters <- fromProto =<< nums ^? ProtoFields.timeParameters
         return QueryTypes.NextUpdateSequenceNumbers{..}
 
+-- An IP address.
 type IpAddress = Text
-type Peer = IpAddress
+
+-- An IP port.
 type IpPort = Int16
+
+-- A peer are represented by its IP address.
+type Peer = IpAddress
+
+-- Compound type representing a pair of an IP address and a port.
 type IpSocketAddress = (IpAddress, IpPort)
 
 instance ToProto IpAddress where
@@ -1120,10 +1190,14 @@ instance ToProto IpPort where
 
 instance FromProto Proto.IpAddress where
     type Output' Proto.IpAddress = IpAddress
+
+    -- FIXME: Should this be validated?
     fromProto peer = peer ^? ProtoFields.value
 
 instance FromProto Proto.Port where
     type Output' Proto.Port = IpPort
+
+    -- FIXME: Should this be validated?
     fromProto port = fromIntegral <$> port ^? ProtoFields.value
 
 instance FromProto Proto.BannedPeer where
@@ -1136,11 +1210,11 @@ instance FromProto Proto.BannedPeers where
 
 instance FromProto Proto.InstanceStateValueAtKey where
     type Output' Proto.InstanceStateValueAtKey = ByteString
-    fromProto bs = bs ^? ProtoFields.value
+    fromProto = deMkSerialize
 
 instance FromProto Proto.Signature where
     type Output' Proto.Signature = Signature
-    fromProto sig = Signature . BSS.toShort <$> (sig ^? ProtoFields.value)
+    fromProto = deMkSerialize
 
 instance FromProto Proto.SignatureMap where
     type Output' Proto.SignatureMap = Updates.UpdateInstructionSignatures
@@ -1153,8 +1227,12 @@ instance FromProto Proto.SignatureMap where
         return Updates.UpdateInstructionSignatures{..}
       where
         deMk (k, s) = do
-            sig <- fromProto s
-            return (fromIntegral k, sig)
+            -- Ensure that the value fits into a Word16.
+            if fromIntegral k <= (maxBound :: Word16)
+                then do
+                    sig <- fromProto s
+                    return (fromIntegral k, sig)
+                else Nothing
 
 instance FromProto Proto.TransactionTime where
     type Output' Proto.TransactionTime = TransactionTime
@@ -1163,28 +1241,6 @@ instance FromProto Proto.TransactionTime where
 instance FromProto Proto.UpdateSequenceNumber where
     type Output' Proto.UpdateSequenceNumber = Nonce
     fromProto = return . Nonce . deMkWord64
-
-instance FromProto Proto.UpdateInstructionHeader where
-    type Output' Proto.UpdateInstructionHeader = Updates.UpdateHeader
-    fromProto uiHeader = do
-        updateSeqNumber <- fromProto =<< uiHeader ^? ProtoFields.sequenceNumber
-        updateEffectiveTime <- fromProto =<< uiHeader ^? ProtoFields.effectiveTime
-        updateTimeout <- fromProto =<< uiHeader ^? ProtoFields.timeout
-        let updatePayloadSize = PayloadSize 0 -- FIXME: What should go here, no such field in the protobuf equivalent.
-        return Updates.UpdateHeader{..}
-
-instance FromProto Proto.UpdateInstruction where
-    type Output' Proto.UpdateInstruction = Updates.UpdateInstruction
-    fromProto ui = do
-        uiSignHash <- Nothing -- FIXME: What should go here, no such field in the protobuf equivalent.
-        uiSignatures <- fromProto =<< ui ^? ProtoFields.signatures
-        uiHeader <- fromProto =<< ui ^? ProtoFields.header
-        uiPayload <- do
-            pl <- ui ^? (ProtoFields.payload . ProtoFields.rawPayload)
-            case (S.runGet $ Updates.getUpdatePayload SP1) pl of -- FIXME: What protocol version to use here?
-                Left _ -> Nothing
-                Right val -> return val
-        return Updates.UpdateInstruction{..}
 
 instance FromProto Proto.CredentialType where
     type Output' Proto.CredentialType = CredentialType
@@ -1263,270 +1319,57 @@ instance FromProto Proto.BakerKeysEvent where
         aggregationKey <- fromProto =<< bkEvent ^? ProtoFields.aggregationKey
         return (bakerId, addr, signKey, electionKey, aggregationKey)
 
-instance FromProto Proto.BakerEvent where
-    type Output' Proto.BakerEvent = Event
-    fromProto bEvent = do
-        be <- bEvent ^. ProtoFields.maybe'event
-        case be of
-            Proto.BakerEvent'BakerAdded' bAdded -> do
-                (kEvent, ebaStake, ebaRestakeEarnings) <- fromProto bAdded
-                let (ebaBakerId, ebaAccount, ebaSignKey, ebaElectionKey, ebaAggregationKey) = kEvent
-                return BakerAdded{..}
-            ProtoFields.BakerEvent'BakerRemoved bRemoved -> do
-                ebrAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                ebrBakerId <- fromProto bRemoved
-                return BakerRemoved{..}
-            ProtoFields.BakerEvent'BakerStakeIncreased' bsIncreased -> do
-                ebsiAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                ebsiBakerId <- fromProto =<< bsIncreased ^? ProtoFields.bakerId
-                ebsiNewStake <- fromProto =<< bsIncreased ^? ProtoFields.newStake
-                return BakerStakeIncreased{..}
-            ProtoFields.BakerEvent'BakerStakeDecreased' bsDecreased -> do
-                ebsiAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                ebsiBakerId <- fromProto =<< bsDecreased ^? ProtoFields.bakerId
-                ebsiNewStake <- fromProto =<< bsDecreased ^? ProtoFields.newStake
-                return BakerStakeDecreased{..}
-            ProtoFields.BakerEvent'BakerRestakeEarningsUpdated' breUpdated -> do
-                ebsreAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                ebsreBakerId <- fromProto =<< breUpdated ^? ProtoFields.bakerId
-                ebsreRestakeEarnings <- breUpdated ^? ProtoFields.restakeEarnings
-                return BakerSetRestakeEarnings{..}
-            ProtoFields.BakerEvent'BakerKeysUpdated bkUpdated -> do
-                (ebkuBakerId, ebkuAccount, ebkuSignKey, ebkuElectionKey, ebkuAggregationKey) <- fromProto bkUpdated
-                return BakerKeysUpdated{..}
-            ProtoFields.BakerEvent'BakerSetOpenStatus' bsoStatus -> do
-                ebsosAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                ebsosBakerId <- fromProto =<< bsoStatus ^? ProtoFields.bakerId
-                ebsosOpenStatus <- fromProto =<< bsoStatus ^? ProtoFields.openStatus
-                return BakerSetOpenStatus{..}
-            ProtoFields.BakerEvent'BakerSetMetadataUrl' bsmUrl -> do
-                ebsmuAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                ebsmuBakerId <- fromProto =<< bsmUrl ^? ProtoFields.bakerId
-                ebsmuMetadataURL <- fromProto =<< bsmUrl ^? ProtoFields.url
-                return BakerSetMetadataURL{..}
-            ProtoFields.BakerEvent'BakerSetTransactionFeeCommission' bstfCommission -> do
-                ebstfcAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                ebstfcBakerId <- fromProto =<< bstfCommission ^? ProtoFields.bakerId
-                ebstfcTransactionFeeCommission <- fromProto =<< bstfCommission ^? ProtoFields.transactionFeeCommission
-                return BakerSetTransactionFeeCommission{..}
-            ProtoFields.BakerEvent'BakerSetBakingRewardCommission' bsbCommission -> do
-                ebsbrcAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                ebsbrcBakerId <- fromProto =<< bsbCommission ^? ProtoFields.bakerId
-                ebsbrcBakingRewardCommission <- fromProto =<< bsbCommission ^? ProtoFields.bakingRewardCommission
-                return BakerSetBakingRewardCommission{..}
-            ProtoFields.BakerEvent'BakerSetFinalizationRewardCommission' bsfrCommission -> do
-                ebsfrcAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                ebsfrcBakerId <- fromProto =<< bsfrCommission ^? ProtoFields.bakerId
-                ebsfrcFinalizationRewardCommission <- fromProto =<< bsfrCommission ^? ProtoFields.finalizationRewardCommission
-                return BakerSetFinalizationRewardCommission{..}
-
-instance FromProto Proto.DelegationEvent where
-    type Output' Proto.DelegationEvent = Event
-    fromProto dEvent = do
-        de <- dEvent ^. ProtoFields.maybe'event
-        case de of
-            Proto.DelegationEvent'DelegationAdded dAdded -> do
-                edaAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                edaDelegatorId <- fromProto dAdded
-                return DelegationAdded{..}
-            ProtoFields.DelegationEvent'DelegationStakeIncreased' dsIncreased -> do
-                edsiAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                edsiDelegatorId <- fromProto =<< dsIncreased ^? ProtoFields.delegatorId
-                edsiNewStake <- fromProto =<< dsIncreased ^? ProtoFields.newStake
-                return DelegationStakeIncreased{..}
-            ProtoFields.DelegationEvent'DelegationStakeDecreased' dsDecreased -> do
-                edsdAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                edsdDelegatorId <- fromProto =<< dsDecreased ^? ProtoFields.delegatorId
-                edsdNewStake <- fromProto =<< dsDecreased ^? ProtoFields.newStake
-                return DelegationStakeDecreased{..}
-            ProtoFields.DelegationEvent'DelegationSetRestakeEarnings' dsrEarnings -> do
-                edsreAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                edsreDelegatorId <- fromProto =<< dsrEarnings ^? ProtoFields.delegatorId
-                edsreRestakeEarnings <- dsrEarnings ^? ProtoFields.restakeEarnings
-                return DelegationSetRestakeEarnings{..}
-            ProtoFields.DelegationEvent'DelegationSetDelegationTarget' dsdTarget -> do
-                edsdtAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                edsdtDelegatorId <- fromProto =<< dsdTarget ^? ProtoFields.delegatorId
-                edsdtDelegationTarget <- fromProto =<< dsdTarget ^? ProtoFields.delegationTarget
-                return DelegationSetDelegationTarget{..}
-            ProtoFields.DelegationEvent'DelegationRemoved dRemoved -> do
-                edrAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                edrDelegatorId <- fromProto dRemoved
-                return DelegationRemoved{..}
-
 instance FromProto Proto.RegisteredData where
     type Output' Proto.RegisteredData = RegisteredData
+
+    -- FIXME: Can we just use deMkSerialize here? Types check out, but fromShort
+    -- is used in the other direction...
     fromProto rData = RegisteredData . BSS.toShort <$> rData ^? ProtoFields.value
 
 instance FromProto Proto.NewRelease where
     type Output' Proto.NewRelease = (Timestamp, Amount)
     fromProto nRelease = do
-        tStamp <- fmap fst . fromProto =<< nRelease ^? ProtoFields.timestamp
+        tStamp <- fromProto =<< nRelease ^? ProtoFields.timestamp
         amount <- fromProto =<< nRelease ^? ProtoFields.amount
         return (tStamp, amount)
 
-instance FromProto Proto.AccountTransactionDetails where
-    type Output' Proto.AccountTransactionDetails = (Maybe TransactionType, ValidResult)
-    fromProto atDetails = do
-        tCost <- fromProto =<< atDetails ^? ProtoFields.cost -- FIXME: Should this be unused?
-        tSender <- deMkSerialize =<< atDetails ^? ProtoFields.sender
-        ate <- atDetails ^. ProtoFields.effects . ProtoFields.maybe'effect
-        case ate of
-            ProtoFields.AccountTransactionEffects'AccountTransfer' aTransfer -> do
-                etAmount <- fromProto =<< aTransfer ^? ProtoFields.amount
-                etTo <- deMkSerialize =<< aTransfer ^? ProtoFields.receiver
-                let etFrom = tSender
-                let memo = fromProto =<< aTransfer ^. ProtoFields.maybe'memo
-                -- Discern between event types based on whether a memo is present.
-                let (tType, vrEvents) = case memo of
-                        Nothing ->
-                            (TTTransfer, [Transferred{..}])
-                        Just tmMemo ->
-                            (TTTransferWithMemo, [Transferred{..}, TransferMemo{..}])
-                return (Just tType, TxSuccess{..})
-            ProtoFields.AccountTransactionEffects'BakerAdded bAdded -> do
-                (kEvent, ebaStake, ebaRestakeEarnings) <- fromProto bAdded
-                let (ebaBakerId, ebaAccount, ebaSignKey, ebaElectionKey, ebaAggregationKey) = kEvent
-                return (Just TTAddBaker, TxSuccess [BakerAdded{..}])
-            ProtoFields.AccountTransactionEffects'BakerConfigured' bConfigured -> do
-                vrEvents <- mapM fromProto =<< bConfigured ^? ProtoFields.events
-                return (Just TTConfigureBaker, TxSuccess{..})
-            ProtoFields.AccountTransactionEffects'BakerKeysUpdated bkUpdated -> do
-                (ebkuBakerId, ebkuAccount, ebkuSignKey, ebkuElectionKey, ebkuAggregationKey) <- fromProto bkUpdated
-                return (Just TTUpdateBakerKeys, TxSuccess [BakerKeysUpdated{..}])
-            ProtoFields.AccountTransactionEffects'BakerRemoved bRemoved -> do
-                ebrAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                ebrBakerId <- fromProto bRemoved
-                return (Just TTRemoveBaker, TxSuccess [BakerRemoved{..}])
-            ProtoFields.AccountTransactionEffects'BakerRestakeEarningsUpdated breUpdated -> do
-                ebsreAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                ebsreBakerId <- fromProto =<< breUpdated ^? ProtoFields.bakerId
-                ebsreRestakeEarnings <- breUpdated ^? ProtoFields.restakeEarnings
-                return (Just TTUpdateBakerRestakeEarnings, TxSuccess [BakerSetRestakeEarnings{..}])
-            ProtoFields.AccountTransactionEffects'BakerStakeUpdated' bsUpdated -> do
-                -- FIXME: This is set to defMessage when no events are present,
-                -- but it is an optional field. I should be careful in ensuring that this
-                -- is correct, cfr. the other direction. See the below comment as well.
-                let vrEvents = maybeToList $ case bsUpdated ^? ProtoFields.update of
-                        Nothing -> Nothing
-                        Just update -> do
-                            increased <- update ^? ProtoFields.increased
-                            ebsiAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                            ebsiBakerId <- fromProto =<< update ^? ProtoFields.bakerId
-                            ebsiNewStake <- fromProto =<< update ^? ProtoFields.newStake
-                            if increased then return BakerStakeIncreased{..} else return BakerStakeDecreased{..}
-                return (Just TTUpdateBakerStake, TxSuccess{..})
-            ProtoFields.AccountTransactionEffects'ContractInitialized cInitialized -> do
-                ecContractVersion <- fromProto =<< cInitialized ^? ProtoFields.contractVersion
-                ecRef <- fromProto =<< cInitialized ^? ProtoFields.originRef
-                ecAddress <- fromProto =<< cInitialized ^? ProtoFields.address
-                ecAmount <- fromProto =<< cInitialized ^? ProtoFields.amount
-                ecInitName <- fromProto =<< cInitialized ^? ProtoFields.initName
-                -- FIXME: We should discuss this, since mapM short
-                -- circuits the monad. The question is, should Nothing be returned if
-                -- an event somehow fails, or should (only) the events that did not fail
-                -- be included?
-                ecEvents <- mapM fromProto =<< cInitialized ^? ProtoFields.events
-                return (Just TTInitContract, TxSuccess [ContractInitialized{..}])
-            ProtoFields.AccountTransactionEffects'ContractUpdateIssued' cuIssued -> do
-                -- FIXME: Is mapM desirable here, cfr. the above comment?
-                vrEvents <- mapM fromProto =<< cuIssued ^? ProtoFields.effects
-                return (Just TTUpdate, TxSuccess{..})
-            ProtoFields.AccountTransactionEffects'CredentialKeysUpdated ckUpdated -> do
-                ckuCredId <- fst <$> fromProto ckUpdated
-                return (Just TTUpdateCredentialKeys, TxSuccess [CredentialKeysUpdated ckuCredId])
-            ProtoFields.AccountTransactionEffects'CredentialsUpdated' cUpdated -> do
-                cuAccount <- Nothing -- FIXME: Where is this, I do not see it in the message.
-                cuNewCredIds <- mapM (fmap fst . fromProto) =<< cUpdated ^? ProtoFields.newCredIds
-                cuRemovedCredIds <- mapM (fmap fst . fromProto) =<< cUpdated ^? ProtoFields.removedCredIds
-                cuNewThreshold <- fromProto =<< cUpdated ^? ProtoFields.newThreshold
-                return (Just TTUpdateCredentials, TxSuccess [CredentialsUpdated{..}])
-            ProtoFields.AccountTransactionEffects'DataRegistered dRegistered -> do
-                drData <- fromProto dRegistered
-                return (Just TTRegisterData, TxSuccess [DataRegistered{..}])
-            ProtoFields.AccountTransactionEffects'DelegationConfigured' dConfigured -> do
-                -- FIXME: Is mapM desirable here?
-                vrEvents <- mapM fromProto =<< dConfigured ^? ProtoFields.events
-                return (Just TTConfigureDelegation, TxSuccess{..})
-            ProtoFields.AccountTransactionEffects'EncryptedAmountTransferred' eaTransferred -> do
-                -- Removed encrypted amounts.
-                removed <- eaTransferred ^? ProtoFields.removed
-                earAccount <- fromProto =<< removed ^? ProtoFields.account
-                earNewAmount <- fromProto =<< removed ^? ProtoFields.newAmount
-                earInputAmount <- fromProto =<< removed ^? ProtoFields.inputAmount
-                earUpToIndex <- EncryptedAmountAggIndex <$> removed ^? ProtoFields.upToIndex
-                -- Added encrypted amounts.
-                added <- eaTransferred ^? ProtoFields.added
-                neaAccount <- fromProto =<< added ^? ProtoFields.receiver
-                neaNewIndex <- EncryptedAmountIndex <$> added ^? ProtoFields.newIndex
-                neaEncryptedAmount <- fromProto =<< added ^? ProtoFields.encryptedAmount
-                -- The memo.
-                let memo = fromProto =<< eaTransferred ^. ProtoFields.maybe'memo
-                -- Discern between event types based on whether a memo is present.
-                let (tType, vrEvents) = case memo of
-                        Nothing ->
-                            ( TTEncryptedAmountTransfer
-                            , [EncryptedAmountsRemoved{..}, NewEncryptedAmount{..}]
-                            )
-                        Just tmMemo ->
-                            ( TTEncryptedAmountTransferWithMemo
-                            , [EncryptedAmountsRemoved{..}, NewEncryptedAmount{..}, TransferMemo{..}]
-                            )
-                return (Just tType, TxSuccess{..})
-            ProtoFields.AccountTransactionEffects'ModuleDeployed mDeployed -> do
-                mRef <- fromProto mDeployed
-                return (Just TTDeployModule, TxSuccess [ModuleDeployed mRef])
-            ProtoFields.AccountTransactionEffects'None' none -> do
-                vrRejectReason <- fromProto =<< none ^? ProtoFields.rejectReason
-                return (Nothing, TxReject{..})
-            ProtoFields.AccountTransactionEffects'TransferredToEncrypted ttEncrypted -> do
-                eaaAccount <- fromProto =<< ttEncrypted ^? ProtoFields.account
-                eaaNewAmount <- fromProto =<< ttEncrypted ^? ProtoFields.newAmount
-                eaaAmount <- fromProto =<< ttEncrypted ^? ProtoFields.amount
-                return (Just TTTransferToEncrypted, TxSuccess [EncryptedSelfAmountAdded{..}])
-            ProtoFields.AccountTransactionEffects'TransferredToPublic' ttPublic -> do
-                -- Amount added by decryption.
-                aabdAmount <- fromProto =<< ttPublic ^? ProtoFields.amount
-                -- Removed encrypted amounts.
-                removed <- ttPublic ^? ProtoFields.removed
-                aabdAccount <- fromProto =<< removed ^? ProtoFields.account
-                earAccount <- fromProto =<< removed ^? ProtoFields.account
-                earNewAmount <- fromProto =<< removed ^? ProtoFields.newAmount
-                earInputAmount <- fromProto =<< removed ^? ProtoFields.inputAmount
-                earUpToIndex <- EncryptedAmountAggIndex <$> removed ^? ProtoFields.upToIndex
-                return (Just TTTransferToPublic, TxSuccess [EncryptedAmountsRemoved{..}, AmountAddedByDecryption{..}])
-            ProtoFields.AccountTransactionEffects'TransferredWithSchedule' twSchedule -> do
-                etwsFrom <- Nothing
-                etwsTo <- fromProto =<< twSchedule ^? ProtoFields.receiver
-                etwsAmount <- mapM fromProto =<< twSchedule ^? ProtoFields.amount
-                -- The memo.
-                let memo = fromProto =<< twSchedule ^. ProtoFields.maybe'memo
-                -- Discern between event types based on whether a memo is present.
-                let (tType, vrEvents) = case memo of
-                        Nothing ->
-                            ( TTTransferWithSchedule
-                            , [TransferredWithSchedule{..}]
-                            )
-                        Just tmMemo ->
-                            ( TTTransferWithScheduleAndMemo
-                            , [TransferredWithSchedule{..}, TransferMemo{..}]
-                            )
-                return (Just tType, TxSuccess{..})
-
 instance FromProto Proto.Memo where
     type Output' Proto.Memo = Memo
+
+    -- FIXME: Can we just use deMkSerialize here? Types check out, but fromShort
+    -- is used in the other direction...
     fromProto memo = Memo . BSS.toShort <$> memo ^? ProtoFields.value
+
+instance FromProto Proto.ArInfo'ArIdentity where
+    type Output' Proto.ArInfo'ArIdentity = ArIdentity
+    fromProto arIdentity = do
+        let arId = deMkWord32 arIdentity
+        -- This can not be 0.
+        -- FIXME: This is not checked in the FFI `ar_info_create` function of base.
+        if arId == 0
+            then Nothing
+            else return $ ArIdentity arId
+
+instance FromProto Proto.IpIdentity where
+    type Output' Proto.IpIdentity = IdentityProviderIdentity
+    fromProto arIdentity = do
+        let ipIp = deMkWord32 arIdentity
+        -- FIXME: Can this not be 0 either?
+        -- FIXME: This is not checked in the FFI `ip_info_create` function of base.
+        if ipIp == 0
+            then Nothing
+            else return $ IP_ID ipIp
 
 instance FromProto Proto.ArInfo where
     type Output' Proto.ArInfo = ArInfo.ArInfo
     fromProto arInfo = do
-        arIdentity <- deMkWord32 <$> arInfo ^? ProtoFields.identity
+        arIdentity <- fromProto =<< arInfo ^? ProtoFields.identity
         arPubKey <- arInfo ^? ProtoFields.publicKey . ProtoFields.value
         arD <- arInfo ^? ProtoFields.description
         arName <- arD ^? ProtoFields.name
         arUrl <- arD ^? ProtoFields.url
         arDescription <- arD ^? ProtoFields.description
-        createArInfo (ArIdentity arIdentity) arPubKey arName arUrl arDescription
+        createArInfo arIdentity arPubKey arName arUrl arDescription
 
 instance FromProto Proto.IpInfo where
     type Output' Proto.IpInfo = IpInfo.IpInfo
@@ -1534,11 +1377,11 @@ instance FromProto Proto.IpInfo where
         ipVerifyKey <- ipInfo ^? ProtoFields.verifyKey . ProtoFields.value
         ipCdiVerifyKey <- ipInfo ^? ProtoFields.cdiVerifyKey . ProtoFields.value
         ipD <- ipInfo ^? ProtoFields.description
-        ipIdentity <- deMkWord32 <$> ipInfo ^? ProtoFields.identity
+        ipIdentity <- fromProto =<< ipInfo ^? ProtoFields.identity
         ipName <- ipD ^? ProtoFields.name
         ipUrl <- ipD ^? ProtoFields.url
         ipDescription <- ipD ^? ProtoFields.description
-        createIpInfo (IP_ID ipIdentity) ipVerifyKey ipCdiVerifyKey ipName ipUrl ipDescription
+        createIpInfo ipIdentity ipVerifyKey ipCdiVerifyKey ipName ipUrl ipDescription
 
 instance FromProto Proto.BakerStakeThreshold where
     type Output' Proto.BakerStakeThreshold = Parameters.PoolParameters 'ChainParametersV0
@@ -1573,7 +1416,10 @@ instance FromProto Proto.Ratio where
     fromProto ratio = do
         numerator <- ratio ^? ProtoFields.numerator
         denominator <- ratio ^? ProtoFields.denominator
-        return $ numerator Ratio.% denominator
+        -- Ensure we do not divide by zero.
+        if denominator == 0
+            then Nothing
+            else return $ numerator Ratio.% denominator
 
 instance FromProto Proto.ExchangeRate where
     type Output' Proto.ExchangeRate = ExchangeRate
@@ -1667,7 +1513,8 @@ instance FromProto Proto.UpdatePublicKey where
 instance FromProto Proto.UpdateKeysThreshold where
     type Output' Proto.UpdateKeysThreshold = Updates.UpdateKeysThreshold
     fromProto ukTreshold = do
-        treshold <- ukTreshold ^? ProtoFields.value
+        -- Ensure that the value fits into a Word16.
+        treshold <- deMkWord16 ukTreshold
         return $ Updates.UpdateKeysThreshold (fromIntegral treshold)
 
 instance FromProto Proto.RootUpdate where
@@ -1703,8 +1550,8 @@ instance FromProto Proto.RootUpdate where
 instance FromProto Proto.HigherLevelKeys where
     type
         Output' Proto.HigherLevelKeys =
-            ( Updates.HigherLevelKeys Updates.Level1KeysKind
-            , Updates.HigherLevelKeys Updates.RootKeysKind
+            ( Updates.HigherLevelKeys Updates.Level1KeysKind,
+              Updates.HigherLevelKeys Updates.RootKeysKind
             )
     fromProto keys = do
         hlkKeys <- Vec.fromList <$> (mapM fromProto =<< keys ^? ProtoFields.keys)
@@ -1822,8 +1669,8 @@ instance FromProto Proto.UpdatePayload where
                     ProtoFields.Level1Update'Level2KeysUpdateV1 l2kUpdateV1 -> do
                         l2kl1uAuthorizationsV1 <- fromProto l2kUpdateV1
                         return
-                            ( Updates.UpdateLevel2Keys
-                            , Updates.Level1UpdatePayload
+                            ( Updates.UpdateLevel2Keys,
+                              Updates.Level1UpdatePayload
                                 Updates.Level2KeysLevel1UpdateV1{..}
                             )
             ProtoFields.UpdatePayload'MicroCcdPerEuroUpdate mcpeUpdate -> do
@@ -1871,10 +1718,10 @@ instance FromProto Proto.BlockItemSummary where
                 return TransactionSummary{..}
             -- Account transaction
             ProtoFields.BlockItemSummary'AccountTransaction aTransaction -> do
-                -- The following two are set if we are here
-                let tsSender = fromProto =<< aTransaction ^? ProtoFields.sender
+                sender <- aTransaction ^? ProtoFields.sender
+                let tsSender = fromProto sender
                 tsCost <- fromProto =<< aTransaction ^? ProtoFields.cost
-                (tType, tsResult) <- fromProto aTransaction
+                (tType, tsResult) <- fromProto (sender, aTransaction)
                 let tsType = TSTAccountTransaction tType
                 return TransactionSummary{..}
             ProtoFields.BlockItemSummary'Update update -> do
@@ -1887,6 +1734,238 @@ instance FromProto Proto.BlockItemSummary where
                 let tsType = TSTUpdateTransaction tType
                 return TransactionSummary{..}
 
+instance FromProto (Proto.AccountAddress, Proto.AccountTransactionDetails) where
+    type Output' (Proto.AccountAddress, Proto.AccountTransactionDetails) = (Maybe TransactionType, ValidResult)
+    fromProto (senderAcc, atDetails) = do
+        sender <- fromProto senderAcc
+        tSender <- deMkSerialize =<< atDetails ^? ProtoFields.sender
+        ate <- atDetails ^. ProtoFields.effects . ProtoFields.maybe'effect
+        case ate of
+            ProtoFields.AccountTransactionEffects'AccountTransfer' aTransfer -> do
+                etAmount <- fromProto =<< aTransfer ^? ProtoFields.amount
+                etTo <- deMkSerialize =<< aTransfer ^? ProtoFields.receiver
+                let etFrom = tSender
+                let memo = fromProto =<< aTransfer ^. ProtoFields.maybe'memo
+                -- Discern between event types based on whether a memo is present.
+                let (tType, vrEvents) = case memo of
+                        Nothing ->
+                            (TTTransfer, [Transferred{..}])
+                        Just tmMemo ->
+                            (TTTransferWithMemo, [Transferred{..}, TransferMemo{..}])
+                return (Just tType, TxSuccess{..})
+            ProtoFields.AccountTransactionEffects'BakerAdded bAdded -> do
+                (kEvent, ebaStake, ebaRestakeEarnings) <- fromProto bAdded
+                let (ebaBakerId, ebaAccount, ebaSignKey, ebaElectionKey, ebaAggregationKey) = kEvent
+                return (Just TTAddBaker, TxSuccess [BakerAdded{..}])
+            ProtoFields.AccountTransactionEffects'BakerConfigured' bConfigured -> do
+                vrEvents <- mapM (\e -> fromProto (senderAcc, e)) =<< bConfigured ^? ProtoFields.events
+                return (Just TTConfigureBaker, TxSuccess{..})
+            ProtoFields.AccountTransactionEffects'BakerKeysUpdated bkUpdated -> do
+                (ebkuBakerId, ebkuAccount, ebkuSignKey, ebkuElectionKey, ebkuAggregationKey) <- fromProto bkUpdated
+                return (Just TTUpdateBakerKeys, TxSuccess [BakerKeysUpdated{..}])
+            ProtoFields.AccountTransactionEffects'BakerRemoved bRemoved -> do
+                let ebrAccount = sender
+                ebrBakerId <- fromProto bRemoved
+                return (Just TTRemoveBaker, TxSuccess [BakerRemoved{..}])
+            ProtoFields.AccountTransactionEffects'BakerRestakeEarningsUpdated breUpdated -> do
+                let ebsreAccount = sender
+                ebsreBakerId <- fromProto =<< breUpdated ^? ProtoFields.bakerId
+                ebsreRestakeEarnings <- breUpdated ^? ProtoFields.restakeEarnings
+                return (Just TTUpdateBakerRestakeEarnings, TxSuccess [BakerSetRestakeEarnings{..}])
+            ProtoFields.AccountTransactionEffects'BakerStakeUpdated' bsUpdated -> do
+                let vrEvents = maybeToList $ case bsUpdated ^. ProtoFields.maybe'update of
+                        Nothing -> Nothing
+                        Just update -> do
+                            increased <- update ^? ProtoFields.increased
+                            let ebsiAccount = sender
+                            ebsiBakerId <- fromProto =<< update ^? ProtoFields.bakerId
+                            ebsiNewStake <- fromProto =<< update ^? ProtoFields.newStake
+                            if increased then return BakerStakeIncreased{..} else return BakerStakeDecreased{..}
+                return (Just TTUpdateBakerStake, TxSuccess{..})
+            ProtoFields.AccountTransactionEffects'ContractInitialized cInitialized -> do
+                ecContractVersion <- fromProto =<< cInitialized ^? ProtoFields.contractVersion
+                ecRef <- fromProto =<< cInitialized ^? ProtoFields.originRef
+                ecAddress <- fromProto =<< cInitialized ^? ProtoFields.address
+                ecAmount <- fromProto =<< cInitialized ^? ProtoFields.amount
+                ecInitName <- fromProto =<< cInitialized ^? ProtoFields.initName
+                ecEvents <- mapM fromProto =<< cInitialized ^? ProtoFields.events
+                return (Just TTInitContract, TxSuccess [ContractInitialized{..}])
+            ProtoFields.AccountTransactionEffects'ContractUpdateIssued' cuIssued -> do
+                vrEvents <- mapM fromProto =<< cuIssued ^? ProtoFields.effects
+                return (Just TTUpdate, TxSuccess{..})
+            ProtoFields.AccountTransactionEffects'CredentialKeysUpdated ckUpdated -> do
+                ckuCredId <- fst <$> fromProto ckUpdated
+                return (Just TTUpdateCredentialKeys, TxSuccess [CredentialKeysUpdated ckuCredId])
+            ProtoFields.AccountTransactionEffects'CredentialsUpdated' cUpdated -> do
+                let cuAccount = sender
+                cuNewCredIds <- mapM (fmap fst . fromProto) =<< cUpdated ^? ProtoFields.newCredIds
+                cuRemovedCredIds <- mapM (fmap fst . fromProto) =<< cUpdated ^? ProtoFields.removedCredIds
+                cuNewThreshold <- fromProto =<< cUpdated ^? ProtoFields.newThreshold
+                return (Just TTUpdateCredentials, TxSuccess [CredentialsUpdated{..}])
+            ProtoFields.AccountTransactionEffects'DataRegistered dRegistered -> do
+                drData <- fromProto dRegistered
+                return (Just TTRegisterData, TxSuccess [DataRegistered{..}])
+            ProtoFields.AccountTransactionEffects'DelegationConfigured' dConfigured -> do
+                vrEvents <- mapM (\e -> fromProto (senderAcc, e)) =<< dConfigured ^? ProtoFields.events
+                return (Just TTConfigureDelegation, TxSuccess{..})
+            ProtoFields.AccountTransactionEffects'EncryptedAmountTransferred' eaTransferred -> do
+                -- Removed encrypted amounts.
+                removed <- eaTransferred ^? ProtoFields.removed
+                earAccount <- fromProto =<< removed ^? ProtoFields.account
+                earNewAmount <- fromProto =<< removed ^? ProtoFields.newAmount
+                earInputAmount <- fromProto =<< removed ^? ProtoFields.inputAmount
+                earUpToIndex <- EncryptedAmountAggIndex <$> removed ^? ProtoFields.upToIndex
+                -- Added encrypted amounts.
+                added <- eaTransferred ^? ProtoFields.added
+                neaAccount <- fromProto =<< added ^? ProtoFields.receiver
+                neaNewIndex <- EncryptedAmountIndex <$> added ^? ProtoFields.newIndex
+                neaEncryptedAmount <- fromProto =<< added ^? ProtoFields.encryptedAmount
+                -- The memo.
+                let memo = fromProto =<< eaTransferred ^. ProtoFields.maybe'memo
+                -- Discern between event types based on whether a memo is present.
+                let (tType, vrEvents) = case memo of
+                        Nothing ->
+                            ( TTEncryptedAmountTransfer,
+                              [EncryptedAmountsRemoved{..}, NewEncryptedAmount{..}]
+                            )
+                        Just tmMemo ->
+                            ( TTEncryptedAmountTransferWithMemo,
+                              [EncryptedAmountsRemoved{..}, NewEncryptedAmount{..}, TransferMemo{..}]
+                            )
+                return (Just tType, TxSuccess{..})
+            ProtoFields.AccountTransactionEffects'ModuleDeployed mDeployed -> do
+                mRef <- fromProto mDeployed
+                return (Just TTDeployModule, TxSuccess [ModuleDeployed mRef])
+            ProtoFields.AccountTransactionEffects'None' none -> do
+                vrRejectReason <- fromProto =<< none ^? ProtoFields.rejectReason
+                let transactionType = fromProto =<< none ^. ProtoFields.maybe'transactionType
+                return (transactionType, TxReject{..})
+            ProtoFields.AccountTransactionEffects'TransferredToEncrypted ttEncrypted -> do
+                eaaAccount <- fromProto =<< ttEncrypted ^? ProtoFields.account
+                eaaNewAmount <- fromProto =<< ttEncrypted ^? ProtoFields.newAmount
+                eaaAmount <- fromProto =<< ttEncrypted ^? ProtoFields.amount
+                return (Just TTTransferToEncrypted, TxSuccess [EncryptedSelfAmountAdded{..}])
+            ProtoFields.AccountTransactionEffects'TransferredToPublic' ttPublic -> do
+                -- Amount added by decryption.
+                aabdAmount <- fromProto =<< ttPublic ^? ProtoFields.amount
+                -- Removed encrypted amounts.
+                removed <- ttPublic ^? ProtoFields.removed
+                aabdAccount <- fromProto =<< removed ^? ProtoFields.account
+                earAccount <- fromProto =<< removed ^? ProtoFields.account
+                earNewAmount <- fromProto =<< removed ^? ProtoFields.newAmount
+                earInputAmount <- fromProto =<< removed ^? ProtoFields.inputAmount
+                earUpToIndex <- EncryptedAmountAggIndex <$> removed ^? ProtoFields.upToIndex
+                return (Just TTTransferToPublic, TxSuccess [EncryptedAmountsRemoved{..}, AmountAddedByDecryption{..}])
+            ProtoFields.AccountTransactionEffects'TransferredWithSchedule' twSchedule -> do
+                let etwsFrom = sender
+                etwsTo <- fromProto =<< twSchedule ^? ProtoFields.receiver
+                etwsAmount <- mapM fromProto =<< twSchedule ^? ProtoFields.amount
+                let memo = fromProto =<< twSchedule ^. ProtoFields.maybe'memo
+                -- Discern between event types based on whether a memo is present.
+                let (tType, vrEvents) = case memo of
+                        Nothing ->
+                            ( TTTransferWithSchedule,
+                              [TransferredWithSchedule{..}]
+                            )
+                        Just tmMemo ->
+                            ( TTTransferWithScheduleAndMemo,
+                              [TransferredWithSchedule{..}, TransferMemo{..}]
+                            )
+                return (Just tType, TxSuccess{..})
+
+instance FromProto (Proto.AccountAddress, Proto.DelegationEvent) where
+    type Output' (Proto.AccountAddress, Proto.DelegationEvent) = Event
+    fromProto (senderAcc, dEvent) = do
+        sender <- fromProto senderAcc
+        de <- dEvent ^. ProtoFields.maybe'event
+        case de of
+            Proto.DelegationEvent'DelegationAdded dAdded -> do
+                let edaAccount = sender
+                edaDelegatorId <- fromProto dAdded
+                return DelegationAdded{..}
+            ProtoFields.DelegationEvent'DelegationStakeIncreased' dsIncreased -> do
+                let edsiAccount = sender
+                edsiDelegatorId <- fromProto =<< dsIncreased ^? ProtoFields.delegatorId
+                edsiNewStake <- fromProto =<< dsIncreased ^? ProtoFields.newStake
+                return DelegationStakeIncreased{..}
+            ProtoFields.DelegationEvent'DelegationStakeDecreased' dsDecreased -> do
+                let edsdAccount = sender
+                edsdDelegatorId <- fromProto =<< dsDecreased ^? ProtoFields.delegatorId
+                edsdNewStake <- fromProto =<< dsDecreased ^? ProtoFields.newStake
+                return DelegationStakeDecreased{..}
+            ProtoFields.DelegationEvent'DelegationSetRestakeEarnings' dsrEarnings -> do
+                let edsreAccount = sender
+                edsreDelegatorId <- fromProto =<< dsrEarnings ^? ProtoFields.delegatorId
+                edsreRestakeEarnings <- dsrEarnings ^? ProtoFields.restakeEarnings
+                return DelegationSetRestakeEarnings{..}
+            ProtoFields.DelegationEvent'DelegationSetDelegationTarget' dsdTarget -> do
+                let edsdtAccount = sender
+                edsdtDelegatorId <- fromProto =<< dsdTarget ^? ProtoFields.delegatorId
+                edsdtDelegationTarget <- fromProto =<< dsdTarget ^? ProtoFields.delegationTarget
+                return DelegationSetDelegationTarget{..}
+            ProtoFields.DelegationEvent'DelegationRemoved dRemoved -> do
+                let edrAccount = sender
+                edrDelegatorId <- fromProto dRemoved
+                return DelegationRemoved{..}
+
+instance FromProto (Proto.AccountAddress, Proto.BakerEvent) where
+    type Output' (Proto.AccountAddress, Proto.BakerEvent) = Event
+    fromProto (senderAcc, bEvent) = do
+        sender <- fromProto senderAcc
+        be <- bEvent ^. ProtoFields.maybe'event
+        case be of
+            Proto.BakerEvent'BakerAdded' bAdded -> do
+                (kEvent, ebaStake, ebaRestakeEarnings) <- fromProto bAdded
+                let (ebaBakerId, ebaAccount, ebaSignKey, ebaElectionKey, ebaAggregationKey) = kEvent
+                return BakerAdded{..}
+            ProtoFields.BakerEvent'BakerRemoved bRemoved -> do
+                let ebrAccount = sender
+                ebrBakerId <- fromProto bRemoved
+                return BakerRemoved{..}
+            ProtoFields.BakerEvent'BakerStakeIncreased' bsIncreased -> do
+                let ebsiAccount = sender
+                ebsiBakerId <- fromProto =<< bsIncreased ^? ProtoFields.bakerId
+                ebsiNewStake <- fromProto =<< bsIncreased ^? ProtoFields.newStake
+                return BakerStakeIncreased{..}
+            ProtoFields.BakerEvent'BakerStakeDecreased' bsDecreased -> do
+                let ebsiAccount = sender
+                ebsiBakerId <- fromProto =<< bsDecreased ^? ProtoFields.bakerId
+                ebsiNewStake <- fromProto =<< bsDecreased ^? ProtoFields.newStake
+                return BakerStakeDecreased{..}
+            ProtoFields.BakerEvent'BakerRestakeEarningsUpdated' breUpdated -> do
+                let ebsreAccount = sender
+                ebsreBakerId <- fromProto =<< breUpdated ^? ProtoFields.bakerId
+                ebsreRestakeEarnings <- breUpdated ^? ProtoFields.restakeEarnings
+                return BakerSetRestakeEarnings{..}
+            ProtoFields.BakerEvent'BakerKeysUpdated bkUpdated -> do
+                (ebkuBakerId, ebkuAccount, ebkuSignKey, ebkuElectionKey, ebkuAggregationKey) <- fromProto bkUpdated
+                return BakerKeysUpdated{..}
+            ProtoFields.BakerEvent'BakerSetOpenStatus' bsoStatus -> do
+                let ebsosAccount = sender
+                ebsosBakerId <- fromProto =<< bsoStatus ^? ProtoFields.bakerId
+                ebsosOpenStatus <- fromProto =<< bsoStatus ^? ProtoFields.openStatus
+                return BakerSetOpenStatus{..}
+            ProtoFields.BakerEvent'BakerSetMetadataUrl' bsmUrl -> do
+                let ebsmuAccount = sender
+                ebsmuBakerId <- fromProto =<< bsmUrl ^? ProtoFields.bakerId
+                ebsmuMetadataURL <- deMkUrlText bsmUrl
+                return BakerSetMetadataURL{..}
+            ProtoFields.BakerEvent'BakerSetTransactionFeeCommission' bstfCommission -> do
+                let ebstfcAccount = sender
+                ebstfcBakerId <- fromProto =<< bstfCommission ^? ProtoFields.bakerId
+                ebstfcTransactionFeeCommission <- fromProto =<< bstfCommission ^? ProtoFields.transactionFeeCommission
+                return BakerSetTransactionFeeCommission{..}
+            ProtoFields.BakerEvent'BakerSetBakingRewardCommission' bsbCommission -> do
+                let ebsbrcAccount = sender
+                ebsbrcBakerId <- fromProto =<< bsbCommission ^? ProtoFields.bakerId
+                ebsbrcBakingRewardCommission <- fromProto =<< bsbCommission ^? ProtoFields.bakingRewardCommission
+                return BakerSetBakingRewardCommission{..}
+            ProtoFields.BakerEvent'BakerSetFinalizationRewardCommission' bsfrCommission -> do
+                let ebsfrcAccount = sender
+                ebsfrcBakerId <- fromProto =<< bsfrCommission ^? ProtoFields.bakerId
+                ebsfrcFinalizationRewardCommission <- fromProto =<< bsfrCommission ^? ProtoFields.finalizationRewardCommission
+                return BakerSetFinalizationRewardCommission{..}
+
 instance FromProto Proto.BlockItemStatus where
     type Output' Proto.BlockItemStatus = QueryTypes.TransactionStatus
     fromProto biStatus = do
@@ -1895,8 +1974,6 @@ instance FromProto Proto.BlockItemStatus where
             Proto.BlockItemStatus'Received _ -> return QueryTypes.Received
             Proto.BlockItemStatus'Finalized' finalized -> do
                 outcome <- finalized ^? ProtoFields.outcome
-                -- FIXME: tSumm is returned as Maybe from fromOutcome,
-                -- so this does not short circuit when it is nothing - should it?
                 (tHash, tSumm) <- fromOutcome outcome
                 return $ QueryTypes.Finalized tHash tSumm
             Proto.BlockItemStatus'Committed' committed -> do
@@ -1921,8 +1998,8 @@ instance FromProto Proto.FinalizationSummaryParty where
         return QueryTypes.FinalizationSummaryParty{..}
 
 instance FromProto Proto.BlockFinalizationSummary where
-    type Output' Proto.BlockFinalizationSummary = BlockFinalizationSummary
-    fromProto bfSummary = return $ do
+    type Output' Proto.BlockFinalizationSummary = FinalizationSummary
+    fromProto bfSummary = do
         bfs <- bfSummary ^. ProtoFields.maybe'summary
         case bfs of
             ProtoFields.BlockFinalizationSummary'None _ -> Nothing
@@ -1931,36 +2008,67 @@ instance FromProto Proto.BlockFinalizationSummary where
                 finIndex <- fromProto =<< record ^? ProtoFields.index
                 delay <- fromProto =<< record ^? ProtoFields.delay
                 finalizers <- mapM fromProto =<< record ^? ProtoFields.finalizers
-                Just FinalizationSummary{..}
+                Just FinalizationProof{..}
 
-data FinalizationSummary = FinalizationSummary
-    { blockHash :: !BlockHash
-    , finIndex :: !FinalizationIndex
-    , delay :: !BlockHeight
-    , finalizers :: ![QueryTypes.FinalizationSummaryParty]
-    }
+-- |Finalization summary that may or may not be part of the block.
+data FinalizationSummary
+    = -- |There is no finalization data in the block.
+      None
+    | -- |There is a single finalization record in the block.
+      FinalizationProof
+        { blockHash :: !BlockHash,
+          finIndex :: !FinalizationIndex,
+          delay :: !BlockHeight,
+          finalizers :: ![QueryTypes.FinalizationSummaryParty]
+        }
 
-type BlockFinalizationSummary = Maybe FinalizationSummary
+-- |Catchup status of the peer.
+data PeerCatchupStatus
+    = -- |The peer does not have any data unknown to us. If we receive a message
+      -- from the peer that refers to unknown data (e.g., an unknown block) the
+      -- peer is marked as pending.
+      UpToDate
+    | -- |The peer might have some data unknown to us. A peer can be in this state
+      -- either because it sent a message that refers to data unknown to us, or
+      -- before we have established a baseline with it. The latter happens during
+      -- node startup, as well as upon protocol updates until the initial catchup
+      -- handshake completes.
+      Pending
+    | -- |The node is currently catching up by requesting blocks from this peer.
+      -- There will be at most one peer with this status at a time. Once the peer
+      -- has responded to the request, its status will be changed to either `UpToDate`
+      -- or `Pending`.
+      CatchingUp
 
-data PeerCatchupStatus = UpToDate | Pending | CatchingUp
-
+-- |Network statistics for the peer.
 data NetworkStats = NetworkStats
-    { packetsSent :: !Integer
-    , packetsReceived :: !Integer
-    , latency :: !Integer
-    }
-data PeerInfo = PeerInfo
-    { peerId :: !Text
-    , socketAddress :: !IpSocketAddress
-    , networkStats :: !NetworkStats
-    , consensusInfo :: !(Maybe PeerCatchupStatus)
+    { -- |The number of messages sent to the peer.
+      -- Packets are blocks, transactions, catchup messages, finalization records
+      -- and network messages such as pings and peer requests.
+      packetsSent :: !Integer,
+      -- |The number of messages received from the peer.
+      -- Packets are blocks, transactions, catchup messages, finalization records
+      -- and network messages such as pings and peer requests.
+      packetsReceived :: !Integer,
+      -- |The connection latency (i.e., ping time) in milliseconds.
+      latency :: !Integer
     }
 
+-- |Network related peer statistics.
+data PeerInfo = PeerInfo
+    { peerId :: !Text,
+      socketAddress :: !IpSocketAddress,
+      networkStats :: !NetworkStats,
+      consensusInfo :: !(Maybe PeerCatchupStatus)
+    }
+
+-- |Network related peer statistics.
 type PeersInfo = [PeerInfo]
 
 instance FromProto Proto.IpSocketAddress where
     type Output' Proto.IpSocketAddress = IpSocketAddress
     fromProto ipsAddress = do
+        -- FIXME: Should this be validated?
         ip <- fromProto =<< ipsAddress ^? ProtoFields.ip
         port <- fromProto =<< ipsAddress ^? ProtoFields.port
         return (ip, port)
@@ -2012,15 +2120,30 @@ instance FromProto Proto.NodeInfo'BakerConsensusInfo'PassiveCommitteeInfo where
             ProtoFields.NodeInfo'BakerConsensusInfo'PassiveCommitteeInfo'Unrecognized _ -> do
                 Nothing
 
+-- |The committee information of a node which is configured with
+-- baker keys but is somehow is _not_ part of the current baking
+-- committee.
 data PassiveCommitteeInfo
-    = NotInCommittee
-    | AddedButNotActiveInCommittee
-    | AddedButWrongKeys
+    = -- |The node is started with baker keys however it is currently not in
+      -- the baking committee. The node is _not_ baking.
+      NotInCommittee
+    | -- |The account is registered as a baker but not in the current `Epoch`.
+      -- The node is _not_ baking.
+      AddedButNotActiveInCommittee
+    | -- |The node has configured invalid baker keys i.e., the configured
+      -- baker keys do not match the current keys on the baker account.
+      -- The node is _not_ baking.
+      AddedButWrongKeys
 
+-- |Status of the baker configured node.
 data BakerConsensusInfoStatus
-    = PassiveBaker !PassiveCommitteeInfo
-    | ActiveBakerCommitteeInfo
-    | ActiveFinalizerCommitteeInfo
+    = -- |The node is currently not baking.
+      PassiveBaker !PassiveCommitteeInfo
+    | -- |Node is configured with baker keys and active in the current baking committee
+      ActiveBakerCommitteeInfo
+    | -- | Node is configured with baker keys and active in the current finalizer
+      -- committee (and also baking committee).
+      ActiveFinalizerCommitteeInfo
 
 instance FromProto Proto.NodeInfo'BakerConsensusInfo where
     type Output' Proto.NodeInfo'BakerConsensusInfo = BakerConsensusInfo
@@ -2037,33 +2160,49 @@ instance FromProto Proto.NodeInfo'BakerConsensusInfo where
                     PassiveBaker <$> fromProto pcInfo
         return BakerConsensusInfo{..}
 
+-- |Consensus info for a node configured with baker keys.
 data BakerConsensusInfo = BakerConsensusInfo
-    { bakerId :: !Integer
-    , status :: !BakerConsensusInfoStatus
+    { bakerId :: !Integer,
+      status :: !BakerConsensusInfoStatus
     }
 
 instance FromProto Proto.NodeInfo where
     type Output' Proto.NodeInfo = NodeInfo
     fromProto nInfo = do
         nDetails <- nInfo ^. ProtoFields.maybe'details
-        let details = case nDetails of
-                ProtoFields.NodeInfo'Bootstrapper _ -> Nothing
-                ProtoFields.NodeInfo'Node' node -> do
-                    n <- node ^. ProtoFields.maybe'consensusStatus
-                    case n of
-                        ProtoFields.NodeInfo'Node'NotRunning _ ->
-                            return NodeNotRunning
-                        ProtoFields.NodeInfo'Node'Passive _ ->
-                            return NodePassive
-                        ProtoFields.NodeInfo'Node'Active cInfo ->
-                            NodeActive <$> fromProto cInfo
+        details <- case nDetails of
+            ProtoFields.NodeInfo'Bootstrapper _ ->
+                return NodeBootstrapper
+            ProtoFields.NodeInfo'Node' node -> do
+                n <- node ^. ProtoFields.maybe'consensusStatus
+                case n of
+                    ProtoFields.NodeInfo'Node'NotRunning _ ->
+                        return NodeNotRunning
+                    ProtoFields.NodeInfo'Node'Passive _ ->
+                        return NodePassive
+                    ProtoFields.NodeInfo'Node'Active cInfo ->
+                        NodeActive <$> fromProto cInfo
         peerVersion <- nInfo ^? ProtoFields.peerVersion
-        localTime <- fmap fst . fromProto =<< nInfo ^? ProtoFields.localTime
+        localTime <- fromProto =<< nInfo ^? ProtoFields.localTime
         peerUptime <- fromProto =<< nInfo ^? ProtoFields.peerUptime
         networkInfo <- fromProto =<< nInfo ^? ProtoFields.networkInfo
         return NodeInfo{..}
 
-data NodeDetails = NodeNotRunning | NodePassive | NodeActive !BakerConsensusInfo
+-- |Consensus related details of the peer.
+data NodeDetails
+    = -- |The peer is of type `Bootstrapper` is not participating in consensus
+      -- and thus has no catchup status.
+      NodeBootstrapper
+    | -- |The node is not running consensus. This is the case only when the node
+      -- is not supporting the protocol on the chain. The node does not process
+      -- blocks.
+      NodeNotRunning
+    | -- | Consensus info for a node that is not configured with baker keys.
+      -- The node is only processing blocks and relaying blocks and transactions
+      -- and responding to catchup messages.
+      NodePassive
+    | -- | The node is configured with baker credentials and consensus is running.
+      NodeActive !BakerConsensusInfo
 
 instance FromProto Proto.NodeInfo'NetworkInfo where
     type Output' Proto.NodeInfo'NetworkInfo = NetworkInfo
@@ -2075,64 +2214,67 @@ instance FromProto Proto.NodeInfo'NetworkInfo where
         avgBpsOut <- fromIntegral <$> nInfo ^? ProtoFields.avgBpsOut
         return NetworkInfo{..}
 
+-- |Network related information of the node.
 data NetworkInfo = NetworkInfo
-    { nodeId :: !Text
-    , peerTotalSent :: !Integer
-    , peerTotalReceived :: !Integer
-    , avgBpsIn :: !Integer
-    , avgBpsOut :: !Integer
+    { -- |The node id.
+      nodeId :: !Text,
+      -- |Total number of packets sent by the node.
+      peerTotalSent :: !Word64,
+      -- |Total number of packets received by the node.
+      peerTotalReceived :: !Word64,
+      -- |Average outbound throughput in bytes per second.
+      avgBpsIn :: !Word64,
+      -- |Average inbound throughput in bytes per second.
+      avgBpsOut :: !Word64
     }
 
+-- |Various information about the node.
 data NodeInfo = NodeInfo
-    { peerVersion :: !Text
-    , localTime :: !Timestamp
-    , peerUptime :: !Duration
-    , networkInfo :: !NetworkInfo
-    , details :: !(Maybe NodeDetails)
+    { -- |The version of the node.
+      peerVersion :: !Text,
+      -- |The local time of the node.
+      localTime :: !Timestamp,
+      -- | Number of milliseconds that the node has been alive.
+      peerUptime :: !Duration,
+      -- | Information related to the p2p protocol.
+      networkInfo :: !NetworkInfo,
+      -- | Various details about the node.
+      details :: !NodeDetails
     }
 
 instance FromProto Proto.ChainParametersV0 where
-    type Output' Proto.ChainParametersV0 = Parameters.ChainParameters' 'ChainParametersV0
+    type Output' Proto.ChainParametersV0 = ChainParameterOutput
     fromProto cParams = do
         _cpElectionDifficulty <- fromProto =<< cParams ^? ProtoFields.electionDifficulty
         _cpExchangeRates <- do
             euroPerEnergy <- fromProto =<< cParams ^? ProtoFields.euroPerEnergy
             microCcdPerEuro <- fromProto =<< cParams ^? ProtoFields.microCcdPerEuro
             return $ Parameters.makeExchangeRates euroPerEnergy microCcdPerEuro
-        _cpCooldownParameters <-
-            fmap Parameters.CooldownParametersV0
-                . fromProto
-                =<< cParams ^? ProtoFields.bakerCooldownEpochs
-        -- FIXME: I don't see this (required field) anywhere in the protobuf message.
-        _cpTimeParameters <- Nothing
+        _cpCooldownParameters <- do
+            epoch <- fromProto =<< cParams ^? ProtoFields.bakerCooldownEpochs
+            return $ Parameters.CooldownParametersV0 epoch
+        let _cpTimeParameters = Parameters.TimeParametersV0
         _cpAccountCreationLimit <- fromProto =<< cParams ^? ProtoFields.accountCreationLimit
         _cpRewardParameters <- do
             _rpMintDistribution <- fromProto =<< cParams ^? ProtoFields.mintDistribution
-            -- \|Distribution of transaction fees.
             _rpTransactionFeeDistribution <- fromProto =<< cParams ^? ProtoFields.transactionFeeDistribution
-            -- \|Rewards paid from the GAS account.
             _rpGASRewards <- fromProto =<< cParams ^? ProtoFields.gasRewards
             return Parameters.RewardParameters{..}
         -- FIXME: ProtoFields.foundationAccount has type AccountAddress, but the type expects an AccountIndex.
-        _cpFoundationAccount <- Nothing
+        --        Is it possible to convert this?
+        _cpFoundationAccount <- Nothing -- <-|
         _cpPoolParameters <- do
-            fmap Parameters.PoolParametersV0 . fromProto =<< cParams ^? ProtoFields.minimumThresholdForBaking
-        {- FIXME: The following fields are present in the protobuf message for ChainParametersV0, but there
-                  are no corresponding record fields in the datatype for chain protocol 1.
-
-                    // Minimum threshold for becoming a baker.
-                    Amount minimum_threshold_for_baking = 10;
-                    // Keys allowed to do root updates.
-                    HigherLevelKeys root_keys = 11;
-                    // Keys allowed to do level1 updates;
-                    HigherLevelKeys level1_keys = 12;
-                    // Keys allowed to do parameter updates.
-                    AuthorizationsV0 level2_keys = 13;
-        -}
-        return Parameters.ChainParameters{..}
+            thresh <- fromProto =<< cParams ^? ProtoFields.minimumThresholdForBaking
+            return $ Parameters.PoolParametersV0 thresh
+        let ecpParams = Parameters.ChainParameters{..}
+        rootKeys <- fmap snd . fromProto =<< cParams ^? ProtoFields.rootKeys
+        level1Keys <- fmap fst . fromProto =<< cParams ^? ProtoFields.level1Keys
+        level2Keys <- fromProto =<< cParams ^? ProtoFields.level2Keys
+        let ecpKeys = Updates.UpdateKeysCollection{..}
+        return $ ChainParameterOutputV0 ecpParams ecpKeys
 
 instance FromProto Proto.ChainParametersV1 where
-    type Output' Proto.ChainParametersV1 = Parameters.ChainParameters' 'ChainParametersV1
+    type Output' Proto.ChainParametersV1 = ChainParameterOutput
     fromProto cParams = do
         _cpElectionDifficulty <- fromProto =<< cParams ^? ProtoFields.electionDifficulty
         _cpExchangeRates <- do
@@ -2140,19 +2282,23 @@ instance FromProto Proto.ChainParametersV1 where
             microCcdPerEuro <- fromProto =<< cParams ^? ProtoFields.microCcdPerEuro
             return $ Parameters.makeExchangeRates euroPerEnergy microCcdPerEuro
         _cpCooldownParameters <- fromProto =<< cParams ^? ProtoFields.cooldownParameters
-        _cpTimeParameters <- Nothing -- FIXME: I do not see this (required field) anywhere in the protobuf message.
+        _cpTimeParameters <- fromProto =<< cParams ^? ProtoFields.timeParameters
         _cpAccountCreationLimit <- fromProto =<< cParams ^? ProtoFields.accountCreationLimit
         _cpRewardParameters <- do
             _rpMintDistribution <- fromProto =<< cParams ^? ProtoFields.mintDistribution
-            -- \|Distribution of transaction fees.
             _rpTransactionFeeDistribution <- fromProto =<< cParams ^? ProtoFields.transactionFeeDistribution
-            -- \|Rewards paid from the GAS account.
             _rpGASRewards <- fromProto =<< cParams ^? ProtoFields.gasRewards
             return Parameters.RewardParameters{..}
         -- FIXME: ProtoFields.foundationAccount has type AccountAddress, but the type expects an AccountIndex.
-        _cpFoundationAccount <- Nothing
-        _cpPoolParameters <- Nothing
-        return Parameters.ChainParameters{..}
+        --        Is it possible to convert this?
+        _cpFoundationAccount <- Nothing -- <-|
+        _cpPoolParameters <- fromProto =<< cParams ^? ProtoFields.poolParameters
+        let ecpParams = Parameters.ChainParameters{..}
+        rootKeys <- fmap snd . fromProto =<< cParams ^? ProtoFields.rootKeys
+        level1Keys <- fmap fst . fromProto =<< cParams ^? ProtoFields.level1Keys
+        level2Keys <- fromProto =<< cParams ^? ProtoFields.level2Keys
+        let ecpKeys = Updates.UpdateKeysCollection{..}
+        return $ ChainParameterOutputV1 ecpParams ecpKeys
 
 instance FromProto Proto.Epoch where
     type Output' Proto.Epoch = Epoch
@@ -2162,144 +2308,21 @@ instance FromProto Proto.CredentialsPerBlockLimit where
     type Output' Proto.CredentialsPerBlockLimit = CredentialsPerBlockLimit
     fromProto = deMkWord16
 
--- FIXME: Pertains to the next FIXME comment.
 data ChainParameterOutput
-    = ChainParameterOutputV0 !(Parameters.ChainParameters' 'ChainParametersV0)
-    | ChainParameterOutputV1 !(Parameters.ChainParameters' 'ChainParametersV1)
+    = ChainParameterOutputV0
+        !(Parameters.ChainParameters' 'ChainParametersV0)
+        !(Updates.UpdateKeysCollection 'ChainParametersV0)
+    | ChainParameterOutputV1
+        !(Parameters.ChainParameters' 'ChainParametersV1)
+        !(Updates.UpdateKeysCollection 'ChainParametersV1)
 
 instance FromProto Proto.ChainParameters where
-    type
-        -- FIXME: Perhaps there is some nice(r) way achieve this
-        --        with (constrained) type variables or type
-        --        families? But I am uncertain whether the class
-        --        has to change, or if this can be done "locally"?
-        --        Or does it not matter?
-        Output' Proto.ChainParameters =
-            ChainParameterOutput
+    type Output' Proto.ChainParameters = ChainParameterOutput
     fromProto cParams = do
         cp <- cParams ^. Proto.maybe'parameters
         case cp of
-            Proto.ChainParameters'V0 v0 -> ChainParameterOutputV0 <$> fromProto v0
-            Proto.ChainParameters'V1 v1 -> ChainParameterOutputV1 <$> fromProto v1
-
-data VersionedModuleSource
-    = ModuleSourceV0 !ByteString
-    | ModuleSourceV1 !ByteString
-
-type AccountTransactionSignHash = ByteString
-
-instance FromProto Proto.AccountTransactionSignHash where
-    type Output' Proto.AccountTransactionSignHash = AccountTransactionSignHash
-    fromProto atsHash = atsHash ^? ProtoFields.value
-
-data AccountTransactionPayload
-    = Raw !ByteString
-    | VersionedModuleSourcePayload
-        !VersionedModuleSource
-    | InitContractPayload
-        { amount :: !Amount
-        , moduleRef :: !ModuleRef
-        , initName :: !Wasm.InitName
-        , parameter :: !Wasm.Parameter
-        }
-    | UpdateContractPayload
-        { amount :: !Amount
-        , address :: !ContractAddress
-        , receiveName :: !Wasm.ReceiveName
-        , parameter :: !Wasm.Parameter
-        }
-    | TransferPayload
-        { amount :: !Amount
-        , receiver :: !AccountAddress
-        }
-    | TransferWithMemoPayload
-        { amount :: !Amount
-        , receiver :: !AccountAddress
-        , memo :: !Memo
-        }
-    | RegisteredDataPayload
-        !RegisteredData
-
-data AccountTransactionHeader = AccountTransactionHeader
-    { sender :: !AccountAddress
-    , sequenceNumber :: !Nonce
-    , energyAmount :: !Energy
-    , expiry :: !TransactionTime
-    }
-
-data PreAccountTransaction = PreAccountTransaction
-    { header :: !AccountTransactionHeader
-    , payload :: !AccountTransactionPayload
-    }
-
-instance ToProto AccountTransactionPayload where
-    type Output AccountTransactionPayload = Proto.AccountTransactionPayload
-    toProto payload =
-        Proto.make $
-            ( case payload of
-                Raw bytes ->
-                    ProtoFields.rawPayload .= bytes
-                VersionedModuleSourcePayload vmSource ->
-                    ProtoFields.deployModule
-                        .= Proto.make
-                            ( case vmSource of
-                                ModuleSourceV0 bs ->
-                                    ProtoFields.v0 . ProtoFields.value .= bs
-                                ModuleSourceV1 bs ->
-                                    ProtoFields.v1 . ProtoFields.value .= bs
-                            )
-                InitContractPayload{..} ->
-                    ProtoFields.initContract
-                        .= Proto.make
-                            ( do
-                                ProtoFields.amount .= toProto amount
-                                ProtoFields.moduleRef .= toProto moduleRef
-                                ProtoFields.initName .= toProto initName
-                                ProtoFields.parameter .= toProto parameter
-                            )
-                UpdateContractPayload{..} ->
-                    ProtoFields.updateContract
-                        .= Proto.make
-                            ( do
-                                ProtoFields.amount .= toProto amount
-                                ProtoFields.address .= toProto address
-                                ProtoFields.receiveName .= toProto receiveName
-                                ProtoFields.parameter .= toProto parameter
-                            )
-                TransferPayload{..} ->
-                    ProtoFields.transfer
-                        .= Proto.make
-                            ( do
-                                ProtoFields.amount .= toProto amount
-                                ProtoFields.receiver .= toProto receiver
-                            )
-                TransferWithMemoPayload{..} ->
-                    ProtoFields.transferWithMemo
-                        .= Proto.make
-                            ( do
-                                ProtoFields.amount .= toProto amount
-                                ProtoFields.receiver .= toProto receiver
-                                ProtoFields.memo .= toProto memo
-                            )
-                RegisteredDataPayload rData ->
-                    ProtoFields.registerData .= toProto rData
-            )
-
-instance ToProto AccountTransactionHeader where
-    type Output AccountTransactionHeader = Proto.AccountTransactionHeader
-    toProto AccountTransactionHeader{..} =
-        Proto.make $ do
-            ProtoFields.sender .= toProto sender
-            ProtoFields.sequenceNumber .= toProto sequenceNumber
-            ProtoFields.energyAmount .= toProto energyAmount
-            ProtoFields.expiry .= toProto expiry
-
-instance ToProto PreAccountTransaction where
-    type Output PreAccountTransaction = Proto.PreAccountTransaction
-    toProto PreAccountTransaction{..} =
-        Proto.make $ do
-            ProtoFields.header .= toProto header
-            ProtoFields.payload .= toProto payload
+            Proto.ChainParameters'V0 v0 -> fromProto v0
+            Proto.ChainParameters'V1 v1 -> fromProto v1
 
 instance FromProto Proto.CryptographicParameters where
     type Output' Proto.CryptographicParameters = CryptographicParameters
@@ -2309,49 +2332,6 @@ instance FromProto Proto.CryptographicParameters where
             bpGens <- cParams ^? ProtoFields.bulletproofGenerators
             occKey <- cParams ^? ProtoFields.onChainCommitmentKey
             createGlobalContext genString bpGens occKey
-
-getCryptographicParametersV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe CryptographicParameters))
-getCryptographicParametersV2 bHash = withUnaryCoreV2 (callV2 @"getCryptographicParameters") msg ((fmap . fmap) fromProto)
-  where
-    msg = toProto bHash
-
-getAccountTransactionSignHashV2 :: (MonadIO m) => PreAccountTransaction -> ClientMonad m (GRPCResult (Maybe AccountTransactionSignHash))
-getAccountTransactionSignHashV2 paTransaction = withUnaryCoreV2 (callV2 @"getAccountTransactionSignHash") msg ((fmap . fmap) fromProto)
-  where
-    msg = toProto paTransaction
-
-getBlockChainParametersV2 ::
-    (MonadIO m) =>
-    BlockHashInput ->
-    ClientMonad m (GRPCResult (Maybe ChainParameterOutput))
-getBlockChainParametersV2 bHash = withUnaryCoreV2 (callV2 @"getBlockChainParameters") msg ((fmap . fmap) fromProto)
-  where
-    msg = toProto bHash
-
-getNodeInfoV2 :: (MonadIO m) => ClientMonad m (GRPCResult (Maybe NodeInfo))
-getNodeInfoV2 = withUnaryCoreV2 (callV2 @"getNodeInfo") msg ((fmap . fmap) fromProto)
-  where
-    msg = defMessage
-
-getPeersInfoV2 :: (MonadIO m) => ClientMonad m (GRPCResult (Maybe PeersInfo))
-getPeersInfoV2 = withUnaryCoreV2 (callV2 @"getPeersInfo") msg ((fmap . fmap) fromProto)
-  where
-    msg = defMessage
-
-getBlockFinalizationSummaryV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe BlockFinalizationSummary))
-getBlockFinalizationSummaryV2 tHash = withUnaryCoreV2 (callV2 @"getBlockFinalizationSummary") msg ((fmap . fmap) fromProto)
-  where
-    msg = toProto tHash
-
-getBlockItemStatusV2 :: (MonadIO m) => TransactionHash -> ClientMonad m (GRPCResult (Maybe QueryTypes.TransactionStatus))
-getBlockItemStatusV2 tHash = withUnaryCoreV2 (callV2 @"getBlockItemStatus") msg ((fmap . fmap) fromProto)
-  where
-    msg = toProto tHash
-
-sendBlockItemV2 :: (MonadIO m) => SendBlockItemInput -> ClientMonad m (GRPCResult (Maybe TransactionHash))
-sendBlockItemV2 sbiInput = withUnaryCoreV2 (callV2 @"sendBlockItem") msg ((fmap . fmap) fromProto)
-  where
-    msg = toProto sbiInput
 
 data SendBlockItemInput
     = AccountTransaction !Transactions.AccountTransaction
@@ -2369,7 +2349,63 @@ instance ToProto SendBlockItemInput where
             UpdateInstruction uInstruction ->
                 ProtoFields.updateInstruction .= toProto uInstruction
 
--- FIXME: Ergonomics: Should input, resp. output be ByteString?
+-- |Get cryptographic parameters in a given block.
+getCryptographicParametersV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe CryptographicParameters))
+getCryptographicParametersV2 bHash = withUnaryCoreV2 (callV2 @"getCryptographicParameters") msg ((fmap . fmap) fromProto)
+  where
+    msg = toProto bHash
+
+-- |Get values of chain parameters in a given block.
+getBlockChainParametersV2 ::
+    (MonadIO m) =>
+    BlockHashInput ->
+    ClientMonad m (GRPCResult (Maybe ChainParameterOutput))
+getBlockChainParametersV2 bHash = withUnaryCoreV2 (callV2 @"getBlockChainParameters") msg ((fmap . fmap) fromProto)
+  where
+    msg = toProto bHash
+
+-- |Get information about the node. See `NodeInfo` for details.
+getNodeInfoV2 :: (MonadIO m) => ClientMonad m (GRPCResult (Maybe NodeInfo))
+getNodeInfoV2 = withUnaryCoreV2 (callV2 @"getNodeInfo") msg ((fmap . fmap) fromProto)
+  where
+    msg = defMessage
+
+-- Get a list of the peers that the node is connected to and network-related information for each peer.
+getPeersInfoV2 :: (MonadIO m) => ClientMonad m (GRPCResult (Maybe PeersInfo))
+getPeersInfoV2 = withUnaryCoreV2 (callV2 @"getPeersInfo") msg ((fmap . fmap) fromProto)
+  where
+    msg = defMessage
+
+-- |Get a summary of the finalization data in a given block.
+getBlockFinalizationSummaryV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe FinalizationSummary))
+getBlockFinalizationSummaryV2 tHash = withUnaryCoreV2 (callV2 @"getBlockFinalizationSummary") msg ((fmap . fmap) fromProto)
+  where
+    msg = toProto tHash
+
+-- |Get the status of and information about a specific block item (transaction).
+getBlockItemStatusV2 :: (MonadIO m) => TransactionHash -> ClientMonad m (GRPCResult (Maybe QueryTypes.TransactionStatus))
+getBlockItemStatusV2 tHash = withUnaryCoreV2 (callV2 @"getBlockItemStatus") msg ((fmap . fmap) fromProto)
+  where
+    msg = toProto tHash
+
+-- |Send a block item. A block item is either an @AccountTransaction@, which is
+-- a transaction signed and paid for by an account, a @CredentialDeployment@,
+-- which creates a new account, or an @UpdateInstruction@, which is an
+-- instruction to change some parameters of the chain. Update instructions can
+-- only be sent by the governance committee.
+--
+-- Returns a hash of the block item, which can be used with
+-- `GetBlockItemStatus`.
+sendBlockItemV2 :: (MonadIO m) => SendBlockItemInput -> ClientMonad m (GRPCResult (Maybe TransactionHash))
+sendBlockItemV2 sbiInput = withUnaryCoreV2 (callV2 @"sendBlockItem") msg ((fmap . fmap) fromProto)
+  where
+    msg = toProto sbiInput
+
+-- FIXME: Ergonomics: Should input, resp. output be ByteString?'
+
+-- |Get the value at a specific key of a contract state. In contrast to
+-- `GetInstanceState` this is more efficient, but requires the user to know
+-- the specific key to look for.
 instanceStateLookupV2 ::
     (MonadIO m) =>
     BlockHashInput ->
@@ -2385,86 +2421,114 @@ instanceStateLookupV2 blockHash cAddr key =
             & ProtoFields.address .~ toProto cAddr
             & ProtoFields.key .~ key
 
+-- |Stop dumping packets.
+-- This feature is enabled if the node was built with the `network_dump` feature.
+-- Returns a GRPC error if the network dump could not be stopped.
 dumpStopV2 :: (MonadIO m) => ClientMonad m (GRPCResult ())
 dumpStopV2 = withUnaryCoreV2 (callV2 @"dumpStop") defMessage ((fmap . fmap . const) ())
 
+-- |Start dumping network packets into the specified file.
+-- This feature is enabled if the node was built with the `network_dump` feature.
+-- Returns a GRPC error if the network dump failed to start.
 dumpStartV2 :: (MonadIO m) => Text -> Bool -> ClientMonad m (GRPCResult ())
 dumpStartV2 file raw = withUnaryCoreV2 (callV2 @"dumpStart") msg ((fmap . fmap . const) ())
   where
     msg = defMessage & ProtoFields.file .~ file & ProtoFields.raw .~ raw
 
+-- |Unban the given peer. Returns a GRPC error if the action failed.
 unbanPeerV2 :: (MonadIO m) => Peer -> ClientMonad m (GRPCResult ())
 unbanPeerV2 peer = withUnaryCoreV2 (callV2 @"unbanPeer") msg ((fmap . fmap . const) ())
   where
     msg = defMessage & ProtoFields.ipAddress .~ toProto peer
 
+-- |Ban the given peer. Returns a GRPC error if the action failed.
 banPeerV2 :: (MonadIO m) => Peer -> ClientMonad m (GRPCResult ())
 banPeerV2 peer = withUnaryCoreV2 (callV2 @"banPeer") msg ((fmap . fmap . const) ())
   where
     msg = defMessage & ProtoFields.ipAddress .~ toProto peer
 
+-- |Get a list of peers banned by the node.
 getBannedPeersV2 :: (MonadIO m) => ClientMonad m (GRPCResult (Maybe [Peer]))
 getBannedPeersV2 = withUnaryCoreV2 (callV2 @"getBannedPeers") defMessage ((fmap . fmap) fromProto)
 
+-- |Ask the node to disconnect from the peer with the submitted details.
+-- On success, the peer is removed from the peer-list of the node and a
+-- @GRPCResponse@ is returned. Otherwise a GRPC error is returned.
 peerDisconnectV2 :: (MonadIO m) => IpAddress -> IpPort -> ClientMonad m (GRPCResult ())
 peerDisconnectV2 ip port = withUnaryCoreV2 (callV2 @"peerDisconnect") msg ((fmap . fmap . const) ())
   where
     msg = defMessage & ProtoFields.ip .~ toProto ip & ProtoFields.port .~ toProto port
 
+-- |Ask a peer to connect to the peer with the submitted details.
+-- On success, the peer is added in the peer-list of the node and a
+-- @GRPCResponse@ is returned. Otherwise a GRPC error is returned.
+-- Note that the peer may not be connected instantly.
 peerConnectV2 :: (MonadIO m) => IpAddress -> IpPort -> ClientMonad m (GRPCResult ())
 peerConnectV2 ip port = withUnaryCoreV2 (callV2 @"peerConnect") msg ((fmap . fmap . const) ())
   where
     msg = defMessage & ProtoFields.ip .~ toProto ip & ProtoFields.port .~ toProto port
 
+-- |Shut down the node. Returns a GRPC error if the shutdown failed.
 shutdownV2 :: (MonadIO m) => ClientMonad m (GRPCResult ())
 shutdownV2 = withUnaryCoreV2 (callV2 @"shutdown") defMessage ((fmap . fmap . const) ()) -- FIXME: Consider wrapper which just ignores output for these.
 
+-- |Get next available sequence numbers for updating chain parameters after a given block.
 getNextUpdateSequenceNumbersV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe QueryTypes.NextUpdateSequenceNumbers))
 getNextUpdateSequenceNumbersV2 blockHash = withUnaryCoreV2 (callV2 @"getNextUpdateSequenceNumbers") msg ((fmap . fmap) fromProto)
   where
     msg = toProto blockHash
 
+-- |Get information related to the baker election for a particular block.
 getElectionInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe QueryTypes.BlockBirkParameters))
 getElectionInfoV2 blockHash = withUnaryCoreV2 (callV2 @"getElectionInfo") msg ((fmap . fmap) fromProto)
   where
     msg = toProto blockHash
 
+-- |Get the current branches of blocks starting from and including the last finalized block.
 getBranchesV2 :: (MonadIO m) => ClientMonad m (GRPCResult (Maybe QueryTypes.Branch))
 getBranchesV2 = withUnaryCoreV2 (callV2 @"getBranches") defMessage ((fmap . fmap) fromProto)
 
+-- |Run the smart contract entrypoint in a given context and in the state at the end of the given block.
 invokeInstanceV2 :: (MonadIO m) => InvokeInstanceInput -> ClientMonad m (GRPCResult (Maybe InvokeContract.InvokeContractResult))
 invokeInstanceV2 iiInput = withUnaryCoreV2 (callV2 @"invokeInstance") msg ((fmap . fmap) fromProto)
   where
     msg = toProto iiInput
 
+-- |Get information about tokenomics at the end of a given block.
 getTokenomicsInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe QueryTypes.RewardStatus))
 getTokenomicsInfoV2 blockHash = withUnaryCoreV2 (callV2 @"getTokenomicsInfo") msg ((fmap . fmap) fromProto)
   where
     msg = toProto blockHash
 
+-- |Get a list of live blocks at a given height.
 getBlocksAtHeightV2 :: (MonadIO m) => BlockHeightInput -> ClientMonad m (GRPCResult (Maybe [BlockHash]))
 getBlocksAtHeightV2 blockHeight = withUnaryCoreV2 (callV2 @"getBlocksAtHeight") msg ((fmap . fmap) fromProto)
   where
     msg = toProto blockHeight
 
+-- |Get information about the passive delegators at the end of a given block.
 getPassiveDelegationInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe QueryTypes.PoolStatus))
 getPassiveDelegationInfoV2 blockHash = withUnaryCoreV2 (callV2 @"getPassiveDelegationInfo") msg ((fmap . fmap) fromProto)
   where
     msg = toProto blockHash
 
+-- |Get information about a given pool at the end of a given block.
 getPoolInfoV2 :: (MonadIO m) => BlockHashInput -> BakerId -> ClientMonad m (GRPCResult (Maybe QueryTypes.PoolStatus))
 getPoolInfoV2 blockHash baker = withUnaryCoreV2 (callV2 @"getPoolInfo") msg ((fmap . fmap) fromProto)
   where
     msg = defMessage & ProtoFields.blockHash .~ toProto blockHash & ProtoFields.baker .~ toProto baker
 
+-- |Get information, such as height, timings, and transaction counts for the given block.
 getBlockInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe QueryTypes.BlockInfo))
 getBlockInfoV2 blockHash = withUnaryCoreV2 (callV2 @"getBlockInfo") msg ((fmap . fmap) fromProto)
   where
     msg = toProto blockHash
 
+-- |Get information about the current state of consensus.
 getConsensusInfoV2 :: (MonadIO m) => ClientMonad m (GRPCResult (Maybe Wasm.WasmModule))
 getConsensusInfoV2 = withUnaryCoreV2 (callV2 @"getModuleSource") defMessage ((fmap . fmap) fromProto)
 
+-- |Get the source of a smart contract module.
 getModuleSourceV2 :: (MonadIO m) => ModuleRef -> BlockHashInput -> ClientMonad m (GRPCResult (Maybe Wasm.WasmModule))
 getModuleSourceV2 modRef hash = withUnaryCoreV2 (callV2 @"getModuleSource") msg ((fmap . fmap) fromProto)
   where
@@ -2473,9 +2537,9 @@ getModuleSourceV2 modRef hash = withUnaryCoreV2 (callV2 @"getModuleSource") msg 
 -- |Retrieve the account information from the chain.
 getAccountInfoV2 ::
     MonadIO m =>
-    -- | Account identifier, address, index or credential registration id.
+    -- |Account identifier, address, index or credential registration id.
     AccountIdentifierInput ->
-    -- | Block hash
+    -- |Block hash
     BlockHashInput ->
     ClientMonad m (GRPCResult (Maybe Concordium.Types.AccountInfo))
 getAccountInfoV2 account blockHash = withUnaryCoreV2 (callV2 @"getAccountInfo") msg ((fmap . fmap) fromProto)
@@ -2492,9 +2556,8 @@ getNextSequenceNumberV2 accAddress = withUnaryCoreV2 (callV2 @"getNextAccountSeq
   where
     msg = toProto accAddress
 
-{- | Setup the GRPC client and run a rawUnary call with the provided message to the provided method,
- the output is interpreted using the function given in the third parameter.
--}
+-- |Setup the GRPC client and run a rawUnary call with the provided message to the provided method,
+-- the output is interpreted using the function given in the third parameter.
 withUnaryCoreV2 ::
     forall m n b.
     (HasMethod CS.Queries m, MonadIO n) =>
@@ -2618,7 +2681,7 @@ withUnaryCoreV2 method message k = do
                 else return (k (Left "Cannot establish connection to GRPC endpoint."))
         (_, Just v) ->
             let response = outputGRPC' v
-             in do
+            in  do
                     addHeaders response
                     return (k response)
   where
@@ -2628,10 +2691,10 @@ withUnaryCoreV2 method message k = do
                 forM_ grpcHeaders $ \(hn, hv) ->
                     when (hn == "set-cookie") $
                         let c = Cookie.parseSetCookie hv
-                         in modify' (Map.insert (Cookie.setCookieName c) (Cookie.setCookieValue c))
+                        in  modify' (Map.insert (Cookie.setCookieName c) (Cookie.setCookieValue c))
         Left _ -> return ()
 
--- | Setup the GRPC client and run a rawUnary call to the provided method.
+-- |Setup the GRPC client and run a rawUnary call to the provided method.
 withUnaryCoreNoMsgV2 ::
     forall m n b.
     (HasMethod CS.Queries m, MonadIO n) =>
@@ -2640,7 +2703,7 @@ withUnaryCoreNoMsgV2 ::
     ClientMonad n (CIHeaderList, b)
 withUnaryCoreNoMsgV2 method = withUnaryCoreV2 method defMessage
 
--- | Call a method with a given message and use a Getter on the output.
+-- |Call a method with a given message and use a Getter on the output.
 withUnaryV2 ::
     forall m n b.
     (HasMethod CS.Queries m, MonadIO n) =>
@@ -2650,7 +2713,7 @@ withUnaryV2 ::
     ClientMonad n (Either String b)
 withUnaryV2 method message k = withUnaryCoreV2 method message (\x -> (^. k) <$> x)
 
--- | Call a method with a given message using the `id` lens on the output.
+-- |Call a method with a given message using the `id` lens on the output.
 withUnaryV2' ::
     forall m n.
     (HasMethod CS.Queries m, MonadIO n) =>
@@ -2659,7 +2722,7 @@ withUnaryV2' ::
     ClientMonad n (GRPCResult (MethodOutput CS.Queries m))
 withUnaryV2' method message = withUnaryV2 method message (to id)
 
--- | Call a method without a message using the given lens
+-- |Call a method without a message using the given lens
 withUnaryNoMsgV2 ::
     forall m n b.
     (HasMethod CS.Queries m, MonadIO n) =>
@@ -2668,12 +2731,12 @@ withUnaryNoMsgV2 ::
     ClientMonad n (Either String b)
 withUnaryNoMsgV2 method = withUnaryV2 method defMessage
 
--- | Call a method with a message that has `blockHash` as a field and use the given lens on the output
+-- |Call a method with a message that has `blockHash` as a field and use the given lens on the output
 withUnaryBlockV2 ::
     forall m n b.
-    ( HasMethod CS.Queries m
-    , MonadIO n
-    , Field.HasField (MethodInput CS.Queries m) "blockHash" Text
+    ( HasMethod CS.Queries m,
+      MonadIO n,
+      Field.HasField (MethodInput CS.Queries m) "blockHash" Text
     ) =>
     RPC CS.Queries m ->
     Text ->
@@ -2681,7 +2744,7 @@ withUnaryBlockV2 ::
     ClientMonad n (Either String b)
 withUnaryBlockV2 method hash = withUnaryV2 method (defMessage & ProtoFields.blockHash .~ hash)
 
--- | Call a method with an empty message using the `id` lens on the output.
+-- |Call a method with an empty message using the `id` lens on the output.
 withUnaryNoMsgV2' ::
     forall m n.
     (HasMethod CS.Queries m, MonadIO n) =>
