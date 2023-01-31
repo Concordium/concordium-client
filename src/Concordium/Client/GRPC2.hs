@@ -84,6 +84,7 @@ import Data.Text qualified as Text
 import Proto.V2.Concordium.Service qualified as CS
 import Proto.V2.Concordium.Types qualified as ProtoFields
 import Proto.V2.Concordium.Types_Fields qualified as Proto
+import Concordium.Crypto.SHA256 (Hash)
 
 -- |A helper function that serves as an inverse to `mkSerialize`,
 --
@@ -419,11 +420,12 @@ instance FromProto Proto.AccountStakingInfo where
 
 instance FromProto Proto.ArThreshold where
     type Output' Proto.ArThreshold = Threshold
-    fromProto t =
+    fromProto t = do
+        t' <- deMkWord8 t
         -- This can not be 0.
-        if t == 0
+        if t' == 0
             then Nothing
-            else fmap Threshold . deMkWord8
+            else return $ Threshold t'
 
 instance FromProto (Map.Map Word32 Proto.ChainArData) where
     type Output' (Map.Map Word32 Proto.ChainArData) = Map.Map ArIdentity ChainArData
@@ -1449,9 +1451,9 @@ instance FromProto Proto.AccessStructure where
       where
         fromProtoUpdateKeysIndex i = do
             i' <- i ^? ProtoFields.value
-            if i' > (maxBound :: Word16)
+            if fromIntegral i' > (maxBound :: Word16)
                 then Nothing
-                else fromIntegral i
+                else return $ fromIntegral i'
 
 instance FromProto Proto.AuthorizationsV0 where
     type Output' Proto.AuthorizationsV0 = Updates.Authorizations 'ChainParametersV0
