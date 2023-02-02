@@ -2915,9 +2915,9 @@ withServerStreamCallbackV2 ::
     RPC CS.Queries m ->
     -- |The procedure input.
     i ->
-    -- |An initial `fold`-like accumulator to
-    -- be updated with the function when a stream
-    -- element arrives.
+    -- |An initial `fold`-like accumulator that
+    -- is updated with the handler each time a
+    -- stream element arrives.
     a ->
     -- |A `fold`-like handler which is used
     -- to process a stream object and update
