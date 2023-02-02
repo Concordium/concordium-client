@@ -85,6 +85,7 @@ import Proto.V2.Concordium.Types qualified as ProtoFields
 import Proto.V2.Concordium.Types_Fields qualified as Proto
 import Concordium.Crypto.SHA256 (Hash)
 import qualified Concordium.Crypto.SHA256 as Hash
+import Concordium.Types.Transactions (AccountAmounts)
 
 -- |A helper function that serves as an inverse to `mkSerialize`,
 --
@@ -2403,19 +2404,132 @@ instance FromProto Proto.DelegatorRewardPeriodInfo where
         pdrpiStake <- fromProto =<< dInfo ^? ProtoFields.stake
         return QueryTypes.DelegatorRewardPeriodInfo{..}
 
+instance FromProto Proto.BlockSpecialEvent'AccountAmounts where
+    type Output' Proto.BlockSpecialEvent'AccountAmounts = Transactions.AccountAmounts
+    fromProto aAmounts = do
+        pairs <- mapM convertEntry =<< aAmounts ^? ProtoFields.entries
+        return $ Transactions.AccountAmounts $ Map.fromList pairs
+      where
+        convertEntry e = do
+            address <- fromProto =<< e ^? ProtoFields.account
+            amount <- fromProto =<< e ^? ProtoFields.amount
+            return (address, amount)
+
 instance FromProto Proto.BlockSpecialEvent where
     type Output' Proto.BlockSpecialEvent = Transactions.SpecialTransactionOutcome
     fromProto bsEvent = do
         bse <- bsEvent ^. ProtoFields.maybe'event
         case bse of
-            ProtoFields.BlockSpecialEvent'BakingRewards' _ -> Nothing
-            ProtoFields.BlockSpecialEvent'Mint' _ -> Nothing
-            ProtoFields.BlockSpecialEvent'FinalizationRewards' _ -> Nothing
-            ProtoFields.BlockSpecialEvent'BlockReward' _ -> Nothing
-            ProtoFields.BlockSpecialEvent'PaydayFoundationReward' _ -> Nothing
-            ProtoFields.BlockSpecialEvent'PaydayAccountReward' _ -> Nothing
-            ProtoFields.BlockSpecialEvent'BlockAccrueReward' _ -> Nothing
-            ProtoFields.BlockSpecialEvent'PaydayPoolReward' _ -> Nothing
+            ProtoFields.BlockSpecialEvent'BakingRewards' bReward -> do
+                stoBakerRewards <- fromProto =<< bReward ^? ProtoFields.bakerRewards
+                stoRemainder <- fromProto =<< bReward ^? ProtoFields.remainder
+                return Transactions.BakingRewards{..}
+            ProtoFields.BlockSpecialEvent'Mint' mint -> do
+                stoMintBakingReward <- fromProto =<< mint ^? ProtoFields.mintBakingReward
+                stoMintFinalizationReward <- fromProto =<< mint ^? ProtoFields.mintFinalizationReward
+                stoMintPlatformDevelopmentCharge <- fromProto =<< mint ^? ProtoFields.mintPlatformDevelopmentCharge
+                stoFoundationAccount <- fromProto =<< mint ^? ProtoFields.foundationAccount
+                return Transactions.Mint{..}
+            ProtoFields.BlockSpecialEvent'FinalizationRewards' fRewards -> do
+                stoFinalizationRewards <- fromProto =<< fRewards ^? ProtoFields.finalizationRewards
+                stoRemainder <- fromProto =<< fRewards ^? ProtoFields.remainder
+                return Transactions.FinalizationRewards{..}
+            ProtoFields.BlockSpecialEvent'BlockReward' bReward -> do
+                stoTransactionFees <- fromProto =<< bReward ^? ProtoFields.transactionFees
+                stoOldGASAccount <- fromProto =<< bReward ^? ProtoFields.oldGasAccount
+                stoNewGASAccount <- fromProto =<< bReward ^? ProtoFields.newGasAccount
+                stoBakerReward <- fromProto =<< bReward ^? ProtoFields.bakerReward
+                stoFoundationCharge <- fromProto =<< bReward ^? ProtoFields.foundationCharge
+                stoBaker <- fromProto =<< bReward ^? ProtoFields.baker
+                stoFoundationAccount <- fromProto =<< bReward ^? ProtoFields.foundationAccount
+                return Transactions.BlockReward{..}
+            ProtoFields.BlockSpecialEvent'PaydayFoundationReward' pdfReward -> do
+                stoFoundationAccount <- fromProto =<< pdfReward ^? ProtoFields.foundationAccount
+                stoDevelopmentCharge <- fromProto =<< pdfReward ^? ProtoFields.developmentCharge
+                return Transactions.PaydayFoundationReward{..}
+            ProtoFields.BlockSpecialEvent'PaydayAccountReward' pdaReward -> do
+                stoAccount <- fromProto =<< pdaReward ^? ProtoFields.account
+                stoTransactionFees <- fromProto =<< pdaReward ^? ProtoFields.transactionFees
+                stoBakerReward <- fromProto =<< pdaReward ^? ProtoFields.bakerReward
+                stoFinalizationReward <- fromProto =<< pdaReward ^? ProtoFields.finalizationReward
+                return Transactions.PaydayAccountReward{..}
+            ProtoFields.BlockSpecialEvent'BlockAccrueReward' baReward -> do
+                stoTransactionFees <- fromProto =<< baReward ^? ProtoFields.transactionFees
+                stoOldGASAccount <- fromProto =<< baReward ^? ProtoFields.oldGasAccount
+                stoNewGASAccount <- fromProto =<< baReward ^? ProtoFields.newGasAccount
+                stoBakerReward <- fromProto =<< baReward ^? ProtoFields.bakerReward
+                stoPassiveReward <- fromProto =<< baReward ^? ProtoFields.passiveReward
+                stoFoundationCharge <- fromProto =<< baReward ^? ProtoFields.foundationCharge
+                stoBakerId <- fromProto =<< baReward ^? ProtoFields.baker
+                return Transactions.BlockAccrueReward{..}
+            ProtoFields.BlockSpecialEvent'PaydayPoolReward' ppReward -> do
+                let stoPoolOwner = fromProto =<< ppReward ^. ProtoFields.maybe'poolOwner
+                stoTransactionFees <- fromProto =<< ppReward ^? ProtoFields.transactionFees
+                stoBakerReward <- fromProto =<< ppReward ^? ProtoFields.bakerReward
+                stoFinalizationReward <- fromProto =<< ppReward ^? ProtoFields.finalizationReward
+                return Transactions.PaydayPoolReward{..}
+
+-- |A pending update.
+data PendingUpdate = PendingUpdate {
+    -- |The effect of the update.
+    puEffect :: !QueryTypes.PendingUpdateEffect,
+    -- |The effective time of the update.
+    puEffectiveTime :: TransactionTime
+}
+
+instance FromProto Proto.PendingUpdate where
+    type Output' Proto.PendingUpdate = PendingUpdate
+    fromProto pUpdate = do
+        puEffectiveTime <- fromProto =<< pUpdate ^? ProtoFields.effectiveTime
+        puEffect <- do
+            pue <- pUpdate ^. ProtoFields.maybe'effect
+            case pue of
+                ProtoFields.PendingUpdate'RootKeys rKeys -> do
+                    QueryTypes.PUERootKeys . snd <$> fromProto rKeys
+                ProtoFields.PendingUpdate'Level1Keys l1Keys -> do
+                    QueryTypes.PUELevel1Keys . fst <$> fromProto l1Keys
+                ProtoFields.PendingUpdate'Level2KeysCpv0 l2Keys -> do
+                    QueryTypes.PUELevel2KeysV0 <$> fromProto l2Keys
+                ProtoFields.PendingUpdate'Level2KeysCpv1 l2Keys -> do
+                    QueryTypes.PUELevel2KeysV1 <$> fromProto l2Keys
+                ProtoFields.PendingUpdate'Protocol protocol -> do
+                    QueryTypes.PUEProtocol <$> fromProto protocol
+                ProtoFields.PendingUpdate'ElectionDifficulty eDifficulty -> do
+                    QueryTypes.PUEElectionDifficulty <$> fromProto eDifficulty
+                ProtoFields.PendingUpdate'EuroPerEnergy epEnergy -> do
+                    QueryTypes.PUEEuroPerEnergy <$> fromProto epEnergy
+                ProtoFields.PendingUpdate'MicroCcdPerEuro mcpEuro -> do
+                    QueryTypes.PUEMicroCCDPerEuro <$> fromProto mcpEuro
+                ProtoFields.PendingUpdate'FoundationAccount fAccount ->
+                    QueryTypes.PUEFoundationAccount <$> fromProto fAccount
+                ProtoFields.PendingUpdate'MintDistributionCpv0 mDistribution ->
+                    QueryTypes.PUEMintDistributionV0 <$> fromProto mDistribution
+                ProtoFields.PendingUpdate'MintDistributionCpv1 mDistribution ->
+                    QueryTypes.PUEMintDistributionV1 <$> fromProto mDistribution
+                ProtoFields.PendingUpdate'TransactionFeeDistribution tfDistribution ->
+                    QueryTypes.PUETransactionFeeDistribution <$> fromProto tfDistribution
+                ProtoFields.PendingUpdate'GasRewards gRewards ->
+                    QueryTypes.PUEGASRewards <$> fromProto gRewards
+                ProtoFields.PendingUpdate'PoolParametersCpv0 pParameters ->
+                    QueryTypes.PUEPoolParametersV0 <$> fromProto pParameters
+                ProtoFields.PendingUpdate'PoolParametersCpv1 pParameters ->
+                    QueryTypes.PUEPoolParametersV1 <$> fromProto pParameters
+                ProtoFields.PendingUpdate'AddAnonymityRevoker aaRevoker ->
+                    QueryTypes.PUEAddAnonymityRevoker <$> fromProto aaRevoker
+                ProtoFields.PendingUpdate'AddIdentityProvider aiProvider ->
+                     QueryTypes.PUEAddIdentityProvider <$> fromProto aiProvider
+                ProtoFields.PendingUpdate'CooldownParameters cdParameters -> do
+                    QueryTypes.PUECooldownParameters <$> fromProto cdParameters
+                ProtoFields.PendingUpdate'TimeParameters tParameters -> do
+                    QueryTypes.PUETimeParameters <$> fromProto tParameters
+        return PendingUpdate{..}
+
+-- |Get all pending updates to chain parameters at the end of a given block.
+getBlockPendingUpdatesV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq PendingUpdate)))
+getBlockPendingUpdatesV2 blockHash =
+    withServerStreamCollectV2 (callV2 @"getBlockPendingUpdates") msg ((fmap . fmap . mapM) fromProto)
+  where
+    msg = toProto blockHash
 
 -- |Get all special events in a given block.
 -- A special event is protocol generated event that is not directly caused by a transaction, such as minting, paying out rewards, etc. 
