@@ -89,7 +89,7 @@ library
     , base16-bytestring
     , base64-bytestring
     , bytestring
-    , case-insensitive ==1.2.1.*
+    , case-insensitive
     , cborg
     , cborg-json
     , cereal

@@ -4,8 +4,8 @@
 module Concordium.Client.Runner.Helper
   ( outputGRPC
   , outputGRPC'
-  , outputGRPCV2
-  , outputGRPCV2'
+  , toGRPCResult
+  , toGRPCResult'
   , printJSON
   , printJSONValues
   , getJSON
@@ -43,16 +43,19 @@ type GRPCResult a = Either String (GRPCResponse a)
 -- |Headers in GRPC call response.
 type GRPCHeaderList = CIHeaderList
 
--- The GRPC call helper output, either resulting from a streaming or unary call.
--- This is here due to the differing output types of the GRPC helpers `rawUnary` and `rawStreamServer`.
+-- |GRPC call helper output type, with variants corresponding to the result of a unary or streaming call.
+-- This is here due to the differing output types of the GRPC helpers `rawUnary` and `rawStreamServer`,
+-- that we use to invoke the GRPC procedure. For more info, see the documentation at:
+-- http://hackage.haskell.org/package/http2-client-grpc-0.7.0.0/docs/Network-GRPC-Client-Helpers.html
 data GRPCOutput a =
+      -- |The output returned by invoking a GRPC procedure using `rawUnary`.
       RawUnaryOutput (RawReply a)
+      -- |The output returned by invoking a GRPC procedure using `rawStreamServer`.
     | ServerStreamOutput (a, HeaderList, HeaderList)
 
--- The complexity comes from the return type of `rawUnary` and `rawStreamServer`. See the documentation
--- http://hackage.haskell.org/package/http2-client-grpc-0.7.0.0/docs/Network-GRPC-Client-Helpers.html
-outputGRPCV2' :: GRPCOutput t  -> GRPCResult t
-outputGRPCV2' =
+-- |Convert a GRPC helper output to a unified result type.
+toGRPCResult' :: GRPCOutput t  -> GRPCResult t
+toGRPCResult' =
     \case
       RawUnaryOutput r ->
         case r of
@@ -62,17 +65,19 @@ outputGRPCV2' =
               Left e  -> Left $ "gRPC error: " ++ Network.URI.Encode.decode e
               Right v -> Right (GRPCResponse hds v)
           Left e -> Left $ "Unable to send consensus query: " ++ show e
+      -- FIXME: There are two sets of headers here; it is not clear to me
+      --        which should be used, and should be verified be testing.
       ServerStreamOutput (t, hds, _hds) -> do
         let hs = map (\(hn, hv) -> (CI.mk hn, hv)) hds
         Right (GRPCResponse hs t)
 
 -- The complexity comes from the return type of `rawUnary` and `rawStreamServer`. See the documentation
 -- http://hackage.haskell.org/package/http2-client-grpc-0.7.0.0/docs/Network-GRPC-Client-Helpers.html
-outputGRPCV2 :: Maybe (GRPCOutput t) -> GRPCResult t
-outputGRPCV2 ret =
+toGRPCResult :: Maybe (GRPCOutput t) -> GRPCResult t
+toGRPCResult ret =
   case ret of
     Nothing -> Left "Cannot connect to GRPC server."
-    Just v -> outputGRPCV2' v
+    Just v -> toGRPCResult' v
 
 -- The complexity of the first parameter comes from the return type of
 -- rawUnary. See the documentation

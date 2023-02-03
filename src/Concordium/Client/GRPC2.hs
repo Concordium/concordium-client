@@ -77,7 +77,7 @@ import Data.Maybe (fromJust, maybeToList, fromMaybe)
 import Data.ProtoLens (defMessage)
 import Data.ProtoLens.Field qualified as Field
 import Data.ProtoLens.Service.Types
-import Data.Sequence as Seq
+import qualified Data.Sequence as Seq
 import Data.String
 import Data.Text qualified as Text
 import Proto.V2.Concordium.Service qualified as CS
@@ -2360,8 +2360,11 @@ instance ToProto SendBlockItemInput where
             UpdateInstruction uInstruction ->
                 ProtoFields.updateInstruction .= toProto uInstruction
 
+-- |Information about a block which arrived at the node.
 data ArrivedBlockInfo = ArrivedBlockInfo {
+    -- |Hash of the block.
     abiBlockHash :: !BlockHash,
+    -- |Absolute height of the block, where 0 is the height of the genesis block.
     abiBlockHeight :: !AbsoluteBlockHeight
 } deriving (Show)
 
@@ -2380,9 +2383,6 @@ instance FromProto Proto.FinalizedBlockInfo where
         return ArrivedBlockInfo{..}
 
 instance FromProto Proto.InstanceStateKVPair where
-    -- FIXME: Should this be ByteStrings, or something else? I know this
-    --        isn't needed, but I added it before realizing. Let me know
-    --        if it should just be deleted.
     type Output' Proto.InstanceStateKVPair = (ByteString, ByteString)
     fromProto ikvPair = do
         key <- ikvPair ^? ProtoFields.key
@@ -2525,154 +2525,156 @@ instance FromProto Proto.PendingUpdate where
         return PendingUpdate{..}
 
 -- |Get all pending updates to chain parameters at the end of a given block.
-getBlockPendingUpdatesV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq PendingUpdate)))
-getBlockPendingUpdatesV2 blockHash =
+getBlockPendingUpdatesV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq.Seq PendingUpdate)))
+getBlockPendingUpdatesV2 blockHashInput =
     withServerStreamCollectV2 (callV2 @"getBlockPendingUpdates") msg ((fmap . fmap . mapM) fromProto)
   where
-    msg = toProto blockHash
+    msg = toProto blockHashInput
 
 -- |Get all special events in a given block.
 -- A special event is protocol generated event that is not directly caused by a transaction, such as minting, paying out rewards, etc. 
-getBlockSpecialEventsV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq Transactions.SpecialTransactionOutcome)))
-getBlockSpecialEventsV2 blockHash =
+getBlockSpecialEventsV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq.Seq Transactions.SpecialTransactionOutcome)))
+getBlockSpecialEventsV2 blockHashInput =
     withServerStreamCollectV2 (callV2 @"getBlockSpecialEvents") msg ((fmap . fmap . mapM) fromProto)
   where
-    msg = toProto blockHash
+    msg = toProto blockHashInput
 
 -- |Get all transaction events in a given block.
-getBlockTransactionEventsV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq TransactionSummary)))
-getBlockTransactionEventsV2 blockHash =
+getBlockTransactionEventsV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq.Seq TransactionSummary)))
+getBlockTransactionEventsV2 blockHashInput =
     withServerStreamCollectV2 (callV2 @"getBlockTransactionEvents") msg ((fmap . fmap . mapM) fromProto)
   where
-    msg = toProto blockHash
+    msg = toProto blockHashInput
 
 -- |Get all hashes of non-finalized transactions for a given account.
-getAccountNonFinalizedTransactionsV2 :: (MonadIO m) => AccountAddress -> ClientMonad m (GRPCResult (Maybe (Seq TransactionHash)))
+getAccountNonFinalizedTransactionsV2 :: (MonadIO m) => AccountAddress -> ClientMonad m (GRPCResult (Maybe (Seq.Seq TransactionHash)))
 getAccountNonFinalizedTransactionsV2 accountAddress =
     withServerStreamCollectV2 (callV2 @"getAccountNonFinalizedTransactions") msg ((fmap . fmap . mapM) fromProto)
   where
     msg = toProto accountAddress
 
 -- |Get all anonymity revokers registered at the end of a given block.
-getAnonymityRevokersV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq ArInfo.ArInfo)))
-getAnonymityRevokersV2 blockHash =
+getAnonymityRevokersV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq.Seq ArInfo.ArInfo)))
+getAnonymityRevokersV2 blockHashInput =
     withServerStreamCollectV2 (callV2 @"getAnonymityRevokers") msg ((fmap . fmap . mapM) fromProto)
   where
-    msg = toProto blockHash
+    msg = toProto blockHashInput
 
 -- |Get all identity providers registered at the end of a given block.
-getIdentityProvidersV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq IpInfo.IpInfo)))
-getIdentityProvidersV2 blockHash =
+getIdentityProvidersV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq.Seq IpInfo.IpInfo)))
+getIdentityProvidersV2 blockHashInput =
     withServerStreamCollectV2 (callV2 @"getIdentityProviders") msg ((fmap . fmap . mapM) fromProto)
   where
-    msg = toProto blockHash
+    msg = toProto blockHashInput
 
 -- |Get all fixed passive delegators for the reward period of a given block.
--- In contrast to `getPssiveDelegatorsV2` which returns all delegators registered
+-- In contrast to `getPassiveDelegatorsV2` which returns all delegators registered
 -- at the end of a given block, this returns all fixed delegators contributing
 -- stake in the reward period containing the given block.
-getPassiveDelegatorsRewardPeriodV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq QueryTypes.DelegatorRewardPeriodInfo)))
-getPassiveDelegatorsRewardPeriodV2 blockHash =
+getPassiveDelegatorsRewardPeriodV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq.Seq QueryTypes.DelegatorRewardPeriodInfo)))
+getPassiveDelegatorsRewardPeriodV2 blockHashInput =
     withServerStreamCollectV2 (callV2 @"getPassiveDelegatorsRewardPeriod") msg ((fmap . fmap . mapM) fromProto)
   where
-    msg = toProto blockHash
+    msg = toProto blockHashInput
 
 
 -- |Get all registered passive delegators at the end of a given block.
-getPassiveDelegatorsV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq QueryTypes.DelegatorInfo)))
-getPassiveDelegatorsV2 blockHash =
+getPassiveDelegatorsV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq.Seq QueryTypes.DelegatorInfo)))
+getPassiveDelegatorsV2 blockHashInput =
     withServerStreamCollectV2 (callV2 @"getPassiveDelegators") msg ((fmap . fmap . mapM) fromProto)
   where
-    msg = toProto blockHash
+    msg = toProto blockHashInput
 
 -- |Get all fixed delegators of a given pool for the reward period of a given block.
 -- In contrast to `getPoolDelegatorsV2` which returns all active delegators registered
 -- for the given block, this returns all the active fixed delegators contributing stake
 -- in the reward period containing the given block.
-getPoolDelegatorsRewardPeriodV2 :: (MonadIO m) => BlockHashInput -> BakerId -> ClientMonad m (GRPCResult (Maybe (Seq QueryTypes.DelegatorRewardPeriodInfo)))
-getPoolDelegatorsRewardPeriodV2 blockHash baker =
+getPoolDelegatorsRewardPeriodV2 :: (MonadIO m) => BlockHashInput -> BakerId -> ClientMonad m (GRPCResult (Maybe (Seq.Seq QueryTypes.DelegatorRewardPeriodInfo)))
+getPoolDelegatorsRewardPeriodV2 blockHashInput baker =
     withServerStreamCollectV2 (callV2 @"getPoolDelegatorsRewardPeriod") msg ((fmap . fmap . mapM) fromProto)
   where
-    msg = defMessage & ProtoFields.blockHash .~ toProto blockHash & ProtoFields.baker .~ toProto baker
+    msg = defMessage & ProtoFields.blockHash .~ toProto blockHashInput & ProtoFields.baker .~ toProto baker
 
 -- |Get all registered delegators of a given pool at the end of a given block.
-getPoolDelegatorsV2 :: (MonadIO m) => BlockHashInput -> BakerId -> ClientMonad m (GRPCResult (Maybe (Seq QueryTypes.DelegatorInfo)))
-getPoolDelegatorsV2 blockHash baker =
+getPoolDelegatorsV2 :: (MonadIO m) => BlockHashInput -> BakerId -> ClientMonad m (GRPCResult (Maybe (Seq.Seq QueryTypes.DelegatorInfo)))
+getPoolDelegatorsV2 blockHashInput baker =
     withServerStreamCollectV2 (callV2 @"getPoolDelegators") msg ((fmap . fmap . mapM) fromProto)
   where
-    msg = defMessage & ProtoFields.blockHash .~ toProto blockHash & ProtoFields.baker .~ toProto baker
+    msg = defMessage & ProtoFields.blockHash .~ toProto blockHashInput & ProtoFields.baker .~ toProto baker
 
 -- |Get IDs of all bakers at the end of a given block.
-getBakerListV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq BakerId)))
-getBakerListV2 blockHash = withServerStreamCollectV2 (callV2 @"getBakerList") msg ((fmap . fmap . mapM) fromProto)
+getBakerListV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq.Seq BakerId)))
+getBakerListV2 blockHashInput = withServerStreamCollectV2 (callV2 @"getBakerList") msg ((fmap . fmap . mapM) fromProto)
   where
-    msg = toProto blockHash
+    msg = toProto blockHashInput
 
 -- |Get key-value pairs representing the entire state of a specific contract instance in a given block.
 -- The resulting sequence is ordered lexicographically according to its keys.
-getInstanceStateV2 :: (MonadIO m) => BlockHashInput -> ContractAddress -> ClientMonad m (GRPCResult (Maybe (Seq (ByteString, ByteString))))
-getInstanceStateV2 blockHash cAddress =
+getInstanceStateV2 :: (MonadIO m) => BlockHashInput -> ContractAddress -> ClientMonad m (GRPCResult (Maybe (Seq.Seq (ByteString, ByteString))))
+getInstanceStateV2 blockHashInput cAddress =
     withServerStreamCollectV2 (callV2 @"getInstanceState") msg ((fmap . fmap . mapM) fromProto)
   where
-    msg = defMessage & ProtoFields.blockHash .~ toProto blockHash & ProtoFields.address .~ toProto cAddress
+    msg = defMessage & ProtoFields.blockHash .~ toProto blockHashInput & ProtoFields.address .~ toProto cAddress
 
 -- |Get the addresses of all smart contract instances in a given block.
-getInstanceListV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq ContractAddress)))
-getInstanceListV2 blockHash = withServerStreamCollectV2 (callV2 @"getInstanceList") msg ((fmap . fmap . mapM) fromProto)
+getInstanceListV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq.Seq ContractAddress)))
+getInstanceListV2 blockHashInput = withServerStreamCollectV2 (callV2 @"getInstanceList") msg ((fmap . fmap . mapM) fromProto)
   where
-    msg = toProto blockHash
+    msg = toProto blockHashInput
 
 -- |Get ancestors of a given block.
 -- The first element of the sequence is the requested block itself, and the block
 -- immediately following a block in the sequence is the parent of that block.
 -- The sequence contains at most `limit` blocks, and if the sequence is
 -- strictly shorter, the last block in the list is the genesis block.
-getAncestorsV2 :: (MonadIO m) => BlockHashInput -> Word64 -> ClientMonad m (GRPCResult (Maybe (Seq BlockHash)))
-getAncestorsV2 blockHash limit = withServerStreamCollectV2 (callV2 @"getAncestors") msg ((fmap . fmap . mapM) fromProto)
+getAncestorsV2 :: (MonadIO m) => BlockHashInput -> Word64 -> ClientMonad m (GRPCResult (Maybe (Seq.Seq BlockHash)))
+getAncestorsV2 blockHashInput limit = withServerStreamCollectV2 (callV2 @"getAncestors") msg ((fmap . fmap . mapM) fromProto)
   where
     msg = 
         defMessage
-            & ProtoFields.blockHash .~ toProto blockHash
+            & ProtoFields.blockHash .~ toProto blockHashInput
             & ProtoFields.amount .~ limit
 
 -- |Get all smart contract modules in a given block.
-getModuleListV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq ModuleRef)))
-getModuleListV2 blockHash = withServerStreamCollectV2 (callV2 @"getModuleList") msg ((fmap . fmap . mapM) fromProto)
+getModuleListV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq.Seq ModuleRef)))
+getModuleListV2 blockHashInput = withServerStreamCollectV2 (callV2 @"getModuleList") msg ((fmap . fmap . mapM) fromProto)
   where
-    msg = toProto blockHash
+    msg = toProto blockHashInput
 
 -- |Get all accounts that exist at the end of a given block.
-getAccountListV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq AccountAddress)))
-getAccountListV2 blockHash = withServerStreamCollectV2 (callV2 @"getAccountList") msg ((fmap . fmap . mapM) fromProto)
+getAccountListV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq.Seq AccountAddress)))
+getAccountListV2 blockHashInput = withServerStreamCollectV2 (callV2 @"getAccountList") msg ((fmap . fmap . mapM) fromProto)
   where
-    msg = toProto blockHash
+    msg = toProto blockHashInput
 
 -- |Process a stream of blocks that are finalized from the time the query is made onward.
 -- This can be used to listen for newly finalized blocks. Note that there is no guarantee
 -- that blocks will not be skipped if the client is too slow in processing the stream,
--- however blocks will always be sent by increasing block height.
+-- however blocks will always be sent by increasing block height. Note that this function
+-- is non-terminating, so some care should be taken. See `withGRPCCoreV2` for more info.
 getFinalizedBlocksV2 :: (MonadIO m) => (Maybe ArrivedBlockInfo -> ClientIO ()) -> ClientMonad m (GRPCResult ())
 getFinalizedBlocksV2 f = withServerStreamCallbackV2 (callV2 @"getFinalizedBlocks") defMessage mempty (\_ o -> f (fromProto o)) id
 
 -- |Process a stream of blocks that arrive from the time the query is made onward.
--- This can be used to listen for incoming blocks.
+-- This can be used to listen for incoming blocks. Note that this is non-terminating,
+-- so some care should be taken. See `withGRPCCoreV2` for more info.
 getBlocksV2 :: (MonadIO m) => (Maybe ArrivedBlockInfo -> ClientIO ()) -> ClientMonad m (GRPCResult ())
 getBlocksV2 f = withServerStreamCallbackV2 (callV2 @"getBlocks") defMessage mempty (\_ o -> f (fromProto o)) id
 
 -- |Get cryptographic parameters in a given block.
 getCryptographicParametersV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe CryptographicParameters))
-getCryptographicParametersV2 blockHash = withUnaryV2 (callV2 @"getCryptographicParameters") msg ((fmap . fmap) fromProto)
+getCryptographicParametersV2 blockHashInput = withUnaryV2 (callV2 @"getCryptographicParameters") msg ((fmap . fmap) fromProto)
   where
-    msg = toProto blockHash
+    msg = toProto blockHashInput
 
 -- |Get values of chain parameters in a given block.
 getBlockChainParametersV2 ::
     (MonadIO m) =>
     BlockHashInput ->
     ClientMonad m (GRPCResult (Maybe ChainParameterOutput))
-getBlockChainParametersV2 blockHash = withUnaryV2 (callV2 @"getBlockChainParameters") msg ((fmap . fmap) fromProto)
+getBlockChainParametersV2 blockHashInput = withUnaryV2 (callV2 @"getBlockChainParameters") msg ((fmap . fmap) fromProto)
   where
-    msg = toProto blockHash
+    msg = toProto blockHashInput
 
 -- |Get information about the node. See `NodeInfo` for details.
 getNodeInfoV2 :: (MonadIO m) => ClientMonad m (GRPCResult (Maybe NodeInfo))
@@ -2688,9 +2690,9 @@ getPeersInfoV2 = withUnaryV2 (callV2 @"getPeersInfo") msg ((fmap . fmap) fromPro
 
 -- |Get a summary of the finalization data in a given block.
 getBlockFinalizationSummaryV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe FinalizationSummary))
-getBlockFinalizationSummaryV2 tHash = withUnaryV2 (callV2 @"getBlockFinalizationSummary") msg ((fmap . fmap) fromProto)
+getBlockFinalizationSummaryV2 blockHashInput = withUnaryV2 (callV2 @"getBlockFinalizationSummary") msg ((fmap . fmap) fromProto)
   where
-    msg = toProto tHash
+    msg = toProto blockHashInput
 
 -- |Get the status of and information about a specific block item (transaction).
 getBlockItemStatusV2 :: (MonadIO m) => TransactionHash -> ClientMonad m (GRPCResult (Maybe QueryTypes.TransactionStatus))
@@ -2722,12 +2724,12 @@ instanceStateLookupV2 ::
     ContractAddress ->
     ByteString ->
     ClientMonad m (GRPCResult (Maybe ByteString))
-instanceStateLookupV2 blockHash cAddr key =
+instanceStateLookupV2 blockHashInput cAddr key =
     withUnaryV2 (callV2 @"instanceStateLookup") msg ((fmap . fmap) fromProto)
   where
     msg =
         defMessage
-            & ProtoFields.blockHash .~ toProto blockHash
+            & ProtoFields.blockHash .~ toProto blockHashInput
             & ProtoFields.address .~ toProto cAddr
             & ProtoFields.key .~ key
 
@@ -2784,15 +2786,15 @@ shutdownV2 = withUnaryV2 (callV2 @"shutdown") defMessage ((fmap . fmap . const) 
 
 -- |Get next available sequence numbers for updating chain parameters after a given block.
 getNextUpdateSequenceNumbersV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe QueryTypes.NextUpdateSequenceNumbers))
-getNextUpdateSequenceNumbersV2 blockHash = withUnaryV2 (callV2 @"getNextUpdateSequenceNumbers") msg ((fmap . fmap) fromProto)
+getNextUpdateSequenceNumbersV2 blockHashInput = withUnaryV2 (callV2 @"getNextUpdateSequenceNumbers") msg ((fmap . fmap) fromProto)
   where
-    msg = toProto blockHash
+    msg = toProto blockHashInput
 
 -- |Get information related to the baker election for a particular block.
 getElectionInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe QueryTypes.BlockBirkParameters))
-getElectionInfoV2 blockHash = withUnaryV2 (callV2 @"getElectionInfo") msg ((fmap . fmap) fromProto)
+getElectionInfoV2 blockHashInput = withUnaryV2 (callV2 @"getElectionInfo") msg ((fmap . fmap) fromProto)
   where
-    msg = toProto blockHash
+    msg = toProto blockHashInput
 
 -- |Get the current branches of blocks starting from and including the last finalized block.
 getBranchesV2 :: (MonadIO m) => ClientMonad m (GRPCResult (Maybe QueryTypes.Branch))
@@ -2806,9 +2808,9 @@ invokeInstanceV2 iiInput = withUnaryV2 (callV2 @"invokeInstance") msg ((fmap . f
 
 -- |Get information about tokenomics at the end of a given block.
 getTokenomicsInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe QueryTypes.RewardStatus))
-getTokenomicsInfoV2 blockHash = withUnaryV2 (callV2 @"getTokenomicsInfo") msg ((fmap . fmap) fromProto)
+getTokenomicsInfoV2 blockHashInput = withUnaryV2 (callV2 @"getTokenomicsInfo") msg ((fmap . fmap) fromProto)
   where
-    msg = toProto blockHash
+    msg = toProto blockHashInput
 
 -- |Get a list of live blocks at a given height.
 getBlocksAtHeightV2 :: (MonadIO m) => BlockHeightInput -> ClientMonad m (GRPCResult (Maybe [BlockHash]))
@@ -2818,21 +2820,21 @@ getBlocksAtHeightV2 blockHeight = withUnaryV2 (callV2 @"getBlocksAtHeight") msg 
 
 -- |Get information about the passive delegators at the end of a given block.
 getPassiveDelegationInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe QueryTypes.PoolStatus))
-getPassiveDelegationInfoV2 blockHash = withUnaryV2 (callV2 @"getPassiveDelegationInfo") msg ((fmap . fmap) fromProto)
+getPassiveDelegationInfoV2 blockHashInput = withUnaryV2 (callV2 @"getPassiveDelegationInfo") msg ((fmap . fmap) fromProto)
   where
-    msg = toProto blockHash
+    msg = toProto blockHashInput
 
 -- |Get information about a given pool at the end of a given block.
 getPoolInfoV2 :: (MonadIO m) => BlockHashInput -> BakerId -> ClientMonad m (GRPCResult (Maybe QueryTypes.PoolStatus))
-getPoolInfoV2 blockHash baker = withUnaryV2 (callV2 @"getPoolInfo") msg ((fmap . fmap) fromProto)
+getPoolInfoV2 blockHashInput baker = withUnaryV2 (callV2 @"getPoolInfo") msg ((fmap . fmap) fromProto)
   where
-    msg = defMessage & ProtoFields.blockHash .~ toProto blockHash & ProtoFields.baker .~ toProto baker
+    msg = defMessage & ProtoFields.blockHash .~ toProto blockHashInput & ProtoFields.baker .~ toProto baker
 
 -- |Get information, such as height, timings, and transaction counts for a given block.
 getBlockInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe QueryTypes.BlockInfo))
-getBlockInfoV2 blockHash = withUnaryV2 (callV2 @"getBlockInfo") msg ((fmap . fmap) fromProto)
+getBlockInfoV2 blockHashInput = withUnaryV2 (callV2 @"getBlockInfo") msg ((fmap . fmap) fromProto)
   where
-    msg = toProto blockHash
+    msg = toProto blockHashInput
 
 -- |Get information about the current state of consensus.
 getConsensusInfoV2 :: (MonadIO m) => ClientMonad m (GRPCResult (Maybe Wasm.WasmModule))
@@ -2840,9 +2842,9 @@ getConsensusInfoV2 = withUnaryV2 (callV2 @"getModuleSource") defMessage ((fmap .
 
 -- |Get the source of a smart contract module.
 getModuleSourceV2 :: (MonadIO m) => ModuleRef -> BlockHashInput -> ClientMonad m (GRPCResult (Maybe Wasm.WasmModule))
-getModuleSourceV2 modRef hash = withUnaryV2 (callV2 @"getModuleSource") msg ((fmap . fmap) fromProto)
+getModuleSourceV2 modRef blockHashInput = withUnaryV2 (callV2 @"getModuleSource") msg ((fmap . fmap) fromProto)
   where
-    msg = defMessage & ProtoFields.blockHash .~ toProto hash & ProtoFields.moduleRef .~ toProto modRef
+    msg = defMessage & ProtoFields.blockHash .~ toProto blockHashInput & ProtoFields.moduleRef .~ toProto modRef
 
 -- |Retrieve the account information from the chain.
 getAccountInfoV2 ::
@@ -2852,27 +2854,27 @@ getAccountInfoV2 ::
     -- |Block hash
     BlockHashInput ->
     ClientMonad m (GRPCResult (Maybe Concordium.Types.AccountInfo))
-getAccountInfoV2 account blockHash = withUnaryV2 (callV2 @"getAccountInfo") msg ((fmap . fmap) fromProto)
+getAccountInfoV2 account blockHashInput = withUnaryV2 (callV2 @"getAccountInfo") msg ((fmap . fmap) fromProto)
   where
-    msg = defMessage & ProtoFields.blockHash .~ toProto blockHash & ProtoFields.accountIdentifier .~ toProto account
+    msg = defMessage & ProtoFields.blockHash .~ toProto blockHashInput & ProtoFields.accountIdentifier .~ toProto account
 
 getInstanceInfoV2 :: (MonadIO m) => ContractAddress -> BlockHashInput -> ClientMonad m (GRPCResult (Maybe Wasm.InstanceInfo))
-getInstanceInfoV2 cAddress blockHash = withUnaryV2 (callV2 @"getInstanceInfo") msg ((fmap . fmap) fromProto)
+getInstanceInfoV2 cAddress blockHashInput = withUnaryV2 (callV2 @"getInstanceInfo") msg ((fmap . fmap) fromProto)
   where
-    msg = defMessage & ProtoFields.blockHash .~ toProto blockHash & ProtoFields.address .~ toProto cAddress
+    msg = defMessage & ProtoFields.blockHash .~ toProto blockHashInput & ProtoFields.address .~ toProto cAddress
 
 getNextSequenceNumberV2 :: (MonadIO m) => AccountAddress -> ClientMonad m (GRPCResult (Maybe QueryTypes.NextAccountNonce))
 getNextSequenceNumberV2 accAddress = withUnaryV2 (callV2 @"getNextAccountSequenceNumber") msg ((fmap . fmap) fromProto)
   where
     msg = toProto accAddress
 
--- |Send a request to a unary V2 GRPC API endpoint and return the result.
+-- |Call a unary V2 GRPC API endpoint and return the result.
 withUnaryV2 ::
     ( HasMethod CS.Queries m,
       MonadIO n,
       i ~ MethodInput CS.Queries m,
       o ~ MethodOutput CS.Queries m ) =>
-    -- |The procedure to invoke.
+    -- |The procedure to call.
     RPC CS.Queries m ->
     -- |The procedure input.
     i ->
@@ -2886,13 +2888,15 @@ withUnaryV2 method input k = withGRPCCoreV2 callHelper k
             res <- rawUnary method client input
             return $ fmap RawUnaryOutput res
 
--- |Invoke a streaming V2 GRPC API endpoint and return the (collected) results in a sequence.
+-- |Call a streaming V2 GRPC API endpoint and return the (collected) results in a sequence.
+-- Note that some care should be taken when using this with long-running calls. See
+-- `withGRPCCoreV2` for more info.
 withServerStreamCollectV2 ::
     ( HasMethod CS.Queries m,
       MonadIO n,
       i ~ MethodInput CS.Queries m,
-      o ~ Seq (MethodOutput CS.Queries m) ) =>
-    -- |The procedure to invoke.
+      o ~ Seq.Seq (MethodOutput CS.Queries m) ) =>
+    -- |The procedure to call.
     RPC CS.Queries m ->
     -- |The procedure input.
     i ->
@@ -2903,15 +2907,17 @@ withServerStreamCollectV2 method input =
     withServerStreamCallbackV2 method input mempty handler
     where handler acc o = return $ acc <> pure o
 
--- |Invoke a streaming GRPC API endpoint and return the (collected) results.
+-- |Call a streaming GRPC API endpoint and return the (collected) results.
 -- Takes a `fold`-like callback and an accumulator, and returns the result
--- of folding through each stream element, once the stream terminates.
+-- of folding through each stream element, once the stream terminates. Note
+-- that some care should be taken when using this with long-running calls.
+-- See `withGRPCCoreV2` for more info.
 withServerStreamCallbackV2 ::
     ( HasMethod CS.Queries m,
       MonadIO n,
       i ~ MethodInput CS.Queries m,
       o ~ MethodOutput CS.Queries m ) =>
-    -- |The procedure to invoke.
+    -- |The procedure to call.
     RPC CS.Queries m ->
     -- |The procedure input.
     i ->
@@ -2939,8 +2945,23 @@ withServerStreamCallbackV2 method input acc handler k =
             res <- rawStreamServer method client acc input handler'
             return $ fmap ServerStreamOutput res
 
--- |Setup a GRPC client and invoke a request helper which uses the client.
+-- |Run a request helper function with a client instance to call a GRPC procedure.
 -- The output is interpreted using the function given in the second parameter.
+--
+-- If the client fails during a call, the connection will be re-established at most
+-- a number of of times depending on the configuration. It should, however, be noted
+-- that for performance reasons, the client is a (global) instance protected by a
+-- (global) RW lock, where
+--
+-- 1) its read lock is acquired for the entire duration of a call,
+-- 2) in the event of a client error, the write lock must be acquired to reset
+--    the client in the failing call, and re-establish the connection.
+--
+-- It follows that a long-running streaming call may prevent a failing call from
+-- acquiring the write lock, blocking it in its faulty state. Therefore some care
+-- should be taken when using long-running or unproductive calls, and in particular
+-- those targeting never-ending streaming endpoints such as `getBlocks` and
+-- `getFinalizedBlocks`.
 withGRPCCoreV2 ::
     (MonadIO n) =>
     -- |A helper which takes a client, issues a GRPC request in the client and returns the result.
@@ -2955,6 +2976,8 @@ withGRPCCoreV2 helper k = do
     logm <- asks logger
     cookies <- ClientMonad (lift get)
     mv <- asks killConnection
+    -- FIXME: Timeout should probably be handled differently when
+    --        invoking a tailing procedure such as `getBlocks`.
     let Timeout timeoutSeconds = _grpcClientConfigTimeout cfg
     -- try to establish a connection
     let tryEstablish :: Int -> IO (Maybe GrpcClient)
@@ -3057,12 +3080,12 @@ withGRPCCoreV2 helper k = do
                 then do
                     liftIO (logm "Reestablished connection, trying again.")
                     (_, ret') <- liftIO tryRun
-                    let response = outputGRPCV2 ret'
+                    let response = toGRPCResult ret'
                     addHeaders response
                     return $ k response
                 else return $ k (Left "Cannot establish connection to GRPC endpoint.")
         (_, Just v) ->
-            let response = outputGRPCV2' v
+            let response = toGRPCResult' v
              in do
                     addHeaders response
                     return (k response)
