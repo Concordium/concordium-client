@@ -71,8 +71,7 @@ toGRPCResult' =
         let hs = map (\(hn, hv) -> (CI.mk hn, hv)) hds
         Right (GRPCResponse hs t)
 
--- The complexity comes from the return type of `rawUnary` and `rawStreamServer`. See the documentation
--- http://hackage.haskell.org/package/http2-client-grpc-0.7.0.0/docs/Network-GRPC-Client-Helpers.html
+-- |Convert a GRPC helper output to a unified result type.
 toGRPCResult :: Maybe (GRPCOutput t) -> GRPCResult t
 toGRPCResult ret =
   case ret of
