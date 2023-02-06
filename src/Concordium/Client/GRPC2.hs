@@ -196,17 +196,6 @@ class FromProto a where
     -- equivalent. Returns Nothing if the conversion failed.
     fromProto :: a -> Maybe (Output' a)
 
--- |A block identifier.
--- A block is either identified via a hash, or as one of the special
--- blocks at a given time (last final or best block). Queries which
--- just need the recent state can use `LastFinal` or `Best` to get the
--- result without first establishing what the last final or best block
--- is.
-data BlockHashInput = Best | LastFinal | Given !BlockHash
-
--- |An account identifier input
-type AccountIdentifierInput = AccountIdentifier
-
 instance FromProto Proto.AccountIndex where
     type Output' Proto.AccountIndex = AccountIndex
     fromProto = return . AccountIndex . deMkWord64
@@ -223,20 +212,13 @@ instance FromProto Proto.CredentialRegistrationId where
         return (nonRaw, raw)
 
 instance FromProto Proto.AccountIdentifierInput where
-    type Output' Proto.AccountIdentifierInput = AccountIdentifierInput
+    type Output' Proto.AccountIdentifierInput = AccountIdentifier
     fromProto a = do
         aii <- a ^. ProtoFields.maybe'accountIdentifierInput
         case aii of
             Proto.AccountIdentifierInput'AccountIndex accIdx -> AccIndex <$> fromProto accIdx
             Proto.AccountIdentifierInput'Address addr -> AccAddress <$> fromProto addr
             Proto.AccountIdentifierInput'CredId cId -> CredRegID . snd <$> fromProto cId
-
-instance ToProto AccountIdentifierInput where
-    type Output AccountIdentifierInput = Proto.AccountIdentifierInput
-    toProto = \case
-        CredRegID cred -> Proto.make $ ProtoFields.credId .= toProto cred
-        AccAddress addr -> Proto.make $ ProtoFields.address .= toProto addr
-        AccIndex accIdx -> Proto.make $ ProtoFields.accountIndex .= toProto accIdx
 
 instance FromProto Proto.SequenceNumber where
     type Output' Proto.SequenceNumber = Nonce
@@ -582,13 +564,6 @@ instance FromProto Proto.AccountInfo where
                 then Nothing
                 else return (CredentialIndex $ fromIntegral key, Versioned versionTag v)
 
-instance ToProto BlockHashInput where
-    type Output BlockHashInput = Proto.BlockHashInput
-    toProto = \case
-        Best -> Proto.make $ ProtoFields.best .= defMessage
-        LastFinal -> Proto.make $ ProtoFields.lastFinal .= defMessage
-        Given bh -> Proto.make $ ProtoFields.given .= toProto bh
-
 instance FromProto Proto.BlockHash where
     type Output' Proto.BlockHash = BlockHash
     fromProto = deMkSerialize
@@ -819,40 +794,6 @@ instance FromProto Proto.BlocksAtHeightResponse where
     fromProto bahr = mapM fromProto =<< bahr ^? ProtoFields.blocks
 
 -- |Input for `getBlocksAtHeightV2`.
-data BlockHeightInput
-    = -- |The height of a block relative to a genesis index. This differs from the
-      -- absolute block height in that it counts height from the protocol update
-      -- corresponding to the provided genesis index.
-      Relative
-        { -- |Genesis index.
-          rGenesisIndex :: !GenesisIndex,
-          -- |Block height starting from the genesis block at the genesis index.
-          rBlockHeight :: !BlockHeight,
-          -- |Whether to return results only from the specified genesis index (`True`),
-          -- or allow results from more recent genesis indices as well (`False`).
-          rRestrict :: !Bool
-        }
-    | -- |The absolute height of a block. This is the number of ancestors of a block
-      -- since the genesis block. In particular, the chain genesis block has absolute
-      -- height 0.
-      Absolute
-        { aBlockHeight :: !AbsoluteBlockHeight
-        }
-
-instance ToProto BlockHeightInput where
-    type Output BlockHeightInput = Proto.BlocksAtHeightRequest
-    toProto Relative{..} =
-        Proto.make $
-            ProtoFields.relative
-                .= Proto.make
-                    ( do
-                        ProtoFields.genesisIndex .= toProto rGenesisIndex
-                        ProtoFields.height .= toProto rBlockHeight
-                        ProtoFields.restrict .= rRestrict
-                    )
-    toProto Absolute{..} =
-        Proto.make $
-            ProtoFields.absolute .= Proto.make (ProtoFields.height .= toProto aBlockHeight)
 
 instance FromProto Proto.MintRate where
     type Output' Proto.MintRate = MintRate
@@ -889,21 +830,6 @@ instance FromProto Proto.TokenomicsInfo where
                 rsTotalStakedCapital <- fromProto =<< v1 ^? ProtoFields.totalStakedCapital
                 rsProtocolVersion <- fromProto =<< v1 ^? ProtoFields.protocolVersion
                 return QueryTypes.RewardStatusV1{..}
-
--- |Input for `invokeInstanceV2`.
-type InvokeInstanceInput = (BlockHashInput, ContractContext)
-
-instance ToProto InvokeInstanceInput where
-    type Output InvokeInstanceInput = Proto.InvokeInstanceRequest
-    toProto (bhi, ContractContext{..}) =
-        Proto.make $ do
-            ProtoFields.blockHash .= toProto bhi
-            ProtoFields.maybe'invoker .= fmap toProto ccInvoker
-            ProtoFields.instance' .= toProto ccContract
-            ProtoFields.amount .= toProto ccAmount
-            ProtoFields.entrypoint .= toProto ccMethod
-            ProtoFields.parameter .= toProto ccParameter
-            ProtoFields.energy .= toProto ccEnergy
 
 instance FromProto Proto.ContractEvent where
     type Output' Proto.ContractEvent = Wasm.ContractEvent
@@ -1177,37 +1103,17 @@ instance FromProto Proto.NextUpdateSequenceNumbers where
         _nusnTimeParameters <- fromProto =<< nums ^? ProtoFields.timeParameters
         return QueryTypes.NextUpdateSequenceNumbers{..}
 
--- An IP address.
-type IpAddress = Text
-
--- An IP port.
-type IpPort = Int16
-
--- A peer are represented by its IP address.
-type Peer = IpAddress
-
--- Compound type representing a pair of an IP address and a port.
-type IpSocketAddress = (IpAddress, IpPort)
-
-instance ToProto IpAddress where
-    type Output IpAddress = Proto.IpAddress
-    toProto ip = Proto.make $ ProtoFields.value .= ip
-
-instance ToProto IpPort where
-    type Output IpPort = Proto.Port
-    toProto ip = Proto.make $ ProtoFields.value .= fromIntegral ip
-
 instance FromProto Proto.IpAddress where
     type Output' Proto.IpAddress = IpAddress
 
     -- FIXME: Should this be validated?
-    fromProto peer = peer ^? ProtoFields.value
+    fromProto peer = IpAddress <$> peer ^? ProtoFields.value
 
 instance FromProto Proto.Port where
     type Output' Proto.Port = IpPort
 
     -- FIXME: Should this be validated?
-    fromProto port = fromIntegral <$> port ^? ProtoFields.value
+    fromProto port = IpPort . fromIntegral <$> port ^? ProtoFields.value
 
 instance FromProto Proto.BannedPeer where
     type Output' Proto.BannedPeer = Peer
@@ -2344,22 +2250,6 @@ instance FromProto Proto.CryptographicParameters where
             occKey <- cParams ^? ProtoFields.onChainCommitmentKey
             createGlobalContext genString bpGens occKey
 
-data SendBlockItemInput
-    = AccountTransaction !Transactions.AccountTransaction
-    | AccountCreation !Transactions.AccountCreation
-    | UpdateInstruction !Updates.UpdateInstruction
-
-instance ToProto SendBlockItemInput where
-    type Output SendBlockItemInput = Proto.SendBlockItemRequest
-    toProto sbi = Proto.make $
-        case sbi of
-            AccountTransaction aTransaction ->
-                ProtoFields.accountTransaction .= toProto aTransaction
-            AccountCreation aCreation ->
-                ProtoFields.credentialDeployment .= toProto aCreation
-            UpdateInstruction uInstruction ->
-                ProtoFields.updateInstruction .= toProto uInstruction
-
 -- |Information about a block which arrived at the node.
 data ArrivedBlockInfo = ArrivedBlockInfo {
     -- |Hash of the block.
@@ -2371,48 +2261,48 @@ data ArrivedBlockInfo = ArrivedBlockInfo {
 instance FromProto Proto.ArrivedBlockInfo where
     type Output' Proto.ArrivedBlockInfo = ArrivedBlockInfo
     fromProto abInfo = do
-        abiBlockHash <- fromProto =<< abInfo ^? ProtoFields.hash
-        abiBlockHeight <- fromProto =<< abInfo ^? ProtoFields.height
+        abiBlockHash <- fromProto $ abInfo ^. ProtoFields.hash
+        abiBlockHeight <- fromProto $ abInfo ^. ProtoFields.height
         return ArrivedBlockInfo{..}
 
 instance FromProto Proto.FinalizedBlockInfo where
     type Output' Proto.FinalizedBlockInfo = ArrivedBlockInfo
     fromProto abInfo = do
-        abiBlockHash <- fromProto =<< abInfo ^? ProtoFields.hash
-        abiBlockHeight <- fromProto =<< abInfo ^? ProtoFields.height
+        abiBlockHash <- fromProto $ abInfo ^. ProtoFields.hash
+        abiBlockHeight <- fromProto $ abInfo ^. ProtoFields.height
         return ArrivedBlockInfo{..}
 
 instance FromProto Proto.InstanceStateKVPair where
     type Output' Proto.InstanceStateKVPair = (ByteString, ByteString)
     fromProto ikvPair = do
-        key <- ikvPair ^? ProtoFields.key
-        value <- ikvPair ^? ProtoFields.value
+        let key = ikvPair ^. ProtoFields.key
+        let value = ikvPair ^. ProtoFields.value
         return (key, value)
 
 instance FromProto Proto.DelegatorInfo where
     type Output' Proto.DelegatorInfo = QueryTypes.DelegatorInfo
     fromProto dInfo = do
-        pdiAccount <- fromProto =<< dInfo ^? ProtoFields.account
-        pdiStake <- fromProto =<< dInfo ^? ProtoFields.stake
+        pdiAccount <- fromProto $ dInfo ^. ProtoFields.account
+        pdiStake <- fromProto $ dInfo ^. ProtoFields.stake
         let pdiPendingChanges = fromMaybe NoChange (fromProto =<< dInfo ^. ProtoFields.maybe'pendingChange)
         return QueryTypes.DelegatorInfo{..}
 
 instance FromProto Proto.DelegatorRewardPeriodInfo where
     type Output' Proto.DelegatorRewardPeriodInfo = QueryTypes.DelegatorRewardPeriodInfo
     fromProto dInfo = do
-        pdrpiAccount <- fromProto =<< dInfo ^? ProtoFields.account
-        pdrpiStake <- fromProto =<< dInfo ^? ProtoFields.stake
+        pdrpiAccount <- fromProto $ dInfo ^. ProtoFields.account
+        pdrpiStake <- fromProto $ dInfo ^. ProtoFields.stake
         return QueryTypes.DelegatorRewardPeriodInfo{..}
 
 instance FromProto Proto.BlockSpecialEvent'AccountAmounts where
     type Output' Proto.BlockSpecialEvent'AccountAmounts = Transactions.AccountAmounts
     fromProto aAmounts = do
-        pairs <- mapM convertEntry =<< aAmounts ^? ProtoFields.entries
+        pairs <- mapM convertEntry $ aAmounts ^. ProtoFields.entries
         return $ Transactions.AccountAmounts $ Map.fromList pairs
       where
         convertEntry e = do
-            address <- fromProto =<< e ^? ProtoFields.account
-            amount <- fromProto =<< e ^? ProtoFields.amount
+            address <- fromProto $ e ^. ProtoFields.account
+            amount <- fromProto $ e ^. ProtoFields.amount
             return (address, amount)
 
 instance FromProto Proto.BlockSpecialEvent where
@@ -2421,52 +2311,52 @@ instance FromProto Proto.BlockSpecialEvent where
         bse <- bsEvent ^. ProtoFields.maybe'event
         case bse of
             ProtoFields.BlockSpecialEvent'BakingRewards' bReward -> do
-                stoBakerRewards <- fromProto =<< bReward ^? ProtoFields.bakerRewards
-                stoRemainder <- fromProto =<< bReward ^? ProtoFields.remainder
+                stoBakerRewards <- fromProto $ bReward ^. ProtoFields.bakerRewards
+                stoRemainder <- fromProto $ bReward ^. ProtoFields.remainder
                 return Transactions.BakingRewards{..}
             ProtoFields.BlockSpecialEvent'Mint' mint -> do
-                stoMintBakingReward <- fromProto =<< mint ^? ProtoFields.mintBakingReward
-                stoMintFinalizationReward <- fromProto =<< mint ^? ProtoFields.mintFinalizationReward
-                stoMintPlatformDevelopmentCharge <- fromProto =<< mint ^? ProtoFields.mintPlatformDevelopmentCharge
-                stoFoundationAccount <- fromProto =<< mint ^? ProtoFields.foundationAccount
+                stoMintBakingReward <- fromProto $ mint ^. ProtoFields.mintBakingReward
+                stoMintFinalizationReward <- fromProto $ mint ^. ProtoFields.mintFinalizationReward
+                stoMintPlatformDevelopmentCharge <- fromProto $ mint ^. ProtoFields.mintPlatformDevelopmentCharge
+                stoFoundationAccount <- fromProto $ mint ^. ProtoFields.foundationAccount
                 return Transactions.Mint{..}
             ProtoFields.BlockSpecialEvent'FinalizationRewards' fRewards -> do
-                stoFinalizationRewards <- fromProto =<< fRewards ^? ProtoFields.finalizationRewards
-                stoRemainder <- fromProto =<< fRewards ^? ProtoFields.remainder
+                stoFinalizationRewards <- fromProto $ fRewards ^. ProtoFields.finalizationRewards
+                stoRemainder <- fromProto $ fRewards ^. ProtoFields.remainder
                 return Transactions.FinalizationRewards{..}
             ProtoFields.BlockSpecialEvent'BlockReward' bReward -> do
-                stoTransactionFees <- fromProto =<< bReward ^? ProtoFields.transactionFees
-                stoOldGASAccount <- fromProto =<< bReward ^? ProtoFields.oldGasAccount
-                stoNewGASAccount <- fromProto =<< bReward ^? ProtoFields.newGasAccount
-                stoBakerReward <- fromProto =<< bReward ^? ProtoFields.bakerReward
-                stoFoundationCharge <- fromProto =<< bReward ^? ProtoFields.foundationCharge
-                stoBaker <- fromProto =<< bReward ^? ProtoFields.baker
-                stoFoundationAccount <- fromProto =<< bReward ^? ProtoFields.foundationAccount
+                stoTransactionFees <- fromProto $ bReward ^. ProtoFields.transactionFees
+                stoOldGASAccount <- fromProto $ bReward ^. ProtoFields.oldGasAccount
+                stoNewGASAccount <- fromProto $ bReward ^. ProtoFields.newGasAccount
+                stoBakerReward <- fromProto $ bReward ^. ProtoFields.bakerReward
+                stoFoundationCharge <- fromProto $ bReward ^. ProtoFields.foundationCharge
+                stoBaker <- fromProto $ bReward ^. ProtoFields.baker
+                stoFoundationAccount <- fromProto $ bReward ^. ProtoFields.foundationAccount
                 return Transactions.BlockReward{..}
             ProtoFields.BlockSpecialEvent'PaydayFoundationReward' pdfReward -> do
-                stoFoundationAccount <- fromProto =<< pdfReward ^? ProtoFields.foundationAccount
-                stoDevelopmentCharge <- fromProto =<< pdfReward ^? ProtoFields.developmentCharge
+                stoFoundationAccount <- fromProto $ pdfReward ^. ProtoFields.foundationAccount
+                stoDevelopmentCharge <- fromProto $ pdfReward ^. ProtoFields.developmentCharge
                 return Transactions.PaydayFoundationReward{..}
             ProtoFields.BlockSpecialEvent'PaydayAccountReward' pdaReward -> do
-                stoAccount <- fromProto =<< pdaReward ^? ProtoFields.account
-                stoTransactionFees <- fromProto =<< pdaReward ^? ProtoFields.transactionFees
-                stoBakerReward <- fromProto =<< pdaReward ^? ProtoFields.bakerReward
-                stoFinalizationReward <- fromProto =<< pdaReward ^? ProtoFields.finalizationReward
+                stoAccount <- fromProto $ pdaReward ^. ProtoFields.account
+                stoTransactionFees <- fromProto $ pdaReward ^. ProtoFields.transactionFees
+                stoBakerReward <- fromProto $ pdaReward ^. ProtoFields.bakerReward
+                stoFinalizationReward <- fromProto $ pdaReward ^. ProtoFields.finalizationReward
                 return Transactions.PaydayAccountReward{..}
             ProtoFields.BlockSpecialEvent'BlockAccrueReward' baReward -> do
-                stoTransactionFees <- fromProto =<< baReward ^? ProtoFields.transactionFees
-                stoOldGASAccount <- fromProto =<< baReward ^? ProtoFields.oldGasAccount
-                stoNewGASAccount <- fromProto =<< baReward ^? ProtoFields.newGasAccount
-                stoBakerReward <- fromProto =<< baReward ^? ProtoFields.bakerReward
-                stoPassiveReward <- fromProto =<< baReward ^? ProtoFields.passiveReward
-                stoFoundationCharge <- fromProto =<< baReward ^? ProtoFields.foundationCharge
-                stoBakerId <- fromProto =<< baReward ^? ProtoFields.baker
+                stoTransactionFees <- fromProto $ baReward ^. ProtoFields.transactionFees
+                stoOldGASAccount <- fromProto $ baReward ^. ProtoFields.oldGasAccount
+                stoNewGASAccount <- fromProto $ baReward ^. ProtoFields.newGasAccount
+                stoBakerReward <- fromProto $ baReward ^. ProtoFields.bakerReward
+                stoPassiveReward <- fromProto $ baReward ^. ProtoFields.passiveReward
+                stoFoundationCharge <- fromProto $ baReward ^. ProtoFields.foundationCharge
+                stoBakerId <- fromProto $ baReward ^. ProtoFields.baker
                 return Transactions.BlockAccrueReward{..}
             ProtoFields.BlockSpecialEvent'PaydayPoolReward' ppReward -> do
                 let stoPoolOwner = fromProto =<< ppReward ^. ProtoFields.maybe'poolOwner
-                stoTransactionFees <- fromProto =<< ppReward ^? ProtoFields.transactionFees
-                stoBakerReward <- fromProto =<< ppReward ^? ProtoFields.bakerReward
-                stoFinalizationReward <- fromProto =<< ppReward ^? ProtoFields.finalizationReward
+                stoTransactionFees <- fromProto $ ppReward ^. ProtoFields.transactionFees
+                stoBakerReward <- fromProto $ ppReward ^. ProtoFields.bakerReward
+                stoFinalizationReward <- fromProto $ ppReward ^. ProtoFields.finalizationReward
                 return Transactions.PaydayPoolReward{..}
 
 -- |A pending update.
@@ -2635,7 +2525,7 @@ getAncestorsV2 bhInput limit = withServerStreamCollectV2 (callV2 @"getAncestors"
             & ProtoFields.blockHash .~ toProto bhInput
             & ProtoFields.amount .~ limit
 
--- |Get all smart contract modules in a given block.
+-- |Get all smart contract modules that exist at the end of a given block.
 getModuleListV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (Maybe (Seq.Seq ModuleRef)))
 getModuleListV2 bhInput = withServerStreamCollectV2 (callV2 @"getModuleList") msg ((fmap . fmap . mapM) fromProto)
   where
@@ -2850,7 +2740,7 @@ getModuleSourceV2 modRef bhInput = withUnaryV2 (callV2 @"getModuleSource") msg (
 getAccountInfoV2 ::
     MonadIO m =>
     -- |Account identifier, address, index or credential registration id.
-    AccountIdentifierInput ->
+    AccountIdentifier ->
     -- |Block hash
     BlockHashInput ->
     ClientMonad m (GRPCResult (Maybe Concordium.Types.AccountInfo))
