@@ -107,7 +107,7 @@ outputGRPC' ret =
         Left e  ->
           Left $ "gRPC error: " ++ Network.URI.Encode.decode e
         Right v -> Right (GRPCResponse hds v)
-    Left e -> Left $ "Unable to send consensus query: " ++ show e
+    Left e -> Left $ "Unable to send query: " ++ show e
 
 -- |Decode JSON from response. Assumes that the response from a GRPC call has a @value@ field containing the JSON.
 getJSON :: (Field.HasField a "value" Text) => SimpleGetter (GRPCResponse a) (GRPCResponse Value)

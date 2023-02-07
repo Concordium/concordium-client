@@ -787,8 +787,6 @@ instance FromProto Proto.BlocksAtHeightResponse where
     type Output' Proto.BlocksAtHeightResponse = [BlockHash]
     fromProto bahr = mapM fromProto =<< bahr ^? ProtoFields.blocks
 
--- |Input for `getBlocksAtHeightV2`.
-
 instance FromProto Proto.MintRate where
     type Output' Proto.MintRate = MintRate
     fromProto mr = do
