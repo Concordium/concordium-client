@@ -16,9 +16,7 @@ import Control.Concurrent
 import Data.ByteString qualified as BS
 import Data.ByteString.Short qualified as BSS
 import Data.Coerce
-import Data.Int
 import Data.Map.Strict qualified as Map
-import Data.ProtoLens.Combinators qualified as Proto
 import Data.ProtoLens.Field qualified
 import Data.Ratio qualified as Ratio
 import Data.Serialize qualified as S
@@ -61,21 +59,19 @@ import Network.GRPC.HTTP2.ProtoLens
 import Network.HTTP2.Client
 import Web.Cookie qualified as Cookie
 
-import Concordium.GRPC2 hiding (Output')
+import Concordium.GRPC2
 import Concordium.ID.AnonymityRevoker (createArInfo)
 import Concordium.ID.IdentityProvider (createIpInfo)
 import Concordium.ID.Parameters (createGlobalContext)
 import Concordium.Types.Accounts qualified as Concordium.Types
-import Concordium.Types.InvokeContract (ContractContext (ContractContext))
 import Concordium.Types.Parameters (CryptographicParameters)
 import Control.Concurrent.Async
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.ByteString (ByteString)
 import Data.IORef
-import Data.Maybe (fromJust, maybeToList, fromMaybe)
+import Data.Maybe (maybeToList, fromMaybe)
 import Data.ProtoLens (defMessage)
-import Data.ProtoLens.Field qualified as Field
 import Data.ProtoLens.Service.Types
 import qualified Data.Sequence as Seq
 import Data.String
@@ -84,8 +80,6 @@ import Proto.V2.Concordium.Service qualified as CS
 import Proto.V2.Concordium.Types qualified as ProtoFields
 import Proto.V2.Concordium.Types_Fields qualified as Proto
 import Concordium.Crypto.SHA256 (Hash)
-import qualified Concordium.Crypto.SHA256 as Hash
-import Concordium.Types.Transactions (AccountAmounts)
 
 -- |A helper function that serves as an inverse to `mkSerialize`,
 --
@@ -2499,7 +2493,7 @@ getBakerListV2 bhInput = withServerStreamCollectV2 (callV2 @"getBakerList") msg 
     msg = toProto bhInput
 
 -- |Get key-value pairs representing the entire state of a specific contract instance in a given block.
--- The resulting sequence is ordered lexicographically according to its keys.
+-- The resulting sequence consists of key-value pairs ordered lexicographically according to the keys.
 getInstanceStateV2 :: (MonadIO m) => BlockHashInput -> ContractAddress -> ClientMonad m (GRPCResult (Maybe (Seq.Seq (ByteString, ByteString))))
 getInstanceStateV2 bhInput cAddress =
     withServerStreamCollectV2 (callV2 @"getInstanceState") msg ((fmap . fmap . mapM) fromProto)
@@ -2838,20 +2832,10 @@ withServerStreamCallbackV2 method input acc handler k =
 -- |Run a request helper function with a client instance to call a GRPC procedure.
 -- The output is interpreted using the function given in the second parameter.
 --
--- If the client fails during a call, the connection will be re-established at most
--- a number of of times depending on the configuration. It should, however, be noted
--- that for performance reasons, the client is a (global) instance protected by a
--- (global) RW lock, where
---
--- 1) its read lock is acquired for the entire duration of a call,
--- 2) in the event of a client error, the write lock must be acquired to reset
---    the client in the failing call, and re-establish the connection.
---
--- It follows that a long-running streaming call may prevent a failing call from
--- acquiring the write lock, blocking it in its faulty state. Therefore some care
--- should be taken when using long-running or unproductive calls, and in particular
--- those targeting never-ending streaming endpoints such as `getBlocks` and
--- `getFinalizedBlocks`.
+-- Note that long-running streaming call may block other calls from retrying to
+-- establish their connection if they fail. Therefore some care should be taken
+-- when using long-running or unproductive calls, and in particular those targeting
+-- never-ending streaming endpoints such as `getBlocks` and `getFinalizedBlocks`.
 withGRPCCoreV2 ::
     (MonadIO n) =>
     -- |A helper which takes a client, issues a GRPC request in the client and returns the result.
