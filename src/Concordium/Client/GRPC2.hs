@@ -493,7 +493,7 @@ instance FromProto Proto.Policy where
                 $ p ^. ProtoFields.attributes
         return Policy{..}
       where
-        -- \|Convert a tag and a bytestring pair to an attribute tag and attribute value pair.
+        -- |Convert a tag and a bytestring pair to an attribute tag and attribute value pair.
         -- The length of the bytestring should be at most 31 and the tag should fit in an `Word8`.
         convert (aTag, aVal) = do
             let fits = fromIntegral aTag <= (maxBound :: Word8)
