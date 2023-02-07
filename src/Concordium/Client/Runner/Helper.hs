@@ -65,7 +65,7 @@ toGRPCResult' =
               Left e  -> Left $ "gRPC error: " ++ Network.URI.Encode.decode e
               Right v -> Right (GRPCResponse hds v)
           Left e -> Left $ "Unable to send consensus query: " ++ show e
-      -- ServerStreamOutput contains a tripl consisting of a result,
+      -- ServerStreamOutput contains a triple consisting of a result,
       -- headers and trailers. The trailers are not used.
       ServerStreamOutput (t, hds, _trs) -> do
         let hs = map (\(hn, hv) -> (CI.mk hn, hv)) hds
