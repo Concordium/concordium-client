@@ -24,6 +24,7 @@ import Data.ProtoLens.Service.Types
 import Data.String (fromString)
 import Data.Text (Text)
 import Data.Word
+import Lens.Micro.Platform
 import Network.GRPC.Client
 import Network.GRPC.Client.Helpers hiding (Address)
 import Network.GRPC.HTTP2.ProtoLens
@@ -40,8 +41,6 @@ import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Vector as Vec
 import qualified Web.Cookie as Cookie
-
-import Lens.Micro.Platform
 
 import Concordium.Client.GRPC
 import Concordium.Client.Runner.Helper
@@ -2127,62 +2126,75 @@ data NodeInfo = NodeInfo
     }
 
 instance FromProto Proto.ChainParametersV0 where
-    type Output Proto.ChainParametersV0 = ChainParameterOutput
+    -- |The internal Haskell type for representing chain parameters expects
+    -- an account _index_, while the protocol buffer representation uses an
+    -- account _address_ for the foundation account. The workaround here is to
+    -- return the address and a closure. The address can then be converted
+    -- to its corresponding index and fed to the closure to get the desired
+    -- @ChainParameterOutputV0@ instance.
+    type Output Proto.ChainParametersV0 = (AccountAddress,  AccountIndex -> Maybe ChainParameterOutput)
     fromProto cParams = do
-        _cpElectionDifficulty <- fromProto $ cParams ^. ProtoFields.electionDifficulty
-        _cpExchangeRates <- do
-            euroPerEnergy <- fromProto $ cParams ^. ProtoFields.euroPerEnergy
-            microCcdPerEuro <- fromProto $ cParams ^. ProtoFields.microCcdPerEuro
-            return $ Parameters.makeExchangeRates euroPerEnergy microCcdPerEuro
-        _cpCooldownParameters <- do
-            epoch <- fromProto $ cParams ^. ProtoFields.bakerCooldownEpochs
-            return $ Parameters.CooldownParametersV0 epoch
-        let _cpTimeParameters = Parameters.TimeParametersV0
-        _cpAccountCreationLimit <- fromProto $ cParams ^. ProtoFields.accountCreationLimit
-        _cpRewardParameters <- do
-            _rpMintDistribution <- fromProto $ cParams ^. ProtoFields.mintDistribution
-            _rpTransactionFeeDistribution <- fromProto $ cParams ^. ProtoFields.transactionFeeDistribution
-            _rpGASRewards <- fromProto $ cParams ^. ProtoFields.gasRewards
-            return Parameters.RewardParameters{..}
-        -- FIXME: ProtoFields.foundationAccount has type AccountAddress, but the type expects an AccountIndex.
-        --        Is it possible to convert this?
-        _cpFoundationAccount <- Nothing -- <-|
-        _cpPoolParameters <- do
-            thresh <- fromProto $ cParams ^. ProtoFields.minimumThresholdForBaking
-            return $ Parameters.PoolParametersV0 thresh
-        let ecpParams = Parameters.ChainParameters{..}
-        rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
-        level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
-        level2Keys <- fromProto $ cParams ^. ProtoFields.level2Keys
-        let ecpKeys = Updates.UpdateKeysCollection{..}
-        return $ ChainParameterOutputV0 ecpParams ecpKeys
-
+        faAddress <- fromProto $ cParams ^. ProtoFields.foundationAccount
+        return (faAddress, faIdxToOutput)
+      where faIdxToOutput faIndex = do
+                _cpElectionDifficulty <- fromProto $ cParams ^. ProtoFields.electionDifficulty
+                _cpExchangeRates <- do
+                    euroPerEnergy <- fromProto $ cParams ^. ProtoFields.euroPerEnergy
+                    microCcdPerEuro <- fromProto $ cParams ^. ProtoFields.microCcdPerEuro
+                    return $ Parameters.makeExchangeRates euroPerEnergy microCcdPerEuro
+                _cpCooldownParameters <- do
+                    epoch <- fromProto $ cParams ^. ProtoFields.bakerCooldownEpochs
+                    return $ Parameters.CooldownParametersV0 epoch
+                let _cpTimeParameters = Parameters.TimeParametersV0
+                _cpAccountCreationLimit <- fromProto $ cParams ^. ProtoFields.accountCreationLimit
+                _cpRewardParameters <- do
+                    _rpMintDistribution <- fromProto $ cParams ^. ProtoFields.mintDistribution
+                    _rpTransactionFeeDistribution <- fromProto $ cParams ^. ProtoFields.transactionFeeDistribution
+                    _rpGASRewards <- fromProto $ cParams ^. ProtoFields.gasRewards
+                    return Parameters.RewardParameters{..}
+                let _cpFoundationAccount = faIndex
+                _cpPoolParameters <- do
+                    thresh <- fromProto $ cParams ^. ProtoFields.minimumThresholdForBaking
+                    return $ Parameters.PoolParametersV0 thresh
+                let ecpParams = Parameters.ChainParameters{..}
+                rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
+                level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
+                level2Keys <- fromProto $ cParams ^. ProtoFields.level2Keys
+                let ecpKeys = Updates.UpdateKeysCollection{..}
+                return $ ChainParameterOutputV0 ecpParams ecpKeys
 instance FromProto Proto.ChainParametersV1 where
-    type Output Proto.ChainParametersV1 = ChainParameterOutput
+    -- |The internal Haskell type for representing chain parameters expects
+    -- an account _index_, while the protocol buffer representation uses an
+    -- account _address_ for the foundation account. The workaround here is to
+    -- return the address and a closure. The address can then be converted
+    -- to its corresponding index and fed to the closure to get the desired
+    -- @ChainParameterOutputV1@ instance.
+    type Output Proto.ChainParametersV1 = (AccountAddress,  AccountIndex -> Maybe ChainParameterOutput)
     fromProto cParams = do
-        _cpElectionDifficulty <- fromProto $ cParams ^. ProtoFields.electionDifficulty
-        _cpExchangeRates <- do
-            euroPerEnergy <- fromProto $ cParams ^. ProtoFields.euroPerEnergy
-            microCcdPerEuro <- fromProto $ cParams ^. ProtoFields.microCcdPerEuro
-            return $ Parameters.makeExchangeRates euroPerEnergy microCcdPerEuro
-        _cpCooldownParameters <- fromProto $ cParams ^. ProtoFields.cooldownParameters
-        _cpTimeParameters <- fromProto $ cParams ^. ProtoFields.timeParameters
-        _cpAccountCreationLimit <- fromProto $ cParams ^. ProtoFields.accountCreationLimit
-        _cpRewardParameters <- do
-            _rpMintDistribution <- fromProto $ cParams ^. ProtoFields.mintDistribution
-            _rpTransactionFeeDistribution <- fromProto $ cParams ^. ProtoFields.transactionFeeDistribution
-            _rpGASRewards <- fromProto $ cParams ^. ProtoFields.gasRewards
-            return Parameters.RewardParameters{..}
-        -- FIXME: ProtoFields.foundationAccount has type AccountAddress, but the type expects an AccountIndex.
-        --        Is it possible to convert this?
-        _cpFoundationAccount <- Nothing -- <-|
-        _cpPoolParameters <- fromProto $ cParams ^. ProtoFields.poolParameters
-        let ecpParams = Parameters.ChainParameters{..}
-        rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
-        level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
-        level2Keys <- fromProto $ cParams ^. ProtoFields.level2Keys
-        let ecpKeys = Updates.UpdateKeysCollection{..}
-        return $ ChainParameterOutputV1 ecpParams ecpKeys
+        faAddress <- fromProto $ cParams ^. ProtoFields.foundationAccount
+        return (faAddress, faIdxToOutput)
+      where faIdxToOutput faIndex = do
+                _cpElectionDifficulty <- fromProto $ cParams ^. ProtoFields.electionDifficulty
+                _cpExchangeRates <- do
+                    euroPerEnergy <- fromProto $ cParams ^. ProtoFields.euroPerEnergy
+                    microCcdPerEuro <- fromProto $ cParams ^. ProtoFields.microCcdPerEuro
+                    return $ Parameters.makeExchangeRates euroPerEnergy microCcdPerEuro
+                _cpCooldownParameters <- fromProto $ cParams ^. ProtoFields.cooldownParameters
+                _cpTimeParameters <- fromProto $ cParams ^. ProtoFields.timeParameters
+                _cpAccountCreationLimit <- fromProto $ cParams ^. ProtoFields.accountCreationLimit
+                _cpRewardParameters <- do
+                    _rpMintDistribution <- fromProto $ cParams ^. ProtoFields.mintDistribution
+                    _rpTransactionFeeDistribution <- fromProto $ cParams ^. ProtoFields.transactionFeeDistribution
+                    _rpGASRewards <- fromProto $ cParams ^. ProtoFields.gasRewards
+                    return Parameters.RewardParameters{..}
+                let _cpFoundationAccount = faIndex
+                _cpPoolParameters <- fromProto $ cParams ^. ProtoFields.poolParameters
+                let ecpParams = Parameters.ChainParameters{..}
+                rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
+                level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
+                level2Keys <- fromProto $ cParams ^. ProtoFields.level2Keys
+                let ecpKeys = Updates.UpdateKeysCollection{..}
+                return $ ChainParameterOutputV1 ecpParams ecpKeys
 
 instance FromProto Proto.Epoch where
     type Output Proto.Epoch = Epoch
@@ -2201,7 +2213,7 @@ data ChainParameterOutput
         !(Updates.UpdateKeysCollection 'ChainParametersV1)
 
 instance FromProto Proto.ChainParameters where
-    type Output Proto.ChainParameters = ChainParameterOutput
+    type Output Proto.ChainParameters = (AccountAddress, AccountIndex -> Maybe ChainParameterOutput)
     fromProto cParams = do
         cp <- cParams ^. Proto.maybe'parameters
         case cp of
@@ -2228,7 +2240,31 @@ getBlockChainParametersV2 ::
     (MonadIO m) =>
     BlockHashInput ->
     ClientMonad m (GRPCResult (Maybe ChainParameterOutput))
-getBlockChainParametersV2 bHash = withUnaryCoreV2 (callV2 @"getBlockChainParameters") msg ((fmap . fmap) fromProto)
+getBlockChainParametersV2 bHash = do
+    -- Get the foundation account address and the callback that allows for constructing the chain parameters.
+    paramsOutput <- withUnaryCoreV2 (callV2 @"getBlockChainParameters") msg ((fmap . fmap) fromProto)
+    let cpOutputM = case paramsOutput of
+                Left err -> Left err
+                Right resp -> do
+                    case grpcResponseVal resp of
+                            Nothing -> 
+                                Left "Could not deserialize response from endpoint getBlockChainParameters."
+                            Just v ->
+                                Right v
+    -- Get the account index from the account address and return the chain parameters.
+    case cpOutputM of
+        Left err -> return $ Left err
+        Right (faAddr, toOutput) -> do
+            accInfoOutput <- getAccountInfoV2 (AccAddress faAddr) bHash
+            case accInfoOutput of
+                Left err -> return $ Left err
+                Right resp -> do
+                    case grpcResponseVal resp of
+                            Nothing ->
+                                return $ Left "Could not convert response from getAccountInfo."
+                            Just ai -> do
+                                let chainParams = toOutput (aiAccountIndex ai)
+                                return $ Right $ GRPCResponse (grpcHeaders resp) chainParams
   where
     msg = toProto bHash
 
