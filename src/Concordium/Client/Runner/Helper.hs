@@ -51,6 +51,8 @@ data GRPCOutput a =
       -- |The output returned by invoking a GRPC procedure using `rawUnary`.
       RawUnaryOutput (RawReply a)
       -- |The output returned by invoking a GRPC procedure using `rawStreamServer`.
+      -- The second and third element of the triple represents the response headers,
+      -- respectively trailers.
     | ServerStreamOutput (a, HeaderList, HeaderList)
 
 -- |Convert a GRPC helper output to a unified result type.
@@ -66,7 +68,7 @@ toGRPCResult' =
               Right v -> Right (GRPCResponse hds v)
           Left e -> Left $ "Unable to send consensus query: " ++ show e
       -- ServerStreamOutput contains a triple consisting of a result,
-      -- headers and trailers. The trailers are not used.
+      -- headers and trailers. The trailers are unused.
       ServerStreamOutput (t, hds, _trs) -> do
         let hs = map (\(hn, hv) -> (CI.mk hn, hv)) hds
         Right (GRPCResponse hs t)
