@@ -46,6 +46,7 @@ library
       Concordium.Client.Config
       Concordium.Client.Export
       Concordium.Client.GRPC
+      Concordium.Client.GRPC2
       Concordium.Client.LegacyCommands
       Concordium.Client.Output
       Concordium.Client.Parse
@@ -88,6 +89,7 @@ library
     , base16-bytestring
     , base64-bytestring
     , bytestring
+    , case-insensitive
     , cborg
     , cborg-json
     , cereal
