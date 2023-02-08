@@ -33,7 +33,6 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Short as BSS
 import qualified Data.Map.Strict as Map
 import qualified Data.ProtoLens.Field
-import qualified Data.ProtoLens.Field as Field
 import qualified Data.Ratio as Ratio
 import qualified Data.Sequence as Seq
 import qualified Data.Serialize as S
@@ -78,18 +77,22 @@ import qualified Concordium.Types.Transactions as Transactions
 
 -- |A helper function that serves as an inverse to `mkSerialize`,
 --
--- Converts a protocol buffer wrapper type to a native Haskell type
+-- Converts a protocol buffer message to a native Haskell type
 -- which is a member of `Serialize`.
 --
--- More concretely, the wrapper type should be of the form
+-- More concretely, the protocol buffer message should have the form
 --
 -- > message Wrapper {
+-- >    ..
 -- >    bytes value = 1
+-- >    ...
 -- > }
 --
--- where the name @Wrapper@ can be arbitrary, but the @value@ field must exist,
--- and it must have type @bytes@. Returns @Nothing@ if the bytestring could not
--- be converted or if the entire bytestring was not consumed while converting it.
+-- where `Wrapper` is an arbitrary message name, that must contain a field
+-- named `value` of type `bytes`. Returns @Nothing@ if the bytestring contained
+-- in the `value`-field not be converted or if the entire bytestring was not
+-- consumed while converting it. Returns a @Just@ wrapping the converted value
+-- otherwise.
 deMkSerialize ::
     ( Data.ProtoLens.Field.HasField
         b
@@ -101,56 +104,71 @@ deMkSerialize ::
     Maybe a
 deMkSerialize val = decodeAndConsume (val ^. ProtoFields.value)
 
--- |Like 'deMkSerialize' above, but for Word64 fields.
+-- |A helper function that serves as an inverse to `mkWord64`,
+-- Like 'deMkSerialize', but the `value field` must be a `Word64`,
+-- and the output a type which can be coerced from a `Word64`.
+-- Coercible here means that the output is a `Word64` wrapped in
+-- a newtype wrapper (possibly several) of a `Word64`.
 deMkWord64 ::
-    ( Data.ProtoLens.Field.HasField
+    ( Coercible Word64 a,
+      Data.ProtoLens.Field.HasField
         b
         "value"
         Word64
     ) =>
     b ->
-    Word64
+    a
 deMkWord64 val = coerce $ val ^. ProtoFields.value
 
--- |Like 'deMkWord64' above, but for Word32 fields instead.
+-- |Like `deMkWord64`, but the value field should be a `Word32`
+-- and the output should be coercible from this.
 deMkWord32 ::
-    ( Data.ProtoLens.Field.HasField
+    ( Coercible Word32 a,
+      Data.ProtoLens.Field.HasField
         b
         "value"
         Word32
     ) =>
     b ->
-    Word32
+    a
 deMkWord32 val = coerce $ val ^. ProtoFields.value
 
--- |Like 'deMkWord64' above, but for Word16 fields instead.
+-- |Like `deMkWord32` but the output should be coercible from
+-- a `Word16`. Returns @Nothing if the value of the `Word32` can
+-- not fit in a `Word16` and a @Just@ wrapping the coerced value
+-- otherwise.
 deMkWord16 ::
-    ( Data.ProtoLens.Field.HasField
+    ( Coercible Word16 a,
+      Data.ProtoLens.Field.HasField
         b
         "value"
         Word32
     ) =>
     b ->
-    Maybe Word16
+    Maybe a
 deMkWord16 val =
     if v <= fromIntegral (maxBound :: Word16)
-        then return $ fromIntegral v
+        then return $ coerce (fromIntegral v :: Word16)
         else Nothing
   where
     v = val ^. ProtoFields.value
 
--- |Like 'mkWord32', but for Word8 fields instead.
+-- |Like `deMkWord32` but the output should be coercible from
+-- a `Word8`. Returns @Nothing if the value of the `Word32` can
+-- not fit in a `Word8` and a @Just@ wrapping the coerced value
+-- otherwise.
 deMkWord8 ::
-    ( Data.ProtoLens.Field.HasField
+    ( Coercible Word8 a,
+      Data.ProtoLens.Field.HasField
         b
         "value"
         Word32
     ) =>
     b ->
-    Maybe Word8
+    Maybe a
 deMkWord8 val =
     if v <= fromIntegral (maxBound :: Word8)
-        then return $ fromIntegral v
+        then return $ coerce (fromIntegral v :: Word8)
         else Nothing
   where
     v = val ^. ProtoFields.value
@@ -201,7 +219,7 @@ class FromProto a where
 
 instance FromProto Proto.AccountIndex where
     type Output Proto.AccountIndex = AccountIndex
-    fromProto = return . AccountIndex . deMkWord64
+    fromProto = return . deMkWord64
 
 instance FromProto Proto.AccountAddress where
     type Output Proto.AccountAddress = AccountAddress
@@ -298,7 +316,7 @@ instance FromProto Proto.EncryptionKey where
 
 instance FromProto Proto.BakerId where
     type Output Proto.BakerId = BakerId
-    fromProto = return . BakerId . AccountIndex . deMkWord64
+    fromProto = return . deMkWord64
 
 instance FromProto Proto.DelegatorId where
     type Output Proto.DelegatorId = DelegatorId
@@ -503,7 +521,7 @@ instance FromProto Proto.Policy where
 
 instance FromProto Proto.IdentityProviderIdentity where
     type Output Proto.IdentityProviderIdentity = IdentityProviderIdentity
-    fromProto = return . IP_ID . deMkWord32
+    fromProto = return . deMkWord32
 
 instance FromProto Proto.CredentialPublicKeys where
     type Output Proto.CredentialPublicKeys = CredentialPublicKeys
@@ -642,19 +660,19 @@ instance FromProto Proto.ProtocolVersion where
 
 instance FromProto Proto.Duration where
     type Output Proto.Duration = Duration
-    fromProto = return . Duration . deMkWord64
+    fromProto = return . deMkWord64
 
 instance FromProto Proto.BlockHeight where
     type Output Proto.BlockHeight = BlockHeight
-    fromProto = return . BlockHeight . deMkWord64
+    fromProto = return . deMkWord64
 
 instance FromProto Proto.AbsoluteBlockHeight where
     type Output Proto.AbsoluteBlockHeight = AbsoluteBlockHeight
-    fromProto = return . AbsoluteBlockHeight . deMkWord64
+    fromProto = return . deMkWord64
 
 instance FromProto Proto.GenesisIndex where
     type Output Proto.GenesisIndex = GenesisIndex
-    fromProto = return . GenesisIndex . deMkWord32
+    fromProto = return . deMkWord32
 
 instance FromProto Proto.ConsensusInfo where
     type Output Proto.ConsensusInfo = QueryTypes.ConsensusStatus
@@ -693,7 +711,7 @@ instance FromProto Proto.ConsensusInfo where
 
 instance FromProto Proto.Slot where
     type Output Proto.Slot = Slot
-    fromProto = return . Slot . deMkWord64
+    fromProto = return . deMkWord64
 
 instance FromProto Proto.StateHash where
     type Output Proto.StateHash = StateHash
@@ -701,7 +719,7 @@ instance FromProto Proto.StateHash where
 
 instance FromProto Proto.Energy where
     type Output Proto.Energy = Energy
-    fromProto = return . Energy . deMkWord64
+    fromProto = return . deMkWord64
 
 instance FromProto Proto.BlockInfo where
     type Output Proto.BlockInfo = QueryTypes.BlockInfo
@@ -726,7 +744,7 @@ instance FromProto Proto.BlockInfo where
 
 instance FromProto Proto.Amount where
     type Output Proto.Amount = Amount
-    fromProto = return . Amount . deMkWord64
+    fromProto = return . deMkWord64
 
 instance FromProto Proto.PoolCurrentPaydayInfo where
     type Output Proto.PoolCurrentPaydayInfo = QueryTypes.CurrentPaydayBakerPoolStatus
@@ -1142,11 +1160,11 @@ instance FromProto Proto.SignatureMap where
 
 instance FromProto Proto.TransactionTime where
     type Output Proto.TransactionTime = TransactionTime
-    fromProto = return . TransactionTime . deMkWord64
+    fromProto = return . deMkWord64
 
 instance FromProto Proto.UpdateSequenceNumber where
     type Output Proto.UpdateSequenceNumber = Nonce
-    fromProto = return . Nonce . deMkWord64
+    fromProto = return . deMkWord64
 
 instance FromProto Proto.CredentialType where
     type Output Proto.CredentialType = CredentialType
@@ -1251,7 +1269,7 @@ instance FromProto Proto.ArInfo'ArIdentity where
 
 instance FromProto Proto.IpIdentity where
     type Output Proto.IpIdentity = IdentityProviderIdentity
-    fromProto arIdentity = return $ IP_ID $ deMkWord32 arIdentity
+    fromProto = return . deMkWord32
 
 instance FromProto Proto.ArInfo where
     type Output Proto.ArInfo = ArInfo.ArInfo
@@ -1282,7 +1300,7 @@ instance FromProto Proto.BakerStakeThreshold where
 
 instance FromProto Proto.DurationSeconds where
     type Output Proto.DurationSeconds = DurationSeconds
-    fromProto = return . DurationSeconds . deMkWord64
+    fromProto = return . deMkWord64
 
 instance FromProto Proto.CooldownParametersCpv1 where
     type Output Proto.CooldownParametersCpv1 = Parameters.CooldownParameters 'ChainParametersV1
@@ -1302,7 +1320,7 @@ instance FromProto Proto.RewardPeriodLength where
     type Output Proto.RewardPeriodLength = RewardPeriodLength
     fromProto rpl = do
         let t = rpl ^. ProtoFields.value
-        return . RewardPeriodLength $ deMkWord64 t
+        return $ deMkWord64 t
 
 instance FromProto Proto.Ratio where
     type Output Proto.Ratio = (Ratio.Ratio Word64)
@@ -1410,9 +1428,8 @@ instance FromProto Proto.UpdatePublicKey where
 instance FromProto Proto.UpdateKeysThreshold where
     type Output Proto.UpdateKeysThreshold = Updates.UpdateKeysThreshold
     fromProto ukTreshold = do
-        -- Ensure that the value fits into a Word16.
         treshold <- deMkWord16 ukTreshold
-        return $ Updates.UpdateKeysThreshold (fromIntegral treshold)
+        return $ Updates.UpdateKeysThreshold treshold
 
 instance FromProto Proto.RootUpdate where
     type Output Proto.RootUpdate = Updates.RootUpdate
@@ -1587,7 +1604,7 @@ instance FromProto Proto.BlockItemSummary where
     type Output Proto.BlockItemSummary = TransactionSummary
     fromProto biSummary = do
         -- Common block item summary fields
-        let tsIndex = TransactionIndex . deMkWord64 $ biSummary ^. ProtoFields.index
+        let tsIndex = deMkWord64 $ biSummary ^. ProtoFields.index
         tsEnergyCost <- fromProto $ biSummary ^. ProtoFields.energyCost
         tsHash <- fromProto $ biSummary ^. ProtoFields.hash
         -- Discern between transactions
@@ -1873,7 +1890,7 @@ instance FromProto Proto.BlockItemStatus where
 
 instance FromProto Proto.FinalizationIndex where
     type Output Proto.FinalizationIndex = FinalizationIndex
-    fromProto = return . FinalizationIndex . deMkWord64
+    fromProto = return . deMkWord64
 
 instance FromProto Proto.FinalizationSummaryParty where
     type Output Proto.FinalizationSummaryParty = QueryTypes.FinalizationSummaryParty
