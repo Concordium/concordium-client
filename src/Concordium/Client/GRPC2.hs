@@ -590,14 +590,14 @@ instance FromProto Proto.ReceiveName where
     type Output Proto.ReceiveName = Wasm.ReceiveName
     fromProto name = do
         let n = name ^. ProtoFields.value
-        unless (Wasm.isValidReceiveName n) Nothing
+        guard (Wasm.isValidReceiveName n)
         return $ Wasm.ReceiveName n
 
 instance FromProto Proto.InitName where
     type Output Proto.InitName = Wasm.InitName
     fromProto name = do
         let n = name ^. ProtoFields.value
-        unless (Wasm.isValidInitName n) Nothing
+        guard (Wasm.isValidInitName n)
         return $ Wasm.InitName n
 
 instance FromProto Proto.InstanceInfo where
@@ -1132,7 +1132,7 @@ instance FromProto Proto.SignatureMap where
       where
         deMk (k, s) = do
             -- Ensure that the value fits into a Word16.
-            if fromIntegral k <= (maxBound :: Word16)
+            if k <= fromIntegral (maxBound :: Word16)
                 then do
                     sig <- fromProto s
                     return (fromIntegral k, sig)
@@ -1336,7 +1336,7 @@ instance FromProto Proto.AccessStructure where
       where
         fromProtoUpdateKeysIndex i = do
             let i' = i ^. ProtoFields.value
-            if fromIntegral i' > (maxBound :: Word16)
+            if i' > fromIntegral (maxBound :: Word16)
                 then Nothing
                 else return $ fromIntegral i'
 
