@@ -75,10 +75,8 @@ data LegacyCmd
       } -- ^ Queries the gRPC server for the list of modules on a specific block
   | GetNodeInfo -- ^Queries the gRPC server for the node information.
   | GetPeerData
-      { legacyIncludeBootstrapper :: !Bool -- ^Whether to include bootstrapper node in the stats or not.
-      } -- ^Get all data as pertaining to the node's role as a member of the P2P network.
-  | StartBaker
-  | StopBaker
+      { legacyIncludeBootstrapper :: !Bool -- ^ Whether to include bootstrapper node in the stats or not.
+      } -- ^ Get all data as pertaining to the node's role as a member of the P2P network.
   | PeerConnect
       { legacyIp     :: !Text
       , legacyPortPC :: !Int
@@ -89,18 +87,10 @@ data LegacyCmd
       }
   | GetPeerUptime
   | BanNode
-      { legacyNodeId   :: !(Maybe Text)
-      , legacyNodeIp   :: !(Maybe Text)
+      { legacyNodeIp   :: !Text
       }
   | UnbanNode
-      { legacyNodeId   :: !(Maybe Text)
-      , legacyNodeIp   :: !(Maybe Text)
-      }
-  | JoinNetwork
-      { legacyNetId :: !Int
-      }
-  | LeaveNetwork
-      { legacyNetId :: !Int
+      { legacyNodeIp   :: !Text
       }
   | GetAncestors
       { legacyAmount    :: !Int,
@@ -110,6 +100,9 @@ data LegacyCmd
   | GetBannedPeers
   | Shutdown
   | DumpStart
+    { legacyFilepath :: !Text,
+      legacyRaw :: !Bool
+    }
   | DumpStop
   | GetIdentityProviders
     { legacyBlockHash :: !(Maybe Text) }
@@ -143,15 +136,11 @@ legacyProgramOptions =
      getModuleListCommand <>
      getNodeInfoCommand <>
      getPeerDataCommand <>
-     startBakerCommand <>
-     stopBakerCommand <>
      peerConnectCommand <>
      peerDisconnectCommand <>
      getPeerUptimeCommand <>
      banNodeCommand <>
      unbanNodeCommand <>
-     joinNetworkCommand <>
-     leaveNetworkCommand <>
      getAncestorsCommand <>
      getBranchesCommand <>
      getBannedPeersCommand <>
@@ -168,7 +157,7 @@ getPeerDataCommand =
   command
     "GetPeerData"
     (info
-       (GetPeerData <$> switch (long "bootstrapper" <> help "Include the bootstrapper in the peer data."))
+       (GetPeerData <$> switch (long "bootstrapper" <> help "Include the bootstrapper in the peer data"))
        (progDesc "Query the gRPC server for the node information."))
 
 getNodeInfoCommand :: Mod CommandFields LegacyCmd
@@ -216,7 +205,7 @@ getTransactionStatusInBlockCommand =
         strArgument
           (metavar "TX-HASH" <> help "Hash of the transaction to query for") <*>
         strArgument
-          (metavar "BLOCK-HASH" <> help "Hash of the block.")
+          (metavar "BLOCK-HASH" <> help "Hash of the block")
        )
        (progDesc
           "Query the gRPC for the information about the execution of a transaction in a specific block."))
@@ -235,7 +224,7 @@ getBlockInfoCommand =
     "GetBlockInfo"
     (info
        (GetBlockInfo <$>
-        switch (short 'a' <> long "all" <> help "Traverse all parent blocks and get their info as well.") <*>
+        switch (short 'a' <> long "all" <> help "Traverse all parent blocks and get their info as well") <*>
         optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
        )
        (progDesc "Query the gRPC server for a specific block."))
@@ -256,7 +245,7 @@ getBlocksAtHeightCommand =
     "GetBlocksAtHeight"
     (info
       (GetBlocksAtHeight <$>
-       argument auto (metavar "HEIGHT" <> help "Height of the blocks to query.") <*>
+       argument auto (metavar "HEIGHT" <> help "Height of the blocks to query") <*>
        optional (option auto (long "genesis-index" <> metavar "GENINDEX" <> help "Base genesis index")) <*>
        flag Nothing (Just True) (long "restrict" <> help "Restrict to specified genesis index")
       )
@@ -286,7 +275,7 @@ getAccountInfoCommand =
     "GetAccountInfo"
     (info
        (GetAccountInfo <$>
-        strArgument (metavar "IDENTIFIER" <> help "Account address, account index or credential id to be queried about.") <*>
+        strArgument (metavar "IDENTIFIER" <> help "Account address, account index or credential id to be queried about") <*>
         optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block in which to do the query"))
        )
        (progDesc "Query the gRPC server for the information of an account."))
@@ -330,9 +319,9 @@ invokeContractCommand =
     "InvokeContract"
     (info
        (InvokeContract <$>
-        strArgument (metavar "CONTEXT" <> help "JSON file with the context.") <*>
+        strArgument (metavar "CONTEXT" <> help "JSON file with the context") <*>
         optional (strArgument (metavar "BLOCK-HASH" <>
-                               help "Hash of the block in which to do the query,"))
+                               help "Hash of the block in which to do the query"))
        )
        (progDesc "Invoke a smart contract in the state of the given block."))
 getPoolStatusCommand :: Mod CommandFields LegacyCmd
@@ -385,6 +374,7 @@ getModuleListCommand =
         optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
        (progDesc "Query the gRPC server for the list of modules."))
 
+{- FIXME: These are deprecated; remove and document in FP.
 startBakerCommand :: Mod CommandFields LegacyCmd
 startBakerCommand =
     command
@@ -400,6 +390,7 @@ stopBakerCommand =
     (info
        (pure StopBaker)
        (progDesc "Stop the baker."))
+--}
 
 peerConnectCommand :: Mod CommandFields LegacyCmd
 peerConnectCommand =
@@ -419,10 +410,10 @@ peerDisconnectCommand =
      "PeerDisconnect"
     (info
        (PeerDisconnect <$>
-        strArgument (metavar "PEER-IP" <> help "IP of the peer we want to disconnect from.") <*>
+        strArgument (metavar "PEER-IP" <> help "IP of the peer we want to disconnect from") <*>
         argument
           auto
-          (metavar "PEER-PORT" <> help "Port of the peer we want to disconnect from."))
+          (metavar "PEER-PORT" <> help "Port of the peer we want to disconnect from"))
        (progDesc "Disconnect from a specified peer."))
 
 getPeerUptimeCommand :: Mod CommandFields LegacyCmd
@@ -440,9 +431,9 @@ banNodeCommand =
      "BanNode"
     (info
        (BanNode <$>
-        optional (strOption (long "node-id" <> metavar "NODE-ID" <> help "ID of the node to be banned")) <*>
-        optional (strOption (long "ip" <> metavar "NODE-IP" <> help "IP of the node to be banned")))
-       (progDesc "Ban a node. The node to ban can either be supplied via a node-id or via an IP and port, but not both."))
+        strArgument
+          (metavar "NODE-IP" <> help "IP of the node to be banned"))
+       (progDesc "Ban a node."))
 
 unbanNodeCommand :: Mod CommandFields LegacyCmd
 unbanNodeCommand =
@@ -450,9 +441,11 @@ unbanNodeCommand =
      "UnbanNode"
     (info
        (UnbanNode <$>
-        optional (strOption (long "node-id" <> metavar "NODE-ID" <> help "ID of the node to be unbanned")) <*>
-        optional (strOption (long "ip" <> metavar "NODE-IP" <> help "IP of the node to be banned")))
-       (progDesc "Unban a node. The node to unban can either be supplied via a node-id or via an IP."))
+        strArgument
+          (metavar "NODE-IP" <> help "IP of the node to be unbanned"))
+       (progDesc "Unban a node."))
+
+{- FIXME: These are deprecated; remove and document in FP.
 
 joinNetworkCommand :: Mod CommandFields LegacyCmd
 joinNetworkCommand =
@@ -471,6 +464,7 @@ leaveNetworkCommand =
        (LeaveNetwork <$>
         argument auto (metavar "NET-ID" <> help "ID of the network"))
        (progDesc "Leave a network."))
+-}
 
 getAncestorsCommand :: Mod CommandFields LegacyCmd
 getAncestorsCommand =
@@ -514,7 +508,15 @@ dumpStartCommand =
     command
     "DumpStart"
     (info
-       (pure DumpStart)
+       (DumpStart <$> 
+        strArgument
+          (metavar "FILE" <> help "Path to the file to write the dumped packages to") <*>
+        argument
+          auto
+          (metavar "RAW" <>
+           value False <>
+           showDefault <>
+           help "Dump raw packages"))
        (progDesc "Start dumping the packages."))
 
 dumpStopCommand :: Mod CommandFields LegacyCmd

@@ -125,13 +125,21 @@ import           System.Directory
 import           System.FilePath
 import qualified System.Console.ANSI                 as ANSI
 import           Text.Printf
-import           Text.Read (readMaybe)
+import           Text.Read (readMaybe, readEither)
 import Data.Time.Clock (addUTCTime, getCurrentTime, UTCTime)
 import Data.Ratio
 import Codec.CBOR.Write
 import Codec.CBOR.Encoding
 import Codec.CBOR.JSON
 import Control.Arrow (Arrow(second))
+import Concordium.GRPC2 (BlockHashInput(Best), IpAddress (IpAddress, ipAddress), IpPort (IpPort, ipPort))
+import Concordium.Types (AccountIdentifier(AccAddress))
+import Concordium.Client.GRPC2
+import Concordium.Types.Accounts (AccountInfo(aiAccountNonce))
+import Concordium.Types.Queries (ConsensusStatus(csBestBlock))
+import Concordium.Client.GRPC2 (getBannedPeersV2, getBranchesV2, banPeerV2, getNodeInfoV2, peerConnectV2, peerDisconnectV2, PeerInfo, getPeersInfoV2, NodeInfo (networkInfo, NodeInfo), PeersInfo, NetworkStats (packetsReceived, packetsSent, latency))
+import Data.Coerce (coerce)
+import Data.Aeson (ToJSON(toJSON))
 
 -- |Establish a new connection to the backend and run the provided computation.
 -- Close a connection after completion of the computation. Establishing a
@@ -1557,7 +1565,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
     AccountList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      accs <- withClientJson backend $ fmap grpcResponseVal <$>  withBestBlockHash block getAccountList
+      accs <- withClientJson backend $ fmap grpcResponseVal <$>  withBestBlockHash block getAccountList
       runPrinter $ printAccountList (bcAccountNameMap baseCfg) accs
 
     AccountUpdateKeys f cid txOpts -> do
@@ -3450,8 +3458,9 @@ processLegacyCmd action backend =
       t <- withClient backend $ processTransaction source nid
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (getBlockItemHash t)
-    GetConsensusInfo -> withClient backend $ getConsensusStatus >>= printJSON . fmap grpcResponseVal
-    GetBlockInfo every block -> withClient backend $ withBestBlockHash block getBlockInfo >>= if every then loop . fmap grpcResponseVal else printJSON . fmap grpcResponseVal
+    GetConsensusInfo -> withClient backend $ getConsensusInfoV2 >>= printResponseValueAsJSON "GetConsensusInfo"
+    GetBlockInfo every block ->
+      withClient backend $ withBestBlockHash block getBlockInfo >>= if every then loop . fmap grpcResponseVal else printJSON . fmap grpcResponseVal
     GetBlockSummary block -> withClient backend $ withBestBlockHash block getBlockSummary >>= printJSON . fmap grpcResponseVal
     GetBlocksAtHeight height gen restr -> withClient backend $ getBlocksAtHeight height gen restr >>= printJSON . fmap grpcResponseVal
     GetAccountList block -> withClient backend $ withBestBlockHash block getAccountList >>= printJSON . fmap grpcResponseVal
@@ -3476,33 +3485,87 @@ processLegacyCmd action backend =
       in withClient backend $ withBestBlockHash block (getPoolStatus bid passiveDelegation) >>= printJSON . fmap grpcResponseVal
     GetBakerList block -> withClient backend $ withBestBlockHash block getBakerList >>= printJSON . fmap grpcResponseVal
     GetRewardStatus block -> withClient backend $ withBestBlockHash block getRewardStatus >>= printJSON . fmap grpcResponseVal
-    GetBirkParameters block ->
-      withClient backend $ withBestBlockHash block getBirkParameters >>= printJSON . fmap grpcResponseVal
-    GetModuleList block -> withClient backend $ withBestBlockHash block getModuleList >>= printJSON . fmap grpcResponseVal
-    GetNodeInfo -> withClient backend $ getNodeInfo >>= printNodeInfo . fmap grpcResponseVal
-    GetPeerData bootstrapper -> withClient backend $ getPeerData bootstrapper >>= printPeerData
-    StartBaker -> withClient backend $ startBaker >>= printSuccess'
-    StopBaker -> withClient backend $ stopBaker >>= printSuccess'
-    PeerConnect ip port -> withClient backend $ peerConnect ip port >>= printSuccess'
-    PeerDisconnect ip port -> withClient backend $ peerDisconnect ip port >>= printSuccess'
-    GetPeerUptime -> withClient backend $ getPeerUptime >>= (liftIO . print) . fmap grpcResponseVal
-    BanNode nodeId nodeIp -> withClient backend $ banNode nodeId nodeIp >>= printSuccess'
-    UnbanNode nodeId nodeIp -> withClient backend $ unbanNode nodeId nodeIp >>= printSuccess'
-    JoinNetwork netId -> withClient backend $ joinNetwork netId >>= printSuccess'
-    LeaveNetwork netId -> withClient backend $ leaveNetwork netId >>= printSuccess'
-    GetAncestors amount blockHash -> withClient backend $ withBestBlockHash blockHash (getAncestors amount) >>= printJSON . fmap grpcResponseVal
-    GetBranches -> withClient backend $ getBranches >>= printJSON . fmap grpcResponseVal
-    GetBannedPeers -> withClient backend $ getBannedPeers >>= (liftIO . print) . fmap grpcResponseVal
-    Shutdown -> withClient backend $ shutdown >>= printSuccess'
-    DumpStart -> withClient backend $ dumpStart >>= printSuccess'
-    DumpStop -> withClient backend $ dumpStop >>= printSuccess'
-    GetIdentityProviders block -> withClient backend $ withBestBlockHash block getIdentityProviders >>= printJSON . fmap grpcResponseVal
-    GetAnonymityRevokers block -> withClient backend $ withBestBlockHash block getAnonymityRevokers >>= printJSON . fmap grpcResponseVal
-    GetCryptographicParameters block -> withClient backend $ withBestBlockHash block getCryptographicParameters >>= printJSON . fmap grpcResponseVal
-  where
-    printSuccess (Left x)  = liftIO . putStrLn $ x
-    printSuccess (Right x) = liftIO $ if x then putStrLn "OK" else putStrLn "FAIL"
-    printSuccess' = printSuccess . fmap grpcResponseVal
+    GetBirkParameters block -> withClient backend $
+          getElectionInfoV2 (readOrDefault' Best block)
+      >>= printResponseValue id "GetBirkParameters"
+    GetModuleList block -> withClient backend $
+          getModuleListV2 (readOrDefault' Best block)
+      >>= printResponseValueAsJSON "GetModuleList"
+    GetNodeInfo -> withClient backend $
+      getNodeInfoV2 >>= getResponseValueOrFail id "GetNodeInfo" >>= printNodeInfo
+    -- FIXME: The bootstrapper flag was removed here; document in FP.
+    GetPeerData bootstrapper -> withClient backend $ do
+      peersInfo <- getResponseValueOrFail id "GetPeerData" =<< getPeersInfoV2
+      nodeInfo <- getResponseValueOrFail id "GetPeerData" =<< getNodeInfoV2
+      printPeerData bootstrapper peersInfo nodeInfo
+    PeerConnect ip port ->
+      withClient backend $
+            peerConnectV2 (IpAddress ip) (IpPort $ fromIntegral port)
+        >>= printSuccessV2
+    PeerDisconnect ip port ->
+      withClient backend $
+            peerDisconnectV2 (IpAddress ip) (IpPort $ fromIntegral port)
+        >>= printSuccessV2
+    -- FIXME: This now prints a Word64 rather than a Maybe Word64; document in FP.
+    GetPeerUptime ->
+      withClient backend $
+            getNodeInfoV2
+        >>= printResponseValue peerUptime "GetPeerUptime"
+    -- FIXME: This now always takes an IP; document in FP.
+    BanNode nodeIp -> withClient backend $ banPeerV2 (IpAddress nodeIp) >>= printSuccessV2
+    -- FIXME: This now always takes an IP; document in FP.
+    UnbanNode nodeIp -> withClient backend $ unbanPeerV2 (IpAddress nodeIp) >>= printSuccessV2
+    GetAncestors amount block ->
+      withClient backend $
+            getAncestorsV2 (readOrDefault' Best block) (fromIntegral amount)
+        >>= printResponseValueAsJSON "GetAncestors"
+    GetBranches ->
+      withClient backend $
+            getBranchesV2 
+        >>= printResponseValueAsJSON "GetBranches"
+    GetBannedPeers ->
+      withClient backend $
+            getBannedPeersV2
+        >>= getResponseValueOrFail id "GetBannedPeers"
+        >>= liftIO . print
+    Shutdown ->
+      withClient backend $
+            shutdownV2
+        >>= printSuccessV2
+    -- TODO: Parameters added here in V2; document in FP.
+    DumpStart file raw ->
+      withClient backend $
+            dumpStartV2 file raw
+        >>= printSuccessV2
+    DumpStop ->
+      withClient backend $
+            dumpStopV2
+        >>= printSuccessV2
+    GetIdentityProviders block ->
+      withClient backend $
+            getIdentityProvidersV2 (readOrDefault' Best block)
+        >>= printResponseValueAsJSON "GetIdentityProviders"
+    GetAnonymityRevokers block ->
+      withClient backend $
+            getAnonymityRevokersV2 (readOrDefault' Best block)
+        >>= printResponseValueAsJSON "GetAnonymityRevokers"
+    GetCryptographicParameters block ->
+      withClient backend $
+            getCryptographicParametersV2 (readOrDefault' Best block)
+        >>= printResponseValueAsJSON "GetCryptographicParameters"
+  where  
+    printResponseValue f commandName res = getResponseValueOrFail f commandName res >>= liftIO . print
+    printResponseValueAsJSON commandName res = getResponseValueOrFail toJSON commandName res >>= printJSONValues
+
+    printSuccessV2 (Left x)  = liftIO $ putStrLn $ "FAIL: " <> x
+    printSuccessV2 (Right _) = liftIO $ putStrLn "OK"
+
+    readOrDefault :: Read a => a -> Text -> a
+    readOrDefault defVal s = fromMaybe defVal (readMaybe $ Text.unpack s)
+
+    readOrDefault' :: Read a => a -> Maybe Text -> a
+    readOrDefault' defVal Nothing = defVal
+    readOrDefault' defVal (Just s) = readOrDefault defVal s
 
 -- |Look up block infos all the way to genesis.
 loop :: Either String Value -> ClientMonad IO ()
@@ -3533,36 +3596,56 @@ data PeerData = PeerData {
   peerList      :: PeerListResponse
   }
 
-printPeerData :: MonadIO m => Either String PeerData -> m ()
-printPeerData epd =
-  case epd of
-    Left err -> liftIO $ putStrLn err
-    Right PeerData{..} -> liftIO $ do
-      putStrLn $ "Total packets sent: " ++ show totalSent
-      putStrLn $ "Total packets received: " ++ show totalReceived
-      putStrLn $ "Peer version: " ++ Text.unpack version
+printPeerData :: MonadIO m => Bool -> PeersInfo -> NodeInfo -> m ()
+printPeerData bootstrapper pInfos NodeInfo{..} =
+  let NetworkInfo{..} = networkInfo
+      -- Filter bootstrappers. `consensusInfo p == Bootstrapper` iff. the 
+      -- peer is a bootstrapper. 
+      pInfos' = filter (\p -> bootstrapper || consensusInfo p == Bootstrapper) pInfos
+  in
+  liftIO $ do
+      putStrLn $ "Total packets sent: " ++ show peerTotalSent
+      putStrLn $ "Total packets received: " ++ show peerTotalReceived
+      putStrLn $ "Peer version: " ++ Text.unpack peerVersion
+
       putStrLn "Peer stats:"
-      forM_ (peerStats ^. CF.peerstats) $ \ps -> do
-        putStrLn $ "  Peer: " ++ Text.unpack (ps ^. CF.nodeId)
-        putStrLn $ "    Packets sent: " ++ show (ps ^. CF.packetsSent)
-        putStrLn $ "    Packets received: " ++ show (ps ^. CF.packetsReceived)
-        putStrLn $ "    Latency: " ++ show (ps ^. CF.latency)
-        putStrLn ""
+      forM_ pInfos' printPeerInfo
 
-      putStrLn $ "Peer type: " ++ Text.unpack (peerList ^. CF.peerType)
+      putStrLn $ "Peer type: " ++ showNodeDetails details
+
       putStrLn "Peers:"
-      forM_ (peerList ^. CF.peers) $ \pe -> do
-        putStrLn $ "  Node id: " ++ Text.unpack (pe ^. CF.nodeId . CF.value)
-        putStrLn $ "    Port: " ++ show (pe ^. CF.port . CF.value)
-        putStrLn $ "    IP: " ++ Text.unpack (pe ^. CF.ip . CF.value)
-        putStrLn $ "    Catchup Status: " ++ showCatchupStatus (pe ^. CF.catchupStatus)
+      forM_ pInfos' printPeerInfo'
+  where
+    printPeerInfo PeerInfo{..} =
+      let NetworkStats{..} = networkStats in do
+        putStrLn $ "  Peer: " ++ Text.unpack peerId
+        putStrLn $ "    Packets sent: " ++ show packetsSent
+        putStrLn $ "    Packets received: " ++ show packetsReceived
+        putStrLn $ "    Latency: " ++ show latency
         putStrLn ""
-  where showCatchupStatus =
-          \case PeerElement'UPTODATE -> "Up to date"
-                PeerElement'PENDING -> "Pending"
-                PeerElement'CATCHINGUP -> "Catching up"
-                _ -> "Unknown" -- this should not happen in well-formed responses
-
+    printPeerInfo' PeerInfo{..} = do
+      putStrLn $ "  Node id: " ++ Text.unpack peerId
+      putStrLn $ "    Port: " ++ show (ipPort $ snd socketAddress)
+      putStrLn $ "    IP: " ++ Text.unpack (ipAddress $ fst socketAddress)
+      putStrLn $ "    Catchup Status: " ++ showCatchupStatus consensusInfo
+      putStrLn ""
+    -- FIXME: Ensure these are correct.
+    showCatchupStatus =
+      \case UpToDate -> "Up to date"
+            Pending -> "Pending"
+            CatchingUp -> "Catching up"
+            Bootstrapper -> "N/A (Bootstrapper)"
+    -- FIXME: Ensure these are correct.
+    showNodeDetails =
+      \case NodeBootstrapper -> "Bootstrapper"
+            NodeNotRunning -> "Node (not running consensus)"
+            NodePassive -> "Node (passive)"
+            NodeActive cInfo ->
+                  "Node (running, "
+              <>  case status cInfo of
+                    PassiveBaker _ -> "not baking)"
+                    ActiveBakerCommitteeInfo -> "in current baking committee)"
+                    ActiveFinalizerCommitteeInfo -> "in current baking and finalizer committee)"
 
 getPeerData :: Bool -> ClientMonad IO (Either String PeerData)
 getPeerData bootstrapper = do
@@ -3579,20 +3662,71 @@ getPeerData bootstrapper = do
     peerList <- grpcResponseVal <$> peerList'
     return PeerData{..}
 
-printNodeInfo :: MonadIO m => Either String NodeInfoResponse -> m ()
-printNodeInfo mni =
-  case mni of
-    Left err -> liftIO (putStrLn err)
-    Right ni -> liftIO $ do
-      putStrLn $ "Node ID: " ++ show (ni ^. CF.nodeId . CF.value)
-      putStrLn $ "Current local time: " ++ show (ni ^. CF.currentLocaltime)
-      putStrLn $ "Baker ID: " ++ maybe "not a baker" show (ni ^? CF.maybe'consensusBakerId . _Just . CF.value)
-      putStrLn $ "Peer type: " ++ show (ni ^. CF.peerType)
-      putStrLn $ "Baker running: " ++ show (ni ^. CF.consensusBakerRunning)
-      putStrLn $ "Consensus running: " ++ show (ni ^. CF.consensusRunning)
-      putStrLn $ "Consensus type: " ++ show (ni ^. CF.consensusType)
-      putStrLn $ "Baker committee member: " ++ show (ni ^. CF.consensusBakerCommittee)
-      putStrLn $ "Finalization committee member: " ++ show (ni ^. CF.consensusFinalizerCommittee)
+printNodeInfo :: MonadIO m => NodeInfo -> m ()
+printNodeInfo NodeInfo{..} = liftIO $
+  let NetworkInfo{..} = networkInfo in do
+      putStrLn $ "Node ID: " ++ show nodeId
+      putStrLn $ "Current local time: " ++ show localTime
+      putStrLn $ "Baker ID: " ++ maybe "not a baker" show (getBakerIdM details)
+      putStrLn $ "Peer type: " ++ showNodeType details
+      putStrLn $ "Baker running: " ++ show (getBakerRunning details)
+      putStrLn $ "Consensus running: " ++ show (getConsensusRunning details)
+      putStrLn $ "Consensus type: " ++ getConsensusType details
+      putStrLn $ "Baker committee member: " ++ show (getBakerCommitteeMember details)
+      putStrLn $ "Finalization committee member: " ++ show (getFinalizerCommitteeMember details)
+  where showNodeType =
+        -- FIXME: Ensure these are correct.
+          \case NodeBootstrapper -> "Bootstrapper"
+                NodeNotRunning -> "Node"
+                NodePassive -> "Node"
+                NodeActive _ -> "Node"
+        -- FIXME: Ensure these are correct.
+        getBakerRunning =
+          \case NodeBootstrapper -> False
+                NodeNotRunning -> False
+                NodePassive -> False
+                NodeActive _ -> True
+        getBakerIdM =
+          \case NodeActive cInfo -> Just . show $ bakerId cInfo
+                _ -> Nothing
+        -- FIXME: Ensure these are correct.
+        getConsensusRunning =
+          \case NodeBootstrapper -> False
+                NodeNotRunning -> False
+                NodePassive -> True
+                NodeActive _ -> True
+        -- FIXME: Should messages be more specific (NodeActive carries additional information)?
+        getConsensusType =
+          \case NodeBootstrapper -> "Bootstrapper"
+                NodeNotRunning -> "Not running"
+                NodePassive -> "Passive"
+                NodeActive _ -> "Active"
+        -- FIXME: Should messages be more specific, or just be a boolean?
+        getBakerCommitteeMember =
+          \case NodeActive (BakerConsensusInfo _ ActiveBakerCommitteeInfo) -> True
+                NodeActive (BakerConsensusInfo _ ActiveFinalizerCommitteeInfo) -> True
+                _ -> False
+                {- FIXME: Should a catchall be avoided?
+                NodeBootstrapper -> "Not in a committee"
+                NodeNotRunning -> "Not in a committee"
+                NodePassive -> "Not in a committee"
+                NodeActive (BakerConsensusInfo _ (PassiveBaker NotInCommittee)) -> "Not in a committee"
+                NodeActive (BakerConsensusInfo _ (PassiveBaker AddedButNotActiveInCommittee)) -> "Not in a committee"
+                NodeActive (BakerConsensusInfo _ (PassiveBaker AddedButWrongKeys)) -> "Not in a committee"
+                -}
+        -- FIXME: Should messages be more specific, or just be a boolean?
+        getFinalizerCommitteeMember =
+          \case NodeActive (BakerConsensusInfo _ ActiveFinalizerCommitteeInfo) -> True
+                _ -> False
+                {- FIXME: Should a catchall be avoided?
+                NodeActive (BakerConsensusInfo _ ActiveBakerCommitteeInfo) -> "Not in committee"
+                NodeBootstrapper -> "Not in a committee"
+                NodeNotRunning -> "Not in a committee"
+                NodePassive -> "Not in a committee"
+                NodeActive (BakerConsensusInfo _ (PassiveBaker NotInCommittee)) -> "Not in committee"
+                NodeActive (BakerConsensusInfo _ (PassiveBaker AddedButNotActiveInCommittee)) -> "Not in committee"
+                NodeActive (BakerConsensusInfo _ (PassiveBaker AddedButWrongKeys)) -> "Not in committee"
+                -}
 
 -- |FIXME: Move this some other place in refactoring.
 data StatusOfPeers = StatusOfPeers {
@@ -3639,6 +3773,19 @@ processTransaction source networkId =
     Left err -> fail $ "Error decoding JSON: " ++ err
     Right t  -> processTransaction_ t networkId True
 
+getResponseValueOrFail :: (MonadFail m, MonadIO m) => (a -> b) -> String -> GRPCResult (Either String a) -> m b
+getResponseValueOrFail f errPrefix res =
+  case res of
+    Left err' ->
+      fail $ errPrefix <> ": " <> err'
+    Right resp ->
+      case grpcResponseVal resp of
+        Left err -> fail $ errPrefix <> ": Could not convert response: " <> err
+        Right val -> return $ f val
+
+getResponseValueOrFail' :: (MonadFail m, MonadIO m) => String -> GRPCResult (Either String a) -> m a
+getResponseValueOrFail' errPrefix = getResponseValueOrFail id errPrefix
+
 -- |Process a transaction with unencrypted keys given explicitly.
 -- The transaction is signed with all the provided keys.
 -- This is only for testing purposes and currently used by the middleware.
@@ -3655,7 +3802,9 @@ processTransaction_ transaction networkId _verbose = do
         sender = thSenderAddress header
     nonce <-
       case thNonce header of
-        Nothing -> getBestBlockHash >>= getAccountNonce sender
+        Nothing -> do
+          res <- getAccountInfoV2 (AccAddress sender) Best
+          getResponseValueOrFail aiAccountNonce "Error while processing transaction" res
         Just nonce -> return nonce
     txPayload <- convertTransactionJsonPayload $ payload transaction
     return $ encodeAndSignTransaction
