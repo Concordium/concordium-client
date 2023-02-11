@@ -3501,10 +3501,13 @@ processLegacyCmd action backend =
       withClient backend $
         getBlocksAtHeightV2
         -- ↓ FIXME: Verify that this is correct in particular.
-        (case (gen, restr) of
-          (Just g, Just _) -> Relative g height True
-          (Just g, Nothing) -> Relative g height False
-          (Nothing, _) -> Absolute (Types.AbsoluteBlockHeight $ Types.theBlockHeight height)) >>=
+          (case (gen, restr) of
+            (Just g, Just _) ->
+              Relative g height True
+            (Just g, Nothing) ->
+              Relative g height False
+            (Nothing, _) ->
+              Absolute (Types.AbsoluteBlockHeight $ Types.theBlockHeight height)) >>=
         printResponseValueAsJSON'
     GetAccountList block ->
       withClient backend $
@@ -3581,7 +3584,7 @@ processLegacyCmd action backend =
         (case eitherDecode ctx of
           Left err -> fail err
           Right c -> invokeInstanceV2 b c) >>=
-            printResponseValueAsJSON'
+          printResponseValueAsJSON'
     GetPoolStatus pool block ->
       withClient backend $ do
         b <- readOrFailM Best block
