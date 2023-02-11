@@ -73,6 +73,7 @@ import qualified Concordium.Types.Queries            as Queries
 import qualified Concordium.Types.Updates            as Updates
 import qualified Concordium.Types.Transactions       as Types
 import qualified Concordium.Types.Accounts           as Types
+import qualified Concordium.Types.Block              as Types
 import           Concordium.Types.HashableTo
 import           Concordium.Types.Parameters
 import qualified Concordium.Cost as Cost
@@ -96,7 +97,6 @@ import           Data.IORef
 import           Data.Foldable
 import           Data.Aeson                          as AE
 import qualified Data.Aeson.Encode.Pretty            as AE
-import qualified Data.Aeson.KeyMap                   as KM
 import qualified Data.ByteString                     as BS
 import qualified Data.ByteString.Lazy                as BSL
 import qualified Data.ByteString.Lazy.Char8          as BSL8
@@ -131,11 +131,9 @@ import Codec.CBOR.Write
 import Codec.CBOR.Encoding
 import Codec.CBOR.JSON
 import Control.Arrow (Arrow(second))
-import Concordium.GRPC2 (BlockHashInput(Best), IpAddress (IpAddress, ipAddress), IpPort (IpPort, ipPort), BlockHeightInput (Relative, Absolute))
+import Concordium.GRPC2
 import Concordium.Types (AccountIdentifier(AccAddress))
 import Concordium.Client.GRPC2
-import Concordium.Types.Accounts (AccountInfo(aiAccountNonce))
-import Concordium.Types.Block (AbsoluteBlockHeight(AbsoluteBlockHeight))
 
 -- |Establish a new connection to the backend and run the provided computation.
 -- Close a connection after completion of the computation. Establishing a
@@ -3457,65 +3455,89 @@ processLegacyCmd action backend =
     GetConsensusInfo ->
       withClient backend $
         getConsensusInfoV2 >>=
-        printResponseValueAsJSON' "GetConsensusInfo"
+        printResponseValueAsJSON'
     GetBlockInfo every block ->
-      withClient backend $ withBestBlockHash block getBlockInfo >>= if every then loop . fmap grpcResponseVal else printJSON . fmap grpcResponseVal
-    GetBlockSummary _block -> return ()
-    {-
+      withClient backend $
+        readOrFailM Best block >>=
+        printBlockInfos every
+    GetBlockSummary block ->
       withClient backend $ do
-        b <- readOrFailM Best block
-        bsTransactionSummaries <- fmap (fromList . toList) $ getResponseValueOrFail' "GetBlockSummary" =<< getBlockTransactionEventsV2 b
-        bsSpecialEvents <- getResponseValueOrFail' "GetBlockSummary" =<< getBlockSpecialEventsV2 b
-        bsFinalizationData <- getResponseValueOrFail' "GetBlockSummary" =<< getBlockFinalizationSummaryV2 b
-        bsUpdates <- fmap Just $ getResponseValueOrFail' "GetBlockSummary" =<< getBlockPendingUpdatesV2 b
-        bsProtocolVersion <- return SP6
-        let bs = Queries.BlockSummary{..}
-        printResponseValueAsJSON' "GetBlockSummary" bs
-        -}
+        bs <- do
+          b <- readOrFailM Best block
+          bsTransactionSummaries <-
+            fmap (Vec.fromList . toList) $ getResponseValueOrFail'' =<< getBlockTransactionEventsV2 b
+          bsSpecialEvents <- getResponseValueOrFail'' =<< getBlockSpecialEventsV2 b
+          bsFinalizationData <- getResponseValueOrFail'' =<< getBlockFinalizationSummaryV2 b
+          pUpdates <- getResponseValueOrFail'' =<< getBlockPendingUpdatesV2 b
+          bcParams <- getResponseValueOrFail'' =<< getBlockChainParametersV2 b
+          case bcParams of
+            ChainParameterOutputV0 cParams uKeys -> do
+              let _currentParameters = cParams
+              let _currentKeyCollection = Types.makeHashed uKeys
+              -- ↓ FIXME: I am unsure what this should be.
+              let _currentProtocolUpdate = Nothing
+              _pendingUpdates <- toUpdates pUpdates b addPendingUpdateV0
+              let bsUpdates = Updates{..}
+              -- ↓ FIXME: I am unsure where the protocol
+              --          version should come from.
+              let bsProtocolVersion = Types.SP1
+              return Queries.BlockSummary{..}
+            ChainParameterOutputV1 cParams uKeys -> do
+              let _currentParameters = cParams
+              let _currentKeyCollection = Types.makeHashed uKeys
+              -- ↓ FIXME: I am not sure what this should be.
+              let _currentProtocolUpdate = Nothing
+              _pendingUpdates <- toUpdates pUpdates b addPendingUpdateV1
+              let bsUpdates = Updates{..}
+              -- ↓ FIXME: I am not sure where the protocol
+              --          version should come from.
+              let bsProtocolVersion = Types.SP4
+              return Queries.BlockSummary{..}
+        printJSONValues $ toJSON bs
     GetBlocksAtHeight height gen restr ->
       withClient backend $
         getBlocksAtHeightV2
-        -- FIXME: Verify this in particular.
+        -- ↓ FIXME: Verify that this is correct in particular.
         (case (gen, restr) of
           (Just g, Just _) -> Relative g height True
           (Just g, Nothing) -> Relative g height False
-          (Nothing, _) -> Absolute (AbsoluteBlockHeight $ Types.theBlockHeight height)) >>=
-        printResponseValueAsJSON' "GetAccountList"
+          (Nothing, _) -> Absolute (Types.AbsoluteBlockHeight $ Types.theBlockHeight height)) >>=
+        printResponseValueAsJSON'
     GetAccountList block ->
       withClient backend $
         readOrFailM Best block >>=
         getAccountListV2 >>=
-        printResponseValueAsJSON' "GetAccountList"
+        printResponseValueAsJSON'
     GetInstances block ->
       withClient backend $
         readOrFailM Best block >>=
         getInstanceListV2 >>=
-        printResponseValueAsJSON' "GetInstances"
+        printResponseValueAsJSON'
     GetTransactionStatus txhash ->
       withClient backend $
         readOrFail txhash >>=
         getBlockItemsV2 >>=
-        printResponseValueAsJSON' "GetTransactionStatus"
+        printResponseValueAsJSON'
     GetTransactionStatusInBlock txhash block -> do
       b <- readOrFail block
       t <- readOrFail txhash
       withClient backend $
         getBlockItemsV2 t >>=
-        getResponseValueOrFail' "GetTransactionStatusInBlock" >>=
+        getResponseValueOrFail'' >>=
         (\case
               Queries.Received ->
-                fail "Received, not present in any blocks."
+                fail "Transaction received, but not present in any block."
               Queries.Committed m ->
                 case m Map.!? b of
                   Just (Just ts) -> return ts
-                  _ -> fail $ "Committed, no summary for block '"
+                  _ -> fail $ "Transaction received in block '"
                             <> Text.unpack block
-                            <> "' in node responce."
+                            <> "', but no summary in node response."
               Queries.Finalized _ (Just ts) -> return ts
               Queries.Finalized _ Nothing ->
-                fail $ "Finalized, no summary for block '"
-                            <> Text.unpack block
-                            <> "' in node response.") >>=
+                fail $ "Transaction finalized in block '"
+                     <> Text.unpack block
+                     <> "', but no summary in node response.") >>=
         printJSONValues . toJSON
     GetAccountInfo account block -> do
       acc <- case ID.addressFromText account of
@@ -3524,33 +3546,28 @@ processLegacyCmd action backend =
       b <- readOrFailM Best block
       withClient backend $
         getAccountInfoV2 (AccAddress acc) b >>=
-        printResponseValueAsJSON' "GetAccountInfo"
+        printResponseValueAsJSON'
     GetAccountNonFinalized account -> do
-      acc <- case ID.addressFromText account of
-        Left err -> logFatal [[i|cannot parse #{account} as an address: #{err}|]]
-        Right a -> return a
+      acc <- parseAccountAddress account
       withClient backend $
         getAccountNonFinalizedTransactionsV2 acc >>=
-        printResponseValueAsJSON' "GetAccountNonFinalized"
+        printResponseValueAsJSON'
     GetNextAccountNonce account -> do
-      acc <- case ID.addressFromText account of
-        Left err ->
-          logFatal [[i|cannot parse #{account} as an address: #{err}|]]
-        Right a -> return a
+      acc <- parseAccountAddress account
       withClient backend $
         getNextSequenceNumberV2 acc >>=
-        printResponseValueAsJSON' "GetNextAccountNonce"
+        printResponseValueAsJSON'
     GetInstanceInfo addr block ->
       withClient backend $ do
         c <- readOrFail addr
         b <- readOrFailM Best block
         let contractIndex = Types.ContractIndex c
         let contractSubindex = 0
-        -- FIXME: Is it OK to set the subindex to 0; 
-        --        I read docs that state that it is
-        --        currently unused.
+        -- ↓ FIXME: Is it OK to set the subindex to 0; 
+        --          I read docs that state that it is
+        --          currently unused.
         getInstanceInfoV2 Types.ContractAddress{..} b >>=
-          printResponseValueAsJSON' "GetInstanceInfo"
+          printResponseValueAsJSON'
     InvokeContract contextFile block -> do
       withClient backend $ do
         ctx <- liftIO $ BSL.readFile contextFile
@@ -3558,30 +3575,30 @@ processLegacyCmd action backend =
         (case eitherDecode ctx of
           Left err -> fail err
           Right c -> invokeInstanceV2 b c) >>=
-            printResponseValueAsJSON' "InvokeContract"
+            printResponseValueAsJSON'
     GetPoolStatus pool block ->
       withClient backend $ do
         b <- readOrFailM Best block
         (case pool of
           Nothing -> getPassiveDelegationInfoV2 b
           Just p -> getPoolInfoV2 b p) >>=
-          printResponseValueAsJSON' "GetPoolStatus"
+          printResponseValueAsJSON'
     GetBakerList block -> withClient backend $
       readOrFailM Best block >>=
       getBakerListV2 >>=
-      printResponseValueAsJSON' "GetBakerList"
+      printResponseValueAsJSON'
     GetRewardStatus block -> withClient backend $
       readOrFailM Best block >>=
       getTokenomicsInfoV2 >>=
-      printResponseValueAsJSON' "GetRewardStatus"
+      printResponseValueAsJSON'
     GetBirkParameters block -> withClient backend $
       readOrFailM Best block >>=
       getElectionInfoV2 >>=
-      printResponseValueAsJSON' "GetBirkParameters"
+      printResponseValueAsJSON'
     GetModuleList block -> withClient backend $
       readOrFailM Best block >>=
       getModuleListV2 >>=
-      printResponseValueAsJSON' "GetModuleList"
+      printResponseValueAsJSON'
     GetNodeInfo -> withClient backend $
       getNodeInfoV2 >>= getResponseValueOrFail id "GetNodeInfo" >>= printNodeInfo
     GetPeerData bootstrapper -> withClient backend $ do
@@ -3591,105 +3608,226 @@ processLegacyCmd action backend =
     PeerConnect ip port ->
       withClient backend $
         peerConnectV2 (IpAddress ip) (IpPort $ fromIntegral port) >>=
-        printSuccessV2
+        printSuccess
     PeerDisconnect ip port ->
       withClient backend $
         peerDisconnectV2 (IpAddress ip) (IpPort $ fromIntegral port) >>=
-        printSuccessV2
-    -- FIXME: This now prints a Word64 rather than a Maybe Word64; document in FP?
+        printSuccess
+    -- ↓ FIXME: This now prints a Word64 rather than a Maybe Word64; document in FP?
     GetPeerUptime ->
       withClient backend $
         getNodeInfoV2 >>=
-        printResponseValue "GetPeerUptime" peerUptime
-    -- FIXME: This now always takes only an IP; document in FP.
+        printResponseValue peerUptime
+    -- ↓ TODO: This now always takes only an IP; document in FP.
     BanNode nodeIp ->
       withClient backend $
         banPeerV2 (IpAddress nodeIp) >>=
-        printSuccessV2
-    -- FIXME: This now always takes only an IP; document in FP.
+        printSuccess
+    -- ↓ TODO: This now always takes only an IP; document in FP.
     UnbanNode nodeIp ->
       withClient backend $
         unbanPeerV2 (IpAddress nodeIp) >>=
-        printSuccessV2
+        printSuccess
     GetAncestors amount block ->
       withClient backend $ do
         b <- readOrFailM Best block
         getAncestorsV2 b (fromIntegral amount) >>=
-          printResponseValueAsJSON' "GetAncestors"
+          printResponseValueAsJSON'
     GetBranches ->
       withClient backend $
         getBranchesV2  >>=
-        printResponseValueAsJSON' "GetBranches"
+        printResponseValueAsJSON'
     GetBannedPeers ->
       withClient backend $
-        getBannedPeersV2 >>=
-        printResponseValue' "GetBannedPeers"
+        getBannedPeersV2 >>= -- TODO: Should this be printed as JSON, or what?
+        printResponseValue'
     Shutdown ->
       withClient backend $
         shutdownV2 >>=
-        printSuccessV2
-    -- TODO: Parameters added here in V2; document in FP.
+        printSuccess
+    -- ↓ TODO: Parameters added here in V2; document in FP.
     DumpStart file raw ->
       withClient backend $
         dumpStartV2 file raw >>=
-        printSuccessV2
+        printSuccess
     DumpStop ->
       withClient backend $
         dumpStopV2 >>=
-        printSuccessV2
+        printSuccess
     GetIdentityProviders block ->
       withClient backend $
         readOrFailM Best block >>=
         getIdentityProvidersV2 >>=
-        printResponseValueAsJSON' "GetIdentityProviders"
+        printResponseValueAsJSON'
     GetAnonymityRevokers block ->
       withClient backend $
         readOrFailM Best block >>=
         getAnonymityRevokersV2 >>=
-        printResponseValueAsJSON' "GetAnonymityRevokers"
+        printResponseValueAsJSON'
     GetCryptographicParameters block ->
       withClient backend $
         readOrFailM Best block >>=
         getCryptographicParametersV2 >>=
-        printResponseValueAsJSON' "GetCryptographicParameters"
+        printResponseValueAsJSON'
   where
-    printResponseValue commandName f res =
-      getResponseValueOrFail f commandName res >>= liftIO . print
-    printResponseValue' commandName =
-      printResponseValue commandName id
+    -- |Print the response value under the provided mapping,
+    -- or fail if the response contained an error.
+    printResponseValue f res =
+      getResponseValueOrFail' f res >>= liftIO . print
 
-    printResponseValueAsJSON commandName res f =
-      getResponseValueOrFail f commandName res >>= printJSONValues . toJSON
-    printResponseValueAsJSON' commandName res =
-      printResponseValueAsJSON commandName res id
+    -- |Print the response value, or fail if the response
+    -- contained an error.
+    printResponseValue' =
+      printResponseValue id
 
-    printSuccessV2 (Left x)  = liftIO $ putStrLn $ "FAIL: " <> x
-    printSuccessV2 (Right _) = liftIO $ putStrLn "OK"
+    -- |Print the response value under the provided mapping
+    -- as JSON, or fail if the response contained an error.
+    printResponseValueAsJSON res f = do
+      v <- getResponseValueOrFail' f res
+      printJSONValues . toJSON $ v
 
-    readOrFail s =
-      case readEither (Text.unpack s) of
-        Left err -> fail err
+    -- |Print the response value as JSON, or fail if the response
+    -- contained an error.
+    printResponseValueAsJSON' res =
+      printResponseValueAsJSON res id
+
+    printSuccess (Left x)  = liftIO $ putStrLn $ "FAIL: " <> x
+    printSuccess (Right _) = liftIO $ putStrLn "OK"
+
+    -- |`read` input or fail if the input could not be `read`.
+    readOrFail t =
+      case readEither s of
+        Left err -> fail $ "Unable to parse '" <> s <> "' , got: " <> err
         Right v -> return v
+      where s = Text.unpack t
 
+    -- |Like `readOrFail s` when the input is @Just s@, and
+    -- a default value otherwise.
     readOrFailM d Nothing = return d
     readOrFailM _ (Just s) = readOrFail s
 
--- |Look up block infos all the way to genesis.
-loop :: Either String Value -> ClientMonad IO ()
-loop v =
-  case v of
-    Left err       -> liftIO $ putStrLn err
-    Right (AE.Object m) ->
-      case KM.lookup "blockParent" m of
-        Just (String parent) -> do
-          printJSON v
-          case KM.lookup "blockSlot" m of
-            Just (AE.Number x) | x > 0 ->
-              fmap grpcResponseVal <$> getBlockInfo parent >>= loop
-            _ -> return () -- Genesis block reached.
-        _ -> error "Unexpected return value for block parent."
-    _ -> error "Unexptected return value for getBlockInfo."
+    -- |Parse an account address.
+    parseAccountAddress accAddr =
+      case ID.addressFromText accAddr of
+          Left _ -> fail "Unable to parse account address."
+          Right a -> return a
 
+    -- |Print info about a block and possibly recurse on its ancestor.
+    printBlockInfos :: Bool -> BlockHashInput -> ClientMonad IO ()
+    printBlockInfos recurse bh = do
+      bi <- getResponseValueOrFail'' =<< getBlockInfoV2 bh
+      printJSONValues $ toJSON bi
+      -- Recurse if were instructed to and we are not at the genesis block.
+      when (recurse && Queries.biBlockHeight bi /= 0)
+        (printBlockInfos recurse $ Given (Queries.biBlockParent bi))
+
+    -- |Add a pending V0 chain parameter update to its appropriate queue.
+    -- The output is either a @Left@ wrapping a @PendingUpdates@ instance with
+    -- the update added to its appropriate queue, or a @Right@ wrapping a pair
+    -- of an @AccountAddress@ and a callback which takes an @AccountIndex@ and
+    -- returns the@PendingUpdates@ instance with the update added to its appropriate
+    -- queue. The address can then be converted to its corresponding index and
+    -- fed to the closure to get the @PendingUpdates@ instance. This is due to API
+    -- returning an account address, while the native datatype uses use an account
+    -- index.
+    addPendingUpdateV0 :: (MonadFail m)
+        => PendingUpdate -- |The pending update.
+        -> PendingUpdates 'Types.ChainParametersV0 -- |The update queues.
+        -> m ( Either
+                 (PendingUpdates 'Types.ChainParametersV0)
+                 (Types.AccountAddress, Types.AccountIndex -> PendingUpdates 'Types.ChainParametersV0)
+             )
+    addPendingUpdateV0 PendingUpdate{..} updates =
+      case puEffect of
+        Queries.PUERootKeys hlKeys -> enqueueM pRootKeysUpdateQueue hlKeys
+        Queries.PUELevel1Keys l1Keys -> enqueueM pLevel1KeysUpdateQueue l1Keys
+        Queries.PUELevel2KeysV0 auths -> enqueueM pLevel2KeysUpdateQueue auths
+        Queries.PUELevel2KeysV1 _ -> enqueueFail
+        Queries.PUEProtocol pUpdate -> enqueueM pProtocolQueue pUpdate
+        Queries.PUEElectionDifficulty eDiff -> enqueueM pElectionDifficultyQueue eDiff
+        Queries.PUEEuroPerEnergy eRate -> enqueueM pEuroPerEnergyQueue eRate
+        Queries.PUEMicroCCDPerEuro eRate -> enqueueM pMicroGTUPerEuroQueue eRate
+        Queries.PUEFoundationAccount aAddr -> return . Right $
+            (aAddr, \ai -> over pFoundationAccountQueue (enqueue puEffectiveTime ai) updates)
+        Queries.PUEMintDistributionV0 mDist -> enqueueM pMintDistributionQueue mDist
+        Queries.PUEMintDistributionV1 _ -> enqueueFail
+        Queries.PUETransactionFeeDistribution tfDist -> enqueueM pTransactionFeeDistributionQueue tfDist
+        Queries.PUEGASRewards gRewards -> enqueueM pGASRewardsQueue gRewards
+        Queries.PUEPoolParametersV0 pParams -> enqueueM pPoolParametersQueue pParams
+        Queries.PUEPoolParametersV1 _ -> enqueueFail
+        Queries.PUEAddAnonymityRevoker arInfo -> enqueueM pAddAnonymityRevokerQueue arInfo
+        Queries.PUEAddIdentityProvider ipInfo -> enqueueM pAddIdentityProviderQueue ipInfo
+        Queries.PUECooldownParameters _ -> enqueueFail
+        Queries.PUETimeParameters _ -> enqueueFail
+      where
+        enqueueFail = fail "Response included a V1 chain parameter update but expected only V0."
+        enqueueM :: (Monad m) => ASetter (PendingUpdates 'Types.ChainParametersV0) a (UpdateQueue e) (UpdateQueue e) -> e -> m (Either a b)
+        enqueueM l v = return . Left $ enqueue' puEffectiveTime updates l v
+
+    -- |Add a pending V1 chain parameter update to its appropriate queue.
+    -- The output is either a @Left@ wrapping a @PendingUpdates@ instance with
+    -- the update added to its appropriate queue, or a @Right@ wrapping a pair
+    -- of an @AccountAddress@ and a callback which takes an @AccountIndex@ and
+    -- returns the@PendingUpdates@ instance with the update added to its appropriate
+    -- queue. The address can then be converted to its corresponding index and
+    -- fed to the closure to get the @PendingUpdates@ instance. This is due to API
+    -- returning an account address, while the native datatype uses use an account
+    -- index.
+    addPendingUpdateV1 :: (MonadFail m)
+        => PendingUpdate -- |The pending update.
+        -> PendingUpdates 'Types.ChainParametersV1 -- |The update queues.
+        -> m ( Either
+                 (PendingUpdates 'Types.ChainParametersV1)
+                 (Types.AccountAddress, Types.AccountIndex -> PendingUpdates 'Types.ChainParametersV1)
+             )
+    addPendingUpdateV1 PendingUpdate{..} updates =
+      case puEffect of
+        Queries.PUERootKeys hlKeys -> enqueueM pRootKeysUpdateQueue hlKeys
+        Queries.PUELevel1Keys l1Keys -> enqueueM pLevel1KeysUpdateQueue l1Keys
+        Queries.PUELevel2KeysV0 _ -> enqueueFail
+        Queries.PUELevel2KeysV1 auths -> enqueueM pLevel2KeysUpdateQueue auths
+        Queries.PUEProtocol pUpdate -> enqueueM pProtocolQueue pUpdate
+        Queries.PUEElectionDifficulty eDiff -> enqueueM pElectionDifficultyQueue eDiff
+        Queries.PUEEuroPerEnergy eRate -> enqueueM pEuroPerEnergyQueue eRate
+        Queries.PUEMicroCCDPerEuro eRate -> enqueueM pMicroGTUPerEuroQueue eRate
+        Queries.PUEFoundationAccount aAddr -> return . Right $
+            (aAddr, \ai -> over pFoundationAccountQueue (enqueue puEffectiveTime ai) updates)
+        Queries.PUEMintDistributionV0 _ -> enqueueFail
+        Queries.PUEMintDistributionV1 mDist -> enqueueM pMintDistributionQueue mDist
+        Queries.PUETransactionFeeDistribution tfDist -> enqueueM pTransactionFeeDistributionQueue tfDist
+        Queries.PUEGASRewards gRewards -> enqueueM pGASRewardsQueue gRewards
+        Queries.PUEPoolParametersV0 _ -> enqueueFail
+        Queries.PUEPoolParametersV1 pParams -> enqueueM pPoolParametersQueue pParams
+        Queries.PUEAddAnonymityRevoker arInfo -> enqueueM pAddAnonymityRevokerQueue arInfo
+        Queries.PUEAddIdentityProvider ipInfo -> enqueueM pAddIdentityProviderQueue ipInfo
+        Queries.PUECooldownParameters cdParams ->
+          return . Left $ over pCooldownParametersQueue (fmap $ enqueue puEffectiveTime cdParams) updates
+        Queries.PUETimeParameters tParams ->
+          return . Left $ over pTimeParametersQueue (fmap $ enqueue puEffectiveTime tParams) updates
+      where
+        enqueueFail = fail "Response included a V0 chain parameter update but expected only V1."
+        enqueueM :: (Monad m) => ASetter (PendingUpdates 'Types.ChainParametersV1) a (UpdateQueue e) (UpdateQueue e) -> e -> m (Either a b)
+        enqueueM l v = return . Left $ enqueue' puEffectiveTime updates l v
+
+    -- |Helper function to enqueue elements in a @PendingUpdates@ instance.
+    enqueue' :: Types.TransactionTime -- |The effective time for the update.
+              -> PendingUpdates cpv -- |The instance to enqueue the update to.
+              -> ASetter (PendingUpdates cpv) a (UpdateQueue e) (UpdateQueue e) -- |The lens corresponding to the queue to add the update.
+              -> e -- |The value to enqueue.
+              -> a
+    enqueue' pue ups l v = over l (enqueue pue v) ups
+
+    -- |Helper function which converts the output of `getBlockPendingUpdatesV2` to @PendingUpdates@.
+    toUpdates pUpdates b helper =  do
+      foldM (\acc e -> do
+              us <- helper e acc
+              case us of
+                Left u -> return u
+                Right (aAddr, cb) -> do
+                  accInfo <- getResponseValueOrFail'' =<< getAccountInfoV2 (AccAddress aAddr) b
+                  return $ cb (Types.aiAccountIndex accInfo)
+                ) emptyPendingUpdates pUpdates
+                
 -- |Helper function to specialize the type, avoiding the need for type
 -- annotations in many places.
 getBlockItemHash :: Types.BareBlockItem -> Types.TransactionHash
@@ -3706,8 +3844,7 @@ data PeerData = PeerData {
 printPeerData :: MonadIO m => Bool -> PeersInfo -> NodeInfo -> m ()
 printPeerData bootstrapper pInfos NodeInfo{..} =
   let NetworkInfo{..} = networkInfo
-      -- Filter bootstrappers. `consensusInfo p == Bootstrapper` iff. the 
-      -- peer is a bootstrapper. 
+      -- Filter bootstrappers.
       pInfos' = filter (\p -> bootstrapper || consensusInfo p == Bootstrapper) pInfos
   in
   liftIO $ do
@@ -3736,13 +3873,13 @@ printPeerData bootstrapper pInfos NodeInfo{..} =
       putStrLn $ "    IP: " ++ Text.unpack (ipAddress $ fst socketAddress)
       putStrLn $ "    Catchup Status: " ++ showCatchupStatus consensusInfo
       putStrLn ""
-    -- FIXME: Ensure these are correct.
+    -- ↓ FIXME: Ensure these are correct.
     showCatchupStatus =
       \case UpToDate -> "Up to date"
             Pending -> "Pending"
             CatchingUp -> "Catching up"
             Bootstrapper -> "N/A (Bootstrapper)"
-    -- FIXME: Ensure these are correct.
+    -- ↓ FIXME: Ensure these are correct.
     showNodeDetails =
       \case NodeBootstrapper -> "Bootstrapper"
             NodeNotRunning -> "Node (not running consensus)"
@@ -3782,12 +3919,12 @@ printNodeInfo NodeInfo{..} = liftIO $
       putStrLn $ "Baker committee member: " ++ show (getBakerCommitteeMember details)
       putStrLn $ "Finalization committee member: " ++ show (getFinalizerCommitteeMember details)
   where showNodeType =
-        -- FIXME: Ensure these are correct.
+        -- ↓ FIXME: Verify that these are correct.
           \case NodeBootstrapper -> "Bootstrapper"
                 NodeNotRunning -> "Node"
                 NodePassive -> "Node"
                 NodeActive _ -> "Node"
-        -- FIXME: Ensure these are correct.
+        -- ↓ FIXME: Verify that these are correct.
         getBakerRunning =
           \case NodeBootstrapper -> False
                 NodeNotRunning -> False
@@ -3796,19 +3933,19 @@ printNodeInfo NodeInfo{..} = liftIO $
         getBakerIdM =
           \case NodeActive cInfo -> Just . show $ bakerId cInfo
                 _ -> Nothing
-        -- FIXME: Ensure these are correct.
+        -- ↓ FIXME: Verify that these are correct.
         getConsensusRunning =
           \case NodeBootstrapper -> False
                 NodeNotRunning -> False
                 NodePassive -> True
                 NodeActive _ -> True
-        -- FIXME: Should messages be more specific (NodeActive carries additional information)?
+        -- ↓ FIXME: Should messages be more specific (NodeActive carries additional information)?
         getConsensusType =
           \case NodeBootstrapper -> "Bootstrapper"
                 NodeNotRunning -> "Not running"
                 NodePassive -> "Passive"
                 NodeActive _ -> "Active"
-        -- FIXME: Should messages be more specific, or just be a boolean?
+        -- ↓ FIXME: Should messages be a boolean or more specific, see the commented code below.
         getBakerCommitteeMember =
           \case NodeActive (BakerConsensusInfo _ ActiveBakerCommitteeInfo) -> True
                 NodeActive (BakerConsensusInfo _ ActiveFinalizerCommitteeInfo) -> True
@@ -3821,7 +3958,7 @@ printNodeInfo NodeInfo{..} = liftIO $
                 NodeActive (BakerConsensusInfo _ (PassiveBaker AddedButNotActiveInCommittee)) -> "Not in a committee"
                 NodeActive (BakerConsensusInfo _ (PassiveBaker AddedButWrongKeys)) -> "Not in a committee"
                 -}
-        -- FIXME: Should messages be more specific, or just be a boolean?
+        -- FIXME: Should messages be a boolean or more specific, see the commented code.
         getFinalizerCommitteeMember =
           \case NodeActive (BakerConsensusInfo _ ActiveFinalizerCommitteeInfo) -> True
                 _ -> False
@@ -3880,19 +4017,6 @@ processTransaction source networkId =
     Left err -> fail $ "Error decoding JSON: " ++ err
     Right t  -> processTransaction_ t networkId True
 
-getResponseValueOrFail :: (MonadFail m) => (a -> b) -> String -> GRPCResult (Either String a) -> m b
-getResponseValueOrFail f errPrefix res =
-  case res of
-    Left err' ->
-      fail $ errPrefix <> ": " <> err'
-    Right resp ->
-      case grpcResponseVal resp of
-        Left err -> fail $ errPrefix <> ": Could not convert response: " <> err
-        Right val -> return $ f val
-
-getResponseValueOrFail' :: (MonadFail m) => String -> GRPCResult (Either String a) -> m a
-getResponseValueOrFail' errPrefix = getResponseValueOrFail id errPrefix
-
 -- |Process a transaction with unencrypted keys given explicitly.
 -- The transaction is signed with all the provided keys.
 -- This is only for testing purposes and currently used by the middleware.
@@ -3911,7 +4035,7 @@ processTransaction_ transaction networkId _verbose = do
       case thNonce header of
         Nothing -> do
           res <- getAccountInfoV2 (AccAddress sender) Best
-          getResponseValueOrFail aiAccountNonce "Error while processing transaction" res
+          getResponseValueOrFail Types.aiAccountNonce "Error while processing transaction" res
         Just nonce -> return nonce
     txPayload <- convertTransactionJsonPayload $ payload transaction
     return $ encodeAndSignTransaction
@@ -4000,3 +4124,43 @@ signEncodedTransaction encPayload sender energy nonce expiry accKeys = Types.Nor
       }
       keys = Map.toList $ fmap Map.toList accKeys
   in Types.signTransaction keys header encPayload
+
+-- |Get the response value of a GRPCResult under the provided mapping.
+-- Returns @Left@ wrapping an error string describing its nature if the
+-- result contains an error, or a @Right@ wrapping the response value
+-- under the provided mapping otherwise.
+getResponseValue :: (a -> b) -> GRPCResult (FromProtoResult a) -> Either String b
+getResponseValue f res =
+  case res of
+    Left err -> Left $ "A GRPC error occurred: " <> err
+    Right resp ->
+      case grpcResponseVal resp of
+        Left _ -> Left "An error was found in the response."
+        Right val -> Right $ f val
+
+-- |Get the response value of a GRPCResult.
+-- Returns @Left@ wrapping an error string describing its nature if the
+-- result contains an error, or a @Right@ wrapping the response value
+-- otherwise.
+getResponseValue' :: GRPCResult (Either String a) -> Either String a
+getResponseValue' = getResponseValue id
+
+-- |Get the response value of a GRPCResult under the provided mapping or
+-- fail if the result contains an error. Takes a string to be prepended
+-- to the error message.
+getResponseValueOrFail :: (MonadFail m)
+  => (a -> b) -- |Result mapping
+  -> String -- |A prefix to the error message to print case of an error.
+  -> GRPCResult (Either String a) -> m b
+getResponseValueOrFail f errPrefix res =
+  case getResponseValue f res of
+    Left err -> fail $ errPrefix <> err
+    Right v -> return v
+
+-- |Get the response value of a GRPCResult or fail if the result contains an error.
+getResponseValueOrFail' :: (MonadFail m) => (a -> b) -> GRPCResult (Either String a) -> m b
+getResponseValueOrFail' f = getResponseValueOrFail f "" 
+
+-- |Get the response value of a GRPCResult or fail if the result contains an error.
+getResponseValueOrFail'' :: (MonadFail m) => GRPCResult (Either String a) -> m a
+getResponseValueOrFail'' = getResponseValueOrFail id "" 

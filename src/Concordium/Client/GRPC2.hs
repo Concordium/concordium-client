@@ -18,7 +18,6 @@ import Control.Monad.State.Strict
 import Data.ByteString (ByteString)
 import Data.Coerce
 import Data.IORef (readIORef, atomicWriteIORef)
-import Data.Maybe (maybeToList)
 import Data.ProtoLens (defMessage)
 import Data.ProtoLens.Service.Types
 import Data.String (fromString)
@@ -230,9 +229,9 @@ decodeAndConsume bs = do
             then return v
             else fail "Did not consume the input."
 
--- |Type alias for the output type of fromProto.
--- Is @Left@ wrapping an error string if the conversion failed
--- and @Right@ wrapping the converted value otherwise.
+-- |The result of converting a protocol buffer message with `fromProto`.
+-- A @Left@ wrapping an error string indicates that the conversion failed
+-- and a @Right@ wrapping the converted value indicates that it succeeded.
 type FromProtoResult a = Either String a
 
 -- |A helper class analogous to something like Aeson's FromJSON.
