@@ -134,6 +134,7 @@ import Control.Arrow (Arrow(second))
 import Concordium.GRPC2
 import Concordium.Types (AccountIdentifier(AccAddress))
 import Concordium.Client.GRPC2
+import Data.Coerce (coerce)
 
 -- |Establish a new connection to the backend and run the provided computation.
 -- Close a connection after completion of the computation. Establishing a
@@ -3447,6 +3448,8 @@ processIdentityShowCmd action backend =
 processLegacyCmd :: LegacyCmd -> Backend -> IO ()
 processLegacyCmd action backend =
   case action of
+    -- ↓ FIXME: This should be verified in particular, 
+    --          I am not sure how to test it.
     SendTransaction fname nid -> do
       source <- handleReadFile BSL.readFile fname
       t <- withClient backend $ processTransaction source nid
@@ -3603,10 +3606,10 @@ processLegacyCmd action backend =
       getModuleListV2 >>=
       printResponseValueAsJSON'
     GetNodeInfo -> withClient backend $
-      getNodeInfoV2 >>= getResponseValueOrFail id "GetNodeInfo" >>= printNodeInfo
+      getNodeInfoV2 >>= getResponseValueOrFail'' >>= printNodeInfo
     GetPeerData bootstrapper -> withClient backend $ do
-      peersInfo <- getResponseValueOrFail id "GetPeerData" =<< getPeersInfoV2
-      nodeInfo <- getResponseValueOrFail id "GetPeerData" =<< getNodeInfoV2
+      peersInfo <- getResponseValueOrFail'' =<< getPeersInfoV2
+      nodeInfo <- getResponseValueOrFail'' =<< getNodeInfoV2
       printPeerData bootstrapper peersInfo nodeInfo
     PeerConnect ip port ->
       withClient backend $
@@ -3616,17 +3619,14 @@ processLegacyCmd action backend =
       withClient backend $
         peerDisconnectV2 (IpAddress ip) (IpPort $ fromIntegral port) >>=
         printSuccess
-    -- ↓ FIXME: This now prints a Word64 rather than a Maybe Word64; document in FP?
     GetPeerUptime ->
       withClient backend $
         getNodeInfoV2 >>=
         printResponseValue peerUptime
-    -- ↓ TODO: This now always takes only an IP; document in FP.
     BanNode nodeIp ->
       withClient backend $
         banPeerV2 (IpAddress nodeIp) >>=
         printSuccess
-    -- ↓ TODO: This now always takes only an IP; document in FP.
     UnbanNode nodeIp ->
       withClient backend $
         unbanPeerV2 (IpAddress nodeIp) >>=
@@ -3642,13 +3642,15 @@ processLegacyCmd action backend =
         printResponseValueAsJSON'
     GetBannedPeers ->
       withClient backend $
-        getBannedPeersV2 >>= -- TODO: Should this be printed as JSON, or what?
-        printResponseValue'
+        getBannedPeersV2 >>=
+        getResponseValueOrFail'' >>=
+        -- The coercion is done to avoid either an orphan
+        -- instance here or polluting `Concordium.GRPC2`.
+        printJSONValues . toJSON . fmap (coerce :: IpAddress -> Text)
     Shutdown ->
       withClient backend $
         shutdownV2 >>=
         printSuccess
-    -- ↓ TODO: Parameters added here in V2; document in FP.
     DumpStart file raw ->
       withClient backend $
         dumpStartV2 file raw >>=
@@ -3677,11 +3679,6 @@ processLegacyCmd action backend =
     -- or fail if the response contained an error.
     printResponseValue f res =
       getResponseValueOrFail' f res >>= liftIO . print
-
-    -- |Print the response value, or fail if the response
-    -- contained an error.
-    printResponseValue' =
-      printResponseValue id
 
     -- |Print the response value under the provided mapping
     -- as JSON, or fail if the response contained an error.
