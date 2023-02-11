@@ -3524,6 +3524,9 @@ processLegacyCmd action backend =
       withClient backend $
         getBlockItemsV2 t >>=
         getResponseValueOrFail'' >>=
+        -- ↓ FIXME: The below changes the client output.
+        --          Should this be documented or changed
+        --          to a different output?
         (\case
               Queries.Received ->
                 fail "Transaction received, but not present in any block."
