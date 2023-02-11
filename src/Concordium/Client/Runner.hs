@@ -113,7 +113,6 @@ import           Data.Text(Text)
 import qualified Data.Tuple                          as Tuple
 import qualified Data.Text                           as Text
 import qualified Data.Text.Encoding                  as Text
-import qualified Data.Text.IO                        as TextIO
 import qualified Data.Vector                         as Vec
 import           Data.Word
 import           Lens.Micro.Platform
@@ -132,14 +131,11 @@ import Codec.CBOR.Write
 import Codec.CBOR.Encoding
 import Codec.CBOR.JSON
 import Control.Arrow (Arrow(second))
-import Concordium.GRPC2 (BlockHashInput(Best), IpAddress (IpAddress, ipAddress), IpPort (IpPort, ipPort))
+import Concordium.GRPC2 (BlockHashInput(Best), IpAddress (IpAddress, ipAddress), IpPort (IpPort, ipPort), BlockHeightInput (Relative, Absolute))
 import Concordium.Types (AccountIdentifier(AccAddress))
 import Concordium.Client.GRPC2
 import Concordium.Types.Accounts (AccountInfo(aiAccountNonce))
-import Concordium.Types.Queries (ConsensusStatus(csBestBlock))
-import Concordium.Client.GRPC2 (getBannedPeersV2, getBranchesV2, banPeerV2, getNodeInfoV2, peerConnectV2, peerDisconnectV2, PeerInfo, getPeersInfoV2, NodeInfo (networkInfo, NodeInfo), PeersInfo, NetworkStats (packetsReceived, packetsSent, latency))
-import Data.Coerce (coerce)
-import Data.Aeson (ToJSON(toJSON))
+import Concordium.Types.Block (AbsoluteBlockHeight(AbsoluteBlockHeight))
 
 -- |Establish a new connection to the backend and run the provided computation.
 -- Close a connection after completion of the computation. Establishing a
@@ -3458,114 +3454,225 @@ processLegacyCmd action backend =
       t <- withClient backend $ processTransaction source nid
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (getBlockItemHash t)
-    GetConsensusInfo -> withClient backend $ getConsensusInfoV2 >>= printResponseValueAsJSON "GetConsensusInfo"
+    GetConsensusInfo ->
+      withClient backend $
+        getConsensusInfoV2 >>=
+        printResponseValueAsJSON' "GetConsensusInfo"
     GetBlockInfo every block ->
       withClient backend $ withBestBlockHash block getBlockInfo >>= if every then loop . fmap grpcResponseVal else printJSON . fmap grpcResponseVal
-    GetBlockSummary block -> withClient backend $ withBestBlockHash block getBlockSummary >>= printJSON . fmap grpcResponseVal
-    GetBlocksAtHeight height gen restr -> withClient backend $ getBlocksAtHeight height gen restr >>= printJSON . fmap grpcResponseVal
-    GetAccountList block -> withClient backend $ withBestBlockHash block getAccountList >>= printJSON . fmap grpcResponseVal
-    GetInstances block -> withClient backend $ withBestBlockHash block getInstances >>= printJSON . fmap grpcResponseVal
-    GetTransactionStatus txhash -> withClient backend $ getTransactionStatus txhash >>= printJSON . fmap grpcResponseVal
-    GetTransactionStatusInBlock txhash block -> withClient backend $ getTransactionStatusInBlock txhash block >>= printJSON . fmap grpcResponseVal
-    GetAccountInfo account block ->
-      withClient backend $ withBestBlockHash block (getAccountInfo account) >>= printJSON . fmap grpcResponseVal
-    GetAccountNonFinalized account ->
-      withClient backend $ getAccountNonFinalizedTransactions account >>= printJSON . fmap grpcResponseVal
-    GetNextAccountNonce account ->
-      withClient backend $ getNextAccountNonce account >>= printJSON . fmap grpcResponseVal
-    GetInstanceInfo account block ->
-      withClient backend $ withBestBlockHash block (getInstanceInfo account) >>= printJSON . fmap grpcResponseVal
+    GetBlockSummary _block -> return ()
+    {-
+      withClient backend $ do
+        b <- readOrFailM Best block
+        bsTransactionSummaries <- fmap (fromList . toList) $ getResponseValueOrFail' "GetBlockSummary" =<< getBlockTransactionEventsV2 b
+        bsSpecialEvents <- getResponseValueOrFail' "GetBlockSummary" =<< getBlockSpecialEventsV2 b
+        bsFinalizationData <- getResponseValueOrFail' "GetBlockSummary" =<< getBlockFinalizationSummaryV2 b
+        bsUpdates <- fmap Just $ getResponseValueOrFail' "GetBlockSummary" =<< getBlockPendingUpdatesV2 b
+        bsProtocolVersion <- return SP6
+        let bs = Queries.BlockSummary{..}
+        printResponseValueAsJSON' "GetBlockSummary" bs
+        -}
+    GetBlocksAtHeight height gen restr ->
+      withClient backend $
+        getBlocksAtHeightV2
+        -- FIXME: Verify this in particular.
+        (case (gen, restr) of
+          (Just g, Just _) -> Relative g height True
+          (Just g, Nothing) -> Relative g height False
+          (Nothing, _) -> Absolute (AbsoluteBlockHeight $ Types.theBlockHeight height)) >>=
+        printResponseValueAsJSON' "GetAccountList"
+    GetAccountList block ->
+      withClient backend $
+        readOrFailM Best block >>=
+        getAccountListV2 >>=
+        printResponseValueAsJSON' "GetAccountList"
+    GetInstances block ->
+      withClient backend $
+        readOrFailM Best block >>=
+        getInstanceListV2 >>=
+        printResponseValueAsJSON' "GetInstances"
+    GetTransactionStatus txhash ->
+      withClient backend $
+        readOrFail txhash >>=
+        getBlockItemsV2 >>=
+        printResponseValueAsJSON' "GetTransactionStatus"
+    GetTransactionStatusInBlock txhash block -> do
+      b <- readOrFail block
+      t <- readOrFail txhash
+      withClient backend $
+        getBlockItemsV2 t >>=
+        getResponseValueOrFail' "GetTransactionStatusInBlock" >>=
+        (\case
+              Queries.Received ->
+                fail "Received, not present in any blocks."
+              Queries.Committed m ->
+                case m Map.!? b of
+                  Just (Just ts) -> return ts
+                  _ -> fail $ "Committed, no summary for block '"
+                            <> Text.unpack block
+                            <> "' in node responce."
+              Queries.Finalized _ (Just ts) -> return ts
+              Queries.Finalized _ Nothing ->
+                fail $ "Finalized, no summary for block '"
+                            <> Text.unpack block
+                            <> "' in node response.") >>=
+        printJSONValues . toJSON
+    GetAccountInfo account block -> do
+      acc <- case ID.addressFromText account of
+        Left err -> logFatal [[i|cannot parse #{account} as an address: #{err}|]]
+        Right a -> return a
+      b <- readOrFailM Best block
+      withClient backend $
+        getAccountInfoV2 (AccAddress acc) b >>=
+        printResponseValueAsJSON' "GetAccountInfo"
+    GetAccountNonFinalized account -> do
+      acc <- case ID.addressFromText account of
+        Left err -> logFatal [[i|cannot parse #{account} as an address: #{err}|]]
+        Right a -> return a
+      withClient backend $
+        getAccountNonFinalizedTransactionsV2 acc >>=
+        printResponseValueAsJSON' "GetAccountNonFinalized"
+    GetNextAccountNonce account -> do
+      acc <- case ID.addressFromText account of
+        Left err ->
+          logFatal [[i|cannot parse #{account} as an address: #{err}|]]
+        Right a -> return a
+      withClient backend $
+        getNextSequenceNumberV2 acc >>=
+        printResponseValueAsJSON' "GetNextAccountNonce"
+    GetInstanceInfo addr block ->
+      withClient backend $ do
+        c <- readOrFail addr
+        b <- readOrFailM Best block
+        let contractIndex = Types.ContractIndex c
+        let contractSubindex = 0
+        -- FIXME: Is it OK to set the subindex to 0; 
+        --        I read docs that state that it is
+        --        currently unused.
+        getInstanceInfoV2 Types.ContractAddress{..} b >>=
+          printResponseValueAsJSON' "GetInstanceInfo"
     InvokeContract contextFile block -> do
-      context <- TextIO.readFile contextFile
-      withClient backend $ withBestBlockHash block (invokeContract context) >>= printJSON . fmap grpcResponseVal
+      withClient backend $ do
+        ctx <- liftIO $ BSL.readFile contextFile
+        b <- readOrFailM Best block
+        (case eitherDecode ctx of
+          Left err -> fail err
+          Right c -> invokeInstanceV2 b c) >>=
+            printResponseValueAsJSON' "InvokeContract"
     GetPoolStatus pool block ->
-      let (bid, passiveDelegation) = case pool of
-            Just bakerId -> (bakerId, False)
-            Nothing -> (0, True)
-      in withClient backend $ withBestBlockHash block (getPoolStatus bid passiveDelegation) >>= printJSON . fmap grpcResponseVal
-    GetBakerList block -> withClient backend $ withBestBlockHash block getBakerList >>= printJSON . fmap grpcResponseVal
-    GetRewardStatus block -> withClient backend $ withBestBlockHash block getRewardStatus >>= printJSON . fmap grpcResponseVal
+      withClient backend $ do
+        b <- readOrFailM Best block
+        (case pool of
+          Nothing -> getPassiveDelegationInfoV2 b
+          Just p -> getPoolInfoV2 b p) >>=
+          printResponseValueAsJSON' "GetPoolStatus"
+    GetBakerList block -> withClient backend $
+      readOrFailM Best block >>=
+      getBakerListV2 >>=
+      printResponseValueAsJSON' "GetBakerList"
+    GetRewardStatus block -> withClient backend $
+      readOrFailM Best block >>=
+      getTokenomicsInfoV2 >>=
+      printResponseValueAsJSON' "GetRewardStatus"
     GetBirkParameters block -> withClient backend $
-          getElectionInfoV2 (readOrDefault' Best block)
-      >>= printResponseValue id "GetBirkParameters"
+      readOrFailM Best block >>=
+      getElectionInfoV2 >>=
+      printResponseValueAsJSON' "GetBirkParameters"
     GetModuleList block -> withClient backend $
-          getModuleListV2 (readOrDefault' Best block)
-      >>= printResponseValueAsJSON "GetModuleList"
+      readOrFailM Best block >>=
+      getModuleListV2 >>=
+      printResponseValueAsJSON' "GetModuleList"
     GetNodeInfo -> withClient backend $
       getNodeInfoV2 >>= getResponseValueOrFail id "GetNodeInfo" >>= printNodeInfo
-    -- FIXME: The bootstrapper flag was removed here; document in FP.
     GetPeerData bootstrapper -> withClient backend $ do
       peersInfo <- getResponseValueOrFail id "GetPeerData" =<< getPeersInfoV2
       nodeInfo <- getResponseValueOrFail id "GetPeerData" =<< getNodeInfoV2
       printPeerData bootstrapper peersInfo nodeInfo
     PeerConnect ip port ->
       withClient backend $
-            peerConnectV2 (IpAddress ip) (IpPort $ fromIntegral port)
-        >>= printSuccessV2
+        peerConnectV2 (IpAddress ip) (IpPort $ fromIntegral port) >>=
+        printSuccessV2
     PeerDisconnect ip port ->
       withClient backend $
-            peerDisconnectV2 (IpAddress ip) (IpPort $ fromIntegral port)
-        >>= printSuccessV2
-    -- FIXME: This now prints a Word64 rather than a Maybe Word64; document in FP.
+        peerDisconnectV2 (IpAddress ip) (IpPort $ fromIntegral port) >>=
+        printSuccessV2
+    -- FIXME: This now prints a Word64 rather than a Maybe Word64; document in FP?
     GetPeerUptime ->
       withClient backend $
-            getNodeInfoV2
-        >>= printResponseValue peerUptime "GetPeerUptime"
-    -- FIXME: This now always takes an IP; document in FP.
-    BanNode nodeIp -> withClient backend $ banPeerV2 (IpAddress nodeIp) >>= printSuccessV2
-    -- FIXME: This now always takes an IP; document in FP.
-    UnbanNode nodeIp -> withClient backend $ unbanPeerV2 (IpAddress nodeIp) >>= printSuccessV2
-    GetAncestors amount block ->
+        getNodeInfoV2 >>=
+        printResponseValue "GetPeerUptime" peerUptime
+    -- FIXME: This now always takes only an IP; document in FP.
+    BanNode nodeIp ->
       withClient backend $
-            getAncestorsV2 (readOrDefault' Best block) (fromIntegral amount)
-        >>= printResponseValueAsJSON "GetAncestors"
+        banPeerV2 (IpAddress nodeIp) >>=
+        printSuccessV2
+    -- FIXME: This now always takes only an IP; document in FP.
+    UnbanNode nodeIp ->
+      withClient backend $
+        unbanPeerV2 (IpAddress nodeIp) >>=
+        printSuccessV2
+    GetAncestors amount block ->
+      withClient backend $ do
+        b <- readOrFailM Best block
+        getAncestorsV2 b (fromIntegral amount) >>=
+          printResponseValueAsJSON' "GetAncestors"
     GetBranches ->
       withClient backend $
-            getBranchesV2 
-        >>= printResponseValueAsJSON "GetBranches"
+        getBranchesV2  >>=
+        printResponseValueAsJSON' "GetBranches"
     GetBannedPeers ->
       withClient backend $
-            getBannedPeersV2
-        >>= getResponseValueOrFail id "GetBannedPeers"
-        >>= liftIO . print
+        getBannedPeersV2 >>=
+        printResponseValue' "GetBannedPeers"
     Shutdown ->
       withClient backend $
-            shutdownV2
-        >>= printSuccessV2
+        shutdownV2 >>=
+        printSuccessV2
     -- TODO: Parameters added here in V2; document in FP.
     DumpStart file raw ->
       withClient backend $
-            dumpStartV2 file raw
-        >>= printSuccessV2
+        dumpStartV2 file raw >>=
+        printSuccessV2
     DumpStop ->
       withClient backend $
-            dumpStopV2
-        >>= printSuccessV2
+        dumpStopV2 >>=
+        printSuccessV2
     GetIdentityProviders block ->
       withClient backend $
-            getIdentityProvidersV2 (readOrDefault' Best block)
-        >>= printResponseValueAsJSON "GetIdentityProviders"
+        readOrFailM Best block >>=
+        getIdentityProvidersV2 >>=
+        printResponseValueAsJSON' "GetIdentityProviders"
     GetAnonymityRevokers block ->
       withClient backend $
-            getAnonymityRevokersV2 (readOrDefault' Best block)
-        >>= printResponseValueAsJSON "GetAnonymityRevokers"
+        readOrFailM Best block >>=
+        getAnonymityRevokersV2 >>=
+        printResponseValueAsJSON' "GetAnonymityRevokers"
     GetCryptographicParameters block ->
       withClient backend $
-            getCryptographicParametersV2 (readOrDefault' Best block)
-        >>= printResponseValueAsJSON "GetCryptographicParameters"
-  where  
-    printResponseValue f commandName res = getResponseValueOrFail f commandName res >>= liftIO . print
-    printResponseValueAsJSON commandName res = getResponseValueOrFail toJSON commandName res >>= printJSONValues
+        readOrFailM Best block >>=
+        getCryptographicParametersV2 >>=
+        printResponseValueAsJSON' "GetCryptographicParameters"
+  where
+    printResponseValue commandName f res =
+      getResponseValueOrFail f commandName res >>= liftIO . print
+    printResponseValue' commandName =
+      printResponseValue commandName id
+
+    printResponseValueAsJSON commandName res f =
+      getResponseValueOrFail f commandName res >>= printJSONValues . toJSON
+    printResponseValueAsJSON' commandName res =
+      printResponseValueAsJSON commandName res id
 
     printSuccessV2 (Left x)  = liftIO $ putStrLn $ "FAIL: " <> x
     printSuccessV2 (Right _) = liftIO $ putStrLn "OK"
 
-    readOrDefault :: Read a => a -> Text -> a
-    readOrDefault defVal s = fromMaybe defVal (readMaybe $ Text.unpack s)
+    readOrFail s =
+      case readEither (Text.unpack s) of
+        Left err -> fail err
+        Right v -> return v
 
-    readOrDefault' :: Read a => a -> Maybe Text -> a
-    readOrDefault' defVal Nothing = defVal
-    readOrDefault' defVal (Just s) = readOrDefault defVal s
+    readOrFailM d Nothing = return d
+    readOrFailM _ (Just s) = readOrFail s
 
 -- |Look up block infos all the way to genesis.
 loop :: Either String Value -> ClientMonad IO ()
@@ -3773,7 +3880,7 @@ processTransaction source networkId =
     Left err -> fail $ "Error decoding JSON: " ++ err
     Right t  -> processTransaction_ t networkId True
 
-getResponseValueOrFail :: (MonadFail m, MonadIO m) => (a -> b) -> String -> GRPCResult (Either String a) -> m b
+getResponseValueOrFail :: (MonadFail m) => (a -> b) -> String -> GRPCResult (Either String a) -> m b
 getResponseValueOrFail f errPrefix res =
   case res of
     Left err' ->
@@ -3783,7 +3890,7 @@ getResponseValueOrFail f errPrefix res =
         Left err -> fail $ errPrefix <> ": Could not convert response: " <> err
         Right val -> return $ f val
 
-getResponseValueOrFail' :: (MonadFail m, MonadIO m) => String -> GRPCResult (Either String a) -> m a
+getResponseValueOrFail' :: (MonadFail m) => String -> GRPCResult (Either String a) -> m a
 getResponseValueOrFail' errPrefix = getResponseValueOrFail id errPrefix
 
 -- |Process a transaction with unencrypted keys given explicitly.
