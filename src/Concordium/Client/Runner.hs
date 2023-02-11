@@ -3721,15 +3721,16 @@ processLegacyCmd action backend =
       when (recurse && Queries.biBlockHeight bi /= 0)
         (printBlockInfos recurse $ Given (Queries.biBlockParent bi))
 
-    -- |Add a pending V0 chain parameter update to its appropriate queue.
+    -- |Add a pending chain parameter update to its appropriate queue in an
+    -- @PendingUpdates 'ChainParametersV0@ instance.
     -- The output is either a @Left@ wrapping a @PendingUpdates@ instance with
     -- the update added to its appropriate queue, or a @Right@ wrapping a pair
     -- of an @AccountAddress@ and a callback which takes an @AccountIndex@ and
-    -- returns the@PendingUpdates@ instance with the update added to its appropriate
-    -- queue. The address can then be converted to its corresponding index and
-    -- fed to the closure to get the @PendingUpdates@ instance. This is due to API
-    -- returning an account address, while the native datatype uses use an account
-    -- index.
+    -- returns the @PendingUpdates@ instance with the update added. The address
+    -- can then be converted to its corresponding index and fed to the closure
+    -- to get the @PendingUpdates@ instance. This is due to API returning an
+    -- account address, while the native datatype uses use an account index.
+    -- Fails if the @PendingUpdate@ is a V1 chain parameter update.
     addPendingUpdateV0 :: (MonadFail m)
         => PendingUpdate -- |The pending update.
         -> PendingUpdates 'Types.ChainParametersV0 -- |The update queues.
@@ -3764,15 +3765,16 @@ processLegacyCmd action backend =
         enqueueM :: (Monad m) => ASetter (PendingUpdates 'Types.ChainParametersV0) a (UpdateQueue e) (UpdateQueue e) -> e -> m (Either a b)
         enqueueM l v = return . Left $ enqueue' puEffectiveTime updates l v
 
-    -- |Add a pending V1 chain parameter update to its appropriate queue.
+    -- |Add a pending chain parameter update to its appropriate queue in an
+    -- @PendingUpdates 'ChainParametersV1@ instance.
     -- The output is either a @Left@ wrapping a @PendingUpdates@ instance with
     -- the update added to its appropriate queue, or a @Right@ wrapping a pair
     -- of an @AccountAddress@ and a callback which takes an @AccountIndex@ and
-    -- returns the@PendingUpdates@ instance with the update added to its appropriate
-    -- queue. The address can then be converted to its corresponding index and
-    -- fed to the closure to get the @PendingUpdates@ instance. This is due to API
-    -- returning an account address, while the native datatype uses use an account
-    -- index.
+    -- returns the @PendingUpdates@ instance with the update added. The address
+    -- can then be converted to its corresponding index and fed to the closure
+    -- to get the @PendingUpdates@ instance. This is due to API returning an
+    -- account address, while the native datatype uses use an account index.
+    -- Fails if the @PendingUpdate@ is a V0 chain parameter update.
     addPendingUpdateV1 :: (MonadFail m)
         => PendingUpdate -- |The pending update.
         -> PendingUpdates 'Types.ChainParametersV1 -- |The update queues.
