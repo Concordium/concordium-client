@@ -3732,7 +3732,7 @@ processLegacyCmd action backend =
     -- returns the @PendingUpdates@ instance with the update added. The address
     -- can then be converted to its corresponding index and fed to the closure
     -- to get the @PendingUpdates@ instance. This is due to API returning an
-    -- account address, while the native datatype uses use an account index.
+    -- account address, while the native datatype uses an account index.
     -- Fails if the @PendingUpdate@ is a V1 chain parameter update.
     addPendingUpdateV0 :: (MonadFail m)
         => PendingUpdate -- |The pending update.
@@ -3776,7 +3776,7 @@ processLegacyCmd action backend =
     -- returns the @PendingUpdates@ instance with the update added. The address
     -- can then be converted to its corresponding index and fed to the closure
     -- to get the @PendingUpdates@ instance. This is due to API returning an
-    -- account address, while the native datatype uses use an account index.
+    -- account address, while the native datatype uses an account index.
     -- Fails if the @PendingUpdate@ is a V0 chain parameter update.
     addPendingUpdateV1 :: (MonadFail m)
         => PendingUpdate -- |The pending update.
