@@ -45,7 +45,7 @@ extra-deps:
   commit: 8087dfd416118064934affb35caab811a8a70233
 
 - github: Concordium/http2-grpc-haskell
-  commit: 7f4f4955cd64d867b9fda951600a445653f5b098
+  commit: d3d7a3413ccf4ca899602df8ef8e99601024938a
   subdirs:
     - http2-client-grpc
     - http2-grpc-proto-lens
