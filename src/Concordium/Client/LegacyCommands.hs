@@ -15,10 +15,12 @@ data LegacyCmd
   | GetTransactionStatus
       { legacyTransactionHash :: !Text
       } -- ^ Queries the gRPC for the information about the execution of a transaction
+  {- VH/FIXME: These are deprecated, remove and document in FP and changelog. 
   | GetTransactionStatusInBlock
       { legacyTransactionHash :: !Text,
         legacyBlockHash' :: !Text
       } -- ^ Queries the gRPC for the information about the execution of a transaction
+  -}
   | GetAccountNonFinalized {
       legacyAddress :: !Text
       } -- ^Get non finalized transactions for a given account.
@@ -100,8 +102,8 @@ data LegacyCmd
   | GetBannedPeers
   | Shutdown
   | DumpStart
-    { legacyFilepath :: !Text,
-      legacyRaw :: !Bool
+    { legacyFilepath :: !Text, -- ^ Path of the file to write the dumped packages to
+      legacyRaw :: !Bool -- ^ Dump raw packages if true
     }
   | DumpStop
   | GetIdentityProviders
@@ -117,7 +119,6 @@ legacyProgramOptions =
   hsubparser
     (sendTransactionCommand <>
      getTransactionStatusCommand <>
-     getTransactionStatusInBlockCommand <>
      getConsensusInfoCommand <>
      getBlockInfoCommand <>
      getBlockSummaryCommand <>
@@ -196,6 +197,7 @@ getTransactionStatusCommand =
        (progDesc
           "Query the gRPC for the information about the execution of a transaction."))
 
+{- VH/FIXME: Document in FP/changelog.
 getTransactionStatusInBlockCommand :: Mod CommandFields LegacyCmd
 getTransactionStatusInBlockCommand =
   command
@@ -209,6 +211,7 @@ getTransactionStatusInBlockCommand =
        )
        (progDesc
           "Query the gRPC for the information about the execution of a transaction in a specific block."))
+-}
 
 getConsensusInfoCommand :: Mod CommandFields LegacyCmd
 getConsensusInfoCommand =
@@ -510,13 +513,8 @@ dumpStartCommand =
     (info
        (DumpStart <$> 
         strArgument
-          (metavar "FILE" <> help "Path to the file to write the dumped packages to") <*>
-        argument
-          auto
-          (metavar "RAW" <>
-           value False <>
-           showDefault <>
-           help "Dump raw packages"))
+          (metavar "FILE" <> help "Path of the file to write the dumped packages to") <*>
+          flag False True (long "restrict" <> help "Dump raw packages"))
        (progDesc "Start dumping the packages."))
 
 dumpStopCommand :: Mod CommandFields LegacyCmd

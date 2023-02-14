@@ -132,9 +132,7 @@ import Codec.CBOR.Encoding
 import Codec.CBOR.JSON
 import Control.Arrow (Arrow(second))
 import Concordium.GRPC2
-import Concordium.Types (AccountIdentifier(AccAddress))
 import Concordium.Client.GRPC2
-import Data.Coerce (coerce)
 
 -- |Establish a new connection to the backend and run the provided computation.
 -- Close a connection after completion of the computation. Establishing a
@@ -3500,7 +3498,6 @@ processLegacyCmd action backend =
     GetBlocksAtHeight height gen restr ->
       withClient backend $
         getBlocksAtHeightV2
-        -- ↓ FIXME: Verify that this is correct in particular.
           (case (gen, restr) of
             (Just g, Just _) ->
               Relative g height True
@@ -3524,37 +3521,13 @@ processLegacyCmd action backend =
         readOrFail txhash >>=
         getBlockItemsV2 >>=
         printResponseValueAsJSON'
-    GetTransactionStatusInBlock txhash block -> do
-      b <- readOrFail block
-      t <- readOrFail txhash
-      withClient backend $
-        getBlockItemsV2 t >>=
-        getResponseValueOrFail'' >>=
-        -- ↓ FIXME: The below changes the client output.
-        --          Should this be documented or changed
-        --          to a different output?
-        (\case
-              Queries.Received ->
-                fail "Transaction received, but not present in any block."
-              Queries.Committed m ->
-                case m Map.!? b of
-                  Just (Just ts) -> return ts
-                  _ -> fail $ "Transaction received in block '"
-                            <> Text.unpack block
-                            <> "', but no summary in node response."
-              Queries.Finalized _ (Just ts) -> return ts
-              Queries.Finalized _ Nothing ->
-                fail $ "Transaction finalized in block '"
-                     <> Text.unpack block
-                     <> "', but no summary in node response.") >>=
-        printJSONValues . toJSON
     GetAccountInfo account block -> do
-      acc <- case ID.addressFromText account of
-        Left err -> logFatal [[i|cannot parse #{account} as an address: #{err}|]]
-        Right a -> return a
+      acc <- case Types.decodeAccountIdentifier $ Text.encodeUtf8 account of
+        Nothing -> logFatal [[i|cannot parse #{account} as an account identifier.|]]
+        Just a -> return a
       b <- readOrFailM Best block
       withClient backend $
-        getAccountInfoV2 (AccAddress acc) b >>=
+        getAccountInfoV2 acc b >>=
         printResponseValueAsJSON'
     GetAccountNonFinalized account -> do
       acc <- parseAccountAddress account
@@ -3572,9 +3545,6 @@ processLegacyCmd action backend =
         b <- readOrFailM Best block
         let contractIndex = Types.ContractIndex c
         let contractSubindex = 0
-        -- ↓ FIXME: Is it OK to set the subindex to 0; 
-        --          I read docs that state that it is
-        --          currently unused.
         getInstanceInfoV2 Types.ContractAddress{..} b >>=
           printResponseValueAsJSON'
     InvokeContract contextFile block -> do
@@ -3647,9 +3617,7 @@ processLegacyCmd action backend =
       withClient backend $
         getBannedPeersV2 >>=
         getResponseValueOrFail'' >>=
-        -- The coercion is done to avoid either an orphan
-        -- instance here or polluting `Concordium.GRPC2`.
-        printJSONValues . toJSON . fmap (coerce :: IpAddress -> Text)
+        printJSONValues . toJSON
     Shutdown ->
       withClient backend $
         shutdownV2 >>=
@@ -3680,20 +3648,31 @@ processLegacyCmd action backend =
   where
     -- |Print the response value under the provided mapping,
     -- or fail if the response contained an error.
+    printResponseValue :: (MonadIO m, MonadFail m, Show b)
+      => (a -> b)
+      -> GRPCResult (Either String a)
+      -> m ()
     printResponseValue f res =
       getResponseValueOrFail' f res >>= liftIO . print
 
     -- |Print the response value under the provided mapping
     -- as JSON, or fail if the response contained an error.
-    printResponseValueAsJSON res f = do
+    printResponseValueAsJSON :: (MonadIO m, MonadFail m, ToJSON b)
+      => (a -> b)
+      -> GRPCResult (Either String a)
+      -> m ()
+    printResponseValueAsJSON f res = do
       v <- getResponseValueOrFail' f res
       printJSONValues . toJSON $ v
 
     -- |Print the response value as JSON, or fail if the response
     -- contained an error.
-    printResponseValueAsJSON' res =
-      printResponseValueAsJSON res id
+    printResponseValueAsJSON' :: (MonadIO m, MonadFail m, ToJSON a)
+      => GRPCResult (Either String a)
+      -> m ()
+    printResponseValueAsJSON' = printResponseValueAsJSON id
 
+    -- |Print 
     printSuccess (Left x)  = liftIO $ putStrLn $ "FAIL: " <> x
     printSuccess (Right _) = liftIO $ putStrLn "OK"
 
@@ -3817,10 +3796,17 @@ processLegacyCmd action backend =
     -- |Helper function to enqueue elements in a @PendingUpdates@ instance.
     enqueue' :: Types.TransactionTime -- |The effective time for the update.
               -> PendingUpdates cpv -- |The instance to enqueue the update to.
-              -> ASetter (PendingUpdates cpv) a (UpdateQueue e) (UpdateQueue e) -- |The lens corresponding to the queue to add the update.
+              -> ASetter (PendingUpdates cpv) a (UpdateQueue e) (UpdateQueue e) -- |The setter for picking the queue to add the update to.
               -> e -- |The value to enqueue.
               -> a
-    enqueue' pue ups l v = over l (enqueue pue v) ups
+    enqueue' pue ups l v =
+      over
+        -- Lens for getting a queue.
+        (l . uqQueue)
+        -- Put an update on the queue.
+        (\q -> q <> [(pue, v)])
+        ups
+
 
     -- |Helper function which converts the output of `getBlockPendingUpdatesV2` to @PendingUpdates@.
     toUpdates pUpdates b helper =  do
@@ -3829,7 +3815,7 @@ processLegacyCmd action backend =
               case us of
                 Left u -> return u
                 Right (aAddr, cb) -> do
-                  accInfo <- getResponseValueOrFail'' =<< getAccountInfoV2 (AccAddress aAddr) b
+                  accInfo <- getResponseValueOrFail'' =<< getAccountInfoV2 (Types.AccAddress aAddr) b
                   return $ cb (Types.aiAccountIndex accInfo)
                 ) emptyPendingUpdates pUpdates
                 
@@ -3924,12 +3910,10 @@ printNodeInfo NodeInfo{..} = liftIO $
       putStrLn $ "Baker committee member: " ++ show (getBakerCommitteeMember details)
       putStrLn $ "Finalization committee member: " ++ show (getFinalizerCommitteeMember details)
   where showNodeType =
-        -- ↓ FIXME: Verify that these are correct.
           \case NodeBootstrapper -> "Bootstrapper"
                 NodeNotRunning -> "Node"
                 NodePassive -> "Node"
                 NodeActive _ -> "Node"
-        -- ↓ FIXME: Verify that these are correct.
         getBakerRunning =
           \case NodeBootstrapper -> False
                 NodeNotRunning -> False
@@ -3938,36 +3922,31 @@ printNodeInfo NodeInfo{..} = liftIO $
         getBakerIdM =
           \case NodeActive cInfo -> Just . show $ bakerId cInfo
                 _ -> Nothing
-        -- ↓ FIXME: Verify that these are correct.
         getConsensusRunning =
           \case NodeBootstrapper -> False
                 NodeNotRunning -> False
                 NodePassive -> True
                 NodeActive _ -> True
-        -- ↓ FIXME: Should messages be more specific (NodeActive carries additional information)?
         getConsensusType =
           \case NodeBootstrapper -> "Bootstrapper"
                 NodeNotRunning -> "Not running"
                 NodePassive -> "Passive"
                 NodeActive _ -> "Active"
-        -- ↓ FIXME: Should messages be a boolean or more specific, see the commented code below.
         getBakerCommitteeMember =
-          \case NodeActive (BakerConsensusInfo _ ActiveBakerCommitteeInfo) -> True
-                NodeActive (BakerConsensusInfo _ ActiveFinalizerCommitteeInfo) -> True
-                _ -> False
-                {- FIXME: Should a catchall be avoided?
-                NodeBootstrapper -> "Not in a committee"
-                NodeNotRunning -> "Not in a committee"
-                NodePassive -> "Not in a committee"
-                NodeActive (BakerConsensusInfo _ (PassiveBaker NotInCommittee)) -> "Not in a committee"
-                NodeActive (BakerConsensusInfo _ (PassiveBaker AddedButNotActiveInCommittee)) -> "Not in a committee"
-                NodeActive (BakerConsensusInfo _ (PassiveBaker AddedButWrongKeys)) -> "Not in a committee"
-                -}
-        -- FIXME: Should messages be a boolean or more specific, see the commented code.
+          \case NodeBootstrapper -> "No"
+                NodeNotRunning -> "No"
+                NodePassive -> "No"
+                NodeActive (BakerConsensusInfo _ (PassiveBaker NotInCommittee)) ->
+                  "No, currently not baking."
+                NodeActive (BakerConsensusInfo _ (PassiveBaker AddedButNotActiveInCommittee)) ->
+                  "No, registered as a baker but not in the current epoch."
+                NodeActive (BakerConsensusInfo _ (PassiveBaker AddedButWrongKeys)) -> "Not in committee"
+                NodeActive (BakerConsensusInfo bId ActiveBakerCommitteeInfo) ->
+                  "In current baker committee with baker ID '" <> show bId <> "'."
+                NodeActive (BakerConsensusInfo bId ActiveFinalizerCommitteeInfo) ->
+                  "In current baker committee with baker ID '" <> show bId <> "'."
         getFinalizerCommitteeMember =
-          \case NodeActive (BakerConsensusInfo _ ActiveFinalizerCommitteeInfo) -> True
-                _ -> False
-                {- FIXME: Should a catchall be avoided?
+          \case
                 NodeActive (BakerConsensusInfo _ ActiveBakerCommitteeInfo) -> "Not in committee"
                 NodeBootstrapper -> "Not in a committee"
                 NodeNotRunning -> "Not in a committee"
@@ -3975,7 +3954,8 @@ printNodeInfo NodeInfo{..} = liftIO $
                 NodeActive (BakerConsensusInfo _ (PassiveBaker NotInCommittee)) -> "Not in committee"
                 NodeActive (BakerConsensusInfo _ (PassiveBaker AddedButNotActiveInCommittee)) -> "Not in committee"
                 NodeActive (BakerConsensusInfo _ (PassiveBaker AddedButWrongKeys)) -> "Not in committee"
-                -}
+                NodeActive (BakerConsensusInfo bId ActiveFinalizerCommitteeInfo) ->
+                  "In current finalizer committee with baker ID " <> show bId <> "'."
 
 -- |FIXME: Move this some other place in refactoring.
 data StatusOfPeers = StatusOfPeers {
@@ -4039,7 +4019,7 @@ processTransaction_ transaction networkId _verbose = do
     nonce <-
       case thNonce header of
         Nothing -> do
-          res <- getAccountInfoV2 (AccAddress sender) Best
+          res <- getAccountInfoV2 (Types.AccAddress sender) Best
           getResponseValueOrFail Types.aiAccountNonce "Error while processing transaction" res
         Just nonce -> return nonce
     txPayload <- convertTransactionJsonPayload $ payload transaction
