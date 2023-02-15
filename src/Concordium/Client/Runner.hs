@@ -3447,8 +3447,6 @@ processIdentityShowCmd action backend =
 processLegacyCmd :: LegacyCmd -> Backend -> IO ()
 processLegacyCmd action backend =
   case action of
-    -- ↓ FIXME: This should be verified in particular, 
-    --          I am not sure how to test it.
     SendTransaction fname nid -> do
       source <- handleReadFile BSL.readFile fname
       t <- withClient backend $ processTransaction source nid

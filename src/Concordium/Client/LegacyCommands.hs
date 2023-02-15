@@ -15,12 +15,6 @@ data LegacyCmd
   | GetTransactionStatus
       { legacyTransactionHash :: !Text
       } -- ^ Queries the gRPC for the information about the execution of a transaction
-  {- VH/FIXME: These are deprecated, remove and document in FP and changelog. 
-  | GetTransactionStatusInBlock
-      { legacyTransactionHash :: !Text,
-        legacyBlockHash' :: !Text
-      } -- ^ Queries the gRPC for the information about the execution of a transaction
-  -}
   | GetAccountNonFinalized {
       legacyAddress :: !Text
       } -- ^Get non finalized transactions for a given account.
@@ -209,22 +203,6 @@ getTransactionStatusCommand =
        (progDesc
           "Query the gRPC for the information about the execution of a transaction."))
 
-{- VH/FIXME: Document in FP/changelog.
-getTransactionStatusInBlockCommand :: Mod CommandFields LegacyCmd
-getTransactionStatusInBlockCommand =
-  command
-    "GetTransactionStatusInBlock"
-    (info
-       (GetTransactionStatusInBlock <$>
-        strArgument
-          (metavar "TX-HASH" <> help "Hash of the transaction to query for") <*>
-        strArgument
-          (metavar "BLOCK-HASH" <> help "Hash of the block")
-       )
-       (progDesc
-          "Query the gRPC for the information about the execution of a transaction in a specific block."))
--}
-
 getConsensusInfoCommand :: Mod CommandFields LegacyCmd
 getConsensusInfoCommand =
   command
@@ -243,17 +221,7 @@ getBlockInfoCommand =
         optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
        )
        (progDesc "Query the gRPC server for a specific block."))
-{- VH/FIXME: Removed, document in FP and changelog.
-getBlockSummaryCommand :: Mod CommandFields LegacyCmd
-getBlockSummaryCommand =
-  command
-    "GetBlockSummary"
-    (info
-       (GetBlockSummary <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
-       )
-       (progDesc "Query the gRPC server for a specific block and its transactions."))
--}
+
 getBlockPendingUpdatesCommand :: Mod CommandFields LegacyCmd
 getBlockPendingUpdatesCommand =
   command
@@ -429,24 +397,6 @@ getModuleListCommand =
         optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
        (progDesc "Query the gRPC server for the list of modules."))
 
-{- FIXME: These are deprecated; remove and document in FP.
-startBakerCommand :: Mod CommandFields LegacyCmd
-startBakerCommand =
-    command
-     "StartBaker"
-    (info
-       (pure StartBaker)
-       (progDesc "Start the baker."))
-
-stopBakerCommand :: Mod CommandFields LegacyCmd
-stopBakerCommand =
-    command
-     "StopBaker"
-    (info
-       (pure StopBaker)
-       (progDesc "Stop the baker."))
---}
-
 peerConnectCommand :: Mod CommandFields LegacyCmd
 peerConnectCommand =
     command
@@ -499,27 +449,6 @@ unbanNodeCommand =
         strArgument
           (metavar "NODE-IP" <> help "IP of the node to be unbanned"))
        (progDesc "Unban a node."))
-
-{- FIXME: These are deprecated; remove and document in FP.
-
-joinNetworkCommand :: Mod CommandFields LegacyCmd
-joinNetworkCommand =
-    command
-     "JoinNetwork"
-    (info
-       (JoinNetwork <$>
-        argument auto (metavar "NET-ID" <> help "ID of the network"))
-       (progDesc "Join a network."))
-
-leaveNetworkCommand :: Mod CommandFields LegacyCmd
-leaveNetworkCommand =
-    command
-     "LeaveNetwork"
-    (info
-       (LeaveNetwork <$>
-        argument auto (metavar "NET-ID" <> help "ID of the network"))
-       (progDesc "Leave a network."))
--}
 
 getAncestorsCommand :: Mod CommandFields LegacyCmd
 getAncestorsCommand =

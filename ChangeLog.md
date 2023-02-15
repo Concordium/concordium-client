@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- `raw` commands now use the V2 GRPC API exposed by the node. This introduces
+  some potentially breaking changes:
+    - Commands `raw GetTransactionStatusInBlock`, `raw StartBaker`, `raw StopBaker`,
+      `raw JoinNetwork` and ` raw LeaveNetwork` have been removed.
+    - Command `raw GetBlockSummary` has been removed, and replaced by the commands
+      `raw GetBlockPendingUpdates`, `raw GetBlockSpecialEvents`,
+      `raw GetBlockChainParameters` `raw GetBlockFinalizationSummary`. These provide
+      more granular way to access to the same data.
+    - `raw BanNode` and `raw BanNode` no longer support node IDs, but now rather an
+      take an IP address.
+    - `raw DumpStart` takes a parameter specifying the path of the file to write
+      dumped packets to, and furthermore supports a flag to specify whether raw
+      packets should be written to the file.
+    - Output of `raw GetBannedPeers` prints a JSON file containing a list of
+      strings each corresponding to a banned IP.
+    - Output of `raw GetPeerUptime` now prints an integer representing the uptime
+      of the node.
+
 ## 5.0.2
 
 - Receive function parameters are now displayed as JSON in `transaction status`
