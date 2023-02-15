@@ -74,12 +74,6 @@ import qualified Proto.V2.Concordium.Types as Proto
 import qualified Proto.V2.Concordium.Types as ProtoFields
 import qualified Proto.V2.Concordium.Types_Fields as Proto
 import qualified Proto.V2.Concordium.Types_Fields as ProtoFields
-import Data.Aeson
-import Data.Aeson.TH
-import Data.Aeson.Types (Parser)
-import Concordium.Utils
-import Data.Char
-import Concordium.Types.Queries (EChainParametersAndKeys)
 
 -- |A helper function that serves as an inverse to `mkSerialize`,
 --
