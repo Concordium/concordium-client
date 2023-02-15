@@ -9,9 +9,9 @@
     - Command `raw GetBlockSummary` has been removed, and replaced by the commands
       `raw GetBlockPendingUpdates`, `raw GetBlockSpecialEvents`,
       `raw GetBlockChainParameters` `raw GetBlockFinalizationSummary`. These provide
-      more granular way to access to the same data.
+      a more granular way of accessing to the same data.
     - `raw BanNode` and `raw BanNode` no longer support node IDs, but now rather an
-      take an IP address.
+      take just an IP address.
     - `raw DumpStart` takes a parameter specifying the path of the file to write
       dumped packets to, and furthermore supports a flag to specify whether raw
       packets should be written to the file.
