@@ -3,6 +3,7 @@
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -64,7 +65,7 @@ import qualified Concordium.Types.Accounts as Concordium.Types
 import qualified Concordium.Types.InvokeContract as InvokeContract
 import qualified Concordium.Types.Parameters as Parameters
 import qualified Concordium.Types.Transactions as Transactions
-import qualified Concordium.Types.Queries as QueryTypes
+import Concordium.Types.Queries
 import qualified Concordium.Types.Updates as Updates
 import qualified Concordium.Wasm as Wasm
 
@@ -73,6 +74,12 @@ import qualified Proto.V2.Concordium.Types as Proto
 import qualified Proto.V2.Concordium.Types as ProtoFields
 import qualified Proto.V2.Concordium.Types_Fields as Proto
 import qualified Proto.V2.Concordium.Types_Fields as ProtoFields
+import Data.Aeson
+import Data.Aeson.TH
+import Data.Aeson.Types (Parser)
+import Concordium.Utils
+import Data.Char
+import Concordium.Types.Queries (EChainParametersAndKeys)
 
 -- |A helper function that serves as an inverse to `mkSerialize`,
 --
@@ -602,11 +609,11 @@ instance FromProto Proto.YearMonth where
         if 1_000 <= ymYear && ymYear <= 9_999 && 1 <= ymMonth && ymMonth <= 12
             then return YearMonth{..}
             else fromProtoFail $
-                      "Unable to convert 'YearMonth', got year "
+                      "Unable to convert 'YearMonth', got year '"
                     <> show ymYear
-                    <> ", month "
+                    <> "', month '"
                     <> show ymMonth
-                    <> "."
+                    <> "'."
 
 instance FromProto Proto.Policy where
     type Output Proto.Policy = Policy
@@ -767,11 +774,11 @@ instance FromProto Proto.InstanceInfo where
                 return Wasm.InstanceInfoV1{..}
 
 instance FromProto Proto.NextAccountSequenceNumber where
-    type Output Proto.NextAccountSequenceNumber = QueryTypes.NextAccountNonce
+    type Output Proto.NextAccountSequenceNumber = NextAccountNonce
     fromProto asn = do
         nanNonce <- fromProto $ asn ^. ProtoFields.sequenceNumber
         let nanAllFinal = asn ^. ProtoFields.allFinal
-        return QueryTypes.NextAccountNonce{..}
+        return NextAccountNonce{..}
 
 instance FromProto Proto.ProtocolVersion where
     type Output Proto.ProtocolVersion = ProtocolVersion
@@ -802,7 +809,7 @@ instance FromProto Proto.GenesisIndex where
     fromProto = return . deMkWord32
 
 instance FromProto Proto.ConsensusInfo where
-    type Output Proto.ConsensusInfo = QueryTypes.ConsensusStatus
+    type Output Proto.ConsensusInfo = ConsensusStatus
     fromProto ci = do
         csBestBlock <- fromProto $ ci ^. ProtoFields.bestBlock
         csGenesisBlock <- fromProto $ ci ^. ProtoFields.genesisBlock
@@ -836,7 +843,7 @@ instance FromProto Proto.ConsensusInfo where
         csGenesisIndex <- fromProto $ ci ^. ProtoFields.genesisIndex
         csCurrentEraGenesisBlock <- fromProto $ ci ^. ProtoFields.currentEraGenesisBlock
         csCurrentEraGenesisTime <- fmap timestampToUTCTime . fromProto $ ci ^. ProtoFields.currentEraGenesisTime
-        return QueryTypes.ConsensusStatus{..}
+        return ConsensusStatus{..}
 
 instance FromProto Proto.Slot where
     type Output Proto.Slot = Slot
@@ -854,7 +861,7 @@ instance FromProto Proto.Energy where
     fromProto = return . deMkWord64
 
 instance FromProto Proto.BlockInfo where
-    type Output Proto.BlockInfo = QueryTypes.BlockInfo
+    type Output Proto.BlockInfo = BlockInfo
     fromProto bi = do
         biBlockHash <- fromProto $ bi ^. ProtoFields.hash
         biBlockHeight <- fromProto $ bi ^. ProtoFields.height
@@ -872,14 +879,14 @@ instance FromProto Proto.BlockInfo where
         biTransactionEnergyCost <- fromProto $ bi ^. ProtoFields.transactionsEnergyCost
         let biTransactionsSize = fromIntegral $ bi ^. ProtoFields.transactionsSize
         biBlockStateHash <- fromProto $ bi ^. ProtoFields.stateHash
-        return QueryTypes.BlockInfo{..}
+        return BlockInfo{..}
 
 instance FromProto Proto.Amount where
     type Output Proto.Amount = Amount
     fromProto = return . deMkWord64
 
 instance FromProto Proto.PoolCurrentPaydayInfo where
-    type Output Proto.PoolCurrentPaydayInfo = QueryTypes.CurrentPaydayBakerPoolStatus
+    type Output Proto.PoolCurrentPaydayInfo = CurrentPaydayBakerPoolStatus
     fromProto cpi = do
         let bpsBlocksBaked = fromIntegral $ cpi ^. ProtoFields.blocksBaked
         let bpsFinalizationLive = cpi ^. ProtoFields.finalizationLive
@@ -888,10 +895,10 @@ instance FromProto Proto.PoolCurrentPaydayInfo where
         let bpsLotteryPower = cpi ^. ProtoFields.lotteryPower
         bpsBakerEquityCapital <- fromProto $ cpi ^. ProtoFields.bakerEquityCapital
         bpsDelegatedCapital <- fromProto $ cpi ^. ProtoFields.delegatedCapital
-        return QueryTypes.CurrentPaydayBakerPoolStatus{..}
+        return CurrentPaydayBakerPoolStatus{..}
 
 instance FromProto Proto.PoolInfoResponse where
-    type Output Proto.PoolInfoResponse = QueryTypes.PoolStatus
+    type Output Proto.PoolInfoResponse = PoolStatus
     fromProto pir = do
         psBakerId <- fromProto $ pir ^. ProtoFields.baker
         psBakerAddress <- fromProto $ pir ^. ProtoFields.address
@@ -901,24 +908,24 @@ instance FromProto Proto.PoolInfoResponse where
         psPoolInfo <- fromProto $ pir ^. ProtoFields.poolInfo
         psBakerStakePendingChange <-
             case pir ^. ProtoFields.maybe'equityPendingChange of
-                Nothing -> return QueryTypes.PPCNoChange
+                Nothing -> return PPCNoChange
                 Just ppc -> fromProto ppc
         psCurrentPaydayStatus <- fromProtoMaybe $ pir ^. ProtoFields.maybe'currentPaydayInfo
         psAllPoolTotalCapital <- fromProto $ pir ^. ProtoFields.allPoolTotalCapital
-        return QueryTypes.BakerPoolStatus{..}
+        return BakerPoolStatus{..}
 
 instance FromProto Proto.PassiveDelegationInfo where
-    type Output Proto.PassiveDelegationInfo = QueryTypes.PoolStatus
+    type Output Proto.PassiveDelegationInfo = PoolStatus
     fromProto pdi = do
         psDelegatedCapital <- fromProto $ pdi ^. ProtoFields.delegatedCapital
         psCommissionRates <- fromProto $ pdi ^. ProtoFields.commissionRates
         psCurrentPaydayTransactionFeesEarned <- fromProto $ pdi ^. ProtoFields.currentPaydayTransactionFeesEarned
         psCurrentPaydayDelegatedCapital <- fromProto $ pdi ^. ProtoFields.currentPaydayDelegatedCapital
         psAllPoolTotalCapital <- fromProto $ pdi ^. ProtoFields.allPoolTotalCapital
-        return QueryTypes.PassiveDelegationStatus{..}
+        return PassiveDelegationStatus{..}
 
 instance FromProto Proto.PoolPendingChange where
-    type Output Proto.PoolPendingChange = QueryTypes.PoolPendingChange
+    type Output Proto.PoolPendingChange = PoolPendingChange
     fromProto ppChange = do
         ppc <- case ppChange ^. Proto.maybe'change of
             Nothing -> fromProtoFail
@@ -928,10 +935,10 @@ instance FromProto Proto.PoolPendingChange where
             Proto.PoolPendingChange'Reduce' reduce -> do
                 ppcBakerEquityCapital <- fromProto $ reduce ^. ProtoFields.reducedEquityCapital
                 ppcEffectiveTime <- fmap timestampToUTCTime . fromProto $ reduce ^. ProtoFields.effectiveTime
-                return QueryTypes.PPCReduceBakerCapital{..}
+                return PPCReduceBakerCapital{..}
             Proto.PoolPendingChange'Remove' remove -> do
                 ppcEffectiveTime <- fmap timestampToUTCTime . fromProto $ remove ^. ProtoFields.effectiveTime
-                return QueryTypes.PPCRemovePool{..}
+                return PPCRemovePool{..}
 
 instance FromProto Proto.BlocksAtHeightResponse where
     type Output Proto.BlocksAtHeightResponse = [BlockHash]
@@ -951,7 +958,7 @@ instance FromProto Proto.MintRate where
             else return MintRate{..}
 
 instance FromProto Proto.TokenomicsInfo where
-    type Output Proto.TokenomicsInfo = QueryTypes.RewardStatus
+    type Output Proto.TokenomicsInfo = RewardStatus
     fromProto tInfo = do
         ti <- case tInfo ^. Proto.maybe'tokenomics of
             Nothing -> fromProtoFail
@@ -965,7 +972,7 @@ instance FromProto Proto.TokenomicsInfo where
                 rsFinalizationRewardAccount <- fromProto $ v0 ^. ProtoFields.finalizationRewardAccount
                 rsGasAccount <- fromProto $ v0 ^. ProtoFields.gasAccount
                 rsProtocolVersion <- fromProto $ v0 ^. ProtoFields.protocolVersion
-                return QueryTypes.RewardStatusV0{..}
+                return RewardStatusV0{..}
             Proto.TokenomicsInfo'V1' v1 -> do
                 rsTotalAmount <- fromProto $ v1 ^. ProtoFields.totalAmount
                 rsTotalEncryptedAmount <- fromProto $ v1 ^. ProtoFields.totalEncryptedAmount
@@ -977,7 +984,7 @@ instance FromProto Proto.TokenomicsInfo where
                 rsNextPaydayMintRate <- fromProto $ v1 ^. ProtoFields.nextPaydayMintRate
                 rsTotalStakedCapital <- fromProto $ v1 ^. ProtoFields.totalStakedCapital
                 rsProtocolVersion <- fromProto $ v1 ^. ProtoFields.protocolVersion
-                return QueryTypes.RewardStatusV1{..}
+                return RewardStatusV1{..}
 
 instance FromProto Proto.ContractEvent where
     type Output Proto.ContractEvent = Wasm.ContractEvent
@@ -1216,19 +1223,19 @@ instance FromProto Proto.InvokeInstanceResponse where
                 return InvokeContract.Failure{..}
 
 instance FromProto Proto.Branch where
-    type Output Proto.Branch = QueryTypes.Branch
+    type Output Proto.Branch = Branch
     fromProto branch = do
         branchBlockHash <- fromProto $ branch ^. ProtoFields.blockHash
         branchChildren <- mapM fromProto $ branch ^. ProtoFields.children
-        return QueryTypes.Branch{..}
+        return Branch{..}
 
 instance FromProto Proto.ElectionInfo'Baker where
-    type Output Proto.ElectionInfo'Baker = QueryTypes.BakerSummary
+    type Output Proto.ElectionInfo'Baker = BakerSummary
     fromProto baker = do
         bsBakerId <- fromProto $ baker ^. ProtoFields.baker
         bsBakerAccount <- fromProtoMaybe $ baker ^. ProtoFields.maybe'account
         let bsBakerLotteryPower = baker ^. ProtoFields.lotteryPower
-        return QueryTypes.BakerSummary{..}
+        return BakerSummary{..}
 
 instance FromProto Proto.ElectionDifficulty where
     type Output Proto.ElectionDifficulty = ElectionDifficulty
@@ -1249,7 +1256,7 @@ instance FromProto Proto.LeadershipElectionNonce where
             Right nonce -> return nonce
 
 instance FromProto Proto.ElectionInfo where
-    type Output Proto.ElectionInfo = QueryTypes.BlockBirkParameters
+    type Output Proto.ElectionInfo = BlockBirkParameters
     fromProto eInfo = do
         bbpBakers <-
             mapM fromProto
@@ -1257,10 +1264,10 @@ instance FromProto Proto.ElectionInfo where
                 $ eInfo ^. ProtoFields.bakerElectionInfo
         bbpElectionDifficulty <- fromProto $ eInfo ^. ProtoFields.electionDifficulty
         bbpElectionNonce <- fromProto $ eInfo ^. ProtoFields.electionNonce
-        return QueryTypes.BlockBirkParameters{..}
+        return BlockBirkParameters{..}
 
 instance FromProto Proto.NextUpdateSequenceNumbers where
-    type Output Proto.NextUpdateSequenceNumbers = QueryTypes.NextUpdateSequenceNumbers
+    type Output Proto.NextUpdateSequenceNumbers = NextUpdateSequenceNumbers
     fromProto nums = do
         _nusnRootKeys <- fromProto $ nums ^. ProtoFields.rootKeys
         _nusnLevel1Keys <- fromProto $ nums ^. ProtoFields.level1Keys
@@ -1278,7 +1285,7 @@ instance FromProto Proto.NextUpdateSequenceNumbers where
         _nusnAddIdentityProvider <- fromProto $ nums ^. ProtoFields.addIdentityProvider
         _nusnCooldownParameters <- fromProto $ nums ^. ProtoFields.cooldownParameters
         _nusnTimeParameters <- fromProto $ nums ^. ProtoFields.timeParameters
-        return QueryTypes.NextUpdateSequenceNumbers{..}
+        return NextUpdateSequenceNumbers{..}
 
 instance FromProto Proto.IpAddress where
     type Output Proto.IpAddress = IpAddress
@@ -2101,21 +2108,21 @@ instance FromProto (Proto.AccountAddress, Proto.BakerEvent) where
                 return BakerSetFinalizationRewardCommission{..}
 
 instance FromProto Proto.BlockItemStatus where
-    type Output Proto.BlockItemStatus = QueryTypes.TransactionStatus
+    type Output Proto.BlockItemStatus = TransactionStatus
     fromProto biStatus = do
         bis <- case biStatus ^. Proto.maybe'status of
             Nothing -> fromProtoFail
                 "Unable to convert 'BlockItemStatus' due to missing field in response payload."
             Just v -> return v
         case bis of
-            Proto.BlockItemStatus'Received _ -> return QueryTypes.Received
+            Proto.BlockItemStatus'Received _ -> return Received
             Proto.BlockItemStatus'Finalized' finalized -> do
                 let outcome = finalized ^. ProtoFields.outcome
                 (tHash, tSumm) <- fromOutcome outcome
-                return $ QueryTypes.Finalized tHash tSumm
+                return $ Finalized tHash tSumm
             Proto.BlockItemStatus'Committed' committed -> do
                 outcomes <- mapM fromOutcome $ committed ^. ProtoFields.outcomes
-                return $ QueryTypes.Committed (Map.fromList outcomes)
+                return $ Committed (Map.fromList outcomes)
       where
         fromOutcome outcome = do
             bHash <- fromProto $ outcome ^. ProtoFields.blockHash
@@ -2127,15 +2134,15 @@ instance FromProto Proto.FinalizationIndex where
     fromProto = return . deMkWord64
 
 instance FromProto Proto.FinalizationSummaryParty where
-    type Output Proto.FinalizationSummaryParty = QueryTypes.FinalizationSummaryParty
+    type Output Proto.FinalizationSummaryParty = FinalizationSummaryParty
     fromProto fsParty = do
         fspBakerId <- fromProto $ fsParty ^. ProtoFields.baker
         let fspWeight = fromIntegral $ fsParty ^. ProtoFields.weight
         let fspSigned = fsParty ^. ProtoFields.signed
-        return QueryTypes.FinalizationSummaryParty{..}
+        return FinalizationSummaryParty{..}
 
 instance FromProto Proto.BlockFinalizationSummary where
-    type Output Proto.BlockFinalizationSummary = Maybe QueryTypes.FinalizationSummary
+    type Output Proto.BlockFinalizationSummary = Maybe FinalizationSummary
     fromProto bfSummary = do
         bfs <- case bfSummary ^. Proto.maybe'summary of
             Nothing -> fromProtoFail
@@ -2148,53 +2155,7 @@ instance FromProto Proto.BlockFinalizationSummary where
                 fsFinalizationIndex <- fromProto $ record ^. ProtoFields.index
                 fsFinalizationDelay <- fromProto $ record ^. ProtoFields.delay
                 fsFinalizers <- fmap Vec.fromList . mapM fromProto $ record ^. ProtoFields.finalizers
-                return $ Just QueryTypes.FinalizationSummary{..}
-
--- |Catchup status of the peer.
-data PeerCatchupStatus
-    = -- |The peer is a bootstrapper and not participating in consensus.
-      Bootstrapper
-    | -- |The peer does not have any data unknown to us. If we receive a message
-      -- from the peer that refers to unknown data (e.g., an unknown block) the
-      -- peer is marked as pending.
-      UpToDate
-    | -- |The peer might have some data unknown to us. A peer can be in this state
-      -- either because it sent a message that refers to data unknown to us, or
-      -- before we have established a baseline with it. The latter happens during
-      -- node startup, as well as upon protocol updates until the initial catchup
-      -- handshake completes.
-      Pending
-    | -- |The node is currently catching up by requesting blocks from this peer.
-      -- There will be at most one peer with this status at a time. Once the peer
-      -- has responded to the request, its status will be changed to either `UpToDate`
-      -- or `Pending`.
-      CatchingUp
-  deriving (Show, Eq)
-
--- |Network statistics for the peer.
-data NetworkStats = NetworkStats
-    { -- |The number of messages sent to the peer.
-      -- Packets are blocks, transactions, catchup messages, finalization records
-      -- and network messages such as pings and peer requests.
-      packetsSent :: !Word64,
-      -- |The number of messages received from the peer.
-      -- Packets are blocks, transactions, catchup messages, finalization records
-      -- and network messages such as pings and peer requests.
-      packetsReceived :: !Word64,
-      -- |The connection latency (i.e., ping time) in milliseconds.
-      latency :: !Word64
-    } deriving (Show)
-
--- |Network related peer statistics.
-data PeerInfo = PeerInfo
-    { peerId :: !Text,
-      socketAddress :: !IpSocketAddress,
-      networkStats :: !NetworkStats,
-      consensusInfo :: !PeerCatchupStatus
-    } deriving (Show)
-
--- |Network related peer statistics.
-type PeersInfo = [PeerInfo]
+                return $ Just FinalizationSummary{..}
 
 instance FromProto Proto.IpSocketAddress where
     type Output Proto.IpSocketAddress = IpSocketAddress
@@ -2242,7 +2203,7 @@ instance FromProto Proto.PeersInfo'Peer where
         return PeerInfo{..}
 
 instance FromProto Proto.PeersInfo where
-    type Output Proto.PeersInfo = PeersInfo
+    type Output Proto.PeersInfo = [PeerInfo]
     fromProto pInfo = mapM fromProto $ pInfo ^. Proto.peers
 
 instance FromProto Proto.NodeInfo'BakerConsensusInfo'PassiveCommitteeInfo where
@@ -2257,33 +2218,6 @@ instance FromProto Proto.NodeInfo'BakerConsensusInfo'PassiveCommitteeInfo where
                 return AddedButWrongKeys
             ProtoFields.NodeInfo'BakerConsensusInfo'PassiveCommitteeInfo'Unrecognized _ -> do
                 fromProtoFail "Unable to convert 'NodeInfo'BakerConsensusInfo'PassiveCommitteeInfo'."
-
--- |The committee information of a node which is configured with
--- baker keys but is somehow is _not_ part of the current baking
--- committee.
-data PassiveCommitteeInfo
-    = -- |The node is started with baker keys however it is currently not in
-      -- the baking committee. The node is _not_ baking.
-      NotInCommittee
-    | -- |The account is registered as a baker but not in the current `Epoch`.
-      -- The node is _not_ baking.
-      AddedButNotActiveInCommittee
-    | -- |The node has configured invalid baker keys i.e., the configured
-      -- baker keys do not match the current keys on the baker account.
-      -- The node is _not_ baking.
-      AddedButWrongKeys
-  deriving (Show)
-
--- |Status of the baker configured node.
-data BakerConsensusInfoStatus
-    = -- |The node is currently not baking.
-      PassiveBaker !PassiveCommitteeInfo
-    | -- |Node is configured with baker keys and active in the current baking committee
-      ActiveBakerCommitteeInfo
-    | -- | Node is configured with baker keys and active in the current finalizer
-      -- committee (and also baking committee).
-      ActiveFinalizerCommitteeInfo
-  deriving (Show)
 
 instance FromProto Proto.NodeInfo'BakerConsensusInfo where
     type Output Proto.NodeInfo'BakerConsensusInfo = BakerConsensusInfo
@@ -2302,12 +2236,6 @@ instance FromProto Proto.NodeInfo'BakerConsensusInfo where
                 ProtoFields.NodeInfo'BakerConsensusInfo'PassiveCommitteeInfo pcInfo ->
                     PassiveBaker <$> fromProto pcInfo
         return BakerConsensusInfo{..}
-
--- |Consensus info for a node configured with baker keys.
-data BakerConsensusInfo = BakerConsensusInfo
-    { bakerId :: !BakerId,
-      status :: !BakerConsensusInfoStatus
-    } deriving (Show)
 
 instance FromProto Proto.NodeInfo where
     type Output Proto.NodeInfo = NodeInfo
@@ -2336,22 +2264,6 @@ instance FromProto Proto.NodeInfo where
         networkInfo <- fromProto $ nInfo ^. ProtoFields.networkInfo
         return NodeInfo{..}
 
--- |Consensus related details of the peer.
-data NodeDetails
-    = -- |The node is a bootstrapper and not participating in consensus.
-      NodeBootstrapper
-    | -- |The node is not running consensus. This is the case only when the node
-      -- is not supporting the protocol on the chain. The node does not process
-      -- blocks.
-      NodeNotRunning
-    | -- | Consensus info for a node that is not configured with baker keys.
-      -- The node is only processing blocks and relaying blocks and transactions
-      -- and responding to catchup messages.
-      NodePassive
-    | -- | The node is configured with baker credentials and consensus is running.
-      NodeActive !BakerConsensusInfo
-  deriving (Show)
-
 instance FromProto Proto.NodeInfo'NetworkInfo where
     type Output Proto.NodeInfo'NetworkInfo = NetworkInfo
     fromProto nInfo = do
@@ -2362,42 +2274,14 @@ instance FromProto Proto.NodeInfo'NetworkInfo where
         let avgBpsOut = fromIntegral $ nInfo ^. ProtoFields.avgBpsOut
         return NetworkInfo{..}
 
--- |Network related information of the node.
-data NetworkInfo = NetworkInfo
-    { -- |The node id.
-      nodeId :: !Text,
-      -- |Total number of packets sent by the node.
-      peerTotalSent :: !Word64,
-      -- |Total number of packets received by the node.
-      peerTotalReceived :: !Word64,
-      -- |Average outbound throughput in bytes per second.
-      avgBpsIn :: !Word64,
-      -- |Average inbound throughput in bytes per second.
-      avgBpsOut :: !Word64
-    } deriving (Show)
-
--- |Various information about the node.
-data NodeInfo = NodeInfo
-    { -- |The version of the node.
-      peerVersion :: !Text,
-      -- |The local time of the node.
-      localTime :: !Timestamp,
-      -- |Number of milliseconds that the node has been alive.
-      peerUptime :: !Duration,
-      -- |Information related to the p2p protocol.
-      networkInfo :: !NetworkInfo,
-      -- |Consensus related details of the node.
-      details :: !NodeDetails
-    } deriving (Show)
-
 instance FromProto Proto.ChainParametersV0 where
     -- |The internal Haskell type for representing chain parameters expects
     -- an account _index_, while the protocol buffer representation uses an
     -- account _address_ for the foundation account. The workaround here is to
     -- return the address and a closure. The address can then be converted
     -- to its corresponding index and fed to the closure to get the desired
-    -- @ChainParameterOutputV0@ instance.
-    type Output Proto.ChainParametersV0 = (AccountAddress,  AccountIndex -> FromProtoResult ChainParameterOutput)
+    -- @EChainParametersAndKeys@ instance.
+    type Output Proto.ChainParametersV0 = (AccountAddress,  AccountIndex -> FromProtoResult EChainParametersAndKeys)
     fromProto cParams = do
         faAddress <- fromProto $ cParams ^. ProtoFields.foundationAccount
         return (faAddress, faIdxToOutput)
@@ -2426,7 +2310,7 @@ instance FromProto Proto.ChainParametersV0 where
                 level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
                 level2Keys <- fromProto $ cParams ^. ProtoFields.level2Keys
                 let ecpKeys = Updates.UpdateKeysCollection{..}
-                return $ ChainParameterOutputV0 ecpParams ecpKeys
+                return $ EChainParametersAndKeys{..}
 
 instance FromProto Proto.ChainParametersV1 where
     -- |The internal Haskell type for representing chain parameters expects
@@ -2434,8 +2318,8 @@ instance FromProto Proto.ChainParametersV1 where
     -- account _address_ for the foundation account. The workaround here is to
     -- return the address and a closure. The address can then be converted
     -- to its corresponding index and fed to the closure to get the desired
-    -- @ChainParameterOutputV1@ instance.
-    type Output Proto.ChainParametersV1 = (AccountAddress,  AccountIndex -> FromProtoResult ChainParameterOutput)
+    -- @EChainParametersAndKeys@ instance.
+    type Output Proto.ChainParametersV1 = (AccountAddress,  AccountIndex -> FromProtoResult EChainParametersAndKeys)
     fromProto cParams = do
         faAddress <- fromProto $ cParams ^. ProtoFields.foundationAccount
         return (faAddress, faIdxToOutput)
@@ -2460,7 +2344,7 @@ instance FromProto Proto.ChainParametersV1 where
                 level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
                 level2Keys <- fromProto $ cParams ^. ProtoFields.level2Keys
                 let ecpKeys = Updates.UpdateKeysCollection{..}
-                return $ ChainParameterOutputV1 ecpParams ecpKeys
+                return $ EChainParametersAndKeys ecpParams ecpKeys
 
 instance FromProto Proto.Epoch where
     type Output Proto.Epoch = Epoch
@@ -2474,16 +2358,8 @@ instance FromProto Proto.CredentialsPerBlockLimit where
                 "Unable to convert 'CredentialsPerBlockLimit': " <> err
             Right v -> return v
 
-data ChainParameterOutput
-    = ChainParameterOutputV0
-        !(Parameters.ChainParameters' 'ChainParametersV0)
-        !(Updates.UpdateKeysCollection 'ChainParametersV0)
-    | ChainParameterOutputV1
-        !(Parameters.ChainParameters' 'ChainParametersV1)
-        !(Updates.UpdateKeysCollection 'ChainParametersV1)
-
 instance FromProto Proto.ChainParameters where
-    type Output Proto.ChainParameters = (AccountAddress, AccountIndex -> FromProtoResult ChainParameterOutput)
+    type Output Proto.ChainParameters = (AccountAddress, AccountIndex -> FromProtoResult EChainParametersAndKeys)
     fromProto cParams = do
         cp <- case cParams ^. ProtoFields.maybe'parameters of
             Nothing -> fromProtoFail
@@ -2505,14 +2381,6 @@ instance FromProto Proto.CryptographicParameters where
                        "Unable to convert 'CryptographicParameters'. Could not create foreign instance "
                     <> "due to malformed payload data."
                 Just v -> return v
-
--- |Information about a block which arrived at the node.
-data ArrivedBlockInfo = ArrivedBlockInfo {
-    -- |Hash of the block.
-    abiBlockHash :: !BlockHash,
-    -- |Absolute height of the block, where 0 is the height of the genesis block.
-    abiBlockHeight :: !AbsoluteBlockHeight
-} deriving (Show)
 
 instance FromProto Proto.ArrivedBlockInfo where
     type Output Proto.ArrivedBlockInfo = ArrivedBlockInfo
@@ -2536,7 +2404,7 @@ instance FromProto Proto.InstanceStateKVPair where
         return (key, value)
 
 instance FromProto Proto.DelegatorInfo where
-    type Output Proto.DelegatorInfo = QueryTypes.DelegatorInfo
+    type Output Proto.DelegatorInfo = DelegatorInfo
     fromProto dInfo = do
         pdiAccount <- fromProto $ dInfo ^. ProtoFields.account
         pdiStake <- fromProto $ dInfo ^. ProtoFields.stake
@@ -2544,14 +2412,14 @@ instance FromProto Proto.DelegatorInfo where
                 case dInfo ^. ProtoFields.maybe'pendingChange of
                     Nothing -> return NoChange
                     Just v -> fromProto v
-        return QueryTypes.DelegatorInfo{..}
+        return DelegatorInfo{..}
 
 instance FromProto Proto.DelegatorRewardPeriodInfo where
-    type Output Proto.DelegatorRewardPeriodInfo = QueryTypes.DelegatorRewardPeriodInfo
+    type Output Proto.DelegatorRewardPeriodInfo = DelegatorRewardPeriodInfo
     fromProto dInfo = do
         pdrpiAccount <- fromProto $ dInfo ^. ProtoFields.account
         pdrpiStake <- fromProto $ dInfo ^. ProtoFields.stake
-        return QueryTypes.DelegatorRewardPeriodInfo{..}
+        return DelegatorRewardPeriodInfo{..}
 
 instance FromProto Proto.BlockSpecialEvent'AccountAmounts where
     type Output Proto.BlockSpecialEvent'AccountAmounts = Transactions.AccountAmounts
@@ -2621,14 +2489,6 @@ instance FromProto Proto.BlockSpecialEvent where
                 stoFinalizationReward <- fromProto $ ppReward ^. ProtoFields.finalizationReward
                 return Transactions.PaydayPoolReward{..}
 
--- |A pending update.
-data PendingUpdate = PendingUpdate {
-    -- |The effect of the update.
-    puEffect :: !QueryTypes.PendingUpdateEffect,
-    -- |The effective time of the update.
-    puEffectiveTime :: TransactionTime
-}
-
 instance FromProto Proto.PendingUpdate where
     type Output Proto.PendingUpdate = PendingUpdate
     fromProto pUpdate = do
@@ -2640,43 +2500,43 @@ instance FromProto Proto.PendingUpdate where
                 Just v -> return v
             case pue of
                 ProtoFields.PendingUpdate'RootKeys rKeys -> do
-                    QueryTypes.PUERootKeys . snd <$> fromProto rKeys
+                    PUERootKeys . snd <$> fromProto rKeys
                 ProtoFields.PendingUpdate'Level1Keys l1Keys -> do
-                    QueryTypes.PUELevel1Keys . fst <$> fromProto l1Keys
+                    PUELevel1Keys . fst <$> fromProto l1Keys
                 ProtoFields.PendingUpdate'Level2KeysCpv0 l2Keys -> do
-                    QueryTypes.PUELevel2KeysV0 <$> fromProto l2Keys
+                    PUELevel2KeysV0 <$> fromProto l2Keys
                 ProtoFields.PendingUpdate'Level2KeysCpv1 l2Keys -> do
-                    QueryTypes.PUELevel2KeysV1 <$> fromProto l2Keys
+                    PUELevel2KeysV1 <$> fromProto l2Keys
                 ProtoFields.PendingUpdate'Protocol protocol -> do
-                    QueryTypes.PUEProtocol <$> fromProto protocol
+                    PUEProtocol <$> fromProto protocol
                 ProtoFields.PendingUpdate'ElectionDifficulty eDifficulty -> do
-                    QueryTypes.PUEElectionDifficulty <$> fromProto eDifficulty
+                    PUEElectionDifficulty <$> fromProto eDifficulty
                 ProtoFields.PendingUpdate'EuroPerEnergy epEnergy -> do
-                    QueryTypes.PUEEuroPerEnergy <$> fromProto epEnergy
+                    PUEEuroPerEnergy <$> fromProto epEnergy
                 ProtoFields.PendingUpdate'MicroCcdPerEuro mcpEuro -> do
-                    QueryTypes.PUEMicroCCDPerEuro <$> fromProto mcpEuro
+                    PUEMicroCCDPerEuro <$> fromProto mcpEuro
                 ProtoFields.PendingUpdate'FoundationAccount fAccount ->
-                    QueryTypes.PUEFoundationAccount <$> fromProto fAccount
+                    PUEFoundationAccount <$> fromProto fAccount
                 ProtoFields.PendingUpdate'MintDistributionCpv0 mDistribution ->
-                    QueryTypes.PUEMintDistributionV0 <$> fromProto mDistribution
+                    PUEMintDistributionV0 <$> fromProto mDistribution
                 ProtoFields.PendingUpdate'MintDistributionCpv1 mDistribution ->
-                    QueryTypes.PUEMintDistributionV1 <$> fromProto mDistribution
+                    PUEMintDistributionV1 <$> fromProto mDistribution
                 ProtoFields.PendingUpdate'TransactionFeeDistribution tfDistribution ->
-                    QueryTypes.PUETransactionFeeDistribution <$> fromProto tfDistribution
+                    PUETransactionFeeDistribution <$> fromProto tfDistribution
                 ProtoFields.PendingUpdate'GasRewards gRewards ->
-                    QueryTypes.PUEGASRewards <$> fromProto gRewards
+                    PUEGASRewards <$> fromProto gRewards
                 ProtoFields.PendingUpdate'PoolParametersCpv0 pParameters ->
-                    QueryTypes.PUEPoolParametersV0 <$> fromProto pParameters
+                    PUEPoolParametersV0 <$> fromProto pParameters
                 ProtoFields.PendingUpdate'PoolParametersCpv1 pParameters ->
-                    QueryTypes.PUEPoolParametersV1 <$> fromProto pParameters
+                    PUEPoolParametersV1 <$> fromProto pParameters
                 ProtoFields.PendingUpdate'AddAnonymityRevoker aaRevoker ->
-                    QueryTypes.PUEAddAnonymityRevoker <$> fromProto aaRevoker
+                    PUEAddAnonymityRevoker <$> fromProto aaRevoker
                 ProtoFields.PendingUpdate'AddIdentityProvider aiProvider ->
-                     QueryTypes.PUEAddIdentityProvider <$> fromProto aiProvider
+                     PUEAddIdentityProvider <$> fromProto aiProvider
                 ProtoFields.PendingUpdate'CooldownParameters cdParameters -> do
-                    QueryTypes.PUECooldownParameters <$> fromProto cdParameters
+                    PUECooldownParameters <$> fromProto cdParameters
                 ProtoFields.PendingUpdate'TimeParameters tParameters -> do
-                    QueryTypes.PUETimeParameters <$> fromProto tParameters
+                    PUETimeParameters <$> fromProto tParameters
         return PendingUpdate{..}
 
 -- |Get all pending updates to chain parameters at the end of a given block.
@@ -2726,14 +2586,14 @@ getIdentityProvidersV2 bhInput =
 -- In contrast to `getPassiveDelegatorsV2` which returns all delegators registered
 -- at the end of a given block, this returns all fixed delegators contributing
 -- stake in the reward period containing the given block.
-getPassiveDelegatorsRewardPeriodV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq QueryTypes.DelegatorRewardPeriodInfo)))
+getPassiveDelegatorsRewardPeriodV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq DelegatorRewardPeriodInfo)))
 getPassiveDelegatorsRewardPeriodV2 bhInput =
     withServerStreamCollectV2 (callV2 @"getPassiveDelegatorsRewardPeriod") msg ((fmap . fmap . mapM) fromProto)
   where
     msg = toProto bhInput
 
 -- |Get all registered passive delegators at the end of a given block.
-getPassiveDelegatorsV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq QueryTypes.DelegatorInfo)))
+getPassiveDelegatorsV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq DelegatorInfo)))
 getPassiveDelegatorsV2 bhInput =
     withServerStreamCollectV2 (callV2 @"getPassiveDelegators") msg ((fmap . fmap . mapM) fromProto)
   where
@@ -2743,14 +2603,14 @@ getPassiveDelegatorsV2 bhInput =
 -- In contrast to `getPoolDelegatorsV2` which returns all active delegators registered
 -- for the given block, this returns all the active fixed delegators contributing stake
 -- in the reward period containing the given block.
-getPoolDelegatorsRewardPeriodV2 :: (MonadIO m) => BlockHashInput -> BakerId -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq QueryTypes.DelegatorRewardPeriodInfo)))
+getPoolDelegatorsRewardPeriodV2 :: (MonadIO m) => BlockHashInput -> BakerId -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq DelegatorRewardPeriodInfo)))
 getPoolDelegatorsRewardPeriodV2 bhInput baker =
     withServerStreamCollectV2 (callV2 @"getPoolDelegatorsRewardPeriod") msg ((fmap . fmap . mapM) fromProto)
   where
     msg = defMessage & ProtoFields.blockHash .~ toProto bhInput & ProtoFields.baker .~ toProto baker
 
 -- |Get all registered delegators of a given pool at the end of a given block.
-getPoolDelegatorsV2 :: (MonadIO m) => BlockHashInput -> BakerId -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq QueryTypes.DelegatorInfo)))
+getPoolDelegatorsV2 :: (MonadIO m) => BlockHashInput -> BakerId -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq DelegatorInfo)))
 getPoolDelegatorsV2 bhInput baker =
     withServerStreamCollectV2 (callV2 @"getPoolDelegators") msg ((fmap . fmap . mapM) fromProto)
   where
@@ -2781,8 +2641,6 @@ getInstanceListV2 bhInput = withServerStreamCollectV2 (callV2 @"getInstanceList"
 -- immediately following a block in the sequence is the parent of that block.
 -- The sequence contains at most `limit` blocks, and if the sequence is
 -- strictly shorter, the last block in the list is the genesis block.
--- FIXME: The first element does not appear to be the requested block. Document
--- in FP or open a PR if this is indeed the case.
 getAncestorsV2 :: (MonadIO m) => BlockHashInput -> Word64 -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq BlockHash)))
 getAncestorsV2 bhInput limit = withServerStreamCollectV2 (callV2 @"getAncestors") msg ((fmap . fmap . mapM) fromProto)
   where
@@ -2827,7 +2685,7 @@ getCryptographicParametersV2 bhInput = withUnaryV2 (callV2 @"getCryptographicPar
 getBlockChainParametersV2 ::
     (MonadIO m) =>
     BlockHashInput ->
-    ClientMonad m (GRPCResult (FromProtoResult ChainParameterOutput))
+    ClientMonad m (GRPCResult (FromProtoResult EChainParametersAndKeys))
 getBlockChainParametersV2 bHash = do
     -- Get the foundation account address and the callback that allows for constructing the chain parameters.
     paramsOutput <- withUnaryV2 (callV2 @"getBlockChainParameters") msg ((fmap . fmap) fromProto)
@@ -2862,25 +2720,25 @@ getNodeInfoV2 = withUnaryV2 (callV2 @"getNodeInfo") msg ((fmap . fmap) fromProto
     msg = defMessage
 
 -- Get a list of the peers that the node is connected to and network-related information for each peer.
-getPeersInfoV2 :: (MonadIO m) => ClientMonad m (GRPCResult (FromProtoResult PeersInfo))
+getPeersInfoV2 :: (MonadIO m) => ClientMonad m (GRPCResult (FromProtoResult [PeerInfo]))
 getPeersInfoV2 = withUnaryV2 (callV2 @"getPeersInfo") msg ((fmap . fmap) fromProto)
   where
     msg = defMessage
 
 -- |Get a summary of the finalization data in a given block.
-getBlockFinalizationSummaryV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Maybe QueryTypes.FinalizationSummary)))
+getBlockFinalizationSummaryV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Maybe FinalizationSummary)))
 getBlockFinalizationSummaryV2 bhInput = withUnaryV2 (callV2 @"getBlockFinalizationSummary") msg ((fmap . fmap) fromProto)
   where
     msg = toProto bhInput
 
 -- |Get the status of and information about a specific block item (transaction).
-getBlockItemStatusV2 :: (MonadIO m) => TransactionHash -> ClientMonad m (GRPCResult (FromProtoResult QueryTypes.TransactionStatus))
+getBlockItemStatusV2 :: (MonadIO m) => TransactionHash -> ClientMonad m (GRPCResult (FromProtoResult TransactionStatus))
 getBlockItemStatusV2 tHash = withUnaryV2 (callV2 @"getBlockItemStatus") msg ((fmap . fmap) fromProto)
   where
     msg = toProto tHash
 
 -- |Get the status of and information about a specific block item (transaction).
-getBlockItemsV2 :: (MonadIO m) => TransactionHash -> ClientMonad m (GRPCResult (FromProtoResult QueryTypes.TransactionStatus))
+getBlockItemsV2 :: (MonadIO m) => TransactionHash -> ClientMonad m (GRPCResult (FromProtoResult TransactionStatus))
 getBlockItemsV2 bhInput = withUnaryV2 (callV2 @"getBlockItemStatus") msg ((fmap . fmap) fromProto)
   where
     msg = toProto bhInput
@@ -2969,19 +2827,19 @@ shutdownV2 :: (MonadIO m) => ClientMonad m (GRPCResult ())
 shutdownV2 = withUnaryV2 (callV2 @"shutdown") defMessage ((fmap . fmap . const) ())
 
 -- |Get next available sequence numbers for updating chain parameters after a given block.
-getNextUpdateSequenceNumbersV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult QueryTypes.NextUpdateSequenceNumbers))
+getNextUpdateSequenceNumbersV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult NextUpdateSequenceNumbers))
 getNextUpdateSequenceNumbersV2 bhInput = withUnaryV2 (callV2 @"getNextUpdateSequenceNumbers") msg ((fmap . fmap) fromProto)
   where
     msg = toProto bhInput
 
 -- |Get information related to the baker election for a particular block.
-getElectionInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult QueryTypes.BlockBirkParameters))
+getElectionInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult BlockBirkParameters))
 getElectionInfoV2 bhInput = withUnaryV2 (callV2 @"getElectionInfo") msg ((fmap . fmap) fromProto)
   where
     msg = toProto bhInput
 
 -- |Get the current branches of blocks starting from and including the last finalized block.
-getBranchesV2 :: (MonadIO m) => ClientMonad m (GRPCResult (FromProtoResult QueryTypes.Branch))
+getBranchesV2 :: (MonadIO m) => ClientMonad m (GRPCResult (FromProtoResult Branch))
 getBranchesV2 = withUnaryV2 (callV2 @"getBranches") defMessage ((fmap . fmap) fromProto)
 
 -- |Run the smart contract entrypoint in a given context and in the state at the end of a given block.
@@ -2994,7 +2852,7 @@ invokeInstanceV2 bhInput cContext = withUnaryV2 (callV2 @"invokeInstance") msg (
     msg = toProto (bhInput, cContext)
 
 -- |Get information about tokenomics at the end of a given block.
-getTokenomicsInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult QueryTypes.RewardStatus))
+getTokenomicsInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult RewardStatus))
 getTokenomicsInfoV2 bhInput = withUnaryV2 (callV2 @"getTokenomicsInfo") msg ((fmap . fmap) fromProto)
   where
     msg = toProto bhInput
@@ -3006,25 +2864,25 @@ getBlocksAtHeightV2 blockHeight = withUnaryV2 (callV2 @"getBlocksAtHeight") msg 
     msg = toProto blockHeight
 
 -- |Get information about the passive delegators at the end of a given block.
-getPassiveDelegationInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult QueryTypes.PoolStatus))
+getPassiveDelegationInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult PoolStatus))
 getPassiveDelegationInfoV2 bhInput = withUnaryV2 (callV2 @"getPassiveDelegationInfo") msg ((fmap . fmap) fromProto)
   where
     msg = toProto bhInput
 
 -- |Get information about a given pool at the end of a given block.
-getPoolInfoV2 :: (MonadIO m) => BlockHashInput -> BakerId -> ClientMonad m (GRPCResult (FromProtoResult QueryTypes.PoolStatus))
+getPoolInfoV2 :: (MonadIO m) => BlockHashInput -> BakerId -> ClientMonad m (GRPCResult (FromProtoResult PoolStatus))
 getPoolInfoV2 bhInput baker = withUnaryV2 (callV2 @"getPoolInfo") msg ((fmap . fmap) fromProto)
   where
     msg = defMessage & ProtoFields.blockHash .~ toProto bhInput & ProtoFields.baker .~ toProto baker
 
 -- |Get information, such as height, timings, and transaction counts for a given block.
-getBlockInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult QueryTypes.BlockInfo))
+getBlockInfoV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult BlockInfo))
 getBlockInfoV2 bhInput = withUnaryV2 (callV2 @"getBlockInfo") msg ((fmap . fmap) fromProto)
   where
     msg = toProto bhInput
 
 -- |Get information about the current state of consensus.
-getConsensusInfoV2 :: (MonadIO m) => ClientMonad m (GRPCResult (FromProtoResult QueryTypes.ConsensusStatus))
+getConsensusInfoV2 :: (MonadIO m) => ClientMonad m (GRPCResult (FromProtoResult ConsensusStatus))
 getConsensusInfoV2 = withUnaryV2 (callV2 @"getConsensusInfo") defMessage ((fmap . fmap) fromProto)
 
 -- |Get the source of a smart contract module.
@@ -3044,7 +2902,7 @@ getInstanceInfoV2 cAddress bhInput = withUnaryV2 (callV2 @"getInstanceInfo") msg
   where
     msg = defMessage & ProtoFields.blockHash .~ toProto bhInput & ProtoFields.address .~ toProto cAddress
 
-getNextSequenceNumberV2 :: (MonadIO m) => AccountAddress -> ClientMonad m (GRPCResult (FromProtoResult QueryTypes.NextAccountNonce))
+getNextSequenceNumberV2 :: (MonadIO m) => AccountAddress -> ClientMonad m (GRPCResult (FromProtoResult NextAccountNonce))
 getNextSequenceNumberV2 accAddress = withUnaryV2 (callV2 @"getNextAccountSequenceNumber") msg ((fmap . fmap) fromProto)
   where
     msg = toProto accAddress

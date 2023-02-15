@@ -32,9 +32,18 @@ data LegacyCmd
       { legacyEvery     :: !Bool,
         legacyBlockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the information of a specific block
-  | GetBlockSummary
+  | GetBlockPendingUpdates
       { legacyBlockHash :: !(Maybe Text)
-      } -- ^ Queries the gRPC server for the information of a specific block and its transactions.
+      } --  ^Queries the gRPC server for the pending updates in a specific block.
+  | GetBlockSpecialEvents
+      { legacyBlockHash :: !(Maybe Text)
+      } --  ^Queries the gRPC server for the special events in a specific block.
+  | GetBlockChainParameters
+      { legacyBlockHash :: !(Maybe Text)
+      } --  ^Queries the gRPC server for the chain parameters in a specific block.
+  | GetBlockFinalizationSummary
+      { legacyBlockHash :: !(Maybe Text)
+      } --  ^Queries the gRPC server for the finalization summary in a specific block.
   | GetBlocksAtHeight
       { legacyBlockHeight :: !BlockHeight,
         legacyFromGenesisIndex :: !(Maybe GenesisIndex),
@@ -121,7 +130,10 @@ legacyProgramOptions =
      getTransactionStatusCommand <>
      getConsensusInfoCommand <>
      getBlockInfoCommand <>
-     getBlockSummaryCommand <>
+     getBlockPendingUpdatesCommand <>
+     getBlockSpecialEventsCommand <>
+     getBlockChainParametersCommand <>
+     getBlockFinalizationSummaryCommand <>
      getBlocksAtHeightCommand <>
      getAccountListCommand <>
      getInstancesCommand <>
@@ -231,7 +243,7 @@ getBlockInfoCommand =
         optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
        )
        (progDesc "Query the gRPC server for a specific block."))
-
+{- VH/FIXME: Removed, document in FP and changelog.
 getBlockSummaryCommand :: Mod CommandFields LegacyCmd
 getBlockSummaryCommand =
   command
@@ -241,6 +253,46 @@ getBlockSummaryCommand =
         optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
        )
        (progDesc "Query the gRPC server for a specific block and its transactions."))
+-}
+getBlockPendingUpdatesCommand :: Mod CommandFields LegacyCmd
+getBlockPendingUpdatesCommand =
+  command
+    "GetBlockPendingUpdates"
+    (info
+       (GetBlockPendingUpdates <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+       )
+       (progDesc "Query the gRPC server for the pending updates in a specific block."))
+
+getBlockSpecialEventsCommand :: Mod CommandFields LegacyCmd
+getBlockSpecialEventsCommand =
+  command
+    "GetBlockSpecialEvents"
+    (info
+       (GetBlockSpecialEvents <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+       )
+       (progDesc "Query the gRPC server for the special events in a specific block."))
+
+getBlockChainParametersCommand :: Mod CommandFields LegacyCmd
+getBlockChainParametersCommand =
+  command
+    "GetBlockChainParameters"
+    (info
+       (GetBlockChainParameters <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+       )
+       (progDesc "Query the gRPC server for the special events in a specific block."))
+
+getBlockFinalizationSummaryCommand :: Mod CommandFields LegacyCmd
+getBlockFinalizationSummaryCommand =
+  command
+    "GetBlockFinalizationSummary"
+    (info
+       (GetBlockFinalizationSummary <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+       )
+       (progDesc "Query the gRPC server for the finalization summary in a specific block."))
 
 getBlocksAtHeightCommand :: Mod CommandFields LegacyCmd
 getBlocksAtHeightCommand =
