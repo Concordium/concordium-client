@@ -19,6 +19,7 @@
       strings each corresponding to a banned IP.
     - Output of `raw GetPeerUptime` now prints an integer representing the uptime
       of the node.
+    - Slight changes to `raw GetNodeInfo` and `raw GetPeerData` output.
 
 ## 5.0.2
 
