@@ -3706,7 +3706,7 @@ printPeerData :: MonadIO m => Bool -> [Queries.PeerInfo] -> Queries.NodeInfo -> 
 printPeerData bootstrapper pInfos Queries.NodeInfo{..} =
   let Queries.NetworkInfo{..} = networkInfo
       -- Filter bootstrappers.
-      pInfos' = filter (\p -> bootstrapper || Queries.consensusInfo p == Queries.Bootstrapper) pInfos
+      pInfos' = filter (\p -> bootstrapper || Queries.consensusInfo p /= Queries.Bootstrapper) pInfos
   in
   liftIO $ do
       putStrLn $ "Total packets sent: " ++ show peerTotalSent
