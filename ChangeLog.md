@@ -10,7 +10,7 @@
       `raw GetBlockPendingUpdates`, `raw GetBlockSpecialEvents`,
       `raw GetBlockChainParameters` `raw GetBlockFinalizationSummary`. These provide
       a more granular way of accessing to the same data.
-    - `raw BanNode` and `raw BanNode` no longer support node IDs, but now rather an
+    - `raw BanNode` and `raw UnbanNode` no longer support node IDs, but now rather an
       take just an IP address.
     - `raw DumpStart` takes a parameter specifying the path of the file to write
       dumped packets to, and furthermore supports a flag to specify whether raw
