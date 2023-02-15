@@ -3702,7 +3702,7 @@ data PeerData = PeerData {
   peerList      :: PeerListResponse
   }
 
-printPeerData :: MonadIO m => Bool -> Queries.PeersInfo -> Queries.NodeInfo -> m ()
+printPeerData :: MonadIO m => Bool -> [Queries.PeerInfo] -> Queries.NodeInfo -> m ()
 printPeerData bootstrapper pInfos Queries.NodeInfo{..} =
   let Queries.NetworkInfo{..} = networkInfo
       -- Filter bootstrappers.
