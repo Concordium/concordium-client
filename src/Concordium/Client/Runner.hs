@@ -3775,8 +3775,8 @@ printNodeInfo Queries.NodeInfo{..} = liftIO $
       putStrLn $ "Baker running: " ++ show (getBakerRunning details)
       putStrLn $ "Consensus running: " ++ show (getConsensusRunning details)
       putStrLn $ "Consensus type: " ++ getConsensusType details
-      putStrLn $ "Baker committee member: " ++ show (getBakerCommitteeMember details)
-      putStrLn $ "Finalization committee member: " ++ show (getFinalizerCommitteeMember details)
+      putStrLn $ "Baker committee member: " ++ getBakerCommitteeMember details
+      putStrLn $ "Finalization committee member: " ++ getFinalizerCommitteeMember details
   where showNodeType =
           \case Queries.NodeBootstrapper -> "Bootstrapper"
                 Queries.NodeNotRunning -> "Node"
@@ -3809,7 +3809,7 @@ printNodeInfo Queries.NodeInfo{..} = liftIO $
                 Queries.NodeActive (Queries.BakerConsensusInfo _ (Queries.PassiveBaker Queries.AddedButNotActiveInCommittee)) ->
                   show False
                 Queries.NodeActive (Queries.BakerConsensusInfo _ (Queries.PassiveBaker Queries.AddedButWrongKeys)) ->
-                  "show False"
+                  show False
                 Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveBakerCommitteeInfo) ->
                   "True, in current baker committee with baker ID '" <> show bId <> "'."
                 Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveFinalizerCommitteeInfo) ->
