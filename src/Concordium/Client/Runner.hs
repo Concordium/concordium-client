@@ -2495,11 +2495,16 @@ processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
 processBlockCmd action _ backend =
   case action of
     BlockShow b -> do
-      when (maybe False (isNothing . parseTransactionHash) b) $
-        logFatal [printf "invalid block hash '%s'" (fromJust b)]
-
-      v <- withClientJson backend $ fmap grpcResponseVal <$> withBestBlockHash b getBlockInfo
-      runPrinter $ printBlockInfo v
+      bHash <- readBlockHashOrDefault Best b
+      withClient backend $
+        getBlockInfoV2 bHash>>=
+          getResponseValueOrFail >>=
+            -- VH/FIXME: Output changes slightly due to V2 API - document?
+            -- Specifically `printBlockInfo` prints `Block not found` when
+            -- its input is @Nothing@, which is never the case here.
+            -- Instead, `Error: A GRPC error occurred: gRPC error: block not found.``
+            -- is printed.
+            runPrinter . printBlockInfo . Just
 
 -- |Generate a fresh set of baker keys.
 generateBakerKeys :: Maybe Types.BakerId -> IO BakerKeys
