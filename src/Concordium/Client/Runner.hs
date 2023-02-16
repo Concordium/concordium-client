@@ -3849,10 +3849,10 @@ processTransaction ::
   => BSL.ByteString
   -> Int
   -> ClientMonad m Types.BareBlockItem
-processTransaction source networkId =
+processTransaction source _networkId =
   case AE.eitherDecode source of
     Left err -> fail $ "Error decoding JSON: " ++ err
-    Right t  -> processTransaction_ t networkId True
+    Right t  -> processTransaction_ t _networkId True
 
 -- |Process a transaction with unencrypted keys given explicitly.
 -- The transaction is signed with all the provided keys.
@@ -3863,7 +3863,7 @@ processTransaction_ ::
   -> Int
   -> Verbose
   -> ClientMonad m Types.BareBlockItem
-processTransaction_ transaction networkId _verbose = do
+processTransaction_ transaction _networkId _verbose = do
   let accountKeys = CT.keys transaction
   tx <- do
     let header = metadata transaction
@@ -3882,11 +3882,9 @@ processTransaction_ transaction networkId _verbose = do
       nonce
       (thExpiry header)
       accountKeys
-
-  sendTransactionToBaker tx networkId >>= \case
-    Left err -> fail $ show err
-    Right (GRPCResponse _ False) -> fail "Transaction not accepted by the baker."
-    Right (GRPCResponse _ True) -> return tx
+  sendBlockItemV2 tx >>=
+    getResponseValueOrFail >>
+      return tx
 
 -- |Read a versioned credential from the bytestring, failing if any errors occur.
 processCredential ::
@@ -3894,7 +3892,7 @@ processCredential ::
   => BSL.ByteString
   -> Int
   -> ClientMonad m Types.BareBlockItem
-processCredential source networkId =
+processCredential source _networkId =
   case AE.eitherDecode source of
     Left err -> fail $ "Error decoding JSON: " ++ err
     Right vCred
@@ -3902,7 +3900,7 @@ processCredential source networkId =
             case fromJSON (vValue vCred) of
               AE.Success cred ->
                 let tx = Types.CredentialDeployment cred
-                in sendTransactionToBaker tx networkId >>= \case
+                in sendTransactionToBaker tx _networkId >>= \case
                   Left err -> fail err
                   Right (GRPCResponse _ False) -> fail "Transaction not accepted by the baker."
                   Right (GRPCResponse _ True) -> return tx
