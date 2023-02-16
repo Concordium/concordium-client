@@ -10,6 +10,8 @@ module Concordium.Client.Runner.Helper
   , printJSONValues
   , getJSON
   , getValue
+  , getResponseValueOrFail
+  , getResponseValueOrFail'
   , GRPCResult
   , GRPCOutput(..)
   , GRPCResponse(..)
@@ -30,6 +32,7 @@ import           Network.GRPC.Client
 import qualified Network.URI.Encode            (decode)
 import           Prelude                       hiding (fail)
 import qualified Proto.ConcordiumP2pRpc_Fields as CF
+import Concordium.Client.Cli (logFatal)
 
 -- |The response contains headers and a response value.
 data GRPCResponse a = GRPCResponse
@@ -132,3 +135,37 @@ value s =
 -- |Extract a value from the response. This assumes that the response from a GRPC call has a @value@ field.
 getValue :: forall a b. (Field.HasField a "value" b) => SimpleGetter (GRPCResponse a) (GRPCResponse b)
 getValue = to (fmap (^. CF.value))
+
+-- |Extract the response value of a GRPCResult and return it under the
+-- provided mapping.
+-- Returns @Left@ wrapping an error string describing its nature if the
+-- result contains an error, or a @Right@ wrapping the response value
+-- under the provided mapping otherwise.
+extractResponseValue :: (a -> b) -> GRPCResult (Either String a) -> Either String b
+extractResponseValue f res =
+  case res of
+    Left err -> Left $ "A GRPC error occurred: " <> err
+    Right resp ->
+      case grpcResponseVal resp of
+        Left err -> Left $ "Unable to convert response payload: " <> err
+        Right val -> Right $ f val
+
+-- |Extract the response value of a GRPCResult and return it under the
+-- provided mapping or fail with an error message if the result contains
+-- an error. Takes a string to be prepended to the error message.
+extractResponseValueOrFail :: (MonadIO m)
+  => (a -> b) -- |Result mapping
+  -> String -- |A prefix to the error message to print case of an error.
+  -> GRPCResult (Either String a) -> m b
+extractResponseValueOrFail f errPrefix res =
+  case extractResponseValue f res of
+    Left err -> logFatal [errPrefix <> err]
+    Right v -> return v
+
+-- |Get the response value of a GRPCResult or fail if the result contains an error.
+getResponseValueOrFail' :: (MonadIO m) => (a -> b) -> GRPCResult (Either String a) -> m b
+getResponseValueOrFail' f = extractResponseValueOrFail f "" 
+
+-- |Get the response value of a GRPCResult or fail if the result contains an error.
+getResponseValueOrFail :: (MonadIO m) => GRPCResult (Either String a) -> m a
+getResponseValueOrFail = extractResponseValueOrFail id "" 

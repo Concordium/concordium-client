@@ -14,7 +14,7 @@ import           Network.Wai.Middleware.Cors (CorsResourcePolicy(..), cors)
 import           Network.Wai.Logger
 import           Text.Read (readMaybe)
 import qualified Config
-import           Concordium.Client.GRPC
+import           Concordium.Client.GRPC2
 import qualified Api
 
 

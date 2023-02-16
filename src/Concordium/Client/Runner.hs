@@ -134,6 +134,7 @@ import Codec.CBOR.Write
 import Codec.CBOR.Encoding
 import Codec.CBOR.JSON
 import Control.Arrow (Arrow(second))
+import Concordium.Client.Types.Contract.Info (instanceInfoToContractInfo)
 
 -- |Establish a new connection to the backend and run the provided computation.
 -- Close a connection after completion of the computation. Establishing a
@@ -1092,13 +1093,8 @@ getDelegatorCooldown bs = do
 
 -- |Query the chain for the given account. Fail if either the chain cannot be reached, or
 -- if the account does not exist.
-getAccountInfoOrDie :: ID.AccountAddress ->  ClientMonad IO Types.AccountInfo
-getAccountInfoOrDie senderAddr = do
-  infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getAccountInfo (Text.pack . show $ senderAddr))
-  case AE.fromJSON $ grpcResponseVal infoValue of
-    AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
-    AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
-    AE.Success (Just air) -> return air
+getAccountInfoOrDie :: (MonadIO m) => ID.AccountAddress -> ClientMonad m Types.AccountInfo
+getAccountInfoOrDie senderAddr = getResponseValueOrFail =<< getAccountInfoV2 (Types.AccAddress senderAddr) Best
 
 -- |Query the chain for the given pool. Fail if either the chain cannot be reached, or
 -- if the baker pool does not exist.
@@ -1152,38 +1148,35 @@ getAccountEncryptTransactionCfg baseCfg txOpts aeAmount payloadSize = do
 -- balance of an account.
 getAccountDecryptTransferData :: ID.AccountAddress -> Types.Amount -> ElgamalSecretKey -> Maybe Int -> ClientMonad IO Enc.SecToPubAmountTransferData
 getAccountDecryptTransferData senderAddr adAmount secretKey idx = do
-  (bbHash, infoValue) <- logFatalOnError =<< withBestBlockHash Nothing (\bbh -> ((bbh, ) <$>) <$> getAccountInfo (Text.pack . show $ senderAddr) bbh)
-  case AE.fromJSON $ grpcResponseVal infoValue of
-    AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
-    AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
-    AE.Success (Just Types.AccountInfo{aiAccountEncryptedAmount=a@Types.AccountEncryptedAmount{..}}) -> do
-      globalContext <- logFatalOnError =<< getParseCryptographicParameters bbHash
-
-      let listOfEncryptedAmounts = Types.getIncomingAmountsList a
-      taker <- case idx of
-        Nothing -> return id
-        Just v -> if v < fromIntegral _startIndex
-                    || v > fromIntegral _startIndex + length listOfEncryptedAmounts
-                 then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
-                 else return $ take (v - fromIntegral _startIndex)
-      -- precomputed table for speeding up decryption
-      let table = Enc.computeTable globalContext (2^(16::Int))
-          decoder = Enc.decryptAmount table secretKey
-          selfDecrypted = decoder _selfAmount
-      -- aggregation of all encrypted amounts
-          inputEncAmounts = taker listOfEncryptedAmounts
-          aggAmounts = foldl' (<>) _selfAmount inputEncAmounts
-          totalEncryptedAmount = foldl' (+) selfDecrypted $ fmap decoder inputEncAmounts
-      unless (totalEncryptedAmount >= adAmount) $
-        logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (Types.amountToString adAmount) (Types.amountToString totalEncryptedAmount)]
-      -- index indicating which encrypted amounts we used as input
-      let aggIndex = case idx of
-            Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (length listOfEncryptedAmounts))
-            Just idx' -> Enc.EncryptedAmountAggIndex (fromIntegral idx')
-          aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
-      liftIO $ Enc.makeSecToPubAmountTransferData globalContext secretKey aggAmount adAmount >>= \case
-        Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
-        Just adTransferData -> return adTransferData
+  bbHash <- getResponseValueOrFail' Queries.biBlockHash =<< getBlockInfoV2 Best
+  Types.AccountInfo{aiAccountEncryptedAmount=a@Types.AccountEncryptedAmount{..}} <-
+    getResponseValueOrFail =<< getAccountInfoV2 (Types.AccAddress senderAddr) (Given bbHash)
+  globalContext <- getResponseValueOrFail =<< getCryptographicParametersV2 (Given bbHash)
+  let listOfEncryptedAmounts = Types.getIncomingAmountsList a
+  taker <- case idx of
+    Nothing -> return id
+    Just v -> if v < fromIntegral _startIndex
+                || v > fromIntegral _startIndex + length listOfEncryptedAmounts
+              then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
+              else return $ take (v - fromIntegral _startIndex)
+  -- precomputed table for speeding up decryption
+  let table = Enc.computeTable globalContext (2^(16::Int))
+      decoder = Enc.decryptAmount table secretKey
+      selfDecrypted = decoder _selfAmount
+  -- aggregation of all encrypted amounts
+      inputEncAmounts = taker listOfEncryptedAmounts
+      aggAmounts = foldl' (<>) _selfAmount inputEncAmounts
+      totalEncryptedAmount = foldl' (+) selfDecrypted $ fmap decoder inputEncAmounts
+  unless (totalEncryptedAmount >= adAmount) $
+    logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (Types.amountToString adAmount) (Types.amountToString totalEncryptedAmount)]
+  -- index indicating which encrypted amounts we used as input
+  let aggIndex = case idx of
+        Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (length listOfEncryptedAmounts))
+        Just idx' -> Enc.EncryptedAmountAggIndex (fromIntegral idx')
+      aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
+  liftIO $ Enc.makeSecToPubAmountTransferData globalContext secretKey aggAmount adAmount >>= \case
+    Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
+    Just adTransferData -> return adTransferData
 
 -- |Get the cryptographic parameters in a given block, and attempt to parse them.
 getParseCryptographicParameters :: Text -> ClientMonad IO (Either String GlobalContext)
@@ -1385,15 +1378,13 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
   nonce <- getNonce naAddr n confirmNonce
   accountKeyMap <- case maybeAccKeys of
                      Just acKeys' -> return acKeys'
-                     Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys (Nothing) Nothing
+                     Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys Nothing Nothing
   let sender = applyAlias tcAlias naAddr
   let tx = signEncodedTransaction pl sender energy nonce expiry accountKeyMap
   when (isJust tcAlias) $
       logInfo [[i|Using the alias #{sender} as the sender of the transaction instead of #{naAddr}.|]]
-  sendTransactionToBaker tx defaultNetId >>= \case
-    Left err -> fail err
-    Right (GRPCResponse _ False) -> fail "transaction not accepted by the baker"
-    Right (GRPCResponse _ True) -> return tx
+  _ <- getResponseValueOrFail =<< sendBlockItemV2 tx
+  return tx
 
 -- |Fetch next nonces relative to the account's most recently committed and
 -- pending transactions, respectively.
@@ -1404,8 +1395,8 @@ getNonce :: (MonadFail m, MonadIO m) => Types.AccountAddress -> Maybe Types.Nonc
 getNonce sender nonce confirm =
   case nonce of
     Nothing -> do
-      currentNonce <- getBestBlockHash >>= getAccountNonce sender
-      nextNonce <- Queries.nanNonce <$> (getNextAccountNonce (Text.pack $ show sender) >>= getFromJson')
+      currentNonce <- getResponseValueOrFail' Types.aiAccountNonce =<< getAccountInfoV2 (Types.AccAddress sender) Best
+      nextNonce <- fmap Queries.nanNonce . getResponseValueOrFail =<< getNextSequenceNumberV2 sender
       liftIO $ when (currentNonce /= nextNonce) $ do
         logWarn [ printf "there is a pending transaction with nonce %s, but last committed one has %s" (show $ nextNonce-1) (show $ currentNonce-1)
                 , printf "this transaction will have nonce %s and might hang if the pending transaction fails" (show nextNonce) ]
@@ -1494,6 +1485,22 @@ tailTransaction verbose hash = do
   where
     getLocalTimeOfDayFormatted = showTimeOfDay <$> getLocalTimeOfDay
 
+-- |`read` input or fail if the input could not be `read`.
+readOrFail :: (MonadIO m, Read a) => Text -> m a
+readOrFail t =
+  case readEither s of
+    Left err -> logFatal [[i|Unable to parse '#{s}': #{err}|]]
+    Right v -> return v
+  where s = Text.unpack t
+
+-- |Reads a blockhash wrapped in the `Maybe` monad.
+-- If the provided value is @Nothing@, a default value specified provided
+-- as the first parameter is returned. If the provided value is string wrapped
+-- in @Just@, `readOrFail s` is returned. Fails if `s` is not a valid blockhash.
+readBlockHashOrDefault :: (MonadIO m) => BlockHashInput -> Maybe Text -> m BlockHashInput
+readBlockHashOrDefault  d Nothing = return d
+readBlockHashOrDefault  _ (Just s) = readOrFail s >>= return . Given
+
 -- |Process an 'account ...' command.
 processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processAccountCmd action baseCfgDir verbose backend =
@@ -1506,32 +1513,26 @@ processAccountCmd action baseCfgDir verbose backend =
         putStrLn ""
 
       input <- case inputMaybe of
-        Nothing -> do
-          logInfo [[i|the ACCOUNT argument was not provided; using the default account name '#{defaultAccountName}'|]]
-          return defaultAccountName
-        Just acc -> return acc
+            Nothing -> do
+              case Map.lookup defaultAccountName (bcAccountNameMap baseCfg) of
+                Nothing -> do
+                  logFatal [[i|The ACCOUNT argument was not provided; so the default account name '#{defaultAccountName}' was used, but no account with that name exists.|]]
+                Just acc -> do
+                  logInfo [[i|The ACCOUNT argument was not provided; so the default account name '#{defaultAccountName}' was used.|]]
+                  return . Text.pack $ show acc
+            Just acc -> return acc
 
       accountIdentifier <- case Types.decodeAccountIdentifier (Text.encodeUtf8 input) of
-                Just _ -> return input -- input is a wellformed account identifier
-                Nothing -> case Map.lookup input (bcAccountNameMap baseCfg) of
-                    Just a -> return $ Text.pack $ show a -- input is the local name of an account
-                    Nothing -> if isNothing inputMaybe
-                               then logFatal [[i|The ACCOUNT argument was not provided; so the default account name '#{defaultAccountName}' was used, but no account with that name exists.|]]
-                               else logFatal [[i|The identifier '#{input}' is neither a credential registration ID, an account index, the address nor the name of an account|]]
+                Just v -> return v -- input is a wellformed account identifier
+                Nothing -> logFatal [[i|The identifier '#{input}' is neither a credential registration ID, an account index, the address nor the name of an account|]]
 
       (accInfo, na, dec) <- withClient backend $ do
         -- query account
-        (bbh, accInfoValue :: GRPCResult Value) <- withBestBlockHash block (\bbh -> (bbh,) <$> getAccountInfo accountIdentifier bbh)
-        accInfo <- do 
-          case accInfoValue of
-            Left err -> logFatal [err]
-            Right aiv -> case AE.fromJSON $ grpcResponseVal aiv of
-                            AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
-                            AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show accountIdentifier]
-                            AE.Success (Just air) -> return air
+        bhInput <- readBlockHashOrDefault Best block
+        accInfo <- getResponseValueOrFail =<< getAccountInfoV2 accountIdentifier bhInput
         -- derive the address of the account from the the initial credential
         resolvedAddress <- case Map.lookup (ID.CredentialIndex 0) (Types.aiAccountCredentials accInfo) of
-                            Nothing -> logFatal [printf "No initial credential found for the account identified by '%s'" accountIdentifier ]
+                            Nothing -> logFatal [[i|No initial credential found for the account identified by '#{input}'|]]
                             Just v -> return $ ID.addressFromRegIdRaw $ ID.credId $ vValue v
         -- reverse lookup local account names
         let na = NamedAddress {naNames = findAllNamesFor (bcAccountNameMap baseCfg) resolvedAddress, naAddr = resolvedAddress}
@@ -1552,15 +1553,17 @@ processAccountCmd action baseCfgDir verbose backend =
           Nothing ->
             return (accInfo, na, Nothing)
           Just k -> do
-            gc <- logFatalOnError =<< getParseCryptographicParameters bbh
+            gc <- getResponseValueOrFail =<< getCryptographicParametersV2 Best
             return (accInfo, na, Just (k, gc))
 
       runPrinter $ printAccountInfo na accInfo verbose (showEncrypted || showDecrypted) dec
 
     AccountList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      accs <- withClientJson backend $ fmap grpcResponseVal <$>  withBestBlockHash block getAccountList
-      runPrinter $ printAccountList (bcAccountNameMap baseCfg) accs
+      bhInput <- readBlockHashOrDefault Best block
+      accs <- withClient backend $
+        getAccountListV2 bhInput >>= getResponseValueOrFail
+      runPrinter $ printAccountList (bcAccountNameMap baseCfg) (toList accs)
 
     AccountUpdateKeys f cid txOpts -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1571,7 +1574,6 @@ processAccountCmd action baseCfgDir verbose backend =
 
       accCfg <- liftIO $ getAccountCfgFromTxOpts baseCfg txOpts
       let senderAddress = naAddr $ esdAddress accCfg
-
 
       withClient backend $ do
         keys <- liftIO $ getFromJson =<< eitherDecodeFileStrict f
@@ -2064,14 +2066,9 @@ processContractCmd action baseCfgDir verbose backend =
 -- Or, log fatally with appropriate error messages if anything goes wrong.
 getContractInfo :: (MonadIO m) => NamedContractAddress -> Text -> ClientMonad m CI.ContractInfo
 getContractInfo namedContrAddr block = do
-  res <- getInstanceInfo (Text.pack . showCompactPrettyJSON . ncaAddr $ namedContrAddr) block
-  case res of
-    Left err -> logFatal ["I/O error:", err]
-    -- TODO: Handle nonexisting blocks separately from nonexisting contracts.
-    Right (GRPCResponse _ AE.Null) -> logFatal [[i|the contract instance #{showNamedContractAddress namedContrAddr} does not exist in block #{block}|]]
-    Right contrInfo -> case AE.fromJSON $ grpcResponseVal contrInfo of
-      Error err -> logFatal ["Could not decode contract info:", err]
-      Success info -> pure info
+  b <- readOrFail block
+  r <- getResponseValueOrFail =<< getInstanceInfoV2 (ncaAddr namedContrAddr) (Given b)
+  return $ instanceInfoToContractInfo r
 
 -- |Display contract info, optionally using a schema to decode the contract state.
 displayContractInfo :: Maybe CS.ModuleSchema -> CI.ContractInfo -> NamedAddress -> NamedModuleRef -> ClientMonad IO ()
@@ -2165,14 +2162,9 @@ getWasmModule :: (MonadIO m)
               -> Text -- ^Hash of the block to query in.
               -> ClientMonad m Wasm.WasmModule
 getWasmModule namedModRef block = do
-  res <- getModuleSource (Text.pack . show $ nmrRef namedModRef) block
-
-  case res of
-    Left err -> logFatal ["I/O error:", err]
-    Right (GRPCResponse _ "") -> logFatal [[i|the module reference #{showNamedModuleRef namedModRef} does not exist in block #{block}|]]
-    Right unparsedWasmMod -> case S.decode $ grpcResponseVal unparsedWasmMod of
-      Left err' -> logFatal [[i|could not decode Wasm Module:|], err']
-      Right wasmMod -> return wasmMod
+  bh <- readOrFail block
+  getModuleSourceV2 (nmrRef namedModRef) (Given bh) >>=
+    getResponseValueOrFail
 
 data ContractInitTransactionCfg =
   ContractInitTransactionCfg
@@ -3657,22 +3649,6 @@ processLegacyCmd action backend =
     printSuccess (Left x)  = liftIO $ logError [[i|FAIL: #{x}|]]
     printSuccess (Right _) = liftIO $ logSuccess ["OK"]
 
-    -- |`read` input or fail if the input could not be `read`.
-    readOrFail :: (MonadIO m, Read a) => Text -> m a
-    readOrFail t =
-      case readEither s of
-        Left err -> logFatal [[i|Unable to parse '#{s}': #{err}|]]
-        Right v -> return v
-      where s = Text.unpack t
-
-    -- |Reads a blockhash wrapped in the `Maybe` monad.
-    -- If the provided value is @Nothing@, a default value specified provided
-    -- as the first parameter is returned. If the provided value is string wrapped
-    -- in @Just@, `readOrFail s` is returned. Fails if `s` is not a valid blockhash.
-    readBlockHashOrDefault :: (MonadIO m) => BlockHashInput -> Maybe Text -> m BlockHashInput
-    readBlockHashOrDefault  d Nothing = return d
-    readBlockHashOrDefault  _ (Just s) = readOrFail s >>= return . Given
-
     -- |Parse an account address.
     parseAccountAddress :: (MonadIO m) => Text -> m ID.AccountAddress
     parseAccountAddress accAddr =
@@ -3708,7 +3684,7 @@ printPeerData bootstrapper pInfos Queries.NodeInfo{..} =
       -- Filter bootstrappers.
       pInfos' = filter (\p -> bootstrapper || Queries.consensusInfo p /= Queries.Bootstrapper) pInfos
   in
-  liftIO $ do
+  liftIO $ do 
       putStrLn $ "Total packets sent: " ++ show peerTotalSent
       putStrLn $ "Total packets received: " ++ show peerTotalReceived
       putStrLn $ "Peer version: " ++ Text.unpack peerVersion
@@ -3892,8 +3868,8 @@ processTransaction_ transaction networkId _verbose = do
     nonce <-
       case thNonce header of
         Nothing -> do
-          res <- getAccountInfoV2 (Types.AccAddress sender) Best
-          extractResponseValueOrFail Types.aiAccountNonce "Error while processing transaction" res
+          res <- getAccountInfoOrDie sender
+          return $ Types.aiAccountNonce res
         Just nonce -> return nonce
     txPayload <- convertTransactionJsonPayload $ payload transaction
     return $ encodeAndSignTransaction
@@ -3982,37 +3958,3 @@ signEncodedTransaction encPayload sender energy nonce expiry accKeys = Types.Nor
       }
       keys = Map.toList $ fmap Map.toList accKeys
   in Types.signTransaction keys header encPayload
-
--- |Extract the response value of a GRPCResult and return it under the
--- provided mapping.
--- Returns @Left@ wrapping an error string describing its nature if the
--- result contains an error, or a @Right@ wrapping the response value
--- under the provided mapping otherwise.
-extractResponseValue :: (a -> b) -> GRPCResult (FromProtoResult a) -> Either String b
-extractResponseValue f res =
-  case res of
-    Left err -> Left $ "A GRPC error occurred: " <> err
-    Right resp ->
-      case grpcResponseVal resp of
-        Left err -> Left $ "Unable to convert response payload: " <> err
-        Right val -> Right $ f val
-
--- |Extract the response value of a GRPCResult and return it under the
--- provided mapping or fail with an error message if the result contains
--- an error. Takes a string to be prepended to the error message.
-extractResponseValueOrFail :: (MonadIO m)
-  => (a -> b) -- |Result mapping
-  -> String -- |A prefix to the error message to print case of an error.
-  -> GRPCResult (Either String a) -> m b
-extractResponseValueOrFail f errPrefix res =
-  case extractResponseValue f res of
-    Left err -> logFatal [errPrefix <> err]
-    Right v -> return v
-
--- |Get the response value of a GRPCResult or fail if the result contains an error.
-getResponseValueOrFail' :: (MonadIO m) => (a -> b) -> GRPCResult (Either String a) -> m b
-getResponseValueOrFail' f = extractResponseValueOrFail f "" 
-
--- |Get the response value of a GRPCResult or fail if the result contains an error.
-getResponseValueOrFail :: (MonadIO m) => GRPCResult (Either String a) -> m a
-getResponseValueOrFail = extractResponseValueOrFail id "" 

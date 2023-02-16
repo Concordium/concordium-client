@@ -14,7 +14,7 @@ import           Servant
 import           Servant.API.Generic
 import           Servant.Server.Generic
 
-import           Concordium.Client.GRPC
+import           Concordium.Client.GRPC2
 import qualified Concordium.Client.GRPC as GRPC
 import           Concordium.Client.Runner.Helper
 
