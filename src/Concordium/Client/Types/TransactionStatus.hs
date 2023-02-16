@@ -28,9 +28,9 @@ data TransactionStatusResult' a = TransactionStatusResult
 type TransactionStatusResult = TransactionStatusResult' ValidResult
 
 -- |Convert an `TransactionStatus` instance into a `TransactionStatusResult` instance.
--- Returns @Left@ wrapping an error message if a transaction summary was @Nothing@ when
--- the input is either @Committed@ or @Finalized@, or a @Right@ wrapping the
--- `TransactionStatusResult` otherwise.
+-- Returns @Left@ wrapping an error message if a transaction summary was @Nothing@ if
+-- the input is either @Committed@ or @Finalized@, or a @Right@ wrapping the result
+-- otherwise.
 transactionStatusToTransactionStatusResult :: Queries.TransactionStatus -> Either String TransactionStatusResult
 transactionStatusToTransactionStatusResult tStatus = do
   (tsrState, tsrResults) <- do
@@ -41,16 +41,16 @@ transactionStatusToTransactionStatusResult tStatus = do
         bhToSummlist <- foldM (\acc (bh, summM) -> do
           case summM of
             Nothing ->
-              err
+              err bh
             Just summ ->
               Right $ acc <> [(bh, summ)]) [] (Map.toList bhToSummMap)
         return (Committed, Map.fromList bhToSummlist)
-      Queries.Finalized _ Nothing -> err
-      Queries.Finalized bHash (Just summ) ->
-        return (Finalized, Map.fromList [(bHash, summ)])
+      Queries.Finalized bh Nothing -> err bh
+      Queries.Finalized bh (Just summ) ->
+        return (Finalized, Map.fromList [(bh, summ)])
   return TransactionStatusResult{..}
   where
-    err = Left "transactionStatusToTransactionStatusResult: A transaction summary was missing."
+    err bh = Left $ "Transaction summary missing for blockhash '" <> show bh <> "'."
 
 instance FromJSON a => FromJSON (TransactionStatusResult' a) where
   parseJSON Null = return TransactionStatusResult{tsrState = Absent, tsrResults = Map.empty}
