@@ -1750,19 +1750,16 @@ processModuleCmd action baseCfgDir verbose backend =
 
     ModuleList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getModuleList bb
-      v <- getFromJsonAndHandleError (\_ _ -> logFatal ["could not retrieve the list of modules",
-                                   "the provided block hash is invalid:", Text.unpack bestBlock]) $ grpcResponseVal <$> res
-      case v of
-        Nothing -> logFatal ["could not retrieve the list of modules",
-                               "the provided block does not exist:", Text.unpack bestBlock]
-        Just [] -> logInfo ["there are no modules in block " ++ Text.unpack bestBlock]
-        Just xs -> runPrinter $ printModuleList (bcModuleNameMap baseCfg) xs
+      bhInput <- readBlockHashOrDefault Best block
+      ms <- withClient backend $
+        getModuleListV2 bhInput >>=
+          getResponseValueOrFail
+      runPrinter $ printModuleList (bcModuleNameMap baseCfg) (toList ms)
 
     ModuleShow modRefOrName outFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedModRef <- getNamedModuleRef (bcModuleNameMap baseCfg) modRefOrName
-      wasmModule <- withClient backend . withBestBlockHash block $ getWasmModule namedModRef
+      wasmModule <- withClient backend $ getWasmModule namedModRef =<< readBlockHashOrDefault Best block
       logInfo [[i|WASM Version of module: #{Wasm.wasmVersion wasmModule}|]]
       let wasmModuleBytes = S.encode wasmModule
       case outFile of
@@ -1776,9 +1773,9 @@ processModuleCmd action baseCfgDir verbose backend =
     ModuleInspect modRefOrName schemaFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedModRef <- getNamedModuleRef (bcModuleNameMap baseCfg) modRefOrName
-      wasmModule <- withClient backend . withBestBlockHash block $ getWasmModule namedModRef
+      wasmModule <- withClient backend $ getWasmModule namedModRef =<< readBlockHashOrDefault Best block
       let wasmVersion = Wasm.wasmVersion wasmModule
-      (schema, exports) <- withClient backend $ getSchemaAndExports schemaFile wasmModule
+      (schema, exports) <- getSchemaAndExports schemaFile wasmModule
       let moduleInspectInfo = CI.constructModuleInspectInfo namedModRef wasmVersion schema exports
       runPrinter $ printModuleInspectInfo moduleInspectInfo
 
@@ -2196,7 +2193,7 @@ getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath mWasmVersion 
 -- or the result cannot be parsed.
 getWasmModule :: (MonadIO m)
               => NamedModuleRef -- ^On-chain reference of the module.
-              -> Text -- ^Hash of the block to query in.
+              -> BlockHashInput -- ^The block to query in.
               -> ClientMonad m Wasm.WasmModule
 getWasmModule namedModRef block = do
   bh <- readOrFail block
@@ -2306,7 +2303,7 @@ getSchemaFromFileOrModule :: (MonadIO m)
                           -> Text -- ^ A block hash.
                           -> ClientMonad m (Maybe CS.ModuleSchema)
 getSchemaFromFileOrModule schemaFile namedModRef block = do
-  wasmModule <- getWasmModule namedModRef block
+  wasmModule <- getWasmModule namedModRef =<< readOrFail block
   case schemaFile of
     Nothing -> do
       liftIO $ case CS.decodeEmbeddedSchema wasmModule of
@@ -2330,12 +2327,12 @@ getSchemaFromFile wasmVersion schemaFile = do
 -- It will only return `(Nothing, _)` if no schemafile is provided and no embedded schema was found in the module.
 getSchemaAndExports :: Maybe FilePath -- ^ Optional schema file.
                     -> Wasm.WasmModule -- ^ Module used for looking up a schema and exports.
-                    -> ClientMonad IO (Maybe CS.ModuleSchema, [Text])
+                    -> IO (Maybe CS.ModuleSchema, [Text])
 getSchemaAndExports schemaFile wasmModule = do
   preferredSchema <- case schemaFile of
     Nothing -> return Nothing
-    Just schemaFile' -> fmap Just . liftIO . getSchemaFromFile (Wasm.wasmVersion wasmModule) $ schemaFile'
-  (schema, exports) <- liftIO $ getSchemaAndExportsOrDie
+    Just schemaFile' -> fmap Just . getSchemaFromFile (Wasm.wasmVersion wasmModule) $ schemaFile'
+  (schema, exports) <- getSchemaAndExportsOrDie
 
   if isJust preferredSchema
   then return (preferredSchema, exports)
