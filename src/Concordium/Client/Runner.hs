@@ -671,7 +671,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
 
       withClient backend $ do
-        cs <- getConsensusStatus >>= getFromJson'
+        cs <- getResponseValueOrFail =<< getConsensusInfoV2
         pl <- liftIO $ do
               res <- case maybeMemo of 
                 Nothing -> return $ Types.Transfer (naAddr receiverAddress) amount
