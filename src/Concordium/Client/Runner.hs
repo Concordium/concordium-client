@@ -2335,7 +2335,7 @@ getSchemaFromFileOrModule :: (MonadIO m)
                           -> BlockHashInput -- ^ A block hash.
                           -> ClientMonad m (Maybe CS.ModuleSchema)
 getSchemaFromFileOrModule schemaFile namedModRef block = do
-  wasmModule <- getWasmModule namedModRef block
+  wasmModule <- getWasmModule namedModRef =<< readOrFail block
   case schemaFile of
     Nothing -> do
       liftIO $ case CS.decodeEmbeddedSchema wasmModule of
