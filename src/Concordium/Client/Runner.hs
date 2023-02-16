@@ -561,12 +561,12 @@ checkAndGetMemo memo pv = do
 -- contract module containing the schema resides, or defaults to using
 -- the best blockhash. The schema from the file will take precedence
 -- over an embedded schema in the module.
-getContractInfoWithSchemas :: (MonadIO m, MonadFail m)
-              => Maybe FilePath -- ^ Path pointing to a schema file.
-              -> Maybe Types.BlockHash -- ^ Blockhash of the block to retrieve the contract info from.
-              -> Types.Event -- ^ The event for which the contract info will be retrieved.
-             -> ClientMonad m (Maybe CI.ContractInfo)
-getContractInfoWithSchemas schemaFile blockHashM ev = do
+getContractInfoWithSchemas :: (MonadIO m)
+  => Maybe FilePath -- ^ Path pointing to a schema file.
+  -> BlockHashInput -- ^ The block to retrieve the contract info from.
+  -> Types.Event -- ^ The event for which the contract info will be retrieved.
+  -> ClientMonad m (Maybe CI.ContractInfo)
+getContractInfoWithSchemas schemaFile blockHash ev = do
   -- Get contract address.
   let cAM = case ev of
               Types.ContractInitialized{..} -> Just ecAddress
@@ -576,14 +576,12 @@ getContractInfoWithSchemas schemaFile blockHashM ev = do
   -- Get module schema.
   case cAM of
     Just ca -> do
-      let blockHashTextM = Text.pack . show <$> blockHashM
-      withBestBlockHash blockHashTextM $ \bh -> do
-        contrInfo <- getContractInfo (NamedContractAddress ca []) bh
-        let namedModRef = NamedModuleRef { nmrRef = CI.ciSourceModule contrInfo, nmrNames = [] }
-        schemaM <- getSchemaFromFileOrModule schemaFile namedModRef bh
-        case schemaM of
-          Nothing -> return $ Just contrInfo
-          Just schema -> CI.addSchemaData contrInfo schema
+      contrInfo <- getContractInfo (NamedContractAddress ca []) blockHash
+      let namedModRef = NamedModuleRef { nmrRef = CI.ciSourceModule contrInfo, nmrNames = [] }
+      schemaM <- getSchemaFromFileOrModule schemaFile namedModRef blockHash
+      case schemaM of
+        Nothing -> return $ Just contrInfo
+        Just schema -> CI.addSchemaData contrInfo schema
     _ -> return Nothing
 
 -- |Get `ContractInfo` for all events in all blocks in which a transaction is present.
@@ -604,7 +602,7 @@ getTxContractInfoWithSchemas schemaFile status = do
   -- Get event schemas for all blocks and events.
   bhToEv <- forM bhEvents $ \(bh, evs) -> do
     evToSt <- forM evs $ \ev -> do
-      st <- getContractInfoWithSchemas schemaFile (Just bh) ev
+      st <- getContractInfoWithSchemas schemaFile (Given bh) ev
       return (ev, st)
     return (bh, evToSt)
   return $ Map.fromList bhToEv
@@ -1857,22 +1855,23 @@ processContractCmd action baseCfgDir verbose backend =
   case action of
     ContractList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      (bestBlock, res) <- withClient backend $ withBestBlockHash block $ \bb -> (bb,) <$> getInstances bb
-      v <- getFromJsonAndHandleError (\_ _ -> logFatal ["could not retrieve the list of contracts",
-                                   "the provided block hash is invalid:", Text.unpack bestBlock]) $ grpcResponseVal <$> res
-      case v of
-        Nothing -> logFatal ["could not retrieve the list of contracts",
-                               "the provided block does not exist:", Text.unpack bestBlock]
-        Just [] -> logInfo ["there are no contract instances in block " ++ Text.unpack bestBlock]
-        Just xs -> runPrinter $ printContractList (bcContractNameMap baseCfg) xs
+      res <- withClient backend $
+        readBlockHashOrDefault Best block >>=
+          getInstanceListV2 >>=
+            getResponseValueOrFail
+      runPrinter $ printContractList (bcContractNameMap baseCfg) (toList res)
 
     ContractShow indexOrName subindex schemaFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-      withClient backend . withBestBlockHash block $ \bb -> do
-        contrInfo <- getContractInfo namedContrAddr bb
+      withClient backend $ do
+        blockHash <-
+          readBlockHashOrDefault Best block >>=
+            getBlockInfoV2 >>=
+              getResponseValueOrFail' Queries.biBlockHash
+        contrInfo <- getContractInfo namedContrAddr (Given blockHash)
         let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = findAllNamesFor (bcModuleNameMap baseCfg) (CI.ciSourceModule contrInfo)}
-        schema <- getSchemaFromFileOrModule schemaFile namedModRef bb
+        schema <- getSchemaFromFileOrModule schemaFile namedModRef (Given blockHash)
         let namedOwner = NamedAddress {naAddr = CI.ciOwner contrInfo, naNames = findAllNamesFor (bcAccountNameMap baseCfg) (CI.ciOwner contrInfo)}
         displayContractInfo schema contrInfo namedOwner namedModRef
 
@@ -1956,14 +1955,18 @@ processContractCmd action baseCfgDir verbose backend =
         Just (InvokerAccount nameOrAddr) -> Just . Types.AddressAccount . naAddr <$> getAccountAddressArg (bcAccountNameMap baseCfg) nameOrAddr
         Just InvokerContract{..} -> Just . Types.AddressContract . ncaAddr <$> getNamedContractAddress (bcContractNameMap baseCfg) icIndexOrName icSubindex
 
-      contrInfo <- withClient backend . withBestBlockHash block $ getContractInfo namedContrAddr
+      (bbHash, contrInfo) <- withClient backend $ do
+        bhInput <- readBlockHashOrDefault Best block
+        bHash <- getResponseValueOrFail' Queries.biBlockHash =<< getBlockInfoV2 bhInput
+        cInfo <- getContractInfo namedContrAddr (Given bHash)
+        return (bHash, cInfo)
       let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = []} -- Skip finding nmrNames, as they won't be shown.
 
       let contractName = CI.getContractName contrInfo
       let wasmReceiveName = Wasm.ReceiveName [i|#{contractName}.#{receiveName}|]
       updatedReceiveName <- checkAndGetContractReceiveName contrInfo receiveName
 
-      modSchema <- withClient backend . withBestBlockHash block $ getSchemaFromFileOrModule schemaFile namedModRef
+      modSchema <- withClient backend $ getSchemaFromFileOrModule schemaFile namedModRef (Given bbHash)
       wasmParameter <- getWasmParameter parameterFile modSchema (CS.ReceiveFuncName contractName updatedReceiveName)
       let nrg = fromMaybe (Types.Energy 10_000_000) energy
 
@@ -1975,34 +1978,28 @@ processContractCmd action baseCfgDir verbose backend =
                           , ccParameter = wasmParameter
                           , ccEnergy = nrg
                           }
-      invokeContextArg <- case Text.decodeUtf8' . BSL.toStrict . AE.encode $ invokeContext of
-            Left _ -> logFatal ["Could not invoke contract due to internal error: decoding UTF-8 failed"] -- Should never happen.
-            Right text -> return text
 
-      withClient backend . withBestBlockHash block $ \bb -> do
-        res <- invokeContract invokeContextArg bb
-        case res of
-          Left err -> logFatal [[i|Invocation failed with error: #{err}|]]
-          Right (GRPCResponse _ jsonValue) -> case AE.fromJSON jsonValue of
-            AE.Error jsonErr -> logFatal [[i|Invocation failed with error: #{jsonErr}|]]
-            AE.Success InvokeContract.Failure{..} -> do
-              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName True
-              -- Logs in cyan to indicate that the invocation returned with a failure.
-              -- This might be what you expected from the contract, so logWarn or logFatal should not be used.
-              log Info (Just ANSI.Cyan) [[iii|Invocation resulted in failure:\n
-                                                - Energy used: #{showNrg rcrUsedEnergy}\n
-                                                - Reason: #{showRejectReason verbose rcrReason}
-                                                #{returnValueMsg}|]]
-            AE.Success InvokeContract.Success{..} -> do
-              let eventsMsg = case mapMaybe (fmap (("  - " <>) . Text.pack) . showEvent verbose Nothing) rcrEvents of
-                                [] -> Text.empty
-                                evts -> [i|- Events:\n#{Text.intercalate "\n" evts}|]
-              returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName False
-              logSuccess [[iii|Invocation resulted in success:\n
-                               - Energy used: #{showNrg rcrUsedEnergy}
-                               #{returnValueMsg}
-                               #{eventsMsg}
-                               |]]
+      -- VH/FIXME: Should the blockhash input in the following be `Best` or `Given bbHash`?
+      res <- withClient backend $ getResponseValueOrFail =<< invokeInstanceV2 (Given bbHash) invokeContext
+      case res of
+          InvokeContract.Failure{..} -> do
+            returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName True
+            -- Logs in cyan to indicate that the invocation returned with a failure.
+            -- This might be what you expected from the contract, so logWarn or logFatal should not be used.
+            log Info (Just ANSI.Cyan) [[iii|Invocation resulted in failure:\n
+                                              - Energy used: #{showNrg rcrUsedEnergy}\n
+                                              - Reason: #{showRejectReason verbose rcrReason}
+                                              #{returnValueMsg}|]]
+          InvokeContract.Success{..} -> do
+            let eventsMsg = case mapMaybe (fmap (("  - " <>) . Text.pack) . showEvent verbose Nothing) rcrEvents of
+                              [] -> Text.empty
+                              evts -> [i|- Events:\n#{Text.intercalate "\n" evts}|]
+            returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName False
+            logSuccess [[iii|Invocation resulted in success:\n
+                              - Energy used: #{showNrg rcrUsedEnergy}
+                              #{returnValueMsg}
+                              #{eventsMsg}
+                              |]]
 
     ContractName index subindex contrName -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -2066,7 +2063,7 @@ processContractCmd action baseCfgDir verbose backend =
 
         -- |Construct a message for displaying the return value of a smart contract invocation.
         --  The 'isError' parameter determines whether the returned bytes should be parsed with the error schema or the return value schema.
-        mkReturnValueMsg :: Maybe BS.ByteString -> Maybe FilePath -> Maybe CS.ModuleSchema -> Text -> Text -> Bool -> ClientMonad IO Text
+        mkReturnValueMsg :: Maybe BS.ByteString -> Maybe FilePath -> Maybe CS.ModuleSchema -> Text -> Text -> Bool -> IO Text
         mkReturnValueMsg rvBytes schemaFile modSchema contractName receiveName isError = case rvBytes of
           Nothing -> return Text.empty
           Just rv -> case modSchema >>= \modSchema' -> lookupSchema modSchema' (CS.ReceiveFuncName contractName receiveName) of
@@ -2084,7 +2081,7 @@ processContractCmd action baseCfgDir verbose backend =
 
 -- |Try to fetch info about the contract and deserialize it from JSON.
 -- Or, log fatally with appropriate error messages if anything goes wrong.
-getContractInfo :: (MonadIO m) => NamedContractAddress -> Text -> ClientMonad m CI.ContractInfo
+getContractInfo :: (MonadIO m) => NamedContractAddress -> BlockHashInput -> ClientMonad m CI.ContractInfo
 getContractInfo namedContrAddr block = do
   bh <- readOrFail block
   blockRes <- getBlockInfoV2 (Given bh)
@@ -2134,14 +2131,17 @@ getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex rece
                                 paramsFile schemaFile amount = do
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
-  contrInfo <- withClient backend . withBestBlockHash Nothing $ getContractInfo namedContrAddr
+  (bbHash, contrInfo) <- withClient backend $ do
+    b <- getResponseValueOrFail' Queries.biBlockHash =<< getBlockInfoV2 Best  
+    cInfo <- getContractInfo namedContrAddr (Given b)
+    return (b, cInfo)
   updatedReceiveName <- checkAndGetContractReceiveName contrInfo receiveName
   let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = []}
   let contrName = CI.getContractName contrInfo
-  schema <- withClient backend . withBestBlockHash Nothing $ getSchemaFromFileOrModule schemaFile namedModRef
+  schema <- withClient backend $ getSchemaFromFileOrModule schemaFile namedModRef (Given bbHash)
   params <- getWasmParameter paramsFile schema (CS.ReceiveFuncName contrName updatedReceiveName)
   return $ ContractUpdateTransactionCfg txCfg (ncaAddr namedContrAddr)
-           contrName (Wasm.ReceiveName [i|#{contrName}.#{receiveName}|]) params amount
+          contrName (Wasm.ReceiveName [i|#{contrName}.#{receiveName}|]) params amount
 
 contractUpdateTransactionPayload :: ContractUpdateTransactionCfg -> Types.Payload
 contractUpdateTransactionPayload ContractUpdateTransactionCfg {..} =
@@ -2184,7 +2184,7 @@ getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath mWasmVersion 
             then (\ref -> NamedModuleRef {nmrRef = ref, nmrNames = []}) <$> getModuleRefFromFile modTBD mWasmVersion
             else getNamedModuleRef (bcModuleNameMap baseCfg) (Text.pack modTBD)
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
-  schema <- withClient backend . withBestBlockHash Nothing $ getSchemaFromFileOrModule schemaFile namedModRef
+  schema <- withClient backend $ getSchemaFromFileOrModule schemaFile namedModRef Best
   params <- getWasmParameter paramsFile schema (CS.InitFuncName contrName)
   return $ ContractInitTransactionCfg txCfg amount (nmrRef namedModRef) (Wasm.InitName [i|init_#{contrName}|]) params
 
@@ -2300,10 +2300,10 @@ getWasmParameter paramsFile schema funcName =
 getSchemaFromFileOrModule :: (MonadIO m)
                           => Maybe FilePath -- ^ Optional schema file.
                           -> NamedModuleRef -- ^ A reference to a module on chain.
-                          -> Text -- ^ A block hash.
+                          -> BlockHashInput -- ^ A block hash.
                           -> ClientMonad m (Maybe CS.ModuleSchema)
 getSchemaFromFileOrModule schemaFile namedModRef block = do
-  wasmModule <- getWasmModule namedModRef =<< readOrFail block
+  wasmModule <- getWasmModule namedModRef block
   case schemaFile of
     Nothing -> do
       liftIO $ case CS.decodeEmbeddedSchema wasmModule of
