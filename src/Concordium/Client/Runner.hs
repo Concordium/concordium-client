@@ -640,6 +640,7 @@ processTransactionCmd action baseCfgDir verbose backend =
         when (ioTail intOpts) $ do
           tailTransaction_ verbose hash
 --          logSuccess [ "transaction successfully completed" ]
+
     TransactionDeployCredential fname intOpts -> do
       source <- handleReadFile BSL.readFile fname
       withClient backend $ do
@@ -716,7 +717,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                            zip (iterate (+ diff) start) (replicate (numIntervals - 1) chunks ++ [chunks + lastChunk])
       receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
       withClient backend $ do
-        cs <- getConsensusStatus >>= getFromJson'
+        cs <- getResponseValueOrFail =<< getConsensusInfoV2
         pl <- liftIO $ do
               res <- case maybeMemo of 
                 Nothing -> return $ Types.TransferWithSchedule (naAddr receiverAddress) realSchedule
@@ -737,14 +738,14 @@ processTransactionCmd action baseCfgDir verbose backend =
         -- Check that sending and receiving accounts are not the same
         let fromAddr = naAddr $ esdAddress ( tcEncryptedSigningData txCfg)
         let toAddr = naAddr $ twstcReceiver ttxCfg
-        case fromAddr == toAddr of
-          False -> do
+        if fromAddr == toAddr
+          then liftIO $ do 
+            logWarn ["Scheduled transfers from an account to itself are not allowed."]
+            logWarn ["Transaction Cancelled"]
+          else do
             let intOpts = toInteractionOpts txOpts
             liftIO $ transferWithScheduleTransactionConfirm ttxCfg (ioConfirm intOpts)
             sendAndTailTransaction_ verbose txCfg pl intOpts
-          True -> liftIO $ do 
-            logWarn ["Scheduled transfers from an account to itself are not allowed."]
-            logWarn ["Transaction Cancelled"]
 
     TransactionEncryptedTransfer txOpts receiver amount index maybeMemo -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -766,7 +767,7 @@ processTransactionCmd action baseCfgDir verbose backend =
 
       withClient backend $ do
         transferData <- getEncryptedAmountTransferData (naAddr senderAddr) receiverAcc amount index secretKey
-        cs <- getConsensusStatus >>= getFromJson'
+        cs <- getResponseValueOrFail =<< getConsensusInfoV2
         payload <- liftIO $ do
                 res <- case maybeMemo of 
                   Nothing -> return $ Types.EncryptedAmountTransfer (naAddr receiverAcc) transferData
@@ -1019,47 +1020,40 @@ data EncryptedTransferTransactionConfig =
 getEncryptedAmountTransferData :: ID.AccountAddress -> NamedAddress -> Types.Amount -> Maybe Int -> ElgamalSecretKey -> ClientMonad IO Enc.EncryptedAmountTransferData
 getEncryptedAmountTransferData senderAddr ettReceiver ettAmount idx secretKey = do
   -- get encrypted amounts for the sender
-  (bbHash, infoValue) <- logFatalOnError =<< withBestBlockHash Nothing (\bbHash -> ((bbHash,) <$>) <$> getAccountInfo (Text.pack . show $ senderAddr) bbHash)
-  case AE.fromJSON $ grpcResponseVal infoValue of
-    AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
-    AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show senderAddr]
-    AE.Success (Just Types.AccountInfo{aiAccountEncryptedAmount=a@Types.AccountEncryptedAmount{..}}) -> do
-      let listOfEncryptedAmounts = Types.getIncomingAmountsList a
-      taker <- case idx of
-                Nothing -> return id
-                Just v ->
-                  if v < fromIntegral _startIndex
-                     || v > fromIntegral _startIndex + length listOfEncryptedAmounts
-                  then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
-                  else return $ take (v - fromIntegral _startIndex)
-      -- get receiver's public encryption key
-      infoValueReceiver <- logFatalOnError =<< withBestBlockHash (Just bbHash) (getAccountInfo (Text.pack . show $ naAddr ettReceiver))
-      case AE.fromJSON $ grpcResponseVal infoValueReceiver of
-        AE.Error err -> logFatal ["Cannot decode account info response from the node: " ++ err]
-        AE.Success Nothing -> logFatal [printf "Account %s does not exist on the chain." $ show $ naAddr ettReceiver]
-        AE.Success (Just air) -> do
-          globalContext <- logFatalOnError =<< getParseCryptographicParameters bbHash
-
-          let receiverPk = ID._elgamalPublicKey $ Types.aiAccountEncryptionKey air
-          -- precomputed table for speeding up decryption
-          let table = Enc.computeTable globalContext (2^(16::Int))
-              decoder = Enc.decryptAmount table secretKey
-              selfDecrypted = decoder _selfAmount
-          -- aggregation of idx encrypted amounts
-              inputEncAmounts = taker listOfEncryptedAmounts
-              aggAmounts = foldl' (<>) _selfAmount inputEncAmounts
-              totalEncryptedAmount = foldl' (+) selfDecrypted $ fmap decoder inputEncAmounts
-          unless (totalEncryptedAmount >= ettAmount) $
-            logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (Types.amountToString ettAmount) (Types.amountToString totalEncryptedAmount)]
-          -- index indicating which encrypted amounts we used as input
-          let aggIndex = case idx of
-                Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (length listOfEncryptedAmounts))
-                Just idx' -> Enc.EncryptedAmountAggIndex (fromIntegral idx')
-                -- we use the supplied index if given. We already checked above that it is within bounds.
-              aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
-          liftIO $ Enc.makeEncryptedAmountTransferData globalContext receiverPk secretKey aggAmount ettAmount >>= \case
-            Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
-            Just ettTransferData -> return ettTransferData
+  bbHash <- getResponseValueOrFail' Queries.biBlockHash =<< getBlockInfoV2 Best
+  Types.AccountInfo{aiAccountEncryptedAmount=a@Types.AccountEncryptedAmount{..}} <-
+    getResponseValueOrFail =<< getAccountInfoV2 (Types.AccAddress senderAddr) (Given bbHash)
+  let listOfEncryptedAmounts = Types.getIncomingAmountsList a
+  taker <- case idx of
+            Nothing -> return id
+            Just v ->
+              if v < fromIntegral _startIndex
+                  || v > fromIntegral _startIndex + length listOfEncryptedAmounts
+              then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
+              else return $ take (v - fromIntegral _startIndex)
+  -- get receiver's public encryption key
+  air <- getResponseValueOrFail =<< getAccountInfoV2 (Types.AccAddress $ naAddr ettReceiver) (Given bbHash)
+  globalContext <- getResponseValueOrFail =<< getCryptographicParametersV2 (Given bbHash)
+  let receiverPk = ID._elgamalPublicKey $ Types.aiAccountEncryptionKey air
+  -- precomputed table for speeding up decryption
+  let table = Enc.computeTable globalContext (2^(16::Int))
+      decoder = Enc.decryptAmount table secretKey
+      selfDecrypted = decoder _selfAmount
+  -- aggregation of idx encrypted amounts
+      inputEncAmounts = taker listOfEncryptedAmounts
+      aggAmounts = foldl' (<>) _selfAmount inputEncAmounts
+      totalEncryptedAmount = foldl' (+) selfDecrypted $ fmap decoder inputEncAmounts
+  unless (totalEncryptedAmount >= ettAmount) $
+    logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (Types.amountToString ettAmount) (Types.amountToString totalEncryptedAmount)]
+  -- index indicating which encrypted amounts we used as input
+  let aggIndex = case idx of
+        Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (length listOfEncryptedAmounts))
+        Just idx' -> Enc.EncryptedAmountAggIndex (fromIntegral idx')
+        -- we use the supplied index if given. We already checked above that it is within bounds.
+      aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
+  liftIO $ Enc.makeEncryptedAmountTransferData globalContext receiverPk secretKey aggAmount ettAmount >>= \case
+    Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
+    Just ettTransferData -> return ettTransferData
 
 -- |Returns the UTCTime date when the baker cooldown on reducing stake/removing a baker will end, using on chain parameters
 getBakerCooldown :: Queries.BlockSummary -> ClientMonad IO UTCTime
