@@ -1513,27 +1513,29 @@ processAccountCmd action baseCfgDir verbose backend =
         putStrLn ""
 
       input <- case inputMaybe of
+        Nothing -> do
+          case Map.lookup defaultAccountName (bcAccountNameMap baseCfg) of
             Nothing -> do
-              case Map.lookup defaultAccountName (bcAccountNameMap baseCfg) of
-                Nothing -> do
-                  logFatal [[i|The ACCOUNT argument was not provided; so the default account name '#{defaultAccountName}' was used, but no account with that name exists.|]]
-                Just acc -> do
-                  logInfo [[i|The ACCOUNT argument was not provided; so the default account name '#{defaultAccountName}' was used.|]]
-                  return . Text.pack $ show acc
-            Just acc -> return acc
+              logFatal [[i|The ACCOUNT argument was not provided; so the default account name '#{defaultAccountName}' was used, but no account with that name exists.|]]
+            Just acc -> do
+              logInfo [[i|The ACCOUNT argument was not provided; so the default account name '#{defaultAccountName}' was used.|]]
+              return . Text.pack $ show acc
+        Just acc -> return acc
 
-      accountIdentifier <- case Types.decodeAccountIdentifier (Text.encodeUtf8 input) of
-                Just v -> return v -- input is a wellformed account identifier
-                Nothing -> logFatal [[i|The identifier '#{input}' is neither a credential registration ID, an account index, the address nor the name of an account|]]
+      accountIdentifier <-
+        case Types.decodeAccountIdentifier (Text.encodeUtf8 input) of
+          Just v -> return v -- input is a wellformed account identifier
+          Nothing -> logFatal [[i|The identifier '#{input}' is neither a credential registration ID, an account index, the address nor the name of an account|]]
 
       (accInfo, na, dec) <- withClient backend $ do
         -- query account
         bhInput <- readBlockHashOrDefault Best block
         accInfo <- getResponseValueOrFail =<< getAccountInfoV2 accountIdentifier bhInput
         -- derive the address of the account from the the initial credential
-        resolvedAddress <- case Map.lookup (ID.CredentialIndex 0) (Types.aiAccountCredentials accInfo) of
-                            Nothing -> logFatal [[i|No initial credential found for the account identified by '#{input}'|]]
-                            Just v -> return $ ID.addressFromRegIdRaw $ ID.credId $ vValue v
+        resolvedAddress <-
+          case Map.lookup (ID.CredentialIndex 0) (Types.aiAccountCredentials accInfo) of
+            Nothing -> logFatal [[i|No initial credential found for the account identified by '#{input}'|]]
+            Just v -> return $ ID.addressFromRegIdRaw $ ID.credId $ vValue v
         -- reverse lookup local account names
         let na = NamedAddress {naNames = findAllNamesFor (bcAccountNameMap baseCfg) resolvedAddress, naAddr = resolvedAddress}
         
@@ -1562,7 +1564,8 @@ processAccountCmd action baseCfgDir verbose backend =
       baseCfg <- getBaseConfig baseCfgDir verbose
       bhInput <- readBlockHashOrDefault Best block
       accs <- withClient backend $
-        getAccountListV2 bhInput >>= getResponseValueOrFail
+        getAccountListV2 bhInput >>=
+        getResponseValueOrFail
       runPrinter $ printAccountList (bcAccountNameMap baseCfg) (toList accs)
 
     AccountUpdateKeys f cid txOpts -> do
@@ -3496,7 +3499,7 @@ processLegacyCmd action backend =
     GetTransactionStatus txhash ->
       withClient backend $
         readOrFail txhash >>=
-        getBlockItemsV2 >>=
+        getBlockItemStatusV2 >>=
         printResponseValueAsJSON
     GetAccountInfo account block -> do
       acc <- case Types.decodeAccountIdentifier $ Text.encodeUtf8 account of

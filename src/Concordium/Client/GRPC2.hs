@@ -3031,12 +3031,6 @@ getBlockItemStatusV2 tHash = withUnaryV2 (callV2 @"getBlockItemStatus") msg ((fm
   where
     msg = toProto tHash
 
--- |Get the status of and information about a specific block item (transaction). -- VH/FIXME: This uses the wrong endpoint.
-getBlockItemsV2 :: (MonadIO m) => TransactionHash -> ClientMonad m (GRPCResult (FromProtoResult TransactionStatus))
-getBlockItemsV2 bhInput = withUnaryV2 (callV2 @"getBlockItemStatus") msg ((fmap . fmap) fromProto)
-  where
-    msg = toProto bhInput
-
 -- |Send a block item. A block item is either an @AccountTransaction@, which is
 -- a transaction signed and paid for by an account, a @CredentialDeployment@,
 -- which creates a new account, or an @UpdateInstruction@, which is an

@@ -272,6 +272,7 @@ data ContractStateV0
   | Cs0JSON !AE.Value
   deriving (Eq, Show)
 
+-- |Convert an `InstanceInfo` instance into a `ContractInfo` instance.
 instanceInfoToContractInfo :: Wasm.InstanceInfo -> ContractInfo
 instanceInfoToContractInfo iInfo =
   case iInfo of

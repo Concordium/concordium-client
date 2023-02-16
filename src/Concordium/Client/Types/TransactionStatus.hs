@@ -27,6 +27,10 @@ data TransactionStatusResult' a = TransactionStatusResult
 
 type TransactionStatusResult = TransactionStatusResult' ValidResult
 
+-- |Convert an `TransactionStatus` instance into a `TransactionStatusResult` instance.
+-- Returns @Left@ wrapping an error message if a transaction summary was @Nothing@ when
+-- the input is either @Committed@ or @Finalized@, or a @Right@ wrapping the
+-- `TransactionStatusResult` otherwise.
 transactionStatusToTransactionStatusResult :: Queries.TransactionStatus -> Either String TransactionStatusResult
 transactionStatusToTransactionStatusResult tStatus = do
   (tsrState, tsrResults) <- do
