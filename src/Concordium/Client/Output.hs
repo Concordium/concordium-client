@@ -60,6 +60,7 @@ import Codec.CBOR.Decoding (decodeString)
 import Concordium.Common.Time (DurationSeconds(durationSeconds))
 import Concordium.Types.Execution (Event(ecEvents))
 import Data.Either (isLeft)
+import Concordium.Types.Queries (BlockBirkParameters)
 
 -- PRINTER
 
@@ -991,7 +992,7 @@ printConsensusStatus r =
        , printf "Current era genesis time:    %s" (show $ Queries.csCurrentEraGenesisTime r)]
 
 
-printBirkParameters :: Bool -> Types.BlockBirkParameters -> Map.Map IDTypes.AccountAddress Text -> Printer
+printBirkParameters :: Bool -> BlockBirkParameters -> Map.Map IDTypes.AccountAddress Text -> Printer
 printBirkParameters includeBakers r addrmap = do
   tell [ printf "Election nonce:      %s" (show $ Queries.bbpElectionNonce r)
       ] --, printf "Election difficulty: %f" (Types.electionDifficulty $ bprElectionDifficulty r) ]
