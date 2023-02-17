@@ -1145,7 +1145,7 @@ printChainParametersV2 ChainParameters {..} = tell [
   [i|  + minimum time between blocks: #{_cpConsensusParameters ^. cpMinBlockTime}|],
   [i|  + block energy limit: #{_cpConsensusParameters ^. cpBlockEnergyLimit}|],
   "",
-  [i|\# Finalization committee rewards:|],
+  [i|\# Finalization committee parameters:|],
   [i|  + minimum finalizers: #{show (_cpFinalizationCommitteeParameters ^. fcpMinFinalizers)}|],
   [i|  + maximum finalizers: #{show (_cpFinalizationCommitteeParameters ^. fcpMaxFinalizers)}|],
   [i|  + finalizer relative stake threshold: #{showPartsPerHundredThousands (_cpFinalizationCommitteeParameters ^. fcpFinalizerRelativeStakeThreshold)}|],
