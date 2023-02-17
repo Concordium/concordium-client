@@ -5,6 +5,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE TypeApplications #-}
 module Concordium.Client.Runner
   ( process
   , getAccountNonce
@@ -309,8 +310,6 @@ processConfigCmd action baseCfgDir verbose =
             else
               return (bcfg, skipped)
 
-
-
       ConfigAccountAddKeys addr keysFile -> do
         baseCfg <- getBaseConfig baseCfgDir verbose
         when verbose $ do
@@ -592,10 +591,10 @@ getContractInfoWithSchemas schemaFile blockHash ev = do
 -- Optionally takes a path to a schema file to be parsed. If a schema is contained in the
 -- file, it will take precedence over any schemas that may be embedded in the module and
 -- will therefore be present in the `ContractInfo` for all events.
-getTxContractInfoWithSchemas :: (MonadIO m, MonadFail m)
-               => Maybe FilePath -- ^ Path pointing to a schema file.
-               -> TransactionStatusResult -- ^ The transaction result for which the contract info will be retrieved.
-               -> ClientMonad m (Map.Map Types.BlockHash [(Types.Event, Maybe CI.ContractInfo)])
+getTxContractInfoWithSchemas :: (MonadIO m)
+  => Maybe FilePath -- ^ Path pointing to a schema file.
+  -> TransactionStatusResult -- ^ The transaction result for which the contract info will be retrieved.
+  -> ClientMonad m (Map.Map Types.BlockHash [(Types.Event, Maybe CI.ContractInfo)])
 getTxContractInfoWithSchemas schemaFile status = do
   -- Which blocks should be used in the ContractInfo queries?
   let bhEvents = [ (bh, evsE) | (bh, Right evsE) <- extractFromTsr' getEvents status ]
@@ -1073,16 +1072,15 @@ getBakerCooldown bs = do
         toInteger $ ups ^. Types.currentParameters . cpCooldownParameters . cpBakerExtraCooldownEpochs
 
 -- |Returns the UTCTime date when the delegator cooldown on reducing stake/removing delegation will end, using on chain parameters
-getDelegatorCooldown :: Queries.BlockSummary -> ClientMonad IO (Maybe UTCTime)
-getDelegatorCooldown bs = do
-  Queries.bsWithUpdates bs $ \spv ups ->
-    case Types.chainParametersVersionFor spv of
-        Types.SCPV0 -> do
-          return Nothing
-        Types.SCPV1 -> do
-          currTime <- liftIO getCurrentTime
-          let cooldownTime = fromIntegral . Types.durationSeconds $ ups ^. Types.currentParameters . cpCooldownParameters . cpDelegatorCooldown
-          return $ Just $ addUTCTime cooldownTime currTime
+getDelegatorCooldown :: Queries.EChainParametersAndKeys -> IO (Maybe UTCTime)
+getDelegatorCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) = do
+  case Types.chainParametersVersion @cpv of
+      Types.SCPV0 -> do
+        return Nothing
+      Types.SCPV1 -> do
+        currTime <- liftIO getCurrentTime
+        let cooldownTime = fromIntegral . Types.durationSeconds $ ecpParams ^. cpCooldownParameters . cpDelegatorCooldown
+        return $ Just $ addUTCTime cooldownTime currTime
 
 -- |Query the chain for the given account. Fail if either the chain cannot be reached, or
 -- if the account does not exist.
@@ -1102,14 +1100,7 @@ getAccountInfoOrDie senderAddr bhInput = do
 -- if the baker pool does not exist.
 getPoolStatusOrDie :: Maybe Types.BakerId ->  ClientMonad IO Queries.PoolStatus
 getPoolStatusOrDie mbid = do
-  let (bid, passiveDelegation) = case mbid of
-        Nothing -> (0, True)
-        Just bakerId -> (bakerId, False)
-  infoValue <- logFatalOnError =<< withBestBlockHash Nothing (getPoolStatus bid passiveDelegation)
-  case AE.fromJSON $ grpcResponseVal infoValue of
-    AE.Error err -> logFatal ["Cannot decode pool status response from the node: " ++ err]
-    AE.Success Nothing -> logFatal ["Could not query pool status from the chain."]
-    AE.Success (Just ps) -> return ps
+  getPoolInfoV2 Best (fromMaybe 0 mbid) >>= getResponseValueOrFail
 
 data CredentialUpdateKeysTransactionCfg =
   CredentialUpdateKeysTransactionCfg
@@ -1443,12 +1434,12 @@ sendAndTailTransaction verbose txCfg pl intOpts = do
   else return Nothing
 
 -- |Continuously query and display transaction status until the transaction is finalized.
-tailTransaction_ :: (MonadIO m, MonadFail m) => Bool -> Types.TransactionHash -> ClientMonad m ()
+tailTransaction_ :: (MonadIO m) => Bool -> Types.TransactionHash -> ClientMonad m ()
 tailTransaction_ verbose hash = void $ tailTransaction verbose hash
 
 -- |Continuously query and display transaction status until the transaction is finalized.
 -- Returns the TransactionStatusResult of the finalized status.
-tailTransaction :: (MonadIO m, MonadFail m) => Bool -> Types.TransactionHash-> ClientMonad m TransactionStatusResult
+tailTransaction :: (MonadIO m) => Bool -> Types.TransactionHash-> ClientMonad m TransactionStatusResult
 tailTransaction verbose hash = do
   logInfo [ "waiting for the transaction to be committed and finalized"
           , "you may skip this step by interrupting the command using Ctrl-C (pass flag '--no-wait' to do this by default)"
@@ -2401,27 +2392,24 @@ processConsensusCmd :: ConsensusCmd -> Maybe FilePath -> Verbose -> Backend -> I
 processConsensusCmd action _baseCfgDir verbose backend =
   case action of
     ConsensusStatus -> do
-      v <- withClientJson backend $ fmap grpcResponseVal <$> getConsensusStatus
+      v <- withClient backend $ getResponseValueOrFail =<< getConsensusInfoV2
       runPrinter $ printConsensusStatus v
+
     ConsensusShowParameters b includeBakers -> do
       baseCfg <- getBaseConfig _baseCfgDir verbose
-      v <- withClientJson backend $ fmap grpcResponseVal <$> withBestBlockHash b getBirkParameters
-      case v of
-        Nothing -> putStrLn "Block not found."
-        Just p -> runPrinter $ printBirkParameters includeBakers p addrmap
-                    where
-                      addrmap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
+      p <- withClient backend $
+        readBlockHashOrDefault Best b >>=
+          getElectionInfoV2 >>=
+            getResponseValueOrFail
+      let addrMap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
+      runPrinter $ printBirkParameters includeBakers p addrMap
 
     ConsensusShowChainParameters b -> do
-      eBlockSummaryJSON <- withClient backend $ withBestBlockHash b getBlockSummary
-      Queries.BlockSummary {..} <-
-        case eBlockSummaryJSON of
-          Right jsn ->
-            case fromJSON $ grpcResponseVal jsn of
-              AE.Success bs -> return bs
-              AE.Error e -> logFatal [printf "Error parsing a JSON for block summary: '%s'" (show e)]
-          Left e -> logFatal [printf "Error getting block summary: '%s'" (show e)]
-      runPrinter $ printChainParameters (bsUpdates ^. currentParameters)
+      cParams <- withClient backend $
+        readBlockHashOrDefault Best b >>=
+          getBlockChainParametersV2 >>=
+            getResponseValueOrFail
+      runPrinter $ printChainParameters cParams
 
     ConsensusChainUpdate rawUpdateFile keysFiles intOpts -> do
       let
@@ -2430,15 +2418,8 @@ processConsensusCmd action _baseCfgDir verbose backend =
           Left err -> logFatal [fn ++ ": " ++ err]
           Right r -> return r
       rawUpdate@Updates.RawUpdateInstruction{..} <- loadJSON rawUpdateFile
-      eBlockSummaryJSON <- withClient backend $ withBestBlockHash Nothing getBlockSummary
-      Queries.BlockSummary {bsProtocolVersion = _ :: Types.SProtocolVersion pv, bsUpdates = eUpdates} <-
-        case eBlockSummaryJSON of
-          Right jsn ->
-            case fromJSON $ grpcResponseVal jsn of
-              AE.Success bs -> return bs
-              AE.Error e -> logFatal [printf "Error parsing a JSON for block summary: '%s'" (show e)]
-          Left e -> logFatal [printf "Error getting block summary: '%s'" (show e)]
-      let keyCollectionStore = eUpdates ^. Types.currentKeyCollection ^. Types.unhashed
+      Queries.EChainParametersAndKeys{..} <- withClient backend $ getResponseValueOrFail =<< getBlockChainParametersV2 Best
+      let keyCollectionStore = ecpKeys
       keys <- mapM loadJSON keysFiles
       let
         (keySet, th) = Updates.extractKeysIndices ruiPayload keyCollectionStore
@@ -2480,10 +2461,8 @@ processConsensusCmd action _baseCfgDir verbose backend =
         let
           tx = Types.ChainUpdate ui
           hash = getBlockItemHash tx
-        sendTransactionToBaker tx defaultNetId >>= \case
-          Left err -> fail err
-          Right (GRPCResponse _ False) -> fail "update instruction not accepted by the node"
-          Right (GRPCResponse _ True) -> logSuccess [printf "update instruction '%s' sent to the baker" (show hash)]
+        _ <- sendBlockItemV2 tx >>=
+          getResponseValueOrFail
         when (ioTail intOpts) $
           tailTransaction_ verbose hash
 
@@ -3313,7 +3292,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
     warnAboutFailedResult result
   where
     warnInOldProtocol = do
-      cs <- getConsensusStatus >>= getFromJson'
+      cs <- getResponseValueOrFail =<< getConsensusInfoV2
       when (Queries.csProtocolVersion cs < Types.P4) $ do
         logWarn [[i|Delegation is not supported in protocol versions < 4.|]]
         confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
@@ -3339,7 +3318,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
       warnIfCannotAfford txCfg capital aiAccountAmount
       (alreadyDelegatedToBakerPool, alreadyBakerId) <- case aiStakingInfo of
             Types.AccountStakingDelegated{..} -> do
-                warnIfCapitalIsLowered capital asiStakedAmount
+                liftIO $ warnIfCapitalIsLowered capital asiStakedAmount
                 mbid <- case asiDelegationTarget of
                   Types.DelegatePassive -> return Nothing
                   Types.DelegateToBaker bid -> return $ Just bid
@@ -3348,12 +3327,10 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
       warnAboutPoolStatus capital alreadyDelegatedToBakerPool alreadyBakerId
 
     warnIfCapitalIsLowered capital stakedAmount = do
-      blockSummary <- getFromJson' =<< withBestBlockHash Nothing getBlockSummary
-      cooldownDate <- case blockSummary of
-        Just cpr -> getDelegatorCooldown cpr
-        Nothing -> do
-          logError ["Could not reach the node to get the delegator cooldown period."]
-          exitTransactionCancelled
+      cooldownDate <- withClient backend $
+        getBlockChainParametersV2 Best >>=
+          getResponseValueOrFail >>=
+            liftIO . getDelegatorCooldown
       let cooldownString :: String = case cooldownDate of
             Just cd -> [i|The current baker cooldown would last until approximately #{cd}|]
             Nothing -> [i||]
@@ -3410,7 +3387,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
         confirmed <- askConfirmation Nothing
         unless confirmed exitTransactionCancelled
       when verbose $ do
-        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData
+        runPrinter $ printSelectedKeyConfig tcEncryptedSigningData
         putStrLn ""
       return (txCfg, payload)
 

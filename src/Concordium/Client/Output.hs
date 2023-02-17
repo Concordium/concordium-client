@@ -3,6 +3,8 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeApplications #-}
+
 module Concordium.Client.Output where
 
 import Concordium.Client.Cli
@@ -46,6 +48,7 @@ import Data.String.Interpolate (i)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Time
+import qualified Data.Vector as Vec
 import Lens.Micro.Platform
 import Text.Printf
 import Codec.CBOR.Read
@@ -54,6 +57,7 @@ import Codec.CBOR.Decoding (decodeString)
 import Concordium.Common.Time (DurationSeconds(durationSeconds))
 import Concordium.Types.Execution (Event(ecEvents))
 import Data.Either (isLeft)
+import Concordium.Types.Queries (BlockBirkParameters)
 
 -- PRINTER
 
@@ -984,33 +988,38 @@ printConsensusStatus r =
        , printf "Current era genesis block:   %s" (show $ Queries.csCurrentEraGenesisBlock r)
        , printf "Current era genesis time:    %s" (show $ Queries.csCurrentEraGenesisTime r)]
 
-printBirkParameters :: Bool -> BirkParametersResult -> Map.Map IDTypes.AccountAddress Text -> Printer
+
+printBirkParameters :: Bool -> BlockBirkParameters -> Map.Map IDTypes.AccountAddress Text -> Printer
 printBirkParameters includeBakers r addrmap = do
-  tell [ printf "Election nonce:      %s" (show $ bprElectionNonce r)
+  tell [ printf "Election nonce:      %s" (show $ Queries.bbpElectionNonce r)
       ] --, printf "Election difficulty: %f" (Types.electionDifficulty $ bprElectionDifficulty r) ]
   when includeBakers $
-    case bprBakers r of
+    case Vec.toList $ Queries.bbpBakers r of
       [] ->
          tell [ "Bakers:              " ++ showNone ]
       bakers -> do
         tell [ "Bakers:"
              , printf "                             Account                       Lottery power  Account Name"
              , printf "        ------------------------------------------------------------------------------" ]
-        tell (map f bakers)
+        tell (fmap f bakers)
         where
-          f b' = printf "%6s: %s  %s  %s" (show $ bpbrId b') (show $ bpbrAccount b') (showLotteryPower $ bpbrLotteryPower b') (accountName $ bpbrAccount b')
+          f b' =
+            printf "%6s: %s  %s  %s"
+              (show $ Queries.bsBakerId b')
+              (show $ Queries.bsBakerAccount b')
+              (showLotteryPower $ Queries.bsBakerLotteryPower b')
+              (maybe "" accountName (Queries.bsBakerAccount b'))
           showLotteryPower lp = if 0 < lp && lp < 0.000001
                                 then " <0.0001 %" :: String
                                 else printf "%8.4f %%" (lp*100)
           accountName bkr = fromMaybe " " $ Map.lookup bkr addrmap
 
-
 -- | Prints the chain  parameters.
-printChainParameters :: ChainParameters' cpv -> Printer
-printChainParameters cp = do
-  case cp ^. cpCooldownParameters of
-    CooldownParametersV0 {} -> printChainParametersV0 cp
-    CooldownParametersV1 {} -> printChainParametersV1 cp
+printChainParameters :: Queries.EChainParametersAndKeys -> Printer
+printChainParameters (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) = do
+  case chainParametersVersion @cpv of
+    SCPV0 -> printChainParametersV0 ecpParams
+    SCPV1 -> printChainParametersV1 ecpParams
 
 -- | Prints the chain  parameters for version 0.
 printChainParametersV0 :: ChainParameters' 'ChainParametersV0 -> Printer
