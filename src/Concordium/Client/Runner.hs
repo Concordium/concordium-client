@@ -1054,22 +1054,21 @@ getEncryptedAmountTransferData senderAddr ettReceiver ettAmount idx secretKey = 
     Just ettTransferData -> return ettTransferData
 
 -- |Returns the UTCTime date when the baker cooldown on reducing stake/removing a baker will end, using on chain parameters
-getBakerCooldown :: Queries.BlockSummary -> ClientMonad IO UTCTime
-getBakerCooldown bs = do
-  cooldownTime <- Queries.bsWithUpdates bs $ \spv ups ->
-        case Types.chainParametersVersionFor spv of
-            Types.SCPV0 -> do
-                cs <- getFromJson' =<< getConsensusStatus
-                let epochTime = toInteger (Time.durationMillis $ Queries.csEpochDuration cs) % 1000
-                return . fromRational $ epochTime * ((cooldownEpochsV0 ups + 2) % 1)
-            Types.SCPV1 -> return .fromIntegral . Types.durationSeconds $
-                ups ^. Types.currentParameters . cpCooldownParameters . cpPoolOwnerCooldown
+getBakerCooldown :: Queries.EChainParametersAndKeys -> ClientMonad IO UTCTime
+getBakerCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) = do
+  cooldownTime <- case Types.chainParametersVersion @cpv of
+    Types.SCPV0 -> do
+        cs <- getResponseValueOrFail =<< getConsensusInfoV2
+        let epochTime = toInteger (Time.durationMillis $ Queries.csEpochDuration cs) % 1000
+        return . fromRational $ epochTime * ((cooldownEpochsV0 ecpParams + 2) % 1)
+    Types.SCPV1 -> return .fromIntegral . Types.durationSeconds $
+        ecpParams ^. cpCooldownParameters . cpPoolOwnerCooldown
   currTime <- liftIO getCurrentTime
   let cooldownDate = addUTCTime cooldownTime currTime
   return cooldownDate
   where
     cooldownEpochsV0 ups =
-        toInteger $ ups ^. Types.currentParameters . cpCooldownParameters . cpBakerExtraCooldownEpochs
+        toInteger $ ups ^. cpCooldownParameters . cpBakerExtraCooldownEpochs
 
 -- |Returns the UTCTime date when the delegator cooldown on reducing stake/removing delegation will end, using on chain parameters
 getDelegatorCooldown :: Queries.EChainParametersAndKeys -> IO (Maybe UTCTime)
@@ -2615,7 +2614,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
       warnIfCapitalIsSmall capital
       cannotAfford <- warnIfCannotAfford txCfg capital aiAccountAmount
       case aiStakingInfo of
-        Types.AccountStakingBaker{..} -> warnIfCapitalIsLowered capital asiStakedAmount
+        Types.AccountStakingBaker{..} -> liftIO $ warnIfCapitalIsLowered capital asiStakedAmount
         _ -> return ()
       unless cannotAfford (warnIfCapitalIsBig capital aiAccountAmount)
 
@@ -2637,12 +2636,11 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
         unless confirmed exitTransactionCancelled
 
     warnIfCapitalIsLowered capital stakedAmount = do
-      blockSummary <- getFromJson' =<< withBestBlockHash Nothing getBlockSummary
-      cooldownDate <- case blockSummary of
-        Just cpr -> getBakerCooldown cpr
-        Nothing -> do
-          logError ["Could not reach the node to get the baker cooldown period."]
-          exitTransactionCancelled
+      -- VH/FIXME: Error message changed here, probably not good - should this be changed back to reflect how it was?
+      cooldownDate <- withClient backend $
+        getBlockChainParametersV2 Best >>=
+          getResponseValueOrFail >>=
+            liftIO . getDelegatorCooldown
       when (capital < stakedAmount) $ do
         let removing = capital == 0
         if removing then
@@ -3019,17 +3017,15 @@ processBakerRemoveCmd baseCfgDir verbose backend txOpts = do
   let intOpts = toInteractionOpts txOpts
   (txCfg, pl) <- transactionForBakerRemove (ioConfirm intOpts)
   withClient backend $ do
-    warnAboutRemoving
+    liftIO $ warnAboutRemoving
     sendAndTailTransaction_ verbose txCfg pl intOpts
   where
-
     warnAboutRemoving = do
-      blockSummary <- getFromJson' =<< withBestBlockHash Nothing getBlockSummary
-      cooldownDate <- case blockSummary of
-        Just cpr -> getBakerCooldown cpr
-        Nothing -> do
-          logError ["Could not reach the node to get the baker cooldown period."]
-          exitTransactionCancelled
+      -- VH/FIXME: Error message changed here, probably not good - should this be changed back to reflect how it was?
+      cooldownDate <- withClient backend $
+        getBlockChainParametersV2 Best >>=
+          getResponseValueOrFail >>=
+            getBakerCooldown
       logWarn ["Stopping a baker that is staking will lock the stake of the baker for a cooldown period before the CCD are made available."]
       logWarn ["During this period it is not possible to update the baker's stake, or restart the baker."]
       logWarn [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
@@ -3070,7 +3066,7 @@ processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = 
       warnIfCapitalIsSmall capital
       cannotAfford <- warnIfCannotAfford txCfg capital aiAccountAmount
       case aiStakingInfo of
-        Types.AccountStakingBaker{..} -> warnIfCapitalIsLowered capital asiStakedAmount
+        Types.AccountStakingBaker{..} -> liftIO $ warnIfCapitalIsLowered capital asiStakedAmount
         _ -> return ()
       unless cannotAfford (warnIfCapitalIsBig capital aiAccountAmount)
 
@@ -3092,12 +3088,11 @@ processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = 
         unless confirmed exitTransactionCancelled
 
     warnIfCapitalIsLowered capital stakedAmount = do
-      blockSummary <- getFromJson . fmap grpcResponseVal =<< withBestBlockHash Nothing getBlockSummary
-      cooldownDate <- case blockSummary of
-        Just cpr -> getBakerCooldown cpr
-        Nothing -> do
-          logError ["Could not reach the node to get the baker cooldown period."]
-          exitTransactionCancelled
+      -- VH/FIXME: Error message changed here, probably not good - should this be changed back to reflect how it was?
+      cooldownDate <- withClient backend $
+        getBlockChainParametersV2 Best >>=
+          getResponseValueOrFail >>=
+            getBakerCooldown
       if capital < stakedAmount
       then do
         logWarn ["The new staked value appears to be lower than the amount currently staked on chain by this baker."]
@@ -3157,7 +3152,7 @@ processBakerUpdateRestakeCmd baseCfgDir verbose backend txOpts ubreRestakeEarnin
         confirmed <- askConfirmation Nothing
         unless confirmed exitTransactionCancelled
       when verbose $ do
-        runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData
+        runPrinter $ printSelectedKeyConfig tcEncryptedSigningData
         putStrLn ""
       return (txCfg, payload)
 
@@ -3213,7 +3208,7 @@ processBakerCmd action baseCfgDir verbose backend =
 
     BakerAdd bakerKeysFile txOpts initialStake autoRestake extraData outputFile -> do
       pv <- withClient backend $ do
-        cs <- getConsensusStatus >>= getFromJson'
+        cs <- getResponseValueOrFail =<< getConsensusInfoV2
         return $ Queries.csProtocolVersion cs
       if pv < Types.P4
         then
@@ -3240,7 +3235,7 @@ processBakerCmd action baseCfgDir verbose backend =
 
     BakerSetKeys file txOpts outfile -> do
       pv <- withClient backend $ do
-        cs <- getConsensusStatus >>= getFromJson'
+        cs <- getResponseValueOrFail =<< getConsensusInfoV2
         return $ Queries.csProtocolVersion cs
       if pv < Types.P4
         then processBakerSetKeysCmd baseCfgDir verbose backend txOpts file outfile
@@ -3248,7 +3243,7 @@ processBakerCmd action baseCfgDir verbose backend =
 
     BakerRemove txOpts -> do
       pv <- withClient backend $ do
-        cs <- getConsensusStatus >>= getFromJson'
+        cs <- getResponseValueOrFail =<< getConsensusInfoV2
         return $ Queries.csProtocolVersion cs
       if pv < Types.P4
         then processBakerRemoveCmd baseCfgDir verbose backend txOpts
@@ -3256,7 +3251,7 @@ processBakerCmd action baseCfgDir verbose backend =
 
     BakerUpdateStake newStake txOpts -> do
       pv <- withClient backend $ do
-        cs <- getConsensusStatus >>= getFromJson'
+        cs <- getResponseValueOrFail =<< getConsensusInfoV2
         return $ Queries.csProtocolVersion cs
       if pv < Types.P4
       then processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts newStake
@@ -3264,7 +3259,7 @@ processBakerCmd action baseCfgDir verbose backend =
 
     BakerUpdateRestakeEarnings restake txOpts -> do
       pv <- withClient backend $ do
-        cs <- getConsensusStatus >>= getFromJson'
+        cs <- getResponseValueOrFail =<< getConsensusInfoV2
         return $ Queries.csProtocolVersion cs
       if pv < Types.P4
       then processBakerUpdateRestakeCmd baseCfgDir verbose backend txOpts restake
@@ -3327,6 +3322,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
       warnAboutPoolStatus capital alreadyDelegatedToBakerPool alreadyBakerId
 
     warnIfCapitalIsLowered capital stakedAmount = do
+      -- VH/FIXME: Error message changed here, probably not good - should this be changed back to reflect how it was?
       cooldownDate <- withClient backend $
         getBlockChainParametersV2 Best >>=
           getResponseValueOrFail >>=
