@@ -3451,15 +3451,15 @@ processIdentityShowCmd :: IdentityShowCmd -> Backend -> IO ()
 processIdentityShowCmd action backend =
   case action of
     IdentityShowIPs block -> do
-      v <- withClientJson backend $ fmap grpcResponseVal <$> withBestBlockHash block getIdentityProviders
-      case v of
-        Nothing -> putStrLn "No response received from the gRPC server."
-        Just a -> runPrinter $ printIdentityProviders a
+      bhInput <- readBlockHashOrDefault Best block
+      withClient backend $ getIdentityProvidersV2 bhInput >>=
+        getResponseValueOrFail >>=
+          runPrinter . printIdentityProviders . toList
     IdentityShowARs block -> do
-      v <- withClientJson backend $ withBestBlockHash block $ fmap (fmap grpcResponseVal) . getAnonymityRevokers
-      case v of
-        Nothing -> putStrLn "No response received from the gRPC server."
-        Just a -> runPrinter $ printAnonymityRevokers a
+      bhInput <- readBlockHashOrDefault Best block
+      withClient backend $ getAnonymityRevokersV2 bhInput >>=
+        getResponseValueOrFail >>=
+          runPrinter . printAnonymityRevokers . toList
 
 -- |Process a "legacy" command.
 processLegacyCmd :: LegacyCmd -> Backend -> IO ()

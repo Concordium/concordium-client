@@ -23,7 +23,10 @@ import qualified Concordium.Types as Types
 import qualified Concordium.Types.Accounts as Types
 import qualified Concordium.Types.Accounts.Releases as Types
 import qualified Concordium.Types.Execution as Types
+import qualified Concordium.Types.Queries as Types
 import qualified Concordium.ID.Types as IDTypes
+import qualified Concordium.ID.IdentityProvider as IDTypes
+import qualified Concordium.ID.AnonymityRevoker as ARTypes
 import qualified Concordium.Crypto.EncryptedTransfers as Enc
 import qualified Concordium.Wasm as Wasm
 import qualified Concordium.Common.Time as Time
@@ -57,7 +60,6 @@ import Codec.CBOR.Decoding (decodeString)
 import Concordium.Common.Time (DurationSeconds(durationSeconds))
 import Concordium.Types.Execution (Event(ecEvents))
 import Data.Either (isLeft)
-import Concordium.Types.Queries (BlockBirkParameters)
 
 -- PRINTER
 
@@ -989,7 +991,7 @@ printConsensusStatus r =
        , printf "Current era genesis time:    %s" (show $ Queries.csCurrentEraGenesisTime r)]
 
 
-printBirkParameters :: Bool -> BlockBirkParameters -> Map.Map IDTypes.AccountAddress Text -> Printer
+printBirkParameters :: Bool -> Types.BlockBirkParameters -> Map.Map IDTypes.AccountAddress Text -> Printer
 printBirkParameters includeBakers r addrmap = do
   tell [ printf "Election nonce:      %s" (show $ Queries.bbpElectionNonce r)
       ] --, printf "Election difficulty: %f" (Types.electionDifficulty $ bprElectionDifficulty r) ]
@@ -1148,47 +1150,27 @@ parseDescription = AE.withObject "Description" $ \obj -> do
   description <- obj AE..: "description"
   return (name, url, description)
 
-printIdentityProviders :: [AE.Value] -> Printer
-printIdentityProviders vals = do
+printIdentityProviders :: [IDTypes.IpInfo] -> Printer
+printIdentityProviders ipInfos = do
   tell [ printf "Identity providers"
        , printf "------------------" ]
-  tell $ concatMap printSingleIdentityProvider vals
- where parseResponse :: AE.Value -> AE.Parser (IDTypes.IdentityProviderIdentity, (String, String, String))
-       parseResponse = AE.withObject "IpInfo" $ \obj -> do
-         ipId <- obj AE..: "ipIdentity"
-         descriptionVal <- obj AE..: "ipDescription"
-         description <- parseDescription descriptionVal
-         return (ipId, description)
-       printSingleIdentityProvider val =
-         let mresult = AE.parse parseResponse val in
-           case mresult of
-             AE.Success (ident, (name, url, description)) ->
-               [ printf "Identifier:     %s" $ show ident
-               , printf "Description:    NAME %s" name
-               , printf "                URL %s" url
-               , printf "                %s" description ]
-             AE.Error e -> [ "Error encountered while parsing IpInfo: " ++ show e ]
+  tell $ concatMap printSingleIdentityProvider ipInfos
+  where printSingleIdentityProvider ipInfo =
+          [ printf "Identifier:     %s" $ show $ IDTypes.ipIdentity ipInfo
+          , printf "Description:    NAME %s" $ IDTypes.ipName ipInfo
+          , printf "                URL %s" $ IDTypes.ipUrl ipInfo
+          , printf "                %s" $ IDTypes.ipDescription ipInfo ]
 
-printAnonymityRevokers :: [AE.Value] -> Printer
-printAnonymityRevokers vals = do
+printAnonymityRevokers :: [ARTypes.ArInfo] -> Printer
+printAnonymityRevokers arInfos = do
   tell [ printf "Anonymity revokers"
        , printf "------------------" ]
-  tell $ concatMap printSingleAnonymityRevoker vals
- where parseResponse :: AE.Value -> AE.Parser (IDTypes.ArIdentity, (String, String, String))
-       parseResponse = AE.withObject "IpInfo" $ \obj -> do
-         ipId <- obj AE..: "arIdentity"
-         descriptionVal <- obj AE..: "arDescription"
-         description <- parseDescription descriptionVal
-         return (ipId, description)
-       printSingleAnonymityRevoker val =
-         let mresult = AE.parse parseResponse val in
-           case mresult of
-             AE.Success (ident, (name, url, description)) ->
-               [ printf "Identifier:     %s" $ show ident
-               , printf "Description:    NAME %s" name
-               , printf "                URL %s" url
-               , printf "                %s" description ]
-             AE.Error e -> [ "Error encountered while parsing ArInfo: " ++ show e ]
+  tell $ concatMap printSingleAnonymityRevoker arInfos
+  where printSingleAnonymityRevoker arInfo =
+          [ printf "Identifier:     %s" $ show $ ARTypes.arIdentity arInfo
+          , printf "Description:    NAME %s" $ ARTypes.arName arInfo
+          , printf "                URL %s" $ ARTypes.arUrl arInfo
+          , printf "                %s" $ ARTypes.arDescription arInfo ]
 
 -- AMOUNT AND ENERGY
 
