@@ -1144,6 +1144,12 @@ printChainParametersV2 ChainParameters {..} = tell [
   [i|     * timeout decrease: #{showRatio (_cpConsensusParameters ^. cpTimeoutParameters ^. tpTimeoutDecrease)}|],
   [i|  + minimum time between blocks: #{_cpConsensusParameters ^. cpMinBlockTime}|],
   [i|  + block energy limit: #{_cpConsensusParameters ^. cpBlockEnergyLimit}|],
+  "",
+  [i|\# Finalization committee rewards:|],
+  [i|  + minimum finalizers: #{show (_cpFinalizationCommitteeParameters ^. fcpMinFinalizers)}|],
+  [i|  + maximum finalizers: #{show (_cpFinalizationCommitteeParameters ^. fcpMaxFinalizers)}|],
+  [i|  + finalizer relative stake threshold: #{showPartsPerHundredThousands (_cpFinalizationCommitteeParameters ^. fcpFinalizerRelativeStakeThreshold)}|],
+  "",
   [i|\# Other parameters: |],
   [i|  + foundation account index: #{_cpFoundationAccount}|],
   [i|  + maximum credential deployments per block: #{_cpAccountCreationLimit}|]
@@ -1159,6 +1165,9 @@ showRatio r =
   let num = numerator r
       den = denominator r
    in show num ++ " / " ++ show den ++ " (approx " ++ show (realToFrac r :: Double) ++ ")"
+
+showPartsPerHundredThousands :: Types.PartsPerHundredThousands -> String
+showPartsPerHundredThousands (Types.PartsPerHundredThousands val) = show val ++ "/" ++ "100000"
 
 -- | Returns a string representation of the given exchange rate.
 showExchangeRate :: Types.ExchangeRate -> String
