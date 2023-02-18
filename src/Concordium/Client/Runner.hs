@@ -41,8 +41,6 @@ module Concordium.Client.Runner
   , TransactionConfig(..)
   , getFromJson
   , getFromJson'
-  -- other auxiliary functions
-  , getParseCryptographicParameters
   ) where
 
 import           Concordium.Client.Utils
@@ -1242,14 +1240,10 @@ encryptedTransferTransactionConfirm EncryptedTransferTransactionConfig{..} confi
 -- |Query the chain for the minimum baker stake threshold. Fail if the chain cannot be reached.
 getBakerStakeThresholdOrDie :: ClientMonad IO Types.Amount
 getBakerStakeThresholdOrDie = do
-  blockSummary <- getFromJson' =<< withLastFinalBlockHash Nothing getBlockSummary
-  case blockSummary of
-    Nothing -> do
-      logFatal ["Could not reach the node to retrieve the baker stake threshold."]
-    Just bs -> return $ Queries.bsWithUpdates bs $ \spv ups ->
-        case Types.chainParametersVersionFor spv of
-            Types.SCPV0 -> ups ^. Types.currentParameters ^. cpPoolParameters ^. ppBakerStakeThreshold
-            Types.SCPV1 -> ups ^. Types.currentParameters ^. cpPoolParameters ^. ppMinimumEquityCapital
+  (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) <- getResponseValueOrFail =<< getBlockChainParametersV2 Best
+  return $ case Types.chainParametersVersion @cpv of
+      Types.SCPV0 -> ecpParams ^. cpPoolParameters ^. ppBakerStakeThreshold
+      Types.SCPV1 -> ecpParams ^. cpPoolParameters ^. ppMinimumEquityCapital
 
 getAccountUpdateCredentialsTransactionData ::
   Maybe FilePath -- ^ A file with new credentials.
@@ -1858,7 +1852,7 @@ processContractCmd action baseCfgDir verbose backend =
         blockHash <-
           readBlockHashOrDefault Best block >>=
             getBlockInfoV2 >>=
-              getResponseValueOrFail' Queries.biBlockHash
+              extractResponseValueOrFail Queries.biBlockHash
         contrInfo <- getContractInfo namedContrAddr (Given blockHash)
         let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = findAllNamesFor (bcModuleNameMap baseCfg) (CI.ciSourceModule contrInfo)}
         schema <- getSchemaFromFileOrModule schemaFile namedModRef (Given blockHash)
@@ -1947,7 +1941,7 @@ processContractCmd action baseCfgDir verbose backend =
 
       (bbHash, contrInfo) <- withClient backend $ do
         bhInput <- readBlockHashOrDefault Best block
-        bHash <- getResponseValueOrFail' Queries.biBlockHash =<< getBlockInfoV2 bhInput
+        bHash <- extractResponseValueOrFail Queries.biBlockHash =<< getBlockInfoV2 bhInput
         cInfo <- getContractInfo namedContrAddr (Given bHash)
         return (bHash, cInfo)
       let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = []} -- Skip finding nmrNames, as they won't be shown.
@@ -2122,7 +2116,7 @@ getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex rece
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
   (bbHash, contrInfo) <- withClient backend $ do
-    b <- getResponseValueOrFail' Queries.biBlockHash =<< getBlockInfoV2 Best  
+    b <- extractResponseValueOrFail Queries.biBlockHash =<< getBlockInfoV2 Best  
     cInfo <- getContractInfo namedContrAddr (Given b)
     return (b, cInfo)
   updatedReceiveName <- checkAndGetContractReceiveName contrInfo receiveName
@@ -2503,15 +2497,14 @@ generateBakerKeys bkBakerId = do
 -- This functionality is going to be more generally used in an upcoming branch adding CCD prices to NRG printouts across the client.
 getNrgGtuRate :: ClientMonad IO Types.EnergyRate
 getNrgGtuRate = do
-  blockSummary <- getFromJson' =<< withLastFinalBlockHash Nothing getBlockSummary
-  case blockSummary of
-    Nothing -> do
+  res <- getBlockChainParametersV2 LastFinal
+  case getResponseValue res of
+    Left _ -> do
       logError ["Failed to retrieve NRG-CCD rate from the chain using best block hash, unable to estimate CCD cost"]
       logError ["Falling back to default behaviour, all CCD values derived from NRG will be set to 0"]
       return 0
-    Just bs ->
-      return $ Queries.bsWithUpdates bs $ \_ ups ->
-          ups ^. Types.currentParameters ^. energyRate
+    Right (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _)  -> do
+      return $ ecpParams ^. energyRate
 
 -- |Process the 'baker configure ...' command.
 processBakerConfigureCmd :: Maybe FilePath -> Verbose -> Backend -> TransactionOpts (Maybe Types.Energy)
@@ -3017,7 +3010,7 @@ processBakerRemoveCmd baseCfgDir verbose backend txOpts = do
   let intOpts = toInteractionOpts txOpts
   (txCfg, pl) <- transactionForBakerRemove (ioConfirm intOpts)
   withClient backend $ do
-    liftIO $ warnAboutRemoving
+    liftIO warnAboutRemoving
     sendAndTailTransaction_ verbose txCfg pl intOpts
   where
     warnAboutRemoving = do
