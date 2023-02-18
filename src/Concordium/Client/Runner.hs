@@ -1900,7 +1900,7 @@ processContractCmd action baseCfgDir verbose backend =
         blockHash <-
           readBlockHashOrDefault Best block >>=
             getBlockInfoV2 >>=
-              getResponseValueOrFail' Queries.biBlockHash
+              extractResponseValueOrFail Queries.biBlockHash
         contrInfo <- getContractInfo namedContrAddr (Given blockHash)
         let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = findAllNamesFor (bcModuleNameMap baseCfg) (CI.ciSourceModule contrInfo)}
         schema <- getSchemaFromFileOrModule schemaFile namedModRef (Given blockHash)
@@ -1989,7 +1989,7 @@ processContractCmd action baseCfgDir verbose backend =
 
       (bbHash, contrInfo) <- withClient backend $ do
         bhInput <- readBlockHashOrDefault Best block
-        bHash <- getResponseValueOrFail' Queries.biBlockHash =<< getBlockInfoV2 bhInput
+        bHash <- extractResponseValueOrFail Queries.biBlockHash =<< getBlockInfoV2 bhInput
         cInfo <- getContractInfo namedContrAddr (Given bHash)
         return (bHash, cInfo)
       let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = []} -- Skip finding nmrNames, as they won't be shown.
@@ -2164,7 +2164,7 @@ getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex rece
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
   (bbHash, contrInfo) <- withClient backend $ do
-    b <- getResponseValueOrFail' Queries.biBlockHash =<< getBlockInfoV2 Best  
+    b <- extractResponseValueOrFail Queries.biBlockHash =<< getBlockInfoV2 Best  
     cInfo <- getContractInfo namedContrAddr (Given b)
     return (b, cInfo)
   updatedReceiveName <- checkAndGetContractReceiveName contrInfo receiveName
