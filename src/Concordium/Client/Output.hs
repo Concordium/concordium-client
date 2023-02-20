@@ -1144,6 +1144,12 @@ printChainParametersV2 ChainParameters {..} = tell [
   [i|     * timeout decrease: #{showRatio (_cpConsensusParameters ^. cpTimeoutParameters ^. tpTimeoutDecrease)}|],
   [i|  + minimum time between blocks: #{_cpConsensusParameters ^. cpMinBlockTime}|],
   [i|  + block energy limit: #{_cpConsensusParameters ^. cpBlockEnergyLimit}|],
+  "",
+  [i|\# Finalization committee parameters:|],
+  [i|  + minimum finalizers: #{show (_cpFinalizationCommitteeParameters ^. fcpMinFinalizers)}|],
+  [i|  + maximum finalizers: #{show (_cpFinalizationCommitteeParameters ^. fcpMaxFinalizers)}|],
+  [i|  + finalizer relative stake threshold: #{show (_cpFinalizationCommitteeParameters ^. fcpFinalizerRelativeStakeThreshold)}|],
+  "",
   [i|\# Other parameters: |],
   [i|  + foundation account index: #{_cpFoundationAccount}|],
   [i|  + maximum credential deployments per block: #{_cpAccountCreationLimit}|]
