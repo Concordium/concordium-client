@@ -272,7 +272,10 @@ data ContractStateV0
   | Cs0JSON !AE.Value
   deriving (Eq, Show)
 
--- |Convert an `InstanceInfo` instance into a `ContractInfo` instance.
+-- |Convert an `InstanceInfo` into a `ContractInfo`.
+-- The schema in the returned @ContractInfo@ value will always be of
+-- the @NoSchemaV0@ variant. Schema informaton can be included by
+-- manually augmenting the result e.g. by using @addSchemaData@.
 instanceInfoToContractInfo :: Wasm.InstanceInfo -> ContractInfo
 instanceInfoToContractInfo iInfo =
   case iInfo of
