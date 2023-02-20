@@ -154,8 +154,8 @@ extractResponseValue f res =
 -- provided mapping or fail with an error message if the result contains
 -- an error. Takes a string to be prepended to the error message.
 extractResponseValueOrFail :: (MonadIO m)
-  => (a -> b) -- |Result mapping
-  -> String -- |A prefix to the error message to print case of an error.
+  => (a -> b) -- ^ Result mapping
+  -> String -- ^ A prefix to the error message to print case of an error.
   -> GRPCResult (Either String a) -> m b
 extractResponseValueOrFail f errPrefix res =
   case extractResponseValue f res of
