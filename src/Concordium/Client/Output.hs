@@ -1148,7 +1148,7 @@ printChainParametersV2 ChainParameters {..} = tell [
   [i|\# Finalization committee parameters:|],
   [i|  + minimum finalizers: #{show (_cpFinalizationCommitteeParameters ^. fcpMinFinalizers)}|],
   [i|  + maximum finalizers: #{show (_cpFinalizationCommitteeParameters ^. fcpMaxFinalizers)}|],
-  [i|  + finalizer relative stake threshold: #{showPartsPerHundredThousands (_cpFinalizationCommitteeParameters ^. fcpFinalizerRelativeStakeThreshold)}|],
+  [i|  + finalizer relative stake threshold: #{show (_cpFinalizationCommitteeParameters ^. fcpFinalizerRelativeStakeThreshold)}|],
   "",
   [i|\# Other parameters: |],
   [i|  + foundation account index: #{_cpFoundationAccount}|],
@@ -1165,9 +1165,6 @@ showRatio r =
   let num = numerator r
       den = denominator r
    in show num ++ " / " ++ show den ++ " (approx " ++ show (realToFrac r :: Double) ++ ")"
-
-showPartsPerHundredThousands :: Types.PartsPerHundredThousands -> String
-showPartsPerHundredThousands (Types.PartsPerHundredThousands val) = show val ++ "/" ++ "100000"
 
 -- | Returns a string representation of the given exchange rate.
 showExchangeRate :: Types.ExchangeRate -> String
