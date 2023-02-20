@@ -1727,7 +1727,7 @@ instance FromProto Proto.Sha256Hash where
     fromProto h =
         case deMkSerialize h of
             Left err -> fromProtoFail $
-                "Unable to convert 'LeadershipElectionNonce': " <> err
+                "Unable to convert 'Sha256Hash': " <> err
             Right hash -> return hash
 
 instance FromProto Proto.ProtocolUpdate where

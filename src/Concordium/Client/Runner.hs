@@ -741,7 +741,7 @@ processTransactionCmd action baseCfgDir verbose backend =
             let intOpts = toInteractionOpts txOpts
             liftIO $ transferWithScheduleTransactionConfirm ttxCfg (ioConfirm intOpts)
             sendAndTailTransaction_ verbose txCfg pl intOpts
-          True -> liftIO $ do 
+          True -> liftIO $ do
             logWarn ["Scheduled transfers from an account to itself are not allowed."]
             logWarn ["Transaction Cancelled"]
 
@@ -3654,8 +3654,8 @@ processLegacyCmd action backend =
       printJSONValues . toJSON $ v
 
     -- |Print result of a query with side-effects.
-    printSuccess (Left x)  = liftIO $ logError [[i|FAIL: #{x}|]]
-    printSuccess (Right _) = liftIO $ logSuccess ["OK"]
+    printSuccess (Left x)  = liftIO $ putStrLn $ "FAIL: " <> x
+    printSuccess (Right _) = liftIO $ putStrLn "OK"
 
     -- |`read` input or fail if the input could not be `read`.
     readOrFail :: (MonadIO m, Read a) => Text -> m a
@@ -3665,10 +3665,11 @@ processLegacyCmd action backend =
         Right v -> return v
       where s = Text.unpack t
 
-    -- |Reads a blockhash wrapped in the `Maybe` monad.
-    -- If the provided value is @Nothing@, a default value specified provided
-    -- as the first parameter is returned. If the provided value is string wrapped
-    -- in @Just@, `readOrFail s` is returned. Fails if `s` is not a valid blockhash.
+    -- |Reads a blockhash wrapped in @Maybe@ or return a default value.
+    -- If the input value is @Nothing@, a default value provided in the
+    -- first parameter is returned. If the input value is @Just t@ then @t@
+    -- is parsed as a block hash. If this fails @logFatal@ is called to
+    -- report an error and terminate the process.
     readBlockHashOrDefault :: (MonadIO m) => BlockHashInput -> Maybe Text -> m BlockHashInput
     readBlockHashOrDefault  d Nothing = return d
     readBlockHashOrDefault  _ (Just s) = readOrFail s >>= return . Given
@@ -3680,7 +3681,10 @@ processLegacyCmd action backend =
           Left _ -> logFatal ["Unable to parse account address."]
           Right a -> return a
 
-    -- |Print info about a block and possibly recurse on its ancestor.
+    -- |Print info about a block and possibly its ancestors.
+    -- The boolean indicates whether to recurse on the ancestor
+    -- of the block. The recursion bottoms out when the genesis
+    -- block is reached.
     printBlockInfos :: Bool -> BlockHashInput -> ClientMonad IO ()
     printBlockInfos recurse bh = do
       bi <- getResponseValueOrFail =<< getBlockInfoV2 bh
@@ -3811,9 +3815,9 @@ printNodeInfo Queries.NodeInfo{..} = liftIO $
                 Queries.NodeActive (Queries.BakerConsensusInfo _ (Queries.PassiveBaker Queries.AddedButWrongKeys)) ->
                   show False
                 Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveBakerCommitteeInfo) ->
-                  "True, in current baker committee with baker ID '" <> show bId <> "'."
+                  "In current baker committee with baker ID '" <> show bId <> "'."
                 Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveFinalizerCommitteeInfo) ->
-                  "True, in current baker committee with baker ID '" <> show bId <> "'."
+                  "In current baker committee with baker ID '" <> show bId <> "'."
         getFinalizerCommitteeMember =
           \case
                 Queries.NodeActive (Queries.BakerConsensusInfo _ Queries.ActiveBakerCommitteeInfo) ->
@@ -3828,7 +3832,7 @@ printNodeInfo Queries.NodeInfo{..} = liftIO $
                 Queries.NodeActive (Queries.BakerConsensusInfo _ (Queries.PassiveBaker Queries.AddedButWrongKeys)) ->
                   show False
                 Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveFinalizerCommitteeInfo) ->
-                  "True, in current finalizer committee with baker ID " <> show bId <> "'."
+                  "In current finalizer committee with baker ID " <> show bId <> "'."
 
 -- |FIXME: Move this some other place in refactoring.
 data StatusOfPeers = StatusOfPeers {
