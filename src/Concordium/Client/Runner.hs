@@ -742,7 +742,7 @@ processTransactionCmd action baseCfgDir verbose backend =
             let intOpts = toInteractionOpts txOpts
             liftIO $ transferWithScheduleTransactionConfirm ttxCfg (ioConfirm intOpts)
             sendAndTailTransaction_ verbose txCfg pl intOpts
-          True -> liftIO $ do 
+          True -> liftIO $ do
             logWarn ["Scheduled transfers from an account to itself are not allowed."]
             logWarn ["Transaction Cancelled"]
 
