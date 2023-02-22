@@ -11,8 +11,8 @@ module Concordium.Client.Runner.Helper
   , getJSON
   , getValue
   , getResponseValue
-  , getResponseValueOrFail
-  , extractResponseValueOrFail
+  , getResponseValueOrDie
+  , extractResponseValueOrDie
   , GRPCResult
   , GRPCResultV2(..)
   , GRPCOutput(..)
@@ -184,18 +184,18 @@ getResponseValue = extractResponseValue id
 -- |Extract the response value of a `GRPCResult` and return it under
 -- the provided mapping or fail printing the error if the result
 -- contains an error.
-extractResponseValueOrFail :: (MonadIO m)
+extractResponseValueOrDie :: (MonadIO m)
   => (a -> b)
   -> GRPCResultV2 (Either String a)
   -> m b
-extractResponseValueOrFail f res =
+extractResponseValueOrDie f res =
   case extractResponseValue f res of
     Left err -> logFatal [snd err]
     Right v -> return v
 
 -- |Get the response value of a GRPCResult or fail if the result
 -- contains an error.
-getResponseValueOrFail :: (MonadIO m)
+getResponseValueOrDie :: (MonadIO m)
   => GRPCResultV2 (Either String a)
   -> m a
-getResponseValueOrFail = extractResponseValueOrFail id
+getResponseValueOrDie = extractResponseValueOrDie id
