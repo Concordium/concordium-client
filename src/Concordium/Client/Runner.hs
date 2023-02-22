@@ -192,9 +192,10 @@ getAccountAddressArg m account = do
     Left err -> logFatal [err]
     Right v -> return v
 
--- |Die if the request failed and could not be made, e.g. due to an I/O error.
--- Prints a message and terminates the program with 'logFatal'. Note that
--- further details about the nature of the error are appended to the message.
+-- |Die if the request failed, e.g. due to an I/O error or a HTTP/2 error.
+-- If so, an error message is printed and the client is terminated by calling
+-- 'logFatal'. Note that further details about the nature of the error are
+-- appended to the message and printed.
 dieOnRequestFailed :: (MonadIO m)
                    => [String] -- ^The message prefix to display.
                    -> GRPCResultV2 a
