@@ -46,28 +46,25 @@ data GRPCResponse a = GRPCResponse
 -- |Result of running a GRPC request. Either the request fails or there is a response.
 type GRPCResult a = Either String (GRPCResponse a)
 
--- |Result of running a GRPC request. Either the request succeeded
--- with an OK GRPC status code and a result, a non-OK status code and
--- an error message string, or with an invalid error code. Otherwise
--- the request failed.
+-- |Result of running a GRPC request.
 data GRPCResultV2 a =
-    StatusOk (GRPCResponse a) -- ^ The request was made and a response is available.
-  | StatusNotOk (GRPCStatusCode, String) -- ^ The request was made, but a status code indicating error is present in the response.
-  | StatusInvalid -- ^ The request was made, but an invalid status code was present in the response.
-  | RequestFailed String -- ^ The request failed.
+    StatusOk (GRPCResponse a) -- ^ The request was successful with status code 'OK', and a response is available.
+  | StatusNotOk (GRPCStatusCode, String) -- ^ The request was successful, with a non-'OK' status code indicating a GRPC error occurred.
+  | StatusInvalid -- ^ The request was successful, but an invalid status code was returned.
+  | RequestFailed String -- ^ The request failed due to an I/O or HTTP/2 error.
   deriving (Functor)
 
 -- |Headers in GRPC call response.
 type GRPCHeaderList = CIHeaderList
 
 -- |GRPC call helper output type, with variants corresponding to the result of a unary or streaming call.
--- This is here due to the differing output types of the GRPC helpers `rawUnary` and `rawStreamServer`,
+-- This is here due to the differing output types of the GRPC helpers 'rawUnary' and 'rawStreamServer',
 -- that we use to invoke the GRPC procedure. For more info, see the documentation at:
 -- http://hackage.haskell.org/package/http2-client-grpc-0.7.0.0/docs/Network-GRPC-Client-Helpers.html
 data GRPCOutput a =
-      -- |The output returned by invoking a GRPC procedure using `rawUnary`.
+      -- |The output returned by invoking a GRPC procedure using 'rawUnary'.
       RawUnaryOutput (RawReply a)
-      -- |The output returned by invoking a GRPC procedure using `rawStreamServer`.
+      -- |The output returned by invoking a GRPC procedure using 'rawStreamServer'.
       -- The second and third element of the triple represents the response headers,
       -- respectively trailers.
     | ServerStreamOutput (a, HeaderList, HeaderList)
@@ -76,23 +73,33 @@ data GRPCOutput a =
 toGRPCResult' :: GRPCOutput t  -> GRPCResultV2 t
 toGRPCResult' =
     \case
+      -- @RawUnaryOutput@ models the result of invoking a non-streaming GRPC call.
+      -- It wraps a 'RawReply' which either indicates if a problem occurred at the
+      -- application layer, whose nature is then available in an @ErrorCode@, or if the
+      -- request was successful, in which case the result is a triple comprimising HTTP/2
+      -- response headers, trailers and a GRPC response. The response in turn either
+      -- indicates if a non-'OK' status code was returned or if an 'OK' status code was
+      -- returned. In the former case, a server response message is available, and in the
+      -- latter case the GRPC message payload is available.
       RawUnaryOutput r ->
         case r of
+          -- The request was successful.
           Right val -> do
             let (hds, _, response) = val
             case response of
-              -- The status code was OK.
+              -- The status code was 'OK'.
               Right v -> StatusOk (GRPCResponse hds v)
-              -- Otherwise, we got a non-OK status code.
+              -- Otherwise, we got a non-'OK' status code.
               Left e  -> do
                 let statusCode = readTrailers hds
                 case statusCode of
-                  -- Valid non-OK status code.
+                  -- Which is either a valid non-'OK' status code.
                   Right (GRPCStatus c _) -> StatusNotOk (c, "gRPC error: " ++ Network.URI.Encode.decode e ++ "\n" ++ show hds)
-                  -- Invalid status code.
+                  -- Or an invalid status code.
                   Left (InvalidGRPCStatus _) -> StatusInvalid
+          -- The request failed.
           Left e -> RequestFailed $ "Unable to send query: " ++ show e
-      -- ServerStreamOutput contains a triple consisting of a result,
+      -- @ServerStreamOutput@ contains a triple consisting of a result,
       -- headers and trailers. The trailers are unused.
       ServerStreamOutput (t, hds, _trs) -> do
         let hs = map (\(hn, hv) -> (CI.mk hn, hv)) hds
