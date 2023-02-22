@@ -30,10 +30,8 @@ import Network.GRPC.Client.Helpers hiding (Address)
 import Network.GRPC.HTTP2.ProtoLens
 import Network.HTTP2.Client
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Short as BSS
 import qualified Data.Map.Strict as Map
-import Data.Maybe (fromMaybe)
 import qualified Data.ProtoLens.Field
 import qualified Data.Ratio as Ratio
 import qualified Data.Sequence as Seq
@@ -44,7 +42,7 @@ import qualified Data.Vector as Vec
 import qualified Web.Cookie as Cookie
 
 import Concordium.Client.Cli (TransactionStatusQuery(..), wait, logFatal)
-import Concordium.Client.GRPC (useTls, ClientMonad(..), LoggerMethod, EnvData(..), GrpcConfig(..), initializeLock, withReadLock, withWriteLock, RWLock(..))
+import Concordium.Client.GRPC (ClientMonad(..), EnvData(..), withReadLock, withWriteLock)
 import Concordium.Client.Runner.Helper
 import Concordium.Client.Types.TransactionStatus (transactionStatusToTransactionStatusResult)
 import Concordium.Common.Time
@@ -2702,7 +2700,7 @@ getBlockChainParametersV2 bHash = do
           StatusNotOk err -> Left $ StatusNotOk err
           StatusInvalid -> Left StatusInvalid
           StatusOk res -> do Right $ grpcResponseVal res
-    -- Get the account index from the account address and build and and return the chain parameters.
+    -- Get the account index from the account address to get the chain parameters.
     case paramsM of
       Left failed -> return failed
       Right res -> 

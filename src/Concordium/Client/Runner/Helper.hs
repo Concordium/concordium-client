@@ -76,7 +76,7 @@ toGRPCResult' =
       -- @RawUnaryOutput@ models the result of invoking a non-streaming GRPC call.
       -- It wraps a 'RawReply' which either indicates if a problem occurred at the
       -- application layer, whose nature is then available in an @ErrorCode@, or if the
-      -- request was successful, in which case the result is a triple comprimising HTTP/2
+      -- request was successful the result is available in a triple comprimising HTTP/2
       -- response headers, trailers and a GRPC response. The response in turn either
       -- indicates if a non-'OK' status code was returned or if an 'OK' status code was
       -- returned. In the former case, a server response message is available, and in the
@@ -165,10 +165,10 @@ value s =
 getValue :: forall a b. (Field.HasField a "value" b) => SimpleGetter (GRPCResponse a) (GRPCResponse b)
 getValue = to (fmap (^. CF.value))
 
--- |Extract the response value of a GRPCResult and return it under the
--- provided mapping.
--- Returns @Left@ wrapping a error string describing its nature if the
--- request could not be made or if the GRPC status code was not OK, or a
+-- |Extract the response value of a @GRPCResult@, if present, and return it
+-- under the provided mapping.
+-- Returns a @Left@ wrapping an error string describing its nature if the
+-- request could not be made, or if the GRPC status code was not 'OK', or a
 -- @Right@ wrapping the response value under the provided mapping otherwise.
 -- VH/FIXME: Change @Either String a@ to @FromProtoResult a @ after re-
 -- factoring.
@@ -183,13 +183,15 @@ extractResponseValue f res =
     StatusInvalid -> Left (Nothing, "A GRPC error occurred: Response contained an invalid return code.")
     RequestFailed err -> Left (Nothing, "The GRPC request failed: " <> err)
 
--- |Get the response value of a GRPCResult or fail if the result
--- contains an error.
+-- |Get the response value of a @GRPCResult@, if present.
+-- Returns a @Left@ wrapping an error string describing its nature if the
+-- request could not be made, or if the GRPC status code was not 'OK', or a
+-- @Right@ wrapping the response value otherwise.
 getResponseValue :: GRPCResultV2 (Either String a) -> Either (Maybe GRPCStatusCode, String) a
 getResponseValue = extractResponseValue id
 
--- |Extract the response value of a `GRPCResult` and return it under
--- the provided mapping or fail printing the error if the result
+-- |Extract the response value of a @GRPCResult@, if present, and return it
+-- under the provided mapping, or fail printing the cause if the result
 -- contains an error.
 extractResponseValueOrDie :: (MonadIO m)
   => (a -> b)
@@ -200,8 +202,8 @@ extractResponseValueOrDie f res =
     Left err -> logFatal [snd err]
     Right v -> return v
 
--- |Get the response value of a GRPCResult or fail if the result
--- contains an error.
+-- |Get the response value of a @GRPCResult@ if present, or fail printing the
+-- cause if the result contains an error.
 getResponseValueOrDie :: (MonadIO m)
   => GRPCResultV2 (Either String a)
   -> m a
