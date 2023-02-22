@@ -1142,7 +1142,7 @@ getAccountEncryptTransactionCfg baseCfg txOpts aeAmount payloadSize = do
 -- balance of an account.
 getAccountDecryptTransferData :: ID.AccountAddress -> Types.Amount -> ElgamalSecretKey -> Maybe Int -> ClientMonad IO Enc.SecToPubAmountTransferData
 getAccountDecryptTransferData senderAddr adAmount secretKey idx = do
-  bbHash <- getResponseValueOrFail' Queries.biBlockHash =<< getBlockInfoV2 Best
+  bbHash <- extractResponseValueOrFail Queries.biBlockHash =<< getBlockInfoV2 Best
   Types.AccountInfo{aiAccountEncryptedAmount=a@Types.AccountEncryptedAmount{..}} <-
     getResponseValueOrFail =<< getAccountInfoV2 (Types.AccAddress senderAddr) (Given bbHash)
   globalContext <- getResponseValueOrFail =<< getCryptographicParametersV2 (Given bbHash)
@@ -1389,7 +1389,7 @@ getNonce :: (MonadFail m, MonadIO m) => Types.AccountAddress -> Maybe Types.Nonc
 getNonce sender nonce confirm =
   case nonce of
     Nothing -> do
-      currentNonce <- getResponseValueOrFail' Types.aiAccountNonce =<< getAccountInfoV2 (Types.AccAddress sender) Best
+      currentNonce <- extractResponseValueOrFail Types.aiAccountNonce =<< getAccountInfoV2 (Types.AccAddress sender) Best
       nextNonce <- fmap Queries.nanNonce . getResponseValueOrFail =<< getNextSequenceNumberV2 sender
       liftIO $ when (currentNonce /= nextNonce) $ do
         logWarn [ printf "there is a pending transaction with nonce %s, but last committed one has %s" (show $ nextNonce-1) (show $ currentNonce-1)
@@ -3628,23 +3628,25 @@ processLegacyCmd action backend =
     -- an error.
     printResponseValue :: (MonadIO m, Show b)
       => (a -> b)
-      -> GRPCResult (Either String a)
+      -> GRPCResultV2 (Either String a)
       -> m ()
     printResponseValue f res =
-      getResponseValueOrFail' f res >>= liftIO . print
+      extractResponseValueOrFail f res >>= liftIO . print
 
     -- |Print the response value as JSON, or fail with an error
     -- message if the response contained an error.
     printResponseValueAsJSON :: (MonadIO m, ToJSON a)
-      => GRPCResult (Either String a)
+      => GRPCResultV2 (Either String a)
       -> m ()
     printResponseValueAsJSON res = do
       v <- getResponseValueOrFail res
       printJSONValues . toJSON $ v
 
     -- |Print result of a query with side-effects.
-    printSuccess (Left x)  = liftIO $ logError [[i|FAIL: #{x}|]]
-    printSuccess (Right _) = liftIO $ logSuccess ["OK"]
+    printSuccess (StatusOk _) = liftIO $ logSuccess ["OK"]
+    printSuccess (StatusNotOk (_, x)) = liftIO $ logError [[i|FAIL: #{x}|]]
+    printSuccess StatusInvalid = liftIO $ logError [[i|FAIL: Invalid status code in response.|]]
+    printSuccess (RequestFailed x) = liftIO $ logError [[i|FAIL: Request failed: #{x}|]]
 
     -- |Parse an account address.
     parseAccountAddress :: (MonadIO m) => Text -> m ID.AccountAddress
@@ -3681,7 +3683,7 @@ printPeerData bootstrapper pInfos Queries.NodeInfo{..} =
       -- Filter bootstrappers.
       pInfos' = filter (\p -> bootstrapper || Queries.consensusInfo p /= Queries.Bootstrapper) pInfos
   in
-  liftIO $ do 
+  liftIO $ do
       putStrLn $ "Total packets sent: " ++ show peerTotalSent
       putStrLn $ "Total packets received: " ++ show peerTotalReceived
       putStrLn $ "Peer version: " ++ Text.unpack peerVersion
