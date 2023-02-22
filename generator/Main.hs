@@ -9,6 +9,7 @@ import Concordium.Types.Transactions
 import Concordium.Types
 import Concordium.Types.Execution
 import Concordium.Types.Accounts
+import Concordium.Types.Queries
 import Concordium.ID.Types
 import Concordium.Crypto.EncryptedTransfers
 import Concordium.Client.Types.Transaction(encryptedTransferEnergyCost)
@@ -105,7 +106,7 @@ main = do
                   Right [] -> return Nothing
                   Right addrs -> return (Just addrs)
 
-          accInfo <- withClient backend (getAccountInfoOrDie selfAddress)
+          accInfo <- withClient backend (getAccountInfoOrDie selfAddress Best)
           let txRecepient (Nonce n) =
                 case addresses of
                   Just addrs -> addrs !! (fromIntegral n `mod` length addrs)
@@ -138,10 +139,10 @@ main = do
                   Right addrs -> case filter (/= selfAddress) addrs of
                     [] -> die "There must be at least one other receiver."
                     xs -> withClient backend $ forM xs $ \addr -> do
-                      accInfo <- getAccountInfoOrDie addr
+                      accInfo <- getAccountInfoOrDie addr Best
                       return (addr, aiAccountEncryptionKey accInfo)
 
-          accInfo <- withClient backend $ getAccountInfoOrDie selfAddress
+          accInfo <- withClient backend $ getAccountInfoOrDie selfAddress Best
 
           let encAmount = aiAccountEncryptedAmount accInfo
           let ownAmount = _selfAmount encAmount

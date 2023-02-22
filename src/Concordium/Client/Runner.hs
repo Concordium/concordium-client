@@ -193,7 +193,7 @@ getAccountAddressArg m account = do
     Left err -> logFatal [err]
     Right v -> return v
 
--- |Die if the request failed, e.g. due to an I/O error.
+-- |Die if the request failed, e.g. due to an I/O error or a HTTP/2 error.
 -- If so, an error message is printed and the client is terminated by calling
 -- 'logFatal'. Note that further details about the nature of the error are
 -- appended to the message and printed.
@@ -1145,8 +1145,13 @@ getDelegatorCooldown bs = do
 
 -- |Query the chain for the given account. Fail if either the chain cannot be reached, or
 -- if the account does not exist.
-getAccountInfoOrDie :: (MonadIO m) => ID.AccountAddress -> ClientMonad m Types.AccountInfo
-getAccountInfoOrDie senderAddr = getResponseValueOrDie =<< getAccountInfoV2 (Types.AccAddress senderAddr) Best
+getAccountInfoOrDie :: (MonadIO m) => ID.AccountAddress -> BlockHashInput -> ClientMonad m Types.AccountInfo
+getAccountInfoOrDie senderAddr bhInput = do
+  res <- getAccountInfoV2 (Types.AccAddress senderAddr) bhInput
+  dieOnRequestFailed ["I/O error:"] res
+  dieOnStatusNotFound [[i|Account #{senderAddr} does not exist on the chain.|]] res
+  dieOnConversionError ["Cannot decode account info response from the node:"] res
+  getResponseValueOrDie res
 
 -- |Query the chain for the given pool. Fail if either the chain cannot be reached, or
 -- if the baker pool does not exist.
@@ -1545,10 +1550,10 @@ readOrFail t =
     Right v -> return v
   where s = Text.unpack t
 
--- |Reads a blockhash wrapped in the `Maybe` monad.
--- If the provided value is @Nothing@, a default value specified provided
--- as the first parameter is returned. If the provided value is string wrapped
--- in @Just@, `readOrFail s` is returned. Fails if `s` is not a valid blockhash.
+-- |Reads a blockhash wrapped in a @Maybe@.
+-- If the provided value is @Nothing@, a default value provided in the first parameter 
+-- is returned. If the provided value is @Just s@, @readOrFail s@ is returned. Fails if
+-- @s@ is not a valid blockhash.
 readBlockHashOrDefault :: (MonadIO m) => BlockHashInput -> Maybe Text -> m BlockHashInput
 readBlockHashOrDefault  d Nothing = return d
 readBlockHashOrDefault  _ (Just s) = readOrFail s >>= return . Given
@@ -1582,7 +1587,12 @@ processAccountCmd action baseCfgDir verbose backend =
       (accInfo, na, dec) <- withClient backend $ do
         -- query account
         bhInput <- readBlockHashOrDefault Best block
-        accInfo <- getResponseValueOrDie =<< getAccountInfoV2 accountIdentifier bhInput
+        accInfo <- do
+          res <- getAccountInfoV2 accountIdentifier bhInput
+          dieOnRequestFailed ["I/O error:"] res
+          dieOnStatusNotFound [[i|Account does not exist on the chain.|]] res
+          dieOnConversionError ["Cannot decode account info response from the node:"] res
+          getResponseValueOrDie res
         -- derive the address of the account from the the initial credential
         resolvedAddress <-
           case Map.lookup (ID.CredentialIndex 0) (Types.aiAccountCredentials accInfo) of
@@ -1634,7 +1644,7 @@ processAccountCmd action baseCfgDir verbose backend =
         keys <- liftIO $ getFromJson =<< eitherDecodeFileStrict f
         let pl = Types.encodePayload $ Types.UpdateCredentialKeys cid keys
 
-        accInfo <- getAccountInfoOrDie senderAddress
+        accInfo <- getAccountInfoOrDie senderAddress Best
         let numCredentials = Map.size $ Types.aiAccountCredentials accInfo
         let numKeys = length $ ID.credKeys keys
         let nrgCost _ = return $ Just $ accountUpdateKeysEnergyCost (Types.payloadSize pl) numCredentials numKeys
@@ -1664,7 +1674,7 @@ processAccountCmd action baseCfgDir verbose backend =
       let senderAddress = naAddr $ esdAddress accCfg
 
       withClient backend $ do
-        accInfo <- getAccountInfoOrDie senderAddress
+        accInfo <- getAccountInfoOrDie senderAddress Best
         (epayload, numKeys, newCredentials, removedCredentials) <- liftIO $ getAccountUpdateCredentialsTransactionData cdisFile removeCidsFile newThreshold
         let numExistingCredentials =  Map.size (Types.aiAccountCredentials accInfo)
         let nrgCost _ = return $ Just $ accountUpdateCredentialsEnergyCost (Types.payloadSize epayload) numExistingCredentials numKeys
@@ -2578,7 +2588,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
                 _ -> False
       when (not allPresent) $ do
         let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
-        Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr
+        Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr Best
         case aiStakingInfo of
           Types.AccountStakingBaker{} -> return ()
           _ -> do
@@ -2646,7 +2656,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
 
     warnAboutBadCapital txCfg capital = do
       let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
-      Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr
+      Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr Best
       warnIfCapitalIsSmall capital
       cannotAfford <- warnIfCannotAfford txCfg capital aiAccountAmount
       case aiStakingInfo of
@@ -2850,7 +2860,7 @@ processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarn
 
     warnAboutBadCapital txCfg capital = do
       let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
-      Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr
+      Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr Best
       warnIfCapitalIsSmall capital
       cannotAfford <- warnIfCannotAfford txCfg capital aiAccountAmount
       unless cannotAfford (warnIfCapitalIsBig capital aiAccountAmount)
@@ -3101,7 +3111,7 @@ processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = 
 
     warnAboutBadCapital txCfg capital = do
       let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
-      Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr
+      Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr Best
       warnIfCapitalIsSmall capital
       cannotAfford <- warnIfCannotAfford txCfg capital aiAccountAmount
       case aiStakingInfo of
@@ -3349,7 +3359,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
             _ -> return () -- Should not happen
     warnAboutBadCapital txCfg capital = do
       let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
-      Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr
+      Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr Best
       warnIfCannotAfford txCfg capital aiAccountAmount
       (alreadyDelegatedToBakerPool, alreadyBakerId) <- case aiStakingInfo of
             Types.AccountStakingDelegated{..} -> do
@@ -3480,7 +3490,7 @@ processDelegatorCmd action baseCfgDir verbose backend =
         Just na -> do
           let address = naAddr na
           withClient backend $ do
-            ai <- Types.aiAccountIndex <$> getAccountInfoOrDie address
+            ai <- Types.aiAccountIndex <$> getAccountInfoOrDie address Best
             return $ Just $ Types.DelegateToBaker $ Types.BakerId $ ai
 
 processIdentityCmd :: IdentityCmd -> Backend -> IO ()
@@ -3915,10 +3925,10 @@ processTransaction ::
   => BSL.ByteString
   -> Int
   -> ClientMonad m Types.BareBlockItem
-processTransaction source _networkId =
+processTransaction source networkId =
   case AE.eitherDecode source of
     Left err -> fail $ "Error decoding JSON: " ++ err
-    Right t  -> processTransaction_ t _networkId True
+    Right t  -> processTransaction_ t networkId True
 
 -- |Process a transaction with unencrypted keys given explicitly.
 -- The transaction is signed with all the provided keys.
@@ -3937,7 +3947,7 @@ processTransaction_ transaction _networkId _verbose = do
     nonce <-
       case thNonce header of
         Nothing -> do
-          res <- getAccountInfoOrDie sender
+          res <- getAccountInfoOrDie sender Best
           return $ Types.aiAccountNonce res
         Just nonce -> return nonce
     txPayload <- convertTransactionJsonPayload $ payload transaction
@@ -3958,7 +3968,7 @@ processCredential ::
   => BSL.ByteString
   -> Int
   -> ClientMonad m Types.BareBlockItem
-processCredential source _networkId =
+processCredential source networkId =
   case AE.eitherDecode source of
     Left err -> fail $ "Error decoding JSON: " ++ err
     Right vCred
@@ -3966,7 +3976,7 @@ processCredential source _networkId =
             case fromJSON (vValue vCred) of
               AE.Success cred ->
                 let tx = Types.CredentialDeployment cred
-                in sendTransactionToBaker tx _networkId >>= \case
+                in sendTransactionToBaker tx networkId >>= \case
                   Left err -> fail err
                   Right (GRPCResponse _ False) -> fail "Transaction not accepted by the baker."
                   Right (GRPCResponse _ True) -> return tx
