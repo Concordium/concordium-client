@@ -192,6 +192,53 @@ getAccountAddressArg m account = do
     Left err -> logFatal [err]
     Right v -> return v
 
+-- |Die if the request failed and could not be made, e.g. due to an I/O error.
+-- Prints a message and terminates the program with 'logFatal'. Note that
+-- further details about the nature of the error are appended to the message.
+dieOnRequestFailed :: (MonadIO m)
+                   => [String] -- ^The message prefix to display.
+                   -> GRPCResultV2 a
+                   -> ClientMonad m ()
+dieOnRequestFailed msg res =
+  case res of
+    RequestFailed err -> logFatal $ msg <> [err]
+    _ -> return ()
+
+-- |Die if the request was succesful with an 'OK' GRPC status code,
+-- and the response payload could not be converted using @fromProto@.
+-- Prints a message and terminates the program with 'logFatal'. Note
+-- that type parameter of the result corresponds to a converted payload,
+-- and that further details about the nature of the conversion error are
+-- appended to the message.
+dieOnConversionError :: (MonadIO m)
+                     => [String] -- ^The message prefix to display.
+                     -> GRPCResultV2 (FromProtoResult a) -- ^The result of the GRPC incovation.
+                     -> ClientMonad m ()
+dieOnConversionError msg res =
+  case res of
+    StatusOk (GRPCResponse _ (Left err)) -> logFatal $ msg <> [err]
+    _ -> return ()
+
+-- |Die if a 'NOT_FOUND' status code was returned in the 'grpc-status' response header.
+-- Prints a message and terminates the program with 'logFatal'.
+dieOnStatusNotFound :: (MonadIO m)
+                    => [String] -- ^The message to display.
+                    -> GRPCResultV2 a -- ^The result of the GRPC incovation.
+                    -> ClientMonad m ()
+dieOnStatusNotFound = dieOnStatus NOT_FOUND
+
+-- |Die if a specific GRPC status code other than 'OK' was returned in the 'grpc-status' response header.
+-- Prints a message and terminates the program with 'logFatal'.
+dieOnStatus :: (MonadIO m)
+            => GRPCStatusCode -- ^The status code to fail on.
+            -> [String] -- ^The message to display.
+            -> GRPCResultV2 a -- ^The result of the GRPC incovation.
+            -> ClientMonad m ()
+dieOnStatus st msg res =
+  case res of
+    StatusNotOk (st', _) -> when (st == st') $ logFatal msg
+    _ -> return ()
+
 -- |Process CLI command.
 process :: COM.Options -> IO ()
 process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir, optsVerbose = verbose} = do
@@ -3665,17 +3712,10 @@ processLegacyCmd action backend =
       printJSONValues . toJSON $ v
 
     -- |Print result of a query with side-effects.
-<<<<<<< HEAD
     printSuccess (StatusOk _) = liftIO $ logSuccess ["Success"]
     printSuccess (StatusNotOk (c, x)) = liftIO $ logError [[i|Non-"OK" status code '#{c}' in response: #{x}|]]
     printSuccess StatusInvalid = liftIO $ logError [[i|Invalid status code in response|]]
     printSuccess (RequestFailed x) = liftIO $ logError [[i|Request failed: #{x}|]]
-=======
-    printSuccess (StatusOk _) = liftIO $ logSuccess ["OK"]
-    printSuccess (StatusNotOk (_, x)) = liftIO $ logError [[i|FAIL: #{x}|]]
-    printSuccess StatusInvalid = liftIO $ logError [[i|FAIL: Invalid status code in response.|]]
-    printSuccess (RequestFailed x) = liftIO $ logError [[i|FAIL: Request failed: #{x}|]]
->>>>>>> 3abc47b (Add error handling to V2 API.)
 
     -- |Parse an account address.
     parseAccountAddress :: (MonadIO m) => Text -> m ID.AccountAddress
