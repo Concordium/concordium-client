@@ -10,16 +10,18 @@ module Concordium.Client.Runner.Helper
   , printJSONValues
   , getJSON
   , getValue
+  , getResponseValue
   , getResponseValueOrFail
-  , getResponseValueOrFail'
+  , extractResponseValueOrFail
   , GRPCResult
+  , GRPCResultV2(..)
   , GRPCOutput(..)
   , GRPCResponse(..)
   , GRPCHeaderList
   ) where
 
 import           Control.Monad.IO.Class
-import           Data.Aeson
+import           Data.Aeson                    hiding (Error)
 import           Data.Aeson.Encode.Pretty
 import qualified Data.ByteString               as BS
 import qualified Data.ByteString.Lazy.Char8    as BSL8
@@ -28,7 +30,8 @@ import qualified Data.ProtoLens.Field          as Field
 import           Data.Text                     (Text)
 import           Data.Text.Encoding
 import           Lens.Micro.Platform
-import           Network.GRPC.Client
+import           Network.GRPC.Client           hiding (Invalid)
+import           Network.GRPC.HTTP2.Types
 import qualified Network.URI.Encode            (decode)
 import           Prelude                       hiding (fail)
 import qualified Proto.ConcordiumP2pRpc_Fields as CF
@@ -42,6 +45,17 @@ data GRPCResponse a = GRPCResponse
 
 -- |Result of running a GRPC request. Either the request fails or there is a response.
 type GRPCResult a = Either String (GRPCResponse a)
+
+-- |Result of running a GRPC request. Either the request succeeded
+-- with an OK GRPC status code and a result, a non-OK status code and
+-- an error message string, or with an invalid error code. Otherwise
+-- the request failed.
+data GRPCResultV2 a =
+    StatusOk (GRPCResponse a) -- ^ The request was made and a response is available.
+  | StatusNotOk (GRPCStatusCode, String) -- ^ The request was made, but a status code indicating error is present in the response.
+  | StatusInvalid -- ^ The request was made, but an invalid status code was present in the response.
+  | RequestFailed String -- ^ The request failed.
+  deriving (Functor)
 
 -- |Headers in GRPC call response.
 type GRPCHeaderList = CIHeaderList
@@ -59,7 +73,7 @@ data GRPCOutput a =
     | ServerStreamOutput (a, HeaderList, HeaderList)
 
 -- |Convert a GRPC helper output to a unified result type.
-toGRPCResult' :: GRPCOutput t  -> GRPCResult t
+toGRPCResult' :: GRPCOutput t  -> GRPCResultV2 t
 toGRPCResult' =
     \case
       RawUnaryOutput r ->
@@ -67,20 +81,28 @@ toGRPCResult' =
           Right val -> do
             let (hds, _, response) = val
             case response of
-              Left e  -> Left $ "gRPC error: " ++ Network.URI.Encode.decode e
-              Right v -> Right (GRPCResponse hds v)
-          Left e -> Left $ "Unable to send consensus query: " ++ show e
+              -- The status code was OK.
+              Right v -> StatusOk (GRPCResponse hds v)
+              -- Otherwise, we got a non-OK status code.
+              Left e  -> do
+                let statusCode = readTrailers hds
+                case statusCode of
+                  -- Valid non-OK status code.
+                  Right (GRPCStatus c _) -> StatusNotOk (c, "gRPC error: " ++ Network.URI.Encode.decode e ++ "\n" ++ show hds)
+                  -- Invalid status code.
+                  Left (InvalidGRPCStatus _) -> StatusInvalid
+          Left e -> RequestFailed $ "Unable to send query: " ++ show e
       -- ServerStreamOutput contains a triple consisting of a result,
       -- headers and trailers. The trailers are unused.
       ServerStreamOutput (t, hds, _trs) -> do
         let hs = map (\(hn, hv) -> (CI.mk hn, hv)) hds
-        Right (GRPCResponse hs t)
+        StatusOk (GRPCResponse hs t)
 
 -- |Convert a GRPC helper output to a unified result type.
-toGRPCResult :: Maybe (GRPCOutput t) -> GRPCResult t
+toGRPCResult :: Maybe (GRPCOutput t) -> GRPCResultV2 t
 toGRPCResult ret =
   case ret of
-    Nothing -> Left "Cannot connect to GRPC server."
+    Nothing -> RequestFailed "Cannot connect to GRPC server."
     Just v -> toGRPCResult' v
 
 -- The complexity of the first parameter comes from the return type of
@@ -138,34 +160,42 @@ getValue = to (fmap (^. CF.value))
 
 -- |Extract the response value of a GRPCResult and return it under the
 -- provided mapping.
--- Returns @Left@ wrapping an error string describing its nature if the
--- result contains an error, or a @Right@ wrapping the response value
--- under the provided mapping otherwise.
-extractResponseValue :: (a -> b) -> GRPCResult (Either String a) -> Either String b
+-- Returns @Left@ wrapping a error string describing its nature if the
+-- request could not be made or if the GRPC status code was not OK, or a
+-- @Right@ wrapping the response value under the provided mapping otherwise.
+-- VH/FIXME: Change @Either String a@ to @FromProtoResult a @ after re-
+-- factoring.
+extractResponseValue :: (a -> b) -> GRPCResultV2 (Either String a) -> Either (Maybe GRPCStatusCode, String) b
 extractResponseValue f res =
   case res of
-    Left err -> Left $ "A GRPC error occurred: " <> err
-    Right resp ->
+    StatusOk resp ->
       case grpcResponseVal resp of
-        Left err -> Left $ "Unable to convert response payload: " <> err
+        Left err -> Left (Nothing, "Unable to convert GRPC response payload: " <> err)
         Right val -> Right $ f val
+    StatusNotOk (status, err) -> Left (Just status, "A GRPC error occurred: " <> err)
+    StatusInvalid -> Left (Nothing, "A GRPC error occurred: Response contained an invalid return code.")
+    RequestFailed err -> Left (Nothing, "The GRPC request failed: " <> err)
 
--- |Extract the response value of a GRPCResult and return it under the
--- provided mapping or fail with an error message if the result contains
--- an error. Takes a string to be prepended to the error message.
+-- |Get the response value of a GRPCResult or fail if the result
+-- contains an error.
+getResponseValue :: GRPCResultV2 (Either String a) -> Either (Maybe GRPCStatusCode, String) a
+getResponseValue = extractResponseValue id
+
+-- |Extract the response value of a `GRPCResult` and return it under
+-- the provided mapping or fail printing the error if the result
+-- contains an error.
 extractResponseValueOrFail :: (MonadIO m)
-  => (a -> b) -- ^ Result mapping
-  -> String -- ^ A prefix to the error message to print case of an error.
-  -> GRPCResult (Either String a) -> m b
-extractResponseValueOrFail f errPrefix res =
+  => (a -> b)
+  -> GRPCResultV2 (Either String a)
+  -> m b
+extractResponseValueOrFail f res =
   case extractResponseValue f res of
-    Left err -> logFatal [errPrefix <> err]
+    Left err -> logFatal [snd err]
     Right v -> return v
 
--- |Get the response value of a GRPCResult or fail if the result contains an error.
-getResponseValueOrFail' :: (MonadIO m) => (a -> b) -> GRPCResult (Either String a) -> m b
-getResponseValueOrFail' f = extractResponseValueOrFail f "" 
-
--- |Get the response value of a GRPCResult or fail if the result contains an error.
-getResponseValueOrFail :: (MonadIO m) => GRPCResult (Either String a) -> m a
-getResponseValueOrFail = extractResponseValueOrFail id "" 
+-- |Get the response value of a GRPCResult or fail if the result
+-- contains an error.
+getResponseValueOrFail :: (MonadIO m)
+  => GRPCResultV2 (Either String a)
+  -> m a
+getResponseValueOrFail = extractResponseValueOrFail id
