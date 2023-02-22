@@ -193,26 +193,28 @@ getAccountAddressArg m account = do
     Left err -> logFatal [err]
     Right v -> return v
 
--- |Die if the request failed and could not be made, e.g. due to an I/O error.
--- Prints a message and terminates the program with 'logFatal'. Note that
--- further details about the nature of the error are appended to the message.
+-- |Die if the request failed, e.g. due to an I/O error.
+-- If so, an error message is printed and the client is terminated by calling
+-- 'logFatal'. Note that further details about the nature of the error are
+-- appended to the message and printed.
 dieOnRequestFailed :: (MonadIO m)
-                   => [String] -- ^The message prefix to display.
-                   -> GRPCResultV2 a
+                   => [String] -- ^The message prefix to print.
+                   -> GRPCResultV2 a -- ^The result of the GRPC incovation.
                    -> ClientMonad m ()
 dieOnRequestFailed msg res =
   case res of
     RequestFailed err -> logFatal $ msg <> [err]
     _ -> return ()
 
--- |Die if the request was succesful with an 'OK' GRPC status code,
--- and the response payload could not be converted using @fromProto@.
--- Prints a message and terminates the program with 'logFatal'. Note
--- that type parameter of the result corresponds to a converted payload,
--- and that further details about the nature of the conversion error are
--- appended to the message.
+-- |Die if the request was successful, the status code 'OK' is in the
+-- 'grpc-status' response header and the response payload could not be
+-- converted using @fromProto@. If so, an error message is printed and
+-- the client is terminated by calling 'logFatal'.
+-- Note that the type parameter of the result corresponds to a converted pay-
+-- load, and that further details about the nature of the conversion error
+-- are appended to the message and printed.
 dieOnConversionError :: (MonadIO m)
-                     => [String] -- ^The message prefix to display.
+                     => [String] -- ^The message prefix to print.
                      -> GRPCResultV2 (FromProtoResult a) -- ^The result of the GRPC incovation.
                      -> ClientMonad m ()
 dieOnConversionError msg res =
@@ -220,19 +222,21 @@ dieOnConversionError msg res =
     StatusOk (GRPCResponse _ (Left err)) -> logFatal $ msg <> [err]
     _ -> return ()
 
--- |Die if a 'NOT_FOUND' status code was returned in the 'grpc-status' response header.
--- Prints a message and terminates the program with 'logFatal'.
+-- |Die if the request was successful and the status code 'NOT_FOUND' is in
+-- the 'grpc-status' response header. If so, an error message is printed and
+-- the client is terminated by calling 'logFatal'.
 dieOnStatusNotFound :: (MonadIO m)
-                    => [String] -- ^The message to display.
+                    => [String] -- ^The message to print.
                     -> GRPCResultV2 a -- ^The result of the GRPC incovation.
                     -> ClientMonad m ()
 dieOnStatusNotFound = dieOnStatus NOT_FOUND
 
--- |Die if a specific GRPC status code other than 'OK' was returned in the 'grpc-status' response header.
--- Prints a message and terminates the program with 'logFatal'.
+-- |Die if the request was successful and a given GRPC status code other than
+-- 'OK' is in the 'grpc-status' response header. If so, an error message is
+-- printed and the client is terminated by calling 'logFatal'.
 dieOnStatus :: (MonadIO m)
             => GRPCStatusCode -- ^The status code to fail on.
-            -> [String] -- ^The message to display.
+            -> [String] -- ^The message to print.
             -> GRPCResultV2 a -- ^The result of the GRPC incovation.
             -> ClientMonad m ()
 dieOnStatus st msg res =
