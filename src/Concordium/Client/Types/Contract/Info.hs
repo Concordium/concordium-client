@@ -43,7 +43,7 @@ import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Concordium.Client.Config as Config
-import Concordium.Client.GRPC2 (ClientMonad)
+import Concordium.Client.GRPC (ClientMonad)
 import Concordium.Client.Cli
 import Control.Monad.Cont (MonadIO)
 
