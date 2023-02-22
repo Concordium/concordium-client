@@ -135,6 +135,7 @@ import Codec.CBOR.Encoding
 import Codec.CBOR.JSON
 import Control.Arrow (Arrow(second))
 import Concordium.Client.Types.Contract.Info (instanceInfoToContractInfo)
+import Network.GRPC.HTTP2.Types (GRPCStatusCode(NOT_FOUND))
 
 -- |Establish a new connection to the backend and run the provided computation.
 -- Close a connection after completion of the computation. Establishing a
@@ -191,6 +192,53 @@ getAccountAddressArg m account = do
   case getAccountAddress m account of
     Left err -> logFatal [err]
     Right v -> return v
+
+-- |Die if the request failed and could not be made, e.g. due to an I/O error.
+-- Prints a message and terminates the program with 'logFatal'. Note that
+-- further details about the nature of the error are appended to the message.
+dieOnRequestFailed :: (MonadIO m)
+                   => [String] -- ^The message prefix to display.
+                   -> GRPCResultV2 a
+                   -> ClientMonad m ()
+dieOnRequestFailed msg res =
+  case res of
+    RequestFailed err -> logFatal $ msg <> [err]
+    _ -> return ()
+
+-- |Die if the request was succesful with an 'OK' GRPC status code,
+-- and the response payload could not be converted using @fromProto@.
+-- Prints a message and terminates the program with 'logFatal'. Note
+-- that type parameter of the result corresponds to a converted payload,
+-- and that further details about the nature of the conversion error are
+-- appended to the message.
+dieOnConversionError :: (MonadIO m)
+                     => [String] -- ^The message prefix to display.
+                     -> GRPCResultV2 (FromProtoResult a) -- ^The result of the GRPC incovation.
+                     -> ClientMonad m ()
+dieOnConversionError msg res =
+  case res of
+    StatusOk (GRPCResponse _ (Left err)) -> logFatal $ msg <> [err]
+    _ -> return ()
+
+-- |Die if a 'NOT_FOUND' status code was returned in the 'grpc-status' response header.
+-- Prints a message and terminates the program with 'logFatal'.
+dieOnStatusNotFound :: (MonadIO m)
+                    => [String] -- ^The message to display.
+                    -> GRPCResultV2 a -- ^The result of the GRPC incovation.
+                    -> ClientMonad m ()
+dieOnStatusNotFound = dieOnStatus NOT_FOUND
+
+-- |Die if a specific GRPC status code other than 'OK' was returned in the 'grpc-status' response header.
+-- Prints a message and terminates the program with 'logFatal'.
+dieOnStatus :: (MonadIO m)
+            => GRPCStatusCode -- ^The status code to fail on.
+            -> [String] -- ^The message to display.
+            -> GRPCResultV2 a -- ^The result of the GRPC incovation.
+            -> ClientMonad m ()
+dieOnStatus st msg res =
+  case res of
+    StatusNotOk (st', _) -> when (st == st') $ logFatal msg
+    _ -> return ()
 
 -- |Process CLI command.
 process :: COM.Options -> IO ()
@@ -1094,7 +1142,7 @@ getDelegatorCooldown bs = do
 -- |Query the chain for the given account. Fail if either the chain cannot be reached, or
 -- if the account does not exist.
 getAccountInfoOrDie :: (MonadIO m) => ID.AccountAddress -> ClientMonad m Types.AccountInfo
-getAccountInfoOrDie senderAddr = getResponseValueOrFail =<< getAccountInfoV2 (Types.AccAddress senderAddr) Best
+getAccountInfoOrDie senderAddr = getResponseValueOrDie =<< getAccountInfoV2 (Types.AccAddress senderAddr) Best
 
 -- |Query the chain for the given pool. Fail if either the chain cannot be reached, or
 -- if the baker pool does not exist.
@@ -1148,10 +1196,10 @@ getAccountEncryptTransactionCfg baseCfg txOpts aeAmount payloadSize = do
 -- balance of an account.
 getAccountDecryptTransferData :: ID.AccountAddress -> Types.Amount -> ElgamalSecretKey -> Maybe Int -> ClientMonad IO Enc.SecToPubAmountTransferData
 getAccountDecryptTransferData senderAddr adAmount secretKey idx = do
-  bbHash <- extractResponseValueOrFail Queries.biBlockHash =<< getBlockInfoV2 Best
+  bbHash <- extractResponseValueOrDie Queries.biBlockHash =<< getBlockInfoV2 Best
   Types.AccountInfo{aiAccountEncryptedAmount=a@Types.AccountEncryptedAmount{..}} <-
-    getResponseValueOrFail =<< getAccountInfoV2 (Types.AccAddress senderAddr) (Given bbHash)
-  globalContext <- getResponseValueOrFail =<< getCryptographicParametersV2 (Given bbHash)
+    getResponseValueOrDie =<< getAccountInfoV2 (Types.AccAddress senderAddr) (Given bbHash)
+  globalContext <- getResponseValueOrDie =<< getCryptographicParametersV2 (Given bbHash)
   let listOfEncryptedAmounts = Types.getIncomingAmountsList a
   taker <- case idx of
     Nothing -> return id
@@ -1383,7 +1431,7 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
   let tx = signEncodedTransaction pl sender energy nonce expiry accountKeyMap
   when (isJust tcAlias) $
       logInfo [[i|Using the alias #{sender} as the sender of the transaction instead of #{naAddr}.|]]
-  _ <- getResponseValueOrFail =<< sendBlockItemV2 tx
+  _ <- getResponseValueOrDie =<< sendBlockItemV2 tx
   return tx
 
 -- |Fetch next nonces relative to the account's most recently committed and
@@ -1395,8 +1443,8 @@ getNonce :: (MonadFail m, MonadIO m) => Types.AccountAddress -> Maybe Types.Nonc
 getNonce sender nonce confirm =
   case nonce of
     Nothing -> do
-      currentNonce <- extractResponseValueOrFail Types.aiAccountNonce =<< getAccountInfoV2 (Types.AccAddress sender) Best
-      nextNonce <- fmap Queries.nanNonce . getResponseValueOrFail =<< getNextSequenceNumberV2 sender
+      currentNonce <- extractResponseValueOrDie Types.aiAccountNonce =<< getAccountInfoV2 (Types.AccAddress sender) Best
+      nextNonce <- fmap Queries.nanNonce . getResponseValueOrDie =<< getNextSequenceNumberV2 sender
       liftIO $ when (currentNonce /= nextNonce) $ do
         logWarn [ printf "there is a pending transaction with nonce %s, but last committed one has %s" (show $ nextNonce-1) (show $ currentNonce-1)
                 , printf "this transaction will have nonce %s and might hang if the pending transaction fails" (show nextNonce) ]
@@ -1530,7 +1578,7 @@ processAccountCmd action baseCfgDir verbose backend =
       (accInfo, na, dec) <- withClient backend $ do
         -- query account
         bhInput <- readBlockHashOrDefault Best block
-        accInfo <- getResponseValueOrFail =<< getAccountInfoV2 accountIdentifier bhInput
+        accInfo <- getResponseValueOrDie =<< getAccountInfoV2 accountIdentifier bhInput
         -- derive the address of the account from the the initial credential
         resolvedAddress <-
           case Map.lookup (ID.CredentialIndex 0) (Types.aiAccountCredentials accInfo) of
@@ -1555,7 +1603,7 @@ processAccountCmd action baseCfgDir verbose backend =
           Nothing ->
             return (accInfo, na, Nothing)
           Just k -> do
-            gc <- getResponseValueOrFail =<< getCryptographicParametersV2 Best
+            gc <- getResponseValueOrDie =<< getCryptographicParametersV2 Best
             return (accInfo, na, Just (k, gc))
 
       runPrinter $ printAccountInfo na accInfo verbose (showEncrypted || showDecrypted) dec
@@ -1565,7 +1613,7 @@ processAccountCmd action baseCfgDir verbose backend =
       bhInput <- readBlockHashOrDefault Best block
       accs <- withClient backend $
         getAccountListV2 bhInput >>=
-        getResponseValueOrFail
+        getResponseValueOrDie
       runPrinter $ printAccountList (bcAccountNameMap baseCfg) (toList accs)
 
     AccountUpdateKeys f cid txOpts -> do
@@ -2069,9 +2117,15 @@ processContractCmd action baseCfgDir verbose backend =
 -- Or, log fatally with appropriate error messages if anything goes wrong.
 getContractInfo :: (MonadIO m) => NamedContractAddress -> Text -> ClientMonad m CI.ContractInfo
 getContractInfo namedContrAddr block = do
-  b <- readOrFail block
-  r <- getResponseValueOrFail =<< getInstanceInfoV2 (ncaAddr namedContrAddr) (Given b)
-  return $ instanceInfoToContractInfo r
+  bh <- readOrFail block
+  blockRes <- getBlockInfoV2 (Given bh)
+  dieOnRequestFailed ["I/O error:"] blockRes
+  dieOnStatusNotFound [[i|block #{block} does not exist|]] blockRes
+  res <- getInstanceInfoV2 (ncaAddr namedContrAddr) (Given bh)
+  dieOnRequestFailed ["I/O error:"] res
+  dieOnStatusNotFound [[i|the contract instance #{showNamedContractAddress namedContrAddr} does not exist in block #{block}|]] res
+  dieOnConversionError ["Could not decode contract info:"] res
+  extractResponseValueOrDie instanceInfoToContractInfo res
 
 -- |Display contract info, optionally using a schema to decode the contract state.
 displayContractInfo :: Maybe CS.ModuleSchema -> CI.ContractInfo -> NamedAddress -> NamedModuleRef -> ClientMonad IO ()
@@ -2166,8 +2220,14 @@ getWasmModule :: (MonadIO m)
               -> ClientMonad m Wasm.WasmModule
 getWasmModule namedModRef block = do
   bh <- readOrFail block
-  getModuleSourceV2 (nmrRef namedModRef) (Given bh) >>=
-    getResponseValueOrFail
+  blockRes <- getBlockInfoV2 (Given bh)
+  dieOnRequestFailed ["I/O error:"] blockRes
+  dieOnStatusNotFound [[i|block #{block} does not exist|]] blockRes
+  res <- getModuleSourceV2 (nmrRef namedModRef) (Given bh)
+  dieOnRequestFailed ["I/O error:"] res
+  dieOnStatusNotFound [[i|the module reference #{showNamedModuleRef namedModRef} does not exist in block #{block}|]] res
+  dieOnConversionError ["could not decode Wasm Module:"] res
+  getResponseValueOrDie res
 
 data ContractInitTransactionCfg =
   ContractInitTransactionCfg
@@ -3562,10 +3622,10 @@ processLegacyCmd action backend =
       getModuleListV2 >>=
       printResponseValueAsJSON
     GetNodeInfo -> withClient backend $
-      getNodeInfoV2 >>= getResponseValueOrFail >>= printNodeInfo
+      getNodeInfoV2 >>= getResponseValueOrDie >>= printNodeInfo
     GetPeerData bootstrapper -> withClient backend $ do
-      peersInfo <- getResponseValueOrFail =<< getPeersInfoV2
-      nodeInfo <- getResponseValueOrFail =<< getNodeInfoV2
+      peersInfo <- getResponseValueOrDie =<< getPeersInfoV2
+      nodeInfo <- getResponseValueOrDie =<< getNodeInfoV2
       printPeerData bootstrapper peersInfo nodeInfo
     PeerConnect ip port ->
       withClient backend $
@@ -3599,7 +3659,7 @@ processLegacyCmd action backend =
     GetBannedPeers ->
       withClient backend $
         getBannedPeersV2 >>=
-        getResponseValueOrFail >>=
+        getResponseValueOrDie >>=
         printJSONValues . toJSON
     Shutdown ->
       withClient backend $
@@ -3637,7 +3697,7 @@ processLegacyCmd action backend =
       -> GRPCResultV2 (Either String a)
       -> m ()
     printResponseValue f res =
-      extractResponseValueOrFail f res >>= liftIO . print
+      extractResponseValueOrDie f res >>= liftIO . print
 
     -- |Print the response value as JSON, or fail with an error
     -- message if the response contained an error.
@@ -3645,7 +3705,7 @@ processLegacyCmd action backend =
       => GRPCResultV2 (Either String a)
       -> m ()
     printResponseValueAsJSON res = do
-      v <- getResponseValueOrFail res
+      v <- getResponseValueOrDie res
       printJSONValues . toJSON $ v
 
     -- |Print result of a query with side-effects.
@@ -3664,7 +3724,7 @@ processLegacyCmd action backend =
     -- |Print info about a block and possibly recurse on its ancestor.
     printBlockInfos :: Bool -> BlockHashInput -> ClientMonad IO ()
     printBlockInfos recurse bh = do
-      bi <- getResponseValueOrFail =<< getBlockInfoV2 bh
+      bi <- getResponseValueOrDie =<< getBlockInfoV2 bh
       printJSONValues $ toJSON bi
       -- Recurse if were instructed to and if we are not at the genesis block.
       when (recurse && Queries.biBlockHeight bi /= 0)
@@ -3885,7 +3945,7 @@ processTransaction_ transaction _networkId _verbose = do
       (thExpiry header)
       accountKeys
   sendBlockItemV2 tx >>=
-    getResponseValueOrFail >>
+    getResponseValueOrDie >>
       return tx
 
 -- |Read a versioned credential from the bytestring, failing if any errors occur.

@@ -2601,7 +2601,7 @@ newtype ClientMonad m a =
 
 instance (MonadIO m) => TransactionStatusQuery (ClientMonad m) where
   queryTransactionStatus hash = do
-    r <- getResponseValueOrFail =<< getBlockItemStatusV2 hash
+    r <- getResponseValueOrDie =<< getBlockItemStatusV2 hash
     case transactionStatusToTransactionStatusResult r of
         Left err -> logFatal ["queryTransactionStatus: " <> err]
         Right v -> return v
@@ -2992,7 +2992,7 @@ getBlockChainParametersV2 bHash = do
     case paramsM of
       Left failed -> return failed
       Right res -> 
-        case res of 
+        case res of
           Left err -> return $ RequestFailed $ "Could not convert response from GetChainParameters: " <> err
           Right (faAddr, toOutput) -> do
             accInfoOutput <- getAccountInfoV2 (AccAddress faAddr) bHash
