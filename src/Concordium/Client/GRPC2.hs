@@ -18,7 +18,7 @@ import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.ByteString (ByteString)
 import Data.Coerce
-import Data.IORef
+import Data.IORef (atomicWriteIORef, readIORef)
 import Data.ProtoLens (defMessage)
 import Data.ProtoLens.Service.Types
 import Data.String (fromString)
@@ -28,7 +28,7 @@ import Lens.Micro.Platform
 import Network.GRPC.Client
 import Network.GRPC.Client.Helpers hiding (Address)
 import Network.GRPC.HTTP2.ProtoLens
-import Network.HTTP2.Client
+import Network.HTTP2.Client (runExceptT, ClientIO, TooMuchConcurrency)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Short as BSS
 import qualified Data.Map.Strict as Map

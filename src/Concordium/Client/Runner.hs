@@ -231,6 +231,21 @@ dieOnStatusNotFound :: (MonadIO m)
                     -> ClientMonad m ()
 dieOnStatusNotFound = dieOnStatus NOT_FOUND
 
+-- |Die if the request was unsuccessful or a code non-'OK' status code is in
+-- the 'grpc-status' response header. If so, an error message is printed and
+-- the client is terminated by calling 'logFatal'. Note that the type parameter
+-- of the result corresponds to a converted payload, and that further details
+-- about the nature of the conversion error are appended to the message and
+-- printed.
+dieOnError :: (MonadIO m)
+           => [String]
+           -> GRPCResultV2 (Either String a) -- ^The result of the GRPC incovation.
+           -> ClientMonad m ()
+dieOnError msg res = do
+  case getResponseValue res of
+    Left (_, err) -> logFatal $ msg <> [err]
+    Right _ -> return ()
+
 -- |Die if the request was successful and a given GRPC status code other than
 -- 'OK' is in the 'grpc-status' response header. If so, an error message is
 -- printed and the client is terminated by calling 'logFatal'.
@@ -1434,7 +1449,7 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
   let tx = signEncodedTransaction pl sender energy nonce expiry accountKeyMap
   when (isJust tcAlias) $
       logInfo [[i|Using the alias #{sender} as the sender of the transaction instead of #{naAddr}.|]]
-  _ <- getResponseValueOrDie =<< sendBlockItemV2 tx
+  sendBlockItemV2 tx >>= dieOnError [[i|transaction not accepted by the baker:|]]
   return tx
 
 -- |Fetch next nonces relative to the account's most recently committed and
@@ -1590,7 +1605,7 @@ processAccountCmd action baseCfgDir verbose backend =
         -- derive the address of the account from the the initial credential
         resolvedAddress <-
           case Map.lookup (ID.CredentialIndex 0) (Types.aiAccountCredentials accInfo) of
-            Nothing -> logFatal [[i|No initial credential found for the account identified by '#{input}'|]]
+            Nothing -> logFatal [[i|No initial credential found for the account identified by '#{accountIdentifier}'|]]
             Just v -> return $ ID.addressFromRegIdRaw $ ID.credId $ vValue v
         -- reverse lookup local account names
         let na = NamedAddress {naNames = findAllNamesFor (bcAccountNameMap baseCfg) resolvedAddress, naAddr = resolvedAddress}
