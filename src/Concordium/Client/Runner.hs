@@ -19,6 +19,7 @@ module Concordium.Client.Runner
   , generateBakerKeys
   , getAccountInfo
   , getAccountInfoOrDie
+  , getCryptographicParameters
   , getModuleSet
   , getStatusOfPeers
   , StatusOfPeers(..)
@@ -48,7 +49,7 @@ import           Concordium.Client.Cli
 import           Concordium.Client.Config
 import           Concordium.Client.Commands          as COM
 import           Concordium.Client.Export
-import           Concordium.Client.GRPC
+import           Concordium.Client.GRPC              hiding (getCryptographicParameters)
 import           Concordium.Client.GRPC2
 import           Concordium.Client.Output
 import           Concordium.Client.Parse
@@ -70,7 +71,6 @@ import qualified Concordium.Crypto.VRF               as VRF
 
 import           Concordium.GRPC2
 import qualified Concordium.Types.InvokeContract     as InvokeContract
-import           Concordium.Types.UpdateQueues       as Types
 import qualified Concordium.Types.Queries            as Queries
 import qualified Concordium.Types.Updates            as Updates
 import qualified Concordium.Types.Transactions       as Types
@@ -602,10 +602,10 @@ checkAndGetMemo memo pv = do
 --   - Concordium.Types.Interrupted
 -- or fails if the contract could not be retrieved.
 -- Optionally takes a path to a schema file to be parsed and returned.
--- Optionally takes a blockhash of the block in which the contract
--- contract module containing the schema resides, or defaults to using
--- the best blockhash. The schema from the file will take precedence
--- over an embedded schema in the module.
+-- Takes a blockhash of the block in which to retrieve the contract
+-- module containing the schema from. The schema from the file will
+-- take precedence over an embedded schema in the module retrieved
+-- from the block.
 getContractInfoWithSchemas :: (MonadIO m)
   => Maybe FilePath -- ^ Path pointing to a schema file.
   -> BlockHashInput -- ^ The block to retrieve the contract info from.
@@ -1104,7 +1104,7 @@ getBakerCooldown :: Queries.EChainParametersAndKeys -> ClientMonad IO UTCTime
 getBakerCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) = do
   cooldownTime <- case Types.chainParametersVersion @cpv of
     Types.SCPV0 -> do
-        cs <- getResponseValueOrFail =<< getConsensusInfoV2
+        cs <- getResponseValueOrDie =<< getConsensusInfoV2
         let epochTime = toInteger (Time.durationMillis $ Queries.csEpochDuration cs) % 1000
         return . fromRational $ epochTime * ((cooldownEpochsV0 ecpParams + 2) % 1)
     Types.SCPV1 -> return .fromIntegral . Types.durationSeconds $
@@ -1145,7 +1145,7 @@ getAccountInfoOrDie senderAddr bhInput = do
 -- if the baker pool does not exist.
 getPoolStatusOrDie :: Maybe Types.BakerId ->  ClientMonad IO Queries.PoolStatus
 getPoolStatusOrDie mbid = do
-  getPoolInfoV2 Best (fromMaybe 0 mbid) >>= getResponseValueOrFail
+  getPoolInfoV2 Best (fromMaybe 0 mbid) >>= getResponseValueOrDie
 
 data CredentialUpdateKeysTransactionCfg =
   CredentialUpdateKeysTransactionCfg
@@ -1217,15 +1217,13 @@ getAccountDecryptTransferData senderAddr adAmount secretKey idx = do
     Just adTransferData -> return adTransferData
 
 -- |Get the cryptographic parameters in a given block, and attempt to parse them.
-getParseCryptographicParameters :: Text -> ClientMonad IO (Either String GlobalContext)
-getParseCryptographicParameters bHash = runExceptT $ do
-  vglobalContext <- liftEither =<< (lift . getCryptographicParameters $ bHash)
-  case AE.fromJSON $ grpcResponseVal vglobalContext of
-    AE.Error err -> throwError err
-    AE.Success Nothing -> throwError "The given block does not exist."
-    AE.Success (Just Versioned{..}) -> do
-      unless (vVersion == 0) $ throwError "Received unsupported version of cryptographic parameters."
-      return vValue
+getCryptographicParameters :: BlockHashInput -> ClientMonad IO GlobalContext
+getCryptographicParameters block = do
+  blockRes <- getBlockInfoV2 block
+  dieOnRequestFailed ["I/O error:"] blockRes
+  dieOnStatusNotFound [[i|block #{block} does not exist|]] blockRes
+  cpRes <- getCryptographicParametersV2 block
+  getResponseValueOrDie cpRes
 
 -- |Convert transfer transaction config into a valid payload,
 -- optionally asking the user for confirmation.
@@ -1288,7 +1286,7 @@ encryptedTransferTransactionConfirm EncryptedTransferTransactionConfig{..} confi
 -- |Query the chain for the minimum baker stake threshold. Fail if the chain cannot be reached.
 getBakerStakeThresholdOrDie :: ClientMonad IO Types.Amount
 getBakerStakeThresholdOrDie = do
-  (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) <- getResponseValueOrFail =<< getBlockChainParametersV2 Best
+  (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) <- getResponseValueOrDie =<< getBlockChainParametersV2 Best
   return $ case Types.chainParametersVersion @cpv of
       Types.SCPV0 -> ecpParams ^. cpPoolParameters ^. ppBakerStakeThreshold
       Types.SCPV1 -> ecpParams ^. cpPoolParameters ^. ppMinimumEquityCapital
@@ -1783,7 +1781,7 @@ processModuleCmd action baseCfgDir verbose backend =
       bhInput <- readBlockHashOrDefault Best block
       ms <- withClient backend $
         getModuleListV2 bhInput >>=
-          getResponseValueOrFail
+          getResponseValueOrDie
       runPrinter $ printModuleList (bcModuleNameMap baseCfg) (toList ms)
 
     ModuleShow modRefOrName outFile block -> do
@@ -1890,7 +1888,7 @@ processContractCmd action baseCfgDir verbose backend =
       res <- withClient backend $
         readBlockHashOrDefault Best block >>=
           getInstanceListV2 >>=
-            getResponseValueOrFail
+            getResponseValueOrDie
       runPrinter $ printContractList (bcContractNameMap baseCfg) (toList res)
 
     ContractShow indexOrName subindex schemaFile block -> do
@@ -1900,7 +1898,7 @@ processContractCmd action baseCfgDir verbose backend =
         blockHash <-
           readBlockHashOrDefault Best block >>=
             getBlockInfoV2 >>=
-              extractResponseValueOrFail Queries.biBlockHash
+              extractResponseValueOrDie Queries.biBlockHash
         contrInfo <- getContractInfo namedContrAddr (Given blockHash)
         let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = findAllNamesFor (bcModuleNameMap baseCfg) (CI.ciSourceModule contrInfo)}
         schema <- getSchemaFromFileOrModule schemaFile namedModRef (Given blockHash)
@@ -1989,7 +1987,7 @@ processContractCmd action baseCfgDir verbose backend =
 
       (bbHash, contrInfo) <- withClient backend $ do
         bhInput <- readBlockHashOrDefault Best block
-        bHash <- extractResponseValueOrFail Queries.biBlockHash =<< getBlockInfoV2 bhInput
+        bHash <- extractResponseValueOrDie Queries.biBlockHash =<< getBlockInfoV2 bhInput
         cInfo <- getContractInfo namedContrAddr (Given bHash)
         return (bHash, cInfo)
       let namedModRef = NamedModuleRef {nmrRef = CI.ciSourceModule contrInfo, nmrNames = []} -- Skip finding nmrNames, as they won't be shown.
@@ -2012,7 +2010,7 @@ processContractCmd action baseCfgDir verbose backend =
                           }
 
       -- VH/FIXME: Should the blockhash input in the following be `Best` or `Given bbHash`?
-      res <- withClient backend $ getResponseValueOrFail =<< invokeInstanceV2 (Given bbHash) invokeContext
+      res <- withClient backend $ getResponseValueOrDie =<< invokeInstanceV2 (Given bbHash) invokeContext
       case res of
           InvokeContract.Failure{..} -> do
             returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName True
@@ -2164,7 +2162,7 @@ getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex rece
   txCfg <- getRequiredEnergyTransactionCfg baseCfg txOpts
   namedContrAddr <- getNamedContractAddress (bcContractNameMap baseCfg) indexOrName subindex
   (bbHash, contrInfo) <- withClient backend $ do
-    b <- extractResponseValueOrFail Queries.biBlockHash =<< getBlockInfoV2 Best  
+    b <- extractResponseValueOrDie Queries.biBlockHash =<< getBlockInfoV2 Best  
     cInfo <- getContractInfo namedContrAddr (Given b)
     return (b, cInfo)
   updatedReceiveName <- checkAndGetContractReceiveName contrInfo receiveName
@@ -2433,7 +2431,7 @@ processConsensusCmd :: ConsensusCmd -> Maybe FilePath -> Verbose -> Backend -> I
 processConsensusCmd action _baseCfgDir verbose backend =
   case action of
     ConsensusStatus -> do
-      v <- withClient backend $ getResponseValueOrFail =<< getConsensusInfoV2
+      v <- withClient backend $ getResponseValueOrDie =<< getConsensusInfoV2
       runPrinter $ printConsensusStatus v
 
     ConsensusShowParameters b includeBakers -> do
@@ -2441,7 +2439,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
       p <- withClient backend $
         readBlockHashOrDefault Best b >>=
           getElectionInfoV2 >>=
-            getResponseValueOrFail
+            getResponseValueOrDie
       let addrMap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
       runPrinter $ printBirkParameters includeBakers p addrMap
 
@@ -2449,7 +2447,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
       cParams <- withClient backend $
         readBlockHashOrDefault Best b >>=
           getBlockChainParametersV2 >>=
-            getResponseValueOrFail
+            getResponseValueOrDie
       runPrinter $ printChainParameters cParams
 
     ConsensusChainUpdate rawUpdateFile keysFiles intOpts -> do
@@ -2459,7 +2457,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
           Left err -> logFatal [fn ++ ": " ++ err]
           Right r -> return r
       rawUpdate@Updates.RawUpdateInstruction{..} <- loadJSON rawUpdateFile
-      Queries.EChainParametersAndKeys{..} <- withClient backend $ getResponseValueOrFail =<< getBlockChainParametersV2 Best
+      Queries.EChainParametersAndKeys{..} <- withClient backend $ getResponseValueOrDie =<< getBlockChainParametersV2 Best
       let keyCollectionStore = ecpKeys
       keys <- mapM loadJSON keysFiles
       let
@@ -2503,7 +2501,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
           tx = Types.ChainUpdate ui
           hash = getBlockItemHash tx
         _ <- sendBlockItemV2 tx >>=
-          getResponseValueOrFail
+          getResponseValueOrDie
         when (ioTail intOpts) $
           tailTransaction_ verbose hash
 
@@ -2515,7 +2513,7 @@ processBlockCmd action _ backend =
       bHash <- readBlockHashOrDefault Best b
       withClient backend $
         getBlockInfoV2 bHash>>=
-          getResponseValueOrFail >>=
+          getResponseValueOrDie >>=
             -- VH/FIXME: Output changes slightly due to V2 API - document?
             -- Specifically `printBlockInfo` prints `Block not found` when
             -- its input is @Nothing@, which is never the case here.
@@ -2680,7 +2678,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
       -- VH/FIXME: Error message changed here, probably not good - should this be changed back to reflect how it was?
       cooldownDate <- withClient backend $
         getBlockChainParametersV2 Best >>=
-          getResponseValueOrFail >>=
+          getResponseValueOrDie >>=
             liftIO . getDelegatorCooldown
       when (capital < stakedAmount) $ do
         let removing = capital == 0
@@ -3065,7 +3063,7 @@ processBakerRemoveCmd baseCfgDir verbose backend txOpts = do
       -- VH/FIXME: Error message changed here, probably not good - should this be changed back to reflect how it was?
       cooldownDate <- withClient backend $
         getBlockChainParametersV2 Best >>=
-          getResponseValueOrFail >>=
+          getResponseValueOrDie >>=
             getBakerCooldown
       logWarn ["Stopping a baker that is staking will lock the stake of the baker for a cooldown period before the CCD are made available."]
       logWarn ["During this period it is not possible to update the baker's stake, or restart the baker."]
@@ -3132,7 +3130,7 @@ processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = 
       -- VH/FIXME: Error message changed here, probably not good - should this be changed back to reflect how it was?
       cooldownDate <- withClient backend $
         getBlockChainParametersV2 Best >>=
-          getResponseValueOrFail >>=
+          getResponseValueOrDie >>=
             getBakerCooldown
       if capital < stakedAmount
       then do
@@ -3249,7 +3247,7 @@ processBakerCmd action baseCfgDir verbose backend =
 
     BakerAdd bakerKeysFile txOpts initialStake autoRestake extraData outputFile -> do
       pv <- withClient backend $ do
-        cs <- getResponseValueOrFail =<< getConsensusInfoV2
+        cs <- getResponseValueOrDie =<< getConsensusInfoV2
         return $ Queries.csProtocolVersion cs
       if pv < Types.P4
         then
@@ -3276,7 +3274,7 @@ processBakerCmd action baseCfgDir verbose backend =
 
     BakerSetKeys file txOpts outfile -> do
       pv <- withClient backend $ do
-        cs <- getResponseValueOrFail =<< getConsensusInfoV2
+        cs <- getResponseValueOrDie =<< getConsensusInfoV2
         return $ Queries.csProtocolVersion cs
       if pv < Types.P4
         then processBakerSetKeysCmd baseCfgDir verbose backend txOpts file outfile
@@ -3284,7 +3282,7 @@ processBakerCmd action baseCfgDir verbose backend =
 
     BakerRemove txOpts -> do
       pv <- withClient backend $ do
-        cs <- getResponseValueOrFail =<< getConsensusInfoV2
+        cs <- getResponseValueOrDie =<< getConsensusInfoV2
         return $ Queries.csProtocolVersion cs
       if pv < Types.P4
         then processBakerRemoveCmd baseCfgDir verbose backend txOpts
@@ -3292,7 +3290,7 @@ processBakerCmd action baseCfgDir verbose backend =
 
     BakerUpdateStake newStake txOpts -> do
       pv <- withClient backend $ do
-        cs <- getResponseValueOrFail =<< getConsensusInfoV2
+        cs <- getResponseValueOrDie =<< getConsensusInfoV2
         return $ Queries.csProtocolVersion cs
       if pv < Types.P4
       then processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts newStake
@@ -3300,7 +3298,7 @@ processBakerCmd action baseCfgDir verbose backend =
 
     BakerUpdateRestakeEarnings restake txOpts -> do
       pv <- withClient backend $ do
-        cs <- getResponseValueOrFail =<< getConsensusInfoV2
+        cs <- getResponseValueOrDie =<< getConsensusInfoV2
         return $ Queries.csProtocolVersion cs
       if pv < Types.P4
       then processBakerUpdateRestakeCmd baseCfgDir verbose backend txOpts restake
@@ -3328,7 +3326,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
     warnAboutFailedResult result
   where
     warnInOldProtocol = do
-      cs <- getResponseValueOrFail =<< getConsensusInfoV2
+      cs <- getResponseValueOrDie =<< getConsensusInfoV2
       when (Queries.csProtocolVersion cs < Types.P4) $ do
         logWarn [[i|Delegation is not supported in protocol versions < 4.|]]
         confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
@@ -3366,7 +3364,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
       -- VH/FIXME: Error message changed here, probably not good - should this be changed back to reflect how it was?
       cooldownDate <- withClient backend $
         getBlockChainParametersV2 Best >>=
-          getResponseValueOrFail >>=
+          getResponseValueOrDie >>=
             liftIO . getDelegatorCooldown
       let cooldownString :: String = case cooldownDate of
             Just cd -> [i|The current baker cooldown would last until approximately #{cd}|]
@@ -3494,12 +3492,12 @@ processIdentityShowCmd action backend =
     IdentityShowIPs block -> do
       bhInput <- readBlockHashOrDefault Best block
       withClient backend $ getIdentityProvidersV2 bhInput >>=
-        getResponseValueOrFail >>=
+        getResponseValueOrDie >>=
           runPrinter . printIdentityProviders . toList
     IdentityShowARs block -> do
       bhInput <- readBlockHashOrDefault Best block
       withClient backend $ getAnonymityRevokersV2 bhInput >>=
-        getResponseValueOrFail >>=
+        getResponseValueOrDie >>=
           runPrinter . printAnonymityRevokers . toList
 
 -- |Process a "legacy" command.

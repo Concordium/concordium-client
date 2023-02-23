@@ -23,7 +23,6 @@ import qualified Concordium.Types as Types
 import qualified Concordium.Types.Accounts as Types
 import qualified Concordium.Types.Accounts.Releases as Types
 import qualified Concordium.Types.Execution as Types
-import qualified Concordium.Types.Queries as Types
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.ID.IdentityProvider as IDTypes
 import qualified Concordium.ID.AnonymityRevoker as ARTypes
