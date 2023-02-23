@@ -1224,7 +1224,7 @@ getCryptographicParameters :: BlockHashInput -> ClientMonad IO GlobalContext
 getCryptographicParameters block = do
   blockRes <- getBlockInfoV2 block
   dieOnRequestFailed ["I/O error:"] blockRes
-  dieOnStatusNotFound [[i|block #{showBlockHashInput block} does not exist|]] blockRes
+  dieOnStatusNotFound [[i|#{showBlockHashInput block} does not exist|]] blockRes
   cpRes <- getCryptographicParametersV2 block
   getResponseValueOrDie cpRes
 
@@ -1587,7 +1587,7 @@ processAccountCmd action baseCfgDir verbose backend =
         -- derive the address of the account from the the initial credential
         resolvedAddress <-
           case Map.lookup (ID.CredentialIndex 0) (Types.aiAccountCredentials accInfo) of
-            Nothing -> logFatal [[i|No initial credential found for the account identified by '#{showAccountIdentifier accountIdentifier}'|]]
+            Nothing -> logFatal [[i|No initial credential found for the account identified by #{showAccountIdentifier accountIdentifier}|]]
             Just v -> return $ ID.addressFromRegIdRaw $ ID.credId $ vValue v
         -- reverse lookup local account names
         let na = NamedAddress {naNames = findAllNamesFor (bcAccountNameMap baseCfg) resolvedAddress, naAddr = resolvedAddress}
@@ -1788,19 +1788,23 @@ processModuleCmd action baseCfgDir verbose backend =
         Nothing -> return ()
         Just b -> case readEither (Text.unpack b) of
           Left _ -> logFatal ["could not retrieve the list of modules",
-                              "the provided block hash is invalid:", Text.unpack b]
+                              "the provided block hash is invalid, tried:", Text.unpack b]
           Right (_v :: Types.BlockHash) -> return ()
       bhInput <- readBlockHashOrDefault Best block
-      ms <- withClient backend $ do
+      (best, ms) <- withClient backend $ do
+        -- Check that the block exists.
         blRes <- getBlockInfoV2 bhInput
         dieOnStatusNotFound
           ["could not retrieve the list of modules",
-           "the provided block does not exist:",
+           "the provided block does not exist, tried:",
            showBlockHashInput bhInput
           ] blRes
-        getModuleListV2 bhInput >>=
-          getResponseValueOrDie
-      runPrinter $ printModuleList (bcModuleNameMap baseCfg) (toList ms)
+        -- Get the hash of the best block and the modules.
+        bbHash <- extractResponseValueOrDie Queries.biBlockHash blRes
+        modules <- fmap toList . getResponseValueOrDie =<< getModuleListV2 (Given bbHash)
+        return (bbHash, modules)
+      when (null ms) $ logInfo [[i|there are no modules in block '#{best}'|]]
+      runPrinter $ printModuleList (bcModuleNameMap baseCfg) ms
 
     ModuleShow modRefOrName outFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1903,11 +1907,28 @@ processContractCmd action baseCfgDir verbose backend =
   case action of
     ContractList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
-      res <- withClient backend $
-        readBlockHashOrDefault Best block >>=
-          getInstanceListV2 >>=
-            getResponseValueOrDie
-      runPrinter $ printContractList (bcContractNameMap baseCfg) (toList res)
+      -- Verify that the provided blockhash is valid.
+      case block of
+        Nothing -> return ()
+        Just b -> case readEither (Text.unpack b) of
+          Left _ -> logFatal ["could not retrieve the list of contracts",
+                              "the provided block hash is invalid, tried:", Text.unpack b]
+          Right (_v :: Types.BlockHash) -> return ()
+      bhInput <- readBlockHashOrDefault Best block
+      (best, ms) <- withClient backend $ do
+        -- Check that the block exists.
+        blRes <- getBlockInfoV2 bhInput
+        dieOnStatusNotFound
+          ["could not retrieve the list of contracts",
+           "the provided block does not exist, tried:",
+           showBlockHashInput bhInput
+          ] blRes
+        -- Get the hash of the best block and the modules.
+        bbHash <- extractResponseValueOrDie Queries.biBlockHash blRes
+        modules <- fmap toList . getResponseValueOrDie =<< getInstanceListV2 (Given bbHash)
+        return (bbHash, modules)
+      when (null ms) $ logInfo [[i|there are no contract instances in block '#{best}'|]]
+      runPrinter $ printContractList (bcContractNameMap baseCfg) ms
 
     ContractShow indexOrName subindex schemaFile block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
@@ -2028,7 +2049,11 @@ processContractCmd action baseCfgDir verbose backend =
                           }
 
       -- VH/FIXME: Should the blockhash input in the following be `Best` or `Given bbHash`?
-      res <- withClient backend $ getResponseValueOrDie =<< invokeInstanceV2 (Given bbHash) invokeContext
+      res <- withClient backend $ do
+        iiRes <- invokeInstanceV2 (Given bbHash) invokeContext
+        dieOnError [[i|Invocation failed with error:|]] iiRes
+        getResponseValueOrDie iiRes
+
       case res of
           InvokeContract.Failure{..} -> do
             returnValueMsg <- mkReturnValueMsg rcrReturnValue schemaFile modSchema contractName updatedReceiveName True
@@ -2454,18 +2479,18 @@ processConsensusCmd action _baseCfgDir verbose backend =
 
     ConsensusShowParameters b includeBakers -> do
       baseCfg <- getBaseConfig _baseCfgDir verbose
-      p <- withClient backend $
-        readBlockHashOrDefault Best b >>=
-          getElectionInfoV2 >>=
-            getResponseValueOrDie
+      p <- withClient backend $ do
+        bhRes <- getElectionInfoV2 =<< readBlockHashOrDefault Best b
+        dieOnStatusNotFound ["Block not found."] bhRes
+        getResponseValueOrDie bhRes
       let addrMap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
       runPrinter $ printBirkParameters includeBakers p addrMap
 
     ConsensusShowChainParameters b -> do
-      cParams <- withClient backend $
-        readBlockHashOrDefault Best b >>=
-          getBlockChainParametersV2 >>=
-            getResponseValueOrDie
+      cParams <- withClient backend $ do
+        bcpRes <- getBlockChainParametersV2 =<< readBlockHashOrDefault Best b
+        dieOnError [[i|"Error getting chain parameters:|]] bcpRes
+        getResponseValueOrDie bcpRes
       runPrinter $ printChainParameters cParams
 
     ConsensusChainUpdate rawUpdateFile keysFiles intOpts -> do
@@ -2475,7 +2500,10 @@ processConsensusCmd action _baseCfgDir verbose backend =
           Left err -> logFatal [fn ++ ": " ++ err]
           Right r -> return r
       rawUpdate@Updates.RawUpdateInstruction{..} <- loadJSON rawUpdateFile
-      Queries.EChainParametersAndKeys{..} <- withClient backend $ getResponseValueOrDie =<< getBlockChainParametersV2 Best
+      Queries.EChainParametersAndKeys{..} <- withClient backend $ do
+        bcpRes <- getBlockChainParametersV2 Best
+        dieOnError [[i|"Error getting chain parameters:|]] bcpRes
+        getResponseValueOrDie bcpRes
       let keyCollectionStore = ecpKeys
       keys <- mapM loadJSON keysFiles
       let
@@ -2528,16 +2556,11 @@ processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
 processBlockCmd action _ backend =
   case action of
     BlockShow b -> do
-      bHash <- readBlockHashOrDefault Best b
-      withClient backend $
-        getBlockInfoV2 bHash>>=
-          getResponseValueOrDie >>=
-            -- VH/FIXME: Output changes slightly due to V2 API - document?
-            -- Specifically `printBlockInfo` prints `Block not found` when
-            -- its input is @Nothing@, which is never the case here.
-            -- Instead, `Error: A GRPC error occurred: gRPC error: block not found.``
-            -- is printed.
-            runPrinter . printBlockInfo . Just
+      withClient backend $ do
+        bhInput <- readBlockHashOrDefault Best b
+        biRes <- getBlockInfoV2 bhInput
+        dieOnStatusNotFound [[i|#{showBlockHashInput bhInput} not found|]] biRes
+        runPrinter . printBlockInfo =<< getResponseValueOrDie biRes
 
 -- |Generate a fresh set of baker keys.
 generateBakerKeys :: Maybe Types.BakerId -> IO BakerKeys
@@ -2693,11 +2716,14 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
         unless confirmed exitTransactionCancelled
 
     warnIfCapitalIsLowered capital stakedAmount = do
-      -- VH/FIXME: Error message changed here, probably not good - should this be changed back to reflect how it was?
-      cooldownDate <- withClient backend $
-        getBlockChainParametersV2 Best >>=
-          getResponseValueOrDie >>=
-            liftIO . getDelegatorCooldown
+      cooldownDate <- withClient backend $ do
+        bcpRes <- getBlockChainParametersV2 Best
+        case getResponseValue bcpRes of
+          Left (_, err) -> do
+            logError ["Could not reach the node to get the baker cooldown period: " <> err]
+            exitTransactionCancelled
+          Right v -> do
+            getBakerCooldown v
       when (capital < stakedAmount) $ do
         let removing = capital == 0
         if removing then
@@ -3078,11 +3104,14 @@ processBakerRemoveCmd baseCfgDir verbose backend txOpts = do
     sendAndTailTransaction_ verbose txCfg pl intOpts
   where
     warnAboutRemoving = do
-      -- VH/FIXME: Error message changed here, probably not good - should this be changed back to reflect how it was?
-      cooldownDate <- withClient backend $
-        getBlockChainParametersV2 Best >>=
-          getResponseValueOrDie >>=
-            getBakerCooldown
+      cooldownDate <- withClient backend $ do
+        bcpRes <- getBlockChainParametersV2 Best
+        case getResponseValue bcpRes of
+          Left (_, err) -> do
+            logError ["Could not reach the node to get the baker cooldown period: " <> err]
+            exitTransactionCancelled
+          Right v -> do
+            getBakerCooldown v
       logWarn ["Stopping a baker that is staking will lock the stake of the baker for a cooldown period before the CCD are made available."]
       logWarn ["During this period it is not possible to update the baker's stake, or restart the baker."]
       logWarn [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
@@ -3145,11 +3174,14 @@ processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = 
         unless confirmed exitTransactionCancelled
 
     warnIfCapitalIsLowered capital stakedAmount = do
-      -- VH/FIXME: Error message changed here, probably not good - should this be changed back to reflect how it was?
-      cooldownDate <- withClient backend $
-        getBlockChainParametersV2 Best >>=
-          getResponseValueOrDie >>=
-            getBakerCooldown
+      cooldownDate <- withClient backend $ do
+        bcpRes <- getBlockChainParametersV2 Best
+        case getResponseValue bcpRes of
+          Left (_, err) -> do
+            logError ["Could not reach the node to get the baker cooldown period: " <> err]
+            exitTransactionCancelled
+          Right v -> do
+            getBakerCooldown v
       if capital < stakedAmount
       then do
         logWarn ["The new staked value appears to be lower than the amount currently staked on chain by this baker."]
@@ -3379,14 +3411,15 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
       warnAboutPoolStatus capital alreadyDelegatedToBakerPool alreadyBakerId
 
     warnIfCapitalIsLowered capital stakedAmount = do
-      -- VH/FIXME: Error message changed here, probably not good - should this be changed back to reflect how it was?
-      cooldownDate <- withClient backend $
-        getBlockChainParametersV2 Best >>=
-          getResponseValueOrDie >>=
-            liftIO . getDelegatorCooldown
-      let cooldownString :: String = case cooldownDate of
-            Just cd -> [i|The current baker cooldown would last until approximately #{cd}|]
-            Nothing -> [i||]
+      cooldownDate <- withClient backend $ do
+        bcpRes <- getBlockChainParametersV2 Best
+        case getResponseValue bcpRes of
+          Left (_, err) -> do
+            logError ["Could not reach the node to get the delegator cooldown period: " <> err]
+            exitTransactionCancelled
+          Right v -> do
+            getBakerCooldown v
+      let cooldownString :: String = [i|The current baker cooldown would last until approximately #{cooldownDate}|]
       when (capital < stakedAmount) $ do
         let removing = capital == 0
         if removing then
@@ -3509,14 +3542,16 @@ processIdentityShowCmd action backend =
   case action of
     IdentityShowIPs block -> do
       bhInput <- readBlockHashOrDefault Best block
-      withClient backend $ getIdentityProvidersV2 bhInput >>=
-        getResponseValueOrDie >>=
-          runPrinter . printIdentityProviders . toList
+      withClient backend $
+        getIdentityProvidersV2 bhInput >>=
+          getResponseValueOrDie >>=
+            runPrinter . printIdentityProviders . toList
     IdentityShowARs block -> do
       bhInput <- readBlockHashOrDefault Best block
-      withClient backend $ getAnonymityRevokersV2 bhInput >>=
-        getResponseValueOrDie >>=
-          runPrinter . printAnonymityRevokers . toList
+      withClient backend $
+        getAnonymityRevokersV2 bhInput >>=
+          getResponseValueOrDie >>=
+            runPrinter . printAnonymityRevokers . toList
 
 -- |Process a "legacy" command.
 processLegacyCmd :: LegacyCmd -> Backend -> IO ()
@@ -3530,31 +3565,31 @@ processLegacyCmd action backend =
     GetConsensusInfo ->
       withClient backend $
         getConsensusInfoV2 >>=
-        printResponseValueAsJSON
+          printResponseValueAsJSON
     GetBlockInfo every block ->
       withClient backend $
         readBlockHashOrDefault Best block >>=
-        printBlockInfos every
+          printBlockInfos every
     GetBlockPendingUpdates block ->
       withClient backend $
         readBlockHashOrDefault Best block >>=
-        getBlockPendingUpdatesV2 >>=
-        printResponseValueAsJSON
+          getBlockPendingUpdatesV2 >>=
+            printResponseValueAsJSON
     GetBlockSpecialEvents block ->
       withClient backend $
         readBlockHashOrDefault Best block >>=
-        getBlockSpecialEventsV2 >>=
-        printResponseValueAsJSON
+          getBlockSpecialEventsV2 >>=
+            printResponseValueAsJSON
     GetBlockChainParameters block ->
       withClient backend $
         readBlockHashOrDefault Best block >>=
-        getBlockChainParametersV2 >>=
-        printResponseValueAsJSON
+          getBlockChainParametersV2 >>=
+            printResponseValueAsJSON
     GetBlockFinalizationSummary block ->
       withClient backend $
         readBlockHashOrDefault Best block >>=
-        getBlockFinalizationSummaryV2 >>=
-        printResponseValueAsJSON
+          getBlockFinalizationSummaryV2 >>=
+            printResponseValueAsJSON
     GetBlocksAtHeight height gen restr ->
       withClient backend $
         getBlocksAtHeightV2
@@ -3569,18 +3604,18 @@ processLegacyCmd action backend =
     GetAccountList block -> do
       withClient backend $
         readBlockHashOrDefault Best block >>=
-        getAccountListV2 >>=
-        printResponseValueAsJSON
+          getAccountListV2 >>=
+            printResponseValueAsJSON
     GetInstances block ->
       withClient backend $
         readBlockHashOrDefault Best block >>=
-        getInstanceListV2 >>=
-        printResponseValueAsJSON
+          getInstanceListV2 >>=
+            printResponseValueAsJSON
     GetTransactionStatus txhash ->
       withClient backend $
         readOrFail txhash >>=
-        getBlockItemStatusV2 >>=
-        printResponseValueAsJSON
+          getBlockItemStatusV2 >>=
+            printResponseValueAsJSON
     GetAccountInfo account block -> do
       acc <- case Types.decodeAccountIdentifier $ Text.encodeUtf8 account of
         Nothing -> logFatal [[i|cannot parse #{account} as an account identifier.|]]
@@ -3588,17 +3623,17 @@ processLegacyCmd action backend =
       b <- readBlockHashOrDefault Best block
       withClient backend $
         getAccountInfoV2 acc b >>=
-        printResponseValueAsJSON
+          printResponseValueAsJSON
     GetAccountNonFinalized account -> do
       acc <- parseAccountAddress account
       withClient backend $
         getAccountNonFinalizedTransactionsV2 acc >>=
-        printResponseValueAsJSON
+          printResponseValueAsJSON
     GetNextAccountNonce account -> do
       acc <- parseAccountAddress account
       withClient backend $
         getNextSequenceNumberV2 acc >>=
-        printResponseValueAsJSON
+          printResponseValueAsJSON
     GetInstanceInfo addr block ->
       withClient backend $ do
         b <- readBlockHashOrDefault Best block
@@ -3617,30 +3652,30 @@ processLegacyCmd action backend =
         (case eitherDecode ctx of
           Left err -> logFatal [[i|Unable to decode context: #{err}|]]
           Right c -> invokeInstanceV2 b c) >>=
-          printResponseValueAsJSON
+            printResponseValueAsJSON
     GetPoolStatus pool block ->
       withClient backend $ do
         b <- readBlockHashOrDefault Best block
         (case pool of
           Nothing -> getPassiveDelegationInfoV2 b
           Just p -> getPoolInfoV2 b p) >>=
-          printResponseValueAsJSON
+            printResponseValueAsJSON
     GetBakerList block -> withClient backend $
       readBlockHashOrDefault Best block >>=
-      getBakerListV2 >>=
-      printResponseValueAsJSON
+        getBakerListV2 >>=
+          printResponseValueAsJSON
     GetRewardStatus block -> withClient backend $
       readBlockHashOrDefault Best block >>=
-      getTokenomicsInfoV2 >>=
-      printResponseValueAsJSON
+        getTokenomicsInfoV2 >>=
+          printResponseValueAsJSON
     GetBirkParameters block -> withClient backend $
       readBlockHashOrDefault Best block >>=
-      getElectionInfoV2 >>=
-      printResponseValueAsJSON
+        getElectionInfoV2 >>=
+          printResponseValueAsJSON
     GetModuleList block -> withClient backend $
       readBlockHashOrDefault Best block >>=
-      getModuleListV2 >>=
-      printResponseValueAsJSON
+        getModuleListV2 >>=
+          printResponseValueAsJSON
     GetNodeInfo -> withClient backend $
       getNodeInfoV2 >>= getResponseValueOrDie >>= printNodeInfo
     GetPeerData bootstrapper -> withClient backend $ do
@@ -3650,23 +3685,23 @@ processLegacyCmd action backend =
     PeerConnect ip port ->
       withClient backend $
         peerConnectV2 (Queries.IpAddress ip) (Queries.IpPort $ fromIntegral port) >>=
-        printSuccess
+          printSuccess
     PeerDisconnect ip port ->
       withClient backend $
         peerDisconnectV2 (Queries.IpAddress ip) (Queries.IpPort $ fromIntegral port) >>=
-        printSuccess
+          printSuccess
     GetPeerUptime ->
       withClient backend $
         getNodeInfoV2 >>=
-        printResponseValue Queries.peerUptime
+          printResponseValue Queries.peerUptime
     BanNode nodeIp ->
       withClient backend $
         banPeerV2 (Queries.IpAddress nodeIp) >>=
-        printSuccess
+          printSuccess
     UnbanNode nodeIp ->
       withClient backend $
         unbanPeerV2 (Queries.IpAddress nodeIp) >>=
-        printSuccess
+          printSuccess
     GetAncestors amount block ->
       withClient backend $ do
         b <- readBlockHashOrDefault Best block
@@ -3675,39 +3710,39 @@ processLegacyCmd action backend =
     GetBranches ->
       withClient backend $
         getBranchesV2  >>=
-        printResponseValueAsJSON
+          printResponseValueAsJSON
     GetBannedPeers ->
       withClient backend $
         getBannedPeersV2 >>=
-        getResponseValueOrDie >>=
-        printJSONValues . toJSON
+          getResponseValueOrDie >>=
+            printJSONValues . toJSON
     Shutdown ->
       withClient backend $
         shutdownV2 >>=
-        printSuccess
+          printSuccess
     DumpStart file raw ->
       withClient backend $
         dumpStartV2 file raw >>=
-        printSuccess
+          printSuccess
     DumpStop ->
       withClient backend $
         dumpStopV2 >>=
-        printSuccess
+          printSuccess
     GetIdentityProviders block ->
       withClient backend $
         readBlockHashOrDefault Best block >>=
-        getIdentityProvidersV2 >>=
-        printResponseValueAsJSON
+          getIdentityProvidersV2 >>=
+            printResponseValueAsJSON
     GetAnonymityRevokers block ->
       withClient backend $
         readBlockHashOrDefault Best block >>=
-        getAnonymityRevokersV2 >>=
-        printResponseValueAsJSON
+          getAnonymityRevokersV2 >>=
+            printResponseValueAsJSON
     GetCryptographicParameters block ->
       withClient backend $
         readBlockHashOrDefault Best block >>=
-        getCryptographicParametersV2 >>=
-        printResponseValueAsJSON
+          getCryptographicParametersV2 >>=
+            printResponseValueAsJSON
   where
     -- |Print the response value under the provided mapping,
     -- or fail with an error message if the response contained

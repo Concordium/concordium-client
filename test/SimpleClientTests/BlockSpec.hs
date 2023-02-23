@@ -44,7 +44,7 @@ blockSpec = describe "block" $ do
     , "Transaction count:          10"
     , "Transaction energy cost:    101 NRG"
     , "Transactions size:          11" ]
-  where p = execWriter . printBlockInfo . Just
+  where p = execWriter . printBlockInfo
 
 exampleBlockInfoWithBaker :: BlockInfo
 exampleBlockInfoWithBaker =

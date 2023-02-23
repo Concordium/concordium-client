@@ -158,7 +158,7 @@ printAccountConfigList cfgs =
 
 -- ACCOUNT
 
--- |Get a string printing the type of the account identifier and its value.
+-- |Get a string representation of given @AccountIdentifier@ variant.
 showAccountIdentifier :: Types.AccountIdentifier -> String
 showAccountIdentifier (Types.AccAddress addr) = [i|account address '#{addr}'|]
 showAccountIdentifier (Types.CredRegID cred) = [i|credential registration ID '#{cred}'|]
@@ -1127,15 +1127,14 @@ showExchangeRate (Types.ExchangeRate r) = showRatio r
 
 -- BLOCK
 
--- |Get a string printing a representation of a block hash input.
+-- |Get a string representation of a given @BlockHashInput@ variant.
 showBlockHashInput :: Queries.BlockHashInput -> String
 showBlockHashInput Queries.Best = [i|best block|]
 showBlockHashInput (Queries.Given bh) = [i|block with hash #{bh}|]
 showBlockHashInput Queries.LastFinal = [i|last finalized block|]
 
-printBlockInfo :: Maybe Queries.BlockInfo -> Printer
-printBlockInfo Nothing = tell [ printf "Block not found." ]
-printBlockInfo (Just b) =
+printBlockInfo :: Queries.BlockInfo -> Printer
+printBlockInfo b =
   tell [ printf "Hash:                       %s" (show $ Queries.biBlockHash b)
        , printf "Parent block:               %s" (show $ Queries.biBlockParent b)
        , printf "Last finalized block:       %s" (show $ Queries.biBlockLastFinalized b)
