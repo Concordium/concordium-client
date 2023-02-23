@@ -158,6 +158,12 @@ printAccountConfigList cfgs =
 
 -- ACCOUNT
 
+-- |Get a string printing the type of the account identifier and its value.
+showAccountIdentifier :: Types.AccountIdentifier -> String
+showAccountIdentifier (Types.AccAddress addr) = [i|account address '#{addr}'|]
+showAccountIdentifier (Types.CredRegID cred) = [i|credential registration ID '#{cred}'|]
+showAccountIdentifier (Types.AccIndex idx) = [i|account index '#{idx}'|]
+
 -- |Standardized method of displaying "no" information.
 showNone :: String
 showNone = "none"
@@ -1120,6 +1126,12 @@ showExchangeRate :: Types.ExchangeRate -> String
 showExchangeRate (Types.ExchangeRate r) = showRatio r
 
 -- BLOCK
+
+-- |Get a string printing a representation of a block hash input.
+showBlockHashInput :: Queries.BlockHashInput -> String
+showBlockHashInput Queries.Best = [i|best block|]
+showBlockHashInput (Queries.Given bh) = [i|block with hash #{bh}|]
+showBlockHashInput Queries.LastFinal = [i|last finalized block|]
 
 printBlockInfo :: Maybe Queries.BlockInfo -> Printer
 printBlockInfo Nothing = tell [ printf "Block not found." ]

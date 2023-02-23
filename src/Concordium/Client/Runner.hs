@@ -602,7 +602,7 @@ checkAndGetMemo memo pv = do
 --   - Concordium.Types.Interrupted
 -- or fails if the contract could not be retrieved.
 -- Optionally takes a path to a schema file to be parsed and returned.
--- Takes a blockhash of the block in which to retrieve the contract
+-- Takes an identifier of the block in which to retrieve the contract
 -- module containing the schema from. The schema from the file will
 -- take precedence over an embedded schema in the module retrieved
 -- from the block.
@@ -1145,7 +1145,10 @@ getAccountInfoOrDie senderAddr bhInput = do
 -- if the baker pool does not exist.
 getPoolStatusOrDie :: Maybe Types.BakerId ->  ClientMonad IO Queries.PoolStatus
 getPoolStatusOrDie mbid = do
-  getPoolInfoV2 Best (fromMaybe 0 mbid) >>= getResponseValueOrDie
+  psRes <- getPoolInfoV2 Best (fromMaybe 0 mbid)
+  dieOnConversionError ["Cannot decode pool status response from the node:"] psRes
+  dieOnError ["Could not query pool status from the chain:"] psRes
+  getResponseValueOrDie psRes
 
 data CredentialUpdateKeysTransactionCfg =
   CredentialUpdateKeysTransactionCfg
@@ -1221,7 +1224,7 @@ getCryptographicParameters :: BlockHashInput -> ClientMonad IO GlobalContext
 getCryptographicParameters block = do
   blockRes <- getBlockInfoV2 block
   dieOnRequestFailed ["I/O error:"] blockRes
-  dieOnStatusNotFound [[i|block #{block} does not exist|]] blockRes
+  dieOnStatusNotFound [[i|block #{showBlockHashInput block} does not exist|]] blockRes
   cpRes <- getCryptographicParametersV2 block
   getResponseValueOrDie cpRes
 
@@ -1286,7 +1289,9 @@ encryptedTransferTransactionConfirm EncryptedTransferTransactionConfig{..} confi
 -- |Query the chain for the minimum baker stake threshold. Fail if the chain cannot be reached.
 getBakerStakeThresholdOrDie :: ClientMonad IO Types.Amount
 getBakerStakeThresholdOrDie = do
-  (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) <- getResponseValueOrDie =<< getBlockChainParametersV2 Best
+  bcpRes <- getBlockChainParametersV2 Best
+  dieOnRequestFailed ["Could not reach the node to retrieve the baker stake threshold."] bcpRes
+  (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) <- getResponseValueOrDie bcpRes
   return $ case Types.chainParametersVersion @cpv of
       Types.SCPV0 -> ecpParams ^. cpPoolParameters ^. ppBakerStakeThreshold
       Types.SCPV1 -> ecpParams ^. cpPoolParameters ^. ppMinimumEquityCapital
@@ -1582,7 +1587,7 @@ processAccountCmd action baseCfgDir verbose backend =
         -- derive the address of the account from the the initial credential
         resolvedAddress <-
           case Map.lookup (ID.CredentialIndex 0) (Types.aiAccountCredentials accInfo) of
-            Nothing -> logFatal [[i|No initial credential found for the account identified by '#{accountIdentifier}'|]]
+            Nothing -> logFatal [[i|No initial credential found for the account identified by '#{showAccountIdentifier accountIdentifier}'|]]
             Just v -> return $ ID.addressFromRegIdRaw $ ID.credId $ vValue v
         -- reverse lookup local account names
         let na = NamedAddress {naNames = findAllNamesFor (bcAccountNameMap baseCfg) resolvedAddress, naAddr = resolvedAddress}
@@ -1778,8 +1783,21 @@ processModuleCmd action baseCfgDir verbose backend =
 
     ModuleList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
+      -- Verify that the provided blockhash is valid.
+      case block of
+        Nothing -> return ()
+        Just b -> case readEither (Text.unpack b) of
+          Left _ -> logFatal ["could not retrieve the list of modules",
+                              "the provided block hash is invalid:", Text.unpack b]
+          Right (_v :: Types.BlockHash) -> return ()
       bhInput <- readBlockHashOrDefault Best block
-      ms <- withClient backend $
+      ms <- withClient backend $ do
+        blRes <- getBlockInfoV2 bhInput
+        dieOnStatusNotFound
+          ["could not retrieve the list of modules",
+           "the provided block does not exist:",
+           showBlockHashInput bhInput
+          ] blRes
         getModuleListV2 bhInput >>=
           getResponseValueOrDie
       runPrinter $ printModuleList (bcModuleNameMap baseCfg) (toList ms)
