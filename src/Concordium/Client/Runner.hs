@@ -739,7 +739,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
 
       withClient backend $ do
-        cs <- getResponseValueOrFail =<< getConsensusInfoV2
+        cs <- getResponseValueOrDie =<< getConsensusInfoV2
         pl <- liftIO $ do
               res <- case maybeMemo of 
                 Nothing -> return $ Types.Transfer (naAddr receiverAddress) amount
@@ -784,7 +784,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                            zip (iterate (+ diff) start) (replicate (numIntervals - 1) chunks ++ [chunks + lastChunk])
       receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
       withClient backend $ do
-        cs <- getResponseValueOrFail =<< getConsensusInfoV2
+        cs <- getResponseValueOrDie =<< getConsensusInfoV2
         pl <- liftIO $ do
               res <- case maybeMemo of 
                 Nothing -> return $ Types.TransferWithSchedule (naAddr receiverAddress) realSchedule
@@ -834,7 +834,7 @@ processTransactionCmd action baseCfgDir verbose backend =
 
       withClient backend $ do
         transferData <- getEncryptedAmountTransferData (naAddr senderAddr) receiverAcc amount index secretKey
-        cs <- getResponseValueOrFail =<< getConsensusInfoV2
+        cs <- getResponseValueOrDie =<< getConsensusInfoV2
         payload <- liftIO $ do
                 res <- case maybeMemo of 
                   Nothing -> return $ Types.EncryptedAmountTransfer (naAddr receiverAcc) transferData
@@ -1087,9 +1087,9 @@ data EncryptedTransferTransactionConfig =
 getEncryptedAmountTransferData :: ID.AccountAddress -> NamedAddress -> Types.Amount -> Maybe Int -> ElgamalSecretKey -> ClientMonad IO Enc.EncryptedAmountTransferData
 getEncryptedAmountTransferData senderAddr ettReceiver ettAmount idx secretKey = do
   -- get encrypted amounts for the sender
-  bbHash <- getResponseValueOrFail' Queries.biBlockHash =<< getBlockInfoV2 Best
+  bbHash <- extractResponseValueOrDie Queries.biBlockHash =<< getBlockInfoV2 Best
   Types.AccountInfo{aiAccountEncryptedAmount=a@Types.AccountEncryptedAmount{..}} <-
-    getResponseValueOrFail =<< getAccountInfoV2 (Types.AccAddress senderAddr) (Given bbHash)
+    getResponseValueOrDie =<< getAccountInfoV2 (Types.AccAddress senderAddr) (Given bbHash)
   let listOfEncryptedAmounts = Types.getIncomingAmountsList a
   taker <- case idx of
             Nothing -> return id
@@ -1099,8 +1099,8 @@ getEncryptedAmountTransferData senderAddr ettReceiver ettAmount idx secretKey = 
               then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
               else return $ take (v - fromIntegral _startIndex)
   -- get receiver's public encryption key
-  air <- getResponseValueOrFail =<< getAccountInfoV2 (Types.AccAddress $ naAddr ettReceiver) (Given bbHash)
-  globalContext <- getResponseValueOrFail =<< getCryptographicParametersV2 (Given bbHash)
+  air <- getResponseValueOrDie =<< getAccountInfoV2 (Types.AccAddress $ naAddr ettReceiver) (Given bbHash)
+  globalContext <- getResponseValueOrDie =<< getCryptographicParametersV2 (Given bbHash)
   let receiverPk = ID._elgamalPublicKey $ Types.aiAccountEncryptionKey air
   -- precomputed table for speeding up decryption
   let table = Enc.computeTable globalContext (2^(16::Int))
