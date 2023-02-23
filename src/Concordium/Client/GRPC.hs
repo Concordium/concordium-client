@@ -18,7 +18,6 @@ import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 
 import           Concordium.Client.Runner.Helper
 
-import           Concordium.Client.Cli
 import           Concordium.Types.Transactions(BareBlockItem, putVersionedBareBlockItemV0)
 import           Concordium.Types as Types
 import           Concordium.ID.Types as IDTypes
