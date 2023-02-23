@@ -3732,10 +3732,10 @@ processLegacyCmd action backend =
       printJSONValues . toJSON $ v
 
     -- |Print result of a query with side-effects.
-    printSuccess (StatusOk _) = liftIO $ logSuccess ["OK"]
-    printSuccess (StatusNotOk (_, x)) = liftIO $ logError [[i|FAIL: #{x}|]]
-    printSuccess StatusInvalid = liftIO $ logError [[i|FAIL: Invalid status code in response.|]]
-    printSuccess (RequestFailed x) = liftIO $ logError [[i|FAIL: Request failed: #{x}|]]
+    printSuccess (StatusOk _) = liftIO $ logSuccess ["Success"]
+    printSuccess (StatusNotOk (c, x)) = liftIO $ logError [[i|Non-"OK" status code '#{c}' in response: #{x}|]]
+    printSuccess StatusInvalid = liftIO $ logError [[i|Invalid status code in response|]]
+    printSuccess (RequestFailed x) = liftIO $ logError [[i|Request failed: #{x}|]]
 
     -- |Parse an account address.
     parseAccountAddress :: (MonadIO m) => Text -> m ID.AccountAddress
