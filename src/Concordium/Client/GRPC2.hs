@@ -2539,7 +2539,7 @@ instance (MonadIO m) => TransactionStatusQuery (ClientMonad m) where
   queryTransactionStatus hash = do
     r <- getResponseValueOrDie =<< getBlockItemStatusV2 hash
     case transactionStatusToTransactionStatusResult r of
-        Left err -> logFatal ["queryTransactionStatus: " <> err]
+        Left err -> logFatal ["Unable to query transaction status: " <> err]
         Right v -> return v
   wait t = liftIO $ do
     putChar '.'
@@ -2699,7 +2699,7 @@ getBlockChainParametersV2 bHash = do
           RequestFailed err -> Left $ RequestFailed err
           StatusNotOk err -> Left $ StatusNotOk err
           StatusInvalid -> Left StatusInvalid
-          StatusOk res -> do Right $ grpcResponseVal res
+          StatusOk res -> Right $ grpcResponseVal res
     -- Get the account index from the account address to get the chain parameters.
     case paramsM of
       Left failed -> return failed
