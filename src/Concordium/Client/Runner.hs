@@ -193,72 +193,6 @@ getAccountAddressArg m account = do
     Left err -> logFatal [err]
     Right v -> return v
 
--- |Die if the request failed, e.g. due to an I/O error or a HTTP/2 error.
--- If so, an error message is printed and the client is terminated by calling
--- 'logFatal'. Note that further details about the nature of the error are
--- appended to the message and printed.
-dieOnRequestFailed :: (MonadIO m)
-                   => [String] -- ^The message prefix to print.
-                   -> GRPCResultV2 a -- ^The result of the GRPC incovation.
-                   -> ClientMonad m ()
-dieOnRequestFailed msg res =
-  case res of
-    RequestFailed err -> logFatal $ msg <> [err]
-    _ -> return ()
-
--- |Die if the request was successful, the status code 'OK' is in the
--- 'grpc-status' response header and the response payload could not be
--- converted using @fromProto@. If so, an error message is printed and
--- the client is terminated by calling 'logFatal'.
--- Note that the type parameter of the result corresponds to a converted pay-
--- load, and that further details about the nature of the conversion error
--- are appended to the message and printed.
-dieOnConversionError :: (MonadIO m)
-                     => [String] -- ^The message prefix to print.
-                     -> GRPCResultV2 (FromProtoResult a) -- ^The result of the GRPC incovation.
-                     -> ClientMonad m ()
-dieOnConversionError msg res =
-  case res of
-    StatusOk (GRPCResponse _ (Left err)) -> logFatal $ msg <> [err]
-    _ -> return ()
-
--- |Die if the request was successful and the status code 'NOT_FOUND' is in
--- the 'grpc-status' response header. If so, an error message is printed and
--- the client is terminated by calling 'logFatal'.
-dieOnStatusNotFound :: (MonadIO m)
-                    => [String] -- ^The message to print.
-                    -> GRPCResultV2 a -- ^The result of the GRPC incovation.
-                    -> ClientMonad m ()
-dieOnStatusNotFound = dieOnStatus NOT_FOUND
-
--- |Die if the request was unsuccessful or a code non-'OK' status code is in
--- the 'grpc-status' response header. If so, an error message is printed and
--- the client is terminated by calling 'logFatal'. Note that the type parameter
--- of the result corresponds to a converted payload, and that further details
--- about the nature of the conversion error are appended to the message and
--- printed.
-dieOnError :: (MonadIO m)
-           => [String]
-           -> GRPCResultV2 (Either String a) -- ^The result of the GRPC incovation.
-           -> ClientMonad m ()
-dieOnError msg res = do
-  case getResponseValue res of
-    Left (_, err) -> logFatal $ msg <> [err]
-    Right _ -> return ()
-
--- |Die if the request was successful and a given GRPC status code other than
--- 'OK' is in the 'grpc-status' response header. If so, an error message is
--- printed and the client is terminated by calling 'logFatal'.
-dieOnStatus :: (MonadIO m)
-            => GRPCStatusCode -- ^The status code to fail on.
-            -> [String] -- ^The message to print.
-            -> GRPCResultV2 a -- ^The result of the GRPC incovation.
-            -> ClientMonad m ()
-dieOnStatus st msg res =
-  case res of
-    StatusNotOk (st', _) -> when (st == st') $ logFatal msg
-    _ -> return ()
-
 -- |Process CLI command.
 process :: COM.Options -> IO ()
 process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir, optsVerbose = verbose} = do
@@ -1157,10 +1091,14 @@ getDelegatorCooldown bs = do
 getAccountInfoOrDie :: (MonadIO m) => ID.AccountAddress -> BlockHashInput -> ClientMonad m Types.AccountInfo
 getAccountInfoOrDie senderAddr bhInput = do
   res <- getAccountInfoV2 (Types.AccAddress senderAddr) bhInput
-  dieOnRequestFailed ["I/O error:"] res
-  dieOnStatusNotFound [[i|Account #{senderAddr} does not exist on the chain.|]] res
-  dieOnConversionError ["Cannot decode account info response from the node:"] res
-  getResponseValueOrDie res
+  case res of
+    StatusOk resp -> case grpcResponseVal resp of
+      Left err -> logFatal ["Cannot decode account info response from the node: " <> err]
+      Right v -> return v
+    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|Account #{senderAddr} does not exist on the chain.|]] 
+    StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
+    StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
+    RequestFailed err -> logFatal [[i|I/O error: #{err}|]]
 
 -- |Query the chain for the given pool. Fail if either the chain cannot be reached, or
 -- if the baker pool does not exist.
@@ -1449,8 +1387,15 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
   let tx = signEncodedTransaction pl sender energy nonce expiry accountKeyMap
   when (isJust tcAlias) $
       logInfo [[i|Using the alias #{sender} as the sender of the transaction instead of #{naAddr}.|]]
-  sendBlockItemV2 tx >>= dieOnError [[i|transaction not accepted by the baker:|]]
-  return tx
+  sbiRes <- sendBlockItemV2 tx
+  let res = case sbiRes of
+        StatusOk resp -> Right resp
+        StatusNotOk (status, err) -> Left [[i|GRPC response with status '#{status}': #{err}|]] 
+        StatusInvalid -> Left ["GRPC response contained an invalid status code."]
+        RequestFailed err -> Left [[i|I/O error: #{err}|]]
+  case res of
+    Left err -> logFatal $ [[i|Transaction not accepted by the baker:|]] <> err
+    Right _ -> return tx
 
 -- |Fetch next nonces relative to the account's most recently committed and
 -- pending transactions, respectively.
@@ -1598,10 +1543,14 @@ processAccountCmd action baseCfgDir verbose backend =
         bhInput <- readBlockHashOrDefault Best block
         accInfo <- do
           res <- getAccountInfoV2 accountIdentifier bhInput
-          dieOnRequestFailed ["I/O error:"] res
-          dieOnStatusNotFound [[i|Account does not exist on the chain.|]] res
-          dieOnConversionError ["Cannot decode account info response from the node:"] res
-          getResponseValueOrDie res
+          case res of
+            StatusOk resp -> case grpcResponseVal resp of
+              Left err -> logFatal [[i|Cannot decode account info response from the node: #{err}|]] 
+              Right v -> return v
+            StatusNotOk (NOT_FOUND, _) -> logFatal [[i|Account does not exist on the chain.|]] 
+            StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
+            StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
+            RequestFailed err -> logFatal [[i|I/O error: #{err}|]]
         -- derive the address of the account from the the initial credential
         resolvedAddress <-
           case Map.lookup (ID.CredentialIndex 0) (Types.aiAccountCredentials accInfo) of
@@ -2142,13 +2091,21 @@ getContractInfo :: (MonadIO m) => NamedContractAddress -> Text -> ClientMonad m 
 getContractInfo namedContrAddr block = do
   bh <- readOrFail block
   blockRes <- getBlockInfoV2 (Given bh)
-  dieOnRequestFailed ["I/O error:"] blockRes
-  dieOnStatusNotFound [[i|block #{block} does not exist|]] blockRes
+  case blockRes of
+    StatusOk _ -> return ()
+    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|block #{block} does not exist|]] 
+    StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
+    StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
+    RequestFailed err -> logFatal [[i|I/O error: #{err}|]]
   res <- getInstanceInfoV2 (ncaAddr namedContrAddr) (Given bh)
-  dieOnRequestFailed ["I/O error:"] res
-  dieOnStatusNotFound [[i|the contract instance #{showNamedContractAddress namedContrAddr} does not exist in block #{block}|]] res
-  dieOnConversionError ["Could not decode contract info:"] res
-  extractResponseValueOrDie instanceInfoToContractInfo res
+  case res of
+    StatusOk resp -> case grpcResponseVal resp of
+      Left err -> logFatal [[i|Could not decode contract info: #{err}|]] 
+      Right v -> return $ instanceInfoToContractInfo v
+    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|the contract instance #{showNamedContractAddress namedContrAddr} does not exist in block #{block}|]] 
+    StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
+    StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
+    RequestFailed err -> logFatal [[i|I/O error: #{err}|]]
 
 -- |Display contract info, optionally using a schema to decode the contract state.
 displayContractInfo :: Maybe CS.ModuleSchema -> CI.ContractInfo -> NamedAddress -> NamedModuleRef -> ClientMonad IO ()
@@ -2244,13 +2201,21 @@ getWasmModule :: (MonadIO m)
 getWasmModule namedModRef block = do
   bh <- readOrFail block
   blockRes <- getBlockInfoV2 (Given bh)
-  dieOnRequestFailed ["I/O error:"] blockRes
-  dieOnStatusNotFound [[i|block #{block} does not exist|]] blockRes
+  case blockRes of
+    StatusOk _ -> return ()
+    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|Block #{block} does not exist|]] 
+    StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
+    StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
+    RequestFailed err -> logFatal [[i|I/O error: #{err}|]]
   res <- getModuleSourceV2 (nmrRef namedModRef) (Given bh)
-  dieOnRequestFailed ["I/O error:"] res
-  dieOnStatusNotFound [[i|the module reference #{showNamedModuleRef namedModRef} does not exist in block #{block}|]] res
-  dieOnConversionError ["could not decode Wasm Module:"] res
-  getResponseValueOrDie res
+  case res of
+    StatusOk resp -> case grpcResponseVal resp of
+      Left err -> logFatal ["Could not decode Wasm Module: " <> err]
+      Right v -> return v
+    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|The module reference #{showNamedModuleRef namedModRef} does not exist in block #{block}|]] 
+    StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
+    StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
+    RequestFailed err -> logFatal [[i|I/O error: #{err}|]]
 
 data ContractInitTransactionCfg =
   ContractInitTransactionCfg
