@@ -10,16 +10,20 @@
       `raw GetBlockPendingUpdates`, `raw GetBlockSpecialEvents`,
       `raw GetBlockChainParameters` `raw GetBlockFinalizationSummary`. These provide
       a more granular way of accessing to the same data.
-    - `raw BanNode` and `raw UnbanNode` no longer support node IDs, but now rather an
+    - `raw BanNode` and `raw UnbanNode` no longer support node IDs, but now rather
       take just an IP address.
     - `raw DumpStart` takes a parameter specifying the path of the file to write
       dumped packets to, and furthermore supports a flag to specify whether raw
       packets should be written to the file.
-    - Output of `raw GetBannedPeers` prints a JSON file containing a list of
-      strings each corresponding to a banned IP.
+    - Output of `raw GetBannedPeers` prints a JSON list of banned IP addresses,
+      represented as strings.
     - Output of `raw GetPeerUptime` now prints an integer representing the uptime
-      of the node.
-    - Slight changes to `raw GetNodeInfo` and `raw GetPeerData` output.
+      of the node in milliseconds.
+    - Slight changes to `raw GetNodeInfo`. Notably the baker ID is now included in
+      the output when the node is in the baker or finalization committee. Various
+      consensus-related details about the node is also elaborated upon.
+    - Slight changes to `raw GetPeerData` output. Notably the catch-up status and
+      consensus-related details about the peer is elaborated upon.
 
 ## 5.0.2
 

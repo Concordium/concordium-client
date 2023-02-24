@@ -3715,7 +3715,10 @@ processLegacyCmd action backend =
           Left _ -> logFatal ["Unable to parse account address."]
           Right a -> return a
 
-    -- |Print info about a block and possibly recurse on its ancestor.
+    -- |Print info about a block and possibly its ancestors.
+    -- The boolean indicates whether to recurse on the ancestor
+    -- of the block. The recursion bottoms out when the genesis
+    -- block is reached.
     printBlockInfos :: Bool -> BlockHashInput -> ClientMonad IO ()
     printBlockInfos recurse bh = do
       bi <- getResponseValueOrDie =<< getBlockInfoV2 bh
@@ -3846,9 +3849,9 @@ printNodeInfo Queries.NodeInfo{..} = liftIO $
                 Queries.NodeActive (Queries.BakerConsensusInfo _ (Queries.PassiveBaker Queries.AddedButWrongKeys)) ->
                   show False
                 Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveBakerCommitteeInfo) ->
-                  "True, in current baker committee with baker ID '" <> show bId <> "'."
+                  "In current baker committee with baker ID '" <> show bId <> "'."
                 Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveFinalizerCommitteeInfo) ->
-                  "True, in current baker committee with baker ID '" <> show bId <> "'."
+                  "In current baker committee with baker ID '" <> show bId <> "'."
         getFinalizerCommitteeMember =
           \case
                 Queries.NodeActive (Queries.BakerConsensusInfo _ Queries.ActiveBakerCommitteeInfo) ->
@@ -3863,7 +3866,7 @@ printNodeInfo Queries.NodeInfo{..} = liftIO $
                 Queries.NodeActive (Queries.BakerConsensusInfo _ (Queries.PassiveBaker Queries.AddedButWrongKeys)) ->
                   show False
                 Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveFinalizerCommitteeInfo) ->
-                  "True, in current finalizer committee with baker ID " <> show bId <> "'."
+                  "In current finalizer committee with baker ID " <> show bId <> "'."
 
 -- |FIXME: Move this some other place in refactoring.
 data StatusOfPeers = StatusOfPeers {

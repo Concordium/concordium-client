@@ -250,7 +250,7 @@ getBlockChainParametersCommand =
        (GetBlockChainParameters <$>
         optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
        )
-       (progDesc "Query the gRPC server for the special events in a specific block."))
+       (progDesc "Query the gRPC server for the chain parameters at a specific block."))
 
 getBlockFinalizationSummaryCommand :: Mod CommandFields LegacyCmd
 getBlockFinalizationSummaryCommand =
@@ -427,7 +427,7 @@ getPeerUptimeCommand =
      "GetPeerUptime"
     (info
        (pure GetPeerUptime)
-       (progDesc "Get the node uptime."))
+       (progDesc "Get the node uptime in milliseconds."))
 
 
 banNodeCommand :: Mod CommandFields LegacyCmd
