@@ -2546,8 +2546,8 @@ processConsensusCmd action _baseCfgDir verbose backend =
         let
           tx = Types.ChainUpdate ui
           hash = getBlockItemHash tx
-        _ <- sendBlockItemV2 tx >>=
-          getResponseValueOrDie
+        sendBlockItemV2 tx >>= dieOnError ["Update instruction not accepted by the node:"]
+        logSuccess [[i|Update instruction '#{hash}' sent to the baker|]]
         when (ioTail intOpts) $
           tailTransaction_ verbose hash
 
@@ -4018,18 +4018,16 @@ processCredential ::
   => BSL.ByteString
   -> Int
   -> ClientMonad m Types.BareBlockItem
-processCredential source networkId =
+processCredential source _networkId =
   case AE.eitherDecode source of
     Left err -> fail $ "Error decoding JSON: " ++ err
     Right vCred
         | vVersion vCred == 0 ->
             case fromJSON (vValue vCred) of
-              AE.Success cred ->
+              AE.Success cred -> do
                 let tx = Types.CredentialDeployment cred
-                in sendTransactionToBaker tx networkId >>= \case
-                  Left err -> fail err
-                  Right (GRPCResponse _ False) -> fail "Transaction not accepted by the baker."
-                  Right (GRPCResponse _ True) -> return tx
+                sendBlockItemV2 tx >>= dieOnError ["Transaction not accepted by the baker:"]
+                return tx
               AE.Error err -> fail $ "Cannot parse credential according to V0: " ++ err
         | otherwise ->
           fail $ "Unsupported credential version: " ++ show (vVersion vCred)
