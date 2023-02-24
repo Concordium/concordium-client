@@ -3709,7 +3709,10 @@ processLegacyCmd action backend =
           Left _ -> logFatal ["Unable to parse account address."]
           Right a -> return a
 
-    -- |Print info about a block and possibly recurse on its ancestor.
+    -- |Print info about a block and possibly its ancestors.
+    -- The boolean indicates whether to recurse on the ancestor
+    -- of the block. The recursion bottoms out when the genesis
+    -- block is reached.
     printBlockInfos :: Bool -> BlockHashInput -> ClientMonad IO ()
     printBlockInfos recurse bh = do
       bi <- getResponseValueOrDie =<< getBlockInfoV2 bh
@@ -3840,9 +3843,9 @@ printNodeInfo Queries.NodeInfo{..} = liftIO $
                 Queries.NodeActive (Queries.BakerConsensusInfo _ (Queries.PassiveBaker Queries.AddedButWrongKeys)) ->
                   show False
                 Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveBakerCommitteeInfo) ->
-                  "True, in current baker committee with baker ID '" <> show bId <> "'."
+                  "In current baker committee with baker ID '" <> show bId <> "'."
                 Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveFinalizerCommitteeInfo) ->
-                  "True, in current baker committee with baker ID '" <> show bId <> "'."
+                  "In current baker committee with baker ID '" <> show bId <> "'."
         getFinalizerCommitteeMember =
           \case
                 Queries.NodeActive (Queries.BakerConsensusInfo _ Queries.ActiveBakerCommitteeInfo) ->
@@ -3857,7 +3860,7 @@ printNodeInfo Queries.NodeInfo{..} = liftIO $
                 Queries.NodeActive (Queries.BakerConsensusInfo _ (Queries.PassiveBaker Queries.AddedButWrongKeys)) ->
                   show False
                 Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveFinalizerCommitteeInfo) ->
-                  "True, in current finalizer committee with baker ID " <> show bId <> "'."
+                  "In current finalizer committee with baker ID " <> show bId <> "'."
 
 -- |FIXME: Move this some other place in refactoring.
 data StatusOfPeers = StatusOfPeers {
@@ -3932,9 +3935,15 @@ processTransaction_ transaction _networkId _verbose = do
       nonce
       (thExpiry header)
       accountKeys
-  sendBlockItemV2 tx >>=
-    getResponseValueOrDie >>
-      return tx
+  sbiRes <- sendBlockItemV2 tx
+  let res = case sbiRes of
+        StatusOk resp -> Right resp
+        StatusNotOk (status, err) -> Left [[i|GRPC response with status '#{status}': #{err}|]] 
+        StatusInvalid -> Left ["GRPC response contained an invalid status code."]
+        RequestFailed err -> Left [[i|I/O error: #{err}|]]
+  case res of
+    Left err -> logFatal $ [[i|Transaction not accepted by the baker:|]] <> err
+    Right _ -> return tx
 
 -- |Read a versioned credential from the bytestring, failing if any errors occur.
 processCredential ::
