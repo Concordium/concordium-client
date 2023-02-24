@@ -18,7 +18,6 @@ import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 
 import           Concordium.Client.Runner.Helper
 
-import           Concordium.Client.Cli
 import           Concordium.Types.Transactions(BareBlockItem, putVersionedBareBlockItemV0)
 import           Concordium.Types as Types
 import           Concordium.ID.Types as IDTypes
@@ -109,19 +108,6 @@ newtype ClientMonad m a =
            , MonadFail
            , MonadIO
            )
-
-instance (MonadIO m) => TransactionStatusQuery (ClientMonad m) where
-  queryTransactionStatus hash = do
-    r <- getTransactionStatus (pack $ show hash)
-    tx <- case r of
-            Left err -> error $ "RPC error: " ++ err
-            Right tx -> return tx
-    case fromJSON (grpcResponseVal tx) of
-      Error err -> error $ printf "cannot parse '%s' as JSON: %s" (show tx) err
-      Success v -> return v
-  wait t = liftIO $ do
-    putChar '.'
-    threadDelay $ t*1000000
 
 -- |Execute the computation with the given environment (using the established connection).
 runClient :: Monad m => EnvData -> ClientMonad m a -> m (Either ClientError a)
