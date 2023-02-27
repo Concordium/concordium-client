@@ -1180,20 +1180,19 @@ getAccountDecryptTransferData senderAddr adAmount secretKey idx = do
 
 -- |Get the cryptographic parameters in a given block, and attempt to parse them.
 getCryptographicParameters :: BlockHashInput -> ClientMonad IO GlobalContext
-getCryptographicParameters block = do
-  blockRes <- getBlockInfoV2 block
+getCryptographicParameters bhInput = do
+  blockRes <- getBlockInfoV2 bhInput
   case blockRes of
     StatusOk _ -> return () -- Note that this does not check whether the payload could be decoded.
-    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|block #{block} does not exist|]] 
+    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|No block with #{showBlockHashInput bhInput} exists.|]] 
     StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
     StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
     RequestFailed err -> logFatal ["I/O error: " <> err]
-  cpRes <- getCryptographicParametersV2 block
+  cpRes <- getCryptographicParametersV2 bhInput
   case cpRes of
     StatusOk resp -> case grpcResponseVal resp of
-      Left err -> logFatal ["Could not decode cryptographic parameters: " <> err]
+      Left err -> logFatal ["Cannot decode cryptographic parameters response from the node: " <> err]
       Right v -> return v
-    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|the cryptographic parameters do not exist in block #{block}|]] 
     StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
     StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
     RequestFailed err -> logFatal ["I/O error: " <> err]
@@ -1262,7 +1261,7 @@ getBakerStakeThresholdOrDie = do
   bcpRes <- getBlockChainParametersV2 Best
   let res = case bcpRes of
         StatusOk resp -> case grpcResponseVal resp of
-          Left err -> Left $ "Could not decode contract info: " <> err
+          Left err -> Left $ "Cannot decode contract info response from the node: " <> err
           Right v -> Right v
         StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
         StatusInvalid -> Left "GRPC response contained an invalid status code."
@@ -1763,11 +1762,12 @@ processModuleCmd action baseCfgDir verbose backend =
       bhInput <- readBlockHashOrDefault Best block
       (best, ms) <- withClient backend $ do
         blRes <- getBlockInfoV2 bhInput
+        -- Check that the requested block exists.
         let res = case blRes of
               StatusOk resp -> case grpcResponseVal resp of
-                Left err -> Left $ "Could not decode block info: " <> err
+                Left err -> Left $ "Cannot decode block info response from the node: " <> err
                 Right v -> Right v
-              StatusNotOk (NOT_FOUND, _) -> Left [i|#{bhInput} does not exist|]
+              StatusNotOk (NOT_FOUND, _) -> Left [i|No block with #{showBlockHashInput bhInput} exists.|]
               StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
               StatusInvalid -> Left "GRPC response contained an invalid status code."
               RequestFailed err -> Left $ "I/O error: " <> err
@@ -1893,21 +1893,30 @@ processContractCmd action baseCfgDir verbose backend =
       bhInput <- readBlockHashOrDefault Best block
       (best, ms) <- withClient backend $ do
         blRes <- getBlockInfoV2 bhInput
+        -- Check that the requested block exists.
         let res = case blRes of
               StatusOk resp -> case grpcResponseVal resp of
-                Left err -> Left $ "Could not decode block info: " <> err
+                Left err -> Left $ "Cannot decode block info response from the node: " <> err
                 Right v -> Right v
-              StatusNotOk (NOT_FOUND, _) -> Left [i|#{bhInput} does not exist|]
+              StatusNotOk (NOT_FOUND, _) -> Left [i|No block with #{showBlockHashInput bhInput} exists.|]
               StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
               StatusInvalid -> Left "GRPC response contained an invalid status code."
               RequestFailed err -> Left $ "I/O error: " <> err
         case res of
-          Left err -> logFatal ["Could not retrieve the list of contracts: " <> err]
+          Left err -> logFatal ["Cannot decode contract list response from the node: " <> err]
           Right bi -> do
             -- Get the hash of the best block and the modules.
             let bbHash = Queries.biBlockHash bi
-            modules <- fmap toList . getResponseValueOrDie =<< getInstanceListV2 (Given bbHash)
-            return (bbHash, modules)
+            modRes <- getInstanceListV2 (Given bbHash)
+            case modRes of
+              StatusOk resp -> case grpcResponseVal resp of
+                Left err -> logFatal ["Cannot decode contract list response from the node: " <> err]
+                Right mods -> return (bbHash, toList mods)
+              StatusNotOk (NOT_FOUND, _) -> logFatal [[i|No block with #{showBlockHashInput bhInput} exists.|]]
+              StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]]
+              StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
+              RequestFailed err -> logFatal ["I/O error: " <> err]
+            
       when (null ms) $ logInfo [[i|There are no contract instances in block '#{best}'|]]
       runPrinter $ printContractList (bcContractNameMap baseCfg) ms
 
@@ -2144,20 +2153,21 @@ processContractCmd action baseCfgDir verbose backend =
 -- |Try to fetch info about the contract and deserialize it from JSON.
 -- Or, log fatally with appropriate error messages if anything goes wrong.
 getContractInfo :: (MonadIO m) => NamedContractAddress -> BlockHashInput -> ClientMonad m CI.ContractInfo
-getContractInfo namedContrAddr block = do
-  blockRes <- getBlockInfoV2 block
+getContractInfo namedContrAddr bhInput = do
+  blockRes <- getBlockInfoV2 bhInput
+  -- Check that the requested block exists.
   case blockRes of
     StatusOk _ -> return () -- Note that this does not check whether the payload could be decoded.
-    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|block #{block} does not exist|]] 
+    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|No block with #{showBlockHashInput bhInput} exists.|]] 
     StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
     StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
     RequestFailed err -> logFatal ["I/O error: " <> err]
-  res <- getInstanceInfoV2 (ncaAddr namedContrAddr) block
+  res <- getInstanceInfoV2 (ncaAddr namedContrAddr) bhInput
   case res of
     StatusOk resp -> case grpcResponseVal resp of
-      Left err -> logFatal ["Could not decode contract info: " <> err]
+      Left err -> logFatal ["Cannot decode contract info response from the node: " <> err]
       Right v -> return $ instanceInfoToContractInfo v
-    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|the contract instance #{showNamedContractAddress namedContrAddr} does not exist in block #{block}|]] 
+    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|the contract instance #{showNamedContractAddress namedContrAddr} does not exist in #{showBlockHashInput bhInput}.|]] 
     StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
     StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
     RequestFailed err -> logFatal ["I/O error: " <> err]
@@ -2256,20 +2266,21 @@ getWasmModule :: (MonadIO m)
               => NamedModuleRef -- ^On-chain reference of the module.
               -> BlockHashInput -- ^The block to query in.
               -> ClientMonad m Wasm.WasmModule
-getWasmModule namedModRef block = do
-  blockRes <- getBlockInfoV2 block
+getWasmModule namedModRef bhInput = do
+  blockRes <- getBlockInfoV2 bhInput
+  -- Check that the requested block exists.
   case blockRes of
     StatusOk _ -> return () -- Note that this does not check whether the payload could be decoded.
-    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|Block #{block} does not exist|]] 
+    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|No block with #{showBlockHashInput bhInput} exists.|]] 
     StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
     StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
     RequestFailed err -> logFatal ["I/O error: " <> err]
-  res <- getModuleSourceV2 (nmrRef namedModRef) block
+  res <- getModuleSourceV2 (nmrRef namedModRef) bhInput
   case res of
     StatusOk resp -> case grpcResponseVal resp of
-      Left err -> logFatal ["Could not decode Wasm Module: " <> err]
+      Left err -> logFatal ["Cannot decode Wasm module response from the node: " <> err]
       Right v -> return v
-    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|The module reference #{showNamedModuleRef namedModRef} does not exist in block #{block}|]] 
+    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|The module reference #{showNamedModuleRef namedModRef} does not exist in block #{showBlockHashInput bhInput}|]] 
     StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
     StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
     RequestFailed err -> logFatal ["I/O error: " <> err]
@@ -2467,12 +2478,13 @@ processConsensusCmd action _baseCfgDir verbose backend =
     ConsensusShowParameters b includeBakers -> do
       baseCfg <- getBaseConfig _baseCfgDir verbose
       p <- withClient backend $ do
-        eiRes <- getElectionInfoV2 =<< readBlockHashOrDefault Best b
+        bhInput <- readBlockHashOrDefault Best b
+        eiRes <- getElectionInfoV2 bhInput
         let res = case eiRes of
               StatusOk resp -> case grpcResponseVal resp of
                 Left err -> Left $ "Cannot decode consensus parameters response from the node: " <> err
                 Right v -> Right v
-              StatusNotOk (NOT_FOUND, _) -> Left "Block not found."
+              StatusNotOk (NOT_FOUND, _) -> Left [i|No block with #{showBlockHashInput bhInput} exists.|]
               StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
               StatusInvalid -> Left "GRPC response contained an invalid status code."
               RequestFailed err -> Left $ "I/O error: " <> err
@@ -2582,7 +2594,7 @@ processBlockCmd action _ backend =
               StatusOk resp -> case grpcResponseVal resp of
                 Left err -> Left $ "Cannot decode block info response from the node: " <> err
                 Right v -> Right v
-              StatusNotOk (NOT_FOUND, _) -> Left [i|No block with #{showBlockHashInput bhInput} exists on chain.|]
+              StatusNotOk (NOT_FOUND, _) -> Left [i|No block with #{showBlockHashInput bhInput} exists.|]
               StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
               StatusInvalid -> Left "GRPC response contained an invalid status code."
               RequestFailed err -> Left $ "I/O error: " <> err
