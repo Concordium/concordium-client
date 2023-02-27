@@ -192,54 +192,6 @@ getAccountAddressArg m account = do
     Left err -> logFatal [err]
     Right v -> return v
 
--- |Die if the request failed, e.g. due to an I/O error or a HTTP/2 error.
--- If so, an error message is printed and the client is terminated by calling
--- 'logFatal'. Note that further details about the nature of the error are
--- appended to the message and printed.
-dieOnRequestFailed :: (MonadIO m)
-                   => [String] -- ^The message prefix to display.
-                   -> GRPCResultV2 a
-                   -> ClientMonad m ()
-dieOnRequestFailed msg res =
-  case res of
-    RequestFailed err -> logFatal $ msg <> [err]
-    _ -> return ()
-
--- |Die if the request was succesful with an 'OK' GRPC status code,
--- and the response payload could not be converted using @fromProto@.
--- Prints a message and terminates the program with 'logFatal'. Note
--- that type parameter of the result corresponds to a converted payload,
--- and that further details about the nature of the conversion error are
--- appended to the message.
-dieOnConversionError :: (MonadIO m)
-                     => [String] -- ^The message prefix to display.
-                     -> GRPCResultV2 (FromProtoResult a) -- ^The result of the GRPC incovation.
-                     -> ClientMonad m ()
-dieOnConversionError msg res =
-  case res of
-    StatusOk (GRPCResponse _ (Left err)) -> logFatal $ msg <> [err]
-    _ -> return ()
-
--- |Die if a 'NOT_FOUND' status code was returned in the 'grpc-status' response header.
--- Prints a message and terminates the program with 'logFatal'.
-dieOnStatusNotFound :: (MonadIO m)
-                    => [String] -- ^The message to display.
-                    -> GRPCResultV2 a -- ^The result of the GRPC incovation.
-                    -> ClientMonad m ()
-dieOnStatusNotFound = dieOnStatus NOT_FOUND
-
--- |Die if a specific GRPC status code other than 'OK' was returned in the 'grpc-status' response header.
--- Prints a message and terminates the program with 'logFatal'.
-dieOnStatus :: (MonadIO m)
-            => GRPCStatusCode -- ^The status code to fail on.
-            -> [String] -- ^The message to display.
-            -> GRPCResultV2 a -- ^The result of the GRPC incovation.
-            -> ClientMonad m ()
-dieOnStatus st msg res =
-  case res of
-    StatusNotOk (st', _) -> when (st == st') $ logFatal msg
-    _ -> return ()
-
 -- |Process CLI command.
 process :: COM.Options -> IO ()
 process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir, optsVerbose = verbose} = do
@@ -1129,26 +1081,33 @@ getDelegatorCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParamet
 
 -- |Query the chain for the given account. Fail if either the chain cannot be reached, or
 -- if the account does not exist.
-getAccountInfoOrDie :: (MonadIO m) => ID.AccountAddress -> BlockHashInput -> ClientMonad m Types.AccountInfo
-getAccountInfoOrDie senderAddr bhInput = do
-  res <- getAccountInfoV2 (Types.AccAddress senderAddr) bhInput
+getAccountInfoOrDie :: (MonadIO m) => Types.AccountIdentifier -> BlockHashInput -> ClientMonad m Types.AccountInfo
+getAccountInfoOrDie sender bhInput = do
+  res <- getAccountInfoV2 sender bhInput
   case res of
     StatusOk resp -> case grpcResponseVal resp of
       Left err -> logFatal ["Cannot decode account info response from the node: " <> err]
       Right v -> return v
-    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|Account #{senderAddr} does not exist on the chain.|]] 
+    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|No account with #{showAccountIdentifier sender} exists on the chain.|]] 
     StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
     StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
-    RequestFailed err -> logFatal [[i|I/O error: #{err}|]]
+    RequestFailed err -> logFatal ["I/O error: " <> err]
 
 -- |Query the chain for the given pool. Fail if either the chain cannot be reached, or
 -- if the baker pool does not exist.
 getPoolStatusOrDie :: Maybe Types.BakerId ->  ClientMonad IO Queries.PoolStatus
 getPoolStatusOrDie mbid = do
   psRes <- getPoolInfoV2 Best (fromMaybe 0 mbid)
-  dieOnConversionError ["Cannot decode pool status response from the node:"] psRes
-  dieOnError ["Could not query pool status from the chain:"] psRes
-  getResponseValueOrDie psRes
+  let res = case psRes of
+        StatusOk resp -> case grpcResponseVal resp of
+          Left err -> Left $ "Cannot decode pool status response from the node: " <> err
+          Right v -> Right $ return v
+        StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
+        StatusInvalid -> Left "GRPC response contained an invalid status code."
+        RequestFailed err -> Left $ "I/O error: " <> err
+  case res of
+    Left err -> logFatal ["Could not query pool status from the chain: " <> err]
+    Right v -> v
 
 data CredentialUpdateKeysTransactionCfg =
   CredentialUpdateKeysTransactionCfg
@@ -1223,10 +1182,21 @@ getAccountDecryptTransferData senderAddr adAmount secretKey idx = do
 getCryptographicParameters :: BlockHashInput -> ClientMonad IO GlobalContext
 getCryptographicParameters block = do
   blockRes <- getBlockInfoV2 block
-  dieOnRequestFailed ["I/O error:"] blockRes
-  dieOnStatusNotFound [[i|#{showBlockHashInput block} does not exist|]] blockRes
+  case blockRes of
+    StatusOk _ -> return () -- Note that this does not check whether the payload could be decoded.
+    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|block #{block} does not exist|]] 
+    StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
+    StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
+    RequestFailed err -> logFatal ["I/O error: " <> err]
   cpRes <- getCryptographicParametersV2 block
-  getResponseValueOrDie cpRes
+  case cpRes of
+    StatusOk resp -> case grpcResponseVal resp of
+      Left err -> logFatal ["Could not decode cryptographic parameters: " <> err]
+      Right v -> return v
+    StatusNotOk (NOT_FOUND, _) -> logFatal [[i|the cryptographic parameters do not exist in block #{block}|]] 
+    StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
+    StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
+    RequestFailed err -> logFatal ["I/O error: " <> err]
 
 -- |Convert transfer transaction config into a valid payload,
 -- optionally asking the user for confirmation.
@@ -1290,11 +1260,19 @@ encryptedTransferTransactionConfirm EncryptedTransferTransactionConfig{..} confi
 getBakerStakeThresholdOrDie :: ClientMonad IO Types.Amount
 getBakerStakeThresholdOrDie = do
   bcpRes <- getBlockChainParametersV2 Best
-  dieOnRequestFailed ["Could not reach the node to retrieve the baker stake threshold."] bcpRes
-  (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) <- getResponseValueOrDie bcpRes
-  return $ case Types.chainParametersVersion @cpv of
-      Types.SCPV0 -> ecpParams ^. cpPoolParameters ^. ppBakerStakeThreshold
-      Types.SCPV1 -> ecpParams ^. cpPoolParameters ^. ppMinimumEquityCapital
+  let res = case bcpRes of
+        StatusOk resp -> case grpcResponseVal resp of
+          Left err -> Left $ "Could not decode contract info: " <> err
+          Right v -> Right v
+        StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
+        StatusInvalid -> Left "GRPC response contained an invalid status code."
+        RequestFailed err -> Left $ "I/O error: " <> err
+  case res of
+    Left err -> logFatal ["Could not retrieve the baker stake threshold: " <> err]
+    Right (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) ->
+        return $ case Types.chainParametersVersion @cpv of
+            Types.SCPV0 -> ecpParams ^. cpPoolParameters . ppBakerStakeThreshold
+            Types.SCPV1 -> ecpParams ^. cpPoolParameters . ppMinimumEquityCapital
 
 getAccountUpdateCredentialsTransactionData ::
   Maybe FilePath -- ^ A file with new credentials.
@@ -1423,11 +1401,11 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
   sbiRes <- sendBlockItemV2 tx
   let res = case sbiRes of
         StatusOk resp -> Right resp
-        StatusNotOk (status, err) -> Left [[i|GRPC response with status '#{status}': #{err}|]] 
-        StatusInvalid -> Left ["GRPC response contained an invalid status code."]
-        RequestFailed err -> Left [[i|I/O error: #{err}|]]
+        StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
+        StatusInvalid -> Left "GRPC response contained an invalid status code."
+        RequestFailed err -> Left $ "I/O error: " <> err
   case res of
-    Left err -> logFatal $ [[i|Transaction not accepted by the baker:|]] <> err
+    Left err -> logFatal ["Transaction not accepted by the baker: " <> err]
     Right _ -> return tx
 
 -- |Fetch next nonces relative to the account's most recently committed and
@@ -1574,16 +1552,7 @@ processAccountCmd action baseCfgDir verbose backend =
       (accInfo, na, dec) <- withClient backend $ do
         -- query account
         bhInput <- readBlockHashOrDefault Best block
-        accInfo <- do
-          res <- getAccountInfoV2 accountIdentifier bhInput
-          case res of
-            StatusOk resp -> case grpcResponseVal resp of
-              Left err -> logFatal [[i|Cannot decode account info response from the node: #{err}|]] 
-              Right v -> return v
-            StatusNotOk (NOT_FOUND, _) -> logFatal [[i|Account does not exist on the chain.|]] 
-            StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
-            StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
-            RequestFailed err -> logFatal [[i|I/O error: #{err}|]]
+        accInfo <- getAccountInfoOrDie accountIdentifier bhInput
         -- derive the address of the account from the the initial credential
         resolvedAddress <-
           case Map.lookup (ID.CredentialIndex 0) (Types.aiAccountCredentials accInfo) of
@@ -1635,7 +1604,7 @@ processAccountCmd action baseCfgDir verbose backend =
         keys <- liftIO $ getFromJson =<< eitherDecodeFileStrict f
         let pl = Types.encodePayload $ Types.UpdateCredentialKeys cid keys
 
-        accInfo <- getAccountInfoOrDie senderAddress Best
+        accInfo <- getAccountInfoOrDie (Types.AccAddress senderAddress) Best
         let numCredentials = Map.size $ Types.aiAccountCredentials accInfo
         let numKeys = length $ ID.credKeys keys
         let nrgCost _ = return $ Just $ accountUpdateKeysEnergyCost (Types.payloadSize pl) numCredentials numKeys
@@ -1665,7 +1634,7 @@ processAccountCmd action baseCfgDir verbose backend =
       let senderAddress = naAddr $ esdAddress accCfg
 
       withClient backend $ do
-        accInfo <- getAccountInfoOrDie senderAddress Best
+        accInfo <- getAccountInfoOrDie (Types.AccAddress senderAddress) Best
         (epayload, numKeys, newCredentials, removedCredentials) <- liftIO $ getAccountUpdateCredentialsTransactionData cdisFile removeCidsFile newThreshold
         let numExistingCredentials =  Map.size (Types.aiAccountCredentials accInfo)
         let nrgCost _ = return $ Just $ accountUpdateCredentialsEnergyCost (Types.payloadSize epayload) numExistingCredentials numKeys
@@ -1787,23 +1756,29 @@ processModuleCmd action baseCfgDir verbose backend =
       case block of
         Nothing -> return ()
         Just b -> case readEither (Text.unpack b) of
-          Left _ -> logFatal ["could not retrieve the list of modules",
-                              "the provided block hash is invalid, tried:", Text.unpack b]
+          Left _ -> logFatal ["Could not retrieve the list of modules",
+                              "the provided block hash is invalid, tried:",
+                              Text.unpack b]
           Right (_v :: Types.BlockHash) -> return ()
       bhInput <- readBlockHashOrDefault Best block
       (best, ms) <- withClient backend $ do
-        -- Check that the block exists.
         blRes <- getBlockInfoV2 bhInput
-        dieOnStatusNotFound
-          ["could not retrieve the list of modules",
-           "the provided block does not exist, tried:",
-           showBlockHashInput bhInput
-          ] blRes
-        -- Get the hash of the best block and the modules.
-        bbHash <- extractResponseValueOrDie Queries.biBlockHash blRes
-        modules <- fmap toList . getResponseValueOrDie =<< getModuleListV2 (Given bbHash)
-        return (bbHash, modules)
-      when (null ms) $ logInfo [[i|there are no modules in block '#{best}'|]]
+        let res = case blRes of
+              StatusOk resp -> case grpcResponseVal resp of
+                Left err -> Left $ "Could not decode block info: " <> err
+                Right v -> Right v
+              StatusNotOk (NOT_FOUND, _) -> Left [i|#{bhInput} does not exist|]
+              StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
+              StatusInvalid -> Left "GRPC response contained an invalid status code."
+              RequestFailed err -> Left $ "I/O error: " <> err
+        case res of
+          Left err -> logFatal ["Could not retrieve the list of modules: " <> err]
+          Right bi -> do
+            -- Get the hash of the best block and the modules.
+            let bbHash = Queries.biBlockHash bi
+            modules <- fmap toList . getResponseValueOrDie =<< getModuleListV2 (Given bbHash)
+            return (bbHash, modules)
+      when (null ms) $ logInfo [[i|There are no modules in block '#{best}'|]]
       runPrinter $ printModuleList (bcModuleNameMap baseCfg) ms
 
     ModuleShow modRefOrName outFile block -> do
@@ -1911,23 +1886,29 @@ processContractCmd action baseCfgDir verbose backend =
       case block of
         Nothing -> return ()
         Just b -> case readEither (Text.unpack b) of
-          Left _ -> logFatal ["could not retrieve the list of contracts",
-                              "the provided block hash is invalid, tried:", Text.unpack b]
+          Left _ -> logFatal ["Could not retrieve the list of contracts",
+                              "the provided block hash is invalid, tried:",
+                              Text.unpack b]
           Right (_v :: Types.BlockHash) -> return ()
       bhInput <- readBlockHashOrDefault Best block
       (best, ms) <- withClient backend $ do
-        -- Check that the block exists.
         blRes <- getBlockInfoV2 bhInput
-        dieOnStatusNotFound
-          ["could not retrieve the list of contracts",
-           "the provided block does not exist, tried:",
-           showBlockHashInput bhInput
-          ] blRes
-        -- Get the hash of the best block and the modules.
-        bbHash <- extractResponseValueOrDie Queries.biBlockHash blRes
-        modules <- fmap toList . getResponseValueOrDie =<< getInstanceListV2 (Given bbHash)
-        return (bbHash, modules)
-      when (null ms) $ logInfo [[i|there are no contract instances in block '#{best}'|]]
+        let res = case blRes of
+              StatusOk resp -> case grpcResponseVal resp of
+                Left err -> Left $ "Could not decode block info: " <> err
+                Right v -> Right v
+              StatusNotOk (NOT_FOUND, _) -> Left [i|#{bhInput} does not exist|]
+              StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
+              StatusInvalid -> Left "GRPC response contained an invalid status code."
+              RequestFailed err -> Left $ "I/O error: " <> err
+        case res of
+          Left err -> logFatal ["Could not retrieve the list of contracts: " <> err]
+          Right bi -> do
+            -- Get the hash of the best block and the modules.
+            let bbHash = Queries.biBlockHash bi
+            modules <- fmap toList . getResponseValueOrDie =<< getInstanceListV2 (Given bbHash)
+            return (bbHash, modules)
+      when (null ms) $ logInfo [[i|There are no contract instances in block '#{best}'|]]
       runPrinter $ printContractList (bcContractNameMap baseCfg) ms
 
     ContractShow indexOrName subindex schemaFile block -> do
@@ -2051,8 +2032,16 @@ processContractCmd action baseCfgDir verbose backend =
       -- VH/FIXME: Should the blockhash input in the following be `Best` or `Given bbHash`?
       res <- withClient backend $ do
         iiRes <- invokeInstanceV2 (Given bbHash) invokeContext
-        dieOnError [[i|Invocation failed with error:|]] iiRes
-        getResponseValueOrDie iiRes
+        let r = case iiRes of
+              StatusOk resp -> case grpcResponseVal resp of
+                Left err -> Left $ "Cannot decode contract info response from the node: " <> err
+                Right v -> return v
+              StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
+              StatusInvalid -> Left "GRPC response contained an invalid status code."
+              RequestFailed err -> Left $ "I/O error: " <> err
+        case r of
+              Left err -> logFatal ["Invocation failed with error: " <> err]
+              Right v -> return v
 
       case res of
           InvokeContract.Failure{..} -> do
@@ -2156,23 +2145,22 @@ processContractCmd action baseCfgDir verbose backend =
 -- Or, log fatally with appropriate error messages if anything goes wrong.
 getContractInfo :: (MonadIO m) => NamedContractAddress -> BlockHashInput -> ClientMonad m CI.ContractInfo
 getContractInfo namedContrAddr block = do
-  bh <- readOrFail block
-  blockRes <- getBlockInfoV2 (Given bh)
+  blockRes <- getBlockInfoV2 block
   case blockRes of
-    StatusOk _ -> return ()
+    StatusOk _ -> return () -- Note that this does not check whether the payload could be decoded.
     StatusNotOk (NOT_FOUND, _) -> logFatal [[i|block #{block} does not exist|]] 
     StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
     StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
-    RequestFailed err -> logFatal [[i|I/O error: #{err}|]]
-  res <- getInstanceInfoV2 (ncaAddr namedContrAddr) (Given bh)
+    RequestFailed err -> logFatal ["I/O error: " <> err]
+  res <- getInstanceInfoV2 (ncaAddr namedContrAddr) block
   case res of
     StatusOk resp -> case grpcResponseVal resp of
-      Left err -> logFatal [[i|Could not decode contract info: #{err}|]] 
+      Left err -> logFatal ["Could not decode contract info: " <> err]
       Right v -> return $ instanceInfoToContractInfo v
     StatusNotOk (NOT_FOUND, _) -> logFatal [[i|the contract instance #{showNamedContractAddress namedContrAddr} does not exist in block #{block}|]] 
     StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
     StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
-    RequestFailed err -> logFatal [[i|I/O error: #{err}|]]
+    RequestFailed err -> logFatal ["I/O error: " <> err]
 
 -- |Display contract info, optionally using a schema to decode the contract state.
 displayContractInfo :: Maybe CS.ModuleSchema -> CI.ContractInfo -> NamedAddress -> NamedModuleRef -> ClientMonad IO ()
@@ -2269,15 +2257,14 @@ getWasmModule :: (MonadIO m)
               -> BlockHashInput -- ^The block to query in.
               -> ClientMonad m Wasm.WasmModule
 getWasmModule namedModRef block = do
-  bh <- readOrFail block
-  blockRes <- getBlockInfoV2 (Given bh)
+  blockRes <- getBlockInfoV2 block
   case blockRes of
-    StatusOk _ -> return ()
+    StatusOk _ -> return () -- Note that this does not check whether the payload could be decoded.
     StatusNotOk (NOT_FOUND, _) -> logFatal [[i|Block #{block} does not exist|]] 
     StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
     StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
-    RequestFailed err -> logFatal [[i|I/O error: #{err}|]]
-  res <- getModuleSourceV2 (nmrRef namedModRef) (Given bh)
+    RequestFailed err -> logFatal ["I/O error: " <> err]
+  res <- getModuleSourceV2 (nmrRef namedModRef) block
   case res of
     StatusOk resp -> case grpcResponseVal resp of
       Left err -> logFatal ["Could not decode Wasm Module: " <> err]
@@ -2285,7 +2272,7 @@ getWasmModule namedModRef block = do
     StatusNotOk (NOT_FOUND, _) -> logFatal [[i|The module reference #{showNamedModuleRef namedModRef} does not exist in block #{block}|]] 
     StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
     StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
-    RequestFailed err -> logFatal [[i|I/O error: #{err}|]]
+    RequestFailed err -> logFatal ["I/O error: " <> err]
 
 data ContractInitTransactionCfg =
   ContractInitTransactionCfg
@@ -2480,18 +2467,34 @@ processConsensusCmd action _baseCfgDir verbose backend =
     ConsensusShowParameters b includeBakers -> do
       baseCfg <- getBaseConfig _baseCfgDir verbose
       p <- withClient backend $ do
-        bhRes <- getElectionInfoV2 =<< readBlockHashOrDefault Best b
-        dieOnStatusNotFound ["Block not found."] bhRes
-        getResponseValueOrDie bhRes
+        eiRes <- getElectionInfoV2 =<< readBlockHashOrDefault Best b
+        let res = case eiRes of
+              StatusOk resp -> case grpcResponseVal resp of
+                Left err -> Left $ "Cannot decode consensus parameters response from the node: " <> err
+                Right v -> Right v
+              StatusNotOk (NOT_FOUND, _) -> Left "Block not found."
+              StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
+              StatusInvalid -> Left "GRPC response contained an invalid status code."
+              RequestFailed err -> Left $ "I/O error: " <> err
+        case res of
+          Left err -> logFatal ["Error getting consensus parameters: " <> err]
+          Right cParams -> return cParams
       let addrMap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
       runPrinter $ printBirkParameters includeBakers p addrMap
 
     ConsensusShowChainParameters b -> do
-      cParams <- withClient backend $ do
+      withClient backend $ do
         bcpRes <- getBlockChainParametersV2 =<< readBlockHashOrDefault Best b
-        dieOnError [[i|"Error getting chain parameters:|]] bcpRes
-        getResponseValueOrDie bcpRes
-      runPrinter $ printChainParameters cParams
+        let res = case bcpRes of
+              StatusOk resp -> case grpcResponseVal resp of
+                Left err -> Left $ "Cannot decode chain parameters response from the node: " <> err
+                Right v -> Right v
+              StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
+              StatusInvalid -> Left "GRPC response contained an invalid status code."
+              RequestFailed err -> Left $ "I/O error: " <> err
+        case res of
+          Left err -> logFatal ["Error getting chain parameters: " <> err]
+          Right cParams -> runPrinter $ printChainParameters cParams 
 
     ConsensusChainUpdate rawUpdateFile keysFiles intOpts -> do
       let
@@ -2502,8 +2505,16 @@ processConsensusCmd action _baseCfgDir verbose backend =
       rawUpdate@Updates.RawUpdateInstruction{..} <- loadJSON rawUpdateFile
       Queries.EChainParametersAndKeys{..} <- withClient backend $ do
         bcpRes <- getBlockChainParametersV2 Best
-        dieOnError [[i|"Error getting chain parameters:|]] bcpRes
-        getResponseValueOrDie bcpRes
+        let res = case bcpRes of
+              StatusOk resp -> case grpcResponseVal resp of
+                Left err -> Left $ "Cannot decode chain parameters response from the node: " <> err
+                Right v -> Right v
+              StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
+              StatusInvalid -> Left "GRPC response contained an invalid status code."
+              RequestFailed err -> Left $ "I/O error: " <> err
+        case res of
+          Left err -> logFatal ["Error getting chain parameters: " <> err]
+          Right cParams -> return cParams
       let keyCollectionStore = ecpKeys
       keys <- mapM loadJSON keysFiles
       let
@@ -2546,10 +2557,18 @@ processConsensusCmd action _baseCfgDir verbose backend =
         let
           tx = Types.ChainUpdate ui
           hash = getBlockItemHash tx
-        sendBlockItemV2 tx >>= dieOnError ["Update instruction not accepted by the node:"]
-        logSuccess [[i|Update instruction '#{hash}' sent to the baker|]]
-        when (ioTail intOpts) $
-          tailTransaction_ verbose hash
+        sbiRes <- sendBlockItemV2 tx
+        let res = case sbiRes of
+              StatusOk resp -> Right resp
+              StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
+              StatusInvalid -> Left "GRPC response contained an invalid status code."
+              RequestFailed err -> Left $ "I/O error: " <> err
+        case res of
+          Left err -> logFatal ["Transaction not accepted by the baker: " <> err]
+          Right _ -> do
+            logSuccess [[i|Update instruction '#{hash}' sent to the baker|]]
+            when (ioTail intOpts) $
+              tailTransaction_ verbose hash
 
 -- |Process a 'block ...' command.
 processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
@@ -2559,8 +2578,17 @@ processBlockCmd action _ backend =
       withClient backend $ do
         bhInput <- readBlockHashOrDefault Best b
         biRes <- getBlockInfoV2 bhInput
-        dieOnStatusNotFound [[i|#{showBlockHashInput bhInput} not found|]] biRes
-        runPrinter . printBlockInfo =<< getResponseValueOrDie biRes
+        let res = case biRes of
+              StatusOk resp -> case grpcResponseVal resp of
+                Left err -> Left $ "Cannot decode block info response from the node: " <> err
+                Right v -> Right v
+              StatusNotOk (NOT_FOUND, _) -> Left [i|No block with #{showBlockHashInput bhInput} exists on chain.|]
+              StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
+              StatusInvalid -> Left "GRPC response contained an invalid status code."
+              RequestFailed err -> Left $ "I/O error: " <> err
+        case res of
+          Left err -> logFatal ["Error getting block info: " <> err]
+          Right bi -> runPrinter $ printBlockInfo bi
 
 -- |Generate a fresh set of baker keys.
 generateBakerKeys :: Maybe Types.BakerId -> IO BakerKeys
@@ -2622,7 +2650,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
                 _ -> False
       when (not allPresent) $ do
         let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
-        Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr Best
+        Types.AccountInfo{..} <- getAccountInfoOrDie (Types.AccAddress senderAddr) Best
         case aiStakingInfo of
           Types.AccountStakingBaker{} -> return ()
           _ -> do
@@ -2690,7 +2718,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
 
     warnAboutBadCapital txCfg capital = do
       let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
-      Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr Best
+      Types.AccountInfo{..} <- getAccountInfoOrDie (Types.AccAddress senderAddr) Best
       warnIfCapitalIsSmall capital
       cannotAfford <- warnIfCannotAfford txCfg capital aiAccountAmount
       case aiStakingInfo of
@@ -2720,7 +2748,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
         bcpRes <- getBlockChainParametersV2 Best
         case getResponseValue bcpRes of
           Left (_, err) -> do
-            logError ["Could not reach the node to get the baker cooldown period: " <> err]
+            logError ["Could not get the baker cooldown period: " <> err]
             exitTransactionCancelled
           Right v -> do
             getBakerCooldown v
@@ -2896,7 +2924,7 @@ processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarn
 
     warnAboutBadCapital txCfg capital = do
       let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
-      Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr Best
+      Types.AccountInfo{..} <- getAccountInfoOrDie (Types.AccAddress senderAddr) Best
       warnIfCapitalIsSmall capital
       cannotAfford <- warnIfCannotAfford txCfg capital aiAccountAmount
       unless cannotAfford (warnIfCapitalIsBig capital aiAccountAmount)
@@ -3108,7 +3136,7 @@ processBakerRemoveCmd baseCfgDir verbose backend txOpts = do
         bcpRes <- getBlockChainParametersV2 Best
         case getResponseValue bcpRes of
           Left (_, err) -> do
-            logError ["Could not reach the node to get the baker cooldown period: " <> err]
+            logError ["Could not get the baker cooldown period: " <> err]
             exitTransactionCancelled
           Right v -> do
             getBakerCooldown v
@@ -3148,7 +3176,7 @@ processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = 
 
     warnAboutBadCapital txCfg capital = do
       let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
-      Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr Best
+      Types.AccountInfo{..} <- getAccountInfoOrDie (Types.AccAddress senderAddr) Best
       warnIfCapitalIsSmall capital
       cannotAfford <- warnIfCannotAfford txCfg capital aiAccountAmount
       case aiStakingInfo of
@@ -3178,7 +3206,7 @@ processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = 
         bcpRes <- getBlockChainParametersV2 Best
         case getResponseValue bcpRes of
           Left (_, err) -> do
-            logError ["Could not reach the node to get the baker cooldown period: " <> err]
+            logError ["Could not get the baker cooldown period: " <> err]
             exitTransactionCancelled
           Right v -> do
             getBakerCooldown v
@@ -3398,7 +3426,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
             _ -> return () -- Should not happen
     warnAboutBadCapital txCfg capital = do
       let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
-      Types.AccountInfo{..} <- getAccountInfoOrDie senderAddr Best
+      Types.AccountInfo{..} <- getAccountInfoOrDie (Types.AccAddress senderAddr) Best
       warnIfCannotAfford txCfg capital aiAccountAmount
       (alreadyDelegatedToBakerPool, alreadyBakerId) <- case aiStakingInfo of
             Types.AccountStakingDelegated{..} -> do
@@ -3415,10 +3443,10 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
         bcpRes <- getBlockChainParametersV2 Best
         case getResponseValue bcpRes of
           Left (_, err) -> do
-            logError ["Could not reach the node to get the delegator cooldown period: " <> err]
+            logError ["Could not get the delegator cooldown period: " <> err]
             exitTransactionCancelled
           Right v -> do
-            getBakerCooldown v
+            liftIO $ getDelegatorCooldown v
       let cooldownString :: String = [i|The current baker cooldown would last until approximately #{cooldownDate}|]
       when (capital < stakedAmount) $ do
         let removing = capital == 0
@@ -3529,7 +3557,7 @@ processDelegatorCmd action baseCfgDir verbose backend =
         Just na -> do
           let address = naAddr na
           withClient backend $ do
-            ai <- Types.aiAccountIndex <$> getAccountInfoOrDie address Best
+            ai <- Types.aiAccountIndex <$> getAccountInfoOrDie (Types.AccAddress address) Best
             return $ Just $ Types.DelegateToBaker $ Types.BakerId $ ai
 
 processIdentityCmd :: IdentityCmd -> Backend -> IO ()
@@ -3991,7 +4019,7 @@ processTransaction_ transaction _networkId _verbose = do
     nonce <-
       case thNonce header of
         Nothing -> do
-          res <- getAccountInfoOrDie sender Best
+          res <- getAccountInfoOrDie (Types.AccAddress sender) Best
           return $ Types.aiAccountNonce res
         Just nonce -> return nonce
     txPayload <- convertTransactionJsonPayload $ payload transaction
@@ -4005,11 +4033,11 @@ processTransaction_ transaction _networkId _verbose = do
   sbiRes <- sendBlockItemV2 tx
   let res = case sbiRes of
         StatusOk resp -> Right resp
-        StatusNotOk (status, err) -> Left [[i|GRPC response with status '#{status}': #{err}|]] 
-        StatusInvalid -> Left ["GRPC response contained an invalid status code."]
-        RequestFailed err -> Left [[i|I/O error: #{err}|]]
+        StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
+        StatusInvalid -> Left "GRPC response contained an invalid status code."
+        RequestFailed err -> Left $ "I/O error: " <> err
   case res of
-    Left err -> logFatal $ [[i|Transaction not accepted by the baker:|]] <> err
+    Left err -> logFatal ["Transaction not accepted by the baker: " <> err]
     Right _ -> return tx
 
 -- |Read a versioned credential from the bytestring, failing if any errors occur.
@@ -4026,8 +4054,15 @@ processCredential source _networkId =
             case fromJSON (vValue vCred) of
               AE.Success cred -> do
                 let tx = Types.CredentialDeployment cred
-                sendBlockItemV2 tx >>= dieOnError ["Transaction not accepted by the baker:"]
-                return tx
+                sbiRes <- sendBlockItemV2 tx
+                let res = case sbiRes of
+                      StatusOk resp -> Right resp
+                      StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
+                      StatusInvalid -> Left "GRPC response contained an invalid status code."
+                      RequestFailed err -> Left $ "I/O error: " <> err
+                case res of
+                  Left err -> logFatal ["Transaction not accepted by the baker: " <> err]
+                  Right _ -> return tx
               AE.Error err -> fail $ "Cannot parse credential according to V0: " ++ err
         | otherwise ->
           fail $ "Unsupported credential version: " ++ show (vVersion vCred)

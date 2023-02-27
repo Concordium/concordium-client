@@ -106,7 +106,7 @@ main = do
                   Right [] -> return Nothing
                   Right addrs -> return (Just addrs)
 
-          accInfo <- withClient backend (getAccountInfoOrDie selfAddress Best)
+          accInfo <- withClient backend (getAccountInfoOrDie (AccAddress selfAddress) Best)
           let txRecepient (Nonce n) =
                 case addresses of
                   Just addrs -> addrs !! (fromIntegral n `mod` length addrs)
@@ -136,10 +136,10 @@ main = do
                   Right addrs -> case filter (/= selfAddress) addrs of
                     [] -> die "There must be at least one other receiver."
                     xs -> withClient backend $ forM xs $ \addr -> do
-                      accInfo <- getAccountInfoOrDie addr Best
+                      accInfo <- getAccountInfoOrDie (AccAddress addr) Best
                       return (addr, aiAccountEncryptionKey accInfo)
 
-          accInfo <- withClient backend $ getAccountInfoOrDie selfAddress Best
+          accInfo <- withClient backend $ getAccountInfoOrDie (AccAddress selfAddress) Best
 
           let encAmount = aiAccountEncryptedAmount accInfo
           let ownAmount = _selfAmount encAmount
