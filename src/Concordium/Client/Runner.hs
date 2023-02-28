@@ -581,14 +581,14 @@ getContractInfoWithSchemas schemaFile blockHash ev = do
         Just schema -> CI.addSchemaData contrInfo schema
     _ -> return Nothing
 
--- |Get `ContractInfo` for all events in all blocks in which a transaction is present.
+-- |Get @ContractInfo@ for all events in all blocks in which a transaction is present.
 -- Returns a map from blockhashes of blocks in which the transaction is present to the
 -- events of the transaction in that block. Each event appears in a pair with an optional
--- `ContractInfo` value containing contract schema info associated with the event of the
+-- @ContractInfo@ value containing contract schema info associated with the event of the
 -- transaction in that block, if present.
 -- Optionally takes a path to a schema file to be parsed. If a schema is contained in the
 -- file, it will take precedence over any schemas that may be embedded in the module and
--- will therefore be present in the `ContractInfo` for all events.
+-- will therefore be present in the @ContractInfo@ for all events.
 getTxContractInfoWithSchemas :: (MonadIO m)
   => Maybe FilePath -- ^ Path pointing to a schema file.
   -> TransactionStatusResult -- ^ The transaction result for which the contract info will be retrieved.
@@ -1441,7 +1441,7 @@ sendAndTailTransaction_ verbose txCfg pl intOpts = void $ sendAndTailTransaction
 
 -- |Send a transaction and optionally tail it (see 'tailTransaction' below).
 -- If tailed, it returns the TransactionStatusResult of the finalized status,
--- otherwise the return value is `Nothing`.
+-- otherwise the return value is @Nothing@.
 sendAndTailTransaction :: (MonadIO m, MonadFail m)
     => Bool -- ^ Whether the output should be verbose
     -> TransactionConfig -- ^ Information about the sender, and the context of transaction
@@ -1508,7 +1508,7 @@ tailTransaction verbose hash = do
   where
     getLocalTimeOfDayFormatted = showTimeOfDay <$> getLocalTimeOfDay
 
--- |`read` input or fail if the input could not be `read`.
+-- |@read@ input or fail if the input could not be @read@.
 readOrFail :: (MonadIO m, Read a) => Text -> m a
 readOrFail t =
   case readEither s of
@@ -2184,8 +2184,8 @@ displayContractInfo schema contrInfo namedOwner namedModRef = do
   runPrinter $ printContractInfo cInfo namedOwner namedModRef
 
 -- |Attempts to acquire the needed parts for updating a contract.
--- The two primary parts are a contract address, which is acquired using `getNamedContractAddress`,
--- and a `Wasm.Parameter` which is acquired using `getWasmParameter`.
+-- The two primary parts are a contract address, which is acquired using @getNamedContractAddress@,
+-- and a @Wasm.Parameter@ which is acquired using @getWasmParameter@.
 -- It will log fatally if one of the two cannot be acquired.
 getContractUpdateTransactionCfg :: Backend
                                 -> BaseConfig
@@ -2195,7 +2195,7 @@ getContractUpdateTransactionCfg :: Backend
                                 -> Text -- ^ Name of the receive function to use.
                                 -> Maybe ParameterFileInput -- ^ Optional parameter file.
                                 -> Maybe FilePath -- ^ Optional schema file.
-                                -> Types.Amount   -- ^ `Amount` to send to the contract.
+                                -> Types.Amount   -- ^ @Amount@ to send to the contract.
                                 -> IO ContractUpdateTransactionCfg
 getContractUpdateTransactionCfg backend baseCfg txOpts indexOrName subindex receiveName
                                 paramsFile schemaFile amount = do
@@ -2236,7 +2236,7 @@ data ContractUpdateTransactionCfg =
 
 -- |Attempts to acquire the needed parts for initializing a contract.
 -- The two primary parts are a module reference, which can be acquired in one of three ways
--- (see the arguments for details), and a `Wasm.Parameter`, which is acquired using `getWasmParameter`.
+-- (see the arguments for details), and a @Wasm.Parameter@, which is acquired using @getWasmParameter@.
 -- It will log fatally if one of the two cannot be acquired.
 getContractInitTransactionCfg :: Backend
                               -> BaseConfig
@@ -2247,7 +2247,7 @@ getContractInitTransactionCfg :: Backend
                               -> Text   -- ^ Name of contract to init.
                               -> Maybe ParameterFileInput -- ^ Optional parameter file.
                               -> Maybe FilePath -- ^ Optional schema file.
-                              -> Types.Amount   -- ^ `Amount` to send to the contract.
+                              -> Types.Amount   -- ^ @Amount@ to send to the contract.
                               -> IO ContractInitTransactionCfg
 getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath mWasmVersion contrName paramsFile schemaFile amount = do
   namedModRef <- if isPath
@@ -2334,9 +2334,9 @@ getWasmModuleFromFile moduleFile mWasmVersion = do
             getMagicBytes = S.getByteString 4
 
 
--- |Load `Wasm.Parameter` through one of several ways, dependent on the arguments:
---   * If binary file provided -> Read the file and wrap its contents in `Wasm.Parameter`.
---   * If JSON file provided   -> Try to use the schema to encode the parameters into a `Wasm.Parameter`.
+-- |Load @Wasm.Parameter@ through one of several ways, dependent on the arguments:
+--   * If binary file provided -> Read the file and wrap its contents in @Wasm.Parameter@.
+--   * If JSON file provided   -> Try to use the schema to encode the parameters into a @Wasm.Parameter@.
 -- If invalid arguments are provided or something fails, appropriate warning or error messages are logged.
 getWasmParameter :: Maybe ParameterFileInput -- ^ Optional parameter file in JSON or binary format.
                  -> Maybe CS.ModuleSchema -- ^ Optional module schema.
@@ -2366,7 +2366,7 @@ getWasmParameter paramsFile schema funcName =
 --
 -- Can logWarn and logFatal in the following situations:
 --   - Invalid schemafile: logs fatally.
---   - No schemafile and invalid embedded schema: logs a warning and returns `Nothing`.
+--   - No schemafile and invalid embedded schema: logs a warning and returns @Nothing@.
 getSchemaFromFileOrModule :: (MonadIO m)
                           => Maybe FilePath -- ^ Optional schema file.
                           -> NamedModuleRef -- ^ A reference to a module on chain.

@@ -554,8 +554,8 @@ parseTransactionBlockResult status =
 -- Since the transaction may be present in multiple blocks before it is finalized,
 -- the schema information is passed as a map from blockhashes to pairs of events and
 -- its associated contract information. For a block in which the transaction is
--- present, `printTransactionSchema` looks up its blockhash in the map and retrieves
--- the relevant schema information from the `ContractInfo` associated with each event.
+-- present, @printTransactionSchema@ looks up its blockhash in the map and retrieves
+-- the relevant schema information from the @ContractInfo@ associated with each event.
 -- If a parameter or event could not be decoded either because a schema was not present
 -- in the contract information or because the decoding failed, a hexadecimal string
 -- representing the raw data will be shown instead.
@@ -657,8 +657,8 @@ showOutcomeResult verbose contrInfoWithEventsM = \case
     else [[i|Transaction rejected: #{showRejectReason False r}.|]]
   where
     -- Helper for folding over events and schemas, collecting showEvent outputs.
-    -- This is as to indent or unindent output on `Interrupted`, resp.
-    -- `Resumed`. The accumulator @(Int, [Maybe String])@ is a pair of current
+    -- This is as to indent or unindent output on @Interrupted@, resp.
+    -- @Resumed@. The accumulator @(Int, [Maybe String])@ is a pair of current
     -- indentation level and the list of outputs that have been accumulated.
     --
     -- The reason for using a @Maybe String@ is that the output is only produced

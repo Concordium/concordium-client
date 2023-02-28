@@ -77,22 +77,23 @@ import qualified Proto.V2.Concordium.Types as ProtoFields
 import qualified Proto.V2.Concordium.Types_Fields as Proto
 import qualified Proto.V2.Concordium.Types_Fields as ProtoFields
 
--- |A helper function that serves as an inverse to `mkSerialize`,
+-- |A helper function that serves as an inverse to @mkSerialize@,
 --
 -- Converts a protocol buffer message to a native Haskell type
--- that is a member of `Serialize`.
+-- that is a member of @Serialize@.
 --
 -- More concretely, the protocol buffer message should have the form:
---
+-- @
 -- > message Wrapper {
 -- >    ..
 -- >    bytes value = 1
 -- >    ...
 -- > }
+-- @
 --
--- where `Wrapper` is an arbitrary message name that must contain a field
--- named `value` of type `bytes`. Returns @Left@ if the bytestring contained
--- in the `value`-field could not be converted or if the entire bytestring was
+-- where @Wrapper@ is an arbitrary message name that must contain a field
+-- named @value@ of type @bytes@. Returns @Left@ if the bytestring contained
+-- in the @value@-field could not be converted or if the entire bytestring was
 -- not consumed while converting it. Returns a @Right@ wrapping the converted
 -- value otherwise.
 deMkSerialize ::
@@ -109,11 +110,11 @@ deMkSerialize val =
         Left err -> Left $ "deMkSerialize error: " <> err
         Right v -> return v
 
--- |A helper function that serves as an inverse to `mkWord64`,
--- Like 'deMkSerialize', but the `value field` must be a `Word64`,
--- and the output a type which can be coerced from a `Word64`.
--- Coercible here means that the output is a `Word64` wrapped in
--- a newtype wrapper (possibly several) of a `Word64`.
+-- |A helper function that serves as an inverse to @mkWord64@,
+-- Like 'deMkSerialize', but the @value@ field must be a @Word64@,
+-- and the output a type which can be coerced from a @Word64@.
+-- Coercible here means that the output is a @Word64@ wrapped in
+-- a newtype wrapper (possibly several) of a @Word64@.
 deMkWord64 ::
     ( Coercible Word64 a,
       Data.ProtoLens.Field.HasField
@@ -125,7 +126,7 @@ deMkWord64 ::
     a
 deMkWord64 val = coerce $ val ^. ProtoFields.value
 
--- |Like `deMkWord64`, but the value field should be a `Word32`
+-- |Like @deMkWord64@, but the value field should be a @Word32@
 -- and the output should be coercible from this.
 deMkWord32 ::
     ( Coercible Word32 a,
@@ -138,9 +139,9 @@ deMkWord32 ::
     a
 deMkWord32 val = coerce $ val ^. ProtoFields.value
 
--- |Like `deMkWord32` but the output should be coercible from
--- a `Word16`. Returns @Left@ if the value of the `Word32` can
--- not fit in a `Word16` and a @Right@ wrapping the coerced value
+-- |Like @deMkWord32@ but the output should be coercible from
+-- a @Word16@. Returns @Left@ if the value of the @Word32@ can
+-- not fit in a @Word16@ and a @Right@ wrapping the coerced value
 -- otherwise.
 deMkWord16 ::
     ( Coercible Word16 a,
@@ -163,9 +164,9 @@ deMkWord16 val =
   where
     v = val ^. ProtoFields.value
 
--- |Like `deMkWord32` but the output should be coercible from
--- a `Word8`. Returns @Left@ if the value of the `Word32` can
--- not fit in a `Word8` and a @Right@ wrapping the coerced value
+-- |Like @deMkWord32@ but the output should be coercible from
+-- a @Word8@. Returns @Left@ if the value of the @Word32@ can
+-- not fit in a @Word8@ and a @Right@ wrapping the coerced value
 -- otherwise.
 deMkWord8 ::
     ( Coercible Word8 a,
@@ -188,7 +189,7 @@ deMkWord8 val =
   where
     v = val ^. ProtoFields.value
 
--- |Validate a protocol buffer message with an `url` Text field.
+-- |Validate a protocol buffer message with an @url@ Text field.
 -- Returns @Left@ if the string is longer than the maxium permissible
 -- length, and returns a @UrlText@ wrapped in a @Right@ otherwise.
 deMkUrlText ::
@@ -233,7 +234,7 @@ decodeAndConsume bs = do
             then return v
             else fail "Did not consume the input."
 
--- |The result of converting a protocol buffer message with `fromProto`.
+-- |The result of converting a protocol buffer message with @fromProto@.
 -- A @Left@ wrapping an error string indicates that the conversion failed
 -- and a @Right@ wrapping the converted value indicates that it succeeded.
 type FromProtoResult a = Either String a
@@ -249,11 +250,11 @@ class FromProto a where
     fromProto :: a -> FromProtoResult (Output a)
 
 -- |A helper to be used to indicate that something went wrong in a
--- `FromProto` instance.
+-- @FromProto@ instance.
 fromProtoFail :: String -> FromProtoResult a
 fromProtoFail msg = Left $ "fromProto: " <> msg
 
--- |Like `fromProtoM` but maps from and into the `Maybe` monad.
+-- |Like @fromProtoM@ but maps from and into the @Maybe@ monad.
 -- Returns @Nothing@ if the input is @Nothing@ or if the input
 -- value wrapped in @Just@ could not be converted. Returns a
 -- @Just@ wrapping the converted value otherwise
@@ -474,8 +475,8 @@ instance FromProto Proto.AmountFraction where
     type Output Proto.AmountFraction = AmountFraction
 
     -- This must not exceed 100000. We check it here since
-    -- `makePartsPerHundredThousand` referenced in
-    -- `makeAmountFraction` assumes this.
+    -- @makePartsPerHundredThousand@ referenced in
+    -- @makeAmountFraction@ assumes this.
     fromProto amountFraction = do
         let af = amountFraction ^. ProtoFields.partsPerHundredThousand
         if af > 100_000
@@ -624,7 +625,7 @@ instance FromProto Proto.Policy where
         return Policy{..}
       where
         -- |Convert a tag and a bytestring pair to an attribute tag and attribute value pair.
-        -- The length of the bytestring should be at most 31 and the tag should fit in an `Word8`.
+        -- The length of the bytestring should be at most 31 and the tag should fit in an @Word8@.
         convert (aTag, aVal) = do
             let fits = aTag <= fromIntegral (maxBound :: Word8)
             unless fits $ fromProtoFail $ "Unable to convert 'Policy'. Attribute tag exceeds " <> show (maxBound :: Word8) <> "."
@@ -2589,7 +2590,7 @@ getIdentityProvidersV2 bhInput =
     msg = toProto bhInput
 
 -- |Get all fixed passive delegators for the reward period of a given block.
--- In contrast to `getPassiveDelegatorsV2` which returns all delegators registered
+-- In contrast to @getPassiveDelegatorsV2@ which returns all delegators registered
 -- at the end of a given block, this returns all fixed delegators contributing
 -- stake in the reward period containing the given block.
 getPassiveDelegatorsRewardPeriodV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResultV2 (FromProtoResult (Seq.Seq DelegatorRewardPeriodInfo)))
@@ -2606,7 +2607,7 @@ getPassiveDelegatorsV2 bhInput =
     msg = toProto bhInput
 
 -- |Get all fixed delegators of a given pool for the reward period of a given block.
--- In contrast to `getPoolDelegatorsV2` which returns all active delegators registered
+-- In contrast to @getPoolDelegatorsV2@ which returns all active delegators registered
 -- for the given block, this returns all the active fixed delegators contributing stake
 -- in the reward period containing the given block.
 getPoolDelegatorsRewardPeriodV2 :: (MonadIO m) => BlockHashInput -> BakerId -> ClientMonad m (GRPCResultV2 (FromProtoResult (Seq.Seq DelegatorRewardPeriodInfo)))
@@ -2645,7 +2646,7 @@ getInstanceListV2 bhInput = withServerStreamCollectV2 (callV2 @"getInstanceList"
 -- |Get ancestors of a given block.
 -- The first element of the sequence is the requested block itself, and the block
 -- immediately following a block in the sequence is the parent of that block.
--- The sequence contains at most `limit` blocks, and if the sequence is
+-- The sequence contains at most @limit@ blocks, and if the sequence is
 -- strictly shorter, the last block in the list is the genesis block.
 getAncestorsV2 :: (MonadIO m) => BlockHashInput -> Word64 -> ClientMonad m (GRPCResultV2 (FromProtoResult (Seq.Seq BlockHash)))
 getAncestorsV2 bhInput limit = withServerStreamCollectV2 (callV2 @"getAncestors") msg ((fmap . mapM) fromProto)
@@ -2671,13 +2672,13 @@ getAccountListV2 bhInput = withServerStreamCollectV2 (callV2 @"getAccountList") 
 -- This can be used to listen for newly finalized blocks. Note that there is no guarantee
 -- that blocks will not be skipped if the client is too slow in processing the stream,
 -- however blocks will always be sent by increasing block height. Note that this function
--- is non-terminating, so some care should be taken. See `withGRPCCoreV2` for more info.
+-- is non-terminating, so some care should be taken. See @withGRPCCoreV2@ for more info.
 getFinalizedBlocksV2 :: (MonadIO m) => (FromProtoResult ArrivedBlockInfo -> ClientIO ()) -> ClientMonad m (GRPCResultV2 ())
 getFinalizedBlocksV2 f = withServerStreamCallbackV2 (callV2 @"getFinalizedBlocks") defMessage mempty (\_ o -> f (fromProto o)) id
 
 -- |Process a stream of blocks that arrive from the time the query is made onward.
 -- This can be used to listen for incoming blocks. Note that this is non-terminating,
--- so some care should be taken. See `withGRPCCoreV2` for more info.
+-- so some care should be taken. See @withGRPCCoreV2@ for more info.
 getBlocksV2 :: (MonadIO m) => (FromProtoResult ArrivedBlockInfo -> ClientIO ()) -> ClientMonad m (GRPCResultV2 ())
 getBlocksV2 f = withServerStreamCallbackV2 (callV2 @"getBlocks") defMessage mempty (\_ o -> f (fromProto o)) id
 
@@ -2721,7 +2722,7 @@ getBlockChainParametersV2 bHash = do
   where
     msg = toProto bHash
 
--- |Get information about the node. See `NodeInfo` for details.
+-- |Get information about the node. See @NodeInfo@ for details.
 getNodeInfoV2 :: (MonadIO m) => ClientMonad m (GRPCResultV2 (FromProtoResult NodeInfo))
 getNodeInfoV2 = withUnaryV2 (callV2 @"getNodeInfo") msg (fmap fromProto)
   where
@@ -2752,14 +2753,14 @@ getBlockItemStatusV2 tHash = withUnaryV2 (callV2 @"getBlockItemStatus") msg (fma
 -- only be sent by the governance committee.
 --
 -- Returns a hash of the block item, which can be used with
--- `GetBlockItemStatus`.
+-- @GetBlockItemStatus@.
 sendBlockItemV2 :: (MonadIO m) => Transactions.BareBlockItem -> ClientMonad m (GRPCResultV2 (FromProtoResult TransactionHash))
 sendBlockItemV2 bbiInput = withUnaryV2 (callV2 @"sendBlockItem") msg (fmap fromProto)
   where
     msg = toProto bbiInput
 
 -- |Get the value at a specific key of a contract state. In contrast to
--- `GetInstanceState` this is more efficient, but requires the user to know
+-- @GetInstanceState@ this is more efficient, but requires the user to know
 -- the specific key to look for.
 instanceStateLookupV2 ::
     (MonadIO m) =>
@@ -2777,13 +2778,13 @@ instanceStateLookupV2 bhInput cAddr key =
             & ProtoFields.key .~ key
 
 -- |Stop dumping packets.
--- This feature is enabled if the node was built with the `network_dump` feature.
+-- This feature is enabled if the node was built with the @network_dump@ feature.
 -- Returns a GRPC error if the network dump could not be stopped.
 dumpStopV2 :: (MonadIO m) => ClientMonad m (GRPCResultV2 ())
 dumpStopV2 = withUnaryV2 (callV2 @"dumpStop") defMessage ((fmap . const) ())
 
 -- |Start dumping network packets into the specified file.
--- This feature is enabled if the node was built with the `network_dump` feature.
+-- This feature is enabled if the node was built with the @network_dump@ feature.
 -- Returns a GRPC error if the network dump failed to start.
 dumpStartV2 :: (MonadIO m) => Text -> Bool -> ClientMonad m (GRPCResultV2 ())
 dumpStartV2 file raw = withUnaryV2 (callV2 @"dumpStart") msg ((fmap . const) ())
@@ -2924,14 +2925,14 @@ withUnaryV2 ::
     ClientMonad n b
 withUnaryV2 method input k = withGRPCCoreV2 callHelper k
     where
-        -- This is here so we may leverage `withGRPCCoreV2`.
+        -- This is here so we may leverage @withGRPCCoreV2@.
         callHelper client = do
             res <- rawUnary method client input
             return $ fmap RawUnaryOutput res
 
 -- |Call a streaming V2 GRPC API endpoint and return the (collected) results in a sequence.
 -- Note that some care should be taken when using this with long-running calls. See
--- `withGRPCCoreV2` for more info.
+-- @withGRPCCoreV2@ for more info.
 withServerStreamCollectV2 ::
     ( HasMethod CS.Queries m,
       MonadIO n,
@@ -2949,10 +2950,10 @@ withServerStreamCollectV2 method input =
     where handler acc o = return $ acc <> pure o
 
 -- |Call a streaming GRPC API endpoint and return the (collected) results.
--- Takes a `fold`-like callback and an accumulator, and returns the result
+-- Takes a @fold@-like callback and an accumulator, and returns the result
 -- of folding through each stream element, once the stream terminates. Note
 -- that some care should be taken when using this with long-running calls.
--- See `withGRPCCoreV2` for more info.
+-- See @withGRPCCoreV2@ for more info.
 withServerStreamCallbackV2 ::
     ( HasMethod CS.Queries m,
       MonadIO n,
@@ -2962,11 +2963,11 @@ withServerStreamCallbackV2 ::
     RPC CS.Queries m ->
     -- |The procedure input.
     i ->
-    -- |An initial `fold`-like accumulator that
+    -- |An initial @fold@-like accumulator that
     -- is updated with the handler each time a
     -- stream element arrives.
     a ->
-    -- |A `fold`-like handler which is used
+    -- |A @fold@-like handler which is used
     -- to process a stream object and update
     -- the accumulator.
     (a -> o -> ClientIO a) ->
@@ -2977,11 +2978,11 @@ withServerStreamCallbackV2 method input acc handler =
     withGRPCCoreV2 callHelper
     where
         -- This is simply a handler which conforms to the one required by
-        -- `rawStreamServer`. This is here, so we may ignore the response
+        -- @rawStreamServer@. This is here, so we may ignore the response
         -- headers in the handler, just for the sake of ergonomics.
         handler' acc' _hds streamObj = handler acc' streamObj
         -- Helper that invokes the streaming call with the above callback.
-        -- This is here so we may leverage `withGRPCCoreV2`.
+        -- This is here so we may leverage @withGRPCCoreV2@.
         callHelper client = do
             res <- rawStreamServer method client acc input handler'
             return $ fmap ServerStreamOutput res
@@ -2992,7 +2993,7 @@ withServerStreamCallbackV2 method input acc handler =
 -- Note that long-running streaming call may block other calls from retrying to
 -- establish their connection if they fail. Therefore some care should be taken
 -- when using long-running or unproductive calls, and in particular those targeting
--- never-ending streaming endpoints such as `getBlocks` and `getFinalizedBlocks`.
+-- never-ending streaming endpoints such as @getBlocks@ and @getFinalizedBlocks@.
 withGRPCCoreV2 ::
     (MonadIO n) =>
     -- |A helper which takes a client, issues a GRPC request in the client and returns the result.
@@ -3008,7 +3009,7 @@ withGRPCCoreV2 helper k = do
     cookies <- ClientMonad (lift get)
     mv <- asks killConnection
     -- FIXME: Timeout should probably be handled differently when
-    --        invoking a tailing procedure such as `getBlocks`.
+    --        invoking a tailing procedure such as @getBlocks@.
     let Timeout timeoutSeconds = _grpcClientConfigTimeout cfg
     -- try to establish a connection
     let tryEstablish :: Int -> IO (Maybe GrpcClient)

@@ -61,7 +61,7 @@ data GRPCResultV2 a =
 type GRPCHeaderList = CIHeaderList
 
 -- |GRPC call helper output type, with variants corresponding to the result of a unary or streaming call.
--- This is here due to the differing output types of the GRPC helpers 'rawUnary' and 'rawStreamServer',
+-- This is here due to the differing output types of the GRPC helpers @rawUnary@ and @rawStreamServer@,
 -- that we use to invoke the GRPC procedure. For more info, see the documentation at:
 -- http://hackage.haskell.org/package/http2-client-grpc-0.7.0.0/docs/Network-GRPC-Client-Helpers.html
 data GRPCOutput a =
@@ -77,7 +77,7 @@ toGRPCResult' :: GRPCOutput t  -> GRPCResultV2 t
 toGRPCResult' =
     \case
       -- @RawUnaryOutput@ models the result of invoking a non-streaming GRPC call.
-      -- It wraps a 'RawReply' which either indicates if a problem occurred at the
+      -- It wraps a @RawReply@ which either indicates if a problem occurred at the
       -- application layer, whose nature is then available in an @ErrorCode@, or if the
       -- request was successful the result is available in a triple comprimising HTTP/2
       -- response headers, trailers and a GRPC response. The response in turn either
