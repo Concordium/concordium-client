@@ -97,7 +97,7 @@ toGRPCResult' =
                 let statusCode = readTrailers hds
                 case statusCode of
                   -- Which is either a valid non-'OK' status code.
-                  Right (GRPCStatus c _) -> StatusNotOk (c, "gRPC error: " ++ Network.URI.Encode.decode e ++ "\n" ++ show hds)
+                  Right (GRPCStatus c _) -> StatusNotOk (c, "GRPC error: " ++ Network.URI.Encode.decode e)
                   -- Or an invalid status code.
                   Left (InvalidGRPCStatus _) -> StatusInvalid
           -- The request failed.
