@@ -1543,7 +1543,9 @@ processAccountCmd action baseCfgDir verbose backend =
             Just acc -> do
               logInfo [[i|The ACCOUNT argument was not provided; so the default account name '#{defaultAccountName}' was used.|]]
               return . Text.pack $ show acc
-        Just acc -> return acc
+        Just acc -> case Map.lookup acc (bcAccountNameMap baseCfg) of
+          Nothing -> return acc
+          Just acc' -> return . Text.pack $ show acc'
 
       accountIdentifier <-
         case Types.decodeAccountIdentifier (Text.encodeUtf8 input) of
