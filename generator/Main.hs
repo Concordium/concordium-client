@@ -106,7 +106,7 @@ main = do
                   Right [] -> return Nothing
                   Right addrs -> return (Just addrs)
 
-          accInfo <- withClient backend (getAccountInfoOrDie selfAddress Best)
+          accInfo <- withClient backend (getAccountInfoOrDie (AccAddress selfAddress) Best)
           let txRecepient (Nonce n) =
                 case addresses of
                   Just addrs -> addrs !! (fromIntegral n `mod` length addrs)
@@ -125,10 +125,7 @@ main = do
                 return (txRecepient nonce, NormalTransaction $ signTransaction keysList (txHeader (ct + 3600) nonce) (txBody nonce), ())
           go backend (logit txoptions) (tps txoptions) () sign (aiAccountNonce accInfo)
         True -> do
-          globalParameters <- withClient backend (getBestBlockHash >>= getParseCryptographicParameters) >>= \case
-              Left err -> die err
-              Right gp -> return gp
-
+          globalParameters <- withClient backend (getCryptographicParameters Best)
           addresses <-
             case receiversFile txoptions of
               Nothing -> die "Receivers must be present when encrypted transfers are selected."
@@ -139,10 +136,10 @@ main = do
                   Right addrs -> case filter (/= selfAddress) addrs of
                     [] -> die "There must be at least one other receiver."
                     xs -> withClient backend $ forM xs $ \addr -> do
-                      accInfo <- getAccountInfoOrDie addr Best
+                      accInfo <- getAccountInfoOrDie (AccAddress addr) Best
                       return (addr, aiAccountEncryptionKey accInfo)
 
-          accInfo <- withClient backend $ getAccountInfoOrDie selfAddress Best
+          accInfo <- withClient backend $ getAccountInfoOrDie (AccAddress selfAddress) Best
 
           let encAmount = aiAccountEncryptedAmount accInfo
           let ownAmount = _selfAmount encAmount

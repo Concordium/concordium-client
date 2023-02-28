@@ -10,7 +10,6 @@ import Options.Applicative
 data LegacyCmd
   = SendTransaction
       { legacySourceFile :: !FilePath
-      , legacyNetworkId  :: !Int
       } -- ^ Loads a transaction in the context of the local database and sends it to the specified RPC server
   | GetTransactionStatus
       { legacyTransactionHash :: !Text
@@ -182,13 +181,7 @@ sendTransactionCommand =
     (info
        (SendTransaction <$>
         strArgument
-          (metavar "TX-SOURCE" <> help "JSON file with the transaction") <*>
-        argument
-          auto
-          (metavar "NET-ID" <>
-           help "Network ID for the transaction to be sent through" <>
-           value 100 <>
-           showDefault))
+          (metavar "TX-SOURCE" <> help "JSON file with the transaction"))
        (progDesc
           "Parse transaction in current context and send it to the baker."))
 
