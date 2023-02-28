@@ -2973,8 +2973,8 @@ withServerStreamCallbackV2 ::
     -- |A mapping of the accumulated result.
     (GRPCResultV2 a -> b) ->
     ClientMonad n b
-withServerStreamCallbackV2 method input acc handler k =
-    withGRPCCoreV2 callHelper k
+withServerStreamCallbackV2 method input acc handler =
+    withGRPCCoreV2 callHelper
     where
         -- This is simply a handler which conforms to the one required by
         -- `rawStreamServer`. This is here, so we may ignore the response

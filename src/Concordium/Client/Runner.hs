@@ -630,7 +630,7 @@ processTransactionCmd action baseCfgDir verbose backend =
       -- TODO Print transaction details and ask for confirmation if (ioConfirm intOpts)
 
       withClient backend $ do
-        tx <- processTransaction source defaultNetId
+        tx <- processTransaction source
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
@@ -640,7 +640,7 @@ processTransactionCmd action baseCfgDir verbose backend =
     TransactionDeployCredential fname intOpts -> do
       source <- handleReadFile BSL.readFile fname
       withClient backend $ do
-        tx <- processCredential source defaultNetId
+        tx <- processCredential source
         let hash = getBlockItemHash tx
         logSuccess [ printf "transaction '%s' sent to the baker" (show hash) ]
         when (ioTail intOpts) $ do
@@ -1097,7 +1097,9 @@ getAccountInfoOrDie sender bhInput = do
 -- if the baker pool does not exist.
 getPoolStatusOrDie :: Maybe Types.BakerId ->  ClientMonad IO Queries.PoolStatus
 getPoolStatusOrDie mbid = do
-  psRes <- getPoolInfoV2 Best (fromMaybe 0 mbid)
+  psRes <- case mbid of
+    Nothing -> getPassiveDelegationInfoV2 Best
+    Just bId -> getPoolInfoV2 Best bId
   let res = case psRes of
         StatusOk resp -> case grpcResponseVal resp of
           Left err -> Left $ "Cannot decode pool status response from the node: " <> err
@@ -1755,9 +1757,7 @@ processModuleCmd action baseCfgDir verbose backend =
       case block of
         Nothing -> return ()
         Just b -> case readEither (Text.unpack b) of
-          Left _ -> logFatal ["Could not retrieve the list of modules",
-                              "the provided block hash is invalid, tried:",
-                              Text.unpack b]
+          Left _ -> logFatal [[i|Could not retrieve the list of modules: The provided block hash '#{Text.unpack b}' is invalid.|]]
           Right (_v :: Types.BlockHash) -> return ()
       bhInput <- readBlockHashOrDefault Best block
       (best, ms) <- withClient backend $ do
@@ -1886,9 +1886,7 @@ processContractCmd action baseCfgDir verbose backend =
       case block of
         Nothing -> return ()
         Just b -> case readEither (Text.unpack b) of
-          Left _ -> logFatal ["Could not retrieve the list of contracts",
-                              "the provided block hash is invalid, tried:",
-                              Text.unpack b]
+          Left _ -> logFatal [[i|Could not retrieve the list of contracts: The provided block hash '#{Text.unpack b}' is invalid.|]]
           Right (_v :: Types.BlockHash) -> return ()
       bhInput <- readBlockHashOrDefault Best block
       (best, ms) <- withClient backend $ do
@@ -2038,7 +2036,6 @@ processContractCmd action baseCfgDir verbose backend =
                           , ccEnergy = nrg
                           }
 
-      -- VH/FIXME: Should the blockhash input in the following be `Best` or `Given bbHash`?
       res <- withClient backend $ do
         iiRes <- invokeInstanceV2 (Given bbHash) invokeContext
         let r = case iiRes of
@@ -2150,7 +2147,7 @@ processContractCmd action baseCfgDir verbose backend =
           where
               (lookupSchema, valueType) = if isError then (CS.lookupErrorSchema, "Error"::Text) else (CS.lookupReturnValueSchema, "Return"::Text)
 
--- |Try to fetch info about the contract and deserialize it from JSON.
+-- |Try to fetch info about the contract.
 -- Or, log fatally with appropriate error messages if anything goes wrong.
 getContractInfo :: (MonadIO m) => NamedContractAddress -> BlockHashInput -> ClientMonad m CI.ContractInfo
 getContractInfo namedContrAddr bhInput = do
@@ -2762,8 +2759,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
           Left (_, err) -> do
             logError ["Could not get the baker cooldown period: " <> err]
             exitTransactionCancelled
-          Right v -> do
-            getBakerCooldown v
+          Right v -> getBakerCooldown v
       when (capital < stakedAmount) $ do
         let removing = capital == 0
         if removing then
@@ -3459,7 +3455,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
             exitTransactionCancelled
           Right v -> do
             liftIO $ getDelegatorCooldown v
-      let cooldownString :: String = [i|The current baker cooldown would last until approximately #{cooldownDate}|]
+      let cooldownString :: String = [i|The current delegator cooldown would last until approximately #{cooldownDate}|]
       when (capital < stakedAmount) $ do
         let removing = capital == 0
         if removing then
@@ -3597,9 +3593,9 @@ processIdentityShowCmd action backend =
 processLegacyCmd :: LegacyCmd -> Backend -> IO ()
 processLegacyCmd action backend =
   case action of
-    SendTransaction fname nid -> do
+    SendTransaction fname -> do
       source <- handleReadFile BSL.readFile fname
-      t <- withClient backend $ processTransaction source nid
+      t <- withClient backend $ processTransaction source
       putStrLn $ "Transaction sent to the baker. Its hash is " ++
         show (getBlockItemHash t)
     GetConsensusInfo ->
@@ -4007,12 +4003,11 @@ getStatusOfPeers = do
 processTransaction ::
      (MonadFail m, MonadIO m)
   => BSL.ByteString
-  -> Int
   -> ClientMonad m Types.BareBlockItem
-processTransaction source networkId =
+processTransaction source =
   case AE.eitherDecode source of
     Left err -> fail $ "Error decoding JSON: " ++ err
-    Right t  -> processTransaction_ t networkId True
+    Right t  -> processTransaction_ t True
 
 -- |Process a transaction with unencrypted keys given explicitly.
 -- The transaction is signed with all the provided keys.
@@ -4020,10 +4015,9 @@ processTransaction source networkId =
 processTransaction_ ::
      (MonadFail m, MonadIO m)
   => TransactionJSON
-  -> Int
   -> Verbose
   -> ClientMonad m Types.BareBlockItem
-processTransaction_ transaction _networkId _verbose = do
+processTransaction_ transaction _verbose = do
   let accountKeys = CT.keys transaction
   tx <- do
     let header = metadata transaction
@@ -4056,9 +4050,8 @@ processTransaction_ transaction _networkId _verbose = do
 processCredential ::
      (MonadFail m, MonadIO m)
   => BSL.ByteString
-  -> Int
   -> ClientMonad m Types.BareBlockItem
-processCredential source _networkId =
+processCredential source =
   case AE.eitherDecode source of
     Left err -> fail $ "Error decoding JSON: " ++ err
     Right vCred
