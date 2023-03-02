@@ -1055,11 +1055,13 @@ getEncryptedAmountTransferData senderAddr ettReceiver ettAmount idx secretKey = 
 getBakerCooldown :: Queries.EChainParametersAndKeys -> ClientMonad IO UTCTime
 getBakerCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) = do
   cooldownTime <- case Types.chainParametersVersion @cpv of
-    Types.SCPV0 -> do
+    Types.SChainParametersV0 -> do
         cs <- getResponseValueOrDie =<< getConsensusInfoV2
         let epochTime = toInteger (Time.durationMillis $ Queries.csEpochDuration cs) % 1000
         return . fromRational $ epochTime * ((cooldownEpochsV0 ecpParams + 2) % 1)
-    Types.SCPV1 -> return .fromIntegral . Types.durationSeconds $
+    Types.SChainParametersV1 -> return .fromIntegral . Types.durationSeconds $
+        ecpParams ^. cpCooldownParameters . cpPoolOwnerCooldown
+    Types.SChainParametersV2 -> return .fromIntegral . Types.durationSeconds $
         ecpParams ^. cpCooldownParameters . cpPoolOwnerCooldown
   currTime <- liftIO getCurrentTime
   let cooldownDate = addUTCTime cooldownTime currTime
@@ -1072,9 +1074,13 @@ getBakerCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters'
 getDelegatorCooldown :: Queries.EChainParametersAndKeys -> IO (Maybe UTCTime)
 getDelegatorCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) = do
   case Types.chainParametersVersion @cpv of
-      Types.SCPV0 -> do
+      Types.SChainParametersV0 -> do
         return Nothing
-      Types.SCPV1 -> do
+      Types.SChainParametersV1 -> do
+        currTime <- liftIO getCurrentTime
+        let cooldownTime = fromIntegral . Types.durationSeconds $ ecpParams ^. cpCooldownParameters . cpDelegatorCooldown
+        return $ Just $ addUTCTime cooldownTime currTime
+      Types.SChainParametersV2 -> do
         currTime <- liftIO getCurrentTime
         let cooldownTime = fromIntegral . Types.durationSeconds $ ecpParams ^. cpCooldownParameters . cpDelegatorCooldown
         return $ Just $ addUTCTime cooldownTime currTime
@@ -1272,8 +1278,9 @@ getBakerStakeThresholdOrDie = do
     Left err -> logFatal ["Could not retrieve the baker stake threshold: " <> err]
     Right (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) ->
         return $ case Types.chainParametersVersion @cpv of
-            Types.SCPV0 -> ecpParams ^. cpPoolParameters . ppBakerStakeThreshold
-            Types.SCPV1 -> ecpParams ^. cpPoolParameters . ppMinimumEquityCapital
+            Types.SChainParametersV0 -> ecpParams ^. cpPoolParameters . ppBakerStakeThreshold
+            Types.SChainParametersV1 -> ecpParams ^. cpPoolParameters . ppMinimumEquityCapital
+            Types.SChainParametersV2 -> ecpParams ^. cpPoolParameters . ppMinimumEquityCapital
 
 getAccountUpdateCredentialsTransactionData ::
   Maybe FilePath -- ^ A file with new credentials.
@@ -2505,7 +2512,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
               RequestFailed err -> Left $ "I/O error: " <> err
         case res of
           Left err -> logFatal ["Error getting chain parameters: " <> err]
-          Right cParams -> runPrinter $ printChainParameters cParams 
+          Right Queries.EChainParametersAndKeys{..} -> runPrinter $ printChainParameters ecpParams 
 
     ConsensusChainUpdate rawUpdateFile keysFiles intOpts -> do
       let
@@ -3884,8 +3891,8 @@ printPeerData bootstrapper pInfos Queries.NodeInfo{..} =
                   "Node (running, "
               <>  case Queries.status cInfo of
                     Queries.PassiveBaker _ -> "not baking)"
-                    Queries.ActiveBakerCommitteeInfo -> "in current baking committee)"
-                    Queries.ActiveFinalizerCommitteeInfo -> "in current baking and finalizer committee)"
+                    Queries.ActiveBaker -> "in current baking committee)"
+                    Queries.ActiveFinalizer -> "in current baking and finalizer committee)"
 
 getPeerData :: Bool -> ClientMonad IO (Either String PeerData)
 getPeerData bootstrapper = do
@@ -3947,13 +3954,13 @@ printNodeInfo Queries.NodeInfo{..} = liftIO $
                   show False
                 Queries.NodeActive (Queries.BakerConsensusInfo _ (Queries.PassiveBaker Queries.AddedButWrongKeys)) ->
                   show False
-                Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveBakerCommitteeInfo) ->
+                Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveBaker) ->
                   "In current baker committee with baker ID '" <> show bId <> "'."
-                Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveFinalizerCommitteeInfo) ->
+                Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveFinalizer) ->
                   "In current baker committee with baker ID '" <> show bId <> "'."
         getFinalizerCommitteeMember =
           \case
-                Queries.NodeActive (Queries.BakerConsensusInfo _ Queries.ActiveBakerCommitteeInfo) ->
+                Queries.NodeActive (Queries.BakerConsensusInfo _ Queries.ActiveBaker) ->
                   show False
                 Queries.NodeBootstrapper -> show False
                 Queries.NodeNotRunning -> show False
@@ -3964,7 +3971,7 @@ printNodeInfo Queries.NodeInfo{..} = liftIO $
                   show False
                 Queries.NodeActive (Queries.BakerConsensusInfo _ (Queries.PassiveBaker Queries.AddedButWrongKeys)) ->
                   show False
-                Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveFinalizerCommitteeInfo) ->
+                Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveFinalizer) ->
                   "In current finalizer committee with baker ID " <> show bId <> "'."
 
 -- |FIXME: Move this some other place in refactoring.
