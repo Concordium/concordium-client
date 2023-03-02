@@ -19,6 +19,7 @@ import Control.Monad.State.Strict
 import Data.ByteString (ByteString)
 import Data.Coerce
 import Data.IORef (atomicWriteIORef, readIORef)
+import Data.Maybe (isJust)
 import Data.ProtoLens (defMessage)
 import Data.ProtoLens.Service.Types
 import Data.String (fromString)
@@ -76,7 +77,6 @@ import qualified Proto.V2.Concordium.Types as Proto
 import qualified Proto.V2.Concordium.Types as ProtoFields
 import qualified Proto.V2.Concordium.Types_Fields as Proto
 import qualified Proto.V2.Concordium.Types_Fields as ProtoFields
-import Data.Maybe (isNothing)
 
 -- |A helper function that serves as an inverse to @mkSerialize@,
 --
@@ -1698,9 +1698,10 @@ instance FromProto Proto.MintDistributionCpv0 where
         _mdBakingReward <- fromProto $ mDistribution ^. ProtoFields.bakingReward
         _mdFinalizationReward <- fromProto $ mDistribution ^. ProtoFields.finalizationReward
         -- Ensure that @_mdBakingReward _mdFinalizationReward <= 1@
-        when
-            (isNothing $ addAmountFraction _mdBakingReward _mdFinalizationReward)
-            (fromProtoFail "Unable to convert 'MintDistributionCpv0': Sum of baking and finalization reward fractions exceeds 1.")
+        let atMostOne = isJust $ addAmountFraction _mdBakingReward _mdFinalizationReward
+        unless
+            atMostOne
+            (fromProtoFail "Unable to convert 'MintDistributionCpv0': Sum of baking and finalization reward ratios exceeds 1.")
         _mdMintPerSlot <- fmap Parameters.CTrue . fromProto $ mDistribution ^. ProtoFields.mintPerSlot
         return Parameters.MintDistribution{..}
 
@@ -1710,9 +1711,10 @@ instance FromProto Proto.MintDistributionCpv1 where
         _mdBakingReward <- fromProto $ mDistribution ^. ProtoFields.bakingReward
         _mdFinalizationReward <- fromProto $ mDistribution ^. ProtoFields.finalizationReward
         -- Ensure that @_mdBakingReward _mdFinalizationReward <= 1@
-        when
-            (isNothing $ addAmountFraction _mdBakingReward _mdFinalizationReward)
-            (fromProtoFail "Unable to convert 'MintDistributionCpv0': Sum of baking and finalization reward fractions exceeds 1.")
+        let atMostOne = isJust $ addAmountFraction _mdBakingReward _mdFinalizationReward
+        unless
+            atMostOne
+            (fromProtoFail "Unable to convert 'MintDistributionCpv0': Sum of baking and finalization reward ratios exceeds 1.")
         let _mdMintPerSlot = Parameters.CFalse
         return Parameters.MintDistribution{..}
 
@@ -1780,14 +1782,14 @@ instance FromProto Proto.TimeoutParameters where
         _tpTimeoutBase <- fromProto $ tParams ^. ProtoFields.timeoutBase
         _tpTimeoutIncrease <- do
             toIncrease <- fromProto $ tParams ^. ProtoFields.timeoutIncrease
-            when
-                (Ratio.numerator toIncrease <= Ratio.denominator toIncrease)
-                (fromProtoFail "Unable to convert 'TimeoutParameters', 'toIncrease' must be greater than 0.")
+            unless
+                (Ratio.numerator toIncrease > Ratio.denominator toIncrease)
+                (fromProtoFail "Unable to convert 'TimeoutParameters', 'toIncrease' must be greater than 1.")
             return toIncrease
         _tpTimeoutDecrease <- do
             toDecrease <- fromProto $ tParams ^. ProtoFields.timeoutDecrease
-            when
-                (Ratio.numerator toDecrease > Ratio.denominator toDecrease)
+            unless
+                (Ratio.numerator toDecrease <= Ratio.denominator toDecrease)
                 (fromProtoFail "Unable to convert 'TimeoutParameters', 'toDecrease' must at most be 1.")
             return toDecrease
         return Parameters.TimeoutParameters{..}
@@ -2334,15 +2336,15 @@ instance FromProto Proto.FinalizationCommitteeParameters where
     fromProto fcParams = do
         _fcpMinFinalizers <- do
             let minFinalizers = fcParams ^. ProtoFields.minimumFinalizers
-            when
-                (minFinalizers < 1)
-                (fromProtoFail "Unable to convert 'FinalizationCommitteeParameters', 'minFinalizers' must be at least 1.")
+            unless
+                (minFinalizers >= 1)
+                (fromProtoFail "Unable to convert 'FinalizationCommitteeParameters': 'minFinalizers' must be at least 1.")
             return minFinalizers
         _fcpMaxFinalizers <- do
             let maxFinalizers = fcParams ^. ProtoFields.maximumFinalizers
-            when
-                (maxFinalizers < _fcpMinFinalizers)
-                (fromProtoFail "Unable to convert 'FinalizationCommitteeParameters', 'minFinalizers' must not exceed 'maxFinalizers'.")
+            unless
+                (maxFinalizers >= _fcpMinFinalizers)
+                (fromProtoFail "Unable to convert 'FinalizationCommitteeParameters': 'minFinalizers' exceeds 'maxFinalizers'.")
             return maxFinalizers
         -- The @FromProto@ instance for @AmountFraction@ ensures this does not exceed 100_000.
         _fcpFinalizerRelativeStakeThreshold <- fmap coerce $ fromProto $ fcParams ^. ProtoFields.finalizerRelativeStakeThreshold
