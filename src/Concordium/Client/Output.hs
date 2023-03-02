@@ -1030,7 +1030,7 @@ printChainParameters cp = do
     SChainParametersV1 -> printChainParametersV1 cp
     SChainParametersV2 -> printChainParametersV2 cp
 
--- | Prints the chain  parameters for version 0.
+-- | Prints the chain parameters for version 0.
 printChainParametersV0 :: ChainParameters' 'ChainParametersV0 -> Printer
 printChainParametersV0 ChainParameters {..} = tell [
   [i|\# Baker parameters |],
@@ -1062,7 +1062,7 @@ printChainParametersV0 ChainParameters {..} = tell [
   [i|  + maximum credential deployments per block: #{_cpAccountCreationLimit}|]
   ]
 
--- | Prints the chain  parameters for version 1.
+-- | Prints the chain parameters for version 1.
 printChainParametersV1 :: ChainParameters' 'ChainParametersV1 -> Printer
 printChainParametersV1 ChainParameters {..} = tell [
   "",

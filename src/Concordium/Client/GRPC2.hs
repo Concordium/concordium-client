@@ -76,6 +76,7 @@ import qualified Proto.V2.Concordium.Types as Proto
 import qualified Proto.V2.Concordium.Types as ProtoFields
 import qualified Proto.V2.Concordium.Types_Fields as Proto
 import qualified Proto.V2.Concordium.Types_Fields as ProtoFields
+import Data.Maybe (isNothing)
 
 -- |A helper function that serves as an inverse to @mkSerialize@,
 --
@@ -1696,6 +1697,10 @@ instance FromProto Proto.MintDistributionCpv0 where
     fromProto mDistribution = do
         _mdBakingReward <- fromProto $ mDistribution ^. ProtoFields.bakingReward
         _mdFinalizationReward <- fromProto $ mDistribution ^. ProtoFields.finalizationReward
+        -- Ensure that @_mdBakingReward _mdFinalizationReward <= 1@
+        when
+            (isNothing $ addAmountFraction _mdBakingReward _mdFinalizationReward)
+            (fromProtoFail "Unable to convert 'MintDistributionCpv0': Sum of baking and finalization reward fractions exceed 1.")
         _mdMintPerSlot <- fmap Parameters.CTrue . fromProto $ mDistribution ^. ProtoFields.mintPerSlot
         return Parameters.MintDistribution{..}
 
@@ -1704,6 +1709,10 @@ instance FromProto Proto.MintDistributionCpv1 where
     fromProto mDistribution = do
         _mdBakingReward <- fromProto $ mDistribution ^. ProtoFields.bakingReward
         _mdFinalizationReward <- fromProto $ mDistribution ^. ProtoFields.finalizationReward
+        -- Ensure that @_mdBakingReward _mdFinalizationReward <= 1@
+        when
+            (isNothing $ addAmountFraction _mdBakingReward _mdFinalizationReward)
+            (fromProtoFail "Unable to convert 'MintDistributionCpv0': Sum of baking and finalization reward fractions exceed 1.")
         let _mdMintPerSlot = Parameters.CFalse
         return Parameters.MintDistribution{..}
 
@@ -1769,8 +1778,18 @@ instance FromProto Proto.TimeoutParameters where
     type Output Proto.TimeoutParameters = Parameters.TimeoutParameters
     fromProto tParams = do
         _tpTimeoutBase <- fromProto $ tParams ^. ProtoFields.timeoutBase
-        _tpTimeoutIncrease <- fromProto $ tParams ^. ProtoFields.timeoutIncrease 
-        _tpTimeoutDecrease <- fromProto $ tParams ^. ProtoFields.timeoutDecrease
+        _tpTimeoutIncrease <- do
+            toIncrease <- fromProto $ tParams ^. ProtoFields.timeoutIncrease
+            when
+                (Ratio.numerator toIncrease <= Ratio.denominator toIncrease)
+                (fromProtoFail "Unable to convert 'TimeoutParameters', 'toIncrease' must be greater than 0.")
+            return toIncrease
+        _tpTimeoutDecrease <- do
+            toDecrease <- fromProto $ tParams ^. ProtoFields.timeoutDecrease
+            when
+                (Ratio.numerator toDecrease > Ratio.denominator toDecrease)
+                (fromProtoFail "Unable to convert 'TimeoutParameters', 'toDecrease' must at most be 1.")
+            return toDecrease
         return Parameters.TimeoutParameters{..}
 
 instance FromProto Proto.UpdatePayload where
