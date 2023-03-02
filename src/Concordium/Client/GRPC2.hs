@@ -1700,7 +1700,7 @@ instance FromProto Proto.MintDistributionCpv0 where
         -- Ensure that @_mdBakingReward _mdFinalizationReward <= 1@
         when
             (isNothing $ addAmountFraction _mdBakingReward _mdFinalizationReward)
-            (fromProtoFail "Unable to convert 'MintDistributionCpv0': Sum of baking and finalization reward fractions exceed 1.")
+            (fromProtoFail "Unable to convert 'MintDistributionCpv0': Sum of baking and finalization reward fractions exceeds 1.")
         _mdMintPerSlot <- fmap Parameters.CTrue . fromProto $ mDistribution ^. ProtoFields.mintPerSlot
         return Parameters.MintDistribution{..}
 
@@ -1712,7 +1712,7 @@ instance FromProto Proto.MintDistributionCpv1 where
         -- Ensure that @_mdBakingReward _mdFinalizationReward <= 1@
         when
             (isNothing $ addAmountFraction _mdBakingReward _mdFinalizationReward)
-            (fromProtoFail "Unable to convert 'MintDistributionCpv0': Sum of baking and finalization reward fractions exceed 1.")
+            (fromProtoFail "Unable to convert 'MintDistributionCpv0': Sum of baking and finalization reward fractions exceeds 1.")
         let _mdMintPerSlot = Parameters.CFalse
         return Parameters.MintDistribution{..}
 
