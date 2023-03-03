@@ -1790,7 +1790,7 @@ instance FromProto Proto.TimeoutParameters where
             toDecrease <- fromProto $ tParams ^. ProtoFields.timeoutDecrease
             unless
                 (Ratio.numerator toDecrease <= Ratio.denominator toDecrease)
-                (fromProtoFail "Unable to convert 'TimeoutParameters', 'toDecrease' must at most be 1.")
+                (fromProtoFail "Unable to convert 'TimeoutParameters', 'toDecrease' must be at most 1.")
             return toDecrease
         return Parameters.TimeoutParameters{..}
 
