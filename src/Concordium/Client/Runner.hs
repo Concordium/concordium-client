@@ -8,26 +8,16 @@
 {-# LANGUAGE TypeApplications #-}
 module Concordium.Client.Runner
   ( process
-  , getAccountNonce
-  , getBestBlockHash
-  , getLastFinalBlockHash
   , PeerData(..)
-  , getPeerData
-  , getNodeInfo
-  , sendTransactionToBaker
-  , getConsensusStatus
   , generateBakerKeys
-  , getAccountInfo
   , getAccountInfoOrDie
   , getCryptographicParameters
-  , getModuleSet
-  , getStatusOfPeers
-  , StatusOfPeers(..)
   , ClientMonad(..)
   , withClient
   , EnvData(..)
   , GrpcConfig
   , processTransaction_
+  , sendBlockItemV2
   , awaitState
   -- * For importing support
   , decodeGenesisFormattedAccountExport
@@ -49,7 +39,6 @@ import           Concordium.Client.Cli
 import           Concordium.Client.Config
 import           Concordium.Client.Commands          as COM
 import           Concordium.Client.Export
-import           Concordium.Client.GRPC              hiding (getCryptographicParameters)
 import           Concordium.Client.GRPC2
 import           Concordium.Client.Output
 import           Concordium.Client.Parse
@@ -68,7 +57,6 @@ import qualified Concordium.Crypto.BlsSignature      as Bls
 import qualified Concordium.Crypto.Proofs            as Proofs
 import qualified Concordium.Crypto.SignatureScheme   as SigScheme
 import qualified Concordium.Crypto.VRF               as VRF
-
 import           Concordium.GRPC2
 import qualified Concordium.Types.InvokeContract     as InvokeContract
 import qualified Concordium.Types.Queries            as Queries
@@ -86,7 +74,6 @@ import           Concordium.ID.Parameters
 import qualified Concordium.Utils.Encryption         as Password
 import qualified Concordium.Wasm                     as Wasm
 import           Proto.ConcordiumP2pRpc
-import qualified Proto.ConcordiumP2pRpc_Fields       as CF
 import qualified Data.Char as Char
 
 import           Control.Exception
@@ -94,7 +81,6 @@ import           Control.Monad.Fail
 import           Control.Monad.Except
 import           Control.Monad.Reader                hiding (fail)
 import           Control.Monad.State.Strict
-import           GHC.Generics
 import           Data.IORef
 import           Data.Foldable
 import           Data.Aeson                          as AE
@@ -3894,21 +3880,6 @@ printPeerData bootstrapper pInfos Queries.NodeInfo{..} =
                     Queries.ActiveBaker -> "in current baking committee)"
                     Queries.ActiveFinalizer -> "in current baking and finalizer committee)"
 
-getPeerData :: Bool -> ClientMonad IO (Either String PeerData)
-getPeerData bootstrapper = do
-  totalSent' <- getPeerTotalSent
-  totalReceived' <- getPeerTotalReceived
-  version' <- getPeerVersion
-  peerStats' <- getPeerStats bootstrapper
-  peerList' <- getPeerList bootstrapper
-  return $ do
-    totalSent <- grpcResponseVal <$> totalSent'
-    totalReceived <- grpcResponseVal <$> totalReceived'
-    version <- grpcResponseVal <$> version'
-    peerStats <- grpcResponseVal <$> peerStats'
-    peerList <- grpcResponseVal <$> peerList'
-    return PeerData{..}
-
 printNodeInfo :: MonadIO m => Queries.NodeInfo -> m ()
 printNodeInfo Queries.NodeInfo{..} = liftIO $
   let Queries.NetworkInfo{..} = networkInfo in do
@@ -3973,38 +3944,6 @@ printNodeInfo Queries.NodeInfo{..} = liftIO $
                   show False
                 Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveFinalizer) ->
                   "In current finalizer committee with baker ID " <> show bId <> "'."
-
--- |FIXME: Move this some other place in refactoring.
-data StatusOfPeers = StatusOfPeers {
-  -- |How many peers we deem are up-to-date with us.
-  numUpToDate :: !Int,
-  -- |How many are in limbo, we don't know what the status is with respect to
-  -- consensus status of the both of us.
-  numPending :: !Int,
-  -- |Number of peers we are catching up with.
-  numCatchingUp :: !Int
-  } deriving(Show, Generic)
-
-instance ToJSON StatusOfPeers
-instance FromJSON StatusOfPeers
-
--- |Get an indication of how caught up the node is in relation to its peers.
-getStatusOfPeers :: ClientMonad IO (Either String StatusOfPeers)
-getStatusOfPeers = do
-  -- False means we don't include the bootstrap nodes here, since they are not running consensus.
-  fmap grpcResponseVal <$> getPeerList False <&> \case
-    Left err -> (Left err)
-    Right peerList -> Right $
-      L.foldl' (\status peerElem ->
-                  case peerElem ^. CF.catchupStatus of
-                    PeerElement'UPTODATE -> status { numUpToDate = numUpToDate status + 1 }
-                    PeerElement'PENDING -> status { numPending = numPending status + 1 }
-                    PeerElement'CATCHINGUP -> status { numCatchingUp = numCatchingUp status + 1 }
-                    _ -> status -- this should not happen in well-formed responses
-               )
-          (StatusOfPeers 0 0 0)
-          (peerList ^. CF.peers)
-
 
 -- |Process a transaction from JSON payload given as a byte string
 -- and with keys given explicitly.

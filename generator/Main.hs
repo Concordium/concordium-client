@@ -57,11 +57,16 @@ parser = info (helper <*> ((,) <$> backendParser <*> txOptions))
          (fullDesc <> progDesc "Generate transactions for a fixed contract.")
 
 sendTx :: MonadIO m => BareBlockItem -> ClientMonad m BareBlockItem
-sendTx tx =
-  sendTransactionToBaker tx 100 >>= \case
-    Left err -> liftIO $ die err
-    Right (GRPCResponse _ False) -> liftIO $ die "Could not send transaction (rejected)."
-    Right (GRPCResponse _ True) -> return tx
+sendTx tx = do
+  sbiRes <- sendBlockItemV2 tx
+  let res = case sbiRes of
+        StatusOk resp -> Right resp
+        StatusNotOk (status, err) -> Left $ "GRPC response with status '" <> show status <> "': " <> show err
+        StatusInvalid -> Left "GRPC response contained an invalid status code."
+        RequestFailed err -> Left $ "I/O error: " <> err
+  case res of
+    Left err -> liftIO $ die $ "Could not send transaction: " <> err
+    Right _ -> return tx
 
 iterateM_ :: Monad m => (a -> m a) -> a -> m b
 iterateM_ f a = f a >>= iterateM_ f

@@ -18,8 +18,8 @@ import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.ByteString (ByteString)
 import Data.Coerce
-import Data.IORef (atomicWriteIORef, readIORef)
-import Data.Maybe (isJust)
+import Data.IORef (atomicWriteIORef, newIORef, readIORef, IORef)
+import Data.Maybe (isJust, fromMaybe)
 import Data.ProtoLens (defMessage)
 import Data.ProtoLens.Service.Types
 import Data.String (fromString)
@@ -29,8 +29,9 @@ import Lens.Micro.Platform
 import Network.GRPC.Client
 import Network.GRPC.Client.Helpers hiding (Address)
 import Network.GRPC.HTTP2.ProtoLens
-import Network.HTTP2.Client (runExceptT, ClientIO, TooMuchConcurrency)
+import Network.HTTP2.Client (runExceptT, ClientIO, TooMuchConcurrency, HostName, ExceptT, ClientError, PortNumber)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Short as BSS
 import qualified Data.Map.Strict as Map
 import qualified Data.ProtoLens.Field
@@ -43,8 +44,8 @@ import qualified Data.Vector as Vec
 import qualified Web.Cookie as Cookie
 
 import Concordium.Client.Cli (TransactionStatusQuery(..), wait, logFatal)
-import Concordium.Client.GRPC (ClientMonad(..), EnvData(..), withReadLock, withWriteLock)
 import Concordium.Client.Runner.Helper
+import Concordium.Client.RWLock
 import Concordium.Client.Types.TransactionStatus (transactionStatusToTransactionStatusResult)
 import Concordium.Common.Time
 import Concordium.Common.Version
@@ -61,7 +62,6 @@ import Concordium.Types.Accounts
 import Concordium.Types.Accounts.Releases
 import Concordium.Types.Block (AbsoluteBlockHeight (..))
 import Concordium.Types.Execution
-import Concordium.Types.Parameters (CryptographicParameters)
 import qualified Concordium.ID.AnonymityRevoker as ArInfo
 import qualified Concordium.ID.IdentityProvider as IpInfo
 import qualified Concordium.Types.Accounts as Concordium.Types
@@ -2497,7 +2497,7 @@ instance FromProto Proto.ChainParameters where
             Proto.ChainParameters'V2 v2 -> fromProto v2
 
 instance FromProto Proto.CryptographicParameters where
-    type Output Proto.CryptographicParameters = CryptographicParameters
+    type Output Proto.CryptographicParameters = Parameters.CryptographicParameters
     fromProto cParams =
         do
             let genString = cParams ^. ProtoFields.genesisString
@@ -2676,6 +2676,101 @@ instance FromProto Proto.PendingUpdate where
                     PUEFinalizationCommitteeParameters <$> fromProto fcParams
         return PendingUpdate{..}
 
+
+type LoggerMethod = Text -> IO ()
+
+data GrpcConfig =
+  GrpcConfig
+    { host   :: !HostName
+    , port   :: !PortNumber
+    , grpcAuthenticationToken :: !String
+    -- Target node, i.e. "node-0" for use with grpc-proxy.eu.test.concordium.com against testnet
+    , target :: !(Maybe String)
+    -- |Number of times to __retry__ to establish a connection. Thus a value of
+    -- 0 means try only once.
+    , retryNum :: !Int
+    -- |Timeout of each RPC call (defaults to 5min if not given).
+    , timeout :: !(Maybe Int)
+    -- |Whether to use TLS or not.
+    , useTls :: !Bool
+    }
+
+data EnvData =
+  EnvData
+    {
+      -- How many times to retry to establish the connection.
+      -- 0 means only try once.
+      retryTimes :: !Int,
+      config :: !GrpcClientConfig,
+      rwlock :: !RWLock,
+      -- |A shared reference to a connection together with a generation counter.
+      -- All queries will reuse this single connection as much as possible. This
+      -- is @Nothing@ if no connection is yet established. When we reconnect we
+      -- increase the generation counter. The reason for the generation counter
+      -- is so that if multiple queries are in-flight at the time the connection
+      -- is reset, we only reconnect once, and then retry the queries.
+      grpc :: !(IORef (Maybe (Word64, GrpcClient))),
+      logger :: LoggerMethod,
+      -- |A flag indicating that all the in-flight queries should be killed.
+      -- |This is a workaround for the inadequate behaviour of the grpc library
+      -- which does not handle disconnects from the server very well, and in
+      -- particular it does not handle the server sending GoAway frames. Ideally
+      -- in that scenario the library would either try to reconnect itself, or,
+      -- alternatively, trigger a normal error that we could recover from and
+      -- re-establish the connection. None of the two happen. So instead we
+      -- install our own custom GoAway handler that kills all in-flight queries,
+      -- and then re-establishes the connection.
+      --
+      -- This MVar will be empty when queries are progressing. When the queries
+      -- need to be killed then we write to it. When we successfully
+      -- re-establish the connection then the the MVar is again emptied.
+      killConnection :: !(MVar ())
+    }
+
+-- |Monad in which the program would run
+newtype ClientMonad m a =
+  ClientMonad
+    { _runClientMonad :: ReaderT EnvData (ExceptT ClientError (StateT CookieHeaders m)) a
+    }
+  deriving ( Functor
+           , Applicative
+           , Monad
+           , MonadReader EnvData
+           , MonadFail
+           , MonadIO
+           )
+
+-- |Cookie headers that may be returned by the node in a query.
+type CookieHeaders = Map.Map BS8.ByteString BS8.ByteString
+
+-- |Execute the computation with the given environment (using the established connection).
+runClient :: Monad m => EnvData -> ClientMonad m a -> m (Either ClientError a)
+runClient config comp = evalStateT (runExceptT $ runReaderT (_runClientMonad comp) config) (Map.empty :: CookieHeaders)
+
+-- |runClient but with additional cookies added to the GRPCRequest.
+-- The updated set of cookies (set via set-cookie headers)  are returned.
+runClientWithCookies :: CookieHeaders -> EnvData -> ClientMonad m a -> m (Either ClientError a, CookieHeaders)
+runClientWithCookies hds cfg comp = runStateT (runExceptT $ runReaderT (_runClientMonad comp) cfg) hds
+
+mkGrpcClient :: GrpcConfig -> Maybe LoggerMethod -> ClientIO EnvData
+mkGrpcClient config mLogger =
+  let auth = ("authentication", BS8.pack $ grpcAuthenticationToken config)
+      header =
+        case target config of
+          Just t  -> [auth, ("target", BS8.pack t)]
+          Nothing -> [auth]
+      cfg = (grpcClientConfigSimple (host config) (port config) (useTls config))
+                 { _grpcClientConfigCompression = uncompressed
+                 , _grpcClientConfigHeaders = header
+                 , _grpcClientConfigTimeout = Timeout (fromMaybe 300 (timeout config))
+                 }
+   in liftIO $ do
+       lock <- initializeLock
+       ioref <- newIORef Nothing -- don't start the connection just now
+       killConnection <- newEmptyMVar
+       let logger = fromMaybe (const (return ())) mLogger
+       return $! EnvData (retryNum config) cfg lock ioref logger killConnection
+
 instance (MonadIO m) => TransactionStatusQuery (ClientMonad m) where
   queryTransactionStatus hash = do
     r <- getResponseValueOrDie =<< getBlockItemStatusV2 hash
@@ -2823,7 +2918,7 @@ getBlocksV2 :: (MonadIO m) => (FromProtoResult ArrivedBlockInfo -> ClientIO ()) 
 getBlocksV2 f = withServerStreamCallbackV2 (callV2 @"getBlocks") defMessage mempty (\_ o -> f (fromProto o)) id
 
 -- |Get cryptographic parameters in a given block.
-getCryptographicParametersV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResultV2 (FromProtoResult CryptographicParameters))
+getCryptographicParametersV2 :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResultV2 (FromProtoResult Parameters.CryptographicParameters))
 getCryptographicParametersV2 bhInput = withUnaryV2 (callV2 @"getCryptographicParameters") msg (fmap fromProto)
   where
     msg = toProto bhInput
