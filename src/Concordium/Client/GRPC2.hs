@@ -19,6 +19,7 @@ import Control.Monad.State.Strict
 import Data.ByteString (ByteString)
 import Data.Coerce
 import Data.IORef (atomicWriteIORef, readIORef)
+import Data.Maybe (isJust)
 import Data.ProtoLens (defMessage)
 import Data.ProtoLens.Service.Types
 import Data.String (fromString)
@@ -473,7 +474,6 @@ instance FromProto Proto.BakerPoolInfo where
 
 instance FromProto Proto.AmountFraction where
     type Output Proto.AmountFraction = AmountFraction
-
     -- This must not exceed 100000. We check it here since
     -- @makePartsPerHundredThousand@ referenced in
     -- @makeAmountFraction@ assumes this.
@@ -1282,6 +1282,10 @@ instance FromProto Proto.NextUpdateSequenceNumbers where
         _nusnAddIdentityProvider <- fromProto $ nums ^. ProtoFields.addIdentityProvider
         _nusnCooldownParameters <- fromProto $ nums ^. ProtoFields.cooldownParameters
         _nusnTimeParameters <- fromProto $ nums ^. ProtoFields.timeParameters
+        _nusnTimeoutParameters <- fromProto $ nums ^. ProtoFields.timeoutParameters
+        _nusnMinBlockTime <- fromProto $ nums ^. ProtoFields.minBlockTime
+        _nusnBlockEnergyLimit <- fromProto $ nums ^. ProtoFields.blockEnergyLimit
+        _nusnFinalizationCommitteeParameters <- fromProto $ nums ^. ProtoFields.finalizationCommitteeParameters
         return NextUpdateSequenceNumbers{..}
 
 instance FromProto Proto.IpAddress where
@@ -1371,6 +1375,10 @@ instance FromProto Proto.UpdateType where
     fromProto Proto.UPDATE_LEVEL2_KEYS = return Updates.UpdateLevel2Keys
     fromProto Proto.UPDATE_COOLDOWN_PARAMETERS = return Updates.UpdateCooldownParameters
     fromProto Proto.UPDATE_TIME_PARAMETERS = return Updates.UpdateTimeParameters
+    fromProto ProtoFields.UPDATE_TIMEOUT_PARAMETERS = return Updates.UpdateTimeoutParameters
+    fromProto ProtoFields.UPDATE_MIN_BLOCK_TIME = return Updates.UpdateMinBlockTime
+    fromProto ProtoFields.UPDATE_BLOCK_ENERGY_LIMIT = return Updates.UpdateBlockEnergyLimit
+    fromProto ProtoFields.UPDATE_FINALIZATION_COMMITTEE_PARAMETERS = return Updates.UpdateFinalizationCommitteeParameters
     fromProto (Proto.UpdateType'Unrecognized variant) =
         fromProtoFail $
                 "Unable to convert 'InvokeInstanceResponse': "
@@ -1508,7 +1516,7 @@ instance FromProto Proto.CooldownParametersCpv1 where
         return Parameters.CooldownParametersV1{..}
 
 instance FromProto Proto.TimeParametersCpv1 where
-    type Output Proto.TimeParametersCpv1 = (Parameters.TimeParameters 'ChainParametersV1)
+    type Output Proto.TimeParametersCpv1 = Parameters.TimeParameters
     fromProto tParams = do
         _tpRewardPeriodLength <- fromProto $ tParams ^. ProtoFields.rewardPeriodLength
         _tpMintPerPayday <- fromProto $ tParams ^. ProtoFields.mintPerPayday
@@ -1535,13 +1543,22 @@ instance FromProto Proto.ExchangeRate where
     fromProto er = fmap ExchangeRate . fromProto $ er ^. ProtoFields.value
 
 instance FromProto Proto.GasRewards where
-    type Output Proto.GasRewards = Parameters.GASRewards
+    type Output Proto.GasRewards = Parameters.GASRewards (Parameters.GasRewardsVersionFor 'ChainParametersV0)
     fromProto gRewards = do
-        _gasBaker <- fromProto $ gRewards ^. ProtoFields.baker
-        _gasFinalizationProof <- fromProto $ gRewards ^. ProtoFields.finalizationProof
-        _gasAccountCreation <- fromProto $ gRewards ^. ProtoFields.accountCreation
-        _gasChainUpdate <- fromProto $ gRewards ^. ProtoFields.chainUpdate
-        return Parameters.GASRewards{..}
+            _gasBaker <- fromProto $ gRewards ^. ProtoFields.baker
+            _gasFinalizationProof <- fmap Parameters.CTrue $ fromProto $ gRewards ^. ProtoFields.finalizationProof
+            _gasAccountCreation <- fromProto $ gRewards ^. ProtoFields.accountCreation
+            _gasChainUpdate <- fromProto $ gRewards ^. ProtoFields.chainUpdate
+            return Parameters.GASRewards{..}
+
+instance FromProto Proto.GasRewardsCpv2 where
+    type Output Proto.GasRewardsCpv2 = Parameters.GASRewards (Parameters.GasRewardsVersionFor 'ChainParametersV2)
+    fromProto gRewards = do
+            _gasBaker <- fromProto $ gRewards ^. ProtoFields.baker
+            let _gasFinalizationProof = Parameters.CFalse
+            _gasAccountCreation <- fromProto $ gRewards ^. ProtoFields.accountCreation
+            _gasChainUpdate <- fromProto $ gRewards ^. ProtoFields.chainUpdate
+            return Parameters.GASRewards{..}
 
 instance FromProto Proto.AccessStructure where
     type Output Proto.AccessStructure = Updates.AccessStructure
@@ -1562,12 +1579,12 @@ instance FromProto Proto.AccessStructure where
                 else return $ fromIntegral i'
 
 instance FromProto Proto.AuthorizationsV0 where
-    type Output Proto.AuthorizationsV0 = Updates.Authorizations 'ChainParametersV0
+    type Output Proto.AuthorizationsV0 = Updates.Authorizations 'Parameters.AuthorizationsVersion0
     fromProto auth = do
         asKeys <- Vec.fromList <$> mapM fromProto (auth ^. ProtoFields.keys)
         asEmergency <- fromProto $ auth ^. ProtoFields.emergency
         asProtocol <- fromProto $ auth ^. ProtoFields.protocol
-        asParamElectionDifficulty <- fromProto $ auth ^. ProtoFields.parameterElectionDifficulty
+        asParamConsensusParameters <- fromProto $ auth ^. ProtoFields.parameterConsensus
         asParamEuroPerEnergy <- fromProto $ auth ^. ProtoFields.parameterEuroPerEnergy
         asParamMicroGTUPerEuro <- fromProto $ auth ^. ProtoFields.parameterMicroCCDPerEuro
         asParamFoundationAccount <- fromProto $ auth ^. ProtoFields.parameterFoundationAccount
@@ -1577,18 +1594,18 @@ instance FromProto Proto.AuthorizationsV0 where
         asPoolParameters <- fromProto $ auth ^. ProtoFields.poolParameters
         asAddAnonymityRevoker <- fromProto $ auth ^. ProtoFields.addAnonymityRevoker
         asAddIdentityProvider <- fromProto $ auth ^. ProtoFields.addIdentityProvider
-        let asCooldownParameters = NothingForCPV1
-        let asTimeParameters = NothingForCPV1
+        let asCooldownParameters = Parameters.CFalse
+        let asTimeParameters = Parameters.CFalse
         return Updates.Authorizations{..}
 
 instance FromProto Proto.AuthorizationsV1 where
-    type Output Proto.AuthorizationsV1 = Updates.Authorizations 'ChainParametersV1
+    type Output Proto.AuthorizationsV1 = Updates.Authorizations 'Parameters.AuthorizationsVersion1
     fromProto auth = do
         let v0 = auth ^. ProtoFields.v0
         asKeys <- Vec.fromList <$> mapM fromProto (v0 ^. ProtoFields.keys)
         asEmergency <- fromProto $ v0 ^. ProtoFields.emergency
         asProtocol <- fromProto $ v0 ^. ProtoFields.protocol
-        asParamElectionDifficulty <- fromProto $ v0 ^. ProtoFields.parameterElectionDifficulty
+        asParamConsensusParameters <- fromProto $ v0 ^. ProtoFields.parameterConsensus
         asParamEuroPerEnergy <- fromProto $ v0 ^. ProtoFields.parameterEuroPerEnergy
         asParamMicroGTUPerEuro <- fromProto $ v0 ^. ProtoFields.parameterMicroCCDPerEuro
         asParamFoundationAccount <- fromProto $ v0 ^. ProtoFields.parameterFoundationAccount
@@ -1598,8 +1615,8 @@ instance FromProto Proto.AuthorizationsV1 where
         asPoolParameters <- fromProto $ v0 ^. ProtoFields.poolParameters
         asAddAnonymityRevoker <- fromProto $ v0 ^. ProtoFields.addAnonymityRevoker
         asAddIdentityProvider <- fromProto $ v0 ^. ProtoFields.addIdentityProvider
-        asCooldownParameters <- justForCPV1A . fromProto $ auth ^. ProtoFields.parameterCooldown
-        asTimeParameters <- justForCPV1A . fromProto $ auth ^. ProtoFields.parameterTime
+        asCooldownParameters <- fmap Parameters.CTrue $ fromProto $ auth ^. ProtoFields.parameterCooldown
+        asTimeParameters <- fmap Parameters.CTrue $ fromProto $ auth ^. ProtoFields.parameterTime
         return Updates.Authorizations{..}
 
 instance FromProto Proto.Level1Update where
@@ -1676,19 +1693,29 @@ instance FromProto Proto.HigherLevelKeys where
         return (Updates.HigherLevelKeys{..}, Updates.HigherLevelKeys{..})
 
 instance FromProto Proto.MintDistributionCpv0 where
-    type Output Proto.MintDistributionCpv0 = Parameters.MintDistribution 'ChainParametersV0
+    type Output Proto.MintDistributionCpv0 = Parameters.MintDistribution (Parameters.MintDistributionVersionFor 'ChainParametersV0)
     fromProto mDistribution = do
         _mdBakingReward <- fromProto $ mDistribution ^. ProtoFields.bakingReward
         _mdFinalizationReward <- fromProto $ mDistribution ^. ProtoFields.finalizationReward
-        _mdMintPerSlot <- fmap Parameters.MintPerSlotForCPV0Some . fromProto $ mDistribution ^. ProtoFields.mintPerSlot
+        -- Ensure that @_mdBakingReward _mdFinalizationReward <= 1@
+        let atMostOne = isJust $ addAmountFraction _mdBakingReward _mdFinalizationReward
+        unless
+            atMostOne
+            (fromProtoFail "Unable to convert 'MintDistributionCpv0': Sum of baking and finalization reward ratios exceeds 1.")
+        _mdMintPerSlot <- fmap Parameters.CTrue . fromProto $ mDistribution ^. ProtoFields.mintPerSlot
         return Parameters.MintDistribution{..}
 
 instance FromProto Proto.MintDistributionCpv1 where
-    type Output Proto.MintDistributionCpv1 = Parameters.MintDistribution 'ChainParametersV1
+    type Output Proto.MintDistributionCpv1 = Parameters.MintDistribution (Parameters.MintDistributionVersionFor 'ChainParametersV1)
     fromProto mDistribution = do
         _mdBakingReward <- fromProto $ mDistribution ^. ProtoFields.bakingReward
         _mdFinalizationReward <- fromProto $ mDistribution ^. ProtoFields.finalizationReward
-        let _mdMintPerSlot = Parameters.MintPerSlotForCPV0None
+        -- Ensure that @_mdBakingReward _mdFinalizationReward <= 1@
+        let atMostOne = isJust $ addAmountFraction _mdBakingReward _mdFinalizationReward
+        unless
+            atMostOne
+            (fromProtoFail "Unable to convert 'MintDistributionCpv0': Sum of baking and finalization reward ratios exceeds 1.")
+        let _mdMintPerSlot = Parameters.CFalse
         return Parameters.MintDistribution{..}
 
 instance FromProto Proto.InclusiveRangeAmountFraction where
@@ -1749,6 +1776,24 @@ instance FromProto Proto.TransactionFeeDistribution where
         _tfdGASAccount <- fromProto $ tfDistribution ^. ProtoFields.gasAccount
         return Parameters.TransactionFeeDistribution{..}
 
+instance FromProto Proto.TimeoutParameters where
+    type Output Proto.TimeoutParameters = Parameters.TimeoutParameters
+    fromProto tParams = do
+        _tpTimeoutBase <- fromProto $ tParams ^. ProtoFields.timeoutBase
+        _tpTimeoutIncrease <- do
+            toIncrease <- fromProto $ tParams ^. ProtoFields.timeoutIncrease
+            unless
+                (Ratio.numerator toIncrease > Ratio.denominator toIncrease)
+                (fromProtoFail "Unable to convert 'TimeoutParameters', 'toIncrease' must be greater than 1.")
+            return toIncrease
+        _tpTimeoutDecrease <- do
+            toDecrease <- fromProto $ tParams ^. ProtoFields.timeoutDecrease
+            unless
+                (Ratio.numerator toDecrease <= Ratio.denominator toDecrease)
+                (fromProtoFail "Unable to convert 'TimeoutParameters', 'toDecrease' must be at most 1.")
+            return toDecrease
+        return Parameters.TimeoutParameters{..}
+
 instance FromProto Proto.UpdatePayload where
     type Output Proto.UpdatePayload = Updates.UpdatePayload
     fromProto uPayload = do
@@ -1781,6 +1826,9 @@ instance FromProto Proto.UpdatePayload where
             ProtoFields.UpdatePayload'GasRewardsUpdate grUpdate -> do
                 gr <- fromProto grUpdate
                 return $ Updates.GASRewardsUpdatePayload gr
+            ProtoFields.UpdatePayload'GasRewardsCpv2Update grUpdate -> do
+                gr <- fromProto grUpdate
+                return $ Updates.GASRewardsCPV2UpdatePayload gr
             ProtoFields.UpdatePayload'Level1Update l1Update -> do
                 u <- case l1Update ^. Proto.maybe'updateType of
                     Nothing -> fromProtoFail
@@ -1820,6 +1868,18 @@ instance FromProto Proto.UpdatePayload where
             ProtoFields.UpdatePayload'TransactionFeeDistributionUpdate tfdUpdate -> do
                 tfd <- fromProto tfdUpdate
                 return $ Updates.TransactionFeeDistributionUpdatePayload tfd
+            ProtoFields.UpdatePayload'TimeoutParametersUpdate tpUpdate -> do
+                tp <- fromProto tpUpdate
+                return $ Updates.TimeoutParametersUpdatePayload tp
+            ProtoFields.UpdatePayload'MinBlockTimeUpdate mbtUpdate -> do
+                mbt <- fromProto mbtUpdate
+                return $ Updates.MinBlockTimeUpdatePayload mbt
+            ProtoFields.UpdatePayload'BlockEnergyLimitUpdate belUpdate -> do
+                bel <- fromProto belUpdate
+                return $ Updates.BlockEnergyLimitUpdatePayload bel
+            ProtoFields.UpdatePayload'FinalizationCommitteeParametersUpdate fcpUpdate -> do
+                fcp <- fromProto fcpUpdate
+                return $ Updates.FinalizationCommitteeParametersUpdatePayload fcp
 
 instance FromProto Proto.BlockItemSummary where
     type Output Proto.BlockItemSummary = TransactionSummary
@@ -2227,9 +2287,9 @@ instance FromProto Proto.NodeInfo'BakerConsensusInfo where
                 Just v -> return v
             case st of
                 ProtoFields.NodeInfo'BakerConsensusInfo'ActiveBakerCommitteeInfo' _ ->
-                    return ActiveBakerCommitteeInfo
+                    return ActiveBaker
                 ProtoFields.NodeInfo'BakerConsensusInfo'ActiveFinalizerCommitteeInfo' _ ->
-                    return ActiveFinalizerCommitteeInfo
+                    return ActiveFinalizer
                 ProtoFields.NodeInfo'BakerConsensusInfo'PassiveCommitteeInfo pcInfo ->
                     PassiveBaker <$> fromProto pcInfo
         return BakerConsensusInfo{..}
@@ -2271,6 +2331,25 @@ instance FromProto Proto.NodeInfo'NetworkInfo where
         let avgBpsOut = fromIntegral $ nInfo ^. ProtoFields.avgBpsOut
         return NetworkInfo{..}
 
+instance FromProto Proto.FinalizationCommitteeParameters where
+    type Output Proto.FinalizationCommitteeParameters = Parameters.FinalizationCommitteeParameters
+    fromProto fcParams = do
+        _fcpMinFinalizers <- do
+            let minFinalizers = fcParams ^. ProtoFields.minimumFinalizers
+            unless
+                (minFinalizers >= 1)
+                (fromProtoFail "Unable to convert 'FinalizationCommitteeParameters': 'minFinalizers' must be at least 1.")
+            return minFinalizers
+        _fcpMaxFinalizers <- do
+            let maxFinalizers = fcParams ^. ProtoFields.maximumFinalizers
+            unless
+                (maxFinalizers >= _fcpMinFinalizers)
+                (fromProtoFail "Unable to convert 'FinalizationCommitteeParameters': 'minFinalizers' exceeds 'maxFinalizers'.")
+            return maxFinalizers
+        -- The @FromProto@ instance for @AmountFraction@ ensures this does not exceed 100_000.
+        _fcpFinalizerRelativeStakeThreshold <- fmap coerce $ fromProto $ fcParams ^. ProtoFields.finalizerRelativeStakeThreshold
+        return Parameters.FinalizationCommitteeParameters{..}
+
 instance FromProto Proto.ChainParametersV0 where
     -- |The internal Haskell type for representing chain parameters expects
     -- an account _index_, while the protocol buffer representation uses an
@@ -2283,7 +2362,9 @@ instance FromProto Proto.ChainParametersV0 where
         faAddress <- fromProto $ cParams ^. ProtoFields.foundationAccount
         return (faAddress, faIdxToOutput)
       where faIdxToOutput faIndex = do
-                _cpElectionDifficulty <- fromProto $ cParams ^. ProtoFields.electionDifficulty
+                _cpConsensusParameters <- do
+                    _cpElectionDifficulty <- fromProto $ cParams ^. ProtoFields.electionDifficulty
+                    return $ Parameters.ConsensusParametersV0 _cpElectionDifficulty
                 _cpExchangeRates <- do
                     euroPerEnergy <- fromProto $ cParams ^. ProtoFields.euroPerEnergy
                     microCcdPerEuro <- fromProto $ cParams ^. ProtoFields.microCcdPerEuro
@@ -2291,23 +2372,32 @@ instance FromProto Proto.ChainParametersV0 where
                 _cpCooldownParameters <- do
                     epoch <- fromProto $ cParams ^. ProtoFields.bakerCooldownEpochs
                     return $ Parameters.CooldownParametersV0 epoch
-                let _cpTimeParameters = Parameters.TimeParametersV0
+                let _cpTimeParameters = Parameters.NoParam
                 _cpAccountCreationLimit <- fromProto $ cParams ^. ProtoFields.accountCreationLimit
                 _cpRewardParameters <- do
                     _rpMintDistribution <- fromProto $ cParams ^. ProtoFields.mintDistribution
                     _rpTransactionFeeDistribution <- fromProto $ cParams ^. ProtoFields.transactionFeeDistribution
                     _rpGASRewards <- fromProto $ cParams ^. ProtoFields.gasRewards
-                    return Parameters.RewardParameters{..}
+                    return (Parameters.RewardParameters{..} :: Parameters.RewardParameters 'ChainParametersV0)
                 let _cpFoundationAccount = faIndex
                 _cpPoolParameters <- do
                     thresh <- fromProto $ cParams ^. ProtoFields.minimumThresholdForBaking
                     return $ Parameters.PoolParametersV0 thresh
+                let _cpFinalizationCommitteeParameters = Parameters.NoParam
                 let ecpParams = Parameters.ChainParameters{..}
                 rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
                 level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
                 level2Keys <- fromProto $ cParams ^. ProtoFields.level2Keys
                 let ecpKeys = Updates.UpdateKeysCollection{..}
                 return $ EChainParametersAndKeys{..}
+
+instance FromProto Proto.ConsensusParametersV1 where
+    type Output Proto.ConsensusParametersV1 = Parameters.ConsensusParameters' 'Parameters.ConsensusParametersVersion1
+    fromProto cParams = do
+        _cpTimeoutParameters <- fromProto $ cParams ^. ProtoFields.timeoutParameters
+        _cpMinBlockTime <- fromProto $ cParams ^. ProtoFields.minBlockTime
+        _cpBlockEnergyLimit <- fromProto $ cParams ^. ProtoFields.blockEnergyLimit
+        return Parameters.ConsensusParametersV1{..}
 
 instance FromProto Proto.ChainParametersV1 where
     -- |The internal Haskell type for representing chain parameters expects
@@ -2321,21 +2411,60 @@ instance FromProto Proto.ChainParametersV1 where
         faAddress <- fromProto $ cParams ^. ProtoFields.foundationAccount
         return (faAddress, faIdxToOutput)
       where faIdxToOutput faIndex = do
+                _cpConsensusParameters <- do
+                    _cpElectionDifficulty <- fromProto $ cParams ^. ProtoFields.electionDifficulty
+                    return $ Parameters.ConsensusParametersV0 _cpElectionDifficulty
                 _cpElectionDifficulty <- fromProto $ cParams ^. ProtoFields.electionDifficulty
                 _cpExchangeRates <- do
                     euroPerEnergy <- fromProto $ cParams ^. ProtoFields.euroPerEnergy
                     microCcdPerEuro <- fromProto $ cParams ^. ProtoFields.microCcdPerEuro
                     return $ Parameters.makeExchangeRates euroPerEnergy microCcdPerEuro
                 _cpCooldownParameters <- fromProto $ cParams ^. ProtoFields.cooldownParameters
-                _cpTimeParameters <- fromProto $ cParams ^. ProtoFields.timeParameters
+                _cpTimeParameters <- fmap Parameters.SomeParam $ fromProto $ cParams ^. ProtoFields.timeParameters
                 _cpAccountCreationLimit <- fromProto $ cParams ^. ProtoFields.accountCreationLimit
                 _cpRewardParameters <- do
                     _rpMintDistribution <- fromProto $ cParams ^. ProtoFields.mintDistribution
                     _rpTransactionFeeDistribution <- fromProto $ cParams ^. ProtoFields.transactionFeeDistribution
                     _rpGASRewards <- fromProto $ cParams ^. ProtoFields.gasRewards
-                    return Parameters.RewardParameters{..}
+                    return (Parameters.RewardParameters{..} :: Parameters.RewardParameters 'ChainParametersV1)
                 let _cpFoundationAccount = faIndex
                 _cpPoolParameters <- fromProto $ cParams ^. ProtoFields.poolParameters
+                let _cpFinalizationCommitteeParameters = Parameters.NoParam
+                let ecpParams = Parameters.ChainParameters{..}
+                rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
+                level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
+                level2Keys <- fromProto $ cParams ^. ProtoFields.level2Keys
+                let ecpKeys = Updates.UpdateKeysCollection{..}
+                return $ EChainParametersAndKeys ecpParams ecpKeys
+
+instance FromProto Proto.ChainParametersV2 where
+    -- |The internal Haskell type for representing chain parameters expects
+    -- an account _index_, while the protocol buffer representation uses an
+    -- account _address_ for the foundation account. The workaround here is to
+    -- return the address and a closure. The address can then be converted
+    -- to its corresponding index and fed to the closure to get the desired
+    -- @EChainParametersAndKeys@ instance.
+    type Output Proto.ChainParametersV2 = (AccountAddress,  AccountIndex -> FromProtoResult EChainParametersAndKeys)
+    fromProto cParams = do
+        faAddress <- fromProto $ cParams ^. ProtoFields.foundationAccount
+        return (faAddress, faIdxToOutput)
+      where faIdxToOutput faIndex = do
+                _cpConsensusParameters <- fromProto $ cParams ^. ProtoFields.consensusParameters
+                _cpExchangeRates <- do
+                    euroPerEnergy <- fromProto $ cParams ^. ProtoFields.euroPerEnergy
+                    microCcdPerEuro <- fromProto $ cParams ^. ProtoFields.microCcdPerEuro
+                    return $ Parameters.makeExchangeRates euroPerEnergy microCcdPerEuro
+                _cpCooldownParameters <- fromProto $ cParams ^. ProtoFields.cooldownParameters
+                _cpTimeParameters <- fmap Parameters.SomeParam $ fromProto $ cParams ^. ProtoFields.timeParameters
+                _cpAccountCreationLimit <- fromProto $ cParams ^. ProtoFields.accountCreationLimit
+                _cpRewardParameters <- do
+                    _rpMintDistribution <- fromProto $ cParams ^. ProtoFields.mintDistribution
+                    _rpTransactionFeeDistribution <- fromProto $ cParams ^. ProtoFields.transactionFeeDistribution
+                    _rpGASRewards <- fromProto $ cParams ^. ProtoFields.gasRewards
+                    return (Parameters.RewardParameters{..} :: Parameters.RewardParameters 'ChainParametersV2)
+                let _cpFoundationAccount = faIndex
+                _cpPoolParameters <- fromProto $ cParams ^. ProtoFields.poolParameters
+                _cpFinalizationCommitteeParameters <- fmap Parameters.SomeParam $ fromProto $ cParams ^. ProtoFields.finalizationCommitteeParameters
                 let ecpParams = Parameters.ChainParameters{..}
                 rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
                 level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
@@ -2365,6 +2494,7 @@ instance FromProto Proto.ChainParameters where
         case cp of
             Proto.ChainParameters'V0 v0 -> fromProto v0
             Proto.ChainParameters'V1 v1 -> fromProto v1
+            Proto.ChainParameters'V2 v2 -> fromProto v2
 
 instance FromProto Proto.CryptographicParameters where
     type Output Proto.CryptographicParameters = CryptographicParameters
@@ -2521,7 +2651,9 @@ instance FromProto Proto.PendingUpdate where
                 ProtoFields.PendingUpdate'TransactionFeeDistribution tfDistribution ->
                     PUETransactionFeeDistribution <$> fromProto tfDistribution
                 ProtoFields.PendingUpdate'GasRewards gRewards ->
-                    PUEGASRewards <$> fromProto gRewards
+                    PUEGASRewardsV0 <$> fromProto gRewards
+                ProtoFields.PendingUpdate'GasRewardsCpv2 gRewards ->
+                    PUEGASRewardsV1 <$> fromProto gRewards
                 ProtoFields.PendingUpdate'PoolParametersCpv0 pParameters ->
                     PUEPoolParametersV0 <$> fromProto pParameters
                 ProtoFields.PendingUpdate'PoolParametersCpv1 pParameters ->
@@ -2534,6 +2666,14 @@ instance FromProto Proto.PendingUpdate where
                     PUECooldownParameters <$> fromProto cdParameters
                 ProtoFields.PendingUpdate'TimeParameters tParameters -> do
                     PUETimeParameters <$> fromProto tParameters
+                ProtoFields.PendingUpdate'TimeoutParameters toParams -> do
+                    PUETimeoutParameters <$> fromProto toParams
+                ProtoFields.PendingUpdate'MinBlockTime mbTime -> do
+                    PUEMinBlockTime <$> fromProto mbTime
+                ProtoFields.PendingUpdate'BlockEnergyLimit beLimit -> do
+                    PUEBlockEnergyLimit <$> fromProto beLimit
+                ProtoFields.PendingUpdate'FinalizationCommitteeParameters fcParams -> do
+                    PUEFinalizationCommitteeParameters <$> fromProto fcParams
         return PendingUpdate{..}
 
 instance (MonadIO m) => TransactionStatusQuery (ClientMonad m) where
