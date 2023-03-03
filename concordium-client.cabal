@@ -30,10 +30,6 @@ custom-setup
     , base
     , proto-lens-setup ==0.4.*
 
-flag middleware
-  manual: True
-  default: True
-
 flag static
   description: Use static linking.
   manual: True
@@ -45,14 +41,13 @@ library
       Concordium.Client.Commands
       Concordium.Client.Config
       Concordium.Client.Export
-      Concordium.Client.GRPC
       Concordium.Client.GRPC2
       Concordium.Client.LegacyCommands
       Concordium.Client.Output
       Concordium.Client.Parse
       Concordium.Client.Runner
       Concordium.Client.Runner.Helper
-      Concordium.Client.TransactionStatus
+      Concordium.Client.RWLock
       Concordium.Client.Types.Account
       Concordium.Client.Types.Contract.Info
       Concordium.Client.Types.Contract.Parameter
@@ -147,61 +142,6 @@ executable concordium-client
   default-language: Haskell2010
   if flag(static)
     ld-options: -static
-
-executable middleware
-  main-is: Main.hs
-  other-modules:
-      Api
-      Config
-      Server
-      Paths_concordium_client
-  autogen-modules:
-      Paths_concordium_client
-  hs-source-dirs:
-      middleware
-  default-extensions:
-      OverloadedStrings
-      RecordWildCards
-      GeneralizedNewtypeDeriving
-      ScopedTypeVariables
-      FlexibleContexts
-      LambdaCase
-      TupleSections
-  ghc-options: -Wall -threaded
-  build-depends:
-      aeson
-    , base >=4.7 && <5
-    , bytestring
-    , cereal >=0.5.8
-    , concordium-base
-    , concordium-client
-    , containers
-    , directory
-    , filepath
-    , http-conduit
-    , http2-client-grpc
-    , microlens-platform
-    , monad-logger
-    , mtl >=2.2.2
-    , process
-    , servant
-    , servant-server
-    , split
-    , text
-    , time
-    , transformers
-    , unordered-containers
-    , wai
-    , wai-cors
-    , wai-extra
-    , wai-logger
-    , wai-middleware-static
-    , warp
-  default-language: Haskell2010
-  if flag(middleware)
-    buildable: True
-  else
-    buildable: False
 
 executable tx-generator
   main-is: Main.hs

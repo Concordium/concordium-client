@@ -75,6 +75,6 @@ jobs:
           key: ${{ runner.os }}-rust-stack-deps-${{ env.RUST }}-${{ hashFiles('stack.yaml', 'package.yaml', 'deps/concordium-base/haskell-src/**.hs', 'deps/concordium-base/rust-src/Cargo.toml', 'deps/concordium-base/rust-src/**.rs') }}
 
       - name: Stack build # build all the binaries and tests, but don't run the tests
-        run: stack build --flag 'concordium-client:middleware' --test --no-run-tests
+        run: stack build --test --no-run-tests
       - name: Stack test # run the tests
-        run: stack build --flag 'concordium-client:middleware' --test
+        run: stack build --test
