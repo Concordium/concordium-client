@@ -996,9 +996,9 @@ printConsensusStatus r =
        , printf "Current era genesis block:   %s" (show $ Queries.csCurrentEraGenesisBlock r)
        , printf "Current era genesis time:    %s" (show $ Queries.csCurrentEraGenesisTime r)]
 
-
-printBirkParameters :: Bool -> Queries.BlockBirkParameters -> Map.Map IDTypes.AccountAddress Text -> Printer
-printBirkParameters includeBakers r addrmap = do
+-- |Print Birk parameters from a @BlockBirkParameters@.
+printQueryBirkParameters :: Bool -> Queries.BlockBirkParameters -> Map.Map IDTypes.AccountAddress Text -> Printer
+printQueryBirkParameters includeBakers r addrmap = do
   tell [ printf "Election nonce:      %s" (show $ Queries.bbpElectionNonce r)
       ] --, printf "Election difficulty: %f" (Types.electionDifficulty $ bprElectionDifficulty r) ]
   when includeBakers $
@@ -1016,7 +1016,28 @@ printBirkParameters includeBakers r addrmap = do
               (show $ Queries.bsBakerId b')
               (show $ Queries.bsBakerAccount b')
               (showLotteryPower $ Queries.bsBakerLotteryPower b')
-              (maybe "" accountName (Queries.bsBakerAccount b'))
+              (maybe "" accountName (Queries.bsBakerAccount b')) -- this should never be @Nothing@.
+          showLotteryPower lp = if 0 < lp && lp < 0.000001
+                                then " <0.0001 %" :: String
+                                else printf "%8.4f %%" (lp*100)
+          accountName bkr = fromMaybe " " $ Map.lookup bkr addrmap
+
+-- |Print Birk parameters from a @BirkParametersResult@.
+printBirkParameters :: Bool -> BirkParametersResult -> Map.Map IDTypes.AccountAddress Text -> Printer
+printBirkParameters includeBakers r addrmap = do
+  tell [ printf "Election nonce:      %s" (show $ bprElectionNonce r)
+      ] --, printf "Election difficulty: %f" (Types.electionDifficulty $ bprElectionDifficulty r) ]
+  when includeBakers $
+    case bprBakers r of
+      [] ->
+         tell [ "Bakers:              " ++ showNone ]
+      bakers -> do
+        tell [ "Bakers:"
+             , printf "                             Account                       Lottery power  Account Name"
+             , printf "        ------------------------------------------------------------------------------" ]
+        tell (map f bakers)
+        where
+          f b' = printf "%6s: %s  %s  %s" (show $ bpbrId b') (show $ bpbrAccount b') (showLotteryPower $ bpbrLotteryPower b') (accountName $ bpbrAccount b')
           showLotteryPower lp = if 0 < lp && lp < 0.000001
                                 then " <0.0001 %" :: String
                                 else printf "%8.4f %%" (lp*100)

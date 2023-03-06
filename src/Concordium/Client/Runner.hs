@@ -2484,7 +2484,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
           Left err -> logFatal ["Error getting consensus parameters: " <> err]
           Right cParams -> return cParams
       let addrMap = Map.fromList . map Tuple.swap . Map.toList $ bcAccountNameMap baseCfg
-      runPrinter $ printBirkParameters includeBakers p addrMap
+      runPrinter $ printQueryBirkParameters includeBakers p addrMap
 
     ConsensusShowChainParameters b -> do
       withClient backend $ do
