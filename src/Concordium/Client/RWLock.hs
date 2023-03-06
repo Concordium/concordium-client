@@ -1,5 +1,5 @@
 module Concordium.Client.RWLock
-  ( RWLock(..)
+  ( RWLock
   , initializeLock
   , withReadLock
   , withWriteLock

@@ -23,4 +23,3 @@ extra-lib-dirs:
 flags:
   concordium-client:
     static: true
-    middleware: false

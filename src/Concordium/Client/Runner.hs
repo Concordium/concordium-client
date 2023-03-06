@@ -3959,7 +3959,6 @@ processTransaction source =
 
 -- |Process a transaction with unencrypted keys given explicitly.
 -- The transaction is signed with all the provided keys.
--- This is only for testing purposes and currently used by the middleware.
 processTransaction_ ::
      (MonadFail m, MonadIO m)
   => TransactionJSON
