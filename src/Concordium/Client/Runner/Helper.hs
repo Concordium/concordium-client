@@ -173,8 +173,6 @@ getValue = to (fmap (^. CF.value))
 -- Returns a @Left@ wrapping an error string describing its nature if the
 -- request could not be made, or if the GRPC status code was not 'OK', or a
 -- @Right@ wrapping the response value under the provided mapping otherwise.
--- VH/FIXME: Change @Either String a@ to @FromProtoResult a @ after re-
--- factoring.
 extractResponseValue :: (a -> b) -> GRPCResultV2 (Either String a) -> Either (Maybe GRPCStatusCode, String) b
 extractResponseValue f res =
   case res of

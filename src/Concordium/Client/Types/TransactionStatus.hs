@@ -27,7 +27,7 @@ data TransactionStatusResult' a = TransactionStatusResult
 
 type TransactionStatusResult = TransactionStatusResult' ValidResult
 
--- |Convert an `TransactionStatus` instance into a `TransactionStatusResult` instance.
+-- |Convert a @TransactionStatus@ instance into a @TransactionStatusResult@ instance.
 -- Returns @Left@ wrapping an error message if a transaction summary was @Nothing@ if
 -- the input is either @Committed@ or @Finalized@, or a @Right@ wrapping the result
 -- otherwise.

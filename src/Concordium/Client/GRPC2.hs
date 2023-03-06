@@ -112,10 +112,10 @@ deMkSerialize val =
         Right v -> return v
 
 -- |A helper function that serves as an inverse to @mkWord64@,
--- Like 'deMkSerialize', but the @value@ field must be a @Word64@,
+-- Like @deMkSerialize@, but the @value@ field must be a @Word64@,
 -- and the output a type which can be coerced from a @Word64@.
 -- Coercible here means that the output is a @Word64@ wrapped in
--- a newtype wrapper (possibly several) of a @Word64@.
+-- a (or possibly several) newtype wrapper(s).
 deMkWord64 ::
     ( Coercible Word64 a,
       Data.ProtoLens.Field.HasField
@@ -2747,8 +2747,8 @@ type CookieHeaders = Map.Map BS8.ByteString BS8.ByteString
 runClient :: Monad m => EnvData -> ClientMonad m a -> m (Either ClientError a)
 runClient config comp = evalStateT (runExceptT $ runReaderT (_runClientMonad comp) config) (Map.empty :: CookieHeaders)
 
--- |runClient but with additional cookies added to the GRPCRequest.
--- The updated set of cookies (set via set-cookie headers)  are returned.
+-- |@runClient@ but with additional cookies set in the @GRPCRequest@.
+-- The updated set of cookies (set via set-cookie headers) are returned.
 runClientWithCookies :: CookieHeaders -> EnvData -> ClientMonad m a -> m (Either ClientError a, CookieHeaders)
 runClientWithCookies hds cfg comp = runStateT (runExceptT $ runReaderT (_runClientMonad comp) cfg) hds
 
@@ -2771,6 +2771,7 @@ mkGrpcClient config mLogger =
        let logger = fromMaybe (const (return ())) mLogger
        return $! EnvData (retryNum config) cfg lock ioref logger killConnection
 
+-- |Get and print the status of a transaction.
 instance (MonadIO m) => TransactionStatusQuery (ClientMonad m) where
   queryTransactionStatus hash = do
     r <- getResponseValueOrDie =<< getBlockItemStatusV2 hash
@@ -2907,13 +2908,14 @@ getAccountListV2 bhInput = withServerStreamCollectV2 (callV2 @"getAccountList") 
 -- This can be used to listen for newly finalized blocks. Note that there is no guarantee
 -- that blocks will not be skipped if the client is too slow in processing the stream,
 -- however blocks will always be sent by increasing block height. Note that this function
--- is non-terminating, so some care should be taken. See @withGRPCCoreV2@ for more info.
+-- is non-terminating, so some care should be taken when invoking this. See @withGRPCCoreV2@
+-- for more info.
 getFinalizedBlocksV2 :: (MonadIO m) => (FromProtoResult ArrivedBlockInfo -> ClientIO ()) -> ClientMonad m (GRPCResultV2 ())
 getFinalizedBlocksV2 f = withServerStreamCallbackV2 (callV2 @"getFinalizedBlocks") defMessage mempty (\_ o -> f (fromProto o)) id
 
 -- |Process a stream of blocks that arrive from the time the query is made onward.
 -- This can be used to listen for incoming blocks. Note that this is non-terminating,
--- so some care should be taken. See @withGRPCCoreV2@ for more info.
+-- so some care should be taken when using this. See @withGRPCCoreV2@ for more info.
 getBlocksV2 :: (MonadIO m) => (FromProtoResult ArrivedBlockInfo -> ClientIO ()) -> ClientMonad m (GRPCResultV2 ())
 getBlocksV2 f = withServerStreamCallbackV2 (callV2 @"getBlocks") defMessage mempty (\_ o -> f (fromProto o)) id
 

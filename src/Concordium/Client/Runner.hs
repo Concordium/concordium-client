@@ -540,10 +540,10 @@ checkAndGetMemo memo pv = do
 --   - Concordium.Types.Interrupted
 -- or fails if the contract could not be retrieved.
 -- Optionally takes a path to a schema file to be parsed and returned.
--- Takes an identifier of the block in which to retrieve the contract
--- module containing the schema from. The schema from the file will
--- take precedence over an embedded schema in the module retrieved
--- from the block.
+-- Takes an identifier of the block from which to retrieve the contract
+-- module containing the schema. The schema from the file will take
+-- precedence over an embedded schema in the module retrieved from the
+-- block.
 getContractInfoWithSchemas :: (MonadIO m)
   => Maybe FilePath -- ^ Path pointing to a schema file.
   -> BlockHashInput -- ^ The block to retrieve the contract info from.
