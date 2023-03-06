@@ -1014,9 +1014,9 @@ printQueryBirkParameters includeBakers r addrmap = do
           f b' =
             printf "%6s: %s  %s  %s"
               (show $ Queries.bsBakerId b')
-              (show $ Queries.bsBakerAccount b')
+              (maybe "" show (Queries.bsBakerAccount b')) -- This should never be @Nothing@.
               (showLotteryPower $ Queries.bsBakerLotteryPower b')
-              (maybe "" accountName (Queries.bsBakerAccount b')) -- this should never be @Nothing@.
+              (maybe "" accountName (Queries.bsBakerAccount b'))
           showLotteryPower lp = if 0 < lp && lp < 0.000001
                                 then " <0.0001 %" :: String
                                 else printf "%8.4f %%" (lp*100)
