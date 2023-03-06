@@ -178,7 +178,7 @@ extractResponseValue f res =
   case res of
     StatusOk resp ->
       case grpcResponseVal resp of
-        Left err -> Left (Nothing, "Unable to convert GRPC response payload: " <> err)
+        Left err -> Left (Just OK, "Unable to convert GRPC response payload: " <> err)
         Right val -> Right $ f val
     StatusNotOk (status, err) -> Left (Just status, "A GRPC error occurred: " <> err)
     StatusInvalid -> Left (Nothing, "A GRPC error occurred: Response contained an invalid return code.")
