@@ -18,8 +18,6 @@ module Concordium.Client.Runner.Helper
   , GRPCHeaderList
   ) where
 
-
-
 import Concordium.Client.Cli (logFatal)
 
 import           Control.Monad.IO.Class
