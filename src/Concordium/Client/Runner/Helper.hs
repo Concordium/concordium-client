@@ -8,8 +8,6 @@ module Concordium.Client.Runner.Helper
   , toGRPCResult'
   , printJSON
   , printJSONValues
-  , getJSON
-  , getValue
   , getResponseValue
   , getResponseValueOrDie
   , extractResponseValueOrDie
@@ -27,18 +25,12 @@ import Concordium.Client.Cli (logFatal)
 import           Control.Monad.IO.Class
 import           Data.Aeson                    hiding (Error)
 import           Data.Aeson.Encode.Pretty
-import qualified Data.ByteString               as BS
 import qualified Data.ByteString.Lazy.Char8    as BSL8
 import qualified Data.CaseInsensitive          as CI
-import qualified Data.ProtoLens.Field          as Field
-import qualified Data.Text                     as Text
-import           Data.Text.Encoding
-import           Lens.Micro.Platform
 import           Network.GRPC.Client           hiding (Invalid)
 import           Network.GRPC.HTTP2.Types
 import qualified Network.URI.Encode            (decode)
 import           Prelude                       hiding (fail)
-import qualified Proto.ConcordiumP2pRpc_Fields as CF
 
 -- |The response contains headers and a response value.
 data GRPCResponse a = GRPCResponse
@@ -144,10 +136,6 @@ outputGRPC' ret =
         Right v -> Right (GRPCResponse hds v)
     Left e -> Left $ "Unable to send query: " ++ show e
 
--- |Decode JSON from response. Assumes that the response from a GRPC call has a @value@ field containing the JSON.
-getJSON :: (Field.HasField a "value" Text.Text) => SimpleGetter (GRPCResponse a) (GRPCResponse Value)
-getJSON  = to (fmap (value . encodeUtf8 <$> (^. CF.value)))
-
 printJSON :: MonadIO m => Either String Value -> m ()
 printJSON v =
   case v of
@@ -156,17 +144,6 @@ printJSON v =
 
 printJSONValues :: MonadIO m => Value -> m ()
 printJSONValues = liftIO . BSL8.putStrLn . encodePretty
-
--- |Decode a JSON string
-value :: BS.ByteString -> Value
-value s =
-  case eitherDecodeStrict' s of
-    Right v -> v
-    Left err -> error ("Error in gRPC output decoding as a json: " ++ err)
-
--- |Extract a value from the response. This assumes that the response from a GRPC call has a @value@ field.
-getValue :: forall a b. (Field.HasField a "value" b) => SimpleGetter (GRPCResponse a) (GRPCResponse b)
-getValue = to (fmap (^. CF.value))
 
 -- |Extract the response value of a @GRPCResult@, if present, and return it
 -- under the provided mapping.

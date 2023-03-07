@@ -8,7 +8,6 @@
 {-# LANGUAGE TypeApplications #-}
 module Concordium.Client.Runner
   ( process
-  , PeerData(..)
   , generateBakerKeys
   , getAccountInfoOrDie
   , getCryptographicParameters
@@ -73,7 +72,6 @@ import qualified Concordium.ID.Types                 as ID
 import           Concordium.ID.Parameters
 import qualified Concordium.Utils.Encryption         as Password
 import qualified Concordium.Wasm                     as Wasm
-import           Proto.ConcordiumP2pRpc
 import qualified Data.Char as Char
 
 import           Control.Exception
@@ -3821,14 +3819,6 @@ processLegacyCmd action backend =
 -- annotations in many places.
 getBlockItemHash :: Types.BareBlockItem -> Types.TransactionHash
 getBlockItemHash = getHash
-
-data PeerData = PeerData {
-  totalSent     :: Word64,
-  totalReceived :: Word64,
-  version       :: Text,
-  peerStats     :: PeerStatsResponse,
-  peerList      :: PeerListResponse
-  }
 
 printPeerData :: MonadIO m => Bool -> [Queries.PeerInfo] -> Queries.NodeInfo -> m ()
 printPeerData bootstrapper pInfos Queries.NodeInfo{..} =

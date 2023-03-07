@@ -1,4 +1,4 @@
-cabal-version: 2.0
+cabal-version: 1.24
 
 -- This file has been generated from package.yaml by hpack version 0.35.0.
 --
@@ -55,12 +55,8 @@ library
       Concordium.Client.Types.TransactionStatus
       Concordium.Client.Utils
       Data.DoubleWord
-      Proto.ConcordiumP2pRpc Proto.ConcordiumP2pRpc_Fields
   other-modules:
       Paths_concordium_client
-  autogen-modules:
-      Paths_concordium_client
-      Proto.ConcordiumP2pRpc Proto.ConcordiumP2pRpc_Fields
   hs-source-dirs:
       src
   default-extensions:
@@ -121,8 +117,6 @@ executable concordium-client
   main-is: Main.hs
   other-modules:
       Paths_concordium_client
-  autogen-modules:
-      Paths_concordium_client
   hs-source-dirs:
       app
   default-extensions:
@@ -145,8 +139,6 @@ executable concordium-client
 executable tx-generator
   main-is: Main.hs
   other-modules:
-      Paths_concordium_client
-  autogen-modules:
       Paths_concordium_client
   hs-source-dirs:
       generator
@@ -192,8 +184,6 @@ test-suite concordium-client-test
       SimpleClientTests.QueryTransaction
       SimpleClientTests.SchemaParsingSpec
       SimpleClientTests.TransactionSpec
-      Paths_concordium_client
-  autogen-modules:
       Paths_concordium_client
   hs-source-dirs:
       test

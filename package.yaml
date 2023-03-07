@@ -97,9 +97,6 @@ library:
     - string-interpolate
     - scientific
     - cookie
-  generated-exposed-modules:
-    Proto.ConcordiumP2pRpc
-    Proto.ConcordiumP2pRpc_Fields
 
 executables:
   concordium-client:
