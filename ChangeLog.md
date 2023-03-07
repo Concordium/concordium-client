@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The `--grpc-authentication-token` option has been removed.
 - The client now uses the V2 GRPC API exposed by the node. This introduces some breaking
   changes:
     - Since the node serves the V2 GRPC API at port 20000 by default, the default value of
