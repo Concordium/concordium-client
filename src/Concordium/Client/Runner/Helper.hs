@@ -2,17 +2,14 @@
 {-# LANGUAGE DeriveFunctor    #-}
 
 module Concordium.Client.Runner.Helper
-  ( outputGRPC
-  , outputGRPC'
-  , toGRPCResult
+  ( toGRPCResult
   , toGRPCResult'
   , printJSON
   , printJSONValues
   , getResponseValue
   , getResponseValueOrDie
   , extractResponseValueOrDie
-  , GRPCResult
-  , GRPCResultV2(..)
+  , GRPCResult(..)
   , GRPCOutput(..)
   , GRPCResponse(..)
   , GRPCHeaderList
@@ -36,11 +33,8 @@ data GRPCResponse a = GRPCResponse
     grpcResponseVal :: a
   } deriving (Show, Functor)
 
--- |Result of running a GRPC request. Either the request fails or there is a response.
-type GRPCResult a = Either String (GRPCResponse a)
-
 -- |Result of running a GRPC request.
-data GRPCResultV2 a =
+data GRPCResult a =
     StatusOk (GRPCResponse a) -- ^ The request was successful with status code 'OK', and a response is available.
   | StatusNotOk (GRPCStatusCode, String) -- ^ The request was successful, with a non-'OK' status code indicating a GRPC error occurred.
   | StatusInvalid -- ^ The request was successful, but an invalid status code was returned.
@@ -63,7 +57,7 @@ data GRPCOutput a =
     | ServerStreamOutput (a, HeaderList, HeaderList)
 
 -- |Convert a GRPC helper output to a unified result type.
-toGRPCResult' :: GRPCOutput t  -> GRPCResultV2 t
+toGRPCResult' :: GRPCOutput t  -> GRPCResult t
 toGRPCResult' =
     \case
       -- @RawUnaryOutput@ models the result of invoking a non-streaming GRPC call.
@@ -99,40 +93,11 @@ toGRPCResult' =
         StatusOk (GRPCResponse hs t)
 
 -- |Convert a GRPC helper output to a unified result type.
-toGRPCResult :: Maybe (GRPCOutput t) -> GRPCResultV2 t
+toGRPCResult :: Maybe (GRPCOutput t) -> GRPCResult t
 toGRPCResult ret =
   case ret of
     Nothing -> RequestFailed "Cannot connect to GRPC server."
     Just v -> toGRPCResult' v
-
--- The complexity of the first parameter comes from the return type of
--- rawUnary. See the documentation
--- http://hackage.haskell.org/package/http2-client-grpc-0.7.0.0/docs/Network-GRPC-Client-Helpers.html#v:rawUnary
-outputGRPC ::
-     (Show a1)
-  => Maybe (Either a1 (GRPCHeaderList, b, Either String t))
-  -> GRPCResult t
-outputGRPC ret =
-  case ret of
-    Nothing -> Left "Cannot connect to GRPC server."
-    Just v -> outputGRPC' v
-
--- The complexity of the first parameter comes from the return type of
--- rawUnary. See the documentation
--- http://hackage.haskell.org/package/http2-client-grpc-0.7.0.0/docs/Network-GRPC-Client-Helpers.html#v:rawUnary
-outputGRPC' ::
-     (Show a1)
-  => Either a1 (GRPCHeaderList, b, Either String t)
-  -> GRPCResult t
-outputGRPC' ret =
-  case ret of
-    Right val -> do
-      let (hds, _, response) = val
-      case response of
-        Left e  ->
-          Left $ "gRPC error: " ++ Network.URI.Encode.decode e
-        Right v -> Right (GRPCResponse hds v)
-    Left e -> Left $ "Unable to send query: " ++ show e
 
 printJSON :: MonadIO m => Either String Value -> m ()
 printJSON v =
@@ -148,7 +113,7 @@ printJSONValues = liftIO . BSL8.putStrLn . encodePretty
 -- Returns a @Left@ wrapping an error string describing its nature if the
 -- request could not be made, or if the GRPC status code was not 'OK', or a
 -- @Right@ wrapping the response value under the provided mapping otherwise.
-extractResponseValue :: (a -> b) -> GRPCResultV2 (Either String a) -> Either (Maybe GRPCStatusCode, String) b
+extractResponseValue :: (a -> b) -> GRPCResult (Either String a) -> Either (Maybe GRPCStatusCode, String) b
 extractResponseValue f res =
   case res of
     StatusOk resp ->
@@ -163,7 +128,7 @@ extractResponseValue f res =
 -- Returns a @Left@ wrapping an error string describing its nature if the
 -- request could not be made, or if the GRPC status code was not 'OK', or a
 -- @Right@ wrapping the response value otherwise.
-getResponseValue :: GRPCResultV2 (Either String a) -> Either (Maybe GRPCStatusCode, String) a
+getResponseValue :: GRPCResult (Either String a) -> Either (Maybe GRPCStatusCode, String) a
 getResponseValue = extractResponseValue id
 
 -- |Extract the response value of a @GRPCResult@, if present, and return it
@@ -171,7 +136,7 @@ getResponseValue = extractResponseValue id
 -- contains an error.
 extractResponseValueOrDie :: (MonadIO m)
   => (a -> b)
-  -> GRPCResultV2 (Either String a)
+  -> GRPCResult (Either String a)
   -> m b
 extractResponseValueOrDie f res =
   case extractResponseValue f res of
@@ -181,6 +146,6 @@ extractResponseValueOrDie f res =
 -- |Get the response value of a @GRPCResult@ if present, or fail printing the
 -- cause if the result contains an error.
 getResponseValueOrDie :: (MonadIO m)
-  => GRPCResultV2 (Either String a)
+  => GRPCResult (Either String a)
   -> m a
 getResponseValueOrDie = extractResponseValueOrDie id

@@ -30,7 +30,6 @@ module Concordium.Client.Runner
   , withClientJson
   , TransactionConfig(..)
   , getFromJson
-  , getFromJson'
   ) where
 
 import           Concordium.Client.Utils
@@ -149,9 +148,6 @@ withClientJson b c = withClient b c >>= getFromJson
 getFromJson :: (MonadIO m, FromJSON a) => Either String Value -> m a
 getFromJson = getFromJsonAndHandleError onError
   where onError val err = logFatal ["cannot convert '" ++ show val ++ "': " ++ err]
-
-getFromJson' :: (MonadIO m, FromJSON a) => GRPCResult Value -> m a
-getFromJson' = getFromJson . fmap grpcResponseVal
 
 -- |Helper function for parsing JSON Value, logFatal if the Either is Left,
 -- and use the provided function to handle Error in fromJSON.
@@ -3776,7 +3772,7 @@ processLegacyCmd action backend =
     -- an error.
     printResponseValue :: (MonadIO m, Show b)
       => (a -> b)
-      -> GRPCResultV2 (Either String a)
+      -> GRPCResult (Either String a)
       -> m ()
     printResponseValue f res =
       extractResponseValueOrDie f res >>= liftIO . print
@@ -3784,7 +3780,7 @@ processLegacyCmd action backend =
     -- |Print the response value as JSON, or fail with an error
     -- message if the response contained an error.
     printResponseValueAsJSON :: (MonadIO m, ToJSON a)
-      => GRPCResultV2 (Either String a)
+      => GRPCResult (Either String a)
       -> m ()
     printResponseValueAsJSON res = do
       v <- getResponseValueOrDie res
