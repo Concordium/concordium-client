@@ -105,6 +105,7 @@ import qualified Data.Vector                         as Vec
 import           Data.Word
 import           Lens.Micro.Platform
 import           Network.GRPC.Client.Helpers
+import           Network.GRPC.HTTP2.Types (GRPCStatusCode(NOT_FOUND))
 import           Prelude                             hiding (log, fail, unlines)
 import           System.IO
 import           System.Exit
@@ -119,8 +120,6 @@ import Codec.CBOR.Write
 import Codec.CBOR.Encoding
 import Codec.CBOR.JSON
 import Control.Arrow (Arrow(second))
-import Concordium.Client.Types.Contract.Info (instanceInfoToContractInfo)
-import Network.GRPC.HTTP2.Types (GRPCStatusCode(NOT_FOUND))
 
 -- |Establish a new connection to the backend and run the provided computation.
 -- Close a connection after completion of the computation. Establishing a
@@ -2035,7 +2034,7 @@ processContractCmd action baseCfgDir verbose backend =
               StatusOk resp -> case grpcResponseVal resp of
                 Left err -> Left $ "Cannot decode contract info response from the node: " <> err
                 Right v -> return v
-              StatusNotOk (NOT_FOUND, _) -> Left "Contract not found."
+              StatusNotOk (NOT_FOUND, _) -> Left "Contract does not exist."
               StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
               StatusInvalid -> Left "GRPC response contained an invalid status code."
               RequestFailed err -> Left $ "I/O error: " <> err
@@ -2157,7 +2156,7 @@ getContractInfo namedContrAddr bhInput = do
   case res of
     StatusOk resp -> case grpcResponseVal resp of
       Left err -> logFatal ["Cannot decode contract info response from the node: " <> err]
-      Right v -> return $ instanceInfoToContractInfo v
+      Right v -> return $ CI.instanceInfoToContractInfo v
     StatusNotOk (NOT_FOUND, _) -> logFatal [[i|the contract instance #{showNamedContractAddress namedContrAddr} does not exist in #{showBlockHashInput bhInput}.|]] 
     StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]] 
     StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]

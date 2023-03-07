@@ -7,10 +7,10 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
--- |Part of the implementation of the GRPC API V2 node API. This module
+-- |Part of the implementation of the GRPC API node API V2. This module
 -- contains client logic and API wrappers for the services exposed, and
 -- a typeclass @FromProto@ with accompanying instances. The latter are
--- used to convert Protocol buffer payloads to our "native" Haskell data-
+-- used to convert Protocol-buffer payloads into our "native" Haskell data-
 -- type equivalents.
 module Concordium.Client.GRPC2 where
 

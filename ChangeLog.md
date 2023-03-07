@@ -4,7 +4,7 @@
 
 - The client now uses the V2 GRPC API exposed by the node. This introduces some breaking
   changes:
-    - The node serves the V2 GRPC API at port 20000 by default, and the default value of
+    - Since the node serves the V2 GRPC API at port 20000 by default, the default value of
       the `--grpc-port` option has been updated to reflect this.
     - `raw` family of commands:
         - Commands `raw GetTransactionStatusInBlock`, `raw StartBaker`, `raw StopBaker`,
