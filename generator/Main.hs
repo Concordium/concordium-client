@@ -58,7 +58,7 @@ parser = info (helper <*> ((,) <$> backendParser <*> txOptions))
 
 sendTx :: MonadIO m => BareBlockItem -> ClientMonad m BareBlockItem
 sendTx tx = do
-  sbiRes <- sendBlockItemV2 tx
+  sbiRes <- sendBlockItem tx
   let res = case sbiRes of
         StatusOk resp -> Right resp
         StatusNotOk (status, err) -> Left $ "GRPC response with status '" <> show status <> "': " <> show err
@@ -130,7 +130,7 @@ main = do
                 return (txRecepient nonce, NormalTransaction $ signTransaction keysList (txHeader (ct + 3600) nonce) (txBody nonce), ())
           go backend (logit txoptions) (tps txoptions) () sign (aiAccountNonce accInfo)
         True -> do
-          globalParameters <- withClient backend (getCryptographicParameters Best)
+          globalParameters <- withClient backend (getCryptographicParametersOrDie Best)
           addresses <-
             case receiversFile txoptions of
               Nothing -> die "Receivers must be present when encrypted transfers are selected."
