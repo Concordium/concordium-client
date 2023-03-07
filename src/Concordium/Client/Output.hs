@@ -999,16 +999,16 @@ printConsensusStatus r =
 -- |Print Birk parameters from a @BlockBirkParameters@.
 printQueryBirkParameters :: Bool -> Queries.BlockBirkParameters -> Map.Map IDTypes.AccountAddress Text -> Printer
 printQueryBirkParameters includeBakers r addrmap = do
-  tell [ printf "Election nonce:      %s" (show $ Queries.bbpElectionNonce r)
-      ] --, printf "Election difficulty: %f" (Types.electionDifficulty $ bprElectionDifficulty r) ]
+  tell [ printf "Election nonce:      %s" (show $ Queries.bbpElectionNonce r),
+         printf "Election difficulty: %s" (show $ Queries.bbpElectionDifficulty r) ]
   when includeBakers $
     case Vec.toList $ Queries.bbpBakers r of
       [] ->
          tell [ "Bakers:              " ++ showNone ]
       bakers -> do
         tell [ "Bakers:"
-             , printf "                             Account                       Lottery power  Account Name"
-             , printf "        ------------------------------------------------------------------------------" ]
+             , "                             Account                       Lottery power  Account Name"
+             , "        ------------------------------------------------------------------------------" ]
         tell (fmap f bakers)
         where
           f b' =

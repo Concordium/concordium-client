@@ -1255,7 +1255,7 @@ getBakerStakeThresholdOrDie = do
   bcpRes <- getBlockChainParametersV2 Best
   let res = case bcpRes of
         StatusOk resp -> case grpcResponseVal resp of
-          Left err -> Left $ "Cannot decode contract info response from the node: " <> err
+          Left err -> Left $ "Cannot decode chain parameters response from the node: " <> err
           Right v -> Right v
         StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
         StatusInvalid -> Left "GRPC response contained an invalid status code."
@@ -1749,12 +1749,11 @@ processModuleCmd action baseCfgDir verbose backend =
     ModuleList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       -- Verify that the provided blockhash is valid.
-      case block of
-        Nothing -> return ()
+      bhInput <- case block of
+        Nothing -> return Best
         Just b -> case readEither (Text.unpack b) of
           Left _ -> logFatal [[i|Could not retrieve the list of modules: The provided block hash '#{Text.unpack b}' is invalid.|]]
-          Right (_v :: Types.BlockHash) -> return ()
-      bhInput <- readBlockHashOrDefault Best block
+          Right v -> return $ Given v
       (best, ms) <- withClient backend $ do
         blRes <- getBlockInfoV2 bhInput
         -- Check that the requested block exists.
@@ -1878,12 +1877,11 @@ processContractCmd action baseCfgDir verbose backend =
     ContractList block -> do
       baseCfg <- getBaseConfig baseCfgDir verbose
       -- Verify that the provided blockhash is valid.
-      case block of
-        Nothing -> return ()
+      bhInput <- case block of
+        Nothing -> return Best
         Just b -> case readEither (Text.unpack b) of
           Left _ -> logFatal [[i|Could not retrieve the list of contracts: The provided block hash '#{Text.unpack b}' is invalid.|]]
-          Right (_v :: Types.BlockHash) -> return ()
-      bhInput <- readBlockHashOrDefault Best block
+          Right v -> return $ Given v
       (best, ms) <- withClient backend $ do
         blRes <- getBlockInfoV2 bhInput
         -- Check that the requested block exists.
@@ -2037,6 +2035,7 @@ processContractCmd action baseCfgDir verbose backend =
               StatusOk resp -> case grpcResponseVal resp of
                 Left err -> Left $ "Cannot decode contract info response from the node: " <> err
                 Right v -> return v
+              StatusNotOk (NOT_FOUND, _) -> Left "Contract not found."
               StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
               StatusInvalid -> Left "GRPC response contained an invalid status code."
               RequestFailed err -> Left $ "I/O error: " <> err
@@ -3800,13 +3799,6 @@ processLegacyCmd action backend =
     printSuccess StatusInvalid = liftIO $ logError [[i|Invalid status code in response|]]
     printSuccess (RequestFailed x) = liftIO $ logError [[i|Request failed: #{x}|]]
 
-    -- |Parse an account address.
-    parseAccountAddress :: (MonadIO m) => Text -> m ID.AccountAddress
-    parseAccountAddress accAddr =
-      case ID.addressFromText accAddr of
-          Left _ -> logFatal ["Unable to parse account address."]
-          Right a -> return a
-
     -- |Print info about a block and possibly its ancestors.
     -- The boolean indicates whether to recurse on the ancestor
     -- of the block. The recursion bottoms out when the genesis
@@ -3818,6 +3810,13 @@ processLegacyCmd action backend =
       -- Recurse if were instructed to and if we are not at the genesis block.
       when (recurse && Queries.biBlockHeight bi /= 0)
         (printBlockInfos recurse $ Given (Queries.biBlockParent bi))
+
+    -- |Parse an account address.
+    parseAccountAddress :: (MonadIO m) => Text -> m ID.AccountAddress
+    parseAccountAddress accAddr =
+      case ID.addressFromText accAddr of
+          Left _ -> logFatal ["Unable to parse account address."]
+          Right a -> return a
                 
 -- |Helper function to specialize the type, avoiding the need for type
 -- annotations in many places.

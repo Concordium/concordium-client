@@ -540,7 +540,7 @@ portParser =
     auto
     (long "grpc-port" <>
      metavar "GRPC-PORT" <>
-     value 10000 <> -- default value to match the node default GRPC port
+     value 20000 <> -- default value to match the node default GRPC port
      showDefault <>
      help "Port where the gRPC server is listening.")
 

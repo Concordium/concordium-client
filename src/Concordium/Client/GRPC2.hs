@@ -3,12 +3,15 @@
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
--- |Part of the implementation of the GRPC2 interface.
+-- |Part of the implementation of the GRPC API V2 node API. This module
+-- contains client logic and API wrappers for the services exposed, and
+-- a typeclass @FromProto@ with accompanying instances. The latter are
+-- used to convert Protocol buffer payloads to our "native" Haskell data-
+-- type equivalents.
 module Concordium.Client.GRPC2 where
 
 import Control.Concurrent

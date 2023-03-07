@@ -211,7 +211,7 @@ getBlockInfoCommand =
     (info
        (GetBlockInfo <$>
         switch (short 'a' <> long "all" <> help "Traverse all parent blocks and get their info as well") <*>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for a specific block."))
 
@@ -221,7 +221,7 @@ getBlockPendingUpdatesCommand =
     "GetBlockPendingUpdates"
     (info
        (GetBlockPendingUpdates <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the pending updates in a specific block."))
 
@@ -231,7 +231,7 @@ getBlockSpecialEventsCommand =
     "GetBlockSpecialEvents"
     (info
        (GetBlockSpecialEvents <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the special events in a specific block."))
 
@@ -241,7 +241,7 @@ getBlockChainParametersCommand =
     "GetBlockChainParameters"
     (info
        (GetBlockChainParameters <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the chain parameters at a specific block."))
 
@@ -251,7 +251,7 @@ getBlockFinalizationSummaryCommand =
     "GetBlockFinalizationSummary"
     (info
        (GetBlockFinalizationSummary <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the finalization summary in a specific block."))
 
@@ -273,7 +273,7 @@ getAccountListCommand =
     "GetAccountList"
     (info
        (GetAccountList <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)")))
        (progDesc "Query the gRPC server for the list of accounts."))
 
 getInstancesCommand :: Mod CommandFields LegacyCmd
@@ -282,7 +282,7 @@ getInstancesCommand =
     "GetInstances"
     (info
        (GetInstances <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)")))
        (progDesc "Query the gRPC server for the list of instances."))
 
 getAccountInfoCommand :: Mod CommandFields LegacyCmd
@@ -292,7 +292,7 @@ getAccountInfoCommand =
     (info
        (GetAccountInfo <$>
         strArgument (metavar "IDENTIFIER" <> help "Account address, account index or credential id to be queried about") <*>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block in which to do the query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the information of an account."))
 
@@ -325,7 +325,7 @@ getInstanceInfoCommand =
        (GetInstanceInfo <$>
         strArgument (metavar "INSTANCE" <> help "Contract address to be queried about") <*>
         optional (strArgument (metavar "BLOCK-HASH" <>
-                               help "Hash of the block in which to do the query"))
+                               help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the information of an instance."))
 
@@ -337,7 +337,7 @@ invokeContractCommand =
        (InvokeContract <$>
         strArgument (metavar "CONTEXT" <> help "JSON file with the context") <*>
         optional (strArgument (metavar "BLOCK-HASH" <>
-                               help "Hash of the block in which to do the query"))
+                               help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Invoke a smart contract in the state of the given block."))
 getPoolStatusCommand :: Mod CommandFields LegacyCmd
@@ -348,7 +348,7 @@ getPoolStatusCommand =
        (GetPoolStatus <$>
         optional (option auto (long "pool" <> metavar "POOL" <> help "Baker ID of pool. If not provided, status of passive delegation is queried.")) <*>
         optional (strArgument (metavar "BLOCK-HASH" <>
-                               help "Hash of the block in which to do the query"))
+                               help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the status of a baker pool or passive delegation."))
 
@@ -359,7 +359,7 @@ getBakerListCommand =
     (info
        (GetBakerList <$>
         optional (strArgument (metavar "BLOCK-HASH" <>
-                               help "Hash of the block in which to do the query"))
+                               help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the list of bakers."))
 
@@ -369,7 +369,7 @@ getRewardStatusCommand =
     "GetRewardStatus"
     (info
        (GetRewardStatus <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)")))
        (progDesc "Query the gRPC server for the reward status."))
 
 getBirkParametersCommand :: Mod CommandFields LegacyCmd
@@ -378,7 +378,7 @@ getBirkParametersCommand =
     "GetBirkParameters"
     (info
        (GetBirkParameters <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)")))
        (progDesc "Query the gRPC server for the Birk parameters."))
 
 getModuleListCommand :: Mod CommandFields LegacyCmd
@@ -387,7 +387,7 @@ getModuleListCommand =
     "GetModuleList"
     (info
        (GetModuleList <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)")))
        (progDesc "Query the gRPC server for the list of modules."))
 
 peerConnectCommand :: Mod CommandFields LegacyCmd
@@ -452,7 +452,7 @@ getAncestorsCommand =
         argument
           auto
           (metavar "AMOUNT" <> help "How many ancestors") <*>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Get the ancestors of a block."))
 
@@ -506,7 +506,7 @@ getIdentityProvidersCommand =
     "GetIdentityProviders"
     (info
      (GetIdentityProviders <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the identity providers in a specific block."))
 
@@ -516,7 +516,7 @@ getAnonymityRevokersCommand =
     "GetAnonymityRevokers"
     (info
      (GetAnonymityRevokers <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the anonymity revokers in a specific block."))
 
@@ -526,6 +526,6 @@ getCryptographicParametersCommand =
     "GetCryptographicParameters"
     (info
      (GetCryptographicParameters <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the cryptographic parameters in a specific block."))

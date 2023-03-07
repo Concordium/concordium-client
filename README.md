@@ -108,9 +108,10 @@ pkg-config --cflags libffi
 
 Run using `stack run concordium-client -- [BACKEND] COMMAND [ARGS...]`, where
 
-- `BACKEND` is the GRPC server on which to perform the actions/queries.
-  It's specified using the flags `--grpc-ip`, `--grpc-port`, and `--grpc-target`
-  (might be needed when calling through proxy like, say, on the testnet).
+- `BACKEND` specifies the node to target with the commands. This is specified using the
+  `--grpc-ip`, `--grpc-port`, and `--grpc-target` options (where the latter might be
+  needed when calling through a proxy like, say, on the testnet). The IP-address must
+  belong to a node running with the GRPC API V2 enabled and served on the specified port.
 
 - `COMMAND` is a command from one of the categories described below in [Commands](#commands).
 
