@@ -10,14 +10,9 @@ import Options.Applicative
 data LegacyCmd
   = SendTransaction
       { legacySourceFile :: !FilePath
-      , legacyNetworkId  :: !Int
       } -- ^ Loads a transaction in the context of the local database and sends it to the specified RPC server
   | GetTransactionStatus
       { legacyTransactionHash :: !Text
-      } -- ^ Queries the gRPC for the information about the execution of a transaction
-  | GetTransactionStatusInBlock
-      { legacyTransactionHash :: !Text,
-        legacyBlockHash' :: !Text
       } -- ^ Queries the gRPC for the information about the execution of a transaction
   | GetAccountNonFinalized {
       legacyAddress :: !Text
@@ -30,9 +25,18 @@ data LegacyCmd
       { legacyEvery     :: !Bool,
         legacyBlockHash :: !(Maybe Text)
       } -- ^ Queries the gRPC server for the information of a specific block
-  | GetBlockSummary
+  | GetBlockPendingUpdates
       { legacyBlockHash :: !(Maybe Text)
-      } -- ^ Queries the gRPC server for the information of a specific block and its transactions.
+      } --  ^Queries the gRPC server for the pending updates in a specific block.
+  | GetBlockSpecialEvents
+      { legacyBlockHash :: !(Maybe Text)
+      } --  ^Queries the gRPC server for the special events in a specific block.
+  | GetBlockChainParameters
+      { legacyBlockHash :: !(Maybe Text)
+      } --  ^Queries the gRPC server for the chain parameters in a specific block.
+  | GetBlockFinalizationSummary
+      { legacyBlockHash :: !(Maybe Text)
+      } --  ^Queries the gRPC server for the finalization summary in a specific block.
   | GetBlocksAtHeight
       { legacyBlockHeight :: !BlockHeight,
         legacyFromGenesisIndex :: !(Maybe GenesisIndex),
@@ -75,10 +79,8 @@ data LegacyCmd
       } -- ^ Queries the gRPC server for the list of modules on a specific block
   | GetNodeInfo -- ^Queries the gRPC server for the node information.
   | GetPeerData
-      { legacyIncludeBootstrapper :: !Bool -- ^Whether to include bootstrapper node in the stats or not.
-      } -- ^Get all data as pertaining to the node's role as a member of the P2P network.
-  | StartBaker
-  | StopBaker
+      { legacyIncludeBootstrapper :: !Bool -- ^ Whether to include bootstrapper node in the stats or not.
+      } -- ^ Get all data as pertaining to the node's role as a member of the P2P network.
   | PeerConnect
       { legacyIp     :: !Text
       , legacyPortPC :: !Int
@@ -89,18 +91,10 @@ data LegacyCmd
       }
   | GetPeerUptime
   | BanNode
-      { legacyNodeId   :: !(Maybe Text)
-      , legacyNodeIp   :: !(Maybe Text)
+      { legacyNodeIp   :: !Text
       }
   | UnbanNode
-      { legacyNodeId   :: !(Maybe Text)
-      , legacyNodeIp   :: !(Maybe Text)
-      }
-  | JoinNetwork
-      { legacyNetId :: !Int
-      }
-  | LeaveNetwork
-      { legacyNetId :: !Int
+      { legacyNodeIp   :: !Text
       }
   | GetAncestors
       { legacyAmount    :: !Int,
@@ -110,6 +104,9 @@ data LegacyCmd
   | GetBannedPeers
   | Shutdown
   | DumpStart
+    { legacyFilepath :: !Text, -- ^ Path of the file to write the dumped packages to
+      legacyRaw :: !Bool -- ^ Dump raw packages if true
+    }
   | DumpStop
   | GetIdentityProviders
     { legacyBlockHash :: !(Maybe Text) }
@@ -124,10 +121,12 @@ legacyProgramOptions =
   hsubparser
     (sendTransactionCommand <>
      getTransactionStatusCommand <>
-     getTransactionStatusInBlockCommand <>
      getConsensusInfoCommand <>
      getBlockInfoCommand <>
-     getBlockSummaryCommand <>
+     getBlockPendingUpdatesCommand <>
+     getBlockSpecialEventsCommand <>
+     getBlockChainParametersCommand <>
+     getBlockFinalizationSummaryCommand <>
      getBlocksAtHeightCommand <>
      getAccountListCommand <>
      getInstancesCommand <>
@@ -143,15 +142,11 @@ legacyProgramOptions =
      getModuleListCommand <>
      getNodeInfoCommand <>
      getPeerDataCommand <>
-     startBakerCommand <>
-     stopBakerCommand <>
      peerConnectCommand <>
      peerDisconnectCommand <>
      getPeerUptimeCommand <>
      banNodeCommand <>
      unbanNodeCommand <>
-     joinNetworkCommand <>
-     leaveNetworkCommand <>
      getAncestorsCommand <>
      getBranchesCommand <>
      getBannedPeersCommand <>
@@ -168,7 +163,7 @@ getPeerDataCommand =
   command
     "GetPeerData"
     (info
-       (GetPeerData <$> switch (long "bootstrapper" <> help "Include the bootstrapper in the peer data."))
+       (GetPeerData <$> switch (long "bootstrapper" <> help "Include the bootstrapper in the peer data"))
        (progDesc "Query the gRPC server for the node information."))
 
 getNodeInfoCommand :: Mod CommandFields LegacyCmd
@@ -186,13 +181,7 @@ sendTransactionCommand =
     (info
        (SendTransaction <$>
         strArgument
-          (metavar "TX-SOURCE" <> help "JSON file with the transaction") <*>
-        argument
-          auto
-          (metavar "NET-ID" <>
-           help "Network ID for the transaction to be sent through" <>
-           value 100 <>
-           showDefault))
+          (metavar "TX-SOURCE" <> help "JSON file with the transaction"))
        (progDesc
           "Parse transaction in current context and send it to the baker."))
 
@@ -206,20 +195,6 @@ getTransactionStatusCommand =
           (metavar "TX-HASH" <> help "Hash of the transaction to query for"))
        (progDesc
           "Query the gRPC for the information about the execution of a transaction."))
-
-getTransactionStatusInBlockCommand :: Mod CommandFields LegacyCmd
-getTransactionStatusInBlockCommand =
-  command
-    "GetTransactionStatusInBlock"
-    (info
-       (GetTransactionStatusInBlock <$>
-        strArgument
-          (metavar "TX-HASH" <> help "Hash of the transaction to query for") <*>
-        strArgument
-          (metavar "BLOCK-HASH" <> help "Hash of the block.")
-       )
-       (progDesc
-          "Query the gRPC for the information about the execution of a transaction in a specific block."))
 
 getConsensusInfoCommand :: Mod CommandFields LegacyCmd
 getConsensusInfoCommand =
@@ -235,20 +210,50 @@ getBlockInfoCommand =
     "GetBlockInfo"
     (info
        (GetBlockInfo <$>
-        switch (short 'a' <> long "all" <> help "Traverse all parent blocks and get their info as well.") <*>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        switch (short 'a' <> long "all" <> help "Traverse all parent blocks and get their info as well") <*>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for a specific block."))
 
-getBlockSummaryCommand :: Mod CommandFields LegacyCmd
-getBlockSummaryCommand =
+getBlockPendingUpdatesCommand :: Mod CommandFields LegacyCmd
+getBlockPendingUpdatesCommand =
   command
-    "GetBlockSummary"
+    "GetBlockPendingUpdates"
     (info
-       (GetBlockSummary <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+       (GetBlockPendingUpdates <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
        )
-       (progDesc "Query the gRPC server for a specific block and its transactions."))
+       (progDesc "Query the gRPC server for the pending updates in a specific block."))
+
+getBlockSpecialEventsCommand :: Mod CommandFields LegacyCmd
+getBlockSpecialEventsCommand =
+  command
+    "GetBlockSpecialEvents"
+    (info
+       (GetBlockSpecialEvents <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
+       )
+       (progDesc "Query the gRPC server for the special events in a specific block."))
+
+getBlockChainParametersCommand :: Mod CommandFields LegacyCmd
+getBlockChainParametersCommand =
+  command
+    "GetBlockChainParameters"
+    (info
+       (GetBlockChainParameters <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
+       )
+       (progDesc "Query the gRPC server for the chain parameters at a specific block."))
+
+getBlockFinalizationSummaryCommand :: Mod CommandFields LegacyCmd
+getBlockFinalizationSummaryCommand =
+  command
+    "GetBlockFinalizationSummary"
+    (info
+       (GetBlockFinalizationSummary <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
+       )
+       (progDesc "Query the gRPC server for the finalization summary in a specific block."))
 
 getBlocksAtHeightCommand :: Mod CommandFields LegacyCmd
 getBlocksAtHeightCommand =
@@ -256,7 +261,7 @@ getBlocksAtHeightCommand =
     "GetBlocksAtHeight"
     (info
       (GetBlocksAtHeight <$>
-       argument auto (metavar "HEIGHT" <> help "Height of the blocks to query.") <*>
+       argument auto (metavar "HEIGHT" <> help "Height of the blocks to query") <*>
        optional (option auto (long "genesis-index" <> metavar "GENINDEX" <> help "Base genesis index")) <*>
        flag Nothing (Just True) (long "restrict" <> help "Restrict to specified genesis index")
       )
@@ -268,7 +273,7 @@ getAccountListCommand =
     "GetAccountList"
     (info
        (GetAccountList <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)")))
        (progDesc "Query the gRPC server for the list of accounts."))
 
 getInstancesCommand :: Mod CommandFields LegacyCmd
@@ -277,7 +282,7 @@ getInstancesCommand =
     "GetInstances"
     (info
        (GetInstances <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)")))
        (progDesc "Query the gRPC server for the list of instances."))
 
 getAccountInfoCommand :: Mod CommandFields LegacyCmd
@@ -286,8 +291,8 @@ getAccountInfoCommand =
     "GetAccountInfo"
     (info
        (GetAccountInfo <$>
-        strArgument (metavar "IDENTIFIER" <> help "Account address, account index or credential id to be queried about.") <*>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block in which to do the query"))
+        strArgument (metavar "IDENTIFIER" <> help "Account address, account index or credential id to be queried about") <*>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the information of an account."))
 
@@ -320,7 +325,7 @@ getInstanceInfoCommand =
        (GetInstanceInfo <$>
         strArgument (metavar "INSTANCE" <> help "Contract address to be queried about") <*>
         optional (strArgument (metavar "BLOCK-HASH" <>
-                               help "Hash of the block in which to do the query"))
+                               help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the information of an instance."))
 
@@ -330,9 +335,9 @@ invokeContractCommand =
     "InvokeContract"
     (info
        (InvokeContract <$>
-        strArgument (metavar "CONTEXT" <> help "JSON file with the context.") <*>
+        strArgument (metavar "CONTEXT" <> help "JSON file with the context") <*>
         optional (strArgument (metavar "BLOCK-HASH" <>
-                               help "Hash of the block in which to do the query,"))
+                               help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Invoke a smart contract in the state of the given block."))
 getPoolStatusCommand :: Mod CommandFields LegacyCmd
@@ -343,7 +348,7 @@ getPoolStatusCommand =
        (GetPoolStatus <$>
         optional (option auto (long "pool" <> metavar "POOL" <> help "Baker ID of pool. If not provided, status of passive delegation is queried.")) <*>
         optional (strArgument (metavar "BLOCK-HASH" <>
-                               help "Hash of the block in which to do the query"))
+                               help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the status of a baker pool or passive delegation."))
 
@@ -354,7 +359,7 @@ getBakerListCommand =
     (info
        (GetBakerList <$>
         optional (strArgument (metavar "BLOCK-HASH" <>
-                               help "Hash of the block in which to do the query"))
+                               help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the list of bakers."))
 
@@ -364,7 +369,7 @@ getRewardStatusCommand =
     "GetRewardStatus"
     (info
        (GetRewardStatus <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)")))
        (progDesc "Query the gRPC server for the reward status."))
 
 getBirkParametersCommand :: Mod CommandFields LegacyCmd
@@ -373,7 +378,7 @@ getBirkParametersCommand =
     "GetBirkParameters"
     (info
        (GetBirkParameters <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)")))
        (progDesc "Query the gRPC server for the Birk parameters."))
 
 getModuleListCommand :: Mod CommandFields LegacyCmd
@@ -382,24 +387,8 @@ getModuleListCommand =
     "GetModuleList"
     (info
        (GetModuleList <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query")))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)")))
        (progDesc "Query the gRPC server for the list of modules."))
-
-startBakerCommand :: Mod CommandFields LegacyCmd
-startBakerCommand =
-    command
-     "StartBaker"
-    (info
-       (pure StartBaker)
-       (progDesc "Start the baker."))
-
-stopBakerCommand :: Mod CommandFields LegacyCmd
-stopBakerCommand =
-    command
-     "StopBaker"
-    (info
-       (pure StopBaker)
-       (progDesc "Stop the baker."))
 
 peerConnectCommand :: Mod CommandFields LegacyCmd
 peerConnectCommand =
@@ -419,10 +408,10 @@ peerDisconnectCommand =
      "PeerDisconnect"
     (info
        (PeerDisconnect <$>
-        strArgument (metavar "PEER-IP" <> help "IP of the peer we want to disconnect from.") <*>
+        strArgument (metavar "PEER-IP" <> help "IP of the peer we want to disconnect from") <*>
         argument
           auto
-          (metavar "PEER-PORT" <> help "Port of the peer we want to disconnect from."))
+          (metavar "PEER-PORT" <> help "Port of the peer we want to disconnect from"))
        (progDesc "Disconnect from a specified peer."))
 
 getPeerUptimeCommand :: Mod CommandFields LegacyCmd
@@ -431,7 +420,7 @@ getPeerUptimeCommand =
      "GetPeerUptime"
     (info
        (pure GetPeerUptime)
-       (progDesc "Get the node uptime."))
+       (progDesc "Get the node uptime in milliseconds."))
 
 
 banNodeCommand :: Mod CommandFields LegacyCmd
@@ -440,9 +429,9 @@ banNodeCommand =
      "BanNode"
     (info
        (BanNode <$>
-        optional (strOption (long "node-id" <> metavar "NODE-ID" <> help "ID of the node to be banned")) <*>
-        optional (strOption (long "ip" <> metavar "NODE-IP" <> help "IP of the node to be banned")))
-       (progDesc "Ban a node. The node to ban can either be supplied via a node-id or via an IP and port, but not both."))
+        strArgument
+          (metavar "NODE-IP" <> help "IP of the node to be banned"))
+       (progDesc "Ban a node."))
 
 unbanNodeCommand :: Mod CommandFields LegacyCmd
 unbanNodeCommand =
@@ -450,27 +439,9 @@ unbanNodeCommand =
      "UnbanNode"
     (info
        (UnbanNode <$>
-        optional (strOption (long "node-id" <> metavar "NODE-ID" <> help "ID of the node to be unbanned")) <*>
-        optional (strOption (long "ip" <> metavar "NODE-IP" <> help "IP of the node to be banned")))
-       (progDesc "Unban a node. The node to unban can either be supplied via a node-id or via an IP."))
-
-joinNetworkCommand :: Mod CommandFields LegacyCmd
-joinNetworkCommand =
-    command
-     "JoinNetwork"
-    (info
-       (JoinNetwork <$>
-        argument auto (metavar "NET-ID" <> help "ID of the network"))
-       (progDesc "Join a network."))
-
-leaveNetworkCommand :: Mod CommandFields LegacyCmd
-leaveNetworkCommand =
-    command
-     "LeaveNetwork"
-    (info
-       (LeaveNetwork <$>
-        argument auto (metavar "NET-ID" <> help "ID of the network"))
-       (progDesc "Leave a network."))
+        strArgument
+          (metavar "NODE-IP" <> help "IP of the node to be unbanned"))
+       (progDesc "Unban a node."))
 
 getAncestorsCommand :: Mod CommandFields LegacyCmd
 getAncestorsCommand =
@@ -481,7 +452,7 @@ getAncestorsCommand =
         argument
           auto
           (metavar "AMOUNT" <> help "How many ancestors") <*>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Get the ancestors of a block."))
 
@@ -514,7 +485,10 @@ dumpStartCommand =
     command
     "DumpStart"
     (info
-       (pure DumpStart)
+       (DumpStart <$> 
+        strArgument
+          (metavar "FILE" <> help "Path of the file to write the dumped packages to") <*>
+          flag False True (long "restrict" <> help "Dump raw packages"))
        (progDesc "Start dumping the packages."))
 
 dumpStopCommand :: Mod CommandFields LegacyCmd
@@ -532,7 +506,7 @@ getIdentityProvidersCommand =
     "GetIdentityProviders"
     (info
      (GetIdentityProviders <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the identity providers in a specific block."))
 
@@ -542,7 +516,7 @@ getAnonymityRevokersCommand =
     "GetAnonymityRevokers"
     (info
      (GetAnonymityRevokers <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the anonymity revokers in a specific block."))
 
@@ -552,6 +526,6 @@ getCryptographicParametersCommand =
     "GetCryptographicParameters"
     (info
      (GetCryptographicParameters <$>
-        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query"))
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the cryptographic parameters in a specific block."))

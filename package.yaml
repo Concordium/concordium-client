@@ -1,5 +1,5 @@
 name:                concordium-client
-version:             5.0.2
+version:             5.1.0
 github:              "Concordium/concordium-client"
 author:              "Concordium"
 maintainer:          "developers@concordium.com"
@@ -10,7 +10,6 @@ build-type:          Custom
 extra-source-files:
 - README.md
 - ChangeLog.md
-- deps/concordium-base/concordium-grpc-api/concordium_p2p_rpc.proto
 
 custom-setup:
   dependencies:
@@ -39,9 +38,6 @@ ghc-options: -Wall
 description:         Please see the README on GitHub at <https://github.com/Concordium/concordium-client#readme>
 
 flags:
-  middleware:
-    manual: True
-    default: True
   static:
     description: Use static linking.
     manual: True
@@ -68,6 +64,7 @@ library:
     - base16-bytestring
     - base64-bytestring
     - bytestring
+    - case-insensitive
     - cereal
     - cborg
     - cborg-json
@@ -100,9 +97,6 @@ library:
     - string-interpolate
     - scientific
     - cookie
-  generated-exposed-modules:
-    Proto.ConcordiumP2pRpc
-    Proto.ConcordiumP2pRpc_Fields
 
 executables:
   concordium-client:
@@ -150,47 +144,6 @@ executables:
       - bytestring
       - aeson
       - time
-
-  middleware:
-    main:             Main.hs
-    source-dirs:      middleware
-    ghc-options:
-      - -threaded
-    dependencies:
-      - aeson
-      - wai-logger
-      - bytestring
-      - concordium-base
-      - containers
-      - directory
-      - filepath
-      - http-conduit
-      - http2-client-grpc
-      - microlens-platform
-      - monad-logger
-      - mtl
-      - process
-      - servant
-      - servant-server
-      - concordium-client
-      - split
-      - text
-      - time
-      - unordered-containers
-      - wai
-      - wai-cors
-      - wai-extra
-      - wai-middleware-static
-      - warp
-      - mtl >= 2.2.2
-      - cereal >= 0.5.8
-      - transformers
-    when:
-      - condition: flag(middleware)
-        then:
-          buildable: true
-        else:
-          buildable: false
 
 tests:
   concordium-client-test:

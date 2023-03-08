@@ -4,6 +4,8 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeApplications #-}
+
 module Concordium.Client.Output where
 
 import Concordium.Client.Cli
@@ -23,6 +25,8 @@ import qualified Concordium.Types.Accounts as Types
 import qualified Concordium.Types.Accounts.Releases as Types
 import qualified Concordium.Types.Execution as Types
 import qualified Concordium.ID.Types as IDTypes
+import qualified Concordium.ID.IdentityProvider as IDTypes
+import qualified Concordium.ID.AnonymityRevoker as ARTypes
 import qualified Concordium.Crypto.EncryptedTransfers as Enc
 import qualified Concordium.Wasm as Wasm
 import qualified Concordium.Common.Time as Time
@@ -47,6 +51,7 @@ import Data.String.Interpolate (i)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Time
+import qualified Data.Vector as Vec
 import Lens.Micro.Platform
 import Text.Printf
 import Codec.CBOR.Read
@@ -152,6 +157,12 @@ printAccountConfigList cfgs =
   where namedAddress cfg = showNamedAddress $ acAddr cfg
 
 -- ACCOUNT
+
+-- |Get a string representation of given @AccountIdentifier@ variant.
+showAccountIdentifier :: Types.AccountIdentifier -> String
+showAccountIdentifier (Types.AccAddress addr) = [i|account address '#{addr}'|]
+showAccountIdentifier (Types.CredRegID cred) = [i|credential registration ID '#{cred}'|]
+showAccountIdentifier (Types.AccIndex idx) = [i|account index '#{idx}'|]
 
 -- |Standardized method of displaying "no" information.
 showNone :: String
@@ -544,8 +555,8 @@ parseTransactionBlockResult status =
 -- Since the transaction may be present in multiple blocks before it is finalized,
 -- the schema information is passed as a map from blockhashes to pairs of events and
 -- its associated contract information. For a block in which the transaction is
--- present, `printTransactionSchema` looks up its blockhash in the map and retrieves
--- the relevant schema information from the `ContractInfo` associated with each event.
+-- present, @printTransactionSchema@ looks up its blockhash in the map and retrieves
+-- the relevant schema information from the @ContractInfo@ associated with each event.
 -- If a parameter or event could not be decoded either because a schema was not present
 -- in the contract information or because the decoding failed, a hexadecimal string
 -- representing the raw data will be shown instead.
@@ -647,8 +658,8 @@ showOutcomeResult verbose contrInfoWithEventsM = \case
     else [[i|Transaction rejected: #{showRejectReason False r}.|]]
   where
     -- Helper for folding over events and schemas, collecting showEvent outputs.
-    -- This is as to indent or unindent output on `Interrupted`, resp.
-    -- `Resumed`. The accumulator @(Int, [Maybe String])@ is a pair of current
+    -- This is as to indent or unindent output on @Interrupted@, resp.
+    -- @Resumed@. The accumulator @(Int, [Maybe String])@ is a pair of current
     -- indentation level and the list of outputs that have been accumulated.
     --
     -- The reason for using a @Maybe String@ is that the output is only produced
@@ -985,6 +996,33 @@ printConsensusStatus r =
        , printf "Current era genesis block:   %s" (show $ Queries.csCurrentEraGenesisBlock r)
        , printf "Current era genesis time:    %s" (show $ Queries.csCurrentEraGenesisTime r)]
 
+-- |Print Birk parameters from a @BlockBirkParameters@.
+printQueryBirkParameters :: Bool -> Queries.BlockBirkParameters -> Map.Map IDTypes.AccountAddress Text -> Printer
+printQueryBirkParameters includeBakers r addrmap = do
+  tell [ printf "Election nonce:      %s" (show $ Queries.bbpElectionNonce r),
+         printf "Election difficulty: %s" (show $ Queries.bbpElectionDifficulty r) ]
+  when includeBakers $
+    case Vec.toList $ Queries.bbpBakers r of
+      [] ->
+         tell [ "Bakers:              " ++ showNone ]
+      bakers -> do
+        tell [ "Bakers:"
+             , "                             Account                       Lottery power  Account Name"
+             , "        ------------------------------------------------------------------------------" ]
+        tell (fmap f bakers)
+        where
+          f b' =
+            printf "%6s: %s  %s  %s"
+              (show $ Queries.bsBakerId b')
+              (maybe "" show (Queries.bsBakerAccount b')) -- This should never be @Nothing@.
+              (showLotteryPower $ Queries.bsBakerLotteryPower b')
+              (maybe "" accountName (Queries.bsBakerAccount b'))
+          showLotteryPower lp = if 0 < lp && lp < 0.000001
+                                then " <0.0001 %" :: String
+                                else printf "%8.4f %%" (lp*100)
+          accountName bkr = fromMaybe " " $ Map.lookup bkr addrmap
+
+-- |Print Birk parameters from a @BirkParametersResult@.
 printBirkParameters :: Bool -> BirkParametersResult -> Map.Map IDTypes.AccountAddress Text -> Printer
 printBirkParameters includeBakers r addrmap = do
   tell [ printf "Election nonce:      %s" (show $ bprElectionNonce r)
@@ -1005,8 +1043,7 @@ printBirkParameters includeBakers r addrmap = do
                                 else printf "%8.4f %%" (lp*100)
           accountName bkr = fromMaybe " " $ Map.lookup bkr addrmap
 
-
--- | Prints the chain  parameters.
+-- | Prints the chain parameters.
 printChainParameters :: forall cpv. IsChainParametersVersion cpv => ChainParameters' cpv -> Printer
 printChainParameters cp = do
   case chainParametersVersion @cpv of
@@ -1014,7 +1051,7 @@ printChainParameters cp = do
     SChainParametersV1 -> printChainParametersV1 cp
     SChainParametersV2 -> printChainParametersV2 cp
 
--- | Prints the chain  parameters for version 0.
+-- | Prints the chain parameters for version 0.
 printChainParametersV0 :: ChainParameters' 'ChainParametersV0 -> Printer
 printChainParametersV0 ChainParameters {..} = tell [
   [i|\# Baker parameters |],
@@ -1046,7 +1083,7 @@ printChainParametersV0 ChainParameters {..} = tell [
   [i|  + maximum credential deployments per block: #{_cpAccountCreationLimit}|]
   ]
 
--- | Prints the chain  parameters for version 1.
+-- | Prints the chain parameters for version 1.
 printChainParametersV1 :: ChainParameters' 'ChainParametersV1 -> Printer
 printChainParametersV1 ChainParameters {..} = tell [
   "",
@@ -1172,9 +1209,14 @@ showExchangeRate (Types.ExchangeRate r) = showRatio r
 
 -- BLOCK
 
-printBlockInfo :: Maybe Queries.BlockInfo -> Printer
-printBlockInfo Nothing = tell [ printf "Block not found." ]
-printBlockInfo (Just b) =
+-- |Get a string representation of a given @BlockHashInput@ variant.
+showBlockHashInput :: Queries.BlockHashInput -> String
+showBlockHashInput Queries.Best = [i|best block|]
+showBlockHashInput (Queries.Given bh) = [i|block with hash #{bh}|]
+showBlockHashInput Queries.LastFinal = [i|last finalized block|]
+
+printBlockInfo :: Queries.BlockInfo -> Printer
+printBlockInfo b =
   tell [ printf "Hash:                       %s" (show $ Queries.biBlockHash b)
        , printf "Parent block:               %s" (show $ Queries.biBlockParent b)
        , printf "Last finalized block:       %s" (show $ Queries.biBlockLastFinalized b)
@@ -1201,47 +1243,27 @@ parseDescription = AE.withObject "Description" $ \obj -> do
   description <- obj AE..: "description"
   return (name, url, description)
 
-printIdentityProviders :: [AE.Value] -> Printer
-printIdentityProviders vals = do
+printIdentityProviders :: [IDTypes.IpInfo] -> Printer
+printIdentityProviders ipInfos = do
   tell [ printf "Identity providers"
        , printf "------------------" ]
-  tell $ concatMap printSingleIdentityProvider vals
- where parseResponse :: AE.Value -> AE.Parser (IDTypes.IdentityProviderIdentity, (String, String, String))
-       parseResponse = AE.withObject "IpInfo" $ \obj -> do
-         ipId <- obj AE..: "ipIdentity"
-         descriptionVal <- obj AE..: "ipDescription"
-         description <- parseDescription descriptionVal
-         return (ipId, description)
-       printSingleIdentityProvider val =
-         let mresult = AE.parse parseResponse val in
-           case mresult of
-             AE.Success (ident, (name, url, description)) ->
-               [ printf "Identifier:     %s" $ show ident
-               , printf "Description:    NAME %s" name
-               , printf "                URL %s" url
-               , printf "                %s" description ]
-             AE.Error e -> [ "Error encountered while parsing IpInfo: " ++ show e ]
+  tell $ concatMap printSingleIdentityProvider ipInfos
+  where printSingleIdentityProvider ipInfo =
+          [ printf "Identifier:     %s" $ show $ IDTypes.ipIdentity ipInfo
+          , printf "Description:    NAME %s" $ IDTypes.ipName ipInfo
+          , printf "                URL %s" $ IDTypes.ipUrl ipInfo
+          , printf "                %s" $ IDTypes.ipDescription ipInfo ]
 
-printAnonymityRevokers :: [AE.Value] -> Printer
-printAnonymityRevokers vals = do
+printAnonymityRevokers :: [ARTypes.ArInfo] -> Printer
+printAnonymityRevokers arInfos = do
   tell [ printf "Anonymity revokers"
        , printf "------------------" ]
-  tell $ concatMap printSingleAnonymityRevoker vals
- where parseResponse :: AE.Value -> AE.Parser (IDTypes.ArIdentity, (String, String, String))
-       parseResponse = AE.withObject "IpInfo" $ \obj -> do
-         ipId <- obj AE..: "arIdentity"
-         descriptionVal <- obj AE..: "arDescription"
-         description <- parseDescription descriptionVal
-         return (ipId, description)
-       printSingleAnonymityRevoker val =
-         let mresult = AE.parse parseResponse val in
-           case mresult of
-             AE.Success (ident, (name, url, description)) ->
-               [ printf "Identifier:     %s" $ show ident
-               , printf "Description:    NAME %s" name
-               , printf "                URL %s" url
-               , printf "                %s" description ]
-             AE.Error e -> [ "Error encountered while parsing ArInfo: " ++ show e ]
+  tell $ concatMap printSingleAnonymityRevoker arInfos
+  where printSingleAnonymityRevoker arInfo =
+          [ printf "Identifier:     %s" $ show $ ARTypes.arIdentity arInfo
+          , printf "Description:    NAME %s" $ ARTypes.arName arInfo
+          , printf "                URL %s" $ ARTypes.arUrl arInfo
+          , printf "                %s" $ ARTypes.arDescription arInfo ]
 
 -- AMOUNT AND ENERGY
 

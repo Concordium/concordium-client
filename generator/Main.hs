@@ -9,6 +9,7 @@ import Concordium.Types.Transactions
 import Concordium.Types
 import Concordium.Types.Execution
 import Concordium.Types.Accounts
+import Concordium.Types.Queries
 import Concordium.ID.Types
 import Concordium.Crypto.EncryptedTransfers
 import Concordium.Client.Types.Transaction(encryptedTransferEnergyCost)
@@ -56,11 +57,16 @@ parser = info (helper <*> ((,) <$> backendParser <*> txOptions))
          (fullDesc <> progDesc "Generate transactions for a fixed contract.")
 
 sendTx :: MonadIO m => BareBlockItem -> ClientMonad m BareBlockItem
-sendTx tx =
-  sendTransactionToBaker tx 100 >>= \case
-    Left err -> liftIO $ die err
-    Right (GRPCResponse _ False) -> liftIO $ die "Could not send transaction (rejected)."
-    Right (GRPCResponse _ True) -> return tx
+sendTx tx = do
+  sbiRes <- sendBlockItem tx
+  let res = case sbiRes of
+        StatusOk resp -> Right resp
+        StatusNotOk (status, err) -> Left $ "GRPC response with status '" <> show status <> "': " <> show err
+        StatusInvalid -> Left "GRPC response contained an invalid status code."
+        RequestFailed err -> Left $ "I/O error: " <> err
+  case res of
+    Left err -> liftIO $ die $ "Could not send transaction: " <> err
+    Right _ -> return tx
 
 iterateM_ :: Monad m => (a -> m a) -> a -> m b
 iterateM_ f a = f a >>= iterateM_ f
@@ -105,7 +111,7 @@ main = do
                   Right [] -> return Nothing
                   Right addrs -> return (Just addrs)
 
-          accInfo <- withClient backend (getAccountInfoOrDie selfAddress)
+          accInfo <- withClient backend (getAccountInfoOrDie (AccAddress selfAddress) Best)
           let txRecepient (Nonce n) =
                 case addresses of
                   Just addrs -> addrs !! (fromIntegral n `mod` length addrs)
@@ -124,10 +130,7 @@ main = do
                 return (txRecepient nonce, NormalTransaction $ signTransaction keysList (txHeader (ct + 3600) nonce) (txBody nonce), ())
           go backend (logit txoptions) (tps txoptions) () sign (aiAccountNonce accInfo)
         True -> do
-          globalParameters <- withClient backend (getBestBlockHash >>= getParseCryptographicParameters) >>= \case
-              Left err -> die err
-              Right gp -> return gp
-
+          globalParameters <- withClient backend (getCryptographicParametersOrDie Best)
           addresses <-
             case receiversFile txoptions of
               Nothing -> die "Receivers must be present when encrypted transfers are selected."
@@ -138,10 +141,10 @@ main = do
                   Right addrs -> case filter (/= selfAddress) addrs of
                     [] -> die "There must be at least one other receiver."
                     xs -> withClient backend $ forM xs $ \addr -> do
-                      accInfo <- getAccountInfoOrDie addr
+                      accInfo <- getAccountInfoOrDie (AccAddress addr) Best
                       return (addr, aiAccountEncryptionKey accInfo)
 
-          accInfo <- withClient backend $ getAccountInfoOrDie selfAddress
+          accInfo <- withClient backend $ getAccountInfoOrDie (AccAddress selfAddress) Best
 
           let encAmount = aiAccountEncryptedAmount accInfo
           let ownAmount = _selfAmount encAmount

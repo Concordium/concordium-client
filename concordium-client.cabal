@@ -1,11 +1,11 @@
-cabal-version: 2.0
+cabal-version: 1.24
 
 -- This file has been generated from package.yaml by hpack version 0.35.0.
 --
 -- see: https://github.com/sol/hpack
 
 name:           concordium-client
-version:        5.0.2
+version:        5.1.0
 description:    Please see the README on GitHub at <https://github.com/Concordium/concordium-client#readme>
 homepage:       https://github.com/Concordium/concordium-client#readme
 bug-reports:    https://github.com/Concordium/concordium-client/issues
@@ -18,7 +18,6 @@ build-type:     Custom
 extra-source-files:
     README.md
     ChangeLog.md
-    deps/concordium-base/concordium-grpc-api/concordium_p2p_rpc.proto
 
 source-repository head
   type: git
@@ -29,10 +28,6 @@ custom-setup
       Cabal
     , base
     , proto-lens-setup ==0.4.*
-
-flag middleware
-  manual: True
-  default: True
 
 flag static
   description: Use static linking.
@@ -45,13 +40,13 @@ library
       Concordium.Client.Commands
       Concordium.Client.Config
       Concordium.Client.Export
-      Concordium.Client.GRPC
+      Concordium.Client.GRPC2
       Concordium.Client.LegacyCommands
       Concordium.Client.Output
       Concordium.Client.Parse
       Concordium.Client.Runner
       Concordium.Client.Runner.Helper
-      Concordium.Client.TransactionStatus
+      Concordium.Client.RWLock
       Concordium.Client.Types.Account
       Concordium.Client.Types.Contract.Info
       Concordium.Client.Types.Contract.Parameter
@@ -60,12 +55,8 @@ library
       Concordium.Client.Types.TransactionStatus
       Concordium.Client.Utils
       Data.DoubleWord
-      Proto.ConcordiumP2pRpc Proto.ConcordiumP2pRpc_Fields
   other-modules:
       Paths_concordium_client
-  autogen-modules:
-      Paths_concordium_client
-      Proto.ConcordiumP2pRpc Proto.ConcordiumP2pRpc_Fields
   hs-source-dirs:
       src
   default-extensions:
@@ -88,6 +79,7 @@ library
     , base16-bytestring
     , base64-bytestring
     , bytestring
+    , case-insensitive
     , cborg
     , cborg-json
     , cereal
@@ -125,8 +117,6 @@ executable concordium-client
   main-is: Main.hs
   other-modules:
       Paths_concordium_client
-  autogen-modules:
-      Paths_concordium_client
   hs-source-dirs:
       app
   default-extensions:
@@ -146,66 +136,9 @@ executable concordium-client
   if flag(static)
     ld-options: -static
 
-executable middleware
-  main-is: Main.hs
-  other-modules:
-      Api
-      Config
-      Server
-      Paths_concordium_client
-  autogen-modules:
-      Paths_concordium_client
-  hs-source-dirs:
-      middleware
-  default-extensions:
-      OverloadedStrings
-      RecordWildCards
-      GeneralizedNewtypeDeriving
-      ScopedTypeVariables
-      FlexibleContexts
-      LambdaCase
-      TupleSections
-  ghc-options: -Wall -threaded
-  build-depends:
-      aeson
-    , base >=4.7 && <5
-    , bytestring
-    , cereal >=0.5.8
-    , concordium-base
-    , concordium-client
-    , containers
-    , directory
-    , filepath
-    , http-conduit
-    , http2-client-grpc
-    , microlens-platform
-    , monad-logger
-    , mtl >=2.2.2
-    , process
-    , servant
-    , servant-server
-    , split
-    , text
-    , time
-    , transformers
-    , unordered-containers
-    , wai
-    , wai-cors
-    , wai-extra
-    , wai-logger
-    , wai-middleware-static
-    , warp
-  default-language: Haskell2010
-  if flag(middleware)
-    buildable: True
-  else
-    buildable: False
-
 executable tx-generator
   main-is: Main.hs
   other-modules:
-      Paths_concordium_client
-  autogen-modules:
       Paths_concordium_client
   hs-source-dirs:
       generator
@@ -251,8 +184,6 @@ test-suite concordium-client-test
       SimpleClientTests.QueryTransaction
       SimpleClientTests.SchemaParsingSpec
       SimpleClientTests.TransactionSpec
-      Paths_concordium_client
-  autogen-modules:
       Paths_concordium_client
   hs-source-dirs:
       test

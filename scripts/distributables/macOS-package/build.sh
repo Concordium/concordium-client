@@ -150,7 +150,7 @@ function createBuildDir() {
 function compile() {
     cd "$clientDir"
     logInfo "Building Client..."
-    stack build --flag concordium-client:-middleware
+    stack build
     logInfo "Done"
 }
 

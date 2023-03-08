@@ -9,6 +9,7 @@ module Concordium.Client.Types.Contract.Info
   , hasReceiveMethod
   , methodNameFromReceiveName
   , constructModuleInspectInfo
+  , instanceInfoToContractInfo
   , ContractInfo(..)
   , ContractStateV0(..)
   , MethodsAndState(..)
@@ -36,12 +37,13 @@ import qualified Data.ByteString.Base16 as BS16
 import Data.List (find)
 import qualified Data.Map.Strict as Map
 import qualified Data.Serialize as S
+import qualified Data.Set as Set
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Concordium.Client.Config as Config
-import Concordium.Client.GRPC (ClientMonad)
+import Concordium.Client.GRPC2 (ClientMonad)
 import Concordium.Client.Cli
 import Control.Monad.Cont (MonadIO)
 
@@ -269,6 +271,34 @@ data ContractStateV0
   = Cs0Bytes !ByteString
   | Cs0JSON !AE.Value
   deriving (Eq, Show)
+
+-- |Convert an @InstanceInfo@ into a @ContractInfo@.
+-- The schema in the returned @ContractInfo@ value will always be of
+-- the @NoSchemaV0@ variant. Schema informaton can be included by
+-- manually augmenting the result e.g. by using @addSchemaData@.
+instanceInfoToContractInfo :: Wasm.InstanceInfo -> ContractInfo
+instanceInfoToContractInfo iInfo =
+  case iInfo of
+    Wasm.InstanceInfoV0{..} ->
+      let
+        ciAmount = iiAmount
+        ciOwner = iiOwner
+        ciName = contractNameFromInitName iiName
+        ciSourceModule = iiSourceModule
+        methods = methodNameFromReceiveName <$> Set.toList iiMethods
+        state = Wasm.contractState iiModel
+        ciSize = BS.length state
+        ciMethodsAndState = NoSchemaV0 { ns0State = state, ns0Methods = methods}
+       in ContractInfoV0{..}
+    Wasm.InstanceInfoV1{..} ->
+      let
+        ciAmount = iiAmount
+        ciOwner = iiOwner
+        ciName = contractNameFromInitName iiName
+        ciSourceModule = iiSourceModule
+        methods = methodNameFromReceiveName <$> Set.toList iiMethods
+        ciMethods = NoSchemaV1 { ns1Methods = methods }
+       in ContractInfoV1{..}
 
 instance AE.FromJSON ContractInfo where
   parseJSON = AE.withObject "Info" $ \v -> do
