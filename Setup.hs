@@ -1,5 +1,3 @@
-import Data.ProtoLens.Setup
-
 import Distribution.PackageDescription
 import Distribution.Simple
 import Distribution.Simple.LocalBuildInfo
@@ -20,7 +18,7 @@ autoConfHook desc flags = do
             in confHook simpleUserHooks desc extraFlags
     _ -> confHook simpleUserHooks desc flags
 
-main = defaultMainWithHooks $ generatingProtos "deps/concordium-base/concordium-grpc-api/v2" simpleUserHooks
+main = defaultMainWithHooks simpleUserHooks
   {
     confHook = autoConfHook
   }

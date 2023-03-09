@@ -15,7 +15,6 @@ custom-setup:
   dependencies:
     - base
     - Cabal
-    - proto-lens-setup == 0.4.*
 
 default-extensions:
 - OverloadedStrings
@@ -88,7 +87,6 @@ library:
     - pretty
     - proto-lens == 0.7.*
     - proto-lens-protobuf-types == 0.7.*
-    - proto-lens-runtime == 0.7.*
     - microlens-platform
     - transformers
     - uri-encode >= 1.5

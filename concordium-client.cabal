@@ -1,6 +1,6 @@
 cabal-version: 1.24
 
--- This file has been generated from package.yaml by hpack version 0.35.0.
+-- This file has been generated from package.yaml by hpack version 0.35.1.
 --
 -- see: https://github.com/sol/hpack
 
@@ -27,7 +27,6 @@ custom-setup
   setup-depends:
       Cabal
     , base
-    , proto-lens-setup ==0.4.*
 
 flag static
   description: Use static linking.
@@ -100,7 +99,6 @@ library
     , pretty
     , proto-lens ==0.7.*
     , proto-lens-protobuf-types ==0.7.*
-    , proto-lens-runtime ==0.7.*
     , random
     , scientific
     , split
