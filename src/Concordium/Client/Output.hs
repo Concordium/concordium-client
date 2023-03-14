@@ -20,6 +20,7 @@ import Concordium.Client.Utils(durationToText)
 import Concordium.Client.Types.TransactionStatus
 import Concordium.Common.Version
 import Concordium.ID.Parameters
+import qualified Concordium.Types.Conditionally as Types
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Accounts as Types
 import qualified Concordium.Types.Accounts.Releases as Types
@@ -1073,7 +1074,7 @@ printChainParametersV0 ChainParameters {..} = tell [
   [i|     * fraction for the GAS account: #{_cpRewardParameters ^. tfdGASAccount}|],
   [i|  + GAS account distribution:|],
   [i|     * baking a block: #{_cpRewardParameters ^. gasBaker}|],
-  [i|     * adding a finalization proof: #{_cpRewardParameters ^. gasFinalizationProof}|],
+  [i|     * adding a finalization proof: #{Types.uncond $ _cpRewardParameters ^. gasFinalizationProof}|],
   [i|     * adding a credential deployment: #{_cpRewardParameters ^. gasAccountCreation}|],
   [i|     * adding a chain update: #{_cpRewardParameters ^. gasChainUpdate}|],
   "",
@@ -1119,7 +1120,7 @@ printChainParametersV1 ChainParameters {..} = tell [
   [i|     * GAS account: #{_cpRewardParameters ^. tfdGASAccount}|],
   [i|  + GAS rewards:|],
   [i|     * baking a block: #{_cpRewardParameters ^. gasBaker}|],
-  [i|     * adding a finalization proof: #{_cpRewardParameters ^. gasFinalizationProof}|],
+  [i|     * adding a finalization proof: #{Types.uncond $ _cpRewardParameters ^. gasFinalizationProof}|],
   [i|     * adding a credential deployment: #{_cpRewardParameters ^. gasAccountCreation}|],
   [i|     * adding a chain update: #{_cpRewardParameters ^. gasChainUpdate}|],
   "",
