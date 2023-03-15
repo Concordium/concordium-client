@@ -8,6 +8,7 @@
   line of the gas rewards section of the `consensus show-chain-parameters` output.
 - Fix a bug that caused the output of `raw GetCryptographicParameters` to be printed
   in a non-versioned context.
+- The help-message for `raw Shutdown` now properly describes its effects.
 
 ## 5.1.0
 
