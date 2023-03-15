@@ -157,6 +157,10 @@ getResponseValueOrDie :: (MonadIO m)
   -> m a
 getResponseValueOrDie = extractResponseValueOrDie id
 
+-- |Get the response value and the headers of a @GRPCResult@, if present.
+-- Returns a @Left@ wrapping the @GRPCResult@ if it is not of the variant
+-- @StatusOk@ and a @Right@ wrapping a pair of the response value and a
+-- @CIHeaderList@ otherwise.
 getResponseValueAndHeaders :: GRPCResult a -> Either (GRPCResult b) (a, CIHeaderList)
 getResponseValueAndHeaders res =
   case res of
@@ -165,10 +169,10 @@ getResponseValueAndHeaders res =
     StatusInvalid -> Left StatusInvalid
     RequestFailed err -> Left $ RequestFailed err
 
--- |Get the 'block-hash' header value of a @CIHeader@ if present.
--- Returns a @Left@ wrapping a string iff the header was not present or if the header
--- could not be parsed. Returns a @Right@ wrapping a @BlockHash@ parsed from the value
--- otherwise.
+-- |Get the 'blockhash' header value of a @CIHeaderList@ if present.
+-- Returns a @Left@ wrapping a string if the header was not present or if the header
+-- value could not be @read@ into a @BlockHash@. Returns a @Right@ wrapping a
+-- @BlockHash@ @read@ from the header value otherwise.
 getBlockHashHeader :: (MonadFail m) => CIHeaderList -> m Types.BlockHash
 getBlockHashHeader hs =
   case List.find (("blockhash"==) . fst) hs of
