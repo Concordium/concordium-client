@@ -478,7 +478,7 @@ shutdownCommand =
     "Shutdown"
     (info
        (pure Shutdown)
-       (progDesc "Shutdown the node gracefully."))
+       (progDesc "Tell the node to shutdown its network layer. This does not terminate the node process, and the effect hereof may not happen immediately."))
 
 dumpStartCommand :: Mod CommandFields LegacyCmd
 dumpStartCommand =
