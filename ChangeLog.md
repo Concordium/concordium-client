@@ -6,6 +6,8 @@
   displayed in the output of `baker configure` and `transaction status`.
 - Fix a bug that caused leftover code to be displayed in the finalization proof
   line of the gas rewards section of the `consensus show-chain-parameters` output.
+- Fix a bug that caused the output of `raw GetCryptographicParameters` to be printed
+  in a non-versioned context.
 - The help-message for `raw Shutdown` now properly describes its effects.
 
 ## 5.1.0
