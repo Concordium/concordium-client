@@ -6,7 +6,9 @@ module Concordium.Client.Runner.Helper
   , toGRPCResult'
   , printJSON
   , printJSONValues
+  , getBlockHashHeader
   , getResponseValue
+  , getResponseValueAndHeaders
   , getResponseValueOrDie
   , extractResponseValueOrDie
   , GRPCResult(..)
@@ -15,17 +17,22 @@ module Concordium.Client.Runner.Helper
   , GRPCHeaderList
   ) where
 
-import Concordium.Client.Cli (logFatal)
+import           Concordium.Client.Cli         (logFatal)
+import qualified Concordium.Types              as Types
 
 import           Control.Monad.IO.Class
 import           Data.Aeson                    hiding (Error)
 import           Data.Aeson.Encode.Pretty
 import qualified Data.ByteString.Lazy.Char8    as BSL8
 import qualified Data.CaseInsensitive          as CI
+import qualified Data.List                     as List
+import qualified Data.Text                     as Text
+import           Data.Text.Encoding            (decodeLatin1)
 import           Network.GRPC.Client           hiding (Invalid)
 import           Network.GRPC.HTTP2.Types
 import qualified Network.URI.Encode            (decode)
-import           Prelude                       hiding (fail)
+import           Prelude
+import           Text.Read                     (readEither)
 
 -- |The response contains headers and a response value.
 data GRPCResponse a = GRPCResponse
@@ -149,3 +156,24 @@ getResponseValueOrDie :: (MonadIO m)
   => GRPCResult (Either String a)
   -> m a
 getResponseValueOrDie = extractResponseValueOrDie id
+
+getResponseValueAndHeaders :: GRPCResult a -> Either (GRPCResult b) (a, CIHeaderList)
+getResponseValueAndHeaders res =
+  case res of
+    StatusOk resp -> Right (grpcResponseVal resp, grpcHeaders resp)
+    StatusNotOk err -> Left $ StatusNotOk err
+    StatusInvalid -> Left StatusInvalid
+    RequestFailed err -> Left $ RequestFailed err
+
+-- |Get the 'block-hash' header value of a @CIHeader@ if present.
+-- Returns a @Left@ wrapping a string iff the header was not present or if the header
+-- could not be parsed. Returns a @Right@ wrapping a @BlockHash@ parsed from the value
+-- otherwise.
+getBlockHashHeader :: (MonadFail m) => CIHeaderList -> m Types.BlockHash
+getBlockHashHeader hs =
+  case List.find (("blockhash"==) . fst) hs of
+    Just hd ->
+      case readEither . Text.unpack . decodeLatin1 $ snd hd of
+        Left _ -> fail "Could not parse 'block-hash' header in response."
+        Right v -> return v
+    Nothing -> fail "No 'block-hash' header in response."
