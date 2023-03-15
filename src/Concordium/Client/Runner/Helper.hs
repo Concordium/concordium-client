@@ -179,6 +179,6 @@ getBlockHashHeader hs =
   case List.find (("blockhash"==) . fst) hs of
     Just hd ->
       case readEither . Text.unpack . decodeLatin1 $ snd hd of
-        Left _ -> fail "Could not parse 'block-hash' header in response."
+        Left _ -> fail "Could not parse 'blockhash' header in response."
         Right v -> return v
-    Nothing -> fail "No 'block-hash' header in response."
+    Nothing -> fail "No 'blockhash' header in response."
