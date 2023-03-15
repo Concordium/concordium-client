@@ -170,9 +170,9 @@ getResponseValueAndHeaders res =
     RequestFailed err -> Left $ RequestFailed err
 
 -- |Get the 'blockhash' header value of a @CIHeaderList@ if present.
--- Returns a @Left@ wrapping a string if the header was not present or
--- if the header value could not be @read@ into a @BlockHash@. Returns
--- a @Right@wrapping a @BlockHash@ @read@ from the header value
+-- Fails with an error message if the header was not present in the
+-- list of headers or if the header value could not be @read@ into a
+-- @BlockHash@. Returns a @BlockHash@ @read@ from the header value
 -- otherwise.
 getBlockHashHeader :: (MonadFail m) => CIHeaderList -> m Types.BlockHash
 getBlockHashHeader hs =
