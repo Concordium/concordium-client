@@ -478,7 +478,7 @@ shutdownCommand =
     "Shutdown"
     (info
        (pure Shutdown)
-       (progDesc "Shutdown the node gracefully."))
+       (progDesc "Request the node to shut down its P2P network layer. This does not terminate the node process and the node will still respond to consensus queries."))
 
 dumpStartCommand :: Mod CommandFields LegacyCmd
 dumpStartCommand =

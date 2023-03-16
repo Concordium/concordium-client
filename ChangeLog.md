@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+
+## 5.1.1
+
+- Fix a bug that caused commission-rate related reject reasons to be incorrectly
+  displayed in the output of `baker configure` and `transaction status`.
+- Fix a bug that caused leftover code to be displayed in the finalization proof
+  line of the gas rewards section of the `consensus show-chain-parameters` output.
+- Fix a bug that caused the output of `raw GetCryptographicParameters` to be printed
+  in a non-versioned context.
+- The help-message for `raw Shutdown` now properly describes its effects.
+
+## 5.1.0
+
 - The `--grpc-authentication-token` option has been removed.
 - The client now uses the V2 GRPC API exposed by the node. This introduces some breaking
   changes:

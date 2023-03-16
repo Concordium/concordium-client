@@ -1177,11 +1177,11 @@ instance FromProto Proto.RejectReason where
             Proto.RejectReason'MissingBakerAddParameters _ -> do
                 return MissingBakerAddParameters
             Proto.RejectReason'FinalizationRewardCommissionNotInRange _ -> do
-                return BakingRewardCommissionNotInRange
-            Proto.RejectReason'BakingRewardCommissionNotInRange _ -> do
-                return TransactionFeeCommissionNotInRange
-            Proto.RejectReason'TransactionFeeCommissionNotInRange _ -> do
                 return FinalizationRewardCommissionNotInRange
+            Proto.RejectReason'BakingRewardCommissionNotInRange _ -> do
+                return BakingRewardCommissionNotInRange
+            Proto.RejectReason'TransactionFeeCommissionNotInRange _ -> do
+                return TransactionFeeCommissionNotInRange
             Proto.RejectReason'AlreadyADelegator _ -> do
                 return AlreadyADelegator
             Proto.RejectReason'InsufficientBalanceForDelegationStake _ -> do
