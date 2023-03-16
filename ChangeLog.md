@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+
+## 5.1.1
+
 - Fix a bug that caused commission-rate related reject reasons to be incorrectly
   displayed in the output of `baker configure` and `transaction status`.
 - Fix a bug that caused leftover code to be displayed in the finalization proof
