@@ -27,7 +27,7 @@ import qualified Data.ByteString.Lazy.Char8    as BSL8
 import qualified Data.CaseInsensitive          as CI
 import qualified Data.List                     as List
 import qualified Data.Text                     as Text
-import           Data.Text.Encoding            (decodeLatin1)
+import           Data.Text.Encoding            (decodeUtf8)
 import           Network.GRPC.Client           hiding (Invalid)
 import           Network.GRPC.HTTP2.Types
 import qualified Network.URI.Encode            (decode)
@@ -178,7 +178,7 @@ getBlockHashHeader :: (MonadFail m) => CIHeaderList -> m Types.BlockHash
 getBlockHashHeader hs =
   case List.find (("blockhash"==) . fst) hs of
     Just hd ->
-      case readEither . Text.unpack . decodeLatin1 $ snd hd of
+      case readEither . Text.unpack . decodeUtf8 $ snd hd of
         Left _ -> fail "Could not parse 'blockhash' header in response."
         Right v -> return v
     Nothing -> fail "No 'blockhash' header in response."
