@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Fix another a bug that caused leftover code to be displayed in the finalization proof
+- Fix a bug that caused another code-leftover to be displayed in the finalization proof
   line of the gas rewards section of the `consensus show-chain-parameters` output.
 
 ## 5.1.1
