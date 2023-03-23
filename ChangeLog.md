@@ -4,7 +4,7 @@
 
 - Fix a bug that caused another code-leftover to be displayed in the finalization proof
   line of the gas rewards section of the `consensus show-chain-parameters` output. This
-  is only relevant when the queried chain runs protocol version 6 or lower.
+  is only relevant when the queried chain runs protocol version 6.
 
 ## 5.1.1
 
