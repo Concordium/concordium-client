@@ -1120,7 +1120,7 @@ printChainParametersV1 ChainParameters {..} = tell [
   [i|     * GAS account: #{_cpRewardParameters ^. tfdGASAccount}|],
   [i|  + GAS rewards:|],
   [i|     * baking a block: #{_cpRewardParameters ^. gasBaker}|],
-  [i|     * adding a finalization proof: |] <> showConditionally (_cpRewardParameters ^. gasFinalizationProof),
+  [i|     * adding a finalization proof: #{showConditionally (_cpRewardParameters ^. gasFinalizationProof)}|],
   [i|     * adding a credential deployment: #{_cpRewardParameters ^. gasAccountCreation}|],
   [i|     * adding a chain update: #{_cpRewardParameters ^. gasChainUpdate}|],
   "",
