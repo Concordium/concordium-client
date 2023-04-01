@@ -4,7 +4,7 @@ pipeline {
     stages {
         stage('build') {
             environment {
-                GHC_VERSION = '9.2.5'
+                GHC_VERSION = '9.2.7'
                 BASE_OUTFILE = 's3://distribution.concordium.software/tools/windows/concordium-client'
             }
             steps {
@@ -22,7 +22,7 @@ pipeline {
                     fi    
 
                     # Ensure correct rust env
-                    rustup default 1.62-x86_64-pc-windows-gnu
+                    rustup default 1.68-x86_64-pc-windows-gnu
 
                     # Build project
                     stack build --force-dirty

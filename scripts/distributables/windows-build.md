@@ -104,7 +104,7 @@ The following components are written in Rust:
 Install [Rustup](https://www.rust-lang.org/tools/install) to be able to compile those:
 Customize installation:
 - triple: `x64_64-pc-windows-gnu`
-- toolchain: `1.62`
+- toolchain: `1.68`
 
 Add binaries to `PATH`:
 
@@ -115,7 +115,7 @@ echo 'PATH=/c/Users/$USER/.cargo/bin:$PATH' >>~/.bash_profile
 Install correct toolchain if it wasn't done during install:
 
 ```sh
-rustup default 1.62-x86_64-pc-windows-gnu
+rustup default 1.68-x86_64-pc-windows-gnu
 ```
 
 #### Protobuf
