@@ -17,7 +17,7 @@
 #
 # resolver: ./custom-snapshot.yaml
 # resolver: https://example.com/snapshots/2018-01-01.yaml
-resolver: lts-20.4
+resolver: lts-20.16
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -42,10 +42,10 @@ packages:
 extra-deps:
 # http2-client was never included in stackage
 - github: Concordium/http2-client
-  commit: 8087dfd416118064934affb35caab811a8a70233
+  commit: 4e9058db74e7a27dee0c92c4a754086e8a45a592
 
 - github: Concordium/http2-grpc-haskell
-  commit: d79454adc7234908a05b3b5339b48ceaca23ffd9
+  commit: a4a0a31d44f754bf61868552ee5b256d94eed4de
   subdirs:
     - http2-client-grpc
     - http2-grpc-proto-lens
