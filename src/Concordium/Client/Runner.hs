@@ -3605,6 +3605,11 @@ processLegacyCmd action backend =
         readBlockHashOrDefault Best block >>=
           getBlockSpecialEvents >>=
             printResponseValueAsJSON
+    GetBlockTransactionEvents block ->
+      withClient backend $
+        readBlockHashOrDefault Best block >>=
+          getBlockTransactionEvents >>=
+            printResponseValueAsJSON
     GetBlockChainParameters block ->
       withClient backend $
         readBlockHashOrDefault Best block >>=

@@ -28,6 +28,9 @@ data LegacyCmd
   | GetBlockPendingUpdates
       { legacyBlockHash :: !(Maybe Text)
       } --  ^Queries the gRPC server for the pending updates in a specific block.
+  | GetBlockTransactionEvents
+      { legacyBlockHash :: !(Maybe Text)
+      } --  ^Queries the gRPC server for the transaction events in a specific block.
   | GetBlockSpecialEvents
       { legacyBlockHash :: !(Maybe Text)
       } --  ^Queries the gRPC server for the special events in a specific block.
@@ -124,6 +127,7 @@ legacyProgramOptions =
      getConsensusInfoCommand <>
      getBlockInfoCommand <>
      getBlockPendingUpdatesCommand <>
+     getBlockTransactionEventsCommand <>
      getBlockSpecialEventsCommand <>
      getBlockChainParametersCommand <>
      getBlockFinalizationSummaryCommand <>
@@ -224,6 +228,16 @@ getBlockPendingUpdatesCommand =
         optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
        )
        (progDesc "Query the gRPC server for the pending updates in a specific block."))
+
+getBlockTransactionEventsCommand :: Mod CommandFields LegacyCmd
+getBlockTransactionEventsCommand =
+  command
+    "GetBlockTransactionEvents"
+    (info
+       (GetBlockTransactionEvents <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
+       )
+       (progDesc "Query the gRPC server for the transaction events in a specific block."))
 
 getBlockSpecialEventsCommand :: Mod CommandFields LegacyCmd
 getBlockSpecialEventsCommand =
