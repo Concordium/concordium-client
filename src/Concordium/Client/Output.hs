@@ -1235,7 +1235,8 @@ printBlockInfo b =
        , printf "Baker:                      %s" (showMaybe show $ Queries.biBlockBaker b)
        , printf "Transaction count:          %d" (Queries.biTransactionCount b)
        , printf "Transaction energy cost:    %s" (showNrg $ Queries.biTransactionEnergyCost b)
-       , printf "Transactions size:          %d" (Queries.biTransactionsSize b) ]
+       , printf "Transactions size:          %d" (Queries.biTransactionsSize b)
+       , printf "Protocol version:           %s" (show $ Queries.biProtocolVersion b)]
 
 
 -- ID LAYER

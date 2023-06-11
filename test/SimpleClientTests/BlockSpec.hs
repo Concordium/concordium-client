@@ -27,7 +27,8 @@ blockSpec = describe "block" $ do
     , "Baker:                      53"
     , "Transaction count:          10"
     , "Transaction energy cost:    101 NRG"
-    , "Transactions size:          11" ]
+    , "Transactions size:          11"
+    , "Protocol version:           P1"]
   specify "without baker" $ p exampleBlockInfoWithoutBaker `shouldBe`
     [ "Hash:                       0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389"
     , "Parent block:               0f71eeca9f0a497dc4427cab0544f2bcb820b328ad97be29181e212edea708fd"
@@ -43,7 +44,8 @@ blockSpec = describe "block" $ do
     , "Baker:                      none"
     , "Transaction count:          10"
     , "Transaction energy cost:    101 NRG"
-    , "Transactions size:          11" ]
+    , "Transactions size:          11"
+    , "Protocol version:           P3"]
   where p = execWriter . printBlockInfo
 
 exampleBlockInfoWithBaker :: BlockInfo
@@ -64,7 +66,8 @@ exampleBlockInfoWithBaker =
   , biTransactionCount = 10
   , biTransactionEnergyCost = 101
   , biTransactionsSize = 11
-  , biBlockStateHash = exampleStateHash }
+  , biBlockStateHash = exampleStateHash
+  , biProtocolVersion = Types.P1}
 
 exampleBlockInfoWithoutBaker :: BlockInfo
 exampleBlockInfoWithoutBaker =
@@ -84,7 +87,8 @@ exampleBlockInfoWithoutBaker =
   , biTransactionCount = 10
   , biTransactionEnergyCost = 101
   , biTransactionsSize = 11
-  , biBlockStateHash = exampleStateHash }
+  , biBlockStateHash = exampleStateHash
+  , biProtocolVersion = Types.P3}
 
 exampleBlockHash1 :: Types.BlockHash
 exampleBlockHash1 = read "0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389"
