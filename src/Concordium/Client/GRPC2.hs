@@ -879,6 +879,7 @@ instance FromProto Proto.BlockInfo where
         biTransactionEnergyCost <- fromProto $ bi ^. ProtoFields.transactionsEnergyCost
         let biTransactionsSize = fromIntegral $ bi ^. ProtoFields.transactionsSize
         biBlockStateHash <- fromProto $ bi ^. ProtoFields.stateHash
+        biProtocolVersion <- fromProto $ bi ^. ProtoFields.protocolVersion
         return BlockInfo{..}
 
 instance FromProto Proto.Amount where

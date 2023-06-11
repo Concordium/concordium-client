@@ -1214,6 +1214,10 @@ showBlockHashInput :: Queries.BlockHashInput -> String
 showBlockHashInput Queries.Best = [i|best block|]
 showBlockHashInput (Queries.Given bh) = [i|block with hash #{bh}|]
 showBlockHashInput Queries.LastFinal = [i|last finalized block|]
+showBlockHashInput (Queries.AtHeight bhi) =
+    case bhi of
+        Queries.Relative{..} -> [i|@#{rBlockHeight}/#{rGenesisIndex}#{if rRestrict then ("!" :: String) else ""} |]
+        Queries.Absolute{..} -> [i|@#{aBlockHeight}|]
 
 printBlockInfo :: Queries.BlockInfo -> Printer
 printBlockInfo b =
@@ -1231,7 +1235,8 @@ printBlockInfo b =
        , printf "Baker:                      %s" (showMaybe show $ Queries.biBlockBaker b)
        , printf "Transaction count:          %d" (Queries.biTransactionCount b)
        , printf "Transaction energy cost:    %s" (showNrg $ Queries.biTransactionEnergyCost b)
-       , printf "Transactions size:          %d" (Queries.biTransactionsSize b) ]
+       , printf "Transactions size:          %d" (Queries.biTransactionsSize b)
+       , printf "Protocol version:           %s" (show $ Queries.biProtocolVersion b)]
 
 
 -- ID LAYER

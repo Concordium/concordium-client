@@ -3773,6 +3773,11 @@ processLegacyCmd action backend =
         readBlockHashOrDefault Best block >>=
           getCryptographicParameters >>=
             printResponseValueAsJSON . fmap (fmap (Versioned $ Version 0))
+    GetNextUpdateSequenceNumbers block ->
+      withClient backend $
+        readBlockHashOrDefault Best block >>=
+          getNextUpdateSequenceNumbers >>=
+            printResponseValueAsJSON
   where
     -- |Print the response value under the provided mapping,
     -- or fail with an error message if the response contained
