@@ -3879,6 +3879,7 @@ printPeerData bootstrapper pInfos Queries.NodeInfo{..} =
 printNodeInfo :: MonadIO m => Queries.NodeInfo -> m ()
 printNodeInfo Queries.NodeInfo{..} = liftIO $
   let Queries.NetworkInfo{..} = networkInfo in do
+      putStrLn $ "Node version: " ++ Text.unpack peerVersion
       putStrLn $ "Node ID: " ++ show nodeId
       putStrLn $ "Current local time: " ++ show localTime
       putStrLn $ "Baker ID: " ++ maybe "not a baker" show (getBakerIdM details)

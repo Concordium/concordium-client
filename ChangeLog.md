@@ -7,6 +7,7 @@
   `block show` commands.
 - The client needs node version at least 5.4.
 - Add `raw GetNextUpdateSequenceNumbers` subcommand.
+- Add node version to the output of `raw GetNodeInfo`.
 
 ## 5.2.0
 
