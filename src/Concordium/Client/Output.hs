@@ -20,7 +20,6 @@ import Concordium.Client.Utils(durationToText)
 import Concordium.Client.Types.TransactionStatus
 import Concordium.Common.Version
 import Concordium.ID.Parameters
-import qualified Concordium.Types.Conditionally()
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Accounts as Types
 import qualified Concordium.Types.Accounts.Releases as Types
@@ -1065,7 +1064,7 @@ printChainParametersV0 ChainParameters {..} = tell [
   [i|  + microCCD per EUR rate: #{showExchangeRate (_erMicroGTUPerEuro _cpExchangeRates)}|],
   "",
   [i|\# Parameters that affect rewards distribution:|],
-  [i|  + mint rate per slot: #{_cpRewardParameters ^. mdMintPerSlot}|],
+  [i|  + mint rate per slot: #{_cpRewardParameters ^. (mdMintPerSlot . unconditionally)}|],
   [i|  + mint distribution:|],
   [i|     * baking reward: #{_cpRewardParameters ^. mdBakingReward}|],
   [i|     * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|],

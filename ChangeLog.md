@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Remove a stray `CTrue` in output of `consensus show-chain-parameters`.
+
 ## 5.2.0
 
 - Fix a bug that caused another code-leftover to be displayed in the finalization proof
