@@ -117,6 +117,8 @@ data LegacyCmd
     { legacyBlockHash :: !(Maybe Text) }
   | GetCryptographicParameters
     { legacyBlockHash :: !(Maybe Text) }
+  | GetNextUpdateSequenceNumbers
+    { legacyBlockHash :: !(Maybe Text) }
   deriving (Show)
 
 legacyProgramOptions :: Parser LegacyCmd
@@ -159,7 +161,8 @@ legacyProgramOptions =
      dumpStopCommand <>
      getIdentityProvidersCommand <>
      getAnonymityRevokersCommand <>
-     getCryptographicParametersCommand
+     getCryptographicParametersCommand <>
+     getNextUpdateSequenceNumbersCommand
     )
 
 getPeerDataCommand :: Mod CommandFields LegacyCmd
@@ -329,6 +332,16 @@ getNextAccountNonceCommand =
         strArgument (metavar "ACCOUNT" <> help "Account to be queried about")
        )
        (progDesc "Query the gRPC server for the best guess on the next account nonce."))
+
+getNextUpdateSequenceNumbersCommand :: Mod CommandFields LegacyCmd
+getNextUpdateSequenceNumbersCommand =
+  command
+    "GetNextUpdateSequenceNumbers"
+    (info
+       (GetNextUpdateSequenceNumbers <$>
+        optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
+       )
+       (progDesc "Query the gRPC server for the next update sequence numbers for all update queues."))
 
 
 getInstanceInfoCommand :: Mod CommandFields LegacyCmd

@@ -3,6 +3,9 @@
 ## Unreleased
 
 - Remove a stray `CTrue` in output of `consensus show-chain-parameters`.
+- The client now outputs protocol version as part of raw `GetBlockInfo`.
+- The client needs node version at least 5.4.
+- Add `raw GetNextUpdateSequenceNumbers` subcommand.
 
 ## 5.2.0
 

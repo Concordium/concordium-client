@@ -1214,6 +1214,10 @@ showBlockHashInput :: Queries.BlockHashInput -> String
 showBlockHashInput Queries.Best = [i|best block|]
 showBlockHashInput (Queries.Given bh) = [i|block with hash #{bh}|]
 showBlockHashInput Queries.LastFinal = [i|last finalized block|]
+showBlockHashInput (Queries.AtHeight bhi) =
+    case bhi of
+        Queries.Relative{..} -> [i|@#{rBlockHeight}/#{rGenesisIndex}#{if rRestrict then ("!" :: String) else ""} |]
+        Queries.Absolute{..} -> [i|@#{aBlockHeight}|]
 
 printBlockInfo :: Queries.BlockInfo -> Printer
 printBlockInfo b =
