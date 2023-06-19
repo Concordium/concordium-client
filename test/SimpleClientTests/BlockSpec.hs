@@ -20,7 +20,7 @@ blockSpec = describe "block" $ do
     , "Receive time:               Mon, 12 Jan 1970 13:46:40 UTC"
     , "Arrive time:                Thu, 15 Jan 1970 06:56:07 UTC"
     , "Slot:                       1337"
-    , "Slot time:                  Sat, 24 Jan 1970 03:33:20 UTC"
+    , "Block time:                 Sat, 24 Jan 1970 03:33:20 UTC"
     , "Height:                     121"
     , "Height since last genesis:  121"
     , "Genesis index:              0"
@@ -37,7 +37,7 @@ blockSpec = describe "block" $ do
     , "Receive time:               Mon, 12 Jan 1970 13:46:40 UTC"
     , "Arrive time:                Thu, 15 Jan 1970 06:56:07 UTC"
     , "Slot:                       1337"
-    , "Slot time:                  Sat, 24 Jan 1970 03:33:20 UTC"
+    , "Block time:                 Sat, 24 Jan 1970 03:33:20 UTC"
     , "Height:                     121"
     , "Height since last genesis:  121"
     , "Genesis index:              0"
@@ -57,7 +57,7 @@ exampleBlockInfoWithBaker =
   , biFinalized = False
   , biBlockReceiveTime = exampleTime1
   , biBlockArriveTime = exampleTime2
-  , biBlockSlot = 1337
+  , biBlockSlot = Just 1337
   , biBlockHeight = 121
   , biGenesisIndex = 0
   , biEraBlockHeight = 121
@@ -67,7 +67,9 @@ exampleBlockInfoWithBaker =
   , biTransactionEnergyCost = 101
   , biTransactionsSize = 11
   , biBlockStateHash = exampleStateHash
-  , biProtocolVersion = Types.P1}
+  , biProtocolVersion = Types.P1
+  , biRound = Nothing
+  , biEpoch = Nothing}
 
 exampleBlockInfoWithoutBaker :: BlockInfo
 exampleBlockInfoWithoutBaker =
@@ -78,7 +80,7 @@ exampleBlockInfoWithoutBaker =
   , biFinalized = False
   , biBlockReceiveTime = exampleTime1
   , biBlockArriveTime = exampleTime2
-  , biBlockSlot = 1337
+  , biBlockSlot = Just 1337
   , biBlockSlotTime = exampleTime3
   , biBlockHeight = 121
   , biGenesisIndex = 0
@@ -88,7 +90,9 @@ exampleBlockInfoWithoutBaker =
   , biTransactionEnergyCost = 101
   , biTransactionsSize = 11
   , biBlockStateHash = exampleStateHash
-  , biProtocolVersion = Types.P3}
+  , biProtocolVersion = Types.P3
+  , biRound = Nothing
+  , biEpoch = Nothing}
 
 exampleBlockHash1 :: Types.BlockHash
 exampleBlockHash1 = read "0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389"

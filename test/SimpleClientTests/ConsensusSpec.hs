@@ -140,12 +140,13 @@ exampleStatusWithOptionalFields =
   , csFinalizationPeriodEMA = Just 100
   , csFinalizationPeriodEMSD = Just 200
   , csGenesisTime = exampleTime1
-  , csSlotDuration = 100000
+  , csSlotDuration = Just 100000
   , csEpochDuration = 100000
   , csProtocolVersion = P1
   , csGenesisIndex = 0
   , csCurrentEraGenesisBlock = exampleBlockHash2
-  , csCurrentEraGenesisTime = exampleTime1 }
+  , csCurrentEraGenesisTime = exampleTime1
+  , csConcordiumBFTStatus = Nothing }
 
 exampleStatusWithoutOptionalFields :: ConsensusStatus
 exampleStatusWithoutOptionalFields =
@@ -174,12 +175,13 @@ exampleStatusWithoutOptionalFields =
   , csFinalizationPeriodEMA = Nothing
   , csFinalizationPeriodEMSD = Nothing
   , csGenesisTime = exampleTime1
-  , csSlotDuration = 100000
+  , csSlotDuration = Just 100000
   , csEpochDuration = 100000
   , csProtocolVersion = P1
   , csGenesisIndex = 0
   , csCurrentEraGenesisBlock = exampleBlockHash2
-  , csCurrentEraGenesisTime = exampleTime1 }
+  , csCurrentEraGenesisTime = exampleTime1
+  , csConcordiumBFTStatus = Nothing }
 
 exampleBirkParameters :: BirkParametersResult
 exampleBirkParameters =
