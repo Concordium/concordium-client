@@ -1240,7 +1240,7 @@ printBlockInfo b =
        , printf "Receive time:               %s" (showTimeFormatted $ Queries.biBlockReceiveTime b)
        , printf "Arrive time:                %s" (showTimeFormatted $ Queries.biBlockArriveTime b)
        ] ++ maybeSlot (Queries.biBlockSlot b) ++ [
-         printf "Slot time:                  %s" (showTimeFormatted $ Queries.biBlockSlotTime b)
+         printf "Block time:                  %s" (showTimeFormatted $ Queries.biBlockSlotTime b)
        , printf "Height:                     %s" (show $ Queries.biBlockHeight b)
        , printf "Height since last genesis:  %s" (show $ Queries.biEraBlockHeight b)
        , printf "Genesis index:              %s" (show $ Queries.biGenesisIndex b)
