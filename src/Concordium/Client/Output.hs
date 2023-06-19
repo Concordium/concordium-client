@@ -1002,9 +1002,9 @@ printConsensusStatus r =
     bftStatus Nothing = []
     bftStatus (Just Queries.ConcordiumBFTStatus{..}) = [
          printf "Current timeout duration:    %s" (showDuration $ Time.durationMillis cbftsCurrentTimeoutDuration),
-         printf "Current round:    %s" (show cbftsCurrentRound),
-         printf "Current epoch:    %s" (show cbftsCurrentEpoch),
-         printf "Trigger block time:    %s" (show cbftsTriggerBlockTime)
+         printf "Current round:               %s" (show cbftsCurrentRound),
+         printf "Current epoch:               %s" (show cbftsCurrentEpoch),
+         printf "Trigger block time:          %s" (show cbftsTriggerBlockTime)
       ]
 
 
@@ -1240,7 +1240,7 @@ printBlockInfo b =
        , printf "Receive time:               %s" (showTimeFormatted $ Queries.biBlockReceiveTime b)
        , printf "Arrive time:                %s" (showTimeFormatted $ Queries.biBlockArriveTime b)
        ] ++ maybeSlot (Queries.biBlockSlot b) ++ [
-         printf "Block time:                  %s" (showTimeFormatted $ Queries.biBlockSlotTime b)
+         printf "Block time:                 %s" (showTimeFormatted $ Queries.biBlockSlotTime b)
        , printf "Height:                     %s" (show $ Queries.biBlockHeight b)
        , printf "Height since last genesis:  %s" (show $ Queries.biEraBlockHeight b)
        , printf "Genesis index:              %s" (show $ Queries.biGenesisIndex b)
@@ -1254,9 +1254,9 @@ printBlockInfo b =
     maybeSlot Nothing = []
     maybeSlot (Just s) = [printf "Slot:                       %s" (show s)]
     maybeRound Nothing = []
-    maybeRound (Just r) = [printf "Round:                       %s" (show r)]
+    maybeRound (Just r) = [printf "Round:                      %s" (show r)]
     maybeEpoch Nothing = []
-    maybeEpoch (Just e) = [printf "Epoch:                       %s" (show e)]
+    maybeEpoch (Just e) = [printf "Epoch:                      %s" (show e)]
 
 
 -- ID LAYER
