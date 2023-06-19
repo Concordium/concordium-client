@@ -971,11 +971,11 @@ showRejectReason verbose = \case
 
 printConsensusStatus :: Queries.ConsensusStatus -> Printer
 printConsensusStatus r =
-  tell [ printf "Best block:                  %s" (show $ Queries.csBestBlock r)
+  tell $ [ printf "Best block:                  %s" (show $ Queries.csBestBlock r)
        , printf "Genesis block:               %s" (show $ Queries.csGenesisBlock r)
        , printf "Genesis time:                %s" (show $ Queries.csGenesisTime r)
-       , printf "Slot duration:               %s" (showDuration $ Time.durationMillis $ Queries.csSlotDuration r)
-       , printf "Epoch duration:              %s" (showDuration $ Time.durationMillis $ Queries.csEpochDuration r)
+       ] ++ slotDur (Queries.csSlotDuration r) ++ [
+         printf "Epoch duration:              %s" (showDuration $ Time.durationMillis $ Queries.csEpochDuration r)
        , printf "Last finalized block:        %s" (show $ Queries.csLastFinalizedBlock r)
        , printf "Best block height:           %s" (show $ Queries.csBestBlockHeight r)
        , printf "Last finalized block height: %s" (show $ Queries.csLastFinalizedBlockHeight r)
@@ -995,6 +995,18 @@ printConsensusStatus r =
        , printf "Genesis index:               %s" (show $ Queries.csGenesisIndex r)
        , printf "Current era genesis block:   %s" (show $ Queries.csCurrentEraGenesisBlock r)
        , printf "Current era genesis time:    %s" (show $ Queries.csCurrentEraGenesisTime r)]
+       ++ bftStatus (Queries.csConcordiumBFTStatus r)
+  where 
+    slotDur Nothing = []
+    slotDur (Just dur) = [printf "Slot duration:               %s" (showDuration $ Time.durationMillis dur)]
+    bftStatus Nothing = []
+    bftStatus (Just Queries.ConcordiumBFTStatus{..}) = [
+         printf "Current timeout duration:    %s" (showDuration $ Time.durationMillis cbftsCurrentTimeoutDuration),
+         printf "Current round:    %s" (show cbftsCurrentRound),
+         printf "Current epoch:    %s" (show cbftsCurrentEpoch),
+         printf "Trigger block time:    %s" (show cbftsTriggerBlockTime)
+      ]
+
 
 -- |Print Birk parameters from a @BlockBirkParameters@.
 printQueryBirkParameters :: Bool -> Queries.BlockBirkParameters -> Map.Map IDTypes.AccountAddress Text -> Printer
@@ -1221,14 +1233,14 @@ showBlockHashInput (Queries.AtHeight bhi) =
 
 printBlockInfo :: Queries.BlockInfo -> Printer
 printBlockInfo b =
-  tell [ printf "Hash:                       %s" (show $ Queries.biBlockHash b)
+  tell $ [ printf "Hash:                       %s" (show $ Queries.biBlockHash b)
        , printf "Parent block:               %s" (show $ Queries.biBlockParent b)
        , printf "Last finalized block:       %s" (show $ Queries.biBlockLastFinalized b)
        , printf "Finalized:                  %s" (showYesNo $ Queries.biFinalized b)
        , printf "Receive time:               %s" (showTimeFormatted $ Queries.biBlockReceiveTime b)
        , printf "Arrive time:                %s" (showTimeFormatted $ Queries.biBlockArriveTime b)
-       , printf "Slot:                       %s" (show $ Queries.biBlockSlot b)
-       , printf "Slot time:                  %s" (showTimeFormatted $ Queries.biBlockSlotTime b)
+       ] ++ maybeSlot (Queries.biBlockSlot b) ++ [
+         printf "Slot time:                  %s" (showTimeFormatted $ Queries.biBlockSlotTime b)
        , printf "Height:                     %s" (show $ Queries.biBlockHeight b)
        , printf "Height since last genesis:  %s" (show $ Queries.biEraBlockHeight b)
        , printf "Genesis index:              %s" (show $ Queries.biGenesisIndex b)
@@ -1237,6 +1249,14 @@ printBlockInfo b =
        , printf "Transaction energy cost:    %s" (showNrg $ Queries.biTransactionEnergyCost b)
        , printf "Transactions size:          %d" (Queries.biTransactionsSize b)
        , printf "Protocol version:           %s" (show $ Queries.biProtocolVersion b)]
+       ++ maybeRound (Queries.biRound b) ++ maybeEpoch (Queries.biEpoch b) 
+  where
+    maybeSlot Nothing = []
+    maybeSlot (Just s) = [printf "Slot:                       %s" (show s)]
+    maybeRound Nothing = []
+    maybeRound (Just r) = [printf "Round:                       %s" (show r)]
+    maybeEpoch Nothing = []
+    maybeEpoch (Just e) = [printf "Epoch:                       %s" (show e)]
 
 
 -- ID LAYER
