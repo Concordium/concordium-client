@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 6.0.0
+
 - Remove a stray `CTrue` in output of `consensus show-chain-parameters`.
 - The client now outputs protocol version as part of raw `GetBlockInfo` and
   `block show` commands.
