@@ -15,6 +15,7 @@
 - Add round and epoch to the output of `raw GetBlockInfo`.
 - Add round and epoch to the output of `block show` when they are present.
 - Print "Block time" instead of "Slot time" in the output of `block show`.
+- In the output of `consensus show-parameters`, only print election difficulty when present. 
 
 ## 5.2.0
 

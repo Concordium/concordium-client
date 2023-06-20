@@ -1011,8 +1011,8 @@ printConsensusStatus r =
 -- |Print Birk parameters from a @BlockBirkParameters@.
 printQueryBirkParameters :: Bool -> Queries.BlockBirkParameters -> Map.Map IDTypes.AccountAddress Text -> Printer
 printQueryBirkParameters includeBakers r addrmap = do
-  tell [ printf "Election nonce:      %s" (show $ Queries.bbpElectionNonce r),
-         printf "Election difficulty: %s" (show $ Queries.bbpElectionDifficulty r) ]
+  tell $ printf "Election nonce:      %s" (show $ Queries.bbpElectionNonce r)
+         : maybeElectionDiffiulty (Queries.bbpElectionDifficulty r)
   when includeBakers $
     case Vec.toList $ Queries.bbpBakers r of
       [] ->
@@ -1033,6 +1033,9 @@ printQueryBirkParameters includeBakers r addrmap = do
                                 then " <0.0001 %" :: String
                                 else printf "%8.4f %%" (lp*100)
           accountName bkr = fromMaybe " " $ Map.lookup bkr addrmap
+  where
+    maybeElectionDiffiulty Nothing = []
+    maybeElectionDiffiulty (Just ed) = [printf "Election difficulty: %s" (show ed)]
 
 -- |Print Birk parameters from a @BirkParametersResult@.
 printBirkParameters :: Bool -> BirkParametersResult -> Map.Map IDTypes.AccountAddress Text -> Printer
