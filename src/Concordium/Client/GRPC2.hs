@@ -814,7 +814,7 @@ instance FromProto Proto.ConsensusInfo where
         csBestBlock <- fromProto $ ci ^. ProtoFields.bestBlock
         csGenesisBlock <- fromProto $ ci ^. ProtoFields.genesisBlock
         csGenesisTime <- fmap timestampToUTCTime . fromProto $ ci ^. ProtoFields.genesisTime
-        csSlotDuration <- fromProto $ ci ^. ProtoFields.slotDuration
+        csSlotDuration <- fromProtoMaybe $ ci ^. ProtoFields.maybe'slotDuration
         csEpochDuration <- fromProto $ ci ^. ProtoFields.epochDuration
         csLastFinalizedBlock <- fromProto $ ci ^. ProtoFields.lastFinalizedBlock
         csBestBlockHeight <- fromProto $ ci ^. ProtoFields.bestBlockHeight
@@ -843,10 +843,22 @@ instance FromProto Proto.ConsensusInfo where
         csGenesisIndex <- fromProto $ ci ^. ProtoFields.genesisIndex
         csCurrentEraGenesisBlock <- fromProto $ ci ^. ProtoFields.currentEraGenesisBlock
         csCurrentEraGenesisTime <- fmap timestampToUTCTime . fromProto $ ci ^. ProtoFields.currentEraGenesisTime
+        currentTimeoutDuration <- fromProtoMaybe $ ci ^. ProtoFields.maybe'currentTimeoutDuration
+        currentRound <- fromProtoMaybe $ ci ^. ProtoFields.maybe'currentRound
+        currentEpoch <- fromProtoMaybe $ ci ^. ProtoFields.maybe'currentEpoch
+        triggerBlockTime <- (fmap . fmap) timestampToUTCTime . fromProtoMaybe $ ci ^. ProtoFields.maybe'triggerBlockTime
+        let csConcordiumBFTStatus = case (currentTimeoutDuration, currentRound, currentEpoch, triggerBlockTime) of 
+                (Just cbftsCurrentTimeoutDuration, Just cbftsCurrentRound, Just cbftsCurrentEpoch, Just cbftsTriggerBlockTime) -> Just ConcordiumBFTStatus{..}
+                _ -> Nothing
         return ConsensusStatus{..}
 
 instance FromProto Proto.Slot where
     type Output Proto.Slot = Slot
+    fromProto = return . deMkWord64
+
+
+instance FromProto Proto.Round where
+    type Output Proto.Round = Round
     fromProto = return . deMkWord64
 
 instance FromProto Proto.StateHash where
@@ -871,7 +883,7 @@ instance FromProto Proto.BlockInfo where
         biEraBlockHeight <- fromProto $ bi ^. ProtoFields.eraBlockHeight
         biBlockReceiveTime <- fmap timestampToUTCTime . fromProto $ bi ^. ProtoFields.receiveTime
         biBlockArriveTime <- fmap timestampToUTCTime . fromProto $ bi ^. ProtoFields.arriveTime
-        biBlockSlot <- fromProto $ bi ^. ProtoFields.slotNumber
+        biBlockSlot <- fromProtoMaybe $ bi ^. ProtoFields.maybe'slotNumber
         biBlockSlotTime <- fmap timestampToUTCTime . fromProto $ bi ^. ProtoFields.slotTime
         biBlockBaker <- fromProtoMaybe $ bi ^. ProtoFields.maybe'baker
         let biFinalized = bi ^. ProtoFields.finalized
@@ -880,6 +892,8 @@ instance FromProto Proto.BlockInfo where
         let biTransactionsSize = fromIntegral $ bi ^. ProtoFields.transactionsSize
         biBlockStateHash <- fromProto $ bi ^. ProtoFields.stateHash
         biProtocolVersion <- fromProto $ bi ^. ProtoFields.protocolVersion
+        biRound <- fromProtoMaybe $ bi ^. ProtoFields.maybe'round
+        biEpoch <- fromProtoMaybe $ bi ^. ProtoFields.maybe'epoch
         return BlockInfo{..}
 
 instance FromProto Proto.Amount where
@@ -1263,7 +1277,7 @@ instance FromProto Proto.ElectionInfo where
             mapM fromProto
                 . Vec.fromList
                 $ eInfo ^. ProtoFields.bakerElectionInfo
-        bbpElectionDifficulty <- fromProto $ eInfo ^. ProtoFields.electionDifficulty
+        bbpElectionDifficulty <- fromProtoMaybe $ eInfo ^. ProtoFields.maybe'electionDifficulty
         bbpElectionNonce <- fromProto $ eInfo ^. ProtoFields.electionNonce
         return BlockBirkParameters{..}
 

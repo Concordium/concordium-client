@@ -8,6 +8,14 @@
 - The client needs node version at least 5.4.
 - Add `raw GetNextUpdateSequenceNumbers` subcommand.
 - Add node version to the output of `raw GetNodeInfo`.
+- Add current timeout duration, current round, current epoch and trigger block time to the output
+  of `raw GetConsensusInfo`.
+- Add current timeout duration, current round, current epoch and trigger block time to the output
+  of `consensus status` when they are present.
+- Add round and epoch to the output of `raw GetBlockInfo`.
+- Add round and epoch to the output of `block show` when they are present.
+- Print "Block time" instead of "Slot time" in the output of `block show`.
+- In the output of `consensus show-parameters`, only print election difficulty when present. 
 
 ## 5.2.0
 
