@@ -1194,7 +1194,7 @@ printChainParametersV2 ChainParameters {..} = tell [
   [i|     * base timeout: #{_cpConsensusParameters ^. cpTimeoutParameters ^. tpTimeoutBase} ms.|],
   [i|     * timeout increase: #{showRatio (_cpConsensusParameters ^. cpTimeoutParameters ^. tpTimeoutIncrease)}|],
   [i|     * timeout decrease: #{showRatio (_cpConsensusParameters ^. cpTimeoutParameters ^. tpTimeoutDecrease)}|],
-  [i|  + minimum time between blocks: #{_cpConsensusParameters ^. cpMinBlockTime}|],
+  [i|  + minimum time between blocks: #{_cpConsensusParameters ^. cpMinBlockTime} ms.|],
   [i|  + block energy limit: #{_cpConsensusParameters ^. cpBlockEnergyLimit}|],
   "",
   [i|\# Finalization committee parameters:|],

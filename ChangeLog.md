@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add an unit (ms) to the minimum block time shown in the chain parameters for P6.
+
 ## 6.0.0
 
 - Remove a stray `CTrue` in output of `consensus show-chain-parameters`.
