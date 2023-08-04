@@ -17,7 +17,6 @@ import Concordium.Client.Types.TransactionStatus
 import Control.Exception
 import Control.Monad
 import Control.Monad.Except
-import Control.Monad.IO.Class
 import Data.Aeson as AE
 import Data.Aeson.Types (Pair)
 import qualified Data.Char as C

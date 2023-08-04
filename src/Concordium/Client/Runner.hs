@@ -82,7 +82,6 @@ import Codec.CBOR.Write
 import Control.Arrow (Arrow (second))
 import Control.Exception
 import Control.Monad.Except
-import Control.Monad.Fail
 import Control.Monad.Reader hiding (fail)
 import Control.Monad.State.Strict
 import Data.Aeson as AE

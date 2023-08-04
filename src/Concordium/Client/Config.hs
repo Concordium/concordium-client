@@ -45,7 +45,7 @@ import Text.Read (readMaybe)
 -- |
 --The layout of the config directory is shown in this example:
 --
---@
+-- @
 --  <baseConfigDir>
 --  ├── accounts
 --  │   ├── names.map
@@ -84,7 +84,7 @@ import Text.Read (readMaybe)
 --  └── contracts
 --      ├── contractNames.map
 --      └── moduleNames.map
---@
+-- @
 type BaseConfigDir = FilePath
 
 type AccountConfigDir = FilePath
