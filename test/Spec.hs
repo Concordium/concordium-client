@@ -7,5 +7,5 @@ import qualified SimpleClientTests.CliSpec
 
 main :: IO ()
 main = hspec $ parallel $ do
-  SimpleClientTests.CliSpec.tests
-  DataTests.DoubleWordSpec.tests
+    SimpleClientTests.CliSpec.tests
+    DataTests.DoubleWordSpec.tests

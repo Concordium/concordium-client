@@ -1,10 +1,10 @@
-module Concordium.Client.Parse
-  ( parseTransactionHash
-  , parseBlockHash
-  , parseTime
-  , parseCredExpiry
-  , parseExpiry
-  ) where
+module Concordium.Client.Parse (
+    parseTransactionHash,
+    parseBlockHash,
+    parseTime,
+    parseCredExpiry,
+    parseExpiry,
+) where
 
 import Concordium.Crypto.SHA256
 import Concordium.Types
@@ -13,8 +13,8 @@ import Control.Monad.Except
 import Data.Text
 import Data.Time
 import Data.Word
-import Text.Read
 import Text.Printf
+import Text.Read
 
 parseTransactionHash :: Text -> Maybe TransactionHashV0
 parseTransactionHash = readMaybe . unpack
@@ -26,8 +26,9 @@ data DurationUnit = Second | Minute | Hour
 
 type TimeFormat = String
 
--- |Parse time from a string using the provided format.
--- This is a simple convenience wrapper around the more general function parseTimeM.
+{- |Parse time from a string using the provided format.
+ This is a simple convenience wrapper around the more general function parseTimeM.
+-}
 parseTime :: (MonadFail m) => TimeFormat -> String -> m UTCTime
 parseTime = parseTimeM False defaultTimeLocale
 
@@ -35,30 +36,32 @@ parseTime = parseTimeM False defaultTimeLocale
 parseCredExpiry :: (MonadFail m) => String -> m UTCTime
 parseCredExpiry = parseTime "%0Y%0m"
 
--- |Parse expiry time given as absolute Unix epoch or a duration string
--- relative to the provided "now" time.
+{- |Parse expiry time given as absolute Unix epoch or a duration string
+ relative to the provided "now" time.
+-}
 parseExpiry :: (MonadError String m) => TransactionExpiryTime -> Text -> m TransactionExpiryTime
 parseExpiry now input = do
-  (t, u) <- parseDuration input
-  let e = TransactionTime t
-  return $ case u of
-            Nothing -> e
-            Just s -> now + e*multiplier s
-  where multiplier = \case
-          Second -> 1
-          Minute -> 60
-          Hour -> 3600
+    (t, u) <- parseDuration input
+    let e = TransactionTime t
+    return $ case u of
+        Nothing -> e
+        Just s -> now + e * multiplier s
+  where
+    multiplier = \case
+        Second -> 1
+        Minute -> 60
+        Hour -> 3600
 
 -- |Parse a string into an integer and an optional duration unit.
 parseDuration :: (MonadError String m) => Text -> m (Word64, Maybe DurationUnit)
 parseDuration t =
-  case reads $ unpack t of
-    [(n, r)] -> do
-      unit <- case toLower $ strip $ pack r of
+    case reads $ unpack t of
+        [(n, r)] -> do
+            unit <- case toLower $ strip $ pack r of
                 "" -> return Nothing
                 "s" -> return $ Just Second
                 "m" -> return $ Just Minute
                 "h" -> return $ Just Hour
                 _ -> throwError $ printf "unsupported suffix '%s'" r
-      return (n, unit)
-    _ -> throwError "non-numeric prefix"
+            return (n, unit)
+        _ -> throwError "non-numeric prefix"

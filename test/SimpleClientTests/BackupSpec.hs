@@ -1,5 +1,6 @@
-{-# OPTIONS_GHC -Wno-deprecations #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-deprecations #-}
+
 module SimpleClientTests.BackupSpec where
 
 import Concordium.Client.Config
@@ -20,77 +21,102 @@ import Test.Hspec
 
 fromBase64 :: BS.ByteString -> Base64ByteString
 fromBase64 bs =
-  case BS64.decode bs of
-    Right x -> Base64ByteString x
-    Left e -> error $ "Error decoding base64 string: " ++ e
-
+    case BS64.decode bs of
+        Right x -> Base64ByteString x
+        Left e -> error $ "Error decoding base64 string: " ++ e
 
 exampleAccountAddress1 :: IDTypes.AccountAddress
 exampleAccountAddress1 = case IDTypes.addressFromText "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6" of
-                           Right addr -> addr
-                           -- This does not happen since the format
-                           -- of the text is that of a valid address.
-                           Left err -> error err
+    Right addr -> addr
+    -- This does not happen since the format
+    -- of the text is that of a valid address.
+    Left err -> error err
 
 -- some value that has the right format, it does not matter what it is.
 -- Safe, since the format of the text is that of a valid registration
 -- ID, and hence it is always decoded.
 someCredId :: IDTypes.CredentialRegistrationID
-someCredId = MA.fromMaybe
-                (error "unable to decode")
-                $ AE.decode "\"96f89a557352b0aa7596b12f3ccf4cc5973066e31e2c57a8b9dc096fdcff6dd8967e27a7a6e9d41fcc0d553b62650148\""
+someCredId =
+    MA.fromMaybe
+        (error "unable to decode")
+        $ AE.decode "\"96f89a557352b0aa7596b12f3ccf4cc5973066e31e2c57a8b9dc096fdcff6dd8967e27a7a6e9d41fcc0d553b62650148\""
 
 -- |dummy accountconfig, for testing export/import
 exampleAccountConfigWithKeysAndName :: AccountConfig
 exampleAccountConfigWithKeysAndName =
-  AccountConfig
-  { acAddr = NamedAddress { naNames = ["name"] , naAddr = exampleAccountAddress1 }
-  , acCids = Map.singleton 0 someCredId
-  , acKeys = Map.singleton 0 $ Map.fromList [ (11,
-                           EncryptedAccountKeyPairEd25519 {
-                              verifyKey=vk1
-                              , encryptedSignKey = EncryptedJSON (EncryptedText {
-                                                                     etMetadata = EncryptionMetadata {
-                                                                         emEncryptionMethod = AES256,
-                                                                           emKeyDerivationMethod = PBKDF2SHA256,
-                                                                           emIterations = 100000,
-                                                                           emSalt = fromBase64 "sQ8NG/fBLdLuuLd1ARlAqw==",
-                                                                           emInitializationVector = fromBase64 "z6tTcT5ko8vS2utlwwNvbw=="},
-                                                                       etCipherText = fromBase64 "9ltKSJtlkiBXY/kU8huA4GoCaGNjy8M2Ym2SOtlg1ay6lfI9o95sXJ1cjcQ2b8gV+WddwS7ile8ZhIr8es58pTaM8PczlLbKBCSJ11R2iqw="})
-                              })
-                        , ( 2,
-                            EncryptedAccountKeyPairEd25519 {
-                              verifyKey=vk2
-                              , encryptedSignKey = EncryptedJSON (EncryptedText {
-                                                                     etMetadata = EncryptionMetadata {
-                                                                         emEncryptionMethod = AES256,
-                                                                         emKeyDerivationMethod = PBKDF2SHA256,
-                                                                         emIterations = 100000,
-                                                                         emSalt = fromBase64 "slzkcKo8IPymU5t7jamGQQ==",
-                                                                         emInitializationVector = fromBase64 "NXbbI8Cc3AXtaG/go+L+FA=="},
-                                                                     etCipherText = fromBase64 "hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY="})
-                              })]
-  , acEncryptionKey = Just EncryptedText {
-      etMetadata = EncryptionMetadata {
-          emEncryptionMethod = AES256,
-          emIterations = 100000,
-          emSalt = fromBase64 "w7pmsDi1K4bWf+zkLCuzVw==",
-          emInitializationVector = fromBase64 "EXhd7ctFeqKvaA0P/oB8wA==",
-          emKeyDerivationMethod = PBKDF2SHA256
-          },
-      etCipherText = fromBase64 "pYvIywCAMLhvag1EJmGVuVezGsNvYn24zBnB6TCTkwEwOH50AOrx8NAZnVuQteZMQ7k7Kd7a1RorSxIQI1H/WX+Usi8f3VLnzdZFJmbk4Cme+dcgAbI+wWr0hisgrCDl"
-      }}
+    AccountConfig
+        { acAddr = NamedAddress{naNames = ["name"], naAddr = exampleAccountAddress1}
+        , acCids = Map.singleton 0 someCredId
+        , acKeys =
+            Map.singleton 0 $
+                Map.fromList
+                    [
+                        ( 11
+                        , EncryptedAccountKeyPairEd25519
+                            { verifyKey = vk1
+                            , encryptedSignKey =
+                                EncryptedJSON
+                                    ( EncryptedText
+                                        { etMetadata =
+                                            EncryptionMetadata
+                                                { emEncryptionMethod = AES256
+                                                , emKeyDerivationMethod = PBKDF2SHA256
+                                                , emIterations = 100000
+                                                , emSalt = fromBase64 "sQ8NG/fBLdLuuLd1ARlAqw=="
+                                                , emInitializationVector = fromBase64 "z6tTcT5ko8vS2utlwwNvbw=="
+                                                }
+                                        , etCipherText = fromBase64 "9ltKSJtlkiBXY/kU8huA4GoCaGNjy8M2Ym2SOtlg1ay6lfI9o95sXJ1cjcQ2b8gV+WddwS7ile8ZhIr8es58pTaM8PczlLbKBCSJ11R2iqw="
+                                        }
+                                    )
+                            }
+                        )
+                    ,
+                        ( 2
+                        , EncryptedAccountKeyPairEd25519
+                            { verifyKey = vk2
+                            , encryptedSignKey =
+                                EncryptedJSON
+                                    ( EncryptedText
+                                        { etMetadata =
+                                            EncryptionMetadata
+                                                { emEncryptionMethod = AES256
+                                                , emKeyDerivationMethod = PBKDF2SHA256
+                                                , emIterations = 100000
+                                                , emSalt = fromBase64 "slzkcKo8IPymU5t7jamGQQ=="
+                                                , emInitializationVector = fromBase64 "NXbbI8Cc3AXtaG/go+L+FA=="
+                                                }
+                                        , etCipherText = fromBase64 "hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY="
+                                        }
+                                    )
+                            }
+                        )
+                    ]
+        , acEncryptionKey =
+            Just
+                EncryptedText
+                    { etMetadata =
+                        EncryptionMetadata
+                            { emEncryptionMethod = AES256
+                            , emIterations = 100000
+                            , emSalt = fromBase64 "w7pmsDi1K4bWf+zkLCuzVw=="
+                            , emInitializationVector = fromBase64 "EXhd7ctFeqKvaA0P/oB8wA=="
+                            , emKeyDerivationMethod = PBKDF2SHA256
+                            }
+                    , etCipherText = fromBase64 "pYvIywCAMLhvag1EJmGVuVezGsNvYn24zBnB6TCTkwEwOH50AOrx8NAZnVuQteZMQ7k7Kd7a1RorSxIQI1H/WX+Usi8f3VLnzdZFJmbk4Cme+dcgAbI+wWr0hisgrCDl"
+                    }
+        }
   where
     v1 = "c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027"
     v2 = "f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213"
     (vk1, vk2) = case (BSH.deserializeBase16 v1, BSH.deserializeBase16 v2) of
-                   (Just v', Just v'') -> (v', v'')
-                   -- This does not happen since string literals are base 16.
-                   _ -> error "unable to deserialize"
+        (Just v', Just v'') -> (v', v'')
+        -- This does not happen since string literals are base 16.
+        _ -> error "unable to deserialize"
 
 exampleContractNameMap :: ContractNameMap
 exampleContractNameMap = Map.fromList [("contrA", mkContrAddr 0 0), ("contrB", mkContrAddr 42 0), ("contrC", mkContrAddr 42 4200)]
-  where mkContrAddr index subindex = Types.ContractAddress (Types.ContractIndex index) (Types.ContractSubindex subindex)
+  where
+    mkContrAddr index subindex = Types.ContractAddress (Types.ContractIndex index) (Types.ContractSubindex subindex)
 
 exampleModuleNameMap :: ModuleNameMap
 exampleModuleNameMap = Map.fromList [("modA", modRef1), ("modB", modRef2)]
@@ -99,11 +125,12 @@ exampleModuleNameMap = Map.fromList [("modA", modRef1), ("modB", modRef2)]
     modRef2 = Types.ModuleRef $ getHash ("ref2" :: BS.ByteString) -- Hash: 3bdc9752a50026c173ce5e1e344b09bc131b04ba15e9f870e23c53490a51b840
 
 exampleConfigBackup :: ConfigBackup
-exampleConfigBackup = ConfigBackup
-  { cbAccounts = [exampleAccountConfigWithKeysAndName]
-  , cbContractNameMap = exampleContractNameMap
-  , cbModuleNameMap = exampleModuleNameMap
-  }
+exampleConfigBackup =
+    ConfigBackup
+        { cbAccounts = [exampleAccountConfigWithKeysAndName]
+        , cbContractNameMap = exampleContractNameMap
+        , cbModuleNameMap = exampleModuleNameMap
+        }
 
 -- | Json generated by exporting exampleAccountConfigWithKeysAndName with v1 serialisation and no password
 unencryptedBackupv1 :: BS.ByteString
@@ -122,7 +149,7 @@ testPassword2 = Password{getPassword = "anotherTestPassword"}
 backupSpec :: Spec
 backupSpec = describe "Testing backup import/export" $ do
     specify "JSON decode is inverse of decode for ConfigBackup" $ do
-      (AE.eitherDecode . AE.encode $ exampleConfigBackup) `shouldBe` Right exampleConfigBackup
+        (AE.eitherDecode . AE.encode $ exampleConfigBackup) `shouldBe` Right exampleConfigBackup
     specify "export then import without password" $ do
         exported <- configExport exampleConfigBackup Nothing
         x' <- configImport exported (return testPassword)
