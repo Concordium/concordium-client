@@ -80,6 +80,7 @@ import Codec.CBOR.Encoding
 import Codec.CBOR.JSON
 import Codec.CBOR.Write
 import Control.Arrow (Arrow (second))
+import Control.Concurrent (threadDelay)
 import Control.Exception
 import Control.Monad.Except
 import Control.Monad.Reader hiding (fail)
@@ -104,7 +105,7 @@ import Data.String.Interpolate (i, iii)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
-import Data.Time.Clock (UTCTime, addUTCTime, getCurrentTime)
+import Data.Time
 import qualified Data.Tuple as Tuple
 import qualified Data.Vector as Vec
 import Data.Word
@@ -3670,6 +3671,28 @@ processBakerCmd action baseCfgDir verbose backend =
             processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing Nothing Nothing (Just url) Nothing Nothing Nothing Nothing Nothing
         BakerUpdateOpenDelegationStatus status txOpts ->
             processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing Nothing (Just status) Nothing Nothing Nothing Nothing Nothing Nothing
+        BakerGetEarliestWinTime bakerId useLocalTime doPoll -> do
+            winTimestamp <- getWinTimestamp
+            putStrLn [i|Baker #{bakerId} is expected to bake no sooner than:|]
+            if doPoll then polling winTimestamp else displayTime winTimestamp
+            putStrLn ""
+          where
+            getWinTimestamp = do
+                result <- withClient backend $ getBakerEarliestWinTime bakerId
+                getResponseValueOrDie result
+            displayTime winTimestamp = do
+                let winUTC = Time.timestampToUTCTime winTimestamp
+                tz <- if useLocalTime then getTimeZone winUTC else return utc
+                let winLocalised = utcToZonedTime tz winUTC
+                now <- Time.utcTimeToTimestamp <$> getCurrentTime
+                let duration
+                        | winTimestamp > now = durationToText . fromIntegral $ winTimestamp - now
+                        | otherwise = "the past"
+                putStr [i|\r#{formatTime defaultTimeLocale rfc822DateFormat winLocalised}  (in #{duration})        |]
+            polling winTimestamp = do
+                displayTime winTimestamp
+                threadDelay 1_000_000
+                polling =<< getWinTimestamp
 
 -- |Process a 'delegator configure ...' command.
 processDelegatorConfigureCmd ::

@@ -510,6 +510,11 @@ data BakerCmd
         { bodsOpenForDelegation :: !OpenStatus,
           bodsTransactionOpts :: !(TransactionOpts (Maybe Energy))
         }
+    | BakerGetEarliestWinTime
+        { bgewtBakerId :: !BakerId,
+          bgewtShowLocalTime :: !Bool,
+          bgewtPoll :: !Bool
+        }
     deriving (Show)
 
 data DelegatorCmd
@@ -1626,6 +1631,7 @@ bakerCmds =
                         <> bakerUpdateUpdateMetadataURL
                         <> bakerUpdateOpenDelegationStatus
                         <> bakerConfigureCmd
+                        <> bakerGetEarliestWinTime
                     )
             )
             (progDesc "Commands for creating and deploying baker credentials.")
@@ -1765,6 +1771,25 @@ bakerUpdateOpenDelegationStatus =
                 <*> transactionOptsParser
             )
             (progDesc "Change whether to allow other parties to delegate stake to the baker.")
+        )
+
+bakerGetEarliestWinTime :: Mod CommandFields BakerCmd
+bakerGetEarliestWinTime =
+    command
+        "win-time"
+        ( info
+            ( BakerGetEarliestWinTime
+                <$> argument auto (metavar "BAKER-ID" <> help "Baker ID to query.")
+                <*> switch
+                    ( long "local-time"
+                        <> help "Display time in the local time zone (instead of UTC)."
+                    )
+                <*> switch
+                    ( long "poll"
+                        <> help "Repeatedly poll for the latest time."
+                    )
+            )
+            (progDesc "Show the earliest time the baker may be expected to bake a block.")
         )
 
 bakerSetKeysCmd :: Mod CommandFields BakerCmd
