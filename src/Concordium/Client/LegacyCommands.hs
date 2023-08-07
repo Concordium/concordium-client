@@ -16,11 +16,11 @@ data LegacyCmd
       GetTransactionStatus
         { legacyTransactionHash :: !Text
         }
-    | -- |Get non finalized transactions for a given account.
+    | -- | Get non finalized transactions for a given account.
       GetAccountNonFinalized
         { legacyAddress :: !Text
         }
-    | -- |Get non finalized transactions for a given account.
+    | -- | Get non finalized transactions for a given account.
       GetNextAccountNonce
         { legacyAddress :: !Text
         }
@@ -96,7 +96,7 @@ data LegacyCmd
       GetModuleList
         { legacyBlockHash :: !(Maybe Text)
         }
-    | -- |Queries the gRPC server for the node information.
+    | -- | Queries the gRPC server for the node information.
       GetNodeInfo
     | GetPeerData
         { -- | Whether to include bootstrapper node in the stats or not.
@@ -140,6 +140,9 @@ data LegacyCmd
         {legacyBlockHash :: !(Maybe Text)}
     | GetNextUpdateSequenceNumbers
         {legacyBlockHash :: !(Maybe Text)}
+    | GetBakerEarliestWinTime
+        { legacyBakerId :: !BakerId
+        }
     deriving (Show)
 
 legacyProgramOptions :: Parser LegacyCmd
@@ -184,6 +187,7 @@ legacyProgramOptions =
             <> getAnonymityRevokersCommand
             <> getCryptographicParametersCommand
             <> getNextUpdateSequenceNumbersCommand
+            <> getBakerEarliestWinTimeCommand
         )
 
 getPeerDataCommand :: Mod CommandFields LegacyCmd
@@ -386,6 +390,20 @@ getNextUpdateSequenceNumbersCommand =
                 <$> optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
             )
             (progDesc "Query the gRPC server for the next update sequence numbers for all update queues.")
+        )
+
+getBakerEarliestWinTimeCommand :: Mod CommandFields LegacyCmd
+getBakerEarliestWinTimeCommand =
+    command
+        "GetBakerEarliestWinTime"
+        ( info
+            ( GetBakerEarliestWinTime
+                <$> argument auto (metavar "BAKER-ID" <> help "Baker ID of the baker.")
+            )
+            ( progDesc
+                "Query the gRPC server for the earliest time that a given baker is expected \
+                \to bake."
+            )
         )
 
 getInstanceInfoCommand :: Mod CommandFields LegacyCmd

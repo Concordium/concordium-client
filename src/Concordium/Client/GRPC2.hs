@@ -3217,6 +3217,12 @@ getNextSequenceNumber accAddress = withUnary (call @"getNextAccountSequenceNumbe
   where
     msg = toProto accAddress
 
+-- |Get the earliest time at which a baker may be expected to bake a block.
+getBakerEarliestWinTime :: (MonadIO m) => BakerId -> ClientMonad m (GRPCResult (FromProtoResult Timestamp))
+getBakerEarliestWinTime bakerId = withUnary (call @"getBakerEarliestWinTime") msg (fmap fromProto)
+  where
+    msg = toProto bakerId
+
 -- |Call a unary V2 GRPC API endpoint and return the result.
 withUnary ::
     ( HasMethod CS.Queries m,
