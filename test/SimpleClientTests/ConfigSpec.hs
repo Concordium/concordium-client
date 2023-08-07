@@ -60,7 +60,7 @@ parseAccountNameMapEntrySpec = describe "parseAccountNameEntryMap" $ do
         p "name" `shouldBe` Left "invalid mapping format 'name' (should be '<name> = <address>')"
     specify "two separators" $
         let input = printf "name1=name2=%s" s
-         in p input `shouldBe` (Left $ printf "invalid mapping format '%s' (should be '<name> = <address>')" input)
+        in  p input `shouldBe` (Left $ printf "invalid mapping format '%s' (should be '<name> = <address>')" input)
   where
     p = parseAccountNameMapEntry
     s = "35FtQ8HgRShXLGUer7k8wtovjKAcSQ2Ys8RQPx27KfRA7zf7i4"
@@ -77,13 +77,13 @@ parseAccountNameMapSpec = describe "parseAccountNameMap" $ do
         parseAccountNameMap [] `shouldBe` Right Map.empty
     specify "two lines separated by blank" $
         let input =
-                [ ""
-                , "first= " ++ s1
-                , " \t "
-                , "second =" ++ s2
+                [ "",
+                  "first= " ++ s1,
+                  " \t ",
+                  "second =" ++ s2
                 ]
             want = Map.fromList [("first", a1), ("second", a2)]
-         in parseAccountNameMap input `shouldBe` Right want
+        in  parseAccountNameMap input `shouldBe` Right want
     specify "invalid format" $
         parseAccountNameMap ["invalid"] `shouldBe` Left "invalid mapping format 'invalid' (should be '<name> = <address>')"
     specify "invalid name" $
@@ -137,29 +137,29 @@ printBaseConfigSpec = describe "base config" $ do
     -- TODO Update to new format when the format of this and other commands has been decided.
     specify "with map" $
         p exampleBaseConfigWithAccountNameMap
-            `shouldBe` [ "Base configuration:"
-                       , "- Verbose:            yes"
-                       , "- Account config dir: /some/path"
-                       , "- Contract config dir: /some/path"
-                       , "- Account name map:"
-                       , "    accName1 -> 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-                       , "    accName2 -> 4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y"
-                       , "- Contract name map:"
-                       , "    contrName1 -> {\"index\":0,\"subindex\":0}"
-                       , "    contrName2 -> {\"index\":1,\"subindex\":0}"
-                       , "- Module name map:"
-                       , "    modName1 -> de0cd794099a5e03c2131d662d423164111d3b78d5122970197cd7e1937ed0e4"
-                       , "    modName2 -> 3bdc9752a50026c173ce5e1e344b09bc131b04ba15e9f870e23c53490a51b840"
+            `shouldBe` [ "Base configuration:",
+                         "- Verbose:            yes",
+                         "- Account config dir: /some/path",
+                         "- Contract config dir: /some/path",
+                         "- Account name map:",
+                         "    accName1 -> 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
+                         "    accName2 -> 4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y",
+                         "- Contract name map:",
+                         "    contrName1 -> {\"index\":0,\"subindex\":0}",
+                         "    contrName2 -> {\"index\":1,\"subindex\":0}",
+                         "- Module name map:",
+                         "    modName1 -> de0cd794099a5e03c2131d662d423164111d3b78d5122970197cd7e1937ed0e4",
+                         "    modName2 -> 3bdc9752a50026c173ce5e1e344b09bc131b04ba15e9f870e23c53490a51b840"
                        ]
     specify "without map" $
         p exampleBaseConfigWithoutNameMaps
-            `shouldBe` [ "Base configuration:"
-                       , "- Verbose:            no"
-                       , "- Account config dir: /some/other/path"
-                       , "- Contract config dir: /some/other/path"
-                       , "- Account name map:   none"
-                       , "- Contract name map:   none"
-                       , "- Module name map:   none"
+            `shouldBe` [ "Base configuration:",
+                         "- Verbose:            no",
+                         "- Account config dir: /some/other/path",
+                         "- Contract config dir: /some/other/path",
+                         "- Account name map:   none",
+                         "- Contract name map:   none",
+                         "- Module name map:   none"
                        ]
   where
     p = execWriter . printBaseConfig
@@ -169,20 +169,20 @@ printAccountConfigSpec = describe "account config" $ do
     -- TODO Update to new format when the format of this and other commands has been decided.
     specify "with keys and name" $
         p exampleSelectedKeyConfigWithKeysAndName
-            `shouldBe` [ "Account configuration:"
-                       , "- Names:   'name'"
-                       , "- Address: 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-                       , "- Credentials keys:"
-                       , "   - Keys for credential with index 0"
-                       , "      2: {\n    \"encryptedSignKey\": {\n        \"cipherText\": \"hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY=\",\n        \"metadata\": {\n            \"encryptionMethod\": \"AES-256\",\n            \"initializationVector\": \"NXbbI8Cc3AXtaG/go+L+FA==\",\n            \"iterations\": 100000,\n            \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\",\n            \"salt\": \"slzkcKo8IPymU5t7jamGQQ==\"\n        }\n    },\n    \"schemeId\": \"Ed25519\",\n    \"verifyKey\": \"f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213\"\n}"
-                       , "      11: {\n    \"encryptedSignKey\": {\n        \"cipherText\": \"9ltKSJtlkiBXY/kU8huA4GoCaGNjy8M2Ym2SOtlg1ay6lfI9o95sXJ1cjcQ2b8gV+WddwS7ile8ZhIr8es58pTaM8PczlLbKBCSJ11R2iqw=\",\n        \"metadata\": {\n            \"encryptionMethod\": \"AES-256\",\n            \"initializationVector\": \"z6tTcT5ko8vS2utlwwNvbw==\",\n            \"iterations\": 100000,\n            \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\",\n            \"salt\": \"sQ8NG/fBLdLuuLd1ARlAqw==\"\n        }\n    },\n    \"schemeId\": \"Ed25519\",\n    \"verifyKey\": \"c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027\"\n}"
+            `shouldBe` [ "Account configuration:",
+                         "- Names:   'name'",
+                         "- Address: 2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
+                         "- Credentials keys:",
+                         "   - Keys for credential with index 0",
+                         "      2: {\n    \"encryptedSignKey\": {\n        \"cipherText\": \"hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY=\",\n        \"metadata\": {\n            \"encryptionMethod\": \"AES-256\",\n            \"initializationVector\": \"NXbbI8Cc3AXtaG/go+L+FA==\",\n            \"iterations\": 100000,\n            \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\",\n            \"salt\": \"slzkcKo8IPymU5t7jamGQQ==\"\n        }\n    },\n    \"schemeId\": \"Ed25519\",\n    \"verifyKey\": \"f489ebb6bec1f44ca1add277482c1a24d42173f2dd2e1ba9e79ed0ec5f76f213\"\n}",
+                         "      11: {\n    \"encryptedSignKey\": {\n        \"cipherText\": \"9ltKSJtlkiBXY/kU8huA4GoCaGNjy8M2Ym2SOtlg1ay6lfI9o95sXJ1cjcQ2b8gV+WddwS7ile8ZhIr8es58pTaM8PczlLbKBCSJ11R2iqw=\",\n        \"metadata\": {\n            \"encryptionMethod\": \"AES-256\",\n            \"initializationVector\": \"z6tTcT5ko8vS2utlwwNvbw==\",\n            \"iterations\": 100000,\n            \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\",\n            \"salt\": \"sQ8NG/fBLdLuuLd1ARlAqw==\"\n        }\n    },\n    \"schemeId\": \"Ed25519\",\n    \"verifyKey\": \"c825d0ada6ebedcdf58b78cf4bc2dccc98c67ea0b0df6757f15c2b639e09f027\"\n}"
                        ]
     specify "without keys and name" $
         p exampleAccountConfigWithoutKeysAndName
-            `shouldBe` [ "Account configuration:"
-                       , "- Names:   none"
-                       , "- Address: 4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y"
-                       , "- Credentials keys:    none"
+            `shouldBe` [ "Account configuration:",
+                         "- Names:   none",
+                         "- Address: 4DY7Kq5vXsNDhEAnj969Fd86g9egi1Htq3YmL2qAU9cXWj2a1y",
+                         "- Credentials keys:    none"
                        ]
   where
     p = execWriter . printSelectedKeyConfig
@@ -190,23 +190,23 @@ printAccountConfigSpec = describe "account config" $ do
 exampleBaseConfigWithAccountNameMap :: BaseConfig
 exampleBaseConfigWithAccountNameMap =
     BaseConfig
-        { bcVerbose = True
-        , bcAccountNameMap = Map.fromList [("accName1", exampleAccountAddress1), ("accName2", exampleAccountAddress2)]
-        , bcAccountCfgDir = "/some/path"
-        , bcContractNameMap = Map.fromList [("contrName1", exampleContractAddress1), ("contrName2", exampleContractAddress2)]
-        , bcModuleNameMap = Map.fromList [("modName1", exampleModuleRef1), ("modName2", exampleModuleRef2)]
-        , bcContractCfgDir = "/some/path"
+        { bcVerbose = True,
+          bcAccountNameMap = Map.fromList [("accName1", exampleAccountAddress1), ("accName2", exampleAccountAddress2)],
+          bcAccountCfgDir = "/some/path",
+          bcContractNameMap = Map.fromList [("contrName1", exampleContractAddress1), ("contrName2", exampleContractAddress2)],
+          bcModuleNameMap = Map.fromList [("modName1", exampleModuleRef1), ("modName2", exampleModuleRef2)],
+          bcContractCfgDir = "/some/path"
         }
 
 exampleBaseConfigWithoutNameMaps :: BaseConfig
 exampleBaseConfigWithoutNameMaps =
     BaseConfig
-        { bcVerbose = False
-        , bcAccountNameMap = Map.empty
-        , bcAccountCfgDir = "/some/other/path"
-        , bcContractNameMap = Map.empty
-        , bcModuleNameMap = Map.empty
-        , bcContractCfgDir = "/some/other/path"
+        { bcVerbose = False,
+          bcAccountNameMap = Map.empty,
+          bcAccountCfgDir = "/some/other/path",
+          bcContractNameMap = Map.empty,
+          bcModuleNameMap = Map.empty,
+          bcContractCfgDir = "/some/other/path"
         }
 
 dummyEncryptionSecretKey :: ElgamalSecretKey
@@ -217,67 +217,65 @@ dummyEncryptionPublicKey = fromJust $ AE.decode "\"a820662531d0aac70b3a80dd8a249
 exampleSelectedKeyConfigWithKeysAndName :: EncryptedSigningData
 exampleSelectedKeyConfigWithKeysAndName =
     EncryptedSigningData
-        { esdAddress = NamedAddress{naNames = ["name"], naAddr = exampleAccountAddress1}
-        , -- TODO Generate testdata instead of hard-coding (generate key pairs, encrypt).
+        { esdAddress = NamedAddress{naNames = ["name"], naAddr = exampleAccountAddress1},
+          -- TODO Generate testdata instead of hard-coding (generate key pairs, encrypt).
           -- Test keypairs can either be generated with
           -- randomEd25519KeyPair from Concordium.Crypto.DummyData if determinism is required, or
           -- with newKeyPair from Concordium.Crypto.SignatureScheme if determinism is not important.
           esdKeys =
             Map.singleton 0 $
                 Map.fromList
-                    [
-                        ( 11
-                        , EncryptedAccountKeyPairEd25519
-                            { verifyKey = vk1
-                            , encryptedSignKey =
+                    [   ( 11,
+                          EncryptedAccountKeyPairEd25519
+                            { verifyKey = vk1,
+                              encryptedSignKey =
                                 EncryptedJSON
                                     ( EncryptedText
                                         { etMetadata =
                                             EncryptionMetadata
-                                                { emEncryptionMethod = AES256
-                                                , emKeyDerivationMethod = PBKDF2SHA256
-                                                , emIterations = 100000
-                                                , emSalt = fromBase64 "sQ8NG/fBLdLuuLd1ARlAqw=="
-                                                , emInitializationVector = fromBase64 "z6tTcT5ko8vS2utlwwNvbw=="
-                                                }
-                                        , etCipherText = fromBase64 "9ltKSJtlkiBXY/kU8huA4GoCaGNjy8M2Ym2SOtlg1ay6lfI9o95sXJ1cjcQ2b8gV+WddwS7ile8ZhIr8es58pTaM8PczlLbKBCSJ11R2iqw="
+                                                { emEncryptionMethod = AES256,
+                                                  emKeyDerivationMethod = PBKDF2SHA256,
+                                                  emIterations = 100000,
+                                                  emSalt = fromBase64 "sQ8NG/fBLdLuuLd1ARlAqw==",
+                                                  emInitializationVector = fromBase64 "z6tTcT5ko8vS2utlwwNvbw=="
+                                                },
+                                          etCipherText = fromBase64 "9ltKSJtlkiBXY/kU8huA4GoCaGNjy8M2Ym2SOtlg1ay6lfI9o95sXJ1cjcQ2b8gV+WddwS7ile8ZhIr8es58pTaM8PczlLbKBCSJ11R2iqw="
                                         }
                                     )
                             }
-                        )
-                    ,
-                        ( 2
-                        , EncryptedAccountKeyPairEd25519
-                            { verifyKey = vk2
-                            , encryptedSignKey =
+                        ),
+                        ( 2,
+                          EncryptedAccountKeyPairEd25519
+                            { verifyKey = vk2,
+                              encryptedSignKey =
                                 EncryptedJSON
                                     ( EncryptedText
                                         { etMetadata =
                                             EncryptionMetadata
-                                                { emEncryptionMethod = AES256
-                                                , emKeyDerivationMethod = PBKDF2SHA256
-                                                , emIterations = 100000
-                                                , emSalt = fromBase64 "slzkcKo8IPymU5t7jamGQQ=="
-                                                , emInitializationVector = fromBase64 "NXbbI8Cc3AXtaG/go+L+FA=="
-                                                }
-                                        , etCipherText = fromBase64 "hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY="
+                                                { emEncryptionMethod = AES256,
+                                                  emKeyDerivationMethod = PBKDF2SHA256,
+                                                  emIterations = 100000,
+                                                  emSalt = fromBase64 "slzkcKo8IPymU5t7jamGQQ==",
+                                                  emInitializationVector = fromBase64 "NXbbI8Cc3AXtaG/go+L+FA=="
+                                                },
+                                          etCipherText = fromBase64 "hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY="
                                         }
                                     )
                             }
                         )
-                    ]
-        , esdEncryptionKey =
+                    ],
+          esdEncryptionKey =
             Just
                 EncryptedText
                     { etMetadata =
                         EncryptionMetadata
-                            { emEncryptionMethod = AES256
-                            , emIterations = 100000
-                            , emSalt = fromBase64 "w7pmsDi1K4bWf+zkLCuzVw=="
-                            , emInitializationVector = fromBase64 "EXhd7ctFeqKvaA0P/oB8wA=="
-                            , emKeyDerivationMethod = PBKDF2SHA256
-                            }
-                    , etCipherText = fromBase64 "pYvIywCAMLhvag1EJmGVuVezGsNvYn24zBnB6TCTkwEwOH50AOrx8NAZnVuQteZMQ7k7Kd7a1RorSxIQI1H/WX+Usi8f3VLnzdZFJmbk4Cme+dcgAbI+wWr0hisgrCDl"
+                            { emEncryptionMethod = AES256,
+                              emIterations = 100000,
+                              emSalt = fromBase64 "w7pmsDi1K4bWf+zkLCuzVw==",
+                              emInitializationVector = fromBase64 "EXhd7ctFeqKvaA0P/oB8wA==",
+                              emKeyDerivationMethod = PBKDF2SHA256
+                            },
+                      etCipherText = fromBase64 "pYvIywCAMLhvag1EJmGVuVezGsNvYn24zBnB6TCTkwEwOH50AOrx8NAZnVuQteZMQ7k7Kd7a1RorSxIQI1H/WX+Usi8f3VLnzdZFJmbk4Cme+dcgAbI+wWr0hisgrCDl"
                     }
         }
   where
@@ -293,9 +291,9 @@ exampleSelectedKeyConfigWithKeysAndName =
 exampleAccountConfigWithoutKeysAndName :: EncryptedSigningData
 exampleAccountConfigWithoutKeysAndName =
     EncryptedSigningData
-        { esdAddress = NamedAddress{naNames = [], naAddr = exampleAccountAddress2}
-        , esdKeys = Map.empty
-        , esdEncryptionKey = Nothing
+        { esdAddress = NamedAddress{naNames = [], naAddr = exampleAccountAddress2},
+          esdKeys = Map.empty,
+          esdEncryptionKey = Nothing
         }
 
 exampleAccountAddress1 :: IDTypes.AccountAddress

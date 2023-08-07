@@ -7,12 +7,11 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-{- |Part of the implementation of the GRPC API node API V2. This module
- contains client logic and API wrappers for the services exposed, and
- a typeclass @FromProto@ with accompanying instances. The latter are
- used to convert Protocol-buffer payloads into our "native" Haskell data-
- type equivalents.
--}
+-- |Part of the implementation of the GRPC API node API V2. This module
+-- contains client logic and API wrappers for the services exposed, and
+-- a typeclass @FromProto@ with accompanying instances. The latter are
+-- used to convert Protocol-buffer payloads into our "native" Haskell data-
+-- type equivalents.
 module Concordium.Client.GRPC2 where
 
 import Control.Concurrent
@@ -82,32 +81,31 @@ import qualified Proto.V2.Concordium.Types as ProtoFields
 import qualified Proto.V2.Concordium.Types_Fields as Proto
 import qualified Proto.V2.Concordium.Types_Fields as ProtoFields
 
-{- |A helper function that serves as an inverse to @mkSerialize@,
-
- Converts a protocol buffer message to a native Haskell type
- that is a member of @Serialize@.
-
- More concretely, the protocol buffer message should have the form:
- @
- > message Wrapper {
- >    ..
- >    bytes value = 1
- >    ...
- > }
- @
-
- where @Wrapper@ is an arbitrary message name that must contain a field
- named @value@ of type @bytes@. Returns @Left@ if the bytestring contained
- in the @value@-field could not be converted or if the entire bytestring was
- not consumed while converting it. Returns a @Right@ wrapping the converted
- value otherwise.
--}
+-- |A helper function that serves as an inverse to @mkSerialize@,
+--
+-- Converts a protocol buffer message to a native Haskell type
+-- that is a member of @Serialize@.
+--
+-- More concretely, the protocol buffer message should have the form:
+-- @
+-- > message Wrapper {
+-- >    ..
+-- >    bytes value = 1
+-- >    ...
+-- > }
+-- @
+--
+-- where @Wrapper@ is an arbitrary message name that must contain a field
+-- named @value@ of type @bytes@. Returns @Left@ if the bytestring contained
+-- in the @value@-field could not be converted or if the entire bytestring was
+-- not consumed while converting it. Returns a @Right@ wrapping the converted
+-- value otherwise.
 deMkSerialize ::
     ( Data.ProtoLens.Field.HasField
         b
         "value"
-        BS.ByteString
-    , S.Serialize a
+        BS.ByteString,
+      S.Serialize a
     ) =>
     b ->
     Either String a
@@ -116,15 +114,14 @@ deMkSerialize val =
         Left err -> Left $ "deMkSerialize error: " <> err
         Right v -> return v
 
-{- |A helper function that serves as an inverse to @mkWord64@,
- Like @deMkSerialize@, but the @value@ field must be a @Word64@,
- and the output a type which can be coerced from a @Word64@.
- Coercible here means that the output is a @Word64@ wrapped in
- a (or possibly several) newtype wrapper(s).
--}
+-- |A helper function that serves as an inverse to @mkWord64@,
+-- Like @deMkSerialize@, but the @value@ field must be a @Word64@,
+-- and the output a type which can be coerced from a @Word64@.
+-- Coercible here means that the output is a @Word64@ wrapped in
+-- a (or possibly several) newtype wrapper(s).
 deMkWord64 ::
-    ( Coercible Word64 a
-    , Data.ProtoLens.Field.HasField
+    ( Coercible Word64 a,
+      Data.ProtoLens.Field.HasField
         b
         "value"
         Word64
@@ -133,12 +130,11 @@ deMkWord64 ::
     a
 deMkWord64 val = coerce $ val ^. ProtoFields.value
 
-{- |Like @deMkWord64@, but the value field should be a @Word32@
- and the output should be coercible from this.
--}
+-- |Like @deMkWord64@, but the value field should be a @Word32@
+-- and the output should be coercible from this.
 deMkWord32 ::
-    ( Coercible Word32 a
-    , Data.ProtoLens.Field.HasField
+    ( Coercible Word32 a,
+      Data.ProtoLens.Field.HasField
         b
         "value"
         Word32
@@ -147,14 +143,13 @@ deMkWord32 ::
     a
 deMkWord32 val = coerce $ val ^. ProtoFields.value
 
-{- |Like @deMkWord32@ but the output should be coercible from
- a @Word16@. Returns @Left@ if the value of the @Word32@ can
- not fit in a @Word16@ and a @Right@ wrapping the coerced value
- otherwise.
--}
+-- |Like @deMkWord32@ but the output should be coercible from
+-- a @Word16@. Returns @Left@ if the value of the @Word32@ can
+-- not fit in a @Word16@ and a @Right@ wrapping the coerced value
+-- otherwise.
 deMkWord16 ::
-    ( Coercible Word16 a
-    , Data.ProtoLens.Field.HasField
+    ( Coercible Word16 a,
+      Data.ProtoLens.Field.HasField
         b
         "value"
         Word32
@@ -174,14 +169,13 @@ deMkWord16 val =
   where
     v = val ^. ProtoFields.value
 
-{- |Like @deMkWord32@ but the output should be coercible from
- a @Word8@. Returns @Left@ if the value of the @Word32@ can
- not fit in a @Word8@ and a @Right@ wrapping the coerced value
- otherwise.
--}
+-- |Like @deMkWord32@ but the output should be coercible from
+-- a @Word8@. Returns @Left@ if the value of the @Word32@ can
+-- not fit in a @Word8@ and a @Right@ wrapping the coerced value
+-- otherwise.
 deMkWord8 ::
-    ( Coercible Word8 a
-    , Data.ProtoLens.Field.HasField
+    ( Coercible Word8 a,
+      Data.ProtoLens.Field.HasField
         b
         "value"
         Word32
@@ -201,10 +195,9 @@ deMkWord8 val =
   where
     v = val ^. ProtoFields.value
 
-{- |Validate a protocol buffer message with an @url@ Text field.
- Returns @Left@ if the string is longer than the maxium permissible
- length, and returns a @UrlText@ wrapped in a @Right@ otherwise.
--}
+-- |Validate a protocol buffer message with an @url@ Text field.
+-- Returns @Left@ if the string is longer than the maxium permissible
+-- length, and returns a @UrlText@ wrapped in a @Right@ otherwise.
 deMkUrlText ::
     ( Data.ProtoLens.Field.HasField
         b
@@ -226,11 +219,10 @@ deMkUrlText val =
   where
     v = val ^. ProtoFields.url
 
-{- |Decode a bytestring and return the decoded value if the
- input was consumed. Returns @Left@ if the bytestring
- could not be decoded or if the input was not consumed,
- and the decoded value wrapped in a @Right@ otherwise.
--}
+-- |Decode a bytestring and return the decoded value if the
+-- input was consumed. Returns @Left@ if the bytestring
+-- could not be decoded or if the input was not consumed,
+-- and the decoded value wrapped in a @Right@ otherwise.
 decodeAndConsume :: (S.Serialize a) => ByteString -> Either String a
 decodeAndConsume bs = do
     case S.runGet getter bs of
@@ -250,16 +242,14 @@ decodeAndConsume bs = do
             then return v
             else fail "Did not consume the input."
 
-{- |The result of converting a protocol buffer message with @fromProto@.
- A @Left@ wrapping an error string indicates that the conversion failed
- and a @Right@ wrapping the converted value indicates that it succeeded.
--}
+-- |The result of converting a protocol buffer message with @fromProto@.
+-- A @Left@ wrapping an error string indicates that the conversion failed
+-- and a @Right@ wrapping the converted value indicates that it succeeded.
 type FromProtoResult a = Either String a
 
-{- |A helper class analogous to something like Aeson's FromJSON.
- It exists to make it more manageable to convert the Protobuf
- types to their internal Haskell type equivalents.
--}
+-- |A helper class analogous to something like Aeson's FromJSON.
+-- It exists to make it more manageable to convert the Protobuf
+-- types to their internal Haskell type equivalents.
 class FromProto a where
     -- |The corresponding Haskell type.
     type Output a
@@ -268,17 +258,15 @@ class FromProto a where
     -- equivalent.
     fromProto :: a -> FromProtoResult (Output a)
 
-{- |A helper to be used to indicate that something went wrong in a
- @FromProto@ instance.
--}
+-- |A helper to be used to indicate that something went wrong in a
+-- @FromProto@ instance.
 fromProtoFail :: String -> FromProtoResult a
 fromProtoFail msg = Left $ "fromProto: " <> msg
 
-{- |Like @fromProtoM@ but maps from and into the @Maybe@ monad.
- Returns @Nothing@ if the input is @Nothing@ or if the input
- value wrapped in @Just@ could not be converted. Returns a
- @Just@ wrapping the converted value otherwise
--}
+-- |Like @fromProtoM@ but maps from and into the @Maybe@ monad.
+-- Returns @Nothing@ if the input is @Nothing@ or if the input
+-- value wrapped in @Just@ could not be converted. Returns a
+-- @Just@ wrapping the converted value otherwise
 fromProtoMaybe :: (FromProto a) => Maybe a -> FromProtoResult (Maybe (Output a))
 fromProtoMaybe Nothing = Right Nothing
 fromProtoMaybe (Just m) =
@@ -392,8 +380,8 @@ instance FromProto Proto.EncryptedBalance where
             let si = eb ^. ProtoFields.startIndex
             return $ EncryptedAmountAggIndex . fromIntegral $ si
         _aggregatedAmount <- do
-            case ( eb ^. ProtoFields.maybe'aggregatedAmount
-                 , eb ^. ProtoFields.maybe'numAggregated
+            case ( eb ^. ProtoFields.maybe'aggregatedAmount,
+                   eb ^. ProtoFields.maybe'numAggregated
                  ) of
                 (Just aa, Just na) -> do
                     aa' <- fromProto aa
@@ -1751,8 +1739,8 @@ instance FromProto Proto.RootUpdate where
 instance FromProto Proto.HigherLevelKeys where
     type
         Output Proto.HigherLevelKeys =
-            ( Updates.HigherLevelKeys Updates.Level1KeysKind
-            , Updates.HigherLevelKeys Updates.RootKeysKind
+            ( Updates.HigherLevelKeys Updates.Level1KeysKind,
+              Updates.HigherLevelKeys Updates.RootKeysKind
             )
     fromProto keys = do
         hlkKeys <- Vec.fromList <$> mapM fromProto (keys ^. ProtoFields.keys)
@@ -2088,12 +2076,12 @@ instance FromProto Proto.AccountTransactionDetails where
                 -- Discern between event types based on whether a memo is present.
                 let (tType, vrEvents) = case memo of
                         Nothing ->
-                            ( TTEncryptedAmountTransfer
-                            , [EncryptedAmountsRemoved{..}, NewEncryptedAmount{..}]
+                            ( TTEncryptedAmountTransfer,
+                              [EncryptedAmountsRemoved{..}, NewEncryptedAmount{..}]
                             )
                         Just tmMemo ->
-                            ( TTEncryptedAmountTransferWithMemo
-                            , [EncryptedAmountsRemoved{..}, NewEncryptedAmount{..}, TransferMemo{..}]
+                            ( TTEncryptedAmountTransferWithMemo,
+                              [EncryptedAmountsRemoved{..}, NewEncryptedAmount{..}, TransferMemo{..}]
                             )
                 return (Just tType, TxSuccess{..})
             ProtoFields.AccountTransactionEffects'ModuleDeployed mDeployed -> do
@@ -2127,12 +2115,12 @@ instance FromProto Proto.AccountTransactionDetails where
                 -- Discern between event types based on whether a memo is present.
                 let (tType, vrEvents) = case memo of
                         Nothing ->
-                            ( TTTransferWithSchedule
-                            , [TransferredWithSchedule{..}]
+                            ( TTTransferWithSchedule,
+                              [TransferredWithSchedule{..}]
                             )
                         Just tmMemo ->
-                            ( TTTransferWithScheduleAndMemo
-                            , [TransferredWithSchedule{..}, TransferMemo{..}]
+                            ( TTTransferWithScheduleAndMemo,
+                              [TransferredWithSchedule{..}, TransferMemo{..}]
                             )
                 return (Just tType, TxSuccess{..})
 
@@ -2776,47 +2764,47 @@ instance FromProto Proto.PendingUpdate where
 type LoggerMethod = Text -> IO ()
 
 data GrpcConfig = GrpcConfig
-    { host :: !HostName
-    , port :: !PortNumber
-    , -- Target node, i.e. "node-0" for use with grpc-proxy.eu.test.concordium.com against testnet
-      target :: !(Maybe String)
-    , retryNum :: !Int
-    -- ^Number of times to __retry__ to establish a connection. Thus a value of
-    -- 0 means try only once.
-    , timeout :: !(Maybe Int)
-    -- ^Timeout of each RPC call (defaults to 5min if not given).
-    , useTls :: !Bool
-    -- ^Whether to use TLS or not.
+    { host :: !HostName,
+      port :: !PortNumber,
+      -- Target node, i.e. "node-0" for use with grpc-proxy.eu.test.concordium.com against testnet
+      target :: !(Maybe String),
+      -- |Number of times to __retry__ to establish a connection. Thus a value of
+      -- 0 means try only once.
+      retryNum :: !Int,
+      -- |Timeout of each RPC call (defaults to 5min if not given).
+      timeout :: !(Maybe Int),
+      -- |Whether to use TLS or not.
+      useTls :: !Bool
     }
 
 data EnvData = EnvData
     { -- How many times to retry to establish the connection.
       -- 0 means only try once.
-      retryTimes :: !Int
-    , config :: !GrpcClientConfig
-    , rwlock :: !RWLock
-    , grpc :: !(IORef (Maybe (Word64, GrpcClient)))
-    -- ^A shared reference to a connection together with a generation counter.
-    -- All queries will reuse this single connection as much as possible. This
-    -- is @Nothing@ if no connection is yet established. When we reconnect we
-    -- increase the generation counter. The reason for the generation counter
-    -- is so that if multiple queries are in-flight at the time the connection
-    -- is reset, we only reconnect once, and then retry the queries.
-    , logger :: LoggerMethod
-    , killConnection :: !(MVar ())
-    -- ^A flag indicating that all the in-flight queries should be killed.
-    -- |This is a workaround for the inadequate behaviour of the grpc library
-    -- which does not handle disconnects from the server very well, and in
-    -- particular it does not handle the server sending GoAway frames. Ideally
-    -- in that scenario the library would either try to reconnect itself, or,
-    -- alternatively, trigger a normal error that we could recover from and
-    -- re-establish the connection. None of the two happen. So instead we
-    -- install our own custom GoAway handler that kills all in-flight queries,
-    -- and then re-establishes the connection.
-    --
-    -- This MVar will be empty when queries are progressing. When the queries
-    -- need to be killed then we write to it. When we successfully
-    -- re-establish the connection then the the MVar is again emptied.
+      retryTimes :: !Int,
+      config :: !GrpcClientConfig,
+      rwlock :: !RWLock,
+      -- |A shared reference to a connection together with a generation counter.
+      -- All queries will reuse this single connection as much as possible. This
+      -- is @Nothing@ if no connection is yet established. When we reconnect we
+      -- increase the generation counter. The reason for the generation counter
+      -- is so that if multiple queries are in-flight at the time the connection
+      -- is reset, we only reconnect once, and then retry the queries.
+      grpc :: !(IORef (Maybe (Word64, GrpcClient))),
+      logger :: LoggerMethod,
+      -- |A flag indicating that all the in-flight queries should be killed.
+      -- |This is a workaround for the inadequate behaviour of the grpc library
+      -- which does not handle disconnects from the server very well, and in
+      -- particular it does not handle the server sending GoAway frames. Ideally
+      -- in that scenario the library would either try to reconnect itself, or,
+      -- alternatively, trigger a normal error that we could recover from and
+      -- re-establish the connection. None of the two happen. So instead we
+      -- install our own custom GoAway handler that kills all in-flight queries,
+      -- and then re-establishes the connection.
+      --
+      -- This MVar will be empty when queries are progressing. When the queries
+      -- need to be killed then we write to it. When we successfully
+      -- re-establish the connection then the the MVar is again emptied.
+      killConnection :: !(MVar ())
     }
 
 -- |Monad in which the program would run
@@ -2824,12 +2812,12 @@ newtype ClientMonad m a = ClientMonad
     { _runClientMonad :: ReaderT EnvData (ExceptT ClientError (StateT CookieHeaders m)) a
     }
     deriving
-        ( Functor
-        , Applicative
-        , Monad
-        , MonadReader EnvData
-        , MonadFail
-        , MonadIO
+        ( Functor,
+          Applicative,
+          Monad,
+          MonadReader EnvData,
+          MonadFail,
+          MonadIO
         )
 
 -- |Cookie headers that may be returned by the node in a query.
@@ -2839,9 +2827,8 @@ type CookieHeaders = Map.Map BS8.ByteString BS8.ByteString
 runClient :: Monad m => EnvData -> ClientMonad m a -> m (Either ClientError a)
 runClient config comp = evalStateT (runExceptT $ runReaderT (_runClientMonad comp) config) (Map.empty :: CookieHeaders)
 
-{- |@runClient@ but with additional cookies set in the @GRPCRequest@.
- The updated set of cookies (set via set-cookie headers) are returned.
--}
+-- |@runClient@ but with additional cookies set in the @GRPCRequest@.
+-- The updated set of cookies (set via set-cookie headers) are returned.
 runClientWithCookies :: CookieHeaders -> EnvData -> ClientMonad m a -> m (Either ClientError a, CookieHeaders)
 runClientWithCookies hds cfg comp = runStateT (runExceptT $ runReaderT (_runClientMonad comp) cfg) hds
 
@@ -2853,11 +2840,11 @@ mkGrpcClient config mLogger =
                 Nothing -> []
         cfg =
             (grpcClientConfigSimple (host config) (port config) (useTls config))
-                { _grpcClientConfigCompression = uncompressed
-                , _grpcClientConfigHeaders = header
-                , _grpcClientConfigTimeout = Timeout (fromMaybe 300 (timeout config))
+                { _grpcClientConfigCompression = uncompressed,
+                  _grpcClientConfigHeaders = header,
+                  _grpcClientConfigTimeout = Timeout (fromMaybe 300 (timeout config))
                 }
-     in liftIO $ do
+    in  liftIO $ do
             lock <- initializeLock
             ioref <- newIORef Nothing -- don't start the connection just now
             killConnection <- newEmptyMVar
@@ -2882,9 +2869,8 @@ getBlockPendingUpdates bhInput =
   where
     msg = toProto bhInput
 
-{- |Get all special events in a given block.
- A special event is protocol generated event that is not directly caused by a transaction, such as minting, paying out rewards, etc.
--}
+-- |Get all special events in a given block.
+-- A special event is protocol generated event that is not directly caused by a transaction, such as minting, paying out rewards, etc.
 getBlockSpecialEvents :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq Transactions.SpecialTransactionOutcome)))
 getBlockSpecialEvents bhInput =
     withServerStreamCollect (call @"getBlockSpecialEvents") msg ((fmap . mapM) fromProto)
@@ -2919,11 +2905,10 @@ getIdentityProviders bhInput =
   where
     msg = toProto bhInput
 
-{- |Get all fixed passive delegators for the reward period of a given block.
- In contrast to @getPassiveDelegators@ which returns all delegators registered
- at the end of a given block, this returns all fixed delegators contributing
- stake in the reward period containing the given block.
--}
+-- |Get all fixed passive delegators for the reward period of a given block.
+-- In contrast to @getPassiveDelegators@ which returns all delegators registered
+-- at the end of a given block, this returns all fixed delegators contributing
+-- stake in the reward period containing the given block.
 getPassiveDelegatorsRewardPeriod :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq DelegatorRewardPeriodInfo)))
 getPassiveDelegatorsRewardPeriod bhInput =
     withServerStreamCollect (call @"getPassiveDelegatorsRewardPeriod") msg ((fmap . mapM) fromProto)
@@ -2937,11 +2922,10 @@ getPassiveDelegators bhInput =
   where
     msg = toProto bhInput
 
-{- |Get all fixed delegators of a given pool for the reward period of a given block.
- In contrast to @getPoolDelegators@ which returns all active delegators registered
- for the given block, this returns all the active fixed delegators contributing stake
- in the reward period containing the given block.
--}
+-- |Get all fixed delegators of a given pool for the reward period of a given block.
+-- In contrast to @getPoolDelegators@ which returns all active delegators registered
+-- for the given block, this returns all the active fixed delegators contributing stake
+-- in the reward period containing the given block.
 getPoolDelegatorsRewardPeriod :: (MonadIO m) => BlockHashInput -> BakerId -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq DelegatorRewardPeriodInfo)))
 getPoolDelegatorsRewardPeriod bhInput baker =
     withServerStreamCollect (call @"getPoolDelegatorsRewardPeriod") msg ((fmap . mapM) fromProto)
@@ -2961,9 +2945,8 @@ getBakerList bhInput = withServerStreamCollect (call @"getBakerList") msg ((fmap
   where
     msg = toProto bhInput
 
-{- |Get key-value pairs representing the entire state of a specific contract instance in a given block.
- The resulting sequence consists of key-value pairs ordered lexicographically according to the keys.
--}
+-- |Get key-value pairs representing the entire state of a specific contract instance in a given block.
+-- The resulting sequence consists of key-value pairs ordered lexicographically according to the keys.
 getInstanceState :: (MonadIO m) => BlockHashInput -> ContractAddress -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq (ByteString, ByteString))))
 getInstanceState bhInput cAddress =
     withServerStreamCollect (call @"getInstanceState") msg ((fmap . mapM) fromProto)
@@ -2976,12 +2959,11 @@ getInstanceList bhInput = withServerStreamCollect (call @"getInstanceList") msg 
   where
     msg = toProto bhInput
 
-{- |Get ancestors of a given block.
- The first element of the sequence is the requested block itself, and the block
- immediately following a block in the sequence is the parent of that block.
- The sequence contains at most @limit@ blocks, and if the sequence is
- strictly shorter, the last block in the list is the genesis block.
--}
+-- |Get ancestors of a given block.
+-- The first element of the sequence is the requested block itself, and the block
+-- immediately following a block in the sequence is the parent of that block.
+-- The sequence contains at most @limit@ blocks, and if the sequence is
+-- strictly shorter, the last block in the list is the genesis block.
 getAncestors :: (MonadIO m) => BlockHashInput -> Word64 -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq BlockHash)))
 getAncestors bhInput limit = withServerStreamCollect (call @"getAncestors") msg ((fmap . mapM) fromProto)
   where
@@ -3002,20 +2984,18 @@ getAccountList bhInput = withServerStreamCollect (call @"getAccountList") msg ((
   where
     msg = toProto bhInput
 
-{- |Process a stream of blocks that are finalized from the time the query is made onward.
- This can be used to listen for newly finalized blocks. Note that there is no guarantee
- that blocks will not be skipped if the client is too slow in processing the stream,
- however blocks will always be sent by increasing block height. Note that this function
- is non-terminating, so some care should be taken when invoking this. See @withGRPCCore@
- for more info.
--}
+-- |Process a stream of blocks that are finalized from the time the query is made onward.
+-- This can be used to listen for newly finalized blocks. Note that there is no guarantee
+-- that blocks will not be skipped if the client is too slow in processing the stream,
+-- however blocks will always be sent by increasing block height. Note that this function
+-- is non-terminating, so some care should be taken when invoking this. See @withGRPCCore@
+-- for more info.
 getFinalizedBlocks :: (MonadIO m) => (FromProtoResult ArrivedBlockInfo -> ClientIO ()) -> ClientMonad m (GRPCResult ())
 getFinalizedBlocks f = withServerStreamCallback (call @"getFinalizedBlocks") defMessage mempty (\_ o -> f (fromProto o)) id
 
-{- |Process a stream of blocks that arrive from the time the query is made onward.
- This can be used to listen for incoming blocks. Note that this is non-terminating,
- so some care should be taken when using this. See @withGRPCCore@ for more info.
--}
+-- |Process a stream of blocks that arrive from the time the query is made onward.
+-- This can be used to listen for incoming blocks. Note that this is non-terminating,
+-- so some care should be taken when using this. See @withGRPCCore@ for more info.
 getBlocks :: (MonadIO m) => (FromProtoResult ArrivedBlockInfo -> ClientIO ()) -> ClientMonad m (GRPCResult ())
 getBlocks f = withServerStreamCallback (call @"getBlocks") defMessage mempty (\_ o -> f (fromProto o)) id
 
@@ -3083,24 +3063,22 @@ getBlockItemStatus tHash = withUnary (call @"getBlockItemStatus") msg (fmap from
   where
     msg = toProto tHash
 
-{- |Send a block item. A block item is either an @AccountTransaction@, which is
- a transaction signed and paid for by an account, a @CredentialDeployment@,
- which creates a new account, or an @UpdateInstruction@, which is an
- instruction to change some parameters of the chain. Update instructions can
- only be sent by the governance committee.
-
- Returns a hash of the block item, which can be used with
- @GetBlockItemStatus@.
--}
+-- |Send a block item. A block item is either an @AccountTransaction@, which is
+-- a transaction signed and paid for by an account, a @CredentialDeployment@,
+-- which creates a new account, or an @UpdateInstruction@, which is an
+-- instruction to change some parameters of the chain. Update instructions can
+-- only be sent by the governance committee.
+--
+-- Returns a hash of the block item, which can be used with
+-- @GetBlockItemStatus@.
 sendBlockItem :: (MonadIO m) => Transactions.BareBlockItem -> ClientMonad m (GRPCResult (FromProtoResult TransactionHash))
 sendBlockItem bbiInput = withUnary (call @"sendBlockItem") msg (fmap fromProto)
   where
     msg = toProto bbiInput
 
-{- |Get the value at a specific key of a contract state. In contrast to
- @GetInstanceState@ this is more efficient, but requires the user to know
- the specific key to look for.
--}
+-- |Get the value at a specific key of a contract state. In contrast to
+-- @GetInstanceState@ this is more efficient, but requires the user to know
+-- the specific key to look for.
 instanceStateLookup ::
     (MonadIO m) =>
     BlockHashInput ->
@@ -3116,17 +3094,15 @@ instanceStateLookup bhInput cAddr key =
             & ProtoFields.address .~ toProto cAddr
             & ProtoFields.key .~ key
 
-{- |Stop dumping packets.
- This feature is enabled if the node was built with the @network_dump@ feature.
- Returns a GRPC error if the network dump could not be stopped.
--}
+-- |Stop dumping packets.
+-- This feature is enabled if the node was built with the @network_dump@ feature.
+-- Returns a GRPC error if the network dump could not be stopped.
 dumpStop :: (MonadIO m) => ClientMonad m (GRPCResult ())
 dumpStop = withUnary (call @"dumpStop") defMessage ((fmap . const) ())
 
-{- |Start dumping network packets into the specified file.
- This feature is enabled if the node was built with the @network_dump@ feature.
- Returns a GRPC error if the network dump failed to start.
--}
+-- |Start dumping network packets into the specified file.
+-- This feature is enabled if the node was built with the @network_dump@ feature.
+-- Returns a GRPC error if the network dump failed to start.
 dumpStart :: (MonadIO m) => Text -> Bool -> ClientMonad m (GRPCResult ())
 dumpStart file raw = withUnary (call @"dumpStart") msg ((fmap . const) ())
   where
@@ -3148,21 +3124,19 @@ banPeer peer = withUnary (call @"banPeer") msg ((fmap . const) ())
 getBannedPeers :: (MonadIO m) => ClientMonad m (GRPCResult (FromProtoResult [Peer]))
 getBannedPeers = withUnary (call @"getBannedPeers") defMessage (fmap fromProto)
 
-{- |Ask the node to disconnect from the peer with the submitted details.
- On success, the peer is removed from the peer-list of the node and a
- @GRPCResponse@ is returned. Otherwise a GRPC error is returned.
--}
+-- |Ask the node to disconnect from the peer with the submitted details.
+-- On success, the peer is removed from the peer-list of the node and a
+-- @GRPCResponse@ is returned. Otherwise a GRPC error is returned.
 peerDisconnect :: (MonadIO m) => IpAddress -> IpPort -> ClientMonad m (GRPCResult ())
 peerDisconnect ip port = withUnary (call @"peerDisconnect") msg ((fmap . const) ())
   where
     msg = defMessage & ProtoFields.ip .~ toProto ip & ProtoFields.port .~ toProto port
 
-{- |Ask a peer to connect to the peer with the submitted details.
- On success, the peer is added in the peer-list of the node and a
- @GRPCResponse@ is returned. Otherwise a GRPC error is returned.
- Note that the peer may not be connected instantly, in which case
- the call succeeds.
--}
+-- |Ask a peer to connect to the peer with the submitted details.
+-- On success, the peer is added in the peer-list of the node and a
+-- @GRPCResponse@ is returned. Otherwise a GRPC error is returned.
+-- Note that the peer may not be connected instantly, in which case
+-- the call succeeds.
 peerConnect :: (MonadIO m) => IpAddress -> IpPort -> ClientMonad m (GRPCResult ())
 peerConnect ip port = withUnary (call @"peerConnect") msg ((fmap . const) ())
   where
@@ -3262,10 +3236,10 @@ getBakersRewardPeriod bhInput = withServerStreamCollect (call @"getBakersRewardP
 
 -- |Call a unary V2 GRPC API endpoint and return the result.
 withUnary ::
-    ( HasMethod CS.Queries m
-    , MonadIO n
-    , i ~ MethodInput CS.Queries m
-    , o ~ MethodOutput CS.Queries m
+    ( HasMethod CS.Queries m,
+      MonadIO n,
+      i ~ MethodInput CS.Queries m,
+      o ~ MethodOutput CS.Queries m
     ) =>
     -- |The procedure to call.
     RPC CS.Queries m ->
@@ -3281,15 +3255,14 @@ withUnary method input k = withGRPCCore callHelper k
         res <- rawUnary method client input
         return $ fmap RawUnaryOutput res
 
-{- |Call a streaming V2 GRPC API endpoint and return the (collected) results in a sequence.
- Note that some care should be taken when using this with long-running calls. See
- @withGRPCCore@ for more info.
--}
+-- |Call a streaming V2 GRPC API endpoint and return the (collected) results in a sequence.
+-- Note that some care should be taken when using this with long-running calls. See
+-- @withGRPCCore@ for more info.
 withServerStreamCollect ::
-    ( HasMethod CS.Queries m
-    , MonadIO n
-    , i ~ MethodInput CS.Queries m
-    , o ~ Seq.Seq (MethodOutput CS.Queries m)
+    ( HasMethod CS.Queries m,
+      MonadIO n,
+      i ~ MethodInput CS.Queries m,
+      o ~ Seq.Seq (MethodOutput CS.Queries m)
     ) =>
     -- |The procedure to call.
     RPC CS.Queries m ->
@@ -3303,17 +3276,16 @@ withServerStreamCollect method input =
   where
     handler acc o = return $ acc <> pure o
 
-{- |Call a streaming GRPC API endpoint and return the (collected) results.
- Takes a @fold@-like callback and an accumulator, and returns the result
- of folding through each stream element, once the stream terminates. Note
- that some care should be taken when using this with long-running calls.
- See @withGRPCCore@ for more info.
--}
+-- |Call a streaming GRPC API endpoint and return the (collected) results.
+-- Takes a @fold@-like callback and an accumulator, and returns the result
+-- of folding through each stream element, once the stream terminates. Note
+-- that some care should be taken when using this with long-running calls.
+-- See @withGRPCCore@ for more info.
 withServerStreamCallback ::
-    ( HasMethod CS.Queries m
-    , MonadIO n
-    , i ~ MethodInput CS.Queries m
-    , o ~ MethodOutput CS.Queries m
+    ( HasMethod CS.Queries m,
+      MonadIO n,
+      i ~ MethodInput CS.Queries m,
+      o ~ MethodOutput CS.Queries m
     ) =>
     -- |The procedure to call.
     RPC CS.Queries m ->
@@ -3343,14 +3315,13 @@ withServerStreamCallback method input acc handler =
         res <- rawStreamServer method client acc input handler'
         return $ fmap ServerStreamOutput res
 
-{- |Run a request helper function with a client instance to call a GRPC procedure.
- The output is interpreted using the function given in the second parameter.
-
- Note that long-running streaming call may block other calls from retrying to
- establish their connection if they fail. Therefore some care should be taken
- when using long-running or unproductive calls, and in particular those targeting
- never-ending streaming endpoints such as @getBlocks@ and @getFinalizedBlocks@.
--}
+-- |Run a request helper function with a client instance to call a GRPC procedure.
+-- The output is interpreted using the function given in the second parameter.
+--
+-- Note that long-running streaming call may block other calls from retrying to
+-- establish their connection if they fail. Therefore some care should be taken
+-- when using long-running or unproductive calls, and in particular those targeting
+-- never-ending streaming endpoints such as @getBlocks@ and @getFinalizedBlocks@.
 withGRPCCore ::
     (MonadIO n) =>
     -- |A helper which takes a client, issues a GRPC request in the client and returns the result.
@@ -3475,7 +3446,7 @@ withGRPCCore helper k = do
                 else return $ k (RequestFailed "Cannot establish connection to GRPC endpoint.")
         (_, Just v) ->
             let response = toGRPCResult' v
-             in do
+            in  do
                     addHeaders response
                     return (k response)
   where
@@ -3485,7 +3456,7 @@ withGRPCCore helper k = do
                 forM_ grpcHeaders $ \(hn, hv) ->
                     when (hn == "set-cookie") $
                         let c = Cookie.parseSetCookie hv
-                         in modify' (Map.insert (Cookie.setCookieName c) (Cookie.setCookieValue c))
+                        in  modify' (Map.insert (Cookie.setCookieName c) (Cookie.setCookieValue c))
         _ -> return ()
 
 call :: forall m. RPC CS.Queries m

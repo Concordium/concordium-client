@@ -45,10 +45,9 @@ import Text.Read (readMaybe)
 serializeWithSchema :: SchemaType -> AE.Value -> Either String ByteString
 serializeWithSchema typ params = S.runPut <$> putJSONUsingSchema typ params
 
-{- |Deserialize bytestring to JSON using `SchemaType` or fail with an error message
- if either the bytestring could not be parsed, or if a non-empty tail of the
- bytestring was not consumed.
--}
+-- |Deserialize bytestring to JSON using `SchemaType` or fail with an error message
+-- if either the bytestring could not be parsed, or if a non-empty tail of the
+-- bytestring was not consumed.
 deserializeWithSchema :: SchemaType -> ByteString -> Either String AE.Value
 deserializeWithSchema typ = S.runGet $ do
     json <- getJSONUsingSchema typ
@@ -56,11 +55,10 @@ deserializeWithSchema typ = S.runGet $ do
     unless theEnd $ fail "Could not parse entire bytestring using schema."
     return json
 
-{- |Create a `Serialize.Get` for decoding binary as specified by a `SchemaType` into JSON.
- The `SchemaType` is pattern matched and for each variant, the corresponding binary
- deserialization is used followed by the corresponding JSON serialization.
- The Value that is returned should match what is expected from `putJSONUsingSchema` when using the same schema.
--}
+-- |Create a `Serialize.Get` for decoding binary as specified by a `SchemaType` into JSON.
+-- The `SchemaType` is pattern matched and for each variant, the corresponding binary
+-- deserialization is used followed by the corresponding JSON serialization.
+-- The Value that is returned should match what is expected from `putJSONUsingSchema` when using the same schema.
 getJSONUsingSchema :: SchemaType -> S.Get AE.Value
 getJSONUsingSchema typ = case typ of
     Unit -> return AE.Null
@@ -122,7 +120,7 @@ getJSONUsingSchema typ = case typ of
             Just idx ->
                 let (contractName, funcNameWithDot) = Text.splitAt idx rawName
                     funcName = Text.tail funcNameWithDot -- Safe, since we know it contains a dot.
-                 in return $ AE.object ["contract" .= contractName, "func" .= funcName]
+                in  return $ AE.object ["contract" .= contractName, "func" .= funcName]
     ULeb128 constraint -> AE.toJSON . show <$> leb128 0
       where
         leb128 :: Int -> S.Get Integer
@@ -151,7 +149,7 @@ getJSONUsingSchema typ = case typ of
                     ileb128 (byteCount + 1) value
                 else
                     let isNegative = Bits.testBit byte 6
-                     in return $!
+                    in  return $!
                             if isNegative
                                 then value - 2 ^ ((byteCount + 1) * 7)
                                 else value
@@ -188,12 +186,11 @@ getJSONUsingSchema typ = case typ of
             Left _ -> fail "String is not valid UTF-8."
             Right str -> return str
 
-{- |Create a `Serialize.Put` for JSON using a `SchemaType`.
- It goes through the JSON and SchemaType recursively, and
- deserializes the JSON before serializing the values to binary.
- A descriptive error message is shown if the JSON does not match
- the expected format as specified by the `SchemaType`.
--}
+-- |Create a `Serialize.Put` for JSON using a `SchemaType`.
+-- It goes through the JSON and SchemaType recursively, and
+-- deserializes the JSON before serializing the values to binary.
+-- A descriptive error message is shown if the JSON does not match
+-- the expected format as specified by the `SchemaType`.
 putJSONUsingSchema :: SchemaType -> AE.Value -> Either String S.Put
 putJSONUsingSchema typ json = case (typ, json) of
     (Unit, AE.Null) -> pure mempty
@@ -484,10 +481,9 @@ putJSONUsingSchema typ json = case (typ, json) of
             millis = numerator frac `div` denominator frac
         timeString = Text.unpack s
 
-{- |Wrapper for Concordium.Types.Amount that uses a little-endian encoding
- for binary serialization. Show and JSON instances are inherited from
- the Amount type.
--}
+-- |Wrapper for Concordium.Types.Amount that uses a little-endian encoding
+-- for binary serialization. Show and JSON instances are inherited from
+-- the Amount type.
 newtype AmountLE = AmountLE T.Amount
     deriving (Eq)
     deriving newtype (FromJSON, Show, ToJSON)

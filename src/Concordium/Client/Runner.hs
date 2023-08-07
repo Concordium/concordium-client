@@ -120,11 +120,10 @@ import Text.Printf
 import Text.Read (readEither, readMaybe)
 import Prelude hiding (fail, log, unlines)
 
-{- |Establish a new connection to the backend and run the provided computation.
- Close a connection after completion of the computation. Establishing a
- connection is expensive, and thus if multiple RPC calls are going to be made
- they should be made in the context of the same 'withClient' so they reuse it.
--}
+-- |Establish a new connection to the backend and run the provided computation.
+-- Close a connection after completion of the computation. Establishing a
+-- connection is expensive, and thus if multiple RPC calls are going to be made
+-- they should be made in the context of the same 'withClient' so they reuse it.
 withClient :: Backend -> ClientMonad IO a -> IO a
 withClient bkend comp = do
     let config = GrpcConfig (COM.grpcHost bkend) (COM.grpcPort bkend) (COM.grpcTarget bkend) (COM.grpcRetryNum bkend) Nothing (COM.grpcUseTls bkend)
@@ -146,18 +145,16 @@ withClient bkend comp = do
 withClientJson :: (FromJSON a) => Backend -> ClientMonad IO (Either String Value) -> IO a
 withClientJson b c = withClient b c >>= getFromJson
 
-{- |Helper function for parsing JSON Value or fail if the value is missing or cannot be converted correctly.
- The parameter has the same type as the one returned by e.g. eitherDecode or processJSON,
- which many of the GRPC commands use.
--}
+-- |Helper function for parsing JSON Value or fail if the value is missing or cannot be converted correctly.
+-- The parameter has the same type as the one returned by e.g. eitherDecode or processJSON,
+-- which many of the GRPC commands use.
 getFromJson :: (MonadIO m, FromJSON a) => Either String Value -> m a
 getFromJson = getFromJsonAndHandleError onError
   where
     onError val err = logFatal ["cannot convert '" ++ show val ++ "': " ++ err]
 
-{- |Helper function for parsing JSON Value, logFatal if the Either is Left,
- and use the provided function to handle Error in fromJSON.
--}
+-- |Helper function for parsing JSON Value, logFatal if the Either is Left,
+-- and use the provided function to handle Error in fromJSON.
 getFromJsonAndHandleError ::
     (MonadIO m, FromJSON a) =>
     -- | Takes the JSON being converted and the err string from (Error err) if fromJSON fails.
@@ -172,9 +169,8 @@ getFromJsonAndHandleError handleError r = do
         Error err -> handleError s err
         Success v -> return v
 
-{- |Look up account from the provided name or address.
- Fail if the address cannot be found.
--}
+-- |Look up account from the provided name or address.
+-- Fail if the address cannot be found.
 getAccountAddressArg :: AccountNameMap -> Text -> IO NamedAddress
 getAccountAddressArg m account = do
     case getAccountAddress m account of
@@ -217,9 +213,9 @@ processConfigCmd action baseCfgDir verbose =
             allAccounts <- getAllAccountConfigs baseCfg
             let configBackup =
                     ConfigBackup
-                        { cbAccounts = allAccounts
-                        , cbContractNameMap = bcContractNameMap baseCfg
-                        , cbModuleNameMap = bcModuleNameMap baseCfg
+                        { cbAccounts = allAccounts,
+                          cbContractNameMap = bcContractNameMap baseCfg,
+                          cbModuleNameMap = bcModuleNameMap baseCfg
                         }
             exportedConfigBackup <- case Password.getPassword pwd of
                 "" -> configExport configBackup Nothing
@@ -319,8 +315,8 @@ processConfigCmd action baseCfgDir verbose =
                                 ++ show cidx
                                 ++ " with indices "
                                 ++ showMapIdxs km
-                                ++ " cannot be added because they already exist"
-                            , "Use 'concordium-client config account update-keys' if you want to update them."
+                                ++ " cannot be added because they already exist",
+                              "Use 'concordium-client config account update-keys' if you want to update them."
                             ]
 
                 -- Only write account keys if any non-duplicated keys are added
@@ -361,7 +357,7 @@ processConfigCmd action baseCfgDir verbose =
                                 case (Map.lookup cidx keyMapCurrent, Map.lookup cidx keyMapInput) of
                                     (Just kmCurrent, Just kmInput) -> Map.intersection kmInput kmCurrent
                                     _ -> Map.empty -- if the credential exists in one but not the other then it won't be updated.
-                         in Map.filter (not . Map.null) . Map.mapWithKey f $ credDuplicates
+                        in  Map.filter (not . Map.null) . Map.mapWithKey f $ credDuplicates
 
                 unless (Map.null keyMapNew) $ forM_ (Map.toList keyMapNew) $ \(cidx, km) -> do
                     unless (Map.null km) $
@@ -370,8 +366,8 @@ processConfigCmd action baseCfgDir verbose =
                                 ++ show cidx
                                 ++ " with indices "
                                 ++ showMapIdxs km
-                                ++ " can not be updated because they do not match existing keys"
-                            , "Use 'concordium-client config account add-keys' if you want to add them."
+                                ++ " can not be updated because they do not match existing keys",
+                              "Use 'concordium-client config account add-keys' if you want to add them."
                             ]
 
                 case Map.null keyDuplicates of
@@ -404,8 +400,8 @@ processConfigCmd action baseCfgDir verbose =
                             writeAccountKeys baseCfg' accCfg' verbose
             ConfigAccountChangeKeyPassword name cidx keyIndex -> do
                 logWarn
-                    [ printf "Re-encrypting keys under a new password permanently overwrites the previous encrypted keys"
-                    , "This is a destructive operation and cannot be undone"
+                    [ printf "Re-encrypting keys under a new password permanently overwrites the previous encrypted keys",
+                      "This is a destructive operation and cannot be undone"
                     ]
 
                 baseCfg <- getBaseConfig baseCfgDir verbose
@@ -515,14 +511,13 @@ processConfigCmd action baseCfgDir verbose =
     getAccountConfigFromAddr :: Text -> BaseConfig -> IO (BaseConfig, AccountConfig)
     getAccountConfigFromAddr addr baseCfg = getAccountConfig (Just addr) baseCfg Nothing Nothing Nothing AutoInit
 
-{- |Read and parse a file exported from either genesis data or mobile wallet.
- The format specifier tells which format to expect.
- If the format is "mobile", the user is prompted for a password which is used to decrypt
- the exported data. This may result in multiple named accounts. If a name is provided,
- only the account with that name is being selected for import.
- The "genesis" format is not encrypted and only contains a single account which is not named.
- If a name is provided in this case, this will become the account name.
--}
+-- |Read and parse a file exported from either genesis data or mobile wallet.
+-- The format specifier tells which format to expect.
+-- If the format is "mobile", the user is prompted for a password which is used to decrypt
+-- the exported data. This may result in multiple named accounts. If a name is provided,
+-- only the account with that name is being selected for import.
+-- The "genesis" format is not encrypted and only contains a single account which is not named.
+-- If a name is provided in this case, this will become the account name.
 loadAccountImportFile :: AccountExportFormat -> FilePath -> Maybe Text -> IO [AccountConfig]
 loadAccountImportFile format file name = do
     contents <- handleReadFile BS.readFile file
@@ -534,8 +529,8 @@ loadAccountImportFile format file name = do
             logInfo [[i|loaded the following #{accountsMessage} from the #{environment} chain:|]]
             forM_ accCfgs $ \AccountConfig{acAddr = NamedAddress{..}} -> logInfo [[i|- #{naAddr} #{showNameList naNames}|]]
             logInfo
-                [ "all signing keys have been encrypted with the password used for this import."
-                , "Note that accounts are not transferable between different chains, e.g., from testnet to mainnet or vice-versa."
+                [ "all signing keys have been encrypted with the password used for this import.",
+                  "Note that accounts are not transferable between different chains, e.g., from testnet to mainnet or vice-versa."
                 ]
             putStrLn ""
 
@@ -572,18 +567,17 @@ checkAndGetMemo memo pv = do
             return $ Types.Memo bss
         Right m -> return m
 
-{- | Returns contract info with schemas associated with an event.
- Returns @Nothing@ if the event provided is not one of
-   - Concordium.Types.ContractInitialized
-   - Concordium.Types.Updated
-   - Concordium.Types.Interrupted
- or fails if the contract could not be retrieved.
- Optionally takes a path to a schema file to be parsed and returned.
- Takes an identifier of the block from which to retrieve the contract
- module containing the schema. The schema from the file will take
- precedence over an embedded schema in the module retrieved from the
- block.
--}
+-- | Returns contract info with schemas associated with an event.
+-- Returns @Nothing@ if the event provided is not one of
+--   - Concordium.Types.ContractInitialized
+--   - Concordium.Types.Updated
+--   - Concordium.Types.Interrupted
+-- or fails if the contract could not be retrieved.
+-- Optionally takes a path to a schema file to be parsed and returned.
+-- Takes an identifier of the block from which to retrieve the contract
+-- module containing the schema. The schema from the file will take
+-- precedence over an embedded schema in the module retrieved from the
+-- block.
 getContractInfoWithSchemas ::
     (MonadIO m) =>
     -- | Path pointing to a schema file.
@@ -611,15 +605,14 @@ getContractInfoWithSchemas schemaFile blockHash ev = do
                 Just schema -> CI.addSchemaData contrInfo schema
         _ -> return Nothing
 
-{- |Get @ContractInfo@ for all events in all blocks in which a transaction is present.
- Returns a map from blockhashes of blocks in which the transaction is present to the
- events of the transaction in that block. Each event appears in a pair with an optional
- @ContractInfo@ value containing contract schema info associated with the event of the
- transaction in that block, if present.
- Optionally takes a path to a schema file to be parsed. If a schema is contained in the
- file, it will take precedence over any schemas that may be embedded in the module and
- will therefore be present in the @ContractInfo@ for all events.
--}
+-- |Get @ContractInfo@ for all events in all blocks in which a transaction is present.
+-- Returns a map from blockhashes of blocks in which the transaction is present to the
+-- events of the transaction in that block. Each event appears in a pair with an optional
+-- @ContractInfo@ value containing contract schema info associated with the event of the
+-- transaction in that block, if present.
+-- Optionally takes a path to a schema file to be parsed. If a schema is contained in the
+-- file, it will take precedence over any schemas that may be embedded in the module and
+-- will therefore be present in the @ContractInfo@ for all events.
 getTxContractInfoWithSchemas ::
     (MonadIO m) =>
     -- | Path pointing to a schema file.
@@ -715,9 +708,9 @@ processTransactionCmd action baseCfgDir verbose backend =
 
                 let ttxCfg =
                         TransferTransactionConfig
-                            { ttcTransactionCfg = txCfg
-                            , ttcReceiver = receiverAddress
-                            , ttcAmount = amount
+                            { ttcTransactionCfg = txCfg,
+                              ttcReceiver = receiverAddress,
+                              ttcAmount = amount
                             }
                 when verbose $ liftIO $ do
                     runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
@@ -744,7 +737,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                                 COM.Week -> 7 * 24 * 60 * 60 * 1000
                                 COM.Month -> 30 * 24 * 60 * 60 * 1000
                                 COM.Year -> 365 * 24 * 60 * 60 * 1000
-                         in zip (iterate (+ diff) start) (replicate (numIntervals - 1) chunks ++ [chunks + lastChunk])
+                        in  zip (iterate (+ diff) start) (replicate (numIntervals - 1) chunks ++ [chunks + lastChunk])
             receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
             withClient backend $ do
                 cs <- getResponseValueOrDie =<< getConsensusInfo
@@ -759,9 +752,9 @@ processTransactionCmd action baseCfgDir verbose backend =
                 txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
                 let ttxCfg =
                         TransferWithScheduleTransactionConfig
-                            { twstcTransactionCfg = txCfg
-                            , twstcReceiver = receiverAddress
-                            , twstcSchedule = realSchedule
+                            { twstcTransactionCfg = txCfg,
+                              twstcReceiver = receiverAddress,
+                              twstcSchedule = realSchedule
                             }
 
                 when verbose $ liftIO $ do
@@ -811,10 +804,10 @@ processTransactionCmd action baseCfgDir verbose backend =
 
                 let ettCfg =
                         EncryptedTransferTransactionConfig
-                            { ettTransferData = transferData
-                            , ettTransactionCfg = txCfg
-                            , ettReceiver = receiverAcc
-                            , ettAmount = amount
+                            { ettTransferData = transferData,
+                              ettTransactionCfg = txCfg,
+                              ettReceiver = receiverAcc,
+                              ettAmount = amount
                             }
                 liftIO $ when verbose $ do
                     runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
@@ -850,10 +843,9 @@ processTransactionCmd action baseCfgDir verbose backend =
                     Just (Left err) -> logFatal ["Registering data failed:", err]
                     Just (Right _) -> logSuccess ["Data succesfully registered."]
 
-{- |Construct a transaction config for registering data.
-  The data is read from the 'FilePath' provided.
-  Fails if the data can't be read or it violates the size limit checked by 'Types.registeredDataFromBSS'.
--}
+-- |Construct a transaction config for registering data.
+--  The data is read from the 'FilePath' provided.
+--  Fails if the data can't be read or it violates the size limit checked by 'Types.registeredDataFromBSS'.
 getRegisterDataTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> RegisterDataInput -> IO RegisterDataTransactionCfg
 getRegisterDataTransactionCfg baseCfg txOpts dataInput = do
     bss <-
@@ -892,16 +884,15 @@ registerDataTransactionPayload RegisterDataTransactionCfg{..} = Types.RegisterDa
 
 -- |Transaction config for registering data.
 data RegisterDataTransactionCfg = RegisterDataTransactionCfg
-    { rdtcTransactionCfg :: !TransactionConfig
-    -- ^Configuration for the transaction.
-    , rdtcData :: !Types.RegisteredData
-    -- ^The data to register.
+    { -- |Configuration for the transaction.
+      rdtcTransactionCfg :: !TransactionConfig,
+      -- |The data to register.
+      rdtcData :: !Types.RegisteredData
     }
 
-{- |Poll the transaction state continuously until it is "at least" the provided one.
- Note that the "absent" state is considered the "highest" state,
- so the loop will break if, for instance, the transaction state goes from "committed" to "absent".
--}
+-- |Poll the transaction state continuously until it is "at least" the provided one.
+-- Note that the "absent" state is considered the "highest" state,
+-- so the loop will break if, for instance, the transaction state goes from "committed" to "absent".
 awaitState :: (TransactionStatusQuery m) => Int -> TransactionState -> Types.TransactionHash -> m TransactionStatusResult
 awaitState t s hash = do
     status <- queryTransactionStatus hash
@@ -911,9 +902,8 @@ awaitState t s hash = do
             wait t
             awaitState t s hash
 
-{- |Function type for computing the transaction energy cost for a given number of keys.
- Returns Nothing if the cost cannot be computed.
--}
+-- |Function type for computing the transaction energy cost for a given number of keys.
+-- Returns Nothing if the cost cannot be computed.
 type ComputeEnergyCost = Int -> Types.Energy
 
 -- |Function for computing a cost function based on the resolved account config.
@@ -921,18 +911,17 @@ type GetComputeEnergyCost = EncryptedSigningData -> IO (Maybe ComputeEnergyCost)
 
 -- |Resolved configuration common to all transaction types.
 data TransactionConfig = TransactionConfig
-    { tcEncryptedSigningData :: EncryptedSigningData
-    , tcNonce :: Maybe Types.Nonce
-    , tcEnergy :: Types.Energy
-    , tcExpiry :: Types.TransactionExpiryTime
-    , tcAlias :: Maybe Word
+    { tcEncryptedSigningData :: EncryptedSigningData,
+      tcNonce :: Maybe Types.Nonce,
+      tcEnergy :: Types.Energy,
+      tcExpiry :: Types.TransactionExpiryTime,
+      tcAlias :: Maybe Word
     }
 
-{- |Resolve transaction config based on persisted config and CLI flags.
- If an energy cost function is provided and it returns a value which
- is different from the specified energy allocation, a warning is logged.
- If the energy allocation is too low, the user is prompted to increase it.
--}
+-- |Resolve transaction config based on persisted config and CLI flags.
+-- If an energy cost function is provided and it returns a value which
+-- is different from the specified energy allocation, a warning is logged.
+-- If the energy allocation is too low, the user is prompted to increase it.
 getTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> GetComputeEnergyCost -> IO TransactionConfig
 getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
     encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
@@ -954,18 +943,18 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
 
     return
         TransactionConfig
-            { tcEncryptedSigningData = encSignData
-            , tcNonce = toNonce txOpts
-            , tcEnergy = energy
-            , tcExpiry = expiry
-            , tcAlias = toAlias txOpts
+            { tcEncryptedSigningData = encSignData,
+              tcNonce = toNonce txOpts,
+              tcEnergy = energy,
+              tcExpiry = expiry,
+              tcAlias = toAlias txOpts
             }
   where
     promptEnergyUpdate energy actualFee
         | energy < actualFee = do
             logWarn
-                [ "insufficient energy allocated to the transaction"
-                , printf "transaction fee will be %s, but only %s has been allocated" (showNrg actualFee) (showNrg energy)
+                [ "insufficient energy allocated to the transaction",
+                  printf "transaction fee will be %s, but only %s has been allocated" (showNrg actualFee) (showNrg energy)
                 ]
             confirmed <- askConfirmation $ Just [i|Do you want to increase the energy allocation to #{showNrg actualFee}? Confirm|]
             return $ if confirmed then actualFee else energy
@@ -974,9 +963,8 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
             return energy
         | otherwise = return energy
 
-{- |Resolve transaction config based on persisted config and CLI flags.
- Used for transactions where a specification of maxEnergy is required.
--}
+-- |Resolve transaction config based on persisted config and CLI flags.
+-- Used for transactions where a specification of maxEnergy is required.
 getRequiredEnergyTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> IO TransactionConfig
 getRequiredEnergyTransactionCfg baseCfg txOpts = do
     encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
@@ -987,27 +975,26 @@ getRequiredEnergyTransactionCfg baseCfg txOpts = do
 
     return
         TransactionConfig
-            { tcEncryptedSigningData = encSignData
-            , tcNonce = toNonce txOpts
-            , tcEnergy = energy
-            , tcExpiry = expiry
-            , tcAlias = toAlias txOpts
+            { tcEncryptedSigningData = encSignData,
+              tcNonce = toNonce txOpts,
+              tcEnergy = energy,
+              tcExpiry = expiry,
+              tcAlias = toAlias txOpts
             }
 
-{- |Warn if expiry is in the past or very near or distant future.
- As the timestamps are unsigned, taking the simple difference might cause underflow.
--}
+-- |Warn if expiry is in the past or very near or distant future.
+-- As the timestamps are unsigned, taking the simple difference might cause underflow.
 warnSuspiciousExpiry :: Types.TransactionExpiryTime -> Types.TransactionExpiryTime -> IO ()
 warnSuspiciousExpiry expiryArg now
     | expiryArg < now =
         logWarn
-            [ "expiration time is in the past"
-            , "the transaction will not be committed"
+            [ "expiration time is in the past",
+              "the transaction will not be committed"
             ]
     | expiryArg < now + 30 =
         logWarn
-            [ printf "expiration time is in just %s seconds" (show $ expiryArg - now)
-            , "this may not be enough time for the transaction to be committed"
+            [ printf "expiration time is in just %s seconds" (show $ expiryArg - now),
+              "this may not be enough time for the transaction to be committed"
             ]
     | expiryArg > now + 3600 =
         logWarn ["expiration time is in more than one hour"]
@@ -1027,7 +1014,7 @@ getAccountCfgFromTxOpts baseCfg txOpts = do
                     let insertKey c k acc = case Map.lookup c acc of
                             Nothing -> Map.insert c [k] acc
                             Just x -> Map.insert c ([k] ++ x) acc
-                     in foldl' (\acc (c, k) -> insertKey c k acc) Map.empty $ fmap ((\(p1, p2) -> (read . Text.unpack $ p1, read . Text.unpack $ Text.drop 1 p2)) . Text.breakOn ":") $ Text.split (== ',') t
+                    in  foldl' (\acc (c, k) -> insertKey c k acc) Map.empty $ fmap ((\(p1, p2) -> (read . Text.unpack $ p1, read . Text.unpack $ Text.drop 1 p2)) . Text.breakOn ":") $ Text.split (== ',') t
     accCfg <- snd <$> getAccountConfig (toSender txOpts) baseCfg Nothing keysArg Nothing AssumeInitialized
     let keys = acKeys accCfg
     case chosenKeysMaybe of
@@ -1061,23 +1048,23 @@ getAccountCfgFromTxOpts baseCfg txOpts = do
 
 -- |Resolved configuration for a transfer transaction.
 data TransferTransactionConfig = TransferTransactionConfig
-    { ttcTransactionCfg :: TransactionConfig
-    , ttcReceiver :: NamedAddress
-    , ttcAmount :: Types.Amount
+    { ttcTransactionCfg :: TransactionConfig,
+      ttcReceiver :: NamedAddress,
+      ttcAmount :: Types.Amount
     }
 
 -- |Resolved configuration for a transfer transaction.
 data TransferWithScheduleTransactionConfig = TransferWithScheduleTransactionConfig
-    { twstcTransactionCfg :: TransactionConfig
-    , twstcReceiver :: NamedAddress
-    , twstcSchedule :: [(Time.Timestamp, Types.Amount)]
+    { twstcTransactionCfg :: TransactionConfig,
+      twstcReceiver :: NamedAddress,
+      twstcSchedule :: [(Time.Timestamp, Types.Amount)]
     }
 
 data EncryptedTransferTransactionConfig = EncryptedTransferTransactionConfig
-    { ettTransactionCfg :: TransactionConfig
-    , ettReceiver :: NamedAddress
-    , ettAmount :: Types.Amount
-    , ettTransferData :: !Enc.EncryptedAmountTransferData
+    { ettTransactionCfg :: TransactionConfig,
+      ettReceiver :: NamedAddress,
+      ettAmount :: Types.Amount,
+      ettTransferData :: !Enc.EncryptedAmountTransferData
     }
 
 getEncryptedAmountTransferData :: ID.AccountAddress -> NamedAddress -> Types.Amount -> Maybe Int -> ElgamalSecretKey -> ClientMonad IO Enc.EncryptedAmountTransferData
@@ -1155,9 +1142,8 @@ getDelegatorCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParamet
             let cooldownTime = fromIntegral . Types.durationSeconds $ ecpParams ^. cpCooldownParameters . cpDelegatorCooldown
             return $ Just $ addUTCTime cooldownTime currTime
 
-{- |Query the chain for the given account.
- Die printing an error message containing the nature of the error if such occured.
--}
+-- |Query the chain for the given account.
+-- Die printing an error message containing the nature of the error if such occured.
 getAccountInfoOrDie :: (MonadIO m) => Types.AccountIdentifier -> BlockHashInput -> ClientMonad m Types.AccountInfo
 getAccountInfoOrDie sender bhInput = do
     res <- getAccountInfo sender bhInput
@@ -1170,9 +1156,8 @@ getAccountInfoOrDie sender bhInput = do
         StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
         RequestFailed err -> logFatal ["I/O error: " <> err]
 
-{- |Query the chain for the given pool.
- Die printing an error message containing the nature of the error if such occured.
--}
+-- |Query the chain for the given pool.
+-- Die printing an error message containing the nature of the error if such occured.
 getPoolStatusOrDie :: Maybe Types.BakerId -> ClientMonad IO Queries.PoolStatus
 getPoolStatusOrDie mbid = do
     psRes <- case mbid of
@@ -1190,33 +1175,32 @@ getPoolStatusOrDie mbid = do
         Right v -> v
 
 data CredentialUpdateKeysTransactionCfg = CredentialUpdateKeysTransactionCfg
-    { cuktcTransactionCfg :: TransactionConfig
-    , cuktcKeys :: ID.CredentialPublicKeys
-    , cuktcCredId :: ID.CredentialRegistrationID
+    { cuktcTransactionCfg :: TransactionConfig,
+      cuktcKeys :: ID.CredentialPublicKeys,
+      cuktcCredId :: ID.CredentialRegistrationID
     }
 
 data AccountUpdateCredentialsTransactionCfg = AccountUpdateCredentialsTransactionCfg
-    { auctcTransactionCfg :: TransactionConfig
-    , auctcNewCredInfos :: Map.Map ID.CredentialIndex ID.CredentialDeploymentInformation
-    , auctcRemoveCredIds :: [ID.CredentialRegistrationID]
-    , auctcNewThreshold :: ID.AccountThreshold
+    { auctcTransactionCfg :: TransactionConfig,
+      auctcNewCredInfos :: Map.Map ID.CredentialIndex ID.CredentialDeploymentInformation,
+      auctcRemoveCredIds :: [ID.CredentialRegistrationID],
+      auctcNewThreshold :: ID.AccountThreshold
     }
 
 -- |Resolved configuration for transferring from public to encrypted balance.
 data AccountEncryptTransactionConfig = AccountEncryptTransactionConfig
-    { aeTransactionCfg :: TransactionConfig
-    , aeAmount :: Types.Amount
+    { aeTransactionCfg :: TransactionConfig,
+      aeAmount :: Types.Amount
     }
 
 -- |Resolved configuration for transferring from encrypted to public balance.
 data AccountDecryptTransactionConfig = AccountDecryptTransactionConfig
-    { adTransactionCfg :: TransactionConfig
-    , adTransferData :: Enc.SecToPubAmountTransferData
+    { adTransactionCfg :: TransactionConfig,
+      adTransferData :: Enc.SecToPubAmountTransferData
     }
 
-{- |Resolve configuration for transferring an amount from public to encrypted
- balance of an account.
--}
+-- |Resolve configuration for transferring an amount from public to encrypted
+-- balance of an account.
 getAccountEncryptTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.Amount -> Types.PayloadSize -> IO AccountEncryptTransactionConfig
 getAccountEncryptTransactionCfg baseCfg txOpts aeAmount payloadSize = do
     aeTransactionCfg <- getTransactionCfg baseCfg txOpts nrgCost
@@ -1224,9 +1208,8 @@ getAccountEncryptTransactionCfg baseCfg txOpts aeAmount payloadSize = do
   where
     nrgCost _ = return $ Just $ accountEncryptEnergyCost payloadSize
 
-{- |Resolve configuration for transferring an amount from encrypted to public
- balance of an account.
--}
+-- |Resolve configuration for transferring an amount from encrypted to public
+-- balance of an account.
 getAccountDecryptTransferData :: ID.AccountAddress -> Types.Amount -> ElgamalSecretKey -> Maybe Int -> ClientMonad IO Enc.SecToPubAmountTransferData
 getAccountDecryptTransferData senderAddr adAmount secretKey idx = do
     bbHash <- extractResponseValueOrDie Queries.biBlockHash =<< getBlockInfo Best
@@ -1261,9 +1244,8 @@ getAccountDecryptTransferData senderAddr adAmount secretKey idx = do
             Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
             Just adTransferData -> return adTransferData
 
-{- |Query the chain for cryptographic parameters in a given block.
- Die printing an error message containing the nature of the error if such occured.
--}
+-- |Query the chain for cryptographic parameters in a given block.
+-- Die printing an error message containing the nature of the error if such occured.
 getCryptographicParametersOrDie :: BlockHashInput -> ClientMonad IO GlobalContext
 getCryptographicParametersOrDie bhInput = do
     blockRes <- getBlockInfo bhInput
@@ -1282,54 +1264,52 @@ getCryptographicParametersOrDie bhInput = do
         StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
         RequestFailed err -> logFatal ["I/O error: " <> err]
 
-{- |Convert transfer transaction config into a valid payload,
- optionally asking the user for confirmation.
--}
+-- |Convert transfer transaction config into a valid payload,
+-- optionally asking the user for confirmation.
 transferTransactionConfirm :: TransferTransactionConfig -> Bool -> IO ()
 transferTransactionConfirm ttxCfg confirm = do
     let TransferTransactionConfig
             { ttcTransactionCfg =
                 TransactionConfig
-                    { tcEnergy = energy
-                    , tcExpiry = expiryTs
-                    , tcEncryptedSigningData = EncryptedSigningData{esdAddress = fromAddress}
-                    }
-            , ttcAmount = amount
-            , ttcReceiver = toAddress
+                    { tcEnergy = energy,
+                      tcExpiry = expiryTs,
+                      tcEncryptedSigningData = EncryptedSigningData{esdAddress = fromAddress}
+                    },
+              ttcAmount = amount,
+              ttcReceiver = toAddress
             } =
                 ttxCfg
 
     logSuccess
-        [ printf "sending %s from %s to %s" (showCcd amount) (showNamedAddress fromAddress) (showNamedAddress toAddress)
-        , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-        , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiryTs)
+        [ printf "sending %s from %s to %s" (showCcd amount) (showNamedAddress fromAddress) (showNamedAddress toAddress),
+          printf "allowing up to %s to be spent as transaction fee" (showNrg energy),
+          printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiryTs)
         ]
     when confirm $ do
         confirmed <- askConfirmation Nothing
         unless confirmed exitTransactionCancelled
 
-{- |Convert transfer transaction config into a valid payload,
- optionally asking the user for confirmation.
--}
+-- |Convert transfer transaction config into a valid payload,
+-- optionally asking the user for confirmation.
 transferWithScheduleTransactionConfirm :: TransferWithScheduleTransactionConfig -> Bool -> IO ()
 transferWithScheduleTransactionConfirm ttxCfg confirm = do
     let TransferWithScheduleTransactionConfig
             { twstcTransactionCfg =
                 TransactionConfig
-                    { tcEnergy = energy
-                    , tcExpiry = expiryTs
-                    , tcEncryptedSigningData = EncryptedSigningData{esdAddress = fromAddress}
-                    }
-            , twstcSchedule = schedule
-            , twstcReceiver = toAddress
+                    { tcEnergy = energy,
+                      tcExpiry = expiryTs,
+                      tcEncryptedSigningData = EncryptedSigningData{esdAddress = fromAddress}
+                    },
+              twstcSchedule = schedule,
+              twstcReceiver = toAddress
             } =
                 ttxCfg
 
     logSuccess
-        [ printf "sending CCDs from %s to %s" (showNamedAddress fromAddress) (showNamedAddress toAddress)
-        , printf "with the following release schedule:\n%swith a total amount of %s" (unlines $ map (\(a, b) -> showTimeFormatted (Time.timestampToUTCTime a) ++ ": " ++ showCcd b) schedule) (showCcd $ foldl' (\acc (_, x) -> acc + x) 0 schedule)
-        , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-        , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiryTs)
+        [ printf "sending CCDs from %s to %s" (showNamedAddress fromAddress) (showNamedAddress toAddress),
+          printf "with the following release schedule:\n%swith a total amount of %s" (unlines $ map (\(a, b) -> showTimeFormatted (Time.timestampToUTCTime a) ++ ": " ++ showCcd b) schedule) (showCcd $ foldl' (\acc (_, x) -> acc + x) 0 schedule),
+          printf "allowing up to %s to be spent as transaction fee" (showNrg energy),
+          printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiryTs)
         ]
     when confirm $ do
         confirmed <- askConfirmation Nothing
@@ -1338,25 +1318,24 @@ transferWithScheduleTransactionConfirm ttxCfg confirm = do
 encryptedTransferTransactionConfirm :: MonadIO m => EncryptedTransferTransactionConfig -> Bool -> m ()
 encryptedTransferTransactionConfirm EncryptedTransferTransactionConfig{..} confirm = do
     let TransactionConfig
-            { tcEnergy = energy
-            , tcExpiry = expiry
-            , tcEncryptedSigningData = EncryptedSigningData{esdAddress = addr}
+            { tcEnergy = energy,
+              tcExpiry = expiry,
+              tcEncryptedSigningData = EncryptedSigningData{esdAddress = addr}
             } =
                 ettTransactionCfg
 
     logInfo
-        [ printf "transferring %s CCD from shielded balance of account %s to %s" (Types.amountToString ettAmount) (showNamedAddress addr) (showNamedAddress ettReceiver)
-        , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-        , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry)
+        [ printf "transferring %s CCD from shielded balance of account %s to %s" (Types.amountToString ettAmount) (showNamedAddress addr) (showNamedAddress ettReceiver),
+          printf "allowing up to %s to be spent as transaction fee" (showNrg energy),
+          printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry)
         ]
 
     when confirm $ do
         confirmed <- askConfirmation Nothing
         unless confirmed exitTransactionCancelled
 
-{- |Query the chain for the minimum baker stake threshold.
- Die printing an error message containing the nature of the error if such occured.
--}
+-- |Query the chain for the minimum baker stake threshold.
+-- Die printing an error message containing the nature of the error if such occured.
 getBakerStakeThresholdOrDie :: ClientMonad IO Types.Amount
 getBakerStakeThresholdOrDie = do
     bcpRes <- getBlockChainParameters Best
@@ -1398,9 +1377,9 @@ getAccountUpdateCredentialsTransactionData f1 f2 ucNewThreshold = do
 credentialUpdateKeysTransactionConfirm :: CredentialUpdateKeysTransactionCfg -> Bool -> IO ()
 credentialUpdateKeysTransactionConfirm CredentialUpdateKeysTransactionCfg{..} confirm = do
     let TransactionConfig
-            { tcEnergy = energy
-            , tcExpiry = expiry
-            , tcEncryptedSigningData = EncryptedSigningData{esdAddress = addr}
+            { tcEnergy = energy,
+              tcExpiry = expiry,
+              tcEncryptedSigningData = EncryptedSigningData{esdAddress = addr}
             } =
                 cuktcTransactionCfg
 
@@ -1410,8 +1389,8 @@ credentialUpdateKeysTransactionConfirm CredentialUpdateKeysTransactionCfg{..} co
         [[i|"setting the following keys for credential #{show cuktcCredId} on account #{showNamedAddress addr}:" |]]
             ++ logNewKeys
             ++ [printf "with threshold %s" (show (ID.credThreshold cuktcKeys))]
-            ++ [ printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-               , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry)
+            ++ [ printf "allowing up to %s to be spent as transaction fee" (showNrg energy),
+                 printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry)
                ]
 
     when confirm $ do
@@ -1421,9 +1400,9 @@ credentialUpdateKeysTransactionConfirm CredentialUpdateKeysTransactionCfg{..} co
 accountUpdateCredentialsTransactionConfirm :: AccountUpdateCredentialsTransactionCfg -> Bool -> IO ()
 accountUpdateCredentialsTransactionConfirm AccountUpdateCredentialsTransactionCfg{..} confirm = do
     let TransactionConfig
-            { tcEnergy = energy
-            , tcExpiry = expiry
-            , tcEncryptedSigningData = EncryptedSigningData{esdAddress = addr}
+            { tcEnergy = energy,
+              tcExpiry = expiry,
+              tcEncryptedSigningData = EncryptedSigningData{esdAddress = addr}
             } =
                 auctcTransactionCfg
 
@@ -1434,8 +1413,8 @@ accountUpdateCredentialsTransactionConfirm AccountUpdateCredentialsTransactionCf
             ++ logNewCids
             ++ [printf "setting new account threshold %s" (show (auctcNewThreshold))]
             ++ [printf "removing credentials with credential registration ids %s" (show (auctcRemoveCredIds))]
-            ++ [ printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-               , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry)
+            ++ [ printf "allowing up to %s to be spent as transaction fee" (showNrg energy),
+                 printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry)
                ]
 
     when confirm $ do
@@ -1445,16 +1424,16 @@ accountUpdateCredentialsTransactionConfirm AccountUpdateCredentialsTransactionCf
 accountEncryptTransactionConfirm :: AccountEncryptTransactionConfig -> Bool -> IO ()
 accountEncryptTransactionConfirm AccountEncryptTransactionConfig{..} confirm = do
     let TransactionConfig
-            { tcEnergy = energy
-            , tcExpiry = expiry
-            , tcEncryptedSigningData = EncryptedSigningData{esdAddress = addr}
+            { tcEnergy = energy,
+              tcExpiry = expiry,
+              tcEncryptedSigningData = EncryptedSigningData{esdAddress = addr}
             } =
                 aeTransactionCfg
 
     logInfo $
-        [ printf "transferring %s CCD from public to shielded balance of account %s" (Types.amountToString aeAmount) (showNamedAddress addr)
-        , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-        , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry)
+        [ printf "transferring %s CCD from public to shielded balance of account %s" (Types.amountToString aeAmount) (showNamedAddress addr),
+          printf "allowing up to %s to be spent as transaction fee" (showNrg energy),
+          printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry)
         ]
 
     when confirm $ do
@@ -1464,26 +1443,25 @@ accountEncryptTransactionConfirm AccountEncryptTransactionConfig{..} confirm = d
 accountDecryptTransactionConfirm :: MonadIO m => AccountDecryptTransactionConfig -> Bool -> m ()
 accountDecryptTransactionConfirm AccountDecryptTransactionConfig{..} confirm = do
     let TransactionConfig
-            { tcEnergy = energy
-            , tcExpiry = expiry
-            , tcEncryptedSigningData = EncryptedSigningData{esdAddress = addr}
+            { tcEnergy = energy,
+              tcExpiry = expiry,
+              tcEncryptedSigningData = EncryptedSigningData{esdAddress = addr}
             } =
                 adTransactionCfg
 
     logInfo $
-        [ printf "transferring %s CCD from shielded to public balance of account %s" (Types.amountToString (Enc.stpatdTransferAmount adTransferData)) (showNamedAddress addr)
-        , printf "allowing up to %s to be spent as transaction fee" (showNrg energy)
-        , printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry)
+        [ printf "transferring %s CCD from shielded to public balance of account %s" (Types.amountToString (Enc.stpatdTransferAmount adTransferData)) (showNamedAddress addr),
+          printf "allowing up to %s to be spent as transaction fee" (showNrg energy),
+          printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry)
         ]
 
     when confirm $ do
         confirmed <- askConfirmation Nothing
         unless confirmed exitTransactionCancelled
 
-{- |Encode, sign, and send transaction off to the baker.
- If confirmNonce is set, the user is asked to confirm using the next nonce
- if there are pending transactions.
--}
+-- |Encode, sign, and send transaction off to the baker.
+-- If confirmNonce is set, the user is asked to confirm using the next nonce
+-- if there are pending transactions.
 startTransaction ::
     (MonadFail m, MonadIO m) =>
     TransactionConfig ->
@@ -1495,11 +1473,11 @@ startTransaction ::
     ClientMonad m Types.BareBlockItem
 startTransaction txCfg pl confirmNonce maybeAccKeys = do
     let TransactionConfig
-            { tcEnergy = energy
-            , tcExpiry = expiry
-            , tcNonce = n
-            , tcEncryptedSigningData = EncryptedSigningData{esdAddress = NamedAddress{..}, ..}
-            , ..
+            { tcEnergy = energy,
+              tcExpiry = expiry,
+              tcNonce = n,
+              tcEncryptedSigningData = EncryptedSigningData{esdAddress = NamedAddress{..}, ..},
+              ..
             } = txCfg
     nonce <- getNonce naAddr n confirmNonce
     accountKeyMap <- case maybeAccKeys of
@@ -1519,12 +1497,11 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
         Left err -> logFatal ["Transaction not accepted by the baker: " <> err]
         Right _ -> return tx
 
-{- |Fetch next nonces relative to the account's most recently committed and
- pending transactions, respectively.
- If they match, the nonce is returned.
- If they don't match, optionally ask the user to confirm proceeding with the latter nonce.
- If rejected, the process is cancelled (exit with code 0).
--}
+-- |Fetch next nonces relative to the account's most recently committed and
+-- pending transactions, respectively.
+-- If they match, the nonce is returned.
+-- If they don't match, optionally ask the user to confirm proceeding with the latter nonce.
+-- If rejected, the process is cancelled (exit with code 0).
 getNonce :: (MonadFail m, MonadIO m) => Types.AccountAddress -> Maybe Types.Nonce -> Bool -> ClientMonad m Types.Nonce
 getNonce sender nonce confirm =
     case nonce of
@@ -1533,8 +1510,8 @@ getNonce sender nonce confirm =
             nextNonce <- fmap Queries.nanNonce . getResponseValueOrDie =<< getNextSequenceNumber sender
             liftIO $ when (currentNonce /= nextNonce) $ do
                 logWarn
-                    [ printf "there is a pending transaction with nonce %s, but last committed one has %s" (show $ nextNonce - 1) (show $ currentNonce - 1)
-                    , printf "this transaction will have nonce %s and might hang if the pending transaction fails" (show nextNonce)
+                    [ printf "there is a pending transaction with nonce %s, but last committed one has %s" (show $ nextNonce - 1) (show $ currentNonce - 1),
+                      printf "this transaction will have nonce %s and might hang if the pending transaction fails" (show nextNonce)
                     ]
                 when confirm $ do
                     putStrLn "Proceed if you're confident that all currently pending transactions are valid."
@@ -1557,10 +1534,9 @@ sendAndTailTransaction_ ::
     ClientMonad m ()
 sendAndTailTransaction_ verbose txCfg pl intOpts = void $ sendAndTailTransaction verbose txCfg pl intOpts
 
-{- |Send a transaction and optionally tail it (see 'tailTransaction' below).
- If tailed, it returns the TransactionStatusResult of the finalized status,
- otherwise the return value is @Nothing@.
--}
+-- |Send a transaction and optionally tail it (see 'tailTransaction' below).
+-- If tailed, it returns the TransactionStatusResult of the finalized status,
+-- otherwise the return value is @Nothing@.
 sendAndTailTransaction ::
     (MonadIO m, MonadFail m) =>
     -- | Whether the output should be verbose
@@ -1584,15 +1560,14 @@ sendAndTailTransaction verbose txCfg pl intOpts = do
 tailTransaction_ :: (MonadIO m) => Bool -> Types.TransactionHash -> ClientMonad m ()
 tailTransaction_ verbose hash = void $ tailTransaction verbose hash
 
-{- |Continuously query and display transaction status until the transaction is finalized.
- Returns the TransactionStatusResult of the finalized status.
--}
+-- |Continuously query and display transaction status until the transaction is finalized.
+-- Returns the TransactionStatusResult of the finalized status.
 tailTransaction :: (MonadIO m) => Bool -> Types.TransactionHash -> ClientMonad m TransactionStatusResult
 tailTransaction verbose hash = do
     logInfo
-        [ "waiting for the transaction to be committed and finalized"
-        , "you may skip this step by interrupting the command using Ctrl-C (pass flag '--no-wait' to do this by default)"
-        , printf "the transaction will still get processed and may be queried using\n  'concordium-client transaction status %s'" (show hash)
+        [ "waiting for the transaction to be committed and finalized",
+          "you may skip this step by interrupting the command using Ctrl-C (pass flag '--no-wait' to do this by default)",
+          printf "the transaction will still get processed and may be queried using\n  'concordium-client transaction status %s'" (show hash)
         ]
 
     liftIO $ printf "[%s] Waiting for the transaction to be committed..." =<< getLocalTimeOfDayFormatted
@@ -1601,8 +1576,8 @@ tailTransaction verbose hash = do
 
     when (tsrState committedStatus == Absent) $
         logFatal
-            [ "transaction failed before it got committed"
-            , "most likely because it was invalid"
+            [ "transaction failed before it got committed",
+              "most likely because it was invalid"
             ]
 
     committedContrInfoWithSchemas <- getTxContractInfoWithSchemas Nothing committedStatus
@@ -1625,8 +1600,8 @@ tailTransaction verbose hash = do
 
                 when (tsrState finalizedStatus == Absent) $
                     logFatal
-                        [ "transaction failed after it was committed"
-                        , "response:\n" ++ showPrettyJSON committedStatus
+                        [ "transaction failed after it was committed",
+                          "response:\n" ++ showPrettyJSON committedStatus
                         ]
 
                 -- Print out finalized status.
@@ -1648,11 +1623,10 @@ readOrFail t =
   where
     s = Text.unpack t
 
-{- |Reads a blockhash wrapped in a @Maybe@.
- If the provided value is @Nothing@, a default value provided in the first parameter
- is returned. If the provided value is @Just s@, @readOrFail s@ is returned. Fails if
- @s@ is not a valid blockhash.
--}
+-- |Reads a blockhash wrapped in a @Maybe@.
+-- If the provided value is @Nothing@, a default value provided in the first parameter
+-- is returned. If the provided value is @Just s@, @readOrFail s@ is returned. Fails if
+-- @s@ is not a valid blockhash.
 readBlockHashOrDefault :: (MonadIO m) => BlockHashInput -> Maybe Text -> m BlockHashInput
 readBlockHashOrDefault d Nothing = return d
 readBlockHashOrDefault _ (Just s) = readOrFail s >>= return . Given
@@ -1781,10 +1755,10 @@ processAccountCmd action baseCfgDir verbose backend =
                 let intOpts = toInteractionOpts txOpts
                 let aucCfg =
                         AccountUpdateCredentialsTransactionCfg
-                            { auctcTransactionCfg = txCfg
-                            , auctcNewCredInfos = newCredentials
-                            , auctcRemoveCredIds = removedCredentials
-                            , auctcNewThreshold = newThreshold
+                            { auctcTransactionCfg = txCfg,
+                              auctcNewCredInfos = newCredentials,
+                              auctcRemoveCredIds = removedCredentials,
+                              auctcNewThreshold = newThreshold
                             }
                 liftIO $ accountUpdateCredentialsTransactionConfirm aucCfg (ioConfirm intOpts)
                 sendAndTailTransaction_ verbose txCfg epayload intOpts
@@ -1826,8 +1800,8 @@ processAccountCmd action baseCfgDir verbose backend =
 
                 let adtxCfg =
                         AccountDecryptTransactionConfig
-                            { adTransactionCfg = txCfg
-                            , adTransferData = transferData
+                            { adTransactionCfg = txCfg,
+                              adTransferData = transferData
                             }
 
                 when verbose $ do
@@ -1860,8 +1834,8 @@ processModuleCmd action baseCfgDir verbose backend =
                     Nothing -> [i|deploy the module '#{modFile}'|]
                     Just modName' -> [i|deploy the module '#{modFile}' and name it '#{modName'}'|]
             logInfo
-                [ msgIntro
-                , [i|allowing up to #{showNrg nrg} to be spent as transaction fee|]
+                [ msgIntro,
+                  [i|allowing up to #{showNrg nrg} to be spent as transaction fee|]
                 ]
 
             when (ioConfirm . toInteractionOpts $ txOpts) $ do
@@ -1975,18 +1949,17 @@ moduleDeployEnergyCost wasmMod encSignData =
     payloadSize = Types.payloadSize . Types.encodePayload . Types.DeployModule $ wasmMod
 
 data ModuleDeployTransactionCfg = ModuleDeployTransactionCfg
-    { mdtcTransactionCfg :: !TransactionConfig
-    -- ^Configuration for the transaction.
-    , mdtcModule :: !Wasm.WasmModule
-    -- ^The WASM module to deploy.
+    { -- |Configuration for the transaction.
+      mdtcTransactionCfg :: !TransactionConfig,
+      -- |The WASM module to deploy.
+      mdtcModule :: !Wasm.WasmModule
     }
 
 moduleDeployTransactionPayload :: ModuleDeployTransactionCfg -> Types.Payload
 moduleDeployTransactionPayload ModuleDeployTransactionCfg{..} = Types.DeployModule mdtcModule
 
-{- |Checks if the given receive name is valid and if so, returns it back
- or otherwise a fallback receive name for v1 contracts.
--}
+-- |Checks if the given receive name is valid and if so, returns it back
+-- or otherwise a fallback receive name for v1 contracts.
 checkAndGetContractReceiveName :: CI.ContractInfo -> Text -> IO Text
 checkAndGetContractReceiveName contrInfo receiveName = do
     if CI.hasReceiveMethod receiveName contrInfo
@@ -1996,7 +1969,7 @@ checkAndGetContractReceiveName contrInfo receiveName = do
                 then confirmAbortOrContinue False
                 else
                     let (_, fallbackReceiveName) = Wasm.contractAndFunctionName $ Wasm.makeFallbackReceiveName $ Wasm.ReceiveName (CI.getContractName contrInfo <> receiveName)
-                     in if CI.hasReceiveMethod fallbackReceiveName contrInfo
+                    in  if CI.hasReceiveMethod fallbackReceiveName contrInfo
                             then do
                                 logInfo [[i|The contract does not have an entrypoint named '#{receiveName}'. The fallback entrypoint will be used instead.|]]
                                 return fallbackReceiveName
@@ -2086,17 +2059,17 @@ processContractCmd action baseCfgDir verbose backend =
             let minEnergy = contractInitMinimumEnergy ciCfg (tcEncryptedSigningData txCfg)
             when (energy < minEnergy) $
                 logFatal
-                    [ "insufficient energy provided"
-                    , [iii|to verify the transaction signature #{showNrg minEnergy} is needed,
+                    [ "insufficient energy provided",
+                      [iii|to verify the transaction signature #{showNrg minEnergy} is needed,
                                                   and additional energy is needed to complete the initialization|]
                     ]
 
             logInfo
                 [ [i|initialize contract '#{contrName}' from module '#{citcModuleRef ciCfg}' with |]
                     ++ paramsMsg paramsFile
-                    ++ [i| Sending #{Types.amountToString $ citcAmount ciCfg} CCD.|]
-                , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
-                , [i|transaction expires on #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]
+                    ++ [i| Sending #{Types.amountToString $ citcAmount ciCfg} CCD.|],
+                  [i|allowing up to #{showNrg energy} to be spent as transaction fee|],
+                  [i|transaction expires on #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]
                 ]
 
             when (ioConfirm . toInteractionOpts $ txOpts) $ do
@@ -2137,17 +2110,17 @@ processContractCmd action baseCfgDir verbose backend =
             let minEnergy = contractUpdateMinimumEnergy cuCfg (tcEncryptedSigningData txCfg)
             when (energy < minEnergy) $
                 logFatal
-                    [ "insufficient energy provided"
-                    , [iii|to verify the transaction signature #{showNrg minEnergy} is needed,
+                    [ "insufficient energy provided",
+                      [iii|to verify the transaction signature #{showNrg minEnergy} is needed,
                                                   and additional energy is needed to complete the update|]
                     ]
 
             logInfo
                 [ [i|update contract '#{cutcContrName cuCfg}' using the function '#{receiveName}' with |]
                     ++ paramsMsg paramsFile
-                    ++ [i| Sending #{Types.amountToString $ cutcAmount cuCfg} CCD.|]
-                , [i|allowing up to #{showNrg energy} to be spent as transaction fee|]
-                , [i|transaction expires on #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]
+                    ++ [i| Sending #{Types.amountToString $ cutcAmount cuCfg} CCD.|],
+                  [i|allowing up to #{showNrg energy} to be spent as transaction fee|],
+                  [i|transaction expires on #{showTimeFormatted $ timeFromTransactionExpiryTime expiryTs}|]
                 ]
 
             when (ioConfirm . toInteractionOpts $ txOpts) $ do
@@ -2192,12 +2165,12 @@ processContractCmd action baseCfgDir verbose backend =
 
             let invokeContext =
                     InvokeContract.ContractContext
-                        { ccInvoker = invoker'
-                        , ccContract = ncaAddr namedContrAddr
-                        , ccAmount = amount
-                        , ccMethod = wasmReceiveName
-                        , ccParameter = wasmParameter
-                        , ccEnergy = nrg
+                        { ccInvoker = invoker',
+                          ccContract = ncaAddr namedContrAddr,
+                          ccAmount = amount,
+                          ccMethod = wasmReceiveName,
+                          ccParameter = wasmParameter,
+                          ccEnergy = nrg
                         }
 
             res <- withClient backend $ do
@@ -2328,9 +2301,8 @@ processContractCmd action baseCfgDir verbose backend =
       where
         (lookupSchema, valueType) = if isError then (CS.lookupErrorSchema, "Error" :: Text) else (CS.lookupReturnValueSchema, "Return" :: Text)
 
-{- |Try to fetch info about the contract.
- Or, log fatally with appropriate error messages if anything goes wrong.
--}
+-- |Try to fetch info about the contract.
+-- Or, log fatally with appropriate error messages if anything goes wrong.
 getContractInfo :: (MonadIO m) => NamedContractAddress -> BlockHashInput -> ClientMonad m CI.ContractInfo
 getContractInfo namedContrAddr bhInput = do
     blockRes <- getBlockInfo bhInput
@@ -2363,11 +2335,10 @@ displayContractInfo schema contrInfo namedOwner namedModRef = do
         Nothing -> return contrInfo
     runPrinter $ printContractInfo cInfo namedOwner namedModRef
 
-{- |Attempts to acquire the needed parts for updating a contract.
- The two primary parts are a contract address, which is acquired using @getNamedContractAddress@,
- and a @Wasm.Parameter@ which is acquired using @getWasmParameter@.
- It will log fatally if one of the two cannot be acquired.
--}
+-- |Attempts to acquire the needed parts for updating a contract.
+-- The two primary parts are a contract address, which is acquired using @getNamedContractAddress@,
+-- and a @Wasm.Parameter@ which is acquired using @getWasmParameter@.
+-- It will log fatally if one of the two cannot be acquired.
 getContractUpdateTransactionCfg ::
     Backend ->
     BaseConfig ->
@@ -2420,26 +2391,25 @@ contractUpdateTransactionPayload ContractUpdateTransactionCfg{..} =
     Types.Update cutcAmount cutcAddress cutcReceiveName cutcParams
 
 data ContractUpdateTransactionCfg = ContractUpdateTransactionCfg
-    { cutcTransactionCfg :: !TransactionConfig
-    -- ^Configuration for the transaction.
-    , cutcAddress :: !Types.ContractAddress
-    -- ^The address of the contract to invoke.
-    , cutcContrName :: !Text
-    -- ^Name of the contract that is being updated.
-    -- This is resolved from the chain.
-    , cutcReceiveName :: !Wasm.ReceiveName
-    -- ^Name of the receive method to invoke.
-    , cutcParams :: !Wasm.Parameter
-    -- ^Parameters to the receive method.
-    , cutcAmount :: !Types.Amount
-    -- ^Amount to transfer to the contract.
+    { -- |Configuration for the transaction.
+      cutcTransactionCfg :: !TransactionConfig,
+      -- |The address of the contract to invoke.
+      cutcAddress :: !Types.ContractAddress,
+      -- |Name of the contract that is being updated.
+      -- This is resolved from the chain.
+      cutcContrName :: !Text,
+      -- |Name of the receive method to invoke.
+      cutcReceiveName :: !Wasm.ReceiveName,
+      -- |Parameters to the receive method.
+      cutcParams :: !Wasm.Parameter,
+      -- |Amount to transfer to the contract.
+      cutcAmount :: !Types.Amount
     }
 
-{- |Attempts to acquire the needed parts for initializing a contract.
- The two primary parts are a module reference, which can be acquired in one of three ways
- (see the arguments for details), and a @Wasm.Parameter@, which is acquired using @getWasmParameter@.
- It will log fatally if one of the two cannot be acquired.
--}
+-- |Attempts to acquire the needed parts for initializing a contract.
+-- The two primary parts are a module reference, which can be acquired in one of three ways
+-- (see the arguments for details), and a @Wasm.Parameter@, which is acquired using @getWasmParameter@.
+-- It will log fatally if one of the two cannot be acquired.
 getContractInitTransactionCfg ::
     Backend ->
     BaseConfig ->
@@ -2469,10 +2439,9 @@ getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath mWasmVersion 
     params <- getWasmParameter paramsFile schema (CS.InitFuncName contrName)
     return $ ContractInitTransactionCfg txCfg amount (nmrRef namedModRef) (Wasm.InitName [i|init_#{contrName}|]) params
 
-{- |Query the node for a module reference, and parse the result.
- Terminate program execution if either the module cannot be obtained,
- or the result cannot be parsed.
--}
+-- |Query the node for a module reference, and parse the result.
+-- Terminate program execution if either the module cannot be obtained,
+-- or the result cannot be parsed.
 getWasmModule ::
     (MonadIO m) =>
     -- |On-chain reference of the module.
@@ -2500,27 +2469,26 @@ getWasmModule namedModRef bhInput = do
         RequestFailed err -> logFatal ["I/O error: " <> err]
 
 data ContractInitTransactionCfg = ContractInitTransactionCfg
-    { citcTransactionCfg :: !TransactionConfig
-    -- ^Configuration for the transaction.
-    , citcAmount :: !Types.Amount
-    -- ^Initial amount on the contract's account.
-    , citcModuleRef :: !Types.ModuleRef
-    -- ^Reference of the module (on-chain) in which the contract exist.
-    , citcInitName :: !Wasm.InitName
-    -- ^Name of the init method to invoke in that module.
-    , citcParams :: !Wasm.Parameter
-    -- ^Parameters to the init method.
+    { -- |Configuration for the transaction.
+      citcTransactionCfg :: !TransactionConfig,
+      -- |Initial amount on the contract's account.
+      citcAmount :: !Types.Amount,
+      -- |Reference of the module (on-chain) in which the contract exist.
+      citcModuleRef :: !Types.ModuleRef,
+      -- |Name of the init method to invoke in that module.
+      citcInitName :: !Wasm.InitName,
+      -- |Parameters to the init method.
+      citcParams :: !Wasm.Parameter
     }
 
 contractInitTransactionPayload :: ContractInitTransactionCfg -> Types.Payload
 contractInitTransactionPayload ContractInitTransactionCfg{..} =
     Types.InitContract citcAmount citcModuleRef citcInitName citcParams
 
-{- |Load a WasmModule from the specified file path.
- The module will be prefixed with the wasmVersion and moduleSize if wasmVersion is provided.
- This enables the use of wasm modules compiled with cargo-concordium version < 2, and modules compiled
- without cargo-concordium version >= 2.
--}
+-- |Load a WasmModule from the specified file path.
+-- The module will be prefixed with the wasmVersion and moduleSize if wasmVersion is provided.
+-- This enables the use of wasm modules compiled with cargo-concordium version < 2, and modules compiled
+-- without cargo-concordium version >= 2.
 getWasmModuleFromFile ::
     -- | The module file.
     FilePath ->
@@ -2535,7 +2503,7 @@ getWasmModuleFromFile moduleFile mWasmVersion = do
                 Just wasmVersion ->
                     let wasmVersionBytes = S.encode wasmVersion
                         moduleSizeBytes = S.encode ((fromIntegral $ BS.length source) :: Word32)
-                     in return $ wasmVersionBytes <> moduleSizeBytes <> source -- Prefix the wasmVersion and moduleSize.
+                    in  return $ wasmVersionBytes <> moduleSizeBytes <> source -- Prefix the wasmVersion and moduleSize.
     case S.decode source of
         Right wm ->
             if hasValidWasmMagic wm
@@ -2560,11 +2528,10 @@ getWasmModuleFromFile moduleFile mWasmVersion = do
         wasmMagicValue = BS.pack [0x00, 0x61, 0x73, 0x6D]
         getMagicBytes = S.getByteString 4
 
-{- |Load @Wasm.Parameter@ through one of several ways, dependent on the arguments:
-   * If binary file provided -> Read the file and wrap its contents in @Wasm.Parameter@.
-   * If JSON file provided   -> Try to use the schema to encode the parameters into a @Wasm.Parameter@.
- If invalid arguments are provided or something fails, appropriate warning or error messages are logged.
--}
+-- |Load @Wasm.Parameter@ through one of several ways, dependent on the arguments:
+--   * If binary file provided -> Read the file and wrap its contents in @Wasm.Parameter@.
+--   * If JSON file provided   -> Try to use the schema to encode the parameters into a @Wasm.Parameter@.
+-- If invalid arguments are provided or something fails, appropriate warning or error messages are logged.
 getWasmParameter ::
     -- | Optional parameter file in JSON or binary format.
     Maybe ParameterFileInput ->
@@ -2593,13 +2560,12 @@ getWasmParameter paramsFile schema funcName =
     emptyParams = pure . Wasm.Parameter $ BSS.empty
     binaryParams file = Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile file
 
-{- |Get a schema from a file or, alternatively, try to extract an embedded schema from a module.
- The schema from the file will take precedence over an embedded schema in the module.
-
- Can logWarn and logFatal in the following situations:
-   - Invalid schemafile: logs fatally.
-   - No schemafile and invalid embedded schema: logs a warning and returns @Nothing@.
--}
+-- |Get a schema from a file or, alternatively, try to extract an embedded schema from a module.
+-- The schema from the file will take precedence over an embedded schema in the module.
+--
+-- Can logWarn and logFatal in the following situations:
+--   - Invalid schemafile: logs fatally.
+--   - No schemafile and invalid embedded schema: logs a warning and returns @Nothing@.
 getSchemaFromFileOrModule ::
     (MonadIO m) =>
     -- | Optional schema file.
@@ -2628,11 +2594,10 @@ getSchemaFromFile wasmVersion schemaFile = do
         Left err -> logFatal [[i|Could not decode schema from file '#{schemaFile}':|], err]
         Right schema' -> pure schema'
 
-{- |Get a schema and a list of exported function names from an optional schema file and a module.
- Logs fatally if an invalid schema is found (either from a file or embedded).
- The schema from the file will take precedence over an embedded schema in the module.
- It will only return `(Nothing, _)` if no schemafile is provided and no embedded schema was found in the module.
--}
+-- |Get a schema and a list of exported function names from an optional schema file and a module.
+-- Logs fatally if an invalid schema is found (either from a file or embedded).
+-- The schema from the file will take precedence over an embedded schema in the module.
+-- It will only return `(Nothing, _)` if no schemafile is provided and no embedded schema was found in the module.
 getSchemaAndExports ::
     -- | Optional schema file.
     Maybe FilePath ->
@@ -2663,10 +2628,9 @@ getModuleRefFromRefOrFile modRefOrFile mWasmVersion = case readMaybe modRefOrFil
 getModuleRefFromFile :: String -> Maybe Wasm.WasmVersion -> IO Types.ModuleRef
 getModuleRefFromFile file mWasmVersion = Types.ModuleRef . getHash <$> getWasmModuleFromFile file mWasmVersion
 
-{- |Get a NamedContractAddress from either a name or index and an optional subindex.
- LogWarn if subindex is provided with a contract name.
- LogFatal if it is neither an index nor a contract name.
--}
+-- |Get a NamedContractAddress from either a name or index and an optional subindex.
+-- LogWarn if subindex is provided with a contract name.
+-- LogFatal if it is neither an index nor a contract name.
 getNamedContractAddress :: MonadIO m => ContractNameMap -> Text -> Maybe Word64 -> m NamedContractAddress
 getNamedContractAddress nameMap indexOrName subindex = case readMaybe $ Text.unpack indexOrName of
     Just index -> return $ NamedContractAddress{ncaAddr = mkContractAddress index subindex, ncaNames = []}
@@ -2676,9 +2640,8 @@ getNamedContractAddress nameMap indexOrName subindex = case readMaybe $ Text.unp
             Just addr -> return $ NamedContractAddress{ncaAddr = addr, ncaNames = [indexOrName]}
             Nothing -> logFatal [[i|'#{indexOrName}' is neither the address index nor the name of a contract|]]
 
-{- |Get a NamedModuleRef from either a name or a module reference.
- LogFatal if it is neither a module reference nor a module name.
--}
+-- |Get a NamedModuleRef from either a name or a module reference.
+-- LogFatal if it is neither a module reference nor a module name.
 getNamedModuleRef :: MonadIO m => ModuleNameMap -> Text -> m NamedModuleRef
 getNamedModuleRef nameMap modRefOrName = case readMaybe $ Text.unpack modRefOrName of
     Just modRef -> return $ NamedModuleRef{nmrRef = modRef, nmrNames = []}
@@ -2692,10 +2655,9 @@ mkContractAddress index subindex = Types.ContractAddress (Types.ContractIndex in
   where
     subindex' = fromMaybe 0 subindex
 
-{- |Try to extract event information from a TransactionStatusResult.
- The Maybe returned by the supplied function is mapped to Either with an error message.
- 'Nothing' is mapped to 'Nothing'
--}
+-- |Try to extract event information from a TransactionStatusResult.
+-- The Maybe returned by the supplied function is mapped to Either with an error message.
+-- 'Nothing' is mapped to 'Nothing'
 extractFromTsr :: (Types.Event -> Maybe a) -> Maybe TransactionStatusResult -> Maybe (Either String a)
 extractFromTsr _ Nothing = Nothing -- occurs when ioTail is disabled.
 extractFromTsr eventMatcher (Just tsr) = Just $ case parseTransactionBlockResult tsr of
@@ -2776,7 +2738,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
                 keyLU :: SigScheme.KeyPair -> IO (Word16, SigScheme.KeyPair)
                 keyLU key =
                     let vk = SigScheme.correspondingVerifyKey key
-                     in case ruiPayload of
+                    in  case ruiPayload of
                             Updates.RootUpdatePayload{} -> case vk `Vec.elemIndex` (Updates.hlkKeys . Updates.rootKeys $ keyCollectionStore) of
                                 Nothing -> logFatal [printf "Current key collection at best block does not contain public key '%s'" (show vk)]
                                 Just idx -> return (fromIntegral idx, key)
@@ -2856,13 +2818,13 @@ generateBakerKeys bkBakerId = do
     BlockSig.KeyPair{signKey = sigSk, verifyKey = sigVk} <- BlockSig.newKeyPair
     return
         BakerKeys
-            { bkAggrSignKey = aggrSk
-            , bkAggrVerifyKey = aggrPk
-            , bkElectionSignKey = elSk
-            , bkElectionVerifyKey = elPk
-            , bkSigSignKey = sigSk
-            , bkSigVerifyKey = sigVk
-            , ..
+            { bkAggrSignKey = aggrSk,
+              bkAggrVerifyKey = aggrPk,
+              bkElectionSignKey = elSk,
+              bkElectionVerifyKey = elPk,
+              bkSigSignKey = sigSk,
+              bkSigVerifyKey = sigVk,
+              ..
             }
 
 -- General function to fetch NrgGtu rate
@@ -2964,7 +2926,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
                 printToOutputFile BakerCredentials{bcKeys = keys, bcIdentity = bakerId} outFile
             _ ->
                 let encrypted = fmap snd bakerKeys == Just True
-                 in unless encrypted $
+                in  unless encrypted $
                         case inputKeysFile of
                             Nothing ->
                                 logInfo [printf "To use it add \"bakerId\": %s to the keys file." (show bakerId)]
@@ -3059,8 +3021,8 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
                 Just _ -> return . Just $ bakerConfigureEnergyCostWithKeys (Types.payloadSize payload)
         txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
         logSuccess
-            ( [ printf "configuring baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
-              , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
+            ( [ printf "configuring baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData)),
+                printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
               ]
                 ++ configureCapitalLogMsg
                 ++ configureRestakeLogMsg
@@ -3186,7 +3148,7 @@ processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarn
                 printToOutputFile BakerCredentials{bcKeys = keys, bcIdentity = bakerId} outFile
             _ ->
                 let encrypted = snd bakerKeys
-                 in unless encrypted $
+                in  unless encrypted $
                         logInfo [printf "To use it add \"bakerId\": %s to the keys file %s." (show bakerId) inputKeysFile]
 
     eventsFromTransactionResult Nothing = return []
@@ -3242,23 +3204,23 @@ processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarn
         when verbose $ do
             runPrinter $ printBaseConfig baseCfg
             putStrLn ""
-        ( bakerKeys
-            , Types.BakerKeysWithProofs
-                { bkwpElectionVerifyKey = abElectionVerifyKey
-                , bkwpProofElection = abProofElection
-                , bkwpSignatureVerifyKey = abSignatureVerifyKey
-                , bkwpProofSig = abProofSig
-                , bkwpAggregationVerifyKey = abAggregationVerifyKey
-                , bkwpProofAggregation = abProofAggregation
-                }
+        ( bakerKeys,
+          Types.BakerKeysWithProofs
+            { bkwpElectionVerifyKey = abElectionVerifyKey,
+              bkwpProofElection = abProofElection,
+              bkwpSignatureVerifyKey = abSignatureVerifyKey,
+              bkwpProofSig = abProofSig,
+              bkwpAggregationVerifyKey = abAggregationVerifyKey,
+              bkwpProofAggregation = abProofAggregation
+            }
             ) <-
             readInputKeysFile baseCfg
         let payload = Types.encodePayload Types.AddBaker{..}
             nrgCost _ = return . Just $ bakerAddEnergyCost $ Types.payloadSize payload
         txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
         logSuccess
-            ( [ printf "adding baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
-              , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
+            ( [ printf "adding baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData)),
+                printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
               ]
                 ++ configureCapitalLogMsg
                 ++ configureRestakeLogMsg
@@ -3346,7 +3308,7 @@ processBakerSetKeysCmd baseCfgDir verbose backend txOpts inputKeysFile outputKey
                 printToOutputFile BakerCredentials{bcKeys = keys, bcIdentity = bakerId} outFile
             _ ->
                 let encrypted = snd bakerKeys
-                 in unless encrypted $
+                in  unless encrypted $
                         logInfo [printf "To use it add \"bakerId\": %s to the keys file %s." (show bakerId) inputKeysFile]
 
     eventsFromTransactionResult Nothing = return []
@@ -3371,23 +3333,23 @@ processBakerSetKeysCmd baseCfgDir verbose backend txOpts inputKeysFile outputKey
         when verbose $ do
             runPrinter $ printBaseConfig baseCfg
             putStrLn ""
-        ( bakerKeys
-            , Types.BakerKeysWithProofs
-                { bkwpElectionVerifyKey = ubkElectionVerifyKey
-                , bkwpProofElection = ubkProofElection
-                , bkwpSignatureVerifyKey = ubkSignatureVerifyKey
-                , bkwpProofSig = ubkProofSig
-                , bkwpAggregationVerifyKey = ubkAggregationVerifyKey
-                , bkwpProofAggregation = ubkProofAggregation
-                }
+        ( bakerKeys,
+          Types.BakerKeysWithProofs
+            { bkwpElectionVerifyKey = ubkElectionVerifyKey,
+              bkwpProofElection = ubkProofElection,
+              bkwpSignatureVerifyKey = ubkSignatureVerifyKey,
+              bkwpProofSig = ubkProofSig,
+              bkwpAggregationVerifyKey = ubkAggregationVerifyKey,
+              bkwpProofAggregation = ubkProofAggregation
+            }
             ) <-
             readInputKeysFile baseCfg
         let payload = Types.encodePayload Types.UpdateBakerKeys{..}
             nrgCost _ = return . Just $ bakerSetKeysEnergyCost $ Types.payloadSize payload
         txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
         logSuccess
-            ( [ printf "setting new keys for baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
-              , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
+            ( [ printf "setting new keys for baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData)),
+                printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
               ]
             )
         when confirm $ do
@@ -3458,8 +3420,8 @@ processBakerRemoveCmd baseCfgDir verbose backend txOpts = do
             nrgCost _ = return . Just $ bakerRemoveEnergyCost $ Types.payloadSize payload
         txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
         logSuccess
-            ( [ printf "submitting transaction to remove baker with %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
-              , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
+            ( [ printf "submitting transaction to remove baker with %s" (show (naAddr $ esdAddress tcEncryptedSigningData)),
+                printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
               ]
             )
         when confirm $ do
@@ -3548,8 +3510,8 @@ processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = 
             nrgCost _ = return . Just $ bakerUpdateStakeEnergyCost $ Types.payloadSize payload
         txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
         logSuccess
-            ( [ printf "submitting transaction to update stake of baker to %s" (showCcd ubsStake)
-              , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
+            ( [ printf "submitting transaction to update stake of baker to %s" (showCcd ubsStake),
+                printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
               ]
             )
         when confirm $ do
@@ -3581,8 +3543,8 @@ processBakerUpdateRestakeCmd baseCfgDir verbose backend txOpts ubreRestakeEarnin
             nrgCost _ = return . Just $ bakerUpdateRestakeEnergyCost $ Types.payloadSize payload
         txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
         logSuccess
-            ( [ printf "submitting transaction to change restaking switch of baker to %s" (show ubreRestakeEarnings)
-              , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
+            ( [ printf "submitting transaction to change restaking switch of baker to %s" (show ubreRestakeEarnings),
+                printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
               ]
             )
         when confirm $ do
@@ -3643,9 +3605,9 @@ processBakerCmd action baseCfgDir verbose backend =
                     when keysSuccess $ do
                         let pubFile = f -<.> (".pub" ++ takeExtension f)
                         logSuccess
-                            [ printf "keys written to file '%s'" f
-                            , "DO NOT LOSE THIS FILE"
-                            , printf "to add a baker to the chain using these keys, use 'concordium-client baker add %s'" f
+                            [ printf "keys written to file '%s'" f,
+                              "DO NOT LOSE THIS FILE",
+                              printf "to add a baker to the chain using these keys, use 'concordium-client baker add %s'" f
                             ]
                         pubSuccess <- handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose pubFile publicBakerKeysJSON
                         when pubSuccess $ do
@@ -3818,8 +3780,8 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
             nrgCost _ = return . Just $ delegationConfigureEnergyCost (Types.payloadSize payload)
         txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
         logSuccess
-            ( [ printf "configuring delegator with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData))
-              , printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
+            ( [ printf "configuring delegator with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData)),
+                printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
               ]
                 ++ configureCapitalLogMsg
                 ++ configureRestakeLogMsg
@@ -3875,7 +3837,7 @@ processDelegatorCmd action baseCfgDir verbose backend =
                     | Prelude.all Char.isDigit s ->
                         let n = read s :: Integer
                             w = fromIntegral n :: Word64
-                         in if n >= 0 && n <= fromIntegral (maxBound :: Word64)
+                        in  if n >= 0 && n <= fromIntegral (maxBound :: Word64)
                                 then return $ Just $ Types.DelegateToBaker $ Types.BakerId $ Types.AccountIndex w
                                 else do
                                     logWarn $ ["The BAKERID '" ++ s ++ "'" ++ " is out of range."]
@@ -4014,16 +3976,16 @@ processLegacyCmd action backend =
                 ctx <- liftIO $ BSL.readFile contextFile
                 b <- readBlockHashOrDefault Best block
                 ( case eitherDecode ctx of
-                        Left err -> logFatal [[i|Unable to decode context: #{err}|]]
-                        Right c -> invokeInstance b c
+                    Left err -> logFatal [[i|Unable to decode context: #{err}|]]
+                    Right c -> invokeInstance b c
                     )
                     >>= printResponseValueAsJSON
         GetPoolStatus pool block ->
             withClient backend $ do
                 b <- readBlockHashOrDefault Best block
                 ( case pool of
-                        Nothing -> getPassiveDelegationInfo b
-                        Just p -> getPoolInfo b p
+                    Nothing -> getPassiveDelegationInfo b
+                    Just p -> getPoolInfo b p
                     )
                     >>= printResponseValueAsJSON
         GetBakerList block ->
@@ -4172,9 +4134,8 @@ processLegacyCmd action backend =
             Left _ -> logFatal ["Unable to parse account address."]
             Right a -> return a
 
-{- |Helper function to specialize the type, avoiding the need for type
- annotations in many places.
--}
+-- |Helper function to specialize the type, avoiding the need for type
+-- annotations in many places.
 getBlockItemHash :: Types.BareBlockItem -> Types.TransactionHash
 getBlockItemHash = getHash
 
@@ -4183,7 +4144,7 @@ printPeerData bootstrapper pInfos Queries.NodeInfo{..} =
     let Queries.NetworkInfo{..} = networkInfo
         -- Filter bootstrappers.
         pInfos' = filter (\p -> bootstrapper || Queries.consensusInfo p /= Queries.Bootstrapper) pInfos
-     in liftIO $ do
+    in  liftIO $ do
             putStrLn $ "Total packets sent: " ++ show peerTotalSent
             putStrLn $ "Total packets received: " ++ show peerTotalReceived
             putStrLn $ "Peer version: " ++ Text.unpack peerVersion
@@ -4198,7 +4159,7 @@ printPeerData bootstrapper pInfos Queries.NodeInfo{..} =
   where
     printPeerInfo Queries.PeerInfo{..} =
         let Queries.NetworkStats{..} = networkStats
-         in do
+        in  do
                 putStrLn $ "  Peer: " ++ Text.unpack peerId
                 putStrLn $ "    Packets sent: " ++ show packetsSent
                 putStrLn $ "    Packets received: " ++ show packetsReceived
@@ -4232,7 +4193,7 @@ printNodeInfo :: MonadIO m => Queries.NodeInfo -> m ()
 printNodeInfo Queries.NodeInfo{..} =
     liftIO $
         let Queries.NetworkInfo{..} = networkInfo
-         in do
+        in  do
                 putStrLn $ "Node version: " ++ Text.unpack peerVersion
                 putStrLn $ "Node ID: " ++ show nodeId
                 putStrLn $ "Current local time: " ++ show localTime
@@ -4303,10 +4264,9 @@ printNodeInfo Queries.NodeInfo{..} =
             Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveFinalizer) ->
                 "In current finalizer committee with baker ID " <> show bId <> "'."
 
-{- |Process a transaction from JSON payload given as a byte string
- and with keys given explicitly.
- The transaction is signed with all the provided keys.
--}
+-- |Process a transaction from JSON payload given as a byte string
+-- and with keys given explicitly.
+-- The transaction is signed with all the provided keys.
 processTransaction ::
     (MonadFail m, MonadIO m) =>
     BSL.ByteString ->
@@ -4316,9 +4276,8 @@ processTransaction source =
         Left err -> fail $ "Error decoding JSON: " ++ err
         Right t -> processTransaction_ t True
 
-{- |Process a transaction with unencrypted keys given explicitly.
- The transaction is signed with all the provided keys.
--}
+-- |Process a transaction with unencrypted keys given explicitly.
+-- The transaction is signed with all the provided keys.
 processTransaction_ ::
     (MonadFail m, MonadIO m) =>
     TransactionJSON ->
@@ -4399,9 +4358,8 @@ convertTransactionJsonPayload = \case
     CT.TransferToEncrypted{..} -> return $ Types.TransferToEncrypted{..}
     CT.EncryptedAmountTransfer{..} -> return Types.EncryptedAmountTransfer{..}
 
-{- |Sign a transaction payload and configuration into a "normal" transaction,
- which is ready to be sent.
--}
+-- |Sign a transaction payload and configuration into a "normal" transaction,
+-- which is ready to be sent.
 encodeAndSignTransaction ::
     Types.Payload ->
     Types.AccountAddress ->
@@ -4412,9 +4370,8 @@ encodeAndSignTransaction ::
     Types.BareBlockItem
 encodeAndSignTransaction txPayload = signEncodedTransaction (Types.encodePayload txPayload)
 
-{- |Sign an encoded transaction payload and a configuration into a "normal" transaction,
- which is ready to be sent.
--}
+-- |Sign an encoded transaction payload and a configuration into a "normal" transaction,
+-- which is ready to be sent.
 signEncodedTransaction ::
     Types.EncodedPayload ->
     Types.AccountAddress ->
@@ -4427,11 +4384,11 @@ signEncodedTransaction encPayload sender energy nonce expiry accKeys =
     Types.NormalTransaction $
         let header =
                 Types.TransactionHeader
-                    { thSender = sender
-                    , thPayloadSize = Types.payloadSize encPayload
-                    , thNonce = nonce
-                    , thEnergyAmount = energy
-                    , thExpiry = expiry
+                    { thSender = sender,
+                      thPayloadSize = Types.payloadSize encPayload,
+                      thNonce = nonce,
+                      thEnergyAmount = energy,
+                      thExpiry = expiry
                     }
             keys = Map.toList $ fmap Map.toList accKeys
-         in Types.signTransaction keys header encPayload
+        in  Types.signTransaction keys header encPayload

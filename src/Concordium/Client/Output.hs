@@ -71,9 +71,8 @@ runPrinter = liftIO . mapM_ putStrLn . execWriter
 
 -- TIME
 
-{- |Convert time to string using the provided formatting and "default" (American) locale.
- Normally one of the functions below should be used instead of this one.
--}
+-- |Convert time to string using the provided formatting and "default" (American) locale.
+-- Normally one of the functions below should be used instead of this one.
 showTime :: String -> UTCTime -> String
 showTime = formatTime defaultTimeLocale
 
@@ -81,15 +80,13 @@ showTime = formatTime defaultTimeLocale
 showTimeFormatted :: UTCTime -> String
 showTimeFormatted = showTime rfc822DateFormat
 
-{- |Convert time to string formatted as "<month (3 letters)> <year (4 digits)>".
- This is the format used for credential expiration.
--}
+-- |Convert time to string formatted as "<month (3 letters)> <year (4 digits)>".
+-- This is the format used for credential expiration.
 showTimeYearMonth :: UTCTime -> String
 showTimeYearMonth = showTime "%b %0Y"
 
-{- |Convert time of day to string formatted as "<hour>:<minute>:<second>" (all zero-padded).
- This is the format used for timestamps in logging.
--}
+-- |Convert time of day to string formatted as "<hour>:<minute>:<second>" (all zero-padded).
+-- This is the format used for timestamps in logging.
 showTimeOfDay :: TimeOfDay -> String
 showTimeOfDay = formatTime defaultTimeLocale "%T"
 
@@ -98,10 +95,10 @@ showTimeOfDay = formatTime defaultTimeLocale "%T"
 printBaseConfig :: BaseConfig -> Printer
 printBaseConfig cfg = do
     tell
-        [ "Base configuration:"
-        , [i|- Verbose:            #{showYesNo $ bcVerbose cfg}|]
-        , [i|- Account config dir: #{bcAccountCfgDir cfg}|]
-        , [i|- Contract config dir: #{bcContractCfgDir cfg}|]
+        [ "Base configuration:",
+          [i|- Verbose:            #{showYesNo $ bcVerbose cfg}|],
+          [i|- Account config dir: #{bcAccountCfgDir cfg}|],
+          [i|- Contract config dir: #{bcContractCfgDir cfg}|]
         ]
     printNameMap "Account" show $ bcAccountNameMap cfg
     printNameMap "Contract" showCompactPrettyJSON $ bcContractNameMap cfg
@@ -122,9 +119,9 @@ printBaseConfig cfg = do
 printSelectedKeyConfig :: EncryptedSigningData -> Printer
 printSelectedKeyConfig encSignData = do
     tell
-        [ [i|Account configuration:|]
-        , [i|- Names:   #{nameListOrNone}|]
-        , [i|- Address: #{naAddr $ esdAddress encSignData}|]
+        [ [i|Account configuration:|],
+          [i|- Names:   #{nameListOrNone}|],
+          [i|- Address: #{naAddr $ esdAddress encSignData}|]
         ]
     printKeys $ esdKeys encSignData
   where
@@ -193,9 +190,9 @@ showRevealedAttributes as =
 printAccountInfo :: NamedAddress -> Types.AccountInfo -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
 printAccountInfo addr a verbose showEncrypted mEncKey = do
     tell
-        ( [ [i|Local names:            #{showNameList $ naNames addr}|]
-          , [i|Address:                #{naAddr addr}|]
-          , [i|Balance:                #{showCcd $ Types.aiAccountAmount a}|]
+        ( [ [i|Local names:            #{showNameList $ naNames addr}|],
+            [i|Address:                #{naAddr addr}|],
+            [i|Balance:                #{showCcd $ Types.aiAccountAmount a}|]
           ]
             ++ case Types.releaseTotal $ Types.aiAccountReleaseSchedule a of
                 0 -> []
@@ -211,9 +208,9 @@ printAccountInfo addr a verbose showEncrypted mEncKey = do
                                 )
                                 (Types.releaseSchedule $ Types.aiAccountReleaseSchedule a)
                           )
-            ++ [ printf "Nonce:                  %s" (show $ Types.aiAccountNonce a)
-               , printf "Encryption public key:  %s" (show $ Types.aiAccountEncryptionKey a)
-               , ""
+            ++ [ printf "Nonce:                  %s" (show $ Types.aiAccountNonce a),
+                 printf "Encryption public key:  %s" (show $ Types.aiAccountEncryptionKey a),
+                 ""
                ]
         )
 
@@ -234,12 +231,12 @@ printAccountInfo addr a verbose showEncrypted mEncKey = do
                         _ -> ["  Incoming amounts:"] <> balances
                     tell [printf "  Self balance: %s" self]
                     tell [""]
-             in
+            in
                 case mEncKey of
                     Nothing ->
                         let incomingAmounts = showEncryptedAmount <$> Types.getIncomingAmountsList (Types.aiAccountEncryptedAmount a)
                             selfAmount = showEncryptedAmount $ Types.aiAccountEncryptedAmount a ^. Types.selfAmount
-                         in showEncryptedBalance incomingAmounts selfAmount
+                        in  showEncryptedBalance incomingAmounts selfAmount
                     Just (encKey, globalContext) -> do
                         let table = Enc.computeTable globalContext (2 ^ (16 :: Int))
                             decoder = Enc.decryptAmount table encKey
@@ -258,18 +255,18 @@ printAccountInfo addr a verbose showEncrypted mEncKey = do
             case asiPendingChange of
                 Types.NoChange ->
                     tell
-                        [ bkid
-                        , stkstr
+                        [ bkid,
+                          stkstr
                         ]
                 Types.RemoveStake t ->
                     tell
-                        [ [i|#{bkid} to be removed at #{t}|]
-                        , stkstr
+                        [ [i|#{bkid} to be removed at #{t}|],
+                          stkstr
                         ]
                 Types.ReduceStake n t ->
                     tell
-                        [ bkid
-                        , [i|#{stkstr} to be updated to #{showCcd n} at #{t}|]
+                        [ bkid,
+                          [i|#{stkstr} to be updated to #{showCcd n} at #{t}|]
                         ]
             tell [[i| - Restake earnings: #{showYesNo asiStakeEarnings}|]]
         Types.AccountStakingDelegated{..} -> do
@@ -283,13 +280,13 @@ printAccountInfo addr a verbose showEncrypted mEncKey = do
                 Types.NoChange -> tell [target, stkstr]
                 Types.RemoveStake t ->
                     tell
-                        [ [i|#{target} to be removed at #{t}|]
-                        , stkstr
+                        [ [i|#{target} to be removed at #{t}|],
+                          stkstr
                         ]
                 Types.ReduceStake n t ->
                     tell
-                        [ target
-                        , [i|#{stkstr} to be updated to #{showCcd n} at #{t}|]
+                        [ target,
+                          [i|#{stkstr} to be updated to #{showCcd n} at #{t}|]
                         ]
             tell [[i| - Restake earnings: #{showYesNo asiStakeEarnings}|]]
 
@@ -303,9 +300,8 @@ printAccountInfo addr a verbose showEncrypted mEncKey = do
                 then tell $ [showPrettyJSON (Types.aiAccountCredentials a)]
                 else forM_ (Map.toList (Types.aiAccountCredentials a)) printVersionedCred
 
-{- |Print a versioned credential. This only prints the credential value, and not the
- associated version.
--}
+-- |Print a versioned credential. This only prints the credential value, and not the
+-- associated version.
 printVersionedCred :: Show credTy => (IDTypes.CredentialIndex, (Versioned (IDTypes.AccountCredential' credTy))) -> Printer
 printVersionedCred (ci, vc) = printCred ci (vValue vc)
 
@@ -313,11 +309,11 @@ printVersionedCred (ci, vc) = printCred ci (vValue vc)
 printCred :: Show credTy => IDTypes.CredentialIndex -> IDTypes.AccountCredential' credTy -> Printer
 printCred ci c =
     tell
-        [ printf "* %s:" (show $ IDTypes.credId c)
-        , printf "  - Index: %s" (show ci)
-        , printf "  - Expiration: %s" expiry
-        , printf "  - Type: %s" credType
-        , printf "  - Revealed attributes: %s" (showRevealedAttributes attrs)
+        [ printf "* %s:" (show $ IDTypes.credId c),
+          printf "  - Index: %s" (show ci),
+          printf "  - Expiration: %s" expiry,
+          printf "  - Type: %s" credType,
+          printf "  - Revealed attributes: %s" (showRevealedAttributes attrs)
         ]
   where
     p = IDTypes.policy c
@@ -338,9 +334,9 @@ printAccountList nameMap accs = printNameList "Accounts" header format namedAccs
     namedAccs = map (\addr -> NamedAddress{naAddr = addr, naNames = unwrapMaybeList $ Map.lookup addr nameMapInv}) accs
     nameMapInv = invertHashMapAndCombine nameMap
     header =
-        [ "Accounts:"
-        , "                 Account Address                     Account Names"
-        , "--------------------------------------------------------------------"
+        [ "Accounts:",
+          "                 Account Address                     Account Names",
+          "--------------------------------------------------------------------"
         ]
     format NamedAddress{..} = [i|#{naAddr}   #{showNameList naNames}|]
 
@@ -351,9 +347,9 @@ printModuleList nameMap refs = printNameList "Modules" header format namedModRef
     namedModRefs = map (\ref -> NamedModuleRef{nmrRef = ref, nmrNames = unwrapMaybeList $ Map.lookup ref nameMapInv}) refs
     nameMapInv = invertHashMapAndCombine nameMap
     header =
-        [ "Modules:"
-        , "                        Module Reference                           Module Names"
-        , "---------------------------------------------------------------------------------"
+        [ "Modules:",
+          "                        Module Reference                           Module Names",
+          "---------------------------------------------------------------------------------"
         ]
     format NamedModuleRef{..} = [i|#{nmrRef}   #{showNameList nmrNames}|]
 
@@ -364,9 +360,9 @@ printContractList nameMap addrs = printNameList "Contracts" header format namedC
     namedContrAddrs = map (\addr -> NamedContractAddress{ncaAddr = addr, ncaNames = unwrapMaybeList $ Map.lookup addr nameMapInv}) addrs
     nameMapInv = invertHashMapAndCombine nameMap
     header =
-        [ "Contracts:"
-        , "    Contract Address       Contract Names"
-        , "-------------------------------------------"
+        [ "Contracts:",
+          "    Contract Address       Contract Names",
+          "-------------------------------------------"
         ]
     format NamedContractAddress{..} = [i|#{addr}   #{showNameList ncaNames}|]
       where
@@ -381,30 +377,29 @@ printNameList variantName header format xs =
             tell header
             tell $ map format xs
 
-{- |Print contract info using a provided namedAddress and namedModRef.
- Since ContractInfo comes directly from the node, the names are not included and must
- be provided separately.
--}
+-- |Print contract info using a provided namedAddress and namedModRef.
+-- Since ContractInfo comes directly from the node, the names are not included and must
+-- be provided separately.
 printContractInfo :: CI.ContractInfo -> NamedAddress -> NamedModuleRef -> Printer
 printContractInfo ci namedOwner namedModRef =
     case ci of
         CI.ContractInfoV0{..} -> do
             tell
-                [ [i|Contract:        #{ciName}|]
-                , [i|Owner:           #{owner}|]
-                , [i|ModuleReference: #{showNamedModuleRef namedModRef}|]
-                , [i|Balance:         #{showCcd ciAmount}|]
-                , [i|State size:      #{ciSize} bytes|]
+                [ [i|Contract:        #{ciName}|],
+                  [i|Owner:           #{owner}|],
+                  [i|ModuleReference: #{showNamedModuleRef namedModRef}|],
+                  [i|Balance:         #{showCcd ciAmount}|],
+                  [i|State size:      #{ciSize} bytes|]
                 ]
             tell (showState ciMethodsAndState)
             tell [[i|Methods:|]]
             tellMethodsV0 ciMethodsAndState
         CI.ContractInfoV1{..} -> do
             tell
-                [ [i|Contract:        #{ciName}|]
-                , [i|Owner:           #{owner}|]
-                , [i|ModuleReference: #{showNamedModuleRef namedModRef}|]
-                , [i|Balance:         #{showCcd ciAmount}|]
+                [ [i|Contract:        #{ciName}|],
+                  [i|Owner:           #{owner}|],
+                  [i|ModuleReference: #{showNamedModuleRef namedModRef}|],
+                  [i|Balance:         #{showCcd ciAmount}|]
                 ]
             tell [[i|Methods:|]]
             tellMethodsV1 ciMethods
@@ -464,17 +459,16 @@ showContractEventV3 stM = case stM of
     Nothing -> [i||]
     Just st -> [i| #{showPrettyJSON st}|]
 
-{- |Print module inspect info, i.e., the named moduleRef and its included contracts.
- If the init or receive signatures for a contract exist in the schema, they are also printed.
- Otherwise, it just prints the method names.
- If the schema contains signatures for init or receive methods not in the module, a warning is displayed.
--}
+-- |Print module inspect info, i.e., the named moduleRef and its included contracts.
+-- If the init or receive signatures for a contract exist in the schema, they are also printed.
+-- Otherwise, it just prints the method names.
+-- If the schema contains signatures for init or receive methods not in the module, a warning is displayed.
 printModuleInspectInfo :: CI.ModuleInspectInfo -> Printer
 printModuleInspectInfo CI.ModuleInspectInfo{..} = do
     tell
-        [ [i|Module:       #{showNamedModuleRef miiNamedModRef}|]
-        , [i|Wasm version: #{showWasmVersion miiWasmVersion}|]
-        , [i|Contracts:|]
+        [ [i|Module:       #{showNamedModuleRef miiNamedModRef}|],
+          [i|Wasm version: #{showWasmVersion miiWasmVersion}|],
+          [i|Contracts:|]
         ]
     tell $ showModuleInspectSigs miiModuleInspectSigs
     tell $ showWarnings miiExtraneousSchemas
@@ -607,20 +601,19 @@ parseTransactionBlockResult status =
             [] -> NoBlocks
             [outcome] ->
                 let hashes = map fst blocks
-                 in MultipleBlocksUnambiguous hashes outcome
+                in  MultipleBlocksUnambiguous hashes outcome
             _ -> MultipleBlocksAmbiguous blocks
 
-{- |Print transaction status, optionally decoding events and parameters according
- to contract module schema.
- Since the transaction may be present in multiple blocks before it is finalized,
- the schema information is passed as a map from blockhashes to pairs of events and
- its associated contract information. For a block in which the transaction is
- present, @printTransactionSchema@ looks up its blockhash in the map and retrieves
- the relevant schema information from the @ContractInfo@ associated with each event.
- If a parameter or event could not be decoded either because a schema was not present
- in the contract information or because the decoding failed, a hexadecimal string
- representing the raw data will be shown instead.
--}
+-- |Print transaction status, optionally decoding events and parameters according
+-- to contract module schema.
+-- Since the transaction may be present in multiple blocks before it is finalized,
+-- the schema information is passed as a map from blockhashes to pairs of events and
+-- its associated contract information. For a block in which the transaction is
+-- present, @printTransactionSchema@ looks up its blockhash in the map and retrieves
+-- the relevant schema information from the @ContractInfo@ associated with each event.
+-- If a parameter or event could not be decoded either because a schema was not present
+-- in the contract information or because the decoding failed, a hexadecimal string
+-- representing the raw data will be shown instead.
 printTransactionStatus ::
     TransactionStatusResult ->
     Bool ->
@@ -726,10 +719,10 @@ showOutcomeResult verbose contrInfoWithEventsM = \case
                         evs = filter ((`elem` evsWithCInfo) . fst) contrInfoWithEvents
                         -- Events without schemas should still be displayed, but do not have a schema.
                         evs' = map (,Nothing) evsWithoutCInfo
-                     in
+                    in
                         evs <> evs'
             (_, output) = foldl' fHelper (0, []) cInfos
-         in
+        in
             catMaybes output
     Types.TxReject r ->
         if verbose
@@ -759,20 +752,19 @@ showOutcomeResult verbose contrInfoWithEventsM = \case
                 _ -> (idt, idt)
 
             evStringM = fmap (indentBy idtCurrent) (showEvent verbose cInfo ev)
-         in
+        in
             (idtFollowing, out <> [evStringM])
 
-{- |Return string representation of outcome event if verbose or if the event includes
- relevant information that wasn't part of the transaction request. Otherwise return Nothing.
- If verbose is true, the string includes the details from the fields of the event.
- Otherwise, only the fields that are not known from the transaction request are included.
- Currently this is only the baker ID from AddBaker, which is computed by the backend.
- The non-verbose version is used by the transaction commands (through tailTransaction_)
- where the input parameters have already been specified manually and repeated in a block
- of text that they confirmed manually.
- The verbose version is used by 'transaction status' and the non-trivial cases of the above
- where there are multiple distinct outcomes.
--}
+-- |Return string representation of outcome event if verbose or if the event includes
+-- relevant information that wasn't part of the transaction request. Otherwise return Nothing.
+-- If verbose is true, the string includes the details from the fields of the event.
+-- Otherwise, only the fields that are not known from the transaction request are included.
+-- Currently this is only the baker ID from AddBaker, which is computed by the backend.
+-- The non-verbose version is used by the transaction commands (through tailTransaction_)
+-- where the input parameters have already been specified manually and repeated in a block
+-- of text that they confirmed manually.
+-- The verbose version is used by 'transaction status' and the non-trivial cases of the above
+-- where there are multiple distinct outcomes.
 showEvent ::
     -- | Whether the output should be verbose.
     Verbose ->
@@ -801,7 +793,7 @@ showEvent verbose ciM = \case
         verboseOrNothing $ printf "credential with registration '%s' deployed onto account '%s'" (show ecdRegId) (show ecdAccount)
     Types.BakerAdded{..} ->
         let restakeString :: String = if ebaRestakeEarnings then "Earnings are added to the stake." else "Earnings are not added to the stake."
-         in verboseOrNothing $ printf "baker %s added, staking %s CCD. %s" (showBaker ebaBakerId ebaAccount) (Types.amountToString ebaStake) restakeString
+        in  verboseOrNothing $ printf "baker %s added, staking %s CCD. %s" (showBaker ebaBakerId ebaAccount) (Types.amountToString ebaStake) restakeString
     Types.BakerRemoved{..} ->
         verboseOrNothing $ printf "baker %s, removed" (showBaker ebrBakerId ebrAccount)
     Types.BakerStakeIncreased{..} ->
@@ -863,14 +855,14 @@ showEvent verbose ciM = \case
                     if rest == BSL.empty
                         then showPrettyJSON x
                         else invalidCBOR
-         in Just $ printf "Transfer memo:\n%s" str
+        in  Just $ printf "Transfer memo:\n%s" str
     Types.Interrupted cAddr ev ->
         verboseOrNothing [i|interrupted '#{cAddr}'.\n#{showLoggedEvents ev}|]
     Types.Upgraded{..} ->
         verboseOrNothing [i|upgraded contract instance at '#{euAddress}' from '#{euFrom}' to '#{euTo}'.|]
     Types.Resumed cAddr invokeSucceeded ->
         let invokeMsg :: Text = if invokeSucceeded then "succeeded" else "failed"
-         in verboseOrNothing [i|resumed '#{cAddr}' after an interruption that #{invokeMsg}.|]
+        in  verboseOrNothing [i|resumed '#{cAddr}' after an interruption that #{invokeMsg}.|]
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
@@ -941,16 +933,15 @@ showEvent verbose ciM = \case
             Nothing -> Nothing
             Just ci -> CI.getParameterSchema ci rName
 
-{- |Return string representation of reject reason.
- If verbose is true, the string includes the details from the fields of the reason.
- Otherwise, only the fields that are not known from the transaction request are included.
- Currently this is only the baker address from NotFromBakerAccount.
- The non-verbose version is used by the transaction commands (through tailTransaction_)
- where the input parameters have already been specified manually and repeated in a block
- of text that they confirmed manually.
- The verbose version is used by 'transaction status' and the non-trivial cases of the above
- where there are multiple distinct outcomes.
--}
+-- |Return string representation of reject reason.
+-- If verbose is true, the string includes the details from the fields of the reason.
+-- Otherwise, only the fields that are not known from the transaction request are included.
+-- Currently this is only the baker address from NotFromBakerAccount.
+-- The non-verbose version is used by the transaction commands (through tailTransaction_)
+-- where the input parameters have already been specified manually and repeated in a block
+-- of text that they confirmed manually.
+-- The verbose version is used by 'transaction status' and the non-trivial cases of the above
+-- where there are multiple distinct outcomes.
 showRejectReason :: Verbose -> Types.RejectReason -> String
 showRejectReason verbose = \case
     Types.ModuleNotWF ->
@@ -993,7 +984,7 @@ showRejectReason verbose = \case
         [i|contract init logic failed with code #{rejectReason}|]
     Types.RejectedReceive{..} ->
         let (contractName, funcName) = Wasm.contractAndFunctionName receiveName
-         in [i|'#{funcName}' in '#{contractName}' at #{showCompactPrettyJSON contractAddress} failed with code #{rejectReason}|]
+        in  [i|'#{funcName}' in '#{contractName}' at #{showCompactPrettyJSON contractAddress} failed with code #{rejectReason}|]
     Types.InvalidProof ->
         "proof that baker owns relevant private keys is not valid"
     Types.DuplicateAggregationKey k ->
@@ -1053,31 +1044,31 @@ showRejectReason verbose = \case
 printConsensusStatus :: Queries.ConsensusStatus -> Printer
 printConsensusStatus r =
     tell $
-        [ printf "Best block:                  %s" (show $ Queries.csBestBlock r)
-        , printf "Genesis block:               %s" (show $ Queries.csGenesisBlock r)
-        , printf "Genesis time:                %s" (show $ Queries.csGenesisTime r)
+        [ printf "Best block:                  %s" (show $ Queries.csBestBlock r),
+          printf "Genesis block:               %s" (show $ Queries.csGenesisBlock r),
+          printf "Genesis time:                %s" (show $ Queries.csGenesisTime r)
         ]
             ++ slotDur (Queries.csSlotDuration r)
-            ++ [ printf "Epoch duration:              %s" (showDuration $ Time.durationMillis $ Queries.csEpochDuration r)
-               , printf "Last finalized block:        %s" (show $ Queries.csLastFinalizedBlock r)
-               , printf "Best block height:           %s" (show $ Queries.csBestBlockHeight r)
-               , printf "Last finalized block height: %s" (show $ Queries.csLastFinalizedBlockHeight r)
-               , printf "Blocks received count:       %s" (show $ Queries.csBlocksReceivedCount r)
-               , printf "Block last received time:    %s" (showMaybeUTC $ Queries.csBlockLastReceivedTime r)
-               , printf "Block receive latency:       %s" (showEmSeconds (Queries.csBlockReceiveLatencyEMA r) (Queries.csBlockReceiveLatencyEMSD r))
-               , printf "Block receive period:        %s" (showMaybeEmSeconds (Queries.csBlockReceivePeriodEMA r) (Queries.csBlockReceivePeriodEMSD r))
-               , printf "Blocks verified count:       %s" (show $ Queries.csBlocksVerifiedCount r)
-               , printf "Block last arrived time:     %s" (showMaybeUTC $ Queries.csBlockLastArrivedTime r)
-               , printf "Block arrive latency:        %s" (showEmSeconds (Queries.csBlockArriveLatencyEMA r) (Queries.csBlockArriveLatencyEMSD r))
-               , printf "Block arrive period:         %s" (showMaybeEmSeconds (Queries.csBlockArrivePeriodEMA r) (Queries.csBlockArrivePeriodEMSD r))
-               , printf "Transactions per block:      %s" (showEm (printf "%8.3f" $ Queries.csTransactionsPerBlockEMA r) (printf "%8.3f" $ Queries.csTransactionsPerBlockEMSD r))
-               , printf "Finalization count:          %s" (show $ Queries.csFinalizationCount r)
-               , printf "Last finalized time:         %s" (showMaybeUTC $ Queries.csLastFinalizedTime r)
-               , printf "Finalization period:         %s" (showMaybeEmSeconds (Queries.csFinalizationPeriodEMA r) (Queries.csFinalizationPeriodEMSD r))
-               , printf "Protocol version:            %s" (show $ Queries.csProtocolVersion r)
-               , printf "Genesis index:               %s" (show $ Queries.csGenesisIndex r)
-               , printf "Current era genesis block:   %s" (show $ Queries.csCurrentEraGenesisBlock r)
-               , printf "Current era genesis time:    %s" (show $ Queries.csCurrentEraGenesisTime r)
+            ++ [ printf "Epoch duration:              %s" (showDuration $ Time.durationMillis $ Queries.csEpochDuration r),
+                 printf "Last finalized block:        %s" (show $ Queries.csLastFinalizedBlock r),
+                 printf "Best block height:           %s" (show $ Queries.csBestBlockHeight r),
+                 printf "Last finalized block height: %s" (show $ Queries.csLastFinalizedBlockHeight r),
+                 printf "Blocks received count:       %s" (show $ Queries.csBlocksReceivedCount r),
+                 printf "Block last received time:    %s" (showMaybeUTC $ Queries.csBlockLastReceivedTime r),
+                 printf "Block receive latency:       %s" (showEmSeconds (Queries.csBlockReceiveLatencyEMA r) (Queries.csBlockReceiveLatencyEMSD r)),
+                 printf "Block receive period:        %s" (showMaybeEmSeconds (Queries.csBlockReceivePeriodEMA r) (Queries.csBlockReceivePeriodEMSD r)),
+                 printf "Blocks verified count:       %s" (show $ Queries.csBlocksVerifiedCount r),
+                 printf "Block last arrived time:     %s" (showMaybeUTC $ Queries.csBlockLastArrivedTime r),
+                 printf "Block arrive latency:        %s" (showEmSeconds (Queries.csBlockArriveLatencyEMA r) (Queries.csBlockArriveLatencyEMSD r)),
+                 printf "Block arrive period:         %s" (showMaybeEmSeconds (Queries.csBlockArrivePeriodEMA r) (Queries.csBlockArrivePeriodEMSD r)),
+                 printf "Transactions per block:      %s" (showEm (printf "%8.3f" $ Queries.csTransactionsPerBlockEMA r) (printf "%8.3f" $ Queries.csTransactionsPerBlockEMSD r)),
+                 printf "Finalization count:          %s" (show $ Queries.csFinalizationCount r),
+                 printf "Last finalized time:         %s" (showMaybeUTC $ Queries.csLastFinalizedTime r),
+                 printf "Finalization period:         %s" (showMaybeEmSeconds (Queries.csFinalizationPeriodEMA r) (Queries.csFinalizationPeriodEMSD r)),
+                 printf "Protocol version:            %s" (show $ Queries.csProtocolVersion r),
+                 printf "Genesis index:               %s" (show $ Queries.csGenesisIndex r),
+                 printf "Current era genesis block:   %s" (show $ Queries.csCurrentEraGenesisBlock r),
+                 printf "Current era genesis time:    %s" (show $ Queries.csCurrentEraGenesisTime r)
                ]
             ++ bftStatus (Queries.csConcordiumBFTStatus r)
   where
@@ -1085,10 +1076,10 @@ printConsensusStatus r =
     slotDur (Just dur) = [printf "Slot duration:               %s" (showDuration $ Time.durationMillis dur)]
     bftStatus Nothing = []
     bftStatus (Just Queries.ConcordiumBFTStatus{..}) =
-        [ printf "Current timeout duration:    %s" (showDuration $ Time.durationMillis cbftsCurrentTimeoutDuration)
-        , printf "Current round:               %s" (show cbftsCurrentRound)
-        , printf "Current epoch:               %s" (show cbftsCurrentEpoch)
-        , printf "Trigger block time:          %s" (show cbftsTriggerBlockTime)
+        [ printf "Current timeout duration:    %s" (showDuration $ Time.durationMillis cbftsCurrentTimeoutDuration),
+          printf "Current round:               %s" (show cbftsCurrentRound),
+          printf "Current epoch:               %s" (show cbftsCurrentEpoch),
+          printf "Trigger block time:          %s" (show cbftsTriggerBlockTime)
         ]
 
 -- |Print Birk parameters from a @BlockBirkParameters@.
@@ -1103,9 +1094,9 @@ printQueryBirkParameters includeBakers r addrmap = do
                 tell ["Bakers:              " ++ showNone]
             bakers -> do
                 tell
-                    [ "Bakers:"
-                    , "                             Account                       Lottery power  Account Name"
-                    , "        ------------------------------------------------------------------------------"
+                    [ "Bakers:",
+                      "                             Account                       Lottery power  Account Name",
+                      "        ------------------------------------------------------------------------------"
                     ]
                 tell (fmap f bakers)
               where
@@ -1137,9 +1128,9 @@ printBirkParameters includeBakers r addrmap = do
                 tell ["Bakers:              " ++ showNone]
             bakers -> do
                 tell
-                    [ "Bakers:"
-                    , printf "                             Account                       Lottery power  Account Name"
-                    , printf "        ------------------------------------------------------------------------------"
+                    [ "Bakers:",
+                      printf "                             Account                       Lottery power  Account Name",
+                      printf "        ------------------------------------------------------------------------------"
                     ]
                 tell (map f bakers)
               where
@@ -1162,144 +1153,144 @@ printChainParameters cp = do
 printChainParametersV0 :: ChainParameters' 'ChainParametersV0 -> Printer
 printChainParametersV0 ChainParameters{..} =
     tell
-        [ [i|\# Baker parameters |]
-        , [i|  + baker extra cooldown: #{(_cpBakerExtraCooldownEpochs _cpCooldownParameters)} epochs|]
-        , [i|  + stake threshold to become a baker: #{showCcd (_ppBakerStakeThreshold _cpPoolParameters)}|]
-        , ""
-        , [i|\# Exchange rate parameters: |]
-        , [i|  + EUR per CCD rate (approx): #{printf "%.4f" (realToFrac (1000000 / _erMicroGTUPerEuro _cpExchangeRates) :: Double) :: String}|]
-        , [i|  + EUR per Energy rate: #{showExchangeRate (_erEuroPerEnergy _cpExchangeRates)}|]
-        , [i|  + microCCD per EUR rate: #{showExchangeRate (_erMicroGTUPerEuro _cpExchangeRates)}|]
-        , ""
-        , [i|\# Parameters that affect rewards distribution:|]
-        , [i|  + mint rate per slot: #{_cpRewardParameters ^. (mdMintPerSlot . unconditionally)}|]
-        , [i|  + mint distribution:|]
-        , [i|     * baking reward: #{_cpRewardParameters ^. mdBakingReward}|]
-        , [i|     * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|]
-        , [i|  + transaction fee distribution:|]
-        , [i|     * fraction for the baker: #{_cpRewardParameters ^. tfdBaker}|]
-        , [i|     * fraction for the GAS account: #{_cpRewardParameters ^. tfdGASAccount}|]
-        , [i|  + GAS account distribution:|]
-        , [i|     * baking a block: #{_cpRewardParameters ^. gasBaker}|]
-        , [i|     * adding a finalization proof: #{showConditionally (_cpRewardParameters ^. gasFinalizationProof)}|]
-        , [i|     * adding a credential deployment: #{_cpRewardParameters ^. gasAccountCreation}|]
-        , [i|     * adding a chain update: #{_cpRewardParameters ^. gasChainUpdate}|]
-        , ""
-        , [i|\# Other parameters: |]
-        , [i|  + election difficulty: #{_cpConsensusParameters ^. cpElectionDifficulty}|]
-        , [i|  + foundation account index: #{_cpFoundationAccount}|]
-        , [i|  + maximum credential deployments per block: #{_cpAccountCreationLimit}|]
+        [ [i|\# Baker parameters |],
+          [i|  + baker extra cooldown: #{(_cpBakerExtraCooldownEpochs _cpCooldownParameters)} epochs|],
+          [i|  + stake threshold to become a baker: #{showCcd (_ppBakerStakeThreshold _cpPoolParameters)}|],
+          "",
+          [i|\# Exchange rate parameters: |],
+          [i|  + EUR per CCD rate (approx): #{printf "%.4f" (realToFrac (1000000 / _erMicroGTUPerEuro _cpExchangeRates) :: Double) :: String}|],
+          [i|  + EUR per Energy rate: #{showExchangeRate (_erEuroPerEnergy _cpExchangeRates)}|],
+          [i|  + microCCD per EUR rate: #{showExchangeRate (_erMicroGTUPerEuro _cpExchangeRates)}|],
+          "",
+          [i|\# Parameters that affect rewards distribution:|],
+          [i|  + mint rate per slot: #{_cpRewardParameters ^. (mdMintPerSlot . unconditionally)}|],
+          [i|  + mint distribution:|],
+          [i|     * baking reward: #{_cpRewardParameters ^. mdBakingReward}|],
+          [i|     * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|],
+          [i|  + transaction fee distribution:|],
+          [i|     * fraction for the baker: #{_cpRewardParameters ^. tfdBaker}|],
+          [i|     * fraction for the GAS account: #{_cpRewardParameters ^. tfdGASAccount}|],
+          [i|  + GAS account distribution:|],
+          [i|     * baking a block: #{_cpRewardParameters ^. gasBaker}|],
+          [i|     * adding a finalization proof: #{showConditionally (_cpRewardParameters ^. gasFinalizationProof)}|],
+          [i|     * adding a credential deployment: #{_cpRewardParameters ^. gasAccountCreation}|],
+          [i|     * adding a chain update: #{_cpRewardParameters ^. gasChainUpdate}|],
+          "",
+          [i|\# Other parameters: |],
+          [i|  + election difficulty: #{_cpConsensusParameters ^. cpElectionDifficulty}|],
+          [i|  + foundation account index: #{_cpFoundationAccount}|],
+          [i|  + maximum credential deployments per block: #{_cpAccountCreationLimit}|]
         ]
 
 -- | Prints the chain parameters for version 1.
 printChainParametersV1 :: ChainParameters' 'ChainParametersV1 -> Printer
 printChainParametersV1 ChainParameters{..} =
     tell
-        [ ""
-        , [i|\# Parameters related to baker pools:|]
-        , [i|  + minimum equity capital: #{showCcd (_cpPoolParameters ^. ppMinimumEquityCapital)}|]
-        , [i|  + maximum fraction of total stake a pool is allowed to hold: #{_cpPoolParameters ^. ppCapitalBound}|]
-        , [i|  + maximum factor a pool may stake relative to the baker's stake: #{_cpPoolParameters ^. ppLeverageBound}|]
-        , [i|  + pool owner cooldown duration: #{durationToText (durationSeconds (_cpCooldownParameters ^. cpPoolOwnerCooldown) * 1000)}|]
-        , [i|  + allowed range for finalization commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . finalizationCommissionRange))}|]
-        , [i|  + allowed range for baking commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . bakingCommissionRange))}|]
-        , [i|  + allowed range for transaction commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . transactionCommissionRange))}|]
-        , ""
-        , [i|\# Passive delegation parameters:|]
-        , [i|  + finalization commission: #{_cpPoolParameters ^. (ppPassiveCommissions . Types.finalizationCommission)}|]
-        , [i|  + baking commission: #{_cpPoolParameters ^. (ppPassiveCommissions . Types.bakingCommission)}|]
-        , [i|  + transaction commission: #{_cpPoolParameters ^. (ppPassiveCommissions . Types.transactionCommission)}|]
-        , ""
-        , [i|\# Parameters related to delegators: |]
-        , [i|  + delegator cooldown duration: #{durationToText (durationSeconds (_cpCooldownParameters ^. cpDelegatorCooldown) * 1000)}|]
-        , ""
-        , [i|\# Exchange rate parameters: |]
-        , [i|  - EUR per CCD rate (approx): #{printf "%.4f" (realToFrac (1000000 / _erMicroGTUPerEuro _cpExchangeRates) :: Double) :: String}|]
-        , [i|  - EUR per Energy rate: #{showExchangeRate (_erEuroPerEnergy _cpExchangeRates)}|]
-        , [i|  - microCCD per EUR rate: #{showExchangeRate (_erMicroGTUPerEuro _cpExchangeRates)}|]
-        , ""
-        , [i|\# Parameters that affect rewards distribution:|]
-        , [i|  + mint amount per reward period: #{_cpTimeParameters ^. tpMintPerPayday}|]
-        , [i|  + mint distribution:|]
-        , [i|     * baking reward: #{_cpRewardParameters ^. mdBakingReward}|]
-        , [i|     * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|]
-        , [i|  + transaction fee distribution:|]
-        , [i|     * baker: #{_cpRewardParameters ^. tfdBaker}|]
-        , [i|     * GAS account: #{_cpRewardParameters ^. tfdGASAccount}|]
-        , [i|  + GAS rewards:|]
-        , [i|     * baking a block: #{_cpRewardParameters ^. gasBaker}|]
-        , [i|     * adding a finalization proof: #{showConditionally (_cpRewardParameters ^. gasFinalizationProof)}|]
-        , [i|     * adding a credential deployment: #{_cpRewardParameters ^. gasAccountCreation}|]
-        , [i|     * adding a chain update: #{_cpRewardParameters ^. gasChainUpdate}|]
-        , ""
-        , [i|\# Time parameters:|]
-        , [i|  + reward period length: #{_cpTimeParameters ^. tpRewardPeriodLength} epochs|]
-        , ""
-        , [i|\# Other parameters: |]
-        , [i|  + election difficulty: #{_cpConsensusParameters ^. cpElectionDifficulty}|]
-        , [i|  + foundation account index: #{_cpFoundationAccount}|]
-        , [i|  + maximum credential deployments per block: #{_cpAccountCreationLimit}|]
+        [ "",
+          [i|\# Parameters related to baker pools:|],
+          [i|  + minimum equity capital: #{showCcd (_cpPoolParameters ^. ppMinimumEquityCapital)}|],
+          [i|  + maximum fraction of total stake a pool is allowed to hold: #{_cpPoolParameters ^. ppCapitalBound}|],
+          [i|  + maximum factor a pool may stake relative to the baker's stake: #{_cpPoolParameters ^. ppLeverageBound}|],
+          [i|  + pool owner cooldown duration: #{durationToText (durationSeconds (_cpCooldownParameters ^. cpPoolOwnerCooldown) * 1000)}|],
+          [i|  + allowed range for finalization commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . finalizationCommissionRange))}|],
+          [i|  + allowed range for baking commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . bakingCommissionRange))}|],
+          [i|  + allowed range for transaction commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . transactionCommissionRange))}|],
+          "",
+          [i|\# Passive delegation parameters:|],
+          [i|  + finalization commission: #{_cpPoolParameters ^. (ppPassiveCommissions . Types.finalizationCommission)}|],
+          [i|  + baking commission: #{_cpPoolParameters ^. (ppPassiveCommissions . Types.bakingCommission)}|],
+          [i|  + transaction commission: #{_cpPoolParameters ^. (ppPassiveCommissions . Types.transactionCommission)}|],
+          "",
+          [i|\# Parameters related to delegators: |],
+          [i|  + delegator cooldown duration: #{durationToText (durationSeconds (_cpCooldownParameters ^. cpDelegatorCooldown) * 1000)}|],
+          "",
+          [i|\# Exchange rate parameters: |],
+          [i|  - EUR per CCD rate (approx): #{printf "%.4f" (realToFrac (1000000 / _erMicroGTUPerEuro _cpExchangeRates) :: Double) :: String}|],
+          [i|  - EUR per Energy rate: #{showExchangeRate (_erEuroPerEnergy _cpExchangeRates)}|],
+          [i|  - microCCD per EUR rate: #{showExchangeRate (_erMicroGTUPerEuro _cpExchangeRates)}|],
+          "",
+          [i|\# Parameters that affect rewards distribution:|],
+          [i|  + mint amount per reward period: #{_cpTimeParameters ^. tpMintPerPayday}|],
+          [i|  + mint distribution:|],
+          [i|     * baking reward: #{_cpRewardParameters ^. mdBakingReward}|],
+          [i|     * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|],
+          [i|  + transaction fee distribution:|],
+          [i|     * baker: #{_cpRewardParameters ^. tfdBaker}|],
+          [i|     * GAS account: #{_cpRewardParameters ^. tfdGASAccount}|],
+          [i|  + GAS rewards:|],
+          [i|     * baking a block: #{_cpRewardParameters ^. gasBaker}|],
+          [i|     * adding a finalization proof: #{showConditionally (_cpRewardParameters ^. gasFinalizationProof)}|],
+          [i|     * adding a credential deployment: #{_cpRewardParameters ^. gasAccountCreation}|],
+          [i|     * adding a chain update: #{_cpRewardParameters ^. gasChainUpdate}|],
+          "",
+          [i|\# Time parameters:|],
+          [i|  + reward period length: #{_cpTimeParameters ^. tpRewardPeriodLength} epochs|],
+          "",
+          [i|\# Other parameters: |],
+          [i|  + election difficulty: #{_cpConsensusParameters ^. cpElectionDifficulty}|],
+          [i|  + foundation account index: #{_cpFoundationAccount}|],
+          [i|  + maximum credential deployments per block: #{_cpAccountCreationLimit}|]
         ]
 
 printChainParametersV2 :: ChainParameters' 'ChainParametersV2 -> Printer
 printChainParametersV2 ChainParameters{..} =
     tell
-        [ ""
-        , [i|\# Parameters related to baker pools:|]
-        , [i|  + minimum equity capital: #{showCcd (_cpPoolParameters ^. ppMinimumEquityCapital)}|]
-        , [i|  + maximum fraction of total stake a pool is allowed to hold: #{_cpPoolParameters ^. ppCapitalBound}|]
-        , [i|  + maximum factor a pool may stake relative to the baker's stake: #{_cpPoolParameters ^. ppLeverageBound}|]
-        , [i|  + pool owner cooldown duration: #{durationToText (durationSeconds (_cpCooldownParameters ^. cpPoolOwnerCooldown) * 1000)}|]
-        , [i|  + allowed range for finalization commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . finalizationCommissionRange))}|]
-        , [i|  + allowed range for baking commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . bakingCommissionRange))}|]
-        , [i|  + allowed range for transaction commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . transactionCommissionRange))}|]
-        , ""
-        , [i|\# Passive delegation parameters:|]
-        , [i|  + finalization commission: #{_cpPoolParameters ^. (ppPassiveCommissions . Types.finalizationCommission)}|]
-        , [i|  + baking commission: #{_cpPoolParameters ^. (ppPassiveCommissions . Types.bakingCommission)}|]
-        , [i|  + transaction commission: #{_cpPoolParameters ^. (ppPassiveCommissions . Types.transactionCommission)}|]
-        , ""
-        , [i|\# Parameters related to delegators: |]
-        , [i|  + delegator cooldown duration: #{durationToText (durationSeconds (_cpCooldownParameters ^. cpDelegatorCooldown) * 1000)}|]
-        , ""
-        , [i|\# Exchange rate parameters: |]
-        , [i|  - EUR per CCD rate (approx): #{printf "%.4f" (realToFrac (1000000 / _erMicroGTUPerEuro _cpExchangeRates) :: Double) :: String}|]
-        , [i|  - EUR per Energy rate: #{showExchangeRate (_erEuroPerEnergy _cpExchangeRates)}|]
-        , [i|  - microCCD per EUR rate: #{showExchangeRate (_erMicroGTUPerEuro _cpExchangeRates)}|]
-        , ""
-        , [i|\# Parameters that affect rewards distribution:|]
-        , [i|  + mint amount per reward period: #{_cpTimeParameters ^. tpMintPerPayday}|]
-        , [i|  + mint distribution:|]
-        , [i|     * baking reward: #{_cpRewardParameters ^. mdBakingReward}|]
-        , [i|     * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|]
-        , [i|  + transaction fee distribution:|]
-        , [i|     * baker: #{_cpRewardParameters ^. tfdBaker}|]
-        , [i|     * GAS account: #{_cpRewardParameters ^. tfdGASAccount}|]
-        , [i|  + GAS rewards:|]
-        , [i|     * baking a block: #{_cpRewardParameters ^. gasBaker}|]
-        , [i|     * adding a finalization proof: |] <> showConditionally (_cpRewardParameters ^. gasFinalizationProof)
-        , [i|     * adding a credential deployment: #{_cpRewardParameters ^. gasAccountCreation}|]
-        , [i|     * adding a chain update: #{_cpRewardParameters ^. gasChainUpdate}|]
-        , ""
-        , [i|\# Time parameters:|]
-        , [i|  + reward period length: #{_cpTimeParameters ^. tpRewardPeriodLength} epochs|]
-        , ""
-        , [i|\# Consensus parameters: |]
-        , [i|  + Timeout parameters: |]
-        , [i|     * base timeout: #{_cpConsensusParameters ^. cpTimeoutParameters ^. tpTimeoutBase} ms.|]
-        , [i|     * timeout increase: #{showRatio (_cpConsensusParameters ^. cpTimeoutParameters ^. tpTimeoutIncrease)}|]
-        , [i|     * timeout decrease: #{showRatio (_cpConsensusParameters ^. cpTimeoutParameters ^. tpTimeoutDecrease)}|]
-        , [i|  + minimum time between blocks: #{_cpConsensusParameters ^. cpMinBlockTime} ms.|]
-        , [i|  + block energy limit: #{_cpConsensusParameters ^. cpBlockEnergyLimit}|]
-        , ""
-        , [i|\# Finalization committee parameters:|]
-        , [i|  + minimum finalizers: #{show (_cpFinalizationCommitteeParameters ^. fcpMinFinalizers)}|]
-        , [i|  + maximum finalizers: #{show (_cpFinalizationCommitteeParameters ^. fcpMaxFinalizers)}|]
-        , [i|  + finalizer relative stake threshold: #{show (_cpFinalizationCommitteeParameters ^. fcpFinalizerRelativeStakeThreshold)}|]
-        , ""
-        , [i|\# Other parameters: |]
-        , [i|  + foundation account index: #{_cpFoundationAccount}|]
-        , [i|  + maximum credential deployments per block: #{_cpAccountCreationLimit}|]
+        [ "",
+          [i|\# Parameters related to baker pools:|],
+          [i|  + minimum equity capital: #{showCcd (_cpPoolParameters ^. ppMinimumEquityCapital)}|],
+          [i|  + maximum fraction of total stake a pool is allowed to hold: #{_cpPoolParameters ^. ppCapitalBound}|],
+          [i|  + maximum factor a pool may stake relative to the baker's stake: #{_cpPoolParameters ^. ppLeverageBound}|],
+          [i|  + pool owner cooldown duration: #{durationToText (durationSeconds (_cpCooldownParameters ^. cpPoolOwnerCooldown) * 1000)}|],
+          [i|  + allowed range for finalization commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . finalizationCommissionRange))}|],
+          [i|  + allowed range for baking commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . bakingCommissionRange))}|],
+          [i|  + allowed range for transaction commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . transactionCommissionRange))}|],
+          "",
+          [i|\# Passive delegation parameters:|],
+          [i|  + finalization commission: #{_cpPoolParameters ^. (ppPassiveCommissions . Types.finalizationCommission)}|],
+          [i|  + baking commission: #{_cpPoolParameters ^. (ppPassiveCommissions . Types.bakingCommission)}|],
+          [i|  + transaction commission: #{_cpPoolParameters ^. (ppPassiveCommissions . Types.transactionCommission)}|],
+          "",
+          [i|\# Parameters related to delegators: |],
+          [i|  + delegator cooldown duration: #{durationToText (durationSeconds (_cpCooldownParameters ^. cpDelegatorCooldown) * 1000)}|],
+          "",
+          [i|\# Exchange rate parameters: |],
+          [i|  - EUR per CCD rate (approx): #{printf "%.4f" (realToFrac (1000000 / _erMicroGTUPerEuro _cpExchangeRates) :: Double) :: String}|],
+          [i|  - EUR per Energy rate: #{showExchangeRate (_erEuroPerEnergy _cpExchangeRates)}|],
+          [i|  - microCCD per EUR rate: #{showExchangeRate (_erMicroGTUPerEuro _cpExchangeRates)}|],
+          "",
+          [i|\# Parameters that affect rewards distribution:|],
+          [i|  + mint amount per reward period: #{_cpTimeParameters ^. tpMintPerPayday}|],
+          [i|  + mint distribution:|],
+          [i|     * baking reward: #{_cpRewardParameters ^. mdBakingReward}|],
+          [i|     * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|],
+          [i|  + transaction fee distribution:|],
+          [i|     * baker: #{_cpRewardParameters ^. tfdBaker}|],
+          [i|     * GAS account: #{_cpRewardParameters ^. tfdGASAccount}|],
+          [i|  + GAS rewards:|],
+          [i|     * baking a block: #{_cpRewardParameters ^. gasBaker}|],
+          [i|     * adding a finalization proof: |] <> showConditionally (_cpRewardParameters ^. gasFinalizationProof),
+          [i|     * adding a credential deployment: #{_cpRewardParameters ^. gasAccountCreation}|],
+          [i|     * adding a chain update: #{_cpRewardParameters ^. gasChainUpdate}|],
+          "",
+          [i|\# Time parameters:|],
+          [i|  + reward period length: #{_cpTimeParameters ^. tpRewardPeriodLength} epochs|],
+          "",
+          [i|\# Consensus parameters: |],
+          [i|  + Timeout parameters: |],
+          [i|     * base timeout: #{_cpConsensusParameters ^. cpTimeoutParameters ^. tpTimeoutBase} ms.|],
+          [i|     * timeout increase: #{showRatio (_cpConsensusParameters ^. cpTimeoutParameters ^. tpTimeoutIncrease)}|],
+          [i|     * timeout decrease: #{showRatio (_cpConsensusParameters ^. cpTimeoutParameters ^. tpTimeoutDecrease)}|],
+          [i|  + minimum time between blocks: #{_cpConsensusParameters ^. cpMinBlockTime} ms.|],
+          [i|  + block energy limit: #{_cpConsensusParameters ^. cpBlockEnergyLimit}|],
+          "",
+          [i|\# Finalization committee parameters:|],
+          [i|  + minimum finalizers: #{show (_cpFinalizationCommitteeParameters ^. fcpMinFinalizers)}|],
+          [i|  + maximum finalizers: #{show (_cpFinalizationCommitteeParameters ^. fcpMaxFinalizers)}|],
+          [i|  + finalizer relative stake threshold: #{show (_cpFinalizationCommitteeParameters ^. fcpFinalizerRelativeStakeThreshold)}|],
+          "",
+          [i|\# Other parameters: |],
+          [i|  + foundation account index: #{_cpFoundationAccount}|],
+          [i|  + maximum credential deployments per block: #{_cpAccountCreationLimit}|]
         ]
 
 -- | Returns a string representation of the given 'InclusiveRange'.
@@ -1311,7 +1302,7 @@ showRatio :: (Show a, Integral a) => Ratio a -> String
 showRatio r =
     let num = numerator r
         den = denominator r
-     in show num ++ " / " ++ show den ++ " (approx " ++ show (realToFrac r :: Double) ++ ")"
+    in  show num ++ " / " ++ show den ++ " (approx " ++ show (realToFrac r :: Double) ++ ")"
 
 -- | Returns a string representation of the given exchange rate.
 showExchangeRate :: Types.ExchangeRate -> String
@@ -1332,23 +1323,23 @@ showBlockHashInput (Queries.AtHeight bhi) =
 printBlockInfo :: Queries.BlockInfo -> Printer
 printBlockInfo b =
     tell $
-        [ printf "Hash:                       %s" (show $ Queries.biBlockHash b)
-        , printf "Parent block:               %s" (show $ Queries.biBlockParent b)
-        , printf "Last finalized block:       %s" (show $ Queries.biBlockLastFinalized b)
-        , printf "Finalized:                  %s" (showYesNo $ Queries.biFinalized b)
-        , printf "Receive time:               %s" (showTimeFormatted $ Queries.biBlockReceiveTime b)
-        , printf "Arrive time:                %s" (showTimeFormatted $ Queries.biBlockArriveTime b)
+        [ printf "Hash:                       %s" (show $ Queries.biBlockHash b),
+          printf "Parent block:               %s" (show $ Queries.biBlockParent b),
+          printf "Last finalized block:       %s" (show $ Queries.biBlockLastFinalized b),
+          printf "Finalized:                  %s" (showYesNo $ Queries.biFinalized b),
+          printf "Receive time:               %s" (showTimeFormatted $ Queries.biBlockReceiveTime b),
+          printf "Arrive time:                %s" (showTimeFormatted $ Queries.biBlockArriveTime b)
         ]
             ++ maybeSlot (Queries.biBlockSlot b)
-            ++ [ printf "Block time:                 %s" (showTimeFormatted $ Queries.biBlockSlotTime b)
-               , printf "Height:                     %s" (show $ Queries.biBlockHeight b)
-               , printf "Height since last genesis:  %s" (show $ Queries.biEraBlockHeight b)
-               , printf "Genesis index:              %s" (show $ Queries.biGenesisIndex b)
-               , printf "Baker:                      %s" (showMaybe show $ Queries.biBlockBaker b)
-               , printf "Transaction count:          %d" (Queries.biTransactionCount b)
-               , printf "Transaction energy cost:    %s" (showNrg $ Queries.biTransactionEnergyCost b)
-               , printf "Transactions size:          %d" (Queries.biTransactionsSize b)
-               , printf "Protocol version:           %s" (show $ Queries.biProtocolVersion b)
+            ++ [ printf "Block time:                 %s" (showTimeFormatted $ Queries.biBlockSlotTime b),
+                 printf "Height:                     %s" (show $ Queries.biBlockHeight b),
+                 printf "Height since last genesis:  %s" (show $ Queries.biEraBlockHeight b),
+                 printf "Genesis index:              %s" (show $ Queries.biGenesisIndex b),
+                 printf "Baker:                      %s" (showMaybe show $ Queries.biBlockBaker b),
+                 printf "Transaction count:          %d" (Queries.biTransactionCount b),
+                 printf "Transaction energy cost:    %s" (showNrg $ Queries.biTransactionEnergyCost b),
+                 printf "Transactions size:          %d" (Queries.biTransactionsSize b),
+                 printf "Protocol version:           %s" (show $ Queries.biProtocolVersion b)
                ]
             ++ maybeRound (Queries.biRound b)
             ++ maybeEpoch (Queries.biEpoch b)
@@ -1372,31 +1363,31 @@ parseDescription = AE.withObject "Description" $ \obj -> do
 printIdentityProviders :: [IDTypes.IpInfo] -> Printer
 printIdentityProviders ipInfos = do
     tell
-        [ printf "Identity providers"
-        , printf "------------------"
+        [ printf "Identity providers",
+          printf "------------------"
         ]
     tell $ concatMap printSingleIdentityProvider ipInfos
   where
     printSingleIdentityProvider ipInfo =
-        [ printf "Identifier:     %s" $ show $ IDTypes.ipIdentity ipInfo
-        , printf "Description:    NAME %s" $ IDTypes.ipName ipInfo
-        , printf "                URL %s" $ IDTypes.ipUrl ipInfo
-        , printf "                %s" $ IDTypes.ipDescription ipInfo
+        [ printf "Identifier:     %s" $ show $ IDTypes.ipIdentity ipInfo,
+          printf "Description:    NAME %s" $ IDTypes.ipName ipInfo,
+          printf "                URL %s" $ IDTypes.ipUrl ipInfo,
+          printf "                %s" $ IDTypes.ipDescription ipInfo
         ]
 
 printAnonymityRevokers :: [ARTypes.ArInfo] -> Printer
 printAnonymityRevokers arInfos = do
     tell
-        [ printf "Anonymity revokers"
-        , printf "------------------"
+        [ printf "Anonymity revokers",
+          printf "------------------"
         ]
     tell $ concatMap printSingleAnonymityRevoker arInfos
   where
     printSingleAnonymityRevoker arInfo =
-        [ printf "Identifier:     %s" $ show $ ARTypes.arIdentity arInfo
-        , printf "Description:    NAME %s" $ ARTypes.arName arInfo
-        , printf "                URL %s" $ ARTypes.arUrl arInfo
-        , printf "                %s" $ ARTypes.arDescription arInfo
+        [ printf "Identifier:     %s" $ show $ ARTypes.arIdentity arInfo,
+          printf "Description:    NAME %s" $ ARTypes.arName arInfo,
+          printf "                URL %s" $ ARTypes.arUrl arInfo,
+          printf "                %s" $ ARTypes.arDescription arInfo
         ]
 
 -- AMOUNT AND ENERGY
@@ -1468,9 +1459,8 @@ showDuration = Text.unpack . durationToText
 printMap :: ((k, v) -> String) -> [(k, v)] -> Printer
 printMap s m = forM_ m $ \(k, v) -> tell [s (k, v)]
 
-{- |Standardized method of displaying a boolean as "yes" or "no"
- (for True and False, respectively).
--}
+-- |Standardized method of displaying a boolean as "yes" or "no"
+-- (for True and False, respectively).
 showYesNo :: Bool -> String
 showYesNo = bool "no" "yes"
 

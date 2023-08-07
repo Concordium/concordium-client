@@ -45,64 +45,62 @@ someCredId =
 exampleAccountConfigWithKeysAndName :: AccountConfig
 exampleAccountConfigWithKeysAndName =
     AccountConfig
-        { acAddr = NamedAddress{naNames = ["name"], naAddr = exampleAccountAddress1}
-        , acCids = Map.singleton 0 someCredId
-        , acKeys =
+        { acAddr = NamedAddress{naNames = ["name"], naAddr = exampleAccountAddress1},
+          acCids = Map.singleton 0 someCredId,
+          acKeys =
             Map.singleton 0 $
                 Map.fromList
-                    [
-                        ( 11
-                        , EncryptedAccountKeyPairEd25519
-                            { verifyKey = vk1
-                            , encryptedSignKey =
+                    [   ( 11,
+                          EncryptedAccountKeyPairEd25519
+                            { verifyKey = vk1,
+                              encryptedSignKey =
                                 EncryptedJSON
                                     ( EncryptedText
                                         { etMetadata =
                                             EncryptionMetadata
-                                                { emEncryptionMethod = AES256
-                                                , emKeyDerivationMethod = PBKDF2SHA256
-                                                , emIterations = 100000
-                                                , emSalt = fromBase64 "sQ8NG/fBLdLuuLd1ARlAqw=="
-                                                , emInitializationVector = fromBase64 "z6tTcT5ko8vS2utlwwNvbw=="
-                                                }
-                                        , etCipherText = fromBase64 "9ltKSJtlkiBXY/kU8huA4GoCaGNjy8M2Ym2SOtlg1ay6lfI9o95sXJ1cjcQ2b8gV+WddwS7ile8ZhIr8es58pTaM8PczlLbKBCSJ11R2iqw="
+                                                { emEncryptionMethod = AES256,
+                                                  emKeyDerivationMethod = PBKDF2SHA256,
+                                                  emIterations = 100000,
+                                                  emSalt = fromBase64 "sQ8NG/fBLdLuuLd1ARlAqw==",
+                                                  emInitializationVector = fromBase64 "z6tTcT5ko8vS2utlwwNvbw=="
+                                                },
+                                          etCipherText = fromBase64 "9ltKSJtlkiBXY/kU8huA4GoCaGNjy8M2Ym2SOtlg1ay6lfI9o95sXJ1cjcQ2b8gV+WddwS7ile8ZhIr8es58pTaM8PczlLbKBCSJ11R2iqw="
                                         }
                                     )
                             }
-                        )
-                    ,
-                        ( 2
-                        , EncryptedAccountKeyPairEd25519
-                            { verifyKey = vk2
-                            , encryptedSignKey =
+                        ),
+                        ( 2,
+                          EncryptedAccountKeyPairEd25519
+                            { verifyKey = vk2,
+                              encryptedSignKey =
                                 EncryptedJSON
                                     ( EncryptedText
                                         { etMetadata =
                                             EncryptionMetadata
-                                                { emEncryptionMethod = AES256
-                                                , emKeyDerivationMethod = PBKDF2SHA256
-                                                , emIterations = 100000
-                                                , emSalt = fromBase64 "slzkcKo8IPymU5t7jamGQQ=="
-                                                , emInitializationVector = fromBase64 "NXbbI8Cc3AXtaG/go+L+FA=="
-                                                }
-                                        , etCipherText = fromBase64 "hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY="
+                                                { emEncryptionMethod = AES256,
+                                                  emKeyDerivationMethod = PBKDF2SHA256,
+                                                  emIterations = 100000,
+                                                  emSalt = fromBase64 "slzkcKo8IPymU5t7jamGQQ==",
+                                                  emInitializationVector = fromBase64 "NXbbI8Cc3AXtaG/go+L+FA=="
+                                                },
+                                          etCipherText = fromBase64 "hV5NemYi36f3erxCE8sC/uUdHKe1+2OrP3JVYVtBeUqn3QrOm8dlJcAd4mk7ufogJVyv0OR56w/oKqQ7HG8/UycDYtBlubGRHE0Ym4LCoqY="
                                         }
                                     )
                             }
                         )
-                    ]
-        , acEncryptionKey =
+                    ],
+          acEncryptionKey =
             Just
                 EncryptedText
                     { etMetadata =
                         EncryptionMetadata
-                            { emEncryptionMethod = AES256
-                            , emIterations = 100000
-                            , emSalt = fromBase64 "w7pmsDi1K4bWf+zkLCuzVw=="
-                            , emInitializationVector = fromBase64 "EXhd7ctFeqKvaA0P/oB8wA=="
-                            , emKeyDerivationMethod = PBKDF2SHA256
-                            }
-                    , etCipherText = fromBase64 "pYvIywCAMLhvag1EJmGVuVezGsNvYn24zBnB6TCTkwEwOH50AOrx8NAZnVuQteZMQ7k7Kd7a1RorSxIQI1H/WX+Usi8f3VLnzdZFJmbk4Cme+dcgAbI+wWr0hisgrCDl"
+                            { emEncryptionMethod = AES256,
+                              emIterations = 100000,
+                              emSalt = fromBase64 "w7pmsDi1K4bWf+zkLCuzVw==",
+                              emInitializationVector = fromBase64 "EXhd7ctFeqKvaA0P/oB8wA==",
+                              emKeyDerivationMethod = PBKDF2SHA256
+                            },
+                      etCipherText = fromBase64 "pYvIywCAMLhvag1EJmGVuVezGsNvYn24zBnB6TCTkwEwOH50AOrx8NAZnVuQteZMQ7k7Kd7a1RorSxIQI1H/WX+Usi8f3VLnzdZFJmbk4Cme+dcgAbI+wWr0hisgrCDl"
                     }
         }
   where
@@ -127,9 +125,9 @@ exampleModuleNameMap = Map.fromList [("modA", modRef1), ("modB", modRef2)]
 exampleConfigBackup :: ConfigBackup
 exampleConfigBackup =
     ConfigBackup
-        { cbAccounts = [exampleAccountConfigWithKeysAndName]
-        , cbContractNameMap = exampleContractNameMap
-        , cbModuleNameMap = exampleModuleNameMap
+        { cbAccounts = [exampleAccountConfigWithKeysAndName],
+          cbContractNameMap = exampleContractNameMap,
+          cbModuleNameMap = exampleModuleNameMap
         }
 
 -- | Json generated by exporting exampleAccountConfigWithKeysAndName with v1 serialisation and no password

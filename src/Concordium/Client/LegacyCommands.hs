@@ -28,8 +28,8 @@ data LegacyCmd
       GetConsensusInfo
     | -- | Queries the gRPC server for the information of a specific block
       GetBlockInfo
-        { legacyEvery :: !Bool
-        , legacyBlockHash :: !(Maybe Text)
+        { legacyEvery :: !Bool,
+          legacyBlockHash :: !(Maybe Text)
         }
     | GetBlockPendingUpdates
         { legacyBlockHash :: !(Maybe Text)
@@ -48,9 +48,9 @@ data LegacyCmd
         } --  ^Queries the gRPC server for the finalization summary in a specific block.
     | -- | Queries the gRPC server for the list of blocks with a given height.
       GetBlocksAtHeight
-        { legacyBlockHeight :: !BlockHeight
-        , legacyFromGenesisIndex :: !(Maybe GenesisIndex)
-        , legacyRestrictToGenesis :: !(Maybe Bool)
+        { legacyBlockHeight :: !BlockHeight,
+          legacyFromGenesisIndex :: !(Maybe GenesisIndex),
+          legacyRestrictToGenesis :: !(Maybe Bool)
         }
     | -- | Queries the gRPC server for the list of accounts on a specific block
       GetAccountList
@@ -62,13 +62,13 @@ data LegacyCmd
         }
     | -- | Queries the gRPC server for the information of an account on a specific block
       GetAccountInfo
-        { legacyAddress :: !Text
-        , legacyBlockHash :: !(Maybe Text)
+        { legacyAddress :: !Text,
+          legacyBlockHash :: !(Maybe Text)
         }
     | -- | Queries the gRPC server for the status of a pool on a specific block
       GetPoolStatus
-        { legacyPool :: !(Maybe BakerId)
-        , legacyBlockHash :: !(Maybe Text)
+        { legacyPool :: !(Maybe BakerId),
+          legacyBlockHash :: !(Maybe Text)
         }
     | -- | Queries the gRPC server for the list of bakers on a specific block
       GetBakerList
@@ -76,13 +76,13 @@ data LegacyCmd
         }
     | -- | Queries the gRPC server for the information of an instance on a specific block
       GetInstanceInfo
-        { legacyContractAddress :: !Text
-        , legacyBlockHash :: !(Maybe Text)
+        { legacyContractAddress :: !Text,
+          legacyBlockHash :: !(Maybe Text)
         }
     | -- | Invokes a contract locally on the node.
       InvokeContract
-        { legacyContextFile :: !FilePath
-        , legacyBlockHash :: !(Maybe Text)
+        { legacyContextFile :: !FilePath,
+          legacyBlockHash :: !(Maybe Text)
         }
     | -- | Queries the gRPC server for the reward status on a specific block
       GetRewardStatus
@@ -99,17 +99,17 @@ data LegacyCmd
     | -- |Queries the gRPC server for the node information.
       GetNodeInfo
     | GetPeerData
-        { legacyIncludeBootstrapper :: !Bool
-        -- ^ Whether to include bootstrapper node in the stats or not.
+        { -- | Whether to include bootstrapper node in the stats or not.
+          legacyIncludeBootstrapper :: !Bool
         }
     | -- \^ Get all data as pertaining to the node's role as a member of the P2P network.
       PeerConnect
-        { legacyIp :: !Text
-        , legacyPortPC :: !Int
+        { legacyIp :: !Text,
+          legacyPortPC :: !Int
         }
     | PeerDisconnect
-        { legacyIp :: !Text
-        , legacyPortPC :: !Int
+        { legacyIp :: !Text,
+          legacyPortPC :: !Int
         }
     | GetPeerUptime
     | BanNode
@@ -119,17 +119,17 @@ data LegacyCmd
         { legacyNodeIp :: !Text
         }
     | GetAncestors
-        { legacyAmount :: !Int
-        , legacyBlockHash :: !(Maybe Text) -- defaults to last finalized block
+        { legacyAmount :: !Int,
+          legacyBlockHash :: !(Maybe Text) -- defaults to last finalized block
         }
     | GetBranches
     | GetBannedPeers
     | Shutdown
     | DumpStart
-        { legacyFilepath :: !Text
-        -- ^ Path of the file to write the dumped packages to
-        , legacyRaw :: !Bool
-        -- ^ Dump raw packages if true
+        { -- | Path of the file to write the dumped packages to
+          legacyFilepath :: !Text,
+          -- | Dump raw packages if true
+          legacyRaw :: !Bool
         }
     | DumpStop
     | GetIdentityProviders

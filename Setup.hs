@@ -16,7 +16,7 @@ autoConfHook desc flags = do
                         -- However profiling builds do not work with --dynamic, whereas this solution works regardless.
                             flags{configProgramArgs = ("ghc", map ("-optl-Wl,-rpath," ++) (configExtraLibDirs flags)) : configProgramArgs flags}
                         else flags
-             in confHook simpleUserHooks desc extraFlags
+            in  confHook simpleUserHooks desc extraFlags
         _ -> confHook simpleUserHooks desc flags
 
 main =

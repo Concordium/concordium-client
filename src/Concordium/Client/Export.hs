@@ -31,14 +31,14 @@ import Text.Printf
 
 -- |Format of keys in genesis per credential.
 data GenesisCredentialKeys = GenesisCredentialKeys
-    { gckKeys :: !(OrdMap.Map IDTypes.KeyIndex KeyPair)
-    , gckThreshold :: !IDTypes.SignatureThreshold
+    { gckKeys :: !(OrdMap.Map IDTypes.KeyIndex KeyPair),
+      gckThreshold :: !IDTypes.SignatureThreshold
     }
 
 -- |Format of keys in a genesis account.
 data GenesisAccountKeys = GenesisAccountKeys
-    { gakKeys :: OrdMap.Map IDTypes.CredentialIndex GenesisCredentialKeys
-    , gakThreshold :: !IDTypes.AccountThreshold
+    { gakKeys :: OrdMap.Map IDTypes.CredentialIndex GenesisCredentialKeys,
+      gakThreshold :: !IDTypes.AccountThreshold
     }
 
 -- |Credentials for genesis accounts.
@@ -57,9 +57,8 @@ instance AE.FromJSON GenesisAccountKeys where
         gakThreshold <- obj AE..: "threshold"
         return GenesisAccountKeys{..}
 
-{- |Get the list of keys suitable for signing. This will respect the thresholds
- so that the lists are no longer than the threshold that is specified.
--}
+-- |Get the list of keys suitable for signing. This will respect the thresholds
+-- so that the lists are no longer than the threshold that is specified.
 toKeysList :: GenesisAccountKeys -> [(IDTypes.CredentialIndex, [(IDTypes.KeyIndex, KeyPair)])]
 toKeysList GenesisAccountKeys{..} = take (fromIntegral gakThreshold) . fmap toKeysListCred . OrdMap.toAscList $ gakKeys
   where
@@ -70,16 +69,15 @@ type Environment = Text
 
 -- | An export format used by wallets including accounts and identities.
 data WalletExport = WalletExport
-    { wepAccounts :: ![WalletExportAccount]
-    , wepEnvironment :: !Text
-    -- ^ Environment for the accounts in the export, e.g., staging, testnet, mainnet, or something else.
+    { wepAccounts :: ![WalletExportAccount],
+      -- | Environment for the accounts in the export, e.g., staging, testnet, mainnet, or something else.
+      wepEnvironment :: !Text
     }
     deriving (Show)
 
-{- |Parse export from the wallet. The data that is exported depends a bit on
- which wallet it is, so the parser requires some context which is why this is
- a separate function, and not a @FromJSON@ instance.
--}
+-- |Parse export from the wallet. The data that is exported depends a bit on
+-- which wallet it is, so the parser requires some context which is why this is
+-- a separate function, and not a @FromJSON@ instance.
 parseWalletExport ::
     -- |The name of the account to import. The old mobile wallet export does not
     -- require this, but for the new mobile wallet export it is required, and parsing
@@ -138,10 +136,10 @@ instance AE.FromJSON WalletExportIdentity where
         return WalletExportIdentity{..}
 
 data WalletExportAccount = WalletExportAccount
-    { weaName :: !Text
-    , weaKeys :: !AccountSigningData
-    , weaCredMap :: !(OrdMap.Map IDTypes.CredentialIndex IDTypes.CredentialRegistrationID)
-    , weaEncryptionKey :: !(Maybe ElgamalSecretKey)
+    { weaName :: !Text,
+      weaKeys :: !AccountSigningData,
+      weaCredMap :: !(OrdMap.Map IDTypes.CredentialIndex IDTypes.CredentialRegistrationID),
+      weaEncryptionKey :: !(Maybe ElgamalSecretKey)
     }
     deriving (Show)
 
@@ -167,22 +165,21 @@ instance AE.FromJSON WalletExportAccount where
         credential :: IDTypes.AccountCredentialWithProofs <- (vValue <$> (v .: "credential")) >>= AE.withObject "Credential" (.: "credential")
         return
             WalletExportAccount
-                { weaName = name
-                , weaKeys =
+                { weaName = name,
+                  weaKeys =
                     AccountSigningData
-                        { asdAddress = addr
-                        , asdKeys = keys
-                        , asdThreshold = th
-                        }
-                , weaCredMap = OrdMap.singleton 0 (IDTypes.credId credential)
-                , weaEncryptionKey = e
+                        { asdAddress = addr,
+                          asdKeys = keys,
+                          asdThreshold = th
+                        },
+                  weaCredMap = OrdMap.singleton 0 (IDTypes.credId credential),
+                  weaEncryptionKey = e
                 }
 
-{- | Decode, potentially decrypt and parse a wallet export. The function asks
- for the password when it is needed. If importing the old mobile wallet export
- then the keys are encrypted using the same password that is used for
- decrypting the export.w
--}
+-- | Decode, potentially decrypt and parse a wallet export. The function asks
+-- for the password when it is needed. If importing the old mobile wallet export
+-- then the keys are encrypted using the same password that is used for
+-- decrypting the export.w
 decodeMobileFormattedAccountExport ::
     -- | JSON with accounts and identities, this can either be encrypted or not. If it is encrypted it must be encrypted
     -- using the format expected of an 'EncryptedJSON WalletExport'.
@@ -208,11 +205,10 @@ decodeMobileFormattedAccountExport jsonBS accountName passwordAct = runExceptT $
                     password <- liftIO passwordAct
                     (,wepEnvironment) <$> accountCfgsFromWalletExportAccounts wepAccounts accountName password
 
-{- | Convert one or all wallet export accounts to regular account configs.
- This encrypts all signing keys with the provided password.
- If name is provided, only the account with matching name (if any) is converted.
- Otherwise they all are. Names to be imported are checked to be valid.
--}
+-- | Convert one or all wallet export accounts to regular account configs.
+-- This encrypts all signing keys with the provided password.
+-- If name is provided, only the account with matching name (if any) is converted.
+-- Otherwise they all are. Names to be imported are checked to be valid.
 accountCfgsFromWalletExportAccounts :: [WalletExportAccount] -> Maybe Text -> Password -> ExceptT String IO [AccountConfig]
 accountCfgsFromWalletExportAccounts weas name pwd = do
     selectedAccounts <-
@@ -221,14 +217,13 @@ accountCfgsFromWalletExportAccounts weas name pwd = do
             Just n -> case Prelude.filter ((== n) . weaName) weas of
                 [] ->
                     let possibleNames = showNameList . Prelude.map weaName $ weas
-                     in throwError [i|An account named '#{n}' does not exist. Possible account names: #{possibleNames}.|]
+                    in  throwError [i|An account named '#{n}' does not exist. Possible account names: #{possibleNames}.|]
                 namesFound -> return namesFound
     forM selectedAccounts $ accountCfgFromWalletExportAccount pwd
 
-{- |Convert a wallet export account to a regular account config.
- This checks whether the name provided by the export is a valid account name.
- This encrypts all signing keys with the provided password.
--}
+-- |Convert a wallet export account to a regular account config.
+-- This checks whether the name provided by the export is a valid account name.
+-- This encrypts all signing keys with the provided password.
 accountCfgFromWalletExportAccount :: Password -> WalletExportAccount -> ExceptT String IO AccountConfig
 accountCfgFromWalletExportAccount pwd WalletExportAccount{weaKeys = AccountSigningData{..}, ..} = do
     name <- liftIO $ ensureValidName weaName
@@ -238,23 +233,22 @@ accountCfgFromWalletExportAccount pwd WalletExportAccount{weaKeys = AccountSigni
         Just ek -> liftIO . fmap Just $ encryptAccountEncryptionSecretKey pwd ek
     return $
         AccountConfig
-            { acAddr = NamedAddress{naNames = [name], naAddr = asdAddress}
-            , acCids = weaCredMap
-            , ..
+            { acAddr = NamedAddress{naNames = [name], naAddr = asdAddress},
+              acCids = weaCredMap,
+              ..
             }
   where
     ensureValidName name =
         let trimmedName = T.strip name
-         in case validateAccountName trimmedName of
+        in  case validateAccountName trimmedName of
                 Left err -> do
                     logError [err]
                     putStr "Input valid replacement name: "
                     T.getLine >>= ensureValidName
                 Right () -> return trimmedName
 
-{- |Decode and parse a genesis account into a named account config.
- All signing keys are encrypted with the given password.
--}
+-- |Decode and parse a genesis account into a named account config.
+-- All signing keys are encrypted with the given password.
 decodeGenesisFormattedAccountExport ::
     -- | JSON with the account information.
     BS.ByteString ->
@@ -282,18 +276,18 @@ decodeGenesisFormattedAccountExport payload name pwd = runExceptT $ do
             acEncryptionKey <- Just <$> (liftIO $ encryptAccountEncryptionSecretKey pwd accEncryptionKey)
             return
                 AccountConfig
-                    { acAddr = NamedAddress{naNames = maybeToList name, naAddr = addr}
-                    , acCids = IDTypes.credId <$> (gcCredentials . vValue $ cmap)
-                    , ..
+                    { acAddr = NamedAddress{naNames = maybeToList name, naAddr = addr},
+                      acCids = IDTypes.credId <$> (gcCredentials . vValue $ cmap),
+                      ..
                     }
 
 ---- Code for instantiating, exporting and importing config backups
 
 -- | An export format used for config backups.
 data ConfigBackup = ConfigBackup
-    { cbAccounts :: [AccountConfig]
-    , cbContractNameMap :: ContractNameMap
-    , cbModuleNameMap :: ModuleNameMap
+    { cbAccounts :: [AccountConfig],
+      cbContractNameMap :: ContractNameMap,
+      cbModuleNameMap :: ModuleNameMap
     }
     deriving (Eq, Show)
 
@@ -308,16 +302,14 @@ instance AE.FromJSON ConfigBackup where
 instance AE.ToJSON ConfigBackup where
     toJSON ConfigBackup{..} = AE.toJSON $ Versioned configBackupVersion (cbAccounts, cbContractNameMap, cbModuleNameMap)
 
-{- | Currently supported version of the config backup.
- Imports from older versions might be possible, but exports are going to use only this version.
--}
+-- | Currently supported version of the config backup.
+-- Imports from older versions might be possible, but exports are going to use only this version.
 configBackupVersion :: Version
 configBackupVersion = 1
 
-{- | Encode and encrypt the config Json, for writing to a file, optionally protected under a password.
- The output artifact is an object with two fields, "type" and "contents", with "type" being either unencrypted or encrypted
- and contents being the actual data, in either encrypted or unencrypted formats.
--}
+-- | Encode and encrypt the config Json, for writing to a file, optionally protected under a password.
+-- The output artifact is an object with two fields, "type" and "contents", with "type" being either unencrypted or encrypted
+-- and contents being the actual data, in either encrypted or unencrypted formats.
 configExport ::
     -- | The contents to back up.
     ConfigBackup ->

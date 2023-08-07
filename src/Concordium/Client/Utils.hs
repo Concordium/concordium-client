@@ -17,22 +17,19 @@ import qualified Data.Text.Lazy.Encoding as Lazy.Text
 import Data.Word (Word64)
 import Text.Read
 
-{- | In the 'Left' case of an 'Either', transform the error using the given function and
- "rethrow" it in the current 'MonadError'.
--}
+-- | In the 'Left' case of an 'Either', transform the error using the given function and
+-- "rethrow" it in the current 'MonadError'.
 embedErr :: MonadError e m => Either e' a -> (e' -> e) -> m a
 embedErr (Left x) f = throwError (f x)
 embedErr (Right a) _ = return a
 
-{- | In the 'Left' case of an 'Either', transform the error using the given function and
- "rethrow" it in the current 'MonadError'.
--}
+-- | In the 'Left' case of an 'Either', transform the error using the given function and
+-- "rethrow" it in the current 'MonadError'.
 failWith :: MonadError e m => m (Either e' a) -> (e' -> e) -> m a
 failWith act f = act >>= flip embedErr f
 
-{- |Like 'failWith', but use MonadFail and just fail with the given message
- without tranforming it.
--}
+-- |Like 'failWith', but use MonadFail and just fail with the given message
+-- without tranforming it.
 failOnError :: MonadFail m => m (Either String a) -> m a
 failOnError act =
     act
@@ -51,10 +48,9 @@ embedErrIOM action f = do
     v <- action
     v `embedErrIO` f
 
-{- |Try to parse an amount from a string, and if failing, try to inform the user
- what the expected format is. This is intended to be used by the options
- parsers.
--}
+-- |Try to parse an amount from a string, and if failing, try to inform the user
+-- what the expected format is. This is intended to be used by the options
+-- parsers.
 amountFromStringInform :: String -> Either String Amount
 amountFromStringInform s =
     case amountFromString s of
@@ -67,10 +63,9 @@ amountFractionFromStringInform s =
         Just a -> Right a
         Nothing -> Left $ "Invalid decimal fraction '" ++ s ++ "'. A decimal fractions must be a decimal number n.m between 0 and 1 (both inclusive), and with at most 5 digits of precision."
 
-{- |Try to parse a KeyIndex from a string, and if failing, try to inform the user
- what the expected format is. This is intended to be used by the options
- parsers.
--}
+-- |Try to parse a KeyIndex from a string, and if failing, try to inform the user
+-- what the expected format is. This is intended to be used by the options
+-- parsers.
 indexFromStringInform :: String -> Either String IDTypes.KeyIndex
 indexFromStringInform s =
     case readMaybe s :: Maybe Integer of
@@ -79,20 +74,18 @@ indexFromStringInform s =
   where
     errString = "Invalid KeyIndex. A KeyIndex must be an integer between 0 and 255 inclusive."
 
-{- |Try to parse a credential id from string, and if failing, try to inform the user
- what the expected format is. This is intended to be used by the options
- parsers.
--}
+-- |Try to parse a credential id from string, and if failing, try to inform the user
+-- what the expected format is. This is intended to be used by the options
+-- parsers.
 credIdFromStringInform :: String -> Either String IDTypes.CredentialRegistrationID
 credIdFromStringInform s =
     case deserializeBase16 (Text.pack s) of
         Just a -> Right a
         Nothing -> Left $ "Invalid credential registration ID."
 
-{- |Try to parse `Energy` from a string, and, if failing, inform the user
- what the expected format and bounds are.
- This is intended to be used by the options parsers.
--}
+-- |Try to parse `Energy` from a string, and, if failing, inform the user
+-- what the expected format and bounds are.
+-- This is intended to be used by the options parsers.
 energyFromStringInform :: String -> Either String Energy
 energyFromStringInform s =
     -- Reading negative numbers directly to Energy (i.e. Word64) silently underflows, so this approach is necessary.
@@ -107,10 +100,9 @@ energyFromStringInform s =
     nrgMinBound = 0
     nrgMaxBound = fromIntegral (maxBound :: Energy)
 
-{- |Try to parse an account alias counter from a string, and, if failing, inform
- the user what the expected format and bounds are. This is intended to be used
- by the options parsers.
--}
+-- |Try to parse an account alias counter from a string, and, if failing, inform
+-- the user what the expected format and bounds are. This is intended to be used
+-- by the options parsers.
 aliasFromStringInform :: String -> Either String Word
 aliasFromStringInform s =
     -- Reading negative numbers directly to Word silently underflows, so this approach is necessary.
@@ -179,12 +171,11 @@ hrInMs = 60 * minInMs
 dayInMs :: Word64
 dayInMs = 24 * hrInMs
 
-{- |Convert a duration in milliseconds into text with a list of duration measures separated by a space.
- A measure is a non-negative integer followed by the unit (with no whitespace in between).
- The support units are: days (d), hours (h), minutes (m), seconds (s), milliseconds (ms).
- Measures that are 0 are omitted from the output (see example, where 'd' and 'ms' are omitted).
- Example: 5022000 -> "1h 23m 42s".
--}
+-- |Convert a duration in milliseconds into text with a list of duration measures separated by a space.
+-- A measure is a non-negative integer followed by the unit (with no whitespace in between).
+-- The support units are: days (d), hours (h), minutes (m), seconds (s), milliseconds (ms).
+-- Measures that are 0 are omitted from the output (see example, where 'd' and 'ms' are omitted).
+-- Example: 5022000 -> "1h 23m 42s".
 durationToText :: Word64 -> Text.Text
 durationToText t =
     Text.intercalate " " . mapMaybe showTimeUnit $
@@ -202,13 +193,12 @@ durationToText t =
             then Nothing
             else Just [i|#{value}#{unit}|]
 
-{- |Parse a string containing a list of duration measures separated by
- spaces. A measure is a non-negative integer followed by a unit (no whitespace is allowed in between).
- Every measure is accumulated into a duration. The string is allowed to contain
- any number of measures with the same unit in no particular order.
- The support units are: days (d), hours (h), minutes (m), seconds (s), milliseconds (ms).
- Example: "1d 2h 3m 2d 1h" -> Right 270180000
--}
+-- |Parse a string containing a list of duration measures separated by
+-- spaces. A measure is a non-negative integer followed by a unit (no whitespace is allowed in between).
+-- Every measure is accumulated into a duration. The string is allowed to contain
+-- any number of measures with the same unit in no particular order.
+-- The support units are: days (d), hours (h), minutes (m), seconds (s), milliseconds (ms).
+-- Example: "1d 2h 3m 2d 1h" -> Right 270180000
 textToDuration :: Text.Text -> Either String Word64
 textToDuration t = mapM measureToMs measures >>= Right . sum
   where

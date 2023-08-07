@@ -1,6 +1,5 @@
-{- | Signed and unsigned 128-bit integer types.
-   Used as values for contract schema types UInt128 and Int128.
--}
+-- | Signed and unsigned 128-bit integer types.
+--   Used as values for contract schema types UInt128 and Int128.
 module Data.DoubleWord where
 
 import qualified Data.Bits as Bits
@@ -9,14 +8,13 @@ import qualified Data.Serialize as S
 import Data.Word (Word64)
 import Text.Read (readMaybe)
 
-{- | 128-bit unsigned integer type.
-   Serialization instance uses big-endian encoding as is normal for integral type Serialize instances.
--}
+-- | 128-bit unsigned integer type.
+--   Serialization instance uses big-endian encoding as is normal for integral type Serialize instances.
 data Word128 = Word128
-    { word128Lo64 :: !Word64
-    -- ^ Least significant 64 bits.
-    , word128Hi64 :: !Word64
-    -- ^ Most significant 64 bits.
+    { -- | Least significant 64 bits.
+      word128Lo64 :: !Word64,
+      -- | Most significant 64 bits.
+      word128Hi64 :: !Word64
     }
     deriving (Eq)
 
@@ -59,22 +57,21 @@ integerToWord128 x
     | otherwise =
         Right $
             Word128
-                { word128Lo64 = fromIntegral x
-                , word128Hi64 = fromIntegral $ x `Bits.shiftR` 64
+                { word128Lo64 = fromIntegral x,
+                  word128Hi64 = fromIntegral $ x `Bits.shiftR` 64
                 }
   where
     minBnd = 0
     maxBnd = 2 ^ (128 :: Int) - 1
 
-{- | 128-bit signed integer type.
-   Serialization instance uses big-endian encoding as is normal for integral type Serialize instances.
- This uses two's complement representation to represent positive and negative numbers.
--}
+-- | 128-bit signed integer type.
+--   Serialization instance uses big-endian encoding as is normal for integral type Serialize instances.
+-- This uses two's complement representation to represent positive and negative numbers.
 data Int128 = Int128
-    { int128Lo64 :: !Word64
-    -- ^ Least significant 64 bits.
-    , int128Hi64 :: !Word64
-    -- ^ Most significant 64 bits.
+    { -- | Least significant 64 bits.
+      int128Lo64 :: !Word64,
+      -- | Most significant 64 bits.
+      int128Hi64 :: !Word64
     }
     deriving (Eq)
 
@@ -111,8 +108,8 @@ integerToInt128 x
     | otherwise =
         Right $
             Int128
-                { int128Lo64 = fromIntegral x
-                , int128Hi64 = fromIntegral $ x `Bits.shiftR` 64
+                { int128Lo64 = fromIntegral x,
+                  int128Hi64 = fromIntegral $ x `Bits.shiftR` 64
                 }
   where
     minBnd = -2 ^ (127 :: Int)

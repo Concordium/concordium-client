@@ -25,19 +25,19 @@ import Options.Applicative
 import System.Exit
 
 data TxOptions = TxOptions
-    { tps :: !Int
-    -- ^How many transactions to send per second.
-    , logit :: !Bool
-    -- ^Whether to output a log after each transaction that is sent.
-    , keysFile :: !FilePath
-    -- ^File with JSON encoded keys for the source account.
-    , receiversFile :: !(Maybe FilePath)
-    -- ^Optional file with addresses and (optionally) public keys of the accounts to send to.
-    -- If not given or empty all transfers will be self-transfers.
-    -- This option is mandatory if encrypted transfers are desired.
-    -- The format of the file should be a JSON array of objects with keys "address" and "encryptionPublicKey", the latter being optional.
-    , encrypted :: !Bool
-    -- ^If this is `True` then we send encrypted transfer transactions.
+    { -- |How many transactions to send per second.
+      tps :: !Int,
+      -- |Whether to output a log after each transaction that is sent.
+      logit :: !Bool,
+      -- |File with JSON encoded keys for the source account.
+      keysFile :: !FilePath,
+      -- |Optional file with addresses and (optionally) public keys of the accounts to send to.
+      -- If not given or empty all transfers will be self-transfers.
+      -- This option is mandatory if encrypted transfers are desired.
+      -- The format of the file should be a JSON array of objects with keys "address" and "encryptionPublicKey", the latter being optional.
+      receiversFile :: !(Maybe FilePath),
+      -- |If this is `True` then we send encrypted transfer transactions.
+      encrypted :: !Bool
     }
 
 txOptions :: Parser TxOptions
@@ -127,11 +127,11 @@ main = do
                     let txBody n = encodePayload (Transfer (txRecepient n) 1)
                     let txHeader thExpiry nonce =
                             TransactionHeader
-                                { thSender = selfAddress
-                                , thNonce = nonce
-                                , thEnergyAmount = 1500
-                                , thPayloadSize = payloadSize (txBody nonce)
-                                , ..
+                                { thSender = selfAddress,
+                                  thNonce = nonce,
+                                  thEnergyAmount = 1500,
+                                  thPayloadSize = payloadSize (txBody nonce),
+                                  ..
                                 }
                     let sign nonce () = do
                             -- set expiry for 1h from now so that the transaction will be accepted by the node.
@@ -167,11 +167,11 @@ main = do
                             return (encodePayload (EncryptedAmountTransfer address eatd), (eatdRemainingAmount eatd, decryptedAmount))
                     let txHeader thExpiry nonce body =
                             TransactionHeader
-                                { thSender = selfAddress
-                                , thNonce = nonce
-                                , thEnergyAmount = encryptedTransferEnergyCost (payloadSize body) (length keysList)
-                                , thPayloadSize = payloadSize body
-                                , ..
+                                { thSender = selfAddress,
+                                  thNonce = nonce,
+                                  thEnergyAmount = encryptedTransferEnergyCost (payloadSize body) (length keysList),
+                                  thPayloadSize = payloadSize body,
+                                  ..
                                 }
                     let sign nonce carry = do
                             ct <- utcTimeToTransactionTime <$> getCurrentTime

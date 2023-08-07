@@ -18,9 +18,8 @@ import qualified Data.Aeson.TH as AETH
 import Data.Text hiding (length, map)
 import GHC.Generics (Generic)
 
-{- | Base cost of checking the transaction. The cost is always at least this,
- but in most cases it will have a transaction specific cost.
--}
+-- | Base cost of checking the transaction. The cost is always at least this,
+-- but in most cases it will have a transaction specific cost.
 minimumCost ::
     -- | Size of the transaction payload in bytes
     PayloadSize ->
@@ -32,9 +31,8 @@ minimumCost psize numSigs = Cost.baseCost totalSize numSigs
     -- the total size of the transaction. The +1 is for the payload tag.
     totalSize = fromIntegral psize + Types.transactionHeaderSize
 
-{- |Cost of a simple transfer transaction.
- This must be kept in sync with the cost in Concordium.Scheduler.Cost
--}
+-- |Cost of a simple transfer transaction.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 simpleTransferEnergyCost ::
     -- |Size of the payload
     PayloadSize ->
@@ -46,9 +44,8 @@ simpleTransferEnergyCost psize numSigs = minimumCost psize numSigs + Cost.simple
 simpleTransferPayloadSize :: PayloadSize
 simpleTransferPayloadSize = 41
 
-{- |Cost of an encrypted transfer transaction.
- This must be kept in sync with the cost in Concordium.Scheduler.Cost
--}
+-- |Cost of an encrypted transfer transaction.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 encryptedTransferEnergyCost ::
     -- |Size of the payload
     PayloadSize ->
@@ -60,9 +57,8 @@ encryptedTransferEnergyCost psize numSigs = minimumCost psize numSigs + Cost.enc
 encryptedTransferPayloadSize :: PayloadSize
 encryptedTransferPayloadSize = 2617
 
-{- |Cost of updating the account keys.
- This must be kept in sync with Concordium.Scheduler.Cost
--}
+-- |Cost of updating the account keys.
+-- This must be kept in sync with Concordium.Scheduler.Cost
 accountUpdateKeysEnergyCost ::
     -- |Size of the payload
     PayloadSize ->
@@ -75,9 +71,8 @@ accountUpdateKeysEnergyCost ::
     Energy
 accountUpdateKeysEnergyCost psize credentialCount keyCount numSigs = minimumCost psize numSigs + Cost.updateCredentialKeysCost credentialCount keyCount
 
-{- |Cost of updating the credentials.
- This must be kept in sync with Concordium.Scheduler.Cost
--}
+-- |Cost of updating the credentials.
+-- This must be kept in sync with Concordium.Scheduler.Cost
 accountUpdateCredentialsEnergyCost ::
     -- | Size of the entire payload
     PayloadSize ->
@@ -90,9 +85,8 @@ accountUpdateCredentialsEnergyCost ::
     Energy
 accountUpdateCredentialsEnergyCost psize credentialCount keyCountList numSigs = minimumCost psize numSigs + Cost.updateCredentialsCost credentialCount keyCountList
 
-{- |Cost of a baker add transaction.
- This must be kept in sync with the cost in Concordium.Scheduler.Cost
--}
+-- |Cost of a baker add transaction.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 bakerAddEnergyCost ::
     -- |Size of the payload
     PayloadSize ->
@@ -149,9 +143,8 @@ bakerConfigurePayloadSize hasCapital hasRestake hasPoolOpen hasKeys mMetadata ha
         + (if hasBCom then 4 else 0)
         + (if hasFCom then 4 else 0)
 
-{- |Cost of a baker set account transaction.
- This must be kept in sync with the cost in Concordium.Scheduler.Cost
--}
+-- |Cost of a baker set account transaction.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 bakerSetKeysEnergyCost ::
     -- |Size of the payload
     PayloadSize ->
@@ -160,9 +153,8 @@ bakerSetKeysEnergyCost ::
     Energy
 bakerSetKeysEnergyCost psize numSigs = minimumCost psize numSigs + Cost.updateBakerKeysCost
 
-{- |Cost of a baker remove transaction.
- This must be kept in sync with the cost in Concordium.Scheduler.Cost
--}
+-- |Cost of a baker remove transaction.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 bakerRemoveEnergyCost ::
     -- |Size of the payload
     PayloadSize ->
@@ -171,9 +163,8 @@ bakerRemoveEnergyCost ::
     Energy
 bakerRemoveEnergyCost psize numSigs = minimumCost psize numSigs + Cost.removeBakerCost
 
-{- |Cost to update a baker's stake.
- This must be kept in sync with the cost in Concordium.Scheduler.Cost
--}
+-- |Cost to update a baker's stake.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 bakerUpdateStakeEnergyCost ::
     -- |Size of the payload
     PayloadSize ->
@@ -182,9 +173,8 @@ bakerUpdateStakeEnergyCost ::
     Energy
 bakerUpdateStakeEnergyCost psize numSigs = minimumCost psize numSigs + Cost.updateBakerStakeCost
 
-{- |Cost to update a baker's re-staking option.
- This must be kept in sync with the cost in Concordium.Scheduler.Cost
--}
+-- |Cost to update a baker's re-staking option.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 bakerUpdateRestakeEnergyCost ::
     -- |Size of the payload
     PayloadSize ->
@@ -231,9 +221,8 @@ updateDelegationPayloadSize updAmt updRestake updTarget targetPassiveDelegation 
 removeDelegationPayloadSize :: PayloadSize
 removeDelegationPayloadSize = 11
 
-{- |Cost of moving funds from public to encrypted amount of an account.
- This must be kept in sync with the cost in Concordium.Scheduler.Cost
--}
+-- |Cost of moving funds from public to encrypted amount of an account.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 accountEncryptEnergyCost ::
     -- |Size of the payload
     PayloadSize ->
@@ -245,9 +234,8 @@ accountEncryptEnergyCost psize numSigs = minimumCost psize numSigs + Cost.transf
 accountEncryptPayloadSize :: PayloadSize
 accountEncryptPayloadSize = 9
 
-{- |Cost of moving funds from encrypted to public balance of an account.
- This must be kept in sync with the cost in Concordium.Scheduler.Cost
--}
+-- |Cost of moving funds from encrypted to public balance of an account.
+-- This must be kept in sync with the cost in Concordium.Scheduler.Cost
 accountDecryptEnergyCost ::
     -- |Size of the payload
     PayloadSize ->
@@ -276,19 +264,18 @@ transferWithSchedulePayloadSize ::
     PayloadSize
 transferWithSchedulePayloadSize numRels = 32 + 1 + 1 + fromIntegral numRels * 16
 
-{- |Transaction header type
- To be populated when deserializing a JSON object.
--}
+-- |Transaction header type
+-- To be populated when deserializing a JSON object.
 data TransactionJSONHeader = TransactionJSONHeader
-    { thSenderAddress :: IDTypes.AccountAddress
-    -- ^Address of the sender.
-    , thNonce :: Maybe Nonce
-    -- ^Nonce of the account. If not present it should be derived
-    -- from the context or queried to the state
-    , thEnergyAmount :: Energy
-    -- ^Amount dedicated for the execution of this transaction.
-    , thExpiry :: TransactionExpiryTime
-    -- ^Absolute time after which transaction will not be executed.
+    { -- |Address of the sender.
+      thSenderAddress :: IDTypes.AccountAddress,
+      -- |Nonce of the account. If not present it should be derived
+      -- from the context or queried to the state
+      thNonce :: Maybe Nonce,
+      -- |Amount dedicated for the execution of this transaction.
+      thEnergyAmount :: Energy,
+      -- |Absolute time after which transaction will not be executed.
+      thExpiry :: TransactionExpiryTime
     }
     deriving (Eq, Show)
 
@@ -305,35 +292,35 @@ data TransactionJSONPayload
         }
     | -- | Initializes a specific Contract in a Module
       InitContract
-        { amount :: !Amount
-        , moduleName :: !Text
-        , contractName :: !Text
-        , parameter :: !Text
+        { amount :: !Amount,
+          moduleName :: !Text,
+          contractName :: !Text,
+          parameter :: !Text
         }
     | -- | Sends a specific message to a Contract
       Update
-        { moduleName :: !Text
-        , amount :: !Amount
-        , address :: !ContractAddress
-        , message :: !Text
+        { moduleName :: !Text,
+          amount :: !Amount,
+          address :: !ContractAddress,
+          message :: !Text
         }
     | -- | Transfers specific amount to the recipent
       Transfer
-        { toaddress :: !IDTypes.AccountAddress
-        , amount :: !Amount
+        { toaddress :: !IDTypes.AccountAddress,
+          amount :: !Amount
         }
     | RemoveBaker
     | TransferToEncrypted
-        { tteAmount :: !Amount
-        -- ^Amount to transfer from public to encrypted balance of the account.
+        { -- |Amount to transfer from public to encrypted balance of the account.
+          tteAmount :: !Amount
         }
     | TransferToPublic
-        { ttpData :: !SecToPubAmountTransferData
-        -- ^Amount the user wishes to transfer to the public balance.
+        { -- |Amount the user wishes to transfer to the public balance.
+          ttpData :: !SecToPubAmountTransferData
         }
     | EncryptedAmountTransfer
-        { eatTo :: !AccountAddress
-        , eatData :: !EncryptedAmountTransferData
+        { eatTo :: !AccountAddress,
+          eatData :: !EncryptedAmountTransferData
         }
     deriving (Show, Generic)
 
@@ -346,9 +333,9 @@ AETH.deriveFromJSON
 
 -- |Transaction as retrieved from a JSON object
 data TransactionJSON = TransactionJSON
-    { metadata :: TransactionJSONHeader
-    , payload :: TransactionJSONPayload
-    , keys :: AccountKeyMap
+    { metadata :: TransactionJSONHeader,
+      payload :: TransactionJSONPayload,
+      keys :: AccountKeyMap
     }
     deriving (Generic, Show)
 

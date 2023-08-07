@@ -38,13 +38,12 @@ import Prelude hiding (fail, log)
 
 data Level = Info | Warn | Err deriving (Eq)
 
-{- |Log a list of sentences. The sentences are pretty printed (capital first letter and dot at the end),
- so the input messages should only contain capital letters for names and have no dot suffix.
- Sentences will be joined on the same line as long as the resulting line doesn't exceed 90 chars.
- Depending on the log level, an appropriate prefix is added to the first line.
- All lines will be indented such that they align with the first line
- (i.e. as if they had all been prefixed).
--}
+-- |Log a list of sentences. The sentences are pretty printed (capital first letter and dot at the end),
+-- so the input messages should only contain capital letters for names and have no dot suffix.
+-- Sentences will be joined on the same line as long as the resulting line doesn't exceed 90 chars.
+-- Depending on the log level, an appropriate prefix is added to the first line.
+-- All lines will be indented such that they align with the first line
+-- (i.e. as if they had all been prefixed).
 log :: MonadIO m => Level -> Maybe Color -> [String] -> m ()
 log lvl color msgs = do
     let doc = prefix <+> fsep (expandLines $ map (prettyMsg ".") msgs)
@@ -102,9 +101,8 @@ logExit msgs = logInfo msgs >> liftIO exitSuccess
 expandLines :: [String] -> [Doc]
 expandLines = map $ vcat . map text . lines
 
-{- |Ensure that a string is printable as a sentence by converting the first letter to upper case
- and, unless it already ends with "standard" punctuation, appending the provided punctionation.
--}
+-- |Ensure that a string is printable as a sentence by converting the first letter to upper case
+-- and, unless it already ends with "standard" punctuation, appending the provided punctionation.
 prettyMsg :: String -> String -> String
 prettyMsg punctuation = \case
     "" -> ""
@@ -113,7 +111,7 @@ prettyMsg punctuation = \case
                 if null xs || last xs `elem` p
                     then xs
                     else xs ++ punctuation
-         in (C.toUpper x) : s
+        in  (C.toUpper x) : s
   where
     p = ".,:;?!{}" :: String
 
@@ -123,10 +121,9 @@ logStr = liftIO . hPutStr stderr
 logStrLn :: MonadIO m => String -> m ()
 logStrLn = liftIO . hPutStrLn stderr
 
-{- |Ask the user to "confirm" on stdin and return the result.
- Note that this only appends " [yN]: " if the prompt does not end in
- one of ".,:;?!{}"
--}
+-- |Ask the user to "confirm" on stdin and return the result.
+-- Note that this only appends " [yN]: " if the prompt does not end in
+-- one of ".,:;?!{}"
 askConfirmation :: MonadIO m => Maybe String -> m Bool
 askConfirmation prompt = liftIO $ do
     putStr $ prettyMsg " [yN]: " $ fromMaybe defaultPrompt prompt
@@ -161,9 +158,8 @@ createPasswordInteractive descr = runExceptT $ do
     unless (pwd' == pwd) $ throwError "the passwords do not match"
     return pwd
 
-{- | Decrypt the given encrypted account keys. For each key, this asks for the respective password
- presenting the key index to the user.
--}
+-- | Decrypt the given encrypted account keys. For each key, this asks for the respective password
+-- presenting the key index to the user.
 decryptAccountKeyMapInteractive ::
     EncryptedAccountKeyMap ->
     Maybe (OrdMap.Map ID.CredentialIndex [ID.KeyIndex]) ->
@@ -191,7 +187,7 @@ decryptAccountKeyMapInteractive encryptedKeyMap indexmap accDescr = runExceptT $
                             Nothing -> False
                             Just keyIndexList -> kidx `elem` keyIndexList
                     newmap = OrdMap.mapWithKey (\credIndex m -> OrdMap.filterWithKey (\k _ -> lookUpKey credIndex k) m) filterCredentials
-                 in newmap
+                in  newmap
     sequence $
         OrdMap.mapWithKey
             ( \credIndex eKpMap ->
@@ -231,8 +227,8 @@ timeFromTransactionExpiryTime = posixSecondsToUTCTime . fromIntegral . ttsSecond
 ----------------------------------------------------------------------------------------------------
 
 data BirkParametersResult = BirkParametersResult
-    { bprElectionNonce :: LeadershipElectionNonce
-    , -- , bprElectionDifficulty :: ElectionDifficulty
+    { bprElectionNonce :: LeadershipElectionNonce,
+      -- , bprElectionDifficulty :: ElectionDifficulty
       bprBakers :: [BirkParametersBakerResult]
     }
 
@@ -244,9 +240,9 @@ instance AE.FromJSON BirkParametersResult where
         return $ BirkParametersResult{..}
 
 data BirkParametersBakerResult = BirkParametersBakerResult
-    { bpbrId :: BakerId
-    , bpbrLotteryPower :: Double
-    , bpbrAccount :: IDTypes.AccountAddress
+    { bpbrId :: BakerId,
+      bpbrLotteryPower :: Double,
+      bpbrAccount :: IDTypes.AccountAddress
     }
 
 instance AE.FromJSON BirkParametersBakerResult where
@@ -257,19 +253,19 @@ instance AE.FromJSON BirkParametersBakerResult where
         return $ BirkParametersBakerResult{..}
 
 data BakerKeys = BakerKeys
-    { bkSigSignKey :: BlockSig.SignKey
-    , bkSigVerifyKey :: BlockSig.VerifyKey
-    , bkAggrSignKey :: Bls.SecretKey
-    , bkAggrVerifyKey :: Bls.PublicKey
-    , bkElectionSignKey :: VRF.SecretKey
-    , bkElectionVerifyKey :: VRF.PublicKey
-    , bkBakerId :: Maybe BakerId
-    -- ^The id of the baker these keys belong to, if known.
+    { bkSigSignKey :: BlockSig.SignKey,
+      bkSigVerifyKey :: BlockSig.VerifyKey,
+      bkAggrSignKey :: Bls.SecretKey,
+      bkAggrVerifyKey :: Bls.PublicKey,
+      bkElectionSignKey :: VRF.SecretKey,
+      bkElectionVerifyKey :: VRF.PublicKey,
+      -- |The id of the baker these keys belong to, if known.
+      bkBakerId :: Maybe BakerId
     }
 
 data BakerCredentials = BakerCredentials
-    { bcKeys :: !BakerKeys
-    , bcIdentity :: !BakerId
+    { bcKeys :: !BakerKeys,
+      bcIdentity :: !BakerId
     }
 
 instance AE.ToJSON BakerCredentials where
@@ -288,12 +284,12 @@ instance AE.FromJSON BakerKeys where
 
 bakerKeysToPairs :: BakerKeys -> [Pair]
 bakerKeysToPairs v =
-    [ "aggregationSignKey" .= bkAggrSignKey v
-    , "aggregationVerifyKey" .= bkAggrVerifyKey v
-    , "electionPrivateKey" .= bkElectionSignKey v
-    , "electionVerifyKey" .= bkElectionVerifyKey v
-    , "signatureSignKey" .= bkSigSignKey v
-    , "signatureVerifyKey" .= bkSigVerifyKey v
+    [ "aggregationSignKey" .= bkAggrSignKey v,
+      "aggregationVerifyKey" .= bkAggrVerifyKey v,
+      "electionPrivateKey" .= bkElectionSignKey v,
+      "electionVerifyKey" .= bkElectionVerifyKey v,
+      "signatureSignKey" .= bkSigSignKey v,
+      "signatureVerifyKey" .= bkSigVerifyKey v
     ]
         ++ ["bakerId" .= bid | bid <- maybeToList (bkBakerId v)]
 
@@ -303,9 +299,9 @@ instance AE.ToJSON BakerKeys where
 -- Helper function for generating JSON containing only the public parts of the baker keys
 bakerPublicKeysToPairs :: BakerKeys -> [Pair]
 bakerPublicKeysToPairs v =
-    [ "aggregationVerifyKey" .= bkAggrVerifyKey v
-    , "electionVerifyKey" .= bkElectionVerifyKey v
-    , "signatureVerifyKey" .= bkSigVerifyKey v
+    [ "aggregationVerifyKey" .= bkAggrVerifyKey v,
+      "electionVerifyKey" .= bkElectionVerifyKey v,
+      "signatureVerifyKey" .= bkSigVerifyKey v
     ]
         ++ ["bakerId" .= bid | bid <- maybeToList (bkBakerId v)]
 
@@ -313,9 +309,8 @@ bakerPublicKeysToPairs v =
 defaultNetId :: Int
 defaultNetId = 100
 
-{- |If the string starts with @ we assume the remaining characters are a file name
- and we try to read the contents of that file.
--}
+-- |If the string starts with @ we assume the remaining characters are a file name
+-- and we try to read the contents of that file.
 decodeJsonArg :: FromJSON a => String -> Maybe (IO (Either String a))
 decodeJsonArg s =
     Just $ do

@@ -22,18 +22,17 @@ type TransactionBlockResults' a = Map.Map BlockHash (TransactionSummary' a)
 type TransactionBlockResults = TransactionBlockResults' ValidResult
 
 data TransactionStatusResult' a = TransactionStatusResult
-    { tsrState :: !TransactionState
-    , tsrResults :: !(TransactionBlockResults' a) -- TODO Rename to "blocks".
+    { tsrState :: !TransactionState,
+      tsrResults :: !(TransactionBlockResults' a) -- TODO Rename to "blocks".
     }
     deriving (Eq, Show)
 
 type TransactionStatusResult = TransactionStatusResult' ValidResult
 
-{- |Convert a @TransactionStatus@ instance into a @TransactionStatusResult@ instance.
- Returns a @Left@ wrapping an error message if either the transaction summary contained in the
- input is @Nothing@, or the input is of variant @Committed@ or @Finalized@. Returns a @Right@
- wrapping the corresponding @TransactionStatusResult@ otherwise.
--}
+-- |Convert a @TransactionStatus@ instance into a @TransactionStatusResult@ instance.
+-- Returns a @Left@ wrapping an error message if either the transaction summary contained in the
+-- input is @Nothing@, or the input is of variant @Committed@ or @Finalized@. Returns a @Right@
+-- wrapping the corresponding @TransactionStatusResult@ otherwise.
 transactionStatusToTransactionStatusResult :: Queries.TransactionStatus -> Either String TransactionStatusResult
 transactionStatusToTransactionStatusResult tStatus = do
     (tsrState, tsrResults) <- do

@@ -53,19 +53,19 @@ import Text.Printf
 type Verbose = Bool
 
 data Options = Options
-    { optsCmd :: Cmd
-    , optsBackend :: Backend
-    , optsConfigDir :: Maybe FilePath
-    , optsVerbose :: Verbose
+    { optsCmd :: Cmd,
+      optsBackend :: Backend,
+      optsConfigDir :: Maybe FilePath,
+      optsVerbose :: Verbose
     }
     deriving (Show)
 
 data Backend = GRPC
-    { grpcHost :: !HostName
-    , grpcPort :: !PortNumber
-    , grpcTarget :: !(Maybe String)
-    , grpcRetryNum :: !Int
-    , grpcUseTls :: !Bool
+    { grpcHost :: !HostName,
+      grpcPort :: !PortNumber,
+      grpcTarget :: !(Maybe String),
+      grpcRetryNum :: !Int,
+      grpcUseTls :: !Bool
     }
     deriving (Show)
 
@@ -100,8 +100,8 @@ data ConfigCmd
     | ConfigBackupExport
         {cbeFileName :: !FilePath}
     | ConfigBackupImport
-        { cbiFileName :: !FilePath
-        , cbiSkipExisting :: !Bool
+        { cbiFileName :: !FilePath,
+          cbiSkipExisting :: !Bool
         }
     | ConfigAccountCmd -- groups 'config account' commands
         {configAccountCmd :: ConfigAccountCmd}
@@ -109,34 +109,34 @@ data ConfigCmd
 
 data ConfigAccountCmd
     = ConfigAccountName
-        { caaAddr :: !Text
-        , caaName :: !Text
+        { caaAddr :: !Text,
+          caaName :: !Text
         }
     | ConfigAccountRemove
         {carAddr :: !Text}
     | ConfigAccountImport
-        { caiFile :: !FilePath
-        , caiName :: !(Maybe Text)
-        , caiFormat :: !AccountExportFormat
-        , caiSkipExisting :: !Bool
+        { caiFile :: !FilePath,
+          caiName :: !(Maybe Text),
+          caiFormat :: !AccountExportFormat,
+          caiSkipExisting :: !Bool
         }
     | ConfigAccountAddKeys
-        { caakAddr :: !Text
-        , caakKeysFile :: !FilePath
+        { caakAddr :: !Text,
+          caakKeysFile :: !FilePath
         }
     | ConfigAccountUpdateKeys
-        { caukAddr :: !Text
-        , caukKeysFile :: !FilePath
+        { caukAddr :: !Text,
+          caukKeysFile :: !FilePath
         }
     | ConfigAccountChangeKeyPassword
-        { cackpName :: !Text
-        , cackpCIndex :: !CredentialIndex
-        , cackpIndex :: !KeyIndex
+        { cackpName :: !Text,
+          cackpCIndex :: !CredentialIndex,
+          cackpIndex :: !KeyIndex
         }
     | ConfigAccountRemoveKeys
-        { carkAddr :: !Text
-        , carkCidx :: !CredentialIndex
-        , carkKeys :: ![KeyIndex]
+        { carkAddr :: !Text,
+          carkCidx :: !CredentialIndex,
+          carkKeys :: ![KeyIndex]
         }
     | ConfigAccountRemoveName
         {carnText :: !Text}
@@ -179,272 +179,272 @@ registerDataParser =
 
 data TransactionCmd
     = TransactionSubmit
-        { tsFile :: !FilePath
-        , tsInteractionOpts :: !InteractionOpts
+        { tsFile :: !FilePath,
+          tsInteractionOpts :: !InteractionOpts
         }
     | TransactionStatus
-        { tsHash :: !Text
-        , tsSchema :: !(Maybe FilePath)
-        -- ^Path to a contract schema, used to display the transaction event info.
+        { tsHash :: !Text,
+          -- |Path to a contract schema, used to display the transaction event info.
+          tsSchema :: !(Maybe FilePath)
         }
     | TransactionSendCcd
-        { tsgReceiver :: !Text
-        , tsgAmount :: !Amount
-        , tsgMemo :: !(Maybe MemoInput)
-        , tsgOpts :: !(TransactionOpts (Maybe Energy))
+        { tsgReceiver :: !Text,
+          tsgAmount :: !Amount,
+          tsgMemo :: !(Maybe MemoInput),
+          tsgOpts :: !(TransactionOpts (Maybe Energy))
         }
     | TransactionSendWithSchedule
-        { twsReceiver :: !Text
-        , twsSchedule :: !(Either (Amount, Interval, Int, Timestamp) [(Timestamp, Amount)])
-        -- ^Eiher total amount, interval, number of intervals and starting time or a raw list of timestamps and amounts.
-        , twsMemo :: !(Maybe MemoInput)
-        , twsOpts :: !(TransactionOpts (Maybe Energy))
+        { twsReceiver :: !Text,
+          -- |Eiher total amount, interval, number of intervals and starting time or a raw list of timestamps and amounts.
+          twsSchedule :: !(Either (Amount, Interval, Int, Timestamp) [(Timestamp, Amount)]),
+          twsMemo :: !(Maybe MemoInput),
+          twsOpts :: !(TransactionOpts (Maybe Energy))
         }
     | TransactionDeployCredential
-        { tdcFile :: !FilePath
-        , tdcInteractionOpts :: !InteractionOpts
+        { tdcFile :: !FilePath,
+          tdcInteractionOpts :: !InteractionOpts
         }
     | TransactionEncryptedTransfer
-        { tetTransactionOpts :: !(TransactionOpts (Maybe Energy))
-        , tetReceiver :: !Text
-        -- ^ Address of the receiver.
-        , tetAmount :: !Amount
-        -- ^ Amount to send.
-        , tetIndex :: !(Maybe Int)
-        -- ^ Which indices to use as inputs to the encrypted amount transfer.
-        -- If none are provided all existing ones will be used.
-        , tetMemo :: !(Maybe MemoInput)
+        { tetTransactionOpts :: !(TransactionOpts (Maybe Energy)),
+          -- | Address of the receiver.
+          tetReceiver :: !Text,
+          -- | Amount to send.
+          tetAmount :: !Amount,
+          -- | Which indices to use as inputs to the encrypted amount transfer.
+          -- If none are provided all existing ones will be used.
+          tetIndex :: !(Maybe Int),
+          tetMemo :: !(Maybe MemoInput)
         }
     | -- | Register data on chain.
       TransactionRegisterData
-        { trdData :: !RegisterDataInput
-        -- ^ File containing the data.
-        , trdTransactionOptions :: !(TransactionOpts (Maybe Energy))
-        -- ^ Options for transaction.
+        { -- | File containing the data.
+          trdData :: !RegisterDataInput,
+          -- | Options for transaction.
+          trdTransactionOptions :: !(TransactionOpts (Maybe Energy))
         }
     deriving (Show)
 
 data AccountCmd
     = AccountShow
-        { asAddress :: !(Maybe Text)
-        , asBlockHash :: !(Maybe Text)
-        , asShowEncryptedBalance :: !Bool
-        , asDecryptEncryptedBalance :: !Bool
+        { asAddress :: !(Maybe Text),
+          asBlockHash :: !(Maybe Text),
+          asShowEncryptedBalance :: !Bool,
+          asDecryptEncryptedBalance :: !Bool
         }
     | AccountList
         {alBlockHash :: !(Maybe Text)}
     | AccountUpdateKeys
-        { aukKeys :: !FilePath
-        , aukCredId :: !CredentialRegistrationID
-        , aukTransactionOpts :: !(TransactionOpts (Maybe Energy))
+        { aukKeys :: !FilePath,
+          aukCredId :: !CredentialRegistrationID,
+          aukTransactionOpts :: !(TransactionOpts (Maybe Energy))
         }
     | -- |Transfer part of the public balance to the encrypted balance of the
       -- account.
       AccountEncrypt
-        { aeTransactionOpts :: !(TransactionOpts (Maybe Energy))
-        , aeAmount :: !Amount
-        -- ^ Amount to transfer from public to encrypted balance.
+        { aeTransactionOpts :: !(TransactionOpts (Maybe Energy)),
+          -- | Amount to transfer from public to encrypted balance.
+          aeAmount :: !Amount
         }
     | -- |Transfer part of the encrypted balance to the public balance of the
       -- account.
       AccountDecrypt
-        { adTransactionOpts :: !(TransactionOpts (Maybe Energy))
-        , adAmount :: !Amount
-        -- ^Amount to transfer from encrypted to public balance.
-        , adIndex :: !(Maybe Int)
-        -- ^ Which indices of incoming amounts to use as inputs.
-        -- If none are provided all existing ones will be used.
+        { adTransactionOpts :: !(TransactionOpts (Maybe Energy)),
+          -- |Amount to transfer from encrypted to public balance.
+          adAmount :: !Amount,
+          -- | Which indices of incoming amounts to use as inputs.
+          -- If none are provided all existing ones will be used.
+          adIndex :: !(Maybe Int)
         }
     | -- |Updated credentials and account threshold (i.e. how many credential holders that need to sign transactions)
       AccountUpdateCredentials
-        { aucNewCredInfos :: !(Maybe FilePath) -- File containing the new CredentialDeploymentInformation's
-        , aucRemoveCredIds :: !(Maybe FilePath) -- File containing the CredentialRegistrationID's for the credentials to be removed
-        , aucNewThreshold :: !AccountThreshold -- The new account threshold
-        , aucTransactionOpts :: !(TransactionOpts (Maybe Energy))
+        { aucNewCredInfos :: !(Maybe FilePath), -- File containing the new CredentialDeploymentInformation's
+          aucRemoveCredIds :: !(Maybe FilePath), -- File containing the CredentialRegistrationID's for the credentials to be removed
+          aucNewThreshold :: !AccountThreshold, -- The new account threshold
+          aucTransactionOpts :: !(TransactionOpts (Maybe Energy))
         }
     | -- |Show an alias for the account.
       AccountShowAlias
-        { asaAddress :: !Text
-        -- ^Name or address of the account.
-        , asaAlias :: !Word
+        { -- |Name or address of the account.
+          asaAddress :: !Text,
+          asaAlias :: !Word
         }
     deriving (Show)
 
 data ModuleCmd
     = -- |Deploy the provided smart contract module on chain.
       ModuleDeploy
-        { mdModuleFile :: !FilePath
-        -- ^Path to the module.
-        , mdName :: !(Maybe Text)
-        -- ^Local alias for the module reference.
-        , mdWasmVersion :: !(Maybe Wasm.WasmVersion)
-        -- ^Optional Wasm version for the module.
-        , mdTransactionOpts :: !(TransactionOpts (Maybe Energy))
-        -- ^Options for transaction.
+        { -- |Path to the module.
+          mdModuleFile :: !FilePath,
+          -- |Local alias for the module reference.
+          mdName :: !(Maybe Text),
+          -- |Optional Wasm version for the module.
+          mdWasmVersion :: !(Maybe Wasm.WasmVersion),
+          -- |Options for transaction.
+          mdTransactionOpts :: !(TransactionOpts (Maybe Energy))
         }
     | -- |List all modules.
       ModuleList
-        { mlBlockHash :: !(Maybe Text)
-        -- ^Hash of the block (default "best").
+        { -- |Hash of the block (default "best").
+          mlBlockHash :: !(Maybe Text)
         }
     | -- |Output the binary source code of the module to the provided file.
       ModuleShow
-        { msModuleRefOrName :: !Text
-        -- ^Reference to the module OR a module name.
-        , msOutFile :: !FilePath
-        -- ^Output the module to this file.
-        -- Use '-' to output to stdout.
-        , msBlockHash :: !(Maybe Text)
-        -- ^Hash of the block (default "best").
+        { -- |Reference to the module OR a module name.
+          msModuleRefOrName :: !Text,
+          -- |Output the module to this file.
+          -- Use '-' to output to stdout.
+          msOutFile :: !FilePath,
+          -- |Hash of the block (default "best").
+          msBlockHash :: !(Maybe Text)
         }
     | -- |Show the functions available in a module, including type signatures if schema is provided.
       ModuleInspect
-        { miModuleRefOrName :: !Text
-        -- ^Reference to the module OR a module name.
-        , miSchema :: !(Maybe FilePath)
-        -- ^Path to a contract schema, used to display the type signatures.
-        , miBlockHash :: !(Maybe Text)
-        -- ^Hash of the block (default "best").
+        { -- |Reference to the module OR a module name.
+          miModuleRefOrName :: !Text,
+          -- |Path to a contract schema, used to display the type signatures.
+          miSchema :: !(Maybe FilePath),
+          -- |Hash of the block (default "best").
+          miBlockHash :: !(Maybe Text)
         }
     | -- |Add a local name to a module.
       ModuleName
-        { mnModule :: !String
-        -- ^Module reference OR path to the module (reference then calculated by hashing).
-        , mnName :: !Text
-        -- ^Name for the module.
-        , mnWasmVersion :: !(Maybe Wasm.WasmVersion)
-        -- ^Optional Wasm version for the module.
+        { -- |Module reference OR path to the module (reference then calculated by hashing).
+          mnModule :: !String,
+          -- |Name for the module.
+          mnName :: !Text,
+          -- |Optional Wasm version for the module.
+          mnWasmVersion :: !(Maybe Wasm.WasmVersion)
         }
     | -- |Remove a local name from the module name map
       ModuleRemoveName
-        { mrnText :: !Text
-        -- ^The module name to remove
+        { -- |The module name to remove
+          mrnText :: !Text
         }
     deriving (Show)
 
 data ContractCmd
     = -- |Show the state of specified contract.
       ContractShow
-        { csAddressIndexOrName :: !Text
-        -- ^Index of the contract address OR a contract name.
-        , csAddressSubindex :: !(Maybe Word64)
-        -- ^Subindex of the address for the contract (default: 0).
-        , csSchema :: !(Maybe FilePath)
-        -- ^Path to a contract schema, used to display the contract info.
-        , csBlockHash :: !(Maybe Text)
-        -- ^Hash of the block (default "best").
+        { -- |Index of the contract address OR a contract name.
+          csAddressIndexOrName :: !Text,
+          -- |Subindex of the address for the contract (default: 0).
+          csAddressSubindex :: !(Maybe Word64),
+          -- |Path to a contract schema, used to display the contract info.
+          csSchema :: !(Maybe FilePath),
+          -- |Hash of the block (default "best").
+          csBlockHash :: !(Maybe Text)
         }
     | -- |List all contracts on chain.
       ContractList
-        { clBlockHash :: !(Maybe Text)
-        -- ^Hash of the block (default "best").
+        { -- |Hash of the block (default "best").
+          clBlockHash :: !(Maybe Text)
         }
     | -- |Initialize a contract from a module on chain.
       ContractInit
-        { ciModule :: !String
-        -- ^Module reference OR module name OR (if ciPath == True) path to the module (reference then calculated by hashing).
-        , ciContractName :: !Text
-        -- ^Name of the contract to initialize. This corresponds to a specific init function.
-        , ciParameterFileJSON :: !(Maybe ParameterFileInput)
-        -- ^Optional path to a JSON or binary file containing parameters for the init function.
-        , ciSchema :: !(Maybe FilePath)
-        -- ^Path to a contract schema.
-        , ciName :: !(Maybe Text)
-        -- ^Local alias for the contract address.
-        , ciPath :: !Bool
-        -- ^Determines whether ciModule should be interpreted as a path.
-        , ciWasmVersion :: !(Maybe Wasm.WasmVersion)
-        -- ^Optional Wasm version for the module.
-        , ciAmount :: !Amount
-        -- ^Amount to be send to contract (default: 0).
-        , ciTransactionOpts :: !(TransactionOpts Energy)
-        -- ^Options for transaction.
+        { -- |Module reference OR module name OR (if ciPath == True) path to the module (reference then calculated by hashing).
+          ciModule :: !String,
+          -- |Name of the contract to initialize. This corresponds to a specific init function.
+          ciContractName :: !Text,
+          -- |Optional path to a JSON or binary file containing parameters for the init function.
+          ciParameterFileJSON :: !(Maybe ParameterFileInput),
+          -- |Path to a contract schema.
+          ciSchema :: !(Maybe FilePath),
+          -- |Local alias for the contract address.
+          ciName :: !(Maybe Text),
+          -- |Determines whether ciModule should be interpreted as a path.
+          ciPath :: !Bool,
+          -- |Optional Wasm version for the module.
+          ciWasmVersion :: !(Maybe Wasm.WasmVersion),
+          -- |Amount to be send to contract (default: 0).
+          ciAmount :: !Amount,
+          -- |Options for transaction.
+          ciTransactionOpts :: !(TransactionOpts Energy)
         }
     | -- |Update an existing contract, i.e. invoke a receive function.
       ContractUpdate
-        { cuAddressIndexOrName :: !Text
-        -- ^Index of the contract address OR a contract name.
-        , cuAddressSubindex :: !(Maybe Word64)
-        -- ^Subindex of the address for the contract to invoke (default: 0).
-        , cuReceiveName :: !Text
-        -- ^Name of the receive function to use.
-        , cuParameterFileJSON :: !(Maybe ParameterFileInput)
-        -- ^Optional path to a JSON or binary file containing parameters for the receive function.
-        , cuSchema :: !(Maybe FilePath)
-        -- ^Path to a contract schema.
-        , cuAmount :: !Amount
-        -- ^Amount to invoke the receive function with (default: 0).
-        , cuTransactionOpts :: !(TransactionOpts Energy)
-        -- ^Options for transaction.
+        { -- |Index of the contract address OR a contract name.
+          cuAddressIndexOrName :: !Text,
+          -- |Subindex of the address for the contract to invoke (default: 0).
+          cuAddressSubindex :: !(Maybe Word64),
+          -- |Name of the receive function to use.
+          cuReceiveName :: !Text,
+          -- |Optional path to a JSON or binary file containing parameters for the receive function.
+          cuParameterFileJSON :: !(Maybe ParameterFileInput),
+          -- |Path to a contract schema.
+          cuSchema :: !(Maybe FilePath),
+          -- |Amount to invoke the receive function with (default: 0).
+          cuAmount :: !Amount,
+          -- |Options for transaction.
+          cuTransactionOpts :: !(TransactionOpts Energy)
         }
     | -- |Invoke a contract locally and view its output.
       ContractInvoke
-        { civAddressIndexOrName :: !Text
-        -- ^Index of the contract address OR a contract name.
-        , civAddressSubindex :: !(Maybe Word64)
-        -- ^Subindex of the address fro the contract to invoke (default: 0).
-        , civReceiveName :: !Text
-        -- ^Name of the receive function to use.
-        , civParameterFile :: !(Maybe ParameterFileInput)
-        -- ^Optional path to a JSON or binary file containing parameters for the receive function.
-        , civSchema :: !(Maybe FilePath)
-        -- ^Path to a contract schema.
-        , civAmount :: !Amount
-        -- ^Amount to invoke the receive function with (default: 0).
-        , civInvoker :: !(Maybe InvokerInput)
-        -- ^Account address or name to use as invoker.
-        , civMaxEnergy :: !(Maybe Energy)
-        -- ^Maximum energy allowed for the invocation (default: 10,000,000).
-        , civBlockHash :: !(Maybe Text)
-        -- ^Hash of the block (default: "best").
+        { -- |Index of the contract address OR a contract name.
+          civAddressIndexOrName :: !Text,
+          -- |Subindex of the address fro the contract to invoke (default: 0).
+          civAddressSubindex :: !(Maybe Word64),
+          -- |Name of the receive function to use.
+          civReceiveName :: !Text,
+          -- |Optional path to a JSON or binary file containing parameters for the receive function.
+          civParameterFile :: !(Maybe ParameterFileInput),
+          -- |Path to a contract schema.
+          civSchema :: !(Maybe FilePath),
+          -- |Amount to invoke the receive function with (default: 0).
+          civAmount :: !Amount,
+          -- |Account address or name to use as invoker.
+          civInvoker :: !(Maybe InvokerInput),
+          -- |Maximum energy allowed for the invocation (default: 10,000,000).
+          civMaxEnergy :: !(Maybe Energy),
+          -- |Hash of the block (default: "best").
+          civBlockHash :: !(Maybe Text)
         }
     | -- |Add a local name to a contract.
       ContractName
-        { cnAddressIndex :: !Word64
-        -- ^Index of the address for the contract.
-        , cnAddressSubindex :: !(Maybe Word64)
-        -- ^Subindex of the address for the contract (default: 0).
-        , cnName :: !Text
-        -- ^Name for the contract.
+        { -- |Index of the address for the contract.
+          cnAddressIndex :: !Word64,
+          -- |Subindex of the address for the contract (default: 0).
+          cnAddressSubindex :: !(Maybe Word64),
+          -- |Name for the contract.
+          cnName :: !Text
         }
     | -- |Remove a local name from the contract name map
       ContractRemoveName
-        { crnText :: !Text
-        -- ^The contract name to remove
+        { -- |The contract name to remove
+          crnText :: !Text
         }
     deriving (Show)
 
 -- | The type parameter 'energyOrMaybe' should be Energy or Maybe Energy.
 data TransactionOpts energyOrMaybe = TransactionOpts
-    { toSender :: !(Maybe Text)
-    , toAlias :: !(Maybe Word)
-    , toKeys :: !(Maybe FilePath)
-    , toSigners :: !(Maybe Text)
-    , toNonce :: !(Maybe Nonce)
-    , toMaxEnergyAmount :: !energyOrMaybe
-    , toExpiration :: !(Maybe Text)
-    , toInteractionOpts :: !InteractionOpts
+    { toSender :: !(Maybe Text),
+      toAlias :: !(Maybe Word),
+      toKeys :: !(Maybe FilePath),
+      toSigners :: !(Maybe Text),
+      toNonce :: !(Maybe Nonce),
+      toMaxEnergyAmount :: !energyOrMaybe,
+      toExpiration :: !(Maybe Text),
+      toInteractionOpts :: !InteractionOpts
     }
     deriving (Show)
 
 data InteractionOpts = InteractionOpts
-    { ioConfirm :: !Bool
-    , ioTail :: !Bool
+    { ioConfirm :: !Bool,
+      ioTail :: !Bool
     }
     deriving (Show)
 
 data ConsensusCmd
     = ConsensusStatus
     | ConsensusShowParameters
-        { cspBlockHash :: !(Maybe Text)
-        , cspIncludeBakers :: !Bool
+        { cspBlockHash :: !(Maybe Text),
+          cspIncludeBakers :: !Bool
         }
     | ConsensusShowChainParameters
         {cscpBlockHash :: !(Maybe Text)}
     | ConsensusChainUpdate
-        { ccuUpdate :: !FilePath
-        , ccuKeys :: ![FilePath]
-        , ccuInteractionOpts :: !InteractionOpts
+        { ccuUpdate :: !FilePath,
+          ccuKeys :: ![FilePath],
+          ccuInteractionOpts :: !InteractionOpts
         }
     deriving (Show)
 
@@ -454,78 +454,78 @@ data BlockCmd = BlockShow
 
 -- Extra data to add a baker in protocol version > 4
 data ExtraBakerAddData = ExtraBakerAddData
-    { ebadOpenForDelegation :: !OpenStatus
-    , ebadMetadataURL :: !String
-    , ebadTransactionFeeCommission :: !AmountFraction
-    , ebadBakingRewardCommission :: !AmountFraction
-    , ebadFinalizationRewardCommission :: !AmountFraction
+    { ebadOpenForDelegation :: !OpenStatus,
+      ebadMetadataURL :: !String,
+      ebadTransactionFeeCommission :: !AmountFraction,
+      ebadBakingRewardCommission :: !AmountFraction,
+      ebadFinalizationRewardCommission :: !AmountFraction
     }
     deriving (Show)
 
 data BakerCmd
     = BakerGenerateKeys
-        { bgkFile :: !(Maybe FilePath)
-        , bgkBakerId :: !(Maybe BakerId)
+        { bgkFile :: !(Maybe FilePath),
+          bgkBakerId :: !(Maybe BakerId)
         }
     | BakerAdd
-        { baFile :: !FilePath
-        , baTransactionOpts :: !(TransactionOpts (Maybe Energy))
-        , baStake :: !Amount
-        , baAutoAddEarnings :: !Bool
-        , baExtraData :: !(Maybe ExtraBakerAddData)
-        , baOutputFile :: !(Maybe FilePath)
+        { baFile :: !FilePath,
+          baTransactionOpts :: !(TransactionOpts (Maybe Energy)),
+          baStake :: !Amount,
+          baAutoAddEarnings :: !Bool,
+          baExtraData :: !(Maybe ExtraBakerAddData),
+          baOutputFile :: !(Maybe FilePath)
         }
     | BakerSetKeys
-        { bsaKeysFile :: !FilePath
-        , bsaTransactionOpts :: !(TransactionOpts (Maybe Energy))
-        , bsaOutputFile :: Maybe FilePath
+        { bsaKeysFile :: !FilePath,
+          bsaTransactionOpts :: !(TransactionOpts (Maybe Energy)),
+          bsaOutputFile :: Maybe FilePath
         }
     | BakerRemove
         {brTransactionOpts :: !(TransactionOpts (Maybe Energy))}
     | BakerUpdateStake
-        { busStake :: !Amount
-        , busTransactionOpts :: !(TransactionOpts (Maybe Energy))
+        { busStake :: !Amount,
+          busTransactionOpts :: !(TransactionOpts (Maybe Energy))
         }
     | BakerUpdateRestakeEarnings
-        { bursRestake :: !Bool
-        , bursTransactionOpts :: !(TransactionOpts (Maybe Energy))
+        { bursRestake :: !Bool,
+          bursTransactionOpts :: !(TransactionOpts (Maybe Energy))
         }
     | BakerConfigure
-        { bcTransactionOpts :: !(TransactionOpts (Maybe Energy))
-        , bcCapital :: !(Maybe Amount)
-        , bcRestake :: !(Maybe Bool)
-        , bcOpenForDelegation :: !(Maybe OpenStatus)
-        , bcMetadataURL :: !(Maybe String)
-        , bcTransactionFeeCommission :: !(Maybe AmountFraction)
-        , bcBakingRewardCommission :: !(Maybe AmountFraction)
-        , bcFinalizationRewardCommission :: !(Maybe AmountFraction)
-        , bcInputKeyFile :: !(Maybe FilePath)
-        , bcOutputKeyFile :: !(Maybe FilePath)
+        { bcTransactionOpts :: !(TransactionOpts (Maybe Energy)),
+          bcCapital :: !(Maybe Amount),
+          bcRestake :: !(Maybe Bool),
+          bcOpenForDelegation :: !(Maybe OpenStatus),
+          bcMetadataURL :: !(Maybe String),
+          bcTransactionFeeCommission :: !(Maybe AmountFraction),
+          bcBakingRewardCommission :: !(Maybe AmountFraction),
+          bcFinalizationRewardCommission :: !(Maybe AmountFraction),
+          bcInputKeyFile :: !(Maybe FilePath),
+          bcOutputKeyFile :: !(Maybe FilePath)
         }
     | BakerUpdateMetadataURL
-        { bumuMetadataURL :: !String
-        , bumuTransactionOpts :: !(TransactionOpts (Maybe Energy))
+        { bumuMetadataURL :: !String,
+          bumuTransactionOpts :: !(TransactionOpts (Maybe Energy))
         }
     | BakerUpdateOpenDelegationStatus
-        { bodsOpenForDelegation :: !OpenStatus
-        , bodsTransactionOpts :: !(TransactionOpts (Maybe Energy))
+        { bodsOpenForDelegation :: !OpenStatus,
+          bodsTransactionOpts :: !(TransactionOpts (Maybe Energy))
         }
     deriving (Show)
 
 data DelegatorCmd
     = DelegatorConfigure
-        { dcTransactionOpts :: !(TransactionOpts (Maybe Energy))
-        , dcCapital :: !(Maybe Amount)
-        , dcRestake :: !(Maybe Bool)
-        , dcDelegationTarget :: !(Maybe Text)
+        { dcTransactionOpts :: !(TransactionOpts (Maybe Energy)),
+          dcCapital :: !(Maybe Amount),
+          dcRestake :: !(Maybe Bool),
+          dcDelegationTarget :: !(Maybe Text)
         }
     | DelegatorRemove
         {drTransactionOpts :: !(TransactionOpts (Maybe Energy))}
     | DelegatorAdd
-        { daTransactionOpts :: !(TransactionOpts (Maybe Energy))
-        , daCapital :: !Amount
-        , daRestake :: !Bool
-        , daDelegationTarget :: !Text
+        { daTransactionOpts :: !(TransactionOpts (Maybe Energy)),
+          daCapital :: !Amount,
+          daRestake :: !Bool,
+          daDelegationTarget :: !Text
         }
     deriving (Show)
 
@@ -549,9 +549,9 @@ visibleHelper :: Parser (a -> a)
 visibleHelper =
     abortOption (ShowHelpText Nothing) $
         mconcat
-            [ long "help"
-            , short 'h'
-            , help "Show detailed help text."
+            [ long "help",
+              short 'h',
+              help "Show detailed help text."
             ]
 
 optsParser :: ShowAllOpts -> ParserInfo Options
@@ -772,7 +772,7 @@ transactionWithScheduleCmd =
                   explicit =
                     Right
                         <$> option (eitherReader eitherParseScheduleInform) (long "schedule" <> metavar "schedule" <> help "Explicit schedule in the form of a comma separated list of elements of the form '3.0 at 2020-12-13T23:35:59Z' (send 3 CCD on December 13, 2020). Timestamps must be given in UTC.")
-               in TransactionSendWithSchedule
+              in  TransactionSendWithSchedule
                     <$> strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.")
                     <*> (implicit <|> explicit)
                     <*> memoInputParser
@@ -780,28 +780,28 @@ transactionWithScheduleCmd =
             )
             ( progDescDoc . Just $
                 fillCat
-                    [ "Transfer CCD from one account to another with the provided schedule of releases."
-                    , "Releases can be specified in one of two ways, either as regular releases via intervals,"
+                    [ "Transfer CCD from one account to another with the provided schedule of releases.",
+                      "Releases can be specified in one of two ways, either as regular releases via intervals,"
                         <> softline
-                        <> "or as an explicit schedule at specific timestamps."
-                    , ""
-                    , "To specify the release via regular intervals use the options" <> softline <> "'--amount', '--every', '--for', and '--starting'."
-                    , "To specify an explicit schedule provide a list of releases in"
+                        <> "or as an explicit schedule at specific timestamps.",
+                      "",
+                      "To specify the release via regular intervals use the options" <> softline <> "'--amount', '--every', '--for', and '--starting'.",
+                      "To specify an explicit schedule provide a list of releases in"
                         <> softline
-                        <> "the form of a '--schedule' flag, which takes a comma separated list of releases."
-                    , "Each release must be of the form 100 at 2020-12-13T23:23:23Z."
-                    , ""
-                    , "For example, to supply three releases, of 100, 150, and 200 CCD,"
+                        <> "the form of a '--schedule' flag, which takes a comma separated list of releases.",
+                      "Each release must be of the form 100 at 2020-12-13T23:23:23Z.",
+                      "",
+                      "For example, to supply three releases, of 100, 150, and 200 CCD,"
                         <> softline
                         <> "on January 1, 2021, February 15, 2021, and December 31, 2021,"
                         <> softline
                         <> "the following input would be used. All releases are at the beginning of"
                         <> softline
-                        <> "the day in the UTC time zone."
-                    , ""
-                    , hang 4 "\"100 at 2021-01-01T00:00:00Z, 150 at 2021-02-15T00:00:00Z, 200 at 2021-12-31T00:00:00Z\""
-                    , ""
-                    , "Times are parsed according to the ISO8601 standard for the UTC time zone."
+                        <> "the day in the UTC time zone.",
+                      "",
+                      hang 4 "\"100 at 2021-01-01T00:00:00Z, 150 at 2021-02-15T00:00:00Z, 200 at 2021-12-31T00:00:00Z\"",
+                      "",
+                      "Times are parsed according to the ISO8601 standard for the UTC time zone."
                     ]
             )
         )
@@ -809,7 +809,7 @@ transactionWithScheduleCmd =
     eitherParseScheduleInform :: String -> Either String [(Timestamp, Amount)]
     eitherParseScheduleInform s =
         let items = map Data.Text.words (splitOn "," (pack s))
-         in forM items $ \case
+        in  forM items $ \case
                 [amountString, "at", timeString] ->
                     case amountFromString (unpack amountString) of
                         Nothing -> Left "Could not parse amount."
@@ -933,18 +933,18 @@ accountUpdateKeysCmd =
             )
             ( progDescDoc $
                 docFromLines
-                    [ "Set keys for the credential. Expected format of the key file:"
-                    , "   {"
-                    , "     \"keys\" : {"
-                    , "       idx: {"
-                    , "         \"verifyKey\": ..."
-                    , "       },"
-                    , "       ..."
-                    , "     },"
-                    , "     \"threshold\": number"
-                    , "   }"
-                    , "where each key is given a numeric index idx and the threshold is at most the number of keys."
-                    , "This replaces all existing keys for the credential with the new set."
+                    [ "Set keys for the credential. Expected format of the key file:",
+                      "   {",
+                      "     \"keys\" : {",
+                      "       idx: {",
+                      "         \"verifyKey\": ...",
+                      "       },",
+                      "       ...",
+                      "     },",
+                      "     \"threshold\": number",
+                      "   }",
+                      "where each key is given a numeric index idx and the threshold is at most the number of keys.",
+                      "This replaces all existing keys for the credential with the new set."
                     ]
             )
         )
@@ -962,29 +962,29 @@ accountUpdateCredentialsCmd =
             )
             ( progDescDoc $
                 docFromLines
-                    [ "Add and/or remove credentials, and update account threshold. Expected format of the file containing new credentials:"
-                    , "   {"
-                    , "     \"cidx\": {"
-                    , "       \"arData\": ...,"
-                    , "       \"credId\": ...,"
-                    , "       \"credentialPublicKeys\": {"
-                    , "           \"keys\": {"
-                    , "             \"kidx\": {"
-                    , "                 \"schemeId\": ...,"
-                    , "                 \"verifyKey\": ...,"
-                    , "              },"
-                    , "              ..."
-                    , "           },"
-                    , "           \"threshold\": ..."
-                    , "       },"
-                    , "       \"ipIdentity\": ...,"
-                    , "       \"policy\": ...,"
-                    , "       \"proofs\": ...,"
-                    , "       \"revocationThreshold\": ...,"
-                    , "     },"
-                    , "     ..."
-                    , "   }"
-                    , "where cidx is the credential index and kidx is the key index of a verify key."
+                    [ "Add and/or remove credentials, and update account threshold. Expected format of the file containing new credentials:",
+                      "   {",
+                      "     \"cidx\": {",
+                      "       \"arData\": ...,",
+                      "       \"credId\": ...,",
+                      "       \"credentialPublicKeys\": {",
+                      "           \"keys\": {",
+                      "             \"kidx\": {",
+                      "                 \"schemeId\": ...,",
+                      "                 \"verifyKey\": ...,",
+                      "              },",
+                      "              ...",
+                      "           },",
+                      "           \"threshold\": ...",
+                      "       },",
+                      "       \"ipIdentity\": ...,",
+                      "       \"policy\": ...,",
+                      "       \"proofs\": ...,",
+                      "       \"revocationThreshold\": ...,",
+                      "     },",
+                      "     ...",
+                      "   }",
+                      "where cidx is the credential index and kidx is the key index of a verify key."
                     ]
             )
         )
@@ -1422,8 +1422,8 @@ configAccountAddKeysCmd =
             )
             ( progDescDoc $
                 docFromLines $
-                    [ "Add one or several key pairs to a specific account configuration."
-                    , "Expected format of the key file:"
+                    [ "Add one or several key pairs to a specific account configuration.",
+                      "Expected format of the key file:"
                     ]
                         ++ expectedAddOrUpdateKeysFileFormat
             )
@@ -1440,8 +1440,8 @@ configAccountUpdateKeysCmd =
             )
             ( progDescDoc $
                 docFromLines $
-                    [ "Update one or several key pairs to a specific account configuration."
-                    , "Expected format of the key file:"
+                    [ "Update one or several key pairs to a specific account configuration.",
+                      "Expected format of the key file:"
                     ]
                         ++ expectedAddOrUpdateKeysFileFormat
             )
@@ -1449,27 +1449,27 @@ configAccountUpdateKeysCmd =
 
 expectedAddOrUpdateKeysFileFormat :: [String]
 expectedAddOrUpdateKeysFileFormat =
-    [ "   {"
-    , "     \"cidx\": {"
-    , "        \"kidx\": {"
-    , "          \"encryptedSignKey\": {"
-    , "            \"metadata\": {"
-    , "              \"encryptionMethod\": \"AES-256\","
-    , "              \"iterations\": ...,"
-    , "              \"salt\": ...,"
-    , "              \"initializationVector\": ...,"
-    , "              \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\""
-    , "            },"
-    , "            \"cipherText\": ..."
-    , "          },"
-    , "          \"verifyKey\": ...,"
-    , "          \"schemeId\": \"Ed25519\""
-    , "        },"
-    , "        ..."
-    , "     },"
-    , "     ..."
-    , "   }"
-    , "where cidx is the credential index and kidx is the index of a key pair."
+    [ "   {",
+      "     \"cidx\": {",
+      "        \"kidx\": {",
+      "          \"encryptedSignKey\": {",
+      "            \"metadata\": {",
+      "              \"encryptionMethod\": \"AES-256\",",
+      "              \"iterations\": ...,",
+      "              \"salt\": ...,",
+      "              \"initializationVector\": ...,",
+      "              \"keyDerivationMethod\": \"PBKDF2WithHmacSHA256\"",
+      "            },",
+      "            \"cipherText\": ...",
+      "          },",
+      "          \"verifyKey\": ...,",
+      "          \"schemeId\": \"Ed25519\"",
+      "        },",
+      "        ...",
+      "     },",
+      "     ...",
+      "   }",
+      "where cidx is the credential index and kidx is the index of a key pair."
     ]
 
 configAccountChangeKeyPasswordCmd :: Mod CommandFields ConfigAccountCmd
@@ -1497,8 +1497,8 @@ configAccountRemoveKeysCmd =
             )
             ( progDescDoc $
                 docFromLines
-                    [ "Removes the keys from the account at the specified indices."
-                    , "The --threshold option may be used to update the signature threshold."
+                    [ "Removes the keys from the account at the specified indices.",
+                      "The --threshold option may be used to update the signature threshold."
                     ]
             )
         )
@@ -1657,18 +1657,18 @@ bakerGenerateKeysCmd =
             )
             ( progDescDoc $
                 docFromLines
-                    [ "Create baker credentials and write them to a file or stdout."
-                    , "If the output file is specified secret keys are written to it,"
-                    , " and public keys are written to the file with the same name but '.pub.json' extension."
-                    , "Format:"
-                    , "    {"
-                    , "      \"signatureSignKey\": ...,"
-                    , "      \"signatureVerifyKey\": ...,"
-                    , "      \"aggregationSignKey\": ...,"
-                    , "      \"aggregationVerifyKey\": ...,"
-                    , "      \"electionPrivateKey\": ...,"
-                    , "      \"electionVerifyKey\": ..."
-                    , "    }"
+                    [ "Create baker credentials and write them to a file or stdout.",
+                      "If the output file is specified secret keys are written to it,",
+                      " and public keys are written to the file with the same name but '.pub.json' extension.",
+                      "Format:",
+                      "    {",
+                      "      \"signatureSignKey\": ...,",
+                      "      \"signatureVerifyKey\": ...,",
+                      "      \"aggregationSignKey\": ...,",
+                      "      \"aggregationVerifyKey\": ...,",
+                      "      \"electionPrivateKey\": ...,",
+                      "      \"electionVerifyKey\": ...",
+                      "    }"
                     ]
             )
         )
@@ -1779,15 +1779,15 @@ bakerSetKeysCmd =
             )
             ( progDescDoc $
                 docFromLines
-                    [ "Update the keys of a baker. Expected format of the key file:"
-                    , "   {"
-                    , "     \"signatureSignKey\": ...,"
-                    , "     \"signatureVerifyKey\": ..."
-                    , "     \"aggregationSignKey\": ...,"
-                    , "     \"aggregationVerifyKey\": ..."
-                    , "     \"electionPrivateKey\": ...,"
-                    , "     \"electionVerifyKey\": ...,"
-                    , "   }"
+                    [ "Update the keys of a baker. Expected format of the key file:",
+                      "   {",
+                      "     \"signatureSignKey\": ...,",
+                      "     \"signatureVerifyKey\": ...",
+                      "     \"aggregationSignKey\": ...,",
+                      "     \"aggregationVerifyKey\": ...",
+                      "     \"electionPrivateKey\": ...,",
+                      "     \"electionVerifyKey\": ...,",
+                      "   }"
                     ]
             )
         )
@@ -1927,18 +1927,16 @@ identityShowARsCmd =
 docFromLines :: [String] -> Maybe P.Doc
 docFromLines = Just . P.vsep . map P.text
 
-{- |A parameter file used for initializing, updating, and invoking smart contracts.
-  For the JSON parameter a schema must be embedded in the module or supplied with the --schema flag.
-  The schema is then used to serialize the JSON to binary.
--}
+-- |A parameter file used for initializing, updating, and invoking smart contracts.
+--  For the JSON parameter a schema must be embedded in the module or supplied with the --schema flag.
+--  The schema is then used to serialize the JSON to binary.
 data ParameterFileInput
     = ParameterJSON FilePath
     | ParameterBinary FilePath
     deriving (Show)
 
-{- |Parse an optional parameter file.
-  Either with '--parameter-json' or '--parameter-binary', but not both.
--}
+-- |Parse an optional parameter file.
+--  Either with '--parameter-json' or '--parameter-binary', but not both.
 parameterFileParser :: Parser (Maybe ParameterFileInput)
 parameterFileParser =
     optional
@@ -1962,22 +1960,20 @@ parameterFileParser =
                 )
         )
 
-{- |An invoker of a smart contract used with 'contract invoke'.
-  The invoker can either be an account or a contract.
-  For the contract, the subindex is optional and defaults to 0.
--}
+-- |An invoker of a smart contract used with 'contract invoke'.
+--  The invoker can either be an account or a contract.
+--  For the contract, the subindex is optional and defaults to 0.
 data InvokerInput
     = InvokerAccount Text
     | InvokerContract
-        { icIndexOrName :: Text
-        , icSubindex :: Maybe Word64
+        { icIndexOrName :: Text,
+          icSubindex :: Maybe Word64
         }
     deriving (Show)
 
-{- |Parse an optional invoker.
-  Either with '--invoker-account' or '--invoker-contract', but not both.
-  If the invoker is a contract, the subindex can be provided with '--invoker-contract-subindex'.
--}
+-- |Parse an optional invoker.
+--  Either with '--invoker-account' or '--invoker-contract', but not both.
+--  If the invoker is a contract, the subindex can be provided with '--invoker-contract-subindex'.
 invokerParser :: Parser (Maybe InvokerInput)
 invokerParser =
     optional $

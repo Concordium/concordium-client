@@ -42,50 +42,49 @@ import System.IO.Error
 import Text.Printf
 import Text.Read (readMaybe)
 
-{- |
-The layout of the config directory is shown in this example:
-
-@
-  <baseConfigDir>
-  ├── accounts
-  │   ├── names.map
-  │   ├── <account1>
-  │   │   ├── <credId1>
-  │   │   │   ├── keypair0.json
-  │   │   │   ├── keypair1.json
-  │   │   │   ├── <credId1>.threshold
-  │   │   │   ├── <credId1>.index
-  │   │   ...
-  │   │   │   └── encSecretKey.json
-  │   │   ├── <credId2>
-  │   │   │   ├── keypair0.json
-  │   │   │   ├── keypair1.json
-  │   │   │   ├── <credId2>.threshold
-  │   │   │   ├── <credId2>.index
-  │   │   ...
-  │   │   │   └── encSecretKey.json
-  │   ├── <account1>.threshold
-  │   ├── <account2>
-  │   │   ├── <credId1>
-  │   │   │   ├── keypair0.json
-  │   │   │   ├── keypair1.json
-  │   │   │   ├── <credId1>.threshold
-  │   │   │   ├── <credId1>.index
-  │   │   ...
-  │   │   │   └── encSecretKey.json
-  │   │   ├── <credId2>
-  │   │   │   ├── keypair0.json
-  │   │   │   ├── keypair1.json
-  │   │   │   ├── <credId2>.threshold
-  │   │   │   ├── <credId2>.index
-  │   │   ...
-  │   │   │   └── encSecretKey.json
-  │   ├── <account2>.threshold
-  └── contracts
-      ├── contractNames.map
-      └── moduleNames.map
-@
--}
+-- |
+--The layout of the config directory is shown in this example:
+--
+--@
+--  <baseConfigDir>
+--  ├── accounts
+--  │   ├── names.map
+--  │   ├── <account1>
+--  │   │   ├── <credId1>
+--  │   │   │   ├── keypair0.json
+--  │   │   │   ├── keypair1.json
+--  │   │   │   ├── <credId1>.threshold
+--  │   │   │   ├── <credId1>.index
+--  │   │   ...
+--  │   │   │   └── encSecretKey.json
+--  │   │   ├── <credId2>
+--  │   │   │   ├── keypair0.json
+--  │   │   │   ├── keypair1.json
+--  │   │   │   ├── <credId2>.threshold
+--  │   │   │   ├── <credId2>.index
+--  │   │   ...
+--  │   │   │   └── encSecretKey.json
+--  │   ├── <account1>.threshold
+--  │   ├── <account2>
+--  │   │   ├── <credId1>
+--  │   │   │   ├── keypair0.json
+--  │   │   │   ├── keypair1.json
+--  │   │   │   ├── <credId1>.threshold
+--  │   │   │   ├── <credId1>.index
+--  │   │   ...
+--  │   │   │   └── encSecretKey.json
+--  │   │   ├── <credId2>
+--  │   │   │   ├── keypair0.json
+--  │   │   │   ├── keypair1.json
+--  │   │   │   ├── <credId2>.threshold
+--  │   │   │   ├── <credId2>.index
+--  │   │   ...
+--  │   │   │   └── encSecretKey.json
+--  │   ├── <account2>.threshold
+--  └── contracts
+--      ├── contractNames.map
+--      └── moduleNames.map
+--@
 type BaseConfigDir = FilePath
 
 type AccountConfigDir = FilePath
@@ -129,9 +128,8 @@ accountNameMapFile accountCfgDir = accountCfgDir </> "names.map"
 accountKeysDir :: AccountConfigDir -> Types.AccountAddress -> FilePath
 accountKeysDir accCfgDir addr = accCfgDir </> show addr
 
-{- |Get the name of the file which contains the threshold for the amount of
- signatures needed to sign a transaction.
--}
+-- |Get the name of the file which contains the threshold for the amount of
+-- signatures needed to sign a transaction.
 accountThresholdFile :: AccountConfigDir -> Types.AccountAddress -> FilePath
 accountThresholdFile accCfgDir addr = accCfgDir </> show addr <.> "threshold"
 
@@ -149,18 +147,16 @@ accountKeyFile keysDir idx = keysDir </> accountKeyFilePrefix ++ show idx <.> ac
 accountEncryptionSecretKeyFile :: FilePath -> FilePath
 accountEncryptionSecretKeyFile keysDir = keysDir </> "encSecretKey.json"
 
-{- |For a filename (without directory but with extension) determine whether it is a valid name
- of an account key file (as it would be produced by 'accountKeyFile').
--}
+-- |For a filename (without directory but with extension) determine whether it is a valid name
+-- of an account key file (as it would be produced by 'accountKeyFile').
 parseAccountKeyFileName :: FilePath -> Maybe KeyIndex
 parseAccountKeyFileName fileName =
     if takeExtension fileName == "." ++ accountKeyFileExt
         then readMaybe (drop (length accountKeyFilePrefix) $ takeBaseName fileName)
         else Nothing
 
-{- |For a credential folder name, find the corresponding credential index
- of an account key file (as it would be produced by 'accountKeyFile').
--}
+-- |For a credential folder name, find the corresponding credential index
+-- of an account key file (as it would be produced by 'accountKeyFile').
 parseCredentialFolder :: FilePath -> Maybe CredentialIndex
 parseCredentialFolder fileName =
     if takeExtension fileName == "." ++ accountKeyFileExt
@@ -195,16 +191,15 @@ type ContractNameMap = NameMap Types.ContractAddress
 -- |Mapping from module names to their references.
 type ModuleNameMap = NameMap Types.ModuleRef
 
-{- |Base configuration consists of the account name mapping and location of
- account keys to be loaded on demand.
--}
+-- |Base configuration consists of the account name mapping and location of
+-- account keys to be loaded on demand.
 data BaseConfig = BaseConfig
-    { bcVerbose :: Bool
-    , bcAccountNameMap :: AccountNameMap
-    , bcAccountCfgDir :: AccountConfigDir
-    , bcContractNameMap :: ContractNameMap
-    , bcModuleNameMap :: ModuleNameMap
-    , bcContractCfgDir :: ContractConfigDir
+    { bcVerbose :: Bool,
+      bcAccountNameMap :: AccountNameMap,
+      bcAccountCfgDir :: AccountConfigDir,
+      bcContractNameMap :: ContractNameMap,
+      bcModuleNameMap :: ModuleNameMap,
+      bcContractCfgDir :: ContractConfigDir
     }
     deriving (Show)
 
@@ -243,12 +238,12 @@ initBaseConfig f verbose = do
     logSuccess ["configuration initialized"]
     return
         BaseConfig
-            { bcVerbose = False
-            , bcAccountCfgDir = accCfgDir
-            , bcAccountNameMap = accNameMap
-            , bcContractCfgDir = contrCfgDir
-            , bcContractNameMap = contrNameMap
-            , bcModuleNameMap = moduleNameMap
+            { bcVerbose = False,
+              bcAccountCfgDir = accCfgDir,
+              bcAccountNameMap = accNameMap,
+              bcContractCfgDir = contrCfgDir,
+              bcContractNameMap = contrNameMap,
+              bcModuleNameMap = moduleNameMap
             }
 
 -- |Ensure the basic account config is initialized.
@@ -313,10 +308,10 @@ initAccountConfigEither baseCfg namedAddr inCLI skipExisting = runExceptT $ do
                         if inCLI
                             then do
                                 logWarn
-                                    [ printf "account is already initialized: directory '%s' exists." keysDir
-                                    , "overwriting the directory would erase all the currently stored keys"
-                                    , "This is a destructive operation and cannot be undone"
-                                    , "Are you certain that you want to proceed with this operation?"
+                                    [ printf "account is already initialized: directory '%s' exists." keysDir,
+                                      "overwriting the directory would erase all the currently stored keys",
+                                      "This is a destructive operation and cannot be undone",
+                                      "Are you certain that you want to proceed with this operation?"
                                     ]
                                 ovwt <- liftIO $ askConfirmation Nothing
                                 if ovwt
@@ -358,19 +353,18 @@ initAccountConfigEither baseCfg namedAddr inCLI skipExisting = runExceptT $ do
                     return baseCfg{bcAccountNameMap = updatedNameMap}
 
     return
-        ( baseCfg'
-        , AccountConfig
-            { acAddr = namedAddr
-            , acKeys = M.empty
-            , acCids = M.empty
-            , acEncryptionKey = Nothing
-            }
-        , written
+        ( baseCfg',
+          AccountConfig
+            { acAddr = namedAddr,
+              acKeys = M.empty,
+              acCids = M.empty,
+              acEncryptionKey = Nothing
+            },
+          written
         )
 
-{- |Add an account to the configuration by creating its key directory and
- optionally a name mapping.
--}
+-- |Add an account to the configuration by creating its key directory and
+-- optionally a name mapping.
 initAccountConfig ::
     BaseConfig ->
     NamedAddress ->
@@ -385,10 +379,9 @@ initAccountConfig baseCfg namedAddr inCLI skipExisting = do
         Left err -> logFatal [err]
         Right config -> return config
 
-{- |Remove a name from the account name map. If the name is not in use
- |it does nothing
- |Returns the potentially updated baseConfig
--}
+-- |Remove a name from the account name map. If the name is not in use
+-- |it does nothing
+-- |Returns the potentially updated baseConfig
 removeAccountNameAndWrite :: BaseConfig -> Text -> Verbose -> IO BaseConfig
 removeAccountNameAndWrite baseCfg name verbose = do
     -- Check if config has been initialized.
@@ -401,10 +394,9 @@ removeAccountNameAndWrite baseCfg name verbose = do
     logSuccess ["removed account name mapping"]
     return baseCfg{bcAccountNameMap = m}
 
-{- |Remove a name from the contract name map. If the name is not in use,
- |it does nothing.
- |Returns the potentially updated baseConfig.
--}
+-- |Remove a name from the contract name map. If the name is not in use,
+-- |it does nothing.
+-- |Returns the potentially updated baseConfig.
 removeContractNameAndWrite :: BaseConfig -> Text -> Verbose -> IO BaseConfig
 removeContractNameAndWrite baseCfg name verbose = do
     -- Check if config has been initialized.
@@ -417,10 +409,9 @@ removeContractNameAndWrite baseCfg name verbose = do
     logSuccess ["removed contract name mapping"]
     return baseCfg{bcContractNameMap = m}
 
-{- |Remove a name from the module name map. If the name is not in use
- |it does nothing
- |Returns the potentially updated baseConfig
--}
+-- |Remove a name from the module name map. If the name is not in use
+-- |it does nothing
+-- |Returns the potentially updated baseConfig
 removeModuleNameAndWrite :: BaseConfig -> Text -> Verbose -> IO BaseConfig
 removeModuleNameAndWrite baseCfg name verbose = do
     -- Check if config has been initialized.
@@ -456,9 +447,8 @@ removeAccountConfig baseCfg@BaseConfig{..} NamedAddress{..} = do
             -- Remove the alias, if it exists
             (foldr M.delete bcAccountNameMap names, True)
 
-{- |Import the contents of a `ConfigBackup` and log information about each step in the process.
- Naming conflicts are handled by prompting the user for new names.
--}
+-- |Import the contents of a `ConfigBackup` and log information about each step in the process.
+-- Naming conflicts are handled by prompting the user for new names.
 importConfigBackup :: Verbose -> BaseConfig -> Bool -> ([AccountConfig], ContractNameMap, ModuleNameMap) -> IO BaseConfig
 importConfigBackup verbose baseCfg skipExistingAccounts (accs, cnm, mnm) = do
     logInfo ["\nImporting accounts..."]
@@ -527,11 +517,10 @@ importConfigBackup verbose baseCfg skipExistingAccounts (accs, cnm, mnm) = do
 
         checkAndPrompt = checkNameUntilNoCollision typeOfValue validateName
 
-{- |Check if the provided name (key) is invalid or already used,
- and continually prompt the user to provide an alternative,
- until a valid and non-colliding one is entered.
- Returns a valid and non-colliding name.
--}
+-- |Check if the provided name (key) is invalid or already used,
+-- and continually prompt the user to provide an alternative,
+-- until a valid and non-colliding one is entered.
+-- Returns a valid and non-colliding name.
 checkNameUntilNoCollision ::
     (Eq v, Show v) =>
     -- | Name of the value type, fx "account" or "module". Used in the prompt.
@@ -570,11 +559,10 @@ checkNameUntilNoCollision typeOfValue validateName nm unvalidatedName newVal = d
                 T.getLine >>= ensureValidName
             Right () -> return name
 
-{- |Add a name to the account name map.
- If the name is invalid or collides with an existing one, `checkNameUntilNoCollision` is
- used to resolve the conflict and find a new name.
- Returns the name that was actually added.
--}
+-- |Add a name to the account name map.
+-- If the name is invalid or collides with an existing one, `checkNameUntilNoCollision` is
+-- used to resolve the conflict and find a new name.
+-- Returns the name that was actually added.
 addAccountNameAndWrite :: Verbose -> BaseConfig -> Text -> AccountAddress -> IO Text
 addAccountNameAndWrite verbose baseCfg name accountAddr = do
     newName <- checkNameUntilNoCollision "account" validateAccountName nameMap name accountAddr
@@ -586,12 +574,11 @@ addAccountNameAndWrite verbose baseCfg name accountAddr = do
     mapFile = accountNameMapFile accCfgDir
     nameMap = bcAccountNameMap baseCfg
 
-{- |Add a contract name and write it to 'contractNames.map'.
- If the name collides with an existing one, `checkNameUntilNoCollision` is
- used to resolve the conflict and find a new name.
- Returns the name that was actually added.
- Logs fatally, if 'contractNames.map' cannot be written to.
--}
+-- |Add a contract name and write it to 'contractNames.map'.
+-- If the name collides with an existing one, `checkNameUntilNoCollision` is
+-- used to resolve the conflict and find a new name.
+-- Returns the name that was actually added.
+-- Logs fatally, if 'contractNames.map' cannot be written to.
 addContractNameAndWrite :: Verbose -> BaseConfig -> Text -> ContractAddress -> IO Text
 addContractNameAndWrite verbose baseCfg name contrAddr = do
     newName <- checkNameUntilNoCollision "contract instance" validateContractOrModuleName nameMap name contrAddr
@@ -602,12 +589,11 @@ addContractNameAndWrite verbose baseCfg name contrAddr = do
     mapFile = contractNameMapFile . bcContractCfgDir $ baseCfg
     nameMap = bcContractNameMap baseCfg
 
-{- |Add a module name and write it to 'moduleNames.map'.
- If the name collides with an existing one, `checkNameUntilNoCollision` is
- used to resolve the conflict and find a new name.
- Returns the name that was actually added.
- Logs fatally, if 'moduleNames.map' cannot be written to.
--}
+-- |Add a module name and write it to 'moduleNames.map'.
+-- If the name collides with an existing one, `checkNameUntilNoCollision` is
+-- used to resolve the conflict and find a new name.
+-- Returns the name that was actually added.
+-- Logs fatally, if 'moduleNames.map' cannot be written to.
 addModuleNameAndWrite :: Verbose -> BaseConfig -> Text -> ModuleRef -> IO Text
 addModuleNameAndWrite verbose baseCfg name modRef = do
     newName <- checkNameUntilNoCollision "module" validateContractOrModuleName nameMap name modRef
@@ -620,19 +606,19 @@ addModuleNameAndWrite verbose baseCfg name modRef = do
 
 -- |A contract address along with a list of local names.
 data NamedContractAddress = NamedContractAddress
-    { ncaAddr :: Types.ContractAddress
-    -- ^ The contract address.
-    , ncaNames :: [Text]
-    -- ^ The local names for the contract.
+    { -- | The contract address.
+      ncaAddr :: Types.ContractAddress,
+      -- | The local names for the contract.
+      ncaNames :: [Text]
     }
     deriving (Show)
 
 -- |A module reference along with a list of local names.
 data NamedModuleRef = NamedModuleRef
-    { nmrRef :: Types.ModuleRef
-    -- ^ The module reference.
-    , nmrNames :: [Text]
-    -- ^ The local names for the module.
+    { -- | The module reference.
+      nmrRef :: Types.ModuleRef,
+      -- | The local names for the module.
+      nmrNames :: [Text]
     }
     deriving (Show)
 
@@ -658,11 +644,10 @@ data OverwriteSetting
       AllowOverwrite
     deriving (Eq)
 
-{- |Write to a file with the provided function and handle IO errors with an appropriate logging of errors.
- Also ensures that the parent folders are created if missing.
- If `OverwriteSetting == PromptBeforeOverwrite` then the user is prompted to confirm.
- Return True if write was attempted, and False otherwise.
--}
+-- |Write to a file with the provided function and handle IO errors with an appropriate logging of errors.
+-- Also ensures that the parent folders are created if missing.
+-- If `OverwriteSetting == PromptBeforeOverwrite` then the user is prompted to confirm.
+-- Return True if write was attempted, and False otherwise.
 handleWriteFile :: (FilePath -> s -> IO ()) -> OverwriteSetting -> Verbose -> FilePath -> s -> IO Bool
 handleWriteFile wrtFile overwriteSetting verbose file contents = do
     writeConfirmed <- case overwriteSetting of
@@ -698,10 +683,9 @@ handleReadFile rdFile file = catchIOError (rdFile file) logFatalOnErrors
         | isPermissionError e = logFatal [[i|you do not have permissions to read the file '#{file}'|]]
         | otherwise = logFatal [[i|something went wrong while reading the file '#{file}', err: '#{e}'|]]
 
-{- |Write the account keys structure into the directory of the given account.
- Each 'EncryptedAccountKeyPair' is written to a JSON file the name of which
- is determined by 'accountKeyFile'.
--}
+-- |Write the account keys structure into the directory of the given account.
+-- Each 'EncryptedAccountKeyPair' is written to a JSON file the name of which
+-- is determined by 'accountKeyFile'.
 writeAccountKeys :: BaseConfig -> AccountConfig -> Verbose -> IO ()
 writeAccountKeys baseCfg accCfg verbose = do
     let accCfgDir = bcAccountCfgDir baseCfg
@@ -763,12 +747,12 @@ getBaseConfig f verbose = do
 
     return
         BaseConfig
-            { bcVerbose = verbose
-            , bcAccountCfgDir = accCfgDir
-            , bcAccountNameMap = anm
-            , bcContractCfgDir = contrCfgDir
-            , bcContractNameMap = cnm
-            , bcModuleNameMap = mnm
+            { bcVerbose = verbose,
+              bcAccountCfgDir = accCfgDir,
+              bcAccountNameMap = anm,
+              bcContractCfgDir = contrCfgDir,
+              bcContractNameMap = cnm,
+              bcModuleNameMap = mnm
             }
 
 getBaseConfigDir :: Maybe FilePath -> IO FilePath
@@ -789,9 +773,8 @@ loadNameMapFromJSON mapFile = do
 emptyMapContentJSON :: IsString s => s
 emptyMapContentJSON = "{}"
 
-{- |Load an AccountNameMap from a file in the format specified by `parseAccountNameMap`.
- LogFatal if the file format is invalid.
--}
+-- |Load an AccountNameMap from a file in the format specified by `parseAccountNameMap`.
+-- LogFatal if the file format is invalid.
 loadAccountNameMap :: FilePath -> IO AccountNameMap
 loadAccountNameMap mapFile = do
     -- Simply use an empty map if the reading fails
@@ -809,9 +792,8 @@ parseAccountNameMap ls = M.fromList <$> mapM parseAccountNameMapEntry ls'
   where
     ls' = filter (not . all isSpace) ls
 
-{- |Parse a line representing a single name-account mapping of the format "<name> = <address>".
- Leading and trailing whitespaces around name and address are ignored.
--}
+-- |Parse a line representing a single name-account mapping of the format "<name> = <address>".
+-- Leading and trailing whitespaces around name and address are ignored.
 parseAccountNameMapEntry :: (MonadError String m) => String -> m (Text, Types.AccountAddress)
 parseAccountNameMapEntry line =
     case splitOn "=" line of
@@ -833,9 +815,8 @@ isValidAccountName n = not (T.null n) && not (isSpace $ T.head n) && not (isSpac
     supportedChar c = isAlphaNum c || c `elem` supportedSpecialChars
     supportedSpecialChars = "-_,.!? " :: String
 
-{- |Check whether the given text is a valid contract or module name.
- Is different from account names in that it must start with a letter.
--}
+-- |Check whether the given text is a valid contract or module name.
+-- Is different from account names in that it must start with a letter.
 isValidContractOrModuleName :: Text -> Bool
 isValidContractOrModuleName n =
     not (T.null n)
@@ -870,26 +851,26 @@ accountConfigVersion :: Version
 accountConfigVersion = 1
 
 data AccountConfig = AccountConfig
-    { acAddr :: !NamedAddress
-    , acKeys :: EncryptedAccountKeyMap
-    , acCids :: !(M.Map IDTypes.CredentialIndex IDTypes.CredentialRegistrationID)
-    -- ^Index assignment of credential registration ids to credential indices.
-    , acEncryptionKey :: !(Maybe EncryptedAccountEncryptionSecretKey)
-    -- ^ FIXME: This is a Maybe because the setup with account init being a
-    -- special thing is such that we need to be able to initialize a dummy config.
-    -- However this makes no practical sense, and that should be reworked so that
-    -- you just import an account and don't initialize a dummy config first. But
-    -- that is for the future, and for now we just have to deal with null pointers.
+    { acAddr :: !NamedAddress,
+      acKeys :: EncryptedAccountKeyMap,
+      -- |Index assignment of credential registration ids to credential indices.
+      acCids :: !(M.Map IDTypes.CredentialIndex IDTypes.CredentialRegistrationID),
+      -- | FIXME: This is a Maybe because the setup with account init being a
+      -- special thing is such that we need to be able to initialize a dummy config.
+      -- However this makes no practical sense, and that should be reworked so that
+      -- you just import an account and don't initialize a dummy config first. But
+      -- that is for the future, and for now we just have to deal with null pointers.
+      acEncryptionKey :: !(Maybe EncryptedAccountEncryptionSecretKey)
     }
     deriving (Show, Eq)
 
 instance AE.ToJSON AccountConfig where
     toJSON AccountConfig{..} =
         AE.object
-            [ "address" .= acAddr
-            , "accountKeys" .= acKeys
-            , "credentialIds" .= acCids
-            , "accountEncryptionKey" .= acEncryptionKey
+            [ "address" .= acAddr,
+              "accountKeys" .= acKeys,
+              "credentialIds" .= acCids,
+              "accountEncryptionKey" .= acEncryptionKey
             ]
 
 instance AE.FromJSON AccountConfig where
@@ -956,8 +937,8 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
                                 (guard . isDoesNotExistError)
                                 ( \_ ->
                                     logFatal
-                                        [ printf "key directory for account '%s' not found" (show addr)
-                                        , "did you forget to add the account (using 'config account add')?"
+                                        [ printf "key directory for account '%s' not found" (show addr),
+                                          "did you forget to add the account (using 'config account add')?"
                                         ]
                                 )
                                 ( do
@@ -981,12 +962,12 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
             e@(Just _) -> return (bc, e)
 
     return
-        ( bc'
-        , AccountConfig
-            { acAddr = namedAddr
-            , acKeys = km
-            , acCids = cidMap
-            , acEncryptionKey = enc
+        ( bc',
+          AccountConfig
+            { acAddr = namedAddr,
+              acKeys = km,
+              acCids = cidMap,
+              acEncryptionKey = enc
             }
         )
   where
@@ -1018,12 +999,11 @@ getAccountConfig account baseCfg keysDir keyMap encKey autoInit = do
             else do
                 return Nothing
 
-{- |Look up an account by name or address:
- If input is a well-formed account address, try to (reverse) look up its name in the map.
- If this lookup fails, return the address with name Nothing.
- Otherwise assume the input is a local name of an account, and try to look up its address.
- If this lookup fails, return Nothing.
--}
+-- |Look up an account by name or address:
+-- If input is a well-formed account address, try to (reverse) look up its name in the map.
+-- If this lookup fails, return the address with name Nothing.
+-- Otherwise assume the input is a local name of an account, and try to look up its address.
+-- If this lookup fails, return Nothing.
 resolveAccountAddress :: AccountNameMap -> Text -> Maybe NamedAddress
 resolveAccountAddress m input = do
     -- Try parsing input as account address.
@@ -1042,9 +1022,8 @@ resolveAccountAddress m input = do
 findAllNamesFor :: Eq v => NameMap v -> v -> [Text]
 findAllNamesFor m input = map fst $ filter ((== input) . snd) (M.toList m)
 
-{- |Look up an account by name or address. See doc for 'resolveAccountAddress'.
- If the lookup fails, an error is thrown.
--}
+-- |Look up an account by name or address. See doc for 'resolveAccountAddress'.
+-- If the lookup fails, an error is thrown.
 getAccountAddress :: (MonadError String m) => AccountNameMap -> Text -> m NamedAddress
 getAccountAddress m input =
     case resolveAccountAddress m input of
@@ -1103,9 +1082,8 @@ loadCredentialIndex credDir = do
 insertAccountKey :: EncryptedAccountKeyMap -> (CredentialIndex, [(KeyIndex, EncryptedAccountKeyPair)]) -> EncryptedAccountKeyMap
 insertAccountKey km (cidx, kpm) = M.insert cidx (M.fromList kpm) km
 
-{- |Compute the next index not already in use, starting from the one provided
- (which is assumed to be less than or equal to the first element of the list).
--}
+-- |Compute the next index not already in use, starting from the one provided
+-- (which is assumed to be less than or equal to the first element of the list).
 nextUnusedIdx :: KeyIndex -> [KeyIndex] -> KeyIndex
 nextUnusedIdx idx sortedKeys = case sortedKeys of
     [] -> idx
@@ -1131,12 +1109,11 @@ safeListDirectory dir = do
     e <- doesDirectoryExist dir
     if e then listDirectory dir else return []
 
-{- |Show a list of names with spacing and quotes. The names are sorted while ignoring case.
- Example:
-
- >>> showNameList ["B", "a"]
- "'a' 'B'"
--}
+-- |Show a list of names with spacing and quotes. The names are sorted while ignoring case.
+-- Example:
+--
+-- >>> showNameList ["B", "a"]
+-- "'a' 'B'"
 showNameList :: [T.Text] -> String
 showNameList = T.unpack . T.unwords . map addQuotes . caseInsensitiveSort
   where

@@ -36,8 +36,8 @@ import Prelude
 
 -- |The response contains headers and a response value.
 data GRPCResponse a = GRPCResponse
-    { grpcHeaders :: GRPCHeaderList
-    , grpcResponseVal :: a
+    { grpcHeaders :: GRPCHeaderList,
+      grpcResponseVal :: a
     }
     deriving (Show, Functor)
 
@@ -56,11 +56,10 @@ data GRPCResult a
 -- |Headers in GRPC call response.
 type GRPCHeaderList = CIHeaderList
 
-{- |GRPC call helper output type, with variants corresponding to the result of a unary or streaming call.
- This is here due to the differing output types of the GRPC helpers @rawUnary@ and @rawStreamServer@,
- that we use to invoke the GRPC procedure. For more info, see the documentation at:
- http://hackage.haskell.org/package/http2-client-grpc-0.7.0.0/docs/Network-GRPC-Client-Helpers.html
--}
+-- |GRPC call helper output type, with variants corresponding to the result of a unary or streaming call.
+-- This is here due to the differing output types of the GRPC helpers @rawUnary@ and @rawStreamServer@,
+-- that we use to invoke the GRPC procedure. For more info, see the documentation at:
+-- http://hackage.haskell.org/package/http2-client-grpc-0.7.0.0/docs/Network-GRPC-Client-Helpers.html
 data GRPCOutput a
     = -- |The output returned by invoking a GRPC procedure using 'rawUnary'.
       RawUnaryOutput (RawReply a)
@@ -121,12 +120,11 @@ printJSON v =
 printJSONValues :: MonadIO m => Value -> m ()
 printJSONValues = liftIO . BSL8.putStrLn . encodePretty
 
-{- |Extract the response value of a @GRPCResult@, if present, and return it
- under the provided mapping.
- Returns a @Left@ wrapping an error string describing its nature if the
- request could not be made, or if the GRPC status code was not 'OK', or a
- @Right@ wrapping the response value under the provided mapping otherwise.
--}
+-- |Extract the response value of a @GRPCResult@, if present, and return it
+-- under the provided mapping.
+-- Returns a @Left@ wrapping an error string describing its nature if the
+-- request could not be made, or if the GRPC status code was not 'OK', or a
+-- @Right@ wrapping the response value under the provided mapping otherwise.
 extractResponseValue :: (a -> b) -> GRPCResult (Either String a) -> Either (Maybe GRPCStatusCode, String) b
 extractResponseValue f res =
     case res of
@@ -138,18 +136,16 @@ extractResponseValue f res =
         StatusInvalid -> Left (Nothing, "A GRPC error occurred: Response contained an invalid return code.")
         RequestFailed err -> Left (Nothing, "The GRPC request failed: " <> err)
 
-{- |Get the response value of a @GRPCResult@, if present.
- Returns a @Left@ wrapping an error string describing its nature if the
- request could not be made, or if the GRPC status code was not 'OK', or a
- @Right@ wrapping the response value otherwise.
--}
+-- |Get the response value of a @GRPCResult@, if present.
+-- Returns a @Left@ wrapping an error string describing its nature if the
+-- request could not be made, or if the GRPC status code was not 'OK', or a
+-- @Right@ wrapping the response value otherwise.
 getResponseValue :: GRPCResult (Either String a) -> Either (Maybe GRPCStatusCode, String) a
 getResponseValue = extractResponseValue id
 
-{- |Extract the response value of a @GRPCResult@, if present, and return it
- under the provided mapping, or fail printing the cause if the result
- contains an error.
--}
+-- |Extract the response value of a @GRPCResult@, if present, and return it
+-- under the provided mapping, or fail printing the cause if the result
+-- contains an error.
 extractResponseValueOrDie ::
     (MonadIO m) =>
     (a -> b) ->
@@ -160,20 +156,18 @@ extractResponseValueOrDie f res =
         Left err -> logFatal [snd err]
         Right v -> return v
 
-{- |Get the response value of a @GRPCResult@ if present, or fail printing the
- cause if the result contains an error.
--}
+-- |Get the response value of a @GRPCResult@ if present, or fail printing the
+-- cause if the result contains an error.
 getResponseValueOrDie ::
     (MonadIO m) =>
     GRPCResult (Either String a) ->
     m a
 getResponseValueOrDie = extractResponseValueOrDie id
 
-{- |Get the response value and the headers of a @GRPCResult@, if present.
- Returns a @Left@ wrapping the @GRPCResult@ if it is not of the variant
- @StatusOk@ and a @Right@ wrapping a pair of the response value and a
- @CIHeaderList@ otherwise.
--}
+-- |Get the response value and the headers of a @GRPCResult@, if present.
+-- Returns a @Left@ wrapping the @GRPCResult@ if it is not of the variant
+-- @StatusOk@ and a @Right@ wrapping a pair of the response value and a
+-- @CIHeaderList@ otherwise.
 getResponseValueAndHeaders :: GRPCResult a -> Either (GRPCResult b) (a, CIHeaderList)
 getResponseValueAndHeaders res =
     case res of
@@ -182,12 +176,11 @@ getResponseValueAndHeaders res =
         StatusInvalid -> Left StatusInvalid
         RequestFailed err -> Left $ RequestFailed err
 
-{- |Get the 'blockhash' header value of a @CIHeaderList@ if present.
- Fails with an error message if the header was not present in the
- list of headers or if the header value could not be @read@ into a
- @BlockHash@. Returns a @BlockHash@ @read@ from the header value
- otherwise.
--}
+-- |Get the 'blockhash' header value of a @CIHeaderList@ if present.
+-- Fails with an error message if the header was not present in the
+-- list of headers or if the header value could not be @read@ into a
+-- @BlockHash@. Returns a @BlockHash@ @read@ from the header value
+-- otherwise.
 getBlockHashHeader :: (MonadFail m) => CIHeaderList -> m Types.BlockHash
 getBlockHashHeader hs =
     case List.find (("blockhash" ==) . fst) hs of

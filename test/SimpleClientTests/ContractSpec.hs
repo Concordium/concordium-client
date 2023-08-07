@@ -158,9 +158,9 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
     it "Enum" $ do
         let enumType =
                 Enum
-                    [ ("a", Named [("a.1", Bool)])
-                    , ("b", Unnamed [Bool])
-                    , ("c", None)
+                    [ ("a", Named [("a.1", Bool)]),
+                      ("b", Unnamed [Bool]),
+                      ("c", None)
                     ]
 
         fromToJSONSucceed enumType $ object ["a" .= object ["a.1" .= AE.Bool True]]
@@ -171,9 +171,9 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
         let taggedEnumType =
                 TaggedEnum $
                     Map.fromList
-                        [ (251, ("a" :: Text, Named [("a.1", Bool)]))
-                        , (255, ("b" :: Text, Unnamed [Bool]))
-                        , (1, ("c" :: Text, None))
+                        [ (251, ("a" :: Text, Named [("a.1", Bool)])),
+                          (255, ("b" :: Text, Unnamed [Bool])),
+                          (1, ("c" :: Text, None))
                         ]
 
         fromToJSONSucceed taggedEnumType $ object ["a" .= object ["a.1" .= AE.Bool True]]
@@ -215,9 +215,9 @@ printParameterSpec = describe "serialize JSON params to bytes and deserialize to
         -- Additional fields not allowed
         fromToJSONFail (ReceiveName One) $
             object
-                [ "contract" .= AE.String "contrName"
-                , "func" .= AE.String "funcName"
-                , "extra" .= AE.String "extra"
+                [ "contract" .= AE.String "contrName",
+                  "func" .= AE.String "funcName",
+                  "extra" .= AE.String "extra"
                 ]
         fromToJSONFail (ReceiveName One) $ object ["contract" .= AE.String "contrName.withDot", "func" .= AE.String "funcName"]
 
@@ -309,8 +309,8 @@ genContractSchema n = ContractSchemaV0 <$> genMaybeSchemaType <*> genMaybeSchema
     genMaybeSchemaType :: Gen (Maybe SchemaType)
     genMaybeSchemaType =
         frequency
-            [ (7, Just <$> genSchemaType (n'))
-            , (1, pure Nothing)
+            [ (7, Just <$> genSchemaType (n')),
+              (1, pure Nothing)
             ]
 
     genReceiveSigs :: Gen (Map Text SchemaType)
@@ -323,9 +323,9 @@ genFields n
     | n == 0 = pure None
     | otherwise =
         frequency
-            [ (8, Named <$> listOf (genTwoOf genText (genSchemaType n')))
-            , (4, Unnamed <$> listOf (genSchemaType n'))
-            , (1, pure None)
+            [ (8, Named <$> listOf (genTwoOf genText (genSchemaType n'))),
+              (4, Unnamed <$> listOf (genSchemaType n')),
+              (1, pure None)
             ]
   where
     n' = nextNSize n
@@ -335,25 +335,25 @@ genSchemaType n
     | n == 0 = pure Unit
     | otherwise =
         oneof
-            [ pure Unit
-            , pure Bool
-            , pure UInt8
-            , pure UInt16
-            , pure UInt32
-            , pure UInt64
-            , pure Int8
-            , pure Int16
-            , pure Int32
-            , pure Int64
-            , pure AccountAddress
-            , pure ContractAddress
-            , Pair <$> genSchemaType n' <*> genSchemaType n'
-            , List <$> genSizeLen <*> genSchemaType n'
-            , Set <$> genSizeLen <*> genSchemaType n'
-            , Map <$> genSizeLen <*> genSchemaType n' <*> genSchemaType n'
-            , Array <$> arbitrary <*> genSchemaType n'
-            , Struct <$> genFields n'
-            , Enum <$> listOf (genTwoOf genText (genFields n'))
+            [ pure Unit,
+              pure Bool,
+              pure UInt8,
+              pure UInt16,
+              pure UInt32,
+              pure UInt64,
+              pure Int8,
+              pure Int16,
+              pure Int32,
+              pure Int64,
+              pure AccountAddress,
+              pure ContractAddress,
+              Pair <$> genSchemaType n' <*> genSchemaType n',
+              List <$> genSizeLen <*> genSchemaType n',
+              Set <$> genSizeLen <*> genSchemaType n',
+              Map <$> genSizeLen <*> genSchemaType n' <*> genSchemaType n',
+              Array <$> arbitrary <*> genSchemaType n',
+              Struct <$> genFields n',
+              Enum <$> listOf (genTwoOf genText (genFields n'))
             ]
   where
     n' = nextNSize n

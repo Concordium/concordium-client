@@ -57,17 +57,17 @@ instance AE.FromJSON NamedAddress where
 type AccountKeyPair = SigScheme.KeyPair
 
 data EncryptedAccountKeyPair = EncryptedAccountKeyPairEd25519
-    { verifyKey :: !Ed25519.VerifyKey
-    , encryptedSignKey :: !(EncryptedJSON Ed25519.SignKey)
+    { verifyKey :: !Ed25519.VerifyKey,
+      encryptedSignKey :: !(EncryptedJSON Ed25519.SignKey)
     }
     deriving (Show, Eq)
 
 instance AE.ToJSON EncryptedAccountKeyPair where
     toJSON EncryptedAccountKeyPairEd25519{..} =
         AE.object
-            [ "schemeId" .= SigScheme.Ed25519
-            , "verifyKey" .= verifyKey
-            , "encryptedSignKey" .= encryptedSignKey
+            [ "schemeId" .= SigScheme.Ed25519,
+              "verifyKey" .= verifyKey,
+              "encryptedSignKey" .= encryptedSignKey
             ]
 
 instance AE.FromJSON EncryptedAccountKeyPair where
@@ -90,30 +90,27 @@ type EncryptedAccountEncryptionSecretKey = EncryptedText
 mapNumKeys :: Map.Map ID.CredentialIndex (Map.Map ID.KeyIndex a) -> Int
 mapNumKeys = sum . fmap Map.size
 
-{- |Information about a given account sufficient to sign transactions.
- This includes the plain signing keys.
--}
+-- |Information about a given account sufficient to sign transactions.
+-- This includes the plain signing keys.
 data AccountSigningData = AccountSigningData
-    { asdAddress :: !Types.AccountAddress
-    , asdKeys :: !AccountKeyMap
-    , asdThreshold :: !ID.AccountThreshold
+    { asdAddress :: !Types.AccountAddress,
+      asdKeys :: !AccountKeyMap,
+      asdThreshold :: !ID.AccountThreshold
     }
     deriving (Show)
 
-{- |Selected keys resolved from the account config for the specific interaction.
- In contrast to the account config this will only contain the keys the user selected.
- The keys are still encrypted. They will only be decrypted when they will be used.
--}
+-- |Selected keys resolved from the account config for the specific interaction.
+-- In contrast to the account config this will only contain the keys the user selected.
+-- The keys are still encrypted. They will only be decrypted when they will be used.
 data EncryptedSigningData = EncryptedSigningData
-    { esdAddress :: !NamedAddress
-    , esdKeys :: !EncryptedAccountKeyMap
-    , esdEncryptionKey :: !(Maybe EncryptedAccountEncryptionSecretKey)
+    { esdAddress :: !NamedAddress,
+      esdKeys :: !EncryptedAccountKeyMap,
+      esdEncryptionKey :: !(Maybe EncryptedAccountEncryptionSecretKey)
     }
     deriving (Show)
 
-{- | Test whether the given keypair passes a basic sanity check, signing and
- verifying the signature with the keypair should succeed.
--}
+-- | Test whether the given keypair passes a basic sanity check, signing and
+-- verifying the signature with the keypair should succeed.
 checkAccountKeyPair :: AccountKeyPair -> IO Bool
 checkAccountKeyPair kp = do
     let sgn = SigScheme.sign kp "challenge"

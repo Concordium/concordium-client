@@ -82,80 +82,80 @@ exampleBakerPoolInfo =
 exampleBakerInfoResult :: StakePendingChange' UTCTime -> AccountStakingInfo
 exampleBakerInfoResult pc =
     AccountStakingBaker
-        { asiStakedAmount = 100
-        , asiStakeEarnings = True
-        , asiBakerInfo =
+        { asiStakedAmount = 100,
+          asiStakeEarnings = True,
+          asiBakerInfo =
             BakerInfo
-                { _bakerIdentity = 1
-                , _bakerElectionVerifyKey = VRF.publicKey . fst $ VRF.randomKeyPair (mkStdGen 0)
-                , _bakerAggregationVerifyKey = derivePublicKey $ unsafePerformIO generateSecretKey
-                , _bakerSignatureVerifyKey = snd $ unsafePerformIO newKeyPair
-                }
-        , asiPendingChange = pc
-        , asiPoolInfo = Just exampleBakerPoolInfo
+                { _bakerIdentity = 1,
+                  _bakerElectionVerifyKey = VRF.publicKey . fst $ VRF.randomKeyPair (mkStdGen 0),
+                  _bakerAggregationVerifyKey = derivePublicKey $ unsafePerformIO generateSecretKey,
+                  _bakerSignatureVerifyKey = snd $ unsafePerformIO newKeyPair
+                },
+          asiPendingChange = pc,
+          asiPoolInfo = Just exampleBakerPoolInfo
         }
 
 exampleDelegatorStakingInfo :: StakePendingChange' UTCTime -> AccountStakingInfo
 exampleDelegatorStakingInfo pc =
     AccountStakingDelegated
-        { asiStakedAmount = 100
-        , asiStakeEarnings = False
-        , asiDelegationTarget = DelegatePassive
-        , asiDelegationPendingChange = pc
+        { asiStakedAmount = 100,
+          asiStakeEarnings = False,
+          asiDelegationTarget = DelegatePassive,
+          asiDelegationPendingChange = pc
         }
 
 -- The credentials will be given indices 0, 1, ..
 exampleAccountInfoResult :: AccountStakingInfo -> [IDTypes.RawAccountCredential] -> AccountInfo
 exampleAccountInfoResult staking cs =
     AccountInfo
-        { aiAccountAmount = Types.Amount 1
-        , aiAccountNonce = Types.Nonce 2
-        , aiStakingInfo = staking
-        , aiAccountCredentials = Map.fromList . zip [0 ..] . map (Versioned 0) $ cs
-        , aiAccountThreshold = 1
-        , aiAccountReleaseSchedule = AccountReleaseSummary 0 []
-        , aiAccountEncryptedAmount =
+        { aiAccountAmount = Types.Amount 1,
+          aiAccountNonce = Types.Nonce 2,
+          aiStakingInfo = staking,
+          aiAccountCredentials = Map.fromList . zip [0 ..] . map (Versioned 0) $ cs,
+          aiAccountThreshold = 1,
+          aiAccountReleaseSchedule = AccountReleaseSummary 0 [],
+          aiAccountEncryptedAmount =
             Types.AccountEncryptedAmount
-                { _startIndex = 3
-                , _incomingEncryptedAmounts = Seq.fromList [encAmount1, encAmount2]
-                , _selfAmount = encAmount2
-                , _aggregatedAmount = Nothing
-                }
-        , aiAccountEncryptionKey = dummyEncryptionPublicKey
-        , aiAccountIndex = 27
-        , aiAccountAddress = exampleAddress1
+                { _startIndex = 3,
+                  _incomingEncryptedAmounts = Seq.fromList [encAmount1, encAmount2],
+                  _selfAmount = encAmount2,
+                  _aggregatedAmount = Nothing
+                },
+          aiAccountEncryptionKey = dummyEncryptionPublicKey,
+          aiAccountIndex = 27,
+          aiAccountAddress = exampleAddress1
         }
 
 exampleCredentials :: IDTypes.Policy -> IDTypes.RawAccountCredential
 exampleCredentials p =
     IDTypes.NormalAC
         ( IDTypes.CredentialDeploymentValues
-            { IDTypes.cdvPublicKeys = acc
-            , IDTypes.cdvCredId = regId
-            , IDTypes.cdvIpId = IDTypes.IP_ID 21
-            , IDTypes.cdvThreshold = IDTypes.Threshold 1
-            , IDTypes.cdvArData =
+            { IDTypes.cdvPublicKeys = acc,
+              IDTypes.cdvCredId = regId,
+              IDTypes.cdvIpId = IDTypes.IP_ID 21,
+              IDTypes.cdvThreshold = IDTypes.Threshold 1,
+              IDTypes.cdvArData =
                 Map.singleton
                     (IDTypes.ArIdentity 0)
                     IDTypes.ChainArData
                         { IDTypes.ardIdCredPubShare = share
-                        }
-            , IDTypes.cdvPolicy = p
+                        },
+              IDTypes.cdvPolicy = p
             }
         )
         $ IDTypes.CredentialDeploymentCommitments
-            { cmmPrf = dummyCommitment
-            , cmmCredCounter = dummyCommitment
-            , cmmMaxAccounts = dummyCommitment
-            , cmmAttributes = Map.empty
-            , cmmIdCredSecSharingCoeff = []
+            { cmmPrf = dummyCommitment,
+              cmmCredCounter = dummyCommitment,
+              cmmMaxAccounts = dummyCommitment,
+              cmmAttributes = Map.empty,
+              cmmIdCredSecSharingCoeff = []
             }
   where
     acc =
         let
             keys = Map.fromList . zip [0 ..] $ unsafePerformIO $ replicateM 2 (SS.correspondingVerifyKey <$> SS.newKeyPair SS.Ed25519)
             threshold = 1
-         in
+        in
             IDTypes.CredentialPublicKeys keys (IDTypes.SignatureThreshold threshold)
     regIdS = "a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f"
     shareS = "a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46fa1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f"
@@ -169,21 +169,20 @@ exampleCredentials p =
 examplePolicyWithoutItems :: IDTypes.Policy
 examplePolicyWithoutItems =
     IDTypes.Policy
-        { IDTypes.pCreatedAt = YearMonth 2020 4
-        , IDTypes.pValidTo = YearMonth 2021 4
-        , IDTypes.pItems = Map.empty
+        { IDTypes.pCreatedAt = YearMonth 2020 4,
+          IDTypes.pValidTo = YearMonth 2021 4,
+          IDTypes.pItems = Map.empty
         }
 
 examplePolicyWithOneItem :: IDTypes.Policy
 examplePolicyWithOneItem =
     IDTypes.Policy
-        { IDTypes.pCreatedAt = YearMonth 2020 4
-        , IDTypes.pValidTo = YearMonth 2021 4
-        , IDTypes.pItems =
+        { IDTypes.pCreatedAt = YearMonth 2020 4,
+          IDTypes.pValidTo = YearMonth 2021 4,
+          IDTypes.pItems =
             Map.fromList
-                [
-                    ( IDTypes.AttributeTag 1
-                    , IDTypes.AttributeValue "Value-1"
+                [   ( IDTypes.AttributeTag 1,
+                      IDTypes.AttributeValue "Value-1"
                     )
                 ]
         }
@@ -191,21 +190,21 @@ examplePolicyWithOneItem =
 examplePolicyWithTwoItems :: IDTypes.Policy
 examplePolicyWithTwoItems =
     IDTypes.Policy
-        { IDTypes.pCreatedAt = YearMonth 2020 4
-        , IDTypes.pValidTo = YearMonth 2021 4
-        , IDTypes.pItems =
+        { IDTypes.pCreatedAt = YearMonth 2020 4,
+          IDTypes.pValidTo = YearMonth 2021 4,
+          IDTypes.pItems =
             Map.fromList
-                [ (IDTypes.AttributeTag 1, IDTypes.AttributeValue "Value-1")
-                , (IDTypes.AttributeTag 3, IDTypes.AttributeValue "Value-2")
+                [ (IDTypes.AttributeTag 1, IDTypes.AttributeValue "Value-1"),
+                  (IDTypes.AttributeTag 3, IDTypes.AttributeValue "Value-2")
                 ]
         }
 
 examplePolicyWithItemOutOfRange :: IDTypes.Policy
 examplePolicyWithItemOutOfRange =
     IDTypes.Policy
-        { IDTypes.pCreatedAt = YearMonth 2020 4
-        , IDTypes.pValidTo = YearMonth 2021 4
-        , IDTypes.pItems = Map.fromList [(IDTypes.AttributeTag 255, IDTypes.AttributeValue "Value-1")]
+        { IDTypes.pCreatedAt = YearMonth 2020 4,
+          IDTypes.pValidTo = YearMonth 2021 4,
+          IDTypes.pItems = Map.fromList [(IDTypes.AttributeTag 255, IDTypes.AttributeValue "Value-1")]
         }
 
 printAccountListSpec :: Spec
@@ -213,11 +212,11 @@ printAccountListSpec = describe "printAccountList" $ do
     specify "empty" $ p [] `shouldBe` ["Accounts: none"]
     specify "multiple" $
         p [exampleAddress1, exampleAddress2]
-            `shouldBe` [ "Accounts:"
-                       , "                 Account Address                     Account Names"
-                       , "--------------------------------------------------------------------"
-                       , "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6   'example' 'exampleExtraName'"
-                       , "4P6vppapjvwAxGf5o1dXUhgwpW3Tvpc6vHj75MJHD6Z3RUmMpJ   'example2'"
+            `shouldBe` [ "Accounts:",
+                         "                 Account Address                     Account Names",
+                         "--------------------------------------------------------------------",
+                         "2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6   'example' 'exampleExtraName'",
+                         "4P6vppapjvwAxGf5o1dXUhgwpW3Tvpc6vHj75MJHD6Z3RUmMpJ   'example2'"
                        ]
   where
     p = execWriter . (printAccountList exampleAccountNameMap)
@@ -226,44 +225,44 @@ printAccountInfoSpec :: Spec
 printAccountInfoSpec = describe "printAccountInfo" $ do
     specify "without baker nor credentials" $
         p exampleNamedAddress (exampleAccountInfoResult AccountStakingNone [])
-            `shouldBe` [ "Local names:            'example'"
-                       , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-                       , "Balance:                0.000001 CCD"
-                       , "Nonce:                  2"
-                       , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
-                       , ""
-                       , "Baking or delegating stake: no"
-                       , ""
-                       , "Credentials: none"
+            `shouldBe` [ "Local names:            'example'",
+                         "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
+                         "Balance:                0.000001 CCD",
+                         "Nonce:                  2",
+                         "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
+                         "",
+                         "Baking or delegating stake: no",
+                         "",
+                         "Credentials: none"
                        ]
     specify "with baker" $
         p exampleNamedAddress (exampleAccountInfoResult (exampleBakerInfoResult NoChange) [])
-            `shouldBe` [ "Local names:            'example'"
-                       , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-                       , "Balance:                0.000001 CCD"
-                       , "Nonce:                  2"
-                       , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
-                       , ""
-                       , "Baker: #1"
-                       , " - Staked amount: 0.000100 CCD"
-                       , " - Restake earnings: yes"
-                       , ""
-                       , "Credentials: none"
+            `shouldBe` [ "Local names:            'example'",
+                         "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
+                         "Balance:                0.000001 CCD",
+                         "Nonce:                  2",
+                         "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
+                         "",
+                         "Baker: #1",
+                         " - Staked amount: 0.000100 CCD",
+                         " - Restake earnings: yes",
+                         "",
+                         "Credentials: none"
                        ]
     specify "with delegator" $
         p exampleNamedAddress (exampleAccountInfoResult (exampleDelegatorStakingInfo NoChange) [])
-            `shouldBe` [ "Local names:            'example'"
-                       , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-                       , "Balance:                0.000001 CCD"
-                       , "Nonce:                  2"
-                       , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
-                       , ""
-                       , "Delegating stake: yes"
-                       , "Delegation target: Passive delegation"
-                       , " - Staked amount: 0.000100 CCD"
-                       , " - Restake earnings: no"
-                       , ""
-                       , "Credentials: none"
+            `shouldBe` [ "Local names:            'example'",
+                         "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
+                         "Balance:                0.000001 CCD",
+                         "Nonce:                  2",
+                         "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
+                         "",
+                         "Delegating stake: yes",
+                         "Delegation target: Passive delegation",
+                         " - Staked amount: 0.000100 CCD",
+                         " - Restake earnings: no",
+                         "",
+                         "Credentials: none"
                        ]
     specify "with release schedule" $
         p
@@ -271,87 +270,87 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
             ( (exampleAccountInfoResult AccountStakingNone [])
                 { aiAccountReleaseSchedule =
                     AccountReleaseSummary
-                        { releaseTotal = 100
-                        , releaseSchedule =
-                            [ ScheduledRelease 1604417302000 33 [dummyTransactionHash1, dummyTransactionHash2]
-                            , ScheduledRelease 1604417342000 33 [dummyTransactionHash1]
-                            , ScheduledRelease 1604417382000 34 [dummyTransactionHash2]
+                        { releaseTotal = 100,
+                          releaseSchedule =
+                            [ ScheduledRelease 1604417302000 33 [dummyTransactionHash1, dummyTransactionHash2],
+                              ScheduledRelease 1604417342000 33 [dummyTransactionHash1],
+                              ScheduledRelease 1604417382000 34 [dummyTransactionHash2]
                             ]
                         }
                 }
             )
-            `shouldBe` [ "Local names:            'example'"
-                       , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-                       , "Balance:                0.000001 CCD"
-                       , "Release schedule:       total 0.000100 CCD"
-                       , "   Tue,  3 Nov 2020 15:28:22 UTC:               0.000033 CCD scheduled by the transactions: f26a45adbb7d5cbefd9430d1eac665bd225fb3d8e04efb288d99a0347f0b8868, b041315fe35a8bdf836647037c24c8e87402547c82aea568c66ee18aa3091326."
-                       , "   Tue,  3 Nov 2020 15:29:02 UTC:               0.000033 CCD scheduled by the transactions: f26a45adbb7d5cbefd9430d1eac665bd225fb3d8e04efb288d99a0347f0b8868."
-                       , "   Tue,  3 Nov 2020 15:29:42 UTC:               0.000034 CCD scheduled by the transactions: b041315fe35a8bdf836647037c24c8e87402547c82aea568c66ee18aa3091326."
-                       , "Nonce:                  2"
-                       , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
-                       , ""
-                       , "Baking or delegating stake: no"
-                       , ""
-                       , "Credentials: none"
+            `shouldBe` [ "Local names:            'example'",
+                         "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
+                         "Balance:                0.000001 CCD",
+                         "Release schedule:       total 0.000100 CCD",
+                         "   Tue,  3 Nov 2020 15:28:22 UTC:               0.000033 CCD scheduled by the transactions: f26a45adbb7d5cbefd9430d1eac665bd225fb3d8e04efb288d99a0347f0b8868, b041315fe35a8bdf836647037c24c8e87402547c82aea568c66ee18aa3091326.",
+                         "   Tue,  3 Nov 2020 15:29:02 UTC:               0.000033 CCD scheduled by the transactions: f26a45adbb7d5cbefd9430d1eac665bd225fb3d8e04efb288d99a0347f0b8868.",
+                         "   Tue,  3 Nov 2020 15:29:42 UTC:               0.000034 CCD scheduled by the transactions: b041315fe35a8bdf836647037c24c8e87402547c82aea568c66ee18aa3091326.",
+                         "Nonce:                  2",
+                         "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
+                         "",
+                         "Baking or delegating stake: no",
+                         "",
+                         "Credentials: none"
                        ]
     specify "with one credential" $
         p exampleNamedAddress (exampleAccountInfoResult AccountStakingNone [exampleCredentials examplePolicyWithoutItems])
-            `shouldBe` [ "Local names:            'example'"
-                       , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-                       , "Balance:                0.000001 CCD"
-                       , "Nonce:                  2"
-                       , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
-                       , ""
-                       , "Baking or delegating stake: no"
-                       , ""
-                       , "Credentials:"
-                       , "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
-                       , "  - Index: 0"
-                       , "  - Expiration: Apr 2021"
-                       , "  - Type: normal"
-                       , "  - Revealed attributes: none"
+            `shouldBe` [ "Local names:            'example'",
+                         "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
+                         "Balance:                0.000001 CCD",
+                         "Nonce:                  2",
+                         "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
+                         "",
+                         "Baking or delegating stake: no",
+                         "",
+                         "Credentials:",
+                         "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:",
+                         "  - Index: 0",
+                         "  - Expiration: Apr 2021",
+                         "  - Type: normal",
+                         "  - Revealed attributes: none"
                        ]
     specify "with two credentials" $
         p
             exampleNamedAddress
             ( exampleAccountInfoResult
                 AccountStakingNone
-                [ exampleCredentials examplePolicyWithoutItems
-                , exampleCredentials examplePolicyWithTwoItems
+                [ exampleCredentials examplePolicyWithoutItems,
+                  exampleCredentials examplePolicyWithTwoItems
                 ]
             )
-            `shouldBe` [ "Local names:            'example'"
-                       , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-                       , "Balance:                0.000001 CCD"
-                       , "Nonce:                  2"
-                       , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
-                       , ""
-                       , "Baking or delegating stake: no"
-                       , ""
-                       , "Credentials:"
-                       , "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
-                       , "  - Index: 0"
-                       , "  - Expiration: Apr 2021"
-                       , "  - Type: normal"
-                       , "  - Revealed attributes: none"
-                       , "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
-                       , "  - Index: 1"
-                       , "  - Expiration: Apr 2021"
-                       , "  - Type: normal"
-                       , "  - Revealed attributes: lastName=\"Value-1\", dob=\"Value-2\""
+            `shouldBe` [ "Local names:            'example'",
+                         "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
+                         "Balance:                0.000001 CCD",
+                         "Nonce:                  2",
+                         "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
+                         "",
+                         "Baking or delegating stake: no",
+                         "",
+                         "Credentials:",
+                         "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:",
+                         "  - Index: 0",
+                         "  - Expiration: Apr 2021",
+                         "  - Type: normal",
+                         "  - Revealed attributes: none",
+                         "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:",
+                         "  - Index: 1",
+                         "  - Expiration: Apr 2021",
+                         "  - Type: normal",
+                         "  - Revealed attributes: lastName=\"Value-1\", dob=\"Value-2\""
                        ]
     xspecify "with one credential - verbose" $
         (execWriter $ printAccountInfo exampleNamedAddress (exampleAccountInfoResult AccountStakingNone [exampleCredentials examplePolicyWithoutItems]) True False Nothing)
-            `shouldBe` [ "Local names:            'example'"
-                       , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-                       , "Balance:                0.000001 CCD"
-                       , "Nonce:                  2"
-                       , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
-                       , ""
-                       , "Baking or delegating stake: no"
-                       , ""
-                       , "Credentials:"
-                       , "{\n\
+            `shouldBe` [ "Local names:            'example'",
+                         "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
+                         "Balance:                0.000001 CCD",
+                         "Nonce:                  2",
+                         "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
+                         "",
+                         "Baking or delegating stake: no",
+                         "",
+                         "Credentials:",
+                         "{\n\
                          \    \"value\": {\n\
                          \        \"ipIdentity\": 21,\n\
                          \        \"regId\": \"a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f\",\n\
@@ -373,45 +372,45 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
                        ]
     specify "show encrypted balance" $
         penc exampleNamedAddress (exampleAccountInfoResult AccountStakingNone [exampleCredentials examplePolicyWithoutItems])
-            `shouldBe` [ "Local names:            'example'"
-                       , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-                       , "Balance:                0.000001 CCD"
-                       , "Nonce:                  2"
-                       , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
-                       , ""
-                       , "Shielded balance:"
-                       , "  Incoming amounts:"
-                       , "    3: b15c03d419e05b657257..."
-                       , "    4: 9450b8ace9ad5a22e8ee..."
-                       , "  Self balance: 9450b8ace9ad5a22e8ee..."
-                       , ""
-                       , "Baking or delegating stake: no"
-                       , ""
-                       , "Credentials:"
-                       , "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
-                       , "  - Index: 0"
-                       , "  - Expiration: Apr 2021"
-                       , "  - Type: normal"
-                       , "  - Revealed attributes: none"
+            `shouldBe` [ "Local names:            'example'",
+                         "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
+                         "Balance:                0.000001 CCD",
+                         "Nonce:                  2",
+                         "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
+                         "",
+                         "Shielded balance:",
+                         "  Incoming amounts:",
+                         "    3: b15c03d419e05b657257...",
+                         "    4: 9450b8ace9ad5a22e8ee...",
+                         "  Self balance: 9450b8ace9ad5a22e8ee...",
+                         "",
+                         "Baking or delegating stake: no",
+                         "",
+                         "Credentials:",
+                         "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:",
+                         "  - Index: 0",
+                         "  - Expiration: Apr 2021",
+                         "  - Type: normal",
+                         "  - Revealed attributes: none"
                        ]
     xspecify "show encrypted balance - verbose" $
         (execWriter $ printAccountInfo exampleNamedAddress (exampleAccountInfoResult AccountStakingNone [exampleCredentials examplePolicyWithoutItems]) True True Nothing)
-            `shouldBe` [ "Local names:            'example'"
-                       , "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6"
-                       , "Balance:                0.000001 CCD"
-                       , "Nonce:                  2"
-                       , "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4"
-                       , ""
-                       , "Shielded balance:"
-                       , "  Incoming amounts:"
-                       , "    3: b15c03d419e05b657257c6016b92788d3cc1cb48ad2ef442aae1ba0db0c42e566b214a4ecb2031f6e5a3d5261d639186b832e7e3d91a86a428f01748143618a9ba8c214654b9bcd8969a49b69f69042124d2170e0986a3cec80e5db45d1e920d84c640baf5646f7d6dc537015b1aac25d041dcfecd48b251b5867b2a74f0f92e6d8df5a2e4ae2f54b970ae472098c21881d07da93a6067dd1a9e0537b2ac15a594e2a1fc31a757ce430c1ad79fd69b4eea81d20f9c953e9439d2970ec4674b76"
-                       , "    4: 9450b8ace9ad5a22e8eea743244bf929e69de3d2c8445d34278d23c6c72dfbf2c1a6fc7fabd4eb3bd7752a0765255ea0963748ddc6bc87040627533b1a3ce76318734cf3cc9dd9b05fd8dfe5c31f51addc68f41b43f764a36f03097c1d1dda12926b233d1f2efdd8f1c143c7a63c5575e1a9f5fac7e265d33ba769f6396db6c91da16e9ddf85b1ec7fc0cbcb4afbd9e491a755540bdf8a42cb46e32f9de7c8986e77a6d111e9fac32524183415cce14ddff3ca5795b5abdc1ad0a1397853a4a3"
-                       , "  Self balance: 9450b8ace9ad5a22e8eea743244bf929e69de3d2c8445d34278d23c6c72dfbf2c1a6fc7fabd4eb3bd7752a0765255ea0963748ddc6bc87040627533b1a3ce76318734cf3cc9dd9b05fd8dfe5c31f51addc68f41b43f764a36f03097c1d1dda12926b233d1f2efdd8f1c143c7a63c5575e1a9f5fac7e265d33ba769f6396db6c91da16e9ddf85b1ec7fc0cbcb4afbd9e491a755540bdf8a42cb46e32f9de7c8986e77a6d111e9fac32524183415cce14ddff3ca5795b5abdc1ad0a1397853a4a3"
-                       , ""
-                       , "Baking or delegating stake: no"
-                       , ""
-                       , "Credentials:"
-                       , "{\n\
+            `shouldBe` [ "Local names:            'example'",
+                         "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
+                         "Balance:                0.000001 CCD",
+                         "Nonce:                  2",
+                         "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
+                         "",
+                         "Shielded balance:",
+                         "  Incoming amounts:",
+                         "    3: b15c03d419e05b657257c6016b92788d3cc1cb48ad2ef442aae1ba0db0c42e566b214a4ecb2031f6e5a3d5261d639186b832e7e3d91a86a428f01748143618a9ba8c214654b9bcd8969a49b69f69042124d2170e0986a3cec80e5db45d1e920d84c640baf5646f7d6dc537015b1aac25d041dcfecd48b251b5867b2a74f0f92e6d8df5a2e4ae2f54b970ae472098c21881d07da93a6067dd1a9e0537b2ac15a594e2a1fc31a757ce430c1ad79fd69b4eea81d20f9c953e9439d2970ec4674b76",
+                         "    4: 9450b8ace9ad5a22e8eea743244bf929e69de3d2c8445d34278d23c6c72dfbf2c1a6fc7fabd4eb3bd7752a0765255ea0963748ddc6bc87040627533b1a3ce76318734cf3cc9dd9b05fd8dfe5c31f51addc68f41b43f764a36f03097c1d1dda12926b233d1f2efdd8f1c143c7a63c5575e1a9f5fac7e265d33ba769f6396db6c91da16e9ddf85b1ec7fc0cbcb4afbd9e491a755540bdf8a42cb46e32f9de7c8986e77a6d111e9fac32524183415cce14ddff3ca5795b5abdc1ad0a1397853a4a3",
+                         "  Self balance: 9450b8ace9ad5a22e8eea743244bf929e69de3d2c8445d34278d23c6c72dfbf2c1a6fc7fabd4eb3bd7752a0765255ea0963748ddc6bc87040627533b1a3ce76318734cf3cc9dd9b05fd8dfe5c31f51addc68f41b43f764a36f03097c1d1dda12926b233d1f2efdd8f1c143c7a63c5575e1a9f5fac7e265d33ba769f6396db6c91da16e9ddf85b1ec7fc0cbcb4afbd9e491a755540bdf8a42cb46e32f9de7c8986e77a6d111e9fac32524183415cce14ddff3ca5795b5abdc1ad0a1397853a4a3",
+                         "",
+                         "Baking or delegating stake: no",
+                         "",
+                         "Credentials:",
+                         "{\n\
                          \    \"value\": {\n\
                          \        \"ipIdentity\": 21,\n\
                          \        \"regId\": \"a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f\",\n\
@@ -439,35 +438,35 @@ printCredSpec :: Spec
 printCredSpec = describe "printCred" $ do
     specify "without attributes" $
         (p $ exampleCredentials examplePolicyWithoutItems)
-            `shouldBe` [ "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
-                       , "  - Index: 0"
-                       , "  - Expiration: Apr 2021"
-                       , "  - Type: normal"
-                       , "  - Revealed attributes: none"
+            `shouldBe` [ "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:",
+                         "  - Index: 0",
+                         "  - Expiration: Apr 2021",
+                         "  - Type: normal",
+                         "  - Revealed attributes: none"
                        ]
     specify "with single attribute" $
         (p $ exampleCredentials examplePolicyWithOneItem)
-            `shouldBe` [ "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
-                       , "  - Index: 0"
-                       , "  - Expiration: Apr 2021"
-                       , "  - Type: normal"
-                       , "  - Revealed attributes: lastName=\"Value-1\""
+            `shouldBe` [ "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:",
+                         "  - Index: 0",
+                         "  - Expiration: Apr 2021",
+                         "  - Type: normal",
+                         "  - Revealed attributes: lastName=\"Value-1\""
                        ]
     specify "with two attributes" $
         (p $ exampleCredentials examplePolicyWithTwoItems)
-            `shouldBe` [ "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
-                       , "  - Index: 0"
-                       , "  - Expiration: Apr 2021"
-                       , "  - Type: normal"
-                       , "  - Revealed attributes: lastName=\"Value-1\", dob=\"Value-2\""
+            `shouldBe` [ "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:",
+                         "  - Index: 0",
+                         "  - Expiration: Apr 2021",
+                         "  - Type: normal",
+                         "  - Revealed attributes: lastName=\"Value-1\", dob=\"Value-2\""
                        ]
     specify "with attribute having key out of range" $
         (p $ exampleCredentials examplePolicyWithItemOutOfRange)
-            `shouldBe` [ "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:"
-                       , "  - Index: 0"
-                       , "  - Expiration: Apr 2021"
-                       , "  - Type: normal"
-                       , "  - Revealed attributes: <255>=\"Value-1\""
+            `shouldBe` [ "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:",
+                         "  - Index: 0",
+                         "  - Expiration: Apr 2021",
+                         "  - Type: normal",
+                         "  - Revealed attributes: <255>=\"Value-1\""
                        ]
   where
     p = execWriter . printCred 0
