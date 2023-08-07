@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add raw support for `GetBakersRewardPeriod`.
+
 ## 6.0.1
 
 - Add an unit (ms) to the minimum block time shown in the chain parameters for P6.
