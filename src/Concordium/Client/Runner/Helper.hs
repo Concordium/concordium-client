@@ -99,16 +99,18 @@ toGRPCResult' =
                 -- The request failed.
                 Left e -> RequestFailed $ "Unable to send query: " ++ show e
         -- @ServerStreamOutput@ contains a triple consisting of a result,
-        -- headers and trailers. The trailers are unused.
-        ServerStreamOutput (t, hds, _trs) ->
+        -- headers and trailers.
+        ServerStreamOutput (t, hds, trs) -> do
             -- Check whether the stream returned an error before trying to consume it.
-            let hs = map (\(hn, hv) -> (CI.mk hn, hv)) hds
-            in  case readTrailers hs of
-                    Left _ -> StatusInvalid
-                    Right (GRPCStatus code message) ->
-                        if code /= OK
-                            then StatusNotOk (code, "GRPC error: " <> show message)
-                            else StatusOk (GRPCResponse hs t)
+            let ts = map (\(hn, hv) -> (CI.mk hn, hv)) trs
+            case readTrailers ts of
+                Left _ -> StatusInvalid
+                Right (GRPCStatus code message) ->
+                    if code /= OK
+                        then StatusNotOk (code, "GRPC error: " <> show message)
+                        else
+                            let hs = map (\(hn, hv) -> (CI.mk hn, hv)) hds
+                            in  StatusOk (GRPCResponse hs t)
 
 -- |Convert a GRPC helper output to a unified result type.
 toGRPCResult :: Maybe (GRPCOutput t) -> GRPCResult t
