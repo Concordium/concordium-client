@@ -3674,13 +3674,17 @@ processBakerCmd action baseCfgDir verbose backend =
         BakerGetEarliestWinTime bakerId useLocalTime doPoll -> do
             winTimestamp <- getWinTimestamp
             putStrLn [i|Baker #{bakerId} is expected to bake no sooner than:|]
-            if doPoll then polling winTimestamp else displayTime winTimestamp
+            if doPoll then polling 0 (0 :: Int) winTimestamp else void $ displayTime 0 winTimestamp
             putStrLn ""
           where
             getWinTimestamp = do
                 result <- withClient backend $ getBakerEarliestWinTime bakerId
                 getResponseValueOrDie result
-            displayTime winTimestamp = do
+            -- Display the timestamp and how far away it is from the current time.
+            -- This takes the length of the old output and returns the length of the new output
+            -- so that each call can cleanly overwrite the previous output.
+            displayTime :: Int -> Types.Timestamp -> IO Int
+            displayTime oldLen winTimestamp = do
                 let winUTC = Time.timestampToUTCTime winTimestamp
                 tz <- if useLocalTime then getTimeZone winUTC else return utc
                 let winLocalised = utcToZonedTime tz winUTC
@@ -3688,11 +3692,22 @@ processBakerCmd action baseCfgDir verbose backend =
                 let duration
                         | winTimestamp > now = durationToText . fromIntegral $ winTimestamp - now
                         | otherwise = "the past"
-                putStr [i|\r#{formatTime defaultTimeLocale rfc822DateFormat winLocalised}  (in #{duration})        |]
-            polling winTimestamp = do
-                displayTime winTimestamp
+                let txt = [i|#{formatTime defaultTimeLocale rfc822DateFormat winLocalised}  (in #{duration})|]
+                let newLen = length txt
+                -- Pad the text with spaces to erase the previous output, and end with
+                -- carriage return so that the next output will overwrite it.
+                putStr $ txt ++ replicate (oldLen - newLen) ' ' ++ "\r"
+                return newLen
+            polling :: Int -> Int -> Types.Timestamp -> IO ()
+            polling oldLen lastPoll winTimestamp = do
+                newLen <- displayTime oldLen winTimestamp
                 threadDelay 1_000_000
-                polling =<< getWinTimestamp
+                now <- Time.utcTimeToTimestamp <$> getCurrentTime
+                -- We repeat the query every 10th iteration, or every iteration if the timestamp
+                -- is less than 10 seconds in the future.
+                if lastPoll >= 10 || winTimestamp - now < 10_000
+                    then polling newLen 0 =<< getWinTimestamp
+                    else polling newLen (lastPoll + 1) winTimestamp
 
 -- |Process a 'delegator configure ...' command.
 processDelegatorConfigureCmd ::
