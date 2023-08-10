@@ -4081,6 +4081,11 @@ processLegacyCmd action backend =
                 readBlockHashOrDefault Best block
                     >>= getNextUpdateSequenceNumbers
                     >>= printResponseValueAsJSON
+        GetBlockCertificates block ->
+            withClient backend $
+                readBlockHashOrDefault Best block
+                    >>= getBlockCertificates
+                    >>= printResponseValueAsJSON
   where
     -- \|Print the response value under the provided mapping,
     -- or fail with an error message if the response contained
