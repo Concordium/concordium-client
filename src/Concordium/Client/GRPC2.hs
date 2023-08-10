@@ -2620,6 +2620,17 @@ instance FromProto Proto.DelegatorRewardPeriodInfo where
         pdrpiStake <- fromProto $ dInfo ^. ProtoFields.stake
         return DelegatorRewardPeriodInfo{..}
 
+instance FromProto Proto.BakerRewardPeriodInfo where
+    type Output Proto.BakerRewardPeriodInfo = BakerRewardPeriodInfo
+    fromProto brpInfo = do
+        brpiBaker <- fromProto $ brpInfo ^. ProtoFields.baker
+        brpiEffectiveStake <- fromProto $ brpInfo ^. ProtoFields.effectiveStake
+        brpiCommissionRates <- fromProto $ brpInfo ^. ProtoFields.commissionRates
+        brpiEquityCapital <- fromProto $ brpInfo ^. ProtoFields.equityCapital
+        brpiDelegatedCapital <- fromProto $ brpInfo ^. ProtoFields.delegatedCapital
+        let brpiIsFinalizer = brpInfo ^. ProtoFields.isFinalizer
+        return BakerRewardPeriodInfo{..}
+
 instance FromProto Proto.BlockSpecialEvent'AccountAmounts where
     type Output Proto.BlockSpecialEvent'AccountAmounts = Transactions.AccountAmounts
     fromProto aAmounts = do
@@ -3216,6 +3227,12 @@ getNextSequenceNumber :: (MonadIO m) => AccountAddress -> ClientMonad m (GRPCRes
 getNextSequenceNumber accAddress = withUnary (call @"getNextAccountSequenceNumber") msg (fmap fromProto)
   where
     msg = toProto accAddress
+
+-- |Retrieve a stream of 'BakerRewardPeriodInfo' given the input.
+getBakersRewardPeriod :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq BakerRewardPeriodInfo)))
+getBakersRewardPeriod bhInput = withServerStreamCollect (call @"getBakersRewardPeriod") msg ((fmap . mapM) fromProto)
+  where
+    msg = toProto bhInput
 
 -- |Call a unary V2 GRPC API endpoint and return the result.
 withUnary ::

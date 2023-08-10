@@ -3,6 +3,7 @@
 ## Unreleased
 
 - End stream consumption early if an error is returned.
+- Add raw support for `GetBakersRewardPeriod`.
 
 ## 6.0.1
 

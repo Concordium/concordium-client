@@ -4081,6 +4081,11 @@ processLegacyCmd action backend =
                 readBlockHashOrDefault Best block
                     >>= getNextUpdateSequenceNumbers
                     >>= printResponseValueAsJSON
+        GetBakersRewardPeriod block ->
+            withClient backend $
+                readBlockHashOrDefault Best block
+                    >>= getBakersRewardPeriod
+                    >>= printResponseValueAsJSON
   where
     -- \|Print the response value under the provided mapping,
     -- or fail with an error message if the response contained

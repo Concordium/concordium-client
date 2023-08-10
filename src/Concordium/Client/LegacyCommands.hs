@@ -140,6 +140,8 @@ data LegacyCmd
         {legacyBlockHash :: !(Maybe Text)}
     | GetNextUpdateSequenceNumbers
         {legacyBlockHash :: !(Maybe Text)}
+    | GetBakersRewardPeriod
+        {legacyBlockHash :: !(Maybe Text)}
     deriving (Show)
 
 legacyProgramOptions :: Parser LegacyCmd
@@ -184,6 +186,7 @@ legacyProgramOptions =
             <> getAnonymityRevokersCommand
             <> getCryptographicParametersCommand
             <> getNextUpdateSequenceNumbersCommand
+            <> getBakersRewardPeriodCommand
         )
 
 getPeerDataCommand :: Mod CommandFields LegacyCmd
@@ -386,6 +389,17 @@ getNextUpdateSequenceNumbersCommand =
                 <$> optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
             )
             (progDesc "Query the gRPC server for the next update sequence numbers for all update queues.")
+        )
+
+getBakersRewardPeriodCommand :: Mod CommandFields LegacyCmd
+getBakersRewardPeriodCommand =
+    command
+        "GetBakersRewardPeriod"
+        ( info
+            ( GetBakersRewardPeriod
+                <$> optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
+            )
+            (progDesc "Query the gRPC server for the bakers of the reward period given by the block.")
         )
 
 getInstanceInfoCommand :: Mod CommandFields LegacyCmd
