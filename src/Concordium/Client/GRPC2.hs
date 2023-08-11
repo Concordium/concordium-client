@@ -929,6 +929,7 @@ instance FromProto Proto.PoolCurrentPaydayInfo where
         let bpsLotteryPower = cpi ^. ProtoFields.lotteryPower
         bpsBakerEquityCapital <- fromProto $ cpi ^. ProtoFields.bakerEquityCapital
         bpsDelegatedCapital <- fromProto $ cpi ^. ProtoFields.delegatedCapital
+        bpsCommissionRates <- fromProto $ cpi ^. ProtoFields.commissionRates
         return CurrentPaydayBakerPoolStatus{..}
 
 instance FromProto Proto.PoolInfoResponse where

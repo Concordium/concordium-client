@@ -4,6 +4,7 @@
 
 - End stream consumption early if an error is returned.
 - Add raw support for `GetBakersRewardPeriod`.
+- Add support for `CommissionRates` in `CurrentPaydayBakerPoolStatus`
 
 ## 6.0.1
 
