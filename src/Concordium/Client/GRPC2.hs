@@ -63,13 +63,13 @@ import qualified Concordium.ID.IdentityProvider as IpInfo
 import Concordium.ID.Parameters (createGlobalContext)
 import Concordium.ID.Types
 import Concordium.Types
-import qualified Concordium.Types.KonsensusV1 as KonsensusV1
 import Concordium.Types.Accounts
 import qualified Concordium.Types.Accounts as Concordium.Types
 import Concordium.Types.Accounts.Releases
 import Concordium.Types.Block (AbsoluteBlockHeight (..))
 import Concordium.Types.Execution
 import qualified Concordium.Types.InvokeContract as InvokeContract
+import qualified Concordium.Types.KonsensusV1 as KonsensusV1
 import qualified Concordium.Types.Parameters as Parameters
 import Concordium.Types.Queries
 import qualified Concordium.Types.Transactions as Transactions
@@ -2621,6 +2621,17 @@ instance FromProto Proto.DelegatorRewardPeriodInfo where
         pdrpiStake <- fromProto $ dInfo ^. ProtoFields.stake
         return DelegatorRewardPeriodInfo{..}
 
+instance FromProto Proto.BakerRewardPeriodInfo where
+    type Output Proto.BakerRewardPeriodInfo = BakerRewardPeriodInfo
+    fromProto brpInfo = do
+        brpiBaker <- fromProto $ brpInfo ^. ProtoFields.baker
+        brpiEffectiveStake <- fromProto $ brpInfo ^. ProtoFields.effectiveStake
+        brpiCommissionRates <- fromProto $ brpInfo ^. ProtoFields.commissionRates
+        brpiEquityCapital <- fromProto $ brpInfo ^. ProtoFields.equityCapital
+        brpiDelegatedCapital <- fromProto $ brpInfo ^. ProtoFields.delegatedCapital
+        let brpiIsFinalizer = brpInfo ^. ProtoFields.isFinalizer
+        return BakerRewardPeriodInfo{..}
+
 instance FromProto Proto.BlockSpecialEvent'AccountAmounts where
     type Output Proto.BlockSpecialEvent'AccountAmounts = Transactions.AccountAmounts
     fromProto aAmounts = do
@@ -2635,8 +2646,8 @@ instance FromProto Proto.BlockSpecialEvent'AccountAmounts where
 instance FromProto Proto.QuorumSignature where
     type Output Proto.QuorumSignature = KonsensusV1.QuorumCertificateSignature
     fromProto qs = case deMkSerialize qs of
-            Left err -> fromProtoFail $ "Unable to convert 'QuorumSignature': " <> err
-            Right v -> return v
+        Left err -> fromProtoFail $ "Unable to convert 'QuorumSignature': " <> err
+        Right v -> return v
 
 instance FromProto Proto.QuorumCertificate where
     type Output Proto.QuorumCertificate = KonsensusV1.QuorumCertificate
@@ -2651,15 +2662,15 @@ instance FromProto Proto.QuorumCertificate where
 instance FromProto Proto.TimeoutSignature where
     type Output Proto.TimeoutSignature = KonsensusV1.TimeoutCertificateSignature
     fromProto ts = case deMkSerialize ts of
-            Left err -> fromProtoFail $ "Unable to convert 'TimeoutSignature': " <> err
-            Right v -> return v
+        Left err -> fromProtoFail $ "Unable to convert 'TimeoutSignature': " <> err
+        Right v -> return v
 
 instance FromProto Proto.FinalizerRound where
-   type Output Proto.FinalizerRound = KonsensusV1.FinalizerRound
-   fromProto fr = do
-       frRound <- fromProto $ fr ^. ProtoFields.round
-       frFinalizers <- mapM fromProto $ fr ^. ProtoFields.finalizers
-       return KonsensusV1.FinalizerRound{..}
+    type Output Proto.FinalizerRound = KonsensusV1.FinalizerRound
+    fromProto fr = do
+        frRound <- fromProto $ fr ^. ProtoFields.round
+        frFinalizers <- mapM fromProto $ fr ^. ProtoFields.finalizers
+        return KonsensusV1.FinalizerRound{..}
 
 instance FromProto Proto.TimeoutCertificate where
     type Output Proto.TimeoutCertificate = KonsensusV1.TimeoutCertificate
@@ -3278,6 +3289,12 @@ getNextSequenceNumber :: (MonadIO m) => AccountAddress -> ClientMonad m (GRPCRes
 getNextSequenceNumber accAddress = withUnary (call @"getNextAccountSequenceNumber") msg (fmap fromProto)
   where
     msg = toProto accAddress
+
+-- |Retrieve a stream of 'BakerRewardPeriodInfo' given the input.
+getBakersRewardPeriod :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq BakerRewardPeriodInfo)))
+getBakersRewardPeriod bhInput = withServerStreamCollect (call @"getBakersRewardPeriod") msg ((fmap . mapM) fromProto)
+  where
+    msg = toProto bhInput
 
 getBlockCertificates :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult KonsensusV1.BlockCertificates))
 getBlockCertificates bhInput = withUnary (call @"getBlockCertificates") msg (fmap fromProto)
