@@ -4119,6 +4119,16 @@ processLegacyCmd action backend =
                 readBlockHashOrDefault Best block
                     >>= getNextUpdateSequenceNumbers
                     >>= printResponseValueAsJSON
+        GetBakersRewardPeriod block ->
+            withClient backend $
+                readBlockHashOrDefault Best block
+                    >>= getBakersRewardPeriod
+                    >>= printResponseValueAsJSON
+        GetBlockCertificates block ->
+            withClient backend $
+                readBlockHashOrDefault Best block
+                    >>= getBlockCertificates
+                    >>= printResponseValueAsJSON
         GetBakerEarliestWinTime bakerId ->
             withClient backend $ getBakerEarliestWinTime bakerId >>= printResponseValueAsJSON
   where

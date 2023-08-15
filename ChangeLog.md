@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- End stream consumption early if an error is returned.
+- Add raw support for `GetBakersRewardPeriod`.
+- Add raw support for `GetBlockCertificates`.
+- Add support for `CommissionRates` in `CurrentPaydayBakerPoolStatus` (Only available for node versions > 6.0).
+
 ## 6.0.1
 
 - Add an unit (ms) to the minimum block time shown in the chain parameters for P6.
