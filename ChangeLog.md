@@ -4,6 +4,7 @@
 
 - End stream consumption early if an error is returned.
 - Add raw support for `GetBakersRewardPeriod`.
+- Add raw support for `GetBlockCertificates`.
 
 ## 6.0.1
 
