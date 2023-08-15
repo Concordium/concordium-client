@@ -69,6 +69,7 @@ import Concordium.Types.Accounts.Releases
 import Concordium.Types.Block (AbsoluteBlockHeight (..))
 import Concordium.Types.Execution
 import qualified Concordium.Types.InvokeContract as InvokeContract
+import qualified Concordium.Types.KonsensusV1 as KonsensusV1
 import qualified Concordium.Types.Parameters as Parameters
 import Concordium.Types.Queries
 import qualified Concordium.Types.Transactions as Transactions
@@ -2643,6 +2644,67 @@ instance FromProto Proto.BlockSpecialEvent'AccountAmounts where
             amount <- fromProto $ e ^. ProtoFields.amount
             return (address, amount)
 
+instance FromProto Proto.QuorumSignature where
+    type Output Proto.QuorumSignature = KonsensusV1.QuorumCertificateSignature
+    fromProto qs = case deMkSerialize qs of
+        Left err -> fromProtoFail $ "Unable to convert 'QuorumSignature': " <> err
+        Right v -> return v
+
+instance FromProto Proto.QuorumCertificate where
+    type Output Proto.QuorumCertificate = KonsensusV1.QuorumCertificate
+    fromProto qc = do
+        qcBlock <- fromProto $ qc ^. ProtoFields.blockHash
+        qcRound <- fromProto $ qc ^. ProtoFields.round
+        qcEpoch <- fromProto $ qc ^. ProtoFields.epoch
+        qcAggregateSignature <- fromProto $ qc ^. ProtoFields.aggregateSignature
+        qcSignatories <- mapM fromProto $ qc ^. ProtoFields.signatories
+        return KonsensusV1.QuorumCertificate{..}
+
+instance FromProto Proto.TimeoutSignature where
+    type Output Proto.TimeoutSignature = KonsensusV1.TimeoutCertificateSignature
+    fromProto ts = case deMkSerialize ts of
+        Left err -> fromProtoFail $ "Unable to convert 'TimeoutSignature': " <> err
+        Right v -> return v
+
+instance FromProto Proto.FinalizerRound where
+    type Output Proto.FinalizerRound = KonsensusV1.FinalizerRound
+    fromProto fr = do
+        frRound <- fromProto $ fr ^. ProtoFields.round
+        frFinalizers <- mapM fromProto $ fr ^. ProtoFields.finalizers
+        return KonsensusV1.FinalizerRound{..}
+
+instance FromProto Proto.TimeoutCertificate where
+    type Output Proto.TimeoutCertificate = KonsensusV1.TimeoutCertificate
+    fromProto tc = do
+        tcRound <- fromProto $ tc ^. ProtoFields.round
+        tcMinEpoch <- fromProto $ tc ^. ProtoFields.minEpoch
+        tcFinalizerQCRoundsFirstEpoch <- mapM fromProto $ tc ^. ProtoFields.qcRoundsFirstEpoch
+        tcFinalizerQCRoundsSecondEpoch <- mapM fromProto $ tc ^. ProtoFields.qcRoundsSecondEpoch
+        tcAggregateSignature <- fromProto $ tc ^. ProtoFields.aggregateSignature
+        return KonsensusV1.TimeoutCertificate{..}
+
+instance FromProto Proto.SuccessorProof where
+    type Output Proto.SuccessorProof = KonsensusV1.SuccessorProof
+    fromProto sp = case deMkSerialize sp of
+        Left err -> fromProtoFail $ "Unable to convert 'SuccessorProof': " <> err
+        Right v -> return v
+
+instance FromProto Proto.EpochFinalizationEntry where
+    type Output Proto.EpochFinalizationEntry = KonsensusV1.EpochFinalizationEntry
+    fromProto efe = do
+        efeFinalizedQC <- fromProto $ efe ^. ProtoFields.finalizedQc
+        efeSuccessorQC <- fromProto $ efe ^. ProtoFields.successorQc
+        efeSuccessorProof <- fromProto $ efe ^. ProtoFields.successorProof
+        return KonsensusV1.EpochFinalizationEntry{..}
+
+instance FromProto Proto.BlockCertificates where
+    type Output Proto.BlockCertificates = KonsensusV1.BlockCertificates
+    fromProto bc = do
+        bcQuorumCertificate <- fromProtoMaybe $ bc ^. ProtoFields.maybe'quorumCertificate
+        bcTimeoutCertificate <- fromProtoMaybe $ bc ^. ProtoFields.maybe'timeoutCertificate
+        bcEpochFinalizationEntry <- fromProtoMaybe $ bc ^. ProtoFields.maybe'epochFinalizationEntry
+        return KonsensusV1.BlockCertificates{..}
+
 instance FromProto Proto.BlockSpecialEvent where
     type Output Proto.BlockSpecialEvent = Transactions.SpecialTransactionOutcome
     fromProto bsEvent = do
@@ -3232,6 +3294,11 @@ getNextSequenceNumber accAddress = withUnary (call @"getNextAccountSequenceNumbe
 -- |Retrieve a stream of 'BakerRewardPeriodInfo' given the input.
 getBakersRewardPeriod :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq BakerRewardPeriodInfo)))
 getBakersRewardPeriod bhInput = withServerStreamCollect (call @"getBakersRewardPeriod") msg ((fmap . mapM) fromProto)
+  where
+    msg = toProto bhInput
+
+getBlockCertificates :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult KonsensusV1.BlockCertificates))
+getBlockCertificates bhInput = withUnary (call @"getBlockCertificates") msg (fmap fromProto)
   where
     msg = toProto bhInput
 
