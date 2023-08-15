@@ -3701,11 +3701,12 @@ processBakerCmd action baseCfgDir verbose backend =
             polling :: Int -> Int -> Types.Timestamp -> IO ()
             polling oldLen lastPoll winTimestamp = do
                 newLen <- displayTime oldLen winTimestamp
+                -- Delay for 1 second
                 threadDelay 1_000_000
                 now <- Time.utcTimeToTimestamp <$> getCurrentTime
                 -- We repeat the query every 10th iteration, or every iteration if the timestamp
                 -- is less than 10 seconds in the future.
-                if lastPoll >= 10 || winTimestamp - now < 10_000
+                if lastPoll >= 10 || winTimestamp < now + 10_000
                     then polling newLen 0 =<< getWinTimestamp
                     else polling newLen (lastPoll + 1) winTimestamp
 

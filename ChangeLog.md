@@ -2,9 +2,12 @@
 
 ## Unreleased
 
+- Add `baker win-time` command for determining the earliest time a specified baker is expected to
+  bake.
 - End stream consumption early if an error is returned.
 - Add raw support for `GetBakersRewardPeriod`.
 - Add raw support for `GetBlockCertificates`.
+- Add raw support for `GetBakerEarliestWinTime`.
 - Add support for `CommissionRates` in `CurrentPaydayBakerPoolStatus` (Only available for node versions > 6.0).
 
 ## 6.0.1
