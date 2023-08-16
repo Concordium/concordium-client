@@ -28,6 +28,7 @@ module Concordium.Client.Commands (
     ParameterFileInput (..),
     InvokerInput (..),
     ExtraBakerAddData (..),
+    EpochSpecifier (..),
 ) where
 
 import Concordium.Client.LegacyCommands

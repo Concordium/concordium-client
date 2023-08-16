@@ -1,4 +1,5 @@
 module Concordium.Client.LegacyCommands (
+    EpochSpecifier (..),
     LegacyCmd (..),
     legacyProgramOptions,
 ) where
@@ -6,6 +7,25 @@ module Concordium.Client.LegacyCommands (
 import Concordium.Types
 import Data.Text
 import Options.Applicative
+
+-- |Representation of the arguments to a command that expects an epoch to be specified as input.
+data EpochSpecifier = EpochSpecifier
+    { -- |The genesis index to query. Should be provided with 'esEpoch'.
+      esGenesisIndex :: !(Maybe GenesisIndex),
+      -- |The epoch number to query. Should be provided with 'esGenesisIndex'.
+      esEpoch :: !(Maybe Epoch),
+      -- |The block to use the epoch of. Should not be provided with any other fields.
+      esBlock :: !(Maybe BlockHash)
+    }
+    deriving (Show)
+
+-- |Helper function for parsing an 'EpochSpecifier' as command line options.
+parseEpochSpecifier :: Parser EpochSpecifier
+parseEpochSpecifier =
+    EpochSpecifier
+        <$> optional (option auto (long "genesis-index" <> metavar "GENINDEX" <> help "Genesis index (use with --epoch)"))
+        <*> optional (option auto (long "epoch" <> metavar "EPOCH" <> help "Epoch number (use with --genesis-index)"))
+        <*> optional (option auto (long "block" <> metavar "BLOCKHASH" <> help "Block hash"))
 
 data LegacyCmd
     = -- | Loads a transaction in the context of the local database and sends it to the specified RPC server
@@ -147,6 +167,10 @@ data LegacyCmd
     | GetBakerEarliestWinTime
         { legacyBakerId :: !BakerId
         }
+    | GetWinningBakersEpoch
+        {legacyEpoch :: !EpochSpecifier}
+    | GetFirstBlockEpoch
+        {legacyEpoch :: !EpochSpecifier}
     deriving (Show)
 
 legacyProgramOptions :: Parser LegacyCmd
@@ -194,6 +218,8 @@ legacyProgramOptions =
             <> getBakersRewardPeriodCommand
             <> getBlockCertificatesCommand
             <> getBakerEarliestWinTimeCommand
+            <> getWinningBakersEpochCommand
+            <> getFirstBlockEpochCommand
         )
 
 getPeerDataCommand :: Mod CommandFields LegacyCmd
@@ -688,4 +714,22 @@ getCryptographicParametersCommand =
                 <$> optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
             )
             (progDesc "Query the gRPC server for the cryptographic parameters in a specific block.")
+        )
+
+getWinningBakersEpochCommand :: Mod CommandFields LegacyCmd
+getWinningBakersEpochCommand =
+    command
+        "GetWinningBakersEpoch"
+        ( info
+            (GetWinningBakersEpoch <$> parseEpochSpecifier)
+            (progDesc "Query the winning bakers for an epoch.")
+        )
+
+getFirstBlockEpochCommand :: Mod CommandFields LegacyCmd
+getFirstBlockEpochCommand =
+    command
+        "GetFirstBlockEpoch"
+        ( info
+            (GetFirstBlockEpoch <$> parseEpochSpecifier)
+            (progDesc "Query the first block of an epoch.")
         )
