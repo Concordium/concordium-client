@@ -731,5 +731,5 @@ getFirstBlockEpochCommand =
         "GetFirstBlockEpoch"
         ( info
             (GetFirstBlockEpoch <$> parseEpochSpecifier)
-            (progDesc "Query the first block of an epoch.")
+            (progDesc "Query the first finalized block of an epoch. (Default: the epoch of the last finalized block.)")
         )
