@@ -1632,6 +1632,33 @@ readBlockHashOrDefault :: (MonadIO m) => BlockHashInput -> Maybe Text -> m Block
 readBlockHashOrDefault d Nothing = return d
 readBlockHashOrDefault _ (Just s) = readOrFail s >>= return . Given
 
+-- |Parse an 'Queries.EpochRequest' from an 'EpochSpecifier'.
+parseEpochRequest ::
+    (MonadIO m) =>
+    -- |Optional value to use if no arguments are specified.
+    Maybe Queries.EpochRequest ->
+    -- |Input specifying the epoch
+    EpochSpecifier ->
+    m Queries.EpochRequest
+parseEpochRequest
+    _
+    EpochSpecifier
+        { esGenesisIndex = Just genIndex,
+          esEpoch = Just epoch,
+          esBlock = Nothing
+        } =
+        return Queries.SpecifiedEpoch{erGenesisIndex = genIndex, erEpoch = epoch}
+parseEpochRequest
+    _
+    EpochSpecifier{esGenesisIndex = Nothing, esEpoch = Nothing, esBlock = Just blk} =
+        return $! Queries.EpochOfBlock (Queries.Given blk)
+parseEpochRequest
+    (Just emptyCase)
+    (EpochSpecifier Nothing Nothing Nothing) =
+        return emptyCase
+parseEpochRequest _ _ =
+    logFatal [[i|Invalid arguments: either a genesis index and an epoch number should be supplied, or a block hash.|]]
+
 -- |Process an 'account ...' command.
 processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processAccountCmd action baseCfgDir verbose backend =
@@ -4132,6 +4159,16 @@ processLegacyCmd action backend =
                     >>= printResponseValueAsJSON
         GetBakerEarliestWinTime bakerId ->
             withClient backend $ getBakerEarliestWinTime bakerId >>= printResponseValueAsJSON
+        GetWinningBakersEpoch epochSpec ->
+            withClient backend $
+                parseEpochRequest Nothing epochSpec
+                    >>= getWinningBakersEpoch
+                    >>= printResponseValueAsJSON
+        GetFirstBlockEpoch epochSpec ->
+            withClient backend $
+                parseEpochRequest (Just (Queries.EpochOfBlock Queries.LastFinal)) epochSpec
+                    >>= getFirstBlockEpoch
+                    >>= printResponseValueAsJSON
   where
     -- \|Print the response value under the provided mapping,
     -- or fail with an error message if the response contained

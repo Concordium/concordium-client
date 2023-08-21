@@ -30,7 +30,7 @@ import qualified Data.Text as Text
 import Data.Text.Encoding (decodeUtf8')
 import Network.GRPC.Client hiding (Invalid)
 import Network.GRPC.HTTP2.Types
-import qualified Network.URI.Encode (decode)
+import qualified Network.URI.Encode (decode, decodeBSToText)
 import Text.Read (readEither)
 import Prelude
 
@@ -75,7 +75,7 @@ toGRPCResult' =
         -- @RawUnaryOutput@ models the result of invoking a non-streaming GRPC call.
         -- It wraps a @RawReply@ which either indicates if a problem occurred at the
         -- application layer, whose nature is then available in an @ErrorCode@, or if the
-        -- request was successful the result is available in a triple comprimising HTTP/2
+        -- request was successful the result is available in a triple comprising HTTP/2
         -- response headers, trailers and a GRPC response. The response in turn either
         -- indicates if a non-'OK' status code was returned or if an 'OK' status code was
         -- returned. In the former case, a server response message is available, and in the
@@ -107,7 +107,12 @@ toGRPCResult' =
                 Left _ -> StatusInvalid
                 Right (GRPCStatus code message) ->
                     if code /= OK
-                        then StatusNotOk (code, "GRPC error: " <> show message)
+                        then
+                            StatusNotOk
+                                ( code,
+                                  "GRPC error: "
+                                    <> Text.unpack (Network.URI.Encode.decodeBSToText message)
+                                )
                         else
                             let hs = map (\(hn, hv) -> (CI.mk hn, hv)) hds
                             in  StatusOk (GRPCResponse hs t)

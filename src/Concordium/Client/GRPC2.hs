@@ -2824,6 +2824,14 @@ instance FromProto Proto.PendingUpdate where
                     PUEFinalizationCommitteeParameters <$> fromProto fcParams
         return PendingUpdate{..}
 
+instance FromProto Proto.WinningBaker where
+    type Output Proto.WinningBaker = WinningBaker
+    fromProto winningBaker = do
+        wbRound <- fromProto (winningBaker ^. ProtoFields.round)
+        wbWinner <- fromProto (winningBaker ^. ProtoFields.winner)
+        let wbPresent = winningBaker ^. ProtoFields.present
+        return WinningBaker{..}
+
 type LoggerMethod = Text -> IO ()
 
 data GrpcConfig = GrpcConfig
@@ -3307,6 +3315,16 @@ getBakerEarliestWinTime :: (MonadIO m) => BakerId -> ClientMonad m (GRPCResult (
 getBakerEarliestWinTime bakerId = withUnary (call @"getBakerEarliestWinTime") msg (fmap fromProto)
   where
     msg = toProto bakerId
+
+getWinningBakersEpoch :: (MonadIO m) => EpochRequest -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq WinningBaker)))
+getWinningBakersEpoch epochReq = withServerStreamCollect (call @"getWinningBakersEpoch") msg ((fmap . mapM) fromProto)
+  where
+    msg = toProto epochReq
+
+getFirstBlockEpoch :: (MonadIO m) => EpochRequest -> ClientMonad m (GRPCResult (FromProtoResult BlockHash))
+getFirstBlockEpoch epochReq = withUnary (call @"getFirstBlockEpoch") msg (fmap fromProto)
+  where
+    msg = toProto epochReq
 
 -- |Call a unary V2 GRPC API endpoint and return the result.
 withUnary ::
