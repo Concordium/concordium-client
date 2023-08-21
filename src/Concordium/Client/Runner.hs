@@ -1657,7 +1657,7 @@ parseEpochRequest
     (EpochSpecifier Nothing Nothing Nothing) =
         return emptyCase
 parseEpochRequest _ _ =
-    logFatal [[i|Invalid arguments: either a genesis index and epoch number should be supplied, or a block hash.|]]
+    logFatal [[i|Invalid arguments: either a genesis index and an epoch number should be supplied, or a block hash.|]]
 
 -- |Process an 'account ...' command.
 processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
