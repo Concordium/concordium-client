@@ -78,20 +78,20 @@ instance AE.FromJSON EncryptedAccountKeyPair where
         case schemeId of
             SigScheme.Ed25519 -> return EncryptedAccountKeyPairEd25519{..}
 
--- |Full map of plaintext account signing keys.
+-- | Full map of plaintext account signing keys.
 type AccountKeyMap = Map.Map ID.CredentialIndex (Map.Map ID.KeyIndex AccountKeyPair)
 
--- |Encrypted analogue of 'AccountKeyMap'
+-- | Encrypted analogue of 'AccountKeyMap'
 type EncryptedAccountKeyMap = Map.Map ID.CredentialIndex (Map.Map ID.KeyIndex EncryptedAccountKeyPair)
 
 type EncryptedAccountEncryptionSecretKey = EncryptedText
 
--- |Get the number of keys in the key map.
+-- | Get the number of keys in the key map.
 mapNumKeys :: Map.Map ID.CredentialIndex (Map.Map ID.KeyIndex a) -> Int
 mapNumKeys = sum . fmap Map.size
 
--- |Information about a given account sufficient to sign transactions.
--- This includes the plain signing keys.
+-- | Information about a given account sufficient to sign transactions.
+--  This includes the plain signing keys.
 data AccountSigningData = AccountSigningData
     { asdAddress :: !Types.AccountAddress,
       asdKeys :: !AccountKeyMap,
@@ -99,9 +99,9 @@ data AccountSigningData = AccountSigningData
     }
     deriving (Show)
 
--- |Selected keys resolved from the account config for the specific interaction.
--- In contrast to the account config this will only contain the keys the user selected.
--- The keys are still encrypted. They will only be decrypted when they will be used.
+-- | Selected keys resolved from the account config for the specific interaction.
+--  In contrast to the account config this will only contain the keys the user selected.
+--  The keys are still encrypted. They will only be decrypted when they will be used.
 data EncryptedSigningData = EncryptedSigningData
     { esdAddress :: !NamedAddress,
       esdKeys :: !EncryptedAccountKeyMap,
@@ -150,11 +150,11 @@ decryptAccountKeyMap ::
 decryptAccountKeyMap encryptedKeyMap pwd =
     runExceptT $ sequence $ Map.map (sequence . Map.mapWithKey (decryptAccountKeyPair pwd)) encryptedKeyMap
 
--- |Encrypt, with the given password, the secret key for decrypting encrypted amounts
+-- | Encrypt, with the given password, the secret key for decrypting encrypted amounts
 encryptAccountEncryptionSecretKey :: Password -> CryptoFFI.ElgamalSecretKey -> IO EncryptedAccountEncryptionSecretKey
 encryptAccountEncryptionSecretKey pwd secret = encryptText AES256 PBKDF2SHA256 (encode secret) pwd
 
--- |Attempt to decrypt, with the given password, the secret key for decrypting encrypted amounts
+-- | Attempt to decrypt, with the given password, the secret key for decrypting encrypted amounts
 decryptAccountEncryptionSecretKey :: Password -> EncryptedAccountEncryptionSecretKey -> IO (Either String CryptoFFI.ElgamalSecretKey)
 decryptAccountEncryptionSecretKey pwd secret =
     either (Left . displayException) decode <$> runExceptT (decryptText secret pwd :: ExceptT DecryptionFailure IO ByteString)

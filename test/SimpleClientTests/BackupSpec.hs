@@ -41,7 +41,7 @@ someCredId =
         (error "unable to decode")
         $ AE.decode "\"96f89a557352b0aa7596b12f3ccf4cc5973066e31e2c57a8b9dc096fdcff6dd8967e27a7a6e9d41fcc0d553b62650148\""
 
--- |dummy accountconfig, for testing export/import
+-- | dummy accountconfig, for testing export/import
 exampleAccountConfigWithKeysAndName :: AccountConfig
 exampleAccountConfigWithKeysAndName =
     AccountConfig

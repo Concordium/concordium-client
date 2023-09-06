@@ -62,31 +62,31 @@ import Text.Printf
 
 -- PRINTER
 
--- |Specialized writer for producing a list of lines.
+-- | Specialized writer for producing a list of lines.
 type Printer = Writer [String] ()
 
--- |Print the lines of a printer.
+-- | Print the lines of a printer.
 runPrinter :: (MonadIO m) => Printer -> m ()
 runPrinter = liftIO . mapM_ putStrLn . execWriter
 
 -- TIME
 
--- |Convert time to string using the provided formatting and "default" (American) locale.
--- Normally one of the functions below should be used instead of this one.
+-- | Convert time to string using the provided formatting and "default" (American) locale.
+--  Normally one of the functions below should be used instead of this one.
 showTime :: String -> UTCTime -> String
 showTime = formatTime defaultTimeLocale
 
--- |Convert time to string using the RFC822 date formatting and "default" (American) locale.
+-- | Convert time to string using the RFC822 date formatting and "default" (American) locale.
 showTimeFormatted :: UTCTime -> String
 showTimeFormatted = showTime rfc822DateFormat
 
--- |Convert time to string formatted as "<month (3 letters)> <year (4 digits)>".
--- This is the format used for credential expiration.
+-- | Convert time to string formatted as "<month (3 letters)> <year (4 digits)>".
+--  This is the format used for credential expiration.
 showTimeYearMonth :: UTCTime -> String
 showTimeYearMonth = showTime "%b %0Y"
 
--- |Convert time of day to string formatted as "<hour>:<minute>:<second>" (all zero-padded).
--- This is the format used for timestamps in logging.
+-- | Convert time of day to string formatted as "<hour>:<minute>:<second>" (all zero-padded).
+--  This is the format used for timestamps in logging.
 showTimeOfDay :: TimeOfDay -> String
 showTimeOfDay = formatTime defaultTimeLocale "%T"
 
@@ -166,13 +166,13 @@ printAccountConfigList cfgs =
 
 -- ACCOUNT
 
--- |Get a string representation of given @AccountIdentifier@ variant.
+-- | Get a string representation of given @AccountIdentifier@ variant.
 showAccountIdentifier :: Types.AccountIdentifier -> String
 showAccountIdentifier (Types.AccAddress addr) = [i|account address '#{addr}'|]
 showAccountIdentifier (Types.CredRegID cred) = [i|credential registration ID '#{cred}'|]
 showAccountIdentifier (Types.AccIndex idx) = [i|account index '#{idx}'|]
 
--- |Standardized method of displaying "no" information.
+-- | Standardized method of displaying "no" information.
 showNone :: String
 showNone = "none"
 
@@ -300,13 +300,13 @@ printAccountInfo addr a verbose showEncrypted mEncKey = do
                 then tell $ [showPrettyJSON (Types.aiAccountCredentials a)]
                 else forM_ (Map.toList (Types.aiAccountCredentials a)) printVersionedCred
 
--- |Print a versioned credential. This only prints the credential value, and not the
--- associated version.
-printVersionedCred :: Show credTy => (IDTypes.CredentialIndex, (Versioned (IDTypes.AccountCredential' credTy))) -> Printer
+-- | Print a versioned credential. This only prints the credential value, and not the
+--  associated version.
+printVersionedCred :: (Show credTy) => (IDTypes.CredentialIndex, (Versioned (IDTypes.AccountCredential' credTy))) -> Printer
 printVersionedCred (ci, vc) = printCred ci (vValue vc)
 
--- |Print the registration id, expiry date, and revealed attributes of a credential.
-printCred :: Show credTy => IDTypes.CredentialIndex -> IDTypes.AccountCredential' credTy -> Printer
+-- | Print the registration id, expiry date, and revealed attributes of a credential.
+printCred :: (Show credTy) => IDTypes.CredentialIndex -> IDTypes.AccountCredential' credTy -> Printer
 printCred ci c =
     tell
         [ printf "* %s:" (show $ IDTypes.credId c),
@@ -327,7 +327,7 @@ printCred ci c =
         Nothing -> printf "invalid expiration time '%s'" e
         Just t -> showTimeYearMonth t
 
--- |Print a list of accounts along with optional names.
+-- | Print a list of accounts along with optional names.
 printAccountList :: AccountNameMap -> [IDTypes.AccountAddress] -> Printer
 printAccountList nameMap accs = printNameList "Accounts" header format namedAccs
   where
@@ -340,7 +340,7 @@ printAccountList nameMap accs = printNameList "Accounts" header format namedAccs
         ]
     format NamedAddress{..} = [i|#{naAddr}   #{showNameList naNames}|]
 
--- |Print a list of modules along with optional names.
+-- | Print a list of modules along with optional names.
 printModuleList :: ModuleNameMap -> [Types.ModuleRef] -> Printer
 printModuleList nameMap refs = printNameList "Modules" header format namedModRefs
   where
@@ -353,7 +353,7 @@ printModuleList nameMap refs = printNameList "Modules" header format namedModRef
         ]
     format NamedModuleRef{..} = [i|#{nmrRef}   #{showNameList nmrNames}|]
 
--- |Print a list of contracts along with optional names.
+-- | Print a list of contracts along with optional names.
 printContractList :: ContractNameMap -> [Types.ContractAddress] -> Printer
 printContractList nameMap addrs = printNameList "Contracts" header format namedContrAddrs
   where
@@ -368,7 +368,7 @@ printContractList nameMap addrs = printNameList "Contracts" header format namedC
       where
         addr = showCompactPrettyJSON ncaAddr
 
--- |Print a header and a list of named items in the provided format.
+-- | Print a header and a list of named items in the provided format.
 printNameList :: String -> [String] -> (a -> String) -> [a] -> Printer
 printNameList variantName header format xs =
     case xs of
@@ -377,9 +377,9 @@ printNameList variantName header format xs =
             tell header
             tell $ map format xs
 
--- |Print contract info using a provided namedAddress and namedModRef.
--- Since ContractInfo comes directly from the node, the names are not included and must
--- be provided separately.
+-- | Print contract info using a provided namedAddress and namedModRef.
+--  Since ContractInfo comes directly from the node, the names are not included and must
+--  be provided separately.
 printContractInfo :: CI.ContractInfo -> NamedAddress -> NamedModuleRef -> Printer
 printContractInfo ci namedOwner namedModRef =
     case ci of
@@ -453,16 +453,16 @@ showContractFuncV2 funcName mFuncSchema = case mFuncSchema of
     Just CS.RvError{..} -> [i|- #{funcName}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
     Just CS.ParamRvError{..} -> [i|- #{funcName}\n    Parameter:\n#{indentBy 8 $ showPrettyJSON fs2Parameter}\n    Return value:\n#{indentBy 8 $ showPrettyJSON fs2ReturnValue}\n    Error:\n#{indentBy 8 $ showPrettyJSON fs2Error}|]
 
--- |Print a V3 event schema.
+-- | Print a V3 event schema.
 showContractEventV3 :: Maybe SchemaType -> String
 showContractEventV3 stM = case stM of
     Nothing -> [i||]
     Just st -> [i| #{showPrettyJSON st}|]
 
--- |Print module inspect info, i.e., the named moduleRef and its included contracts.
--- If the init or receive signatures for a contract exist in the schema, they are also printed.
--- Otherwise, it just prints the method names.
--- If the schema contains signatures for init or receive methods not in the module, a warning is displayed.
+-- | Print module inspect info, i.e., the named moduleRef and its included contracts.
+--  If the init or receive signatures for a contract exist in the schema, they are also printed.
+--  Otherwise, it just prints the method names.
+--  If the schema contains signatures for init or receive methods not in the module, a warning is displayed.
 printModuleInspectInfo :: CI.ModuleInspectInfo -> Printer
 printModuleInspectInfo CI.ModuleInspectInfo{..} = do
     tell
@@ -571,11 +571,11 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
     showReceives :: (a -> b -> String) -> [(a, b)] -> [String]
     showReceives showContractFunc = fmap (indentBy 4 . uncurry showContractFunc)
 
--- |Indents each line in a string by the number of spaces specified.
+-- | Indents each line in a string by the number of spaces specified.
 indentBy :: Int -> String -> String
 indentBy spaces = intercalate "\n" . map (replicate spaces ' ' <>) . lines
 
--- |Invert a map and combine the new values in a list.
+-- | Invert a map and combine the new values in a list.
 invertHashMapAndCombine :: (Ord v) => Map.Map k v -> Map.Map v [k]
 invertHashMapAndCombine = Map.fromListWith (++) . map (\(k, v) -> (v, [k])) . Map.toList
 
@@ -604,16 +604,16 @@ parseTransactionBlockResult status =
                 in  MultipleBlocksUnambiguous hashes outcome
             _ -> MultipleBlocksAmbiguous blocks
 
--- |Print transaction status, optionally decoding events and parameters according
--- to contract module schema.
--- Since the transaction may be present in multiple blocks before it is finalized,
--- the schema information is passed as a map from blockhashes to pairs of events and
--- its associated contract information. For a block in which the transaction is
--- present, @printTransactionSchema@ looks up its blockhash in the map and retrieves
--- the relevant schema information from the @ContractInfo@ associated with each event.
--- If a parameter or event could not be decoded either because a schema was not present
--- in the contract information or because the decoding failed, a hexadecimal string
--- representing the raw data will be shown instead.
+-- | Print transaction status, optionally decoding events and parameters according
+--  to contract module schema.
+--  Since the transaction may be present in multiple blocks before it is finalized,
+--  the schema information is passed as a map from blockhashes to pairs of events and
+--  its associated contract information. For a block in which the transaction is
+--  present, @printTransactionSchema@ looks up its blockhash in the map and retrieves
+--  the relevant schema information from the @ContractInfo@ associated with each event.
+--  If a parameter or event could not be decoded either because a schema was not present
+--  in the contract information or because the decoding failed, a hexadecimal string
+--  representing the raw data will be shown instead.
 printTransactionStatus ::
     TransactionStatusResult ->
     Bool ->
@@ -755,16 +755,16 @@ showOutcomeResult verbose contrInfoWithEventsM = \case
         in
             (idtFollowing, out <> [evStringM])
 
--- |Return string representation of outcome event if verbose or if the event includes
--- relevant information that wasn't part of the transaction request. Otherwise return Nothing.
--- If verbose is true, the string includes the details from the fields of the event.
--- Otherwise, only the fields that are not known from the transaction request are included.
--- Currently this is only the baker ID from AddBaker, which is computed by the backend.
--- The non-verbose version is used by the transaction commands (through tailTransaction_)
--- where the input parameters have already been specified manually and repeated in a block
--- of text that they confirmed manually.
--- The verbose version is used by 'transaction status' and the non-trivial cases of the above
--- where there are multiple distinct outcomes.
+-- | Return string representation of outcome event if verbose or if the event includes
+--  relevant information that wasn't part of the transaction request. Otherwise return Nothing.
+--  If verbose is true, the string includes the details from the fields of the event.
+--  Otherwise, only the fields that are not known from the transaction request are included.
+--  Currently this is only the baker ID from AddBaker, which is computed by the backend.
+--  The non-verbose version is used by the transaction commands (through tailTransaction_)
+--  where the input parameters have already been specified manually and repeated in a block
+--  of text that they confirmed manually.
+--  The verbose version is used by 'transaction status' and the non-trivial cases of the above
+--  where there are multiple distinct outcomes.
 showEvent ::
     -- | Whether the output should be verbose.
     Verbose ->
@@ -933,15 +933,15 @@ showEvent verbose ciM = \case
             Nothing -> Nothing
             Just ci -> CI.getParameterSchema ci rName
 
--- |Return string representation of reject reason.
--- If verbose is true, the string includes the details from the fields of the reason.
--- Otherwise, only the fields that are not known from the transaction request are included.
--- Currently this is only the baker address from NotFromBakerAccount.
--- The non-verbose version is used by the transaction commands (through tailTransaction_)
--- where the input parameters have already been specified manually and repeated in a block
--- of text that they confirmed manually.
--- The verbose version is used by 'transaction status' and the non-trivial cases of the above
--- where there are multiple distinct outcomes.
+-- | Return string representation of reject reason.
+--  If verbose is true, the string includes the details from the fields of the reason.
+--  Otherwise, only the fields that are not known from the transaction request are included.
+--  Currently this is only the baker address from NotFromBakerAccount.
+--  The non-verbose version is used by the transaction commands (through tailTransaction_)
+--  where the input parameters have already been specified manually and repeated in a block
+--  of text that they confirmed manually.
+--  The verbose version is used by 'transaction status' and the non-trivial cases of the above
+--  where there are multiple distinct outcomes.
 showRejectReason :: Verbose -> Types.RejectReason -> String
 showRejectReason verbose = \case
     Types.ModuleNotWF ->
@@ -1082,7 +1082,7 @@ printConsensusStatus r =
           printf "Trigger block time:          %s" (show cbftsTriggerBlockTime)
         ]
 
--- |Print Birk parameters from a @BlockBirkParameters@.
+-- | Print Birk parameters from a @BlockBirkParameters@.
 printQueryBirkParameters :: Bool -> Queries.BlockBirkParameters -> Map.Map IDTypes.AccountAddress Text -> Printer
 printQueryBirkParameters includeBakers r addrmap = do
     tell $
@@ -1116,7 +1116,7 @@ printQueryBirkParameters includeBakers r addrmap = do
     maybeElectionDiffiulty Nothing = []
     maybeElectionDiffiulty (Just ed) = [printf "Election difficulty: %s" (show ed)]
 
--- |Print Birk parameters from a @BirkParametersResult@.
+-- | Print Birk parameters from a @BirkParametersResult@.
 printBirkParameters :: Bool -> BirkParametersResult -> Map.Map IDTypes.AccountAddress Text -> Printer
 printBirkParameters includeBakers r addrmap = do
     tell
@@ -1142,7 +1142,7 @@ printBirkParameters includeBakers r addrmap = do
                 accountName bkr = fromMaybe " " $ Map.lookup bkr addrmap
 
 -- | Prints the chain parameters.
-printChainParameters :: forall cpv. IsChainParametersVersion cpv => ChainParameters' cpv -> Printer
+printChainParameters :: forall cpv. (IsChainParametersVersion cpv) => ChainParameters' cpv -> Printer
 printChainParameters cp = do
     case chainParametersVersion @cpv of
         SChainParametersV0 -> printChainParametersV0 cp
@@ -1310,7 +1310,7 @@ showExchangeRate (Types.ExchangeRate r) = showRatio r
 
 -- BLOCK
 
--- |Get a string representation of a given @BlockHashInput@ variant.
+-- | Get a string representation of a given @BlockHashInput@ variant.
 showBlockHashInput :: Queries.BlockHashInput -> String
 showBlockHashInput Queries.Best = [i|best block|]
 showBlockHashInput (Queries.Given bh) = [i|block with hash #{bh}|]
@@ -1392,24 +1392,24 @@ printAnonymityRevokers arInfos = do
 
 -- AMOUNT AND ENERGY
 
--- |Standardized method of displaying an amount as CCD.
+-- | Standardized method of displaying an amount as CCD.
 showCcd :: Types.Amount -> String
 showCcd = printf "%s CCD" . Types.amountToString
 
--- |Standardized method of displaying energy as NRG.
+-- | Standardized method of displaying energy as NRG.
 showNrg :: Types.Energy -> String
 showNrg = printf "%s NRG" . show
 
 -- UTIL
 
--- |Produce a string fragment of the account address and, if available, a list of names for it.
+-- | Produce a string fragment of the account address and, if available, a list of names for it.
 showNamedAddress :: NamedAddress -> String
 showNamedAddress NamedAddress{..} =
     case naNames of
         [] -> [i|'#{naAddr}'|]
         names -> [i|'#{naAddr}' (#{showNameList names})|]
 
--- |Produce a string fragment of the contract address and, if available, a list of names for it.
+-- | Produce a string fragment of the contract address and, if available, a list of names for it.
 showNamedContractAddress :: NamedContractAddress -> String
 showNamedContractAddress NamedContractAddress{..} =
     case ncaNames of
@@ -1418,57 +1418,57 @@ showNamedContractAddress NamedContractAddress{..} =
   where
     ncaAddr' = showCompactPrettyJSON ncaAddr
 
--- |Produce a string fragment of the moduleRef and, if available, a list of names for it.
+-- | Produce a string fragment of the moduleRef and, if available, a list of names for it.
 showNamedModuleRef :: NamedModuleRef -> String
 showNamedModuleRef NamedModuleRef{..} =
     case nmrNames of
         [] -> [i|'#{nmrRef}'|]
         names -> [i|'#{nmrRef}' (#{showNameList names})|]
 
--- |Standardized method of displaying optional values.
+-- | Standardized method of displaying optional values.
 showMaybe :: (a -> String) -> Maybe a -> String
 showMaybe = maybe showNone
 
--- |Standardized method of displaying optional time values.
+-- | Standardized method of displaying optional time values.
 showMaybeUTC :: Maybe UTCTime -> String
 showMaybeUTC = showMaybe showTimeFormatted
 
--- |Standardized method of displaying EMA/EMSD values.
+-- | Standardized method of displaying EMA/EMSD values.
 showEm :: String -> String -> String
 showEm = printf "%s (EMA), %s (EMSD)"
 
--- |Standardized method of displaying EMA/EMSD number of seconds.
+-- | Standardized method of displaying EMA/EMSD number of seconds.
 showEmSeconds :: Double -> Double -> String
 showEmSeconds a d = showEm (showSeconds a) (showSeconds d)
 
--- |Standardized method of displaying optional EMA/EMSD number of seconds.
+-- | Standardized method of displaying optional EMA/EMSD number of seconds.
 showMaybeEmSeconds :: Maybe Double -> Maybe Double -> String
 showMaybeEmSeconds a d = case (a, d) of
     (Just a', Just d') -> showEmSeconds a' d'
     _ -> showNone
 
--- |Standardized method of displaying a number of seconds.
+-- | Standardized method of displaying a number of seconds.
 showSeconds :: Double -> String
 showSeconds s = printf "%5d ms" (round $ 1000 * s :: Int)
 
--- |Standardized method of displaying a number of milliseconds in a nice way, e.g. "2h 15m 3s".
+-- | Standardized method of displaying a number of milliseconds in a nice way, e.g. "2h 15m 3s".
 showDuration :: Word64 -> String
 showDuration = Text.unpack . durationToText
 
--- |Print a line for each entry in the provided map using the provided print function.
+-- | Print a line for each entry in the provided map using the provided print function.
 printMap :: ((k, v) -> String) -> [(k, v)] -> Printer
 printMap s m = forM_ m $ \(k, v) -> tell [s (k, v)]
 
--- |Standardized method of displaying a boolean as "yes" or "no"
--- (for True and False, respectively).
+-- | Standardized method of displaying a boolean as "yes" or "no"
+--  (for True and False, respectively).
 showYesNo :: Bool -> String
 showYesNo = bool "no" "yes"
 
--- |Unwrap a list from within `Maybe`. `Nothing` becomes an empty list.
+-- | Unwrap a list from within `Maybe`. `Nothing` becomes an empty list.
 unwrapMaybeList :: Maybe [a] -> [a]
 unwrapMaybeList = concat
 
--- |Show a value wrapped in a @Conditionally@.
+-- | Show a value wrapped in a @Conditionally@.
 showConditionally :: (Show a) => Conditionally b a -> String
 showConditionally (CFalse) = "N/A"
 showConditionally (CTrue v) = show v

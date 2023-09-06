@@ -185,7 +185,7 @@ data TransactionCmd
         }
     | TransactionStatus
         { tsHash :: !Text,
-          -- |Path to a contract schema, used to display the transaction event info.
+          -- | Path to a contract schema, used to display the transaction event info.
           tsSchema :: !(Maybe FilePath)
         }
     | TransactionSendCcd
@@ -196,7 +196,7 @@ data TransactionCmd
         }
     | TransactionSendWithSchedule
         { twsReceiver :: !Text,
-          -- |Eiher total amount, interval, number of intervals and starting time or a raw list of timestamps and amounts.
+          -- | Eiher total amount, interval, number of intervals and starting time or a raw list of timestamps and amounts.
           twsSchedule :: !(Either (Amount, Interval, Int, Timestamp) [(Timestamp, Amount)]),
           twsMemo :: !(Maybe MemoInput),
           twsOpts :: !(TransactionOpts (Maybe Energy))
@@ -239,178 +239,178 @@ data AccountCmd
           aukCredId :: !CredentialRegistrationID,
           aukTransactionOpts :: !(TransactionOpts (Maybe Energy))
         }
-    | -- |Transfer part of the public balance to the encrypted balance of the
-      -- account.
+    | -- | Transfer part of the public balance to the encrypted balance of the
+      --  account.
       AccountEncrypt
         { aeTransactionOpts :: !(TransactionOpts (Maybe Energy)),
           -- | Amount to transfer from public to encrypted balance.
           aeAmount :: !Amount
         }
-    | -- |Transfer part of the encrypted balance to the public balance of the
-      -- account.
+    | -- | Transfer part of the encrypted balance to the public balance of the
+      --  account.
       AccountDecrypt
         { adTransactionOpts :: !(TransactionOpts (Maybe Energy)),
-          -- |Amount to transfer from encrypted to public balance.
+          -- | Amount to transfer from encrypted to public balance.
           adAmount :: !Amount,
           -- | Which indices of incoming amounts to use as inputs.
           -- If none are provided all existing ones will be used.
           adIndex :: !(Maybe Int)
         }
-    | -- |Updated credentials and account threshold (i.e. how many credential holders that need to sign transactions)
+    | -- | Updated credentials and account threshold (i.e. how many credential holders that need to sign transactions)
       AccountUpdateCredentials
         { aucNewCredInfos :: !(Maybe FilePath), -- File containing the new CredentialDeploymentInformation's
           aucRemoveCredIds :: !(Maybe FilePath), -- File containing the CredentialRegistrationID's for the credentials to be removed
           aucNewThreshold :: !AccountThreshold, -- The new account threshold
           aucTransactionOpts :: !(TransactionOpts (Maybe Energy))
         }
-    | -- |Show an alias for the account.
+    | -- | Show an alias for the account.
       AccountShowAlias
-        { -- |Name or address of the account.
+        { -- | Name or address of the account.
           asaAddress :: !Text,
           asaAlias :: !Word
         }
     deriving (Show)
 
 data ModuleCmd
-    = -- |Deploy the provided smart contract module on chain.
+    = -- | Deploy the provided smart contract module on chain.
       ModuleDeploy
-        { -- |Path to the module.
+        { -- | Path to the module.
           mdModuleFile :: !FilePath,
-          -- |Local alias for the module reference.
+          -- | Local alias for the module reference.
           mdName :: !(Maybe Text),
-          -- |Optional Wasm version for the module.
+          -- | Optional Wasm version for the module.
           mdWasmVersion :: !(Maybe Wasm.WasmVersion),
-          -- |Options for transaction.
+          -- | Options for transaction.
           mdTransactionOpts :: !(TransactionOpts (Maybe Energy))
         }
-    | -- |List all modules.
+    | -- | List all modules.
       ModuleList
-        { -- |Hash of the block (default "best").
+        { -- | Hash of the block (default "best").
           mlBlockHash :: !(Maybe Text)
         }
-    | -- |Output the binary source code of the module to the provided file.
+    | -- | Output the binary source code of the module to the provided file.
       ModuleShow
-        { -- |Reference to the module OR a module name.
+        { -- | Reference to the module OR a module name.
           msModuleRefOrName :: !Text,
-          -- |Output the module to this file.
-          -- Use '-' to output to stdout.
+          -- | Output the module to this file.
+          --  Use '-' to output to stdout.
           msOutFile :: !FilePath,
-          -- |Hash of the block (default "best").
+          -- | Hash of the block (default "best").
           msBlockHash :: !(Maybe Text)
         }
-    | -- |Show the functions available in a module, including type signatures if schema is provided.
+    | -- | Show the functions available in a module, including type signatures if schema is provided.
       ModuleInspect
-        { -- |Reference to the module OR a module name.
+        { -- | Reference to the module OR a module name.
           miModuleRefOrName :: !Text,
-          -- |Path to a contract schema, used to display the type signatures.
+          -- | Path to a contract schema, used to display the type signatures.
           miSchema :: !(Maybe FilePath),
-          -- |Hash of the block (default "best").
+          -- | Hash of the block (default "best").
           miBlockHash :: !(Maybe Text)
         }
-    | -- |Add a local name to a module.
+    | -- | Add a local name to a module.
       ModuleName
-        { -- |Module reference OR path to the module (reference then calculated by hashing).
+        { -- | Module reference OR path to the module (reference then calculated by hashing).
           mnModule :: !String,
-          -- |Name for the module.
+          -- | Name for the module.
           mnName :: !Text,
-          -- |Optional Wasm version for the module.
+          -- | Optional Wasm version for the module.
           mnWasmVersion :: !(Maybe Wasm.WasmVersion)
         }
-    | -- |Remove a local name from the module name map
+    | -- | Remove a local name from the module name map
       ModuleRemoveName
-        { -- |The module name to remove
+        { -- | The module name to remove
           mrnText :: !Text
         }
     deriving (Show)
 
 data ContractCmd
-    = -- |Show the state of specified contract.
+    = -- | Show the state of specified contract.
       ContractShow
-        { -- |Index of the contract address OR a contract name.
+        { -- | Index of the contract address OR a contract name.
           csAddressIndexOrName :: !Text,
-          -- |Subindex of the address for the contract (default: 0).
+          -- | Subindex of the address for the contract (default: 0).
           csAddressSubindex :: !(Maybe Word64),
-          -- |Path to a contract schema, used to display the contract info.
+          -- | Path to a contract schema, used to display the contract info.
           csSchema :: !(Maybe FilePath),
-          -- |Hash of the block (default "best").
+          -- | Hash of the block (default "best").
           csBlockHash :: !(Maybe Text)
         }
-    | -- |List all contracts on chain.
+    | -- | List all contracts on chain.
       ContractList
-        { -- |Hash of the block (default "best").
+        { -- | Hash of the block (default "best").
           clBlockHash :: !(Maybe Text)
         }
-    | -- |Initialize a contract from a module on chain.
+    | -- | Initialize a contract from a module on chain.
       ContractInit
-        { -- |Module reference OR module name OR (if ciPath == True) path to the module (reference then calculated by hashing).
+        { -- | Module reference OR module name OR (if ciPath == True) path to the module (reference then calculated by hashing).
           ciModule :: !String,
-          -- |Name of the contract to initialize. This corresponds to a specific init function.
+          -- | Name of the contract to initialize. This corresponds to a specific init function.
           ciContractName :: !Text,
-          -- |Optional path to a JSON or binary file containing parameters for the init function.
+          -- | Optional path to a JSON or binary file containing parameters for the init function.
           ciParameterFileJSON :: !(Maybe ParameterFileInput),
-          -- |Path to a contract schema.
+          -- | Path to a contract schema.
           ciSchema :: !(Maybe FilePath),
-          -- |Local alias for the contract address.
+          -- | Local alias for the contract address.
           ciName :: !(Maybe Text),
-          -- |Determines whether ciModule should be interpreted as a path.
+          -- | Determines whether ciModule should be interpreted as a path.
           ciPath :: !Bool,
-          -- |Optional Wasm version for the module.
+          -- | Optional Wasm version for the module.
           ciWasmVersion :: !(Maybe Wasm.WasmVersion),
-          -- |Amount to be send to contract (default: 0).
+          -- | Amount to be send to contract (default: 0).
           ciAmount :: !Amount,
-          -- |Options for transaction.
+          -- | Options for transaction.
           ciTransactionOpts :: !(TransactionOpts Energy)
         }
-    | -- |Update an existing contract, i.e. invoke a receive function.
+    | -- | Update an existing contract, i.e. invoke a receive function.
       ContractUpdate
-        { -- |Index of the contract address OR a contract name.
+        { -- | Index of the contract address OR a contract name.
           cuAddressIndexOrName :: !Text,
-          -- |Subindex of the address for the contract to invoke (default: 0).
+          -- | Subindex of the address for the contract to invoke (default: 0).
           cuAddressSubindex :: !(Maybe Word64),
-          -- |Name of the receive function to use.
+          -- | Name of the receive function to use.
           cuReceiveName :: !Text,
-          -- |Optional path to a JSON or binary file containing parameters for the receive function.
+          -- | Optional path to a JSON or binary file containing parameters for the receive function.
           cuParameterFileJSON :: !(Maybe ParameterFileInput),
-          -- |Path to a contract schema.
+          -- | Path to a contract schema.
           cuSchema :: !(Maybe FilePath),
-          -- |Amount to invoke the receive function with (default: 0).
+          -- | Amount to invoke the receive function with (default: 0).
           cuAmount :: !Amount,
-          -- |Options for transaction.
+          -- | Options for transaction.
           cuTransactionOpts :: !(TransactionOpts Energy)
         }
-    | -- |Invoke a contract locally and view its output.
+    | -- | Invoke a contract locally and view its output.
       ContractInvoke
-        { -- |Index of the contract address OR a contract name.
+        { -- | Index of the contract address OR a contract name.
           civAddressIndexOrName :: !Text,
-          -- |Subindex of the address fro the contract to invoke (default: 0).
+          -- | Subindex of the address fro the contract to invoke (default: 0).
           civAddressSubindex :: !(Maybe Word64),
-          -- |Name of the receive function to use.
+          -- | Name of the receive function to use.
           civReceiveName :: !Text,
-          -- |Optional path to a JSON or binary file containing parameters for the receive function.
+          -- | Optional path to a JSON or binary file containing parameters for the receive function.
           civParameterFile :: !(Maybe ParameterFileInput),
-          -- |Path to a contract schema.
+          -- | Path to a contract schema.
           civSchema :: !(Maybe FilePath),
-          -- |Amount to invoke the receive function with (default: 0).
+          -- | Amount to invoke the receive function with (default: 0).
           civAmount :: !Amount,
-          -- |Account address or name to use as invoker.
+          -- | Account address or name to use as invoker.
           civInvoker :: !(Maybe InvokerInput),
-          -- |Maximum energy allowed for the invocation (default: 10,000,000).
+          -- | Maximum energy allowed for the invocation (default: 10,000,000).
           civMaxEnergy :: !(Maybe Energy),
-          -- |Hash of the block (default: "best").
+          -- | Hash of the block (default: "best").
           civBlockHash :: !(Maybe Text)
         }
-    | -- |Add a local name to a contract.
+    | -- | Add a local name to a contract.
       ContractName
-        { -- |Index of the address for the contract.
+        { -- | Index of the address for the contract.
           cnAddressIndex :: !Word64,
-          -- |Subindex of the address for the contract (default: 0).
+          -- | Subindex of the address for the contract (default: 0).
           cnAddressSubindex :: !(Maybe Word64),
-          -- |Name for the contract.
+          -- | Name for the contract.
           cnName :: !Text
         }
-    | -- |Remove a local name from the contract name map
+    | -- | Remove a local name from the contract name map
       ContractRemoveName
-        { -- |The contract name to remove
+        { -- | The contract name to remove
           crnText :: !Text
         }
     deriving (Show)
@@ -626,19 +626,19 @@ tlsParser =
             <> help "Enable TLS."
         )
 
--- |Parse transactionOpts with an optional energy flag
+-- | Parse transactionOpts with an optional energy flag
 transactionOptsParser :: Parser (TransactionOpts (Maybe Energy))
 transactionOptsParser =
     transactionOptsParserBuilder $
         optional (option (eitherReader energyFromStringInform) (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction."))
 
--- |Parse transactionOpts with a required energy flag
+-- | Parse transactionOpts with a required energy flag
 requiredEnergyTransactionOptsParser :: Parser (TransactionOpts Energy)
 requiredEnergyTransactionOptsParser =
     transactionOptsParserBuilder $
         option (eitherReader energyFromStringInform) (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction.")
 
--- |Helper function to build an transactionOptsParser with or without a required energy flag
+-- | Helper function to build an transactionOptsParser with or without a required energy flag
 transactionOptsParserBuilder :: Parser energyOrMaybe -> Parser (TransactionOpts energyOrMaybe)
 transactionOptsParserBuilder energyOrMaybeParser =
     TransactionOpts
@@ -1025,7 +1025,7 @@ moduleCmds =
             (progDesc "Commands for inspecting and deploying modules.")
         )
 
--- |Parse a contract version.
+-- | Parse a contract version.
 contractVersionOption :: Parser Wasm.WasmVersion
 contractVersionOption =
     option
@@ -1953,16 +1953,16 @@ identityShowARsCmd =
 docFromLines :: [String] -> Maybe P.Doc
 docFromLines = Just . P.vsep . map P.text
 
--- |A parameter file used for initializing, updating, and invoking smart contracts.
---  For the JSON parameter a schema must be embedded in the module or supplied with the --schema flag.
---  The schema is then used to serialize the JSON to binary.
+-- | A parameter file used for initializing, updating, and invoking smart contracts.
+--   For the JSON parameter a schema must be embedded in the module or supplied with the --schema flag.
+--   The schema is then used to serialize the JSON to binary.
 data ParameterFileInput
     = ParameterJSON FilePath
     | ParameterBinary FilePath
     deriving (Show)
 
--- |Parse an optional parameter file.
---  Either with '--parameter-json' or '--parameter-binary', but not both.
+-- | Parse an optional parameter file.
+--   Either with '--parameter-json' or '--parameter-binary', but not both.
 parameterFileParser :: Parser (Maybe ParameterFileInput)
 parameterFileParser =
     optional
@@ -1986,9 +1986,9 @@ parameterFileParser =
                 )
         )
 
--- |An invoker of a smart contract used with 'contract invoke'.
---  The invoker can either be an account or a contract.
---  For the contract, the subindex is optional and defaults to 0.
+-- | An invoker of a smart contract used with 'contract invoke'.
+--   The invoker can either be an account or a contract.
+--   For the contract, the subindex is optional and defaults to 0.
 data InvokerInput
     = InvokerAccount Text
     | InvokerContract
@@ -1997,9 +1997,9 @@ data InvokerInput
         }
     deriving (Show)
 
--- |Parse an optional invoker.
---  Either with '--invoker-account' or '--invoker-contract', but not both.
---  If the invoker is a contract, the subindex can be provided with '--invoker-contract-subindex'.
+-- | Parse an optional invoker.
+--   Either with '--invoker-account' or '--invoker-contract', but not both.
+--   If the invoker is a contract, the subindex can be provided with '--invoker-contract-subindex'.
 invokerParser :: Parser (Maybe InvokerInput)
 invokerParser =
     optional $

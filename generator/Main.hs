@@ -25,18 +25,18 @@ import Options.Applicative
 import System.Exit
 
 data TxOptions = TxOptions
-    { -- |How many transactions to send per second.
+    { -- | How many transactions to send per second.
       tps :: !Int,
-      -- |Whether to output a log after each transaction that is sent.
+      -- | Whether to output a log after each transaction that is sent.
       logit :: !Bool,
-      -- |File with JSON encoded keys for the source account.
+      -- | File with JSON encoded keys for the source account.
       keysFile :: !FilePath,
-      -- |Optional file with addresses and (optionally) public keys of the accounts to send to.
-      -- If not given or empty all transfers will be self-transfers.
-      -- This option is mandatory if encrypted transfers are desired.
-      -- The format of the file should be a JSON array of objects with keys "address" and "encryptionPublicKey", the latter being optional.
+      -- | Optional file with addresses and (optionally) public keys of the accounts to send to.
+      --  If not given or empty all transfers will be self-transfers.
+      --  This option is mandatory if encrypted transfers are desired.
+      --  The format of the file should be a JSON array of objects with keys "address" and "encryptionPublicKey", the latter being optional.
       receiversFile :: !(Maybe FilePath),
-      -- |If this is `True` then we send encrypted transfer transactions.
+      -- | If this is `True` then we send encrypted transfer transactions.
       encrypted :: !Bool
     }
 
@@ -63,7 +63,7 @@ parser =
         (helper <*> ((,) <$> backendParser <*> txOptions))
         (fullDesc <> progDesc "Generate transactions for a fixed contract.")
 
-sendTx :: MonadIO m => BareBlockItem -> ClientMonad m BareBlockItem
+sendTx :: (MonadIO m) => BareBlockItem -> ClientMonad m BareBlockItem
 sendTx tx = do
     sbiRes <- sendBlockItem tx
     let res = case sbiRes of
@@ -75,7 +75,7 @@ sendTx tx = do
         Left err -> liftIO $ die $ "Could not send transaction: " <> err
         Right _ -> return tx
 
-iterateM_ :: Monad m => (a -> m a) -> a -> m b
+iterateM_ :: (Monad m) => (a -> m a) -> a -> m b
 iterateM_ f a = f a >>= iterateM_ f
 
 go :: Backend -> Bool -> Int -> a -> (Nonce -> a -> IO (AccountAddress, BareBlockItem, a)) -> Nonce -> IO ()

@@ -14,9 +14,9 @@ ccPrefs =
           prefShowHelpOnEmpty = True
         }
 
--- |Set the encoding on the given handle in such a way that unsupported
--- characters are replaced with a replacement character.
--- See: https://hackage.haskell.org/package/base-4.14.0.0/docs/System-IO.html#v:mkTextEncoding
+-- | Set the encoding on the given handle in such a way that unsupported
+--  characters are replaced with a replacement character.
+--  See: https://hackage.haskell.org/package/base-4.14.0.0/docs/System-IO.html#v:mkTextEncoding
 setReplacement :: Handle -> IO ()
 setReplacement h = do
     ce' <- hGetEncoding h
