@@ -29,10 +29,10 @@ data TransactionStatusResult' a = TransactionStatusResult
 
 type TransactionStatusResult = TransactionStatusResult' ValidResult
 
--- |Convert a @TransactionStatus@ instance into a @TransactionStatusResult@ instance.
--- Returns a @Left@ wrapping an error message if either the transaction summary contained in the
--- input is @Nothing@, or the input is of variant @Committed@ or @Finalized@. Returns a @Right@
--- wrapping the corresponding @TransactionStatusResult@ otherwise.
+-- | Convert a @TransactionStatus@ instance into a @TransactionStatusResult@ instance.
+--  Returns a @Left@ wrapping an error message if either the transaction summary contained in the
+--  input is @Nothing@, or the input is of variant @Committed@ or @Finalized@. Returns a @Right@
+--  wrapping the corresponding @TransactionStatusResult@ otherwise.
 transactionStatusToTransactionStatusResult :: Queries.TransactionStatus -> Either String TransactionStatusResult
 transactionStatusToTransactionStatusResult tStatus = do
     (tsrState, tsrResults) <- do
@@ -59,14 +59,14 @@ transactionStatusToTransactionStatusResult tStatus = do
   where
     err bh = Left $ "Transaction summary missing for blockhash '" <> show bh <> "'."
 
-instance FromJSON a => FromJSON (TransactionStatusResult' a) where
+instance (FromJSON a) => FromJSON (TransactionStatusResult' a) where
     parseJSON Null = return TransactionStatusResult{tsrState = Absent, tsrResults = Map.empty}
     parseJSON v = flip (withObject "Transaction status") v $ \obj -> do
         tsrState <- obj .: "status"
         tsrResults <- obj .:? "outcomes" .!= Map.empty
         return $ TransactionStatusResult{..}
 
-instance ToJSON a => ToJSON (TransactionStatusResult' a) where
+instance (ToJSON a) => ToJSON (TransactionStatusResult' a) where
     toJSON TransactionStatusResult{..} =
         object $ ("status" .= tsrState) : mapObject
       where

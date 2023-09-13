@@ -48,21 +48,21 @@ import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import Data.Word (Word32)
 
--- |Try to include extra information in the contract info from the module schema.
--- For V0 contracts:
---  - Try to decode the state, if the state schema is available.
---  - Include all available parameter schemas for receive methods.
--- For V1 contracts:
---  - Include all available function schemas for receive methods.
---  - In case of a V3 schema, include event schema.
+-- | Try to include extra information in the contract info from the module schema.
+--  For V0 contracts:
+--   - Try to decode the state, if the state schema is available.
+--   - Include all available parameter schemas for receive methods.
+--  For V1 contracts:
+--   - Include all available function schemas for receive methods.
+--   - In case of a V3 schema, include event schema.
 --
--- Logs warnings if:
---  - The contract is not included in the module schema.
---  - The state could not be parsed using the schema (only for v0 contracts).
+--  Logs warnings if:
+--   - The contract is not included in the module schema.
+--   - The state could not be parsed using the schema (only for v0 contracts).
 --
--- Logs fatally on internal errors that should never occur, namely:
---  - Schema data has already been added.
---  - The version of module schema and contract info does not match.
+--  Logs fatally on internal errors that should never occur, namely:
+--   - Schema data has already been added.
+--   - The version of module schema and contract info does not match.
 addSchemaData :: (MonadIO m) => ContractInfo -> CS.ModuleSchema -> ClientMonad m (Maybe ContractInfo)
 addSchemaData cInfo@ContractInfoV1{..} moduleSchema =
     case moduleSchema of
@@ -158,9 +158,9 @@ addSchemaData cInfo@ContractInfoV0{..} moduleSchema =
         let mSchema = CS.lookupParameterSchema moduleSchema (CS.ReceiveFuncName ciName rcvName)
         in  (rcvName, mSchema)
 
--- |Get a contract name from an InitName, i.e. extracting the text and removing the "init_" prefix.
--- If stripping the prefix fails, it simply returns the extracted text
--- (this should never happen, unless the InitName was incorrectly constructed).
+-- | Get a contract name from an InitName, i.e. extracting the text and removing the "init_" prefix.
+--  If stripping the prefix fails, it simply returns the extracted text
+--  (this should never happen, unless the InitName was incorrectly constructed).
 contractNameFromInitName :: Wasm.InitName -> Text
 contractNameFromInitName initName = case Text.stripPrefix "init_" initNameText of
     Nothing -> initNameText
@@ -168,8 +168,8 @@ contractNameFromInitName initName = case Text.stripPrefix "init_" initNameText o
   where
     initNameText = Wasm.initName initName
 
--- |Get a method name from a Receive name, i.e. extracting the text and removing the "<contractName>." prefix.
--- If the receiveName does not have the prefix, it simply returns the extracted text.
+-- | Get a method name from a Receive name, i.e. extracting the text and removing the "<contractName>." prefix.
+--  If the receiveName does not have the prefix, it simply returns the extracted text.
 methodNameFromReceiveName :: Wasm.ReceiveName -> Text
 methodNameFromReceiveName rcvName = case Text.split (== '.') receiveNameText of
     [_contrName, methodName] -> methodName
@@ -177,7 +177,7 @@ methodNameFromReceiveName rcvName = case Text.split (== '.') receiveNameText of
   where
     receiveNameText = Wasm.receiveName rcvName
 
--- |Check whether the receive method exists in the contract.
+-- | Check whether the receive method exists in the contract.
 hasReceiveMethod :: Text -> ContractInfo -> Bool
 hasReceiveMethod rcvName cInfo = rcvName `elem` methods
   where
@@ -191,20 +191,20 @@ hasReceiveMethod rcvName cInfo = rcvName `elem` methods
             WithSchemaV2{..} -> map fst ws2Methods
             WithSchemaV3{..} -> map fst ws3Methods
 
--- |Get the contract name (without the 'init_' prefix).
+-- | Get the contract name (without the 'init_' prefix).
 getContractName :: ContractInfo -> Text
 getContractName = \case
     ContractInfoV0{..} -> ciName
     ContractInfoV1{..} -> ciName
 
--- |Returns True if the contract has fallback entrypoint support,
--- False otherwise.
+-- | Returns True if the contract has fallback entrypoint support,
+--  False otherwise.
 hasFallbackReceiveSupport :: ContractInfo -> Bool
 hasFallbackReceiveSupport = \case
     ContractInfoV0{} -> False
     ContractInfoV1{} -> True
 
--- |Get the event schema of a contract.
+-- | Get the event schema of a contract.
 getEventSchema :: ContractInfo -> Maybe CS.SchemaType
 getEventSchema = \case
     ContractInfoV0{} -> Nothing
@@ -214,7 +214,7 @@ getEventSchema = \case
         WithSchemaV2 _ -> Nothing
         WithSchemaV3{..} -> ws3Event
 
--- |Get the parameter schema for a receive method.
+-- | Get the parameter schema for a receive method.
 getParameterSchema :: ContractInfo -> Text -> Maybe CS.SchemaType
 getParameterSchema ci rcvName = case ci of
     ContractInfoV0{..} -> case ciMethodsAndState of
@@ -230,40 +230,40 @@ getParameterSchema ci rcvName = case ci of
         Nothing -> Nothing
         Just (_, v) -> v
 
--- |This is returned by the node and specified in Concordium.Getters (from prototype repo).
--- Must stay in sync.
+-- | This is returned by the node and specified in Concordium.Getters (from prototype repo).
+--  Must stay in sync.
 data ContractInfo
-    = -- |Info about a contract.
+    = -- | Info about a contract.
       ContractInfoV0
-        { -- |The contract balance.
+        { -- | The contract balance.
           ciAmount :: !T.Amount,
-          -- |The owner of the contract.
+          -- | The owner of the contract.
           ciOwner :: !T.AccountAddress,
-          -- |The size of the contract state in bytes.
+          -- | The size of the contract state in bytes.
           ciSize :: !Int,
-          -- |The corresponding source module.
+          -- | The corresponding source module.
           ciSourceModule :: !T.ModuleRef,
-          -- |The contract name.
+          -- | The contract name.
           ciName :: !Text,
-          -- |The methods and state of the contract.
+          -- | The methods and state of the contract.
           ciMethodsAndState :: !MethodsAndState
         }
     | ContractInfoV1
-        { -- |The contract balance.
+        { -- | The contract balance.
           ciAmount :: !T.Amount,
-          -- |The owner of the contract.
+          -- | The owner of the contract.
           ciOwner :: !T.AccountAddress,
-          -- |The contract name.
+          -- | The contract name.
           ciName :: !Text,
-          -- |The corresponding source module.
+          -- | The corresponding source module.
           ciSourceModule :: !T.ModuleRef,
-          -- |The methods of the contract.
+          -- | The methods of the contract.
           ciMethods :: !Methods
         }
     deriving (Eq, Show)
 
--- |Methods and State for V0 Contracts.
---  Additional information from the schema can be added with `addSchemaData`.
+-- | Methods and State for V0 Contracts.
+--   Additional information from the schema can be added with `addSchemaData`.
 data MethodsAndState
     = NoSchemaV0
         { ns0State :: !ByteString,
@@ -275,10 +275,10 @@ data MethodsAndState
         }
     deriving (Eq, Show)
 
--- |Method and event schemas for V1 Contracts.
---  Additional information from the schema can be added with `addSchemaData`.
---  The schemas can be either of version 1, 2 or 3.
---  Event schemas are only present in V3 schemas.
+-- | Method and event schemas for V1 Contracts.
+--   Additional information from the schema can be added with `addSchemaData`.
+--   The schemas can be either of version 1, 2 or 3.
+--   Event schemas are only present in V3 schemas.
 data Methods
     = NoSchemaV1 {ns1Methods :: ![Text]}
     | WithSchemaV1 {ws1Methods :: ![(Text, Maybe CS.FunctionSchemaV1)]}
@@ -286,17 +286,17 @@ data Methods
     | WithSchemaV3 {ws3Methods :: ![(Text, Maybe CS.FunctionSchemaV2)], ws3Event :: !(Maybe CS.EventSchemaV3)}
     deriving (Eq, Show)
 
--- |Contract state for a V0 contract.
---  Can either be the raw bytes or a JSON value with the parsed state (parsed with a schema).
+-- | Contract state for a V0 contract.
+--   Can either be the raw bytes or a JSON value with the parsed state (parsed with a schema).
 data ContractStateV0
     = Cs0Bytes !ByteString
     | Cs0JSON !AE.Value
     deriving (Eq, Show)
 
--- |Convert an @InstanceInfo@ into a @ContractInfo@.
--- The schema in the returned @ContractInfo@ value will always be of
--- the @NoSchemaV0@ variant. Schema informaton can be included by
--- manually augmenting the result e.g. by using @addSchemaData@.
+-- | Convert an @InstanceInfo@ into a @ContractInfo@.
+--  The schema in the returned @ContractInfo@ value will always be of
+--  the @NoSchemaV0@ variant. Schema informaton can be included by
+--  manually augmenting the result e.g. by using @addSchemaData@.
 instanceInfoToContractInfo :: Wasm.InstanceInfo -> ContractInfo
 instanceInfoToContractInfo iInfo =
     case iInfo of
@@ -352,15 +352,15 @@ instance AE.FromJSON ContractInfo where
 -- | Version of a module schema.
 data ModuleSchemaVersion = SchemaV0 | SchemaV1 | SchemaV2 | SchemaV3
 
--- |Construct module inspect info.
--- Works by:
---  - Creating ModuleInspectSigs from the list of exported function names.
---  - Inserting the signatures from the moduleSchema into the ModuleInspectSigs
---     - And collect the function names for /extraneous/ schemas,
---     - i.e. schemas for functions that are not exported in the module.
+-- | Construct module inspect info.
+--  Works by:
+--   - Creating ModuleInspectSigs from the list of exported function names.
+--   - Inserting the signatures from the moduleSchema into the ModuleInspectSigs
+--      - And collect the function names for /extraneous/ schemas,
+--      - i.e. schemas for functions that are not exported in the module.
 --
--- If a schema is provided, it will create the corresponding version of ModuleInspectInfo.
--- Otherwise, it will create ModuleInspectInfoV0 for V0 contracts and V2 for V1 contracts.
+--  If a schema is provided, it will create the corresponding version of ModuleInspectInfo.
+--  Otherwise, it will create ModuleInspectInfoV0 for V0 contracts and V2 for V1 contracts.
 constructModuleInspectInfo ::
     Config.NamedModuleRef ->
     Wasm.WasmVersion ->
@@ -657,7 +657,7 @@ constructModuleInspectInfo namedModRef wasmVersion moduleSchema exportedFuncName
                         in  CS.ReceiveFuncName cname fnameWithoutDot : toFuncNames remaining
             | otherwise = toFuncNames remaining -- Ignore other types of exported functions.
 
--- |Data type with information used by 'module inspect' command.
+-- | Data type with information used by 'module inspect' command.
 data ModuleInspectInfo = ModuleInspectInfo
     { miiNamedModRef :: Config.NamedModuleRef,
       miiWasmVersion :: Wasm.WasmVersion,
@@ -665,19 +665,19 @@ data ModuleInspectInfo = ModuleInspectInfo
       miiExtraneousSchemas :: [CS.FuncName]
     }
 
--- |Module signatures of a smart contract module with event schema V*.
--- Identical to `ModuleSchema` in that it uses `ContractSigsV*` instead of `ContractV*` (see their definition).
+-- | Module signatures of a smart contract module with event schema V*.
+--  Identical to `ModuleSchema` in that it uses `ContractSigsV*` instead of `ContractV*` (see their definition).
 data ModuleInspectSigs
     = ModuleInspectSigsV0 {mis0ContractSigs :: Map.Map Text ContractSigsV0}
     | ModuleInspectSigsV1 {mis1ContractSigs :: Map.Map Text ContractSigsV1}
     | ModuleInspectSigsV2 {mis2ContractSigs :: Map.Map Text ContractSigsV2}
     | ModuleInspectSigsV3 {mis3ContractSigs :: Map.Map Text ContractSigsV3}
 
--- |Function signatures of a smart contract with event schema V0.
--- Identical to `ContractSchemaV0`, except that the values of `csv0ReceiveSigs` are wrapped in `Maybe` to
--- indicate, whether a schema specifying the type of the the receive function is present. This is needed
--- as `csv0ReceiveSigs` may contain receive function names for which a schema was neither provided in the
--- contract module nor user schema file.
+-- | Function signatures of a smart contract with event schema V0.
+--  Identical to `ContractSchemaV0`, except that the values of `csv0ReceiveSigs` are wrapped in `Maybe` to
+--  indicate, whether a schema specifying the type of the the receive function is present. This is needed
+--  as `csv0ReceiveSigs` may contain receive function names for which a schema was neither provided in the
+--  contract module nor user schema file.
 data ContractSigsV0 = ContractSigsV0
     { -- | Possibly a type signature for the init function.
       csv0InitSig :: Maybe CS.SchemaType,
@@ -685,11 +685,11 @@ data ContractSigsV0 = ContractSigsV0
       csv0ReceiveSigs :: Map.Map Text (Maybe CS.SchemaType)
     }
 
--- |Function signatures of a smart contract with event schema V1.
--- Identical to `ContractSchemaV1`, except that the values of `csv1ReceiveSigs` are wrapped in `Maybe` to
--- indicate, whether a schema specifying the type of the the receive function is present. This is needed
--- as `csv1ReceiveSigs` may contain receive function names for which a schema was neither provided in the
--- contract module nor user schema file.
+-- | Function signatures of a smart contract with event schema V1.
+--  Identical to `ContractSchemaV1`, except that the values of `csv1ReceiveSigs` are wrapped in `Maybe` to
+--  indicate, whether a schema specifying the type of the the receive function is present. This is needed
+--  as `csv1ReceiveSigs` may contain receive function names for which a schema was neither provided in the
+--  contract module nor user schema file.
 data ContractSigsV1 = ContractSigsV1
     { -- | Possibly a schema for the init function.
       csv1InitSig :: Maybe CS.FunctionSchemaV1,
@@ -697,11 +697,11 @@ data ContractSigsV1 = ContractSigsV1
       csv1ReceiveSigs :: Map.Map Text (Maybe CS.FunctionSchemaV1)
     }
 
--- |Function signatures of a smart contract with event schema V2.
--- Identical to `ContractSchemaV2`, except that the values of `csv2ReceiveSigs` are wrapped in `Maybe` to
--- indicate, whether a schema specifying the type of the the receive function is present. This is needed
--- as `csv2ReceiveSigs` may contain receive function names for which a schema was neither provided in the
--- contract module nor user schema file.
+-- | Function signatures of a smart contract with event schema V2.
+--  Identical to `ContractSchemaV2`, except that the values of `csv2ReceiveSigs` are wrapped in `Maybe` to
+--  indicate, whether a schema specifying the type of the the receive function is present. This is needed
+--  as `csv2ReceiveSigs` may contain receive function names for which a schema was neither provided in the
+--  contract module nor user schema file.
 data ContractSigsV2 = ContractSigsV2
     { -- | Possibly a schema for the init function.
       csv2InitSig :: Maybe CS.FunctionSchemaV2,
@@ -709,11 +709,11 @@ data ContractSigsV2 = ContractSigsV2
       csv2ReceiveSigs :: Map.Map Text (Maybe CS.FunctionSchemaV2)
     }
 
--- |Function and event signatures of a smart contract with event schema V3.
--- Identical to ContractSchemaV3, except that the values of `csv3ReceiveSigs` are wrapped in `Maybe` to
--- indicate, whether a schema specifying the type of the the receive function is present. This is needed
--- as `csv3ReceiveSigs` may contain receive function names for which a schema was neither provided in the
--- contract module nor user schema file.
+-- | Function and event signatures of a smart contract with event schema V3.
+--  Identical to ContractSchemaV3, except that the values of `csv3ReceiveSigs` are wrapped in `Maybe` to
+--  indicate, whether a schema specifying the type of the the receive function is present. This is needed
+--  as `csv3ReceiveSigs` may contain receive function names for which a schema was neither provided in the
+--  contract module nor user schema file.
 data ContractSigsV3 = ContractSigsV3
     { -- | Possibly a schema for the init function.
       csv3InitSig :: Maybe CS.FunctionSchemaV2,

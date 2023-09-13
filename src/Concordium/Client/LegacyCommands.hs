@@ -8,18 +8,18 @@ import Concordium.Types
 import Data.Text
 import Options.Applicative
 
--- |Representation of the arguments to a command that expects an epoch to be specified as input.
+-- | Representation of the arguments to a command that expects an epoch to be specified as input.
 data EpochSpecifier = EpochSpecifier
-    { -- |The genesis index to query. Should be provided with 'esEpoch'.
+    { -- | The genesis index to query. Should be provided with 'esEpoch'.
       esGenesisIndex :: !(Maybe GenesisIndex),
-      -- |The epoch number to query. Should be provided with 'esGenesisIndex'.
+      -- | The epoch number to query. Should be provided with 'esGenesisIndex'.
       esEpoch :: !(Maybe Epoch),
-      -- |The block to use the epoch of. Should not be provided with any other fields.
+      -- | The block to use the epoch of. Should not be provided with any other fields.
       esBlock :: !(Maybe BlockHash)
     }
     deriving (Show)
 
--- |Helper function for parsing an 'EpochSpecifier' as command line options.
+-- | Helper function for parsing an 'EpochSpecifier' as command line options.
 parseEpochSpecifier :: Parser EpochSpecifier
 parseEpochSpecifier =
     EpochSpecifier

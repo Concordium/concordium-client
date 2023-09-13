@@ -26,17 +26,17 @@ data DurationUnit = Second | Minute | Hour
 
 type TimeFormat = String
 
--- |Parse time from a string using the provided format.
--- This is a simple convenience wrapper around the more general function parseTimeM.
+-- | Parse time from a string using the provided format.
+--  This is a simple convenience wrapper around the more general function parseTimeM.
 parseTime :: (MonadFail m) => TimeFormat -> String -> m UTCTime
 parseTime = parseTimeM False defaultTimeLocale
 
--- |Parse credential expiry time formatted as "<year (4 digits)><month (2 digits)>"
+-- | Parse credential expiry time formatted as "<year (4 digits)><month (2 digits)>"
 parseCredExpiry :: (MonadFail m) => String -> m UTCTime
 parseCredExpiry = parseTime "%0Y%0m"
 
--- |Parse expiry time given as absolute Unix epoch or a duration string
--- relative to the provided "now" time.
+-- | Parse expiry time given as absolute Unix epoch or a duration string
+--  relative to the provided "now" time.
 parseExpiry :: (MonadError String m) => TransactionExpiryTime -> Text -> m TransactionExpiryTime
 parseExpiry now input = do
     (t, u) <- parseDuration input
@@ -50,7 +50,7 @@ parseExpiry now input = do
         Minute -> 60
         Hour -> 3600
 
--- |Parse a string into an integer and an optional duration unit.
+-- | Parse a string into an integer and an optional duration unit.
 parseDuration :: (MonadError String m) => Text -> m (Word64, Maybe DurationUnit)
 parseDuration t =
     case reads $ unpack t of

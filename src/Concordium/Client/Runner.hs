@@ -121,10 +121,10 @@ import Text.Printf
 import Text.Read (readEither, readMaybe)
 import Prelude hiding (fail, log, unlines)
 
--- |Establish a new connection to the backend and run the provided computation.
--- Close a connection after completion of the computation. Establishing a
--- connection is expensive, and thus if multiple RPC calls are going to be made
--- they should be made in the context of the same 'withClient' so they reuse it.
+-- | Establish a new connection to the backend and run the provided computation.
+--  Close a connection after completion of the computation. Establishing a
+--  connection is expensive, and thus if multiple RPC calls are going to be made
+--  they should be made in the context of the same 'withClient' so they reuse it.
 withClient :: Backend -> ClientMonad IO a -> IO a
 withClient bkend comp = do
     let config = GrpcConfig (COM.grpcHost bkend) (COM.grpcPort bkend) (COM.grpcTarget bkend) (COM.grpcRetryNum bkend) Nothing (COM.grpcUseTls bkend)
@@ -146,16 +146,16 @@ withClient bkend comp = do
 withClientJson :: (FromJSON a) => Backend -> ClientMonad IO (Either String Value) -> IO a
 withClientJson b c = withClient b c >>= getFromJson
 
--- |Helper function for parsing JSON Value or fail if the value is missing or cannot be converted correctly.
--- The parameter has the same type as the one returned by e.g. eitherDecode or processJSON,
--- which many of the GRPC commands use.
+-- | Helper function for parsing JSON Value or fail if the value is missing or cannot be converted correctly.
+--  The parameter has the same type as the one returned by e.g. eitherDecode or processJSON,
+--  which many of the GRPC commands use.
 getFromJson :: (MonadIO m, FromJSON a) => Either String Value -> m a
 getFromJson = getFromJsonAndHandleError onError
   where
     onError val err = logFatal ["cannot convert '" ++ show val ++ "': " ++ err]
 
--- |Helper function for parsing JSON Value, logFatal if the Either is Left,
--- and use the provided function to handle Error in fromJSON.
+-- | Helper function for parsing JSON Value, logFatal if the Either is Left,
+--  and use the provided function to handle Error in fromJSON.
 getFromJsonAndHandleError ::
     (MonadIO m, FromJSON a) =>
     -- | Takes the JSON being converted and the err string from (Error err) if fromJSON fails.
@@ -170,15 +170,15 @@ getFromJsonAndHandleError handleError r = do
         Error err -> handleError s err
         Success v -> return v
 
--- |Look up account from the provided name or address.
--- Fail if the address cannot be found.
+-- | Look up account from the provided name or address.
+--  Fail if the address cannot be found.
 getAccountAddressArg :: AccountNameMap -> Text -> IO NamedAddress
 getAccountAddressArg m account = do
     case getAccountAddress m account of
         Left err -> logFatal [err]
         Right v -> return v
 
--- |Process CLI command.
+-- | Process CLI command.
 process :: COM.Options -> IO ()
 process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir, optsVerbose = verbose} = do
     -- Disable output buffering.
@@ -197,7 +197,7 @@ process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir
         DelegatorCmd c -> processDelegatorCmd c cfgDir verbose backend
         IdentityCmd c -> processIdentityCmd c backend
 
--- |Process a 'config ...' command.
+-- | Process a 'config ...' command.
 processConfigCmd :: ConfigCmd -> Maybe FilePath -> Verbose -> IO ()
 processConfigCmd action baseCfgDir verbose =
     case action of
@@ -512,13 +512,13 @@ processConfigCmd action baseCfgDir verbose =
     getAccountConfigFromAddr :: Text -> BaseConfig -> IO (BaseConfig, AccountConfig)
     getAccountConfigFromAddr addr baseCfg = getAccountConfig (Just addr) baseCfg Nothing Nothing Nothing AutoInit
 
--- |Read and parse a file exported from either genesis data or mobile wallet.
--- The format specifier tells which format to expect.
--- If the format is "mobile", the user is prompted for a password which is used to decrypt
--- the exported data. This may result in multiple named accounts. If a name is provided,
--- only the account with that name is being selected for import.
--- The "genesis" format is not encrypted and only contains a single account which is not named.
--- If a name is provided in this case, this will become the account name.
+-- | Read and parse a file exported from either genesis data or mobile wallet.
+--  The format specifier tells which format to expect.
+--  If the format is "mobile", the user is prompted for a password which is used to decrypt
+--  the exported data. This may result in multiple named accounts. If a name is provided,
+--  only the account with that name is being selected for import.
+--  The "genesis" format is not encrypted and only contains a single account which is not named.
+--  If a name is provided in this case, this will become the account name.
 loadAccountImportFile :: AccountExportFormat -> FilePath -> Maybe Text -> IO [AccountConfig]
 loadAccountImportFile format file name = do
     contents <- handleReadFile BS.readFile file
@@ -606,14 +606,14 @@ getContractInfoWithSchemas schemaFile blockHash ev = do
                 Just schema -> CI.addSchemaData contrInfo schema
         _ -> return Nothing
 
--- |Get @ContractInfo@ for all events in all blocks in which a transaction is present.
--- Returns a map from blockhashes of blocks in which the transaction is present to the
--- events of the transaction in that block. Each event appears in a pair with an optional
--- @ContractInfo@ value containing contract schema info associated with the event of the
--- transaction in that block, if present.
--- Optionally takes a path to a schema file to be parsed. If a schema is contained in the
--- file, it will take precedence over any schemas that may be embedded in the module and
--- will therefore be present in the @ContractInfo@ for all events.
+-- | Get @ContractInfo@ for all events in all blocks in which a transaction is present.
+--  Returns a map from blockhashes of blocks in which the transaction is present to the
+--  events of the transaction in that block. Each event appears in a pair with an optional
+--  @ContractInfo@ value containing contract schema info associated with the event of the
+--  transaction in that block, if present.
+--  Optionally takes a path to a schema file to be parsed. If a schema is contained in the
+--  file, it will take precedence over any schemas that may be embedded in the module and
+--  will therefore be present in the @ContractInfo@ for all events.
 getTxContractInfoWithSchemas ::
     (MonadIO m) =>
     -- | Path pointing to a schema file.
@@ -647,7 +647,7 @@ getTxContractInfoWithSchemas schemaFile status = do
             MultipleBlocksUnambiguous bhs ts -> map (,f ts) bhs
             MultipleBlocksAmbiguous bhts -> map (second f) bhts
 
--- |Process a 'transaction ...' command.
+-- | Process a 'transaction ...' command.
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processTransactionCmd action baseCfgDir verbose backend =
     case action of
@@ -844,9 +844,9 @@ processTransactionCmd action baseCfgDir verbose backend =
                     Just (Left err) -> logFatal ["Registering data failed:", err]
                     Just (Right _) -> logSuccess ["Data succesfully registered."]
 
--- |Construct a transaction config for registering data.
---  The data is read from the 'FilePath' provided.
---  Fails if the data can't be read or it violates the size limit checked by 'Types.registeredDataFromBSS'.
+-- | Construct a transaction config for registering data.
+--   The data is read from the 'FilePath' provided.
+--   Fails if the data can't be read or it violates the size limit checked by 'Types.registeredDataFromBSS'.
 getRegisterDataTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> RegisterDataInput -> IO RegisterDataTransactionCfg
 getRegisterDataTransactionCfg baseCfg txOpts dataInput = do
     bss <-
@@ -883,17 +883,17 @@ getRegisterDataTransactionCfg baseCfg txOpts dataInput = do
 registerDataTransactionPayload :: RegisterDataTransactionCfg -> Types.Payload
 registerDataTransactionPayload RegisterDataTransactionCfg{..} = Types.RegisterData rdtcData
 
--- |Transaction config for registering data.
+-- | Transaction config for registering data.
 data RegisterDataTransactionCfg = RegisterDataTransactionCfg
-    { -- |Configuration for the transaction.
+    { -- | Configuration for the transaction.
       rdtcTransactionCfg :: !TransactionConfig,
-      -- |The data to register.
+      -- | The data to register.
       rdtcData :: !Types.RegisteredData
     }
 
--- |Poll the transaction state continuously until it is "at least" the provided one.
--- Note that the "absent" state is considered the "highest" state,
--- so the loop will break if, for instance, the transaction state goes from "committed" to "absent".
+-- | Poll the transaction state continuously until it is "at least" the provided one.
+--  Note that the "absent" state is considered the "highest" state,
+--  so the loop will break if, for instance, the transaction state goes from "committed" to "absent".
 awaitState :: (TransactionStatusQuery m) => Int -> TransactionState -> Types.TransactionHash -> m TransactionStatusResult
 awaitState t s hash = do
     status <- queryTransactionStatus hash
@@ -903,14 +903,14 @@ awaitState t s hash = do
             wait t
             awaitState t s hash
 
--- |Function type for computing the transaction energy cost for a given number of keys.
--- Returns Nothing if the cost cannot be computed.
+-- | Function type for computing the transaction energy cost for a given number of keys.
+--  Returns Nothing if the cost cannot be computed.
 type ComputeEnergyCost = Int -> Types.Energy
 
--- |Function for computing a cost function based on the resolved account config.
+-- | Function for computing a cost function based on the resolved account config.
 type GetComputeEnergyCost = EncryptedSigningData -> IO (Maybe ComputeEnergyCost)
 
--- |Resolved configuration common to all transaction types.
+-- | Resolved configuration common to all transaction types.
 data TransactionConfig = TransactionConfig
     { tcEncryptedSigningData :: EncryptedSigningData,
       tcNonce :: Maybe Types.Nonce,
@@ -919,10 +919,10 @@ data TransactionConfig = TransactionConfig
       tcAlias :: Maybe Word
     }
 
--- |Resolve transaction config based on persisted config and CLI flags.
--- If an energy cost function is provided and it returns a value which
--- is different from the specified energy allocation, a warning is logged.
--- If the energy allocation is too low, the user is prompted to increase it.
+-- | Resolve transaction config based on persisted config and CLI flags.
+--  If an energy cost function is provided and it returns a value which
+--  is different from the specified energy allocation, a warning is logged.
+--  If the energy allocation is too low, the user is prompted to increase it.
 getTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> GetComputeEnergyCost -> IO TransactionConfig
 getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
     encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
@@ -964,8 +964,8 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
             return energy
         | otherwise = return energy
 
--- |Resolve transaction config based on persisted config and CLI flags.
--- Used for transactions where a specification of maxEnergy is required.
+-- | Resolve transaction config based on persisted config and CLI flags.
+--  Used for transactions where a specification of maxEnergy is required.
 getRequiredEnergyTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> IO TransactionConfig
 getRequiredEnergyTransactionCfg baseCfg txOpts = do
     encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
@@ -983,8 +983,8 @@ getRequiredEnergyTransactionCfg baseCfg txOpts = do
               tcAlias = toAlias txOpts
             }
 
--- |Warn if expiry is in the past or very near or distant future.
--- As the timestamps are unsigned, taking the simple difference might cause underflow.
+-- | Warn if expiry is in the past or very near or distant future.
+--  As the timestamps are unsigned, taking the simple difference might cause underflow.
 warnSuspiciousExpiry :: Types.TransactionExpiryTime -> Types.TransactionExpiryTime -> IO ()
 warnSuspiciousExpiry expiryArg now
     | expiryArg < now =
@@ -1001,7 +1001,7 @@ warnSuspiciousExpiry expiryArg now
         logWarn ["expiration time is in more than one hour"]
     | otherwise = return ()
 
--- |Get accountCfg from the config folder and return EncryptedSigningData or logFatal if the keys are not provided in txOpts.
+-- | Get accountCfg from the config folder and return EncryptedSigningData or logFatal if the keys are not provided in txOpts.
 getAccountCfgFromTxOpts :: BaseConfig -> TransactionOpts energyOrMaybe -> IO EncryptedSigningData
 getAccountCfgFromTxOpts baseCfg txOpts = do
     keysArg <- case toKeys txOpts of
@@ -1047,14 +1047,14 @@ getAccountCfgFromTxOpts baseCfg txOpts = do
                     chosenKeys
             return EncryptedSigningData{esdKeys = filteredKeys, esdAddress = acAddr accCfg, esdEncryptionKey = acEncryptionKey accCfg}
 
--- |Resolved configuration for a transfer transaction.
+-- | Resolved configuration for a transfer transaction.
 data TransferTransactionConfig = TransferTransactionConfig
     { ttcTransactionCfg :: TransactionConfig,
       ttcReceiver :: NamedAddress,
       ttcAmount :: Types.Amount
     }
 
--- |Resolved configuration for a transfer transaction.
+-- | Resolved configuration for a transfer transaction.
 data TransferWithScheduleTransactionConfig = TransferWithScheduleTransactionConfig
     { twstcTransactionCfg :: TransactionConfig,
       twstcReceiver :: NamedAddress,
@@ -1107,7 +1107,7 @@ getEncryptedAmountTransferData senderAddr ettReceiver ettAmount idx secretKey = 
             Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
             Just ettTransferData -> return ettTransferData
 
--- |Returns the UTCTime date when the baker cooldown on reducing stake/removing a baker will end, using on chain parameters
+-- | Returns the UTCTime date when the baker cooldown on reducing stake/removing a baker will end, using on chain parameters
 getBakerCooldown :: Queries.EChainParametersAndKeys -> ClientMonad IO UTCTime
 getBakerCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) = do
     cooldownTime <- case Types.chainParametersVersion @cpv of
@@ -1128,7 +1128,7 @@ getBakerCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters'
     cooldownEpochsV0 ups =
         toInteger $ ups ^. cpCooldownParameters . cpBakerExtraCooldownEpochs
 
--- |Returns the UTCTime date when the delegator cooldown on reducing stake/removing delegation will end, using on chain parameters
+-- | Returns the UTCTime date when the delegator cooldown on reducing stake/removing delegation will end, using on chain parameters
 getDelegatorCooldown :: Queries.EChainParametersAndKeys -> IO (Maybe UTCTime)
 getDelegatorCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) = do
     case Types.chainParametersVersion @cpv of
@@ -1143,8 +1143,8 @@ getDelegatorCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParamet
             let cooldownTime = fromIntegral . Types.durationSeconds $ ecpParams ^. cpCooldownParameters . cpDelegatorCooldown
             return $ Just $ addUTCTime cooldownTime currTime
 
--- |Query the chain for the given account.
--- Die printing an error message containing the nature of the error if such occured.
+-- | Query the chain for the given account.
+--  Die printing an error message containing the nature of the error if such occured.
 getAccountInfoOrDie :: (MonadIO m) => Types.AccountIdentifier -> BlockHashInput -> ClientMonad m Types.AccountInfo
 getAccountInfoOrDie sender bhInput = do
     res <- getAccountInfo sender bhInput
@@ -1157,8 +1157,8 @@ getAccountInfoOrDie sender bhInput = do
         StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
         RequestFailed err -> logFatal ["I/O error: " <> err]
 
--- |Query the chain for the given pool.
--- Die printing an error message containing the nature of the error if such occured.
+-- | Query the chain for the given pool.
+--  Die printing an error message containing the nature of the error if such occured.
 getPoolStatusOrDie :: Maybe Types.BakerId -> ClientMonad IO Queries.PoolStatus
 getPoolStatusOrDie mbid = do
     psRes <- case mbid of
@@ -1188,20 +1188,20 @@ data AccountUpdateCredentialsTransactionCfg = AccountUpdateCredentialsTransactio
       auctcNewThreshold :: ID.AccountThreshold
     }
 
--- |Resolved configuration for transferring from public to encrypted balance.
+-- | Resolved configuration for transferring from public to encrypted balance.
 data AccountEncryptTransactionConfig = AccountEncryptTransactionConfig
     { aeTransactionCfg :: TransactionConfig,
       aeAmount :: Types.Amount
     }
 
--- |Resolved configuration for transferring from encrypted to public balance.
+-- | Resolved configuration for transferring from encrypted to public balance.
 data AccountDecryptTransactionConfig = AccountDecryptTransactionConfig
     { adTransactionCfg :: TransactionConfig,
       adTransferData :: Enc.SecToPubAmountTransferData
     }
 
--- |Resolve configuration for transferring an amount from public to encrypted
--- balance of an account.
+-- | Resolve configuration for transferring an amount from public to encrypted
+--  balance of an account.
 getAccountEncryptTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.Amount -> Types.PayloadSize -> IO AccountEncryptTransactionConfig
 getAccountEncryptTransactionCfg baseCfg txOpts aeAmount payloadSize = do
     aeTransactionCfg <- getTransactionCfg baseCfg txOpts nrgCost
@@ -1209,8 +1209,8 @@ getAccountEncryptTransactionCfg baseCfg txOpts aeAmount payloadSize = do
   where
     nrgCost _ = return $ Just $ accountEncryptEnergyCost payloadSize
 
--- |Resolve configuration for transferring an amount from encrypted to public
--- balance of an account.
+-- | Resolve configuration for transferring an amount from encrypted to public
+--  balance of an account.
 getAccountDecryptTransferData :: ID.AccountAddress -> Types.Amount -> ElgamalSecretKey -> Maybe Int -> ClientMonad IO Enc.SecToPubAmountTransferData
 getAccountDecryptTransferData senderAddr adAmount secretKey idx = do
     bbHash <- extractResponseValueOrDie Queries.biBlockHash =<< getBlockInfo Best
@@ -1245,8 +1245,8 @@ getAccountDecryptTransferData senderAddr adAmount secretKey idx = do
             Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
             Just adTransferData -> return adTransferData
 
--- |Query the chain for cryptographic parameters in a given block.
--- Die printing an error message containing the nature of the error if such occured.
+-- | Query the chain for cryptographic parameters in a given block.
+--  Die printing an error message containing the nature of the error if such occured.
 getCryptographicParametersOrDie :: BlockHashInput -> ClientMonad IO GlobalContext
 getCryptographicParametersOrDie bhInput = do
     blockRes <- getBlockInfo bhInput
@@ -1265,8 +1265,8 @@ getCryptographicParametersOrDie bhInput = do
         StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
         RequestFailed err -> logFatal ["I/O error: " <> err]
 
--- |Convert transfer transaction config into a valid payload,
--- optionally asking the user for confirmation.
+-- | Convert transfer transaction config into a valid payload,
+--  optionally asking the user for confirmation.
 transferTransactionConfirm :: TransferTransactionConfig -> Bool -> IO ()
 transferTransactionConfirm ttxCfg confirm = do
     let TransferTransactionConfig
@@ -1290,8 +1290,8 @@ transferTransactionConfirm ttxCfg confirm = do
         confirmed <- askConfirmation Nothing
         unless confirmed exitTransactionCancelled
 
--- |Convert transfer transaction config into a valid payload,
--- optionally asking the user for confirmation.
+-- | Convert transfer transaction config into a valid payload,
+--  optionally asking the user for confirmation.
 transferWithScheduleTransactionConfirm :: TransferWithScheduleTransactionConfig -> Bool -> IO ()
 transferWithScheduleTransactionConfirm ttxCfg confirm = do
     let TransferWithScheduleTransactionConfig
@@ -1316,7 +1316,7 @@ transferWithScheduleTransactionConfirm ttxCfg confirm = do
         confirmed <- askConfirmation Nothing
         unless confirmed exitTransactionCancelled
 
-encryptedTransferTransactionConfirm :: MonadIO m => EncryptedTransferTransactionConfig -> Bool -> m ()
+encryptedTransferTransactionConfirm :: (MonadIO m) => EncryptedTransferTransactionConfig -> Bool -> m ()
 encryptedTransferTransactionConfirm EncryptedTransferTransactionConfig{..} confirm = do
     let TransactionConfig
             { tcEnergy = energy,
@@ -1335,8 +1335,8 @@ encryptedTransferTransactionConfirm EncryptedTransferTransactionConfig{..} confi
         confirmed <- askConfirmation Nothing
         unless confirmed exitTransactionCancelled
 
--- |Query the chain for the minimum baker stake threshold.
--- Die printing an error message containing the nature of the error if such occured.
+-- | Query the chain for the minimum baker stake threshold.
+--  Die printing an error message containing the nature of the error if such occured.
 getBakerStakeThresholdOrDie :: ClientMonad IO Types.Amount
 getBakerStakeThresholdOrDie = do
     bcpRes <- getBlockChainParameters Best
@@ -1441,7 +1441,7 @@ accountEncryptTransactionConfirm AccountEncryptTransactionConfig{..} confirm = d
         confirmed <- askConfirmation Nothing
         unless confirmed exitTransactionCancelled
 
-accountDecryptTransactionConfirm :: MonadIO m => AccountDecryptTransactionConfig -> Bool -> m ()
+accountDecryptTransactionConfirm :: (MonadIO m) => AccountDecryptTransactionConfig -> Bool -> m ()
 accountDecryptTransactionConfirm AccountDecryptTransactionConfig{..} confirm = do
     let TransactionConfig
             { tcEnergy = energy,
@@ -1460,9 +1460,9 @@ accountDecryptTransactionConfirm AccountDecryptTransactionConfig{..} confirm = d
         confirmed <- askConfirmation Nothing
         unless confirmed exitTransactionCancelled
 
--- |Encode, sign, and send transaction off to the baker.
--- If confirmNonce is set, the user is asked to confirm using the next nonce
--- if there are pending transactions.
+-- | Encode, sign, and send transaction off to the baker.
+--  If confirmNonce is set, the user is asked to confirm using the next nonce
+--  if there are pending transactions.
 startTransaction ::
     (MonadFail m, MonadIO m) =>
     TransactionConfig ->
@@ -1498,11 +1498,11 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
         Left err -> logFatal ["Transaction not accepted by the baker: " <> err]
         Right _ -> return tx
 
--- |Fetch next nonces relative to the account's most recently committed and
--- pending transactions, respectively.
--- If they match, the nonce is returned.
--- If they don't match, optionally ask the user to confirm proceeding with the latter nonce.
--- If rejected, the process is cancelled (exit with code 0).
+-- | Fetch next nonces relative to the account's most recently committed and
+--  pending transactions, respectively.
+--  If they match, the nonce is returned.
+--  If they don't match, optionally ask the user to confirm proceeding with the latter nonce.
+--  If rejected, the process is cancelled (exit with code 0).
 getNonce :: (MonadFail m, MonadIO m) => Types.AccountAddress -> Maybe Types.Nonce -> Bool -> ClientMonad m Types.Nonce
 getNonce sender nonce confirm =
     case nonce of
@@ -1521,7 +1521,7 @@ getNonce sender nonce confirm =
             return nextNonce
         Just v -> return v
 
--- |Send a transaction and optionally tail it (see 'tailTransaction' below).
+-- | Send a transaction and optionally tail it (see 'tailTransaction' below).
 sendAndTailTransaction_ ::
     (MonadIO m, MonadFail m) =>
     -- | Whether the output should be verbose
@@ -1535,9 +1535,9 @@ sendAndTailTransaction_ ::
     ClientMonad m ()
 sendAndTailTransaction_ verbose txCfg pl intOpts = void $ sendAndTailTransaction verbose txCfg pl intOpts
 
--- |Send a transaction and optionally tail it (see 'tailTransaction' below).
--- If tailed, it returns the TransactionStatusResult of the finalized status,
--- otherwise the return value is @Nothing@.
+-- | Send a transaction and optionally tail it (see 'tailTransaction' below).
+--  If tailed, it returns the TransactionStatusResult of the finalized status,
+--  otherwise the return value is @Nothing@.
 sendAndTailTransaction ::
     (MonadIO m, MonadFail m) =>
     -- | Whether the output should be verbose
@@ -1557,12 +1557,12 @@ sendAndTailTransaction verbose txCfg pl intOpts = do
         then Just <$> tailTransaction verbose hash
         else return Nothing
 
--- |Continuously query and display transaction status until the transaction is finalized.
+-- | Continuously query and display transaction status until the transaction is finalized.
 tailTransaction_ :: (MonadIO m) => Bool -> Types.TransactionHash -> ClientMonad m ()
 tailTransaction_ verbose hash = void $ tailTransaction verbose hash
 
--- |Continuously query and display transaction status until the transaction is finalized.
--- Returns the TransactionStatusResult of the finalized status.
+-- | Continuously query and display transaction status until the transaction is finalized.
+--  Returns the TransactionStatusResult of the finalized status.
 tailTransaction :: (MonadIO m) => Bool -> Types.TransactionHash -> ClientMonad m TransactionStatusResult
 tailTransaction verbose hash = do
     logInfo
@@ -1615,7 +1615,7 @@ tailTransaction verbose hash = do
   where
     getLocalTimeOfDayFormatted = showTimeOfDay <$> getLocalTimeOfDay
 
--- |@read@ input or fail if the input could not be @read@.
+-- | @read@ input or fail if the input could not be @read@.
 readOrFail :: (MonadIO m, Read a) => Text -> m a
 readOrFail t =
     case readEither s of
@@ -1624,20 +1624,20 @@ readOrFail t =
   where
     s = Text.unpack t
 
--- |Reads a blockhash wrapped in a @Maybe@.
--- If the provided value is @Nothing@, a default value provided in the first parameter
--- is returned. If the provided value is @Just s@, @readOrFail s@ is returned. Fails if
--- @s@ is not a valid blockhash.
+-- | Reads a blockhash wrapped in a @Maybe@.
+--  If the provided value is @Nothing@, a default value provided in the first parameter
+--  is returned. If the provided value is @Just s@, @readOrFail s@ is returned. Fails if
+--  @s@ is not a valid blockhash.
 readBlockHashOrDefault :: (MonadIO m) => BlockHashInput -> Maybe Text -> m BlockHashInput
 readBlockHashOrDefault d Nothing = return d
 readBlockHashOrDefault _ (Just s) = readOrFail s >>= return . Given
 
--- |Parse an 'Queries.EpochRequest' from an 'EpochSpecifier'.
+-- | Parse an 'Queries.EpochRequest' from an 'EpochSpecifier'.
 parseEpochRequest ::
     (MonadIO m) =>
-    -- |Optional value to use if no arguments are specified.
+    -- | Optional value to use if no arguments are specified.
     Maybe Queries.EpochRequest ->
-    -- |Input specifying the epoch
+    -- | Input specifying the epoch
     EpochSpecifier ->
     m Queries.EpochRequest
 parseEpochRequest
@@ -1659,7 +1659,7 @@ parseEpochRequest
 parseEpochRequest _ _ =
     logFatal [[i|Invalid arguments: either a genesis index and an epoch number should be supplied, or a block hash.|]]
 
--- |Process an 'account ...' command.
+-- | Process an 'account ...' command.
 processAccountCmd :: AccountCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processAccountCmd action baseCfgDir verbose backend =
     case action of
@@ -1846,7 +1846,7 @@ processAccountCmd action baseCfgDir verbose backend =
                 Right namedAddr ->
                     putStrLn [i|The requested alias for address #{naAddr namedAddr} is #{Types.createAlias (naAddr namedAddr) alias}|]
 
--- |Process a 'module ...' command.
+-- | Process a 'module ...' command.
 processModuleCmd :: ModuleCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processModuleCmd action baseCfgDir verbose backend =
     case action of
@@ -1967,7 +1967,7 @@ getModuleDeployTransactionCfg baseCfg txOpts moduleFile mWasmVersion = do
     txCfg <- getTransactionCfg baseCfg txOpts $ moduleDeployEnergyCost wasmModule
     return $ ModuleDeployTransactionCfg txCfg wasmModule
 
--- |Calculate the energy cost of deploying a module.
+-- | Calculate the energy cost of deploying a module.
 moduleDeployEnergyCost :: Wasm.WasmModule -> EncryptedSigningData -> IO (Maybe (Int -> Types.Energy))
 moduleDeployEnergyCost wasmMod encSignData =
     pure . Just . const $
@@ -1977,17 +1977,17 @@ moduleDeployEnergyCost wasmMod encSignData =
     payloadSize = Types.payloadSize . Types.encodePayload . Types.DeployModule $ wasmMod
 
 data ModuleDeployTransactionCfg = ModuleDeployTransactionCfg
-    { -- |Configuration for the transaction.
+    { -- | Configuration for the transaction.
       mdtcTransactionCfg :: !TransactionConfig,
-      -- |The WASM module to deploy.
+      -- | The WASM module to deploy.
       mdtcModule :: !Wasm.WasmModule
     }
 
 moduleDeployTransactionPayload :: ModuleDeployTransactionCfg -> Types.Payload
 moduleDeployTransactionPayload ModuleDeployTransactionCfg{..} = Types.DeployModule mdtcModule
 
--- |Checks if the given receive name is valid and if so, returns it back
--- or otherwise a fallback receive name for v1 contracts.
+-- | Checks if the given receive name is valid and if so, returns it back
+--  or otherwise a fallback receive name for v1 contracts.
 checkAndGetContractReceiveName :: CI.ContractInfo -> Text -> IO Text
 checkAndGetContractReceiveName contrInfo receiveName = do
     if CI.hasReceiveMethod receiveName contrInfo
@@ -2013,7 +2013,7 @@ checkAndGetContractReceiveName contrInfo receiveName = do
         unless confirmed $ logFatal ["aborting..."]
         return receiveName
 
--- |Process a 'contract ...' command.
+-- | Process a 'contract ...' command.
 processContractCmd :: ContractCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processContractCmd action baseCfgDir verbose backend =
     case action of
@@ -2317,7 +2317,9 @@ processContractCmd action baseCfgDir verbose backend =
     mkReturnValueMsg rvBytes schemaFile modSchema contractName receiveName isError = case rvBytes of
         Nothing -> return Text.empty
         Just rv -> case modSchema >>= \modSchema' -> lookupSchema modSchema' (CS.ReceiveFuncName contractName receiveName) of
-            Nothing -> return [i|\n - #{valueType} value (raw):\n  #{BS.unpack rv}\n|] -- Schema not provided or it doesn't contain the return value for this func.
+            Nothing -> do
+                -- Schema not provided or it doesn't contain the return value for this func.
+                return [i|\n - #{valueType} value (raw):\n  #{BS.unpack rv}\n|]
             Just schemaForFunc -> case S.runGet (CP.getJSONUsingSchema schemaForFunc) rv of
                 Left err -> do
                     logWarn [[i|Could not parse the returned bytes using the schema:\n#{err}|]]
@@ -2329,8 +2331,8 @@ processContractCmd action baseCfgDir verbose backend =
       where
         (lookupSchema, valueType) = if isError then (CS.lookupErrorSchema, "Error" :: Text) else (CS.lookupReturnValueSchema, "Return" :: Text)
 
--- |Try to fetch info about the contract.
--- Or, log fatally with appropriate error messages if anything goes wrong.
+-- | Try to fetch info about the contract.
+--  Or, log fatally with appropriate error messages if anything goes wrong.
 getContractInfo :: (MonadIO m) => NamedContractAddress -> BlockHashInput -> ClientMonad m CI.ContractInfo
 getContractInfo namedContrAddr bhInput = do
     blockRes <- getBlockInfo bhInput
@@ -2351,7 +2353,7 @@ getContractInfo namedContrAddr bhInput = do
         StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
         RequestFailed err -> logFatal ["I/O error: " <> err]
 
--- |Display contract info, optionally using a schema to decode the contract state.
+-- | Display contract info, optionally using a schema to decode the contract state.
 displayContractInfo :: Maybe CS.ModuleSchema -> CI.ContractInfo -> NamedAddress -> NamedModuleRef -> ClientMonad IO ()
 displayContractInfo schema contrInfo namedOwner namedModRef = do
     cInfo <- case schema of
@@ -2363,10 +2365,10 @@ displayContractInfo schema contrInfo namedOwner namedModRef = do
         Nothing -> return contrInfo
     runPrinter $ printContractInfo cInfo namedOwner namedModRef
 
--- |Attempts to acquire the needed parts for updating a contract.
--- The two primary parts are a contract address, which is acquired using @getNamedContractAddress@,
--- and a @Wasm.Parameter@ which is acquired using @getWasmParameter@.
--- It will log fatally if one of the two cannot be acquired.
+-- | Attempts to acquire the needed parts for updating a contract.
+--  The two primary parts are a contract address, which is acquired using @getNamedContractAddress@,
+--  and a @Wasm.Parameter@ which is acquired using @getWasmParameter@.
+--  It will log fatally if one of the two cannot be acquired.
 getContractUpdateTransactionCfg ::
     Backend ->
     BaseConfig ->
@@ -2419,25 +2421,25 @@ contractUpdateTransactionPayload ContractUpdateTransactionCfg{..} =
     Types.Update cutcAmount cutcAddress cutcReceiveName cutcParams
 
 data ContractUpdateTransactionCfg = ContractUpdateTransactionCfg
-    { -- |Configuration for the transaction.
+    { -- | Configuration for the transaction.
       cutcTransactionCfg :: !TransactionConfig,
-      -- |The address of the contract to invoke.
+      -- | The address of the contract to invoke.
       cutcAddress :: !Types.ContractAddress,
-      -- |Name of the contract that is being updated.
-      -- This is resolved from the chain.
+      -- | Name of the contract that is being updated.
+      --  This is resolved from the chain.
       cutcContrName :: !Text,
-      -- |Name of the receive method to invoke.
+      -- | Name of the receive method to invoke.
       cutcReceiveName :: !Wasm.ReceiveName,
-      -- |Parameters to the receive method.
+      -- | Parameters to the receive method.
       cutcParams :: !Wasm.Parameter,
-      -- |Amount to transfer to the contract.
+      -- | Amount to transfer to the contract.
       cutcAmount :: !Types.Amount
     }
 
--- |Attempts to acquire the needed parts for initializing a contract.
--- The two primary parts are a module reference, which can be acquired in one of three ways
--- (see the arguments for details), and a @Wasm.Parameter@, which is acquired using @getWasmParameter@.
--- It will log fatally if one of the two cannot be acquired.
+-- | Attempts to acquire the needed parts for initializing a contract.
+--  The two primary parts are a module reference, which can be acquired in one of three ways
+--  (see the arguments for details), and a @Wasm.Parameter@, which is acquired using @getWasmParameter@.
+--  It will log fatally if one of the two cannot be acquired.
 getContractInitTransactionCfg ::
     Backend ->
     BaseConfig ->
@@ -2467,14 +2469,14 @@ getContractInitTransactionCfg backend baseCfg txOpts modTBD isPath mWasmVersion 
     params <- getWasmParameter paramsFile schema (CS.InitFuncName contrName)
     return $ ContractInitTransactionCfg txCfg amount (nmrRef namedModRef) (Wasm.InitName [i|init_#{contrName}|]) params
 
--- |Query the node for a module reference, and parse the result.
--- Terminate program execution if either the module cannot be obtained,
--- or the result cannot be parsed.
+-- | Query the node for a module reference, and parse the result.
+--  Terminate program execution if either the module cannot be obtained,
+--  or the result cannot be parsed.
 getWasmModule ::
     (MonadIO m) =>
-    -- |On-chain reference of the module.
+    -- | On-chain reference of the module.
     NamedModuleRef ->
-    -- |The block to query in.
+    -- | The block to query in.
     BlockHashInput ->
     ClientMonad m Wasm.WasmModule
 getWasmModule namedModRef bhInput = do
@@ -2497,15 +2499,15 @@ getWasmModule namedModRef bhInput = do
         RequestFailed err -> logFatal ["I/O error: " <> err]
 
 data ContractInitTransactionCfg = ContractInitTransactionCfg
-    { -- |Configuration for the transaction.
+    { -- | Configuration for the transaction.
       citcTransactionCfg :: !TransactionConfig,
-      -- |Initial amount on the contract's account.
+      -- | Initial amount on the contract's account.
       citcAmount :: !Types.Amount,
-      -- |Reference of the module (on-chain) in which the contract exist.
+      -- | Reference of the module (on-chain) in which the contract exist.
       citcModuleRef :: !Types.ModuleRef,
-      -- |Name of the init method to invoke in that module.
+      -- | Name of the init method to invoke in that module.
       citcInitName :: !Wasm.InitName,
-      -- |Parameters to the init method.
+      -- | Parameters to the init method.
       citcParams :: !Wasm.Parameter
     }
 
@@ -2513,10 +2515,10 @@ contractInitTransactionPayload :: ContractInitTransactionCfg -> Types.Payload
 contractInitTransactionPayload ContractInitTransactionCfg{..} =
     Types.InitContract citcAmount citcModuleRef citcInitName citcParams
 
--- |Load a WasmModule from the specified file path.
--- The module will be prefixed with the wasmVersion and moduleSize if wasmVersion is provided.
--- This enables the use of wasm modules compiled with cargo-concordium version < 2, and modules compiled
--- without cargo-concordium version >= 2.
+-- | Load a WasmModule from the specified file path.
+--  The module will be prefixed with the wasmVersion and moduleSize if wasmVersion is provided.
+--  This enables the use of wasm modules compiled with cargo-concordium version < 2, and modules compiled
+--  without cargo-concordium version >= 2.
 getWasmModuleFromFile ::
     -- | The module file.
     FilePath ->
@@ -2556,10 +2558,10 @@ getWasmModuleFromFile moduleFile mWasmVersion = do
         wasmMagicValue = BS.pack [0x00, 0x61, 0x73, 0x6D]
         getMagicBytes = S.getByteString 4
 
--- |Load @Wasm.Parameter@ through one of several ways, dependent on the arguments:
---   * If binary file provided -> Read the file and wrap its contents in @Wasm.Parameter@.
---   * If JSON file provided   -> Try to use the schema to encode the parameters into a @Wasm.Parameter@.
--- If invalid arguments are provided or something fails, appropriate warning or error messages are logged.
+-- | Load @Wasm.Parameter@ through one of several ways, dependent on the arguments:
+--    * If binary file provided -> Read the file and wrap its contents in @Wasm.Parameter@.
+--    * If JSON file provided   -> Try to use the schema to encode the parameters into a @Wasm.Parameter@.
+--  If invalid arguments are provided or something fails, appropriate warning or error messages are logged.
 getWasmParameter ::
     -- | Optional parameter file in JSON or binary format.
     Maybe ParameterFileInput ->
@@ -2588,12 +2590,12 @@ getWasmParameter paramsFile schema funcName =
     emptyParams = pure . Wasm.Parameter $ BSS.empty
     binaryParams file = Wasm.Parameter . BS.toShort <$> handleReadFile BS.readFile file
 
--- |Get a schema from a file or, alternatively, try to extract an embedded schema from a module.
--- The schema from the file will take precedence over an embedded schema in the module.
+-- | Get a schema from a file or, alternatively, try to extract an embedded schema from a module.
+--  The schema from the file will take precedence over an embedded schema in the module.
 --
--- Can logWarn and logFatal in the following situations:
---   - Invalid schemafile: logs fatally.
---   - No schemafile and invalid embedded schema: logs a warning and returns @Nothing@.
+--  Can logWarn and logFatal in the following situations:
+--    - Invalid schemafile: logs fatally.
+--    - No schemafile and invalid embedded schema: logs a warning and returns @Nothing@.
 getSchemaFromFileOrModule ::
     (MonadIO m) =>
     -- | Optional schema file.
@@ -2614,7 +2616,7 @@ getSchemaFromFileOrModule schemaFile namedModRef block = do
                 Right schema -> return schema
         Just schemaFile' -> liftIO (Just <$> getSchemaFromFile (Wasm.wasmVersion wasmModule) schemaFile')
 
--- |Try to load and decode a schema from a file. Logs fatally if the file is not a valid Wasm module.
+-- | Try to load and decode a schema from a file. Logs fatally if the file is not a valid Wasm module.
 getSchemaFromFile :: Wasm.WasmVersion -> FilePath -> IO CS.ModuleSchema
 getSchemaFromFile wasmVersion schemaFile = do
     schema <- CS.decodeModuleSchema wasmVersion <$> handleReadFile BS.readFile schemaFile
@@ -2622,10 +2624,10 @@ getSchemaFromFile wasmVersion schemaFile = do
         Left err -> logFatal [[i|Could not decode schema from file '#{schemaFile}':|], err]
         Right schema' -> pure schema'
 
--- |Get a schema and a list of exported function names from an optional schema file and a module.
--- Logs fatally if an invalid schema is found (either from a file or embedded).
--- The schema from the file will take precedence over an embedded schema in the module.
--- It will only return `(Nothing, _)` if no schemafile is provided and no embedded schema was found in the module.
+-- | Get a schema and a list of exported function names from an optional schema file and a module.
+--  Logs fatally if an invalid schema is found (either from a file or embedded).
+--  The schema from the file will take precedence over an embedded schema in the module.
+--  It will only return `(Nothing, _)` if no schemafile is provided and no embedded schema was found in the module.
 getSchemaAndExports ::
     -- | Optional schema file.
     Maybe FilePath ->
@@ -2646,20 +2648,20 @@ getSchemaAndExports schemaFile wasmModule = do
         Left err -> logFatal [[i|Could not parse embedded schema or exports from module:|], err]
         Right schemaAndExports -> return schemaAndExports
 
--- |Try to parse the input as a module reference and assume it is a path if it fails.
+-- | Try to parse the input as a module reference and assume it is a path if it fails.
 getModuleRefFromRefOrFile :: String -> Maybe Wasm.WasmVersion -> IO Types.ModuleRef
 getModuleRefFromRefOrFile modRefOrFile mWasmVersion = case readMaybe modRefOrFile of
     Just modRef -> pure modRef
     Nothing -> getModuleRefFromFile modRefOrFile mWasmVersion
 
--- |Load the module file and compute its hash, which is the reference.
+-- | Load the module file and compute its hash, which is the reference.
 getModuleRefFromFile :: String -> Maybe Wasm.WasmVersion -> IO Types.ModuleRef
 getModuleRefFromFile file mWasmVersion = Types.ModuleRef . getHash <$> getWasmModuleFromFile file mWasmVersion
 
--- |Get a NamedContractAddress from either a name or index and an optional subindex.
--- LogWarn if subindex is provided with a contract name.
--- LogFatal if it is neither an index nor a contract name.
-getNamedContractAddress :: MonadIO m => ContractNameMap -> Text -> Maybe Word64 -> m NamedContractAddress
+-- | Get a NamedContractAddress from either a name or index and an optional subindex.
+--  LogWarn if subindex is provided with a contract name.
+--  LogFatal if it is neither an index nor a contract name.
+getNamedContractAddress :: (MonadIO m) => ContractNameMap -> Text -> Maybe Word64 -> m NamedContractAddress
 getNamedContractAddress nameMap indexOrName subindex = case readMaybe $ Text.unpack indexOrName of
     Just index -> return $ NamedContractAddress{ncaAddr = mkContractAddress index subindex, ncaNames = []}
     Nothing -> do
@@ -2668,24 +2670,24 @@ getNamedContractAddress nameMap indexOrName subindex = case readMaybe $ Text.unp
             Just addr -> return $ NamedContractAddress{ncaAddr = addr, ncaNames = [indexOrName]}
             Nothing -> logFatal [[i|'#{indexOrName}' is neither the address index nor the name of a contract|]]
 
--- |Get a NamedModuleRef from either a name or a module reference.
--- LogFatal if it is neither a module reference nor a module name.
-getNamedModuleRef :: MonadIO m => ModuleNameMap -> Text -> m NamedModuleRef
+-- | Get a NamedModuleRef from either a name or a module reference.
+--  LogFatal if it is neither a module reference nor a module name.
+getNamedModuleRef :: (MonadIO m) => ModuleNameMap -> Text -> m NamedModuleRef
 getNamedModuleRef nameMap modRefOrName = case readMaybe $ Text.unpack modRefOrName of
     Just modRef -> return $ NamedModuleRef{nmrRef = modRef, nmrNames = []}
     Nothing -> case Map.lookup modRefOrName nameMap of
         Just modRef -> return $ NamedModuleRef{nmrRef = modRef, nmrNames = [modRefOrName]}
         Nothing -> logFatal [[i|'#{modRefOrName}' is neither the reference nor the name of a module|]]
 
--- |Make a contract address from an index and an optional subindex (default: 0).
+-- | Make a contract address from an index and an optional subindex (default: 0).
 mkContractAddress :: Word64 -> Maybe Word64 -> Types.ContractAddress
 mkContractAddress index subindex = Types.ContractAddress (Types.ContractIndex index) (Types.ContractSubindex subindex')
   where
     subindex' = fromMaybe 0 subindex
 
--- |Try to extract event information from a TransactionStatusResult.
--- The Maybe returned by the supplied function is mapped to Either with an error message.
--- 'Nothing' is mapped to 'Nothing'
+-- | Try to extract event information from a TransactionStatusResult.
+--  The Maybe returned by the supplied function is mapped to Either with an error message.
+--  'Nothing' is mapped to 'Nothing'
 extractFromTsr :: (Types.Event -> Maybe a) -> Maybe TransactionStatusResult -> Maybe (Either String a)
 extractFromTsr _ Nothing = Nothing -- occurs when ioTail is disabled.
 extractFromTsr eventMatcher (Just tsr) = Just $ case parseTransactionBlockResult tsr of
@@ -2701,7 +2703,7 @@ extractFromTsr eventMatcher (Just tsr) = Just $ case parseTransactionBlockResult
     maybeToRight _ (Just x) = Right x
     maybeToRight y Nothing = Left y
 
--- |Process a 'consensus ...' command.
+-- | Process a 'consensus ...' command.
 processConsensusCmd :: ConsensusCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processConsensusCmd action _baseCfgDir verbose backend =
     case action of
@@ -2814,7 +2816,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
                         when (ioTail intOpts) $
                             tailTransaction_ verbose hash
 
--- |Process a 'block ...' command.
+-- | Process a 'block ...' command.
 processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
 processBlockCmd action _ backend =
     case action of
@@ -2834,7 +2836,7 @@ processBlockCmd action _ backend =
                     Left err -> logFatal ["Error getting block info: " <> err]
                     Right bi -> runPrinter $ printBlockInfo bi
 
--- |Generate a fresh set of baker keys.
+-- | Generate a fresh set of baker keys.
 generateBakerKeys :: Maybe Types.BakerId -> IO BakerKeys
 generateBakerKeys bkBakerId = do
     -- Aggr/bls keys.
@@ -2868,31 +2870,31 @@ getNrgGtuRate = do
         Right (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) -> do
             return $ ecpParams ^. energyRate
 
--- |Process the 'baker configure ...' command.
+-- | Process the 'baker configure ...' command.
 processBakerConfigureCmd ::
     Maybe FilePath ->
     Verbose ->
     Backend ->
     TransactionOpts (Maybe Types.Energy) ->
-    -- |Whether this was called via `baker configure`
+    -- | Whether this was called via `baker configure`
     Bool ->
-    -- |New stake/capital.
+    -- | New stake/capital.
     Maybe Types.Amount ->
-    -- |Select whether to restake earnings.
+    -- | Select whether to restake earnings.
     Maybe Bool ->
-    -- |Open for delegation status.
+    -- | Open for delegation status.
     Maybe Types.OpenStatus ->
-    -- |URL to metadata about baker.
+    -- | URL to metadata about baker.
     Maybe String ->
-    -- |Transaction fee commission.
+    -- | Transaction fee commission.
     Maybe Types.AmountFraction ->
-    -- |Baking reward commission.
+    -- | Baking reward commission.
     Maybe Types.AmountFraction ->
-    -- |Finalization commission.
+    -- | Finalization commission.
     Maybe Types.AmountFraction ->
-    -- |File to read baker keys from.
+    -- | File to read baker keys from.
     Maybe FilePath ->
-    -- |File to write baker keys to.
+    -- | File to write baker keys to.
     Maybe FilePath ->
     IO ()
 processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCapital cbRestakeEarnings cbOpenForDelegation metadataURL cbTransactionFeeCommission cbBakingRewardCommission cbFinalizationRewardCommission inputKeysFile outputKeysFile = do
@@ -3128,19 +3130,19 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
             Just x -> return x
             Nothing -> logFatal [err]
 
--- |Process the old 'baker add ...' command to add a baker in protocol version < 4.
+-- | Process the old 'baker add ...' command to add a baker in protocol version < 4.
 processBakerAddCmd ::
     Maybe FilePath ->
     Verbose ->
     Backend ->
     TransactionOpts (Maybe Types.Energy) ->
-    -- |New stake/capital.
+    -- | New stake/capital.
     Types.Amount ->
-    -- |Select whether to restake earnings.
+    -- | Select whether to restake earnings.
     Bool ->
-    -- |File to read baker keys from.
+    -- | File to read baker keys from.
     FilePath ->
-    -- |File to write baker keys to.
+    -- | File to write baker keys to.
     Maybe FilePath ->
     IO ()
 processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarnings inputKeysFile outputKeysFile = do
@@ -3293,15 +3295,15 @@ processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarn
             Just x -> return x
             Nothing -> logFatal [err]
 
--- |Process the old 'baker set-key ...' command to set baker keys in protocol version < 4.
+-- | Process the old 'baker set-key ...' command to set baker keys in protocol version < 4.
 processBakerSetKeysCmd ::
     Maybe FilePath ->
     Verbose ->
     Backend ->
     TransactionOpts (Maybe Types.Energy) ->
-    -- |File to read baker keys from.
+    -- | File to read baker keys from.
     FilePath ->
-    -- |File to write baker keys to.
+    -- | File to write baker keys to.
     Maybe FilePath ->
     IO ()
 processBakerSetKeysCmd baseCfgDir verbose backend txOpts inputKeysFile outputKeysFile = do
@@ -3413,7 +3415,7 @@ processBakerSetKeysCmd baseCfgDir verbose backend txOpts inputKeysFile outputKey
             Just x -> return x
             Nothing -> logFatal [err]
 
--- |Process the old 'baker set-key ...' command to set baker keys in protocol version < 4.
+-- | Process the old 'baker set-key ...' command to set baker keys in protocol version < 4.
 processBakerRemoveCmd ::
     Maybe FilePath ->
     Verbose ->
@@ -3460,13 +3462,13 @@ processBakerRemoveCmd baseCfgDir verbose backend txOpts = do
             putStrLn ""
         return (txCfg, payload)
 
--- |Process the old 'baker update-stake ...' command in protocol version < 4.
+-- | Process the old 'baker update-stake ...' command in protocol version < 4.
 processBakerUpdateStakeBeforeP4Cmd ::
     Maybe FilePath ->
     Verbose ->
     Backend ->
     TransactionOpts (Maybe Types.Energy) ->
-    -- |New stake
+    -- | New stake
     Types.Amount ->
     IO ()
 processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = do
@@ -3550,13 +3552,13 @@ processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = 
             putStrLn ""
         return (txCfg, payload)
 
--- |Process the old 'baker update-restake ...' command in protocol version < 4.
+-- | Process the old 'baker update-restake ...' command in protocol version < 4.
 processBakerUpdateRestakeCmd ::
     Maybe FilePath ->
     Verbose ->
     Backend ->
     TransactionOpts (Maybe Types.Energy) ->
-    -- |Whether to restake earnings
+    -- | Whether to restake earnings
     Bool ->
     IO ()
 processBakerUpdateRestakeCmd baseCfgDir verbose backend txOpts ubreRestakeEarnings = do
@@ -3583,13 +3585,13 @@ processBakerUpdateRestakeCmd baseCfgDir verbose backend txOpts ubreRestakeEarnin
             putStrLn ""
         return (txCfg, payload)
 
--- |Process the 'baker update-stake ...' command.
+-- | Process the 'baker update-stake ...' command.
 processBakerUpdateStakeCmd ::
     Maybe FilePath ->
     Verbose ->
     Backend ->
     TransactionOpts (Maybe Types.Energy) ->
-    -- |New stake
+    -- | New stake
     Types.Amount ->
     IO ()
 processBakerUpdateStakeCmd baseCfgDir verbose backend txOpts newStake = do
@@ -3602,7 +3604,7 @@ processBakerUpdateStakeCmd baseCfgDir verbose backend txOpts newStake = do
     when ok $
         processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just newStake) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
--- |Process a 'baker ...' command.
+-- | Process a 'baker ...' command.
 processBakerCmd :: BakerCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processBakerCmd action baseCfgDir verbose backend =
     case action of
@@ -3737,17 +3739,17 @@ processBakerCmd action baseCfgDir verbose backend =
                     then polling newLen 0 =<< getWinTimestamp
                     else polling newLen (lastPoll + 1) winTimestamp
 
--- |Process a 'delegator configure ...' command.
+-- | Process a 'delegator configure ...' command.
 processDelegatorConfigureCmd ::
     Maybe FilePath ->
     Verbose ->
     Backend ->
     TransactionOpts (Maybe Types.Energy) ->
-    -- |New stake/capital.
+    -- | New stake/capital.
     Maybe Types.Amount ->
-    -- |Select whether to restake earnings.
+    -- | Select whether to restake earnings.
     Maybe Bool ->
-    -- |Delegation target: baker or passive delegation.
+    -- | Delegation target: baker or passive delegation.
     Maybe Types.DelegationTarget ->
     IO ()
 processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdRestakeEarnings cdDelegationTarget = do
@@ -3879,7 +3881,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
             Just Types.DelegatePassive -> ["stake will be delegated passively"]
             Just (Types.DelegateToBaker bid) -> [printf "stake will be delegated to baker %s" (show bid)]
 
--- |Process a 'delegator ...' command.
+-- | Process a 'delegator ...' command.
 processDelegatorCmd :: DelegatorCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processDelegatorCmd action baseCfgDir verbose backend =
     case action of
@@ -3938,7 +3940,7 @@ processIdentityShowCmd action backend =
                     >>= getResponseValueOrDie
                     >>= runPrinter . printAnonymityRevokers . toList
 
--- |Process a "legacy" command.
+-- | Process a "legacy" command.
 processLegacyCmd :: LegacyCmd -> Backend -> IO ()
 processLegacyCmd action backend =
     case action of
@@ -4217,12 +4219,12 @@ processLegacyCmd action backend =
             Left _ -> logFatal ["Unable to parse account address."]
             Right a -> return a
 
--- |Helper function to specialize the type, avoiding the need for type
--- annotations in many places.
+-- | Helper function to specialize the type, avoiding the need for type
+--  annotations in many places.
 getBlockItemHash :: Types.BareBlockItem -> Types.TransactionHash
 getBlockItemHash = getHash
 
-printPeerData :: MonadIO m => Bool -> [Queries.PeerInfo] -> Queries.NodeInfo -> m ()
+printPeerData :: (MonadIO m) => Bool -> [Queries.PeerInfo] -> Queries.NodeInfo -> m ()
 printPeerData bootstrapper pInfos Queries.NodeInfo{..} =
     let Queries.NetworkInfo{..} = networkInfo
         -- Filter bootstrappers.
@@ -4272,7 +4274,7 @@ printPeerData bootstrapper pInfos Queries.NodeInfo{..} =
                         Queries.ActiveBaker -> "in current baking committee)"
                         Queries.ActiveFinalizer -> "in current baking and finalizer committee)"
 
-printNodeInfo :: MonadIO m => Queries.NodeInfo -> m ()
+printNodeInfo :: (MonadIO m) => Queries.NodeInfo -> m ()
 printNodeInfo Queries.NodeInfo{..} =
     liftIO $
         let Queries.NetworkInfo{..} = networkInfo
@@ -4347,9 +4349,9 @@ printNodeInfo Queries.NodeInfo{..} =
             Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveFinalizer) ->
                 "In current finalizer committee with baker ID " <> show bId <> "'."
 
--- |Process a transaction from JSON payload given as a byte string
--- and with keys given explicitly.
--- The transaction is signed with all the provided keys.
+-- | Process a transaction from JSON payload given as a byte string
+--  and with keys given explicitly.
+--  The transaction is signed with all the provided keys.
 processTransaction ::
     (MonadFail m, MonadIO m) =>
     BSL.ByteString ->
@@ -4359,8 +4361,8 @@ processTransaction source =
         Left err -> fail $ "Error decoding JSON: " ++ err
         Right t -> processTransaction_ t True
 
--- |Process a transaction with unencrypted keys given explicitly.
--- The transaction is signed with all the provided keys.
+-- | Process a transaction with unencrypted keys given explicitly.
+--  The transaction is signed with all the provided keys.
 processTransaction_ ::
     (MonadFail m, MonadIO m) =>
     TransactionJSON ->
@@ -4396,7 +4398,7 @@ processTransaction_ transaction _verbose = do
         Left err -> logFatal ["Transaction not accepted by the baker: " <> err]
         Right _ -> return tx
 
--- |Read a versioned credential from the bytestring, failing if any errors occur.
+-- | Read a versioned credential from the bytestring, failing if any errors occur.
 processCredential ::
     (MonadFail m, MonadIO m) =>
     BSL.ByteString ->
@@ -4422,7 +4424,7 @@ processCredential source =
             | otherwise ->
                 fail $ "Unsupported credential version: " ++ show (vVersion vCred)
 
--- |Convert JSON-based transaction type to one which is ready to be encoded, signed and sent.
+-- | Convert JSON-based transaction type to one which is ready to be encoded, signed and sent.
 convertTransactionJsonPayload :: (MonadFail m) => CT.TransactionJSONPayload -> ClientMonad m Types.Payload
 convertTransactionJsonPayload = \case
     (CT.DeployModule _) ->
@@ -4441,8 +4443,8 @@ convertTransactionJsonPayload = \case
     CT.TransferToEncrypted{..} -> return $ Types.TransferToEncrypted{..}
     CT.EncryptedAmountTransfer{..} -> return Types.EncryptedAmountTransfer{..}
 
--- |Sign a transaction payload and configuration into a "normal" transaction,
--- which is ready to be sent.
+-- | Sign a transaction payload and configuration into a "normal" transaction,
+--  which is ready to be sent.
 encodeAndSignTransaction ::
     Types.Payload ->
     Types.AccountAddress ->
@@ -4453,8 +4455,8 @@ encodeAndSignTransaction ::
     Types.BareBlockItem
 encodeAndSignTransaction txPayload = signEncodedTransaction (Types.encodePayload txPayload)
 
--- |Sign an encoded transaction payload and a configuration into a "normal" transaction,
--- which is ready to be sent.
+-- | Sign an encoded transaction payload and a configuration into a "normal" transaction,
+--  which is ready to be sent.
 signEncodedTransaction ::
     Types.EncodedPayload ->
     Types.AccountAddress ->

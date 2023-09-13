@@ -29,19 +29,19 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import Text.Printf
 
--- |Format of keys in genesis per credential.
+-- | Format of keys in genesis per credential.
 data GenesisCredentialKeys = GenesisCredentialKeys
     { gckKeys :: !(OrdMap.Map IDTypes.KeyIndex KeyPair),
       gckThreshold :: !IDTypes.SignatureThreshold
     }
 
--- |Format of keys in a genesis account.
+-- | Format of keys in a genesis account.
 data GenesisAccountKeys = GenesisAccountKeys
     { gakKeys :: OrdMap.Map IDTypes.CredentialIndex GenesisCredentialKeys,
       gakThreshold :: !IDTypes.AccountThreshold
     }
 
--- |Credentials for genesis accounts.
+-- | Credentials for genesis accounts.
 newtype GenesisCredentials = GenesisCredentials {gcCredentials :: OrdMap.Map IDTypes.CredentialIndex IDTypes.AccountCredential}
     deriving newtype (AE.FromJSON, AE.ToJSON)
 
@@ -57,14 +57,14 @@ instance AE.FromJSON GenesisAccountKeys where
         gakThreshold <- obj AE..: "threshold"
         return GenesisAccountKeys{..}
 
--- |Get the list of keys suitable for signing. This will respect the thresholds
--- so that the lists are no longer than the threshold that is specified.
+-- | Get the list of keys suitable for signing. This will respect the thresholds
+--  so that the lists are no longer than the threshold that is specified.
 toKeysList :: GenesisAccountKeys -> [(IDTypes.CredentialIndex, [(IDTypes.KeyIndex, KeyPair)])]
 toKeysList GenesisAccountKeys{..} = take (fromIntegral gakThreshold) . fmap toKeysListCred . OrdMap.toAscList $ gakKeys
   where
     toKeysListCred (ci, GenesisCredentialKeys{..}) = (ci, take (fromIntegral gckThreshold) . OrdMap.toAscList $ gckKeys)
 
--- |Environment for the export, e.g., staging, testnet, mainnet or something else.
+-- | Environment for the export, e.g., staging, testnet, mainnet or something else.
 type Environment = Text
 
 -- | An export format used by wallets including accounts and identities.
@@ -75,15 +75,15 @@ data WalletExport = WalletExport
     }
     deriving (Show)
 
--- |Parse export from the wallet. The data that is exported depends a bit on
--- which wallet it is, so the parser requires some context which is why this is
--- a separate function, and not a @FromJSON@ instance.
+-- | Parse export from the wallet. The data that is exported depends a bit on
+--  which wallet it is, so the parser requires some context which is why this is
+--  a separate function, and not a @FromJSON@ instance.
 parseWalletExport ::
-    -- |The name of the account to import. The old mobile wallet export does not
-    -- require this, but for the new mobile wallet export it is required, and parsing
-    -- will fail if this is not provided.
+    -- | The name of the account to import. The old mobile wallet export does not
+    --  require this, but for the new mobile wallet export it is required, and parsing
+    --  will fail if this is not provided.
     Maybe Text ->
-    -- |The JSON value to be parsed.
+    -- | The JSON value to be parsed.
     AE.Value ->
     AE.Parser WalletExport
 parseWalletExport mName = AE.withObject "Wallet Export" $ \v -> do
@@ -221,9 +221,9 @@ accountCfgsFromWalletExportAccounts weas name pwd = do
                 namesFound -> return namesFound
     forM selectedAccounts $ accountCfgFromWalletExportAccount pwd
 
--- |Convert a wallet export account to a regular account config.
--- This checks whether the name provided by the export is a valid account name.
--- This encrypts all signing keys with the provided password.
+-- | Convert a wallet export account to a regular account config.
+--  This checks whether the name provided by the export is a valid account name.
+--  This encrypts all signing keys with the provided password.
 accountCfgFromWalletExportAccount :: Password -> WalletExportAccount -> ExceptT String IO AccountConfig
 accountCfgFromWalletExportAccount pwd WalletExportAccount{weaKeys = AccountSigningData{..}, ..} = do
     name <- liftIO $ ensureValidName weaName
@@ -247,8 +247,8 @@ accountCfgFromWalletExportAccount pwd WalletExportAccount{weaKeys = AccountSigni
                     T.getLine >>= ensureValidName
                 Right () -> return trimmedName
 
--- |Decode and parse a genesis account into a named account config.
--- All signing keys are encrypted with the given password.
+-- | Decode and parse a genesis account into a named account config.
+--  All signing keys are encrypted with the given password.
 decodeGenesisFormattedAccountExport ::
     -- | JSON with the account information.
     BS.ByteString ->
@@ -327,7 +327,7 @@ configExport cb pwd = do
   where
     vcb = Versioned configBackupVersion cb
 
--- |Decrypt and decode an exported config, optionally protected under a password.
+-- | Decrypt and decode an exported config, optionally protected under a password.
 configImport ::
     BS.ByteString ->
     -- | Action to obtain the password if necessary.
