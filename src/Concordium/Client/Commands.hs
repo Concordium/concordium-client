@@ -546,11 +546,6 @@ data IdentityShowCmd
         {isarsBlockHash :: !(Maybe Text)}
     deriving (Show)
 
-type ShowAllOpts = Bool
-
-internalUnless :: ShowAllOpts -> Mod f a
-internalUnless showAllOpts = if showAllOpts then idm else internal
-
 visibleHelper :: Parser (a -> a)
 visibleHelper =
     abortOption (ShowHelpText Nothing) $
@@ -560,10 +555,10 @@ visibleHelper =
               help "Show detailed help text."
             ]
 
-optsParser :: ShowAllOpts -> ParserInfo Options
-optsParser showAllOpts =
+optsParser :: ParserInfo Options
+optsParser =
     info
-        (programOptions showAllOpts <**> versionOption <**> visibleHelper)
+        (programOptions <**> versionOption <**> visibleHelper)
         ( fullDesc
             <> progDesc "Concordium Client CLI."
             <> header "concordium-client - a client to interact with the concordium network."
@@ -660,8 +655,8 @@ interactionOptsParser =
         <$> (not <$> switch (long "no-confirm" <> help "Do not ask for confirmation before proceeding to send the transaction."))
         <*> (not <$> switch (long "no-wait" <> help "Exit right after sending the transaction without waiting for it to be committed and finalized."))
 
-programOptions :: ShowAllOpts -> Parser Options
-programOptions showAllOpts =
+programOptions :: Parser Options
+programOptions =
     Options
         <$> hsubparser
             ( metavar "command"
@@ -669,7 +664,7 @@ programOptions showAllOpts =
                 <> accountCmds
                 <> moduleCmds
                 <> contractCmds
-                <> configCmds showAllOpts
+                <> configCmds
                 <> consensusCmds
                 <> blockCmds
                 <> bakerCmds
@@ -1297,8 +1292,8 @@ contractRemoveNameCmd =
             )
         )
 
-configCmds :: ShowAllOpts -> Mod CommandFields Cmd
-configCmds showAllOpts =
+configCmds :: Mod CommandFields Cmd
+configCmds =
     command
         "config"
         ( info
@@ -1308,7 +1303,7 @@ configCmds showAllOpts =
                         <> configShowCmd
                         <> configBackupExportCmd
                         <> configBackupImportCmd
-                        <> configAccountCmds showAllOpts
+                        <> configAccountCmds
                     )
             )
             (progDesc "Commands for inspecting and changing local configuration.")
@@ -1355,8 +1350,8 @@ configBackupImportCmd =
             (progDesc "Import config backup file, requires password if encrypted")
         )
 
-configAccountCmds :: ShowAllOpts -> Mod CommandFields ConfigCmd
-configAccountCmds showAllOpts =
+configAccountCmds :: Mod CommandFields ConfigCmd
+configAccountCmds =
     command
         "account"
         ( info
@@ -1364,7 +1359,7 @@ configAccountCmds showAllOpts =
                 <$> hsubparser
                     ( configAccountNameCmd
                         <> configAccountRemove
-                        <> configAccountImportCmd showAllOpts
+                        <> configAccountImportCmd
                         <> configAccountAddKeysCmd
                         <> configAccountUpdateKeysCmd
                         <> configAccountChangeKeyPasswordCmd
@@ -1398,24 +1393,21 @@ configAccountRemove =
             (progDesc "Remove the account from the persistent config.")
         )
 
-configAccountImportCmd :: ShowAllOpts -> Mod CommandFields ConfigAccountCmd
-configAccountImportCmd showAllOpts =
+configAccountImportCmd :: Mod CommandFields ConfigAccountCmd
+configAccountImportCmd =
     command
         "import"
         ( info
             ( ConfigAccountImport
                 <$> strArgument (metavar "FILE" <> help "File with one or more accounts exported from the wallet.")
                 <*> optional (strOption (long "name" <> metavar "NAME" <> help nameOptionHelp))
-                <*> option readAccountExportFormat (internalUnless showAllOpts <> long "format" <> metavar "FORMAT" <> value FormatMobile <> help "Export format. Supported values are 'mobile' and 'genesis' (default: 'mobile').")
+                <*> option readAccountExportFormat (long "format" <> metavar "FORMAT" <> value FormatMobile <> help "Export format. Supported values are 'mobile' and 'genesis' (default: 'mobile').")
                 <*> switch (long "skip-existing" <> short 's' <> help "Automatically skip importing accounts when the keydirectory already exists")
             )
             (progDesc "Import an account to persistent config.")
         )
   where
-    nameOptionHelp =
-        if showAllOpts
-            then "Name of the account. For the 'genesis' format, this sets the name to assign to the account. For the 'mobile' format (which contains multiple already named accounts), it selects which account to import."
-            else "Name of a single account in the wallet. This will cause the client to only import that account."
+    nameOptionHelp = "Name of the account. For the 'genesis' format, this sets the name to assign to the account. For the 'mobile' format (which contains multiple already named accounts), it selects which account to import."
 
 configAccountAddKeysCmd :: Mod CommandFields ConfigAccountCmd
 configAccountAddKeysCmd =
