@@ -11,8 +11,8 @@
   - `GetBakerEarliestWinTime`
   - `GetWinningBakersEpoch`
   - `GetFirstBlockEpoch`
-  - Add support for `CommissionRates` in `CurrentPaydayBakerPoolStatus` (Only    available for node versions > 6.0).
-  - By default show all options for importing an account.
+  - Add support for `CommissionRates` in `CurrentPaydayBakerPoolStatus` (Only available for node versions > 6.0).
+  - Show all options for importing an account.
 
 
 ## 6.0.1
