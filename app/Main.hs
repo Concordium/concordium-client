@@ -2,9 +2,7 @@ module Main where
 
 import Concordium.Client.Commands
 import Concordium.Client.Runner
-import Data.Maybe
 import Options.Applicative
-import System.Environment
 import System.IO
 
 ccPrefs :: ParserPrefs
@@ -29,5 +27,4 @@ setReplacement h = do
 main :: IO ()
 main = do
     mapM_ setReplacement [stdout, stderr]
-    showAllOpts <- lookupEnv "SHOW_ALL_OPTS"
-    process =<< customExecParser ccPrefs (optsParser $ isJust showAllOpts)
+    process =<< customExecParser ccPrefs optsParser
