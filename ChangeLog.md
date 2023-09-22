@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 6.1.0
+
 - Add `baker win-time` command for determining the earliest time a specified baker is expected to
   bake.
 - End stream consumption early if an error is returned.
@@ -13,7 +15,6 @@
   - `GetFirstBlockEpoch`
   - Add support for `CommissionRates` in `CurrentPaydayBakerPoolStatus` (Only available for node versions > 6.0).
   - Show all options for importing an account.
-
 
 ## 6.0.1
 
