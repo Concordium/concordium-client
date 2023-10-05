@@ -4,7 +4,9 @@ set -ex
 
 cd /build
 
+# Workaround for stack not setting flags for local dependencies properly.
 sed -i "s/default: False/default: True/g" deps/concordium-base/package.yaml
+sed -i "s/default: False/default: True/g" deps/concordium-base/concordium-base.cabal
 
 stack build --stack-yaml stack.linux-static.yaml
 
