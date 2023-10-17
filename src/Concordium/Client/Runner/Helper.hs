@@ -118,11 +118,11 @@ toGRPCResult' =
                             in  StatusOk (GRPCResponse hs t)
 
 -- | Convert a GRPC helper output to a unified result type.
-toGRPCResult :: Maybe (GRPCOutput t) -> GRPCResult t
+toGRPCResult :: Either Bool (GRPCOutput t) -> GRPCResult t
 toGRPCResult ret =
     case ret of
-        Nothing -> RequestFailed "Cannot connect to GRPC server."
-        Just v -> toGRPCResult' v
+        Left _ -> RequestFailed "Cannot connect to GRPC server."
+        Right v -> toGRPCResult' v
 
 printJSON :: (MonadIO m) => Either String Value -> m ()
 printJSON v =
