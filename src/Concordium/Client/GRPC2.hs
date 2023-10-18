@@ -41,9 +41,9 @@ import qualified Data.Vector as Vec
 import Data.Word
 import Lens.Micro.Platform
 import Network.GRPC.Client
-import Network.GRPC.HTTP2.Types (GRPCStatusCode (RESOURCE_EXHAUSTED, DEADLINE_EXCEEDED))
 import Network.GRPC.Client.Helpers hiding (Address)
 import Network.GRPC.HTTP2.ProtoLens
+import Network.GRPC.HTTP2.Types (GRPCStatusCode (DEADLINE_EXCEEDED, RESOURCE_EXHAUSTED))
 import Network.HTTP2.Client (ClientError, ClientIO, ExceptT, HostName, PortNumber, TooMuchConcurrency, runExceptT)
 import qualified Web.Cookie as Cookie
 
@@ -3538,8 +3538,8 @@ withGRPCCore helper k = do
                     return $ k response
                 else return $ k (RequestFailed "Cannot establish connection to GRPC endpoint.")
         (_, Left (DoNotRetry r)) -> do
-          return (k r)
-        (_, Right v) -> 
+            return (k r)
+        (_, Right v) ->
             let response = toGRPCResult' v
             in  do
                     addHeaders response
