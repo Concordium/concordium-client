@@ -15,6 +15,7 @@ module Concordium.Client.Runner.Helper (
     GRPCOutput (..),
     GRPCResponse (..),
     GRPCHeaderList,
+    Retry (..)
 ) where
 
 import Concordium.Client.Cli (logFatal)
@@ -117,11 +118,16 @@ toGRPCResult' =
                             let hs = map (\(hn, hv) -> (CI.mk hn, hv)) hds
                             in  StatusOk (GRPCResponse hs t)
 
+data Retry a =
+  Retry
+  | DoNotRetry (GRPCResult a)
+
 -- | Convert a GRPC helper output to a unified result type.
-toGRPCResult :: Either Bool (GRPCOutput t) -> GRPCResult t
+toGRPCResult :: Either (Retry t) (GRPCOutput t) -> GRPCResult t
 toGRPCResult ret =
     case ret of
-        Left _ -> RequestFailed "Cannot connect to GRPC server."
+        Left Retry -> RequestFailed "Cannot connect to GRPC server."
+        Left (DoNotRetry r) -> r
         Right v -> toGRPCResult' v
 
 printJSON :: (MonadIO m) => Either String Value -> m ()

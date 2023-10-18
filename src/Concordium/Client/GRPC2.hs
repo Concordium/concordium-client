@@ -41,7 +41,7 @@ import qualified Data.Vector as Vec
 import Data.Word
 import Lens.Micro.Platform
 import Network.GRPC.Client
-import Network.GRPC.HTTP2.Types (GRPCStatusCode (CANCELLED))
+import Network.GRPC.HTTP2.Types (GRPCStatusCode (RESOURCE_EXHAUSTED, DEADLINE_EXCEEDED))
 import Network.GRPC.Client.Helpers hiding (Address)
 import Network.GRPC.HTTP2.ProtoLens
 import Network.HTTP2.Client (ClientError, ClientIO, ExceptT, HostName, PortNumber, TooMuchConcurrency, runExceptT)
@@ -3466,7 +3466,7 @@ withGRPCCore helper k = do
                         -- yield False, in case the connection is established by another
                         -- query from this point until the retry. And thus that client
                         -- will be used next time.
-                        return (0, Left True)
+                        return (0, Left Retry)
                     Just (gen, client) -> do
                         -- if the MVar is not set then we are free to attempt a new query.
                         -- If it is set then it means a GOAWAY frame is being handled. We
@@ -3481,19 +3481,19 @@ withGRPCCore helper k = do
                                 let runRPC =
                                         runExceptT (helper client')
                                             >>= \case
-                                                Left err -> Left True <$ logm ("Network error: " <> fromString (show err)) -- client error
-                                                Right (Left err) -> Left False <$ logm ("Too much concurrency: " <> fromString (show err))
+                                                Left err -> Left Retry <$ logm ("Network error: " <> fromString (show err)) -- client error
+                                                Right (Left err) -> Left (DoNotRetry (StatusNotOk (RESOURCE_EXHAUSTED, "Too many concurrent requests."))) <$ logm ("Too much concurrency: " <> fromString (show err))
                                                 Right (Right x) -> return (Right x)
                                 race (race (readMVar mv) (threadDelay (timeoutSeconds * 1000000))) runRPC
                                     >>= \case
-                                        Left (Left ()) -> (gen, Left True) <$ logm "Terminating query because GOAWAY received."
-                                        Left (Right ()) -> (gen, Left False) <$ logm "Terminating query because it timed out."
+                                        Left (Left ()) -> (gen, Left Retry) <$ logm "Terminating query because GOAWAY received."
+                                        Left (Right ()) -> (gen, Left (DoNotRetry (StatusNotOk (DEADLINE_EXCEEDED, "Query timed out.")))) <$ logm "Terminating query because it timed out."
                                         Right x -> return (gen, x)
-                            Just () -> return (gen, Left True) -- fail this round, go again after the client is established.
+                            Just () -> return (gen, Left Retry) -- fail this round, go again after the client is established.
     ret <- liftIO tryRun
 
     case ret of
-        (usedGen, Left True) -> do
+        (usedGen, Left Retry) -> do
             -- failed, need to establish connection
             liftIO (logm "gRPC call failed. Will try to reestablish connection.")
             retryNum <- asks retryTimes
@@ -3537,8 +3537,8 @@ withGRPCCore helper k = do
                     addHeaders response
                     return $ k response
                 else return $ k (RequestFailed "Cannot establish connection to GRPC endpoint.")
-        (_, Left False) -> do
-          return (k (StatusNotOk (CANCELLED, "Unable to complete query.")))
+        (_, Left (DoNotRetry r)) -> do
+          return (k r)
         (_, Right v) -> 
             let response = toGRPCResult' v
             in  do
