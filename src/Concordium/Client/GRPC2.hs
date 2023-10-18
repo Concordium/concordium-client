@@ -41,7 +41,7 @@ import qualified Data.Vector as Vec
 import Data.Word
 import Lens.Micro.Platform
 import Network.GRPC.Client
-import Network.GRPC.HTTP2.Types (GRPCStatusCode (RESOURCE_EXHAUSTED))
+import Network.GRPC.HTTP2.Types (GRPCStatusCode (CANCELLED))
 import Network.GRPC.Client.Helpers hiding (Address)
 import Network.GRPC.HTTP2.ProtoLens
 import Network.HTTP2.Client (ClientError, ClientIO, ExceptT, HostName, PortNumber, TooMuchConcurrency, runExceptT)
@@ -3538,7 +3538,7 @@ withGRPCCore helper k = do
                     return $ k response
                 else return $ k (RequestFailed "Cannot establish connection to GRPC endpoint.")
         (_, Left False) -> do
-          return (k (StatusNotOk (RESOURCE_EXHAUSTED, "Unable to complete query.")))
+          return (k (StatusNotOk (CANCELLED, "Unable to complete query.")))
         (_, Right v) -> 
             let response = toGRPCResult' v
             in  do
