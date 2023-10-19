@@ -118,9 +118,12 @@ toGRPCResult' =
                             let hs = map (\(hn, hv) -> (CI.mk hn, hv)) hds
                             in  StatusOk (GRPCResponse hs t)
 
+-- |A helper type to indicate whether a failed RPC call should be retried or
+-- not. This is used internally by the @withUnary@ method.
 data Retry a
     = Retry
-    | DoNotRetry (GRPCResult a)
+    | -- | A call failed with the given 'GRPCResult', and will not be retried.
+      DoNotRetry (GRPCResult a)
 
 -- | Convert a GRPC helper output to a unified result type.
 toGRPCResult :: Either (Retry t) (GRPCOutput t) -> GRPCResult t
