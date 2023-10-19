@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Revise client's reconnect handling so that the client will no longer attempt
+  to automatically reconnect on timeouts and node resource exhaustion.
+
 ## 6.1.0
 
 - Add `baker win-time` command for determining the earliest time a specified baker is expected to

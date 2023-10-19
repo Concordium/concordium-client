@@ -118,8 +118,8 @@ toGRPCResult' =
                             let hs = map (\(hn, hv) -> (CI.mk hn, hv)) hds
                             in  StatusOk (GRPCResponse hs t)
 
--- |A helper type to indicate whether a failed RPC call should be retried or
--- not. This is used internally by the @withUnary@ method.
+-- | A helper type to indicate whether a failed RPC call should be retried or
+--  not. This is used internally by the @withUnary@ method.
 data Retry a
     = Retry
     | -- | A call failed with the given 'GRPCResult', and will not be retried.
