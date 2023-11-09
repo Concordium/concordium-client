@@ -194,7 +194,7 @@ legacyProgramOptions =
             <> getInstanceInfoCommand
             <> invokeContractCommand
             <> getPoolStatusCommand
-            <> getBakerListCommand
+            <> getBakerListCommand "GetValidatorList"
             <> getRewardStatusCommand
             <> getBirkParametersCommand
             <> getModuleListCommand
@@ -215,12 +215,19 @@ legacyProgramOptions =
             <> getAnonymityRevokersCommand
             <> getCryptographicParametersCommand
             <> getNextUpdateSequenceNumbersCommand
-            <> getBakersRewardPeriodCommand
+            <> getBakersRewardPeriodCommand "GetValidatorsRewardPeriod"
             <> getBlockCertificatesCommand
-            <> getBakerEarliestWinTimeCommand
-            <> getWinningBakersEpochCommand
+            <> getBakerEarliestWinTimeCommand "GetValidatorEarliestWinTime"
+            <> getWinningBakersEpochCommand "GetWinningValidatorsEpoch"
             <> getFirstBlockEpochCommand
         )
+        <|> hsubparser
+            ( internal
+                <> getBakerListCommand "GetBakerList"
+                <> getBakersRewardPeriodCommand "GetBakersRewardPeriod"
+                <> getBakerEarliestWinTimeCommand "GetBakerEarliestWinTime"
+                <> getWinningBakersEpochCommand "GetWinningBakersEpoch"
+            )
 
 getPeerDataCommand :: Mod CommandFields LegacyCmd
 getPeerDataCommand =
@@ -250,7 +257,7 @@ sendTransactionCommand =
                     (metavar "TX-SOURCE" <> help "JSON file with the transaction")
             )
             ( progDesc
-                "Parse transaction in current context and send it to the baker."
+                "Parse transaction in current context and send it to the node."
             )
         )
 
@@ -424,15 +431,15 @@ getNextUpdateSequenceNumbersCommand =
             (progDesc "Query the gRPC server for the next update sequence numbers for all update queues.")
         )
 
-getBakersRewardPeriodCommand :: Mod CommandFields LegacyCmd
-getBakersRewardPeriodCommand =
+getBakersRewardPeriodCommand :: String -> Mod CommandFields LegacyCmd
+getBakersRewardPeriodCommand name =
     command
-        "GetBakersRewardPeriod"
+        name
         ( info
             ( GetBakersRewardPeriod
                 <$> optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
             )
-            (progDesc "Query the gRPC server for the bakers of the reward period given by the block.")
+            (progDesc "Query the gRPC server for the validators of the reward period given by the block.")
         )
 
 getBlockCertificatesCommand :: Mod CommandFields LegacyCmd
@@ -446,16 +453,16 @@ getBlockCertificatesCommand =
             (progDesc "Query the gRPC server for the certificates of a block.")
         )
 
-getBakerEarliestWinTimeCommand :: Mod CommandFields LegacyCmd
-getBakerEarliestWinTimeCommand =
+getBakerEarliestWinTimeCommand :: String -> Mod CommandFields LegacyCmd
+getBakerEarliestWinTimeCommand name =
     command
-        "GetBakerEarliestWinTime"
+        name
         ( info
             ( GetBakerEarliestWinTime
-                <$> argument auto (metavar "BAKER-ID" <> help "Baker ID of the baker.")
+                <$> argument auto (metavar "VALIDATOR-ID" <> help "Validator ID of the validator.")
             )
             ( progDesc
-                "Query the gRPC server for the earliest time that a given baker is expected \
+                "Query the gRPC server for the earliest time that a given validator is expected \
                 \to bake."
             )
         )
@@ -499,7 +506,7 @@ getPoolStatusCommand =
         "GetPoolStatus"
         ( info
             ( GetPoolStatus
-                <$> optional (option auto (long "pool" <> metavar "POOL" <> help "Baker ID of pool. If not provided, status of passive delegation is queried."))
+                <$> optional (option auto (long "pool" <> metavar "POOL" <> help "Validator ID of pool. If not provided, status of passive delegation is queried."))
                 <*> optional
                     ( strArgument
                         ( metavar "BLOCK-HASH"
@@ -507,13 +514,13 @@ getPoolStatusCommand =
                         )
                     )
             )
-            (progDesc "Query the gRPC server for the status of a baker pool or passive delegation.")
+            (progDesc "Query the gRPC server for the status of a validator pool or passive delegation.")
         )
 
-getBakerListCommand :: Mod CommandFields LegacyCmd
-getBakerListCommand =
+getBakerListCommand :: String -> Mod CommandFields LegacyCmd
+getBakerListCommand name =
     command
-        "GetBakerList"
+        name
         ( info
             ( GetBakerList
                 <$> optional
@@ -523,7 +530,7 @@ getBakerListCommand =
                         )
                     )
             )
-            (progDesc "Query the gRPC server for the list of bakers.")
+            (progDesc "Query the gRPC server for the list of validators.")
         )
 
 getRewardStatusCommand :: Mod CommandFields LegacyCmd
@@ -716,13 +723,13 @@ getCryptographicParametersCommand =
             (progDesc "Query the gRPC server for the cryptographic parameters in a specific block.")
         )
 
-getWinningBakersEpochCommand :: Mod CommandFields LegacyCmd
-getWinningBakersEpochCommand =
+getWinningBakersEpochCommand :: String -> Mod CommandFields LegacyCmd
+getWinningBakersEpochCommand name =
     command
-        "GetWinningBakersEpoch"
+        name
         ( info
             (GetWinningBakersEpoch <$> parseEpochSpecifier)
-            (progDesc "Query the winning bakers for an epoch.")
+            (progDesc "Query the winning validators for an epoch.")
         )
 
 getFirstBlockEpochCommand :: Mod CommandFields LegacyCmd
