@@ -658,19 +658,25 @@ interactionOptsParser =
 programOptions :: Parser Options
 programOptions =
     Options
-        <$> hsubparser
-            ( metavar "command"
-                <> transactionCmds
-                <> accountCmds
-                <> moduleCmds
-                <> contractCmds
-                <> configCmds
-                <> consensusCmds
-                <> blockCmds
-                <> bakerCmds
-                <> delegatorCmds
-                <> identityCmds
-                <> rawCmds
+        <$> ( hsubparser
+                ( metavar "command"
+                    <> transactionCmds
+                    <> accountCmds
+                    <> moduleCmds
+                    <> contractCmds
+                    <> configCmds
+                    <> consensusCmds
+                    <> blockCmds
+                    <> bakerCmds "validator"
+                    <> delegatorCmds
+                    <> identityCmds
+                    <> rawCmds
+                )
+                <|> hsubparser
+                    ( metavar "command"
+                        <> bakerCmds "baker"
+                        <> internal
+                    )
             )
         <*> backendParser
         <*> optional (strOption (long "config" <> metavar "DIR" <> help "Path to the configuration directory."))
@@ -713,7 +719,7 @@ transactionSubmitCmd =
                 <$> strArgument (metavar "FILE" <> help "File containing the transaction parameters in JSON format.")
                 <*> interactionOptsParser
             )
-            (progDesc "Parse transaction and send it to the baker.")
+            (progDesc "Parse transaction and send it to the node.")
         )
 
 transactionDeployCredentialCmd :: Mod CommandFields TransactionCmd
@@ -725,7 +731,7 @@ transactionDeployCredentialCmd =
                 <$> strArgument (metavar "FILE" <> help "File containing the credential deployment information.")
                 <*> interactionOptsParser
             )
-            (progDesc "Parse credential and send it to the baker.")
+            (progDesc "Parse credential and send it to the node.")
         )
 
 transactionStatusCmd :: Mod CommandFields TransactionCmd
@@ -1556,10 +1562,14 @@ consensusShowParametersCmd =
         ( info
             ( ConsensusShowParameters
                 <$> optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\")."))
-                <*> switch (long "include-bakers" <> help "Include the \"lottery power\" of individual bakers.")
+                <*> ( switch (internal <> long "include-bakers" <> includeHelp)
+                        <|> switch (hidden <> long "include-validators" <> includeHelp)
+                    )
             )
             (progDesc "Show election parameters for given block.")
         )
+  where
+    includeHelp = help "Include the \"lottery power\" of individual validators."
 
 consensusShowChainParametersCmd :: Mod CommandFields ConsensusCmd
 consensusShowChainParametersCmd =
@@ -1605,14 +1615,14 @@ blockShowCmd =
             ( BlockShow
                 <$> optional (strArgument (metavar "BLOCK" <> help "Hash of the block (default: \"best\")."))
             )
-            (progDesc "Show the backend's information about a specific block. Note that some fields (e.g. slot time) are objective while others (e.g. arrival time) are specific to the particular baker being queried.")
+            (progDesc "Show the node's information about a specific block. Note that some fields (e.g. block time) are objective while others (e.g. arrival time) are specific to the particular node being queried.")
         )
 
-bakerCmds :: Mod CommandFields Cmd
-bakerCmds =
-    command
-        "baker"
-        ( info
+bakerCmds :: String -> Mod CommandFields Cmd
+bakerCmds name = command name subcommands
+  where
+    subcommands =
+        info
             ( BakerCmd
                 <$> hsubparser
                     ( bakerGenerateKeysCmd
@@ -1627,8 +1637,7 @@ bakerCmds =
                         <> bakerGetEarliestWinTime
                     )
             )
-            (progDesc "Commands for creating and deploying baker credentials.")
-        )
+            (progDesc "Commands for creating and deploying validator credentials.")
 
 delegatorCmds :: Mod CommandFields Cmd
 delegatorCmds =
@@ -1645,6 +1654,11 @@ delegatorCmds =
             (progDesc "Commands for delegation.")
         )
 
+validatorOrBakerId :: Parser (Maybe BakerId)
+validatorOrBakerId = common (internal <> long "baker-id") <|> common (long "validator-id")
+  where
+    common props = optional (option auto (props <> metavar "VALIDATORID" <> help "Optionally provide the validator id to be included with generated baker keys."))
+
 bakerGenerateKeysCmd :: Mod CommandFields BakerCmd
 bakerGenerateKeysCmd =
     command
@@ -1652,11 +1666,11 @@ bakerGenerateKeysCmd =
         ( info
             ( BakerGenerateKeys
                 <$> optional (strArgument (metavar "FILE" <> help "File to write keys to."))
-                <*> optional (option auto (long "baker-id" <> metavar "BAKERID" <> help "Optionally provide the baker id to be included with generated baker keys."))
+                <*> validatorOrBakerId
             )
             ( progDescDoc $
                 docFromLines
-                    [ "Create baker credentials and write them to a file or stdout.",
+                    [ "Create validator credentials and write them to a file or stdout.",
                       "If the output file is specified secret keys are written to it,",
                       " and public keys are written to the file with the same name but '.pub.json' extension.",
                       "Format:",
@@ -1678,27 +1692,32 @@ rangesHelpString name =
         ++ name
         ++ "."
 
+bakerOrValidatorUrl :: Parser String
+bakerOrValidatorUrl = strOption (internal <> long "baker-url" <> commonProps) <|> strOption (long "validator-url" <> commonProps)
+  where
+    commonProps = metavar "URL" <> help "A link to information about the validator."
+
 bakerAddCmd :: Mod CommandFields BakerCmd
 bakerAddCmd =
     command
         "add"
         ( info
             ( BakerAdd
-                <$> strArgument (metavar "FILE" <> help "File containing the baker credentials.")
+                <$> strArgument (metavar "FILE" <> help "File containing the validator credentials.")
                 <*> transactionOptsParser
                 <*> option (eitherReader amountFromStringInform) (long "stake" <> metavar "CCD-AMOUNT" <> help "The amount of CCD to stake.")
-                <*> (not <$> switch (long "no-restake" <> help "If supplied, the earnings will not be added to the baker stake automatically."))
+                <*> (not <$> switch (long "no-restake" <> help "If supplied, the earnings will not be added to the validator stake automatically."))
                 <*> optional
                     ( ExtraBakerAddData
                         <$> (option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> help helpOpenDelegationFor))
-                        <*> (strOption (long "baker-url" <> metavar "URL" <> help "A link to information about the baker."))
-                        <*> (option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission")))
-                        <*> (option (eitherReader amountFractionFromStringInform) (long "delegation-baking-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on baking rewards. " ++ rangesHelpString "baking reward commission")))
-                        <*> (option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission")))
+                        <*> bakerOrValidatorUrl
+                        <*> (option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission")))
+                        <*> (option (eitherReader amountFractionFromStringInform) (long "delegation-baking-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on baking rewards. " ++ rangesHelpString "baking reward commission")))
+                        <*> (option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission")))
                     )
-                <*> optional (strOption (long "out" <> metavar "FILE" <> help "File to write the baker credentials to, in case of successful transaction. These can be used to start the node."))
+                <*> optional (strOption (long "out" <> metavar "FILE" <> help "File to write the validator credentials to, in case of successful transaction. These can be used to start the node."))
             )
-            (progDesc "Deploy baker credentials to the chain.")
+            (progDesc "Deploy validator credentials to the chain.")
         )
 
 allowedValuesOpenDelegationForAsString :: String
@@ -1717,7 +1736,7 @@ openStatusFromStringInform s =
 
 helpOpenDelegationFor :: String
 helpOpenDelegationFor =
-    "Select whether the baker will allow other parties (delegators) to delegate CCD to the pool. Available values for SELECTION are:\n" ++ allowedValuesOpenDelegationForAsString ++ "."
+    "Select whether the validator will allow other parties (delegators) to delegate CCD to the pool. Available values for SELECTION are:\n" ++ allowedValuesOpenDelegationForAsString ++ "."
 
 bakerConfigureCmd :: Mod CommandFields BakerCmd
 bakerConfigureCmd =
@@ -1728,18 +1747,18 @@ bakerConfigureCmd =
                 <$> transactionOptsParser
                 <*> optional (option (eitherReader amountFromStringInform) (long "stake" <> metavar "CCD-AMOUNT" <> help "The amount of CCD to stake."))
                 <*> optional
-                    ( flag' True (long "restake" <> help "The earnings will be added to the baker stake automatically.")
-                        <|> flag' False (long "no-restake" <> help "The earnings will not be added to the baker stake automatically.")
+                    ( flag' True (long "restake" <> help "The earnings will be added to the validator stake automatically.")
+                        <|> flag' False (long "no-restake" <> help "The earnings will not be added to the validator stake automatically.")
                     )
                 <*> optional (option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> help helpOpenDelegationFor))
-                <*> optional (strOption (long "baker-url" <> metavar "URL" <> help "A link to information about the baker."))
-                <*> optional (option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission")))
-                <*> optional (option (eitherReader amountFractionFromStringInform) (long "delegation-baking-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on baking rewards. " ++ rangesHelpString "baking reward commission")))
-                <*> optional (option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the baker takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission")))
-                <*> optional (strOption (long "keys-in" <> metavar "FILE" <> help "File containing baker credentials."))
-                <*> optional (strOption (long "keys-out" <> metavar "FILE" <> help "File to write updated baker credentials to, in case of successful transaction. These can be used to start the node."))
+                <*> optional bakerOrValidatorUrl
+                <*> optional (option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission")))
+                <*> optional (option (eitherReader amountFractionFromStringInform) (long "delegation-baking-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on baking rewards. " ++ rangesHelpString "baking reward commission")))
+                <*> optional (option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission")))
+                <*> optional (strOption (long "keys-in" <> metavar "FILE" <> help "File containing validator credentials."))
+                <*> optional (strOption (long "keys-out" <> metavar "FILE" <> help "File to write updated validator credentials to, in case of successful transaction. These can be used to start the node."))
             )
-            (progDesc "Add a new baker, remove an existing baker or update an existing baker.")
+            (progDesc "Add a new validator, update or remove an existing one.")
         )
 
 bakerUpdateUpdateMetadataURL :: Mod CommandFields BakerCmd
@@ -1748,10 +1767,10 @@ bakerUpdateUpdateMetadataURL =
         "update-url"
         ( info
             ( BakerUpdateMetadataURL
-                <$> strArgument (metavar "URL" <> help "Link to information about the baker.")
+                <$> strArgument (metavar "URL" <> help "Link to information about the validator.")
                 <*> transactionOptsParser
             )
-            (progDesc "Change link to information about the baker.")
+            (progDesc "Change link to information about the validator.")
         )
 
 bakerUpdateOpenDelegationStatus :: Mod CommandFields BakerCmd
@@ -1763,7 +1782,7 @@ bakerUpdateOpenDelegationStatus =
                 <$> argument (eitherReader openStatusFromStringInform) (metavar "SELECTION" <> help helpOpenDelegationFor)
                 <*> transactionOptsParser
             )
-            (progDesc "Change whether to allow other parties to delegate stake to the baker.")
+            (progDesc "Change whether to allow other parties to delegate stake to the validator.")
         )
 
 bakerGetEarliestWinTime :: Mod CommandFields BakerCmd
@@ -1772,7 +1791,7 @@ bakerGetEarliestWinTime =
         "win-time"
         ( info
             ( BakerGetEarliestWinTime
-                <$> argument auto (metavar "BAKER-ID" <> help "Baker ID to query.")
+                <$> argument auto (metavar "VALIDATOR-ID" <> help "Validator ID to query.")
                 <*> switch
                     ( long "local-time"
                         <> help "Display time in the local time zone (instead of UTC)."
@@ -1782,7 +1801,7 @@ bakerGetEarliestWinTime =
                         <> help "Repeatedly poll for the latest time."
                     )
             )
-            (progDesc "Show the earliest time the baker may be expected to bake a block.")
+            (progDesc "Show the earliest time the validator may be expected to produce a block.")
         )
 
 bakerSetKeysCmd :: Mod CommandFields BakerCmd
@@ -1793,11 +1812,11 @@ bakerSetKeysCmd =
             ( BakerSetKeys
                 <$> strArgument (metavar "FILE" <> help "File containing the new public and private keys.")
                 <*> transactionOptsParser
-                <*> optional (strOption (long "out" <> metavar "FILE" <> help "File to write the baker credentials to, in case of succesful transaction. These can be used to start the node."))
+                <*> optional (strOption (long "out" <> metavar "FILE" <> help "File to write the validator credentials to, in case of succesful transaction. These can be used to start the node."))
             )
             ( progDescDoc $
                 docFromLines
-                    [ "Update the keys of a baker. Expected format of the key file:",
+                    [ "Update the keys of a validator. Expected format of the key file:",
                       "   {",
                       "     \"signatureSignKey\": ...,",
                       "     \"signatureVerifyKey\": ...",
@@ -1818,7 +1837,7 @@ bakerRemoveCmd =
             ( BakerRemove
                 <$> transactionOptsParser
             )
-            (progDesc "Remove a baker from the chain.")
+            (progDesc "Remove a validator from the chain.")
         )
 
 bakerUpdateRestakeCmd :: Mod CommandFields BakerCmd
@@ -1842,17 +1861,17 @@ bakerUpdateStakeCmd =
                 <$> option (eitherReader amountFromStringInform) (long "stake" <> metavar "CCD-AMOUNT" <> help "The amount of CCD to stake.")
                 <*> transactionOptsParser
             )
-            (progDesc "Update the amount staked for the baker.")
+            (progDesc "Update the amount staked for the validator.")
         )
 
 allowedValuesDelegationTargetAsString :: String
 allowedValuesDelegationTargetAsString =
-    "'Passive' (for passive delegation), BAKERID (delegate stake to baker pool with baker id BAKERID), ACCOUNT (delegate stake to baker with account ACCOUNT)"
+    "'Passive' (for passive delegation), VALIDATORID (delegate stake to a staking pool with validator id VALIDATORID), ACCOUNT (delegate stake to validator with account ACCOUNT)"
 
 helpDelegationTarget :: Mod OptionFields Text
 helpDelegationTarget =
     help $
-        "Select whether to delegate stake passively or to a baker. Available values for TARGET are: " ++ allowedValuesDelegationTargetAsString ++ "."
+        "Select whether to delegate stake passively or to a staking pool. Available values for TARGET are: " ++ allowedValuesDelegationTargetAsString ++ "."
 
 delegatorConfigureCmd :: Mod CommandFields DelegatorCmd
 delegatorConfigureCmd =

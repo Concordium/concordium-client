@@ -4,6 +4,10 @@
 
 - Revise client's reconnect handling so that the client will no longer attempt
   to automatically reconnect on timeouts and node resource exhaustion.
+- Rename bakers to validators in output.
+- Add additional configuration options that use `validator` in place of `baker`.
+  For example `concordium-client validator add`.
+  The older options still exist, but are hidden.
 
 ## 6.1.0
 

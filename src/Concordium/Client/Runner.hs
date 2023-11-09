@@ -660,7 +660,7 @@ processTransactionCmd action baseCfgDir verbose backend =
             withClient backend $ do
                 tx <- processTransaction source
                 let hash = getBlockItemHash tx
-                logSuccess [printf "transaction '%s' sent to the baker" (show hash)]
+                logSuccess [printf "transaction '%s' sent to the node" (show hash)]
                 when (ioTail intOpts) $ do
                     tailTransaction_ verbose hash
         --          logSuccess [ "transaction successfully completed" ]
@@ -670,7 +670,7 @@ processTransactionCmd action baseCfgDir verbose backend =
             withClient backend $ do
                 tx <- processCredential source
                 let hash = getBlockItemHash tx
-                logSuccess [printf "transaction '%s' sent to the baker" (show hash)]
+                logSuccess [printf "transaction '%s' sent to the node" (show hash)]
                 when (ioTail intOpts) $ do
                     tailTransaction_ verbose hash
         --          logSuccess [ "credential deployed successfully" ]
@@ -1348,7 +1348,7 @@ getBakerStakeThresholdOrDie = do
             StatusInvalid -> Left "GRPC response contained an invalid status code."
             RequestFailed err -> Left $ "I/O error: " <> err
     case res of
-        Left err -> logFatal ["Could not retrieve the baker stake threshold: " <> err]
+        Left err -> logFatal ["Could not retrieve the validator stake threshold: " <> err]
         Right (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) ->
             return $ case Types.chainParametersVersion @cpv of
                 Types.SChainParametersV0 -> ecpParams ^. cpPoolParameters . ppBakerStakeThreshold
@@ -1460,7 +1460,7 @@ accountDecryptTransactionConfirm AccountDecryptTransactionConfig{..} confirm = d
         confirmed <- askConfirmation Nothing
         unless confirmed exitTransactionCancelled
 
--- | Encode, sign, and send transaction off to the baker.
+-- | Encode, sign, and send transaction off to the node.
 --  If confirmNonce is set, the user is asked to confirm using the next nonce
 --  if there are pending transactions.
 startTransaction ::
@@ -1495,7 +1495,7 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
             StatusInvalid -> Left "GRPC response contained an invalid status code."
             RequestFailed err -> Left $ "I/O error: " <> err
     case res of
-        Left err -> logFatal ["Transaction not accepted by the baker: " <> err]
+        Left err -> logFatal ["Transaction not accepted by the node: " <> err]
         Right _ -> return tx
 
 -- | Fetch next nonces relative to the account's most recently committed and
@@ -1552,7 +1552,7 @@ sendAndTailTransaction ::
 sendAndTailTransaction verbose txCfg pl intOpts = do
     tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
     let hash = getBlockItemHash tx
-    logSuccess [printf "transaction '%s' sent to the baker" (show hash)]
+    logSuccess [printf "transaction '%s' sent to the node" (show hash)]
     if ioTail intOpts
         then Just <$> tailTransaction verbose hash
         else return Nothing
@@ -2810,9 +2810,9 @@ processConsensusCmd action _baseCfgDir verbose backend =
                         StatusInvalid -> Left "GRPC response contained an invalid status code."
                         RequestFailed err -> Left $ "I/O error: " <> err
                 case res of
-                    Left err -> logFatal ["Transaction not accepted by the baker: " <> err]
+                    Left err -> logFatal ["Transaction not accepted by the node: " <> err]
                     Right _ -> do
-                        logSuccess [[i|Update instruction '#{hash}' sent to the baker|]]
+                        logSuccess [[i|Update instruction '#{hash}' sent to the node|]]
                         when (ioTail intOpts) $
                             tailTransaction_ verbose hash
 
@@ -2919,11 +2919,11 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
                 _ -> do
                     logWarn $
                         [ init
-                            ( "To add a baker, more options are necessary. The following are missing "
+                            ( "To add a validator, more options are necessary. The following are missing "
                                 ++ (if isNothing cbCapital then "\n--stake," else "")
                                 ++ (if isNothing cbOpenForDelegation then "\n--open-delegation-for," else "")
                                 ++ (if isNothing inputKeysFile then "\n--keys-in," else "")
-                                ++ (if isNothing metadataURL then "\n--baker-url," else "")
+                                ++ (if isNothing metadataURL then "\n--validator-url," else "")
                                 ++ (if isNothing cbTransactionFeeCommission then "\n--delegation-transaction-fee-commission," else "")
                                 ++ (if isNothing cbBakingRewardCommission then "\n--delegation-baking-commission," else "")
                                 ++ (if isNothing cbFinalizationRewardCommission then "\n--delegation-finalization-commission," else "")
@@ -2933,13 +2933,13 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
                     confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
                     unless confirmed exitTransactionCancelled
     askUntilEqual credentials = do
-        pwd <- askPassword "Enter password for encryption of baker credentials (leave blank for no encryption): "
+        pwd <- askPassword "Enter password for encryption of validator credentials (leave blank for no encryption): "
         case Password.getPassword pwd of
             "" -> do
-                logInfo [printf "Empty password, not encrypting baker credentials"]
+                logInfo [printf "Empty password, not encrypting validator credentials"]
                 return $ AE.encodePretty credentials
             _ -> do
-                pwd2 <- askPassword "Re-enter password for encryption of baker credentials: "
+                pwd2 <- askPassword "Re-enter password for encryption of validator credentials: "
                 if pwd == pwd2
                     then AE.encodePretty <$> Password.encryptJSON Password.AES256 Password.PBKDF2SHA256 credentials pwd
                     else do
@@ -2976,10 +2976,10 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
                 logFatal ["Unexpected status."]
 
     tryPrintKeyUpdateEventToOutputFile bakerKeys Types.BakerAdded{..} = do
-        logInfo ["Baker with ID " ++ show ebaBakerId ++ " added."]
+        logInfo ["Validator with ID " ++ show ebaBakerId ++ " added."]
         printToOutputFileIfJust bakerKeys ebaBakerId
     tryPrintKeyUpdateEventToOutputFile bakerKeys Types.BakerKeysUpdated{..} = do
-        logInfo ["Keys for baker with ID " ++ show ebkuBakerId ++ " updated."]
+        logInfo ["Keys for validator with ID " ++ show ebkuBakerId ++ " updated."]
         printToOutputFileIfJust bakerKeys ebkuBakerId
     tryPrintKeyUpdateEventToOutputFile _ _ = return ()
 
@@ -3006,7 +3006,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
     warnIfCapitalIsSmall capital = when (capital /= 0) $ do
         minimumBakerStake <- getBakerStakeThresholdOrDie
         when (capital < minimumBakerStake) $ do
-            logWarn [[i|The staked amount (#{showCcd capital}) is lower than the minimum baker stake threshold (#{showCcd minimumBakerStake}).|]]
+            logWarn [[i|The staked amount (#{showCcd capital}) is lower than the minimum validator stake threshold (#{showCcd minimumBakerStake}).|]]
             confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
             unless confirmed exitTransactionCancelled
 
@@ -3015,26 +3015,26 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
             bcpRes <- getBlockChainParameters Best
             case getResponseValue bcpRes of
                 Left (_, err) -> do
-                    logError ["Could not get the baker cooldown period: " <> err]
+                    logError ["Could not get the validator cooldown period: " <> err]
                     exitTransactionCancelled
                 Right v -> getBakerCooldown v
         when (capital < stakedAmount) $ do
             let removing = capital == 0
             if removing
-                then logWarn ["This will remove the baker."]
-                else logWarn ["The new staked value appears to be lower than the amount currently staked on chain by this baker."]
-            let decreaseOrRemove = if removing then "Removing a baker" else "Decreasing the amount a baker is staking"
-            logWarn [decreaseOrRemove ++ " will lock the stake of the baker for a cooldown period before the CCD are made available."]
-            logWarn ["During this period it is not possible to update the baker's stake, or stop the baker."]
-            logWarn [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
-            let confirmStr = if removing then "remove the baker" else "update the baker's stake"
+                then logWarn ["This will remove the validator."]
+                else logWarn ["The new staked value appears to be lower than the amount currently staked on chain by this validator."]
+            let decreaseOrRemove = if removing then "Removing a validator" else "Decreasing the amount a validator is staking"
+            logWarn [decreaseOrRemove ++ " will lock the stake of the validator for a cooldown period before the CCD are made available."]
+            logWarn ["During this period it is not possible to update the validator's stake, or stop the validator."]
+            logWarn [[i|The current validator cooldown would last until approximately #{cooldownDate}|]]
+            let confirmStr = if removing then "remove the validator" else "update the validator's stake"
             confirmed <- askConfirmation $ Just $ "Confirm that you want to " ++ confirmStr
             unless confirmed exitTransactionCancelled
 
     warnIfCapitalIsBig capital amount =
         when ((capital * 100) > (amount * 95)) $ do
             logWarn ["You are attempting to stake >95% of your total CCD on this account. Staked CCD is not available for spending."]
-            logWarn ["Be aware that updating or stopping your baker in the future will require some amount of non-staked CCD to pay for the transactions to do so."]
+            logWarn ["Be aware that updating or stopping your validator in the future will require some amount of non-staked CCD to pay for the transactions to do so."]
             confirmed <- askConfirmation $ Just "Confirm that you wish to stake this much CCD"
             unless confirmed exitTransactionCancelled
 
@@ -3051,7 +3051,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
                 Just _ -> return . Just $ bakerConfigureEnergyCostWithKeys (Types.payloadSize payload)
         txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
         logSuccess
-            ( [ printf "configuring baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData)),
+            ( [ printf "configuring validator with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData)),
                 printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
               ]
                 ++ configureCapitalLogMsg
@@ -3083,9 +3083,9 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
     configureOpenForDelegationLogMsg =
         case cbOpenForDelegation of
             Nothing -> []
-            Just Types.OpenForAll -> ["baker pool will be open for delegation"]
-            Just Types.ClosedForNew -> ["baker pool will be closed for new delegators"]
-            Just Types.ClosedForAll -> ["baker pool will be closed for delegators and existing delegators will be moved to passive delegation"]
+            Just Types.OpenForAll -> ["staking pool will be open for delegation"]
+            Just Types.ClosedForNew -> ["staking pool will be closed for new delegators"]
+            Just Types.ClosedForAll -> ["staking pool will be closed for delegators and existing delegators will be moved to passive delegation"]
 
     configureTransactionFeeCommissionLogMsg =
         case cbTransactionFeeCommission of
@@ -3108,7 +3108,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
             Nothing -> return (Nothing, Nothing)
             Just inf -> do
                 bakerKeysMaybeEncrypted <- handleReadFile BS.readFile inf
-                let pwdAction = askPassword "Enter password for decrypting baker keys: "
+                let pwdAction = askPassword "Enter password for decrypting validator keys: "
                 Password.decodeMaybeEncrypted pwdAction bakerKeysMaybeEncrypted >>= \case
                     Left err -> logFatal [printf "error: %s" err]
                     Right (keys, enc) -> do
@@ -3155,13 +3155,13 @@ processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarn
         mapM_ (tryPrintKeyUpdateEventToOutputFile bakerKeys) events
   where
     askUntilEqual credentials = do
-        pwd <- askPassword "Enter password for encryption of baker credentials (leave blank for no encryption): "
+        pwd <- askPassword "Enter password for encryption of validator credentials (leave blank for no encryption): "
         case Password.getPassword pwd of
             "" -> do
-                logInfo [printf "Empty password, not encrypting baker credentials"]
+                logInfo [printf "Empty password, not encrypting validator credentials"]
                 return $ AE.encodePretty credentials
             _ -> do
-                pwd2 <- askPassword "Re-enter password for encryption of baker credentials: "
+                pwd2 <- askPassword "Re-enter password for encryption of validator credentials: "
                 if pwd == pwd2
                     then AE.encodePretty <$> Password.encryptJSON Password.AES256 Password.PBKDF2SHA256 credentials pwd
                     else do
@@ -3218,14 +3218,14 @@ processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarn
     warnIfCapitalIsSmall capital = do
         minimumBakerStake <- getBakerStakeThresholdOrDie
         when (capital < minimumBakerStake) $ do
-            logWarn [[i|The staked amount (#{showCcd capital}) is lower than the minimum baker stake threshold (#{showCcd minimumBakerStake}).|]]
+            logWarn [[i|The staked amount (#{showCcd capital}) is lower than the minimum validator stake threshold (#{showCcd minimumBakerStake}).|]]
             confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
             unless confirmed exitTransactionCancelled
 
     warnIfCapitalIsBig capital amount =
         when ((capital * 100) > (amount * 95)) $ do
             logWarn ["You are attempting to stake >95% of your total CCD on this account. Staked CCD is not available for spending."]
-            logWarn ["Be aware that updating or stopping your baker in the future will require some amount of non-staked CCD to pay for the transactions to do so."]
+            logWarn ["Be aware that updating or stopping your validator in the future will require some amount of non-staked CCD to pay for the transactions to do so."]
             confirmed <- askConfirmation $ Just "Confirm that you wish to stake this much CCD"
             unless confirmed exitTransactionCancelled
 
@@ -3249,7 +3249,7 @@ processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarn
             nrgCost _ = return . Just $ bakerAddEnergyCost $ Types.payloadSize payload
         txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
         logSuccess
-            ( [ printf "adding baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData)),
+            ( [ printf "adding validator with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData)),
                 printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
               ]
                 ++ configureCapitalLogMsg
@@ -3315,13 +3315,13 @@ processBakerSetKeysCmd baseCfgDir verbose backend txOpts inputKeysFile outputKey
         mapM_ (tryPrintKeyUpdateEventToOutputFile bakerKeys) events
   where
     askUntilEqual credentials = do
-        pwd <- askPassword "Enter password for encryption of baker credentials (leave blank for no encryption): "
+        pwd <- askPassword "Enter password for encryption of validator credentials (leave blank for no encryption): "
         case Password.getPassword pwd of
             "" -> do
-                logInfo [printf "Empty password, not encrypting baker credentials"]
+                logInfo [printf "Empty password, not encrypting validator credentials"]
                 return $ AE.encodePretty credentials
             _ -> do
-                pwd2 <- askPassword "Re-enter password for encryption of baker credentials: "
+                pwd2 <- askPassword "Re-enter password for encryption of validator credentials: "
                 if pwd == pwd2
                     then AE.encodePretty <$> Password.encryptJSON Password.AES256 Password.PBKDF2SHA256 credentials pwd
                     else do
@@ -3354,7 +3354,7 @@ processBakerSetKeysCmd baseCfgDir verbose backend txOpts inputKeysFile outputKey
                 logFatal ["Unexpected status."]
 
     tryPrintKeyUpdateEventToOutputFile bakerKeys Types.BakerKeysUpdated{..} = do
-        logInfo ["Keys for baker with ID " ++ show ebkuBakerId ++ " updated."]
+        logInfo ["Keys for validator with ID " ++ show ebkuBakerId ++ " updated."]
         printToOutputFileIfJust bakerKeys ebkuBakerId
     tryPrintKeyUpdateEventToOutputFile _ _ = return ()
 
@@ -3378,7 +3378,7 @@ processBakerSetKeysCmd baseCfgDir verbose backend txOpts inputKeysFile outputKey
             nrgCost _ = return . Just $ bakerSetKeysEnergyCost $ Types.payloadSize payload
         txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
         logSuccess
-            ( [ printf "setting new keys for baker with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData)),
+            ( [ printf "setting new keys for validator with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData)),
                 printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
               ]
             )
@@ -3393,7 +3393,7 @@ processBakerSetKeysCmd baseCfgDir verbose backend txOpts inputKeysFile outputKey
     readInputKeysFile baseCfg = do
         encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
         bakerKeysMaybeEncrypted <- handleReadFile BS.readFile inputKeysFile
-        let pwdAction = askPassword "Enter password for decrypting baker keys: "
+        let pwdAction = askPassword "Enter password for decrypting validator keys: "
         Password.decodeMaybeEncrypted pwdAction bakerKeysMaybeEncrypted >>= \case
             Left err -> logFatal [printf "error: %s" err]
             Right (keys, enc) -> do
@@ -3434,14 +3434,14 @@ processBakerRemoveCmd baseCfgDir verbose backend txOpts = do
             bcpRes <- getBlockChainParameters Best
             case getResponseValue bcpRes of
                 Left (_, err) -> do
-                    logError ["Could not get the baker cooldown period: " <> err]
+                    logError ["Could not get the validator cooldown period: " <> err]
                     exitTransactionCancelled
                 Right v -> do
                     getBakerCooldown v
-        logWarn ["Stopping a baker that is staking will lock the stake of the baker for a cooldown period before the CCD are made available."]
-        logWarn ["During this period it is not possible to update the baker's stake, or restart the baker."]
-        logWarn [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
-        confirmed <- askConfirmation $ Just "Confirm that you want to send the transaction to stop this baker"
+        logWarn ["Stopping a validator that is staking will lock the stake of the validator for a cooldown period before the CCD are made available."]
+        logWarn ["During this period it is not possible to update the validator's stake, or restart the validator."]
+        logWarn [[i|The current validator cooldown would last until approximately #{cooldownDate}|]]
+        confirmed <- askConfirmation $ Just "Confirm that you want to send the transaction to stop this validator"
         unless confirmed exitTransactionCancelled
 
     transactionForBakerRemove confirm = do
@@ -3450,7 +3450,7 @@ processBakerRemoveCmd baseCfgDir verbose backend txOpts = do
             nrgCost _ = return . Just $ bakerRemoveEnergyCost $ Types.payloadSize payload
         txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
         logSuccess
-            ( [ printf "submitting transaction to remove baker with %s" (show (naAddr $ esdAddress tcEncryptedSigningData)),
+            ( [ printf "submitting transaction to remove validator with %s" (show (naAddr $ esdAddress tcEncryptedSigningData)),
                 printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
               ]
             )
@@ -3501,7 +3501,7 @@ processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = 
     warnIfCapitalIsSmall capital = do
         minimumBakerStake <- getBakerStakeThresholdOrDie
         when (capital < minimumBakerStake) $ do
-            logWarn [[i|The staked amount (#{showCcd capital}) is lower than the minimum baker stake threshold (#{showCcd minimumBakerStake}).|]]
+            logWarn [[i|The staked amount (#{showCcd capital}) is lower than the minimum validator stake threshold (#{showCcd minimumBakerStake}).|]]
             confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
             unless confirmed exitTransactionCancelled
 
@@ -3510,27 +3510,27 @@ processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = 
             bcpRes <- getBlockChainParameters Best
             case getResponseValue bcpRes of
                 Left (_, err) -> do
-                    logError ["Could not get the baker cooldown period: " <> err]
+                    logError ["Could not get the validator cooldown period: " <> err]
                     exitTransactionCancelled
                 Right v -> do
                     getBakerCooldown v
         if capital < stakedAmount
             then do
-                logWarn ["The new staked value appears to be lower than the amount currently staked on chain by this baker."]
-                logWarn ["Decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the CCD are made available."]
-                logWarn ["During this period it is not possible to update the baker's stake, or stop the baker."]
-                logWarn [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
-                confirmed <- askConfirmation $ Just "Confirm that you want to update the baker's stake"
+                logWarn ["The new staked value appears to be lower than the amount currently staked on chain by this validator."]
+                logWarn ["Decreasing the amount a validator is staking will lock the stake of the validator for a cooldown period before the CCD are made available."]
+                logWarn ["During this period it is not possible to update the validator's stake, or stop the validator."]
+                logWarn [[i|The current validator cooldown would last until approximately #{cooldownDate}|]]
+                confirmed <- askConfirmation $ Just "Confirm that you want to update the validator's stake"
                 unless confirmed exitTransactionCancelled
             else do
-                logInfo ["Note that decreasing the amount a baker is staking will lock the stake of the baker for a cooldown period before the CCD are made available."]
-                logInfo ["During this period it is not possible to update the baker's stake, or stop the baker."]
-                logInfo [[i|The current baker cooldown would last until approximately #{cooldownDate}|]]
+                logInfo ["Note that decreasing the amount a validator is staking will lock the stake of the validator for a cooldown period before the CCD are made available."]
+                logInfo ["During this period it is not possible to update the validator's stake, or stop the validator."]
+                logInfo [[i|The current validator cooldown would last until approximately #{cooldownDate}|]]
 
     warnIfCapitalIsBig capital amount =
         when ((capital * 100) > (amount * 95)) $ do
             logWarn ["You are attempting to stake >95% of your total CCD on this account. Staked CCD is not available for spending."]
-            logWarn ["Be aware that updating or stopping your baker in the future will require some amount of non-staked CCD to pay for the transactions to do so."]
+            logWarn ["Be aware that updating or stopping your validator in the future will require some amount of non-staked CCD to pay for the transactions to do so."]
             confirmed <- askConfirmation $ Just "Confirm that you wish to stake this much CCD"
             unless confirmed exitTransactionCancelled
 
@@ -3540,7 +3540,7 @@ processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = 
             nrgCost _ = return . Just $ bakerUpdateStakeEnergyCost $ Types.payloadSize payload
         txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
         logSuccess
-            ( [ printf "submitting transaction to update stake of baker to %s" (showCcd ubsStake),
+            ( [ printf "submitting transaction to update stake of validator to %s" (showCcd ubsStake),
                 printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
               ]
             )
@@ -3573,7 +3573,7 @@ processBakerUpdateRestakeCmd baseCfgDir verbose backend txOpts ubreRestakeEarnin
             nrgCost _ = return . Just $ bakerUpdateRestakeEnergyCost $ Types.payloadSize payload
         txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
         logSuccess
-            ( [ printf "submitting transaction to change restaking switch of baker to %s" (show ubreRestakeEarnings),
+            ( [ printf "submitting transaction to change restaking switch of validator to %s" (show ubreRestakeEarnings),
                 printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
               ]
             )
@@ -3598,8 +3598,8 @@ processBakerUpdateStakeCmd baseCfgDir verbose backend txOpts newStake = do
     ok <-
         if newStake == 0
             then do
-                logWarn ["Updating stake to 0 will remove baker", "it is possible to add the baker back with a 'baker add' transaction"]
-                askConfirmation $ Just "confirm that you want to remove baker"
+                logWarn ["Updating stake to 0 will remove validator", "it is possible to add the validator back with a 'validator add' transaction"]
+                askConfirmation $ Just "confirm that you want to remove validator"
             else return True
     when ok $
         processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just newStake) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
@@ -3611,13 +3611,13 @@ processBakerCmd action baseCfgDir verbose backend =
         BakerGenerateKeys outputFile maybeBakerId -> do
             keys <- generateBakerKeys maybeBakerId
             let askUntilEqual = do
-                    pwd <- askPassword "Enter password for encryption of baker keys (leave blank for no encryption): "
+                    pwd <- askPassword "Enter password for encryption of validator keys (leave blank for no encryption): "
                     case Password.getPassword pwd of
                         "" -> do
-                            logInfo [printf "Empty password, not encrypting baker keys"]
+                            logInfo [printf "Empty password, not encrypting validator keys"]
                             return $ AE.encodePretty keys
                         _ -> do
-                            pwd2 <- askPassword "Re-enter password for encryption of baker keys: "
+                            pwd2 <- askPassword "Re-enter password for encryption of validator keys: "
                             if pwd == pwd2
                                 then AE.encodePretty <$> Password.encryptJSON Password.AES256 Password.PBKDF2SHA256 keys pwd
                                 else do
@@ -3629,7 +3629,7 @@ processBakerCmd action baseCfgDir verbose backend =
                 Nothing -> do
                     -- TODO Store in config.
                     BSL8.putStrLn out
-                    logInfo [printf "to add a baker to the chain using these keys, store it in a file and use 'concordium-client baker add FILE'"]
+                    logInfo [printf "to add a validator to the chain using these keys, store it in a file and use 'concordium-client validator add FILE'"]
                 Just f -> do
                     keysSuccess <- handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose f out
                     when keysSuccess $ do
@@ -3637,7 +3637,7 @@ processBakerCmd action baseCfgDir verbose backend =
                         logSuccess
                             [ printf "keys written to file '%s'" f,
                               "DO NOT LOSE THIS FILE",
-                              printf "to add a baker to the chain using these keys, use 'concordium-client baker add %s'" f
+                              printf "to add a validator to the chain using these keys, use 'concordium-client validator add %s'" f
                             ]
                         pubSuccess <- handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose pubFile publicBakerKeysJSON
                         when pubSuccess $ do
@@ -3651,9 +3651,9 @@ processBakerCmd action baseCfgDir verbose backend =
                 else do
                     when (isNothing extraData) $ do
                         logWarn $
-                            [ "To add a baker, all of the options\n"
+                            [ "To add a validator, all of the options\n"
                                 ++ "--open-delegation-for,\n"
-                                ++ "--baker-url,\n"
+                                ++ "--validator-url,\n"
                                 ++ "--delegation-transaction-fee-commission,\n"
                                 ++ "--delegation-baking-commission,\n"
                                 ++ "--delegation-finalization-commission\nmust be present"
@@ -3702,7 +3702,7 @@ processBakerCmd action baseCfgDir verbose backend =
             processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing Nothing (Just status) Nothing Nothing Nothing Nothing Nothing Nothing
         BakerGetEarliestWinTime bakerId useLocalTime doPoll -> do
             winTimestamp <- getWinTimestamp
-            putStrLn [i|Baker #{bakerId} is expected to bake no sooner than:|]
+            putStrLn [i|Validator #{bakerId} is expected to produce a block no sooner than:|]
             if doPoll then polling 0 (0 :: Int) winTimestamp else void $ displayTime 0 winTimestamp
             putStrLn ""
           where
@@ -3879,7 +3879,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
         case cdDelegationTarget of
             Nothing -> []
             Just Types.DelegatePassive -> ["stake will be delegated passively"]
-            Just (Types.DelegateToBaker bid) -> [printf "stake will be delegated to baker %s" (show bid)]
+            Just (Types.DelegateToBaker bid) -> [printf "stake will be delegated to validator %s" (show bid)]
 
 -- | Process a 'delegator ...' command.
 processDelegatorCmd :: DelegatorCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -3908,7 +3908,7 @@ processDelegatorCmd action baseCfgDir verbose backend =
                         in  if n >= 0 && n <= fromIntegral (maxBound :: Word64)
                                 then return $ Just $ Types.DelegateToBaker $ Types.BakerId $ Types.AccountIndex w
                                 else do
-                                    logWarn $ ["The BAKERID '" ++ s ++ "'" ++ " is out of range."]
+                                    logWarn $ ["The VALIDATORID '" ++ s ++ "'" ++ " is out of range."]
                                     exitTransactionCancelled
                 s -> do
                     logWarn $ ["Unexpected delegation target '" ++ s ++ "'. The allowed values are: " ++ COM.allowedValuesDelegationTargetAsString]
@@ -3948,7 +3948,7 @@ processLegacyCmd action backend =
             source <- handleReadFile BSL.readFile fname
             t <- withClient backend $ processTransaction source
             putStrLn $
-                "Transaction sent to the baker. Its hash is "
+                "Transaction sent to the node. Its hash is "
                     ++ show (getBlockItemHash t)
         GetConsensusInfo ->
             withClient backend $
