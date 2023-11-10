@@ -1657,7 +1657,7 @@ delegatorCmds =
 validatorOrBakerId :: Parser (Maybe BakerId)
 validatorOrBakerId = common (internal <> long "baker-id") <|> common (long "validator-id")
   where
-    common props = optional (option auto (props <> metavar "VALIDATORID" <> help "Optionally provide the validator id to be included with generated baker keys."))
+    common props = optional (option auto (props <> metavar "VALIDATORID" <> help "Optionally provide the validator id to be included with generated validator keys."))
 
 bakerGenerateKeysCmd :: Mod CommandFields BakerCmd
 bakerGenerateKeysCmd =
