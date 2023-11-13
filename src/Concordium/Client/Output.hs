@@ -250,7 +250,7 @@ printAccountInfo addr a verbose showEncrypted mEncKey = do
     case Types.aiStakingInfo a of
         Types.AccountStakingNone -> tell ["Baking or delegating stake: no"]
         Types.AccountStakingBaker{..} -> do
-            let bkid = [i|Baker: \##{show . Types._bakerIdentity $ asiBakerInfo}|]
+            let bkid = [i|Validator: \##{show . Types._bakerIdentity $ asiBakerInfo}|]
                 stkstr = [i| - Staked amount: #{showCcd asiStakedAmount}|]
             case asiPendingChange of
                 Types.NoChange ->
@@ -273,7 +273,7 @@ printAccountInfo addr a verbose showEncrypted mEncKey = do
             tell ["Delegating stake: yes"]
             let targetStr = case asiDelegationTarget of
                     Types.DelegatePassive -> "Passive delegation"
-                    Types.DelegateToBaker bid -> "Baker pool with ID " ++ show bid
+                    Types.DelegateToBaker bid -> "Staking pool with ID " ++ show bid
             let target = [i|Delegation target: #{targetStr}|]
                 stkstr = [i| - Staked amount: #{showCcd asiStakedAmount}|]
             case asiDelegationPendingChange of
@@ -793,29 +793,29 @@ showEvent verbose ciM = \case
         verboseOrNothing $ printf "credential with registration '%s' deployed onto account '%s'" (show ecdRegId) (show ecdAccount)
     Types.BakerAdded{..} ->
         let restakeString :: String = if ebaRestakeEarnings then "Earnings are added to the stake." else "Earnings are not added to the stake."
-        in  verboseOrNothing $ printf "baker %s added, staking %s CCD. %s" (showBaker ebaBakerId ebaAccount) (Types.amountToString ebaStake) restakeString
+        in  verboseOrNothing $ printf "validator %s added, staking %s CCD. %s" (showBaker ebaBakerId ebaAccount) (Types.amountToString ebaStake) restakeString
     Types.BakerRemoved{..} ->
-        verboseOrNothing $ printf "baker %s, removed" (showBaker ebrBakerId ebrAccount)
+        verboseOrNothing $ printf "validator %s, removed" (showBaker ebrBakerId ebrAccount)
     Types.BakerStakeIncreased{..} ->
-        verboseOrNothing $ printf "baker %s stake increased to %s" (showBaker ebsiBakerId ebsiAccount) (showCcd ebsiNewStake)
+        verboseOrNothing $ printf "validator %s stake increased to %s" (showBaker ebsiBakerId ebsiAccount) (showCcd ebsiNewStake)
     Types.BakerStakeDecreased{..} ->
-        verboseOrNothing $ printf "baker %s stake decreased to %s" (showBaker ebsiBakerId ebsiAccount) (showCcd ebsiNewStake)
+        verboseOrNothing $ printf "validator %s stake decreased to %s" (showBaker ebsiBakerId ebsiAccount) (showCcd ebsiNewStake)
     Types.BakerSetRestakeEarnings{..} ->
-        verboseOrNothing $ printf "baker %s restake earnings %s" (showBaker ebsreBakerId ebsreAccount) (if ebsreRestakeEarnings then "set" :: String else "unset")
+        verboseOrNothing $ printf "validator %s restake earnings %s" (showBaker ebsreBakerId ebsreAccount) (if ebsreRestakeEarnings then "set" :: String else "unset")
     Types.BakerKeysUpdated{..} ->
-        verboseOrNothing $ printf "baker %s keys updated" (showBaker ebkuBakerId ebkuAccount)
+        verboseOrNothing $ printf "validator %s keys updated" (showBaker ebkuBakerId ebkuAccount)
     Types.CredentialsUpdated{..} ->
         verboseOrNothing $ [i|credentials on account #{cuAccount} have been updated.\nCredentials #{cuRemovedCredIds} have been removed, and credentials #{cuNewCredIds} have been added.\nThe new account threshold is #{cuNewThreshold}.|]
     Types.BakerSetOpenStatus{..} ->
-        verboseOrNothing $ printf "baker %s open status changed to %s" (showBaker ebsosBakerId ebsosAccount) (show ebsosOpenStatus)
+        verboseOrNothing $ printf "validator %s open status changed to %s" (showBaker ebsosBakerId ebsosAccount) (show ebsosOpenStatus)
     Types.BakerSetMetadataURL{..} ->
-        verboseOrNothing $ printf "baker %s URL changed to %s" (showBaker ebsmuBakerId ebsmuAccount) (show ebsmuMetadataURL)
+        verboseOrNothing $ printf "validator %s URL changed to %s" (showBaker ebsmuBakerId ebsmuAccount) (show ebsmuMetadataURL)
     Types.BakerSetTransactionFeeCommission{..} ->
-        verboseOrNothing $ printf "baker %s changed transaction fee commission to %s" (showBaker ebstfcBakerId ebstfcAccount) (show ebstfcTransactionFeeCommission)
+        verboseOrNothing $ printf "validator %s changed transaction fee commission to %s" (showBaker ebstfcBakerId ebstfcAccount) (show ebstfcTransactionFeeCommission)
     Types.BakerSetBakingRewardCommission{..} ->
-        verboseOrNothing $ printf "baker %s changed baking reward commission to %s" (showBaker ebsbrcBakerId ebsbrcAccount) (show ebsbrcBakingRewardCommission)
+        verboseOrNothing $ printf "validator %s changed baking reward commission to %s" (showBaker ebsbrcBakerId ebsbrcAccount) (show ebsbrcBakingRewardCommission)
     Types.BakerSetFinalizationRewardCommission{..} ->
-        verboseOrNothing $ printf "baker %s changed finalization reward commission to %s" (showBaker ebsfrcBakerId ebsfrcAccount) (show ebsfrcFinalizationRewardCommission)
+        verboseOrNothing $ printf "validator %s changed finalization reward commission to %s" (showBaker ebsfrcBakerId ebsfrcAccount) (show ebsfrcFinalizationRewardCommission)
     Types.DelegationStakeIncreased{..} ->
         verboseOrNothing $ printf "delegator %s stake increased to %s" (showDelegator edsiDelegatorId edsiAccount) (showCcd edsiNewStake)
     Types.DelegationStakeDecreased{..} ->
@@ -880,7 +880,7 @@ showEvent verbose ciM = \case
 
     showDelegationTarget :: Types.DelegationTarget -> String
     showDelegationTarget Types.DelegatePassive = "Passive delegation"
-    showDelegationTarget (Types.DelegateToBaker bid) = "Baker ID " ++ show bid
+    showDelegationTarget (Types.DelegateToBaker bid) = "Validator ID " ++ show bid
 
     -- Attempt to decode a bytestring according to a schema.
     -- If there is no schema, or decoding fails @Nothing@ is returned.
@@ -986,7 +986,7 @@ showRejectReason verbose = \case
         let (contractName, funcName) = Wasm.contractAndFunctionName receiveName
         in  [i|'#{funcName}' in '#{contractName}' at #{showCompactPrettyJSON contractAddress} failed with code #{rejectReason}|]
     Types.InvalidProof ->
-        "proof that baker owns relevant private keys is not valid"
+        "proof that validator owns relevant private keys is not valid"
     Types.DuplicateAggregationKey k ->
         if verbose
             then printf "duplicate aggregation key '%s'" (show k)
@@ -1010,10 +1010,10 @@ showRejectReason verbose = \case
     Types.FirstScheduledReleaseExpired -> "the first release has already expired"
     Types.ScheduledSelfTransfer acc ->
         printf "attempted to make an scheduled transfer to the same account '%s'" (show acc)
-    Types.AlreadyABaker bid -> printf "already a registered baker with ID %s" (show bid)
-    Types.NotABaker addr -> printf "attempt to remove a baker account %s that is not a baker" (show addr)
+    Types.AlreadyABaker bid -> printf "already a registered validator with ID %s" (show bid)
+    Types.NotABaker addr -> printf "attempt to remove a validator account %s that is not a validator" (show addr)
     Types.InsufficientBalanceForBakerStake -> "the balance on the account is insufficient to cover the desired stake"
-    Types.BakerInCooldown -> "change could not be completed because the baker is in the cooldown period"
+    Types.BakerInCooldown -> "change could not be completed because the validator is in the cooldown period"
     Types.NonExistentCredentialID -> "credential ID does not exist on the account"
     Types.InvalidCredentials -> "one or more of the credentials is not valid"
     Types.DuplicateCredIDs cids -> [i|credential registration ids #{cids} are duplicate|]
@@ -1024,7 +1024,7 @@ showRejectReason verbose = \case
     Types.NotAllowedMultipleCredentials -> "the account is not allowed to have multiple credentials"
     Types.NotAllowedToReceiveEncrypted -> "the account is not allowed to receive shielded transfers"
     Types.NotAllowedToHandleEncrypted -> "the account is not allowed handle shielded amounts"
-    Types.MissingBakerAddParameters -> "missing parameters to add new baker"
+    Types.MissingBakerAddParameters -> "missing parameters to add new validator"
     Types.FinalizationRewardCommissionNotInRange -> "finalization reward commission was not within the allowed range"
     Types.BakingRewardCommissionNotInRange -> "baking reward commission was not within the allowed range"
     Types.TransactionFeeCommissionNotInRange -> "transaction fee commission fee was not within the allowed range"
@@ -1037,7 +1037,7 @@ showRejectReason verbose = \case
     Types.PoolWouldBecomeOverDelegated -> "fraction of delegated capital to baking pool would become too large"
     Types.PoolClosed -> "pool not open for delegation"
     Types.InsufficientDelegationStake -> "not allowed to add delegator with 0 stake"
-    Types.DelegationTargetNotABaker bid -> printf "delegation target %s is not a baker id" (show bid)
+    Types.DelegationTargetNotABaker bid -> printf "delegation target %s is not a validator id" (show bid)
 
 -- CONSENSUS
 
@@ -1153,9 +1153,9 @@ printChainParameters cp = do
 printChainParametersV0 :: ChainParameters' 'ChainParametersV0 -> Printer
 printChainParametersV0 ChainParameters{..} =
     tell
-        [ [i|\# Baker parameters |],
+        [ [i|\# Validator parameters |],
           [i|  + baker extra cooldown: #{(_cpBakerExtraCooldownEpochs _cpCooldownParameters)} epochs|],
-          [i|  + stake threshold to become a baker: #{showCcd (_ppBakerStakeThreshold _cpPoolParameters)}|],
+          [i|  + stake threshold to become a validator: #{showCcd (_ppBakerStakeThreshold _cpPoolParameters)}|],
           "",
           [i|\# Exchange rate parameters: |],
           [i|  + EUR per CCD rate (approx): #{printf "%.4f" (realToFrac (1000000 / _erMicroGTUPerEuro _cpExchangeRates) :: Double) :: String}|],
@@ -1168,7 +1168,7 @@ printChainParametersV0 ChainParameters{..} =
           [i|     * baking reward: #{_cpRewardParameters ^. mdBakingReward}|],
           [i|     * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|],
           [i|  + transaction fee distribution:|],
-          [i|     * fraction for the baker: #{_cpRewardParameters ^. tfdBaker}|],
+          [i|     * fraction for the validator: #{_cpRewardParameters ^. tfdBaker}|],
           [i|     * fraction for the GAS account: #{_cpRewardParameters ^. tfdGASAccount}|],
           [i|  + GAS account distribution:|],
           [i|     * baking a block: #{_cpRewardParameters ^. gasBaker}|],
@@ -1187,10 +1187,10 @@ printChainParametersV1 :: ChainParameters' 'ChainParametersV1 -> Printer
 printChainParametersV1 ChainParameters{..} =
     tell
         [ "",
-          [i|\# Parameters related to baker pools:|],
+          [i|\# Parameters related to staking pools:|],
           [i|  + minimum equity capital: #{showCcd (_cpPoolParameters ^. ppMinimumEquityCapital)}|],
           [i|  + maximum fraction of total stake a pool is allowed to hold: #{_cpPoolParameters ^. ppCapitalBound}|],
-          [i|  + maximum factor a pool may stake relative to the baker's stake: #{_cpPoolParameters ^. ppLeverageBound}|],
+          [i|  + maximum factor a pool may stake relative to the validator's stake: #{_cpPoolParameters ^. ppLeverageBound}|],
           [i|  + pool owner cooldown duration: #{durationToText (durationSeconds (_cpCooldownParameters ^. cpPoolOwnerCooldown) * 1000)}|],
           [i|  + allowed range for finalization commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . finalizationCommissionRange))}|],
           [i|  + allowed range for baking commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . bakingCommissionRange))}|],
@@ -1215,7 +1215,7 @@ printChainParametersV1 ChainParameters{..} =
           [i|     * baking reward: #{_cpRewardParameters ^. mdBakingReward}|],
           [i|     * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|],
           [i|  + transaction fee distribution:|],
-          [i|     * baker: #{_cpRewardParameters ^. tfdBaker}|],
+          [i|     * validator: #{_cpRewardParameters ^. tfdBaker}|],
           [i|     * GAS account: #{_cpRewardParameters ^. tfdGASAccount}|],
           [i|  + GAS rewards:|],
           [i|     * baking a block: #{_cpRewardParameters ^. gasBaker}|],
@@ -1236,10 +1236,10 @@ printChainParametersV2 :: ChainParameters' 'ChainParametersV2 -> Printer
 printChainParametersV2 ChainParameters{..} =
     tell
         [ "",
-          [i|\# Parameters related to baker pools:|],
+          [i|\# Parameters related to staking pools:|],
           [i|  + minimum equity capital: #{showCcd (_cpPoolParameters ^. ppMinimumEquityCapital)}|],
           [i|  + maximum fraction of total stake a pool is allowed to hold: #{_cpPoolParameters ^. ppCapitalBound}|],
-          [i|  + maximum factor a pool may stake relative to the baker's stake: #{_cpPoolParameters ^. ppLeverageBound}|],
+          [i|  + maximum factor a pool may stake relative to the validator's stake: #{_cpPoolParameters ^. ppLeverageBound}|],
           [i|  + pool owner cooldown duration: #{durationToText (durationSeconds (_cpCooldownParameters ^. cpPoolOwnerCooldown) * 1000)}|],
           [i|  + allowed range for finalization commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . finalizationCommissionRange))}|],
           [i|  + allowed range for baking commission: #{showInclusiveRange show (_cpPoolParameters ^. (ppCommissionBounds . bakingCommissionRange))}|],
@@ -1264,7 +1264,7 @@ printChainParametersV2 ChainParameters{..} =
           [i|     * baking reward: #{_cpRewardParameters ^. mdBakingReward}|],
           [i|     * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|],
           [i|  + transaction fee distribution:|],
-          [i|     * baker: #{_cpRewardParameters ^. tfdBaker}|],
+          [i|     * validator: #{_cpRewardParameters ^. tfdBaker}|],
           [i|     * GAS account: #{_cpRewardParameters ^. tfdGASAccount}|],
           [i|  + GAS rewards:|],
           [i|     * baking a block: #{_cpRewardParameters ^. gasBaker}|],
@@ -1335,7 +1335,7 @@ printBlockInfo b =
                  printf "Height:                     %s" (show $ Queries.biBlockHeight b),
                  printf "Height since last genesis:  %s" (show $ Queries.biEraBlockHeight b),
                  printf "Genesis index:              %s" (show $ Queries.biGenesisIndex b),
-                 printf "Baker:                      %s" (showMaybe show $ Queries.biBlockBaker b),
+                 printf "Validator:                  %s" (showMaybe show $ Queries.biBlockBaker b),
                  printf "Transaction count:          %d" (Queries.biTransactionCount b),
                  printf "Transaction energy cost:    %s" (showNrg $ Queries.biTransactionEnergyCost b),
                  printf "Transactions size:          %d" (Queries.biTransactionsSize b),

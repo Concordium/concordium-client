@@ -243,7 +243,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
                          "Nonce:                  2",
                          "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
                          "",
-                         "Baker: #1",
+                         "Validator: #1",
                          " - Staked amount: 0.000100 CCD",
                          " - Restake earnings: yes",
                          "",
