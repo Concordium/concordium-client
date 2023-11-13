@@ -79,6 +79,7 @@ import qualified Data.Char as Char
 import Codec.CBOR.Encoding
 import Codec.CBOR.JSON
 import Codec.CBOR.Write
+import Concordium.Client.Types.Contract.BuildInfo (extractBuildInfo)
 import Control.Arrow (Arrow (second))
 import Control.Concurrent (threadDelay)
 import Control.Exception
@@ -1934,7 +1935,12 @@ processModuleCmd action baseCfgDir verbose backend =
             wasmModule <- withClient backend $ getWasmModule namedModRef =<< readBlockHashOrDefault Best block
             let wasmVersion = Wasm.wasmVersion wasmModule
             (schema, exports) <- getSchemaAndExports schemaFile wasmModule
-            let moduleInspectInfo = CI.constructModuleInspectInfo namedModRef wasmVersion schema exports
+            mbi <- case extractBuildInfo wasmModule of
+                Left err -> do
+                    logWarn [[i|Error attempting to extract build information '#{err}'.|]]
+                    return Nothing
+                Right mbi -> return mbi
+            let moduleInspectInfo = CI.constructModuleInspectInfo namedModRef wasmVersion schema exports mbi
             runPrinter $ printModuleInspectInfo moduleInspectInfo
         ModuleName modRefOrFile modName mWasmVersion -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
@@ -1964,6 +1970,22 @@ processModuleCmd action baseCfgDir verbose backend =
 getModuleDeployTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> FilePath -> Maybe Wasm.WasmVersion -> IO ModuleDeployTransactionCfg
 getModuleDeployTransactionCfg baseCfg txOpts moduleFile mWasmVersion = do
     wasmModule <- getWasmModuleFromFile moduleFile mWasmVersion
+    case extractBuildInfo wasmModule of
+        Left err -> do
+            logWarn [[i|Error attempting to extract build information '#{err}'. The module is likely malformed.|]]
+            when (ioConfirm . toInteractionOpts $ txOpts) $ do
+                confirmed <- askConfirmation $ Just "proceed"
+                unless confirmed $ exitTransactionCancelled
+        Right Nothing -> do
+            logWarn
+                [ [i|The module does not have an embedded build information|],
+                  [i|It will likely not be possible to match this module to source code.|]
+                ]
+            when (ioConfirm . toInteractionOpts $ txOpts) $ do
+                confirmed <- askConfirmation $ Just "proceed"
+                unless confirmed $ exitTransactionCancelled
+        Right (Just _) ->
+            return ()
     txCfg <- getTransactionCfg baseCfg txOpts $ moduleDeployEnergyCost wasmModule
     return $ ModuleDeployTransactionCfg txCfg wasmModule
 

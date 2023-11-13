@@ -31,6 +31,7 @@ import qualified Concordium.Wasm as Wasm
 import Concordium.Client.Cli
 import qualified Concordium.Client.Config as Config
 import Concordium.Client.GRPC2 (ClientMonad)
+import Concordium.Client.Types.Contract.BuildInfo
 import Control.Monad.Cont (MonadIO)
 import Data.Aeson ((.:))
 import qualified Data.Aeson as AE
@@ -367,13 +368,16 @@ constructModuleInspectInfo ::
     Maybe CS.ModuleSchema ->
     -- | Exported function names in module.
     [Text] ->
+    -- | Potentially build information embedded in the module.
+    Maybe BuildInfo ->
     ModuleInspectInfo
-constructModuleInspectInfo namedModRef wasmVersion moduleSchema exportedFuncNames =
+constructModuleInspectInfo namedModRef wasmVersion moduleSchema exportedFuncNames miiBuildInfo =
     ModuleInspectInfo
         { miiNamedModRef = namedModRef,
           miiWasmVersion = wasmVersion,
           miiModuleInspectSigs = moduleInspectSigs,
-          miiExtraneousSchemas = extraneousSchemas
+          miiExtraneousSchemas = extraneousSchemas,
+          ..
         }
   where
     (moduleInspectSigs, extraneousSchemas) = case moduleSchema of
@@ -662,7 +666,8 @@ data ModuleInspectInfo = ModuleInspectInfo
     { miiNamedModRef :: Config.NamedModuleRef,
       miiWasmVersion :: Wasm.WasmVersion,
       miiModuleInspectSigs :: ModuleInspectSigs,
-      miiExtraneousSchemas :: [CS.FuncName]
+      miiExtraneousSchemas :: [CS.FuncName],
+      miiBuildInfo :: Maybe BuildInfo
     }
 
 -- | Module signatures of a smart contract module with event schema V*.

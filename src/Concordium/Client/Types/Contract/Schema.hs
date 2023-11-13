@@ -32,13 +32,12 @@ module Concordium.Client.Types.Contract.Schema (
     putLenWithSizeLen,
 ) where
 
+import Concordium.Client.Types.Contract.WasmParseHelpers
 import qualified Concordium.Wasm as Wasm
 import Control.Arrow (Arrow (first))
-import Control.Monad (unless)
 import Data.Aeson ((.=))
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Key as AE
-import qualified Data.Bits as Bits
 import qualified Data.ByteString as BS
 import Data.Hashable (Hashable)
 import Data.List (group, sort)
@@ -50,7 +49,7 @@ import Data.String.Interpolate (i)
 import Data.Text (Text, pack)
 import qualified Data.Text.Encoding as Text
 import qualified Data.Vector as V
-import Data.Word (Word16, Word32, Word64, Word8)
+import Data.Word (Word16, Word32, Word8)
 import GHC.Generics
 
 -- | Try to find an embedded schema in a module and decode it.
@@ -574,7 +573,7 @@ instance S.Serialize SchemaType where
             18 -> S.label "Map" $ Map <$> S.get <*> S.get <*> S.get
             19 -> S.label "Array" $ Array <$> S.getWord32le <*> S.get
             20 -> S.label "Struct" $ Struct <$> S.get
-            21 -> S.label "Enum" $ Enum <$> getListOfWithSizeLen Four (S.getTwoOf getText S.get)
+            21 -> S.label "Enum" $ Enum <$> getListOfWithSizeLen Four (S.getTwoOf getTextLE S.get)
             22 -> S.label "String" $ String <$> S.get
             23 -> S.label "UInt128" $ pure UInt128
             24 -> S.label "Int128" $ pure Int128
@@ -587,7 +586,7 @@ instance S.Serialize SchemaType where
             31 ->
                 S.label "TaggedEnum" $
                     TaggedEnum
-                        <$> getMapOfWithSizeLenAndPred tEnumPred Four S.getWord8 (S.getTwoOf getText S.get)
+                        <$> getMapOfWithSizeLenAndPred tEnumPred Four S.getWord8 (S.getTwoOf getTextLE S.get)
             x -> fail [i|Invalid SchemaType tag: #{x}|]
       where
         -- Predicate for tagged enums. Tags and variant names should be unique.
@@ -675,10 +674,7 @@ data FuncName
 --  names from inside a Wasm module.
 getEmbeddedSchemaAndExportsFromModule :: Wasm.WasmVersion -> S.Get (Maybe ModuleSchema, [Text])
 getEmbeddedSchemaAndExportsFromModule wasmVersion = do
-    mhBs <- S.getByteString 4
-    unless (mhBs == wasmMagicHash) $ fail "Unknown magic value. This is likely not a Wasm module."
-    vBs <- S.getByteString 4
-    unless (vBs == wasmSpecVersion) $ fail "Unsupported Wasm standard version."
+    ensureWasmModule
     go (Nothing, [])
   where
     schemaIdentifierUnversioned = case wasmVersion of
@@ -706,6 +702,8 @@ getEmbeddedSchemaAndExportsFromModule wasmVersion = do
                     case sectionId of
                         -- Custom section (which is where we store the schema).
                         0 -> do
+                            -- Remember where we are since we might have to skip the section.
+                            curPos <- S.bytesRead
                             name <- S.label "Custom Section Name" getTextWithLEB128Len
                             if name == schemaIdentifierUnversioned || name == "concordium-schema"
                                 then
@@ -717,7 +715,10 @@ getEmbeddedSchemaAndExportsFromModule wasmVersion = do
                                             if not $ null mFuncNames
                                                 then return (Just schemaFound, mFuncNames)
                                                 else go (Just schemaFound, mFuncNames)
-                                else S.skip sectionSize *> go schemaAndFuncNames
+                                else do
+                                    afterPos <- S.bytesRead
+                                    -- Only skip the parts of the section we have not read yet.
+                                    S.skip (sectionSize - (afterPos - curPos)) *> go schemaAndFuncNames
                         -- Export section
                         7 -> do
                             exports <- getListOfWithLEB128Len (S.getTwoOf getTextWithLEB128Len getExportDescription)
@@ -744,44 +745,6 @@ getEmbeddedSchemaAndExportsFromModule wasmVersion = do
             2 -> return Memory
             3 -> return Global
             _ -> fail [i|"Invalid Export Description Tag: #{tag}"|]
-
-    -- \|Get Text where the length is encoded as LEB128-Word32.
-    getTextWithLEB128Len :: S.Get Text
-    getTextWithLEB128Len = S.label "Text with LEB128 Length" $ do
-        txt <- Text.decodeUtf8' . BS.pack <$> getListOfWithLEB128Len S.get
-        case txt of
-            Left err -> fail [i|Could not decode Text with LEB128 len: #{err}|]
-            Right txt' -> pure txt'
-
-    -- \|Get a list of items where the length of the list is encoded as LEB128-Word32.
-    getListOfWithLEB128Len :: S.Get a -> S.Get [a]
-    getListOfWithLEB128Len getElem = S.label "List with LEB128 length" $ do
-        len <- getLEB128Word32le
-        getListOfWithKnownLen len getElem
-
-    -- \|Get a LEB128-encoded Word32. This uses an encoding compatible with the Wasm standard,
-    -- which means that the encoding will use at most 5 bytes.
-    getLEB128Word32le :: S.Get Word32
-    getLEB128Word32le = S.label "Word32LEB128" $ decode7 0 5 1
-      where
-        decode7 :: Word64 -> Word8 -> Word64 -> S.Get Word32
-        decode7 acc left multiplier = do
-            unless (left > 0) $ fail "Section size byte overflow"
-            byte <- S.getWord8
-            if Bits.testBit byte 7
-                then decode7 (acc + multiplier * fromIntegral (Bits.clearBit byte 7)) (left - 1) (multiplier * 128)
-                else do
-                    let value = acc + multiplier * fromIntegral byte
-                    unless (value <= fromIntegral (maxBound :: Word32)) $ fail "Section size value overflow"
-                    return . fromIntegral $ value
-
-    -- \|4 bytes that start every valid Wasm module in binary.
-    wasmMagicHash :: BS.ByteString
-    wasmMagicHash = BS.pack [0x00, 0x61, 0x73, 0x6D]
-
-    -- \|The currently supported version of the Wasm specification.
-    wasmSpecVersion :: BS.ByteString
-    wasmSpecVersion = BS.pack [0x01, 0x00, 0x00, 0x00]
 
 -- | The four types of exports allowed in WASM.
 data ExportDescription

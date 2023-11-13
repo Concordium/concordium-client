@@ -36,6 +36,7 @@ import qualified Concordium.Wasm as Wasm
 import Codec.CBOR.Decoding (decodeString)
 import Codec.CBOR.JSON
 import Codec.CBOR.Read
+import Concordium.Client.Types.Contract.BuildInfo (showBuildInfo)
 import Concordium.Common.Time (DurationSeconds (durationSeconds))
 import Concordium.Types.Execution (Event (ecEvents))
 import Control.Monad.Writer
@@ -472,6 +473,11 @@ printModuleInspectInfo CI.ModuleInspectInfo{..} = do
         ]
     tell $ showModuleInspectSigs miiModuleInspectSigs
     tell $ showWarnings miiExtraneousSchemas
+    tell [[]]
+    tell [[i|Module build information:|]]
+    case miiBuildInfo of
+        Nothing -> tell ["  - No build information embedded in the module."]
+        Just bi -> tell $ map (indentBy 2) (showBuildInfo bi)
   where
     -- \|Show all the contract init and receive functions including optional signatures from the schema.
     -- Only V1 contracts can have the Return value and Error section.
