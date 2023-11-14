@@ -1978,7 +1978,7 @@ getModuleDeployTransactionCfg baseCfg txOpts moduleFile mWasmVersion = do
                 unless confirmed $ exitTransactionCancelled
         Right Nothing -> do
             logWarn
-                [ [i|The module does not have an embedded build information|],
+                [ [i|The module does not have embedded build information|],
                   [i|It will likely not be possible to match this module to source code.|]
                 ]
             when (ioConfirm . toInteractionOpts $ txOpts) $ do
