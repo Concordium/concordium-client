@@ -269,7 +269,7 @@ data BakerCredentials = BakerCredentials
     }
 
 instance AE.ToJSON BakerCredentials where
-    toJSON BakerCredentials{..} = object (("bakerId" .= bcIdentity) : bakerKeysToPairs bcKeys)
+    toJSON BakerCredentials{..} = object (("bakerId" .= bcIdentity) : ("validatorId" .= bcIdentity) : bakerKeysToPairs bcKeys)
 
 instance AE.FromJSON BakerKeys where
     parseJSON = withObject "Baker keys" $ \v -> do
@@ -279,7 +279,15 @@ instance AE.FromJSON BakerKeys where
         bkElectionVerifyKey <- v .: "electionVerifyKey"
         bkSigSignKey <- v .: "signatureSignKey"
         bkSigVerifyKey <- v .: "signatureVerifyKey"
-        bkBakerId <- v .:? "bakerId"
+        mbkBakerId <- v .:? "bakerId"
+        mvalidatorId <- v .:? "validatorId"
+        bkBakerId <- case (mbkBakerId, mvalidatorId) of
+            (Just bid, Just vid)
+                | bid == vid -> return (Just bid)
+                | otherwise -> fail "Both 'bakerId' and 'validatorId' are present, and different."
+            (Just bid, Nothing) -> return (Just bid)
+            (Nothing, Just vid) -> return (Just vid)
+            (Nothing, Nothing) -> return Nothing
         return BakerKeys{..}
 
 bakerKeysToPairs :: BakerKeys -> [Pair]
@@ -291,7 +299,7 @@ bakerKeysToPairs v =
       "signatureSignKey" .= bkSigSignKey v,
       "signatureVerifyKey" .= bkSigVerifyKey v
     ]
-        ++ ["bakerId" .= bid | bid <- maybeToList (bkBakerId v)]
+        ++ concat [["bakerId" .= bid, "validatorId" .= bid] | bid <- maybeToList (bkBakerId v)]
 
 instance AE.ToJSON BakerKeys where
     toJSON = object . bakerKeysToPairs
@@ -303,7 +311,7 @@ bakerPublicKeysToPairs v =
       "electionVerifyKey" .= bkElectionVerifyKey v,
       "signatureVerifyKey" .= bkSigVerifyKey v
     ]
-        ++ ["bakerId" .= bid | bid <- maybeToList (bkBakerId v)]
+        ++ concat [["bakerId" .= bid, "validatorId" .= bid] | bid <- maybeToList (bkBakerId v)]
 
 -- | Hardcoded network ID.
 defaultNetId :: Int
