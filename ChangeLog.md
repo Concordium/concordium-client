@@ -8,6 +8,10 @@
 - Add additional configuration options that use `validator` in place of `baker`.
   For example `concordium-client validator add`.
   The older options still exist, but are hidden.
+- The `module inspect` command now attempts to print any embedded verifiable
+  build information.
+- The `module deploy` command now warns if a module is being deployed that does
+  not have embedded verifiable build information.
 
 ## 6.1.0
 
