@@ -2981,9 +2981,9 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
                 in  unless encrypted $
                         case inputKeysFile of
                             Nothing ->
-                                logInfo [printf "To use it add \"bakerId\": %s to the keys file." (show bakerId)]
+                                logInfo [printf "To use it add \"validatorId\": %s to the keys file." (show bakerId)]
                             Just inf ->
-                                logInfo [printf "To use it add \"bakerId\": %s to the keys file %s." (show bakerId) inf]
+                                logInfo [printf "To use it add \"validatorId\": %s to the keys file %s." (show bakerId) inf]
 
     eventsFromTransactionResult Nothing = return []
     eventsFromTransactionResult (Just result) = do
@@ -3201,7 +3201,7 @@ processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarn
             _ ->
                 let encrypted = snd bakerKeys
                 in  unless encrypted $
-                        logInfo [printf "To use it add \"bakerId\": %s to the keys file %s." (show bakerId) inputKeysFile]
+                        logInfo [printf "To use it add \"validatorId\": %s to the keys file %s." (show bakerId) inputKeysFile]
 
     eventsFromTransactionResult Nothing = return []
     eventsFromTransactionResult (Just result) = do
@@ -3361,7 +3361,7 @@ processBakerSetKeysCmd baseCfgDir verbose backend txOpts inputKeysFile outputKey
             _ ->
                 let encrypted = snd bakerKeys
                 in  unless encrypted $
-                        logInfo [printf "To use it add \"bakerId\": %s to the keys file %s." (show bakerId) inputKeysFile]
+                        logInfo [printf "To use it add \"validatorId\": %s to the keys file %s." (show bakerId) inputKeysFile]
 
     eventsFromTransactionResult Nothing = return []
     eventsFromTransactionResult (Just result) = do

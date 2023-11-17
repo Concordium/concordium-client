@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 6.2.0
+
 - Revise client's reconnect handling so that the client will no longer attempt
   to automatically reconnect on timeouts and node resource exhaustion.
 - Rename bakers to validators in output.
