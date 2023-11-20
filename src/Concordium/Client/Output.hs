@@ -249,7 +249,7 @@ printAccountInfo addr a verbose showEncrypted mEncKey = do
         else return ()
 
     case Types.aiStakingInfo a of
-        Types.AccountStakingNone -> tell ["Baking or delegating stake: no"]
+        Types.AccountStakingNone -> tell ["Validator or delegator: no"]
         Types.AccountStakingBaker{..} -> do
             let bkid = [i|Validator: \##{show . Types._bakerIdentity $ asiBakerInfo}|]
                 stkstr = [i| - Staked amount: #{showCcd asiStakedAmount}|]
@@ -819,7 +819,7 @@ showEvent verbose ciM = \case
     Types.BakerSetTransactionFeeCommission{..} ->
         verboseOrNothing $ printf "validator %s changed transaction fee commission to %s" (showBaker ebstfcBakerId ebstfcAccount) (show ebstfcTransactionFeeCommission)
     Types.BakerSetBakingRewardCommission{..} ->
-        verboseOrNothing $ printf "validator %s changed baking reward commission to %s" (showBaker ebsbrcBakerId ebsbrcAccount) (show ebsbrcBakingRewardCommission)
+        verboseOrNothing $ printf "validator %s changed block reward commission to %s" (showBaker ebsbrcBakerId ebsbrcAccount) (show ebsbrcBakingRewardCommission)
     Types.BakerSetFinalizationRewardCommission{..} ->
         verboseOrNothing $ printf "validator %s changed finalization reward commission to %s" (showBaker ebsfrcBakerId ebsfrcAccount) (show ebsfrcFinalizationRewardCommission)
     Types.DelegationStakeIncreased{..} ->
@@ -1026,21 +1026,21 @@ showRejectReason verbose = \case
     Types.NonExistentCredIDs cids -> [i|credential registration ids #{cids} do not exist|]
     Types.RemoveFirstCredential -> [i|attempt to remove the first credential of the account|]
     Types.CredentialHolderDidNotSign -> [i|credential holder did not sign the credential key update|]
-    Types.StakeUnderMinimumThresholdForBaking -> "the desired stake is under the minimum threshold for baking"
+    Types.StakeUnderMinimumThresholdForBaking -> "the desired stake is under the minimum threshold for a validator"
     Types.NotAllowedMultipleCredentials -> "the account is not allowed to have multiple credentials"
     Types.NotAllowedToReceiveEncrypted -> "the account is not allowed to receive shielded transfers"
     Types.NotAllowedToHandleEncrypted -> "the account is not allowed handle shielded amounts"
     Types.MissingBakerAddParameters -> "missing parameters to add new validator"
     Types.FinalizationRewardCommissionNotInRange -> "finalization reward commission was not within the allowed range"
-    Types.BakingRewardCommissionNotInRange -> "baking reward commission was not within the allowed range"
+    Types.BakingRewardCommissionNotInRange -> "block reward commission was not within the allowed range"
     Types.TransactionFeeCommissionNotInRange -> "transaction fee commission fee was not within the allowed range"
     Types.AlreadyADelegator -> "the account is already a delegator"
     Types.InsufficientBalanceForDelegationStake -> "the balance on the account is insufficient to cover the desired stake"
     Types.MissingDelegationAddParameters -> "missing parameters to add new delegator"
     Types.DelegatorInCooldown -> "change could not be completed because the delegator is in the cooldown period"
     Types.NotADelegator addr -> printf "attempt to remove a delegator account %s that is not a delegator" (show addr)
-    Types.StakeOverMaximumThresholdForPool -> "baking pool's total capital would become too large"
-    Types.PoolWouldBecomeOverDelegated -> "fraction of delegated capital to baking pool would become too large"
+    Types.StakeOverMaximumThresholdForPool -> "staking pool's total capital would become too large"
+    Types.PoolWouldBecomeOverDelegated -> "fraction of delegated capital to staking pool would become too large"
     Types.PoolClosed -> "pool not open for delegation"
     Types.InsufficientDelegationStake -> "not allowed to add delegator with 0 stake"
     Types.DelegationTargetNotABaker bid -> printf "delegation target %s is not a validator id" (show bid)
@@ -1171,13 +1171,13 @@ printChainParametersV0 ChainParameters{..} =
           [i|\# Parameters that affect rewards distribution:|],
           [i|  + mint rate per slot: #{_cpRewardParameters ^. (mdMintPerSlot . unconditionally)}|],
           [i|  + mint distribution:|],
-          [i|     * baking reward: #{_cpRewardParameters ^. mdBakingReward}|],
+          [i|     * block reward: #{_cpRewardParameters ^. mdBakingReward}|],
           [i|     * finalization reward: #{_cpRewardParameters ^. mdFinalizationReward}|],
           [i|  + transaction fee distribution:|],
           [i|     * fraction for the validator: #{_cpRewardParameters ^. tfdBaker}|],
           [i|     * fraction for the GAS account: #{_cpRewardParameters ^. tfdGASAccount}|],
           [i|  + GAS account distribution:|],
-          [i|     * baking a block: #{_cpRewardParameters ^. gasBaker}|],
+          [i|     * producing a block: #{_cpRewardParameters ^. gasBaker}|],
           [i|     * adding a finalization proof: #{showConditionally (_cpRewardParameters ^. gasFinalizationProof)}|],
           [i|     * adding a credential deployment: #{_cpRewardParameters ^. gasAccountCreation}|],
           [i|     * adding a chain update: #{_cpRewardParameters ^. gasChainUpdate}|],
