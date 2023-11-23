@@ -5,6 +5,8 @@
 ## 6.2.1
 
 - Remove uses of `baker` term when printing chain parameters.
+- Remove remaining uses of `baker` in output of `validator add` and `validator
+  configure` command and in their options.
 
 ## 6.2.0
 

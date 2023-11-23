@@ -2947,7 +2947,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
                                 ++ (if isNothing inputKeysFile then "\n--keys-in," else "")
                                 ++ (if isNothing metadataURL then "\n--validator-url," else "")
                                 ++ (if isNothing cbTransactionFeeCommission then "\n--delegation-transaction-fee-commission," else "")
-                                ++ (if isNothing cbBakingRewardCommission then "\n--delegation-block-reward-commission," else "") b
+                                ++ (if isNothing cbBakingRewardCommission then "\n--delegation-block-reward-commission," else "")
                                 ++ (if isNothing cbFinalizationRewardCommission then "\n--delegation-finalization-commission," else "")
                             )
                             ++ (if isNothing cbRestakeEarnings then ". \nExactly one of the options --restake and --no-restake must be present" else "")
