@@ -231,7 +231,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
                          "Nonce:                  2",
                          "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
                          "",
-                         "Baking or delegating stake: no",
+                         "Validator or delegator: no",
                          "",
                          "Credentials: none"
                        ]
@@ -289,7 +289,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
                          "Nonce:                  2",
                          "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
                          "",
-                         "Baking or delegating stake: no",
+                         "Validator or delegator: no",
                          "",
                          "Credentials: none"
                        ]
@@ -301,7 +301,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
                          "Nonce:                  2",
                          "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
                          "",
-                         "Baking or delegating stake: no",
+                         "Validator or delegator: no",
                          "",
                          "Credentials:",
                          "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:",
@@ -325,7 +325,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
                          "Nonce:                  2",
                          "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
                          "",
-                         "Baking or delegating stake: no",
+                         "Validator or delegator: no",
                          "",
                          "Credentials:",
                          "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:",
@@ -347,7 +347,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
                          "Nonce:                  2",
                          "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
                          "",
-                         "Baking or delegating stake: no",
+                         "Validator or delegator: no",
                          "",
                          "Credentials:",
                          "{\n\
@@ -384,7 +384,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
                          "    4: 9450b8ace9ad5a22e8ee...",
                          "  Self balance: 9450b8ace9ad5a22e8ee...",
                          "",
-                         "Baking or delegating stake: no",
+                         "Validator or delegator: no",
                          "",
                          "Credentials:",
                          "* a1355cd1e5e2f4b712c4302f09f045f194c708e5d0cae3b980f53ae3244fc7357d688d97be251a86735179871f03a46f:",
@@ -407,7 +407,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
                          "    4: 9450b8ace9ad5a22e8eea743244bf929e69de3d2c8445d34278d23c6c72dfbf2c1a6fc7fabd4eb3bd7752a0765255ea0963748ddc6bc87040627533b1a3ce76318734cf3cc9dd9b05fd8dfe5c31f51addc68f41b43f764a36f03097c1d1dda12926b233d1f2efdd8f1c143c7a63c5575e1a9f5fac7e265d33ba769f6396db6c91da16e9ddf85b1ec7fc0cbcb4afbd9e491a755540bdf8a42cb46e32f9de7c8986e77a6d111e9fac32524183415cce14ddff3ca5795b5abdc1ad0a1397853a4a3",
                          "  Self balance: 9450b8ace9ad5a22e8eea743244bf929e69de3d2c8445d34278d23c6c72dfbf2c1a6fc7fabd4eb3bd7752a0765255ea0963748ddc6bc87040627533b1a3ce76318734cf3cc9dd9b05fd8dfe5c31f51addc68f41b43f764a36f03097c1d1dda12926b233d1f2efdd8f1c143c7a63c5575e1a9f5fac7e265d33ba769f6396db6c91da16e9ddf85b1ec7fc0cbcb4afbd9e491a755540bdf8a42cb46e32f9de7c8986e77a6d111e9fac32524183415cce14ddff3ca5795b5abdc1ad0a1397853a4a3",
                          "",
-                         "Baking or delegating stake: no",
+                         "Validator or delegator: no",
                          "",
                          "Credentials:",
                          "{\n\
