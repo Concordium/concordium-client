@@ -2947,7 +2947,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
                                 ++ (if isNothing inputKeysFile then "\n--keys-in," else "")
                                 ++ (if isNothing metadataURL then "\n--validator-url," else "")
                                 ++ (if isNothing cbTransactionFeeCommission then "\n--delegation-transaction-fee-commission," else "")
-                                ++ (if isNothing cbBakingRewardCommission then "\n--delegation-baking-commission," else "")
+                                ++ (if isNothing cbBakingRewardCommission then "\n--delegation-block-reward-commission," else "") b
                                 ++ (if isNothing cbFinalizationRewardCommission then "\n--delegation-finalization-commission," else "")
                             )
                             ++ (if isNothing cbRestakeEarnings then ". \nExactly one of the options --restake and --no-restake must be present" else "")
@@ -3099,8 +3099,8 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
     configureRestakeLogMsg =
         case cbRestakeEarnings of
             Nothing -> []
-            Just True -> ["rewards will be automatically added to the baking stake"]
-            Just False -> ["rewards will _not_ be automatically added to the baking stake"]
+            Just True -> ["rewards will be added to the validator stake automatically"]
+            Just False -> ["rewards will _not_ be added to the validator stake automatically"]
 
     configureOpenForDelegationLogMsg =
         case cbOpenForDelegation of
@@ -3117,7 +3117,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
     configureBakingRewardCommissionLogMsg =
         case cbBakingRewardCommission of
             Nothing -> []
-            Just fee -> [printf "baking reward commission from delegators will be %s" (show fee)]
+            Just fee -> [printf "block reward commission from delegators will be %s" (show fee)]
 
     configureFinalizationRewardCommissionLogMsg =
         case cbFinalizationRewardCommission of
@@ -3289,8 +3289,8 @@ processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarn
 
     configureRestakeLogMsg =
         case abRestakeEarnings of
-            True -> ["rewards will be automatically added to the baking stake"]
-            False -> ["rewards will _not_ be automatically added to the baking stake"]
+            True -> ["rewards will be added to the validator stake automatically"]
+            False -> ["rewards will _not_ be added to the validator stake automatically"]
 
     readInputKeysFile baseCfg = do
         encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
@@ -3677,7 +3677,7 @@ processBakerCmd action baseCfgDir verbose backend =
                                 ++ "--open-delegation-for,\n"
                                 ++ "--validator-url,\n"
                                 ++ "--delegation-transaction-fee-commission,\n"
-                                ++ "--delegation-baking-commission,\n"
+                                ++ "--delegation-block-reward-commission,\n"
                                 ++ "--delegation-finalization-commission\nmust be present"
                             ]
                         confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
@@ -4292,9 +4292,9 @@ printPeerData bootstrapper pInfos Queries.NodeInfo{..} =
             Queries.NodeActive cInfo ->
                 "Node (running, "
                     <> case Queries.status cInfo of
-                        Queries.PassiveBaker _ -> "not baking)"
-                        Queries.ActiveBaker -> "in current baking committee)"
-                        Queries.ActiveFinalizer -> "in current baking and finalizer committee)"
+                        Queries.PassiveBaker _ -> "not a validator)"
+                        Queries.ActiveBaker -> "a validator but not a finalizer)"
+                        Queries.ActiveFinalizer -> "in validator and in finalization committee)"
 
 printNodeInfo :: (MonadIO m) => Queries.NodeInfo -> m ()
 printNodeInfo Queries.NodeInfo{..} =
@@ -4309,7 +4309,7 @@ printNodeInfo Queries.NodeInfo{..} =
                 putStrLn $ "Baker running: " ++ show (getBakerRunning details)
                 putStrLn $ "Consensus running: " ++ show (getConsensusRunning details)
                 putStrLn $ "Consensus type: " ++ getConsensusType details
-                putStrLn $ "Baker committee member: " ++ getBakerCommitteeMember details
+                putStrLn $ "Validator member: " ++ getBakerCommitteeMember details
                 putStrLn $ "Finalization committee member: " ++ getFinalizerCommitteeMember details
   where
     showNodeType =

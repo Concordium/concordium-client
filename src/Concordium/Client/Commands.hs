@@ -1712,13 +1712,19 @@ bakerAddCmd =
                         <$> (option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> help helpOpenDelegationFor))
                         <*> bakerOrValidatorUrl
                         <*> (option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission")))
-                        <*> (option (eitherReader amountFractionFromStringInform) (long "delegation-baking-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on baking rewards. " ++ rangesHelpString "baking reward commission")))
+                        <*> blockCommission
                         <*> (option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission")))
                     )
                 <*> optional (strOption (long "out" <> metavar "FILE" <> help "File to write the validator credentials to, in case of successful transaction. These can be used to start the node."))
             )
             (progDesc "Deploy validator credentials to the chain.")
         )
+
+-- | Parser for block reward commission. It supports the legacy terminology of "baking-commission" but it is hidden.
+blockCommission :: Parser AmountFraction
+blockCommission = blockCommissionGen internal "delegation-baking-commission" <|> blockCommissionGen mempty "delegation-block-reward-commission"
+  where
+    blockCommissionGen modifier name = option (eitherReader amountFractionFromStringInform) (modifier <> long name <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on block rewards. " ++ rangesHelpString "block reward commission"))
 
 allowedValuesOpenDelegationForAsString :: String
 allowedValuesOpenDelegationForAsString =
@@ -1753,7 +1759,7 @@ bakerConfigureCmd =
                 <*> optional (option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> help helpOpenDelegationFor))
                 <*> optional bakerOrValidatorUrl
                 <*> optional (option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission")))
-                <*> optional (option (eitherReader amountFractionFromStringInform) (long "delegation-baking-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on baking rewards. " ++ rangesHelpString "baking reward commission")))
+                <*> optional blockCommission
                 <*> optional (option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission")))
                 <*> optional (strOption (long "keys-in" <> metavar "FILE" <> help "File containing validator credentials."))
                 <*> optional (strOption (long "keys-out" <> metavar "FILE" <> help "File to write updated validator credentials to, in case of successful transaction. These can be used to start the node."))
