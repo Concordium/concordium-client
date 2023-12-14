@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Support protocol version 7.
+
 ## 6.2.1
 
 - Remove uses of `baker` term when printing chain parameters.
