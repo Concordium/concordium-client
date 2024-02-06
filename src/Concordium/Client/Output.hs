@@ -39,6 +39,7 @@ import Codec.CBOR.Read
 import Concordium.Client.Types.Contract.BuildInfo (showBuildInfo)
 import Concordium.Common.Time (DurationSeconds (durationSeconds))
 import Concordium.Types.Execution (Event (ecEvents))
+import Control.Monad
 import Control.Monad.Writer
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE

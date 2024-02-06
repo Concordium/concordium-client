@@ -24,6 +24,7 @@ default-extensions:
 - FlexibleContexts
 - LambdaCase
 - TupleSections
+- TypeOperators
 
 ghc-options: -Wall
 
@@ -57,7 +58,6 @@ library:
     - aeson
     - aeson-pretty
     - ansi-terminal
-    - ansi-wl-pprint
     - attoparsec
     - base >=4.7 && <5
     - base16-bytestring
@@ -85,8 +85,9 @@ library:
     - unordered-containers
     - hashable >= 1.2
     - pretty
+    - prettyprinter
+    - prettyprinter-ansi-terminal
     - proto-lens == 0.7.*
-    - proto-lens-protobuf-types == 0.7.*
     - microlens-platform
     - transformers
     - uri-encode >= 1.5

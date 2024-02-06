@@ -68,12 +68,12 @@ library
       FlexibleContexts
       LambdaCase
       TupleSections
+      TypeOperators
   ghc-options: -Wall -Wcompat -Werror=missing-fields -Wredundant-constraints -O
   build-depends:
       aeson
     , aeson-pretty
     , ansi-terminal
-    , ansi-wl-pprint
     , async >=2.2
     , attoparsec
     , base >=4.7 && <5
@@ -99,8 +99,9 @@ library
     , mtl
     , optparse-applicative
     , pretty
+    , prettyprinter
+    , prettyprinter-ansi-terminal
     , proto-lens ==0.7.*
-    , proto-lens-protobuf-types ==0.7.*
     , random
     , scientific
     , split
@@ -127,6 +128,7 @@ executable concordium-client
       FlexibleContexts
       LambdaCase
       TupleSections
+      TypeOperators
   ghc-options: -Wall -Wcompat -Werror=missing-fields -Wredundant-constraints -O
   build-depends:
       base
@@ -150,6 +152,7 @@ executable tx-generator
       FlexibleContexts
       LambdaCase
       TupleSections
+      TypeOperators
   ghc-options: -Wall -Wcompat -Werror=missing-fields -Wredundant-constraints -O
   build-depends:
       aeson
@@ -195,6 +198,7 @@ test-suite concordium-client-test
       FlexibleContexts
       LambdaCase
       TupleSections
+      TypeOperators
   ghc-options: -Wall -Wcompat -Werror=missing-fields -Wredundant-constraints -O
   build-depends:
       HUnit >=1.6

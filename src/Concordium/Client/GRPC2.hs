@@ -17,6 +17,7 @@ module Concordium.Client.GRPC2 where
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception
+import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.ByteString (ByteString)
@@ -811,6 +812,7 @@ instance FromProto Proto.ProtocolVersion where
         Proto.PROTOCOL_VERSION_4 -> return P4
         Proto.PROTOCOL_VERSION_5 -> return P5
         Proto.PROTOCOL_VERSION_6 -> return P6
+        Proto.PROTOCOL_VERSION_7 -> return P7
         Proto.ProtocolVersion'Unrecognized _ ->
             fromProtoFail "Unable to convert 'ProtocolVersion'."
 

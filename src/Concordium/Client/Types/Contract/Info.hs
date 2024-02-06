@@ -32,7 +32,7 @@ import Concordium.Client.Cli
 import qualified Concordium.Client.Config as Config
 import Concordium.Client.GRPC2 (ClientMonad)
 import Concordium.Client.Types.Contract.BuildInfo
-import Control.Monad.Cont (MonadIO)
+import Control.Monad.IO.Class (MonadIO)
 import Data.Aeson ((.:))
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.KeyMap as KM
