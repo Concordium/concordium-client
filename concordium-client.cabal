@@ -75,10 +75,8 @@ library
     , aeson-pretty
     , ansi-terminal
     , async >=2.2
-    , attoparsec
     , base >=4.7 && <5
     , base16-bytestring
-    , base64-bytestring
     , bytestring
     , case-insensitive
     , cborg
@@ -87,7 +85,6 @@ library
     , concordium-base
     , containers
     , cookie
-    , cryptonite
     , directory
     , filepath
     , hashable >=1.2
@@ -102,14 +99,12 @@ library
     , prettyprinter
     , prettyprinter-ansi-terminal
     , proto-lens ==0.7.*
-    , random
     , scientific
     , split
     , string-interpolate
     , text
     , time
     , transformers
-    , unordered-containers
     , uri-encode >=1.5
     , vector >=0.12
   default-language: Haskell2010
@@ -157,10 +152,8 @@ executable tx-generator
   build-depends:
       aeson
     , base
-    , bytestring
     , concordium-base
     , concordium-client
-    , containers
     , mtl
     , optparse-applicative
     , time
@@ -211,14 +204,10 @@ test-suite concordium-client-test
     , concordium-base
     , concordium-client
     , containers
-    , filepath
     , hspec >=2.6
-    , hspec-expectations >=0.8
     , mtl >=2.2.2
     , random
     , text
     , time
-    , transformers
-    , unordered-containers
     , vector
   default-language: Haskell2010

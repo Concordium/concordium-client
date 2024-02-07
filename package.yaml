@@ -58,10 +58,8 @@ library:
     - aeson
     - aeson-pretty
     - ansi-terminal
-    - attoparsec
     - base >=4.7 && <5
     - base16-bytestring
-    - base64-bytestring
     - bytestring
     - case-insensitive
     - cereal
@@ -69,11 +67,9 @@ library:
     - cborg-json
     - concordium-base
     - containers
-    - cryptonite
     - directory
     - filepath
     - optparse-applicative
-    - random
     - split
     - mtl
     - text
@@ -82,7 +78,6 @@ library:
     - http2-client >= 0.9
     - http2-grpc-types
     - http2-grpc-proto-lens
-    - unordered-containers
     - hashable >= 1.2
     - pretty
     - prettyprinter
@@ -136,11 +131,9 @@ executables:
     dependencies:
       - optparse-applicative
       - mtl
-      - containers
       - base
       - concordium-client
       - concordium-base
-      - bytestring
       - aeson
       - time
 
@@ -162,14 +155,10 @@ tests:
       - base64-bytestring
       - containers
       - hspec >= 2.6
-      - hspec-expectations >= 0.8
       - HUnit >= 1.6
       - QuickCheck >= 2.13
       - mtl >= 2.2.2
       - text
-      - transformers
       - time
-      - unordered-containers
-      - filepath
       - vector
       - random
