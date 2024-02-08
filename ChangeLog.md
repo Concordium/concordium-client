@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 6.3.0
+
 - Update GHC version to 9.6.4 (lts-22.9).
 
 ## 6.2.1
