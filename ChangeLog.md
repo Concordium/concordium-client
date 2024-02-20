@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update GHC version to 9.6.4 (lts-22.9).
+
 ## 6.2.1
 
 - Remove uses of `baker` term when printing chain parameters.

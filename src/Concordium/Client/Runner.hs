@@ -83,8 +83,9 @@ import Concordium.Client.Types.Contract.BuildInfo (extractBuildInfo)
 import Control.Arrow (Arrow (second))
 import Control.Concurrent (threadDelay)
 import Control.Exception
+import Control.Monad
 import Control.Monad.Except
-import Control.Monad.Reader hiding (fail)
+import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.Aeson as AE
 import qualified Data.Aeson.Encode.Pretty as AE
@@ -163,12 +164,12 @@ getFromJsonAndHandleError ::
     (Value -> String -> m a) ->
     Either String Value ->
     m a
-getFromJsonAndHandleError handleError r = do
+getFromJsonAndHandleError errHandler r = do
     s <- case r of
         Left err -> logFatal [printf "I/O error: %s" err]
         Right v -> return v
     case fromJSON s of
-        Error err -> handleError s err
+        Error err -> errHandler s err
         Success v -> return v
 
 -- | Look up account from the provided name or address.

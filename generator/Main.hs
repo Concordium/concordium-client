@@ -17,6 +17,7 @@ import Concordium.Types.Queries
 import Concordium.Types.Transactions
 
 import Control.Concurrent
+import Control.Monad
 import Control.Monad.Reader
 import qualified Data.Aeson as AE
 import qualified Data.Aeson.Types as AE
