@@ -10,7 +10,7 @@ COPY . /build
 
 RUN apk add perl g++ make protoc ncurses ncurses-dev zlib zlib-static zlib-dev git wget postgresql-dev gmp-dev gmp xz
 
-ARG RUST_VERSION=1.68
+ARG RUST_VERSION=1.73
 RUN wget -qO - https://sh.rustup.rs | sh -s -- --profile minimal --default-toolchain ${RUST_VERSION} -y
 
 ARG GHC_VERSION=9.6.4
