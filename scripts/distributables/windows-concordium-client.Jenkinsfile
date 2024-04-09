@@ -27,10 +27,11 @@ pipeline {
                     # Build project
                     stack build --force-dirty
                     
+                    # Zip the binaries
                     mkdir out
                     binDir=$(stack path --local-install-root)/bin
-                    outDir=$(pwd)/out
-                    (cd $binDir && zip $outDir/concordium-client.zip concordium-client.exe concordium_base.dll sha_2.dll)
+                    (cd $binDir && powershell -Command "Compress-Archive -Path concordium-client.exe,concordium_base.dll,sha_2.dll -DestinationPath concordium-client.zip)
+                    mv -f $binDir/concordium-client.zip out/concordium-client.zip
 
                     # Push to s3
                     aws s3 cp out/concordium-client.zip ${OUTFILE} --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
