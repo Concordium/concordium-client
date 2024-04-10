@@ -3,7 +3,7 @@
 
 module Concordium.Client.Types.TransactionStatus where
 
-import Control.Monad.State (foldM)
+import Control.Monad (foldM)
 import Data.Aeson
 import Data.Aeson.TH
 import qualified Data.Map.Strict as Map

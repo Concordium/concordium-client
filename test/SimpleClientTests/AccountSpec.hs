@@ -20,6 +20,7 @@ import Concordium.Types.Accounts
 import Concordium.Types.Accounts.Releases
 import Concordium.Types.Execution (DelegationTarget (..), OpenStatus (..))
 
+import Control.Monad
 import Control.Monad.Writer
 import qualified Data.Aeson as AE
 import qualified Data.Map.Strict as Map

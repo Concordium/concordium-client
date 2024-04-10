@@ -10,7 +10,7 @@ import qualified Data.ByteString as BS
 import Concordium.Client.Types.Contract.Parameter
 import Concordium.Client.Types.Contract.Schema
 
-import Control.Monad.List (forM, forM_, when)
+import Control.Monad (forM, forM_, when)
 import Data.Serialize (runPut)
 import Test.HUnit
 import Test.Hspec

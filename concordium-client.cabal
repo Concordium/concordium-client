@@ -5,7 +5,7 @@ cabal-version: 1.24
 -- see: https://github.com/sol/hpack
 
 name:           concordium-client
-version:        6.2.1
+version:        6.3.0
 description:    Please see the README on GitHub at <https://github.com/Concordium/concordium-client#readme>
 homepage:       https://github.com/Concordium/concordium-client#readme
 bug-reports:    https://github.com/Concordium/concordium-client/issues
@@ -68,17 +68,15 @@ library
       FlexibleContexts
       LambdaCase
       TupleSections
+      TypeOperators
   ghc-options: -Wall -Wcompat -Werror=missing-fields -Wredundant-constraints -O
   build-depends:
       aeson
     , aeson-pretty
     , ansi-terminal
-    , ansi-wl-pprint
     , async >=2.2
-    , attoparsec
     , base >=4.7 && <5
     , base16-bytestring
-    , base64-bytestring
     , bytestring
     , case-insensitive
     , cborg
@@ -87,7 +85,6 @@ library
     , concordium-base
     , containers
     , cookie
-    , cryptonite
     , directory
     , filepath
     , hashable >=1.2
@@ -99,16 +96,15 @@ library
     , mtl
     , optparse-applicative
     , pretty
+    , prettyprinter
+    , prettyprinter-ansi-terminal
     , proto-lens ==0.7.*
-    , proto-lens-protobuf-types ==0.7.*
-    , random
     , scientific
     , split
     , string-interpolate
     , text
     , time
     , transformers
-    , unordered-containers
     , uri-encode >=1.5
     , vector >=0.12
   default-language: Haskell2010
@@ -127,6 +123,7 @@ executable concordium-client
       FlexibleContexts
       LambdaCase
       TupleSections
+      TypeOperators
   ghc-options: -Wall -Wcompat -Werror=missing-fields -Wredundant-constraints -O
   build-depends:
       base
@@ -150,14 +147,13 @@ executable tx-generator
       FlexibleContexts
       LambdaCase
       TupleSections
+      TypeOperators
   ghc-options: -Wall -Wcompat -Werror=missing-fields -Wredundant-constraints -O
   build-depends:
       aeson
     , base
-    , bytestring
     , concordium-base
     , concordium-client
-    , containers
     , mtl
     , optparse-applicative
     , time
@@ -195,6 +191,7 @@ test-suite concordium-client-test
       FlexibleContexts
       LambdaCase
       TupleSections
+      TypeOperators
   ghc-options: -Wall -Wcompat -Werror=missing-fields -Wredundant-constraints -O
   build-depends:
       HUnit >=1.6
@@ -207,14 +204,10 @@ test-suite concordium-client-test
     , concordium-base
     , concordium-client
     , containers
-    , filepath
     , hspec >=2.6
-    , hspec-expectations >=0.8
     , mtl >=2.2.2
     , random
     , text
     , time
-    , transformers
-    , unordered-containers
     , vector
   default-language: Haskell2010

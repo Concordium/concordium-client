@@ -40,6 +40,7 @@ import Concordium.Types
 import Concordium.Types.Execution
 import qualified Concordium.Wasm as Wasm
 import Control.Monad
+import Data.String
 import Data.Text hiding (map, unlines)
 import Data.Time.Format.ISO8601
 import Data.Version (showVersion)
@@ -48,7 +49,8 @@ import Network.HTTP2.Client
 import Options.Applicative
 import Options.Applicative.Help.Pretty (fillCat, hang, softline)
 import Paths_concordium_client (version)
-import qualified Text.PrettyPrint.ANSI.Leijen as P
+import qualified Prettyprinter as P
+import qualified Prettyprinter.Render.Terminal as P
 import Text.Printf
 
 type Verbose = Bool
@@ -1967,8 +1969,8 @@ identityShowARsCmd =
             (progDesc "Show anonymity revokers at a given block.")
         )
 
-docFromLines :: [String] -> Maybe P.Doc
-docFromLines = Just . P.vsep . map P.text
+docFromLines :: [String] -> Maybe (P.Doc P.AnsiStyle)
+docFromLines = Just . P.vsep . map fromString
 
 -- | A parameter file used for initializing, updating, and invoking smart contracts.
 --   For the JSON parameter a schema must be embedded in the module or supplied with the --schema flag.

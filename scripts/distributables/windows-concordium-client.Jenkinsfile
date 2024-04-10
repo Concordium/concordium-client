@@ -4,7 +4,7 @@ pipeline {
     stages {
         stage('build') {
             environment {
-                GHC_VERSION = '9.2.7'
+                GHC_VERSION = '9.6.4'
                 BASE_OUTFILE = 's3://distribution.concordium.software/tools/windows/concordium-client'
             }
             steps {
