@@ -30,7 +30,7 @@ pipeline {
                     # Zip the binaries
                     mkdir out
                     binDir=$(stack path --local-install-root)/bin
-                    (cd $binDir && powershell -Command "Compress-Archive -Path concordium-client.exe,concordium_base.dll,sha_2.dll -DestinationPath concordium-client.zip)
+                    (cd $binDir && powershell -Command "Compress-Archive -Path concordium-client.exe,concordium_base.dll,sha_2.dll -DestinationPath concordium-client.zip")
                     mv -f $binDir/concordium-client.zip out/concordium-client.zip
 
                     # Push to s3
