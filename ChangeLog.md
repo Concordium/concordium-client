@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix a bug in correctly accounting for parsed events.
 - Update GHC version to 9.6.4 (lts-22.9).
 - Support protocol version 7.
 
