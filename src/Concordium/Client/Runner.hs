@@ -653,7 +653,7 @@ getTxContractInfoWithSchemas schemaFile status = do
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processTransactionCmd action baseCfgDir verbose backend =
     case action of
-        TransactionSubmit fname intOpts -> do
+        TransactionSignAndSubmit fname intOpts -> do
             -- TODO Ensure that the "nonce" field is optional in the payload.
             source <- handleReadFile BSL.readFile fname
 
@@ -665,7 +665,38 @@ processTransactionCmd action baseCfgDir verbose backend =
                 logSuccess [printf "transaction '%s' sent to the node" (show hash)]
                 when (ioTail intOpts) $ do
                     tailTransaction_ verbose hash
-        --          logSuccess [ "transaction successfully completed" ]
+                    logSuccess [ "transaction successfully completed" ]
+
+        TransactionSubmit fname intOpts -> do
+            jsonFileContent <- liftIO $ BSL8.readFile fname
+
+            -- TODO: Properly decode and display, especially the payload part
+            -- TODO: Ask for confirmation if (ioConfirm intOpts)
+            logInfo [[i| #{jsonFileContent}.|]]
+
+            -- Decode JSON file content into a BareBlockItem
+            let bareBlockItem :: Types.BareBlockItem
+                bareBlockItem = case decode jsonFileContent of
+                    Just item -> item
+                    Nothing -> error "Failed to decode JSON file content"
+
+            withClient backend $ do
+                -- Send transaction on chain
+                sbiRes <- sendBlockItem bareBlockItem
+                let res = case sbiRes of
+                        StatusOk resp -> Right resp
+                        StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
+                        StatusInvalid -> Left "GRPC response contained an invalid status code."
+                        RequestFailed err -> Left $ "I/O error: " <> err
+             
+                case res of
+                    Left err -> logFatal ["Transaction not accepted by the node: " <> err]
+                    Right _ -> do
+                        let hash = getBlockItemHash bareBlockItem
+                        logSuccess [printf "transaction '%s' sent to the node" (show hash)]
+                        when (ioTail intOpts) $ do
+                            tailTransaction_ verbose hash
+                            logSuccess [ "transaction successfully completed" ]
 
         TransactionDeployCredential fname intOpts -> do
             source <- handleReadFile BSL.readFile fname
@@ -675,7 +706,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                 logSuccess [printf "transaction '%s' sent to the node" (show hash)]
                 when (ioTail intOpts) $ do
                     tailTransaction_ verbose hash
-        --          logSuccess [ "credential deployed successfully" ]
+                    logSuccess [ "credential deployed successfully" ]
 
         TransactionStatus h schemaFile -> do
             hash <- case parseTransactionHash h of
@@ -1462,7 +1493,7 @@ accountDecryptTransactionConfirm AccountDecryptTransactionConfig{..} confirm = d
         confirmed <- askConfirmation Nothing
         unless confirmed exitTransactionCancelled
 
--- | Encode, sign, and send transaction off to the node.
+-- | Encode, and sign transaction.
 --  If confirmNonce is set, the user is asked to confirm using the next nonce
 --  if there are pending transactions.
 startTransaction ::
@@ -1488,17 +1519,12 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
         Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys Nothing Nothing
     let sender = applyAlias tcAlias naAddr
     let tx = signEncodedTransaction pl sender energy nonce expiry accountKeyMap
+
     when (isJust tcAlias) $
         logInfo [[i|Using the alias #{sender} as the sender of the transaction instead of #{naAddr}.|]]
-    sbiRes <- sendBlockItem tx
-    let res = case sbiRes of
-            StatusOk resp -> Right resp
-            StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
-            StatusInvalid -> Left "GRPC response contained an invalid status code."
-            RequestFailed err -> Left $ "I/O error: " <> err
-    case res of
-        Left err -> logFatal ["Transaction not accepted by the node: " <> err]
-        Right _ -> return tx
+
+    return tx
+
 
 -- | Fetch next nonces relative to the account's most recently committed and
 --  pending transactions, respectively.
@@ -1537,7 +1563,8 @@ sendAndTailTransaction_ ::
     ClientMonad m ()
 sendAndTailTransaction_ verbose txCfg pl intOpts = void $ sendAndTailTransaction verbose txCfg pl intOpts
 
--- | Send a transaction and optionally tail it (see 'tailTransaction' below).
+-- | Sign a transaction and either send it to the node or write it to a file.
+--  If send to the node, optionally tail it (see 'tailTransaction' below).
 --  If tailed, it returns the TransactionStatusResult of the finalized status,
 --  otherwise the return value is @Nothing@.
 sendAndTailTransaction ::
@@ -1553,11 +1580,36 @@ sendAndTailTransaction ::
     ClientMonad m (Maybe TransactionStatusResult)
 sendAndTailTransaction verbose txCfg pl intOpts = do
     tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
-    let hash = getBlockItemHash tx
-    logSuccess [printf "transaction '%s' sent to the node" (show hash)]
-    if ioTail intOpts
-        then Just <$> tailTransaction verbose hash
-        else return Nothing
+
+    if (ioSubmit intOpts)
+        then do
+            logInfo [[i| Send signed transaction to node.|]]
+
+            -- Send transaction on chain
+            sbiRes <- sendBlockItem tx
+            let res = case sbiRes of
+                    StatusOk resp -> Right resp
+                    StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
+                    StatusInvalid -> Left "GRPC response contained an invalid status code."
+                    RequestFailed err -> Left $ "I/O error: " <> err
+            case res of
+                Left err -> logFatal ["Transaction not accepted by the node: " <> err]
+                Right _ -> do
+                    let hash = getBlockItemHash tx
+                    logSuccess [printf "transaction '%s' sent to the node" (show hash)]
+
+                    if ioTail intOpts
+                        then Just <$> tailTransaction verbose hash
+                        else return Nothing
+        else do
+            logInfo [[i| Write signed transaction to file. Don't send it to the node.|]]
+            -- FIXME: pass in output file via flag.
+            let outFile = "./transaction.json"
+
+            let txJson = AE.encode tx
+            success <- liftIO $ handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose outFile txJson
+            when success $ logSuccess [[i|Wrote transaction successfully to the file '#{outFile}'|]]
+            return Nothing
 
 -- | Continuously query and display transaction status until the transaction is finalized.
 tailTransaction_ :: (MonadIO m) => Bool -> Types.TransactionHash -> ClientMonad m ()

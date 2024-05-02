@@ -181,7 +181,11 @@ registerDataParser =
         <|> (RegisterRaw <$> strOption (long "raw" <> metavar "FILE" <> help "File with raw bytes to be registered on chain."))
 
 data TransactionCmd
-    = TransactionSubmit
+    = TransactionSignAndSubmit
+        { tsFile :: !FilePath,
+          tsInteractionOpts :: !InteractionOpts
+        }
+    | TransactionSubmit
         { tsFile :: !FilePath,
           tsInteractionOpts :: !InteractionOpts
         }
@@ -432,6 +436,7 @@ data TransactionOpts energyOrMaybe = TransactionOpts
 
 data InteractionOpts = InteractionOpts
     { ioConfirm :: !Bool,
+      ioSubmit :: !Bool,
       ioTail :: !Bool
     }
     deriving (Show)
@@ -655,8 +660,8 @@ interactionOptsParser :: Parser InteractionOpts
 interactionOptsParser =
     InteractionOpts
         <$> (not <$> switch (long "no-confirm" <> help "Do not ask for confirmation before proceeding to send the transaction."))
+        <*> (not <$> switch (long "no-submit" <> help "Do not submit transaction on-chain. Write signed transaction to file instead."))
         <*> (not <$> switch (long "no-wait" <> help "Exit right after sending the transaction without waiting for it to be committed and finalized."))
-
 programOptions :: Parser Options
 programOptions =
     Options
@@ -700,7 +705,8 @@ transactionCmds =
         ( info
             ( TransactionCmd
                 <$> hsubparser
-                    ( transactionSubmitCmd
+                    ( transactionSignAndSubmitCmd
+                        <>  transactionSubmitCmd
                         <> transactionStatusCmd
                         <> transactionSendCcdCmd
                         <> transactionWithScheduleCmd
@@ -712,16 +718,28 @@ transactionCmds =
             (progDesc "Commands for submitting and inspecting transactions.")
         )
 
+transactionSignAndSubmitCmd :: Mod CommandFields TransactionCmd
+transactionSignAndSubmitCmd =
+    command
+        "sign-and-submit"
+        ( info
+            ( TransactionSignAndSubmit
+                <$> strArgument (metavar "FILE" <> help "File containing the transaction parameters in JSON format.")
+                <*> interactionOptsParser
+            )
+            (progDesc "Create transaction, sign it, and send it to the node.")
+        )
+
 transactionSubmitCmd :: Mod CommandFields TransactionCmd
 transactionSubmitCmd =
     command
         "submit"
         ( info
             ( TransactionSubmit
-                <$> strArgument (metavar "FILE" <> help "File containing the transaction parameters in JSON format.")
+                <$> strArgument (metavar "FILE" <> help "File containing a signed transaction in JSON format.")
                 <*> interactionOptsParser
             )
-            (progDesc "Parse transaction and send it to the node.")
+            (progDesc "Parse signed transaction and send it to the node.")
         )
 
 transactionDeployCredentialCmd :: Mod CommandFields TransactionCmd
