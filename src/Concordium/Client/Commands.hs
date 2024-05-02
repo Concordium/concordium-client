@@ -706,7 +706,7 @@ transactionCmds =
             ( TransactionCmd
                 <$> hsubparser
                     ( transactionSignAndSubmitCmd
-                        <>  transactionSubmitCmd
+                        <> transactionSubmitCmd
                         <> transactionStatusCmd
                         <> transactionSendCcdCmd
                         <> transactionWithScheduleCmd

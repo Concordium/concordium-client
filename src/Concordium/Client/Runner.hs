@@ -665,8 +665,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                 logSuccess [printf "transaction '%s' sent to the node" (show hash)]
                 when (ioTail intOpts) $ do
                     tailTransaction_ verbose hash
-                    logSuccess [ "transaction successfully completed" ]
-
+                    logSuccess ["transaction successfully completed"]
         TransactionSubmit fname intOpts -> do
             jsonFileContent <- liftIO $ BSL8.readFile fname
 
@@ -688,7 +687,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                         StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
                         StatusInvalid -> Left "GRPC response contained an invalid status code."
                         RequestFailed err -> Left $ "I/O error: " <> err
-             
+
                 case res of
                     Left err -> logFatal ["Transaction not accepted by the node: " <> err]
                     Right _ -> do
@@ -696,8 +695,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                         logSuccess [printf "transaction '%s' sent to the node" (show hash)]
                         when (ioTail intOpts) $ do
                             tailTransaction_ verbose hash
-                            logSuccess [ "transaction successfully completed" ]
-
+                            logSuccess ["transaction successfully completed"]
         TransactionDeployCredential fname intOpts -> do
             source <- handleReadFile BSL.readFile fname
             withClient backend $ do
@@ -706,8 +704,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                 logSuccess [printf "transaction '%s' sent to the node" (show hash)]
                 when (ioTail intOpts) $ do
                     tailTransaction_ verbose hash
-                    logSuccess [ "credential deployed successfully" ]
-
+                    logSuccess ["credential deployed successfully"]
         TransactionStatus h schemaFile -> do
             hash <- case parseTransactionHash h of
                 Nothing -> logFatal [printf "invalid transaction hash '%s'" h]
@@ -1524,7 +1521,6 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
         logInfo [[i|Using the alias #{sender} as the sender of the transaction instead of #{naAddr}.|]]
 
     return tx
-
 
 -- | Fetch next nonces relative to the account's most recently committed and
 --  pending transactions, respectively.
