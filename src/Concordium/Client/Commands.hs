@@ -189,6 +189,10 @@ data TransactionCmd
         { tsFile :: !FilePath,
           tsInteractionOpts :: !InteractionOpts
         }
+    | TransactionAddSignature
+        { tsFile :: !FilePath,
+          tsInteractionOpts :: !InteractionOpts
+        }
     | TransactionStatus
         { tsHash :: !Text,
           -- | Path to a contract schema, used to display the transaction event info.
@@ -707,6 +711,7 @@ transactionCmds =
                 <$> hsubparser
                     ( transactionSignAndSubmitCmd
                         <> transactionSubmitCmd
+                        <> transactionAddSignatureCmd
                         <> transactionStatusCmd
                         <> transactionSendCcdCmd
                         <> transactionWithScheduleCmd
@@ -740,6 +745,18 @@ transactionSubmitCmd =
                 <*> interactionOptsParser
             )
             (progDesc "Parse signed transaction and send it to the node.")
+        )
+
+transactionAddSignatureCmd :: Mod CommandFields TransactionCmd
+transactionAddSignatureCmd =
+    command
+        "add-signature"
+        ( info
+            ( TransactionAddSignature
+                <$> strArgument (metavar "FILE" <> help "File containing a signed transaction in JSON format.")
+                <*> interactionOptsParser
+            )
+            (progDesc "Adds a signature to the transaction in the file.")
         )
 
 transactionDeployCredentialCmd :: Mod CommandFields TransactionCmd

@@ -657,7 +657,11 @@ processTransactionCmd action baseCfgDir verbose backend =
             -- TODO Ensure that the "nonce" field is optional in the payload.
             source <- handleReadFile BSL.readFile fname
 
-            -- TODO Print transaction details and ask for confirmation if (ioConfirm intOpts)
+            -- TODO Print transaction details
+
+            when (ioConfirm intOpts) $ do
+                confirmed <- askConfirmation $ Just "Do you want to send the transaction on chain? "
+                unless confirmed exitTransactionCancelled
 
             withClient backend $ do
                 tx <- processTransaction source
@@ -667,21 +671,27 @@ processTransactionCmd action baseCfgDir verbose backend =
                     tailTransaction_ verbose hash
                     logSuccess ["transaction successfully completed"]
         TransactionSubmit fname intOpts -> do
-            jsonFileContent <- liftIO $ BSL8.readFile fname
+            fileContent <- liftIO $ BSL8.readFile fname
+
+            -- Decode JSON file content into a AccountTransaction
+            let accountTransaction :: Types.AccountTransaction
+                accountTransaction = case decode fileContent of
+                    Just item -> item
+                    Nothing -> error "Failed to decode file content into AccountTransaction type"
 
             -- TODO: Properly decode and display, especially the payload part
-            -- TODO: Ask for confirmation if (ioConfirm intOpts)
-            logInfo [[i| #{jsonFileContent}.|]]
+            logInfo ["Transaction in file: "]
+            logInfo [[i| #{showPrettyJSON accountTransaction}.|]]
 
-            -- Decode JSON file content into a BareBlockItem
-            let bareBlockItem :: Types.BareBlockItem
-                bareBlockItem = case decode jsonFileContent of
-                    Just item -> item
-                    Nothing -> error "Failed to decode JSON file content"
+            when (ioConfirm intOpts) $ do
+                confirmed <- askConfirmation $ Just "Do you want to send the transaction on chain? "
+                unless confirmed exitTransactionCancelled
+
+            let tx = Types.NormalTransaction accountTransaction
 
             withClient backend $ do
                 -- Send transaction on chain
-                sbiRes <- sendBlockItem bareBlockItem
+                sbiRes <- sendBlockItem tx
                 let res = case sbiRes of
                         StatusOk resp -> Right resp
                         StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
@@ -691,11 +701,29 @@ processTransactionCmd action baseCfgDir verbose backend =
                 case res of
                     Left err -> logFatal ["Transaction not accepted by the node: " <> err]
                     Right _ -> do
-                        let hash = getBlockItemHash bareBlockItem
+                        let hash = getBlockItemHash tx
                         logSuccess [printf "transaction '%s' sent to the node" (show hash)]
                         when (ioTail intOpts) $ do
                             tailTransaction_ verbose hash
                             logSuccess ["transaction successfully completed"]
+        TransactionAddSignature fname _intOpts -> do
+            fileContent <- liftIO $ BSL8.readFile fname
+
+            -- Decode JSON file content into a AccountTransaction
+            let accountTransaction :: Types.AccountTransaction
+                accountTransaction = case decode fileContent of
+                    Just item -> item
+                    Nothing -> error "Failed to decode file content into AccountTransaction type"
+
+            -- TODO: Properly decode and display, especially the payload part
+            logInfo ["Transaction in file: "]
+            logInfo [[i| #{showPrettyJSON accountTransaction}.|]]
+
+            let _tx = Types.NormalTransaction accountTransaction
+            -- TODO: Use _tx and _intOpts
+            -- TODO: generate signature and write into file
+
+            logSuccess [[i|Added signature successfully to the transaction in the file '#{fname}'|]]
         TransactionDeployCredential fname intOpts -> do
             source <- handleReadFile BSL.readFile fname
             withClient backend $ do
@@ -1599,12 +1627,13 @@ sendAndTailTransaction verbose txCfg pl intOpts = do
                         else return Nothing
         else do
             logInfo [[i| Write signed transaction to file. Don't send it to the node.|]]
-            -- FIXME: pass in output file via flag.
+            -- TODO: pass in output file via flag.
             let outFile = "./transaction.json"
 
             let txJson = AE.encode tx
             success <- liftIO $ handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose outFile txJson
             when success $ logSuccess [[i|Wrote transaction successfully to the file '#{outFile}'|]]
+            -- TODO: write error if not failing to write to file
             return Nothing
 
 -- | Continuously query and display transaction status until the transaction is finalized.
