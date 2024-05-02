@@ -47,7 +47,7 @@ import Data.Bool
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Short as BSS
-import Data.Either (isRight)
+import Data.Either (isLeft)
 import Data.Functor
 import Data.List (foldl', intercalate, nub, partition, sortOn)
 import qualified Data.Map.Strict as Map
@@ -782,68 +782,68 @@ showEvent ::
     Maybe String
 showEvent verbose ciM = \case
     Types.ModuleDeployed ref ->
-        verboseOrNothing $ printf "module '%s' deployed." (show ref)
+        verboseOrNothing $ printf "module '%s' deployed" (show ref)
     Types.ContractInitialized{..} ->
         verboseOrNothing $
             [i|initialized contract '#{ecAddress}' using init function '#{ecInitName}' from module '#{ecRef}' |]
-                <> [i|with #{showCcd ecAmount}.\n#{showLoggedEvents ecEvents}|]
+                <> [i|with #{showCcd ecAmount}\n#{showLoggedEvents ecEvents}|]
     Types.Updated{..} ->
         verboseOrNothing $
             [i|sent message to function '#{euReceiveName}' with #{showParameter euReceiveName euMessage} and #{showCcd euAmount} |]
-                <> [i|from #{showAddress euInstigator} to #{showAddress $ Types.AddressContract euAddress}.\n|]
+                <> [i|from #{showAddress euInstigator} to #{showAddress $ Types.AddressContract euAddress}\n|]
                 <> [i|#{showLoggedEvents euEvents}|]
     Types.Transferred{..} ->
-        verboseOrNothing $ printf "transferred %s from %s to %s." (showCcd etAmount) (showAddress etFrom) (showAddress etTo)
+        verboseOrNothing $ printf "transferred %s from %s to %s" (showCcd etAmount) (showAddress etFrom) (showAddress etTo)
     Types.AccountCreated addr ->
-        verboseOrNothing $ printf "account '%s' created." (show addr)
+        verboseOrNothing $ printf "account '%s' created" (show addr)
     Types.CredentialDeployed{..} ->
-        verboseOrNothing $ printf "credential with registration '%s' deployed onto account '%s'." (show ecdRegId) (show ecdAccount)
+        verboseOrNothing $ printf "credential with registration '%s' deployed onto account '%s'" (show ecdRegId) (show ecdAccount)
     Types.BakerAdded{..} ->
         let restakeString :: String = if ebaRestakeEarnings then "Earnings are added to the stake." else "Earnings are not added to the stake."
         in  verboseOrNothing $ printf "validator %s added, staking %s CCD. %s" (showBaker ebaBakerId ebaAccount) (Types.amountToString ebaStake) restakeString
     Types.BakerRemoved{..} ->
-        verboseOrNothing $ printf "validator %s, removed." (showBaker ebrBakerId ebrAccount)
+        verboseOrNothing $ printf "validator %s, removed" (showBaker ebrBakerId ebrAccount)
     Types.BakerStakeIncreased{..} ->
-        verboseOrNothing $ printf "validator %s stake increased to %s." (showBaker ebsiBakerId ebsiAccount) (showCcd ebsiNewStake)
+        verboseOrNothing $ printf "validator %s stake increased to %s" (showBaker ebsiBakerId ebsiAccount) (showCcd ebsiNewStake)
     Types.BakerStakeDecreased{..} ->
-        verboseOrNothing $ printf "validator %s stake decreased to %s." (showBaker ebsiBakerId ebsiAccount) (showCcd ebsiNewStake)
+        verboseOrNothing $ printf "validator %s stake decreased to %s" (showBaker ebsiBakerId ebsiAccount) (showCcd ebsiNewStake)
     Types.BakerSetRestakeEarnings{..} ->
-        verboseOrNothing $ printf "validator %s restake earnings %s." (showBaker ebsreBakerId ebsreAccount) (if ebsreRestakeEarnings then "set" :: String else "unset")
+        verboseOrNothing $ printf "validator %s restake earnings %s" (showBaker ebsreBakerId ebsreAccount) (if ebsreRestakeEarnings then "set" :: String else "unset")
     Types.BakerKeysUpdated{..} ->
-        verboseOrNothing $ printf "validator %s keys updated." (showBaker ebkuBakerId ebkuAccount)
+        verboseOrNothing $ printf "validator %s keys updated" (showBaker ebkuBakerId ebkuAccount)
     Types.CredentialsUpdated{..} ->
         verboseOrNothing $ [i|credentials on account #{cuAccount} have been updated.\nCredentials #{cuRemovedCredIds} have been removed, and credentials #{cuNewCredIds} have been added.\nThe new account threshold is #{cuNewThreshold}.|]
     Types.BakerSetOpenStatus{..} ->
-        verboseOrNothing $ printf "validator %s open status changed to %s." (showBaker ebsosBakerId ebsosAccount) (show ebsosOpenStatus)
+        verboseOrNothing $ printf "validator %s open status changed to %s" (showBaker ebsosBakerId ebsosAccount) (show ebsosOpenStatus)
     Types.BakerSetMetadataURL{..} ->
-        verboseOrNothing $ printf "validator %s URL changed to %s." (showBaker ebsmuBakerId ebsmuAccount) (show ebsmuMetadataURL)
+        verboseOrNothing $ printf "validator %s URL changed to %s" (showBaker ebsmuBakerId ebsmuAccount) (show ebsmuMetadataURL)
     Types.BakerSetTransactionFeeCommission{..} ->
-        verboseOrNothing $ printf "validator %s changed transaction fee commission to %s." (showBaker ebstfcBakerId ebstfcAccount) (show ebstfcTransactionFeeCommission)
+        verboseOrNothing $ printf "validator %s changed transaction fee commission to %s" (showBaker ebstfcBakerId ebstfcAccount) (show ebstfcTransactionFeeCommission)
     Types.BakerSetBakingRewardCommission{..} ->
-        verboseOrNothing $ printf "validator %s changed block reward commission to %s." (showBaker ebsbrcBakerId ebsbrcAccount) (show ebsbrcBakingRewardCommission)
+        verboseOrNothing $ printf "validator %s changed block reward commission to %s" (showBaker ebsbrcBakerId ebsbrcAccount) (show ebsbrcBakingRewardCommission)
     Types.BakerSetFinalizationRewardCommission{..} ->
-        verboseOrNothing $ printf "validator %s changed finalization reward commission to %s." (showBaker ebsfrcBakerId ebsfrcAccount) (show ebsfrcFinalizationRewardCommission)
+        verboseOrNothing $ printf "validator %s changed finalization reward commission to %s" (showBaker ebsfrcBakerId ebsfrcAccount) (show ebsfrcFinalizationRewardCommission)
     Types.DelegationStakeIncreased{..} ->
-        verboseOrNothing $ printf "delegator %s stake increased to %s." (showDelegator edsiDelegatorId edsiAccount) (showCcd edsiNewStake)
+        verboseOrNothing $ printf "delegator %s stake increased to %s" (showDelegator edsiDelegatorId edsiAccount) (showCcd edsiNewStake)
     Types.DelegationStakeDecreased{..} ->
-        verboseOrNothing $ printf "delegator %s stake decreased to %s." (showDelegator edsdDelegatorId edsdAccount) (showCcd edsdNewStake)
+        verboseOrNothing $ printf "delegator %s stake decreased to %s" (showDelegator edsdDelegatorId edsdAccount) (showCcd edsdNewStake)
     Types.DelegationSetRestakeEarnings{..} ->
-        verboseOrNothing $ printf "delegator %s restake earnings changed to %s." (showDelegator edsreDelegatorId edsreAccount) (show edsreRestakeEarnings)
+        verboseOrNothing $ printf "delegator %s restake earnings changed to %s" (showDelegator edsreDelegatorId edsreAccount) (show edsreRestakeEarnings)
     Types.DelegationSetDelegationTarget{..} ->
-        verboseOrNothing $ printf "delegator %s delegation target changed to %s." (showDelegator edsdtDelegatorId edsdtAccount) (showDelegationTarget edsdtDelegationTarget)
+        verboseOrNothing $ printf "delegator %s delegation target changed to %s" (showDelegator edsdtDelegatorId edsdtAccount) (showDelegationTarget edsdtDelegationTarget)
     Types.DelegationAdded{..} ->
-        verboseOrNothing $ printf "delegator %s added." (showDelegator edaDelegatorId edaAccount)
+        verboseOrNothing $ printf "delegator %s added" (showDelegator edaDelegatorId edaAccount)
     Types.DelegationRemoved{..} ->
-        verboseOrNothing $ printf "delegator %s removed." (showDelegator edrDelegatorId edrAccount)
-    Types.CredentialKeysUpdated cid -> verboseOrNothing $ printf "credential keys updated for credential with credId %s." (show cid)
-    Types.NewEncryptedAmount{..} -> verboseOrNothing $ printf "shielded amount received on account '%s' with index '%s'." (show neaAccount) (show neaNewIndex)
-    Types.EncryptedAmountsRemoved{..} -> verboseOrNothing $ printf "shielded amounts removed on account '%s' up to index '%s' with a resulting self shielded amount of '%s'." (show earAccount) (show earUpToIndex) (show earNewAmount)
-    Types.AmountAddedByDecryption{..} -> verboseOrNothing $ printf "transferred %s from the shielded balance to the public balance on account '%s'." (showCcd aabdAmount) (show aabdAccount)
-    Types.EncryptedSelfAmountAdded{..} -> verboseOrNothing $ printf "transferred %s from the public balance to the shielded balance on account '%s' with a resulting self shielded balance of '%s'." (showCcd eaaAmount) (show eaaAccount) (show eaaNewAmount)
+        verboseOrNothing $ printf "delegator %s removed" (showDelegator edrDelegatorId edrAccount)
+    Types.CredentialKeysUpdated cid -> verboseOrNothing $ printf "credential keys updated for credential with credId %s" (show cid)
+    Types.NewEncryptedAmount{..} -> verboseOrNothing $ printf "shielded amount received on account '%s' with index '%s'" (show neaAccount) (show neaNewIndex)
+    Types.EncryptedAmountsRemoved{..} -> verboseOrNothing $ printf "shielded amounts removed on account '%s' up to index '%s' with a resulting self shielded amount of '%s'" (show earAccount) (show earUpToIndex) (show earNewAmount)
+    Types.AmountAddedByDecryption{..} -> verboseOrNothing $ printf "transferred %s from the shielded balance to the public balance on account '%s'" (showCcd aabdAmount) (show aabdAccount)
+    Types.EncryptedSelfAmountAdded{..} -> verboseOrNothing $ printf "transferred %s from the public balance to the shielded balance on account '%s' with a resulting self shielded balance of '%s'" (showCcd eaaAmount) (show eaaAccount) (show eaaNewAmount)
     Types.UpdateEnqueued{..} ->
         verboseOrNothing $ printf "Enqueued chain update, effective at %s:\n%s" (showTimeFormatted (timeFromTransactionExpiryTime ueEffectiveTime)) (show uePayload)
     Types.TransferredWithSchedule{..} ->
-        verboseOrNothing $ printf "Sent transfer with schedule %s." (intercalate ", " . map (\(a, b) -> showTimeFormatted (Time.timestampToUTCTime a) ++ ": " ++ showCcd b) $ etwsAmount)
+        verboseOrNothing $ printf "Sent transfer with schedule %s" (intercalate ", " . map (\(a, b) -> showTimeFormatted (Time.timestampToUTCTime a) ++ ": " ++ showCcd b) $ etwsAmount)
     Types.DataRegistered{} ->
         verboseOrNothing [i|Registered data on chain.|]
     Types.TransferMemo{..} ->
@@ -904,10 +904,10 @@ showEvent verbose ciM = \case
     showLoggedEvents :: [Wasm.ContractEvent] -> String
     showLoggedEvents [] = "No contract events were emitted."
     showLoggedEvents evs =
-        [i|#{length evs} contract #{if length evs > 1 then "events were" else ("event was" :: String)} emitted|]
+        [i|#{length evs} contract events were emitted|]
             <> ( if isNothing eventSchemaM
                     then [i| but no event schema was provided nor found in the contract module. |]
-                    else [i|, of which #{length $ filter isRight $ map showContractEvent evs} #{if (length $ filter isRight $ map showContractEvent evs) > 1 then "were" else ("was" :: String)} successfully parsed. |]
+                    else [i|, of which #{length $ filter isLeft $ map showContractEvent evs} were succesfully parsed. |]
                )
             <> [i|Got:\n|]
             <> intercalate "\n" (map fromEither (map showContractEvent evs))
@@ -920,7 +920,7 @@ showEvent verbose ciM = \case
         eventSchemaM = getEventSchema =<< ciM
         -- Show a string representation of the contract event.
         -- Returns @Right@ containing a JSON representation of the event if a schema was present
-        -- and the event could be successfully parsed using it.
+        -- and the event could be succesfully parsed using it.
         -- Returns @Left@ containing a hexadecimal representation of the raw event data otherwise.
         showContractEvent :: Wasm.ContractEvent -> Either String String
         showContractEvent ce@(Wasm.ContractEvent bs) = case toJSONString eventSchemaM bs of
