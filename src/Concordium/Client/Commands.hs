@@ -191,7 +191,7 @@ data TransactionCmd
         }
     | TransactionAddSignature
         { tsFile :: !FilePath,
-          tsInteractionOpts :: !InteractionOpts
+          signers :: !(Maybe Text)
         }
     | TransactionStatus
         { tsHash :: !Text,
@@ -754,7 +754,7 @@ transactionAddSignatureCmd =
         ( info
             ( TransactionAddSignature
                 <$> strArgument (metavar "FILE" <> help "File containing a signed transaction in JSON format.")
-                <*> interactionOptsParser
+                <*> optional (strOption (long "signers" <> metavar "SIGNERS" <> help "Specification of which (local) keys to sign with. Example: \"0:1,0:2,3:0,3:1\" specifies that credential holder 0 signs with keys 1 and 2, while credential holder 3 signs with keys 0 and 1"))
             )
             (progDesc "Adds a signature to the transaction in the file.")
         )
