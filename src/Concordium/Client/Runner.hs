@@ -673,7 +673,7 @@ processTransactionCmd action baseCfgDir verbose backend =
         TransactionSubmit fname intOpts -> do
             fileContent <- liftIO $ BSL8.readFile fname
 
-            -- Decode JSON file content into a AccountTransaction
+            -- Decode JSON file content into an AccountTransaction
             let accountTransaction :: Types.AccountTransaction
                 accountTransaction = case decode fileContent of
                     Just item -> item
@@ -709,36 +709,49 @@ processTransactionCmd action baseCfgDir verbose backend =
         TransactionAddSignature fname signers -> do
             fileContent <- liftIO $ BSL8.readFile fname
 
-            -- Decode JSON file content into a AccountTransaction
+            -- Decode JSON file content into an AccountTransaction
             let accountTransaction :: Types.AccountTransaction
                 accountTransaction = case decode fileContent of
                     Just item -> item
                     Nothing -> error "Failed to decode file content into AccountTransaction type"
 
+            -- Display transaction from the file
             -- TODO: Properly decode and display, especially the payload part
             logInfo ["Transaction in file: "]
             logInfo [[i| #{showPrettyJSON accountTransaction}.|]]
 
+            -- Extract accountKeyMap to be used to sign the transaction
             baseCfg <- getBaseConfig baseCfgDir verbose
-
             let header = Types.atrHeader accountTransaction
-            let encPayload = Types.atrPayload accountTransaction
-            let signerAccountAddress = Types.thSender header
-            let signerAccountAddressText = Text.pack $ show signerAccountAddress
+            let signerAccountAddressText = Text.pack $ show (Types.thSender header)
+
+            -- TODO: should we check if the `nonce` still makes sense as read from the file vs the one on-chain.
+            -- (and throw error if additional txs have been sent by account meanwhile meaning the account nonce is not valid anymore).
 
             -- TODO: better name than `getAccountCfgFromTxOpts2` and consolidate both functions
             encryptedSigningData <- getAccountCfgFromTxOpts2 baseCfg signerAccountAddressText signers
             accountKeyMap <- liftIO $ failOnError $ decryptAccountKeyMapInteractive (esdKeys encryptedSigningData) Nothing Nothing
 
-            let signatures = signEncodedTransaction encPayload header accountKeyMap
+            -- Sign transaction and extract the signature map B (new signatures to be added)
+            let encPayload = Types.atrPayload accountTransaction
+            let transactionB = signEncodedTransaction encPayload header accountKeyMap
+            let sigBMap = Types.tsSignatures (Types.atrSignature transactionB)
 
-            logInfo [[i| "Signatures: " |]]
-            logInfo [[i| ""|]]
-            logInfo [[i| #{signatures}.|]]
+            -- Extract the signature map A (original signatures as stored in the file)
+            let sigAMap = Types.tsSignatures (Types.atrSignature accountTransaction)
 
-            -- TODO: write signatures into file
+            -- Create the union of the signature map A and the signature map B
+            let unionSignaturesMap = Map.unionWith Map.union sigAMap sigBMap
 
-            logSuccess [[i|Added signature successfully to the transaction in the file '#{fname}'|]]
+            -- Create final signed transaction including signtures A and B
+            let finalTransaction = AE.encodePretty accountTransaction{Types.atrSignature = Types.TransactionSignature unionSignaturesMap}
+
+            -- TODO: remove the extra confirmation
+            -- Write finalTransaction to file
+            success <- liftIO $ handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose fname finalTransaction
+            if success
+                then liftIO $ logSuccess [[i|Added signature successfully to the transaction in the file '#{fname}'|]]
+                else liftIO $ logError [[i|Failed to write signature to the file '#{fname}'|]]
         TransactionDeployCredential fname intOpts -> do
             source <- handleReadFile BSL.readFile fname
             withClient backend $ do
@@ -1692,8 +1705,11 @@ signAndProcessTransaction verbose txCfg pl intOpts = do
 
             let txJson = AE.encodePretty tx
             success <- liftIO $ handleWriteFile BSL.writeFile PromptBeforeOverwrite verbose outFile txJson
-            when success $ logSuccess [[i|Wrote transaction successfully to the file '#{outFile}'|]]
-            -- TODO: write error if not failing to write to file
+
+            if success
+                then liftIO $ logSuccess [[i|Wrote transaction successfully to the file '#{outFile}'|]]
+                else liftIO $ logError [[i|Failed to write transaction to the file '#{outFile}'|]]
+
             return Nothing
 
 -- | Continuously query and display transaction status until the transaction is finalized.
@@ -4626,7 +4642,7 @@ formatAndSignTransaction ::
     AccountKeyMap ->
     Types.BareBlockItem
 formatAndSignTransaction encPayload sender energy nonce expiry accKeys =
-    signEncodedTransaction encPayload header accKeys
+    Types.NormalTransaction $ signEncodedTransaction encPayload header accKeys
   where
     header =
         Types.TransactionHeader
@@ -4638,13 +4654,12 @@ formatAndSignTransaction encPayload sender energy nonce expiry accKeys =
             }
 
 -- | Sign an encoded transaction payload, and header with the account key map
--- and return a "normal" transaction, which is ready to be sent.
+-- and return a "normal" AccountTransaction.
 signEncodedTransaction ::
     Types.EncodedPayload ->
     Types.TransactionHeader ->
     AccountKeyMap ->
-    Types.BareBlockItem
+    Types.AccountTransaction
 signEncodedTransaction encPayload header accKeys =
-    Types.NormalTransaction $
-        let keys = Map.toList $ fmap Map.toList accKeys
-        in  Types.signTransaction keys header encPayload
+    let keys = Map.toList $ fmap Map.toList accKeys
+    in  Types.signTransaction keys header encPayload
