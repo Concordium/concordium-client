@@ -674,14 +674,29 @@ processTransactionCmd action baseCfgDir verbose backend =
             fileContent <- liftIO $ BSL8.readFile fname
 
             -- Decode JSON file content into an AccountTransaction
-            let accountTransaction :: Types.AccountTransaction
-                accountTransaction = case decode fileContent of
-                    Just item -> item
-                    Nothing -> error "Failed to decode file content into AccountTransaction type"
+            accountTransaction <- case decode fileContent of
+                Just item -> return item
+                Nothing -> logFatal ["Failed to decode file content into AccountTransaction type"]
 
-            -- TODO: Properly decode and display, especially the payload part
+            -- Display the transaction from the JSON file
             logInfo ["Transaction in file: "]
             logInfo [[i| #{showPrettyJSON accountTransaction}.|]]
+
+            -- Display the decoded payload from the transaction
+            let encPayload = Types.atrPayload accountTransaction
+
+            pv <- withClient backend $ do
+                cs <- getResponseValueOrDie =<< getConsensusInfo
+                return $ Queries.csProtocolVersion cs
+
+            -- TODO: Use the above `pv` instead of `Types.SP6`.
+            decoded_payload <- case Types.decodePayload Types.SP6 (Types.payloadSize encPayload) encPayload of
+                Right payload -> return payload
+                Left err -> logFatal ["Transaction not accepted by the node: " <> err]
+            logInfo [[i| Decoded payload:|]]
+            logInfo [[i| #{showPrettyJSON decoded_payload}.|]]
+
+            -- TODO: to further decode the `message` in contract update or init transactions, we need a schema.
 
             when (ioConfirm intOpts) $ do
                 confirmed <- askConfirmation $ Just "Do you want to send the transaction on chain? "
@@ -710,15 +725,30 @@ processTransactionCmd action baseCfgDir verbose backend =
             fileContent <- liftIO $ BSL8.readFile fname
 
             -- Decode JSON file content into an AccountTransaction
-            let accountTransaction :: Types.AccountTransaction
-                accountTransaction = case decode fileContent of
-                    Just item -> item
-                    Nothing -> error "Failed to decode file content into AccountTransaction type"
+            accountTransaction <- case decode fileContent of
+                Just item -> return item
+                Nothing -> logFatal ["Failed to decode file content into AccountTransaction type"]
 
-            -- Display transaction from the file
-            -- TODO: Properly decode and display, especially the payload part
+            -- Display the transaction from the JSON file
             logInfo ["Transaction in file: "]
             logInfo [[i| #{showPrettyJSON accountTransaction}.|]]
+
+            -- Display the decoded payload from the transaction
+            let encPayload = Types.atrPayload accountTransaction
+
+            pv <- withClient backend $ do
+                cs <- getResponseValueOrDie =<< getConsensusInfo
+                return $ Queries.csProtocolVersion cs
+
+            -- TODO: Use the above `pv` instead of `Types.SP6`.
+
+            decoded_payload <- case Types.decodePayload Types.SP6 (Types.payloadSize encPayload) encPayload of
+                Right payload -> return payload
+                Left err -> logFatal ["Transaction not accepted by the node: " <> err]
+            logInfo [[i| Decoded payload:|]]
+            logInfo [[i| #{showPrettyJSON decoded_payload}.|]]
+
+            -- TODO: to further decode the `message` in contract update or init transactions, we need a schema.
 
             -- Extract accountKeyMap to be used to sign the transaction
             baseCfg <- getBaseConfig baseCfgDir verbose
@@ -733,7 +763,6 @@ processTransactionCmd action baseCfgDir verbose backend =
             accountKeyMap <- liftIO $ failOnError $ decryptAccountKeyMapInteractive (esdKeys encryptedSigningData) Nothing Nothing
 
             -- Sign transaction and extract the signature map B (new signatures to be added)
-            let encPayload = Types.atrPayload accountTransaction
             let transactionB = signEncodedTransaction encPayload header accountKeyMap
             let sigBMap = Types.tsSignatures (Types.atrSignature transactionB)
 
@@ -1543,8 +1572,8 @@ accountUpdateCredentialsTransactionConfirm AccountUpdateCredentialsTransactionCf
     logInfo $
         [printf "adding credentials to account %s with the following credential registration ids on account:" (showNamedAddress addr)]
             ++ logNewCids
-            ++ [printf "setting new account threshold %s" (show (auctcNewThreshold))]
-            ++ [printf "removing credentials with credential registration ids %s" (show (auctcRemoveCredIds))]
+            ++ [printf "setting new account threshold %s" (show auctcNewThreshold)]
+            ++ [printf "removing credentials with credential registration ids %s" (show auctcRemoveCredIds)]
             ++ [ printf "allowing up to %s to be spent as transaction fee" (showNrg energy),
                  printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry)
                ]
@@ -1678,7 +1707,7 @@ signAndProcessTransaction ::
 signAndProcessTransaction verbose txCfg pl intOpts = do
     tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
 
-    if (ioSubmit intOpts)
+    if ioSubmit intOpts
         then do
             logInfo [[i| Send signed transaction to node.|]]
 
