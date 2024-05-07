@@ -649,6 +649,43 @@ getTxContractInfoWithSchemas schemaFile status = do
             MultipleBlocksUnambiguous bhs ts -> map (,f ts) bhs
             MultipleBlocksAmbiguous bhts -> map (second f) bhts
 
+-- | Read and display an `AccountTransaction` from a JSON file.
+--  Returns the `AccountTransaction`.
+readAndDisplayAccountTransaction :: FilePath -> Backend -> IO Types.AccountTransaction
+readAndDisplayAccountTransaction fname backend = do
+    fileContent <- liftIO $ BSL8.readFile fname
+
+    -- Decode JSON file content into an AccountTransaction
+    accountTransaction <- case decode fileContent of
+            Just tx -> do
+                    -- Display the transaction from the JSON file
+                    logInfo ["Transaction in file: "]
+                    logInfo [[i| #{showPrettyJSON tx}.|]]
+
+                    return tx
+            Nothing -> logFatal ["Failed to decode file content into AccountTransaction type"]
+
+    -- Get current protocol version
+    pv <- withClient backend $ do
+            cs <- getResponseValueOrDie =<< getConsensusInfo
+            return $ Queries.csProtocolVersion cs
+
+    -- Decode the display the payload from the transaction
+    let encPayload = Types.atrPayload accountTransaction
+
+    let decPayload = case Types.promoteProtocolVersion pv of
+           Types.SomeProtocolVersion spv -> Types.decodePayload spv (Types.payloadSize encPayload) encPayload
+
+    case decPayload of
+            Right payload -> do
+                logInfo [[i| Decoded payload:|]]
+                logInfo [[i| #{showPrettyJSON payload}.|]]
+            Left err -> logFatal ["Decoding of payload failed: " <> err]
+
+    -- TODO: to further decode the `message` in contract update or init transactions, we need a schema.
+
+    return accountTransaction
+
 -- | Process a 'transaction ...' command.
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processTransactionCmd action baseCfgDir verbose backend =
@@ -671,33 +708,8 @@ processTransactionCmd action baseCfgDir verbose backend =
                     tailTransaction_ verbose hash
                     logSuccess ["transaction successfully completed"]
         TransactionSubmit fname intOpts -> do
-            fileContent <- liftIO $ BSL8.readFile fname
-
-            -- Decode JSON file content into an AccountTransaction
-            accountTransaction <- case decode fileContent of
-                Just item -> return item
-                Nothing -> logFatal ["Failed to decode file content into AccountTransaction type"]
-
-            -- Display the transaction from the JSON file
-            logInfo ["Transaction in file: "]
-            logInfo [[i| #{showPrettyJSON accountTransaction}.|]]
-
-            -- Display the decoded payload from the transaction
-            let encPayload = Types.atrPayload accountTransaction
-
-            pv <- withClient backend $ do
-                cs <- getResponseValueOrDie =<< getConsensusInfo
-                return $ Queries.csProtocolVersion cs
-
-            -- TODO: Use the above `pv` instead of `Types.SP6`.
-            decoded_payload <- case Types.decodePayload Types.SP6 (Types.payloadSize encPayload) encPayload of
-                Right payload -> return payload
-                Left err -> logFatal ["Transaction not accepted by the node: " <> err]
-            logInfo [[i| Decoded payload:|]]
-            logInfo [[i| #{showPrettyJSON decoded_payload}.|]]
-
-            -- TODO: to further decode the `message` in contract update or init transactions, we need a schema.
-
+            accountTransaction <- readAndDisplayAccountTransaction fname backend
+   
             when (ioConfirm intOpts) $ do
                 confirmed <- askConfirmation $ Just "Do you want to send the transaction on chain? "
                 unless confirmed exitTransactionCancelled
@@ -722,33 +734,9 @@ processTransactionCmd action baseCfgDir verbose backend =
                             tailTransaction_ verbose hash
                             logSuccess ["transaction successfully completed"]
         TransactionAddSignature fname signers -> do
-            fileContent <- liftIO $ BSL8.readFile fname
-
-            -- Decode JSON file content into an AccountTransaction
-            accountTransaction <- case decode fileContent of
-                Just item -> return item
-                Nothing -> logFatal ["Failed to decode file content into AccountTransaction type"]
-
-            -- Display the transaction from the JSON file
-            logInfo ["Transaction in file: "]
-            logInfo [[i| #{showPrettyJSON accountTransaction}.|]]
-
-            -- Display the decoded payload from the transaction
+            accountTransaction <- readAndDisplayAccountTransaction fname backend
+            -- Get encoded payload
             let encPayload = Types.atrPayload accountTransaction
-
-            pv <- withClient backend $ do
-                cs <- getResponseValueOrDie =<< getConsensusInfo
-                return $ Queries.csProtocolVersion cs
-
-            -- TODO: Use the above `pv` instead of `Types.SP6`.
-
-            decoded_payload <- case Types.decodePayload Types.SP6 (Types.payloadSize encPayload) encPayload of
-                Right payload -> return payload
-                Left err -> logFatal ["Transaction not accepted by the node: " <> err]
-            logInfo [[i| Decoded payload:|]]
-            logInfo [[i| #{showPrettyJSON decoded_payload}.|]]
-
-            -- TODO: to further decode the `message` in contract update or init transactions, we need a schema.
 
             -- Extract accountKeyMap to be used to sign the transaction
             baseCfg <- getBaseConfig baseCfgDir verbose
