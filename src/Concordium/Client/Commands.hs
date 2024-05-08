@@ -182,16 +182,17 @@ registerDataParser =
 
 data TransactionCmd
     = TransactionSignAndSubmit
-        { tsFile :: !FilePath,
-          tsInteractionOpts :: !InteractionOpts
+        { tssFile :: !FilePath,
+          tssInteractionOpts :: !InteractionOpts
         }
     | TransactionSubmit
         { tsFile :: !FilePath,
           tsInteractionOpts :: !InteractionOpts
         }
     | TransactionAddSignature
-        { tsFile :: !FilePath,
-          signers :: !(Maybe Text)
+        { tasFile :: !FilePath,
+          tasSigners :: !(Maybe Text),
+          tasToKeys :: !(Maybe FilePath)
         }
     | TransactionStatus
         { tsHash :: !Text,
@@ -666,6 +667,7 @@ interactionOptsParser =
         <$> (not <$> switch (long "no-confirm" <> help "Do not ask for confirmation before proceeding to send the transaction."))
         <*> (not <$> switch (long "no-submit" <> help "Do not submit transaction on-chain. Write signed transaction to file instead."))
         <*> (not <$> switch (long "no-wait" <> help "Exit right after sending the transaction without waiting for it to be committed and finalized."))
+
 programOptions :: Parser Options
 programOptions =
     Options
@@ -754,9 +756,18 @@ transactionAddSignatureCmd =
         ( info
             ( TransactionAddSignature
                 <$> strArgument (metavar "FILE" <> help "File containing a signed transaction in JSON format.")
-                <*> optional (strOption (long "signers" <> metavar "SIGNERS" <> help "Specification of which (local) keys to sign with. Example: \"0:1,0:2,3:0,3:1\" specifies that credential holder 0 signs with keys 1 and 2, while credential holder 3 signs with keys 0 and 1"))
+                <*> optional
+                    (strOption (long "signers" <> metavar "SIGNERS" <> help "Specification of which (local) keys to sign with. Example: \"0:1,0:2,3:0,3:1\" specifies that credential holder 0 signs with keys 1 and 2, while credential holder 3 signs with keys 0 and 1"))
+                <*> optional
+                    (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file."))
             )
-            (progDesc "Adds a signature to the transaction in the file.")
+            ( progDescDoc $
+                docFromLines $
+                    [ "Adds a signature to the transaction in the file.",
+                      "Expected format of the `KEYS` file:"
+                    ]
+                        ++ expectedKeysFileFormat
+            )
         )
 
 transactionDeployCredentialCmd :: Mod CommandFields TransactionCmd
@@ -1466,7 +1477,7 @@ configAccountAddKeysCmd =
                     [ "Add one or several key pairs to a specific account configuration.",
                       "Expected format of the key file:"
                     ]
-                        ++ expectedAddOrUpdateKeysFileFormat
+                        ++ expectedKeysFileFormat
             )
         )
 
@@ -1484,12 +1495,12 @@ configAccountUpdateKeysCmd =
                     [ "Update one or several key pairs to a specific account configuration.",
                       "Expected format of the key file:"
                     ]
-                        ++ expectedAddOrUpdateKeysFileFormat
+                        ++ expectedKeysFileFormat
             )
         )
 
-expectedAddOrUpdateKeysFileFormat :: [String]
-expectedAddOrUpdateKeysFileFormat =
+expectedKeysFileFormat :: [String]
+expectedKeysFileFormat =
     [ "   {",
       "     \"cidx\": {",
       "        \"kidx\": {",

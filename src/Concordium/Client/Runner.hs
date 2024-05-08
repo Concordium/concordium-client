@@ -657,30 +657,30 @@ readAndDisplayAccountTransaction fname backend = do
 
     -- Decode JSON file content into an AccountTransaction
     accountTransaction <- case decode fileContent of
-            Just tx -> do
-                    -- Display the transaction from the JSON file
-                    logInfo ["Transaction in file: "]
-                    logInfo [[i| #{showPrettyJSON tx}.|]]
+        Just tx -> do
+            -- Display the transaction from the JSON file
+            logInfo ["Transaction in file: "]
+            logInfo [[i| #{showPrettyJSON tx}.|]]
 
-                    return tx
-            Nothing -> logFatal ["Failed to decode file content into AccountTransaction type"]
+            return tx
+        Nothing -> logFatal ["Failed to decode file content into AccountTransaction type"]
 
     -- Get current protocol version
     pv <- withClient backend $ do
-            cs <- getResponseValueOrDie =<< getConsensusInfo
-            return $ Queries.csProtocolVersion cs
+        cs <- getResponseValueOrDie =<< getConsensusInfo
+        return $ Queries.csProtocolVersion cs
 
     -- Decode the display the payload from the transaction
     let encPayload = Types.atrPayload accountTransaction
 
     let decPayload = case Types.promoteProtocolVersion pv of
-           Types.SomeProtocolVersion spv -> Types.decodePayload spv (Types.payloadSize encPayload) encPayload
+            Types.SomeProtocolVersion spv -> Types.decodePayload spv (Types.payloadSize encPayload) encPayload
 
     case decPayload of
-            Right payload -> do
-                logInfo [[i| Decoded payload:|]]
-                logInfo [[i| #{showPrettyJSON payload}.|]]
-            Left err -> logFatal ["Decoding of payload failed: " <> err]
+        Right payload -> do
+            logInfo [[i| Decoded payload:|]]
+            logInfo [[i| #{showPrettyJSON payload}.|]]
+        Left err -> logFatal ["Decoding of payload failed: " <> err]
 
     -- TODO: to further decode the `message` in contract update or init transactions, we need a schema.
 
@@ -691,6 +691,7 @@ processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend 
 processTransactionCmd action baseCfgDir verbose backend =
     case action of
         TransactionSignAndSubmit fname intOpts -> do
+            -- TODO: the no-submit should be disabled for this command
             -- TODO Ensure that the "nonce" field is optional in the payload.
             source <- handleReadFile BSL.readFile fname
 
@@ -708,8 +709,9 @@ processTransactionCmd action baseCfgDir verbose backend =
                     tailTransaction_ verbose hash
                     logSuccess ["transaction successfully completed"]
         TransactionSubmit fname intOpts -> do
+            -- TODO: the no-submit should be disabled for this command
             accountTransaction <- readAndDisplayAccountTransaction fname backend
-   
+
             when (ioConfirm intOpts) $ do
                 confirmed <- askConfirmation $ Just "Do you want to send the transaction on chain? "
                 unless confirmed exitTransactionCancelled
@@ -733,7 +735,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                         when (ioTail intOpts) $ do
                             tailTransaction_ verbose hash
                             logSuccess ["transaction successfully completed"]
-        TransactionAddSignature fname signers -> do
+        TransactionAddSignature fname signers toKeys -> do
             accountTransaction <- readAndDisplayAccountTransaction fname backend
             -- Get encoded payload
             let encPayload = Types.atrPayload accountTransaction
@@ -741,13 +743,20 @@ processTransactionCmd action baseCfgDir verbose backend =
             -- Extract accountKeyMap to be used to sign the transaction
             baseCfg <- getBaseConfig baseCfgDir verbose
             let header = Types.atrHeader accountTransaction
-            let signerAccountAddressText = Text.pack $ show (Types.thSender header)
+            let signerAccountText = Text.pack $ show (Types.thSender header)
 
             -- TODO: should we check if the `nonce` still makes sense as read from the file vs the one on-chain.
             -- (and throw error if additional txs have been sent by account meanwhile meaning the account nonce is not valid anymore).
 
-            -- TODO: better name than `getAccountCfgFromTxOpts2` and consolidate both functions
-            encryptedSigningData <- getAccountCfgFromTxOpts2 baseCfg signerAccountAddressText signers
+            keysArg <- case toKeys of
+                Nothing -> do
+                    logInfo [[i|The local keys associated to account `#{signerAccountText}` will be used for signing:|]]
+                    return Nothing
+                Just filePath -> do
+                    logInfo [[i|Using keys from file for signing:|]]
+                    AE.eitherDecodeFileStrict filePath `withLogFatalIO` ("cannot decode keys: " ++)
+
+            encryptedSigningData <- getAccountCfg baseCfg signers (Just signerAccountText) keysArg
             accountKeyMap <- liftIO $ failOnError $ decryptAccountKeyMapInteractive (esdKeys encryptedSigningData) Nothing Nothing
 
             -- Sign transaction and extract the signature map B (new signatures to be added)
@@ -1104,58 +1113,30 @@ warnSuspiciousExpiry expiryArg now
         logWarn ["expiration time is in more than one hour"]
     | otherwise = return ()
 
--- | Get accountCfg from the config folder and return EncryptedSigningData or logFatal if the keys are not provided in txOpts.
-getAccountCfgFromTxOpts2 :: BaseConfig -> Text -> Maybe Text -> IO EncryptedSigningData
-getAccountCfgFromTxOpts2 baseCfg signerAccountAddressText signers = do
-    let chosenKeysMaybe :: Maybe (Map.Map ID.CredentialIndex [ID.KeyIndex]) = case signers of
-            Nothing -> Nothing
-            Just t ->
-                Just $
-                    let insertKey c k acc = case Map.lookup c acc of
-                            Nothing -> Map.insert c [k] acc
-                            Just x -> Map.insert c ([k] ++ x) acc
-                    in  foldl' (\acc (c, k) -> insertKey c k acc) Map.empty $ fmap ((\(p1, p2) -> (read . Text.unpack $ p1, read . Text.unpack $ Text.drop 1 p2)) . Text.breakOn ":") $ Text.split (== ',') t
-
-    (_, accCfg) <- getAccountConfig (Just signerAccountAddressText) baseCfg Nothing Nothing Nothing AssumeInitialized
-
-    let keys = acKeys accCfg
-
-    case chosenKeysMaybe of
-        Nothing -> return EncryptedSigningData{esdKeys = keys, esdAddress = acAddr accCfg, esdEncryptionKey = acEncryptionKey accCfg}
-        Just chosenKeys -> do
-            let newKeys = Map.intersection keys chosenKeys
-            let filteredKeys =
-                    Map.mapWithKey
-                        ( \c m ->
-                            Map.filterWithKey
-                                ( \k _ -> case Map.lookup c chosenKeys of
-                                    Nothing -> False
-                                    Just keyList -> elem k keyList
-                                )
-                                m
-                        )
-                        newKeys
-            _ <-
-                Map.traverseWithKey
-                    ( \c keyIndices -> case Map.lookup c newKeys of
-                        Nothing -> logFatal ["No credential holder with index " ++ (show c) ++ "."]
-                        Just credHolderMap -> do
-                            let warnIfMissingKey keyIndex = case Map.lookup keyIndex credHolderMap of
-                                    Nothing -> logFatal ["No key with index " ++ (show keyIndex) ++ " for credential holder " ++ (show c) ++ "."]
-                                    Just _ -> return () -- Key found, do nothing.
-                                    -- We could add the key to a map in this case, replacing the intersection and mapWithKey steps above.
-                            mapM_ warnIfMissingKey keyIndices
-                    )
-                    chosenKeys
-            return EncryptedSigningData{esdKeys = filteredKeys, esdAddress = acAddr accCfg, esdEncryptionKey = acEncryptionKey accCfg}
-
--- | Get accountCfg from the config folder and return EncryptedSigningData or logFatal if the keys are not provided in txOpts.
+-- | Extract the account configuration and return the `EncryptedSigningData` (the encrypted keys/data to be used for e.g. singing a transaction).
+-- If provided via a flag to a key file (in `toKeys txOpts`), the explicit keys provided will take precedence over the local keys stored,
+-- otherwise this function attempts to lookup local keys from the key directory.
+-- If some keys (e.g. '0:0,0:1,1:2') are specified (in `toSigners txOpts`), only the specified keys from the account will be looked up locally,
+-- otherwise all locally stored keys from the account will be returned.
+-- The function throws an error:
+-- - if a key file is provided via a flag but the keys cannot be read from the file.
+-- - if NO key file is provided via a flag and the lookup of local keys from the key directory fails.
 getAccountCfgFromTxOpts :: BaseConfig -> TransactionOpts energyOrMaybe -> IO EncryptedSigningData
 getAccountCfgFromTxOpts baseCfg txOpts = do
     keysArg <- case toKeys txOpts of
         Nothing -> return Nothing
         Just filePath -> AE.eitherDecodeFileStrict filePath `withLogFatalIO` ("cannot decode keys: " ++)
     let chosenKeysText = toSigners txOpts
+    let signerAccountText = toSender txOpts
+    getAccountCfg baseCfg chosenKeysText signerAccountText keysArg
+
+-- | Extract the account configuration and return the EncryptedSigningData (the encrypted keys/data to be used for e.g. singing a transaction).
+-- If the `keysArg` map is provided, the keys in the map will take precedence over the local keys stored,
+-- otherwise this function attempts to lookup local keys from the key directory.
+-- The function throws an error:
+-- - if `keysArg` is NOT provided and the lookup of local keys from the key directory fails.
+getAccountCfg :: BaseConfig -> Maybe Text -> Maybe Text -> Maybe (Map.Map ID.CredentialIndex (Map.Map ID.KeyIndex EncryptedAccountKeyPair)) -> IO EncryptedSigningData
+getAccountCfg baseCfg chosenKeysText signerAccountText keysArg = do
     let chosenKeysMaybe :: Maybe (Map.Map ID.CredentialIndex [ID.KeyIndex]) = case chosenKeysText of
             Nothing -> Nothing
             Just t ->
@@ -1164,7 +1145,7 @@ getAccountCfgFromTxOpts baseCfg txOpts = do
                             Nothing -> Map.insert c [k] acc
                             Just x -> Map.insert c ([k] ++ x) acc
                     in  foldl' (\acc (c, k) -> insertKey c k acc) Map.empty $ fmap ((\(p1, p2) -> (read . Text.unpack $ p1, read . Text.unpack $ Text.drop 1 p2)) . Text.breakOn ":") $ Text.split (== ',') t
-    accCfg <- snd <$> getAccountConfig (toSender txOpts) baseCfg Nothing keysArg Nothing AssumeInitialized
+    accCfg <- snd <$> getAccountConfig signerAccountText baseCfg Nothing keysArg Nothing AssumeInitialized
     let keys = acKeys accCfg
     case chosenKeysMaybe of
         Nothing -> return EncryptedSigningData{esdKeys = keys, esdAddress = acAddr accCfg, esdEncryptionKey = acEncryptionKey accCfg}
