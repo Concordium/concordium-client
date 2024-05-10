@@ -746,7 +746,13 @@ transactionSubmitCmd =
                 <$> strArgument (metavar "FILE" <> help "File containing a signed transaction in JSON format.")
                 <*> interactionOptsParser
             )
-            (progDesc "Parse signed transaction and send it to the node.")
+            ( progDescDoc $
+                docFromLines $
+                    [ "Parse signed transaction and send it to the node.",
+                      "Expected format of the signed transaction in the `FILE`:"
+                    ]
+                        ++ expectedSignedTransactionFormat
+            )
         )
 
 transactionAddSignatureCmd :: Mod CommandFields TransactionCmd
@@ -757,18 +763,50 @@ transactionAddSignatureCmd =
             ( TransactionAddSignature
                 <$> strArgument (metavar "FILE" <> help "File containing a signed transaction in JSON format.")
                 <*> optional
-                    (strOption (long "signers" <> metavar "SIGNERS" <> help "Specification of which (local) keys to sign with. Example: \"0:1,0:2,3:0,3:1\" specifies that credential holder 0 signs with keys 1 and 2, while credential holder 3 signs with keys 0 and 1"))
+                    ( strOption
+                        ( long "signers" <> metavar "SIGNERS" <> help "Specification of which (local) keys to sign with. Example: \"0:1,0:2,3:0,3:1\" specifies that credential holder 0 signs with keys 1 and 2, while credential holder 3 signs with keys 0 and 1"
+                        )
+                    )
                 <*> optional
                     (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file."))
             )
             ( progDescDoc $
                 docFromLines $
                     [ "Adds a signature to the transaction in the file.",
-                      "Expected format of the `KEYS` file:"
+                      "Expected format of the signed transaction in the `FILE`:"
                     ]
+                        ++ expectedSignedTransactionFormat
+                        ++ [ "Expected format of the keys in the `KEYS` file:"
+                           ]
                         ++ expectedKeysFileFormat
             )
         )
+
+expectedSignedTransactionFormat :: [String]
+expectedSignedTransactionFormat =
+    [ "   {",
+      "     \"energy\": 5000,",
+      "     \"expiry\": 1715188938,",
+      "     \"nonce\": 12,",
+      "     \"payload\": {",
+      "       \"address\": {",
+      "         \"index\": 3383,",
+      "         \"subindex\": 0",
+      "       },",
+      "       \"amount\": \"0\",",
+      "       \"message\": \"01000101420c0000000000000000000000000000\",",
+      "       \"receiveName\": \"cis2-bridgeable.updateOperator\"",
+      "     },",
+      "     \"sender\": \"4jxvYasaPncfmCFCLZCvuL5cZuvR5HAQezCHZH7ZA7AGsRYpix\",",
+      "     \"signature\": {",
+      "       \"0\": {",
+      "         \"0\": \"6f17c110965054b262ef0d6dee02f77dccb7bd031c2af324b544f5ee3e6e18b3fd1be8a95782e92a89dd40a1b69cad8a37e8b86fc9107c8528d8267212cf030b\"",
+      "       }",
+      "     },",
+      "     \"transactionType\": \"update\",",
+      "     \"version\": 1",
+      "    }"
+    ]
 
 transactionDeployCredentialCmd :: Mod CommandFields TransactionCmd
 transactionDeployCredentialCmd =
