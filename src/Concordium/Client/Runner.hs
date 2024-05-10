@@ -674,7 +674,6 @@ writeSignedTransactionToFile tx outFile verbose overwriteSetting = do
     let signedTransaction =
             Types.SignedTransaction
                 Types.signedTransactionVersion
-                (Types.getTransactionType jsonPayload)
                 (Types.thEnergyAmount header)
                 (Types.thExpiry header)
                 (Types.thNonce header)
