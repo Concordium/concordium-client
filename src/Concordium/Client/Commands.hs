@@ -255,7 +255,9 @@ data AccountCmd
       AccountEncrypt
         { aeTransactionOpts :: !(TransactionOpts (Maybe Energy)),
           -- | Amount to transfer from public to encrypted balance.
-          aeAmount :: !Amount
+          aeAmount :: !Amount,
+          -- | Optional file name and path to ouptput the signed/partially-signed transaction to instead of submitting the transaction on-chain.
+          aeOutFile :: !(Maybe FilePath)
         }
     | -- | Transfer part of the encrypted balance to the public balance of the
       --  account.
@@ -265,13 +267,16 @@ data AccountCmd
           adAmount :: !Amount,
           -- | Which indices of incoming amounts to use as inputs.
           -- If none are provided all existing ones will be used.
-          adIndex :: !(Maybe Int)
+          adIndex :: !(Maybe Int),
+          -- | Optional file name and path to ouptput the signed/partially-signed transaction to instead of submitting the transaction on-chain.
+          adOutFile :: !(Maybe FilePath)
         }
     | -- | Updated credentials and account threshold (i.e. how many credential holders that need to sign transactions)
       AccountUpdateCredentials
         { aucNewCredInfos :: !(Maybe FilePath), -- File containing the new CredentialDeploymentInformation's
           aucRemoveCredIds :: !(Maybe FilePath), -- File containing the CredentialRegistrationID's for the credentials to be removed
           aucNewThreshold :: !AccountThreshold, -- The new account threshold
+          aucOutFile :: !(Maybe FilePath), -- Otional file name and path to ouptput the signed/partially-signed transaction to instead of submitting the transaction on-chain.
           aucTransactionOpts :: !(TransactionOpts (Maybe Energy))
         }
     | -- | Show an alias for the account.
@@ -435,13 +440,13 @@ data TransactionOpts energyOrMaybe = TransactionOpts
       toNonce :: !(Maybe Nonce),
       toMaxEnergyAmount :: !energyOrMaybe,
       toExpiration :: !(Maybe Text),
+      toOutFile :: !(Maybe FilePath), -- Optional file name and path to ouptput the signed/partially-signed transaction to instead of submitting the transaction on-chain.
       toInteractionOpts :: !InteractionOpts
     }
     deriving (Show)
 
 data InteractionOpts = InteractionOpts
     { ioConfirm :: !Bool,
-      ioSubmit :: !Bool,
       ioTail :: !Bool
     }
     deriving (Show)
@@ -659,13 +664,13 @@ transactionOptsParserBuilder energyOrMaybeParser =
         <*> optional (option auto (long "nonce" <> metavar "NONCE" <> help "Transaction nonce."))
         <*> energyOrMaybeParser
         <*> optional (strOption (long "expiry" <> metavar "EXPIRY" <> help "Expiration time of a transaction, specified as a relative duration (\"30s\", \"5m\", etc.) or UNIX epoch timestamp."))
+        <*> optional (strOption (long "outFile" <> metavar "FILE" <> help "An optional file name and path to ouptput the signed/partially-signed transaction to instead of submitting the transaction on-chain."))
         <*> interactionOptsParser
 
 interactionOptsParser :: Parser InteractionOpts
 interactionOptsParser =
     InteractionOpts
         <$> (not <$> switch (long "no-confirm" <> help "Do not ask for confirmation before proceeding to send the transaction."))
-        <*> (not <$> switch (long "no-submit" <> help "Do not submit transaction on-chain. Write signed transaction to file instead."))
         <*> (not <$> switch (long "no-wait" <> help "Exit right after sending the transaction without waiting for it to be committed and finalized."))
 
 programOptions :: Parser Options
@@ -796,6 +801,7 @@ expectedSignedTransactionFormat =
       "       \"amount\": \"0\",",
       "       \"message\": \"01000101420c0000000000000000000000000000\",",
       "       \"receiveName\": \"cis2-bridgeable.updateOperator\"",
+      "       \"transactionType\": \"update\"",
       "     },",
       "     \"sender\": \"4jxvYasaPncfmCFCLZCvuL5cZuvR5HAQezCHZH7ZA7AGsRYpix\",",
       "     \"signature\": {",
@@ -803,7 +809,6 @@ expectedSignedTransactionFormat =
       "         \"0\": \"6f17c110965054b262ef0d6dee02f77dccb7bd031c2af324b544f5ee3e6e18b3fd1be8a95782e92a89dd40a1b69cad8a37e8b86fc9107c8528d8267212cf030b\"",
       "       }",
       "     },",
-      "     \"transactionType\": \"update\",",
       "     \"version\": 1",
       "    }"
     ]
@@ -997,6 +1002,7 @@ accountEncryptCmd =
             ( AccountEncrypt
                 <$> transactionOptsParser
                 <*> option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> help "The amount to transfer to shielded balance.")
+                <*> optional (strOption (long "outFile" <> metavar "FILE" <> help "An optional file name and path to ouptput the signed/partially-signed transaction to instead of submitting the transaction on-chain."))
             )
             (progDesc "Transfer an amount from public to shielded balance of the account.")
         )
@@ -1010,6 +1016,7 @@ accountDecryptCmd =
                 <$> transactionOptsParser
                 <*> option (maybeReader amountFromString) (long "amount" <> metavar "CCD-AMOUNT" <> help "The amount to transfer to public balance.")
                 <*> optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which shielded amounts should be combined."))
+                <*> optional (strOption (long "outFile" <> metavar "FILE" <> help "An optional file name and path to ouptput the signed/partially-signed transaction to instead of submitting the transaction on-chain."))
             )
             (progDesc "Transfer an amount from shielded to public balance of the account.")
         )
@@ -1051,6 +1058,7 @@ accountUpdateCredentialsCmd =
                 <$> optional (strOption (long "new-credentials" <> metavar "FILE" <> help "File containing the new credential deployment informations."))
                 <*> optional (strOption (long "remove-credentials" <> metavar "FILE" <> help "File containing credential registration ids of the credentials to be removed."))
                 <*> option auto (long "new-threshold" <> metavar "THRESHOLD" <> help "New account threshold, i.e. how many credential holders needed to sign a transaction.")
+                <*> optional (strOption (long "outFile" <> metavar "FILE" <> help "An optional file name and path to ouptput the signed/partially-signed transaction to instead of submitting the transaction on-chain."))
                 <*> transactionOptsParser
             )
             ( progDescDoc $
