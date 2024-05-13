@@ -649,33 +649,9 @@ getTxContractInfoWithSchemas schemaFile status = do
             MultipleBlocksUnambiguous bhs ts -> map (,f ts) bhs
             MultipleBlocksAmbiguous bhts -> map (second f) bhts
 
--- | Convert an `AccountTransaction` into a `SignedTransaction` and write it to a JSON file.
-writeSignedTransactionToFile :: Types.AccountTransaction -> FilePath -> Bool -> OverwriteSetting -> Types.ProtocolVersion -> IO ()
-writeSignedTransactionToFile tx outFile verbose overwriteSetting pv = do
-    let header = Types.atrHeader tx
-
-    -- Decode the payload from the transaction
-    let encPayload = Types.atrPayload tx
-
-    let decPayload = case Types.promoteProtocolVersion pv of
-            Types.SomeProtocolVersion spv -> Types.decodePayload spv (Types.payloadSize encPayload) encPayload
-
-    jsonPayload <- case decPayload of
-        Right payload -> return payload
-        Left err -> logFatal ["Decoding of payload failed: " <> err]
-
-    -- Note: to further decode the `message` in contract update or init transactions, we need a schema.
-
-    let signedTransaction =
-            Types.SignedTransaction
-                Types.signedTransactionVersion
-                (Types.thEnergyAmount header)
-                (Types.thExpiry header)
-                (Types.thNonce header)
-                (Types.thSender header)
-                jsonPayload
-                (Types.atrSignature tx)
-
+-- | Write a `SignedTransaction` to a JSON file.
+writeSignedTransactionToFile :: Types.SignedTransaction -> FilePath -> Bool -> OverwriteSetting -> IO ()
+writeSignedTransactionToFile signedTransaction outFile verbose overwriteSetting = do
     let txJson = AE.encodePretty signedTransaction
     success <- liftIO $ handleWriteFile BSL.writeFile overwriteSetting verbose outFile txJson
 
@@ -684,30 +660,23 @@ writeSignedTransactionToFile tx outFile verbose overwriteSetting pv = do
         else logError [[i|Failed to write transaction to the file '#{outFile}'|]]
 
 -- | Read and display a `SignedTransaction` from a JSON file.
---  Returns the associated `AccountTransaction`.
-readSignedTransactionFromFile :: FilePath -> IO Types.AccountTransaction
+--  Returns the associated `SignedTransaction`.
+readSignedTransactionFromFile :: FilePath -> IO Types.SignedTransaction
 readSignedTransactionFromFile fname = do
     fileContent <- liftIO $ BSL8.readFile fname
 
-    -- Decode JSON file content into an `SignedTransaction` type.
-
+    -- Decode JSON file content into a `SignedTransaction` type.
     let parsedSignedTransaction :: Either String Types.SignedTransaction
         parsedSignedTransaction = eitherDecode fileContent
-    signedTransaction <- case parsedSignedTransaction of
+    case parsedSignedTransaction of
         Right tx -> do
             logInfo ["Transaction in file: "]
             logInfo [[i| #{showPrettyJSON tx}.|]]
+
+            -- TODO: to further decode and display the `message` in contract update or init transactions, we need a schema.
+
             return tx
         Left parseError -> logFatal [[i| Failed to decode file content into signedTransaction type: #{parseError}.|]]
-
-    -- Create the associated `AccountTransaction` type.
-    let encPayload = Types.encodePayload $ Types.stPayload signedTransaction
-    let header = Types.TransactionHeader (Types.stSigner signedTransaction) (Types.stNonce signedTransaction) (Types.stEnergy signedTransaction) (Types.payloadSize encPayload) (Types.stExpiryTime signedTransaction)
-    let signHash = Types.transactionSignHashFromHeaderPayload header encPayload
-
-    -- TODO: to further decode the `message` in contract update or init transactions, we need a schema.
-
-    return $ Types.AccountTransaction (Types.stSignature signedTransaction) header encPayload signHash
 
 -- | Process a 'transaction ...' command.
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -729,15 +698,21 @@ processTransactionCmd action baseCfgDir verbose backend =
                 logSuccess [printf "transaction '%s' sent to the node" (show hash)]
                 when (ioTail intOpts) $ do
                     tailTransaction_ verbose hash
-                    logSuccess ["transaction successfully completed"]
+        -- logSuccess ["transaction successfully completed"]
         TransactionSubmit fname intOpts -> do
-            accountTransaction <- readSignedTransactionFromFile fname
+            -- Read signedTransaction from file
+            signedTransaction <- readSignedTransactionFromFile fname
 
+            -- Confirm to submit transaction on chain
             when (ioConfirm intOpts) $ do
                 confirmed <- askConfirmation $ Just "Do you want to send the transaction on chain? "
                 unless confirmed exitTransactionCancelled
 
-            let tx = Types.NormalTransaction accountTransaction
+            -- Create the associated `bareBlockItem`
+            let encPayload = Types.encodePayload $ Types.stPayload signedTransaction
+            let header = Types.TransactionHeader (Types.stSigner signedTransaction) (Types.stNonce signedTransaction) (Types.stEnergy signedTransaction) (Types.payloadSize encPayload) (Types.stExpiryTime signedTransaction)
+            let signHash = Types.transactionSignHashFromHeaderPayload header encPayload
+            let tx = Types.NormalTransaction $ Types.AccountTransaction (Types.stSignature signedTransaction) header encPayload signHash
 
             withClient backend $ do
                 -- Send transaction on chain
@@ -755,19 +730,20 @@ processTransactionCmd action baseCfgDir verbose backend =
                         logSuccess [printf "transaction '%s' sent to the node" (show hash)]
                         when (ioTail intOpts) $ do
                             tailTransaction_ verbose hash
-                            logSuccess ["transaction successfully completed"]
+                        logSuccess ["transaction successfully completed"]
         TransactionAddSignature fname signers toKeys -> do
-            accountTransaction <- readSignedTransactionFromFile fname
-            -- Get encoded payload
-            let encPayload = Types.atrPayload accountTransaction
+            -- Read transaction from file
+            signedTransaction <- readSignedTransactionFromFile fname
+
+            -- Create the encoded paylaod and header
+            let encPayload = Types.encodePayload $ Types.stPayload signedTransaction
+            let header = Types.TransactionHeader (Types.stSigner signedTransaction) (Types.stNonce signedTransaction) (Types.stEnergy signedTransaction) (Types.payloadSize encPayload) (Types.stExpiryTime signedTransaction)
 
             -- Extract accountKeyMap to be used to sign the transaction
             baseCfg <- getBaseConfig baseCfgDir verbose
-            let header = Types.atrHeader accountTransaction
             let signerAccountText = Text.pack $ show (Types.thSender header)
 
-            -- TODO: should we check if the `nonce` still makes sense as read from the file vs the one on-chain.
-            -- (and throw error if additional txs have been sent by account meanwhile meaning the account nonce is not valid anymore).
+            -- TODO: we could check if the `nonce` still makes sense as read from the file vs the one on-chain.
 
             keysArg <- case toKeys of
                 Nothing -> do
@@ -785,21 +761,16 @@ processTransactionCmd action baseCfgDir verbose backend =
             let sigBMap = Types.tsSignatures (Types.atrSignature transactionB)
 
             -- Extract the signature map A (original signatures as stored in the file)
-            let sigAMap = Types.tsSignatures (Types.atrSignature accountTransaction)
+            let sigAMap = Types.tsSignatures (Types.stSignature signedTransaction)
 
             -- Create the union of the signature map A and the signature map B
             let unionSignaturesMap = Map.unionWith Map.union sigAMap sigBMap
 
             -- Create final signed transaction including signtures A and B
-            let finalTransaction = accountTransaction{Types.atrSignature = Types.TransactionSignature unionSignaturesMap}
-
-            -- Get protocol version
-            pv <- liftIO $ withClient backend $ do
-                cs <- getResponseValueOrDie =<< getConsensusInfo
-                return $ Queries.csProtocolVersion cs
+            let finalTransaction = signedTransaction{Types.stSignature = Types.TransactionSignature unionSignaturesMap}
 
             -- Write final signed transaction to file
-            liftIO $ writeSignedTransactionToFile finalTransaction fname verbose AllowOverwrite pv
+            liftIO $ writeSignedTransactionToFile finalTransaction fname verbose AllowOverwrite
         TransactionDeployCredential fname intOpts -> do
             source <- handleReadFile BSL.readFile fname
             withClient backend $ do
@@ -1717,8 +1688,27 @@ signAndProcessTransaction verbose txCfg pl intOpts outFile backend = do
                 cs <- getResponseValueOrDie =<< getConsensusInfo
                 return $ Queries.csProtocolVersion cs
 
-            -- Write signed transaction to file
-            liftIO $ writeSignedTransactionToFile tx filePath verbose PromptBeforeOverwrite pv
+            -- Decode the payload from the transaction
+            let decPl = case Types.promoteProtocolVersion pv of
+                    Types.SomeProtocolVersion spv -> Types.decodePayload spv (Types.payloadSize pl) pl
+            decPayload <- case decPl of
+                Right decPL -> return decPL
+                Left err -> logFatal ["Decoding of payload failed: " <> err]
+
+            -- Create signedTransaction
+            let header = Types.atrHeader tx
+            let signedTransaction =
+                    Types.SignedTransaction
+                        Types.signedTransactionVersion
+                        (Types.thEnergyAmount header)
+                        (Types.thExpiry header)
+                        (Types.thNonce header)
+                        (Types.thSender header)
+                        decPayload
+                        (Types.atrSignature tx)
+
+            -- Write signedTransaction to file
+            liftIO $ writeSignedTransactionToFile signedTransaction filePath verbose PromptBeforeOverwrite
             return Nothing
         Nothing -> do
             logInfo [[i| Send signed transaction to node.|]]
