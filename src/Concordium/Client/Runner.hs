@@ -650,19 +650,14 @@ getTxContractInfoWithSchemas schemaFile status = do
             MultipleBlocksAmbiguous bhts -> map (second f) bhts
 
 -- | Convert an `AccountTransaction` into a `SignedTransaction` and write it to a JSON file.
-writeSignedTransactionToFile :: Types.AccountTransaction -> FilePath -> Bool -> OverwriteSetting -> IO ()
-writeSignedTransactionToFile tx outFile verbose overwriteSetting = do
+writeSignedTransactionToFile :: Types.AccountTransaction -> FilePath -> Bool -> OverwriteSetting -> Types.ProtocolVersion -> IO ()
+writeSignedTransactionToFile tx outFile verbose overwriteSetting pv = do
     let header = Types.atrHeader tx
-
-    -- TODO Get current protocol version
-    -- pv <- withClient backend $ do
-    --         cs <- getResponseValueOrDie =<< getConsensusInfo
-    --         return $ Queries.csProtocolVersion cs
 
     -- Decode the payload from the transaction
     let encPayload = Types.atrPayload tx
 
-    let decPayload = case Types.promoteProtocolVersion Types.P6 of
+    let decPayload = case Types.promoteProtocolVersion pv of
             Types.SomeProtocolVersion spv -> Types.decodePayload spv (Types.payloadSize encPayload) encPayload
 
     jsonPayload <- case decPayload of
@@ -798,8 +793,13 @@ processTransactionCmd action baseCfgDir verbose backend =
             -- Create final signed transaction including signtures A and B
             let finalTransaction = accountTransaction{Types.atrSignature = Types.TransactionSignature unionSignaturesMap}
 
+            -- Get protocol version
+            pv <- liftIO $ withClient backend $ do
+                cs <- getResponseValueOrDie =<< getConsensusInfo
+                return $ Queries.csProtocolVersion cs
+
             -- Write final signed transaction to file
-            liftIO $ writeSignedTransactionToFile finalTransaction fname verbose AllowOverwrite
+            liftIO $ writeSignedTransactionToFile finalTransaction fname verbose AllowOverwrite pv
         TransactionDeployCredential fname intOpts -> do
             source <- handleReadFile BSL.readFile fname
             withClient backend $ do
@@ -854,7 +854,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                 let intOpts = toInteractionOpts txOpts
                 let outFile = toOutFile txOpts
                 liftIO $ transferTransactionConfirm ttxCfg (ioConfirm intOpts)
-                signAndProcessTransaction_ verbose txCfg pl intOpts outFile
+                signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
         TransactionSendWithSchedule receiver schedule maybeMemo txOpts -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             when verbose $ do
@@ -907,7 +907,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                         let intOpts = toInteractionOpts txOpts
                         let outFile = toOutFile txOpts
                         liftIO $ transferWithScheduleTransactionConfirm ttxCfg (ioConfirm intOpts)
-                        signAndProcessTransaction_ verbose txCfg pl intOpts outFile
+                        signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
         TransactionEncryptedTransfer txOpts receiver amount index maybeMemo -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             when verbose $ do
@@ -953,7 +953,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                 let intOpts = toInteractionOpts txOpts
                 let outFile = toOutFile txOpts
                 encryptedTransferTransactionConfirm ettCfg (ioConfirm intOpts)
-                signAndProcessTransaction_ verbose txCfg payload intOpts outFile
+                signAndProcessTransaction_ verbose txCfg payload intOpts outFile backend
         TransactionRegisterData file txOpts -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             rdCfg <- getRegisterDataTransactionCfg baseCfg txOpts file
@@ -973,7 +973,7 @@ processTransactionCmd action baseCfgDir verbose backend =
             let pl = registerDataTransactionPayload rdCfg
 
             withClient backend $ do
-                mTsr <- signAndProcessTransaction verbose txCfg (Types.encodePayload pl) intOpts outFile
+                mTsr <- signAndProcessTransaction verbose txCfg (Types.encodePayload pl) intOpts outFile backend
                 let extractDataRegistered = extractFromTsr $ \case
                         Types.DataRegistered rd -> Just rd
                         _ -> Nothing
@@ -1683,8 +1683,9 @@ signAndProcessTransaction_ ::
     InteractionOpts ->
     -- | An optional file name to output the signed/partially-signed transaction to instead of sending it to the node
     Maybe FilePath ->
+    Backend ->
     ClientMonad m ()
-signAndProcessTransaction_ verbose txCfg pl intOpts outFile = void $ signAndProcessTransaction verbose txCfg pl intOpts outFile
+signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend = void $ signAndProcessTransaction verbose txCfg pl intOpts outFile backend
 
 -- | Sign a transaction and process transaction by either send it to the node or write it to a file.
 --  If send to the node, optionally tail it (see 'tailTransaction' below).
@@ -1702,16 +1703,22 @@ signAndProcessTransaction ::
     InteractionOpts ->
     -- | An optional file name to output the signed/partially-signed transaction to instead of sending it to the node
     Maybe FilePath ->
+    Backend ->
     ClientMonad m (Maybe TransactionStatusResult)
-signAndProcessTransaction verbose txCfg pl intOpts outFile = do
+signAndProcessTransaction verbose txCfg pl intOpts outFile backend = do
     tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
 
     case outFile of
         Just filePath -> do
             logInfo [[i| Write signed transaction to file. Will not send it to the node.|]]
 
+            -- Get protocol version
+            pv <- liftIO $ withClient backend $ do
+                cs <- getResponseValueOrDie =<< getConsensusInfo
+                return $ Queries.csProtocolVersion cs
+
             -- Write signed transaction to file
-            liftIO $ writeSignedTransactionToFile tx filePath verbose PromptBeforeOverwrite
+            liftIO $ writeSignedTransactionToFile tx filePath verbose PromptBeforeOverwrite pv
             return Nothing
         Nothing -> do
             logInfo [[i| Send signed transaction to node.|]]
@@ -1937,7 +1944,7 @@ processAccountCmd action baseCfgDir verbose backend =
                 let intOpts = toInteractionOpts txOpts
                 let outFile = toOutFile txOpts
                 liftIO $ credentialUpdateKeysTransactionConfirm aukCfg (ioConfirm intOpts)
-                signAndProcessTransaction_ verbose txCfg pl intOpts outFile
+                signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
         AccountUpdateCredentials cdisFile removeCidsFile newThreshold outFile txOpts -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
 
@@ -1967,7 +1974,7 @@ processAccountCmd action baseCfgDir verbose backend =
                               auctcNewThreshold = newThreshold
                             }
                 liftIO $ accountUpdateCredentialsTransactionConfirm aucCfg (ioConfirm intOpts)
-                signAndProcessTransaction_ verbose txCfg epayload intOpts outFile
+                signAndProcessTransaction_ verbose txCfg epayload intOpts outFile backend
         AccountEncrypt{..} -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             when verbose $ do
@@ -1984,7 +1991,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
             let intOpts = toInteractionOpts aeTransactionOpts
             accountEncryptTransactionConfirm aetxCfg (ioConfirm intOpts)
-            withClient backend $ signAndProcessTransaction_ verbose txCfg pl intOpts aeOutFile
+            withClient backend $ signAndProcessTransaction_ verbose txCfg pl intOpts aeOutFile backend
         AccountDecrypt{..} -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             when verbose $ do
@@ -2016,7 +2023,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
                 let intOpts = toInteractionOpts adTransactionOpts
                 accountDecryptTransactionConfirm adtxCfg (ioConfirm intOpts)
-                signAndProcessTransaction_ verbose txCfg pl intOpts adOutFile
+                signAndProcessTransaction_ verbose txCfg pl intOpts adOutFile backend
         AccountShowAlias addrOrName alias -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             case getAccountAddress (bcAccountNameMap baseCfg) addrOrName of
@@ -2055,7 +2062,7 @@ processModuleCmd action baseCfgDir verbose backend =
             let pl = moduleDeployTransactionPayload mdCfg
 
             withClient backend $ do
-                mTsr <- signAndProcessTransaction verbose txCfg (Types.encodePayload pl) intOpts outFile
+                mTsr <- signAndProcessTransaction verbose txCfg (Types.encodePayload pl) intOpts outFile backend
                 case extractModRef mTsr of
                     Nothing -> return ()
                     Just (Left err) -> logFatal ["module deployment failed:", err]
@@ -2308,7 +2315,7 @@ processContractCmd action baseCfgDir verbose backend =
             let outFile = toOutFile txOpts
             let pl = contractInitTransactionPayload ciCfg
             withClient backend $ do
-                mTsr <- signAndProcessTransaction verbose txCfg (Types.encodePayload pl) intOpts outFile
+                mTsr <- signAndProcessTransaction verbose txCfg (Types.encodePayload pl) intOpts outFile backend
                 case extractContractAddress mTsr of
                     Nothing -> return ()
                     Just (Left err) -> logFatal ["contract initialisation failed:", err]
@@ -2360,7 +2367,7 @@ processContractCmd action baseCfgDir verbose backend =
             let outFile = toOutFile txOpts
             let pl = contractUpdateTransactionPayload cuCfg
             withClient backend $ do
-                mTsr <- signAndProcessTransaction verbose txCfg (Types.encodePayload pl) intOpts outFile
+                mTsr <- signAndProcessTransaction verbose txCfg (Types.encodePayload pl) intOpts outFile backend
                 case extractUpdate mTsr of
                     Nothing -> return ()
                     Just (Left err) -> logFatal ["updating contract instance failed:", err]
@@ -3106,7 +3113,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
     withClient backend $ do
         when isBakerConfigure $ warnAboutMissingAddBakerParameters txCfg
         mapM_ (warnAboutBadCapital txCfg) cbCapital
-        result <- signAndProcessTransaction verbose txCfg pl intOpts outFile
+        result <- signAndProcessTransaction verbose txCfg pl intOpts outFile backend
         events <- eventsFromTransactionResult result
         mapM_ (tryPrintKeyUpdateEventToOutputFile bakerKeys) events
   where
@@ -3354,7 +3361,7 @@ processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarn
     (bakerKeys, txCfg, pl) <- transactionForBakerAdd (ioConfirm intOpts)
     withClient backend $ do
         warnAboutBadCapital txCfg abBakingStake
-        result <- signAndProcessTransaction verbose txCfg pl intOpts outFile
+        result <- signAndProcessTransaction verbose txCfg pl intOpts outFile backend
         events <- eventsFromTransactionResult result
         mapM_ (tryPrintKeyUpdateEventToOutputFile bakerKeys) events
   where
@@ -3515,7 +3522,7 @@ processBakerSetKeysCmd baseCfgDir verbose backend txOpts inputKeysFile outputKey
     let outFile = toOutFile txOpts
     (bakerKeys, txCfg, pl) <- transactionForBakerSetKeys (ioConfirm intOpts)
     withClient backend $ do
-        result <- signAndProcessTransaction verbose txCfg pl intOpts outFile
+        result <- signAndProcessTransaction verbose txCfg pl intOpts outFile backend
         events <- eventsFromTransactionResult result
         mapM_ (tryPrintKeyUpdateEventToOutputFile bakerKeys) events
   where
@@ -3633,7 +3640,7 @@ processBakerRemoveCmd baseCfgDir verbose backend txOpts = do
     (txCfg, pl) <- transactionForBakerRemove (ioConfirm intOpts)
     withClient backend $ do
         liftIO warnAboutRemoving
-        signAndProcessTransaction_ verbose txCfg pl intOpts outFile
+        signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
   where
     warnAboutRemoving = do
         cooldownDate <- withClient backend $ do
@@ -3683,7 +3690,7 @@ processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = 
     (txCfg, pl) <- transactionForBakerUpdateStake (ioConfirm intOpts)
     withClient backend $ do
         warnAboutBadCapital txCfg ubsStake
-        signAndProcessTransaction_ verbose txCfg pl intOpts outFile
+        signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
   where
     warnAboutBadCapital txCfg capital = do
         let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
@@ -3773,7 +3780,7 @@ processBakerUpdateRestakeCmd baseCfgDir verbose backend txOpts ubreRestakeEarnin
     let outFile = toOutFile txOpts
     (txCfg, pl) <- transactionForBakerUpdateRestake (ioConfirm intOpts)
     withClient backend $ do
-        signAndProcessTransaction_ verbose txCfg pl intOpts outFile
+        signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
   where
     transactionForBakerUpdateRestake confirm = do
         baseCfg <- getBaseConfig baseCfgDir verbose
@@ -3967,7 +3974,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
     withClient backend $ do
         warnInOldProtocol
         mapM_ (warnAboutBadCapital txCfg) cdCapital
-        result <- signAndProcessTransaction verbose txCfg pl intOpts outFile
+        result <- signAndProcessTransaction verbose txCfg pl intOpts outFile backend
         warnAboutFailedResult result
   where
     warnInOldProtocol = do
