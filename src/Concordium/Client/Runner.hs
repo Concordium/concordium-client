@@ -779,7 +779,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                 logSuccess [printf "transaction '%s' sent to the node" (show hash)]
                 when (ioTail intOpts) $ do
                     tailTransaction_ verbose hash
-                    logSuccess ["credential deployed successfully"]
+        --     logSuccess ["credential deployed successfully"]
         TransactionStatus h schemaFile -> do
             hash <- case parseTransactionHash h of
                 Nothing -> logFatal [printf "invalid transaction hash '%s'" h]
@@ -1654,6 +1654,7 @@ signAndProcessTransaction_ ::
     InteractionOpts ->
     -- | An optional file name to output the signed/partially-signed transaction to instead of sending it to the node
     Maybe FilePath ->
+    -- | Node backend connection
     Backend ->
     ClientMonad m ()
 signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend = void $ signAndProcessTransaction verbose txCfg pl intOpts outFile backend
@@ -1674,6 +1675,7 @@ signAndProcessTransaction ::
     InteractionOpts ->
     -- | An optional file name to output the signed/partially-signed transaction to instead of sending it to the node
     Maybe FilePath ->
+    -- | Node backend connection
     Backend ->
     ClientMonad m (Maybe TransactionStatusResult)
 signAndProcessTransaction verbose txCfg pl intOpts outFile backend = do
@@ -1681,7 +1683,7 @@ signAndProcessTransaction verbose txCfg pl intOpts outFile backend = do
 
     case outFile of
         Just filePath -> do
-            logInfo [[i| Write signed transaction to file. Will not send it to the node.|]]
+            logInfo [[i| Will write signed transaction to file. Will not send transaction to the node.|]]
 
             -- Get protocol version
             pv <- liftIO $ withClient backend $ do
@@ -1711,7 +1713,7 @@ signAndProcessTransaction verbose txCfg pl intOpts outFile backend = do
             liftIO $ writeSignedTransactionToFile signedTransaction filePath verbose PromptBeforeOverwrite
             return Nothing
         Nothing -> do
-            logInfo [[i| Send signed transaction to node.|]]
+            logInfo [[i| Will send signed transaction to node.|]]
 
             -- Send transaction on chain
             let bareBlockItem = Types.NormalTransaction tx
@@ -3652,6 +3654,8 @@ processBakerRemoveCmd baseCfgDir verbose backend txOpts = do
         let payload = Types.encodePayload Types.RemoveBaker
             nrgCost _ = return . Just $ bakerRemoveEnergyCost $ Types.payloadSize payload
         txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
+        logInfo ["payloadpayloadpayloadpayloadpayloadpayload: "]
+        logInfo [[i| #{showPrettyJSON payload}.|]]
         logSuccess
             ( [ printf "submitting transaction to remove validator with %s" (show (naAddr $ esdAddress tcEncryptedSigningData)),
                 printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
