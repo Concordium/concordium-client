@@ -12,7 +12,7 @@ pipeline {
                     
                     # Extract version number from package.yaml, if not set as parameter
                     [ -z "$VERSION" ] && VERSION=$(awk '/version: / { print $2; exit }' package.yaml)
-                    OUTFILE="${BASE_OUTFILE}_${VERSION}.exe"
+                    OUTFILE="${BASE_OUTFILE}_${VERSION}.zip"
 
                     # Fail if file already exists
                     totalFoundObjects=$(aws s3 ls ${OUTFILE} --summarize | grep "Total Objects: " | sed 's/[^0-9]*//g')
@@ -22,18 +22,19 @@ pipeline {
                     fi    
 
                     # Ensure correct rust env
-                    rustup default 1.68-x86_64-pc-windows-gnu
+                    rustup default 1.73-x86_64-pc-windows-gnu
 
                     # Build project
                     stack build --force-dirty
                     
+                    # Zip the binaries
                     mkdir out
-
-                    # Find executable 
-                    cp $(find $PWD/.stack-work/install -type f -name "concordium-client.exe") out/
+                    binDir=$(stack path --local-install-root)/bin
+                    (cd $binDir && powershell -Command "Compress-Archive -Path concordium-client.exe,concordium_base.dll,sha_2.dll -DestinationPath concordium-client.zip")
+                    mv -f $binDir/concordium-client.zip out/concordium-client.zip
 
                     # Push to s3
-                    aws s3 cp out/concordium-client.exe ${OUTFILE} --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+                    aws s3 cp out/concordium-client.zip ${OUTFILE} --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
                 '''.stripIndent()
             }
         }
