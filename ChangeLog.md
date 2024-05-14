@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix a bug in correctly accounting for parsed events.
 - Update GHC version to 9.6.4 (lts-22.9).
 - Update Rust version to 1.73.
 - Support protocol version 7.
