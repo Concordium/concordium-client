@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Rename subcommand `TransactionSubmit` to `TransactionSignAndSubmit`.
+- Add subcommand `TransactionSubmit` to submit a signed transaction on chain.
+- Add subcommand `TransactionAddSignature` to add a signature to a partially-signed transaction.
+- Add optional `--outFile` flag to all transaction-creating commands to output a partially-singed transaction to a file.
 - Update GHC version to 9.6.4 (lts-22.9).
 - Update Rust version to 1.73.
 - Support protocol version 7.
