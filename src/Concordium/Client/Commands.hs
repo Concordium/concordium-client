@@ -791,7 +791,7 @@ expectedSignedTransactionFormat :: [String]
 expectedSignedTransactionFormat =
     [ "   {",
       "     \"energy\": 5000,",
-      "     \"expiry\": \"2024-05-14T13:48:28Z+00:00\",",
+      "     \"expiry\": 1715708777,",
       "     \"nonce\": 12,",
       "     \"payload\": {",
       "       \"address\": {",

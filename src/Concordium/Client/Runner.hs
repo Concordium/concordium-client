@@ -1701,7 +1701,6 @@ signAndProcessTransaction verbose txCfg pl intOpts outFile backend = do
             let header = Types.atrHeader tx
             let signedTransaction =
                     Types.SignedTransaction
-                        Types.signedTransactionVersion
                         (Types.thEnergyAmount header)
                         (Types.thExpiry header)
                         (Types.thNonce header)
