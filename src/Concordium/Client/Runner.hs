@@ -650,7 +650,7 @@ getTxContractInfoWithSchemas schemaFile status = do
             MultipleBlocksAmbiguous bhts -> map (second f) bhts
 
 -- | Write a `SignedTransaction` to a JSON file.
-writeSignedTransactionToFile :: Types.SignedTransaction -> FilePath -> Bool -> OverwriteSetting -> IO ()
+writeSignedTransactionToFile :: CT.SignedTransaction -> FilePath -> Bool -> OverwriteSetting -> IO ()
 writeSignedTransactionToFile signedTransaction outFile verbose overwriteSetting = do
     let txJson = AE.encodePretty signedTransaction
     success <- liftIO $ handleWriteFile BSL.writeFile overwriteSetting verbose outFile txJson
@@ -661,12 +661,12 @@ writeSignedTransactionToFile signedTransaction outFile verbose overwriteSetting 
 
 -- | Read and display a `SignedTransaction` from a JSON file.
 --  Returns the associated `SignedTransaction`.
-readSignedTransactionFromFile :: FilePath -> IO Types.SignedTransaction
+readSignedTransactionFromFile :: FilePath -> IO CT.SignedTransaction
 readSignedTransactionFromFile fname = do
     fileContent <- liftIO $ BSL8.readFile fname
 
     -- Decode JSON file content into a `SignedTransaction` type.
-    let parsedSignedTransaction :: Either String Types.SignedTransaction
+    let parsedSignedTransaction :: Either String CT.SignedTransaction
         parsedSignedTransaction = eitherDecode fileContent
     case parsedSignedTransaction of
         Right tx -> do
@@ -709,10 +709,10 @@ processTransactionCmd action baseCfgDir verbose backend =
                 unless confirmed exitTransactionCancelled
 
             -- Create the associated `bareBlockItem`
-            let encPayload = Types.encodePayload $ Types.stPayload signedTransaction
-            let header = Types.TransactionHeader (Types.stSigner signedTransaction) (Types.stNonce signedTransaction) (Types.stEnergy signedTransaction) (Types.payloadSize encPayload) (Types.stExpiryTime signedTransaction)
+            let encPayload = Types.encodePayload $ CT.stPayload signedTransaction
+            let header = Types.TransactionHeader (CT.stSigner signedTransaction) (CT.stNonce signedTransaction) (CT.stEnergy signedTransaction) (Types.payloadSize encPayload) (CT.stExpiryTime signedTransaction)
             let signHash = Types.transactionSignHashFromHeaderPayload header encPayload
-            let tx = Types.NormalTransaction $ Types.AccountTransaction (Types.stSignature signedTransaction) header encPayload signHash
+            let tx = Types.NormalTransaction $ Types.AccountTransaction (CT.stSignature signedTransaction) header encPayload signHash
 
             withClient backend $ do
                 -- Send transaction on chain
@@ -736,8 +736,8 @@ processTransactionCmd action baseCfgDir verbose backend =
             signedTransaction <- readSignedTransactionFromFile fname
 
             -- Create the encoded paylaod and header
-            let encPayload = Types.encodePayload $ Types.stPayload signedTransaction
-            let header = Types.TransactionHeader (Types.stSigner signedTransaction) (Types.stNonce signedTransaction) (Types.stEnergy signedTransaction) (Types.payloadSize encPayload) (Types.stExpiryTime signedTransaction)
+            let encPayload = Types.encodePayload $ CT.stPayload signedTransaction
+            let header = Types.TransactionHeader (CT.stSigner signedTransaction) (CT.stNonce signedTransaction) (CT.stEnergy signedTransaction) (Types.payloadSize encPayload) (CT.stExpiryTime signedTransaction)
 
             -- Extract accountKeyMap to be used to sign the transaction
             baseCfg <- getBaseConfig baseCfgDir verbose
@@ -761,13 +761,13 @@ processTransactionCmd action baseCfgDir verbose backend =
             let sigBMap = Types.tsSignatures (Types.atrSignature transactionB)
 
             -- Extract the signature map A (original signatures as stored in the file)
-            let sigAMap = Types.tsSignatures (Types.stSignature signedTransaction)
+            let sigAMap = Types.tsSignatures (CT.stSignature signedTransaction)
 
             -- Create the union of the signature map A and the signature map B
             let unionSignaturesMap = Map.unionWith Map.union sigAMap sigBMap
 
             -- Create final signed transaction including signtures A and B
-            let finalTransaction = signedTransaction{Types.stSignature = Types.TransactionSignature unionSignaturesMap}
+            let finalTransaction = signedTransaction{CT.stSignature = Types.TransactionSignature unionSignaturesMap}
 
             -- Write final signed transaction to file
             liftIO $ writeSignedTransactionToFile finalTransaction fname verbose AllowOverwrite
@@ -1700,7 +1700,7 @@ signAndProcessTransaction verbose txCfg pl intOpts outFile backend = do
             -- Create signedTransaction
             let header = Types.atrHeader tx
             let signedTransaction =
-                    Types.SignedTransaction
+                    CT.SignedTransaction
                         (Types.thEnergyAmount header)
                         (Types.thExpiry header)
                         (Types.thNonce header)
@@ -3653,8 +3653,6 @@ processBakerRemoveCmd baseCfgDir verbose backend txOpts = do
         let payload = Types.encodePayload Types.RemoveBaker
             nrgCost _ = return . Just $ bakerRemoveEnergyCost $ Types.payloadSize payload
         txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
-        logInfo ["payloadpayloadpayloadpayloadpayloadpayload: "]
-        logInfo [[i| #{showPrettyJSON payload}.|]]
         logSuccess
             ( [ printf "submitting transaction to remove validator with %s" (show (naAddr $ esdAddress tcEncryptedSigningData)),
                 printf "allowing up to %s to be spent as transaction fee" (showNrg tcEnergy)
