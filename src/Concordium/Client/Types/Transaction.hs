@@ -386,7 +386,7 @@ data SignedTransaction = SignedTransaction
     }
     deriving (Eq, Show)
 
--- | Implement `FromJSON` and `ToJSON` instances for `SignedTransaction`.
+-- | Implement `ToJSON` instance for `SignedTransaction`.
 instance ToJSON SignedTransaction where
     toJSON SignedTransaction{..} =
         AE.object

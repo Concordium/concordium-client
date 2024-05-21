@@ -255,9 +255,7 @@ data AccountCmd
       AccountEncrypt
         { aeTransactionOpts :: !(TransactionOpts (Maybe Energy)),
           -- | Amount to transfer from public to encrypted balance.
-          aeAmount :: !Amount,
-          -- | Optional file name and path to ouptput the signed/partially-signed transaction to instead of submitting the transaction on-chain.
-          aeOutFile :: !(Maybe FilePath)
+          aeAmount :: !Amount
         }
     | -- | Transfer part of the encrypted balance to the public balance of the
       --  account.
@@ -267,16 +265,13 @@ data AccountCmd
           adAmount :: !Amount,
           -- | Which indices of incoming amounts to use as inputs.
           -- If none are provided all existing ones will be used.
-          adIndex :: !(Maybe Int),
-          -- | Optional file name and path to ouptput the signed/partially-signed transaction to instead of submitting the transaction on-chain.
-          adOutFile :: !(Maybe FilePath)
+          adIndex :: !(Maybe Int)
         }
     | -- | Updated credentials and account threshold (i.e. how many credential holders that need to sign transactions)
       AccountUpdateCredentials
         { aucNewCredInfos :: !(Maybe FilePath), -- File containing the new CredentialDeploymentInformation's
           aucRemoveCredIds :: !(Maybe FilePath), -- File containing the CredentialRegistrationID's for the credentials to be removed
           aucNewThreshold :: !AccountThreshold, -- The new account threshold
-          aucOutFile :: !(Maybe FilePath), -- Otional file name and path to ouptput the signed/partially-signed transaction to instead of submitting the transaction on-chain.
           aucTransactionOpts :: !(TransactionOpts (Maybe Energy))
         }
     | -- | Show an alias for the account.
@@ -1002,7 +997,6 @@ accountEncryptCmd =
             ( AccountEncrypt
                 <$> transactionOptsParser
                 <*> option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> help "The amount to transfer to shielded balance.")
-                <*> optional (strOption (long "outFile" <> metavar "FILE" <> help "An optional file name and path to ouptput the signed/partially-signed transaction to instead of submitting the transaction on-chain."))
             )
             (progDesc "Transfer an amount from public to shielded balance of the account.")
         )
@@ -1016,7 +1010,6 @@ accountDecryptCmd =
                 <$> transactionOptsParser
                 <*> option (maybeReader amountFromString) (long "amount" <> metavar "CCD-AMOUNT" <> help "The amount to transfer to public balance.")
                 <*> optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which shielded amounts should be combined."))
-                <*> optional (strOption (long "outFile" <> metavar "FILE" <> help "An optional file name and path to ouptput the signed/partially-signed transaction to instead of submitting the transaction on-chain."))
             )
             (progDesc "Transfer an amount from shielded to public balance of the account.")
         )
@@ -1058,7 +1051,6 @@ accountUpdateCredentialsCmd =
                 <$> optional (strOption (long "new-credentials" <> metavar "FILE" <> help "File containing the new credential deployment informations."))
                 <*> optional (strOption (long "remove-credentials" <> metavar "FILE" <> help "File containing credential registration ids of the credentials to be removed."))
                 <*> option auto (long "new-threshold" <> metavar "THRESHOLD" <> help "New account threshold, i.e. how many credential holders needed to sign a transaction.")
-                <*> optional (strOption (long "outFile" <> metavar "FILE" <> help "An optional file name and path to ouptput the signed/partially-signed transaction to instead of submitting the transaction on-chain."))
                 <*> transactionOptsParser
             )
             ( progDescDoc $

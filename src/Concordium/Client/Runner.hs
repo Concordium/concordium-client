@@ -1936,7 +1936,7 @@ processAccountCmd action baseCfgDir verbose backend =
                 let outFile = toOutFile txOpts
                 liftIO $ credentialUpdateKeysTransactionConfirm aukCfg (ioConfirm intOpts)
                 signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
-        AccountUpdateCredentials cdisFile removeCidsFile newThreshold outFile txOpts -> do
+        AccountUpdateCredentials cdisFile removeCidsFile newThreshold txOpts -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
 
             when verbose $ do
@@ -1965,7 +1965,7 @@ processAccountCmd action baseCfgDir verbose backend =
                               auctcNewThreshold = newThreshold
                             }
                 liftIO $ accountUpdateCredentialsTransactionConfirm aucCfg (ioConfirm intOpts)
-                signAndProcessTransaction_ verbose txCfg epayload intOpts outFile backend
+                signAndProcessTransaction_ verbose txCfg epayload intOpts (toOutFile txOpts) backend
         AccountEncrypt{..} -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             when verbose $ do
@@ -1982,7 +1982,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
             let intOpts = toInteractionOpts aeTransactionOpts
             accountEncryptTransactionConfirm aetxCfg (ioConfirm intOpts)
-            withClient backend $ signAndProcessTransaction_ verbose txCfg pl intOpts aeOutFile backend
+            withClient backend $ signAndProcessTransaction_ verbose txCfg pl intOpts (toOutFile aeTransactionOpts) backend
         AccountDecrypt{..} -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             when verbose $ do
@@ -2014,7 +2014,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
                 let intOpts = toInteractionOpts adTransactionOpts
                 accountDecryptTransactionConfirm adtxCfg (ioConfirm intOpts)
-                signAndProcessTransaction_ verbose txCfg pl intOpts adOutFile backend
+                signAndProcessTransaction_ verbose txCfg pl intOpts (toOutFile adTransactionOpts) backend
         AccountShowAlias addrOrName alias -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             case getAccountAddress (bcAccountNameMap baseCfg) addrOrName of
