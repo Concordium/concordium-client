@@ -181,9 +181,18 @@ registerDataParser =
         <|> (RegisterRaw <$> strOption (long "raw" <> metavar "FILE" <> help "File with raw bytes to be registered on chain."))
 
 data TransactionCmd
-    = TransactionSubmit
+    = TransactionSignAndSubmit
+        { tssFile :: !FilePath,
+          tssInteractionOpts :: !InteractionOpts
+        }
+    | TransactionSubmit
         { tsFile :: !FilePath,
           tsInteractionOpts :: !InteractionOpts
+        }
+    | TransactionAddSignature
+        { tasFile :: !FilePath,
+          tasSigners :: !(Maybe Text),
+          tasToKeys :: !(Maybe FilePath)
         }
     | TransactionStatus
         { tsHash :: !Text,
@@ -426,6 +435,9 @@ data TransactionOpts energyOrMaybe = TransactionOpts
       toNonce :: !(Maybe Nonce),
       toMaxEnergyAmount :: !energyOrMaybe,
       toExpiration :: !(Maybe Text),
+      -- | Optional file name and path to output the signed/partially-signed
+      --  transaction to instead of submitting the transaction on-chain.
+      toOutFile :: !(Maybe FilePath),
       toInteractionOpts :: !InteractionOpts
     }
     deriving (Show)
@@ -649,6 +661,7 @@ transactionOptsParserBuilder energyOrMaybeParser =
         <*> optional (option auto (long "nonce" <> metavar "NONCE" <> help "Transaction nonce."))
         <*> energyOrMaybeParser
         <*> optional (strOption (long "expiry" <> metavar "EXPIRY" <> help "Expiration time of a transaction, specified as a relative duration (\"30s\", \"5m\", etc.) or UNIX epoch timestamp."))
+        <*> optional (strOption (long "out" <> metavar "FILE" <> help "File to output the signed/partially-signed transaction to instead of submitting the transaction on-chain."))
         <*> interactionOptsParser
 
 interactionOptsParser :: Parser InteractionOpts
@@ -700,7 +713,9 @@ transactionCmds =
         ( info
             ( TransactionCmd
                 <$> hsubparser
-                    ( transactionSubmitCmd
+                    ( transactionSignAndSubmitCmd
+                        <> transactionSubmitCmd
+                        <> transactionAddSignatureCmd
                         <> transactionStatusCmd
                         <> transactionSendCcdCmd
                         <> transactionWithScheduleCmd
@@ -712,17 +727,88 @@ transactionCmds =
             (progDesc "Commands for submitting and inspecting transactions.")
         )
 
+transactionSignAndSubmitCmd :: Mod CommandFields TransactionCmd
+transactionSignAndSubmitCmd =
+    command
+        "sign-and-submit"
+        ( info
+            ( TransactionSignAndSubmit
+                <$> strArgument (metavar "FILE" <> help "File containing the transaction parameters in JSON format.")
+                <*> interactionOptsParser
+            )
+            (progDesc "Parse a JSON transaction with keys, sign it, and send it to the node.")
+        )
+
 transactionSubmitCmd :: Mod CommandFields TransactionCmd
 transactionSubmitCmd =
     command
         "submit"
         ( info
             ( TransactionSubmit
-                <$> strArgument (metavar "FILE" <> help "File containing the transaction parameters in JSON format.")
+                <$> strArgument (metavar "FILE" <> help "File containing a signed transaction in JSON format.")
                 <*> interactionOptsParser
             )
-            (progDesc "Parse transaction and send it to the node.")
+            ( progDescDoc $
+                docFromLines $
+                    [ "Parse signed transaction and send it to the node.",
+                      "Expected format of the signed transaction in the `FILE`:"
+                    ]
+                        ++ expectedSignedTransactionFormat
+            )
         )
+
+transactionAddSignatureCmd :: Mod CommandFields TransactionCmd
+transactionAddSignatureCmd =
+    command
+        "add-signature"
+        ( info
+            ( TransactionAddSignature
+                <$> strArgument (metavar "FILE" <> help "File containing a signed transaction in JSON format.")
+                <*> optional
+                    ( strOption
+                        ( long "signers" <> metavar "SIGNERS" <> help "Specification of which (local) keys to sign with. Example: \"0:1,0:2,3:0,3:1\" specifies that credential holder 0 signs with keys 1 and 2, while credential holder 3 signs with keys 0 and 1"
+                        )
+                    )
+                <*> optional
+                    (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file."))
+            )
+            ( progDescDoc $
+                docFromLines $
+                    [ "Adds a signature to the transaction in the file.",
+                      "Expected format of the signed transaction in the `FILE`:"
+                    ]
+                        ++ expectedSignedTransactionFormat
+                        ++ [ "Expected format of the keys in the `KEYS` file:"
+                           ]
+                        ++ expectedKeysFileFormat
+            )
+        )
+
+expectedSignedTransactionFormat :: [String]
+expectedSignedTransactionFormat =
+    [ "   {",
+      "     \"energy\": 5000,",
+      "     \"expiry\": 1715708777,",
+      "     \"nonce\": 12,",
+      "     \"payload\": {",
+      "       \"address\": {",
+      "         \"index\": 3383,",
+      "         \"subindex\": 0",
+      "       },",
+      "       \"amount\": \"0\",",
+      "       \"message\": \"01000101420c0000000000000000000000000000\",",
+      "       \"receiveName\": \"cis2-bridgeable.updateOperator\"",
+      "       \"transactionType\": \"update\"",
+      "     },",
+      "     \"sender\": \"4jxvYasaPncfmCFCLZCvuL5cZuvR5HAQezCHZH7ZA7AGsRYpix\",",
+      "     \"signature\": {",
+      "       \"0\": {",
+      "         \"0\": \"6f17c110965054b262ef0d6dee02f77dccb7bd031c2af324b544f5ee3e6e18b3fd1be8a95782e92a89dd40a1b69cad8a37e8b86fc9107c8528d8267212cf030b\"",
+      "       }",
+      "     },",
+      "     \"version\": 1",
+      "    }"
+    ]
 
 transactionDeployCredentialCmd :: Mod CommandFields TransactionCmd
 transactionDeployCredentialCmd =
@@ -1431,7 +1517,7 @@ configAccountAddKeysCmd =
                     [ "Add one or several key pairs to a specific account configuration.",
                       "Expected format of the key file:"
                     ]
-                        ++ expectedAddOrUpdateKeysFileFormat
+                        ++ expectedKeysFileFormat
             )
         )
 
@@ -1449,12 +1535,12 @@ configAccountUpdateKeysCmd =
                     [ "Update one or several key pairs to a specific account configuration.",
                       "Expected format of the key file:"
                     ]
-                        ++ expectedAddOrUpdateKeysFileFormat
+                        ++ expectedKeysFileFormat
             )
         )
 
-expectedAddOrUpdateKeysFileFormat :: [String]
-expectedAddOrUpdateKeysFileFormat =
+expectedKeysFileFormat :: [String]
+expectedKeysFileFormat =
     [ "   {",
       "     \"cidx\": {",
       "        \"kidx\": {",

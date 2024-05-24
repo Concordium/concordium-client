@@ -2,8 +2,10 @@ module SimpleClientTests.TransactionSpec where
 
 import Concordium.Client.Output
 import Concordium.Client.Runner
+import Concordium.Client.Types.Transaction
 import Concordium.Client.Types.TransactionStatus
 
+import qualified Concordium.Crypto.SignatureScheme as ID
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Types
@@ -11,9 +13,13 @@ import qualified Concordium.Types.Execution as Types
 import SimpleClientTests.QueryTransaction
 
 import Control.Monad.Writer
+import qualified Data.Aeson as AE
+import Data.ByteString.Short as SBS
 import Data.Map.Strict as Map
-import Data.Text (Text)
+import Data.Text as Text
+import Data.Word (Word8)
 
+import Concordium.Types.Transactions
 import Test.Hspec hiding (pending)
 
 exampleAddress1 :: Text
@@ -35,6 +41,32 @@ exampleAccountAddr2 = case IDTypes.addressFromText exampleAddress2 of
     -- This does not happen since the format
     -- of the text is that of a valid address.
     Left err -> error err
+
+exampleRegisterDataPayload :: Types.Payload
+exampleRegisterDataPayload = Types.RegisterData{rdData = Types.RegisteredData exampleShortByteString}
+
+exampleShortByteString :: ShortByteString
+exampleShortByteString = SBS.pack ([1, 2] :: [Word8])
+
+exampleSignatureMap :: Map.Map IDTypes.KeyIndex ID.Signature
+exampleSignatureMap = Map.singleton 1 (ID.Signature exampleShortByteString)
+
+exampleCredentialSignatureMapEmpty :: Map.Map IDTypes.CredentialIndex (Map.Map IDTypes.KeyIndex ID.Signature)
+exampleCredentialSignatureMapEmpty = Map.empty
+
+exampleCredentialSignatureMap :: Map.Map IDTypes.CredentialIndex (Map.Map IDTypes.KeyIndex ID.Signature)
+exampleCredentialSignatureMap = Map.insert (1 :: IDTypes.CredentialIndex) exampleSignatureMap exampleCredentialSignatureMapEmpty
+
+exampleSignedTransaction :: SignedTransaction
+exampleSignedTransaction =
+    SignedTransaction
+        { stEnergy = Types.Energy 1,
+          stExpiryTime = Types.TransactionTime 2,
+          stNonce = Types.Nonce 3,
+          stSigner = exampleAccountAddr1,
+          stPayload = exampleRegisterDataPayload,
+          stSignature = TransactionSignature exampleCredentialSignatureMap
+        }
 
 exampleTransactionHash :: Types.TransactionHash
 exampleTransactionHash = read "c20911f59cda41c116f528531e815a3b561861b96014b379e8a52f1cbbafd2e4"
@@ -216,6 +248,9 @@ awaitStateTests = describe "await state" $ do
             let (finalState, (_, waitCount)) = runQuery q s
             specify "correct final state" $ finalState `shouldBe` finalized
             specify "wait called 3 times" $ waitCount `shouldBe` 3
+
+    describe "JSON encoding and decoding" $ do
+        specify "for 'SignedTransaction'" $ (AE.eitherDecode . AE.encode $ exampleSignedTransaction) `shouldBe` Right exampleSignedTransaction
 
 printTransactionStatusTests :: Spec
 printTransactionStatusTests = describe "print transaction status" $ do

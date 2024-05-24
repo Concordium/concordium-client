@@ -649,15 +649,53 @@ getTxContractInfoWithSchemas schemaFile status = do
             MultipleBlocksUnambiguous bhs ts -> map (,f ts) bhs
             MultipleBlocksAmbiguous bhts -> map (second f) bhts
 
+-- | Write a `SignedTransaction` to a JSON file.
+writeSignedTransactionToFile :: CT.SignedTransaction -> FilePath -> Bool -> OverwriteSetting -> IO ()
+writeSignedTransactionToFile signedTransaction outFile verbose overwriteSetting = do
+    let txJson = AE.encodePretty signedTransaction
+    success <- liftIO $ handleWriteFile BSL.writeFile overwriteSetting verbose outFile txJson
+
+    if success
+        then logSuccess [[i|Wrote transaction successfully to the file '#{outFile}'|]]
+        else logError [[i|Failed to write transaction to the file '#{outFile}'|]]
+
+-- | Read and display a `SignedTransaction` from a JSON file.
+--  Returns the associated `SignedTransaction`.
+readSignedTransactionFromFile :: FilePath -> IO CT.SignedTransaction
+readSignedTransactionFromFile fname = do
+    fileContent <- liftIO $ BSL8.readFile fname
+
+    -- Decode JSON file content into a `SignedTransaction` type.
+    let parsedSignedTransaction :: Either String CT.SignedTransaction
+        parsedSignedTransaction = eitherDecode fileContent
+    case parsedSignedTransaction of
+        Right tx -> do
+            logInfo ["Transaction in file: "]
+            logInfo [[i| #{showPrettyJSON tx}.|]]
+
+            -- Check if the transaction is expired.
+            now <- getCurrentTimeUnix
+            let expiry = CT.stExpiryTime tx
+            warnSuspiciousExpiry expiry now
+
+            -- TODO: to further decode and display the `message` in contract update or init transactions, we need a schema.
+
+            return tx
+        Left parseError -> logFatal [[i| Failed to decode file content into signedTransaction type: #{parseError}.|]]
+
 -- | Process a 'transaction ...' command.
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processTransactionCmd action baseCfgDir verbose backend =
     case action of
-        TransactionSubmit fname intOpts -> do
+        TransactionSignAndSubmit fname intOpts -> do
             -- TODO Ensure that the "nonce" field is optional in the payload.
             source <- handleReadFile BSL.readFile fname
 
-            -- TODO Print transaction details and ask for confirmation if (ioConfirm intOpts)
+            -- TODO Print transaction details
+
+            when (ioConfirm intOpts) $ do
+                confirmed <- askConfirmation $ Just "Do you want to send the transaction on chain? "
+                unless confirmed exitTransactionCancelled
 
             withClient backend $ do
                 tx <- processTransaction source
@@ -665,8 +703,78 @@ processTransactionCmd action baseCfgDir verbose backend =
                 logSuccess [printf "transaction '%s' sent to the node" (show hash)]
                 when (ioTail intOpts) $ do
                     tailTransaction_ verbose hash
-        --          logSuccess [ "transaction successfully completed" ]
+        TransactionSubmit fname intOpts -> do
+            -- Read signedTransaction from file
+            signedTransaction <- readSignedTransactionFromFile fname
 
+            -- Confirm to submit transaction on chain
+            when (ioConfirm intOpts) $ do
+                confirmed <- askConfirmation $ Just "Do you want to send the transaction on chain? "
+                unless confirmed exitTransactionCancelled
+
+            -- Create the associated `bareBlockItem`
+            let encPayload = Types.encodePayload $ CT.stPayload signedTransaction
+            let header = Types.TransactionHeader (CT.stSigner signedTransaction) (CT.stNonce signedTransaction) (CT.stEnergy signedTransaction) (Types.payloadSize encPayload) (CT.stExpiryTime signedTransaction)
+            let signHash = Types.transactionSignHashFromHeaderPayload header encPayload
+            let tx = Types.NormalTransaction $ Types.AccountTransaction (CT.stSignature signedTransaction) header encPayload signHash
+
+            withClient backend $ do
+                -- Send transaction on chain
+                sbiRes <- sendBlockItem tx
+                let res = case sbiRes of
+                        StatusOk resp -> Right resp
+                        StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
+                        StatusInvalid -> Left "GRPC response contained an invalid status code."
+                        RequestFailed err -> Left $ "I/O error: " <> err
+
+                case res of
+                    Left err -> logFatal ["Transaction not accepted by the node: " <> err]
+                    Right _ -> do
+                        let hash = getBlockItemHash tx
+                        logSuccess [printf "transaction '%s' sent to the node" (show hash)]
+                        when (ioTail intOpts) $ do
+                            tailTransaction_ verbose hash
+                        logSuccess ["transaction successfully completed"]
+        TransactionAddSignature fname signers toKeys -> do
+            -- Read transaction from file
+            signedTransaction <- readSignedTransactionFromFile fname
+
+            -- Create the encoded paylaod and header
+            let encPayload = Types.encodePayload $ CT.stPayload signedTransaction
+            let header = Types.TransactionHeader (CT.stSigner signedTransaction) (CT.stNonce signedTransaction) (CT.stEnergy signedTransaction) (Types.payloadSize encPayload) (CT.stExpiryTime signedTransaction)
+
+            -- Extract accountKeyMap to be used to sign the transaction
+            baseCfg <- getBaseConfig baseCfgDir verbose
+            let signerAccountText = Text.pack $ show (Types.thSender header)
+
+            -- TODO: we could check if the `nonce` still makes sense as read from the file vs the one on-chain.
+
+            keysArg <- case toKeys of
+                Nothing -> do
+                    logInfo [[i|The local keys associated to account `#{signerAccountText}` will be used for signing:|]]
+                    return Nothing
+                Just filePath -> do
+                    logInfo [[i|Using keys from file for signing:|]]
+                    AE.eitherDecodeFileStrict filePath `withLogFatalIO` ("cannot decode keys: " ++)
+
+            encryptedSigningData <- getAccountCfg baseCfg signers (Just signerAccountText) keysArg
+            accountKeyMap <- liftIO $ failOnError $ decryptAccountKeyMapInteractive (esdKeys encryptedSigningData) Nothing Nothing
+
+            -- Sign transaction and extract the signature map B (new signatures to be added)
+            let transactionB = signEncodedTransaction encPayload header accountKeyMap
+            let sigBMap = Types.tsSignatures (Types.atrSignature transactionB)
+
+            -- Extract the signature map A (original signatures as stored in the file)
+            let sigAMap = Types.tsSignatures (CT.stSignature signedTransaction)
+
+            -- Create the union of the signature map A and the signature map B
+            let unionSignaturesMap = Map.unionWith Map.union sigAMap sigBMap
+
+            -- Create final signed transaction including signtures A and B
+            let finalTransaction = signedTransaction{CT.stSignature = Types.TransactionSignature unionSignaturesMap}
+
+            -- Write final signed transaction to file
+            liftIO $ writeSignedTransactionToFile finalTransaction fname verbose AllowOverwrite
         TransactionDeployCredential fname intOpts -> do
             source <- handleReadFile BSL.readFile fname
             withClient backend $ do
@@ -675,8 +783,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                 logSuccess [printf "transaction '%s' sent to the node" (show hash)]
                 when (ioTail intOpts) $ do
                     tailTransaction_ verbose hash
-        --          logSuccess [ "credential deployed successfully" ]
-
+        --     logSuccess ["credential deployed successfully"]
         TransactionStatus h schemaFile -> do
             hash <- case parseTransactionHash h of
                 Nothing -> logFatal [printf "invalid transaction hash '%s'" h]
@@ -720,8 +827,9 @@ processTransactionCmd action baseCfgDir verbose backend =
                     putStrLn ""
 
                 let intOpts = toInteractionOpts txOpts
+                let outFile = toOutFile txOpts
                 liftIO $ transferTransactionConfirm ttxCfg (ioConfirm intOpts)
-                sendAndTailTransaction_ verbose txCfg pl intOpts
+                signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
         TransactionSendWithSchedule receiver schedule maybeMemo txOpts -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             when verbose $ do
@@ -772,8 +880,9 @@ processTransactionCmd action baseCfgDir verbose backend =
                         logWarn ["Transaction Cancelled"]
                     else do
                         let intOpts = toInteractionOpts txOpts
+                        let outFile = toOutFile txOpts
                         liftIO $ transferWithScheduleTransactionConfirm ttxCfg (ioConfirm intOpts)
-                        sendAndTailTransaction_ verbose txCfg pl intOpts
+                        signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
         TransactionEncryptedTransfer txOpts receiver amount index maybeMemo -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             when verbose $ do
@@ -817,8 +926,9 @@ processTransactionCmd action baseCfgDir verbose backend =
                     putStrLn ""
 
                 let intOpts = toInteractionOpts txOpts
+                let outFile = toOutFile txOpts
                 encryptedTransferTransactionConfirm ettCfg (ioConfirm intOpts)
-                sendAndTailTransaction_ verbose txCfg payload intOpts
+                signAndProcessTransaction_ verbose txCfg payload intOpts outFile backend
         TransactionRegisterData file txOpts -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             rdCfg <- getRegisterDataTransactionCfg baseCfg txOpts file
@@ -834,10 +944,11 @@ processTransactionCmd action baseCfgDir verbose backend =
             logInfo ["Registering data..."]
 
             let intOpts = toInteractionOpts txOpts
+            let outFile = toOutFile txOpts
             let pl = registerDataTransactionPayload rdCfg
 
             withClient backend $ do
-                mTsr <- sendAndTailTransaction verbose txCfg (Types.encodePayload pl) intOpts
+                mTsr <- signAndProcessTransaction verbose txCfg (Types.encodePayload pl) intOpts outFile backend
                 let extractDataRegistered = extractFromTsr $ \case
                         Types.DataRegistered rd -> Just rd
                         _ -> Nothing
@@ -1003,13 +1114,30 @@ warnSuspiciousExpiry expiryArg now
         logWarn ["expiration time is in more than one hour"]
     | otherwise = return ()
 
--- | Get accountCfg from the config folder and return EncryptedSigningData or logFatal if the keys are not provided in txOpts.
+-- | Extract the account configuration and return the `EncryptedSigningData` (the encrypted keys/data to be used for e.g. singing a transaction).
+-- If provided via a flag to a key file (in `toKeys txOpts`), the explicit keys provided will take precedence over the local keys stored,
+-- otherwise this function attempts to lookup local keys from the key directory.
+-- If some keys (e.g. '0:0,0:1,1:2') are specified (in `toSigners txOpts`), only the specified keys from the account will be looked up locally,
+-- otherwise all locally stored keys from the account will be returned.
+-- The function throws an error:
+-- - if a key file is provided via a flag but the keys cannot be read from the file.
+-- - if NO key file is provided via a flag and the lookup of local keys from the key directory fails.
 getAccountCfgFromTxOpts :: BaseConfig -> TransactionOpts energyOrMaybe -> IO EncryptedSigningData
 getAccountCfgFromTxOpts baseCfg txOpts = do
     keysArg <- case toKeys txOpts of
         Nothing -> return Nothing
         Just filePath -> AE.eitherDecodeFileStrict filePath `withLogFatalIO` ("cannot decode keys: " ++)
     let chosenKeysText = toSigners txOpts
+    let signerAccountText = toSender txOpts
+    getAccountCfg baseCfg chosenKeysText signerAccountText keysArg
+
+-- | Extract the account configuration and return the EncryptedSigningData (the encrypted keys/data to be used for e.g. singing a transaction).
+-- If the `keysArg` map is provided, the keys in the map will take precedence over the local keys stored,
+-- otherwise this function attempts to lookup local keys from the key directory.
+-- The function throws an error:
+-- - if `keysArg` is NOT provided and the lookup of local keys from the key directory fails.
+getAccountCfg :: BaseConfig -> Maybe Text -> Maybe Text -> Maybe (Map.Map ID.CredentialIndex (Map.Map ID.KeyIndex EncryptedAccountKeyPair)) -> IO EncryptedSigningData
+getAccountCfg baseCfg chosenKeysText signerAccountText keysArg = do
     let chosenKeysMaybe :: Maybe (Map.Map ID.CredentialIndex [ID.KeyIndex]) = case chosenKeysText of
             Nothing -> Nothing
             Just t ->
@@ -1018,7 +1146,7 @@ getAccountCfgFromTxOpts baseCfg txOpts = do
                             Nothing -> Map.insert c [k] acc
                             Just x -> Map.insert c ([k] ++ x) acc
                     in  foldl' (\acc (c, k) -> insertKey c k acc) Map.empty $ fmap ((\(p1, p2) -> (read . Text.unpack $ p1, read . Text.unpack $ Text.drop 1 p2)) . Text.breakOn ":") $ Text.split (== ',') t
-    accCfg <- snd <$> getAccountConfig (toSender txOpts) baseCfg Nothing keysArg Nothing AssumeInitialized
+    accCfg <- snd <$> getAccountConfig signerAccountText baseCfg Nothing keysArg Nothing AssumeInitialized
     let keys = acKeys accCfg
     case chosenKeysMaybe of
         Nothing -> return EncryptedSigningData{esdKeys = keys, esdAddress = acAddr accCfg, esdEncryptionKey = acEncryptionKey accCfg}
@@ -1414,8 +1542,8 @@ accountUpdateCredentialsTransactionConfirm AccountUpdateCredentialsTransactionCf
     logInfo $
         [printf "adding credentials to account %s with the following credential registration ids on account:" (showNamedAddress addr)]
             ++ logNewCids
-            ++ [printf "setting new account threshold %s" (show (auctcNewThreshold))]
-            ++ [printf "removing credentials with credential registration ids %s" (show (auctcRemoveCredIds))]
+            ++ [printf "setting new account threshold %s" (show auctcNewThreshold)]
+            ++ [printf "removing credentials with credential registration ids %s" (show auctcRemoveCredIds)]
             ++ [ printf "allowing up to %s to be spent as transaction fee" (showNrg energy),
                  printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry)
                ]
@@ -1462,7 +1590,7 @@ accountDecryptTransactionConfirm AccountDecryptTransactionConfig{..} confirm = d
         confirmed <- askConfirmation Nothing
         unless confirmed exitTransactionCancelled
 
--- | Encode, sign, and send transaction off to the node.
+-- | Encode, and sign transaction.
 --  If confirmNonce is set, the user is asked to confirm using the next nonce
 --  if there are pending transactions.
 startTransaction ::
@@ -1473,7 +1601,7 @@ startTransaction ::
     -- | The decrypted account signing keys. If not provided, the encrypted keys
     -- from the 'TransactionConfig' will be used, and for each the password will be queried.
     Maybe AccountKeyMap ->
-    ClientMonad m Types.BareBlockItem
+    ClientMonad m Types.AccountTransaction
 startTransaction txCfg pl confirmNonce maybeAccKeys = do
     let TransactionConfig
             { tcEnergy = energy,
@@ -1487,18 +1615,12 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
         Just acKeys' -> return acKeys'
         Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys Nothing Nothing
     let sender = applyAlias tcAlias naAddr
-    let tx = signEncodedTransaction pl sender energy nonce expiry accountKeyMap
+    let tx = formatAndSignTransaction pl sender energy nonce expiry accountKeyMap
+
     when (isJust tcAlias) $
         logInfo [[i|Using the alias #{sender} as the sender of the transaction instead of #{naAddr}.|]]
-    sbiRes <- sendBlockItem tx
-    let res = case sbiRes of
-            StatusOk resp -> Right resp
-            StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
-            StatusInvalid -> Left "GRPC response contained an invalid status code."
-            RequestFailed err -> Left $ "I/O error: " <> err
-    case res of
-        Left err -> logFatal ["Transaction not accepted by the node: " <> err]
-        Right _ -> return tx
+
+    return tx
 
 -- | Fetch next nonces relative to the account's most recently committed and
 --  pending transactions, respectively.
@@ -1524,7 +1646,7 @@ getNonce sender nonce confirm =
         Just v -> return v
 
 -- | Send a transaction and optionally tail it (see 'tailTransaction' below).
-sendAndTailTransaction_ ::
+signAndProcessTransaction_ ::
     (MonadIO m, MonadFail m) =>
     -- | Whether the output should be verbose
     Bool ->
@@ -1534,13 +1656,18 @@ sendAndTailTransaction_ ::
     Types.EncodedPayload ->
     -- | How interactive should sending and tailing be
     InteractionOpts ->
+    -- | An optional file name to output the signed/partially-signed transaction to instead of sending it to the node
+    Maybe FilePath ->
+    -- | Node backend connection
+    Backend ->
     ClientMonad m ()
-sendAndTailTransaction_ verbose txCfg pl intOpts = void $ sendAndTailTransaction verbose txCfg pl intOpts
+signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend = void $ signAndProcessTransaction verbose txCfg pl intOpts outFile backend
 
--- | Send a transaction and optionally tail it (see 'tailTransaction' below).
+-- | Sign a transaction and process transaction by either send it to the node or write it to a file.
+--  If sent to the node, optionally tail it (see 'tailTransaction' below).
 --  If tailed, it returns the TransactionStatusResult of the finalized status,
 --  otherwise the return value is @Nothing@.
-sendAndTailTransaction ::
+signAndProcessTransaction ::
     (MonadIO m, MonadFail m) =>
     -- | Whether the output should be verbose
     Bool ->
@@ -1550,14 +1677,64 @@ sendAndTailTransaction ::
     Types.EncodedPayload ->
     -- | How interactive should sending and tailing be
     InteractionOpts ->
+    -- | An optional file name to output the signed/partially-signed transaction to instead of sending it to the node
+    Maybe FilePath ->
+    -- | Node backend connection
+    Backend ->
     ClientMonad m (Maybe TransactionStatusResult)
-sendAndTailTransaction verbose txCfg pl intOpts = do
+signAndProcessTransaction verbose txCfg pl intOpts outFile backend = do
     tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
-    let hash = getBlockItemHash tx
-    logSuccess [printf "transaction '%s' sent to the node" (show hash)]
-    if ioTail intOpts
-        then Just <$> tailTransaction verbose hash
-        else return Nothing
+
+    case outFile of
+        Just filePath -> do
+            logInfo [[i| Will write signed transaction to file. Will not send transaction to the node.|]]
+
+            -- Get protocol version
+            pv <- liftIO $ withClient backend $ do
+                cs <- getResponseValueOrDie =<< getConsensusInfo
+                return $ Queries.csProtocolVersion cs
+
+            -- Decode the payload from the transaction
+            let decPl = case Types.promoteProtocolVersion pv of
+                    Types.SomeProtocolVersion spv -> Types.decodePayload spv pl
+            decPayload <- case decPl of
+                Right decPL -> return decPL
+                Left err -> logFatal ["Decoding of payload failed: " <> err]
+
+            -- Create signedTransaction
+            let header = Types.atrHeader tx
+            let signedTransaction =
+                    CT.SignedTransaction
+                        (Types.thEnergyAmount header)
+                        (Types.thExpiry header)
+                        (Types.thNonce header)
+                        (Types.thSender header)
+                        decPayload
+                        (Types.atrSignature tx)
+
+            -- Write signedTransaction to file
+            liftIO $ writeSignedTransactionToFile signedTransaction filePath verbose PromptBeforeOverwrite
+            return Nothing
+        Nothing -> do
+            logInfo [[i| Will send signed transaction to node.|]]
+
+            -- Send transaction on chain
+            let bareBlockItem = Types.NormalTransaction tx
+            sbiRes <- sendBlockItem bareBlockItem
+            let res = case sbiRes of
+                    StatusOk resp -> Right resp
+                    StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
+                    StatusInvalid -> Left "GRPC response contained an invalid status code."
+                    RequestFailed err -> Left $ "I/O error: " <> err
+            case res of
+                Left err -> logFatal ["Transaction not accepted by the node: " <> err]
+                Right _ -> do
+                    let hash = getBlockItemHash bareBlockItem
+                    logSuccess [printf "transaction '%s' sent to the node" (show hash)]
+
+                    if ioTail intOpts
+                        then Just <$> tailTransaction verbose hash
+                        else return Nothing
 
 -- | Continuously query and display transaction status until the transaction is finalized.
 tailTransaction_ :: (MonadIO m) => Bool -> Types.TransactionHash -> ClientMonad m ()
@@ -1760,8 +1937,9 @@ processAccountCmd action baseCfgDir verbose backend =
                     putStrLn ""
 
                 let intOpts = toInteractionOpts txOpts
+                let outFile = toOutFile txOpts
                 liftIO $ credentialUpdateKeysTransactionConfirm aukCfg (ioConfirm intOpts)
-                sendAndTailTransaction_ verbose txCfg pl intOpts
+                signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
         AccountUpdateCredentials cdisFile removeCidsFile newThreshold txOpts -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
 
@@ -1791,7 +1969,7 @@ processAccountCmd action baseCfgDir verbose backend =
                               auctcNewThreshold = newThreshold
                             }
                 liftIO $ accountUpdateCredentialsTransactionConfirm aucCfg (ioConfirm intOpts)
-                sendAndTailTransaction_ verbose txCfg epayload intOpts
+                signAndProcessTransaction_ verbose txCfg epayload intOpts (toOutFile txOpts) backend
         AccountEncrypt{..} -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             when verbose $ do
@@ -1808,7 +1986,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
             let intOpts = toInteractionOpts aeTransactionOpts
             accountEncryptTransactionConfirm aetxCfg (ioConfirm intOpts)
-            withClient backend $ sendAndTailTransaction_ verbose txCfg pl intOpts
+            withClient backend $ signAndProcessTransaction_ verbose txCfg pl intOpts (toOutFile aeTransactionOpts) backend
         AccountDecrypt{..} -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             when verbose $ do
@@ -1840,7 +2018,7 @@ processAccountCmd action baseCfgDir verbose backend =
 
                 let intOpts = toInteractionOpts adTransactionOpts
                 accountDecryptTransactionConfirm adtxCfg (ioConfirm intOpts)
-                sendAndTailTransaction_ verbose txCfg pl intOpts
+                signAndProcessTransaction_ verbose txCfg pl intOpts (toOutFile adTransactionOpts) backend
         AccountShowAlias addrOrName alias -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             case getAccountAddress (bcAccountNameMap baseCfg) addrOrName of
@@ -1875,10 +2053,11 @@ processModuleCmd action baseCfgDir verbose backend =
             logInfo ["deploying module..."]
 
             let intOpts = toInteractionOpts txOpts
+            let outFile = toOutFile txOpts
             let pl = moduleDeployTransactionPayload mdCfg
 
             withClient backend $ do
-                mTsr <- sendAndTailTransaction verbose txCfg (Types.encodePayload pl) intOpts
+                mTsr <- signAndProcessTransaction verbose txCfg (Types.encodePayload pl) intOpts outFile backend
                 case extractModRef mTsr of
                     Nothing -> return ()
                     Just (Left err) -> logFatal ["module deployment failed:", err]
@@ -2128,9 +2307,10 @@ processContractCmd action baseCfgDir verbose backend =
                 unless confirmed exitTransactionCancelled
 
             let intOpts = toInteractionOpts txOpts
+            let outFile = toOutFile txOpts
             let pl = contractInitTransactionPayload ciCfg
             withClient backend $ do
-                mTsr <- sendAndTailTransaction verbose txCfg (Types.encodePayload pl) intOpts
+                mTsr <- signAndProcessTransaction verbose txCfg (Types.encodePayload pl) intOpts outFile backend
                 case extractContractAddress mTsr of
                     Nothing -> return ()
                     Just (Left err) -> logFatal ["contract initialisation failed:", err]
@@ -2179,9 +2359,10 @@ processContractCmd action baseCfgDir verbose backend =
                 unless confirmed exitTransactionCancelled
 
             let intOpts = toInteractionOpts txOpts
+            let outFile = toOutFile txOpts
             let pl = contractUpdateTransactionPayload cuCfg
             withClient backend $ do
-                mTsr <- sendAndTailTransaction verbose txCfg (Types.encodePayload pl) intOpts
+                mTsr <- signAndProcessTransaction verbose txCfg (Types.encodePayload pl) intOpts outFile backend
                 case extractUpdate mTsr of
                     Nothing -> return ()
                     Just (Left err) -> logFatal ["updating contract instance failed:", err]
@@ -2922,11 +3103,12 @@ processBakerConfigureCmd ::
     IO ()
 processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCapital cbRestakeEarnings cbOpenForDelegation metadataURL cbTransactionFeeCommission cbBakingRewardCommission cbFinalizationRewardCommission inputKeysFile outputKeysFile = do
     let intOpts = toInteractionOpts txOpts
+    let outFile = toOutFile txOpts
     (bakerKeys, txCfg, pl) <- transactionForBakerConfigure (ioConfirm intOpts)
     withClient backend $ do
         when isBakerConfigure $ warnAboutMissingAddBakerParameters txCfg
         mapM_ (warnAboutBadCapital txCfg) cbCapital
-        result <- sendAndTailTransaction verbose txCfg pl intOpts
+        result <- signAndProcessTransaction verbose txCfg pl intOpts outFile backend
         events <- eventsFromTransactionResult result
         mapM_ (tryPrintKeyUpdateEventToOutputFile bakerKeys) events
   where
@@ -3170,10 +3352,11 @@ processBakerAddCmd ::
     IO ()
 processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarnings inputKeysFile outputKeysFile = do
     let intOpts = toInteractionOpts txOpts
+    let outFile = toOutFile txOpts
     (bakerKeys, txCfg, pl) <- transactionForBakerAdd (ioConfirm intOpts)
     withClient backend $ do
         warnAboutBadCapital txCfg abBakingStake
-        result <- sendAndTailTransaction verbose txCfg pl intOpts
+        result <- signAndProcessTransaction verbose txCfg pl intOpts outFile backend
         events <- eventsFromTransactionResult result
         mapM_ (tryPrintKeyUpdateEventToOutputFile bakerKeys) events
   where
@@ -3331,9 +3514,10 @@ processBakerSetKeysCmd ::
     IO ()
 processBakerSetKeysCmd baseCfgDir verbose backend txOpts inputKeysFile outputKeysFile = do
     let intOpts = toInteractionOpts txOpts
+    let outFile = toOutFile txOpts
     (bakerKeys, txCfg, pl) <- transactionForBakerSetKeys (ioConfirm intOpts)
     withClient backend $ do
-        result <- sendAndTailTransaction verbose txCfg pl intOpts
+        result <- signAndProcessTransaction verbose txCfg pl intOpts outFile backend
         events <- eventsFromTransactionResult result
         mapM_ (tryPrintKeyUpdateEventToOutputFile bakerKeys) events
   where
@@ -3447,10 +3631,11 @@ processBakerRemoveCmd ::
     IO ()
 processBakerRemoveCmd baseCfgDir verbose backend txOpts = do
     let intOpts = toInteractionOpts txOpts
+    let outFile = toOutFile txOpts
     (txCfg, pl) <- transactionForBakerRemove (ioConfirm intOpts)
     withClient backend $ do
         liftIO warnAboutRemoving
-        sendAndTailTransaction_ verbose txCfg pl intOpts
+        signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
   where
     warnAboutRemoving = do
         cooldownDate <- withClient backend $ do
@@ -3496,10 +3681,11 @@ processBakerUpdateStakeBeforeP4Cmd ::
     IO ()
 processBakerUpdateStakeBeforeP4Cmd baseCfgDir verbose backend txOpts ubsStake = do
     let intOpts = toInteractionOpts txOpts
+    let outFile = toOutFile txOpts
     (txCfg, pl) <- transactionForBakerUpdateStake (ioConfirm intOpts)
     withClient backend $ do
         warnAboutBadCapital txCfg ubsStake
-        sendAndTailTransaction_ verbose txCfg pl intOpts
+        signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
   where
     warnAboutBadCapital txCfg capital = do
         let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
@@ -3586,9 +3772,10 @@ processBakerUpdateRestakeCmd ::
     IO ()
 processBakerUpdateRestakeCmd baseCfgDir verbose backend txOpts ubreRestakeEarnings = do
     let intOpts = toInteractionOpts txOpts
+    let outFile = toOutFile txOpts
     (txCfg, pl) <- transactionForBakerUpdateRestake (ioConfirm intOpts)
     withClient backend $ do
-        sendAndTailTransaction_ verbose txCfg pl intOpts
+        signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
   where
     transactionForBakerUpdateRestake confirm = do
         baseCfg <- getBaseConfig baseCfgDir verbose
@@ -3777,11 +3964,12 @@ processDelegatorConfigureCmd ::
     IO ()
 processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdRestakeEarnings cdDelegationTarget = do
     let intOpts = toInteractionOpts txOpts
+    let outFile = toOutFile txOpts
     (txCfg, pl) <- transactionForDelegatorConfigure (ioConfirm intOpts)
     withClient backend $ do
         warnInOldProtocol
         mapM_ (warnAboutBadCapital txCfg) cdCapital
-        result <- sendAndTailTransaction verbose txCfg pl intOpts
+        result <- signAndProcessTransaction verbose txCfg pl intOpts outFile backend
         warnAboutFailedResult result
   where
     warnInOldProtocol = do
@@ -4404,13 +4592,14 @@ processTransaction_ transaction _verbose = do
                 Just nonce -> return nonce
         txPayload <- convertTransactionJsonPayload $ payload transaction
         return $
-            encodeAndSignTransaction
-                txPayload
-                sender
-                (thEnergyAmount header)
-                nonce
-                (thExpiry header)
-                accountKeys
+            Types.NormalTransaction $
+                encodeAndSignTransaction
+                    txPayload
+                    sender
+                    (thEnergyAmount header)
+                    nonce
+                    (thExpiry header)
+                    accountKeys
     sbiRes <- sendBlockItem tx
     let res = case sbiRes of
             StatusOk resp -> Right resp
@@ -4466,8 +4655,7 @@ convertTransactionJsonPayload = \case
     CT.TransferToEncrypted{..} -> return $ Types.TransferToEncrypted{..}
     CT.EncryptedAmountTransfer{..} -> return Types.EncryptedAmountTransfer{..}
 
--- | Sign a transaction payload and configuration into a "normal" transaction,
---  which is ready to be sent.
+-- | Sign a transaction payload and configuration into a "normal" AccountTransaction.
 encodeAndSignTransaction ::
     Types.Payload ->
     Types.AccountAddress ->
@@ -4475,28 +4663,36 @@ encodeAndSignTransaction ::
     Types.Nonce ->
     Types.TransactionExpiryTime ->
     AccountKeyMap ->
-    Types.BareBlockItem
-encodeAndSignTransaction txPayload = signEncodedTransaction (Types.encodePayload txPayload)
+    Types.AccountTransaction
+encodeAndSignTransaction txPayload = formatAndSignTransaction (Types.encodePayload txPayload)
 
--- | Sign an encoded transaction payload and a configuration into a "normal" transaction,
---  which is ready to be sent.
-signEncodedTransaction ::
+-- | Format the header of the transaction and sign it together with the encoded transaction payload and return a "normal" AccountTransaction.
+formatAndSignTransaction ::
     Types.EncodedPayload ->
     Types.AccountAddress ->
     Types.Energy ->
     Types.Nonce ->
     Types.TransactionExpiryTime ->
     AccountKeyMap ->
-    Types.BareBlockItem
-signEncodedTransaction encPayload sender energy nonce expiry accKeys =
-    Types.NormalTransaction $
-        let header =
-                Types.TransactionHeader
-                    { thSender = sender,
-                      thPayloadSize = Types.payloadSize encPayload,
-                      thNonce = nonce,
-                      thEnergyAmount = energy,
-                      thExpiry = expiry
-                    }
-            keys = Map.toList $ fmap Map.toList accKeys
-        in  Types.signTransaction keys header encPayload
+    Types.AccountTransaction
+formatAndSignTransaction encPayload sender energy nonce expiry = signEncodedTransaction encPayload header
+  where
+    header =
+        Types.TransactionHeader
+            { thSender = sender,
+              thPayloadSize = Types.payloadSize encPayload,
+              thNonce = nonce,
+              thEnergyAmount = energy,
+              thExpiry = expiry
+            }
+
+-- | Sign an encoded transaction payload, and header with the account key map
+-- and return a "normal" AccountTransaction.
+signEncodedTransaction ::
+    Types.EncodedPayload ->
+    Types.TransactionHeader ->
+    AccountKeyMap ->
+    Types.AccountTransaction
+signEncodedTransaction encPayload header accKeys =
+    let keys = Map.toList $ fmap Map.toList accKeys
+    in  Types.signTransaction keys header encPayload
