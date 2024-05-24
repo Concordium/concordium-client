@@ -435,7 +435,9 @@ data TransactionOpts energyOrMaybe = TransactionOpts
       toNonce :: !(Maybe Nonce),
       toMaxEnergyAmount :: !energyOrMaybe,
       toExpiration :: !(Maybe Text),
-      toOutFile :: !(Maybe FilePath), -- Optional file name and path to ouptput the signed/partially-signed transaction to instead of submitting the transaction on-chain.
+      -- | Optional file name and path to output the signed/partially-signed
+      --  transaction to instead of submitting the transaction on-chain.
+      toOutFile :: !(Maybe FilePath),
       toInteractionOpts :: !InteractionOpts
     }
     deriving (Show)
@@ -659,7 +661,7 @@ transactionOptsParserBuilder energyOrMaybeParser =
         <*> optional (option auto (long "nonce" <> metavar "NONCE" <> help "Transaction nonce."))
         <*> energyOrMaybeParser
         <*> optional (strOption (long "expiry" <> metavar "EXPIRY" <> help "Expiration time of a transaction, specified as a relative duration (\"30s\", \"5m\", etc.) or UNIX epoch timestamp."))
-        <*> optional (strOption (long "outFile" <> metavar "FILE" <> help "An optional file name and path to ouptput the signed/partially-signed transaction to instead of submitting the transaction on-chain."))
+        <*> optional (strOption (long "out" <> metavar "FILE" <> help "File to output the signed/partially-signed transaction to instead of submitting the transaction on-chain."))
         <*> interactionOptsParser
 
 interactionOptsParser :: Parser InteractionOpts
@@ -734,7 +736,7 @@ transactionSignAndSubmitCmd =
                 <$> strArgument (metavar "FILE" <> help "File containing the transaction parameters in JSON format.")
                 <*> interactionOptsParser
             )
-            (progDesc "Create transaction, sign it, and send it to the node.")
+            (progDesc "Parse a JSON transaction with keys, sign it, and send it to the node.")
         )
 
 transactionSubmitCmd :: Mod CommandFields TransactionCmd

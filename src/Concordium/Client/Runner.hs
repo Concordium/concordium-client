@@ -673,6 +673,11 @@ readSignedTransactionFromFile fname = do
             logInfo ["Transaction in file: "]
             logInfo [[i| #{showPrettyJSON tx}.|]]
 
+            -- Check if the transaction is expired.
+            now <- getCurrentTimeUnix
+            let expiry = CT.stExpiryTime tx
+            warnSuspiciousExpiry expiry now
+
             -- TODO: to further decode and display the `message` in contract update or init transactions, we need a schema.
 
             return tx
@@ -698,7 +703,6 @@ processTransactionCmd action baseCfgDir verbose backend =
                 logSuccess [printf "transaction '%s' sent to the node" (show hash)]
                 when (ioTail intOpts) $ do
                     tailTransaction_ verbose hash
-        -- logSuccess ["transaction successfully completed"]
         TransactionSubmit fname intOpts -> do
             -- Read signedTransaction from file
             signedTransaction <- readSignedTransactionFromFile fname
@@ -1660,7 +1664,7 @@ signAndProcessTransaction_ ::
 signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend = void $ signAndProcessTransaction verbose txCfg pl intOpts outFile backend
 
 -- | Sign a transaction and process transaction by either send it to the node or write it to a file.
---  If send to the node, optionally tail it (see 'tailTransaction' below).
+--  If sent to the node, optionally tail it (see 'tailTransaction' below).
 --  If tailed, it returns the TransactionStatusResult of the finalized status,
 --  otherwise the return value is @Nothing@.
 signAndProcessTransaction ::
