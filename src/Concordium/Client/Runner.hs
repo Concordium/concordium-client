@@ -883,52 +883,6 @@ processTransactionCmd action baseCfgDir verbose backend =
                         let outFile = toOutFile txOpts
                         liftIO $ transferWithScheduleTransactionConfirm ttxCfg (ioConfirm intOpts)
                         signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
-        TransactionEncryptedTransfer txOpts receiver amount index maybeMemo -> do
-            baseCfg <- getBaseConfig baseCfgDir verbose
-            when verbose $ do
-                runPrinter $ printBaseConfig baseCfg
-                putStrLn ""
-
-            accCfg <- getAccountCfgFromTxOpts baseCfg txOpts
-            let senderAddr = esdAddress accCfg
-
-            encryptedSecretKey <-
-                case esdEncryptionKey accCfg of
-                    Nothing ->
-                        logFatal ["Missing account encryption secret key for account: " ++ show senderAddr]
-                    Just x -> return x
-            secretKey <- decryptAccountEncryptionSecretKeyInteractive encryptedSecretKey `withLogFatalIO` ("Couldn't decrypt account encryption secret key: " ++)
-
-            receiverAcc <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
-
-            withClient backend $ do
-                transferData <- getEncryptedAmountTransferData (naAddr senderAddr) receiverAcc amount index secretKey
-                cs <- getResponseValueOrDie =<< getConsensusInfo
-                payload <- liftIO $ do
-                    res <- case maybeMemo of
-                        Nothing -> return $ Types.EncryptedAmountTransfer (naAddr receiverAcc) transferData
-                        Just memoInput -> do
-                            memo <- checkAndGetMemo memoInput $ Queries.csProtocolVersion cs
-                            return $ Types.EncryptedAmountTransferWithMemo (naAddr receiverAcc) memo transferData
-                    return $ Types.encodePayload res
-                let nrgCost _ = return $ Just $ encryptedTransferEnergyCost $ Types.payloadSize payload
-                txCfg <- liftIO (getTransactionCfg baseCfg txOpts nrgCost)
-
-                let ettCfg =
-                        EncryptedTransferTransactionConfig
-                            { ettTransferData = transferData,
-                              ettTransactionCfg = txCfg,
-                              ettReceiver = receiverAcc,
-                              ettAmount = amount
-                            }
-                liftIO $ when verbose $ do
-                    runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
-                    putStrLn ""
-
-                let intOpts = toInteractionOpts txOpts
-                let outFile = toOutFile txOpts
-                encryptedTransferTransactionConfirm ettCfg (ioConfirm intOpts)
-                signAndProcessTransaction_ verbose txCfg payload intOpts outFile backend
         TransactionRegisterData file txOpts -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             rdCfg <- getRegisterDataTransactionCfg baseCfg txOpts file
@@ -1191,52 +1145,6 @@ data TransferWithScheduleTransactionConfig = TransferWithScheduleTransactionConf
       twstcSchedule :: [(Time.Timestamp, Types.Amount)]
     }
 
-data EncryptedTransferTransactionConfig = EncryptedTransferTransactionConfig
-    { ettTransactionCfg :: TransactionConfig,
-      ettReceiver :: NamedAddress,
-      ettAmount :: Types.Amount,
-      ettTransferData :: !Enc.EncryptedAmountTransferData
-    }
-
-getEncryptedAmountTransferData :: ID.AccountAddress -> NamedAddress -> Types.Amount -> Maybe Int -> ElgamalSecretKey -> ClientMonad IO Enc.EncryptedAmountTransferData
-getEncryptedAmountTransferData senderAddr ettReceiver ettAmount idx secretKey = do
-    -- get encrypted amounts for the sender
-    bbHash <- extractResponseValueOrDie Queries.biBlockHash =<< getBlockInfo Best
-    Types.AccountInfo{aiAccountEncryptedAmount = a@Types.AccountEncryptedAmount{..}} <-
-        getResponseValueOrDie =<< getAccountInfo (Types.AccAddress senderAddr) (Given bbHash)
-    let listOfEncryptedAmounts = Types.getIncomingAmountsList a
-    taker <- case idx of
-        Nothing -> return id
-        Just v ->
-            if v < fromIntegral _startIndex
-                || v > fromIntegral _startIndex + length listOfEncryptedAmounts
-                then logFatal ["The index provided must be at least the index of the first incoming amount on the account and at most `start index + number of incoming amounts`"]
-                else return $ take (v - fromIntegral _startIndex)
-    -- get receiver's public encryption key
-    air <- getResponseValueOrDie =<< getAccountInfo (Types.AccAddress $ naAddr ettReceiver) (Given bbHash)
-    globalContext <- getResponseValueOrDie =<< getCryptographicParameters (Given bbHash)
-    let receiverPk = ID._elgamalPublicKey $ Types.aiAccountEncryptionKey air
-    -- precomputed table for speeding up decryption
-    let table = Enc.computeTable globalContext (2 ^ (16 :: Int))
-        decoder = Enc.decryptAmount table secretKey
-        selfDecrypted = decoder _selfAmount
-        -- aggregation of idx encrypted amounts
-        inputEncAmounts = taker listOfEncryptedAmounts
-        aggAmounts = foldl' (<>) _selfAmount inputEncAmounts
-        totalEncryptedAmount = foldl' (+) selfDecrypted $ fmap decoder inputEncAmounts
-    unless (totalEncryptedAmount >= ettAmount) $
-        logFatal [printf "The requested transfer (%s) is more than the total encrypted balance (%s)." (Types.amountToString ettAmount) (Types.amountToString totalEncryptedAmount)]
-    -- index indicating which encrypted amounts we used as input
-    let aggIndex = case idx of
-            Nothing -> Enc.EncryptedAmountAggIndex (Enc.theAggIndex _startIndex + fromIntegral (length listOfEncryptedAmounts))
-            Just idx' -> Enc.EncryptedAmountAggIndex (fromIntegral idx')
-        -- we use the supplied index if given. We already checked above that it is within bounds.
-        aggAmount = Enc.makeAggregatedDecryptedAmount aggAmounts totalEncryptedAmount aggIndex
-    liftIO $
-        Enc.makeEncryptedAmountTransferData globalContext receiverPk secretKey aggAmount ettAmount >>= \case
-            Nothing -> logFatal ["Could not create transfer. Likely the provided secret key is incorrect."]
-            Just ettTransferData -> return ettTransferData
-
 -- | Returns the UTCTime date when the baker cooldown on reducing stake/removing a baker will end, using on chain parameters
 getBakerCooldown :: Queries.EChainParametersAndKeys -> ClientMonad IO UTCTime
 getBakerCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) = do
@@ -1318,26 +1226,11 @@ data AccountUpdateCredentialsTransactionCfg = AccountUpdateCredentialsTransactio
       auctcNewThreshold :: ID.AccountThreshold
     }
 
--- | Resolved configuration for transferring from public to encrypted balance.
-data AccountEncryptTransactionConfig = AccountEncryptTransactionConfig
-    { aeTransactionCfg :: TransactionConfig,
-      aeAmount :: Types.Amount
-    }
-
 -- | Resolved configuration for transferring from encrypted to public balance.
 data AccountDecryptTransactionConfig = AccountDecryptTransactionConfig
     { adTransactionCfg :: TransactionConfig,
       adTransferData :: Enc.SecToPubAmountTransferData
     }
-
--- | Resolve configuration for transferring an amount from public to encrypted
---  balance of an account.
-getAccountEncryptTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> Types.Amount -> Types.PayloadSize -> IO AccountEncryptTransactionConfig
-getAccountEncryptTransactionCfg baseCfg txOpts aeAmount payloadSize = do
-    aeTransactionCfg <- getTransactionCfg baseCfg txOpts nrgCost
-    return AccountEncryptTransactionConfig{..}
-  where
-    nrgCost _ = return $ Just $ accountEncryptEnergyCost payloadSize
 
 -- | Resolve configuration for transferring an amount from encrypted to public
 --  balance of an account.
@@ -1446,25 +1339,6 @@ transferWithScheduleTransactionConfirm ttxCfg confirm = do
         confirmed <- askConfirmation Nothing
         unless confirmed exitTransactionCancelled
 
-encryptedTransferTransactionConfirm :: (MonadIO m) => EncryptedTransferTransactionConfig -> Bool -> m ()
-encryptedTransferTransactionConfirm EncryptedTransferTransactionConfig{..} confirm = do
-    let TransactionConfig
-            { tcEnergy = energy,
-              tcExpiry = expiry,
-              tcEncryptedSigningData = EncryptedSigningData{esdAddress = addr}
-            } =
-                ettTransactionCfg
-
-    logInfo
-        [ printf "transferring %s CCD from shielded balance of account %s to %s" (Types.amountToString ettAmount) (showNamedAddress addr) (showNamedAddress ettReceiver),
-          printf "allowing up to %s to be spent as transaction fee" (showNrg energy),
-          printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry)
-        ]
-
-    when confirm $ do
-        confirmed <- askConfirmation Nothing
-        unless confirmed exitTransactionCancelled
-
 -- | Query the chain for the minimum baker stake threshold.
 --  Die printing an error message containing the nature of the error if such occured.
 getBakerStakeThresholdOrDie :: ClientMonad IO Types.Amount
@@ -1547,25 +1421,6 @@ accountUpdateCredentialsTransactionConfirm AccountUpdateCredentialsTransactionCf
             ++ [ printf "allowing up to %s to be spent as transaction fee" (showNrg energy),
                  printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry)
                ]
-
-    when confirm $ do
-        confirmed <- askConfirmation Nothing
-        unless confirmed exitTransactionCancelled
-
-accountEncryptTransactionConfirm :: AccountEncryptTransactionConfig -> Bool -> IO ()
-accountEncryptTransactionConfirm AccountEncryptTransactionConfig{..} confirm = do
-    let TransactionConfig
-            { tcEnergy = energy,
-              tcExpiry = expiry,
-              tcEncryptedSigningData = EncryptedSigningData{esdAddress = addr}
-            } =
-                aeTransactionCfg
-
-    logInfo $
-        [ printf "transferring %s CCD from public to shielded balance of account %s" (Types.amountToString aeAmount) (showNamedAddress addr),
-          printf "allowing up to %s to be spent as transaction fee" (showNrg energy),
-          printf "transaction expires on %s" (showTimeFormatted $ timeFromTransactionExpiryTime expiry)
-        ]
 
     when confirm $ do
         confirmed <- askConfirmation Nothing
@@ -1970,23 +1825,6 @@ processAccountCmd action baseCfgDir verbose backend =
                             }
                 liftIO $ accountUpdateCredentialsTransactionConfirm aucCfg (ioConfirm intOpts)
                 signAndProcessTransaction_ verbose txCfg epayload intOpts (toOutFile txOpts) backend
-        AccountEncrypt{..} -> do
-            baseCfg <- getBaseConfig baseCfgDir verbose
-            when verbose $ do
-                runPrinter $ printBaseConfig baseCfg
-                putStrLn ""
-
-            let pl = Types.encodePayload $ Types.TransferToEncrypted aeAmount
-
-            aetxCfg <- getAccountEncryptTransactionCfg baseCfg aeTransactionOpts aeAmount (Types.payloadSize pl)
-            let txCfg = aeTransactionCfg aetxCfg
-            when verbose $ do
-                runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
-                putStrLn ""
-
-            let intOpts = toInteractionOpts aeTransactionOpts
-            accountEncryptTransactionConfirm aetxCfg (ioConfirm intOpts)
-            withClient backend $ signAndProcessTransaction_ verbose txCfg pl intOpts (toOutFile aeTransactionOpts) backend
         AccountDecrypt{..} -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             when verbose $ do
@@ -4649,6 +4487,7 @@ convertTransactionJsonPayload = \case
         return $ Types.Transfer transferTo transferAmount
     CT.RemoveBaker -> return $ Types.RemoveBaker
     CT.TransferToPublic{..} -> return $ Types.TransferToPublic{..}
+    -- Note: The following two types are not supported anymore in protocol version 7 or above.
     -- FIXME: The following two should have the inputs changed so that they are usable.
     -- They should only specify the amount and the index, and possibly the input encrypted amounts,
     -- but the proofs should be automatically generated here.

@@ -216,17 +216,6 @@ data TransactionCmd
         { tdcFile :: !FilePath,
           tdcInteractionOpts :: !InteractionOpts
         }
-    | TransactionEncryptedTransfer
-        { tetTransactionOpts :: !(TransactionOpts (Maybe Energy)),
-          -- | Address of the receiver.
-          tetReceiver :: !Text,
-          -- | Amount to send.
-          tetAmount :: !Amount,
-          -- | Which indices to use as inputs to the encrypted amount transfer.
-          -- If none are provided all existing ones will be used.
-          tetIndex :: !(Maybe Int),
-          tetMemo :: !(Maybe MemoInput)
-        }
     | -- | Register data on chain.
       TransactionRegisterData
         { -- | File containing the data.
@@ -249,13 +238,6 @@ data AccountCmd
         { aukKeys :: !FilePath,
           aukCredId :: !CredentialRegistrationID,
           aukTransactionOpts :: !(TransactionOpts (Maybe Energy))
-        }
-    | -- | Transfer part of the public balance to the encrypted balance of the
-      --  account.
-      AccountEncrypt
-        { aeTransactionOpts :: !(TransactionOpts (Maybe Energy)),
-          -- | Amount to transfer from public to encrypted balance.
-          aeAmount :: !Amount
         }
     | -- | Transfer part of the encrypted balance to the public balance of the
       --  account.
@@ -720,7 +702,6 @@ transactionCmds =
                         <> transactionSendCcdCmd
                         <> transactionWithScheduleCmd
                         <> transactionDeployCredentialCmd
-                        <> transactionEncryptedTransferCmd
                         <> transactionRegisterDataCmd
                     )
             )
@@ -920,21 +901,6 @@ transactionWithScheduleCmd =
             Nothing -> Left "Starting point could not be read."
             Just time -> return (utcTimeToTimestamp time)
 
-transactionEncryptedTransferCmd :: Mod CommandFields TransactionCmd
-transactionEncryptedTransferCmd = command "send-shielded" sendEncryptedInfo
-  where
-    sendEncryptedInfo :: ParserInfo TransactionCmd
-    sendEncryptedInfo =
-        info
-            ( TransactionEncryptedTransfer
-                <$> transactionOptsParser
-                <*> strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.")
-                <*> option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> help "Amount of CCDs to send.")
-                <*> optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which incoming shielded amounts should be used."))
-                <*> memoInputParser
-            )
-            (progDesc "Transfer CCD from the shielded balance of the account to the shielded balance of another account.")
-
 transactionRegisterDataCmd :: Mod CommandFields TransactionCmd
 transactionRegisterDataCmd =
     command
@@ -958,7 +924,6 @@ accountCmds =
                         <> accountListCmd
                         <> accountUpdateKeysCmd
                         <> accountUpdateCredentialsCmd
-                        <> accountEncryptCmd
                         <> accountDecryptCmd
                         <> accountShowAliasCmd
                     )
@@ -989,18 +954,6 @@ accountListCmd =
                 <$> optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\")."))
             )
             (progDesc "List all accounts.")
-        )
-
-accountEncryptCmd :: Mod CommandFields AccountCmd
-accountEncryptCmd =
-    command
-        "shield"
-        ( info
-            ( AccountEncrypt
-                <$> transactionOptsParser
-                <*> option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> help "The amount to transfer to shielded balance.")
-            )
-            (progDesc "Transfer an amount from public to shielded balance of the account.")
         )
 
 accountDecryptCmd :: Mod CommandFields AccountCmd
