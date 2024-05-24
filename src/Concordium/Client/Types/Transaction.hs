@@ -367,8 +367,8 @@ instance AE.FromJSON TransactionJSON where
 --
 --  The chosen representation is the minimal necessary data needed to construct the
 -- 'TransactionSignHash' which is the value that is signed by the signer. The
--- 'TransactionSignHash' and 'payloadSize' should be re-computed when processing a
--- 'SignedTransaction' (e.g. when adding signatures or sending the transaction on-chain).
+-- 'TransactionSignHash' should be re-computed when processing a 'SignedTransaction'
+-- (e.g. when adding signatures or sending the transaction on-chain).
 data SignedTransaction = SignedTransaction
     { -- | Amount of energy dedicated to the execution of this transaction.
       stEnergy :: !Energy,

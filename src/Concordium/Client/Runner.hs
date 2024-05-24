@@ -1696,7 +1696,7 @@ signAndProcessTransaction verbose txCfg pl intOpts outFile backend = do
 
             -- Decode the payload from the transaction
             let decPl = case Types.promoteProtocolVersion pv of
-                    Types.SomeProtocolVersion spv -> Types.decodePayload spv (Types.payloadSize pl) pl
+                    Types.SomeProtocolVersion spv -> Types.decodePayload spv pl
             decPayload <- case decPl of
                 Right decPL -> return decPL
                 Left err -> logFatal ["Decoding of payload failed: " <> err]
