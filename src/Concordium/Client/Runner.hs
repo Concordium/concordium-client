@@ -687,22 +687,6 @@ readSignedTransactionFromFile fname = do
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processTransactionCmd action baseCfgDir verbose backend =
     case action of
-        TransactionSignAndSubmit fname intOpts -> do
-            -- TODO Ensure that the "nonce" field is optional in the payload.
-            source <- handleReadFile BSL.readFile fname
-
-            -- TODO Print transaction details
-
-            when (ioConfirm intOpts) $ do
-                confirmed <- askConfirmation $ Just "Do you want to send the transaction on chain? "
-                unless confirmed exitTransactionCancelled
-
-            withClient backend $ do
-                tx <- processTransaction source
-                let hash = getBlockItemHash tx
-                logSuccess [printf "transaction '%s' sent to the node" (show hash)]
-                when (ioTail intOpts) $ do
-                    tailTransaction_ verbose hash
         TransactionSubmit fname intOpts -> do
             -- Read signedTransaction from file
             signedTransaction <- readSignedTransactionFromFile fname
