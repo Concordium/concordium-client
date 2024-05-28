@@ -259,11 +259,6 @@ transferWithSchedulePayloadSize ::
     PayloadSize
 transferWithSchedulePayloadSize numRels = 32 + 1 + 1 + fromIntegral numRels * 16
 
-data ModuleSource
-    = ByName Text
-    | FromSource Text
-    deriving (Eq, Show)
-
 -----------------------------------------------------------------
 
 -- * JSON representation of a signed/partially-signed transaction
