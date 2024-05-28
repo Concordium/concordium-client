@@ -16,7 +16,6 @@ module Concordium.Client.Runner (
     withClient,
     EnvData (..),
     GrpcConfig,
-    processTransaction_,
     sendBlockItem,
     awaitState,
 
@@ -687,22 +686,6 @@ readSignedTransactionFromFile fname = do
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processTransactionCmd action baseCfgDir verbose backend =
     case action of
-        TransactionSignAndSubmit fname intOpts -> do
-            -- TODO Ensure that the "nonce" field is optional in the payload.
-            source <- handleReadFile BSL.readFile fname
-
-            -- TODO Print transaction details
-
-            when (ioConfirm intOpts) $ do
-                confirmed <- askConfirmation $ Just "Do you want to send the transaction on chain? "
-                unless confirmed exitTransactionCancelled
-
-            withClient backend $ do
-                tx <- processTransaction source
-                let hash = getBlockItemHash tx
-                logSuccess [printf "transaction '%s' sent to the node" (show hash)]
-                when (ioTail intOpts) $ do
-                    tailTransaction_ verbose hash
         TransactionSubmit fname intOpts -> do
             -- Read signedTransaction from file
             signedTransaction <- readSignedTransactionFromFile fname
@@ -3993,12 +3976,6 @@ processIdentityShowCmd action backend =
 processLegacyCmd :: LegacyCmd -> Backend -> IO ()
 processLegacyCmd action backend =
     case action of
-        SendTransaction fname -> do
-            source <- handleReadFile BSL.readFile fname
-            t <- withClient backend $ processTransaction source
-            putStrLn $
-                "Transaction sent to the node. Its hash is "
-                    ++ show (getBlockItemHash t)
         GetConsensusInfo ->
             withClient backend $
                 getConsensusInfo
@@ -4398,56 +4375,6 @@ printNodeInfo Queries.NodeInfo{..} =
             Queries.NodeActive (Queries.BakerConsensusInfo bId Queries.ActiveFinalizer) ->
                 "In current finalizer committee with baker ID " <> show bId <> "'."
 
--- | Process a transaction from JSON payload given as a byte string
---  and with keys given explicitly.
---  The transaction is signed with all the provided keys.
-processTransaction ::
-    (MonadFail m, MonadIO m) =>
-    BSL.ByteString ->
-    ClientMonad m Types.BareBlockItem
-processTransaction source =
-    case AE.eitherDecode source of
-        Left err -> fail $ "Error decoding JSON: " ++ err
-        Right t -> processTransaction_ t True
-
--- | Process a transaction with unencrypted keys given explicitly.
---  The transaction is signed with all the provided keys.
-processTransaction_ ::
-    (MonadFail m, MonadIO m) =>
-    TransactionJSON ->
-    Verbose ->
-    ClientMonad m Types.BareBlockItem
-processTransaction_ transaction _verbose = do
-    let accountKeys = CT.keys transaction
-    tx <- do
-        let header = metadata transaction
-            sender = thSenderAddress header
-        nonce <-
-            case thNonce header of
-                Nothing -> do
-                    res <- getAccountInfoOrDie (Types.AccAddress sender) Best
-                    return $ Types.aiAccountNonce res
-                Just nonce -> return nonce
-        txPayload <- convertTransactionJsonPayload $ payload transaction
-        return $
-            Types.NormalTransaction $
-                encodeAndSignTransaction
-                    txPayload
-                    sender
-                    (thEnergyAmount header)
-                    nonce
-                    (thExpiry header)
-                    accountKeys
-    sbiRes <- sendBlockItem tx
-    let res = case sbiRes of
-            StatusOk resp -> Right resp
-            StatusNotOk (status, err) -> Left [i|GRPC response with status '#{status}': #{err}|]
-            StatusInvalid -> Left "GRPC response contained an invalid status code."
-            RequestFailed err -> Left $ "I/O error: " <> err
-    case res of
-        Left err -> logFatal ["Transaction not accepted by the baker: " <> err]
-        Right _ -> return tx
-
 -- | Read a versioned credential from the bytestring, failing if any errors occur.
 processCredential ::
     (MonadFail m, MonadIO m) =>
@@ -4473,26 +4400,6 @@ processCredential source =
                     AE.Error err -> fail $ "Cannot parse credential according to V0: " ++ err
             | otherwise ->
                 fail $ "Unsupported credential version: " ++ show (vVersion vCred)
-
--- | Convert JSON-based transaction type to one which is ready to be encoded, signed and sent.
-convertTransactionJsonPayload :: (MonadFail m) => CT.TransactionJSONPayload -> ClientMonad m Types.Payload
-convertTransactionJsonPayload = \case
-    (CT.DeployModule _) ->
-        fail "Use 'concordium-client module deploy' instead."
-    CT.InitContract{} ->
-        fail "Use 'concordium-client contract init' instead."
-    CT.Update{} ->
-        fail "Use 'concordium-client contract update' instead."
-    (CT.Transfer transferTo transferAmount) ->
-        return $ Types.Transfer transferTo transferAmount
-    CT.RemoveBaker -> return $ Types.RemoveBaker
-    CT.TransferToPublic{..} -> return $ Types.TransferToPublic{..}
-    -- Note: The following two types are not supported anymore in protocol version 7 or above.
-    -- FIXME: The following two should have the inputs changed so that they are usable.
-    -- They should only specify the amount and the index, and possibly the input encrypted amounts,
-    -- but the proofs should be automatically generated here.
-    CT.TransferToEncrypted{..} -> return $ Types.TransferToEncrypted{..}
-    CT.EncryptedAmountTransfer{..} -> return Types.EncryptedAmountTransfer{..}
 
 -- | Sign a transaction payload and configuration into a "normal" AccountTransaction.
 encodeAndSignTransaction ::

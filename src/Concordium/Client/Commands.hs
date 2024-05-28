@@ -181,11 +181,7 @@ registerDataParser =
         <|> (RegisterRaw <$> strOption (long "raw" <> metavar "FILE" <> help "File with raw bytes to be registered on chain."))
 
 data TransactionCmd
-    = TransactionSignAndSubmit
-        { tssFile :: !FilePath,
-          tssInteractionOpts :: !InteractionOpts
-        }
-    | TransactionSubmit
+    = TransactionSubmit
         { tsFile :: !FilePath,
           tsInteractionOpts :: !InteractionOpts
         }
@@ -695,8 +691,7 @@ transactionCmds =
         ( info
             ( TransactionCmd
                 <$> hsubparser
-                    ( transactionSignAndSubmitCmd
-                        <> transactionSubmitCmd
+                    ( transactionSubmitCmd
                         <> transactionAddSignatureCmd
                         <> transactionStatusCmd
                         <> transactionSendCcdCmd
@@ -706,18 +701,6 @@ transactionCmds =
                     )
             )
             (progDesc "Commands for submitting and inspecting transactions.")
-        )
-
-transactionSignAndSubmitCmd :: Mod CommandFields TransactionCmd
-transactionSignAndSubmitCmd =
-    command
-        "sign-and-submit"
-        ( info
-            ( TransactionSignAndSubmit
-                <$> strArgument (metavar "FILE" <> help "File containing the transaction parameters in JSON format.")
-                <*> interactionOptsParser
-            )
-            (progDesc "Parse a JSON transaction with keys, sign it, and send it to the node.")
         )
 
 transactionSubmitCmd :: Mod CommandFields TransactionCmd

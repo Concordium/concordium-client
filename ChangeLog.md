@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Remove command `raw SendTransaction`.
+- Remove command `transaction sign-and-submit`.
 - Remove command `transaction send-shielded` to disable the transfer of CCD from the shielded balance of the account to the shielded balance of another account.
 - Remove command `account shield` to disable the transfer of CCD from the public balance to the shielded balance of an account.
 - Rename command `transaction submit` to `transaction sign-and-submit`.
