@@ -5,18 +5,13 @@
 
 module Concordium.Client.Types.Transaction where
 
-import Concordium.Client.Types.Account
 import qualified Concordium.Cost as Cost
-import Concordium.Crypto.EncryptedTransfers
-import qualified Concordium.ID.Types as IDTypes
 import Concordium.Types
 import Concordium.Types.Execution as Types
 
 import qualified Concordium.Types.Transactions as Types
 import Data.Aeson as AE
-import qualified Data.Aeson.TH as AETH
 import Data.Text hiding (length, map)
-import GHC.Generics (Generic)
 
 -- | Base cost of checking the transaction. The cost is always at least this,
 -- but in most cases it will have a transaction specific cost.
@@ -264,91 +259,10 @@ transferWithSchedulePayloadSize ::
     PayloadSize
 transferWithSchedulePayloadSize numRels = 32 + 1 + 1 + fromIntegral numRels * 16
 
--- | Transaction header type
---  To be populated when deserializing a JSON object.
-data TransactionJSONHeader = TransactionJSONHeader
-    { -- | Address of the sender.
-      thSenderAddress :: IDTypes.AccountAddress,
-      -- | Nonce of the account. If not present it should be derived
-      --  from the context or queried to the state
-      thNonce :: Maybe Nonce,
-      -- | Amount dedicated for the execution of this transaction.
-      thEnergyAmount :: Energy,
-      -- | Absolute time after which transaction will not be executed.
-      thExpiry :: TransactionExpiryTime
-    }
-    deriving (Eq, Show)
-
 data ModuleSource
     = ByName Text
     | FromSource Text
     deriving (Eq, Show)
-
--- | Payload of a transaction
-data TransactionJSONPayload
-    = -- | Deploys a blockchain-ready version of the module, as retrieved from the Context
-      DeployModule
-        { moduleName :: !Text
-        }
-    | -- | Initializes a specific Contract in a Module
-      InitContract
-        { amount :: !Amount,
-          moduleName :: !Text,
-          contractName :: !Text,
-          parameter :: !Text
-        }
-    | -- | Sends a specific message to a Contract
-      Update
-        { moduleName :: !Text,
-          amount :: !Amount,
-          address :: !ContractAddress,
-          message :: !Text
-        }
-    | -- | Transfers specific amount to the recipent
-      Transfer
-        { toaddress :: !IDTypes.AccountAddress,
-          amount :: !Amount
-        }
-    | RemoveBaker
-    | TransferToEncrypted
-        { -- | Amount to transfer from public to encrypted balance of the account.
-          tteAmount :: !Amount
-        }
-    | TransferToPublic
-        { -- | Amount the user wishes to transfer to the public balance.
-          ttpData :: !SecToPubAmountTransferData
-        }
-    | EncryptedAmountTransfer
-        { eatTo :: !AccountAddress,
-          eatData :: !EncryptedAmountTransferData
-        }
-    deriving (Show, Generic)
-
-AETH.deriveFromJSON
-    ( AETH.defaultOptions
-        { AETH.sumEncoding = AETH.TaggedObject "transactionType" "contents"
-        }
-    )
-    ''TransactionJSONPayload
-
--- | Transaction as retrieved from a JSON object
-data TransactionJSON = TransactionJSON
-    { metadata :: TransactionJSONHeader,
-      payload :: TransactionJSONPayload,
-      keys :: AccountKeyMap
-    }
-    deriving (Generic, Show)
-
-instance AE.FromJSON TransactionJSON where
-    parseJSON = withObject "Transaction" $ \v -> do
-        thSenderAddress <- v .: "sender"
-        thNonce <- v .:? "nonce"
-        thEnergyAmount <- v .: "energyAmount"
-        thExpiry <- v .: "expiry"
-        let tHeader = TransactionJSONHeader{..}
-        tPayload <- v .: "payload"
-        keyMap <- v .: "keys"
-        return $ TransactionJSON tHeader tPayload keyMap
 
 -----------------------------------------------------------------
 
