@@ -2,17 +2,22 @@
 
 ## Unreleased
 
+## 6.3.0
+
 - Remove command `raw SendTransaction`.
-- Remove command `transaction sign-and-submit`.
-- Remove command `transaction send-shielded` to disable the transfer of CCD from the shielded balance of the account to the shielded balance of another account.
-- Remove command `account shield` to disable the transfer of CCD from the public balance to the shielded balance of an account.
-- Rename command `transaction submit` to `transaction sign-and-submit`.
-- Add command `transaction submit` to submit a signed transaction on chain.
+- Remove command `transaction send-shielded` to disable the transfer of CCD from the shielded
+  balance of the account to the shielded balance of another account.
+- Remove command `account shield` to disable the transfer of CCD from the public balance to the
+  shielded balance of an account.
 - Add command `transaction add-signature` to add a signature to a partially-signed transaction.
-- Add optional `--out` flag to all transaction-creating commands to output a partially-singed transaction to a file.
+- Revise command `transaction submit` to submit already-signed transactions to the chain.
+  (This is a breaking change, as transactions must now already be signed, e.g. with
+  `transaction add-signature`.)
+- Add optional `--out` flag to all transaction-creating commands to output a partially-singed
+  transaction to a file.
 - Update GHC version to 9.6.4 (lts-22.9).
 - Update Rust version to 1.73.
-- Support protocol version 7.
+- Preliminary support for protocol version 7.
 
 ## 6.2.1
 
