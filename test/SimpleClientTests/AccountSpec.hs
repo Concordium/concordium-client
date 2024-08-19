@@ -124,7 +124,9 @@ exampleAccountInfoResult staking cs =
                 },
           aiAccountEncryptionKey = dummyEncryptionPublicKey,
           aiAccountIndex = 27,
-          aiAccountAddress = exampleAddress1
+          aiAccountAddress = exampleAddress1,
+          aiAccountCooldowns = [],
+          aiAccountAvailableAmount = Types.Amount 1
         }
 
 exampleCredentials :: IDTypes.Policy -> IDTypes.RawAccountCredential
