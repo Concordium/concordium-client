@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Support node version 7 and protocol version 7.
+
 ## 6.3.0
 
 - Remove command `raw SendTransaction`.
