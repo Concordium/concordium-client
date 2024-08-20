@@ -107,6 +107,7 @@ import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import Data.Time
+import qualified Data.Time.Clock as Clock
 import qualified Data.Tuple as Tuple
 import qualified Data.Vector as Vec
 import Data.Word
@@ -1128,55 +1129,80 @@ data TransferWithScheduleTransactionConfig = TransferWithScheduleTransactionConf
       twstcSchedule :: [(Time.Timestamp, Types.Amount)]
     }
 
+-- | Try to get the time of the next payday from the chain. If this fails, use the current time
+--  instead.
+getNextPaydayTime :: ClientMonad IO UTCTime
+getNextPaydayTime = do
+    rewardStatusRes <- getTokenomicsInfo LastFinal
+    case rewardStatusRes of
+        StatusOk resp
+            | Right Queries.RewardStatusV1{..} <- grpcResponseVal resp -> do
+                return rsNextPaydayTime
+        _ -> do
+            logWarn ["Could not get the next payday time from the chain. Using the current time as the payday time."]
+            liftIO getCurrentTime
+
 -- | Returns the UTCTime date when the baker cooldown on reducing stake/removing a baker will end, using on chain parameters
 getBakerCooldown :: Queries.EChainParametersAndKeys -> ClientMonad IO UTCTime
-getBakerCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) = do
-    cooldownTime <- case Types.chainParametersVersion @cpv of
+getBakerCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) =
+    case Types.chainParametersVersion @cpv of
         Types.SChainParametersV0 -> do
             cs <- getResponseValueOrDie =<< getConsensusInfo
             let epochTime = toInteger (Time.durationMillis $ Queries.csEpochDuration cs) % 1000
-            return . fromRational $ epochTime * ((cooldownEpochsV0 ecpParams + 2) % 1)
-        Types.SChainParametersV1 ->
-            return . fromIntegral . Types.durationSeconds $
-                ecpParams ^. cpCooldownParameters . cpPoolOwnerCooldown
-        Types.SChainParametersV2 ->
-            return . fromIntegral . Types.durationSeconds $
-                ecpParams ^. cpCooldownParameters . cpPoolOwnerCooldown
-    currTime <- liftIO getCurrentTime
-    let cooldownDate = addUTCTime cooldownTime currTime
-    return cooldownDate
+            let cooldownTime = fromRational $ epochTime * ((cooldownEpochsV0 ecpParams + 2) % 1)
+            currTime <- liftIO getCurrentTime
+            return $ addUTCTime cooldownTime currTime
+        Types.SChainParametersV1 -> do
+            cooldownStart <- getNextPaydayTime
+            let cooldownDuration =
+                    fromIntegral . Types.durationSeconds $
+                        ecpParams ^. cpCooldownParameters . cpPoolOwnerCooldown
+            return $ addUTCTime cooldownDuration cooldownStart
+        Types.SChainParametersV2 -> do
+            cooldownStart <- getNextPaydayTime
+            let cooldownDuration =
+                    fromIntegral . Types.durationSeconds $
+                        ecpParams ^. cpCooldownParameters . cpPoolOwnerCooldown
+            return $ addUTCTime cooldownDuration cooldownStart
   where
     cooldownEpochsV0 ups =
         toInteger $ ups ^. cpCooldownParameters . cpBakerExtraCooldownEpochs
 
 -- | Returns the UTCTime date when the delegator cooldown on reducing stake/removing delegation will end, using on chain parameters
-getDelegatorCooldown :: Queries.EChainParametersAndKeys -> IO (Maybe UTCTime)
+getDelegatorCooldown :: Queries.EChainParametersAndKeys -> ClientMonad IO (Maybe UTCTime)
 getDelegatorCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) = do
     case Types.chainParametersVersion @cpv of
         Types.SChainParametersV0 -> do
             return Nothing
         Types.SChainParametersV1 -> do
-            currTime <- liftIO getCurrentTime
+            paydayTime <- getNextPaydayTime
             let cooldownTime = fromIntegral . Types.durationSeconds $ ecpParams ^. cpCooldownParameters . cpDelegatorCooldown
-            return $ Just $ addUTCTime cooldownTime currTime
+            return $ Just $ addUTCTime cooldownTime paydayTime
         Types.SChainParametersV2 -> do
-            currTime <- liftIO getCurrentTime
+            paydayTime <- getNextPaydayTime
             let cooldownTime = fromIntegral . Types.durationSeconds $ ecpParams ^. cpCooldownParameters . cpDelegatorCooldown
-            return $ Just $ addUTCTime cooldownTime currTime
+            return $ Just $ addUTCTime cooldownTime paydayTime
 
--- | Query the chain for the given account.
+-- | Query the chain for the given account, returning the account info and (if available) the block
+-- hash of the queried block.
 --  Die printing an error message containing the nature of the error if such occurred.
-getAccountInfoOrDie :: (MonadIO m) => Types.AccountIdentifier -> BlockHashInput -> ClientMonad m Types.AccountInfo
-getAccountInfoOrDie sender bhInput = do
+getAccountInfoWithBHOrDie :: (MonadIO m) => Types.AccountIdentifier -> BlockHashInput -> ClientMonad m (Types.AccountInfo, Maybe Types.BlockHash)
+getAccountInfoWithBHOrDie sender bhInput = do
     res <- getAccountInfo sender bhInput
     case res of
         StatusOk resp -> case grpcResponseVal resp of
             Left err -> logFatal ["Cannot decode account info response from the node: " <> err]
-            Right v -> return v
+            Right v ->
+                return (v, getBlockHashHeader (grpcHeaders resp))
         StatusNotOk (NOT_FOUND, _) -> logFatal [[i|No account with #{showAccountIdentifier sender} exists on the chain.|]]
         StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]]
         StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
         RequestFailed err -> logFatal ["I/O error: " <> err]
+
+-- | Query the chain for the given account, returning the account info.
+--  Die printing an error message containing the nature of the error if such occurred.
+getAccountInfoOrDie :: (MonadIO m) => Types.AccountIdentifier -> BlockHashInput -> ClientMonad m (Types.AccountInfo)
+getAccountInfoOrDie sender bhInput = fst <$> getAccountInfoWithBHOrDie sender bhInput
 
 -- | Query the chain for the given pool.
 --  Die printing an error message containing the nature of the error if such occurred.
@@ -1268,6 +1294,61 @@ getCryptographicParametersOrDie bhInput = do
         StatusNotOk (status, err) -> logFatal [[i|GRPC response with status '#{status}': #{err}|]]
         StatusInvalid -> logFatal ["GRPC response contained an invalid status code."]
         RequestFailed err -> logFatal ["I/O error: " <> err]
+
+-- | Compute the time of the first payday after a given time.
+--  This is used for determining the time at which a cooldown will actually elapse.
+firstPaydayAfter ::
+    -- | Time of the next payday.
+    UTCTime ->
+    -- | Duration of an epoch
+    Types.Duration ->
+    -- | Length of a payday.
+    Types.RewardPeriodLength ->
+    -- | Time at which the cooldown expires.
+    UTCTime ->
+    UTCTime
+firstPaydayAfter nextPayday epochDuration (Types.RewardPeriodLength ep) cooldownEnd =
+    if cooldownEnd <= nextPayday
+        then nextPayday
+        else
+            let timeDiff = Clock.diffUTCTime cooldownEnd nextPayday
+                paydayLength = Types.durationToNominalDiffTime (fromIntegral ep * epochDuration)
+                mult :: Word = ceiling (timeDiff / paydayLength)
+            in  Clock.addUTCTime (fromIntegral mult * paydayLength) nextPayday
+
+-- | Correct a pending change on an account to account for the fact that it will only actually be
+--  released at the following payday.
+correctPendingChange :: BlockHashInput -> Types.AccountInfo -> ClientMonad IO Types.AccountInfo
+correctPendingChange bhi = stakingInfo . pendingChange . effectiveTime $ \time -> do
+    eChainParams <- getResponseValueOrDie =<< getBlockChainParameters bhi
+    case eChainParams of
+        Queries.EChainParametersAndKeys ChainParameters{_cpTimeParameters = SomeParam timeParams} _ -> do
+            let rewardPeriod = timeParams ^. tpRewardPeriodLength
+            rewardStatus <- getResponseValueOrDie =<< getTokenomicsInfo bhi
+            case rewardStatus of
+                Queries.RewardStatusV0{} -> return time
+                Queries.RewardStatusV1{..} -> do
+                    consensusInfo <- getResponseValueOrDie =<< getConsensusInfo
+                    let epochDuration = Queries.csEpochDuration consensusInfo
+                    return $ firstPaydayAfter rsNextPaydayTime epochDuration rewardPeriod time
+        _ -> return time
+  where
+    stakingInfo :: Lens' Types.AccountInfo Types.AccountStakingInfo
+    stakingInfo = lens Types.aiStakingInfo (\x y -> x{Types.aiStakingInfo = y})
+    pendingChange :: Traversal' Types.AccountStakingInfo (Types.StakePendingChange' UTCTime)
+    pendingChange _ Types.AccountStakingNone = pure Types.AccountStakingNone
+    pendingChange f Types.AccountStakingBaker{..} =
+        (\newPendingChange -> Types.AccountStakingBaker{asiPendingChange = newPendingChange, ..})
+            <$> f asiPendingChange
+    pendingChange f Types.AccountStakingDelegated{..} =
+        ( \newPendingChange ->
+            Types.AccountStakingDelegated{asiDelegationPendingChange = newPendingChange, ..}
+        )
+            <$> f asiDelegationPendingChange
+    effectiveTime :: Traversal' (Types.StakePendingChange' t) t
+    effectiveTime _ Types.NoChange = pure Types.NoChange
+    effectiveTime f (Types.ReduceStake amt oldTime) = Types.ReduceStake amt <$> f oldTime
+    effectiveTime f (Types.RemoveStake oldTime) = Types.RemoveStake <$> f oldTime
 
 -- | Convert transfer transaction config into a valid payload,
 --  optionally asking the user for confirmation.
@@ -1705,7 +1786,10 @@ processAccountCmd action baseCfgDir verbose backend =
             (accInfo, na, dec) <- withClient backend $ do
                 -- query account
                 bhInput <- readBlockHashOrDefault Best block
-                accInfo <- getAccountInfoOrDie accountIdentifier bhInput
+                (accInfo0, mblockHash) <- getAccountInfoWithBHOrDie accountIdentifier bhInput
+                let actualBHInput = maybe bhInput Given mblockHash
+                accInfo <- correctPendingChange actualBHInput accInfo0
+
                 -- derive the address of the account from the the initial credential
                 resolvedAddress <-
                     case Map.lookup (ID.CredentialIndex 0) (Types.aiAccountCredentials accInfo) of
@@ -3035,14 +3119,14 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
             unless confirmed exitTransactionCancelled
 
     warnIfCapitalIsLowered capital stakedAmount = do
-        cooldownDate <- withClient backend $ do
-            bcpRes <- getBlockChainParameters Best
-            case getResponseValue bcpRes of
-                Left (_, err) -> do
-                    logError ["Could not get the validator cooldown period: " <> err]
-                    exitTransactionCancelled
-                Right v -> getBakerCooldown v
         when (capital < stakedAmount) $ do
+            cooldownDate <- withClient backend $ do
+                bcpRes <- getBlockChainParameters Best
+                case getResponseValue bcpRes of
+                    Left (_, err) -> do
+                        logError ["Could not get the validator cooldown period: " <> err]
+                        exitTransactionCancelled
+                    Right v -> getBakerCooldown v
             let removing = capital == 0
             if removing
                 then logWarn ["This will remove the validator."]
@@ -3050,7 +3134,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
             let decreaseOrRemove = if removing then "Removing a validator" else "Decreasing the amount a validator is staking"
             logWarn [decreaseOrRemove ++ " will lock the stake of the validator for a cooldown period before the CCD are made available."]
             logWarn ["During this period it is not possible to update the validator's stake, or stop the validator."]
-            logWarn [[i|The current validator cooldown would last until approximately #{cooldownDate}|]]
+            logWarn [[i|The validator cooldown will last until approximately #{cooldownDate}|]]
             let confirmStr = if removing then "remove the validator" else "update the validator's stake"
             confirmed <- askConfirmation $ Just $ "Confirm that you want to " ++ confirmStr
             unless confirmed exitTransactionCancelled
@@ -3831,16 +3915,15 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
         warnAboutPoolStatus capital alreadyDelegatedToBakerPool alreadyBakerId
 
     warnIfCapitalIsLowered capital stakedAmount = do
-        cooldownDate <- withClient backend $ do
-            bcpRes <- getBlockChainParameters Best
-            case getResponseValue bcpRes of
-                Left (_, err) -> do
-                    logError ["Could not get the delegator cooldown period: " <> err]
-                    exitTransactionCancelled
-                Right v -> do
-                    liftIO $ getDelegatorCooldown v
-        let cooldownString :: String = [i|The current delegator cooldown would last until approximately #{cooldownDate}|]
         when (capital < stakedAmount) $ do
+            mCooldownDate <- withClient backend $ do
+                bcpRes <- getBlockChainParameters Best
+                case getResponseValue bcpRes of
+                    Left (_, err) -> do
+                        logError ["Could not get the delegator cooldown period: " <> err]
+                        exitTransactionCancelled
+                    Right v -> do
+                        getDelegatorCooldown v
             let removing = capital == 0
             if removing
                 then logWarn ["This will remove the delegator."]
@@ -3848,7 +3931,8 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
             let decreaseOrRemove = if removing then "Removing a delegator" else "Decreasing the amount a delegator is staking"
             logWarn [decreaseOrRemove ++ " will lock the stake of the delegator for a cooldown period before the CCD are made available."]
             logWarn ["During this period it is not possible to update the delegator's stake, or stop the delegation of stake."]
-            logWarn [cooldownString]
+            forM_ mCooldownDate $ \cooldownDate ->
+                logWarn [[i|The delegator cooldown will last until approximately #{cooldownDate}|]]
             let confirmStr = if removing then "remove the delegator" else "update the delegator's stake"
             confirmed <- askConfirmation $ Just $ "Confirm that you want to " ++ confirmStr
             unless confirmed exitTransactionCancelled
