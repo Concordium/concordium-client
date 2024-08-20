@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Support node version 7 and protocol version 7.
+- Fix the display of the expected expiry of pending changes to an account's stake, so that they
+  correctly account for the change taking place at a payday.
 
 ## 6.3.0
 
