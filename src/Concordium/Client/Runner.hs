@@ -1165,7 +1165,7 @@ getDelegatorCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParamet
             return $ Just $ addUTCTime cooldownTime currTime
 
 -- | Query the chain for the given account.
---  Die printing an error message containing the nature of the error if such occured.
+--  Die printing an error message containing the nature of the error if such occurred.
 getAccountInfoOrDie :: (MonadIO m) => Types.AccountIdentifier -> BlockHashInput -> ClientMonad m Types.AccountInfo
 getAccountInfoOrDie sender bhInput = do
     res <- getAccountInfo sender bhInput
@@ -1179,12 +1179,10 @@ getAccountInfoOrDie sender bhInput = do
         RequestFailed err -> logFatal ["I/O error: " <> err]
 
 -- | Query the chain for the given pool.
---  Die printing an error message containing the nature of the error if such occured.
-getPoolStatusOrDie :: Maybe Types.BakerId -> ClientMonad IO Queries.PoolStatus
-getPoolStatusOrDie mbid = do
-    psRes <- case mbid of
-        Nothing -> getPassiveDelegationInfo Best
-        Just bId -> getPoolInfo Best bId
+--  Die printing an error message containing the nature of the error if such occurred.
+getPoolStatusOrDie :: Types.BakerId -> ClientMonad IO Queries.BakerPoolStatus
+getPoolStatusOrDie bId = do
+    psRes <- getPoolInfo Best bId
     let res = case psRes of
             StatusOk resp -> case grpcResponseVal resp of
                 Left err -> Left $ "Cannot decode pool status response from the node: " <> err
@@ -3804,16 +3802,20 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
             Nothing -> return ()
             Just Types.DelegatePassive -> return ()
             Just (Types.DelegateToBaker bid) -> do
-                poolStatus <- getPoolStatusOrDie $ Just bid
-                let alreadyDelegatedToThisBaker = case alreadyBakerId of
-                        Just abid -> if abid == bid then alreadyDelegatedToBakerPool else 0
-                        Nothing -> 0
-                case poolStatus of
-                    Queries.BakerPoolStatus{..} -> when (psDelegatedCapital + capital - alreadyDelegatedToThisBaker > psDelegatedCapitalCap) $ do
-                        logWarn [[i|Staked amount (#{showCcd capital}) plus the stake already delegated the pool is larger than the maximum allowed delegated stake).|]]
+                poolStatus <- getPoolStatusOrDie bid
+                case Queries.psActiveStatus poolStatus of
+                    Nothing -> do
+                        logWarn [[i|The delegation target (#{bid}) is not an active pool.|]]
                         confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
                         unless confirmed exitTransactionCancelled
-                    _ -> return () -- Should not happen
+                    Just (Queries.ActiveBakerPoolStatus{..}) -> do
+                        let alreadyDelegatedToThisBaker = case alreadyBakerId of
+                                Just abid -> if abid == bid then alreadyDelegatedToBakerPool else 0
+                                Nothing -> 0
+                        when (abpsDelegatedCapital + capital - alreadyDelegatedToThisBaker > abpsDelegatedCapitalCap) $ do
+                            logWarn [[i|Staked amount (#{showCcd capital}) plus the stake already delegated the pool is larger than the maximum allowed delegated stake).|]]
+                            confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
+                            unless confirmed exitTransactionCancelled
     warnAboutBadCapital txCfg capital = do
         let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
         Types.AccountInfo{..} <- getAccountInfoOrDie (Types.AccAddress senderAddr) Best
@@ -4077,11 +4079,9 @@ processLegacyCmd action backend =
         GetPoolStatus pool block ->
             withClient backend $ do
                 b <- readBlockHashOrDefault Best block
-                ( case pool of
-                    Nothing -> getPassiveDelegationInfo b
-                    Just p -> getPoolInfo b p
-                    )
-                    >>= printResponseValueAsJSON
+                case pool of
+                    Nothing -> getPassiveDelegationInfo b >>= printResponseValueAsJSON
+                    Just p -> getPoolInfo b p >>= printResponseValueAsJSON
         GetBakerList block ->
             withClient backend $
                 readBlockHashOrDefault Best block

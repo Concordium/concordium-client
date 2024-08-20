@@ -1,7 +1,5 @@
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
 
 module Concordium.Client.Types.Transaction where
 
@@ -11,7 +9,6 @@ import Concordium.Types.Execution as Types
 
 import qualified Concordium.Types.Transactions as Types
 import Data.Aeson as AE
-import Data.Text hiding (length, map)
 
 -- | Base cost of checking the transaction. The cost is always at least this,
 -- but in most cases it will have a transaction specific cost.
