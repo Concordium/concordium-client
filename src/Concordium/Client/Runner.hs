@@ -1302,39 +1302,56 @@ firstPaydayAfter ::
     UTCTime ->
     -- | Duration of an epoch
     Types.Duration ->
-    -- | Length of a payday.
+    -- | Length of a payday in epochs.
     Types.RewardPeriodLength ->
-    -- | Time at which the cooldown expires.
+    -- | Nominal time at which the cooldown is set to expire.
     UTCTime ->
     UTCTime
-firstPaydayAfter nextPayday epochDuration (Types.RewardPeriodLength ep) cooldownEnd =
-    if cooldownEnd <= nextPayday
+firstPaydayAfter nextPayday epochDuration (Types.RewardPeriodLength ep) cooldownExpirationTime =
+    if cooldownExpirationTime <= nextPayday
         then nextPayday
         else
-            let timeDiff = Clock.diffUTCTime cooldownEnd nextPayday
+            let
+                -- Time from the next payday to the expiry.
+                timeDiff = Clock.diffUTCTime cooldownExpirationTime nextPayday
+                -- Payday length as a 'NominalDiffTime'.
                 paydayLength = Types.durationToNominalDiffTime (fromIntegral ep * epochDuration)
+                -- Number of paydays after next the expiry occurs, rounded up.
                 mult :: Word = ceiling (timeDiff / paydayLength)
-            in  Clock.addUTCTime (fromIntegral mult * paydayLength) nextPayday
+            in
+                Clock.addUTCTime (fromIntegral mult * paydayLength) nextPayday
 
 -- | Correct a pending change on an account to account for the fact that it will only actually be
 --  released at the following payday.
 correctPendingChange :: BlockHashInput -> Types.AccountInfo -> ClientMonad IO Types.AccountInfo
 correctPendingChange bhi = stakingInfo . pendingChange . effectiveTime $ \time -> do
+    -- First, try to get the reward period length from the chain.
     eChainParams <- getResponseValueOrDie =<< getBlockChainParameters bhi
     case eChainParams of
         Queries.EChainParametersAndKeys ChainParameters{_cpTimeParameters = SomeParam timeParams} _ -> do
+            -- The time parameters are only present from P4 onwards.
+            -- From P4 onwards, the pending changes occur at paydays.
             let rewardPeriod = timeParams ^. tpRewardPeriodLength
+            -- Get the epoch duration from the chain.
             rewardStatus <- getResponseValueOrDie =<< getTokenomicsInfo bhi
             case rewardStatus of
-                Queries.RewardStatusV0{} -> return time
+                Queries.RewardStatusV0{} -> return time -- Not possible in P4 onwards.
                 Queries.RewardStatusV1{..} -> do
                     consensusInfo <- getResponseValueOrDie =<< getConsensusInfo
                     let epochDuration = Queries.csEpochDuration consensusInfo
+                    -- Now we can update the pending change time to that of the first payday
+                    -- after the previous value.
                     return $ firstPaydayAfter rsNextPaydayTime epochDuration rewardPeriod time
-        _ -> return time
+        _ -> do
+            -- In this case, the protocol version is P1, P2 or P3, pending changes are epoch-based
+            -- and so should already be accurate.
+            return time
   where
+    -- The lenses/traversals below allow us to modify the pending change time in the account info.
+    -- Access the staking info of an account.
     stakingInfo :: Lens' Types.AccountInfo Types.AccountStakingInfo
     stakingInfo = lens Types.aiStakingInfo (\x y -> x{Types.aiStakingInfo = y})
+    -- Access the pending change (if any) of an account's staking info.
     pendingChange :: Traversal' Types.AccountStakingInfo (Types.StakePendingChange' UTCTime)
     pendingChange _ Types.AccountStakingNone = pure Types.AccountStakingNone
     pendingChange f Types.AccountStakingBaker{..} =
@@ -1345,6 +1362,7 @@ correctPendingChange bhi = stakingInfo . pendingChange . effectiveTime $ \time -
             Types.AccountStakingDelegated{asiDelegationPendingChange = newPendingChange, ..}
         )
             <$> f asiDelegationPendingChange
+    -- Access the effective time (if any) of a pending change.
     effectiveTime :: Traversal' (Types.StakePendingChange' t) t
     effectiveTime _ Types.NoChange = pure Types.NoChange
     effectiveTime f (Types.ReduceStake amt oldTime) = Types.ReduceStake amt <$> f oldTime
