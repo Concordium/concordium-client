@@ -3,6 +3,10 @@
 ## Unreleased
 
 - Support node version 7 and protocol version 7.
+  - Display account balance "at disposal". (Note, this will (incorrectly) show as 0 if connecting to
+    an older version of the node.)
+  - List the cooldowns on an account, and their expiration times.
+- Improved checks when configuring a validator or delegator.
 
 ## 6.3.0
 
