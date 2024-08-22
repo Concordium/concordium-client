@@ -7,6 +7,8 @@
     an older version of the node.)
   - List the cooldowns on an account, and their expiration times.
 - Improved checks when configuring a validator or delegator.
+- Fix the display of the expected expiry of pending changes to an account's stake, so that they
+  correctly account for the change taking place at a payday.
 
 ## 6.3.0
 
