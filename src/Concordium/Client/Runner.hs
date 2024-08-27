@@ -3027,37 +3027,56 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
     let outFile = toOutFile txOpts
     (bakerKeys, txCfg, pl) <- transactionForBakerConfigure (ioConfirm intOpts)
     withClient backend $ do
-        when isBakerConfigure $ warnAboutMissingAddBakerParameters txCfg
-        mapM_ (warnAboutBadCapital txCfg) cbCapital
+        let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
+        accountInfo <- getAccountInfoOrDie (Types.AccAddress senderAddr) Best
+        when isBakerConfigure $ warnAboutMissingAddBakerParameters accountInfo
+        mapM_ (warnAboutBadCapital txCfg accountInfo) cbCapital
         result <- signAndProcessTransaction verbose txCfg pl intOpts outFile backend
         events <- eventsFromTransactionResult result
         mapM_ (tryPrintKeyUpdateEventToOutputFile bakerKeys) events
   where
-    warnAboutMissingAddBakerParameters txCfg = do
-        let allPresent = case (cbOpenForDelegation, metadataURL, cbTransactionFeeCommission, cbBakingRewardCommission, cbFinalizationRewardCommission, cbRestakeEarnings, cbCapital, inputKeysFile) of
-                (Just _, Just _, Just _, Just _, Just _, Just _, Just _, Just _) -> True
-                _ -> False
-        when (not allPresent) $ do
-            let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
-            Types.AccountInfo{..} <- getAccountInfoOrDie (Types.AccAddress senderAddr) Best
-            case aiStakingInfo of
-                Types.AccountStakingBaker{} -> return ()
-                _ -> do
-                    logWarn $
-                        [ init
-                            ( "To add a validator, more options are necessary. The following are missing "
-                                ++ (if isNothing cbCapital then "\n--stake," else "")
-                                ++ (if isNothing cbOpenForDelegation then "\n--open-delegation-for," else "")
-                                ++ (if isNothing inputKeysFile then "\n--keys-in," else "")
-                                ++ (if isNothing metadataURL then "\n--validator-url," else "")
-                                ++ (if isNothing cbTransactionFeeCommission then "\n--delegation-transaction-fee-commission," else "")
-                                ++ (if isNothing cbBakingRewardCommission then "\n--delegation-block-reward-commission," else "")
-                                ++ (if isNothing cbFinalizationRewardCommission then "\n--delegation-finalization-commission," else "")
-                            )
-                            ++ (if isNothing cbRestakeEarnings then ". \nExactly one of the options --restake and --no-restake must be present" else "")
-                        ]
-                    confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
-                    unless confirmed exitTransactionCancelled
+    warnAboutMissingAddBakerParameters Types.AccountInfo{..} = do
+        let baseRequirements =
+                isJust $
+                    cbOpenForDelegation
+                        >> metadataURL
+                        >> cbTransactionFeeCommission
+                        >> cbBakingRewardCommission
+                        >> cbFinalizationRewardCommission
+                        >> inputKeysFile
+        let noDelegationRequirements = isJust $ cbRestakeEarnings >> cbCapital
+        case aiStakingInfo of
+            Types.AccountStakingNone | not (baseRequirements && noDelegationRequirements) -> do
+                logWarn $
+                    [ init
+                        ( "To add a validator, more options are necessary. The following are missing "
+                            ++ (if isNothing cbCapital then "\n--stake," else "")
+                            ++ (if isNothing cbOpenForDelegation then "\n--open-delegation-for," else "")
+                            ++ (if isNothing inputKeysFile then "\n--keys-in," else "")
+                            ++ (if isNothing metadataURL then "\n--validator-url," else "")
+                            ++ (if isNothing cbTransactionFeeCommission then "\n--delegation-transaction-fee-commission," else "")
+                            ++ (if isNothing cbBakingRewardCommission then "\n--delegation-block-reward-commission," else "")
+                            ++ (if isNothing cbFinalizationRewardCommission then "\n--delegation-finalization-commission," else "")
+                        )
+                        ++ (if isNothing cbRestakeEarnings then ". \nExactly one of the options --restake and --no-restake must be present" else "")
+                    ]
+                confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
+                unless confirmed exitTransactionCancelled
+            Types.AccountStakingDelegated{} | not baseRequirements -> do
+                logWarn $
+                    [ init
+                        ( "To switch from delegating to validating, more options are necessary. The following are missing "
+                            ++ (if isNothing cbOpenForDelegation then "\n--open-delegation-for," else "")
+                            ++ (if isNothing inputKeysFile then "\n--keys-in," else "")
+                            ++ (if isNothing metadataURL then "\n--validator-url," else "")
+                            ++ (if isNothing cbTransactionFeeCommission then "\n--delegation-transaction-fee-commission," else "")
+                            ++ (if isNothing cbBakingRewardCommission then "\n--delegation-block-reward-commission," else "")
+                            ++ (if isNothing cbFinalizationRewardCommission then "\n--delegation-finalization-commission," else "")
+                        )
+                    ]
+                confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
+                unless confirmed exitTransactionCancelled
+            _ -> return ()
     askUntilEqual credentials = do
         pwd <- askPassword "Enter password for encryption of validator credentials (leave blank for no encryption): "
         case Password.getPassword pwd of
@@ -3109,9 +3128,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
         printToOutputFileIfJust bakerKeys ebkuBakerId
     tryPrintKeyUpdateEventToOutputFile _ _ = return ()
 
-    warnAboutBadCapital txCfg capital = do
-        let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
-        Types.AccountInfo{..} <- getAccountInfoOrDie (Types.AccAddress senderAddr) Best
+    warnAboutBadCapital txCfg Types.AccountInfo{..} capital = do
         warnIfCapitalIsSmall capital
         cannotAfford <- warnIfCannotAfford txCfg capital aiAccountAmount
         case aiStakingInfo of
@@ -3889,7 +3906,10 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
     (txCfg, pl) <- transactionForDelegatorConfigure (ioConfirm intOpts)
     withClient backend $ do
         warnInOldProtocol
-        mapM_ (warnAboutBadCapital txCfg) cdCapital
+        let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
+        accountInfo <- getAccountInfoOrDie (Types.AccAddress senderAddr) Best
+        warnAboutMissingAddDelegatorParameters accountInfo
+        mapM_ (warnAboutBadCapital txCfg accountInfo) cdCapital
         result <- signAndProcessTransaction verbose txCfg pl intOpts outFile backend
         warnAboutFailedResult result
   where
@@ -3899,6 +3919,29 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
             logWarn [[i|Delegation is not supported in protocol versions < 4.|]]
             confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
             unless confirmed exitTransactionCancelled
+    warnAboutMissingAddDelegatorParameters Types.AccountInfo{..} = do
+        -- If the account is not already a delegator or baker, we should warn if
+        -- any of cdCapital, cdRestakeEarnings or cdDelegationTarget is missing.
+        -- Moreover, if the account is a baker, we should warn if cdDelegation target is missing.
+        case aiStakingInfo of
+            Types.AccountStakingBaker{}
+                | isNothing cdDelegationTarget -> do
+                    logWarn ["To switch from validating to delegating, the --target option must be specified."]
+                    confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
+                    unless confirmed exitTransactionCancelled
+            Types.AccountStakingNone
+                | isNothing $ cdCapital >> cdDelegationTarget >> cdRestakeEarnings -> do
+                    logWarn
+                        [ init
+                            ( "To add a delegator, more options are necessary. The following are missing "
+                                ++ (if isNothing cdCapital then "\n--stake," else "")
+                                ++ (if isNothing cdDelegationTarget then "\n--target," else "")
+                                ++ (if isNothing cdRestakeEarnings then "\neither --restake or --no-restake," else "")
+                            )
+                        ]
+                    confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
+                    unless confirmed exitTransactionCancelled
+            _ -> return ()
     warnAboutPoolStatus capital alreadyDelegatedToBakerPool alreadyBakerId = do
         case cdDelegationTarget of
             Nothing -> return ()
@@ -3918,9 +3961,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
                             logWarn [[i|Staked amount (#{showCcd capital}) plus the stake already delegated the pool is larger than the maximum allowed delegated stake).|]]
                             confirmed <- askConfirmation $ Just "This transaction will most likely be rejected by the chain, do you wish to send it anyway"
                             unless confirmed exitTransactionCancelled
-    warnAboutBadCapital txCfg capital = do
-        let senderAddr = naAddr . esdAddress . tcEncryptedSigningData $ txCfg
-        Types.AccountInfo{..} <- getAccountInfoOrDie (Types.AccAddress senderAddr) Best
+    warnAboutBadCapital txCfg Types.AccountInfo{..} capital = do
         warnIfCannotAfford txCfg capital aiAccountAmount
         (alreadyDelegatedToBakerPool, alreadyBakerId) <- case aiStakingInfo of
             Types.AccountStakingDelegated{..} -> do
@@ -3929,6 +3970,9 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
                     Types.DelegatePassive -> return Nothing
                     Types.DelegateToBaker bid -> return $ Just bid
                 return (asiStakedAmount, mbid)
+            Types.AccountStakingBaker{..} -> do
+                liftIO $ warnIfCapitalIsLowered capital asiStakedAmount
+                return (0, Nothing)
             _ -> return (0, Nothing)
         warnAboutPoolStatus capital alreadyDelegatedToBakerPool alreadyBakerId
 
