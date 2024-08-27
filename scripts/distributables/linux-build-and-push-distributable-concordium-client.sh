@@ -3,7 +3,7 @@
 docker build -t concordium/linux-distributable-concordium-client \
        -f scripts/distributables/linux-distributable-concordium-client.Dockerfile \
        --build-arg GHC_VERSION=$GHC_VERSION \
-       --ssh default .
+       .
 
 mkdir out
 
