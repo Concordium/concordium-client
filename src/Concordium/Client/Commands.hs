@@ -1739,7 +1739,7 @@ bakerAddCmd =
                         <*> blockCommission
                         <*> (option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission")))
                     )
-                <*> optional (strOption (long "out" <> metavar "FILE" <> help "File to write the validator credentials to, in case of successful transaction. These can be used to start the node."))
+                <*> optional (strOption (long "validator-credentials-out" <> metavar "FILE" <> help "File to write the validator credentials to, in case of successful transaction. These can be used to start the node."))
             )
             (progDesc "Deploy validator credentials to the chain.")
         )
