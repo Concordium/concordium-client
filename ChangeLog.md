@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Change `--out` flag for `./client validator add` to
+  `--validator-credentials-out`, fixing an issue where this command had two
+  conflicting`--out` options.
+
 ## 7.0.0
 
 - Support node version 7 and protocol version 7.
