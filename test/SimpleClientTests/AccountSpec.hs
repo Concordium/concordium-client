@@ -107,7 +107,13 @@ exampleDelegatorStakingInfo pc =
 
 -- The credentials will be given indices 0, 1, ..
 exampleAccountInfoResult :: AccountStakingInfo -> [IDTypes.RawAccountCredential] -> AccountInfo
-exampleAccountInfoResult staking cs =
+exampleAccountInfoResult = exampleAccountInfoResultWithCooldowns []
+
+exampleCooldowns :: [Cooldown]
+exampleCooldowns = [Cooldown 3600000 200 StatusCooldown, Cooldown 7200000 400 StatusPreCooldown, Cooldown 9000000 500 StatusPrePreCooldown]
+
+exampleAccountInfoResultWithCooldowns :: [Cooldown] -> AccountStakingInfo -> [IDTypes.RawAccountCredential] -> AccountInfo
+exampleAccountInfoResultWithCooldowns cooldowns staking cs =
     AccountInfo
         { aiAccountAmount = Types.Amount 1,
           aiAccountNonce = Types.Nonce 2,
@@ -124,7 +130,9 @@ exampleAccountInfoResult staking cs =
                 },
           aiAccountEncryptionKey = dummyEncryptionPublicKey,
           aiAccountIndex = 27,
-          aiAccountAddress = exampleAddress1
+          aiAccountAddress = exampleAddress1,
+          aiAccountCooldowns = cooldowns,
+          aiAccountAvailableAmount = Types.Amount 1
         }
 
 exampleCredentials :: IDTypes.Policy -> IDTypes.RawAccountCredential
@@ -229,6 +237,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
             `shouldBe` [ "Local names:            'example'",
                          "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
                          "Balance:                0.000001 CCD",
+                         " - At disposal:         0.000001 CCD",
                          "Nonce:                  2",
                          "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
                          "",
@@ -241,6 +250,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
             `shouldBe` [ "Local names:            'example'",
                          "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
                          "Balance:                0.000001 CCD",
+                         " - At disposal:         0.000001 CCD",
                          "Nonce:                  2",
                          "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
                          "",
@@ -255,6 +265,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
             `shouldBe` [ "Local names:            'example'",
                          "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
                          "Balance:                0.000001 CCD",
+                         " - At disposal:         0.000001 CCD",
                          "Nonce:                  2",
                          "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
                          "",
@@ -262,6 +273,26 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
                          "Delegation target: Passive delegation",
                          " - Staked amount: 0.000100 CCD",
                          " - Restake earnings: no",
+                         "",
+                         "Credentials: none"
+                       ]
+    specify "with delegator & cooldown" $
+        p exampleNamedAddress (exampleAccountInfoResultWithCooldowns exampleCooldowns (exampleDelegatorStakingInfo NoChange) [])
+            `shouldBe` [ "Local names:            'example'",
+                         "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
+                         "Balance:                0.000001 CCD",
+                         " - At disposal:         0.000001 CCD",
+                         "Nonce:                  2",
+                         "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
+                         "",
+                         "Delegating stake: yes",
+                         "Delegation target: Passive delegation",
+                         " - Staked amount: 0.000100 CCD",
+                         " - Restake earnings: no",
+                         "Inactive stake in cooldown:",
+                         "   0.000200 CCD available after Thu,  1 Jan 1970 01:00:00 UTC",
+                         "   0.000400 CCD available after Thu,  1 Jan 1970 02:00:00 UTC",
+                         "   0.000500 CCD available after Thu,  1 Jan 1970 02:30:00 UTC",
                          "",
                          "Credentials: none"
                        ]
@@ -283,6 +314,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
             `shouldBe` [ "Local names:            'example'",
                          "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
                          "Balance:                0.000001 CCD",
+                         " - At disposal:         0.000001 CCD",
                          "Release schedule:       total 0.000100 CCD",
                          "   Tue,  3 Nov 2020 15:28:22 UTC:               0.000033 CCD scheduled by the transactions: f26a45adbb7d5cbefd9430d1eac665bd225fb3d8e04efb288d99a0347f0b8868, b041315fe35a8bdf836647037c24c8e87402547c82aea568c66ee18aa3091326.",
                          "   Tue,  3 Nov 2020 15:29:02 UTC:               0.000033 CCD scheduled by the transactions: f26a45adbb7d5cbefd9430d1eac665bd225fb3d8e04efb288d99a0347f0b8868.",
@@ -299,6 +331,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
             `shouldBe` [ "Local names:            'example'",
                          "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
                          "Balance:                0.000001 CCD",
+                         " - At disposal:         0.000001 CCD",
                          "Nonce:                  2",
                          "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
                          "",
@@ -323,6 +356,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
             `shouldBe` [ "Local names:            'example'",
                          "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
                          "Balance:                0.000001 CCD",
+                         " - At disposal:         0.000001 CCD",
                          "Nonce:                  2",
                          "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
                          "",
@@ -345,6 +379,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
             `shouldBe` [ "Local names:            'example'",
                          "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
                          "Balance:                0.000001 CCD",
+                         " - At disposal:         0.000001 CCD",
                          "Nonce:                  2",
                          "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
                          "",
@@ -376,6 +411,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
             `shouldBe` [ "Local names:            'example'",
                          "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
                          "Balance:                0.000001 CCD",
+                         " - At disposal:         0.000001 CCD",
                          "Nonce:                  2",
                          "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
                          "",
@@ -399,6 +435,7 @@ printAccountInfoSpec = describe "printAccountInfo" $ do
             `shouldBe` [ "Local names:            'example'",
                          "Address:                2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6",
                          "Balance:                0.000001 CCD",
+                         " - At disposal:         0.000001 CCD",
                          "Nonce:                  2",
                          "Encryption public key:  a820662531d0aac70b3a80dd8a249aa692436097d06da005aec7c56aad17997ec8331d1e4050fd8dced2b92f06277bd5aae71cf315a6d70c849508f6361ac6d51c2168305dd1604c4c6448da4499b2f14afb94fff0f42b79a68ed7ba206301f4",
                          "",

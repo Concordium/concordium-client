@@ -28,11 +28,7 @@ parseEpochSpecifier =
         <*> optional (option auto (long "block" <> metavar "BLOCKHASH" <> help "Block hash"))
 
 data LegacyCmd
-    = -- | Loads a transaction in the context of the local database and sends it to the specified RPC server
-      SendTransaction
-        { legacySourceFile :: !FilePath
-        }
-    | -- | Queries the gRPC for the information about the execution of a transaction
+    = -- | Queries the gRPC for the information about the execution of a transaction
       GetTransactionStatus
         { legacyTransactionHash :: !Text
         }
@@ -176,8 +172,7 @@ data LegacyCmd
 legacyProgramOptions :: Parser LegacyCmd
 legacyProgramOptions =
     hsubparser
-        ( sendTransactionCommand
-            <> getTransactionStatusCommand
+        ( getTransactionStatusCommand
             <> getConsensusInfoCommand
             <> getBlockInfoCommand
             <> getBlockPendingUpdatesCommand
@@ -245,20 +240,6 @@ getNodeInfoCommand =
         ( info
             (pure GetNodeInfo)
             (progDesc "Query the gRPC server for the node information.")
-        )
-
-sendTransactionCommand :: Mod CommandFields LegacyCmd
-sendTransactionCommand =
-    command
-        "SendTransaction"
-        ( info
-            ( SendTransaction
-                <$> strArgument
-                    (metavar "TX-SOURCE" <> help "JSON file with the transaction")
-            )
-            ( progDesc
-                "Parse transaction in current context and send it to the node."
-            )
         )
 
 getTransactionStatusCommand :: Mod CommandFields LegacyCmd

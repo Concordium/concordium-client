@@ -2,7 +2,7 @@ pipeline {
     agent { label 'jenkins-worker' }
     environment {
         GHC_VERSION = '9.6.4'
-        RUST_VERSION = '1.68'
+        RUST_VERSION = '1.73'
         VERSION = sh(
             returnStdout: true,
             script: '''\

@@ -185,6 +185,11 @@ data TransactionCmd
         { tsFile :: !FilePath,
           tsInteractionOpts :: !InteractionOpts
         }
+    | TransactionAddSignature
+        { tasFile :: !FilePath,
+          tasSigners :: !(Maybe Text),
+          tasToKeys :: !(Maybe FilePath)
+        }
     | TransactionStatus
         { tsHash :: !Text,
           -- | Path to a contract schema, used to display the transaction event info.
@@ -206,17 +211,6 @@ data TransactionCmd
     | TransactionDeployCredential
         { tdcFile :: !FilePath,
           tdcInteractionOpts :: !InteractionOpts
-        }
-    | TransactionEncryptedTransfer
-        { tetTransactionOpts :: !(TransactionOpts (Maybe Energy)),
-          -- | Address of the receiver.
-          tetReceiver :: !Text,
-          -- | Amount to send.
-          tetAmount :: !Amount,
-          -- | Which indices to use as inputs to the encrypted amount transfer.
-          -- If none are provided all existing ones will be used.
-          tetIndex :: !(Maybe Int),
-          tetMemo :: !(Maybe MemoInput)
         }
     | -- | Register data on chain.
       TransactionRegisterData
@@ -240,13 +234,6 @@ data AccountCmd
         { aukKeys :: !FilePath,
           aukCredId :: !CredentialRegistrationID,
           aukTransactionOpts :: !(TransactionOpts (Maybe Energy))
-        }
-    | -- | Transfer part of the public balance to the encrypted balance of the
-      --  account.
-      AccountEncrypt
-        { aeTransactionOpts :: !(TransactionOpts (Maybe Energy)),
-          -- | Amount to transfer from public to encrypted balance.
-          aeAmount :: !Amount
         }
     | -- | Transfer part of the encrypted balance to the public balance of the
       --  account.
@@ -426,6 +413,9 @@ data TransactionOpts energyOrMaybe = TransactionOpts
       toNonce :: !(Maybe Nonce),
       toMaxEnergyAmount :: !energyOrMaybe,
       toExpiration :: !(Maybe Text),
+      -- | Optional file name and path to output the signed/partially-signed
+      --  transaction to instead of submitting the transaction on-chain.
+      toOutFile :: !(Maybe FilePath),
       toInteractionOpts :: !InteractionOpts
     }
     deriving (Show)
@@ -649,6 +639,7 @@ transactionOptsParserBuilder energyOrMaybeParser =
         <*> optional (option auto (long "nonce" <> metavar "NONCE" <> help "Transaction nonce."))
         <*> energyOrMaybeParser
         <*> optional (strOption (long "expiry" <> metavar "EXPIRY" <> help "Expiration time of a transaction, specified as a relative duration (\"30s\", \"5m\", etc.) or UNIX epoch timestamp."))
+        <*> optional (strOption (long "out" <> metavar "FILE" <> help "File to output the signed/partially-signed transaction to instead of submitting the transaction on-chain."))
         <*> interactionOptsParser
 
 interactionOptsParser :: Parser InteractionOpts
@@ -701,11 +692,11 @@ transactionCmds =
             ( TransactionCmd
                 <$> hsubparser
                     ( transactionSubmitCmd
+                        <> transactionAddSignatureCmd
                         <> transactionStatusCmd
                         <> transactionSendCcdCmd
                         <> transactionWithScheduleCmd
                         <> transactionDeployCredentialCmd
-                        <> transactionEncryptedTransferCmd
                         <> transactionRegisterDataCmd
                     )
             )
@@ -718,11 +709,70 @@ transactionSubmitCmd =
         "submit"
         ( info
             ( TransactionSubmit
-                <$> strArgument (metavar "FILE" <> help "File containing the transaction parameters in JSON format.")
+                <$> strArgument (metavar "FILE" <> help "File containing a signed transaction in JSON format.")
                 <*> interactionOptsParser
             )
-            (progDesc "Parse transaction and send it to the node.")
+            ( progDescDoc $
+                docFromLines $
+                    [ "Parse signed transaction and send it to the node.",
+                      "Expected format of the signed transaction in the `FILE`:"
+                    ]
+                        ++ expectedSignedTransactionFormat
+            )
         )
+
+transactionAddSignatureCmd :: Mod CommandFields TransactionCmd
+transactionAddSignatureCmd =
+    command
+        "add-signature"
+        ( info
+            ( TransactionAddSignature
+                <$> strArgument (metavar "FILE" <> help "File containing a signed transaction in JSON format.")
+                <*> optional
+                    ( strOption
+                        ( long "signers" <> metavar "SIGNERS" <> help "Specification of which (local) keys to sign with. Example: \"0:1,0:2,3:0,3:1\" specifies that credential holder 0 signs with keys 1 and 2, while credential holder 3 signs with keys 0 and 1"
+                        )
+                    )
+                <*> optional
+                    (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file."))
+            )
+            ( progDescDoc $
+                docFromLines $
+                    [ "Adds a signature to the transaction in the file.",
+                      "Expected format of the signed transaction in the `FILE`:"
+                    ]
+                        ++ expectedSignedTransactionFormat
+                        ++ [ "Expected format of the keys in the `KEYS` file:"
+                           ]
+                        ++ expectedKeysFileFormat
+            )
+        )
+
+expectedSignedTransactionFormat :: [String]
+expectedSignedTransactionFormat =
+    [ "   {",
+      "     \"energy\": 5000,",
+      "     \"expiry\": 1715708777,",
+      "     \"nonce\": 12,",
+      "     \"payload\": {",
+      "       \"address\": {",
+      "         \"index\": 3383,",
+      "         \"subindex\": 0",
+      "       },",
+      "       \"amount\": \"0\",",
+      "       \"message\": \"01000101420c0000000000000000000000000000\",",
+      "       \"receiveName\": \"cis2-bridgeable.updateOperator\"",
+      "       \"transactionType\": \"update\"",
+      "     },",
+      "     \"sender\": \"4jxvYasaPncfmCFCLZCvuL5cZuvR5HAQezCHZH7ZA7AGsRYpix\",",
+      "     \"signature\": {",
+      "       \"0\": {",
+      "         \"0\": \"6f17c110965054b262ef0d6dee02f77dccb7bd031c2af324b544f5ee3e6e18b3fd1be8a95782e92a89dd40a1b69cad8a37e8b86fc9107c8528d8267212cf030b\"",
+      "       }",
+      "     },",
+      "     \"version\": 1",
+      "    }"
+    ]
 
 transactionDeployCredentialCmd :: Mod CommandFields TransactionCmd
 transactionDeployCredentialCmd =
@@ -834,21 +884,6 @@ transactionWithScheduleCmd =
             Nothing -> Left "Starting point could not be read."
             Just time -> return (utcTimeToTimestamp time)
 
-transactionEncryptedTransferCmd :: Mod CommandFields TransactionCmd
-transactionEncryptedTransferCmd = command "send-shielded" sendEncryptedInfo
-  where
-    sendEncryptedInfo :: ParserInfo TransactionCmd
-    sendEncryptedInfo =
-        info
-            ( TransactionEncryptedTransfer
-                <$> transactionOptsParser
-                <*> strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.")
-                <*> option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> help "Amount of CCDs to send.")
-                <*> optional (option auto (long "index" <> metavar "INDEX" <> help "Optionally specify the index up to which incoming shielded amounts should be used."))
-                <*> memoInputParser
-            )
-            (progDesc "Transfer CCD from the shielded balance of the account to the shielded balance of another account.")
-
 transactionRegisterDataCmd :: Mod CommandFields TransactionCmd
 transactionRegisterDataCmd =
     command
@@ -872,7 +907,6 @@ accountCmds =
                         <> accountListCmd
                         <> accountUpdateKeysCmd
                         <> accountUpdateCredentialsCmd
-                        <> accountEncryptCmd
                         <> accountDecryptCmd
                         <> accountShowAliasCmd
                     )
@@ -903,18 +937,6 @@ accountListCmd =
                 <$> optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\")."))
             )
             (progDesc "List all accounts.")
-        )
-
-accountEncryptCmd :: Mod CommandFields AccountCmd
-accountEncryptCmd =
-    command
-        "shield"
-        ( info
-            ( AccountEncrypt
-                <$> transactionOptsParser
-                <*> option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> help "The amount to transfer to shielded balance.")
-            )
-            (progDesc "Transfer an amount from public to shielded balance of the account.")
         )
 
 accountDecryptCmd :: Mod CommandFields AccountCmd
@@ -1431,7 +1453,7 @@ configAccountAddKeysCmd =
                     [ "Add one or several key pairs to a specific account configuration.",
                       "Expected format of the key file:"
                     ]
-                        ++ expectedAddOrUpdateKeysFileFormat
+                        ++ expectedKeysFileFormat
             )
         )
 
@@ -1449,12 +1471,12 @@ configAccountUpdateKeysCmd =
                     [ "Update one or several key pairs to a specific account configuration.",
                       "Expected format of the key file:"
                     ]
-                        ++ expectedAddOrUpdateKeysFileFormat
+                        ++ expectedKeysFileFormat
             )
         )
 
-expectedAddOrUpdateKeysFileFormat :: [String]
-expectedAddOrUpdateKeysFileFormat =
+expectedKeysFileFormat :: [String]
+expectedKeysFileFormat =
     [ "   {",
       "     \"cidx\": {",
       "        \"kidx\": {",

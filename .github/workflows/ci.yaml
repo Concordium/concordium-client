@@ -33,7 +33,7 @@ on:
   workflow_dispatch: # allow manual trigger
 
 env:
-  RUST: 1.68
+  RUST: 1.73
   GHC: 9.6.4
 
 jobs:
@@ -96,6 +96,6 @@ jobs:
           key: ${{ runner.os }}-rust-stack-deps-${{ env.RUST }}-${{ hashFiles('stack.yaml', 'package.yaml', 'deps/concordium-base/haskell-src/**.hs', 'deps/concordium-base/rust-src/Cargo.toml', 'deps/concordium-base/rust-src/**.rs') }}
 
       - name: Stack build # build all the binaries and tests, but don't run the tests
-        run: stack build --test --no-run-tests
+        run: stack build --test --no-run-tests --ghc-options "-Werror"
       - name: Stack test # run the tests
         run: stack build --test

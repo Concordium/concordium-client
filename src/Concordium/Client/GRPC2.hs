@@ -692,6 +692,21 @@ instance FromProto Proto.CredentialPublicKeys where
                 then fromProtoFail $ "Unable to convert 'CredentialPublicKeys'. Key index exceeds " <> show (maxBound :: Word8) <> "."
                 else return (fromIntegral ki, VerifyKeyEd25519 k)
 
+instance FromProto Proto.Cooldown'CooldownStatus where
+    type Output Proto.Cooldown'CooldownStatus = CooldownStatus
+    fromProto Proto.Cooldown'COOLDOWN = return StatusCooldown
+    fromProto Proto.Cooldown'PRE_COOLDOWN = return StatusPreCooldown
+    fromProto Proto.Cooldown'PRE_PRE_COOLDOWN = return StatusPrePreCooldown
+    fromProto _ = fromProtoFail "Unable to convert 'CooldownStatus'. Unrecognized status."
+
+instance FromProto Proto.Cooldown where
+    type Output Proto.Cooldown = Cooldown
+    fromProto c = do
+        cooldownTimestamp <- fromProto $ c ^. ProtoFields.endTime
+        cooldownAmount <- fromProto $ c ^. ProtoFields.amount
+        cooldownStatus <- fromProto $ c ^. ProtoFields.status
+        return Cooldown{..}
+
 instance FromProto Proto.AccountInfo where
     type Output Proto.AccountInfo = AccountInfo
     fromProto ai = do
@@ -713,6 +728,8 @@ instance FromProto Proto.AccountInfo where
                 Nothing -> return AccountStakingNone
                 Just asi -> fromProto asi
         aiAccountAddress <- fromProto $ ai ^. ProtoFields.address
+        aiAccountCooldowns <- mapM fromProto $ ai ^. ProtoFields.cooldowns
+        aiAccountAvailableAmount <- fromProto $ ai ^. ProtoFields.availableBalance
         return AccountInfo{..}
       where
         versionTag = 0
@@ -937,30 +954,34 @@ instance FromProto Proto.PoolCurrentPaydayInfo where
         return CurrentPaydayBakerPoolStatus{..}
 
 instance FromProto Proto.PoolInfoResponse where
-    type Output Proto.PoolInfoResponse = PoolStatus
+    type Output Proto.PoolInfoResponse = BakerPoolStatus
     fromProto pir = do
         psBakerId <- fromProto $ pir ^. ProtoFields.baker
         psBakerAddress <- fromProto $ pir ^. ProtoFields.address
-        psBakerEquityCapital <- fromProto $ pir ^. ProtoFields.equityCapital
-        psDelegatedCapital <- fromProto $ pir ^. ProtoFields.delegatedCapital
-        psDelegatedCapitalCap <- fromProto $ pir ^. ProtoFields.delegatedCapitalCap
-        psPoolInfo <- fromProto $ pir ^. ProtoFields.poolInfo
-        psBakerStakePendingChange <-
-            case pir ^. ProtoFields.maybe'equityPendingChange of
-                Nothing -> return PPCNoChange
-                Just ppc -> fromProto ppc
+        psActiveStatus <- case pir ^. ProtoFields.maybe'poolInfo of
+            Nothing -> return Nothing
+            Just poolInfo -> do
+                abpsPoolInfo <- fromProto poolInfo
+                abpsBakerEquityCapital <- fromProto $ pir ^. ProtoFields.equityCapital
+                abpsDelegatedCapital <- fromProto $ pir ^. ProtoFields.delegatedCapital
+                abpsDelegatedCapitalCap <- fromProto $ pir ^. ProtoFields.delegatedCapitalCap
+                abpsBakerStakePendingChange <-
+                    case pir ^. ProtoFields.maybe'equityPendingChange of
+                        Nothing -> return PPCNoChange
+                        Just ppc -> fromProto ppc
+                return $ Just ActiveBakerPoolStatus{..}
         psCurrentPaydayStatus <- fromProtoMaybe $ pir ^. ProtoFields.maybe'currentPaydayInfo
         psAllPoolTotalCapital <- fromProto $ pir ^. ProtoFields.allPoolTotalCapital
         return BakerPoolStatus{..}
 
 instance FromProto Proto.PassiveDelegationInfo where
-    type Output Proto.PassiveDelegationInfo = PoolStatus
+    type Output Proto.PassiveDelegationInfo = PassiveDelegationStatus
     fromProto pdi = do
-        psDelegatedCapital <- fromProto $ pdi ^. ProtoFields.delegatedCapital
-        psCommissionRates <- fromProto $ pdi ^. ProtoFields.commissionRates
-        psCurrentPaydayTransactionFeesEarned <- fromProto $ pdi ^. ProtoFields.currentPaydayTransactionFeesEarned
-        psCurrentPaydayDelegatedCapital <- fromProto $ pdi ^. ProtoFields.currentPaydayDelegatedCapital
-        psAllPoolTotalCapital <- fromProto $ pdi ^. ProtoFields.allPoolTotalCapital
+        pdsDelegatedCapital <- fromProto $ pdi ^. ProtoFields.delegatedCapital
+        pdsCommissionRates <- fromProto $ pdi ^. ProtoFields.commissionRates
+        pdsCurrentPaydayTransactionFeesEarned <- fromProto $ pdi ^. ProtoFields.currentPaydayTransactionFeesEarned
+        pdsCurrentPaydayDelegatedCapital <- fromProto $ pdi ^. ProtoFields.currentPaydayDelegatedCapital
+        pdsAllPoolTotalCapital <- fromProto $ pdi ^. ProtoFields.allPoolTotalCapital
         return PassiveDelegationStatus{..}
 
 instance FromProto Proto.PoolPendingChange where
@@ -2167,6 +2188,10 @@ instance FromProto (Proto.AccountAddress, Proto.DelegationEvent) where
                 let edrAccount = sender
                 edrDelegatorId <- fromProto dRemoved
                 return DelegationRemoved{..}
+            ProtoFields.DelegationEvent'BakerRemoved' bkrRemoved -> do
+                let ebrAccount = sender
+                ebrBakerId <- fromProto $ bkrRemoved ^. ProtoFields.bakerId
+                return BakerRemoved{..}
 
 instance FromProto (Proto.AccountAddress, Proto.BakerEvent) where
     type Output (Proto.AccountAddress, Proto.BakerEvent) = Event
@@ -2229,6 +2254,10 @@ instance FromProto (Proto.AccountAddress, Proto.BakerEvent) where
                 ebsfrcBakerId <- fromProto $ bsfrCommission ^. ProtoFields.bakerId
                 ebsfrcFinalizationRewardCommission <- fromProto $ bsfrCommission ^. ProtoFields.finalizationRewardCommission
                 return BakerSetFinalizationRewardCommission{..}
+            ProtoFields.BakerEvent'DelegationRemoved' delRemoved -> do
+                let edrAccount = sender
+                edrDelegatorId <- fromProto $ delRemoved ^. ProtoFields.delegatorId
+                return DelegationRemoved{..}
 
 instance FromProto Proto.BlockItemStatus where
     type Output Proto.BlockItemStatus = TransactionStatus
@@ -3259,13 +3288,13 @@ getBlocksAtHeight blockHeight = withUnary (call @"getBlocksAtHeight") msg (fmap 
     msg = toProto blockHeight
 
 -- | Get information about the passive delegators at the end of a given block.
-getPassiveDelegationInfo :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult PoolStatus))
+getPassiveDelegationInfo :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult PassiveDelegationStatus))
 getPassiveDelegationInfo bhInput = withUnary (call @"getPassiveDelegationInfo") msg (fmap fromProto)
   where
     msg = toProto bhInput
 
 -- | Get information about a given pool at the end of a given block.
-getPoolInfo :: (MonadIO m) => BlockHashInput -> BakerId -> ClientMonad m (GRPCResult (FromProtoResult PoolStatus))
+getPoolInfo :: (MonadIO m) => BlockHashInput -> BakerId -> ClientMonad m (GRPCResult (FromProtoResult BakerPoolStatus))
 getPoolInfo bhInput baker = withUnary (call @"getPoolInfo") msg (fmap fromProto)
   where
     msg = defMessage & ProtoFields.blockHash .~ toProto bhInput & ProtoFields.baker .~ toProto baker

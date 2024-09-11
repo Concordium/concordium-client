@@ -191,10 +191,13 @@ showRevealedAttributes as =
 
 printAccountInfo :: NamedAddress -> Types.AccountInfo -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
 printAccountInfo addr a verbose showEncrypted mEncKey = do
+    let balance = showCcd $ Types.aiAccountAmount a
+    let rjustCcd amt = let t = showCcd amt in replicate (length balance - length t) ' ' ++ t
     tell
         ( [ [i|Local names:            #{showNameList $ naNames addr}|],
             [i|Address:                #{naAddr addr}|],
-            [i|Balance:                #{showCcd $ Types.aiAccountAmount a}|]
+            [i|Balance:                #{balance}|],
+            [i| - At disposal:         #{rjustCcd (Types.aiAccountAvailableAmount a)}|]
           ]
             ++ case Types.releaseTotal $ Types.aiAccountReleaseSchedule a of
                 0 -> []
@@ -291,6 +294,11 @@ printAccountInfo addr a verbose showEncrypted mEncKey = do
                           [i|#{stkstr} to be updated to #{showCcd n} at #{t}|]
                         ]
             tell [[i| - Restake earnings: #{showYesNo asiStakeEarnings}|]]
+
+    unless (null (Types.aiAccountCooldowns a)) $ do
+        tell ["Inactive stake in cooldown:"]
+        forM_ (Types.aiAccountCooldowns a) $ \Types.Cooldown{..} ->
+            tell [[i|   #{showCcd cooldownAmount} available after #{showTimeFormatted (Time.timestampToUTCTime cooldownTimestamp)}|]]
 
     tell [""]
 

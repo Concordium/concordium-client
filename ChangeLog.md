@@ -3,8 +3,30 @@
 ## Unreleased
 
 - Fix a bug in correctly accounting for parsed events.
-- Update GHC version to 9.6.4 (lts-22.9).
-- Support protocol version 7.
+
+## 7.0.0
+
+- Support node version 7 and protocol version 7.
+  - Display account balance "at disposal". (Note, this will (incorrectly) show as 0 if connecting to
+    an older version of the node.)
+  - List the cooldowns on an account, and their expiration times.
+- Improved checks when configuring a validator or delegator.
+- Fix the display of the expected expiry of pending changes to an account's stake, so that they
+  correctly account for the change taking place at a payday.
+
+## 6.3.0
+
+- Remove command `raw SendTransaction`.
+- Remove command `transaction send-shielded` to disable the transfer of CCD from the shielded
+  balance of the account to the shielded balance of another account.
+- Remove command `account shield` to disable the transfer of CCD from the public balance to the
+  shielded balance of an account.
+- Add command `transaction add-signature` to add a signature to a partially-signed transaction.
+- Revise command `transaction submit` to submit already-signed transactions to the chain.
+  (This is a breaking change, as transactions must now already be signed, e.g. with
+  `transaction add-signature`.)
+- Add optional `--out` flag to all transaction-creating commands to output a partially-singed
+  transaction to a file.
 
 ## 6.2.1
 
@@ -58,7 +80,7 @@
 - Add round and epoch to the output of `raw GetBlockInfo`.
 - Add round and epoch to the output of `block show` when they are present.
 - Print "Block time" instead of "Slot time" in the output of `block show`.
-- In the output of `consensus show-parameters`, only print election difficulty when present. 
+- In the output of `consensus show-parameters`, only print election difficulty when present.
 
 ## 5.2.0
 
@@ -121,10 +143,10 @@
 
 - Add support of contract schema V3.
 	  - V3 schemas offer the same options as V2, but also optionally includes a schema for contract events.
-	  - `transaction status` now displays contract events, and a schema can be provided with `--schema`, which 
+	  - `transaction status` now displays contract events, and a schema can be provided with `--schema`, which
 	    will be used to parse the contract events. By default events are parsed with the schema embedded in the
       contract, if present.
-	  - This enables concordium-client to interact with contracts and schemas 
+	  - This enables concordium-client to interact with contracts and schemas
 	    using `concordium-std` version 5.
 - Improved formatting of `transaction status` output using contract schemas if
   they are available for displaying contract events.
