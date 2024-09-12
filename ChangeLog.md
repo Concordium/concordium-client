@@ -27,6 +27,9 @@
   `transaction add-signature`.)
 - Add optional `--out` flag to all transaction-creating commands to output a partially-singed
   transaction to a file.
+- Update GHC version to 9.6.4 (lts-22.9).
+- Update Rust version to 1.73.
+- Preliminary support for protocol version 7.
 
 ## 6.2.1
 

@@ -765,8 +765,7 @@ showOutcomeResult verbose contrInfoWithEventsM = \case
                 Types.Resumed{} -> (idt - 4, idt - 4)
                 _ -> (idt, idt)
 
-            evStringM = fmap (indentBy idtCurrent . prettyMsg ".") (showEvent verbose cInfo ev)
-
+            evStringM = fmap (indentBy idtCurrent) (showEvent verbose cInfo ev)
         in
             (idtFollowing, out <> [evStringM])
 
@@ -794,11 +793,11 @@ showEvent verbose ciM = \case
     Types.ContractInitialized{..} ->
         verboseOrNothing $
             [i|initialized contract '#{ecAddress}' using init function '#{ecInitName}' from module '#{ecRef}' |]
-                <> [i|with #{showCcd ecAmount}.\n#{showLoggedEvents ecEvents}|]
+                <> [i|with #{showCcd ecAmount}\n#{showLoggedEvents ecEvents}|]
     Types.Updated{..} ->
         verboseOrNothing $
             [i|sent message to function '#{euReceiveName}' with #{showParameter euReceiveName euMessage} and #{showCcd euAmount} |]
-                <> [i|from #{showAddress euInstigator} to #{showAddress $ Types.AddressContract euAddress}.\n|]
+                <> [i|from #{showAddress euInstigator} to #{showAddress $ Types.AddressContract euAddress}\n|]
                 <> [i|#{showLoggedEvents euEvents}|]
     Types.Transferred{..} ->
         verboseOrNothing $ printf "transferred %s from %s to %s" (showCcd etAmount) (showAddress etFrom) (showAddress etTo)
@@ -807,7 +806,7 @@ showEvent verbose ciM = \case
     Types.CredentialDeployed{..} ->
         verboseOrNothing $ printf "credential with registration '%s' deployed onto account '%s'" (show ecdRegId) (show ecdAccount)
     Types.BakerAdded{..} ->
-        let restakeString :: String = if ebaRestakeEarnings then "Earnings are added to the stake" else "Earnings are not added to the stake"
+        let restakeString :: String = if ebaRestakeEarnings then "Earnings are added to the stake." else "Earnings are not added to the stake."
         in  verboseOrNothing $ printf "validator %s added, staking %s CCD. %s" (showBaker ebaBakerId ebaAccount) (Types.amountToString ebaStake) restakeString
     Types.BakerRemoved{..} ->
         verboseOrNothing $ printf "validator %s, removed" (showBaker ebrBakerId ebrAccount)
@@ -856,7 +855,7 @@ showEvent verbose ciM = \case
         verboseOrNothing [i|Registered data on chain.|]
     Types.TransferMemo{..} ->
         let (Types.Memo bss) = tmMemo
-            invalidCBOR = printf "Could not decode memo as valid CBOR. The hex value of the memo is %s" $ show tmMemo
+            invalidCBOR = printf "Could not decode memo as valid CBOR. The hex value of the memo is %s." $ show tmMemo
             bsl = BSL.fromStrict $ BSS.fromShort bss
             str = case deserialiseFromBytes decodeString bsl of -- Try to decode the memo as a CBOR string
                 Left _ -> json -- if not possible, try to decode as JSON
@@ -874,10 +873,10 @@ showEvent verbose ciM = \case
     Types.Interrupted cAddr ev ->
         verboseOrNothing [i|interrupted '#{cAddr}'.\n#{showLoggedEvents ev}|]
     Types.Upgraded{..} ->
-        verboseOrNothing [i|upgraded contract instance at '#{euAddress}' from '#{euFrom}' to '#{euTo}'|]
+        verboseOrNothing [i|upgraded contract instance at '#{euAddress}' from '#{euFrom}' to '#{euTo}'.|]
     Types.Resumed cAddr invokeSucceeded ->
         let invokeMsg :: Text = if invokeSucceeded then "succeeded" else "failed"
-        in  verboseOrNothing [i|resumed '#{cAddr}' after an interruption that #{invokeMsg}|]
+        in  verboseOrNothing [i|resumed '#{cAddr}' after an interruption that #{invokeMsg}.|]
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
@@ -910,7 +909,7 @@ showEvent verbose ciM = \case
 
     -- Show events logged in a contract.
     showLoggedEvents :: [Wasm.ContractEvent] -> String
-    showLoggedEvents [] = "No contract events were emitted"
+    showLoggedEvents [] = "No contract events were emitted."
     showLoggedEvents evs =
         [i|#{length evs} contract #{if length evs > 1 then "events were" else ("event was" :: String)} emitted|]
             <> ( if isNothing eventSchemaM
