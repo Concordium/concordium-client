@@ -285,16 +285,16 @@ printTransactionStatusTests = describe "print transaction status" $ do
             p committedTwoDifferentSuccessfulOutcomes
                 `shouldBe` [ "Transaction is committed into 2 blocks:",
                              "- 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.000010 CCD (10 NRG):",
-                             "  * transferred 0.000010 CCD from account '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' to account '4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa'.",
+                             "  * Transferred 0.000010 CCD from account '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' to account '4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa'.",
                              "- 941c24374cd077de2120fb58732306c3115a08bb7b7cda120a04fecc412b1795 with status \"success\" and cost 0.000020 CCD (20 NRG):",
-                             "  * transferred 0.000010 CCD from account '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' to account '4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa'."
+                             "  * Transferred 0.000010 CCD from account '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' to account '4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa'."
                            ]
     describe "committed into two blocks" $
         specify "correct output" $
             p committedSuccessfulAndFailureOutcomes
                 `shouldBe` [ "Transaction is committed into 2 blocks:",
                              "- 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.000010 CCD (10 NRG):",
-                             "  * transferred 0.000010 CCD from account '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' to account '4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa'.",
+                             "  * Transferred 0.000010 CCD from account '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' to account '4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa'.",
                              "- be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93a9be7f9994 with status \"rejected\" and cost 0.000020 CCD (20 NRG):",
                              "  * account or contract '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' does not have enough funds to transfer 0.000011 CCD"
                            ]
@@ -303,7 +303,7 @@ printTransactionStatusTests = describe "print transaction status" $ do
             p committedSuccessfulAndFailureOutcomes
                 `shouldBe` [ "Transaction is committed into 2 blocks:",
                              "- 0a5d64f644461d95315a781475b83f723f74d1c21542bd4f3e234d6173374389 with status \"success\" and cost 0.000010 CCD (10 NRG):",
-                             "  * transferred 0.000010 CCD from account '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' to account '4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa'.",
+                             "  * Transferred 0.000010 CCD from account '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' to account '4MkK65HrYvMauNTHTuL23wRDKp4VXkCiTpmoWYFtsrZHV3WwSa'.",
                              "- be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93a9be7f9994 with status \"rejected\" and cost 0.000020 CCD (20 NRG):",
                              "  * account or contract '2zR4h351M1bqhrL9UywsbHrP3ucA1xY3TBTFRuTsRout8JnLD6' does not have enough funds to transfer 0.000011 CCD"
                            ]
