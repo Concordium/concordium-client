@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix a bug in correctly accounting for parsed events.
 - Change `--out` flag for `./client validator add` to
   `--validator-credentials-out`, fixing an issue where this command had two
   conflicting`--out` options.
