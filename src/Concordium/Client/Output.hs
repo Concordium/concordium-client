@@ -47,7 +47,7 @@ import Data.Bool
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Short as BSS
-import Data.Either (isLeft)
+import Data.Either (isRight)
 import Data.Functor
 import Data.List (foldl', intercalate, nub, partition, sortOn)
 import qualified Data.Map.Strict as Map
@@ -203,16 +203,15 @@ printAccountInfo addr a verbose showEncrypted mEncKey = do
                 0 -> []
                 tot ->
                     (printf "Release schedule:       total %s" (showCcd tot))
-                        : ( map
-                                ( \Types.ScheduledRelease{..} ->
-                                    printf
-                                        "   %s:               %s scheduled by the transactions: %s."
-                                        (showTimeFormatted (Time.timestampToUTCTime releaseTimestamp))
-                                        (showCcd releaseAmount)
-                                        (intercalate ", " $ map show releaseTransactions)
-                                )
-                                (Types.releaseSchedule $ Types.aiAccountReleaseSchedule a)
-                          )
+                        : map
+                            ( \Types.ScheduledRelease{..} ->
+                                printf
+                                    "   %s:               %s scheduled by the transactions: %s."
+                                    (showTimeFormatted (Time.timestampToUTCTime releaseTimestamp))
+                                    (showCcd releaseAmount)
+                                    (intercalate ", " $ map show releaseTransactions)
+                            )
+                            (Types.releaseSchedule $ Types.aiAccountReleaseSchedule a)
             ++ [ printf "Nonce:                  %s" (show $ Types.aiAccountNonce a),
                  printf "Encryption public key:  %s" (show $ Types.aiAccountEncryptionKey a),
                  ""
@@ -312,7 +311,7 @@ printAccountInfo addr a verbose showEncrypted mEncKey = do
 
 -- | Print a versioned credential. This only prints the credential value, and not the
 --  associated version.
-printVersionedCred :: (Show credTy) => (IDTypes.CredentialIndex, (Versioned (IDTypes.AccountCredential' credTy))) -> Printer
+printVersionedCred :: (Show credTy) => (IDTypes.CredentialIndex, Versioned (IDTypes.AccountCredential' credTy)) -> Printer
 printVersionedCred (ci, vc) = printCred ci (vValue vc)
 
 -- | Print the registration id, expiry date, and revealed attributes of a credential.
@@ -912,14 +911,16 @@ showEvent verbose ciM = \case
     showLoggedEvents :: [Wasm.ContractEvent] -> String
     showLoggedEvents [] = "No contract events were emitted."
     showLoggedEvents evs =
-        [i|#{length evs} contract events were emitted|]
+        [i|#{length evs} contract #{if length evs /= 1 then "events were" else ("event was" :: String)} emitted|]
             <> ( if isNothing eventSchemaM
                     then [i| but no event schema was provided nor found in the contract module. |]
-                    else [i|, of which #{length $ filter isLeft $ map showContractEvent evs} were succesfully parsed. |]
+                    else [i|, of which #{noOfParsedEvents} #{if noOfParsedEvents > 1 then "were" else ("was" :: String)} successfully parsed. |]
                )
             <> [i|Got:\n|]
-            <> intercalate "\n" (map fromEither (map showContractEvent evs))
+            <> intercalate "\n" (map (fromEither . showContractEvent) evs)
       where
+        noOfParsedEvents :: Int
+        noOfParsedEvents = length $ filter isRight $ map showContractEvent evs
         fromEither :: Either a a -> a
         fromEither (Left v) = v
         fromEither (Right v) = v
@@ -928,7 +929,7 @@ showEvent verbose ciM = \case
         eventSchemaM = getEventSchema =<< ciM
         -- Show a string representation of the contract event.
         -- Returns @Right@ containing a JSON representation of the event if a schema was present
-        -- and the event could be succesfully parsed using it.
+        -- and the event could be successfully parsed using it.
         -- Returns @Left@ containing a hexadecimal representation of the raw event data otherwise.
         showContractEvent :: Wasm.ContractEvent -> Either String String
         showContractEvent ce@(Wasm.ContractEvent bs) = case toJSONString eventSchemaM bs of

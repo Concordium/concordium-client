@@ -104,6 +104,18 @@ To determine the exact path to the `libffi` include directory, run the following
 pkg-config --cflags libffi
 ```
 
+## Test
+
+``` sh
+stack build --test
+```
+
+## Format
+
+``` sh
+fourmolu -i $(git ls-files '*.hs')
+```
+
 ## Usage
 
 Run using `stack run concordium-client -- [BACKEND] COMMAND [ARGS...]`, where
