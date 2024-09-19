@@ -729,7 +729,17 @@ instance FromProto Proto.AccountInfo where
                 Just asi -> fromProto asi
         aiAccountAddress <- fromProto $ ai ^. ProtoFields.address
         aiAccountCooldowns <- mapM fromProto $ ai ^. ProtoFields.cooldowns
-        aiAccountAvailableAmount <- fromProto $ ai ^. ProtoFields.availableBalance
+        -- The available balance is only provided by node version 7 onwards, so we compute it
+        -- if it is not present.
+        mAvailableBalance <- mapM fromProto $ ai ^. ProtoFields.maybe'availableBalance
+        let stakedTotal =
+                sum (cooldownAmount <$> aiAccountCooldowns) + case aiStakingInfo of
+                    AccountStakingDelegated{..} -> asiStakedAmount
+                    AccountStakingBaker{..} -> asiStakedAmount
+                    AccountStakingNone -> 0
+        let computedAvailable =
+                aiAccountAmount - max stakedTotal (releaseTotal aiAccountReleaseSchedule)
+        let aiAccountAvailableAmount = fromMaybe computedAvailable mAvailableBalance
         return AccountInfo{..}
       where
         versionTag = 0
