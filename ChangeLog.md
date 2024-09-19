@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Display the correct "at disposal" balance when used with node versions prior to 7.
 - Fix a bug in correctly accounting for parsed events.
 - Change `--out` flag for `./client validator add` to
   `--validator-credentials-out`, fixing an issue where this command had two
