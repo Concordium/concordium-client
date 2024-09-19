@@ -911,7 +911,7 @@ showEvent verbose ciM = \case
     showLoggedEvents :: [Wasm.ContractEvent] -> String
     showLoggedEvents [] = "No contract events were emitted."
     showLoggedEvents evs =
-        [i|#{length evs} contract #{if length evs > 1 then "events were" else ("event was" :: String)} emitted|]
+        [i|#{length evs} contract #{if length evs /= 1 then "events were" else ("event was" :: String)} emitted|]
             <> ( if isNothing eventSchemaM
                     then [i| but no event schema was provided nor found in the contract module. |]
                     else [i|, of which #{noOfParsedEvents} #{if noOfParsedEvents > 1 then "were" else ("was" :: String)} successfully parsed. |]
