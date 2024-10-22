@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add command `consensus detailed-status` for getting detailed consensus status (from protocol
+  version 6).
+- Add `raw GetConsensusDetailedStatus` that presents the detailed consensus status as JSON.
+
 ## 7.0.1
 
 - Display the correct "at disposal" balance when used with node versions prior to 7.

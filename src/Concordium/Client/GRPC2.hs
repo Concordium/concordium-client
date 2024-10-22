@@ -78,6 +78,8 @@ import qualified Concordium.Types.Transactions as Transactions
 import qualified Concordium.Types.Updates as Updates
 import qualified Concordium.Wasm as Wasm
 
+import Concordium.Client.Types.ConsensusStatus
+import qualified Concordium.Crypto.BlockSignature as BlockSignature
 import qualified Proto.V2.Concordium.Service as CS
 import qualified Proto.V2.Concordium.Types as Proto
 import qualified Proto.V2.Concordium.Types as ProtoFields
@@ -2874,6 +2876,186 @@ instance FromProto Proto.WinningBaker where
         let wbPresent = winningBaker ^. ProtoFields.present
         return WinningBaker{..}
 
+instance FromProto Proto.FinalizerIndex where
+    type Output Proto.FinalizerIndex = FinalizerIndex
+    fromProto fi = return . FinalizerIndex $ fi ^. ProtoFields.value
+
+instance FromProto Proto.QuorumMessage where
+    type Output Proto.QuorumMessage = QuorumMessage
+    fromProto qm = do
+        qmSignature <- fromProto (qm ^. ProtoFields.signature)
+        qmBlock <- fromProto (qm ^. ProtoFields.block)
+        qmFinalizer <- fromProto (qm ^. ProtoFields.finalizer)
+        qmRound <- fromProto (qm ^. ProtoFields.round)
+        qmEpoch <- fromProto (qm ^. ProtoFields.epoch)
+        return QuorumMessage{..}
+
+instance FromProto Proto.RawQuorumCertificate where
+    type Output Proto.RawQuorumCertificate = QuorumCertificate
+    fromProto qc = do
+        qcBlockHash <- fromProto (qc ^. ProtoFields.blockHash)
+        qcRound <- fromProto (qc ^. ProtoFields.round)
+        qcEpoch <- fromProto (qc ^. ProtoFields.epoch)
+        qcAggregateSignature <- fromProto (qc ^. ProtoFields.aggregateSignature)
+        qcSignatories <- mapM fromProto (qc ^. ProtoFields.signatories)
+        return QuorumCertificate{..}
+
+instance FromProto Proto.BlockSignature where
+    type Output Proto.BlockSignature = BlockSignature.Signature
+    fromProto = deMkSerialize
+
+instance FromProto Proto.TimeoutMessage where
+    type Output Proto.TimeoutMessage = TimeoutMessage
+    fromProto tm = do
+        tmFinalizer <- fromProto (tm ^. ProtoFields.finalizer)
+        tmRound <- fromProto (tm ^. ProtoFields.round)
+        tmEpoch <- fromProto (tm ^. ProtoFields.epoch)
+        tmQuorumCertificate <- fromProto (tm ^. ProtoFields.quorumCertificate)
+        tmSignature <- fromProto (tm ^. ProtoFields.signature)
+        tmMessageSignature <- fromProto (tm ^. ProtoFields.messageSignature)
+        return TimeoutMessage{..}
+
+instance FromProto Proto.RawFinalizerRound where
+    type Output Proto.RawFinalizerRound = FinalizerRound
+    fromProto fr = do
+        frRound <- fromProto (fr ^. ProtoFields.round)
+        frFinalizers <- mapM fromProto (fr ^. ProtoFields.finalizers)
+        return FinalizerRound{..}
+
+instance FromProto Proto.RawTimeoutCertificate where
+    type Output Proto.RawTimeoutCertificate = TimeoutCertificate
+    fromProto tc = do
+        tcRound <- fromProto (tc ^. ProtoFields.round)
+        tcMinEpoch <- fromProto (tc ^. ProtoFields.minEpoch)
+        tcQcRoundsFirstEpoch <- mapM fromProto (tc ^. ProtoFields.qcRoundsFirstEpoch)
+        tcQcRoundsSecondEpoch <- mapM fromProto (tc ^. ProtoFields.qcRoundsSecondEpoch)
+        tcAggregateSignature <- fromProto (tc ^. ProtoFields.aggregateSignature)
+        return TimeoutCertificate{..}
+
+instance FromProto Proto.PersistentRoundStatus where
+    type Output Proto.PersistentRoundStatus = PersistentRoundStatus
+    fromProto prs = do
+        prsLastSignedQuorumMessage <- mapM fromProto (prs ^. ProtoFields.maybe'lastSignedQuorumMessage)
+        prsLastSignedTimeoutMessage <- mapM fromProto (prs ^. ProtoFields.maybe'lastSignedTimeoutMessage)
+        prsLastBakedRound <- fromProto (prs ^. ProtoFields.lastBakedRound)
+        prsLatestTimeout <- mapM fromProto (prs ^. ProtoFields.maybe'latestTimeout)
+        return PersistentRoundStatus{..}
+
+instance FromProto Proto.RoundTimeout where
+    type Output Proto.RoundTimeout = RoundTimeout
+    fromProto rt = do
+        rtTimeoutCertificate <- fromProto (rt ^. ProtoFields.timeoutCertificate)
+        rtQuorumCertificate <- fromProto (rt ^. ProtoFields.quorumCertificate)
+        return RoundTimeout{..}
+
+instance FromProto Proto.RawFinalizationEntry where
+    type Output Proto.RawFinalizationEntry = FinalizationEntry
+    fromProto fe = do
+        feFinalizedQC <- fromProto (fe ^. ProtoFields.finalizedQc)
+        feSuccessorQC <- fromProto (fe ^. ProtoFields.successorQc)
+        feSuccessorProof <- fromProto (fe ^. ProtoFields.successorProof)
+        return FinalizationEntry{..}
+
+instance FromProto Proto.RoundStatus where
+    type Output Proto.RoundStatus = RoundStatus
+    fromProto rs = do
+        rsCurrentRound <- fromProto (rs ^. ProtoFields.currentRound)
+        rsHighestCertifiedBlock <- fromProto (rs ^. ProtoFields.highestCertifiedBlock)
+        rsPreviousRoundTimeout <- mapM fromProto (rs ^. ProtoFields.maybe'previousRoundTimeout)
+        let rsRoundEligibleToBake = rs ^. ProtoFields.roundEligibleToBake
+        rsCurrentEpoch <- fromProto (rs ^. ProtoFields.currentEpoch)
+        rsLastEpochFinalizationEntry <- mapM fromProto (rs ^. ProtoFields.maybe'lastEpochFinalizationEntry)
+        rsCurrentTimeout <- fromProto (rs ^. ProtoFields.currentTimeout)
+        return RoundStatus{..}
+
+instance FromProto Proto.BlockTableSummary where
+    type Output Proto.BlockTableSummary = BlockTableSummary
+    fromProto bts = do
+        let btsDeadBlockCacheSize = bts ^. ProtoFields.deadBlockCacheSize
+        btsLiveBlocks <- mapM fromProto (bts ^. ProtoFields.liveBlocks)
+        return BlockTableSummary{..}
+
+instance FromProto Proto.RoundExistingBlock where
+    type Output Proto.RoundExistingBlock = RoundExistingBlock
+    fromProto reb = do
+        rebRound <- fromProto (reb ^. ProtoFields.round)
+        rebBaker <- fromProto (reb ^. ProtoFields.baker)
+        rebBlock <- fromProto (reb ^. ProtoFields.block)
+        return RoundExistingBlock{..}
+
+instance FromProto Proto.RoundExistingQC where
+    type Output Proto.RoundExistingQC = RoundExistingQC
+    fromProto req = do
+        reqRound <- fromProto (req ^. ProtoFields.round)
+        reqEpoch <- fromProto (req ^. ProtoFields.epoch)
+        return RoundExistingQC{..}
+
+instance FromProto Proto.FullBakerInfo where
+    type Output Proto.FullBakerInfo = FullBakerInfo
+    fromProto fbi = do
+        fbiBakerIdentity <- fromProto (fbi ^. ProtoFields.bakerIdentity)
+        fbiElectionVerifyKey <- fromProto (fbi ^. ProtoFields.electionVerifyKey)
+        fbiSignatureVerifyKey <- fromProto (fbi ^. ProtoFields.signatureVerifyKey)
+        fbiAggregationVerifyKey <- fromProto (fbi ^. ProtoFields.aggregationVerifyKey)
+        fbiStake <- fromProto (fbi ^. ProtoFields.stake)
+        return FullBakerInfo{..}
+
+instance FromProto Proto.FinalizationCommitteeHash where
+    type Output Proto.FinalizationCommitteeHash = Hash
+    fromProto = deMkSerialize
+
+instance FromProto Proto.BakersAndFinalizers where
+    type Output Proto.BakersAndFinalizers = BakersAndFinalizers
+    fromProto baf = do
+        bafBakers <- mapM fromProto (baf ^. ProtoFields.bakers)
+        bafFinalizers <- mapM fromProto (baf ^. ProtoFields.finalizers)
+        bafBakerTotalStake <- fromProto (baf ^. ProtoFields.bakerTotalStake)
+        bafFinalizerTotalStake <- fromProto (baf ^. ProtoFields.finalizerTotalStake)
+        bafFinalizationCommitteeHash <- fromProto (baf ^. ProtoFields.finalizationCommitteeHash)
+        return BakersAndFinalizers{..}
+
+instance FromProto Proto.EpochBakers where
+    type Output Proto.EpochBakers = EpochBakers
+    fromProto epochBakers = do
+        ebPreviousEpochBakers <- fromProto (epochBakers ^. ProtoFields.previousEpochBakers)
+        ebCurrentEpochBakers <- mapM fromProto (epochBakers ^. ProtoFields.maybe'currentEpochBakers)
+        ebNextEpochBakers <- mapM fromProto (epochBakers ^. ProtoFields.maybe'nextEpochBakers)
+        ebNextPayday <- fromProto (epochBakers ^. ProtoFields.nextPayday)
+        return EpochBakers{..}
+
+instance FromProto Proto.TimeoutMessages where
+    type Output Proto.TimeoutMessages = TimeoutMessages
+    fromProto timeoutMessages = do
+        tmFirstEpoch <- fromProto (timeoutMessages ^. ProtoFields.firstEpoch)
+        tmFirstEpochTimeouts <- mapM fromProto (timeoutMessages ^. ProtoFields.firstEpochTimeouts)
+        tmSecondEpochTimeouts <- mapM fromProto (timeoutMessages ^. ProtoFields.secondEpochTimeouts)
+        return TimeoutMessages{..}
+
+instance FromProto Proto.BranchBlocks where
+    type Output Proto.BranchBlocks = [BlockHash]
+    fromProto branchBlocks = mapM fromProto (branchBlocks ^. ProtoFields.blocksAtBranchHeight)
+
+instance FromProto Proto.ConsensusDetailedStatus where
+    type Output Proto.ConsensusDetailedStatus = ConsensusDetailedStatus
+    fromProto consensusDetailedStatus = do
+        cdsGenesisBlock <- fromProto (consensusDetailedStatus ^. ProtoFields.genesisBlock)
+        cdsPersistentRoundStatus <- fromProto (consensusDetailedStatus ^. ProtoFields.persistentRoundStatus)
+        cdsRoundStatus <- fromProto (consensusDetailedStatus ^. ProtoFields.roundStatus)
+        let cdsNonFinalizedTransactionCount = consensusDetailedStatus ^. ProtoFields.nonFinalizedTransactionCount
+        let cdsTransactionTablePurgeCounter = consensusDetailedStatus ^. ProtoFields.transactionTablePurgeCounter
+        cdsBlockTable <- fromProto (consensusDetailedStatus ^. ProtoFields.blockTable)
+        cdsBranches <- mapM fromProto (consensusDetailedStatus ^. ProtoFields.branches)
+        cdsRoundExistingBlocks <- mapM fromProto (consensusDetailedStatus ^. ProtoFields.roundExistingBlocks)
+        cdsRoundExistingQCs <- mapM fromProto (consensusDetailedStatus ^. ProtoFields.roundExistingQcs)
+        cdsGenesisBlockHeight <- fromProto (consensusDetailedStatus ^. ProtoFields.genesisBlockHeight)
+        cdsLastFinalizedBlock <- fromProto (consensusDetailedStatus ^. ProtoFields.lastFinalizedBlock)
+        cdsLastFinalizedBlockHeight <- fromProto (consensusDetailedStatus ^. ProtoFields.lastFinalizedBlockHeight)
+        cdsLatestFinalizationEntry <- mapM fromProto (consensusDetailedStatus ^. ProtoFields.maybe'latestFinalizationEntry)
+        cdsEpochBakers <- fromProto (consensusDetailedStatus ^. ProtoFields.epochBakers)
+        cdsTimeoutMessages <- mapM fromProto (consensusDetailedStatus ^. ProtoFields.maybe'timeoutMessages)
+        cdsTerminalBlock <- mapM fromProto (consensusDetailedStatus ^. ProtoFields.maybe'terminalBlock)
+        return ConsensusDetailedStatus{..}
+
 type LoggerMethod = Text -> IO ()
 
 data GrpcConfig = GrpcConfig
@@ -3318,6 +3500,12 @@ getBlockInfo bhInput = withUnary (call @"getBlockInfo") msg (fmap fromProto)
 -- | Get information about the current state of consensus.
 getConsensusInfo :: (MonadIO m) => ClientMonad m (GRPCResult (FromProtoResult ConsensusStatus))
 getConsensusInfo = withUnary (call @"getConsensusInfo") defMessage (fmap fromProto)
+
+-- | Get detailed consensus state information (for consensus version 1).
+getConsensusDetailedStatus :: (MonadIO m) => Maybe GenesisIndex -> ClientMonad m (GRPCResult (FromProtoResult ConsensusDetailedStatus))
+getConsensusDetailedStatus mGenesisIndex = withUnary (call @"getConsensusDetailedStatus") msg (fmap fromProto)
+  where
+    msg = defMessage & ProtoFields.maybe'genesisIndex .~ fmap toProto mGenesisIndex
 
 -- | Get the source of a smart contract module.
 getModuleSource :: (MonadIO m) => ModuleRef -> BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult Wasm.WasmModule))

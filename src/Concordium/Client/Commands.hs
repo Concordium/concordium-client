@@ -439,6 +439,9 @@ data ConsensusCmd
           ccuKeys :: ![FilePath],
           ccuInteractionOpts :: !InteractionOpts
         }
+    | ConsensusDetailedStatus
+        { cdsGenesisIndex :: !(Maybe GenesisIndex)
+        }
     deriving (Show)
 
 data BlockCmd = BlockShow
@@ -1560,6 +1563,7 @@ consensusCmds =
             ( ConsensusCmd
                 <$> ( hsubparser
                         ( consensusStatusCmd
+                            <> consensusDetailedStatusCmd
                             <> consensusShowChainParametersCmd
                             <> consensusShowParametersCmd
                         )
@@ -1577,6 +1581,17 @@ consensusStatusCmd =
         ( info
             (pure ConsensusStatus)
             (progDesc "List various parameters related to the current state of the consensus protocol.")
+        )
+
+consensusDetailedStatusCmd :: Mod CommandFields ConsensusCmd
+consensusDetailedStatusCmd =
+    command
+        "detailed-status"
+        ( info
+            ( ConsensusDetailedStatus
+                <$> optional (option auto (long "genesis-index" <> metavar "GENINDEX" <> help "Genesis index (defaults to latest)"))
+            )
+            (progDesc "Show detailed consensus status information.")
         )
 
 consensusShowParametersCmd :: Mod CommandFields ConsensusCmd
