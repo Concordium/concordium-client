@@ -3177,7 +3177,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
             putStrLn ""
         let cbMetadataURL = fmap (Types.UrlText . Text.pack) metadataURL
         (bakerKeys, cbKeysWithProofs) <- readInputKeysFile baseCfg
-        -- TODO: support setting the suspend flag.
+        -- TODO: support setting the suspend flag. Issue #326
         let cbSuspend = Nothing
         let payload = Types.encodePayload Types.ConfigureBaker{..}
             nrgCost _ = case cbKeysWithProofs of
