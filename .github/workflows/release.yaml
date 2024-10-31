@@ -1,0 +1,26 @@
+name: Concordium client release
+
+on:
+  push:
+    branches:
+      - lma/release/github_actions
+    tags:
+     - '*.*.*-*'
+
+
+
+jobs:
+
+  validate-preconditions:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+
