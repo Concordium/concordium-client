@@ -5,7 +5,15 @@ on:
     branches:
       - lma/release/github_actions
     tags:
-     - '*.*.*-*'
+     - '*.*.*-*-rc'
+
+env:
+  S3_ARN_TEMPLATES: '{
+      \"client-linux\": \"s3://distribution.concordium.software/tools/linux/concordium-client_${VERSION}\",
+      \"client-macos\": \"s3://distribution.concordium.software/tools/macos/concordium-client_${VERSION}-unsigned.pkg\",
+      \"client-windows\": \"s3://distribution.concordium.software/tools/windows/concordium-client_${VERSION}.zip\"
+    }'
+  AWS_ROLE_TO_ASSUME: 'arn:aws:iam::192549843005:role/github_concordium-client'
 
 
 
@@ -14,13 +22,61 @@ jobs:
   validate-preconditions:
     runs-on: ubuntu-latest
     environment: release
+    outputs:
+      s3_arns: ${{ steps.render.outputs.s3_arns }}
+      release_type: ${{ steps.versions_derivation.outputs.release_type }}
+      base_version: ${{ steps.versions_derivation.outputs.base_version }}
+      version: ${{ steps.versions_derivation.outputs.version }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          submodules: recursive
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          role-session-name: ValidatePreconditionsSession
+          aws-region: "eu-west-1"
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Validate version
+        id: versions_derivation
+        run: |
+          CARGO_VERSION=$(yq .package.version concordium-node/Cargo.toml)
+          if [ -z "${{ env.SERVICE }}" ]; then
+            IFS='-' read -r VERSION BUILD RELEASE_TYPE <<< "${{ github.ref_name }}"
+            if [ ! "$VERSION" = "$CARGO_VERSION" ]; then
+              echo "::error::${GITHUB_REF_NAME} does not match ${VERSION}."
+              exit 1
+            fi
+          else
+            RELEASE_TYPE="${{ env.SERVICE }}"
+            BUILD=$(git rev-parse --short HEAD)
+          fi
+          echo "::notice::RELEASE_TYPE=${RELEASE_TYPE}"
+          echo "release_type=${RELEASE_TYPE}" >> "$GITHUB_OUTPUT"
+          echo "version=${CARGO_VERSION}-${BUILD}" >> "$GITHUB_OUTPUT"
+          echo "base_version=${CARGO_VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Templates rendering
+        id: render
+        run: |
+          export VERSION="${{ steps.versions_derivation.outputs.version }}"
+          echo "s3_arns=${{ env.S3_ARN_TEMPLATES }}" >> $GITHUB_OUTPUT
 
-
+      - name: Validate whether s3 artifacts are not existing
+        if: contains(fromJSON('["rc"]'), steps.versions_derivation.outputs.release_type)
+        run: |
+          set +e
+          echo '${{ steps.render.outputs.s3_arns }}' | jq -r '. | to_entries[] | .value' | while read -r ARN; do
+            echo "Checking for object at: $ARN"
+            S3_OUTPUT=$(aws s3 ls "$ARN" --summarize 2>&1)
+            EXIT_CODE=$?
+            if [ $EXIT_CODE -eq 1 ]; then
+              echo "No object found for $ARN, proceeding."
+            elif [ $EXIT_CODE -eq 0 ]; then
+              echo "::error::item for $ARN already exists."
+              exit 1
+            else
+              echo "::error::Unexpected exit code: $EXIT_CODE for $ARN."
+              exit 1
+            fi
+          done
