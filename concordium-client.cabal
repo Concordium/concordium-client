@@ -101,6 +101,7 @@ library
     , prettyprinter-ansi-terminal
     , proto-lens ==0.7.*
     , scientific
+    , singletons-base
     , split
     , string-interpolate
     , text
