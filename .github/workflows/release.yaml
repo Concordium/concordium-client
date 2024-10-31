@@ -28,14 +28,11 @@ jobs:
       base_version: ${{ steps.versions_derivation.outputs.base_version }}
       version: ${{ steps.versions_derivation.outputs.version }}
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          role-session-name: ValidatePreconditionsSession
+          role-session-name: ClientPreconditionsSession
           aws-region: "eu-west-1"
 
       - name: Validate version
