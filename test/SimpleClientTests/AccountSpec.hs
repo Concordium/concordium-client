@@ -93,7 +93,8 @@ exampleBakerInfoResult pc =
                   _bakerSignatureVerifyKey = snd $ unsafePerformIO newKeyPair
                 },
           asiPendingChange = pc,
-          asiPoolInfo = Just exampleBakerPoolInfo
+          asiPoolInfo = Just exampleBakerPoolInfo,
+          asiIsSuspended = False
         }
 
 exampleDelegatorStakingInfo :: StakePendingChange' UTCTime -> AccountStakingInfo

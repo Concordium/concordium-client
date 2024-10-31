@@ -535,6 +535,7 @@ instance FromProto Proto.AccountStakingInfo where
                         Nothing -> return NoChange
                         Just ch -> fmap timestampToUTCTime <$> fromProto ch
                 asiPoolInfo <- fromProtoMaybe $ baker ^. ProtoFields.maybe'poolInfo
+                let asiIsSuspended = baker ^. ProtoFields.isSuspended
                 return AccountStakingBaker{..}
 
 instance FromProto Proto.ArThreshold where
@@ -840,6 +841,7 @@ instance FromProto Proto.ProtocolVersion where
         Proto.PROTOCOL_VERSION_5 -> return P5
         Proto.PROTOCOL_VERSION_6 -> return P6
         Proto.PROTOCOL_VERSION_7 -> return P7
+        Proto.PROTOCOL_VERSION_8 -> return P8
         Proto.ProtocolVersion'Unrecognized _ ->
             fromProtoFail "Unable to convert 'ProtocolVersion'."
 
@@ -2268,6 +2270,12 @@ instance FromProto (Proto.AccountAddress, Proto.BakerEvent) where
                 let edrAccount = sender
                 edrDelegatorId <- fromProto $ delRemoved ^. ProtoFields.delegatorId
                 return DelegationRemoved{..}
+            ProtoFields.BakerEvent'BakerSuspended' bkrSuspended -> do
+                ebsBakerId <- fromProto $ bkrSuspended ^. ProtoFields.bakerId
+                return BakerSuspended{..}
+            ProtoFields.BakerEvent'BakerResumed' bkrResumed -> do
+                ebrBakerId <- fromProto $ bkrResumed ^. ProtoFields.bakerId
+                return BakerResumed{..}
 
 instance FromProto Proto.BlockItemStatus where
     type Output Proto.BlockItemStatus = TransactionStatus

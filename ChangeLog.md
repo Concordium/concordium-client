@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Support node version 8 and protocol version 8.
+
 ## 7.0.1
 
 - Display the correct "at disposal" balance when used with node versions prior to 7.

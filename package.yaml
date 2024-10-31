@@ -91,6 +91,7 @@ library:
     - string-interpolate
     - scientific
     - cookie
+    - singletons-base
 
 executables:
   concordium-client:

@@ -1145,20 +1145,14 @@ getNextPaydayTime = do
 -- | Returns the UTCTime date when the baker cooldown on reducing stake/removing a baker will end, using on chain parameters
 getBakerCooldown :: Queries.EChainParametersAndKeys -> ClientMonad IO UTCTime
 getBakerCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) =
-    case Types.chainParametersVersion @cpv of
-        Types.SChainParametersV0 -> do
+    case sCooldownParametersVersionFor $ Types.chainParametersVersion @cpv of
+        SCooldownParametersVersion0 -> do
             cs <- getResponseValueOrDie =<< getConsensusInfo
             let epochTime = toInteger (Time.durationMillis $ Queries.csEpochDuration cs) % 1000
             let cooldownTime = fromRational $ epochTime * ((cooldownEpochsV0 ecpParams + 2) % 1)
             currTime <- liftIO getCurrentTime
             return $ addUTCTime cooldownTime currTime
-        Types.SChainParametersV1 -> do
-            cooldownStart <- getNextPaydayTime
-            let cooldownDuration =
-                    fromIntegral . Types.durationSeconds $
-                        ecpParams ^. cpCooldownParameters . cpPoolOwnerCooldown
-            return $ addUTCTime cooldownDuration cooldownStart
-        Types.SChainParametersV2 -> do
+        SCooldownParametersVersion1 -> do
             cooldownStart <- getNextPaydayTime
             let cooldownDuration =
                     fromIntegral . Types.durationSeconds $
@@ -1171,14 +1165,10 @@ getBakerCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters'
 -- | Returns the UTCTime date when the delegator cooldown on reducing stake/removing delegation will end, using on chain parameters
 getDelegatorCooldown :: Queries.EChainParametersAndKeys -> ClientMonad IO (Maybe UTCTime)
 getDelegatorCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) = do
-    case Types.chainParametersVersion @cpv of
-        Types.SChainParametersV0 -> do
+    case sCooldownParametersVersionFor $ Types.chainParametersVersion @cpv of
+        SCooldownParametersVersion0 -> do
             return Nothing
-        Types.SChainParametersV1 -> do
-            paydayTime <- getNextPaydayTime
-            let cooldownTime = fromIntegral . Types.durationSeconds $ ecpParams ^. cpCooldownParameters . cpDelegatorCooldown
-            return $ Just $ addUTCTime cooldownTime paydayTime
-        Types.SChainParametersV2 -> do
+        SCooldownParametersVersion1 -> do
             paydayTime <- getNextPaydayTime
             let cooldownTime = fromIntegral . Types.durationSeconds $ ecpParams ^. cpCooldownParameters . cpDelegatorCooldown
             return $ Just $ addUTCTime cooldownTime paydayTime
@@ -1434,10 +1424,9 @@ getBakerStakeThresholdOrDie = do
     case res of
         Left err -> logFatal ["Could not retrieve the validator stake threshold: " <> err]
         Right (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) ->
-            return $ case Types.chainParametersVersion @cpv of
-                Types.SChainParametersV0 -> ecpParams ^. cpPoolParameters . ppBakerStakeThreshold
-                Types.SChainParametersV1 -> ecpParams ^. cpPoolParameters . ppMinimumEquityCapital
-                Types.SChainParametersV2 -> ecpParams ^. cpPoolParameters . ppMinimumEquityCapital
+            return $ case sPoolParametersVersionFor $ Types.chainParametersVersion @cpv of
+                SPoolParametersVersion0 -> ecpParams ^. cpPoolParameters . ppBakerStakeThreshold
+                SPoolParametersVersion1 -> ecpParams ^. cpPoolParameters . ppMinimumEquityCapital
 
 getAccountUpdateCredentialsTransactionData ::
     -- | A file with new credentials.
@@ -3188,6 +3177,8 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
             putStrLn ""
         let cbMetadataURL = fmap (Types.UrlText . Text.pack) metadataURL
         (bakerKeys, cbKeysWithProofs) <- readInputKeysFile baseCfg
+        -- TODO: support setting the suspend flag. Issue #326
+        let cbSuspend = Nothing
         let payload = Types.encodePayload Types.ConfigureBaker{..}
             nrgCost _ = case cbKeysWithProofs of
                 Nothing -> return . Just $ bakerConfigureEnergyCostWithoutKeys (Types.payloadSize payload)
