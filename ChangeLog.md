@@ -3,6 +3,9 @@
 ## Unreleased
 
 - Support node version 8 and protocol version 8.
+- Add command `consensus detailed-status` for getting detailed consensus status (from protocol
+  version 6).
+- Add `raw GetConsensusDetailedStatus` that presents the detailed consensus status as JSON.
 
 ## 7.0.1
 

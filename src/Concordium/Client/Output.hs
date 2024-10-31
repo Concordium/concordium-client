@@ -29,6 +29,7 @@ import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Accounts as Types
 import qualified Concordium.Types.Accounts.Releases as Types
+import qualified Concordium.Types.Block as Types
 import qualified Concordium.Types.Execution as Types
 import Concordium.Types.Parameters
 import Concordium.Types.ProtocolVersion
@@ -38,6 +39,8 @@ import qualified Concordium.Wasm as Wasm
 import Codec.CBOR.Decoding (decodeString)
 import Codec.CBOR.JSON
 import Codec.CBOR.Read
+
+import qualified Concordium.Client.Types.ConsensusStatus as ConsensusStatus
 import Concordium.Client.Types.Contract.BuildInfo (showBuildInfo)
 import Concordium.Common.Time (DurationSeconds (durationSeconds))
 import Concordium.Types.Execution (Event (ecEvents))
@@ -52,7 +55,7 @@ import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Short as BSS
 import Data.Either (isRight)
 import Data.Functor
-import Data.List (foldl', intercalate, nub, partition, sortOn)
+import Data.List (elemIndex, foldl', intercalate, nub, partition, sortOn)
 import qualified Data.Map.Strict as Map
 import Data.Maybe
 import Data.Ratio
@@ -1515,3 +1518,137 @@ unwrapMaybeList = concat
 showConditionally :: (Show a) => Conditionally b a -> String
 showConditionally (CFalse) = "N/A"
 showConditionally (CTrue v) = show v
+
+-- | Render the detailed consensus status.
+printConsensusDetailedStatus :: ConsensusStatus.ConsensusDetailedStatus -> Printer
+printConsensusDetailedStatus ConsensusStatus.ConsensusDetailedStatus{..} = do
+    tell
+        [ [i|Current era genesis block: #{cdsGenesisBlock} (height #{cdsGenesisBlockHeight})|]
+        ]
+    forM_ cdsTerminalBlock $ \tb -> tell [[i|Terminal block:            #{tb}|]]
+    let ConsensusStatus.RoundStatus{..} = cdsRoundStatus
+    let eligible
+            | rsRoundEligibleToBake = "not tried to bake" :: String
+            | otherwise = "already tried to bake"
+    tell
+        [ [i|Current round: #{rsCurrentRound} (#{eligible})|],
+          [i|Current epoch: #{rsCurrentEpoch}|],
+          [i|Highest certified block:|]
+        ]
+    tell $ renderQC rsHighestCertifiedBlock
+    forM_ rsPreviousRoundTimeout $ tell . ([i|Previous round timeout:|] :) . renderRoundTimeout
+    tell [[i|Current timeout duration: #{showDuration (Types.durationMillis rsCurrentTimeout)}|]]
+    let ConsensusStatus.PersistentRoundStatus{..} = cdsPersistentRoundStatus
+    forM_ prsLastSignedQuorumMessage $ \ConsensusStatus.QuorumMessage{..} ->
+        tell
+            [ [i|Last signed quorum message:|],
+              [i|  Block:           #{qmBlock}|],
+              [i|  Finalizer index: #{qmFinalizer}|],
+              [i|  Round:           #{qmRound}|],
+              [i|  Epoch:           #{qmEpoch}|]
+            ]
+    forM_ prsLastSignedTimeoutMessage $ \ConsensusStatus.TimeoutMessage{..} ->
+        tell $
+            [ [i|Last signed timeout message:|],
+              [i|  Finalizer index: #{tmFinalizer}|],
+              [i|  Round:           #{tmRound}|],
+              [i|  Epoch:           #{tmEpoch}|],
+              [i|  Highest quorum certificate:|]
+            ]
+                <> (("  " <>) <$> renderQC tmQuorumCertificate)
+    tell [[i|Last baked round: #{prsLastBakedRound}|]]
+    forM_ prsLatestTimeout $ \tc ->
+        tell $ [i|Latest timeout certificate:|] : renderTC tc
+    forM_ rsLastEpochFinalizationEntry $
+        tell . ([i|Last epoch finalization entry:|] :) . renderFinEntry
+    let ConsensusStatus.BlockTableSummary{..} = cdsBlockTable
+    let lfbHeight = Types.localToAbsoluteBlockHeight cdsGenesisBlockHeight cdsLastFinalizedBlockHeight
+    tell
+        [ [i|Non-finalized transactions:      #{cdsNonFinalizedTransactionCount}|],
+          [i|Transaction table purge counter: #{cdsTransactionTablePurgeCounter}|],
+          [i|Cached dead blocks:              #{btsDeadBlockCacheSize}|],
+          [i|Last finalized block:            #{cdsLastFinalizedBlock} (height #{lfbHeight})|]
+        ]
+    forM_ cdsLatestFinalizationEntry $ tell . renderFinEntry
+    tell [[i|Live blocks:                     #{length btsLiveBlocks}|]]
+    tell $ zipWith renderLiveBlocksAtHeight [lfbHeight + 1 ..] btsLiveBlocks
+    tell $ [i|Live rounds with blocks:|] : map renderRoundExistingBlock cdsRoundExistingBlocks
+    tell $ [i|Live rounds with quorum certificates:|] : map renderRoundExistingQC cdsRoundExistingQCs
+    forM_ cdsTimeoutMessages $ \ConsensusStatus.TimeoutMessages{..} -> do
+        tell $
+            [[i|Timeout messages:|], [i|  Epoch #{tmFirstEpoch}:|]]
+                ++ (renderTimeoutMessage <$> tmFirstEpochTimeouts)
+        unless (null tmSecondEpochTimeouts) $
+            tell $
+                [i|  Epoch #{tmFirstEpoch + 1}:|] : (renderTimeoutMessage <$> tmSecondEpochTimeouts)
+    let ConsensusStatus.EpochBakers{..} = cdsEpochBakers
+    tell [[i|Next payday epoch:               #{ebNextPayday}|]]
+    let lfbEpoch = case cdsLatestFinalizationEntry of
+            Nothing -> 0
+            Just fe -> ConsensusStatus.qcEpoch (ConsensusStatus.feFinalizedQC fe)
+    let epochsFirst :: String
+        epochsFirst
+            | Just _ <- ebCurrentEpochBakers = [i|epoch #{lfbEpoch - 1}|]
+            | Just _ <- ebNextEpochBakers,
+              lfbEpoch == 0 =
+                [i|epoch #{lfbEpoch}|]
+            | Just _ <- ebNextEpochBakers = [i|epochs #{lfbEpoch - 1} and #{lfbEpoch}|]
+            | lfbEpoch == 0 = [i|epochs #{lfbEpoch} and #{lfbEpoch + 1}|]
+            | otherwise = [i|epochs #{lfbEpoch - 1}, #{lfbEpoch} and #{lfbEpoch + 1}|]
+        epochsSecond :: String
+            | Just _ <- ebNextEpochBakers = [i|epoch #{lfbEpoch}|]
+            | otherwise = [i|epochs #{lfbEpoch} and #{lfbEpoch + 1}|]
+    tell $ [i|Validators for #{epochsFirst}:|] : renderBakers ebPreviousEpochBakers
+    forM_ ebCurrentEpochBakers $ \eb -> tell $ [i|Validators for #{epochsSecond}:|] : renderBakers eb
+    forM_ ebNextEpochBakers $ \eb -> tell $ [i|Validators for epoch #{lfbEpoch + 1}:|] : renderBakers eb
+  where
+    renderQC ConsensusStatus.QuorumCertificate{..} =
+        [ [i|  Block:       #{qcBlockHash}|],
+          [i|  Round:       #{qcRound}|],
+          [i|  Epoch:       #{qcEpoch}|],
+          [i|  Signatories: #{qcSignatories} |]
+        ]
+    renderTC ConsensusStatus.TimeoutCertificate{..} =
+        [ [i|  Timeout round: #{tcRound}|],
+          [i|  Finalizers in epoch #{tcMinEpoch}:|]
+        ]
+            <> (renderFinalizerRound <$> tcQcRoundsFirstEpoch)
+            <> if null tcQcRoundsSecondEpoch
+                then []
+                else
+                    [i|  Finalizers in epoch #{tcMinEpoch + 1}:|]
+                        : (renderFinalizerRound <$> tcQcRoundsSecondEpoch)
+    renderFinalizerRound ConsensusStatus.FinalizerRound{..} =
+        [i|    Round #{frRound}: #{frFinalizers}|]
+    renderRoundTimeout ConsensusStatus.RoundTimeout{..} =
+        ( [i|  Timeout certificate:|]
+            : (("  " <>) <$> renderTC rtTimeoutCertificate)
+        )
+            <> ( [i|  Highest quorum certificate:|]
+                    : (("  " <>) <$> renderQC rtQuorumCertificate)
+               )
+    renderFinEntry ConsensusStatus.FinalizationEntry{..} =
+        ([i|  Finalized block quorum certificate:|] : (("  " <>) <$> renderQC feFinalizedQC))
+            <> ([i|  Successor block quorum certificate:|] : (("  " <>) <$> renderQC feSuccessorQC))
+    renderLiveBlocksAtHeight h b = [i|  At height #{h}: #{b}|]
+    renderRoundExistingBlock ConsensusStatus.RoundExistingBlock{..} =
+        [i|  Round #{rebRound}: #{rebBlock} - baker #{rebBaker}|]
+    renderRoundExistingQC ConsensusStatus.RoundExistingQC{..} =
+        [i|  Round #{reqRound} in epoch #{reqEpoch}|]
+    renderTimeoutMessage ConsensusStatus.TimeoutMessage{..} =
+        [i|  Finalizer #{tmFinalizer} in round #{tmRound}, epoch #{tmEpoch} with highest QC round #{ConsensusStatus.qcRound tmQuorumCertificate}|]
+    renderBakers ConsensusStatus.BakersAndFinalizers{..} =
+        [i|  Validator ID    Finalizer Index            Effective Stake            Finalizer Weight|]
+            : (renderFBI <$> bafBakers)
+      where
+        finIndex bid = maybe "-" show $ elemIndex bid bafFinalizers
+        renderFBI ConsensusStatus.FullBakerInfo{..} =
+            printf
+                "  %12u    %15s    %20u (%8.4f%%)"
+                (toInteger fbiBakerIdentity)
+                (finIndex fbiBakerIdentity)
+                (Types._amount fbiStake)
+                (fromIntegral @_ @Double fbiStake / fromIntegral bafBakerTotalStake * 100)
+                <> if fbiBakerIdentity `elem` bafFinalizers
+                    then printf "          %8.4f%%" (fromIntegral @_ @Double fbiStake / fromIntegral bafFinalizerTotalStake * 100)
+                    else ""

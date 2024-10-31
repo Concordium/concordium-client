@@ -47,6 +47,7 @@ library
       Concordium.Client.Runner.Helper
       Concordium.Client.RWLock
       Concordium.Client.Types.Account
+      Concordium.Client.Types.ConsensusStatus
       Concordium.Client.Types.Contract.BuildInfo
       Concordium.Client.Types.Contract.Info
       Concordium.Client.Types.Contract.Parameter

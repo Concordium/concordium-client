@@ -42,6 +42,8 @@ data LegacyCmd
         }
     | -- | Queries the gRPC server for the consensus information
       GetConsensusInfo
+    | -- | Queries the gRPC server for detailed consensus status
+      GetConsensusDetailedStatus {legacyFromGenesisIndex :: !(Maybe GenesisIndex)}
     | -- | Queries the gRPC server for the information of a specific block
       GetBlockInfo
         { legacyEvery :: !Bool,
@@ -174,6 +176,7 @@ legacyProgramOptions =
     hsubparser
         ( getTransactionStatusCommand
             <> getConsensusInfoCommand
+            <> getConsensusDetailedStatusCommand
             <> getBlockInfoCommand
             <> getBlockPendingUpdatesCommand
             <> getBlockTransactionEventsCommand
@@ -263,6 +266,17 @@ getConsensusInfoCommand =
         ( info
             (pure GetConsensusInfo)
             (progDesc "Query the gRPC server for the consensus information.")
+        )
+
+getConsensusDetailedStatusCommand :: Mod CommandFields LegacyCmd
+getConsensusDetailedStatusCommand =
+    command
+        "GetConsensusDetailedStatus"
+        ( info
+            ( GetConsensusDetailedStatus
+                <$> optional (option auto (long "genesis-index" <> metavar "GENINDEX" <> help "Consensus genesis index"))
+            )
+            (progDesc "Query the gRPC server for the detailed consensus status. If the genesis index is not specified, the current one is used.")
         )
 
 getBlockInfoCommand :: Mod CommandFields LegacyCmd

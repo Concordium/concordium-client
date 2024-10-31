@@ -2929,6 +2929,9 @@ processConsensusCmd action _baseCfgDir verbose backend =
                         logSuccess [[i|Update instruction '#{hash}' sent to the node|]]
                         when (ioTail intOpts) $
                             tailTransaction_ verbose hash
+        ConsensusDetailedStatus mGenesisIndex -> do
+            v <- withClient backend $ getResponseValueOrDie =<< getConsensusDetailedStatus mGenesisIndex
+            runPrinter $ printConsensusDetailedStatus v
 
 -- | Process a 'block ...' command.
 processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
@@ -4118,6 +4121,10 @@ processLegacyCmd action backend =
         GetConsensusInfo ->
             withClient backend $
                 getConsensusInfo
+                    >>= printResponseValueAsJSON
+        GetConsensusDetailedStatus mGenesisIndex ->
+            withClient backend $
+                getConsensusDetailedStatus mGenesisIndex
                     >>= printResponseValueAsJSON
         GetBlockInfo every block ->
             withClient backend $
