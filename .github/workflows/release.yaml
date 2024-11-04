@@ -28,6 +28,7 @@ env:
   GHC_VERSION: '9.6.4'
   RUST_VERSION: '1.73'
   SERVICE: "${{ inputs.service }}"
+  VERSION_TEST: '7.0.1-rc'
 
 permissions:
   id-token: write
@@ -59,9 +60,9 @@ jobs:
         run: |
           CARGO_VERSION=$(yq .version package.yaml)
           if [ -z "${{ env.SERVICE }}" ]; then
-            IFS='-' read -r VERSION BUILD RELEASE_TYPE <<< "${{ github.ref_name }}"
+            IFS='-' read -r VERSION BUILD RELEASE_TYPE <<< "${{ env.VERSION_TEST }}"
             if [ ! "$VERSION" = "$CARGO_VERSION" ]; then
-              echo "::error::${GITHUB_REF_NAME} does not match ${VERSION}."
+              echo "::error::${CARGO_VERSION} does not match ${VERSION}."
               exit 1
             fi
           else
