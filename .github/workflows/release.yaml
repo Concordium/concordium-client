@@ -101,7 +101,7 @@ jobs:
 
   client-linux:
     needs: [validate-preconditions]
-    runs-on: ubuntu-latest-8core
+    runs-on: ubuntu-latest
     if: contains(fromJSON('["rc", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
     steps:
       - name: Checkout Repository
