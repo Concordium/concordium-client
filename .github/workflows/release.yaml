@@ -57,7 +57,7 @@ jobs:
       - name: Validate version
         id: versions_derivation
         run: |
-          CARGO_VERSION=$(yq .package.version concordium-node/Cargo.toml)
+          CARGO_VERSION=$(yq .version package.yaml)
           if [ -z "${{ env.SERVICE }}" ]; then
             IFS='-' read -r VERSION BUILD RELEASE_TYPE <<< "${{ github.ref_name }}"
             if [ ! "$VERSION" = "$CARGO_VERSION" ]; then
