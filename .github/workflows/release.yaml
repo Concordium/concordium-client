@@ -27,6 +27,7 @@ env:
   STACK_VERSION: '2.13.1'
   GHC_VERSION: '9.6.4'
   RUST_VERSION: '1.73'
+  CABAL_VERSION: '3.6.2.0'
   SERVICE: "${{ inputs.service }}"
   VERSION_TEST: '7.0.1-1-rc'
 
@@ -112,7 +113,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Static Node Binary Image
+      - name: Build Concordium Client Image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -138,3 +139,44 @@ jobs:
           echo $OUTFILE
 #          aws s3 cp "${{ github.job }}_${{ needs.validate-preconditions.outputs.version }}.deb" \
 #            "$OUTFILE" --grants=read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+
+  client-macos:
+    needs: [validate-preconditions]
+    runs-on: macos-latest-large
+    if: contains(fromJSON('["rc", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: ${{ env.GHC_VERSION }}
+          cabal-version: ${{ env.CABAL_VERSION }}
+          enable-stack: true
+          stack-version: ${{ env.STACK_VERSION }}
+
+      - name: Build
+        run: |
+          scripts/distributables/macOS-package/build.sh --build "${{ needs.validate-preconditions.outputs.version }}"
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          role-session-name: ${{ github.job }}Session
+          aws-region: "eu-west-1"
+
+      - name: Publish
+        run: |
+          OUTFILE=$(echo '${{ needs.validate-preconditions.outputs.s3_arns }}' | jq -r '.["${{ github.job }}"]')
+          echo $OUTFILE
+          ls ./scripts/distribution/macOS-package/build/packages/
+#          aws s3 cp ./scripts/distribution/macOS-package/build/packages/concordium-client-${VERSION}-unsigned.pkg \
+#            "$OUTFILE" --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+
