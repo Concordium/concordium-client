@@ -106,7 +106,8 @@ jobs:
     needs: [validate-preconditions]
     runs-on: ubuntu-latest
     environment: release
-    if: contains(fromJSON('["rc", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
+#    if: contains(fromJSON('["rc", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
+    if: false
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -143,8 +144,6 @@ jobs:
       - name: Publish
         run: |
           OUTFILE=$(echo '${{ needs.validate-preconditions.outputs.s3_arns }}' | jq -r '.["${{ github.job }}"]')
-          echo $OUTFILE
-          ls
 #          aws s3 cp "concordium-client" \
 #            "$OUTFILE" --grants=read=uri=http://acs.amazonaws.com/groups/global/AllUsers
 
@@ -152,7 +151,8 @@ jobs:
     needs: [validate-preconditions]
     runs-on: macos-latest-large
     environment: release
-    if: contains(fromJSON('["rc", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
+#    if: contains(fromJSON('["rc", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
+    if: false
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -201,5 +201,73 @@ jobs:
           echo $OUTFILE
           ls ./scripts/distribution/macOS-package/build/packages/
 #          aws s3 cp ./scripts/distribution/macOS-package/build/packages/concordium-client-${VERSION}-unsigned.pkg \
+#            "$OUTFILE" --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+
+
+  client-windows:
+    needs: [validate-preconditions]
+    runs-on: windows-latest
+    environment: release
+    #    if: contains(fromJSON('["rc", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
+    if: false
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          role-session-name: ${{ github.job }}Session
+          aws-region: "eu-west-1"
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}-x86_64-pc-windows-gnu
+
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: ${{ env.GHC_VERSION }}
+          cabal-version: ${{ env.CABAL_VERSION }}
+          enable-stack: true
+          stack-version: ${{ env.STACK_VERSION }}
+
+      - name: Setup client folder
+        run: |
+          mkdir -p "C:/Program Files/client/include"
+          Add-Content -Path $env:GITHUB_PATH -Value "C:/Program Files/client"
+
+      - name: Install flatbuffers
+        run: |
+          curl -L -O https://github.com/google/flatbuffers/releases/download/v${{ env.FLATBUFFERS_VERSION }}/Windows.flatc.binary.zip
+          unzip Windows.flatc.binary.zip
+          mv flatc.exe "C:/Program Files/client/"
+
+      - name: Install protobuf (protoc)
+        run: |
+          curl -L -O https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-win64.zip
+          unzip protoc-${{ env.PROTOC_VERSION }}-win64.zip
+          mv bin/protoc.exe "C:/Program Files/client/"
+          mv include/* "C:/Program Files/client/include"
+
+      - name: Build
+        run: stack build --force-dirty
+
+      - name: Zip the binaries
+        run: |
+          mkdir out
+          binDir=$(stack path --local-install-root)/bin
+          (cd $binDir && powershell -Command "Compress-Archive -Path concordium-client.exe,concordium_base.dll,sha_2.dll -DestinationPath concordium-client.zip")
+          mv -f $binDir/concordium-client.zip out/concordium-client.zip
+
+      - name: Publish
+        run: |
+          OUTFILE=$(echo '${{ needs.validate-preconditions.outputs.s3_arns }}' | jq -r '.["${{ github.job }}"]')
+          echo $OUTFILE
+          ls out
+#          aws s3 cp out/concordium-client.zip \
 #            "$OUTFILE" --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
 
