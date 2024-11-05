@@ -151,8 +151,8 @@ jobs:
     needs: [validate-preconditions]
     runs-on: macos-latest-large
     environment: release
-#    if: contains(fromJSON('["rc", "client-macos"]'), needs.validate-preconditions.outputs.release_type)
-    if: false
+    if: contains(fromJSON('["rc", "client-macos"]'), needs.validate-preconditions.outputs.release_type)
+#    if: false
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -254,11 +254,14 @@ jobs:
         run: stack build --force-dirty
 
       - name: Zip the binaries
+        shell: bash
         run: |
+          pwd
           mkdir out
-          binDir=$(stack path --local-install-root)/bin
-          (cd $binDir && powershell -Command "Compress-Archive -Path concordium-client.exe,concordium_base.dll,sha_2.dll -DestinationPath concordium-client.zip")
-          mv -f $binDir/concordium-client.zip out/concordium-client.zip
+          bin_dir=$(stack path --local-install-root)/bin
+          echo "$bin_dir"
+          (cd "$bin_dir" && powershell -Command "Compress-Archive -Path concordium-client.exe,concordium_base.dll,sha_2.dll -DestinationPath concordium-client.zip")
+          mv -f "$bin_dir/concordium-client.zip" out/concordium-client.zip
 
       - name: Publish
         run: |
