@@ -30,6 +30,8 @@ env:
   CABAL_VERSION: '3.6.2.0'
   SERVICE: "${{ inputs.service }}"
   VERSION_TEST: '7.0.1-1-rc'
+  PROTOC_VERSION: '25.2'
+  FLATBUFFERS_VERSION: '23.5.26'
 
 permissions:
   id-token: write
@@ -119,7 +121,7 @@ jobs:
           context: .
           push: false
           file: scripts/distributables/linux-distributable-concordium-client.Dockerfile
-          tags: concordium/linux-distributable-concordium-client
+          tags: ${{ github.job }}:${{ github.run_id }}
           no-cache: true
           build-args: |
             GHC_VERSION=${{ env.GHC_VERSION }}
@@ -131,13 +133,14 @@ jobs:
             ghc_version=${{ env.GHC_VERSION }}
       - name: Create container and Extract Artifact
         run: |
-          id=$(docker create concordium/linux-distributable-concordium-client)
+          id=$(docker create ${{ github.job }}:${{ github.run_id }})
           docker cp $id:/out/concordium-client .
       - name: Publish
         run: |
           OUTFILE=$(echo '${{ needs.validate-preconditions.outputs.s3_arns }}' | jq -r '.["${{ github.job }}"]')
           echo $OUTFILE
-#          aws s3 cp "${{ github.job }}_${{ needs.validate-preconditions.outputs.version }}.deb" \
+          ls
+#          aws s3 cp "concordium-client" \
 #            "$OUTFILE" --grants=read=uri=http://acs.amazonaws.com/groups/global/AllUsers
 
   client-macos:
@@ -160,6 +163,19 @@ jobs:
           cabal-version: ${{ env.CABAL_VERSION }}
           enable-stack: true
           stack-version: ${{ env.STACK_VERSION }}
+
+      - name: Install flatbuffers
+        run: |
+          wget https://github.com/google/flatbuffers/releases/download/v${{ env.FLATBUFFERS_VERSION }}/MacIntel.flatc.binary.zip -O MacIntel.flatc.binary.zip
+          unzip MacIntel.flatc.binary.zip -d flatbuffers
+          sudo mv flatbuffers/flatc /usr/local/bin/
+
+      - name: Install protobuf
+        run: |
+          curl -L -o protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-osx-x86_64.zip
+          unzip protoc.zip
+          sudo mv bin/protoc /usr/local/bin/
+          sudo mv include/* /usr/local/include/
 
       - name: Build
         run: |
