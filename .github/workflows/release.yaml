@@ -151,7 +151,7 @@ jobs:
     needs: [validate-preconditions]
     runs-on: macos-latest-large
     environment: release
-#    if: contains(fromJSON('["rc", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
+#    if: contains(fromJSON('["rc", "client-macos"]'), needs.validate-preconditions.outputs.release_type)
     if: false
     steps:
       - name: Checkout Repository
@@ -198,9 +198,7 @@ jobs:
       - name: Publish
         run: |
           OUTFILE=$(echo '${{ needs.validate-preconditions.outputs.s3_arns }}' | jq -r '.["${{ github.job }}"]')
-          echo $OUTFILE
-          ls ./scripts/distribution/macOS-package/build/packages/
-#          aws s3 cp ./scripts/distribution/macOS-package/build/packages/concordium-client-${VERSION}-unsigned.pkg \
+#          aws s3 cp ./concordium-client/scripts/distributables/macOS-package/build/concordium-client-${VERSION}-unsigned.pkg \
 #            "$OUTFILE" --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
 
 
@@ -208,8 +206,7 @@ jobs:
     needs: [validate-preconditions]
     runs-on: windows-latest
     environment: release
-    #    if: contains(fromJSON('["rc", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
-    if: false
+    if: contains(fromJSON('["rc", "client-windows"]'), needs.validate-preconditions.outputs.release_type)
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
