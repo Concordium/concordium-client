@@ -105,6 +105,7 @@ jobs:
   client-linux:
     needs: [validate-preconditions]
     runs-on: ubuntu-latest
+    environment: release
     if: contains(fromJSON('["rc", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
     steps:
       - name: Checkout Repository
@@ -150,6 +151,7 @@ jobs:
   client-macos:
     needs: [validate-preconditions]
     runs-on: macos-latest-large
+    environment: release
     if: contains(fromJSON('["rc", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
     steps:
       - name: Checkout Repository
