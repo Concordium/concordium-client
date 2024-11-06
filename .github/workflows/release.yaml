@@ -213,6 +213,10 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Install dependencies
+        run: |
+          choco install yq jq -y
+        shell: bash
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
