@@ -151,8 +151,8 @@ jobs:
     needs: [validate-preconditions]
     runs-on: macos-latest-large
     environment: release
-    if: contains(fromJSON('["rc", "client-macos"]'), needs.validate-preconditions.outputs.release_type)
-#    if: false
+#    if: contains(fromJSON('["rc", "client-macos"]'), needs.validate-preconditions.outputs.release_type)
+    if: false
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
