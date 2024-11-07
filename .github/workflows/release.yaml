@@ -265,7 +265,9 @@ jobs:
       - name: Zip the binaries
         shell: bash
         run: |
+          mkdir -p out
           bin_dir=$(stack path --local-install-root)/bin
+          echo "$bin_dir"
           (cd "$bin_dir" && powershell -Command "Compress-Archive -Path concordium-client.exe,concordium_base.dll,sha_2.dll -DestinationPath concordium-client.zip")
           mv -f "$bin_dir/concordium-client.zip" out/concordium-client.zip
 
