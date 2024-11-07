@@ -257,7 +257,7 @@ jobs:
       - name: List folders
         shell: bash
         run: |
-          ls -la C:/Users/runneradmin/AppData/Local/Programs/stack/x86_64-windows/ghc-9.6.4/mingw/bin
+          which strip
 
       - name: Build
         run: stack build --force-dirty
