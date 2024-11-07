@@ -254,6 +254,11 @@ jobs:
           mv bin/protoc.exe "C:/Program Files/client/"
           mv include/* "C:/Program Files/client/include"
 
+      - name: List folders
+        shell: bash
+        run: |
+          ls -la C:/Users/runneradmin/AppData/Local/Programs/stack/x86_64-windows/ghc-9.6.4/mingw/bin
+
       - name: Build
         run: stack build --force-dirty
 
