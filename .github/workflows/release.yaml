@@ -106,8 +106,7 @@ jobs:
     needs: [validate-preconditions]
     runs-on: ubuntu-latest
     environment: release
-#    if: contains(fromJSON('["rc", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
-    if: false
+    if: contains(fromJSON('["rc", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -144,15 +143,14 @@ jobs:
       - name: Publish
         run: |
           OUTFILE=$(echo '${{ needs.validate-preconditions.outputs.s3_arns }}' | jq -r '.["${{ github.job }}"]')
-#          aws s3 cp "concordium-client" \
-#            "$OUTFILE" --grants=read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+          aws s3 cp "concordium-client" \
+            "$OUTFILE" --grants=read=uri=http://acs.amazonaws.com/groups/global/AllUsers
 
   client-macos:
     needs: [validate-preconditions]
     runs-on: macos-latest-large
     environment: release
-#    if: contains(fromJSON('["rc", "client-macos"]'), needs.validate-preconditions.outputs.release_type)
-    if: false
+    if: contains(fromJSON('["rc", "client-macos"]'), needs.validate-preconditions.outputs.release_type)
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -198,8 +196,8 @@ jobs:
       - name: Publish
         run: |
           OUTFILE=$(echo '${{ needs.validate-preconditions.outputs.s3_arns }}' | jq -r '.["${{ github.job }}"]')
-#          aws s3 cp ./concordium-client/scripts/distributables/macOS-package/build/concordium-client-${VERSION}-unsigned.pkg \
-#            "$OUTFILE" --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+          aws s3 cp ./concordium-client/scripts/distributables/macOS-package/build/concordium-client-${VERSION}-unsigned.pkg \
+            "$OUTFILE" --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
 
 
   client-windows:
@@ -275,8 +273,6 @@ jobs:
         shell: bash
         run: |
           OUTFILE=$(echo '${{ needs.validate-preconditions.outputs.s3_arns }}' | jq -r '.["${{ github.job }}"]')
-          echo $OUTFILE
-          ls out
-#          aws s3 cp out/concordium-client.zip \
-#            "$OUTFILE" --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+          aws s3 cp out/concordium-client.zip \
+            "$OUTFILE" --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
 
