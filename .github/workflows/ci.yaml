@@ -33,8 +33,8 @@ on:
   workflow_dispatch: # allow manual trigger
 
 env:
-  RUST: 1.73
-  GHC: 9.6.4
+  RUST: 1.82
+  GHC: 9.6.6
 
 jobs:
   fourmolu:

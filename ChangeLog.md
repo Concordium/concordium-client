@@ -6,6 +6,7 @@
 - Add command `consensus detailed-status` for getting detailed consensus status (from protocol
   version 6).
 - Add `raw GetConsensusDetailedStatus` that presents the detailed consensus status as JSON.
+- Update GHC version to 9.6.6 (lts-22.39).
 
 ## 7.0.1
 
