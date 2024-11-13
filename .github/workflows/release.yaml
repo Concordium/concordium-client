@@ -12,8 +12,6 @@ on:
           - client-linux
 
   push:
-    branches:
-      - lma/release/github_actions
     tags:
      - '*.*.*-*-rc'
 
@@ -29,7 +27,6 @@ env:
   RUST_VERSION: '1.73'
   CABAL_VERSION: '3.6.2.0'
   SERVICE: "${{ inputs.service }}"
-  VERSION_TEST: '7.0.2-3-rc'
   PROTOC_VERSION: '25.2'
   FLATBUFFERS_VERSION: '23.5.26'
 
@@ -63,7 +60,7 @@ jobs:
         run: |
           CARGO_VERSION=$(yq .version package.yaml)
           if [ -z "${{ env.SERVICE }}" ]; then
-            IFS='-' read -r VERSION BUILD RELEASE_TYPE <<< "${{ env.VERSION_TEST }}"
+            IFS='-' read -r VERSION BUILD RELEASE_TYPE <<< "${{ github.ref_name }}"
             if [ ! "$VERSION" = "$CARGO_VERSION" ]; then
               echo "::error::${CARGO_VERSION} does not match ${VERSION}."
               exit 1
