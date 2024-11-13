@@ -195,8 +195,10 @@ jobs:
 
       - name: Publish
         run: |
+          pwd
+          ls
           OUTFILE=$(echo '${{ needs.validate-preconditions.outputs.s3_arns }}' | jq -r '.["${{ github.job }}"]')
-          aws s3 cp ./concordium-client/scripts/distributables/macOS-package/build/concordium-client-${{ needs.validate-preconditions.outputs.version }}-unsigned.pkg \
+          aws s3 cp "./concordium-client/scripts/distributables/macOS-package/build/concordium-client-${{ needs.validate-preconditions.outputs.version }}-unsigned.pkg" \
             "$OUTFILE" --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
 
 
