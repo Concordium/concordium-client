@@ -29,7 +29,7 @@ env:
   RUST_VERSION: '1.73'
   CABAL_VERSION: '3.6.2.0'
   SERVICE: "${{ inputs.service }}"
-  VERSION_TEST: '7.0.2-2-rc'
+  VERSION_TEST: '7.0.2-3-rc'
   PROTOC_VERSION: '25.2'
   FLATBUFFERS_VERSION: '23.5.26'
 
@@ -195,10 +195,8 @@ jobs:
 
       - name: Publish
         run: |
-          pwd
-          ls
           OUTFILE=$(echo '${{ needs.validate-preconditions.outputs.s3_arns }}' | jq -r '.["${{ github.job }}"]')
-          aws s3 cp "./concordium-client/scripts/distributables/macOS-package/build/concordium-client-${{ needs.validate-preconditions.outputs.version }}-unsigned.pkg" \
+          aws s3 cp "./scripts/distributables/macOS-package/build/concordium-client-${{ needs.validate-preconditions.outputs.version }}-unsigned.pkg" \
             "$OUTFILE" --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
 
 
