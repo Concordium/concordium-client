@@ -3009,12 +3009,14 @@ processBakerConfigureCmd ::
     Maybe Types.AmountFraction ->
     -- | Finalization commission.
     Maybe Types.AmountFraction ->
+    -- | Whether to suspend/resume baker.
+    Maybe Bool ->
     -- | File to read baker keys from.
     Maybe FilePath ->
     -- | File to write baker keys to.
     Maybe FilePath ->
     IO ()
-processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCapital cbRestakeEarnings cbOpenForDelegation metadataURL cbTransactionFeeCommission cbBakingRewardCommission cbFinalizationRewardCommission inputKeysFile outputKeysFile = do
+processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCapital cbRestakeEarnings cbOpenForDelegation metadataURL cbTransactionFeeCommission cbBakingRewardCommission cbFinalizationRewardCommission cbSuspend inputKeysFile outputKeysFile = do
     let intOpts = toInteractionOpts txOpts
     let outFile = toOutFile txOpts
     (bakerKeys, txCfg, pl) <- transactionForBakerConfigure (ioConfirm intOpts)
@@ -3180,8 +3182,6 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
             putStrLn ""
         let cbMetadataURL = fmap (Types.UrlText . Text.pack) metadataURL
         (bakerKeys, cbKeysWithProofs) <- readInputKeysFile baseCfg
-        -- TODO: support setting the suspend flag. Issue #326
-        let cbSuspend = Nothing
         let payload = Types.encodePayload Types.ConfigureBaker{..}
             nrgCost _ = case cbKeysWithProofs of
                 Nothing -> return . Just $ bakerConfigureEnergyCostWithoutKeys (Types.payloadSize payload)
@@ -3744,7 +3744,7 @@ processBakerUpdateStakeCmd baseCfgDir verbose backend txOpts newStake = do
                 askConfirmation $ Just "confirm that you want to remove validator"
             else return True
     when ok $
-        processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just newStake) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+        processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just newStake) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
 -- | Process a 'baker ...' command.
 processBakerCmd :: BakerCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -3807,23 +3807,23 @@ processBakerCmd action baseCfgDir verbose backend =
                         transactionFeeCommission = ebadTransactionFeeCommission <$> extraData
                         bakingRewardCommission = ebadBakingRewardCommission <$> extraData
                         finalizationRewardCommission = ebadFinalizationRewardCommission <$> extraData
-                    processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just initialStake) (Just autoRestake) openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission (Just bakerKeysFile) outputFile
-        BakerConfigure txOpts capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission inputKeysFile outputKeysFile ->
-            processBakerConfigureCmd baseCfgDir verbose backend txOpts True capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission inputKeysFile outputKeysFile
+                    processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just initialStake) (Just autoRestake) openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission Nothing (Just bakerKeysFile) outputFile
+        BakerConfigure txOpts capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission suspend inputKeysFile outputKeysFile ->
+            processBakerConfigureCmd baseCfgDir verbose backend txOpts True capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission suspend inputKeysFile outputKeysFile
         BakerSetKeys file txOpts outfile -> do
             pv <- withClient backend $ do
                 cs <- getResponseValueOrDie =<< getConsensusInfo
                 return $ Queries.csProtocolVersion cs
             if pv < Types.P4
                 then processBakerSetKeysCmd baseCfgDir verbose backend txOpts file outfile
-                else processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing Nothing Nothing Nothing Nothing Nothing Nothing (Just file) outfile
+                else processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing (Just file) outfile
         BakerRemove txOpts -> do
             pv <- withClient backend $ do
                 cs <- getResponseValueOrDie =<< getConsensusInfo
                 return $ Queries.csProtocolVersion cs
             if pv < Types.P4
                 then processBakerRemoveCmd baseCfgDir verbose backend txOpts
-                else processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just 0) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+                else processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just 0) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
         BakerUpdateStake newStake txOpts -> do
             pv <- withClient backend $ do
                 cs <- getResponseValueOrDie =<< getConsensusInfo
@@ -3837,11 +3837,11 @@ processBakerCmd action baseCfgDir verbose backend =
                 return $ Queries.csProtocolVersion cs
             if pv < Types.P4
                 then processBakerUpdateRestakeCmd baseCfgDir verbose backend txOpts restake
-                else processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing (Just restake) Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+                else processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing (Just restake) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
         BakerUpdateMetadataURL url txOpts ->
-            processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing Nothing Nothing (Just url) Nothing Nothing Nothing Nothing Nothing
+            processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing Nothing Nothing (Just url) Nothing Nothing Nothing Nothing Nothing Nothing
         BakerUpdateOpenDelegationStatus status txOpts ->
-            processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing Nothing (Just status) Nothing Nothing Nothing Nothing Nothing Nothing
+            processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing Nothing (Just status) Nothing Nothing Nothing Nothing Nothing Nothing Nothing
         BakerGetEarliestWinTime bakerId useLocalTime doPoll -> do
             winTimestamp <- getWinTimestamp
             putStrLn [i|Validator #{bakerId} is expected to produce a block no sooner than:|]
