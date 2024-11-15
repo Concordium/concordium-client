@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Support node version 8 and protocol version 8.
+- Support for suspend/resume in validator update transactions.
 - Add command `consensus detailed-status` for getting detailed consensus status (from protocol
   version 6).
 - Add `raw GetConsensusDetailedStatus` that presents the detailed consensus status as JSON.

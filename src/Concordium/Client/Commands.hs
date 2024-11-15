@@ -495,6 +495,7 @@ data BakerCmd
           bcTransactionFeeCommission :: !(Maybe AmountFraction),
           bcBakingRewardCommission :: !(Maybe AmountFraction),
           bcFinalizationRewardCommission :: !(Maybe AmountFraction),
+          bcSuspend :: !(Maybe Bool),
           bcInputKeyFile :: !(Maybe FilePath),
           bcOutputKeyFile :: !(Maybe FilePath)
         }
@@ -1800,6 +1801,10 @@ bakerConfigureCmd =
                 <*> optional (option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission")))
                 <*> optional blockCommission
                 <*> optional (option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission")))
+                <*> optional
+                    ( flag' True (long "suspend" <> help "Suspend the validator. The validator will not participate in the consensus anymore.")
+                        <|> flag' False (long "resume" <> help "Resume the validator.")
+                    )
                 <*> optional (strOption (long "keys-in" <> metavar "FILE" <> help "File containing validator credentials."))
                 <*> optional (strOption (long "keys-out" <> metavar "FILE" <> help "File to write updated validator credentials to, in case of successful transaction. These can be used to start the node."))
             )
