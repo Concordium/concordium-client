@@ -10,10 +10,10 @@ COPY . /build
 
 RUN apk add perl g++ make protoc ncurses ncurses-dev zlib zlib-static zlib-dev git wget postgresql-dev gmp-dev gmp xz
 
-ARG RUST_VERSION=1.73
+ARG RUST_VERSION=1.82
 RUN wget -qO - https://sh.rustup.rs | sh -s -- --profile minimal --default-toolchain ${RUST_VERSION} -y
 
-ARG GHC_VERSION=9.6.4
+ARG GHC_VERSION=9.6.6
 RUN wget -q https://s3-eu-west-1.amazonaws.com/static-libraries.concordium.com/ghc-${GHC_VERSION}-x86_64-unknown-linux-integer-gmp.tar.xz && \
         tar -xf ghc-${GHC_VERSION}-x86_64-unknown-linux-integer-gmp.tar.xz && \
         cd ghc-${GHC_VERSION}-x86_64-unknown-linux && \
