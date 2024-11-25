@@ -1,0 +1,269 @@
+name: Concordium client release
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        type: choice
+        description: Choose which workflow should be ran
+        options:
+          - client-macos
+          - client-windows
+          - client-linux
+
+  push:
+    tags:
+     - '*.*.*-*-rc'
+
+env:
+  S3_ARN_TEMPLATES: '{
+      \"client-linux\": \"s3://distribution.concordium.software/tools/linux/concordium-client_${VERSION}\",
+      \"client-macos\": \"s3://distribution.concordium.software/tools/macos/concordium-client_${VERSION}-unsigned.pkg\",
+      \"client-windows\": \"s3://distribution.concordium.software/tools/windows/concordium-client_${VERSION}.zip\"
+    }'
+  AWS_ROLE_TO_ASSUME: 'arn:aws:iam::192549843005:role/github_concordium-client'
+  STACK_VERSION: '2.13.1'
+  GHC_VERSION: '9.6.4'
+  RUST_VERSION: '1.73'
+  CABAL_VERSION: '3.6.2.0'
+  SERVICE: "${{ inputs.service }}"
+  PROTOC_VERSION: '25.2'
+  FLATBUFFERS_VERSION: '23.5.26'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  validate-preconditions:
+    runs-on: ubuntu-latest
+    environment: release
+    outputs:
+      s3_arns: ${{ steps.render.outputs.s3_arns }}
+      release_type: ${{ steps.versions_derivation.outputs.release_type }}
+      base_version: ${{ steps.versions_derivation.outputs.base_version }}
+      version: ${{ steps.versions_derivation.outputs.version }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          role-session-name: ClientPreconditionsSession
+          aws-region: "eu-west-1"
+
+      - name: Validate version
+        id: versions_derivation
+        run: |
+          CARGO_VERSION=$(yq .version package.yaml)
+          if [ -z "${{ env.SERVICE }}" ]; then
+            IFS='-' read -r VERSION BUILD RELEASE_TYPE <<< "${{ github.ref_name }}"
+            if [ ! "$VERSION" = "$CARGO_VERSION" ]; then
+              echo "::error::${CARGO_VERSION} does not match ${VERSION}."
+              exit 1
+            fi
+          else
+            RELEASE_TYPE="${{ env.SERVICE }}"
+            BUILD=$(git rev-parse --short HEAD)
+          fi
+          echo "::notice::RELEASE_TYPE=${RELEASE_TYPE}"
+          echo "release_type=${RELEASE_TYPE}" >> "$GITHUB_OUTPUT"
+          echo "version=${CARGO_VERSION}-${BUILD}" >> "$GITHUB_OUTPUT"
+          echo "base_version=${CARGO_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Templates rendering
+        id: render
+        run: |
+          export VERSION="${{ steps.versions_derivation.outputs.version }}"
+          echo "s3_arns=${{ env.S3_ARN_TEMPLATES }}" >> $GITHUB_OUTPUT
+
+      - name: Validate whether s3 artifacts are not existing
+        if: contains(fromJSON('["rc"]'), steps.versions_derivation.outputs.release_type)
+        run: |
+          set +e
+          echo '${{ steps.render.outputs.s3_arns }}' | jq -r '. | to_entries[] | .value' | while read -r ARN; do
+            echo "Checking for object at: $ARN"
+            S3_OUTPUT=$(aws s3 ls "$ARN" --summarize 2>&1)
+            EXIT_CODE=$?
+            if [ $EXIT_CODE -eq 1 ]; then
+              echo "No object found for $ARN, proceeding."
+            elif [ $EXIT_CODE -eq 0 ]; then
+              echo "::error::item for $ARN already exists."
+              exit 1
+            else
+              echo "::error::Unexpected exit code: $EXIT_CODE for $ARN."
+              exit 1
+            fi
+          done
+
+  client-linux:
+    needs: [validate-preconditions]
+    runs-on: ubuntu-latest
+    environment: release
+    if: contains(fromJSON('["rc", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          role-session-name: ${{ github.job }}Session
+          aws-region: "eu-west-1"
+
+      - name: Build Concordium Client Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          file: scripts/distributables/linux-distributable-concordium-client.Dockerfile
+          tags: ${{ github.job }}:${{ github.run_id }}
+          no-cache: true
+          build-args: |
+            GHC_VERSION=${{ env.GHC_VERSION }}
+            RUST_VERSION=${{ env.RUST_VERSION }}
+            STACK_VERSION=${{ env.STACK_VERSION }}
+          labels: |
+            stack_version=${{ env.STACK_VERSION }}
+            rust_version=${{ env.RUST_VERSION }}
+            ghc_version=${{ env.GHC_VERSION }}
+      - name: Create container and Extract Artifact
+        run: |
+          id=$(docker create ${{ github.job }}:${{ github.run_id }})
+          docker cp $id:/out/concordium-client .
+      - name: Publish
+        run: |
+          OUTFILE=$(echo '${{ needs.validate-preconditions.outputs.s3_arns }}' | jq -r '.["${{ github.job }}"]')
+          aws s3 cp "concordium-client" \
+            "$OUTFILE" --grants=read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+
+  client-macos:
+    needs: [validate-preconditions]
+    runs-on: macos-latest-large
+    environment: release
+    if: contains(fromJSON('["rc", "client-macos"]'), needs.validate-preconditions.outputs.release_type)
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          role-session-name: ${{ github.job }}Session
+          aws-region: "eu-west-1"
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: ${{ env.GHC_VERSION }}
+          cabal-version: ${{ env.CABAL_VERSION }}
+          enable-stack: true
+          stack-version: ${{ env.STACK_VERSION }}
+
+      - name: Install flatbuffers
+        run: |
+          wget https://github.com/google/flatbuffers/releases/download/v${{ env.FLATBUFFERS_VERSION }}/MacIntel.flatc.binary.zip -O MacIntel.flatc.binary.zip
+          unzip MacIntel.flatc.binary.zip -d flatbuffers
+          sudo mv flatbuffers/flatc /usr/local/bin/
+
+      - name: Install protobuf
+        run: |
+          curl -L -o protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-osx-x86_64.zip
+          unzip protoc.zip
+          sudo mv bin/protoc /usr/local/bin/
+          sudo mv include/* /usr/local/include/
+
+      - name: Build
+        run: |
+          scripts/distributables/macOS-package/build.sh --build "${{ needs.validate-preconditions.outputs.version }}"
+
+      - name: Publish
+        run: |
+          OUTFILE=$(echo '${{ needs.validate-preconditions.outputs.s3_arns }}' | jq -r '.["${{ github.job }}"]')
+          aws s3 cp "./scripts/distributables/macOS-package/build/concordium-client-${{ needs.validate-preconditions.outputs.version }}-unsigned.pkg" \
+            "$OUTFILE" --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+
+
+  client-windows:
+    needs: [validate-preconditions]
+    runs-on: windows-latest
+    environment: release
+    if: contains(fromJSON('["rc", "client-windows"]'), needs.validate-preconditions.outputs.release_type)
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          choco install yq jq -y
+        shell: bash
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          role-session-name: ${{ github.job }}Session
+          aws-region: "eu-west-1"
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}-x86_64-pc-windows-gnu
+
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: ${{ env.GHC_VERSION }}
+          cabal-version: ${{ env.CABAL_VERSION }}
+          enable-stack: true
+          stack-version: ${{ env.STACK_VERSION }}
+
+      - name: Setup client folder
+        run: |
+          mkdir -p "C:/Program Files/client/include"
+          Add-Content -Path $env:GITHUB_PATH -Value "C:/Program Files/client"
+
+      - name: Install flatbuffers
+        run: |
+          curl -L -O https://github.com/google/flatbuffers/releases/download/v${{ env.FLATBUFFERS_VERSION }}/Windows.flatc.binary.zip
+          unzip Windows.flatc.binary.zip
+          mv flatc.exe "C:/Program Files/client/"
+
+      - name: Install protobuf (protoc)
+        run: |
+          curl -L -O https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-win64.zip
+          unzip protoc-${{ env.PROTOC_VERSION }}-win64.zip
+          mv bin/protoc.exe "C:/Program Files/client/"
+          mv include/* "C:/Program Files/client/include"
+
+      - name: Build
+        run: stack build --force-dirty
+
+      - name: Zip the binaries
+        shell: bash
+        run: |
+          mkdir -p out
+          bin_dir=$(stack path --local-install-root)/bin
+          echo "$bin_dir"
+          (cd "$bin_dir" && powershell -Command "Compress-Archive -Path concordium-client.exe,concordium_base.dll,sha_2.dll -DestinationPath concordium-client.zip")
+          mv -f "$bin_dir/concordium-client.zip" out/concordium-client.zip
+
+      - name: Publish
+        shell: bash
+        run: |
+          OUTFILE=$(echo '${{ needs.validate-preconditions.outputs.s3_arns }}' | jq -r '.["${{ github.job }}"]')
+          aws s3 cp out/concordium-client.zip \
+            "$OUTFILE" --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+
