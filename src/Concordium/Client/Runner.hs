@@ -1145,20 +1145,14 @@ getNextPaydayTime = do
 -- | Returns the UTCTime date when the baker cooldown on reducing stake/removing a baker will end, using on chain parameters
 getBakerCooldown :: Queries.EChainParametersAndKeys -> ClientMonad IO UTCTime
 getBakerCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) =
-    case Types.chainParametersVersion @cpv of
-        Types.SChainParametersV0 -> do
+    case sCooldownParametersVersionFor $ Types.chainParametersVersion @cpv of
+        SCooldownParametersVersion0 -> do
             cs <- getResponseValueOrDie =<< getConsensusInfo
             let epochTime = toInteger (Time.durationMillis $ Queries.csEpochDuration cs) % 1000
             let cooldownTime = fromRational $ epochTime * ((cooldownEpochsV0 ecpParams + 2) % 1)
             currTime <- liftIO getCurrentTime
             return $ addUTCTime cooldownTime currTime
-        Types.SChainParametersV1 -> do
-            cooldownStart <- getNextPaydayTime
-            let cooldownDuration =
-                    fromIntegral . Types.durationSeconds $
-                        ecpParams ^. cpCooldownParameters . cpPoolOwnerCooldown
-            return $ addUTCTime cooldownDuration cooldownStart
-        Types.SChainParametersV2 -> do
+        SCooldownParametersVersion1 -> do
             cooldownStart <- getNextPaydayTime
             let cooldownDuration =
                     fromIntegral . Types.durationSeconds $
@@ -1171,14 +1165,10 @@ getBakerCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters'
 -- | Returns the UTCTime date when the delegator cooldown on reducing stake/removing delegation will end, using on chain parameters
 getDelegatorCooldown :: Queries.EChainParametersAndKeys -> ClientMonad IO (Maybe UTCTime)
 getDelegatorCooldown (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) = do
-    case Types.chainParametersVersion @cpv of
-        Types.SChainParametersV0 -> do
+    case sCooldownParametersVersionFor $ Types.chainParametersVersion @cpv of
+        SCooldownParametersVersion0 -> do
             return Nothing
-        Types.SChainParametersV1 -> do
-            paydayTime <- getNextPaydayTime
-            let cooldownTime = fromIntegral . Types.durationSeconds $ ecpParams ^. cpCooldownParameters . cpDelegatorCooldown
-            return $ Just $ addUTCTime cooldownTime paydayTime
-        Types.SChainParametersV2 -> do
+        SCooldownParametersVersion1 -> do
             paydayTime <- getNextPaydayTime
             let cooldownTime = fromIntegral . Types.durationSeconds $ ecpParams ^. cpCooldownParameters . cpDelegatorCooldown
             return $ Just $ addUTCTime cooldownTime paydayTime
@@ -1434,10 +1424,9 @@ getBakerStakeThresholdOrDie = do
     case res of
         Left err -> logFatal ["Could not retrieve the validator stake threshold: " <> err]
         Right (Queries.EChainParametersAndKeys (ecpParams :: ChainParameters' cpv) _) ->
-            return $ case Types.chainParametersVersion @cpv of
-                Types.SChainParametersV0 -> ecpParams ^. cpPoolParameters . ppBakerStakeThreshold
-                Types.SChainParametersV1 -> ecpParams ^. cpPoolParameters . ppMinimumEquityCapital
-                Types.SChainParametersV2 -> ecpParams ^. cpPoolParameters . ppMinimumEquityCapital
+            return $ case sPoolParametersVersionFor $ Types.chainParametersVersion @cpv of
+                SPoolParametersVersion0 -> ecpParams ^. cpPoolParameters . ppBakerStakeThreshold
+                SPoolParametersVersion1 -> ecpParams ^. cpPoolParameters . ppMinimumEquityCapital
 
 getAccountUpdateCredentialsTransactionData ::
     -- | A file with new credentials.
@@ -2940,6 +2929,9 @@ processConsensusCmd action _baseCfgDir verbose backend =
                         logSuccess [[i|Update instruction '#{hash}' sent to the node|]]
                         when (ioTail intOpts) $
                             tailTransaction_ verbose hash
+        ConsensusDetailedStatus mGenesisIndex -> do
+            v <- withClient backend $ getResponseValueOrDie =<< getConsensusDetailedStatus mGenesisIndex
+            runPrinter $ printConsensusDetailedStatus v
 
 -- | Process a 'block ...' command.
 processBlockCmd :: BlockCmd -> Verbose -> Backend -> IO ()
@@ -3017,12 +3009,14 @@ processBakerConfigureCmd ::
     Maybe Types.AmountFraction ->
     -- | Finalization commission.
     Maybe Types.AmountFraction ->
+    -- | Whether to suspend/resume baker.
+    Maybe Bool ->
     -- | File to read baker keys from.
     Maybe FilePath ->
     -- | File to write baker keys to.
     Maybe FilePath ->
     IO ()
-processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCapital cbRestakeEarnings cbOpenForDelegation metadataURL cbTransactionFeeCommission cbBakingRewardCommission cbFinalizationRewardCommission inputKeysFile outputKeysFile = do
+processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCapital cbRestakeEarnings cbOpenForDelegation metadataURL cbTransactionFeeCommission cbBakingRewardCommission cbFinalizationRewardCommission cbSuspend inputKeysFile outputKeysFile = do
     let intOpts = toInteractionOpts txOpts
     let outFile = toOutFile txOpts
     (bakerKeys, txCfg, pl) <- transactionForBakerConfigure (ioConfirm intOpts)
@@ -3750,7 +3744,7 @@ processBakerUpdateStakeCmd baseCfgDir verbose backend txOpts newStake = do
                 askConfirmation $ Just "confirm that you want to remove validator"
             else return True
     when ok $
-        processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just newStake) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+        processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just newStake) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
 -- | Process a 'baker ...' command.
 processBakerCmd :: BakerCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -3813,23 +3807,23 @@ processBakerCmd action baseCfgDir verbose backend =
                         transactionFeeCommission = ebadTransactionFeeCommission <$> extraData
                         bakingRewardCommission = ebadBakingRewardCommission <$> extraData
                         finalizationRewardCommission = ebadFinalizationRewardCommission <$> extraData
-                    processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just initialStake) (Just autoRestake) openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission (Just bakerKeysFile) outputFile
-        BakerConfigure txOpts capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission inputKeysFile outputKeysFile ->
-            processBakerConfigureCmd baseCfgDir verbose backend txOpts True capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission inputKeysFile outputKeysFile
+                    processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just initialStake) (Just autoRestake) openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission Nothing (Just bakerKeysFile) outputFile
+        BakerConfigure txOpts capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission suspend inputKeysFile outputKeysFile ->
+            processBakerConfigureCmd baseCfgDir verbose backend txOpts True capital restake openForDelegation metadataURL transactionFeeCommission bakingRewardCommission finalizationRewardCommission suspend inputKeysFile outputKeysFile
         BakerSetKeys file txOpts outfile -> do
             pv <- withClient backend $ do
                 cs <- getResponseValueOrDie =<< getConsensusInfo
                 return $ Queries.csProtocolVersion cs
             if pv < Types.P4
                 then processBakerSetKeysCmd baseCfgDir verbose backend txOpts file outfile
-                else processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing Nothing Nothing Nothing Nothing Nothing Nothing (Just file) outfile
+                else processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing (Just file) outfile
         BakerRemove txOpts -> do
             pv <- withClient backend $ do
                 cs <- getResponseValueOrDie =<< getConsensusInfo
                 return $ Queries.csProtocolVersion cs
             if pv < Types.P4
                 then processBakerRemoveCmd baseCfgDir verbose backend txOpts
-                else processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just 0) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+                else processBakerConfigureCmd baseCfgDir verbose backend txOpts False (Just 0) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
         BakerUpdateStake newStake txOpts -> do
             pv <- withClient backend $ do
                 cs <- getResponseValueOrDie =<< getConsensusInfo
@@ -3843,11 +3837,11 @@ processBakerCmd action baseCfgDir verbose backend =
                 return $ Queries.csProtocolVersion cs
             if pv < Types.P4
                 then processBakerUpdateRestakeCmd baseCfgDir verbose backend txOpts restake
-                else processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing (Just restake) Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+                else processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing (Just restake) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
         BakerUpdateMetadataURL url txOpts ->
-            processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing Nothing Nothing (Just url) Nothing Nothing Nothing Nothing Nothing
+            processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing Nothing Nothing (Just url) Nothing Nothing Nothing Nothing Nothing Nothing
         BakerUpdateOpenDelegationStatus status txOpts ->
-            processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing Nothing (Just status) Nothing Nothing Nothing Nothing Nothing Nothing
+            processBakerConfigureCmd baseCfgDir verbose backend txOpts False Nothing Nothing (Just status) Nothing Nothing Nothing Nothing Nothing Nothing Nothing
         BakerGetEarliestWinTime bakerId useLocalTime doPoll -> do
             winTimestamp <- getWinTimestamp
             putStrLn [i|Validator #{bakerId} is expected to produce a block no sooner than:|]
@@ -4127,6 +4121,10 @@ processLegacyCmd action backend =
         GetConsensusInfo ->
             withClient backend $
                 getConsensusInfo
+                    >>= printResponseValueAsJSON
+        GetConsensusDetailedStatus mGenesisIndex ->
+            withClient backend $
+                getConsensusDetailedStatus mGenesisIndex
                     >>= printResponseValueAsJSON
         GetBlockInfo every block ->
             withClient backend $

@@ -439,6 +439,9 @@ data ConsensusCmd
           ccuKeys :: ![FilePath],
           ccuInteractionOpts :: !InteractionOpts
         }
+    | ConsensusDetailedStatus
+        { cdsGenesisIndex :: !(Maybe GenesisIndex)
+        }
     deriving (Show)
 
 data BlockCmd = BlockShow
@@ -492,6 +495,7 @@ data BakerCmd
           bcTransactionFeeCommission :: !(Maybe AmountFraction),
           bcBakingRewardCommission :: !(Maybe AmountFraction),
           bcFinalizationRewardCommission :: !(Maybe AmountFraction),
+          bcSuspend :: !(Maybe Bool),
           bcInputKeyFile :: !(Maybe FilePath),
           bcOutputKeyFile :: !(Maybe FilePath)
         }
@@ -1560,6 +1564,7 @@ consensusCmds =
             ( ConsensusCmd
                 <$> ( hsubparser
                         ( consensusStatusCmd
+                            <> consensusDetailedStatusCmd
                             <> consensusShowChainParametersCmd
                             <> consensusShowParametersCmd
                         )
@@ -1577,6 +1582,17 @@ consensusStatusCmd =
         ( info
             (pure ConsensusStatus)
             (progDesc "List various parameters related to the current state of the consensus protocol.")
+        )
+
+consensusDetailedStatusCmd :: Mod CommandFields ConsensusCmd
+consensusDetailedStatusCmd =
+    command
+        "detailed-status"
+        ( info
+            ( ConsensusDetailedStatus
+                <$> optional (option auto (long "genesis-index" <> metavar "GENINDEX" <> help "Genesis index (defaults to latest)"))
+            )
+            (progDesc "Show detailed consensus status information.")
         )
 
 consensusShowParametersCmd :: Mod CommandFields ConsensusCmd
@@ -1785,6 +1801,10 @@ bakerConfigureCmd =
                 <*> optional (option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission")))
                 <*> optional blockCommission
                 <*> optional (option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission")))
+                <*> optional
+                    ( flag' True (long "suspend" <> help "Suspend the validator. The validator will not participate in the consensus anymore.")
+                        <|> flag' False (long "resume" <> help "Resume the validator.")
+                    )
                 <*> optional (strOption (long "keys-in" <> metavar "FILE" <> help "File containing validator credentials."))
                 <*> optional (strOption (long "keys-out" <> metavar "FILE" <> help "File to write updated validator credentials to, in case of successful transaction. These can be used to start the node."))
             )
