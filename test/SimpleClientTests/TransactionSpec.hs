@@ -83,13 +83,13 @@ exampleBlockHash3 = read "941c24374cd077de2120fb58732306c3115a08bb7b7cda120a04fe
 exampleBlockHash4 :: Types.BlockHash
 exampleBlockHash4 = read "be880f81dfbcc0a049c3defe483327d0a2a3002a186a06d34bcd93a9be7f9994"
 
-exampleEvent :: Types.Event
+exampleEvent :: Types.SupplementedEvent
 exampleEvent = Types.Transferred (Types.AddressAccount exampleAccountAddr1) 10 (Types.AddressAccount exampleAccountAddr2)
 
 exampleRejectReason :: Types.RejectReason
 exampleRejectReason = Types.AmountTooLarge (Types.AddressAccount exampleAccountAddr1) 11
 
-outcomeSuccess1a :: Types.TransactionSummary
+outcomeSuccess1a :: Types.SupplementedTransactionSummary
 outcomeSuccess1a =
     Types.TransactionSummary
         { Types.tsSender = Just exampleAccountAddr1,
@@ -101,7 +101,7 @@ outcomeSuccess1a =
           Types.tsIndex = Types.TransactionIndex 0
         }
 
-outcomeSuccess1b :: Types.TransactionSummary
+outcomeSuccess1b :: Types.SupplementedTransactionSummary
 outcomeSuccess1b =
     Types.TransactionSummary
         { Types.tsSender = Just exampleAccountAddr1,
@@ -113,7 +113,7 @@ outcomeSuccess1b =
           Types.tsIndex = 0
         }
 
-outcomeSuccess2 :: Types.TransactionSummary
+outcomeSuccess2 :: Types.SupplementedTransactionSummary
 outcomeSuccess2 =
     Types.TransactionSummary
         { Types.tsSender = Just exampleAccountAddr1,
@@ -125,7 +125,7 @@ outcomeSuccess2 =
           Types.tsIndex = 0
         }
 
-outcomeFailure :: Types.TransactionSummary
+outcomeFailure :: Types.SupplementedTransactionSummary
 outcomeFailure =
     Types.TransactionSummary
         { Types.tsSender = Just exampleAccountAddr1,
