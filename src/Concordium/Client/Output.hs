@@ -43,7 +43,7 @@ import Codec.CBOR.Read
 import qualified Concordium.Client.Types.ConsensusStatus as ConsensusStatus
 import Concordium.Client.Types.Contract.BuildInfo (showBuildInfo)
 import Concordium.Common.Time (DurationSeconds (durationSeconds))
-import Concordium.Types.Execution (Event (ecEvents))
+import Concordium.Types.Execution (Event' (ecEvents), SupplementedEvent)
 import Control.Monad
 import Control.Monad.Writer
 import qualified Data.Aeson as AE
@@ -609,9 +609,9 @@ showAccountKeyPair = showPrettyJSON
 
 data TransactionBlockResult
     = NoBlocks
-    | SingleBlock Types.BlockHash Types.TransactionSummary
-    | MultipleBlocksUnambiguous [Types.BlockHash] Types.TransactionSummary
-    | MultipleBlocksAmbiguous [(Types.BlockHash, Types.TransactionSummary)]
+    | SingleBlock Types.BlockHash Types.SupplementedTransactionSummary
+    | MultipleBlocksUnambiguous [Types.BlockHash] Types.SupplementedTransactionSummary
+    | MultipleBlocksAmbiguous [(Types.BlockHash, Types.SupplementedTransactionSummary)]
 
 parseTransactionBlockResult :: TransactionStatusResult -> TransactionBlockResult
 parseTransactionBlockResult status =
@@ -637,7 +637,7 @@ parseTransactionBlockResult status =
 printTransactionStatus ::
     TransactionStatusResult ->
     Bool ->
-    Maybe (Map.Map Types.BlockHash [(Types.Event, Maybe CI.ContractInfo)]) ->
+    Maybe (Map.Map Types.BlockHash [(Types.SupplementedEvent, Maybe CI.ContractInfo)]) ->
     Printer
 printTransactionStatus status verbose contrInfoWithSchemas =
     case tsrState status of
@@ -699,10 +699,10 @@ printTransactionStatus status verbose contrInfoWithSchemas =
                     tell ["Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!"]
   where
     -- Look up event and schema data associated with the transaction in block with hash h.
-    lookupContrInfo :: Types.BlockHash -> Maybe [(Event, Maybe CI.ContractInfo)]
+    lookupContrInfo :: Types.BlockHash -> Maybe [(SupplementedEvent, Maybe CI.ContractInfo)]
     lookupContrInfo h = contrInfoWithSchemas >>= (Map.!? h)
 
-    showOutcomeFragment :: Types.TransactionSummary -> String
+    showOutcomeFragment :: Types.SupplementedTransactionSummary -> String
     showOutcomeFragment outcome =
         printf
             "status \"%s\" and cost %s"
@@ -712,7 +712,7 @@ printTransactionStatus status verbose contrInfoWithSchemas =
         Types.TxSuccess _ -> "success"
         Types.TxReject _ -> "rejected"
 
-showOutcomeCost :: Types.TransactionSummary -> String
+showOutcomeCost :: Types.SupplementedTransactionSummary -> String
 showOutcomeCost outcome = showCost (Types.tsCost outcome) (Types.tsEnergyCost outcome)
 
 showCost :: Types.Amount -> Types.Energy -> String
@@ -723,9 +723,9 @@ showOutcomeResult ::
     -- | Whether the output should be verbose.
     Verbose ->
     -- | Map holding contract info that should be used for displaying events of the outcome.
-    Maybe [(Types.Event, Maybe CI.ContractInfo)] ->
+    Maybe [(Types.SupplementedEvent, Maybe CI.ContractInfo)] ->
     -- | The transaction outcome to show.
-    Types.ValidResult ->
+    Types.SupplementedValidResult ->
     [String]
 showOutcomeResult verbose contrInfoWithEventsM = \case
     Types.TxSuccess es ->
@@ -756,7 +756,7 @@ showOutcomeResult verbose contrInfoWithEventsM = \case
     --
     -- The reason for using a @Maybe String@ is that the output is only produced
     -- if the verbose flag is set.
-    fHelper :: (Int, [Maybe String]) -> (Event, Maybe CI.ContractInfo) -> (Int, [Maybe String])
+    fHelper :: (Int, [Maybe String]) -> (SupplementedEvent, Maybe CI.ContractInfo) -> (Int, [Maybe String])
     fHelper (idt, out) (ev, cInfo) =
         let
             -- compute the new indentation level for the current event (idtCurrent) and
@@ -791,7 +791,7 @@ showEvent ::
     -- | Contract information holding schema information to be used for displaying the event.
     Maybe CI.ContractInfo ->
     -- | The event to show.
-    Types.Event ->
+    Types.SupplementedEvent ->
     Maybe String
 showEvent verbose ciM = \case
     Types.ModuleDeployed ref ->

@@ -1109,7 +1109,7 @@ instance FromProto Proto.ContractVersion where
             fromProtoFail "Unable to convert 'ContractVersion'."
 
 instance FromProto Proto.ContractTraceElement where
-    type Output Proto.ContractTraceElement = Event
+    type Output Proto.ContractTraceElement = SupplementedEvent
     fromProto ctElement = do
         cte <- case ctElement ^. Proto.maybe'element of
             Nothing ->
@@ -1506,7 +1506,7 @@ instance FromProto Proto.TransactionType where
                 <> "'."
 
 instance FromProto Proto.AccountCreationDetails where
-    type Output Proto.AccountCreationDetails = ValidResult
+    type Output Proto.AccountCreationDetails = SupplementedValidResult
     fromProto acDetails = do
         ecdAccount <- fromProto $ acDetails ^. ProtoFields.address
         ecdRegId <- fmap fst . fromProto $ acDetails ^. ProtoFields.regId
@@ -1980,7 +1980,7 @@ instance FromProto Proto.UpdatePayload where
                 return $ Updates.FinalizationCommitteeParametersUpdatePayload fcp
 
 instance FromProto Proto.BlockItemSummary where
-    type Output Proto.BlockItemSummary = TransactionSummary
+    type Output Proto.BlockItemSummary = SupplementedTransactionSummary
     fromProto biSummary = do
         -- Common block item summary fields
         let tsIndex = deMkWord64 $ biSummary ^. ProtoFields.index
@@ -2021,7 +2021,7 @@ instance FromProto Proto.BlockItemSummary where
                 return TransactionSummary{..}
 
 instance FromProto Proto.AccountTransactionDetails where
-    type Output Proto.AccountTransactionDetails = (Maybe TransactionType, ValidResult)
+    type Output Proto.AccountTransactionDetails = (Maybe TransactionType, SupplementedValidResult)
     fromProto atDetails = do
         let senderAcc = atDetails ^. ProtoFields.sender
         sender <- fromProto senderAcc
@@ -2080,6 +2080,7 @@ instance FromProto Proto.AccountTransactionDetails where
                 ecAmount <- fromProto $ cInitialized ^. ProtoFields.amount
                 ecInitName <- fromProto $ cInitialized ^. ProtoFields.initName
                 ecEvents <- mapM fromProto $ cInitialized ^. ProtoFields.events
+                ecParameter <- fmap Parameters.CTrue . fromProto $ cInitialized ^. ProtoFields.parameter
                 return (Just TTInitContract, TxSuccess [ContractInitialized{..}])
             ProtoFields.AccountTransactionEffects'ContractUpdateIssued' cuIssued -> do
                 vrEvents <- mapM fromProto $ cuIssued ^. ProtoFields.effects
@@ -2165,7 +2166,7 @@ instance FromProto Proto.AccountTransactionDetails where
                 return (Just tType, TxSuccess{..})
 
 instance FromProto (Proto.AccountAddress, Proto.DelegationEvent) where
-    type Output (Proto.AccountAddress, Proto.DelegationEvent) = Event
+    type Output (Proto.AccountAddress, Proto.DelegationEvent) = SupplementedEvent
     fromProto (senderAcc, dEvent) = do
         sender <- fromProto senderAcc
         de <- case dEvent ^. Proto.maybe'event of
@@ -2208,7 +2209,7 @@ instance FromProto (Proto.AccountAddress, Proto.DelegationEvent) where
                 return BakerRemoved{..}
 
 instance FromProto (Proto.AccountAddress, Proto.BakerEvent) where
-    type Output (Proto.AccountAddress, Proto.BakerEvent) = Event
+    type Output (Proto.AccountAddress, Proto.BakerEvent) = SupplementedEvent
     fromProto (senderAcc, bEvent) = do
         sender <- fromProto senderAcc
         be <- case bEvent ^. Proto.maybe'event of
@@ -2280,7 +2281,7 @@ instance FromProto (Proto.AccountAddress, Proto.BakerEvent) where
                 return BakerResumed{..}
 
 instance FromProto Proto.BlockItemStatus where
-    type Output Proto.BlockItemStatus = TransactionStatus
+    type Output Proto.BlockItemStatus = SupplementedTransactionStatus
     fromProto biStatus = do
         bis <- case biStatus ^. Proto.maybe'status of
             Nothing ->
@@ -3064,6 +3065,13 @@ instance FromProto Proto.ConsensusDetailedStatus where
         cdsTerminalBlock <- mapM fromProto (consensusDetailedStatus ^. ProtoFields.maybe'terminalBlock)
         return ConsensusDetailedStatus{..}
 
+instance FromProto Proto.AccountPending where
+    type Output Proto.AccountPending = AccountPending
+    fromProto acctPending = do
+        apAccountIndex <- fromProto (acctPending ^. ProtoFields.accountIndex)
+        apFirstTimestamp <- fromProto (acctPending ^. ProtoFields.firstTimestamp)
+        return AccountPending{..}
+
 type LoggerMethod = Text -> IO ()
 
 data GrpcConfig = GrpcConfig
@@ -3181,7 +3189,7 @@ getBlockSpecialEvents bhInput =
     msg = toProto bhInput
 
 -- | Get all transaction events in a given block.
-getBlockTransactionEvents :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq TransactionSummary)))
+getBlockTransactionEvents :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq SupplementedTransactionSummary)))
 getBlockTransactionEvents bhInput =
     withServerStreamCollect (call @"getBlockTransactionEvents") msg ((fmap . mapM) fromProto)
   where
@@ -3361,7 +3369,7 @@ getBlockFinalizationSummary bhInput = withUnary (call @"getBlockFinalizationSumm
     msg = toProto bhInput
 
 -- | Get the status of and information about a specific block item (transaction).
-getBlockItemStatus :: (MonadIO m) => TransactionHash -> ClientMonad m (GRPCResult (FromProtoResult TransactionStatus))
+getBlockItemStatus :: (MonadIO m) => TransactionHash -> ClientMonad m (GRPCResult (FromProtoResult SupplementedTransactionStatus))
 getBlockItemStatus tHash = withUnary (call @"getBlockItemStatus") msg (fmap fromProto)
   where
     msg = toProto tHash
@@ -3452,6 +3460,34 @@ shutdown = withUnary (call @"shutdown") defMessage ((fmap . const) ())
 -- | Get next available sequence numbers for updating chain parameters after a given block.
 getNextUpdateSequenceNumbers :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult NextUpdateSequenceNumbers))
 getNextUpdateSequenceNumbers bhInput = withUnary (call @"getNextUpdateSequenceNumbers") msg (fmap fromProto)
+  where
+    msg = toProto bhInput
+
+-- | Get all accounts that have scheduled releases.
+getScheduledReleaseAccounts :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq AccountPending)))
+getScheduledReleaseAccounts bhInput =
+    withServerStreamCollect (call @"getScheduledReleaseAccounts") msg (fmap (mapM fromProto))
+  where
+    msg = toProto bhInput
+
+-- | Get all accounts that have stake in cooldown.
+getCooldownAccounts :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq AccountPending)))
+getCooldownAccounts bhInput =
+    withServerStreamCollect (call @"getCooldownAccounts") msg (fmap (mapM fromProto))
+  where
+    msg = toProto bhInput
+
+-- | Get all accounts that have stake in pre-cooldown.
+getPreCooldownAccounts :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq AccountIndex)))
+getPreCooldownAccounts bhInput =
+    withServerStreamCollect (call @"getPreCooldownAccounts") msg (fmap (mapM fromProto))
+  where
+    msg = toProto bhInput
+
+-- | Get all accounts that have stake in pre-pre-cooldown.
+getPrePreCooldownAccounts :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq AccountIndex)))
+getPrePreCooldownAccounts bhInput =
+    withServerStreamCollect (call @"getPrePreCooldownAccounts") msg (fmap (mapM fromProto))
   where
     msg = toProto bhInput
 

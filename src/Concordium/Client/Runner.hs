@@ -588,7 +588,7 @@ getContractInfoWithSchemas ::
     -- | The block to retrieve the contract info from.
     BlockHashInput ->
     -- | The event for which the contract info will be retrieved.
-    Types.Event ->
+    Types.SupplementedEvent ->
     ClientMonad m (Maybe CI.ContractInfo)
 getContractInfoWithSchemas schemaFile blockHash ev = do
     -- Get contract address.
@@ -622,7 +622,7 @@ getTxContractInfoWithSchemas ::
     Maybe FilePath ->
     -- | The transaction result for which the contract info will be retrieved.
     TransactionStatusResult ->
-    ClientMonad m (Map.Map Types.BlockHash [(Types.Event, Maybe CI.ContractInfo)])
+    ClientMonad m (Map.Map Types.BlockHash [(Types.SupplementedEvent, Maybe CI.ContractInfo)])
 getTxContractInfoWithSchemas schemaFile status = do
     -- Which blocks should be used in the ContractInfo queries?
     let bhEvents = [(bh, evsE) | (bh, Right evsE) <- extractFromTsr' getEvents status]
@@ -634,14 +634,14 @@ getTxContractInfoWithSchemas schemaFile status = do
         return (bh, evToSt)
     return $ Map.fromList bhToEv
   where
-    getEvents :: Types.TransactionSummary -> Either String [Types.Event]
+    getEvents :: Types.SupplementedTransactionSummary -> Either String [Types.SupplementedEvent]
     getEvents tSum = case Types.tsResult tSum of
         Types.TxSuccess{..} -> Right vrEvents
         Types.TxReject{..} -> Left $ showRejectReason True vrRejectReason
 
     -- A different variant of extractFromTsr' which also takes into
     -- account MultipleBlocksUnambiguous and MultipleBlocksAmbiguous.
-    extractFromTsr' :: (Types.TransactionSummary -> a) -> TransactionStatusResult -> [(Types.BlockHash, a)]
+    extractFromTsr' :: (Types.SupplementedTransactionSummary -> a) -> TransactionStatusResult -> [(Types.BlockHash, a)]
     extractFromTsr' f tsr =
         case parseTransactionBlockResult tsr of
             NoBlocks -> []
@@ -2802,7 +2802,7 @@ mkContractAddress index subindex = Types.ContractAddress (Types.ContractIndex in
 -- | Try to extract event information from a TransactionStatusResult.
 --  The Maybe returned by the supplied function is mapped to Either with an error message.
 --  'Nothing' is mapped to 'Nothing'
-extractFromTsr :: (Types.Event -> Maybe a) -> Maybe TransactionStatusResult -> Maybe (Either String a)
+extractFromTsr :: (Types.SupplementedEvent -> Maybe a) -> Maybe TransactionStatusResult -> Maybe (Either String a)
 extractFromTsr _ Nothing = Nothing -- occurs when ioTail is disabled.
 extractFromTsr eventMatcher (Just tsr) = Just $ case parseTransactionBlockResult tsr of
     SingleBlock _ tSummary -> getEvents tSummary >>= maybeToRight "transaction not included in any blocks" . findModRef
@@ -4318,6 +4318,26 @@ processLegacyCmd action backend =
             withClient backend $
                 readBlockHashOrDefault Best block
                     >>= getNextUpdateSequenceNumbers
+                    >>= printResponseValueAsJSON
+        GetScheduledReleaseAccounts block ->
+            withClient backend $
+                readBlockHashOrDefault Best block
+                    >>= getScheduledReleaseAccounts
+                    >>= printResponseValueAsJSON
+        GetCooldownAccounts block ->
+            withClient backend $
+                readBlockHashOrDefault Best block
+                    >>= getCooldownAccounts
+                    >>= printResponseValueAsJSON
+        GetPreCooldownAccounts block ->
+            withClient backend $
+                readBlockHashOrDefault Best block
+                    >>= getPreCooldownAccounts
+                    >>= printResponseValueAsJSON
+        GetPrePreCooldownAccounts block ->
+            withClient backend $
+                readBlockHashOrDefault Best block
+                    >>= getPrePreCooldownAccounts
                     >>= printResponseValueAsJSON
         GetBakersRewardPeriod block ->
             withClient backend $
