@@ -2,12 +2,19 @@
 
 ## Unreleased
 
+Note: due to API changes, this release may not work correctly with node versions prior to 8.
+
 - Support node version 8 and protocol version 8.
 - Support for suspend/resume in validator update transactions.
 - Add command `consensus detailed-status` for getting detailed consensus status (from protocol
   version 6).
 - Add `raw GetConsensusDetailedStatus` that presents the detailed consensus status as JSON.
 - Update GHC version to 9.6.6 (lts-22.39).
+- Add raw commands `GetScheduledReleaseAccounts`, `GetCooldownAccounts`,
+  `GetPreCooldownAccounts` and `GetPrePreCooldownAccounts` for querying
+  accounts with scheduled releases, cooldowns, pre-cooldowns and pre-pre-cooldowns.
+- Raw commands `GetBlockTransactionEvents` and `GetTransactionStatus` include the `parameter`
+  for `ContractInitialized` events.
 
 ## 7.0.1
 

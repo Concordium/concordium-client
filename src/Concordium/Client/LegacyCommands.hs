@@ -169,6 +169,18 @@ data LegacyCmd
         {legacyEpoch :: !EpochSpecifier}
     | GetFirstBlockEpoch
         {legacyEpoch :: !EpochSpecifier}
+    | -- | Get the list of accounts with scheduled releases.
+      GetScheduledReleaseAccounts
+        {legacyBlockHash :: !(Maybe Text)}
+    | -- | Get the list of accounts with stake in cooldown.
+      GetCooldownAccounts
+        {legacyBlockHash :: !(Maybe Text)}
+    | -- | Get the list of accounts with stake in pre-cooldown.
+      GetPreCooldownAccounts
+        {legacyBlockHash :: !(Maybe Text)}
+    | -- | Get the list of accounts with stake in pre-pre-cooldown.
+      GetPrePreCooldownAccounts
+        {legacyBlockHash :: !(Maybe Text)}
     deriving (Show)
 
 legacyProgramOptions :: Parser LegacyCmd
@@ -213,6 +225,10 @@ legacyProgramOptions =
             <> getAnonymityRevokersCommand
             <> getCryptographicParametersCommand
             <> getNextUpdateSequenceNumbersCommand
+            <> getScheduledReleaseAccountsCommand
+            <> getCooldownAccountsCommand
+            <> getPreCooldownAccountsCommand
+            <> getPrePreCooldownAccountsCommand
             <> getBakersRewardPeriodCommand "GetValidatorsRewardPeriod"
             <> getBlockCertificatesCommand
             <> getBakerEarliestWinTimeCommand "GetValidatorEarliestWinTime"
@@ -424,6 +440,50 @@ getNextUpdateSequenceNumbersCommand =
                 <$> optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
             )
             (progDesc "Query the gRPC server for the next update sequence numbers for all update queues.")
+        )
+
+getScheduledReleaseAccountsCommand :: Mod CommandFields LegacyCmd
+getScheduledReleaseAccountsCommand =
+    command
+        "GetScheduledReleaseAccounts"
+        ( info
+            ( GetScheduledReleaseAccounts
+                <$> optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
+            )
+            (progDesc "Query the gRPC server for all accounts that have scheduled releases, with the timestamp of the first pending scheduled release for that account.")
+        )
+
+getCooldownAccountsCommand :: Mod CommandFields LegacyCmd
+getCooldownAccountsCommand =
+    command
+        "GetCooldownAccounts"
+        ( info
+            ( GetCooldownAccounts
+                <$> optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
+            )
+            (progDesc "Query the gRPC server for all accounts that have stake in cooldown, with the timestamp of the first pending cooldown expiry for each account.")
+        )
+
+getPreCooldownAccountsCommand :: Mod CommandFields LegacyCmd
+getPreCooldownAccountsCommand =
+    command
+        "GetPreCooldownAccounts"
+        ( info
+            ( GetPreCooldownAccounts
+                <$> optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
+            )
+            (progDesc "Query the gRPC server for all accounts that have stake in pre-cooldown.")
+        )
+
+getPrePreCooldownAccountsCommand :: Mod CommandFields LegacyCmd
+getPrePreCooldownAccountsCommand =
+    command
+        "GetPrePreCooldownAccounts"
+        ( info
+            ( GetPrePreCooldownAccounts
+                <$> optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
+            )
+            (progDesc "Query the gRPC server for all accounts that have stake in pre-pre-cooldown.")
         )
 
 getBakersRewardPeriodCommand :: String -> Mod CommandFields LegacyCmd
