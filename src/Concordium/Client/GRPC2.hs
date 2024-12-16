@@ -1374,6 +1374,7 @@ instance FromProto Proto.NextUpdateSequenceNumbers where
         _nusnMinBlockTime <- fromProto $ nums ^. ProtoFields.minBlockTime
         _nusnBlockEnergyLimit <- fromProto $ nums ^. ProtoFields.blockEnergyLimit
         _nusnFinalizationCommitteeParameters <- fromProto $ nums ^. ProtoFields.finalizationCommitteeParameters
+        _nusnValidatorScoreParameters <- fromProto $ nums ^. ProtoFields.validatorScoreParameters
         return NextUpdateSequenceNumbers{..}
 
 instance FromProto Proto.IpAddress where
@@ -1468,6 +1469,7 @@ instance FromProto Proto.UpdateType where
     fromProto ProtoFields.UPDATE_MIN_BLOCK_TIME = return Updates.UpdateMinBlockTime
     fromProto ProtoFields.UPDATE_BLOCK_ENERGY_LIMIT = return Updates.UpdateBlockEnergyLimit
     fromProto ProtoFields.UPDATE_FINALIZATION_COMMITTEE_PARAMETERS = return Updates.UpdateFinalizationCommitteeParameters
+    fromProto ProtoFields.UPDATE_VALIDATOR_SCORE_PARAMETERS = return Updates.UpdateValidatorScoreParameters
     fromProto (Proto.UpdateType'Unrecognized variant) =
         fromProtoFail $
             "Unable to convert 'InvokeInstanceResponse': "
@@ -1978,6 +1980,9 @@ instance FromProto Proto.UpdatePayload where
             ProtoFields.UpdatePayload'FinalizationCommitteeParametersUpdate fcpUpdate -> do
                 fcp <- fromProto fcpUpdate
                 return $ Updates.FinalizationCommitteeParametersUpdatePayload fcp
+            ProtoFields.UpdatePayload'ValidatorScoreParametersUpdate vspUpdate -> do
+                vsp <- fromProto vspUpdate
+                return $ Updates.ValidatorScoreParametersUpdatePayload vsp
 
 instance FromProto Proto.BlockItemSummary where
     type Output Proto.BlockItemSummary = SupplementedTransactionSummary
@@ -2275,8 +2280,10 @@ instance FromProto (Proto.AccountAddress, Proto.BakerEvent) where
                 return DelegationRemoved{..}
             ProtoFields.BakerEvent'BakerSuspended' bkrSuspended -> do
                 ebsBakerId <- fromProto $ bkrSuspended ^. ProtoFields.bakerId
+                let ebsAccount = sender
                 return BakerSuspended{..}
             ProtoFields.BakerEvent'BakerResumed' bkrResumed -> do
+                let ebrAccount = sender
                 ebrBakerId <- fromProto $ bkrResumed ^. ProtoFields.bakerId
                 return BakerResumed{..}
 
@@ -2471,6 +2478,13 @@ instance FromProto Proto.FinalizationCommitteeParameters where
         _fcpFinalizerRelativeStakeThreshold <- fmap coerce $ fromProto $ fcParams ^. ProtoFields.finalizerRelativeStakeThreshold
         return Parameters.FinalizationCommitteeParameters{..}
 
+instance FromProto Proto.ValidatorScoreParameters where
+    type Output Proto.ValidatorScoreParameters = Parameters.ValidatorScoreParameters
+
+    fromProto vsParams = do
+        let _vspMaxMissedRounds = vsParams ^. ProtoFields.maximumMissedRounds
+        return Parameters.ValidatorScoreParameters{..}
+
 instance FromProto Proto.ChainParametersV0 where
     -- \|The internal Haskell type for representing chain parameters expects
     -- an account _index_, while the protocol buffer representation uses an
@@ -2506,6 +2520,7 @@ instance FromProto Proto.ChainParametersV0 where
                 thresh <- fromProto $ cParams ^. ProtoFields.minimumThresholdForBaking
                 return $ Parameters.PoolParametersV0 thresh
             let _cpFinalizationCommitteeParameters = Parameters.NoParam
+            let _cpValidatorScoreParameters = Parameters.NoParam
             let ecpParams = Parameters.ChainParameters{..}
             rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
             level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
@@ -2553,6 +2568,7 @@ instance FromProto Proto.ChainParametersV1 where
             let _cpFoundationAccount = faIndex
             _cpPoolParameters <- fromProto $ cParams ^. ProtoFields.poolParameters
             let _cpFinalizationCommitteeParameters = Parameters.NoParam
+            let _cpValidatorScoreParameters = Parameters.NoParam
             let ecpParams = Parameters.ChainParameters{..}
             rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
             level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
@@ -2589,6 +2605,44 @@ instance FromProto Proto.ChainParametersV2 where
             let _cpFoundationAccount = faIndex
             _cpPoolParameters <- fromProto $ cParams ^. ProtoFields.poolParameters
             _cpFinalizationCommitteeParameters <- fmap Parameters.SomeParam $ fromProto $ cParams ^. ProtoFields.finalizationCommitteeParameters
+            let _cpValidatorScoreParameters = Parameters.NoParam
+            let ecpParams = Parameters.ChainParameters{..}
+            rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
+            level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
+            level2Keys <- fromProto $ cParams ^. ProtoFields.level2Keys
+            let ecpKeys = Updates.UpdateKeysCollection{..}
+            return $ EChainParametersAndKeys ecpParams ecpKeys
+
+instance FromProto Proto.ChainParametersV3 where
+    -- \|The internal Haskell type for representing chain parameters expects
+    -- an account _index_, while the protocol buffer representation uses an
+    -- account _address_ for the foundation account. The workaround here is to
+    -- return the address and a closure. The address can then be converted
+    -- to its corresponding index and fed to the closure to get the desired
+    -- @EChainParametersAndKeys@ instance.
+    type Output Proto.ChainParametersV3 = (AccountAddress, AccountIndex -> FromProtoResult EChainParametersAndKeys)
+    fromProto cParams = do
+        faAddress <- fromProto $ cParams ^. ProtoFields.foundationAccount
+        return (faAddress, faIdxToOutput)
+      where
+        faIdxToOutput faIndex = do
+            _cpConsensusParameters <- fromProto $ cParams ^. ProtoFields.consensusParameters
+            _cpExchangeRates <- do
+                euroPerEnergy <- fromProto $ cParams ^. ProtoFields.euroPerEnergy
+                microCcdPerEuro <- fromProto $ cParams ^. ProtoFields.microCcdPerEuro
+                return $ Parameters.makeExchangeRates euroPerEnergy microCcdPerEuro
+            _cpCooldownParameters <- fromProto $ cParams ^. ProtoFields.cooldownParameters
+            _cpTimeParameters <- fmap Parameters.SomeParam $ fromProto $ cParams ^. ProtoFields.timeParameters
+            _cpAccountCreationLimit <- fromProto $ cParams ^. ProtoFields.accountCreationLimit
+            _cpRewardParameters <- do
+                _rpMintDistribution <- fromProto $ cParams ^. ProtoFields.mintDistribution
+                _rpTransactionFeeDistribution <- fromProto $ cParams ^. ProtoFields.transactionFeeDistribution
+                _rpGASRewards <- fromProto $ cParams ^. ProtoFields.gasRewards
+                return (Parameters.RewardParameters{..} :: Parameters.RewardParameters 'ChainParametersV3)
+            let _cpFoundationAccount = faIndex
+            _cpPoolParameters <- fromProto $ cParams ^. ProtoFields.poolParameters
+            _cpFinalizationCommitteeParameters <- fmap Parameters.SomeParam $ fromProto $ cParams ^. ProtoFields.finalizationCommitteeParameters
+            _cpValidatorScoreParameters <- fmap Parameters.SomeParam $ fromProto $ cParams ^. ProtoFields.validatorScoreParameters
             let ecpParams = Parameters.ChainParameters{..}
             rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
             level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
@@ -2621,6 +2675,7 @@ instance FromProto Proto.ChainParameters where
             Proto.ChainParameters'V0 v0 -> fromProto v0
             Proto.ChainParameters'V1 v1 -> fromProto v1
             Proto.ChainParameters'V2 v2 -> fromProto v2
+            Proto.ChainParameters'V3 v3 -> fromProto v3
 
 instance FromProto Proto.CryptographicParameters where
     type Output Proto.CryptographicParameters = Parameters.CryptographicParameters
@@ -2815,6 +2870,14 @@ instance FromProto Proto.BlockSpecialEvent where
                 stoBakerReward <- fromProto $ ppReward ^. ProtoFields.bakerReward
                 stoFinalizationReward <- fromProto $ ppReward ^. ProtoFields.finalizationReward
                 return Transactions.PaydayPoolReward{..}
+            ProtoFields.BlockSpecialEvent'ValidatorSuspended' vSuspended -> do
+                vsBakerId <- fromProto $ vSuspended ^. ProtoFields.bakerId
+                vsAccount <- fromProto $ vSuspended ^. ProtoFields.account
+                return Transactions.ValidatorSuspended{..}
+            ProtoFields.BlockSpecialEvent'ValidatorPrimedForSuspension' vpfSuspension -> do
+                vpfsBakerId <- fromProto $ vpfSuspension ^. ProtoFields.bakerId
+                vpfsAccount <- fromProto $ vpfSuspension ^. ProtoFields.account
+                return Transactions.ValidatorPrimedForSuspension{..}
 
 instance FromProto Proto.PendingUpdate where
     type Output Proto.PendingUpdate = PendingUpdate
@@ -2875,6 +2938,8 @@ instance FromProto Proto.PendingUpdate where
                     PUEBlockEnergyLimit <$> fromProto beLimit
                 ProtoFields.PendingUpdate'FinalizationCommitteeParameters fcParams -> do
                     PUEFinalizationCommitteeParameters <$> fromProto fcParams
+                ProtoFields.PendingUpdate'ValidatorScoreParameters vsParams -> do
+                    PUEValidatorScoreParameters <$> fromProto vsParams
         return PendingUpdate{..}
 
 instance FromProto Proto.WinningBaker where
