@@ -883,10 +883,10 @@ showEvent verbose ciM = \case
     Types.Resumed cAddr invokeSucceeded ->
         let invokeMsg :: Text = if invokeSucceeded then "succeeded" else "failed"
         in  verboseOrNothing [i|resumed '#{cAddr}' after an interruption that #{invokeMsg}.|]
-    Types.BakerSuspended bID ->
-        verboseOrNothing $ printf "baker %s suspended" (show bID)
-    Types.BakerResumed bID ->
-        verboseOrNothing $ printf "baker %s resumed" (show bID)
+    Types.BakerSuspended bID acc ->
+        verboseOrNothing $ printf "baker %s with account %s suspended" (show bID) (show acc)
+    Types.BakerResumed bID acc ->
+        verboseOrNothing $ printf "baker %s with account %s resumed" (show bID) (show acc)
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
@@ -1237,6 +1237,7 @@ printChainParametersV3 ChainParameters{..} = do
     printRewardAndTimeParameters _cpRewardParameters _cpTimeParameters
     printConsensusParametersV1 _cpConsensusParameters
     mapM_ printFinalizationCommitteeParameters _cpFinalizationCommitteeParameters
+    mapM_ printValidatorScoreParameters _cpValidatorScoreParameters
     tell
         [ "",
           [i|\# Other parameters: |],
@@ -1337,6 +1338,14 @@ printFinalizationCommitteeParameters fcp =
           [i|  + minimum finalizers: #{show (fcp ^. fcpMinFinalizers)}|],
           [i|  + maximum finalizers: #{show (fcp ^. fcpMaxFinalizers)}|],
           [i|  + finalizer relative stake threshold: #{show (fcp ^. fcpFinalizerRelativeStakeThreshold)}|]
+        ]
+
+printValidatorScoreParameters :: ValidatorScoreParameters -> Printer
+printValidatorScoreParameters vsp =
+    tell
+        [ "",
+          [i|\# Validator score parameters:|],
+          [i|  + maximum missed rounds: #{show (vsp ^. vspMaxMissedRounds)}|]
         ]
 
 -- | Returns a string representation of the given 'InclusiveRange'.
