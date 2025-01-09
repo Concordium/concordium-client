@@ -15,6 +15,9 @@ Note: due to API changes, this release may not work correctly with node versions
   accounts with scheduled releases, cooldowns, pre-cooldowns and pre-pre-cooldowns.
 - Raw commands `GetBlockTransactionEvents` and `GetTransactionStatus` include the `parameter`
   for `ContractInitialized` events.
+- From protocol version 8, raw command `GetPoolStatus` indicates if a validator is suspended and,
+  if it is in the current committee, if it is primed for suspension and the current count of
+  missed rounds.
 
 ## 7.0.1
 
