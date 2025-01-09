@@ -965,6 +965,8 @@ instance FromProto Proto.PoolCurrentPaydayInfo where
         bpsBakerEquityCapital <- fromProto $ cpi ^. ProtoFields.bakerEquityCapital
         bpsDelegatedCapital <- fromProto $ cpi ^. ProtoFields.delegatedCapital
         bpsCommissionRates <- fromProto $ cpi ^. ProtoFields.commissionRates
+        let bpsIsPrimedForSuspension = cpi ^. ProtoFields.maybe'isPrimedForSuspension
+        let bpsMissedRounds = cpi ^. ProtoFields.maybe'missedRounds
         return CurrentPaydayBakerPoolStatus{..}
 
 instance FromProto Proto.PoolInfoResponse where
@@ -986,6 +988,7 @@ instance FromProto Proto.PoolInfoResponse where
                 return $ Just ActiveBakerPoolStatus{..}
         psCurrentPaydayStatus <- fromProtoMaybe $ pir ^. ProtoFields.maybe'currentPaydayInfo
         psAllPoolTotalCapital <- fromProto $ pir ^. ProtoFields.allPoolTotalCapital
+        let psIsSuspended = pir ^. ProtoFields.maybe'isSuspended
         return BakerPoolStatus{..}
 
 instance FromProto Proto.PassiveDelegationInfo where
