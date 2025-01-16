@@ -981,6 +981,7 @@ instance FromProto Proto.PoolInfoResponse where
                 abpsBakerEquityCapital <- fromProto $ pir ^. ProtoFields.equityCapital
                 abpsDelegatedCapital <- fromProto $ pir ^. ProtoFields.delegatedCapital
                 abpsDelegatedCapitalCap <- fromProto $ pir ^. ProtoFields.delegatedCapitalCap
+                let abpsIsSuspended = pir ^. ProtoFields.maybe'isSuspended
                 abpsBakerStakePendingChange <-
                     case pir ^. ProtoFields.maybe'equityPendingChange of
                         Nothing -> return PPCNoChange
@@ -988,7 +989,6 @@ instance FromProto Proto.PoolInfoResponse where
                 return $ Just ActiveBakerPoolStatus{..}
         psCurrentPaydayStatus <- fromProtoMaybe $ pir ^. ProtoFields.maybe'currentPaydayInfo
         psAllPoolTotalCapital <- fromProto $ pir ^. ProtoFields.allPoolTotalCapital
-        let psIsSuspended = pir ^. ProtoFields.maybe'isSuspended
         return BakerPoolStatus{..}
 
 instance FromProto Proto.PassiveDelegationInfo where
