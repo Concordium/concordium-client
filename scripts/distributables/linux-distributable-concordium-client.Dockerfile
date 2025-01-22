@@ -1,6 +1,6 @@
 # It seems that linker errors occur on alpine:3.19, which seem to be related to
 # (rust) libc and musl, though it is not clear exactly why.
-FROM alpine:3.18
+FROM alpine:3.19
 
 ENV PATH="${PATH}:/root/.cargo/bin:/root/.stack/bin"
 
