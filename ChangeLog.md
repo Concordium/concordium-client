@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 8.0.0
+
 Note: due to API changes, this release may not work correctly with node versions prior to 8.
 
 - Support node version 8 and protocol version 8.
