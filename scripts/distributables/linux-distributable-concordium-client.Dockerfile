@@ -12,25 +12,22 @@ ARG RUST_VERSION
 RUN wget -qO - https://sh.rustup.rs | sh -s -- --profile minimal --default-toolchain ${RUST_VERSION} -y
 
 ARG GHC_VERSION
-RUN wget -q https://s3-eu-west-1.amazonaws.com/static-libraries.concordium.com/ghc-${GHC_VERSION}-x86_64-unknown-linux-integer-gmp.tar.xz
-    tar -xf ghc-${GHC_VERSION}-x86_64-unknown-linux-integer-gmp.tar.xz && \
-    mkdir -p $HOME/.stack/bin && \
-    cd ghc-${GHC_VERSION}-x86_64-unknown-linux && \
-    ./configure && \
-    make install && \
-    cd .. && \
-    rm -rf ghc-${GHC_VERSION}-x86_64-unknown-linux-integer-gmp.tar.xz ghc-${GHC_VERSION}-x86_64-unknown-linux
+RUN wget -q https://s3-eu-west-1.amazonaws.com/static-libraries.concordium.com/ghc-${GHC_VERSION}-x86_64-unknown-linux-integer-gmp.tar.xz && \
+        tar -xf ghc-${GHC_VERSION}-x86_64-unknown-linux-integer-gmp.tar.xz && \
+        cd ghc-${GHC_VERSION}-x86_64-unknown-linux && \
+        ./configure && \
+        make install && \
+        cd .. && \
+        rm -rf ghc-${GHC_VERSION}-x86_64-unknown-linux-integer-gmp.tar.xz ghc-${GHC_VERSION}-x86_64-unknown-linux \
 
 ARG STACK_VERSION
 RUN wget -q https://github.com/commercialhaskell/stack/releases/download/v${STACK_VERSION}/stack-${STACK_VERSION}-linux-x86_64.tar.gz && \
-    tar -xf stack-${STACK_VERSION}-linux-x86_64.tar.gz && \
-    mkdir -p $HOME/.stack/bin && \
-    mv stack-${STACK_VERSION}-linux-x86_64/stack $HOME/.stack/bin && \
-    rm -rf stack-${STACK_VERSION}-linux-x86_64 stack-${STACK_VERSION}-linux-x86_64.tar.gz && \
-    echo "system-ghc: true" > ~/.stack/config.yaml && \
-    stack update
-
-
+        tar -xf stack-${STACK_VERSION}-linux-x86_64.tar.gz && \
+        mkdir -p $HOME/.stack/bin && \
+        mv stack-${STACK_VERSION}-linux-x86_64/stack $HOME/.stack/bin && \
+        rm -rf stack-${STACK_VERSION}-linux-x86_64 stack-${STACK_VERSION}-linux-x86_64.tar.gz && \
+        echo "system-ghc: true" > ~/.stack/config.yaml && \
+        stack update
 
 COPY scripts/distributables/linux-build-distributable-concordium-client.sh /build-distributable-concordium-client.sh
 
