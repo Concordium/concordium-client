@@ -22,12 +22,11 @@ env:
       \"client-windows\": \"s3://distribution.concordium.software/tools/windows/concordium-client_${VERSION}.zip\"
     }'
   AWS_ROLE_TO_ASSUME: 'arn:aws:iam::192549843005:role/github_concordium-client'
-  STACK_VERSION: '2.13.1'
-  GHC_VERSION: '9.6.4'
-  RUST_VERSION: '1.73'
-  CABAL_VERSION: '3.6.2.0'
+  STACK_VERSION: '3.1.1'
+  GHC_VERSION: '9.6.6'
+  RUST_VERSION: '1.82'
   SERVICE: "${{ inputs.service }}"
-  PROTOC_VERSION: '25.2'
+  PROTOC_VERSION: '28.3'
   FLATBUFFERS_VERSION: '23.5.26'
 
 permissions:
@@ -168,7 +167,6 @@ jobs:
       - uses: haskell-actions/setup@v2
         with:
           ghc-version: ${{ env.GHC_VERSION }}
-          cabal-version: ${{ env.CABAL_VERSION }}
           enable-stack: true
           stack-version: ${{ env.STACK_VERSION }}
 
@@ -226,7 +224,6 @@ jobs:
       - uses: haskell-actions/setup@v2
         with:
           ghc-version: ${{ env.GHC_VERSION }}
-          cabal-version: ${{ env.CABAL_VERSION }}
           enable-stack: true
           stack-version: ${{ env.STACK_VERSION }}
 
