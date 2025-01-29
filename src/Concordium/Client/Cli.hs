@@ -270,7 +270,7 @@ data BakerCredentials = BakerCredentials
     }
 
 instance AE.ToJSON BakerCredentials where
-    toJSON BakerCredentials{..} = object (("bakerId" .= bcIdentity) : ("validatorId" .= bcIdentity) : bakerKeysToPairs bcKeys)
+    toJSON BakerCredentials{..} = object (("validatorId" .= bcIdentity) : bakerKeysToPairs bcKeys)
 
 instance AE.FromJSON BakerKeys where
     parseJSON = withObject "Baker keys" $ \v -> do
@@ -300,7 +300,7 @@ bakerKeysToPairs v =
       "signatureSignKey" .= bkSigSignKey v,
       "signatureVerifyKey" .= bkSigVerifyKey v
     ]
-        ++ concat [["bakerId" .= bid, "validatorId" .= bid] | bid <- maybeToList (bkBakerId v)]
+        ++ concat [["validatorId" .= bid] | bid <- maybeToList (bkBakerId v)]
 
 instance AE.ToJSON BakerKeys where
     toJSON = object . bakerKeysToPairs
@@ -312,7 +312,7 @@ bakerPublicKeysToPairs v =
       "electionVerifyKey" .= bkElectionVerifyKey v,
       "signatureVerifyKey" .= bkSigVerifyKey v
     ]
-        ++ concat [["bakerId" .= bid, "validatorId" .= bid] | bid <- maybeToList (bkBakerId v)]
+        ++ concat [["validatorId" .= bid] | bid <- maybeToList (bkBakerId v)]
 
 -- | Hardcoded network ID.
 defaultNetId :: Int
