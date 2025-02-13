@@ -34,7 +34,7 @@ To sign and notarize the installer (.pkg) file from the build step, run:
 ```
 
 If you are building and signing on the same computer (as opposed to building
-with Jenkins), the whole process can be achieved with a single step:
+with a Github action), the whole process can be achieved with a single step:
 
 ``` sh
 ./build.sh --build-sign <version>
