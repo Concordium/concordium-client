@@ -798,8 +798,9 @@ showEvent verbose ciM = \case
         verboseOrNothing $ printf "module '%s' deployed" (show ref)
     Types.ContractInitialized{..} ->
         verboseOrNothing $
-            [i|initialized contract '#{ecAddress}' using init function '#{ecInitName}' from module '#{ecRef}' |]
-                <> [i|with #{showCcd ecAmount}\n#{showLoggedEvents ecEvents}|]
+            [i|initialized contract '#{ecAddress}' using init function #{ecInitName} from module '#{ecRef}' |]
+                <> [i|with #{showCcd ecAmount} #{foldMap (\p -> "and " ++ showInitParameter p) ecParameter}.\n|]
+                <> [i|#{showLoggedEvents ecEvents}\n|]
     Types.Updated{..} ->
         verboseOrNothing $
             [i|sent message to function '#{euReceiveName}' with #{showParameter euReceiveName euMessage} and #{showCcd euAmount} |]
@@ -958,6 +959,11 @@ showEvent verbose ciM = \case
         rSchemaM = case ciM of
             Nothing -> Nothing
             Just ci -> CI.getParameterSchema ci rName
+
+    -- Show a initialization parameter
+    -- TODO (drsk) pretty print  according to a schema, if present.
+    showInitParameter :: Wasm.Parameter -> String
+    showInitParameter pa = [i|parameter (raw): '#{pa}'|]
 
 -- | Return string representation of reject reason.
 --  If verbose is true, the string includes the details from the fields of the reason.
