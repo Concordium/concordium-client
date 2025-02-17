@@ -23,6 +23,7 @@ module Concordium.Client.Commands (
     DelegatorCmd (..),
     IdentityCmd (..),
     IdentityShowCmd (..),
+    PoolCmd (..),
     MemoInput (..),
     RegisterDataInput (..),
     ParameterFileInput (..),
@@ -95,6 +96,8 @@ data Cmd
         {delegatorCmd :: DelegatorCmd}
     | IdentityCmd
         {identityCmd :: IdentityCmd}
+    | PoolCmd
+        {poolCmd :: PoolCmd}
     deriving (Show)
 
 data ConfigCmd
@@ -542,6 +545,11 @@ data IdentityShowCmd
         {isarsBlockHash :: !(Maybe Text)}
     deriving (Show)
 
+data PoolCmd = PoolStatus
+    { psPool :: !(Maybe BakerId),
+      psBlockHash :: !(Maybe Text)}
+    deriving (Show)
+
 visibleHelper :: Parser (a -> a)
 visibleHelper =
     abortOption (ShowHelpText Nothing) $
@@ -667,6 +675,7 @@ programOptions =
                     <> bakerCmds "validator"
                     <> delegatorCmds
                     <> identityCmds
+                    <> poolCmds
                     <> rawCmds
                 )
                 <|> hsubparser
@@ -2009,6 +2018,35 @@ identityShowARsCmd =
                 <$> optional (strOption (long "block" <> metavar "BLOCK" <> help "Hash of the block (default: \"best\")."))
             )
             (progDesc "Show anonymity revokers at a given block.")
+        )
+
+poolCmds :: Mod CommandFields Cmd
+poolCmds =
+    command
+        "pool"
+        ( info
+            ( PoolCmd
+                <$> hsubparser
+                    poolStatusCmd
+            )
+            (progDesc "Commands for inspecting a validator pool or passive delegation.")
+        )
+
+poolStatusCmd :: Mod CommandFields PoolCmd
+poolStatusCmd =
+    command
+        "status"
+        ( info
+            (PoolStatus
+                <$> optional (option auto (long "pool" <> metavar "POOL" <> help "Validator ID of pool. If not provided, status of passive delegation is queried."))
+                <*> optional
+                    ( strArgument
+                        ( metavar "BLOCK-HASH"
+                            <> help "Hash of the block to query (default: Query the best block)"
+                        )
+                    )
+            )
+            (progDesc "Inspect the status of a validator pool or passive delegation.")
         )
 
 docFromLines :: [String] -> Maybe (P.Doc P.AnsiStyle)

@@ -198,6 +198,7 @@ process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir
         BakerCmd c -> processBakerCmd c cfgDir verbose backend
         DelegatorCmd c -> processDelegatorCmd c cfgDir verbose backend
         IdentityCmd c -> processIdentityCmd c backend
+        PoolCmd c -> processPoolCmd c verbose backend
 
 -- | Process a 'config ...' command.
 processConfigCmd :: ConfigCmd -> Maybe FilePath -> Verbose -> IO ()
@@ -4114,6 +4115,22 @@ processIdentityShowCmd action backend =
                     >>= getResponseValueOrDie
                     >>= runPrinter . printAnonymityRevokers . toList
 
+-- | Process a 'consensus ...' command.
+processPoolCmd :: PoolCmd -> Verbose -> Backend -> IO ()
+processPoolCmd action _verbose backend =
+    case action of
+        PoolStatus pool block -> do
+            withClient backend $ do
+                    b <- readBlockHashOrDefault Best block
+                    case pool of
+                        Nothing -> do
+                            getPassiveDelegationInfo b
+                                >>= getResponseValueOrDie
+                                >>= runPrinter . printPassiveDelegationInfo
+                        Just p -> do
+                            getPoolInfo b p
+                                >>= getResponseValueOrDie
+                                >>= runPrinter . printPoolInfo
 -- | Process a "legacy" command.
 processLegacyCmd :: LegacyCmd -> Backend -> IO ()
 processLegacyCmd action backend =
