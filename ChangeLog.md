@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- The `transaction status` command includes the `parameter` for `ContractInitialized` events.
+- The `transaction status` command output includes the `parameter` for
+  `ContractInitialized` events.
 
 ## 8.0.0
 

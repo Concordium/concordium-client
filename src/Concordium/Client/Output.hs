@@ -803,7 +803,7 @@ showEvent verbose ciM = \case
                 <> [i|#{showLoggedEvents ecEvents}\n|]
     Types.Updated{..} ->
         verboseOrNothing $
-            [i|sent message to function '#{euReceiveName}' with #{showParameter euReceiveName euMessage} and #{showCcd euAmount} |]
+            [i|sent message to function '#{euReceiveName}' with #{showReceiveParameter euReceiveName euMessage} and #{showCcd euAmount} |]
                 <> [i|from #{showAddress euInstigator} to #{showAddress $ Types.AddressContract euAddress}\n|]
                 <> [i|#{showLoggedEvents euEvents}|]
     Types.Transferred{..} ->
@@ -947,11 +947,16 @@ showEvent verbose ciM = \case
             Nothing -> Left [i|Event (raw): '#{ce}'|]
             Just json -> Right [i|Event:\n#{indentBy 4 $ "'" <> json <> "'"}|]
 
-    -- Show a parameter according to a receive name schema, if present.
-    showParameter :: Wasm.ReceiveName -> Wasm.Parameter -> String
-    showParameter rn pa@(Wasm.Parameter bs) = case toJSONString rSchemaM bs of
+    -- Show a receive/init parameter according to a given schema, or raw if no
+    -- schema is present.
+    showParameter :: Maybe SchemaType -> Wasm.Parameter -> String
+    showParameter schemaM pa@(Wasm.Parameter bs) = case toJSONString schemaM bs of
         Nothing -> [i|parameter (raw): '#{pa}'|]
         Just json -> [i|parameter:\n#{indentBy 4 $ "'" <> json <> "'"}|]
+
+    -- Show a receive parameter according to a receive name schema, if present.
+    showReceiveParameter :: Wasm.ReceiveName -> Wasm.Parameter -> String
+    showReceiveParameter rn = showParameter rSchemaM
       where
         -- Receive method name as text.
         rName = CI.methodNameFromReceiveName rn
@@ -960,14 +965,11 @@ showEvent verbose ciM = \case
             Nothing -> Nothing
             Just ci -> CI.getParameterSchema ci rName
 
-    -- Show an initialization parameter
+    -- Show an initialization parameter according to the parameter schema, if present.
     showInitParameter :: Wasm.Parameter -> String
-    showInitParameter pa@(Wasm.Parameter bs) = case toJSONString iniSchemaM bs of
-        Nothing -> [i|parameter (raw): '#{pa}'|]
-        Just json -> [i|parameter:\n#{indentBy 4 $ "'" <> json <> "'"}|]
+    showInitParameter = showParameter initSchemaM
       where
-        -- If contract info is present, try go get the receive name schema.
-        iniSchemaM = ciM >>= CI.getInitParameterSchema
+        initSchemaM = ciM >>= CI.getInitParameterSchema
 
 -- | Return string representation of reject reason.
 --  If verbose is true, the string includes the details from the fields of the reason.

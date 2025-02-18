@@ -338,8 +338,7 @@ instance AE.FromJSON ContractInfo where
     parseJSON = AE.withObject "Info" $ \v -> do
         ciAmount <- v .: "amount"
         ciOwner <- v .: "owner"
-        ciInitName <- v .: "name"
-        let ciName = contractNameFromInitName ciInitName
+        ciName <- contractNameFromInitName <$> v .: "name"
         ciSourceModule <- v .: "sourceModule"
         methods <- fmap methodNameFromReceiveName <$> v .: "methods"
         (v AE..:! "version" AE..!= (0 :: Word32)) >>= \case
