@@ -960,10 +960,14 @@ showEvent verbose ciM = \case
             Nothing -> Nothing
             Just ci -> CI.getParameterSchema ci rName
 
-    -- Show a initialization parameter
-    -- TODO (drsk) pretty print  according to a schema, if present.
+    -- Show an initialization parameter
     showInitParameter :: Wasm.Parameter -> String
-    showInitParameter pa = [i|parameter (raw): '#{pa}'|]
+    showInitParameter pa@(Wasm.Parameter bs) = case toJSONString iniSchemaM bs of
+        Nothing -> [i|parameter (raw): '#{pa}'|]
+        Just json -> [i|parameter:\n#{indentBy 4 $ "'" <> json <> "'"}|]
+      where
+        -- If contract info is present, try go get the receive name schema.
+        iniSchemaM = ciM >>= CI.getInitParameterSchema
 
 -- | Return string representation of reject reason.
 --  If verbose is true, the string includes the details from the fields of the reason.
