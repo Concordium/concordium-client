@@ -547,7 +547,8 @@ data IdentityShowCmd
 
 data PoolCmd = PoolStatus
     { psPool :: !(Maybe BakerId),
-      psBlockHash :: !(Maybe Text)}
+      psBlockHash :: !(Maybe Text)
+    }
     deriving (Show)
 
 visibleHelper :: Parser (a -> a)
@@ -2037,7 +2038,7 @@ poolStatusCmd =
     command
         "status"
         ( info
-            (PoolStatus
+            ( PoolStatus
                 <$> optional (option auto (long "pool" <> metavar "POOL" <> help "Validator ID of pool. If not provided, status of passive delegation is queried."))
                 <*> optional
                     ( strArgument

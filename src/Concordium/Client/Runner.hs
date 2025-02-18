@@ -4121,16 +4121,17 @@ processPoolCmd action _verbose backend =
     case action of
         PoolStatus pool block -> do
             withClient backend $ do
-                    b <- readBlockHashOrDefault Best block
-                    case pool of
-                        Nothing -> do
-                            getPassiveDelegationInfo b
-                                >>= getResponseValueOrDie
-                                >>= runPrinter . printPassiveDelegationInfo
-                        Just p -> do
-                            getPoolInfo b p
-                                >>= getResponseValueOrDie
-                                >>= runPrinter . printPoolInfo
+                b <- readBlockHashOrDefault Best block
+                case pool of
+                    Nothing -> do
+                        getPassiveDelegationInfo b
+                            >>= getResponseValueOrDie
+                            >>= runPrinter . printPassiveDelegationInfo
+                    Just p -> do
+                        getPoolInfo b p
+                            >>= getResponseValueOrDie
+                            >>= runPrinter . printPoolInfo
+
 -- | Process a "legacy" command.
 processLegacyCmd :: LegacyCmd -> Backend -> IO ()
 processLegacyCmd action backend =

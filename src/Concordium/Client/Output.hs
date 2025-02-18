@@ -1667,48 +1667,55 @@ printConsensusDetailedStatus ConsensusStatus.ConsensusDetailedStatus{..} = do
 
 -- Helper function
 commissionStrings :: Types.CommissionRates -> Bool -> [String]
-commissionStrings rates passive = ["Commission rates:",
-          printf " - Finalization:                                                     %s%s" pad (show fin),
-          printf " - Baking:                                                           %s%s" pad (show baking),
-          printf " - Transactions:                                                     %s%s" pad (show tx)]
+commissionStrings rates passive =
+    [ "Commission rates:",
+      printf " - Finalization:                                                     %s%s" pad (show fin),
+      printf " - Baking:                                                           %s%s" pad (show baking),
+      printf " - Transactions:                                                     %s%s" pad (show tx)
+    ]
   where
     fin = Types._finalizationCommission rates
     baking = Types._bakingCommission rates
     tx = Types._transactionCommission rates
     pad :: String = if passive then "            " else ""
 
-
 -- Print passive delegation info
 printPassiveDelegationInfo :: Queries.PassiveDelegationStatus -> Printer
 printPassiveDelegationInfo Queries.PassiveDelegationStatus{..} =
     tell $
         [ printf "Total capital delegated passively:                                               %s" (showCcd pdsDelegatedCapital)
-        ] ++ commissionStrings pdsCommissionRates True ++[
-          printf "Transaction fees accrued in current reward period:                               %s" (showCcd pdsCurrentPaydayTransactionFeesEarned),
-          printf "Effective delegated capital of passive delegators for the current reward period: %s" (showCcd pdsCurrentPaydayDelegatedCapital),
-          printf "Total capital staked across all pools, including passive delegation:             %s" (showCcd pdsAllPoolTotalCapital)
         ]
+            ++ commissionStrings pdsCommissionRates True
+            ++ [ printf "Transaction fees accrued in current reward period:                               %s" (showCcd pdsCurrentPaydayTransactionFeesEarned),
+                 printf "Effective delegated capital of passive delegators for the current reward period: %s" (showCcd pdsCurrentPaydayDelegatedCapital),
+                 printf "Total capital staked across all pools, including passive delegation:             %s" (showCcd pdsAllPoolTotalCapital)
+               ]
 
 -- Print validator pool info
 printPoolInfo :: Queries.BakerPoolStatus -> Printer
-printPoolInfo Queries.BakerPoolStatus{..} = tell $
+printPoolInfo Queries.BakerPoolStatus{..} =
+    tell $
         [ printf "Validator ID:                                                        %s" (show psBakerId),
           printf "Validator address:                                                   %s" (show psBakerAddress),
           printf "Total capital staked across all pools, including passive delegation: %s" (showCcd psAllPoolTotalCapital)
-        ] ++ active psActiveStatus ++ current psCurrentPaydayStatus
+        ]
+            ++ active psActiveStatus
+            ++ current psCurrentPaydayStatus
   where
     active (Just Queries.ActiveBakerPoolStatus{..}) =
         [ printf "Equity capital provided by the pool owner:                           %s" (showCcd abpsBakerEquityCapital),
           printf "Capital delegated to the pool by other accounts:                     %s" (showCcd abpsDelegatedCapital),
           printf "Maximum amount that may be delegated to the pool:                    %s" (showCcd abpsDelegatedCapitalCap),
           printf "Open status:                                                         %s" (show $ Types._poolOpenStatus abpsPoolInfo),
-          printf "Pool metadata URL:                                                   %s" (show  $ Types._poolMetadataUrl abpsPoolInfo)
-        ] ++ commissionStrings (Types._poolCommissionRates abpsPoolInfo) False ++ isSuspended abpsIsSuspended
+          printf "Pool metadata URL:                                                   %s" (show $ Types._poolMetadataUrl abpsPoolInfo)
+        ]
+            ++ commissionStrings (Types._poolCommissionRates abpsPoolInfo) False
+            ++ isSuspended abpsIsSuspended
     active _ = []
     isSuspended Nothing = []
     isSuspended (Just b) =
-        [ printf "Whether the validator is suspended:                                  %s" (show b)]
-    current (Just Queries.CurrentPaydayBakerPoolStatus {..}) =
+        [printf "Whether the validator is suspended:                                  %s" (show b)]
+    current (Just Queries.CurrentPaydayBakerPoolStatus{..}) =
         [ "Information about the current reward period:",
           printf "Number of blocks produced:                                           %s" (show bpsBlocksBaked),
           printf "Whether the validator has contributed to finalization:               %s" (show bpsFinalizationLive),
@@ -1717,11 +1724,14 @@ printPoolInfo Queries.BakerPoolStatus{..} = tell $
           printf "Lottery power of the validator:                                      %s" (show bpsLotteryPower),
           printf "Effective equity capital of the validator:                           %s" (showCcd bpsBakerEquityCapital),
           printf "Effective delegated capital to the pool:                             %s" (showCcd bpsDelegatedCapital)
-        ] ++ commissionStrings bpsCommissionRates False ++ primed bpsIsPrimedForSuspension ++ missedRounds bpsMissedRounds
+        ]
+            ++ commissionStrings bpsCommissionRates False
+            ++ primed bpsIsPrimedForSuspension
+            ++ missedRounds bpsMissedRounds
     current _ = []
     primed (Just b) =
-        [ printf "Whether the pool is primed for suspension:                           %s" (show b)]
+        [printf "Whether the pool is primed for suspension:                           %s" (show b)]
     primed _ = []
     missedRounds (Just n) =
-        [ printf "Missed rounds:                                                       %s" (show n)]
+        [printf "Missed rounds:                                                       %s" (show n)]
     missedRounds _ = []
