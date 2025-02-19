@@ -198,7 +198,7 @@ process Options{optsCmd = command, optsBackend = backend, optsConfigDir = cfgDir
         BakerCmd c -> processBakerCmd c cfgDir verbose backend
         DelegatorCmd c -> processDelegatorCmd c cfgDir verbose backend
         IdentityCmd c -> processIdentityCmd c backend
-        PoolCmd c -> processPoolCmd c verbose backend
+        PoolCmd c -> processPoolCmd c backend
 
 -- | Process a 'config ...' command.
 processConfigCmd :: ConfigCmd -> Maybe FilePath -> Verbose -> IO ()
@@ -4115,9 +4115,9 @@ processIdentityShowCmd action backend =
                     >>= getResponseValueOrDie
                     >>= runPrinter . printAnonymityRevokers . toList
 
--- | Process a 'consensus ...' command.
-processPoolCmd :: PoolCmd -> Verbose -> Backend -> IO ()
-processPoolCmd action _verbose backend =
+-- | Process a 'pool ...' command.
+processPoolCmd :: PoolCmd -> Backend -> IO ()
+processPoolCmd action backend =
     case action of
         PoolStatus pool block -> do
             withClient backend $ do
