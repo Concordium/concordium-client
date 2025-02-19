@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The `transaction status` command output includes the `parameter` for
+  `ContractInitialized` events.
+
 ## 8.0.0
 
 Note: due to API changes, this release may not work correctly with node versions prior to 8.

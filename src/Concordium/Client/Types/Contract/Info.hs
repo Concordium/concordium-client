@@ -6,6 +6,7 @@ module Concordium.Client.Types.Contract.Info (
     getContractName,
     getEventSchema,
     getParameterSchema,
+    getInitParameterSchema,
     hasFallbackReceiveSupport,
     hasReceiveMethod,
     methodNameFromReceiveName,
@@ -66,51 +67,52 @@ import Data.Word (Word32)
 --   - The version of module schema and contract info does not match.
 addSchemaData :: (MonadIO m) => ContractInfo -> CS.ModuleSchema -> ClientMonad m (Maybe ContractInfo)
 addSchemaData cInfo@ContractInfoV1{..} moduleSchema =
-    case moduleSchema of
-        CS.ModuleSchemaV0 _ -> logFatal ["Internal error: Cannot use ModuleSchemaV0 with ContractInfoV1."] -- Should never happen.
-        CS.ModuleSchemaV1{..} ->
-            case ciMethods of
-                NoSchemaV1{..} -> case Map.lookup ciName ms1ContractSchemas of
-                    Nothing -> do
-                        logWarn
-                            [ [i|A schema for the contract '#{ciName}' does not exist in the schema provided.|],
-                              "Showing the contract without information from the schema."
-                            ]
-                        return Nothing
-                    Just contrSchema ->
-                        let ws1Methods = map (addFuncSchemaToMethodV1 contrSchema) ns1Methods
-                            withSchema = WithSchemaV1{..}
-                        in  return $ Just (cInfo{ciMethods = withSchema})
-                _ -> logFatal ["Internal error: Contract info has already been decoded."] -- Matches WithSchema1 / WithSchema2. Should never happen.
-        CS.ModuleSchemaV2{..} ->
-            case ciMethods of
-                NoSchemaV1{..} -> case Map.lookup ciName ms2ContractSchemas of
-                    Nothing -> do
-                        logWarn
-                            [ [i|A schema for the contract '#{ciName}' does not exist in the schema provided.|],
-                              "Showing the contract without information from the schema."
-                            ]
-                        return Nothing
-                    Just contrSchema ->
-                        let ws2Methods = map (addFuncSchemaToMethodV2 contrSchema) ns1Methods
-                            withSchema = WithSchemaV2{..}
-                        in  return $ Just (cInfo{ciMethods = withSchema})
-                _ -> logFatal ["Internal error: Contract info has already been decoded."] -- Matches WithSchema1 / WithSchema2. Should never happen.
-        CS.ModuleSchemaV3{..} ->
-            case ciMethods of
-                NoSchemaV1{..} -> case Map.lookup ciName ms3ContractSchemas of
-                    Nothing -> do
-                        logWarn
-                            [ [i|A schema for the contract '#{ciName}' does not exist in the schema provided.|],
-                              "Showing the contract without information from the schema."
-                            ]
-                        return Nothing
-                    Just contrSchema ->
-                        let ws3Methods = map (addFuncSchemaToMethodV3 contrSchema) ns1Methods
-                            ws3Event = CS.cs3EventSchema contrSchema
-                            withSchema = WithSchemaV3{..}
-                        in  return $ Just (cInfo{ciMethods = withSchema})
-                _ -> logFatal ["Internal error: Contract info has already been decoded."] -- Matches WithSchema*. Should never happen.
+    let ciInitParamM = CS.lookupParameterSchema moduleSchema (CS.InitFuncName ciName)
+    in  case moduleSchema of
+            CS.ModuleSchemaV0 _ -> logFatal ["Internal error: Cannot use ModuleSchemaV0 with ContractInfoV1."] -- Should never happen.
+            CS.ModuleSchemaV1{..} ->
+                case ciMethods of
+                    NoSchemaV1{..} -> case Map.lookup ciName ms1ContractSchemas of
+                        Nothing -> do
+                            logWarn
+                                [ [i|A schema for the contract '#{ciName}' does not exist in the schema provided.|],
+                                  "Showing the contract without information from the schema."
+                                ]
+                            return Nothing
+                        Just contrSchema ->
+                            let ws1Methods = map (addFuncSchemaToMethodV1 contrSchema) ns1Methods
+                                withSchema = WithSchemaV1{..}
+                            in  return $ Just (cInfo{ciMethods = withSchema, ciInitParamSchemaM = ciInitParamM})
+                    _ -> logFatal ["Internal error: Contract info has already been decoded."] -- Matches WithSchema1 / WithSchema2. Should never happen.
+            CS.ModuleSchemaV2{..} ->
+                case ciMethods of
+                    NoSchemaV1{..} -> case Map.lookup ciName ms2ContractSchemas of
+                        Nothing -> do
+                            logWarn
+                                [ [i|A schema for the contract '#{ciName}' does not exist in the schema provided.|],
+                                  "Showing the contract without information from the schema."
+                                ]
+                            return Nothing
+                        Just contrSchema ->
+                            let ws2Methods = map (addFuncSchemaToMethodV2 contrSchema) ns1Methods
+                                withSchema = WithSchemaV2{..}
+                            in  return $ Just (cInfo{ciMethods = withSchema, ciInitParamSchemaM = ciInitParamM})
+                    _ -> logFatal ["Internal error: Contract info has already been decoded."] -- Matches WithSchema1 / WithSchema2. Should never happen.
+            CS.ModuleSchemaV3{..} ->
+                case ciMethods of
+                    NoSchemaV1{..} -> case Map.lookup ciName ms3ContractSchemas of
+                        Nothing -> do
+                            logWarn
+                                [ [i|A schema for the contract '#{ciName}' does not exist in the schema provided.|],
+                                  "Showing the contract without information from the schema."
+                                ]
+                            return Nothing
+                        Just contrSchema ->
+                            let ws3Methods = map (addFuncSchemaToMethodV3 contrSchema) ns1Methods
+                                ws3Event = CS.cs3EventSchema contrSchema
+                                withSchema = WithSchemaV3{..}
+                            in  return $ Just (cInfo{ciMethods = withSchema, ciInitParamSchemaM = ciInitParamM})
+                    _ -> logFatal ["Internal error: Contract info has already been decoded."] -- Matches WithSchema*. Should never happen.
   where
     addFuncSchemaToMethodV1 :: CS.ContractSchemaV1 -> Text -> (Text, Maybe CS.FunctionSchemaV1)
     addFuncSchemaToMethodV1 contrSchema rcvName =
@@ -231,6 +233,11 @@ getParameterSchema ci rcvName = case ci of
         Nothing -> Nothing
         Just (_, v) -> v
 
+getInitParameterSchema :: ContractInfo -> Maybe CS.SchemaType
+getInitParameterSchema ci = case ci of
+    ContractInfoV0{} -> Nothing
+    ContractInfoV1{..} -> ciInitParamSchemaM
+
 -- | This is returned by the node and specified in Concordium.Getters (from prototype repo).
 --  Must stay in sync.
 data ContractInfo
@@ -259,7 +266,9 @@ data ContractInfo
           -- | The corresponding source module.
           ciSourceModule :: !T.ModuleRef,
           -- | The methods of the contract.
-          ciMethods :: !Methods
+          ciMethods :: !Methods,
+          -- | The initialization parameter schema, if present.
+          ciInitParamSchemaM :: !(Maybe CS.SchemaType)
         }
     deriving (Eq, Show)
 
@@ -321,6 +330,7 @@ instanceInfoToContractInfo iInfo =
                 ciSourceModule = iiSourceModule
                 methods = methodNameFromReceiveName <$> Set.toList iiMethods
                 ciMethods = NoSchemaV1{ns1Methods = methods}
+                ciInitParamSchemaM = Nothing
             in
                 ContractInfoV1{..}
 
@@ -347,6 +357,7 @@ instance AE.FromJSON ContractInfo where
                 return ContractInfoV0{..}
             1 ->
                 let ciMethods = NoSchemaV1{ns1Methods = methods}
+                    ciInitParamSchemaM = Nothing
                 in  return ContractInfoV1{..}
             n -> fail [i|Unsupported contract version #{n}.|]
 
