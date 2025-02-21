@@ -123,8 +123,10 @@ bakerConfigurePayloadSize ::
     Bool ->
     -- | Finalization reward commission
     Bool ->
+    -- | Suspended
+    Bool ->
     PayloadSize
-bakerConfigurePayloadSize hasCapital hasRestake hasPoolOpen hasKeys mMetadata hasTCom hasBCom hasFCom =
+bakerConfigurePayloadSize hasCapital hasRestake hasPoolOpen hasKeys mMetadata hasTCom hasBCom hasFCom hasSuspended =
     3
         + (if hasCapital then 8 else 0)
         + (if hasRestake then 1 else 0)
@@ -134,6 +136,7 @@ bakerConfigurePayloadSize hasCapital hasRestake hasPoolOpen hasKeys mMetadata ha
         + (if hasTCom then 4 else 0)
         + (if hasBCom then 4 else 0)
         + (if hasFCom then 4 else 0)
+        + (if hasSuspended then 1 else 0)
 
 -- | Cost of a baker set account transaction.
 --  This must be kept in sync with the cost in Concordium.Scheduler.Cost
