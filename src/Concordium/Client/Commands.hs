@@ -2033,16 +2033,18 @@ poolCmds =
             (progDesc "Commands for inspecting a validator pool or passive delegation.")
         )
 
+-- argument auto (metavar "VALIDATOR-ID" <> help "Validator ID to query.")
 poolStatusCmd :: Mod CommandFields PoolCmd
 poolStatusCmd =
     command
         "status"
         ( info
             ( PoolStatus
-                <$> optional (option auto (long "pool" <> metavar "POOL" <> help "Validator ID of pool. If not provided, status of passive delegation is queried."))
+                <$> optional (argument auto (metavar "POOL" <> help "Validator ID of pool. If not provided, status of passive delegation is queried."))
                 <*> optional
-                    ( strArgument
-                        ( metavar "BLOCK-HASH"
+                    ( strOption
+                        ( long "block"
+                            <> metavar "BLOCK-HASH"
                             <> help "Hash of the block to query (default: Query the best block)"
                         )
                     )
