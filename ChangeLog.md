@@ -1,5 +1,7 @@
 # Changelog for concordium-client
 
+## Unreleased
+
 ## 8.1.0
 
 - The `transaction status` command output includes the `parameter` for
