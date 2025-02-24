@@ -260,12 +260,13 @@ printAccountInfo addr a verbose showEncrypted mEncKey = do
     case Types.aiStakingInfo a of
         Types.AccountStakingNone -> tell ["Validator or delegator: no"]
         Types.AccountStakingBaker{..} -> do
-            let bkid = [i|Validator: \##{show . Types._bakerIdentity $ asiBakerInfo}|]
+            let suspended = if asiIsSuspended then " - This validator is suspended" else ""
+                bkid = [i|Validator: \##{show . Types._bakerIdentity $ asiBakerInfo}|]
                 stkstr = [i| - Staked amount: #{showCcd asiStakedAmount}|]
             case asiPendingChange of
                 Types.NoChange ->
                     tell
-                        [ bkid,
+                        [ bkid ++ suspended,
                           stkstr
                         ]
                 Types.RemoveStake t ->
@@ -1120,6 +1121,13 @@ printConsensusStatus r =
           printf "Trigger block time:          %s" (show cbftsTriggerBlockTime)
         ]
 
+-- Helper function
+showLotteryPower :: Double -> String
+showLotteryPower lp =
+    if 0 < lp && lp < 0.000001
+        then " <0.0001 %" :: String
+        else printf "%8.4f %%" (lp * 100)
+
 -- | Print Birk parameters from a @BlockBirkParameters@.
 printQueryBirkParameters :: Bool -> Queries.BlockBirkParameters -> Map.Map IDTypes.AccountAddress Text -> Printer
 printQueryBirkParameters includeBakers r addrmap = do
@@ -1145,10 +1153,6 @@ printQueryBirkParameters includeBakers r addrmap = do
                         (maybe "" show (Queries.bsBakerAccount b')) -- This should never be @Nothing@.
                         (showLotteryPower $ Queries.bsBakerLotteryPower b')
                         (maybe "" accountName (Queries.bsBakerAccount b'))
-                showLotteryPower lp =
-                    if 0 < lp && lp < 0.000001
-                        then " <0.0001 %" :: String
-                        else printf "%8.4f %%" (lp * 100)
                 accountName bkr = fromMaybe " " $ Map.lookup bkr addrmap
   where
     maybeElectionDiffiulty Nothing = []
@@ -1173,10 +1177,6 @@ printBirkParameters includeBakers r addrmap = do
                 tell (map f bakers)
               where
                 f b' = printf "%6s: %s  %s  %s" (show $ bpbrId b') (show $ bpbrAccount b') (showLotteryPower $ bpbrLotteryPower b') (accountName $ bpbrAccount b')
-                showLotteryPower lp =
-                    if 0 < lp && lp < 0.000001
-                        then " <0.0001 %" :: String
-                        else printf "%8.4f %%" (lp * 100)
                 accountName bkr = fromMaybe " " $ Map.lookup bkr addrmap
 
 -- | Prints the chain parameters.
@@ -1673,3 +1673,100 @@ printConsensusDetailedStatus ConsensusStatus.ConsensusDetailedStatus{..} = do
                 <> if fbiBakerIdentity `elem` bafFinalizers
                     then printf "          %8.4f%%" (fromIntegral @_ @Double fbiStake / fromIntegral bafFinalizerTotalStake * 100)
                     else ""
+
+-- POOLS --
+
+-- Helper function
+commissionStrings :: Types.CommissionRates -> Bool -> [String]
+commissionStrings rates passive =
+    [ "Commission rates:",
+      printf " - Finalization:             %s%s" pad (show fin),
+      printf " - Baking:                   %s%s" pad (show baking),
+      printf " - Transaction fees:         %s%s" pad (show tx)
+    ]
+  where
+    fin = Types._finalizationCommission rates
+    baking = Types._bakingCommission rates
+    tx = Types._transactionCommission rates
+    pad :: String = if passive then "   " else ""
+
+-- Print passive delegation info
+printPassiveDelegationInfo :: Queries.PassiveDelegationStatus -> Printer
+printPassiveDelegationInfo Queries.PassiveDelegationStatus{..} =
+    tell $
+        [ "Current status of passive delegation",
+          "====================================",
+          printf "Passive delegation total stake: %s" (rjustCcd pdsDelegatedCapital pdsAllPoolTotalCapital),
+          printf "Total stake of all pools:       %s" (rjustCcd pdsAllPoolTotalCapital pdsAllPoolTotalCapital)
+        ]
+            ++ commissionStrings pdsCommissionRates True
+            ++ [ "",
+                 "Effective status of passive delegation for current reward period",
+                 "================================================================",
+                 printf "Accrued transaction fees:       %s" (rjustCcd pdsCurrentPaydayTransactionFeesEarned pdsCurrentPaydayDelegatedCapital),
+                 printf "Passive delegation total stake: %s" (rjustCcd pdsCurrentPaydayDelegatedCapital pdsCurrentPaydayDelegatedCapital)
+               ]
+  where
+    rjustCcd amt bigBalance = let t = showCcd amt in replicate (length (showCcd bigBalance) - length t) ' ' ++ t
+
+-- Print validator pool info
+printPoolInfo :: Queries.BakerPoolStatus -> Printer
+printPoolInfo Queries.BakerPoolStatus{..} =
+    tell $
+        [ printf "Validator ID:                %s" (show psBakerId),
+          printf "Validator address:           %s" (show psBakerAddress),
+          "",
+          "Current status",
+          "=============="
+        ]
+            ++ active psActiveStatus
+            ++ [ "",
+                 "Effective status for current reward period",
+                 "=========================================="
+               ]
+            ++ current psCurrentPaydayStatus
+  where
+    active (Just Queries.ActiveBakerPoolStatus{..}) =
+        [ printf "Pool metadata URL:           %s" (showUrl $ Types._poolMetadataUrl abpsPoolInfo)
+        ]
+            ++ isSuspended abpsIsSuspended
+            ++ [ "",
+                 printf "Pool owner's stake:          %s" (rjustCcd abpsBakerEquityCapital psAllPoolTotalCapital),
+                 printf "Pool delegators' stake:      %s" (rjustCcd abpsDelegatedCapital psAllPoolTotalCapital),
+                 printf "Total stake of all pools:    %s" (rjustCcd psAllPoolTotalCapital psAllPoolTotalCapital),
+                 "",
+                 printf "Delegation status:           %s" (openStatus $ Types._poolOpenStatus abpsPoolInfo),
+                 printf "Maximum delegators' stake:   %s" (rjustCcd abpsDelegatedCapitalCap psAllPoolTotalCapital)
+               ]
+            ++ commissionStrings (Types._poolCommissionRates abpsPoolInfo) False
+    active _ = ["The validator has been removed"]
+    openStatus Types.OpenForAll = "open for delegation" :: String
+    openStatus Types.ClosedForAll = "closed for delegation"
+    openStatus Types.ClosedForNew = "closed for new delegators"
+    isSuspended Nothing = []
+    isSuspended (Just b) =
+        [printf "Suspended:                   %s" (yesno b)]
+    yesno False = "No" :: String
+    yesno True = "Yes"
+    current (Just Queries.CurrentPaydayBakerPoolStatus{..}) =
+        [ printf "Blocks produced:             %s" (show bpsBlocksBaked),
+          printf "Contributed to finalization: %s" (yesno bpsFinalizationLive),
+          printf "Accrued transaction fees:    %s" (showCcd bpsTransactionFeesEarned)
+        ]
+            ++ missedRounds bpsMissedRounds bpsIsPrimedForSuspension
+            ++ [ "",
+                 printf "Pool owner's stake:          %s" (rjustCcd bpsBakerEquityCapital maxAmt),
+                 printf "Pool delegator's stake:      %s" (rjustCcd bpsDelegatedCapital maxAmt),
+                 printf "Capped effective stake:      %s" (rjustCcd bpsEffectiveStake maxAmt),
+                 printf "Lottery power:              %s" (showLotteryPower bpsLotteryPower)
+               ]
+      where
+        maxAmt = max bpsEffectiveStake $ max bpsBakerEquityCapital bpsDelegatedCapital
+    current _ = ["The validator is not in the committee for the current reward period."]
+    primed (Just True) = " (suspension is pending)" :: String
+    primed _ = []
+    missedRounds (Just n) mb =
+        [printf "Missed rounds:               %s%s" (show n) (primed mb)]
+    missedRounds _ _ = []
+    rjustCcd amt bigBalance = let t = showCcd amt in replicate (length (showCcd bigBalance) - length t) ' ' ++ t
+    showUrl (Types.UrlText txt) = txt
