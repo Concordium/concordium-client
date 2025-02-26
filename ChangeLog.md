@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 8.1.0
+
 - The `transaction status` command output includes the `parameter` for
   `ContractInitialized` events.
 - From protocol version 8, raw command `GetPoolStatus` indicates if a validator is suspended and,
