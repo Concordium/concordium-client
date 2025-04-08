@@ -198,6 +198,12 @@ data TransactionCmd
           -- | Path to a contract schema, used to display the transaction event info.
           tsSchema :: !(Maybe FilePath)
         }
+    | TransactionIssuePLT
+        { tsgReceiver :: !Text,
+          tsgAmount :: !Amount,
+          tsgMemo :: !(Maybe MemoInput),
+          tsgOpts :: !(TransactionOpts (Maybe Energy))
+        }
     | TransactionSendCcd
         { tsgReceiver :: !Text,
           tsgAmount :: !Amount,
@@ -709,6 +715,7 @@ transactionCmds =
                         <> transactionAddSignatureCmd
                         <> transactionStatusCmd
                         <> transactionSendCcdCmd
+                        <> transactionIssuePLTCmd
                         <> transactionWithScheduleCmd
                         <> transactionDeployCredentialCmd
                         <> transactionRegisterDataCmd
@@ -824,6 +831,20 @@ transactionSendCcdCmd =
                 <*> transactionOptsParser
             )
             (progDesc "Transfer CCD from one account to another.")
+        )
+
+transactionIssuePLTCmd :: Mod CommandFields TransactionCmd
+transactionIssuePLTCmd =
+    command
+        "issue-plt"
+        ( info
+            ( TransactionIssuePLT
+                <$> strOption (long "issuer" <> metavar "ISSUER-ACCOUNT" <> help "Address of the issuer.")
+                <*> option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> help "Amount of CCDs to send.")
+                <*> memoInputParser
+                <*> transactionOptsParser
+            )
+            (progDesc "Issue a new PLT (protocol layer token).")
         )
 
 transactionWithScheduleCmd :: Mod CommandFields TransactionCmd

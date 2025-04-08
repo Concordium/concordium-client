@@ -815,6 +815,40 @@ processTransactionCmd action baseCfgDir verbose backend =
                 let outFile = toOutFile txOpts
                 liftIO $ transferTransactionConfirm ttxCfg (ioConfirm intOpts)
                 signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
+        TransactionIssuePLT issuer amount maybeMemo txOpts -> do
+            baseCfg <- getBaseConfig baseCfgDir verbose
+            when verbose $ do
+                runPrinter $ printBaseConfig baseCfg
+                putStrLn ""
+
+            issuerAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) issuer
+
+            withClient backend $ do
+                cs <- getResponseValueOrDie =<< getConsensusInfo
+                pl <- liftIO $ do
+                    res <- case maybeMemo of
+                        Nothing -> return $ Types.Transfer (naAddr issuerAddress) amount
+                        Just memoInput -> do
+                            memo <- checkAndGetMemo memoInput $ Queries.csProtocolVersion cs
+                            return $ Types.TransferWithMemo (naAddr issuerAddress) memo amount
+                    return $ Types.encodePayload res
+                let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize pl
+                txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
+
+                let ttxCfg =
+                        TransferTransactionConfig
+                            { ttcTransactionCfg = txCfg,
+                              ttcReceiver = issuerAddress,
+                              ttcAmount = amount
+                            }
+                when verbose $ liftIO $ do
+                    runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
+                    putStrLn ""
+
+                let intOpts = toInteractionOpts txOpts
+                let outFile = toOutFile txOpts
+                liftIO $ transferTransactionConfirm ttxCfg (ioConfirm intOpts)
+                signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
         TransactionSendWithSchedule receiver schedule maybeMemo txOpts -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             when verbose $ do

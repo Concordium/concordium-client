@@ -67,6 +67,7 @@ import Concordium.ID.Types
 import Concordium.Types
 import Concordium.Types.Accounts
 import qualified Concordium.Types.Accounts as Concordium.Types
+import qualified Concordium.Types.Queries.Tokens as Tokens
 import Concordium.Types.Accounts.Releases
 import Concordium.Types.Block (AbsoluteBlockHeight (..))
 import Concordium.Types.Execution
@@ -85,6 +86,8 @@ import qualified Proto.V2.Concordium.Types as Proto
 import qualified Proto.V2.Concordium.Types as ProtoFields
 import qualified Proto.V2.Concordium.Types_Fields as Proto
 import qualified Proto.V2.Concordium.Types_Fields as ProtoFields
+import qualified Proto.V2.Concordium.Kernel as ProtoKernel
+import qualified Proto.V2.Concordium.ProtocolLevelTokens as PLT
 
 -- | A helper function that serves as an inverse to @mkSerialize@,
 --
@@ -283,8 +286,8 @@ instance FromProto Proto.AccountIndex where
     type Output Proto.AccountIndex = AccountIndex
     fromProto = return . deMkWord64
 
-instance FromProto Proto.AccountAddress where
-    type Output Proto.AccountAddress = AccountAddress
+instance FromProto ProtoKernel.AccountAddress where
+    type Output ProtoKernel.AccountAddress = AccountAddress
     fromProto aa =
         case deMkSerialize aa of
             Left err -> fromProtoFail $ "Unable to convert 'AccountAddress': " <> err
@@ -710,12 +713,20 @@ instance FromProto Proto.Cooldown where
         cooldownStatus <- fromProto $ c ^. ProtoFields.status
         return Cooldown{..}
 
+instance FromProto Proto.AccountInfo'Token where
+    type Output Proto.AccountInfo'Token = Tokens.Token
+    fromProto token = do
+        tokenId <- fromProto $ token ^. ProtoFields.tokenId
+        tokenAccountState <- fromProto $ token ^. ProtoFields.tokenAccountState
+        return Tokens.Token{..}
+
 instance FromProto Proto.AccountInfo where
     type Output Proto.AccountInfo = AccountInfo
     fromProto ai = do
         aiAccountNonce <- fromProto $ ai ^. ProtoFields.sequenceNumber
         aiAccountAmount <- fromProto $ ai ^. ProtoFields.amount
         aiAccountReleaseSchedule <- fromProto $ ai ^. ProtoFields.schedule
+        aitokens <- fromProto $ ai ^. ProtoFields.tokens
         aiAccountCredentials <-
             do
                 fmap Map.fromAscList
@@ -1547,8 +1558,8 @@ instance FromProto Proto.NewRelease where
         amount <- fromProto $ nRelease ^. ProtoFields.amount
         return (tStamp, amount)
 
-instance FromProto Proto.Memo where
-    type Output Proto.Memo = Memo
+instance FromProto ProtoKernel.Memo where
+    type Output ProtoKernel.Memo = Memo
     fromProto memo = return . Memo . BSS.toShort $ memo ^. ProtoFields.value
 
 instance FromProto Proto.ArInfo'ArIdentity where
@@ -2173,8 +2184,8 @@ instance FromProto Proto.AccountTransactionDetails where
                             )
                 return (Just tType, TxSuccess{..})
 
-instance FromProto (Proto.AccountAddress, Proto.DelegationEvent) where
-    type Output (Proto.AccountAddress, Proto.DelegationEvent) = SupplementedEvent
+instance FromProto (ProtoKernel.AccountAddress, Proto.DelegationEvent) where
+    type Output (ProtoKernel.AccountAddress, Proto.DelegationEvent) = SupplementedEvent
     fromProto (senderAcc, dEvent) = do
         sender <- fromProto senderAcc
         de <- case dEvent ^. Proto.maybe'event of
@@ -2216,8 +2227,8 @@ instance FromProto (Proto.AccountAddress, Proto.DelegationEvent) where
                 ebrBakerId <- fromProto $ bkrRemoved ^. ProtoFields.bakerId
                 return BakerRemoved{..}
 
-instance FromProto (Proto.AccountAddress, Proto.BakerEvent) where
-    type Output (Proto.AccountAddress, Proto.BakerEvent) = SupplementedEvent
+instance FromProto (ProtoKernel.AccountAddress, Proto.BakerEvent) where
+    type Output (ProtoKernel.AccountAddress, Proto.BakerEvent) = SupplementedEvent
     fromProto (senderAcc, bEvent) = do
         sender <- fromProto senderAcc
         be <- case bEvent ^. Proto.maybe'event of
