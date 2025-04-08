@@ -81,7 +81,7 @@ jobs:
           unzip protoc-3.15.3-linux-x86_64.zip
           sudo mv ./bin/protoc /usr/bin/protoc
       - name: Cache cargo and stack dependencies and targets
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/registry

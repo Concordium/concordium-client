@@ -67,7 +67,6 @@ import Concordium.ID.Types
 import Concordium.Types
 import Concordium.Types.Accounts
 import qualified Concordium.Types.Accounts as Concordium.Types
-import qualified Concordium.Types.Queries.Tokens as Tokens
 import Concordium.Types.Accounts.Releases
 import Concordium.Types.Block (AbsoluteBlockHeight (..))
 import Concordium.Types.Execution
@@ -75,19 +74,20 @@ import qualified Concordium.Types.InvokeContract as InvokeContract
 import qualified Concordium.Types.Parameters as Parameters
 import Concordium.Types.Queries
 import qualified Concordium.Types.Queries.KonsensusV1 as KonsensusV1
+import qualified Concordium.Types.Queries.Tokens as Tokens
 import qualified Concordium.Types.Transactions as Transactions
 import qualified Concordium.Types.Updates as Updates
 import qualified Concordium.Wasm as Wasm
 
 import Concordium.Client.Types.ConsensusStatus
 import qualified Concordium.Crypto.BlockSignature as BlockSignature
+import qualified Proto.V2.Concordium.Kernel as ProtoKernel
+import qualified Proto.V2.Concordium.ProtocolLevelTokens as PLT
 import qualified Proto.V2.Concordium.Service as CS
 import qualified Proto.V2.Concordium.Types as Proto
 import qualified Proto.V2.Concordium.Types as ProtoFields
 import qualified Proto.V2.Concordium.Types_Fields as Proto
 import qualified Proto.V2.Concordium.Types_Fields as ProtoFields
-import qualified Proto.V2.Concordium.Kernel as ProtoKernel
-import qualified Proto.V2.Concordium.ProtocolLevelTokens as PLT
 
 -- | A helper function that serves as an inverse to @mkSerialize@,
 --
