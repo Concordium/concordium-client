@@ -78,11 +78,13 @@ import qualified Concordium.Types.Queries.Tokens as Tokens
 import qualified Concordium.Types.Transactions as Transactions
 import qualified Concordium.Types.Updates as Updates
 import qualified Concordium.Wasm as Wasm
+import qualified Data.Text.Encoding as TE
 
 import Concordium.Client.Types.ConsensusStatus
 import qualified Concordium.Crypto.BlockSignature as BlockSignature
 import qualified Proto.V2.Concordium.Kernel as ProtoKernel
-import qualified Proto.V2.Concordium.ProtocolLevelTokens as PLT
+import qualified Proto.V2.Concordium.ProtocolLevelTokens as ProtoPLT
+import qualified Proto.V2.Concordium.ProtocolLevelTokens_Fields as ProtoFieldsPLT
 import qualified Proto.V2.Concordium.Service as CS
 import qualified Proto.V2.Concordium.Types as Proto
 import qualified Proto.V2.Concordium.Types as ProtoFields
@@ -720,13 +722,36 @@ instance FromProto Proto.AccountInfo'Token where
         tokenAccountState <- fromProto $ token ^. ProtoFields.tokenAccountState
         return Tokens.Token{..}
 
+instance FromProto ProtoPLT.TokenAccountState where
+    type Output ProtoPLT.TokenAccountState = Tokens.TokenAccountState
+    fromProto tokenAccountState = do
+        memberAllowList <- Right (tokenAccountState ^. ProtoFieldsPLT.memberAllowList)
+        memberDenyList <- Right (tokenAccountState ^. ProtoFieldsPLT.memberDenyList)
+        balance <- fromProto $ tokenAccountState ^. ProtoFieldsPLT.balance
+        return Tokens.TokenAccountState{..}
+
+instance FromProto ProtoPLT.TokenAmount where
+    type Output ProtoPLT.TokenAmount = Tokens.TokenAmount
+    fromProto tokenAmount = do
+        digits <- Right (tokenAmount ^. ProtoFieldsPLT.digits)
+        nrDecimals <- Right (tokenAmount ^. ProtoFieldsPLT.nrOfDecimals)
+        return Tokens.TokenAmount{..}
+
+instance FromProto ProtoPLT.TokenId where
+    type Output ProtoPLT.TokenId = TokenId
+    fromProto tokenId = do
+        textSymbol <- Right (tokenId ^. ProtoFieldsPLT.symbol)
+        let byteString = TE.encodeUtf8 textSymbol
+        let symbol = BSS.toShort byteString
+        return $ TokenId symbol
+
 instance FromProto Proto.AccountInfo where
     type Output Proto.AccountInfo = AccountInfo
     fromProto ai = do
         aiAccountNonce <- fromProto $ ai ^. ProtoFields.sequenceNumber
         aiAccountAmount <- fromProto $ ai ^. ProtoFields.amount
         aiAccountReleaseSchedule <- fromProto $ ai ^. ProtoFields.schedule
-        aitokens <- fromProto $ ai ^. ProtoFields.tokens
+        aiAccountTokens <- mapM fromProto (ai ^. ProtoFields.tokens)
         aiAccountCredentials <-
             do
                 fmap Map.fromAscList
@@ -855,6 +880,7 @@ instance FromProto Proto.ProtocolVersion where
         Proto.PROTOCOL_VERSION_6 -> return P6
         Proto.PROTOCOL_VERSION_7 -> return P7
         Proto.PROTOCOL_VERSION_8 -> return P8
+        Proto.PROTOCOL_VERSION_9 -> return P9
         Proto.ProtocolVersion'Unrecognized _ ->
             fromProtoFail "Unable to convert 'ProtocolVersion'."
 
@@ -1484,6 +1510,7 @@ instance FromProto Proto.UpdateType where
     fromProto ProtoFields.UPDATE_BLOCK_ENERGY_LIMIT = return Updates.UpdateBlockEnergyLimit
     fromProto ProtoFields.UPDATE_FINALIZATION_COMMITTEE_PARAMETERS = return Updates.UpdateFinalizationCommitteeParameters
     fromProto ProtoFields.UPDATE_VALIDATOR_SCORE_PARAMETERS = return Updates.UpdateValidatorScoreParameters
+    fromProto ProtoFields.UPDATE_CREATE_PLT = return Updates.UpdateCreatePLT
     fromProto (Proto.UpdateType'Unrecognized variant) =
         fromProtoFail $
             "Unable to convert 'InvokeInstanceResponse': "
@@ -2183,6 +2210,10 @@ instance FromProto Proto.AccountTransactionDetails where
                               [TransferredWithSchedule{..}, TransferMemo{..}]
                             )
                 return (Just tType, TxSuccess{..})
+            ProtoFields.AccountTransactionEffects'TokenHolderEvent _pltTokenHolderEvent -> do
+                fromProtoFail "TODO: Implement"
+            ProtoFields.AccountTransactionEffects'TokenGovernanceEvent _pltTokenGovernanceEvent -> do
+                fromProtoFail "TODO: Implement"
 
 instance FromProto (ProtoKernel.AccountAddress, Proto.DelegationEvent) where
     type Output (ProtoKernel.AccountAddress, Proto.DelegationEvent) = SupplementedEvent
