@@ -815,39 +815,31 @@ processTransactionCmd action baseCfgDir verbose backend =
                 let outFile = toOutFile txOpts
                 liftIO $ transferTransactionConfirm ttxCfg (ioConfirm intOpts)
                 signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
-        TransactionIssuePLT issuer amount maybeMemo txOpts -> do
+        TransactionCreatePLT symbolText governanceAccountText moduleHashText decimals initializationParametersText txOpts -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             when verbose $ do
                 runPrinter $ printBaseConfig baseCfg
                 putStrLn ""
+            moduleHash <- case parseHash moduleHashText of
+                Nothing -> logFatal [printf "invalid module hash '%s'" moduleHashText]
+                Just hash -> return hash
+            let tokenModuleRef = Types.TokenModuleRef (moduleHash)
 
-            issuerAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) issuer
+            governanceAccount <- getAccountAddressArg (bcAccountNameMap baseCfg) governanceAccountText
+
+            let symbol = Types.TokenId (BSS.toShort (Text.encodeUtf8 symbolText))
+            -- Nice-to-have: Read in input parameters from CBOR encode datafile e.g. similar to smart contract init param.
+            let initializationParameters = Types.TokenParameter (BSS.toShort (Text.encodeUtf8 initializationParametersText))
 
             withClient backend $ do
-                cs <- getResponseValueOrDie =<< getConsensusInfo
                 pl <- liftIO $ do
-                    res <- case maybeMemo of
-                        Nothing -> return $ Types.Transfer (naAddr issuerAddress) amount
-                        Just memoInput -> do
-                            memo <- checkAndGetMemo memoInput $ Queries.csProtocolVersion cs
-                            return $ Types.TransferWithMemo (naAddr issuerAddress) memo amount
+                    let res = Types.CreateNewPLT symbol tokenModuleRef (naAddr governanceAccount) decimals initializationParameters
+
                     return $ Types.encodePayload res
                 let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize pl
                 txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
-
-                let ttxCfg =
-                        TransferTransactionConfig
-                            { ttcTransactionCfg = txCfg,
-                              ttcReceiver = issuerAddress,
-                              ttcAmount = amount
-                            }
-                when verbose $ liftIO $ do
-                    runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
-                    putStrLn ""
-
                 let intOpts = toInteractionOpts txOpts
                 let outFile = toOutFile txOpts
-                liftIO $ transferTransactionConfirm ttxCfg (ioConfirm intOpts)
                 signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
         TransactionSendWithSchedule receiver schedule maybeMemo txOpts -> do
             baseCfg <- getBaseConfig baseCfgDir verbose

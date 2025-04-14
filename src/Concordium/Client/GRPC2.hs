@@ -725,22 +725,22 @@ instance FromProto Proto.AccountInfo'Token where
 instance FromProto ProtoPLT.TokenAccountState where
     type Output ProtoPLT.TokenAccountState = Tokens.TokenAccountState
     fromProto tokenAccountState = do
-        memberAllowList <- Right (tokenAccountState ^. ProtoFieldsPLT.memberAllowList)
-        memberDenyList <- Right (tokenAccountState ^. ProtoFieldsPLT.memberDenyList)
+        let memberAllowList = tokenAccountState ^. ProtoFieldsPLT.memberAllowList
+        let memberDenyList = tokenAccountState ^. ProtoFieldsPLT.memberDenyList
         balance <- fromProto $ tokenAccountState ^. ProtoFieldsPLT.balance
         return Tokens.TokenAccountState{..}
 
 instance FromProto ProtoPLT.TokenAmount where
     type Output ProtoPLT.TokenAmount = Tokens.TokenAmount
     fromProto tokenAmount = do
-        digits <- Right (tokenAmount ^. ProtoFieldsPLT.digits)
-        nrDecimals <- Right (tokenAmount ^. ProtoFieldsPLT.nrOfDecimals)
+        let digits = tokenAmount ^. ProtoFieldsPLT.digits
+        let nrDecimals = tokenAmount ^. ProtoFieldsPLT.nrOfDecimals
         return Tokens.TokenAmount{..}
 
 instance FromProto ProtoPLT.TokenId where
     type Output ProtoPLT.TokenId = TokenId
     fromProto tokenId = do
-        textSymbol <- Right (tokenId ^. ProtoFieldsPLT.symbol)
+        let textSymbol = tokenId ^. ProtoFieldsPLT.symbol
         let byteString = TE.encodeUtf8 textSymbol
         let symbol = BSS.toShort byteString
         return $ TokenId symbol

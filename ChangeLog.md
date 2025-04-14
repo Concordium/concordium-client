@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `transaction create-plt` command to create a new protocol layer token via a transaction on-chain.
+
 ## 8.1.0
 
 - The `transaction status` command output includes the `parameter` for

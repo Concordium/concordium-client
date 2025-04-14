@@ -45,7 +45,7 @@ import Data.String
 import Data.Text hiding (map, unlines)
 import Data.Time.Format.ISO8601
 import Data.Version (showVersion)
-import Data.Word (Word64)
+import Data.Word (Word64, Word8)
 import Network.HTTP2.Client
 import Options.Applicative
 import Options.Applicative.Help.Pretty (fillCat, hang, softline)
@@ -198,11 +198,13 @@ data TransactionCmd
           -- | Path to a contract schema, used to display the transaction event info.
           tsSchema :: !(Maybe FilePath)
         }
-    | TransactionIssuePLT
-        { tsgReceiver :: !Text,
-          tsgAmount :: !Amount,
-          tsgMemo :: !(Maybe MemoInput),
-          tsgOpts :: !(TransactionOpts (Maybe Energy))
+    | TransactionCreatePLT
+        { tcpSymbol :: !Text,
+          tcpGovernanceAccount :: !Text,
+          tcpModuleHash :: !Text,
+          tcpDecimals :: !Word8,
+          tcpInitializationParameters :: !Text,
+          tcpOpts :: !(TransactionOpts (Maybe Energy))
         }
     | TransactionSendCcd
         { tsgReceiver :: !Text,
@@ -715,7 +717,7 @@ transactionCmds =
                         <> transactionAddSignatureCmd
                         <> transactionStatusCmd
                         <> transactionSendCcdCmd
-                        <> transactionIssuePLTCmd
+                        <> transactionCreatePLTCmd
                         <> transactionWithScheduleCmd
                         <> transactionDeployCredentialCmd
                         <> transactionRegisterDataCmd
@@ -833,18 +835,20 @@ transactionSendCcdCmd =
             (progDesc "Transfer CCD from one account to another.")
         )
 
-transactionIssuePLTCmd :: Mod CommandFields TransactionCmd
-transactionIssuePLTCmd =
+transactionCreatePLTCmd :: Mod CommandFields TransactionCmd
+transactionCreatePLTCmd =
     command
-        "issue-plt"
+        "create-plt"
         ( info
-            ( TransactionIssuePLT
-                <$> strOption (long "issuer" <> metavar "ISSUER-ACCOUNT" <> help "Address of the issuer.")
-                <*> option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> help "Amount of CCDs to send.")
-                <*> memoInputParser
+            ( TransactionCreatePLT
+                <$> strOption (long "symbol" <> metavar "SYMBOL" <> help "Symbol of the PLT token.")
+                <*> strOption (long "governanceAccount" <> metavar "GOVERNANCE-ACCOUNT" <> help "Account addreess that will govern the PLT token.")
+                <*> strOption (long "moduleHash" <> metavar "MODULE-HASH" <> help "Token module hash.")
+                <*> option auto (long "decimals" <> metavar "DECIMALS" <> help "The number of decimal places used in the representation of amounts of this token. This determines the smallest representable fraction of the token.")
+                <*> strOption (long "initializationParameters" <> metavar "INIT_PARAMETERS" <> help "Paramters to initialize the token module.")
                 <*> transactionOptsParser
             )
-            (progDesc "Issue a new PLT (protocol layer token).")
+            (progDesc "Create a new PLT (protocol layer token).")
         )
 
 transactionWithScheduleCmd :: Mod CommandFields TransactionCmd
