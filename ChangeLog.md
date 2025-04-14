@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Add `transaction create-plt` command to create a new protocol layer token via a transaction on-chain.
+- Extend `consensus chain-update` command for creating a new protocol layer token. An option `--pltInitParam` was added to pass in the input paramters for this transaction type.
 
 ## 8.1.0
 

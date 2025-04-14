@@ -45,7 +45,7 @@ import Data.String
 import Data.Text hiding (map, unlines)
 import Data.Time.Format.ISO8601
 import Data.Version (showVersion)
-import Data.Word (Word64, Word8)
+import Data.Word (Word64)
 import Network.HTTP2.Client
 import Options.Applicative
 import Options.Applicative.Help.Pretty (fillCat, hang, softline)
@@ -197,14 +197,6 @@ data TransactionCmd
         { tsHash :: !Text,
           -- | Path to a contract schema, used to display the transaction event info.
           tsSchema :: !(Maybe FilePath)
-        }
-    | TransactionCreatePLT
-        { tcpSymbol :: !Text,
-          tcpGovernanceAccount :: !Text,
-          tcpModuleHash :: !Text,
-          tcpDecimals :: !Word8,
-          tcpInitializationParameters :: !Text,
-          tcpOpts :: !(TransactionOpts (Maybe Energy))
         }
     | TransactionSendCcd
         { tsgReceiver :: !Text,
@@ -448,6 +440,7 @@ data ConsensusCmd
     | ConsensusChainUpdate
         { ccuUpdate :: !FilePath,
           ccuKeys :: ![FilePath],
+          ccuParameterPLT :: !(Maybe FilePath),
           ccuInteractionOpts :: !InteractionOpts
         }
     | ConsensusDetailedStatus
@@ -717,7 +710,6 @@ transactionCmds =
                         <> transactionAddSignatureCmd
                         <> transactionStatusCmd
                         <> transactionSendCcdCmd
-                        <> transactionCreatePLTCmd
                         <> transactionWithScheduleCmd
                         <> transactionDeployCredentialCmd
                         <> transactionRegisterDataCmd
@@ -833,22 +825,6 @@ transactionSendCcdCmd =
                 <*> transactionOptsParser
             )
             (progDesc "Transfer CCD from one account to another.")
-        )
-
-transactionCreatePLTCmd :: Mod CommandFields TransactionCmd
-transactionCreatePLTCmd =
-    command
-        "create-plt"
-        ( info
-            ( TransactionCreatePLT
-                <$> strOption (long "symbol" <> metavar "SYMBOL" <> help "Symbol of the PLT token.")
-                <*> strOption (long "governanceAccount" <> metavar "GOVERNANCE-ACCOUNT" <> help "Account addreess that will govern the PLT token.")
-                <*> strOption (long "moduleHash" <> metavar "MODULE-HASH" <> help "Token module hash.")
-                <*> option auto (long "decimals" <> metavar "DECIMALS" <> help "The number of decimal places used in the representation of amounts of this token. This determines the smallest representable fraction of the token.")
-                <*> strOption (long "initializationParameters" <> metavar "INIT_PARAMETERS" <> help "Paramters to initialize the token module.")
-                <*> transactionOptsParser
-            )
-            (progDesc "Create a new PLT (protocol layer token).")
         )
 
 transactionWithScheduleCmd :: Mod CommandFields TransactionCmd
@@ -1665,9 +1641,50 @@ consensusChainUpdateCmd =
             ( ConsensusChainUpdate
                 <$> strArgument (metavar "UPDATE" <> help "File containing the update command in JSON format.")
                 <*> some (strOption (long "key" <> metavar "FILE" <> help "File containing key-pair to sign the update command. This option can be provided multiple times, once for each key-pair to use."))
+                <*> optional
+                    ( strOption
+                        ( long "pltInitParam"
+                            <> metavar "INIT_PARAM"
+                            <> help
+                                "JSON file with input parameters for creating a plt (protocol layer token). \
+                                \ This option is required for a `createPLT` chain update transaction with the following format: \
+                                \ {\"name\":\"Ether\", \
+                                \ \"metadata\":\"https://myUrl.com\", \
+                                \ \"allowList\":\"False\", \
+                                \ \"denyList\":\"False\", \
+                                \ \"initialSupply\":123456, \
+                                \ \"mintable\":\"True\", \
+                                \ \"burnable\":\"True\" \
+                                \ }.\
+                                \ All fields are required except the `initialSupply` field which is optional. \
+                                \ The option is ignored for any other chain update transaction."
+                        )
+                    )
                 <*> interactionOptsParser
             )
-            (progDesc "Send a chain-update command to the chain.")
+            ( progDescDoc $
+                docFromLines
+                    [ "Send a chain-update command to the chain.",
+                      "E.g. Format for creating a new PLT (protocol layer token):",
+                      "    {",
+                      "      \"seqNumber\":0,",
+                      "      \"effectiveTime\":1234,",
+                      "      \"timeout\":1234,",
+                      "      \"payload\":{",
+                      "         \"updateType\":\"createPLT\",",
+                      "         \"update\":{",
+                      "             \"tokenSymbol\":\"ETH\",",
+                      "             \"tokenModule\":\"6b7eef36dc48bb59ef9290cdbf123dad7e85efa76caf7df1ae8775735f8f59d3\",",
+                      "             \"governanceAccount\":\"4FmiTW2L2AccyR9VjzsnpWFSAcohXWf7Vf797i36y526mqiEcp\",",
+                      "             \"decimals\":6,",
+                      "             \"initializationParameters\":\"dead\"",
+                      "         }",
+                      "       }",
+                      "    }",
+                      "Note:",
+                      "The `dead` value will be replaced by the value from the option flag `pltInitParam`."
+                    ]
+            )
         )
 
 blockCmds :: Mod CommandFields Cmd

@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -814,32 +815,6 @@ processTransactionCmd action baseCfgDir verbose backend =
                 let intOpts = toInteractionOpts txOpts
                 let outFile = toOutFile txOpts
                 liftIO $ transferTransactionConfirm ttxCfg (ioConfirm intOpts)
-                signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
-        TransactionCreatePLT symbolText governanceAccountText moduleHashText decimals initializationParametersText txOpts -> do
-            baseCfg <- getBaseConfig baseCfgDir verbose
-            when verbose $ do
-                runPrinter $ printBaseConfig baseCfg
-                putStrLn ""
-            moduleHash <- case parseHash moduleHashText of
-                Nothing -> logFatal [printf "invalid module hash '%s'" moduleHashText]
-                Just hash -> return hash
-            let tokenModuleRef = Types.TokenModuleRef (moduleHash)
-
-            governanceAccount <- getAccountAddressArg (bcAccountNameMap baseCfg) governanceAccountText
-
-            let symbol = Types.TokenId (BSS.toShort (Text.encodeUtf8 symbolText))
-            -- Nice-to-have: Read in input parameters from CBOR encode datafile e.g. similar to smart contract init param.
-            let initializationParameters = Types.TokenParameter (BSS.toShort (Text.encodeUtf8 initializationParametersText))
-
-            withClient backend $ do
-                pl <- liftIO $ do
-                    let res = Types.CreateNewPLT symbol tokenModuleRef (naAddr governanceAccount) decimals initializationParameters
-
-                    return $ Types.encodePayload res
-                let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize pl
-                txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
-                let intOpts = toInteractionOpts txOpts
-                let outFile = toOutFile txOpts
                 signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
         TransactionSendWithSchedule receiver schedule maybeMemo txOpts -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
@@ -2882,14 +2857,41 @@ processConsensusCmd action _baseCfgDir verbose backend =
                 case res of
                     Left err -> logFatal ["Error getting chain parameters: " <> err]
                     Right Queries.EChainParametersAndKeys{..} -> runPrinter $ printChainParameters ecpParams
-        ConsensusChainUpdate rawUpdateFile keysFiles intOpts -> do
+        ConsensusChainUpdate rawUpdateFile keysFiles maybePLTParam intOpts -> do
             let
                 loadJSON :: (FromJSON a) => FilePath -> IO a
                 loadJSON fn =
                     AE.eitherDecodeFileStrict fn >>= \case
                         Left err -> logFatal [fn ++ ": " ++ err]
                         Right r -> return r
-            rawUpdate@Updates.RawUpdateInstruction{..} <- loadJSON rawUpdateFile
+            rawUpdate@Updates.RawUpdateInstruction{ruiPayload, ruiSeqNumber, ruiEffectiveTime, ruiTimeout} <- loadJSON rawUpdateFile
+            -- In case of a `CreatePLT` tx, load the init param from a separate JSON file and replace it for the `dummyValue` in the payload.
+            updatedRawUpdate <- case ruiPayload of
+                Updates.CreatePLTUpdatePayload (Types.CreatePLT{_cpltTokenSymbol, _cpltTokenModule, _cpltGovernanceAccount, _cpltDecimals, _cpltInitializationParameters}) ->
+                    case maybePLTParam of
+                        Just param -> do
+                            -- Load the new initialization parameters from the file.
+                            newInitializationParams <- loadJSON param
+                            let newCreatePLTPaylaod =
+                                    Types.CreatePLT
+                                        { _cpltTokenSymbol = _cpltTokenSymbol,
+                                          _cpltInitializationParameters = newInitializationParams,
+                                          _cpltTokenModule = _cpltTokenModule,
+                                          _cpltGovernanceAccount = _cpltGovernanceAccount,
+                                          _cpltDecimals = _cpltDecimals
+                                        }
+                            -- Replace the `dead` value.
+                            return
+                                rawUpdate
+                                    { Updates.ruiSeqNumber = ruiSeqNumber,
+                                      Updates.ruiEffectiveTime = ruiEffectiveTime,
+                                      Updates.ruiTimeout = ruiTimeout,
+                                      Updates.ruiPayload = Updates.CreatePLTUpdatePayload newCreatePLTPaylaod
+                                    }
+                        Nothing ->
+                            logFatal [printf "Creating a PLT token requires the `parameter-json` option."]
+                _ -> return rawUpdate
+
             Queries.EChainParametersAndKeys{..} <- withClient backend $ do
                 bcpRes <- getBlockChainParameters Best
                 let res = case bcpRes of
@@ -2925,7 +2927,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
             when (length keys < fromIntegral th) $
                 logFatal [printf "Not enough keys provided for signing this operation, got %u, need %u" (length keys) (fromIntegral th :: Int)]
             keyMap <- Map.fromList <$> mapM keyLU keys
-            let ui = Updates.makeUpdateInstruction rawUpdate keyMap
+            let ui = Updates.makeUpdateInstruction updatedRawUpdate keyMap
             when verbose $ logInfo ["Generated update instruction:", show ui]
             now <- getCurrentTimeUnix
             let expiryOK = ruiTimeout > now
