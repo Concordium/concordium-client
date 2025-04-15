@@ -80,14 +80,6 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          role-session-name: ${{ github.job }}Session
-          aws-region: "eu-west-1"
-          role-duration-seconds: 7200
-
       - name: Build Concordium Client Image
         uses: docker/build-push-action@v6
         with:
@@ -104,6 +96,13 @@ jobs:
             stack_version=${{ env.STACK_VERSION }}
             rust_version=${{ env.RUST_VERSION }}
             ghc_version=${{ env.GHC_VERSION }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          role-session-name: ${{ github.job }}Session
+          aws-region: "eu-west-1"
 
       - name: Create container and Extract Artifact
         run: |
@@ -129,14 +128,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          role-session-name: ${{ github.job }}Session
-          aws-region: "eu-west-1"
-          role-duration-seconds: 7200
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -165,6 +156,13 @@ jobs:
         run: |
           scripts/distributables/macOS-package/build.sh --build "${{ needs.validate-preconditions.outputs.version }}"
 
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          role-session-name: ${{ github.job }}Session
+          aws-region: "eu-west-1"
+
       - name: Extrapolate file name
         run: |
           S3_FILE_NAME=$(echo '${{ needs.validate-preconditions.outputs.s3_file_name }}' | jq -r '.["${{ github.job }}"]')
@@ -189,14 +187,6 @@ jobs:
         run: |
           choco install yq jq -y
         shell: bash
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          role-session-name: ${{ github.job }}Session
-          aws-region: "eu-west-1"
-          role-duration-seconds: 7200
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -228,6 +218,13 @@ jobs:
 
       - name: Build
         run: stack build --force-dirty
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          role-session-name: ${{ github.job }}Session
+          aws-region: "eu-west-1"
 
       - name: Zip the binaries
         shell: bash
