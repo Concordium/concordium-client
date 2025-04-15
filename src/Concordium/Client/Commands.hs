@@ -440,7 +440,6 @@ data ConsensusCmd
     | ConsensusChainUpdate
         { ccuUpdate :: !FilePath,
           ccuKeys :: ![FilePath],
-          ccuParameterPLT :: !(Maybe FilePath),
           ccuInteractionOpts :: !InteractionOpts
         }
     | ConsensusDetailedStatus
@@ -1641,48 +1640,39 @@ consensusChainUpdateCmd =
             ( ConsensusChainUpdate
                 <$> strArgument (metavar "UPDATE" <> help "File containing the update command in JSON format.")
                 <*> some (strOption (long "key" <> metavar "FILE" <> help "File containing key-pair to sign the update command. This option can be provided multiple times, once for each key-pair to use."))
-                <*> optional
-                    ( strOption
-                        ( long "pltInitParam"
-                            <> metavar "INIT_PARAM"
-                            <> help
-                                "JSON file with input parameters for creating a plt (protocol layer token). \
-                                \ This option is required for a `createPLT` chain update transaction with the following format: \
-                                \ {\"name\":\"Ether\", \
-                                \ \"metadata\":\"https://myUrl.com\", \
-                                \ \"allowList\":\"False\", \
-                                \ \"denyList\":\"False\", \
-                                \ \"initialSupply\":123456, \
-                                \ \"mintable\":\"True\", \
-                                \ \"burnable\":\"True\" \
-                                \ }.\
-                                \ All fields are required except the `initialSupply` field which is optional. \
-                                \ The option is ignored for any other chain update transaction."
-                        )
-                    )
                 <*> interactionOptsParser
             )
             ( progDescDoc $
                 docFromLines
                     [ "Send a chain-update command to the chain.",
-                      "E.g. Format for creating a new PLT (protocol layer token):",
+                      "For instance, when creating a new Protocol Level Token (PLT), the `UPDATE` file must contain a JSON object structured as follows:",
                       "    {",
                       "      \"seqNumber\":0,",
-                      "      \"effectiveTime\":1234,",
+                      "      \"effectiveTime\":0,",
                       "      \"timeout\":1234,",
                       "      \"payload\":{",
                       "         \"updateType\":\"createPLT\",",
                       "         \"update\":{",
-                      "             \"tokenSymbol\":\"ETH\",",
+                      "             \"tokenSymbol\":\"USDT\",",
                       "             \"tokenModule\":\"6b7eef36dc48bb59ef9290cdbf123dad7e85efa76caf7df1ae8775735f8f59d3\",",
                       "             \"governanceAccount\":\"4FmiTW2L2AccyR9VjzsnpWFSAcohXWf7Vf797i36y526mqiEcp\",",
                       "             \"decimals\":6,",
-                      "             \"initializationParameters\":\"dead\"",
+                      "             \"initializationParameters\":{",
+                      "                 \"name\":\"Tether\",",
+                      "                 \"metadata\":\"https://myUrl.com\",",
+                      "                 \"allowList\":false,",
+                      "                 \"denyList\":false,",
+                      "                 \"initialSupply\":12345,",
+                      "                 \"mintable\":true,",
+                      "                 \"burnable\":true",
+                      "             }",
                       "         }",
                       "       }",
                       "    }",
                       "Note:",
-                      "The `dead` value will be replaced by the value from the option flag `pltInitParam`."
+                      "Creating a new PLT token is effective immediately, hence the `effectiveTime` has to be set to 0.",
+                      "All fields are required when creating a new PLT token except the `initialSupply` field which is optional and",
+                      "the `allowList`, `denyList`, `mintable`, and `burnable` values which are set to `false` if not present."
                     ]
             )
         )

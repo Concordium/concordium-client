@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Extend `consensus chain-update` command for creating a new protocol layer token. An option `--pltInitParam` was added to pass in the input paramters for this transaction type.
+- The `consensus chain-update` command supports creating protocol level tokens now.
 
 ## 8.1.0
 

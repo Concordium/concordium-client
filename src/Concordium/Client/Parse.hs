@@ -1,6 +1,5 @@
 module Concordium.Client.Parse (
     parseTransactionHash,
-    parseHash,
     parseBlockHash,
     parseTime,
     parseCredExpiry,
@@ -19,9 +18,6 @@ import Text.Read
 
 parseTransactionHash :: Text -> Maybe TransactionHashV0
 parseTransactionHash = readMaybe . unpack
-
-parseHash :: Text -> Maybe Hash
-parseHash = readMaybe . unpack
 
 parseBlockHash :: Text -> Maybe Hash
 parseBlockHash = readMaybe . unpack
