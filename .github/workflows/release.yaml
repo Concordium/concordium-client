@@ -117,7 +117,7 @@ jobs:
 
       - name: Publish
         run: |
-          aws s3api put-object --bucket=distribution.concordium.software --key=tools/linux/${{ env.S3_FILE_NAME }} --body=./concordium-client --if-none-match='*'
+          aws s3api put-object --bucket=distribution.concordium.software --key="tools/linux/${{ env.S3_FILE_NAME }}" --body=./concordium-client --if-none-match='*'
 
   client-macos:
     needs: [validate-preconditions]
@@ -172,7 +172,7 @@ jobs:
 
       - name: Publish
         run: |
-          aws s3api put-object --bucket=distribution.concordium.software --key=tools/macos/${{ env.S3_FILE_NAME }} --body=./scripts/distributables/macOS-package/build/concordium-client-${{ needs.validate-preconditions.outputs.version }}-unsigned.pkg --if-none-match='*'
+          aws s3api put-object --bucket=distribution.concordium.software --key="tools/macos/${{ env.S3_FILE_NAME }}" --body="./scripts/distributables/macOS-package/build/concordium-client-${{ needs.validate-preconditions.outputs.version }}-unsigned.pkg" --if-none-match='*'
 
   client-windows:
     needs: [validate-preconditions]
@@ -246,5 +246,5 @@ jobs:
       - name: Publish
         shell: bash
         run: |
-          aws s3api put-object --bucket=distribution.concordium.software --key=tools/windows/${{ env.S3_FILE_NAME }} --body=out/concordium-client.zip --if-none-match='*'
+          aws s3api put-object --bucket=distribution.concordium.software --key="tools/windows/${{ env.S3_FILE_NAME }}" --body=out/concordium-client.zip --if-none-match='*'
 
