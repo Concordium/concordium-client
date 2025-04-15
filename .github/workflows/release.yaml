@@ -236,6 +236,7 @@ jobs:
           mv -f "$bin_dir/concordium-client.zip" out/concordium-client.zip
 
       - name: Extrapolate file name
+        shell: bash
         run: |
           S3_FILE_NAME=$(echo '${{ needs.validate-preconditions.outputs.s3_file_name }}' | jq -r '.["${{ github.job }}"]')
           echo "S3_FILE_NAME=${S3_FILE_NAME}" >> $GITHUB_ENV
