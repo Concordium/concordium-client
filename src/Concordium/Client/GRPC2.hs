@@ -46,6 +46,7 @@ import Network.GRPC.Client.Helpers hiding (Address)
 import Network.GRPC.HTTP2.ProtoLens
 import Network.GRPC.HTTP2.Types (GRPCStatusCode (DEADLINE_EXCEEDED, RESOURCE_EXHAUSTED))
 import Network.HTTP2.Client (ClientError, ClientIO, ExceptT, HostName, PortNumber, TooMuchConcurrency, runExceptT)
+import qualified Proto.V2.Concordium.ProtocolLevelTokens_Fields as PLTFields
 import qualified Web.Cookie as Cookie
 
 import Concordium.Client.Cli (TransactionStatusQuery (..), logFatal, wait)
@@ -1324,6 +1325,8 @@ instance FromProto Proto.RejectReason where
                 return PoolWouldBecomeOverDelegated
             Proto.RejectReason'PoolClosed _ -> do
                 return PoolClosed
+            Proto.RejectReason'NonExistentTokenId tokenId -> do
+                NonExistentTokenId <$> fromProto tokenId
 
 instance FromProto Proto.InvokeInstanceResponse where
     type Output Proto.InvokeInstanceResponse = InvokeContract.InvokeContractResult
@@ -1541,6 +1544,7 @@ instance FromProto Proto.TransactionType where
     fromProto Proto.TRANSFER_WITH_SCHEDULE_AND_MEMO = return TTTransferWithScheduleAndMemo
     fromProto Proto.CONFIGURE_BAKER = return TTConfigureBaker
     fromProto Proto.CONFIGURE_DELEGATION = return TTConfigureDelegation
+    fromProto Proto.TOKEN_HOLDER = return TTTokenHolder
     fromProto (ProtoFields.TransactionType'Unrecognized variant) =
         fromProtoFail $
             "Unable to convert 'InvokeInstanceResponse': "
@@ -1908,6 +1912,29 @@ instance FromProto Proto.ProtocolUpdate where
         let puSpecificationAuxiliaryData = pUpdate ^. ProtoFields.specificationAuxiliaryData
         return Updates.ProtocolUpdate{..}
 
+instance FromProto ProtoPLT.CBor where
+    type Output ProtoPLT.CBor = TokenParameter
+    fromProto protoCbor = do
+        let bs = protoCbor ^. PLTFields.value
+        pure $ TokenParameter (BSS.toShort bs)
+
+instance FromProto ProtoPLT.TokenModuleRef where
+    type Output ProtoPLT.TokenModuleRef = TokenModuleRef
+    fromProto th =
+        case deMkSerialize th of
+            Left err -> fromProtoFail $ "Unable to convert 'TokenModuleRef': " <> err
+            Right v -> return (TokenModuleRef v)
+
+instance FromProto ProtoPLT.CreatePLT where
+    type Output ProtoPLT.CreatePLT = CreatePLT
+    fromProto cpUpdate = do
+        _cpltTokenSymbol <- fromProto $ cpUpdate ^. PLTFields.tokenSymbol
+        _cpltGovernanceAccount <- fromProto $ cpUpdate ^. PLTFields.governanceAccount
+        let _cpltDecimals = fromIntegral $ cpUpdate ^. PLTFields.decimals
+        _cpltTokenModule <- fromProto $ cpUpdate ^. PLTFields.tokenModule
+        _cpltInitializationParameters <- fromProto $ cpUpdate ^. PLTFields.initializationParameters
+        return CreatePLT{..}
+
 instance FromProto Proto.TransactionFeeDistribution where
     type Output Proto.TransactionFeeDistribution = Parameters.TransactionFeeDistribution
     fromProto tfDistribution = do
@@ -2024,6 +2051,9 @@ instance FromProto Proto.UpdatePayload where
             ProtoFields.UpdatePayload'ValidatorScoreParametersUpdate vspUpdate -> do
                 vsp <- fromProto vspUpdate
                 return $ Updates.ValidatorScoreParametersUpdatePayload vsp
+            ProtoFields.UpdatePayload'CreatePltUpdate cpUpdate -> do
+                cp <- fromProto cpUpdate
+                return $ Updates.CreatePLTUpdatePayload cp
 
 instance FromProto Proto.BlockItemSummary where
     type Output Proto.BlockItemSummary = SupplementedTransactionSummary
@@ -2210,9 +2240,9 @@ instance FromProto Proto.AccountTransactionDetails where
                               [TransferredWithSchedule{..}, TransferMemo{..}]
                             )
                 return (Just tType, TxSuccess{..})
-            ProtoFields.AccountTransactionEffects'TokenHolderEvent _pltTokenHolderEvent -> do
+            ProtoFields.AccountTransactionEffects'TokenGovernanceEffect _pltTokenGovernanceEvent -> do
                 fromProtoFail "TODO: Implement"
-            ProtoFields.AccountTransactionEffects'TokenGovernanceEvent _pltTokenGovernanceEvent -> do
+            ProtoFields.AccountTransactionEffects'TokenHolderEffect _pltTokenHolderEvent -> do
                 fromProtoFail "TODO: Implement"
 
 instance FromProto (ProtoKernel.AccountAddress, Proto.DelegationEvent) where
