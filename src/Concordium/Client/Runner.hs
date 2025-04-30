@@ -2864,7 +2864,6 @@ processConsensusCmd action _baseCfgDir verbose backend =
                         Left err -> logFatal [fn ++ ": " ++ err]
                         Right r -> return r
             rawUpdate@Updates.RawUpdateInstruction{..} <- loadJSON rawUpdateFile
-
             Queries.EChainParametersAndKeys{..} <- withClient backend $ do
                 bcpRes <- getBlockChainParameters Best
                 let res = case bcpRes of

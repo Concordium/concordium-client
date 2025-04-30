@@ -891,15 +891,20 @@ showEvent verbose ciM = \case
         verboseOrNothing $ printf "baker %s with account %s resumed" (show bID) (show acc)
     Types.TokenModuleEvent tokenEvent ->
         let Types.TokenEventDetails bss = Types._teDetails tokenEvent
-            invalidCBOR = printf "Could not decode token event details of token module event with token id %s and type %s as valid CBOR. The hex value of the event details is %s." (show $ Types._teSymbol tokenEvent) (show $ Types._teType tokenEvent) (show $ Types._teDetails tokenEvent)
+            invalidCBOR =
+                printf
+                    "Could not decode token event details of token module event with token id %s and type %s as valid CBOR. The hex value of the event details is %s."
+                    (show $ Types._teSymbol tokenEvent)
+                    (show $ Types._teType tokenEvent)
+                    (show bss)
             bsl = BSL.fromStrict $ BSS.fromShort bss
-            eventDetails = case deserialiseFromBytes decodeString bsl of -- Try to decode the event details as a CBOR string
-                Left _ -> invalidCBOR
+            eventDetailsJSON = case deserialiseFromBytes (decodeValue False) bsl of
+                Left _ -> invalidCBOR -- if not possible, the event details is not written in valid CBOR
                 Right (rest, x) ->
                     if rest == BSL.empty
-                        then Text.unpack x
+                        then showPrettyJSON x
                         else invalidCBOR
-        in  Just $ printf "Token module event of token id %s and type %s occured with event details: \n%s" (show $ Types._teSymbol tokenEvent) (show $ Types._teType tokenEvent) eventDetails
+        in  Just $ printf "Token module event of token id %s and type %s occured with event details: \n%s" (show $ Types._teSymbol tokenEvent) (show $ Types._teType tokenEvent) eventDetailsJSON
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
