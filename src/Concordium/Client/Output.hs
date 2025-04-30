@@ -889,6 +889,22 @@ showEvent verbose ciM = \case
         verboseOrNothing $ printf "baker %s with account %s suspended" (show bID) (show acc)
     Types.BakerResumed bID acc ->
         verboseOrNothing $ printf "baker %s with account %s resumed" (show bID) (show acc)
+    Types.TokenModuleEvent tokenEvent ->
+        let Types.TokenEventDetails bss = Types._teDetails tokenEvent
+            invalidCBOR =
+                printf
+                    "Could not decode token event details of token module event with token id %s and type %s as valid CBOR. The hex value of the event details is %s."
+                    (show $ Types._teSymbol tokenEvent)
+                    (show $ Types._teType tokenEvent)
+                    (show bss)
+            bsl = BSL.fromStrict $ BSS.fromShort bss
+            eventDetailsJSON = case deserialiseFromBytes (decodeValue False) bsl of
+                Left _ -> invalidCBOR -- if not possible, the event details is not written in valid CBOR
+                Right (rest, x) ->
+                    if rest == BSL.empty
+                        then showPrettyJSON x
+                        else invalidCBOR
+        in  Just $ printf "Token module event of token id %s and type %s occured with event details: \n%s" (show $ Types._teSymbol tokenEvent) (show $ Types._teType tokenEvent) eventDetailsJSON
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
@@ -1077,6 +1093,7 @@ showRejectReason verbose = \case
     Types.PoolClosed -> "pool not open for delegation"
     Types.InsufficientDelegationStake -> "not allowed to add delegator with 0 stake"
     Types.DelegationTargetNotABaker bid -> printf "delegation target %s is not a validator id" (show bid)
+    Types.NonExistentTokenId tokenId -> printf "token id %s does not exist on-chain" (show tokenId)
 
 -- CONSENSUS
 
@@ -1187,6 +1204,7 @@ printChainParameters cp = do
         SChainParametersV1 -> printChainParametersV1 cp
         SChainParametersV2 -> printChainParametersV2 cp
         SChainParametersV3 -> printChainParametersV3 cp
+        SChainParametersV4 -> printChainParametersV4 cp
 
 -- | Prints the chain parameters for version 0.
 printChainParametersV0 :: ChainParameters' 'ChainParametersV0 -> Printer
@@ -1242,6 +1260,24 @@ printChainParametersV2 ChainParameters{..} = do
 
 printChainParametersV3 :: ChainParameters' 'ChainParametersV3 -> Printer
 printChainParametersV3 ChainParameters{..} = do
+    printPoolAndCooldownParametersV1
+        _cpPoolParameters
+        _cpCooldownParameters
+    printExchangeRateParameters _cpExchangeRates
+    printRewardAndTimeParameters _cpRewardParameters _cpTimeParameters
+    printConsensusParametersV1 _cpConsensusParameters
+    mapM_ printFinalizationCommitteeParameters _cpFinalizationCommitteeParameters
+    mapM_ printValidatorScoreParameters _cpValidatorScoreParameters
+    tell
+        [ "",
+          [i|\# Other parameters: |],
+          [i|  + foundation account index: #{_cpFoundationAccount}|],
+          [i|  + maximum credential deployments per block: #{_cpAccountCreationLimit}|]
+        ]
+
+-- TODO: Add new chain parameters
+printChainParametersV4 :: ChainParameters' 'ChainParametersV4 -> Printer
+printChainParametersV4 ChainParameters{..} = do
     printPoolAndCooldownParametersV1
         _cpPoolParameters
         _cpCooldownParameters

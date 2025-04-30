@@ -1642,7 +1642,39 @@ consensusChainUpdateCmd =
                 <*> some (strOption (long "key" <> metavar "FILE" <> help "File containing key-pair to sign the update command. This option can be provided multiple times, once for each key-pair to use."))
                 <*> interactionOptsParser
             )
-            (progDesc "Send a chain-update command to the chain.")
+            ( progDescDoc $
+                docFromLines
+                    [ "Send a chain-update command to the chain.",
+                      "For instance, when creating a new Protocol Level Token (PLT), the `UPDATE` file must contain a JSON object structured as follows:",
+                      "    {",
+                      "      \"seqNumber\":0,",
+                      "      \"effectiveTime\":0,",
+                      "      \"timeout\":1234,",
+                      "      \"payload\":{",
+                      "         \"updateType\":\"createPLT\",",
+                      "         \"update\":{",
+                      "             \"tokenSymbol\":\"EUROSTABLE\",",
+                      "             \"tokenModule\":\"6b7eef36dc48bb59ef9290cdbf123dad7e85efa76caf7df1ae8775735f8f59d3\",",
+                      "             \"governanceAccount\":\"4FmiTW2L2AccyR9VjzsnpWFSAcohXWf7Vf797i36y526mqiEcp\",",
+                      "             \"decimals\":6,",
+                      "             \"initializationParameters\":{",
+                      "                 \"name\":\"Stablecoin\",",
+                      "                 \"metadata\":\"https://myUrl.com\",",
+                      "                 \"allowList\":false,",
+                      "                 \"denyList\":false,",
+                      "                 \"initialSupply\":12345,",
+                      "                 \"mintable\":true,",
+                      "                 \"burnable\":true",
+                      "             }",
+                      "         }",
+                      "       }",
+                      "    }",
+                      "Note:",
+                      "Creating a new PLT token is effective immediately, hence the `effectiveTime` has to be set to 0.",
+                      "All fields are required when creating a new PLT token except the `initialSupply` field which is optional and",
+                      "the `allowList`, `denyList`, `mintable`, and `burnable` values which are set to `false` if not present."
+                    ]
+            )
         )
 
 blockCmds :: Mod CommandFields Cmd

@@ -122,6 +122,7 @@ exampleAccountInfoResultWithCooldowns cooldowns staking cs =
           aiAccountCredentials = Map.fromList . zip [0 ..] . map (Versioned 0) $ cs,
           aiAccountThreshold = 1,
           aiAccountReleaseSchedule = AccountReleaseSummary 0 [],
+          aiAccountTokens = [],
           aiAccountEncryptedAmount =
             Types.AccountEncryptedAmount
                 { _startIndex = 3,
