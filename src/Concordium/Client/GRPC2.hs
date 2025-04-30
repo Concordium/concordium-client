@@ -1419,6 +1419,7 @@ instance FromProto Proto.NextUpdateSequenceNumbers where
         _nusnBlockEnergyLimit <- fromProto $ nums ^. ProtoFields.blockEnergyLimit
         _nusnFinalizationCommitteeParameters <- fromProto $ nums ^. ProtoFields.finalizationCommitteeParameters
         _nusnValidatorScoreParameters <- fromProto $ nums ^. ProtoFields.validatorScoreParameters
+        _nusnProtocolLevelTokensParameters <- fromProto $ nums ^. ProtoFields.protocolLevelTokens
         return NextUpdateSequenceNumbers{..}
 
 instance FromProto Proto.IpAddress where

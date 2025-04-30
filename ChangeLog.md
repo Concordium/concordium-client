@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Subcommand `raw GetNextUpdateSequenceNumbers` now displays the next update sequence number for protocol level tokens chain updates.
 - The `consensus chain-update` command supports creating protocol level tokens now.
 
 ## 8.1.0
