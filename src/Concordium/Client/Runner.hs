@@ -4337,6 +4337,11 @@ processLegacyCmd action backend =
                 readBlockHashOrDefault Best block
                     >>= getNextUpdateSequenceNumbers
                     >>= printResponseValueAsJSON
+        GetTokenList block ->
+            withClient backend $
+                readBlockHashOrDefault Best block
+                    >>= getTokenList
+                    >>= printResponseValueAsJSON
         GetScheduledReleaseAccounts block ->
             withClient backend $
                 readBlockHashOrDefault Best block

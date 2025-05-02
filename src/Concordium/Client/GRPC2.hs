@@ -1328,6 +1328,33 @@ instance FromProto Proto.RejectReason where
                 return PoolClosed
             Proto.RejectReason'NonExistentTokenId tokenId -> do
                 NonExistentTokenId <$> fromProto tokenId
+            Proto.RejectReason'TokenHolderTransactionFailed reason -> do
+                TokenHolderTransactionFailed <$> fromProto reason
+
+instance FromProto ProtoPLT.TokenModuleRejectReason where
+    type Output ProtoPLT.TokenModuleRejectReason = TokenModuleRejectReason
+    fromProto reason = do
+        tmrrTokenSymbol <- fromProto $ reason ^. PLTFields.tokenSymbol
+        let rawType = reason ^. PLTFields.type'
+        let bs = TE.encodeUtf8 rawType
+        let tmrrType = TokenEventType (BSS.toShort bs)
+        tmrrDetails <- traverse (fromProto . CBorAsTokenEventDetails) (reason ^. PLTFields.maybe'details)
+        return TokenModuleRejectReason{..}
+
+newtype CBorAsTokenEventDetails = CBorAsTokenEventDetails ProtoPLT.CBor
+newtype CBorAsTokenParameter = CBorAsTokenParameter ProtoPLT.CBor
+
+instance FromProto CBorAsTokenEventDetails where
+    type Output CBorAsTokenEventDetails = TokenEventDetails
+    fromProto (CBorAsTokenEventDetails protoCbor) = do
+        let bs = protoCbor ^. PLTFields.value
+        pure $ TokenEventDetails (BSS.toShort bs)
+
+instance FromProto CBorAsTokenParameter where
+    type Output CBorAsTokenParameter = TokenParameter
+    fromProto (CBorAsTokenParameter protoCbor) = do
+        let bs = protoCbor ^. PLTFields.value
+        pure $ TokenParameter (BSS.toShort bs)
 
 instance FromProto Proto.InvokeInstanceResponse where
     type Output Proto.InvokeInstanceResponse = InvokeContract.InvokeContractResult
@@ -1914,12 +1941,6 @@ instance FromProto Proto.ProtocolUpdate where
         let puSpecificationAuxiliaryData = pUpdate ^. ProtoFields.specificationAuxiliaryData
         return Updates.ProtocolUpdate{..}
 
-instance FromProto ProtoPLT.CBor where
-    type Output ProtoPLT.CBor = TokenParameter
-    fromProto protoCbor = do
-        let bs = protoCbor ^. PLTFields.value
-        pure $ TokenParameter (BSS.toShort bs)
-
 instance FromProto ProtoPLT.TokenModuleRef where
     type Output ProtoPLT.TokenModuleRef = TokenModuleRef
     fromProto th =
@@ -1936,7 +1957,7 @@ instance FromProto ProtoPLT.CreatePLT where
             Nothing -> fromProtoFail $ "CreatePLT: decimals out of range"
             Just converted -> return converted
         _cpltTokenModule <- fromProto $ cpUpdate ^. PLTFields.tokenModule
-        _cpltInitializationParameters <- fromProto $ cpUpdate ^. PLTFields.initializationParameters
+        _cpltInitializationParameters <- (fromProto . CBorAsTokenParameter) (cpUpdate ^. PLTFields.initializationParameters)
         return CreatePLT{..}
 
 instance FromProto Proto.TransactionFeeDistribution where
@@ -3607,6 +3628,12 @@ getNextUpdateSequenceNumbers bhInput = withUnary (call @"getNextUpdateSequenceNu
   where
     msg = toProto bhInput
 
+-- | Get the list of all protocol level tokens after a given block.
+getTokenList :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq TokenId)))
+getTokenList bhInput = withServerStreamCollect (call @"getTokenList") msg ((fmap . mapM) fromProto)
+  where
+    msg = toProto bhInput
+
 -- | Get all accounts that have scheduled releases.
 getScheduledReleaseAccounts :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq AccountPending)))
 getScheduledReleaseAccounts bhInput =
@@ -3758,7 +3785,7 @@ withUnary ::
     -- | A mapping of the result.
     (GRPCResult o -> b) ->
     ClientMonad n b
-withUnary method input k = withGRPCCore callHelper k
+withUnary method input = withGRPCCore callHelper
   where
     -- This is here so we may leverage @withGRPCCore@.
     callHelper client = do
@@ -3818,7 +3845,7 @@ withServerStreamCallback method input acc handler =
     -- This is simply a handler which conforms to the one required by
     -- @rawStreamServer@. This is here, so we may ignore the response
     -- headers in the handler, just for the sake of ergonomics.
-    handler' acc' _hds streamObj = handler acc' streamObj
+    handler' acc' _hds = handler acc'
     -- Helper that invokes the streaming call with the above callback.
     -- This is here so we may leverage @withGRPCCore@.
     callHelper client = do

@@ -1647,7 +1647,7 @@ consensusChainUpdateCmd =
                     [ "Send a chain-update command to the chain.",
                       "For instance, when creating a new Protocol Level Token (PLT), the `UPDATE` file must contain a JSON object structured as follows:",
                       "    {",
-                      "      \"seqNumber\":0,",
+                      "      \"seqNumber\":1,",
                       "      \"effectiveTime\":0,",
                       "      \"timeout\":1234,",
                       "      \"payload\":{",
