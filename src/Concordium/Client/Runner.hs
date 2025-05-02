@@ -895,6 +895,54 @@ processTransactionCmd action baseCfgDir verbose backend =
                     Nothing -> return ()
                     Just (Left err) -> logFatal ["Registering data failed:", err]
                     Just (Right _) -> logSuccess ["Data succesfully registered."]
+        TransactionTokenHolder receiver amount symbolText txOpts -> do
+            baseCfg <- getBaseConfig baseCfgDir verbose
+            when verbose $ do
+                runPrinter $ printBaseConfig baseCfg
+                putStrLn ""
+
+            -- payload@Types.TokenHolder{..} <- loadJSON rawUpdateFile
+            receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
+            let _symbol = Types.TokenId $ BS.toShort $ Text.encodeUtf8 symbolText
+
+            -- TODO
+
+            -- let payload=Types.TokenHolder symbol (naAddr receiverAddress) amount
+            -- let pl = Types.encodePayload payload
+            -- logFatal ["Stop: " <> (show payload)]
+            -- logFatal ["Stop: " <> (show pl)]
+
+            {-
+             TokenHolder
+                {
+                -- | Identifier of the token type to which the transaction refers.
+                thTokenSymbol :: !TokenId,
+                -- | The CBOR-encoded operations to perform.
+                thOperations :: !TokenParameter
+                }
+            -}
+
+            withClient backend $ do
+                pl <- liftIO $ do
+                    let res = Types.Transfer (naAddr receiverAddress) amount
+                    return $ Types.encodePayload res
+                let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize pl
+                txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
+
+                let ttxCfg =
+                        TransferTransactionConfig
+                            { ttcTransactionCfg = txCfg,
+                              ttcReceiver = receiverAddress,
+                              ttcAmount = amount
+                            }
+                when verbose $ liftIO $ do
+                    runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
+                    putStrLn ""
+
+                let intOpts = toInteractionOpts txOpts
+                let outFile = toOutFile txOpts
+                liftIO $ transferTransactionConfirm ttxCfg (ioConfirm intOpts)
+                signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
 
 -- | Construct a transaction config for registering data.
 --   The data is read from the 'FilePath' provided.
@@ -2856,6 +2904,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
                 case res of
                     Left err -> logFatal ["Error getting chain parameters: " <> err]
                     Right Queries.EChainParametersAndKeys{..} -> runPrinter $ printChainParameters ecpParams
+        -- TOOD
         ConsensusChainUpdate rawUpdateFile keysFiles intOpts -> do
             let
                 loadJSON :: (FromJSON a) => FilePath -> IO a

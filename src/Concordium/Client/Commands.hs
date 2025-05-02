@@ -222,6 +222,12 @@ data TransactionCmd
           -- | Options for transaction.
           trdTransactionOptions :: !(TransactionOpts (Maybe Energy))
         }
+    | TransactionTokenHolder
+        { tsgReceiver :: !Text,
+          tsgAmount :: !Amount,
+          tsgSymbol :: !Text,
+          tsgOpts :: !(TransactionOpts (Maybe Energy))
+        }
     deriving (Show)
 
 data AccountCmd
@@ -712,6 +718,7 @@ transactionCmds =
                         <> transactionWithScheduleCmd
                         <> transactionDeployCredentialCmd
                         <> transactionRegisterDataCmd
+                        <> transactionTokenHolderCmd
                     )
             )
             (progDesc "Commands for submitting and inspecting transactions.")
@@ -824,6 +831,20 @@ transactionSendCcdCmd =
                 <*> transactionOptsParser
             )
             (progDesc "Transfer CCD from one account to another.")
+        )
+
+transactionTokenHolderCmd :: Mod CommandFields TransactionCmd
+transactionTokenHolderCmd =
+    command
+        "transfer-plt"
+        ( info
+            ( TransactionTokenHolder
+                <$> strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.")
+                <*> option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> help "Amount of CCDs to send.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (Symbol) of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Transfer troken from one account to another.")
         )
 
 transactionWithScheduleCmd :: Mod CommandFields TransactionCmd
