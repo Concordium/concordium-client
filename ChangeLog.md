@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Subcommand `account show` now displays protocol level tokens info.
+- Subcommand `raw GetAccountInfo` now displays protocol level tokens info.
 - Add `transaction transfer-plt` command to transfer protocol level tokens from one account to another.
 - Add `raw GetTokenList` command to display the list of protocol level tokens.
 - Subcommand `raw GetNextUpdateSequenceNumbers` now displays the next update sequence number for protocol level tokens chain updates.

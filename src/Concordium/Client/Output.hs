@@ -44,6 +44,7 @@ import qualified Concordium.Client.Types.ConsensusStatus as ConsensusStatus
 import Concordium.Client.Types.Contract.BuildInfo (showBuildInfo)
 import Concordium.Common.Time (DurationSeconds (durationSeconds))
 import Concordium.Types.Execution (Event' (ecEvents), SupplementedEvent)
+import qualified Concordium.Types.Queries.Tokens as Types
 import Control.Monad
 import Control.Monad.Writer
 import qualified Data.Aeson as AE
@@ -195,20 +196,36 @@ showRevealedAttributes as =
         Just k -> Text.unpack k
     showAttr (t, IDTypes.AttributeValue v) = printf "%s=%s" (showTag t) (show v)
 
+prettyPrintTokens :: [Types.Token] -> [String]
+prettyPrintTokens = map formatToken
+  where
+    indent = replicate 24 ' '
+    formatToken (Types.Token tid (Types.TokenAccountState (Types.TokenAmount digits decs) inAllowList inDenyList)) =
+        let amount = fromIntegral digits / (10 ^ decs :: Double)
+        in  unlines
+                [ indent ++ "Token ID:            " ++ show tid,
+                  indent ++ "Balance:             " ++ printf ("%." ++ show decs ++ "f") amount,
+                  indent ++ "In Allow List:       " ++ show inAllowList,
+                  indent ++ "In Deny List:        " ++ show inDenyList
+                ]
+
 printAccountInfo :: NamedAddress -> Types.AccountInfo -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
 printAccountInfo addr a verbose showEncrypted mEncKey = do
     let balance = showCcd $ Types.aiAccountAmount a
+    let tokens = prettyPrintTokens (Types.aiAccountTokens a)
     let rjustCcd amt = let t = showCcd amt in replicate (length balance - length t) ' ' ++ t
     tell
         ( [ [i|Local names:            #{showNameList $ naNames addr}|],
             [i|Address:                #{naAddr addr}|],
             [i|Balance:                #{balance}|],
-            [i| - At disposal:         #{rjustCcd (Types.aiAccountAvailableAmount a)}|]
+            [i| - At disposal:         #{rjustCcd (Types.aiAccountAvailableAmount a)}|],
+            [i|Tokens:|],
+            [i|#{unlines tokens}|]
           ]
             ++ case Types.releaseTotal $ Types.aiAccountReleaseSchedule a of
                 0 -> []
                 tot ->
-                    (printf "Release schedule:       total %s" (showCcd tot))
+                    printf "Release schedule:       total %s" (showCcd tot)
                         : map
                             ( \Types.ScheduledRelease{..} ->
                                 printf
