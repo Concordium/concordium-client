@@ -39,6 +39,7 @@ import Concordium.Common.Time
 import Concordium.ID.Types (AccountThreshold, CredentialIndex, CredentialRegistrationID, KeyIndex)
 import Concordium.Types
 import Concordium.Types.Execution
+import Concordium.Types.Queries.Tokens
 import qualified Concordium.Wasm as Wasm
 import Control.Monad
 import Data.String
@@ -223,10 +224,10 @@ data TransactionCmd
           trdTransactionOptions :: !(TransactionOpts (Maybe Energy))
         }
     | TransactionTokenHolder
-        { tsgReceiver :: !Text,
-          tsgAmount :: !Amount,
-          tsgSymbol :: !Text,
-          tsgOpts :: !(TransactionOpts (Maybe Energy))
+        { tthReceiver :: !Text,
+          tthAmount :: !TokenAmount,
+          tthSymbol :: !Text,
+          tthOpts :: !(TransactionOpts (Maybe Energy))
         }
     deriving (Show)
 
@@ -840,11 +841,11 @@ transactionTokenHolderCmd =
         ( info
             ( TransactionTokenHolder
                 <$> strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.")
-                <*> option (eitherReader amountFromStringInform) (long "amount" <> metavar "CCD-AMOUNT" <> help "Amount of CCDs to send.")
+                <*> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (Symbol) of the token.")
                 <*> transactionOptsParser
             )
-            (progDesc "Transfer troken from one account to another.")
+            (progDesc "Transfer tokens from one account to another.")
         )
 
 transactionWithScheduleCmd :: Mod CommandFields TransactionCmd

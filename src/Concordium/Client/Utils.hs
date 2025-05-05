@@ -15,6 +15,9 @@ import qualified Data.Text as Text
 import qualified Data.Text.Lazy as Lazy.Text
 import qualified Data.Text.Lazy.Encoding as Lazy.Text
 import Data.Word (Word64)
+import qualified Text.ParserCombinators.ReadP as RP
+
+import Concordium.Types.Queries.Tokens
 import Text.Read
 
 -- | In the 'Left' case of an 'Either', transform the error using the given function and
@@ -56,6 +59,26 @@ amountFromStringInform s =
     case amountFromString s of
         Just a -> Right a
         Nothing -> Left $ "Invalid CCD amount '" ++ s ++ "'. Amounts must be of the form n[.m] where m, if present,\n must have at least one and at most 6 digits."
+
+-- | Try to parse a token amount from a string, and if failing, try to inform the user
+--  what the expected format is. This is intended to be used by the options
+--  parsers.
+tokenAmountFromStringInform :: String -> Either String TokenAmount
+tokenAmountFromStringInform s =
+    case tokenAmountFromString s of
+        Just a -> Right a
+        Nothing -> Left $ "Invalid protocol level token amount '" ++ s ++ "'. Amounts must be of the form n[.m] where m, if present,\n must have exactly the number of digits associated with the token."
+
+-- | TODO: replace the hardcoded decimal value 2 with a variable.
+-- | TODO: move the funtion to base.
+-- | Parse an amount from GTU decimal representation.
+tokenAmountFromString :: String -> Maybe TokenAmount
+tokenAmountFromString s =
+    if null s || length parsed /= 1
+        then Nothing
+        else Just $ TokenAmount (fst (head parsed)) 2
+  where
+    parsed = RP.readP_to_S amountParser s
 
 amountFractionFromStringInform :: String -> Either String AmountFraction
 amountFractionFromStringInform s =

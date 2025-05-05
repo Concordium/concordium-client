@@ -79,6 +79,7 @@ import Codec.CBOR.Encoding
 import Codec.CBOR.JSON
 import Codec.CBOR.Write
 import Concordium.Client.Types.Contract.BuildInfo (extractBuildInfo)
+import qualified Concordium.Types.ProtocolLevelTokens.CBOR as CBOR
 import Control.Arrow (Arrow (second))
 import Control.Concurrent (threadDelay)
 import Control.Exception
@@ -901,48 +902,30 @@ processTransactionCmd action baseCfgDir verbose backend =
                 runPrinter $ printBaseConfig baseCfg
                 putStrLn ""
 
-            -- payload@Types.TokenHolder{..} <- loadJSON rawUpdateFile
             receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
-            let _symbol = Types.TokenId $ BS.toShort $ Text.encodeUtf8 symbolText
+            let receiverAccount = naAddr receiverAddress
+            let tokenReceiver = CBOR.accountTokenReceiver receiverAccount
 
-            -- TODO
+            -- TODO: handle optional `memo`: amount, recipient, memo
+            let operation = CBOR.TokenTransferBuilder (Just amount) (Just tokenReceiver) Nothing
+            let tokenTranfserBody = CBOR.buildTokenTransfer operation
+            ttb <- case tokenTranfserBody of
+                Right val -> return val
+                Left err -> logFatal ["Error creating token transfer body:", err]
+            let tokenParameter = Types.TokenParameter $ BS.toShort $ CBOR.tokenTransferParametersToBytes ttb
 
-            -- let payload=Types.TokenHolder symbol (naAddr receiverAddress) amount
-            -- let pl = Types.encodePayload payload
-            -- logFatal ["Stop: " <> (show payload)]
-            -- logFatal ["Stop: " <> (show pl)]
+            let symbol = Types.TokenId $ BS.toShort $ Text.encodeUtf8 symbolText
 
-            {-
-             TokenHolder
-                {
-                -- | Identifier of the token type to which the transaction refers.
-                thTokenSymbol :: !TokenId,
-                -- | The CBOR-encoded operations to perform.
-                thOperations :: !TokenParameter
-                }
-            -}
+            let pl = Types.TokenHolder symbol tokenParameter
+            let encoded_pl = Types.encodePayload pl
 
             withClient backend $ do
-                pl <- liftIO $ do
-                    let res = Types.Transfer (naAddr receiverAddress) amount
-                    return $ Types.encodePayload res
-                let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize pl
+                let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize encoded_pl
                 txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
-
-                let ttxCfg =
-                        TransferTransactionConfig
-                            { ttcTransactionCfg = txCfg,
-                              ttcReceiver = receiverAddress,
-                              ttcAmount = amount
-                            }
-                when verbose $ liftIO $ do
-                    runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
-                    putStrLn ""
 
                 let intOpts = toInteractionOpts txOpts
                 let outFile = toOutFile txOpts
-                liftIO $ transferTransactionConfirm ttxCfg (ioConfirm intOpts)
-                signAndProcessTransaction_ verbose txCfg pl intOpts outFile backend
+                signAndProcessTransaction_ verbose txCfg encoded_pl intOpts outFile backend
 
 -- | Construct a transaction config for registering data.
 --   The data is read from the 'FilePath' provided.
