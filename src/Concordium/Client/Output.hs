@@ -1094,7 +1094,20 @@ showRejectReason verbose = \case
     Types.InsufficientDelegationStake -> "not allowed to add delegator with 0 stake"
     Types.DelegationTargetNotABaker bid -> printf "delegation target %s is not a validator id" (show bid)
     Types.NonExistentTokenId tokenId -> printf "token id %s does not exist on-chain" (show tokenId)
-    Types.TokenHolderTransactionFailed reason -> printf "the token holder transaction failed with reason %s" (show reason)
+    Types.TokenHolderTransactionFailed reason -> do
+        let details = Types.tmrrDetails reason
+            invalidCBOR = printf "token holder transaction failed: %s (Could not decode reject details as valid CBOR)\n" (show reason)
+        case details of
+            Nothing -> invalidCBOR
+            Just detail -> do
+                let test = Types.tokenEventDetailsBytes detail
+                let bsl = BSL.fromStrict $ BSS.fromShort test
+                case deserialiseFromBytes (decodeValue False) bsl of
+                    Left _ -> invalidCBOR -- if not possible, the reject details is not written in valid
+                    Right (rest, x) ->
+                        if rest == BSL.empty
+                            then printf "token holder transaction failed: %s (CBOR decoded details: %s)\n" (show reason) (showPrettyJSON x)
+                            else invalidCBOR
 
 -- CONSENSUS
 
