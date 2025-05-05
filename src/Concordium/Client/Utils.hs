@@ -14,8 +14,7 @@ import Data.String.Interpolate (i, iii)
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as Lazy.Text
 import qualified Data.Text.Lazy.Encoding as Lazy.Text
-import Data.Word (Word64)
-import qualified Text.ParserCombinators.ReadP as RP
+import Data.Word (Word32, Word64)
 
 import Concordium.Types.Queries.Tokens
 import Text.Read
@@ -67,18 +66,23 @@ tokenAmountFromStringInform :: String -> Either String TokenAmount
 tokenAmountFromStringInform s =
     case tokenAmountFromString s of
         Just a -> Right a
-        Nothing -> Left $ "Invalid protocol level token amount '" ++ s ++ "'. Amounts must be of the form n[.m] where m, if present,\n must have exactly the number of digits associated with the token."
+        Nothing -> Left $ "Invalid protocol level token amount '" ++ s ++ "'. Amounts must be of the form n[.m] where m, if present,\n must have not more digits as the token decimals value."
 
--- | TODO: replace the hardcoded decimal value 2 with a variable.
--- | TODO: move the funtion to base.
--- | Parse an amount from GTU decimal representation.
 tokenAmountFromString :: String -> Maybe TokenAmount
-tokenAmountFromString s =
-    if null s || length parsed /= 1
-        then Nothing
-        else Just $ TokenAmount (fst (head parsed)) 2
+tokenAmountFromString s
+    | null combinedStr = Nothing
+    | fracLen > fromIntegral (maxBound :: Word32) = Nothing
+    | otherwise = do
+        num <- readMaybe combinedStr
+        if num <= toInteger (maxBound :: Word64)
+            then Just $ TokenAmount (fromInteger num) decimals
+            else Nothing
   where
-    parsed = RP.readP_to_S amountParser s
+    (intPart, fracRaw) = break (== '.') s
+    fracPart = drop 1 fracRaw
+    fracLen = length fracPart
+    decimals = fromIntegral fracLen
+    combinedStr = intPart ++ fracPart
 
 amountFractionFromStringInform :: String -> Either String AmountFraction
 amountFractionFromStringInform s =

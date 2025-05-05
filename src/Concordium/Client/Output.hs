@@ -1100,8 +1100,8 @@ showRejectReason verbose = \case
         case details of
             Nothing -> invalidCBOR
             Just detail -> do
-                let test = Types.tokenEventDetailsBytes detail
-                let bsl = BSL.fromStrict $ BSS.fromShort test
+                let detailsShortByteString = Types.tokenEventDetailsBytes detail
+                let bsl = BSL.fromStrict $ BSS.fromShort detailsShortByteString
                 case deserialiseFromBytes (decodeValue False) bsl of
                     Left _ -> invalidCBOR -- if not possible, the reject details is not written in valid CBOR
                     Right (rest, x) ->

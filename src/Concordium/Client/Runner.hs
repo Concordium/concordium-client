@@ -917,26 +917,26 @@ processTransactionCmd action baseCfgDir verbose backend =
                         return $ Just $ CBOR.CBORMemo memo
 
                 let operation = CBOR.TokenTransferBuilder (Just amount) (Just tokenReceiver) maybeCborMemo
-                let tokenTranfserBody = CBOR.buildTokenTransfer operation
-                ttb <- case tokenTranfserBody of
+                let eitherTokenTranfserBody = CBOR.buildTokenTransfer operation
+                tokenTransferBody <- case eitherTokenTranfserBody of
                     Right val -> return val
                     Left err -> logFatal ["Error creating token transfer body:", err]
-                let tokenHolderTransfer = CBOR.TokenHolderTransfer ttb
+                let tokenHolderTransfer = CBOR.TokenHolderTransfer tokenTransferBody
                 let tokenHolderTransaction = CBOR.TokenHolderTransaction (Seq.fromList [tokenHolderTransfer])
                 let bytes = CBOR.tokenHolderTransactionToBytes tokenHolderTransaction
                 let tokenParameter = Types.TokenParameter $ BS.toShort bytes
 
                 let symbol = Types.TokenId $ BS.toShort $ Text.encodeUtf8 symbolText
 
-                let pl = Types.TokenHolder symbol tokenParameter
-                let encoded_pl = Types.encodePayload pl
+                let payload = Types.TokenHolder symbol tokenParameter
+                let encodedPayload = Types.encodePayload payload
 
-                let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize encoded_pl
+                let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize encodedPayload
                 txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
                 let intOpts = toInteractionOpts txOpts
                 let outFile = toOutFile txOpts
-                signAndProcessTransaction_ verbose txCfg encoded_pl intOpts outFile backend
+                signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend
 
 -- | Construct a transaction config for registering data.
 --   The data is read from the 'FilePath' provided.
@@ -2898,7 +2898,6 @@ processConsensusCmd action _baseCfgDir verbose backend =
                 case res of
                     Left err -> logFatal ["Error getting chain parameters: " <> err]
                     Right Queries.EChainParametersAndKeys{..} -> runPrinter $ printChainParameters ecpParams
-        -- TOOD
         ConsensusChainUpdate rawUpdateFile keysFiles intOpts -> do
             let
                 loadJSON :: (FromJSON a) => FilePath -> IO a
