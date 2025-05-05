@@ -1103,7 +1103,7 @@ showRejectReason verbose = \case
                 let test = Types.tokenEventDetailsBytes detail
                 let bsl = BSL.fromStrict $ BSS.fromShort test
                 case deserialiseFromBytes (decodeValue False) bsl of
-                    Left _ -> invalidCBOR -- if not possible, the reject details is not written in valid
+                    Left _ -> invalidCBOR -- if not possible, the reject details is not written in valid CBOR
                     Right (rest, x) ->
                         if rest == BSL.empty
                             then printf "token holder transaction failed: %s (CBOR decoded details: %s)\n" (show reason) (showPrettyJSON x)

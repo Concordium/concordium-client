@@ -227,6 +227,7 @@ data TransactionCmd
         { tthReceiver :: !Text,
           tthAmount :: !TokenAmount,
           tthSymbol :: !Text,
+          tthMemo :: !(Maybe MemoInput),
           tthOpts :: !(TransactionOpts (Maybe Energy))
         }
     deriving (Show)
@@ -843,6 +844,7 @@ transactionTokenHolderCmd =
                 <$> strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.")
                 <*> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (Symbol) of the token.")
+                <*> memoInputParser
                 <*> transactionOptsParser
             )
             (progDesc "Transfer tokens from one account to another.")
