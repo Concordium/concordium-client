@@ -1343,6 +1343,8 @@ instance FromProto ProtoPLT.TokenModuleRejectReason where
 
 newtype CBorAsTokenEventDetails = CBorAsTokenEventDetails ProtoPLT.CBor
 newtype CBorAsTokenParameter = CBorAsTokenParameter ProtoPLT.CBor
+newtype CBorAsTokenGovernanceEvent = CBorAsTokenGovernanceEvent ProtoPLT.CBor
+newtype CBorAsTokenHolderEvent = CBorAsTokenHolderEvent ProtoPLT.CBor
 
 instance FromProto CBorAsTokenEventDetails where
     type Output CBorAsTokenEventDetails = TokenEventDetails
@@ -1355,6 +1357,18 @@ instance FromProto CBorAsTokenParameter where
     fromProto (CBorAsTokenParameter protoCbor) = do
         let bs = protoCbor ^. PLTFields.value
         pure $ TokenParameter (BSS.toShort bs)
+
+instance FromProto CBorAsTokenGovernanceEvent where
+    type Output CBorAsTokenGovernanceEvent = TokenEventDetails
+    fromProto (CBorAsTokenGovernanceEvent protoCbor) = do
+        let bs = protoCbor ^. PLTFields.value
+        pure $ TokenEventDetails (BSS.toShort bs)
+
+instance FromProto CBorAsTokenHolderEvent where
+    type Output CBorAsTokenHolderEvent = TokenEventDetails
+    fromProto (CBorAsTokenHolderEvent protoCbor) = do
+        let bs = protoCbor ^. PLTFields.value
+        pure $ TokenEventDetails (BSS.toShort bs)
 
 instance FromProto Proto.InvokeInstanceResponse where
     type Output Proto.InvokeInstanceResponse = InvokeContract.InvokeContractResult
@@ -2265,10 +2279,38 @@ instance FromProto Proto.AccountTransactionDetails where
                               [TransferredWithSchedule{..}, TransferMemo{..}]
                             )
                 return (Just tType, TxSuccess{..})
-            ProtoFields.AccountTransactionEffects'TokenGovernanceEffect _pltTokenGovernanceEvent -> do
-                fromProtoFail "TODO: Implement"
-            ProtoFields.AccountTransactionEffects'TokenHolderEffect _pltTokenHolderEvent -> do
-                fromProtoFail "TODO: Implement"
+            ProtoFields.AccountTransactionEffects'TokenGovernanceEffect pltTokenGovernanceEvent -> do
+                let protoEvents = pltTokenGovernanceEvent ^. PLTFields.events
+                tokenEvents <-
+                    mapM
+                        ( \ev -> do
+                            _teSymbol <- fromProto $ ev ^. ProtoFieldsPLT.tokenSymbol
+
+                            let textType = ev ^. ProtoFieldsPLT.type'
+                            let byteString = TE.encodeUtf8 textType
+                            let _teType = TokenEventType $ BSS.toShort byteString
+
+                            _teDetails <- (fromProto . CBorAsTokenGovernanceEvent) (ev ^. PLTFields.details)
+                            return $ TokenModuleEvent (TokenEvent{..})
+                        )
+                        protoEvents
+                return (Just TTTokenGovernance, TxSuccess tokenEvents)
+            ProtoFields.AccountTransactionEffects'TokenHolderEffect pltTokenHolderEvent -> do
+                let protoEvents = pltTokenHolderEvent ^. PLTFields.events
+                tokenEvents <-
+                    mapM
+                        ( \ev -> do
+                            _teSymbol <- fromProto $ ev ^. ProtoFieldsPLT.tokenSymbol
+
+                            let textType = ev ^. ProtoFieldsPLT.type'
+                            let byteString = TE.encodeUtf8 textType
+                            let _teType = TokenEventType $ BSS.toShort byteString
+
+                            _teDetails <- (fromProto . CBorAsTokenGovernanceEvent) (ev ^. PLTFields.details)
+                            return $ TokenModuleEvent (TokenEvent{..})
+                        )
+                        protoEvents
+                return (Just TTTokenGovernance, TxSuccess tokenEvents)
 
 instance FromProto (ProtoKernel.AccountAddress, Proto.DelegationEvent) where
     type Output (ProtoKernel.AccountAddress, Proto.DelegationEvent) = SupplementedEvent

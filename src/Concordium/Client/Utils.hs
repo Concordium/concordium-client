@@ -66,7 +66,7 @@ tokenAmountFromStringInform :: String -> Either String TokenAmount
 tokenAmountFromStringInform s =
     case tokenAmountFromString s of
         Just a -> Right a
-        Nothing -> Left $ "Invalid protocol level token amount '" ++ s ++ "'. Amounts must be of the form n[.m] where m, if present,\n must have not more digits as the token decimals value."
+        Nothing -> Left $ "Invalid protocol level token amount '" ++ s ++ "'. Amounts must be of the form n[.m] where m, if present,\n must have no more digits than the token decimals value."
 
 tokenAmountFromString :: String -> Maybe TokenAmount
 tokenAmountFromString s

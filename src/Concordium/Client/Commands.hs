@@ -223,7 +223,7 @@ data TransactionCmd
           -- | Options for transaction.
           trdTransactionOptions :: !(TransactionOpts (Maybe Energy))
         }
-    | TransactionTokenHolder
+    | TransactionPLTTransfer
         { tthReceiver :: !Text,
           tthAmount :: !TokenAmount,
           tthSymbol :: !Text,
@@ -720,7 +720,7 @@ transactionCmds =
                         <> transactionWithScheduleCmd
                         <> transactionDeployCredentialCmd
                         <> transactionRegisterDataCmd
-                        <> transactionTokenHolderCmd
+                        <> transactionPLTTransferCmd
                     )
             )
             (progDesc "Commands for submitting and inspecting transactions.")
@@ -835,12 +835,12 @@ transactionSendCcdCmd =
             (progDesc "Transfer CCD from one account to another.")
         )
 
-transactionTokenHolderCmd :: Mod CommandFields TransactionCmd
-transactionTokenHolderCmd =
+transactionPLTTransferCmd :: Mod CommandFields TransactionCmd
+transactionPLTTransferCmd =
     command
         "transfer-plt"
         ( info
-            ( TransactionTokenHolder
+            ( TransactionPLTTransfer
                 <$> strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.")
                 <*> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (Symbol) of the token.")

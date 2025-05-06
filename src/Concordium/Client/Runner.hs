@@ -897,7 +897,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                     Nothing -> return ()
                     Just (Left err) -> logFatal ["Registering data failed:", err]
                     Just (Right _) -> logSuccess ["Data succesfully registered."]
-        TransactionTokenHolder receiver amount symbolText maybeMemo txOpts -> do
+        TransactionPLTTransfer receiver amount symbolText maybeMemo txOpts -> do
             baseCfg <- getBaseConfig baseCfgDir verbose
             when verbose $ do
                 runPrinter $ printBaseConfig baseCfg
