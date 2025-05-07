@@ -1347,8 +1347,6 @@ instance FromProto ProtoPLT.TokenModuleRejectReason where
 
 newtype CBorAsTokenEventDetails = CBorAsTokenEventDetails ProtoPLT.CBor
 newtype CBorAsTokenParameter = CBorAsTokenParameter ProtoPLT.CBor
-newtype CBorAsTokenGovernanceEvent = CBorAsTokenGovernanceEvent ProtoPLT.CBor
-newtype CBorAsTokenHolderEvent = CBorAsTokenHolderEvent ProtoPLT.CBor
 
 instance FromProto CBorAsTokenEventDetails where
     type Output CBorAsTokenEventDetails = TokenEventDetails
@@ -1361,18 +1359,6 @@ instance FromProto CBorAsTokenParameter where
     fromProto (CBorAsTokenParameter protoCbor) = do
         let bs = protoCbor ^. PLTFields.value
         pure $ TokenParameter (BSS.toShort bs)
-
-instance FromProto CBorAsTokenGovernanceEvent where
-    type Output CBorAsTokenGovernanceEvent = TokenEventDetails
-    fromProto (CBorAsTokenGovernanceEvent protoCbor) = do
-        let bs = protoCbor ^. PLTFields.value
-        pure $ TokenEventDetails (BSS.toShort bs)
-
-instance FromProto CBorAsTokenHolderEvent where
-    type Output CBorAsTokenHolderEvent = TokenEventDetails
-    fromProto (CBorAsTokenHolderEvent protoCbor) = do
-        let bs = protoCbor ^. PLTFields.value
-        pure $ TokenEventDetails (BSS.toShort bs)
 
 instance FromProto Proto.InvokeInstanceResponse where
     type Output Proto.InvokeInstanceResponse = InvokeContract.InvokeContractResult
@@ -2295,7 +2281,7 @@ instance FromProto Proto.AccountTransactionDetails where
                             let byteString = TE.encodeUtf8 textType
                             let _teType = TokenEventType $ BSS.toShort byteString
 
-                            _teDetails <- (fromProto . CBorAsTokenGovernanceEvent) (ev ^. PLTFields.details)
+                            _teDetails <- (fromProto . CBorAsTokenEventDetails) (ev ^. PLTFields.details)
                             return $ TokenModuleEvent (TokenEvent{..})
                         )
                         protoEvents
@@ -2311,7 +2297,7 @@ instance FromProto Proto.AccountTransactionDetails where
                             let byteString = TE.encodeUtf8 textType
                             let _teType = TokenEventType $ BSS.toShort byteString
 
-                            _teDetails <- (fromProto . CBorAsTokenGovernanceEvent) (ev ^. PLTFields.details)
+                            _teDetails <- (fromProto . CBorAsTokenEventDetails) (ev ^. PLTFields.details)
                             return $ TokenModuleEvent (TokenEvent{..})
                         )
                         protoEvents

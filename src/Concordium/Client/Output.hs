@@ -1101,15 +1101,19 @@ showRejectReason verbose = \case
     Types.NonExistentTokenId tokenId -> printf "token id %s does not exist on-chain" (show tokenId)
     Types.TokenHolderTransactionFailed reason -> do
         let details = Types.tmrrDetails reason
-            invalidCBOR =
+        case details of
+            Nothing ->
                 printf
-                    "%s token-holder transaction was rejected due to: %s; details (undecoded CBOR): %s"
+                    "%s token-holder transaction was rejected due to: %s"
                     (show $ Types.tmrrTokenSymbol reason)
                     (show $ Types.tmrrType reason)
-                    (show details)
-        case details of
-            Nothing -> invalidCBOR
             Just detail -> do
+                let invalidCBOR =
+                        printf
+                            "%s token-holder transaction was rejected due to: %s\n   details (undecoded CBOR): %s"
+                            (show $ Types.tmrrTokenSymbol reason)
+                            (show $ Types.tmrrType reason)
+                            (show detail)
                 let detailsShortByteString = Types.tokenEventDetailsBytes detail
                 let bsl = BSL.fromStrict $ BSS.fromShort detailsShortByteString
                 case deserialiseFromBytes (decodeValue False) bsl of
@@ -1118,7 +1122,7 @@ showRejectReason verbose = \case
                         if rest == BSL.empty
                             then
                                 printf
-                                    "%s token-holder transaction was rejected due to: %s; details (undecoded CBOR): %s;  details (decoded CBOR):"
+                                    "%s token-holder transaction was rejected due to: %s\n   details (undecoded CBOR): %s\n   details (decoded CBOR):"
                                     (show $ Types.tmrrTokenSymbol reason)
                                     (show $ Types.tmrrType reason)
                                     (show details)
@@ -1126,15 +1130,19 @@ showRejectReason verbose = \case
                             else invalidCBOR
     Types.TokenGovernanceTransactionFailed reason -> do
         let details = Types.tmrrDetails reason
-            invalidCBOR =
+        case details of
+            Nothing ->
                 printf
-                    "%s token-governance transaction was rejected due to: %s; details (undecoded CBOR): %s"
+                    "%s token-governance transaction was rejected due to: %s"
                     (show $ Types.tmrrTokenSymbol reason)
                     (show $ Types.tmrrType reason)
-                    (show details)
-        case details of
-            Nothing -> invalidCBOR
             Just detail -> do
+                let invalidCBOR =
+                        printf
+                            "%s token-governance transaction was rejected due to: %s\n   details (undecoded CBOR): %s"
+                            (show $ Types.tmrrTokenSymbol reason)
+                            (show $ Types.tmrrType reason)
+                            (show detail)
                 let detailsShortByteString = Types.tokenEventDetailsBytes detail
                 let bsl = BSL.fromStrict $ BSS.fromShort detailsShortByteString
                 case deserialiseFromBytes (decodeValue False) bsl of
@@ -1143,7 +1151,7 @@ showRejectReason verbose = \case
                         if rest == BSL.empty
                             then
                                 printf
-                                    "%s token-governance transaction was rejected due to: %s; details (undecoded CBOR): %s;  details (decoded CBOR):"
+                                    "%s token-governance transaction was rejected due to: %s\n   details (undecoded CBOR): %s\n   details (decoded CBOR):"
                                     (show $ Types.tmrrTokenSymbol reason)
                                     (show $ Types.tmrrType reason)
                                     (show details)
