@@ -904,7 +904,12 @@ showEvent verbose ciM = \case
                     if rest == BSL.empty
                         then showPrettyJSON x
                         else invalidCBOR
-        in  Just $ printf "Token module event of token id %s and type %s occured with event details: \n%s" (show $ Types._teSymbol tokenEvent) (show $ Types._teType tokenEvent) eventDetailsJSON
+        in  Just $
+                printf
+                    "Token module event of token id %s and type %s occured with event details: \n%s"
+                    (show $ Types._teSymbol tokenEvent)
+                    (show $ Types._teType tokenEvent)
+                    eventDetailsJSON
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
@@ -1096,7 +1101,12 @@ showRejectReason verbose = \case
     Types.NonExistentTokenId tokenId -> printf "token id %s does not exist on-chain" (show tokenId)
     Types.TokenHolderTransactionFailed reason -> do
         let details = Types.tmrrDetails reason
-            invalidCBOR = printf "token holder transaction failed: %s (Could not decode reject details as valid CBOR)\n" (show reason)
+            invalidCBOR =
+                printf
+                    "%s token-holder transaction was rejected due to: %s; details (undecoded CBOR): %s"
+                    (show $ Types.tmrrTokenSymbol reason)
+                    (show $ Types.tmrrType reason)
+                    (show details)
         case details of
             Nothing -> invalidCBOR
             Just detail -> do
@@ -1106,8 +1116,40 @@ showRejectReason verbose = \case
                     Left _ -> invalidCBOR -- if not possible, the reject details is not written in valid CBOR
                     Right (rest, x) ->
                         if rest == BSL.empty
-                            then printf "token holder transaction failed: %s (CBOR decoded details: %s)\n" (show reason) (showPrettyJSON x)
+                            then
+                                printf
+                                    "%s token-holder transaction was rejected due to: %s; details (undecoded CBOR): %s;  details (decoded CBOR):"
+                                    (show $ Types.tmrrTokenSymbol reason)
+                                    (show $ Types.tmrrType reason)
+                                    (show details)
+                                    (showPrettyJSON x)
                             else invalidCBOR
+    Types.TokenGovernanceTransactionFailed reason -> do
+        let details = Types.tmrrDetails reason
+            invalidCBOR =
+                printf
+                    "%s token-governance transaction was rejected due to: %s; details (undecoded CBOR): %s"
+                    (show $ Types.tmrrTokenSymbol reason)
+                    (show $ Types.tmrrType reason)
+                    (show details)
+        case details of
+            Nothing -> invalidCBOR
+            Just detail -> do
+                let detailsShortByteString = Types.tokenEventDetailsBytes detail
+                let bsl = BSL.fromStrict $ BSS.fromShort detailsShortByteString
+                case deserialiseFromBytes (decodeValue False) bsl of
+                    Left _ -> invalidCBOR -- if not possible, the reject details is not written in valid CBOR
+                    Right (rest, x) ->
+                        if rest == BSL.empty
+                            then
+                                printf
+                                    "%s token-governance transaction was rejected due to: %s; details (undecoded CBOR): %s;  details (decoded CBOR):"
+                                    (show $ Types.tmrrTokenSymbol reason)
+                                    (show $ Types.tmrrType reason)
+                                    (show details)
+                                    (showPrettyJSON x)
+                            else invalidCBOR
+    Types.UnauthorizedTokenGovernance tokenId -> printf "the transaction sender is not the governance account of the %s token" (show tokenId)
 
 -- CONSENSUS
 

@@ -1330,6 +1330,10 @@ instance FromProto Proto.RejectReason where
                 NonExistentTokenId <$> fromProto tokenId
             Proto.RejectReason'TokenHolderTransactionFailed reason -> do
                 TokenHolderTransactionFailed <$> fromProto reason
+            Proto.RejectReason'TokenGovernanceTransactionFailed reason -> do
+                TokenGovernanceTransactionFailed <$> fromProto reason
+            Proto.RejectReason'UnauthorizedTokenGovernance tokenId -> do
+                UnauthorizedTokenGovernance <$> fromProto tokenId
 
 instance FromProto ProtoPLT.TokenModuleRejectReason where
     type Output ProtoPLT.TokenModuleRejectReason = TokenModuleRejectReason
@@ -1588,6 +1592,7 @@ instance FromProto Proto.TransactionType where
     fromProto Proto.CONFIGURE_BAKER = return TTConfigureBaker
     fromProto Proto.CONFIGURE_DELEGATION = return TTConfigureDelegation
     fromProto Proto.TOKEN_HOLDER = return TTTokenHolder
+    fromProto Proto.TOKEN_GOVERNANCE = return TTTokenGovernance
     fromProto (ProtoFields.TransactionType'Unrecognized variant) =
         fromProtoFail $
             "Unable to convert 'InvokeInstanceResponse': "
