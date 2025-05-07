@@ -218,10 +218,12 @@ printAccountInfo addr a verbose showEncrypted mEncKey = do
         ( [ [i|Local names:            #{showNameList $ naNames addr}|],
             [i|Address:                #{naAddr addr}|],
             [i|Balance:                #{balance}|],
-            [i| - At disposal:         #{rjustCcd (Types.aiAccountAvailableAmount a)}|],
-            [i|Tokens:|],
-            [i|#{unlines tokens}|]
+            [i| - At disposal:         #{rjustCcd (Types.aiAccountAvailableAmount a)}|]
           ]
+            ++ ( if not (null tokens)
+                    then [[i|Tokens:|], [i|#{unlines tokens}|]]
+                    else []
+               )
             ++ case Types.releaseTotal $ Types.aiAccountReleaseSchedule a of
                 0 -> []
                 tot ->
