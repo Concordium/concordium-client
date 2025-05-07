@@ -39,6 +39,7 @@ import Concordium.Common.Time
 import Concordium.ID.Types (AccountThreshold, CredentialIndex, CredentialRegistrationID, KeyIndex)
 import Concordium.Types
 import Concordium.Types.Execution
+import Concordium.Types.Queries.Tokens
 import qualified Concordium.Wasm as Wasm
 import Control.Monad
 import Data.String
@@ -221,6 +222,13 @@ data TransactionCmd
           trdData :: !RegisterDataInput,
           -- | Options for transaction.
           trdTransactionOptions :: !(TransactionOpts (Maybe Energy))
+        }
+    | TransactionPLTTransfer
+        { tthReceiver :: !Text,
+          tthAmount :: !TokenAmount,
+          tthSymbol :: !Text,
+          tthMemo :: !(Maybe MemoInput),
+          tthOpts :: !(TransactionOpts (Maybe Energy))
         }
     deriving (Show)
 
@@ -712,6 +720,7 @@ transactionCmds =
                         <> transactionWithScheduleCmd
                         <> transactionDeployCredentialCmd
                         <> transactionRegisterDataCmd
+                        <> transactionPLTTransferCmd
                     )
             )
             (progDesc "Commands for submitting and inspecting transactions.")
@@ -824,6 +833,21 @@ transactionSendCcdCmd =
                 <*> transactionOptsParser
             )
             (progDesc "Transfer CCD from one account to another.")
+        )
+
+transactionPLTTransferCmd :: Mod CommandFields TransactionCmd
+transactionPLTTransferCmd =
+    command
+        "transfer-plt"
+        ( info
+            ( TransactionPLTTransfer
+                <$> strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.")
+                <*> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (Symbol) of the token.")
+                <*> memoInputParser
+                <*> transactionOptsParser
+            )
+            (progDesc "Transfer tokens from one account to another.")
         )
 
 transactionWithScheduleCmd :: Mod CommandFields TransactionCmd

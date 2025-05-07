@@ -904,7 +904,12 @@ showEvent verbose ciM = \case
                     if rest == BSL.empty
                         then showPrettyJSON x
                         else invalidCBOR
-        in  Just $ printf "Token module event of token id %s and type %s occured with event details: \n%s" (show $ Types._teSymbol tokenEvent) (show $ Types._teType tokenEvent) eventDetailsJSON
+        in  Just $
+                printf
+                    "Token module event of token id %s and type %s occured with event details: \n%s"
+                    (show $ Types._teSymbol tokenEvent)
+                    (show $ Types._teType tokenEvent)
+                    eventDetailsJSON
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
@@ -1094,7 +1099,65 @@ showRejectReason verbose = \case
     Types.InsufficientDelegationStake -> "not allowed to add delegator with 0 stake"
     Types.DelegationTargetNotABaker bid -> printf "delegation target %s is not a validator id" (show bid)
     Types.NonExistentTokenId tokenId -> printf "token id %s does not exist on-chain" (show tokenId)
-    Types.TokenHolderTransactionFailed reason -> printf "the token holder transaction failed with reason %s" (show reason)
+    Types.TokenHolderTransactionFailed reason -> do
+        let details = Types.tmrrDetails reason
+        case details of
+            Nothing ->
+                printf
+                    "%s token-holder transaction was rejected due to: %s"
+                    (show $ Types.tmrrTokenSymbol reason)
+                    (show $ Types.tmrrType reason)
+            Just detail -> do
+                let invalidCBOR =
+                        printf
+                            "%s token-holder transaction was rejected due to: %s\n   details (undecoded CBOR): %s"
+                            (show $ Types.tmrrTokenSymbol reason)
+                            (show $ Types.tmrrType reason)
+                            (show detail)
+                let detailsShortByteString = Types.tokenEventDetailsBytes detail
+                let bsl = BSL.fromStrict $ BSS.fromShort detailsShortByteString
+                case deserialiseFromBytes (decodeValue False) bsl of
+                    Left _ -> invalidCBOR -- if not possible, the reject details is not written in valid CBOR
+                    Right (rest, x) ->
+                        if rest == BSL.empty
+                            then
+                                printf
+                                    "%s token-holder transaction was rejected due to: %s\n   details (undecoded CBOR): %s\n   details (decoded CBOR):"
+                                    (show $ Types.tmrrTokenSymbol reason)
+                                    (show $ Types.tmrrType reason)
+                                    (show details)
+                                    (showPrettyJSON x)
+                            else invalidCBOR
+    Types.TokenGovernanceTransactionFailed reason -> do
+        let details = Types.tmrrDetails reason
+        case details of
+            Nothing ->
+                printf
+                    "%s token-governance transaction was rejected due to: %s"
+                    (show $ Types.tmrrTokenSymbol reason)
+                    (show $ Types.tmrrType reason)
+            Just detail -> do
+                let invalidCBOR =
+                        printf
+                            "%s token-governance transaction was rejected due to: %s\n   details (undecoded CBOR): %s"
+                            (show $ Types.tmrrTokenSymbol reason)
+                            (show $ Types.tmrrType reason)
+                            (show detail)
+                let detailsShortByteString = Types.tokenEventDetailsBytes detail
+                let bsl = BSL.fromStrict $ BSS.fromShort detailsShortByteString
+                case deserialiseFromBytes (decodeValue False) bsl of
+                    Left _ -> invalidCBOR -- if not possible, the reject details is not written in valid CBOR
+                    Right (rest, x) ->
+                        if rest == BSL.empty
+                            then
+                                printf
+                                    "%s token-governance transaction was rejected due to: %s\n   details (undecoded CBOR): %s\n   details (decoded CBOR):"
+                                    (show $ Types.tmrrTokenSymbol reason)
+                                    (show $ Types.tmrrType reason)
+                                    (show details)
+                                    (showPrettyJSON x)
+                            else invalidCBOR
+    Types.UnauthorizedTokenGovernance tokenId -> printf "the transaction sender is not the governance account of the %s token" (show tokenId)
 
 -- CONSENSUS
 

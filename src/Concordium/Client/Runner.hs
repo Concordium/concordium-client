@@ -74,11 +74,13 @@ import qualified Concordium.Types.Updates as Updates
 import qualified Concordium.Utils.Encryption as Password
 import qualified Concordium.Wasm as Wasm
 import qualified Data.Char as Char
+import qualified Data.Sequence as Seq
 
 import Codec.CBOR.Encoding
 import Codec.CBOR.JSON
 import Codec.CBOR.Write
 import Concordium.Client.Types.Contract.BuildInfo (extractBuildInfo)
+import qualified Concordium.Types.ProtocolLevelTokens.CBOR as CBOR
 import Control.Arrow (Arrow (second))
 import Control.Concurrent (threadDelay)
 import Control.Exception
@@ -895,6 +897,46 @@ processTransactionCmd action baseCfgDir verbose backend =
                     Nothing -> return ()
                     Just (Left err) -> logFatal ["Registering data failed:", err]
                     Just (Right _) -> logSuccess ["Data succesfully registered."]
+        TransactionPLTTransfer receiver amount symbolText maybeMemo txOpts -> do
+            baseCfg <- getBaseConfig baseCfgDir verbose
+            when verbose $ do
+                runPrinter $ printBaseConfig baseCfg
+                putStrLn ""
+
+            receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
+            let receiverAccount = naAddr receiverAddress
+            let tokenReceiver = CBOR.accountTokenReceiver receiverAccount
+
+            withClient backend $ do
+                cs <- getResponseValueOrDie =<< getConsensusInfo
+
+                maybeCborMemo <- case maybeMemo of
+                    Nothing -> return Nothing
+                    Just memoInput -> do
+                        memo <- liftIO $ checkAndGetMemo memoInput $ Queries.csProtocolVersion cs
+                        return $ Just $ CBOR.CBORMemo memo
+
+                let operation = CBOR.TokenTransferBuilder (Just amount) (Just tokenReceiver) maybeCborMemo
+                let eitherTokenTranfserBody = CBOR.buildTokenTransfer operation
+                tokenTransferBody <- case eitherTokenTranfserBody of
+                    Right val -> return val
+                    Left err -> logFatal ["Error creating token transfer body:", err]
+                let tokenHolderTransfer = CBOR.TokenHolderTransfer tokenTransferBody
+                let tokenHolderTransaction = CBOR.TokenHolderTransaction (Seq.fromList [tokenHolderTransfer])
+                let bytes = CBOR.tokenHolderTransactionToBytes tokenHolderTransaction
+                let tokenParameter = Types.TokenParameter $ BS.toShort bytes
+
+                let symbol = Types.TokenId $ BS.toShort $ Text.encodeUtf8 symbolText
+
+                let payload = Types.TokenHolder symbol tokenParameter
+                let encodedPayload = Types.encodePayload payload
+
+                let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize encodedPayload
+                txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
+
+                let intOpts = toInteractionOpts txOpts
+                let outFile = toOutFile txOpts
+                signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend
 
 -- | Construct a transaction config for registering data.
 --   The data is read from the 'FilePath' provided.

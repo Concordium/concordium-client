@@ -1330,6 +1330,10 @@ instance FromProto Proto.RejectReason where
                 NonExistentTokenId <$> fromProto tokenId
             Proto.RejectReason'TokenHolderTransactionFailed reason -> do
                 TokenHolderTransactionFailed <$> fromProto reason
+            Proto.RejectReason'TokenGovernanceTransactionFailed reason -> do
+                TokenGovernanceTransactionFailed <$> fromProto reason
+            Proto.RejectReason'UnauthorizedTokenGovernance tokenId -> do
+                UnauthorizedTokenGovernance <$> fromProto tokenId
 
 instance FromProto ProtoPLT.TokenModuleRejectReason where
     type Output ProtoPLT.TokenModuleRejectReason = TokenModuleRejectReason
@@ -1574,6 +1578,7 @@ instance FromProto Proto.TransactionType where
     fromProto Proto.CONFIGURE_BAKER = return TTConfigureBaker
     fromProto Proto.CONFIGURE_DELEGATION = return TTConfigureDelegation
     fromProto Proto.TOKEN_HOLDER = return TTTokenHolder
+    fromProto Proto.TOKEN_GOVERNANCE = return TTTokenGovernance
     fromProto (ProtoFields.TransactionType'Unrecognized variant) =
         fromProtoFail $
             "Unable to convert 'InvokeInstanceResponse': "
@@ -2265,10 +2270,38 @@ instance FromProto Proto.AccountTransactionDetails where
                               [TransferredWithSchedule{..}, TransferMemo{..}]
                             )
                 return (Just tType, TxSuccess{..})
-            ProtoFields.AccountTransactionEffects'TokenGovernanceEffect _pltTokenGovernanceEvent -> do
-                fromProtoFail "TODO: Implement"
-            ProtoFields.AccountTransactionEffects'TokenHolderEffect _pltTokenHolderEvent -> do
-                fromProtoFail "TODO: Implement"
+            ProtoFields.AccountTransactionEffects'TokenGovernanceEffect pltTokenGovernanceEvent -> do
+                let protoEvents = pltTokenGovernanceEvent ^. PLTFields.events
+                tokenEvents <-
+                    mapM
+                        ( \ev -> do
+                            _teSymbol <- fromProto $ ev ^. ProtoFieldsPLT.tokenSymbol
+
+                            let textType = ev ^. ProtoFieldsPLT.type'
+                            let byteString = TE.encodeUtf8 textType
+                            let _teType = TokenEventType $ BSS.toShort byteString
+
+                            _teDetails <- (fromProto . CBorAsTokenEventDetails) (ev ^. PLTFields.details)
+                            return $ TokenModuleEvent (TokenEvent{..})
+                        )
+                        protoEvents
+                return (Just TTTokenGovernance, TxSuccess tokenEvents)
+            ProtoFields.AccountTransactionEffects'TokenHolderEffect pltTokenHolderEvent -> do
+                let protoEvents = pltTokenHolderEvent ^. PLTFields.events
+                tokenEvents <-
+                    mapM
+                        ( \ev -> do
+                            _teSymbol <- fromProto $ ev ^. ProtoFieldsPLT.tokenSymbol
+
+                            let textType = ev ^. ProtoFieldsPLT.type'
+                            let byteString = TE.encodeUtf8 textType
+                            let _teType = TokenEventType $ BSS.toShort byteString
+
+                            _teDetails <- (fromProto . CBorAsTokenEventDetails) (ev ^. PLTFields.details)
+                            return $ TokenModuleEvent (TokenEvent{..})
+                        )
+                        protoEvents
+                return (Just TTTokenGovernance, TxSuccess tokenEvents)
 
 instance FromProto (ProtoKernel.AccountAddress, Proto.DelegationEvent) where
     type Output (ProtoKernel.AccountAddress, Proto.DelegationEvent) = SupplementedEvent

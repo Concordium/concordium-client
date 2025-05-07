@@ -14,7 +14,9 @@ import Data.String.Interpolate (i, iii)
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as Lazy.Text
 import qualified Data.Text.Lazy.Encoding as Lazy.Text
-import Data.Word (Word64)
+import Data.Word (Word32, Word64)
+
+import Concordium.Types.Queries.Tokens
 import Text.Read
 
 -- | In the 'Left' case of an 'Either', transform the error using the given function and
@@ -56,6 +58,31 @@ amountFromStringInform s =
     case amountFromString s of
         Just a -> Right a
         Nothing -> Left $ "Invalid CCD amount '" ++ s ++ "'. Amounts must be of the form n[.m] where m, if present,\n must have at least one and at most 6 digits."
+
+-- | Try to parse a token amount from a string, and if failing, try to inform the user
+--  what the expected format is. This is intended to be used by the options
+--  parsers.
+tokenAmountFromStringInform :: String -> Either String TokenAmount
+tokenAmountFromStringInform s =
+    case tokenAmountFromString s of
+        Just a -> Right a
+        Nothing -> Left $ "Invalid protocol level token amount '" ++ s ++ "'. Amounts must be of the form n[.m] where m, if present,\n must have no more digits than the token decimals value."
+
+tokenAmountFromString :: String -> Maybe TokenAmount
+tokenAmountFromString s
+    | null combinedStr = Nothing
+    | fracLen > fromIntegral (maxBound :: Word32) = Nothing
+    | otherwise = do
+        num <- readMaybe combinedStr
+        if num <= toInteger (maxBound :: Word64)
+            then Just $ TokenAmount (fromInteger num) decimals
+            else Nothing
+  where
+    (intPart, fracRaw) = break (== '.') s
+    fracPart = drop 1 fracRaw
+    fracLen = length fracPart
+    decimals = fromIntegral fracLen
+    combinedStr = intPart ++ fracPart
 
 amountFractionFromStringInform :: String -> Either String AmountFraction
 amountFractionFromStringInform s =
