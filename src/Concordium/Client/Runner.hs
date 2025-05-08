@@ -1234,7 +1234,7 @@ getAccountInfoWithBHOrDie sender bhInput = do
 
 -- | Query the chain for the given account, returning the account info.
 --  Die printing an error message containing the nature of the error if such occurred.
-getAccountInfoOrDie :: (MonadIO m) => Types.AccountIdentifier -> BlockHashInput -> ClientMonad m (Types.AccountInfo)
+getAccountInfoOrDie :: (MonadIO m) => Types.AccountIdentifier -> BlockHashInput -> ClientMonad m Types.AccountInfo
 getAccountInfoOrDie sender bhInput = fst <$> getAccountInfoWithBHOrDie sender bhInput
 
 -- | Query the chain for the given pool.
