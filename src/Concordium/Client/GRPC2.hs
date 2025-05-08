@@ -737,7 +737,9 @@ instance FromProto ProtoPLT.TokenAmount where
     type Output ProtoPLT.TokenAmount = Tokens.TokenAmount
     fromProto tokenAmount = do
         let digits = tokenAmount ^. ProtoFieldsPLT.digits
-        let nrDecimals = tokenAmount ^. ProtoFieldsPLT.nrOfDecimals
+        nrDecimals <- case toIntegralSized (tokenAmount ^. ProtoFieldsPLT.nrOfDecimals) of
+            Nothing -> fromProtoFail "TokenAmount: decimals out of range"
+            Just converted -> return converted
         return Tokens.TokenAmount{..}
 
 instance FromProto ProtoPLT.TokenId where
@@ -1966,7 +1968,7 @@ instance FromProto ProtoPLT.CreatePLT where
         _cpltTokenSymbol <- fromProto $ cpUpdate ^. PLTFields.tokenSymbol
         _cpltGovernanceAccount <- fromProto $ cpUpdate ^. PLTFields.governanceAccount
         _cpltDecimals <- case toIntegralSized (cpUpdate ^. PLTFields.decimals) of
-            Nothing -> fromProtoFail $ "CreatePLT: decimals out of range"
+            Nothing -> fromProtoFail "CreatePLT: decimals out of range"
             Just converted -> return converted
         _cpltTokenModule <- fromProto $ cpUpdate ^. PLTFields.tokenModule
         _cpltInitializationParameters <- (fromProto . CBorAsTokenParameter) (cpUpdate ^. PLTFields.initializationParameters)
@@ -1984,7 +1986,9 @@ instance FromProto ProtoPLT.TokenState where
     fromProto tokenInfo = do
         tsTokenModuleRef <- fromProto $ tokenInfo ^. ProtoFieldsPLT.tokenModuleRef
         tsIssuer <- fromProto $ tokenInfo ^. ProtoFieldsPLT.issuer
-        tsDecimals <- Right $ tokenInfo ^. ProtoFieldsPLT.nrOfDecimals
+        tsDecimals <- case toIntegralSized (tokenInfo ^. ProtoFieldsPLT.nrOfDecimals) of
+            Nothing -> fromProtoFail "TokenState: decimals out of range"
+            Just converted -> return converted
         tsTotalSupply <- fromProto $ tokenInfo ^. ProtoFieldsPLT.totalSupply
         tsModuleState <- (fromProto . CBorAsModuleState) (tokenInfo ^. PLTFields.moduleState)
         return Tokens.TokenState{..}
