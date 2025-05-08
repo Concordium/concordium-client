@@ -203,8 +203,7 @@ prettyPrintTokens = map formatToken
     formatToken (Types.Token tid (Types.TokenAccountState (Types.TokenAmount digits decs) inAllowList inDenyList)) =
         let amount = fromIntegral digits / (10 ^ decs :: Double)
         in  unlines
-                [ indent ++ "Token ID:            " ++ show tid,
-                  indent ++ "Balance:             " ++ printf ("%." ++ show decs ++ "f") amount,
+                [ indent ++ "Balance:             " ++ printf ("%." ++ show decs ++ "f ") amount ++ show tid,
                   indent ++ "In Allow List:       " ++ show inAllowList,
                   indent ++ "In Deny List:        " ++ show inDenyList
                 ]
