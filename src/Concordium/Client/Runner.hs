@@ -926,7 +926,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                 let bytes = CBOR.tokenHolderTransactionToBytes tokenHolderTransaction
                 let tokenParameter = Types.TokenParameter $ BS.toShort bytes
 
-                let symbol = Types.TokenId $ BS.toShort $ Text.encodeUtf8 symbolText
+                let symbol = tokenIdFromText symbolText
 
                 let payload = Types.TokenHolder symbol tokenParameter
                 let encodedPayload = Types.encodePayload payload
@@ -4383,6 +4383,11 @@ processLegacyCmd action backend =
             withClient backend $
                 readBlockHashOrDefault Best block
                     >>= getTokenList
+                    >>= printResponseValueAsJSON
+        GetTokenInfo tokenId block -> do
+            b <- readBlockHashOrDefault Best block
+            withClient backend $
+                getTokenInfo tokenId b
                     >>= printResponseValueAsJSON
         GetScheduledReleaseAccounts block ->
             withClient backend $

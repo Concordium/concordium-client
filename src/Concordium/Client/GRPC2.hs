@@ -54,6 +54,7 @@ import Concordium.Client.Cli (TransactionStatusQuery (..), logFatal, wait)
 import Concordium.Client.RWLock
 import Concordium.Client.Runner.Helper
 import Concordium.Client.Types.TransactionStatus (transactionStatusToTransactionStatusResult)
+import Concordium.Client.Utils
 import Concordium.Common.Time
 import Concordium.Common.Version
 import Concordium.Crypto.EncryptedTransfers
@@ -1347,6 +1348,7 @@ instance FromProto ProtoPLT.TokenModuleRejectReason where
 
 newtype CBorAsTokenEventDetails = CBorAsTokenEventDetails ProtoPLT.CBor
 newtype CBorAsTokenParameter = CBorAsTokenParameter ProtoPLT.CBor
+newtype CBorAsModuleState = CBorAsModuleState ProtoPLT.CBor
 
 instance FromProto CBorAsTokenEventDetails where
     type Output CBorAsTokenEventDetails = TokenEventDetails
@@ -1359,6 +1361,11 @@ instance FromProto CBorAsTokenParameter where
     fromProto (CBorAsTokenParameter protoCbor) = do
         let bs = protoCbor ^. PLTFields.value
         pure $ TokenParameter (BSS.toShort bs)
+
+instance FromProto CBorAsModuleState where
+    type Output CBorAsModuleState = ByteString
+    fromProto (CBorAsModuleState protoCbor) = do
+        pure $ protoCbor ^. PLTFields.value
 
 instance FromProto Proto.InvokeInstanceResponse where
     type Output Proto.InvokeInstanceResponse = InvokeContract.InvokeContractResult
@@ -1964,6 +1971,23 @@ instance FromProto ProtoPLT.CreatePLT where
         _cpltTokenModule <- fromProto $ cpUpdate ^. PLTFields.tokenModule
         _cpltInitializationParameters <- (fromProto . CBorAsTokenParameter) (cpUpdate ^. PLTFields.initializationParameters)
         return CreatePLT{..}
+
+instance FromProto Proto.TokenInfo where
+    type Output Proto.TokenInfo = Tokens.TokenInfo
+    fromProto tokenInfo = do
+        tiTokenId <- fromProto $ tokenInfo ^. Proto.tokenId
+        tiTokenState <- fromProto $ tokenInfo ^. Proto.tokenState
+        return Tokens.TokenInfo{..}
+
+instance FromProto ProtoPLT.TokenState where
+    type Output ProtoPLT.TokenState = Tokens.TokenState
+    fromProto tokenInfo = do
+        tsTokenModuleRef <- fromProto $ tokenInfo ^. ProtoFieldsPLT.tokenModuleRef
+        tsIssuer <- fromProto $ tokenInfo ^. ProtoFieldsPLT.issuer
+        tsDecimals <- Right $ tokenInfo ^. ProtoFieldsPLT.nrOfDecimals
+        tsTotalSupply <- fromProto $ tokenInfo ^. ProtoFieldsPLT.totalSupply
+        tsModuleState <- (fromProto . CBorAsModuleState) (tokenInfo ^. PLTFields.moduleState)
+        return Tokens.TokenState{..}
 
 instance FromProto Proto.TransactionFeeDistribution where
     type Output Proto.TransactionFeeDistribution = Parameters.TransactionFeeDistribution
@@ -3694,6 +3718,12 @@ getPrePreCooldownAccounts bhInput =
     withServerStreamCollect (call @"getPrePreCooldownAccounts") msg (fmap (mapM fromProto))
   where
     msg = toProto bhInput
+
+-- | Get the info of a protocol level token after a given block.
+getTokenInfo :: (MonadIO m) => Text -> BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult Tokens.TokenInfo))
+getTokenInfo tokenId bhInput = withUnary (call @"getTokenInfo") msg (fmap fromProto)
+  where
+    msg = defMessage & ProtoFields.blockHash .~ toProto bhInput & ProtoFields.tokenId .~ toProto (tokenIdFromText tokenId)
 
 -- | Get information related to the baker election for a particular block.
 getElectionInfo :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult BlockBirkParameters))
