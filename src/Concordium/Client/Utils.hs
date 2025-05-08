@@ -8,10 +8,12 @@ import Concordium.Types
 import qualified Concordium.Wasm as Wasm
 import Control.Monad.Except
 import Data.Aeson as AE
+import qualified Data.ByteString.Short as BS (toShort)
 import qualified Data.Char as Char
 import Data.Maybe (mapMaybe)
 import Data.String.Interpolate (i, iii)
 import qualified Data.Text as Text
+import qualified Data.Text.Encoding as Text
 import qualified Data.Text.Lazy as Lazy.Text
 import qualified Data.Text.Lazy.Encoding as Lazy.Text
 import Data.Word (Word32, Word64)
@@ -83,6 +85,11 @@ tokenAmountFromString s
     fracLen = length fracPart
     decimals = fromIntegral fracLen
     combinedStr = intPart ++ fracPart
+
+-- | Parse a token id (symbol) from a Text.
+tokenIdFromText :: Text.Text -> TokenId
+tokenIdFromText s =
+    TokenId $ BS.toShort $ Text.encodeUtf8 s
 
 amountFractionFromStringInform :: String -> Either String AmountFraction
 amountFractionFromStringInform s =

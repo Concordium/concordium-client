@@ -1065,7 +1065,7 @@ accountShowAliasCmd =
         ( info
             ( AccountShowAlias
                 <$> strArgument (metavar "ACCOUNT" <> help "Name or address of the account.")
-                <*> (option (eitherReader aliasFromStringInform) (long "alias" <> metavar "ALIAS" <> help "Which alias to generate."))
+                <*> option (eitherReader aliasFromStringInform) (long "alias" <> metavar "ALIAS" <> help "Which alias to generate.")
             )
             (progDesc "Generate an alias based on an account address and counter.")
         )
@@ -1815,11 +1815,11 @@ bakerAddCmd =
                 <*> (not <$> switch (long "no-restake" <> help "If supplied, the earnings will not be added to the validator stake automatically."))
                 <*> optional
                     ( ExtraBakerAddData
-                        <$> (option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> help helpOpenDelegationFor))
+                        <$> option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> help helpOpenDelegationFor)
                         <*> bakerOrValidatorUrl
-                        <*> (option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission")))
+                        <*> option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission"))
                         <*> blockCommission
-                        <*> (option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission")))
+                        <*> option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission"))
                     )
                 <*> optional (strOption (long "validator-credentials-out" <> metavar "FILE" <> help "File to write the validator credentials to, in case of successful transaction. These can be used to start the node."))
             )
