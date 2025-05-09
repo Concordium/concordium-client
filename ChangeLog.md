@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 9.0.0 - 2025-05-09
+
 - Add `raw GetTokenInfo` command to display the info of a protocol level token.
 - Subcommand `account show` now displays protocol level tokens info.
 - Subcommand `raw GetAccountInfo` now displays protocol level tokens info.
