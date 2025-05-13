@@ -152,25 +152,58 @@ jobs:
           sudo mv bin/protoc /usr/local/bin/
           sudo mv include/* /usr/local/include/
 
+      - name: Import Apple certificate and provisioning profile (MacOS only)
+        if: matrix.platform.id == 'macos-intel'
+        env:
+          # Base64 encoding of the p12 certificate for Apple code signing.
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.APPLE_BUILD_CERTIFICATE_BASE64 }}
+          # Password for the p12 certificate for Apple code signing.
+          BUILD_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_BUILD_CERTIFICATE_PASSWORD }}
+          # Random string to use as the keychain password.
+          KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+        run: |
+          # create variables
+          CERTIFICATE_PATH=$RUNNER_TEMP/apple_build_certificate.p12
+          PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          # import certificate and provisioning profile from secrets
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+          echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o $PP_PATH
+
+          # create temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          # import certificate to keychain
+          security import $CERTIFICATE_PATH -P "$BUILD_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
       - name: Build
+        env:
+          # Apple code sign variables:
+          APPLEIDPASS: ${{ secrets.APPLEIDPASS }}
+          APPLEID: ${{ secrets.APPLEID }}
         run: |
-          scripts/distributables/macOS-package/build.sh --build "${{ needs.validate-preconditions.outputs.version }}"
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          role-session-name: ${{ github.job }}Session
-          aws-region: "eu-west-1"
-
-      - name: Extrapolate file name
-        run: |
-          S3_FILE_NAME=$(echo '${{ needs.validate-preconditions.outputs.s3_file_name }}' | jq -r '.["${{ github.job }}"]')
-          echo "S3_FILE_NAME=${S3_FILE_NAME}" >> $GITHUB_ENV
-
-      - name: Publish
-        run: |
-          aws s3api put-object --bucket=distribution.concordium.software --key="tools/macos/${{ env.S3_FILE_NAME }}" --body="./scripts/distributables/macOS-package/build/concordium-client-${{ needs.validate-preconditions.outputs.version }}-unsigned.pkg" --if-none-match='*'
+          scripts/distributables/macOS-package/build.sh --build-sign "${{ needs.validate-preconditions.outputs.version }}"
+      #
+      # - name: Configure AWS Credentials
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+      #     role-session-name: ${{ github.job }}Session
+      #     aws-region: "eu-west-1"
+      #
+      # - name: Extrapolate file name
+      #   run: |
+      #     S3_FILE_NAME=$(echo '${{ needs.validate-preconditions.outputs.s3_file_name }}' | jq -r '.["${{ github.job }}"]')
+      #     echo "S3_FILE_NAME=${S3_FILE_NAME}" >> $GITHUB_ENV
+      #
+      # - name: Publish
+      #   run: |
+      #     aws s3api put-object --bucket=distribution.concordium.software --key="tools/macos/${{ env.S3_FILE_NAME }}" --body="./scripts/distributables/macOS-package/build/concordium-client-${{ needs.validate-preconditions.outputs.version }}-unsigned.pkg" --if-none-match='*'
 
   client-windows:
     needs: [validate-preconditions]
