@@ -41,6 +41,7 @@ jobs:
       release_type: ${{ steps.versions_derivation.outputs.release_type }}
       base_version: ${{ steps.versions_derivation.outputs.base_version }}
       version: ${{ steps.versions_derivation.outputs.version }}
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -80,22 +81,22 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Build Concordium Client Image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: false
-          file: scripts/distributables/linux-distributable-concordium-client.Dockerfile
-          tags: ${{ github.job }}:${{ github.run_id }}
-          no-cache: true
-          build-args: |
-            GHC_VERSION=${{ env.GHC_VERSION }}
-            RUST_VERSION=${{ env.RUST_VERSION }}
-            STACK_VERSION=${{ env.STACK_VERSION }}
-          labels: |
-            stack_version=${{ env.STACK_VERSION }}
-            rust_version=${{ env.RUST_VERSION }}
-            ghc_version=${{ env.GHC_VERSION }}
+      #- name: Build Concordium Client Image
+      #  uses: docker/build-push-action@v6
+      #  with:
+      #    context: .
+      #    push: false
+      #    file: scripts/distributables/linux-distributable-concordium-client.Dockerfile
+      #    tags: ${{ github.job }}:${{ github.run_id }}
+      #    no-cache: true
+      #    build-args: |
+      #      GHC_VERSION=${{ env.GHC_VERSION }}
+      #      RUST_VERSION=${{ env.RUST_VERSION }}
+      #      STACK_VERSION=${{ env.STACK_VERSION }}
+      #    labels: |
+      #      stack_version=${{ env.STACK_VERSION }}
+      #      rust_version=${{ env.RUST_VERSION }}
+      #      ghc_version=${{ env.GHC_VERSION }}
       #
       # - name: Configure AWS Credentials
       #   uses: aws-actions/configure-aws-credentials@v4
@@ -129,28 +130,28 @@ jobs:
         with:
           submodules: recursive
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
+     # - uses: actions-rust-lang/setup-rust-toolchain@v1
+     #   with:
+     #     toolchain: ${{ env.RUST_VERSION }}
 
-      - uses: haskell-actions/setup@v2
-        with:
-          ghc-version: ${{ env.GHC_VERSION }}
-          enable-stack: true
-          stack-version: ${{ env.STACK_VERSION }}
+     # - uses: haskell-actions/setup@v2
+     #   with:
+     #     ghc-version: ${{ env.GHC_VERSION }}
+     #     enable-stack: true
+     #     stack-version: ${{ env.STACK_VERSION }}
 
-      - name: Install flatbuffers
-        run: |
-          wget https://github.com/google/flatbuffers/releases/download/v${{ env.FLATBUFFERS_VERSION }}/MacIntel.flatc.binary.zip -O MacIntel.flatc.binary.zip
-          unzip MacIntel.flatc.binary.zip -d flatbuffers
-          sudo mv flatbuffers/flatc /usr/local/bin/
+     # - name: Install flatbuffers
+     #   run: |
+     #     wget https://github.com/google/flatbuffers/releases/download/v${{ env.FLATBUFFERS_VERSION }}/MacIntel.flatc.binary.zip -O MacIntel.flatc.binary.zip
+     #     unzip MacIntel.flatc.binary.zip -d flatbuffers
+     #     sudo mv flatbuffers/flatc /usr/local/bin/
 
-      - name: Install protobuf
-        run: |
-          curl -L -o protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-osx-x86_64.zip
-          unzip protoc.zip
-          sudo mv bin/protoc /usr/local/bin/
-          sudo mv include/* /usr/local/include/
+     # - name: Install protobuf
+     #   run: |
+     #     curl -L -o protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-osx-x86_64.zip
+     #     unzip protoc.zip
+     #     sudo mv bin/protoc /usr/local/bin/
+     #     sudo mv include/* /usr/local/include/
 
       - name: Import Apple certificate and provisioning profile (MacOS only)
         env:
@@ -186,7 +187,8 @@ jobs:
           APPLEIDPASS: ${{ secrets.APPLEIDPASS }}
           APPLEID: ${{ secrets.APPLEID }}
         run: |
-          scripts/distributables/macOS-package/build.sh --build-sign "${{ needs.validate-preconditions.outputs.version }}"
+          touch tmp.txt
+          scripts/distributables/macOS-package/build.sh --build-sign "tmp.txt"
       #
       # - name: Configure AWS Credentials
       #   uses: aws-actions/configure-aws-credentials@v4
