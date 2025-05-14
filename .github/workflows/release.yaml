@@ -10,6 +10,7 @@ on:
           - client-macos
           - client-windows
           - client-linux
+          - all
 
   push:
     tags:
@@ -62,7 +63,7 @@ jobs:
     needs: [validate-preconditions]
     runs-on: ubuntu-latest
     environment: release
-    if: contains(fromJSON('["rc", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
+    if: contains(fromJSON('["rc", "all", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -109,7 +110,7 @@ jobs:
     needs: [validate-preconditions]
     runs-on: ${{ matrix.runner }}
     environment: release
-    if: contains(fromJSON('["rc", "client-macos"]'), needs.validate-preconditions.outputs.release_type)
+    if: contains(fromJSON('["rc", "all", "client-macos"]'), needs.validate-preconditions.outputs.release_type)
     strategy:
       matrix:
         include:
@@ -208,7 +209,7 @@ jobs:
     needs: [validate-preconditions]
     runs-on: windows-latest
     environment: release
-    if: contains(fromJSON('["rc", "client-windows"]'), needs.validate-preconditions.outputs.release_type)
+    if: contains(fromJSON('["rc", "all", "client-windows"]'), needs.validate-preconditions.outputs.release_type)
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -319,6 +320,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: "Concordium Client ${{ needs.validate-preconditions.outputs.version }}"
+          draft: true,
           files: |
             artifacts/concordium-client-linux/concordium-client-linux
             artifacts/concordium-client-macos-intel/concordium-client-macos-intel.pkg
