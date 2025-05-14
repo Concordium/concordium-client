@@ -25,7 +25,7 @@ env:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 jobs:
   validate-preconditions:
@@ -302,4 +302,35 @@ jobs:
           name: concordium-client-windows
           if-no-files-found: error
           path: out/concordium-client-windows.zip
+
+  publish-release:
+    needs: [validate-preconditions, client-linux, client-macos, client-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f | sort
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Concordium Client ${{ needs.validate-preconditions.outputs.version }}"
+          files: |
+            artifacts/concordium-client-linux/concordium-client-linux
+            artifacts/concordium-client-macos-intel/concordium-client-macos-intel.pkg
+            artifacts/concordium-client-macos-arm/concordium-client-macos-arm.pkg
+            artifacts/concordium-client-windows/concordium-client-windows.zip
+          body: |
+            # Concordium Client ${{ needs.validate-preconditions.outputs.version }}
+            
+            ## Binaries
+            
+            - **Linux**: `concordium-client-linux`
+            - **macOS Intel**: `concordium-client-macos-intel.pkg`
+            - **macOS ARM**: `concordium-client-macos-arm.pkg`
+            - **Windows**: `concordium-client-windows.zip`
 
