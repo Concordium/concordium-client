@@ -87,13 +87,6 @@ jobs:
             rust_version=${{ env.RUST_VERSION }}
             ghc_version=${{ env.GHC_VERSION }}
           
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          role-session-name: ${{ github.job }}Session
-          aws-region: "eu-west-1"
-
       - name: Create container and Extract Artifact
         run: |
           id=$(docker create ${{ github.job }}:${{ github.run_id }})
@@ -104,7 +97,7 @@ jobs:
         with:
           name: concordium-client-linux
           if-no-files-found: error
-          path: concordium-client-linux
+          path: ./concordium-client-linux
 
   client-macos:
     needs: [validate-preconditions]
@@ -195,15 +188,15 @@ jobs:
           APPLEIDPASS: ${{ secrets.APPLEIDPASS }}
           APPLEID: ${{ secrets.APPLEID }}
         run: |
-          build.sh --build-sign "${{ needs.validate-preconditions.outputs.version }}"
-          mv "concordium-client-${{ needs.validate-preconditions.outputs.version }}.pkg" "concordium-client-macos-${{ matrix.arch }}-${{ needs.validate-preconditions.outputs.version }}.pkg"
+          ./build.sh --build-sign "${{ needs.validate-preconditions.outputs.version }}"
+          mv "./build/concordium-client-${{ needs.validate-preconditions.outputs.version }}.pkg" "./build/concordium-client-macos-${{ matrix.arch }}.pkg"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: concordium-client-macos-${{ matrix.arch }}
           if-no-files-found: error
-          path: concordium-client-macos-${{ matrix.arch }}.pkg
+          path: scripts/distributables/macOS-package/build/concordium-client-macos-${{ matrix.arch }}.pkg
 
   client-windows:
     needs: [validate-preconditions]
