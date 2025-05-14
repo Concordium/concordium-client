@@ -18,7 +18,8 @@ on:
 env:
   S3_FILE_NAME_TEMPLATES: '{
       \"client-linux\": \"concordium-client_${VERSION}\",
-      \"client-macos\": \"concordium-client_${VERSION}.pkg\",
+      \"client-macos-intel\": \"concordium-client-intel_${VERSION}.pkg\",
+      \"client-macos-arm\": \"concordium-client-arm_${VERSION}.pkg\",
       \"client-windows\": \"concordium-client_${VERSION}.zip\"
     }'
   AWS_ROLE_TO_ASSUME: 'arn:aws:iam::192549843005:role/github_concordium-client'
@@ -121,9 +122,16 @@ jobs:
 
   client-macos:
     needs: [validate-preconditions]
-    runs-on: macos-latest-large
+    runs-on: ${{ matrix.runner }}
     environment: release
     if: contains(fromJSON('["rc", "client-macos"]'), needs.validate-preconditions.outputs.release_type)
+    strategy:
+      matrix:
+        include:
+          - arch: intel
+            runner: macos-latest-large
+          - arch: arm
+            runner: macos-latest-xlarge
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -142,13 +150,21 @@ jobs:
 
       - name: Install flatbuffers
         run: |
-          wget https://github.com/google/flatbuffers/releases/download/v${{ env.FLATBUFFERS_VERSION }}/MacIntel.flatc.binary.zip -O MacIntel.flatc.binary.zip
-          unzip MacIntel.flatc.binary.zip -d flatbuffers
+          if [ "${{ matrix.arch }}" == "intel" ]; then
+            wget https://github.com/google/flatbuffers/releases/download/v${{ env.FLATBUFFERS_VERSION }}/MacIntel.flatc.binary.zip -O flatc.binary.zip
+          else
+            wget https://github.com/google/flatbuffers/releases/download/v${{ env.FLATBUFFERS_VERSION }}/Mac.flatc.binary.zip -O flatc.binary.zip
+          fi
+          unzip flatc.binary.zip -d flatbuffers
           sudo mv flatbuffers/flatc /usr/local/bin/
 
       - name: Install protobuf
         run: |
-          curl -L -o protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-osx-x86_64.zip
+          if [ "${{ matrix.arch }}" == "intel" ]; then
+            curl -L -o protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-osx-x86_64.zip
+          else
+            curl -L -o protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-osx-aarch_64.zip
+          fi
           unzip protoc.zip
           sudo mv bin/protoc /usr/local/bin/
           sudo mv include/* /usr/local/include/
@@ -187,12 +203,14 @@ jobs:
           security list-keychain -d user -s $KEYCHAIN_PATH
 
       - name: Build
+        working-directory: scripts/distributables/macOS-package
         env:
           # Apple code sign variables:
           APPLEIDPASS: ${{ secrets.APPLEIDPASS }}
           APPLEID: ${{ secrets.APPLEID }}
         run: |
-          scripts/distributables/macOS-package/build.sh --build-sign "${{ needs.validate-preconditions.outputs.version }}"
+          build.sh --build-sign "${{ needs.validate-preconditions.outputs.version }}"
+          mv "concordium-client-${{ needs.validate-preconditions.outputs.version }}.pkg" "concordium-client-${{ matrix.arch }}-${{ needs.validate-preconditions.outputs.version }}.pkg"
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -203,12 +221,13 @@ jobs:
 
       - name: Extrapolate file name
         run: |
-          S3_FILE_NAME=$(echo '${{ needs.validate-preconditions.outputs.s3_file_name }}' | jq -r '.["${{ github.job }}"]')
+          S3_FILE_NAME=$(echo '${{ needs.validate-preconditions.outputs.s3_file_name }}' | jq -r '.["${{ github.job }}-${{ matrix.arch }}"]')
           echo "S3_FILE_NAME=${S3_FILE_NAME}" >> $GITHUB_ENV
 
       - name: Publish
+        working-directory: scripts/distributables/macOS-package/build
         run: |
-          aws s3api put-object --bucket=distribution.concordium.software --key="tools/macos/${{ env.S3_FILE_NAME }}" --body="./scripts/distributables/macOS-package/build/concordium-client-${{ needs.validate-preconditions.outputs.version }}.pkg" --if-none-match='*'
+          aws s3api put-object --bucket=distribution.concordium.software --key="tools/macos/${{ env.S3_FILE_NAME }}" --body="concordium-client-${{ matrix.arch }}-${{ needs.validate-preconditions.outputs.version }}.pkg" --if-none-match='*'
 
   client-windows:
     needs: [validate-preconditions]
