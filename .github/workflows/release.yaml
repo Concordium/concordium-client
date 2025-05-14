@@ -16,13 +16,6 @@ on:
      - '*.*.*-*-rc'
 
 env:
-  S3_FILE_NAME_TEMPLATES: '{
-      \"client-linux\": \"concordium-client_${VERSION}\",
-      \"client-macos-intel\": \"concordium-client-intel_${VERSION}.pkg\",
-      \"client-macos-arm\": \"concordium-client-arm_${VERSION}.pkg\",
-      \"client-windows\": \"concordium-client_${VERSION}.zip\"
-    }'
-  AWS_ROLE_TO_ASSUME: 'arn:aws:iam::192549843005:role/github_concordium-client'
   STACK_VERSION: '3.1.1'
   GHC_VERSION: '9.6.6'
   RUST_VERSION: '1.82'
@@ -38,7 +31,6 @@ jobs:
   validate-preconditions:
     runs-on: ubuntu-latest
     outputs:
-      s3_file_name: ${{ steps.render.outputs.s3_file_name }}
       release_type: ${{ steps.versions_derivation.outputs.release_type }}
       base_version: ${{ steps.versions_derivation.outputs.base_version }}
       version: ${{ steps.versions_derivation.outputs.version }}
@@ -65,11 +57,6 @@ jobs:
           echo "release_type=${RELEASE_TYPE}" >> "$GITHUB_OUTPUT"
           echo "version=${CARGO_VERSION}-${BUILD}" >> "$GITHUB_OUTPUT"
           echo "base_version=${CARGO_VERSION}" >> "$GITHUB_OUTPUT"
-      - name: Templates rendering
-        id: render
-        run: |
-          export VERSION="${{ steps.versions_derivation.outputs.version }}"
-          echo "s3_file_name=${{ env.S3_FILE_NAME_TEMPLATES }}" >> $GITHUB_OUTPUT
 
   client-linux:
     needs: [validate-preconditions]
@@ -109,16 +96,14 @@ jobs:
       - name: Create container and Extract Artifact
         run: |
           id=$(docker create ${{ github.job }}:${{ github.run_id }})
-          docker cp $id:/out/concordium-client .
+          docker cp $id:/out/concordium-client ./concordium-client-linux
 
-      - name: Extrapolate file name
-        run: |
-          S3_FILE_NAME=$(echo '${{ needs.validate-preconditions.outputs.s3_file_name }}' | jq -r '.["${{ github.job }}"]')
-          echo "S3_FILE_NAME=${S3_FILE_NAME}" >> $GITHUB_ENV
-
-      - name: Publish
-        run: |
-          aws s3api put-object --bucket=distribution.concordium.software --key="tools/linux/${{ env.S3_FILE_NAME }}" --body=./concordium-client --if-none-match='*'
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: concordium-client-linux
+          if-no-files-found: error
+          path: concordium-client-linux
 
   client-macos:
     needs: [validate-preconditions]
@@ -210,24 +195,14 @@ jobs:
           APPLEID: ${{ secrets.APPLEID }}
         run: |
           build.sh --build-sign "${{ needs.validate-preconditions.outputs.version }}"
-          mv "concordium-client-${{ needs.validate-preconditions.outputs.version }}.pkg" "concordium-client-${{ matrix.arch }}-${{ needs.validate-preconditions.outputs.version }}.pkg"
+          mv "concordium-client-${{ needs.validate-preconditions.outputs.version }}.pkg" "concordium-client-macos-${{ matrix.arch }}-${{ needs.validate-preconditions.outputs.version }}.pkg"
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          role-session-name: ${{ github.job }}Session
-          aws-region: "eu-west-1"
-
-      - name: Extrapolate file name
-        run: |
-          S3_FILE_NAME=$(echo '${{ needs.validate-preconditions.outputs.s3_file_name }}' | jq -r '.["${{ github.job }}-${{ matrix.arch }}"]')
-          echo "S3_FILE_NAME=${S3_FILE_NAME}" >> $GITHUB_ENV
-
-      - name: Publish
-        working-directory: scripts/distributables/macOS-package/build
-        run: |
-          aws s3api put-object --bucket=distribution.concordium.software --key="tools/macos/${{ env.S3_FILE_NAME }}" --body="concordium-client-${{ matrix.arch }}-${{ needs.validate-preconditions.outputs.version }}.pkg" --if-none-match='*'
+          name: concordium-client-macos-${{ matrix.arch }}
+          if-no-files-found: error
+          path: concordium-client-macos-${{ matrix.arch }}.pkg
 
   client-windows:
     needs: [validate-preconditions]
@@ -312,13 +287,6 @@ jobs:
            smctl sign --keypair-alias ${{ env.WINDOWS_SM_KEYPAIR_ALIAS }} --input sha_2.dll --config-file ${{ env.WINDOWS_PKCS11_CONFIG }} --verbose --exit-non-zero-on-fail --failfast
         shell: cmd
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          role-session-name: ${{ github.job }}Session
-          aws-region: "eu-west-1"
-
       - name: Zip the binaries
         shell: bash
         run: |
@@ -326,16 +294,12 @@ jobs:
           bin_dir=$(stack path --local-install-root)/bin
           echo "$bin_dir"
           (cd "$bin_dir" && powershell -Command "Compress-Archive -Path concordium-client.exe,concordium_base.dll,sha_2.dll -DestinationPath concordium-client.zip")
-          mv -f "$bin_dir/concordium-client.zip" out/concordium-client.zip
+          mv -f "$bin_dir/concordium-client.zip" out/concordium-client-windows.zip
 
-      - name: Extrapolate file name
-        shell: bash
-        run: |
-          S3_FILE_NAME=$(echo '${{ needs.validate-preconditions.outputs.s3_file_name }}' | jq -r '.["${{ github.job }}"]')
-          echo "S3_FILE_NAME=${S3_FILE_NAME}" >> $GITHUB_ENV
-
-      - name: Publish
-        shell: bash
-        run: |
-          aws s3api put-object --bucket=distribution.concordium.software --key="tools/windows/${{ env.S3_FILE_NAME }}" --body=out/concordium-client.zip --if-none-match='*'
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: concordium-client-windows
+          if-no-files-found: error
+          path: out/concordium-client-windows.zip
 
