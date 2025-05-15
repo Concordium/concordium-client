@@ -10,18 +10,13 @@ on:
           - client-macos
           - client-windows
           - client-linux
+          - all
 
   push:
     tags:
      - '*.*.*-*-rc'
 
 env:
-  S3_FILE_NAME_TEMPLATES: '{
-      \"client-linux\": \"concordium-client_${VERSION}\",
-      \"client-macos\": \"concordium-client_${VERSION}.pkg\",
-      \"client-windows\": \"concordium-client_${VERSION}.zip\"
-    }'
-  AWS_ROLE_TO_ASSUME: 'arn:aws:iam::192549843005:role/github_concordium-client'
   STACK_VERSION: '3.1.1'
   GHC_VERSION: '9.6.6'
   RUST_VERSION: '1.82'
@@ -31,13 +26,12 @@ env:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 jobs:
   validate-preconditions:
     runs-on: ubuntu-latest
     outputs:
-      s3_file_name: ${{ steps.render.outputs.s3_file_name }}
       release_type: ${{ steps.versions_derivation.outputs.release_type }}
       base_version: ${{ steps.versions_derivation.outputs.base_version }}
       version: ${{ steps.versions_derivation.outputs.version }}
@@ -64,17 +58,12 @@ jobs:
           echo "release_type=${RELEASE_TYPE}" >> "$GITHUB_OUTPUT"
           echo "version=${CARGO_VERSION}-${BUILD}" >> "$GITHUB_OUTPUT"
           echo "base_version=${CARGO_VERSION}" >> "$GITHUB_OUTPUT"
-      - name: Templates rendering
-        id: render
-        run: |
-          export VERSION="${{ steps.versions_derivation.outputs.version }}"
-          echo "s3_file_name=${{ env.S3_FILE_NAME_TEMPLATES }}" >> $GITHUB_OUTPUT
 
   client-linux:
     needs: [validate-preconditions]
     runs-on: ubuntu-latest
     environment: release
-    if: contains(fromJSON('["rc", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
+    if: contains(fromJSON('["rc", "all", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -98,32 +87,30 @@ jobs:
             rust_version=${{ env.RUST_VERSION }}
             ghc_version=${{ env.GHC_VERSION }}
           
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          role-session-name: ${{ github.job }}Session
-          aws-region: "eu-west-1"
-
       - name: Create container and Extract Artifact
         run: |
           id=$(docker create ${{ github.job }}:${{ github.run_id }})
-          docker cp $id:/out/concordium-client .
+          docker cp $id:/out/concordium-client ./concordium-client-linux
 
-      - name: Extrapolate file name
-        run: |
-          S3_FILE_NAME=$(echo '${{ needs.validate-preconditions.outputs.s3_file_name }}' | jq -r '.["${{ github.job }}"]')
-          echo "S3_FILE_NAME=${S3_FILE_NAME}" >> $GITHUB_ENV
-
-      - name: Publish
-        run: |
-          aws s3api put-object --bucket=distribution.concordium.software --key="tools/linux/${{ env.S3_FILE_NAME }}" --body=./concordium-client --if-none-match='*'
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: concordium-client-linux
+          if-no-files-found: error
+          path: ./concordium-client-linux
 
   client-macos:
     needs: [validate-preconditions]
-    runs-on: macos-latest-large
+    runs-on: ${{ matrix.runner }}
     environment: release
-    if: contains(fromJSON('["rc", "client-macos"]'), needs.validate-preconditions.outputs.release_type)
+    if: contains(fromJSON('["rc", "all", "client-macos"]'), needs.validate-preconditions.outputs.release_type)
+    strategy:
+      matrix:
+        include:
+          - arch: intel
+            runner: macos-latest-large
+          - arch: arm
+            runner: macos-latest-xlarge
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -142,13 +129,21 @@ jobs:
 
       - name: Install flatbuffers
         run: |
-          wget https://github.com/google/flatbuffers/releases/download/v${{ env.FLATBUFFERS_VERSION }}/MacIntel.flatc.binary.zip -O MacIntel.flatc.binary.zip
-          unzip MacIntel.flatc.binary.zip -d flatbuffers
+          if [ "${{ matrix.arch }}" == "intel" ]; then
+            wget https://github.com/google/flatbuffers/releases/download/v${{ env.FLATBUFFERS_VERSION }}/MacIntel.flatc.binary.zip -O flatc.binary.zip
+          else
+            wget https://github.com/google/flatbuffers/releases/download/v${{ env.FLATBUFFERS_VERSION }}/Mac.flatc.binary.zip -O flatc.binary.zip
+          fi
+          unzip flatc.binary.zip -d flatbuffers
           sudo mv flatbuffers/flatc /usr/local/bin/
 
       - name: Install protobuf
         run: |
-          curl -L -o protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-osx-x86_64.zip
+          if [ "${{ matrix.arch }}" == "intel" ]; then
+            curl -L -o protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-osx-x86_64.zip
+          else
+            curl -L -o protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-osx-aarch_64.zip
+          fi
           unzip protoc.zip
           sudo mv bin/protoc /usr/local/bin/
           sudo mv include/* /usr/local/include/
@@ -187,34 +182,27 @@ jobs:
           security list-keychain -d user -s $KEYCHAIN_PATH
 
       - name: Build
+        working-directory: scripts/distributables/macOS-package
         env:
           # Apple code sign variables:
           APPLEIDPASS: ${{ secrets.APPLEIDPASS }}
           APPLEID: ${{ secrets.APPLEID }}
         run: |
-          scripts/distributables/macOS-package/build.sh --build-sign "${{ needs.validate-preconditions.outputs.version }}"
+          ./build.sh --build-sign "${{ needs.validate-preconditions.outputs.version }}"
+          mv "./build/concordium-client-${{ needs.validate-preconditions.outputs.version }}.pkg" "./build/concordium-client-macos-${{ matrix.arch }}.pkg"
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          role-session-name: ${{ github.job }}Session
-          aws-region: "eu-west-1"
-
-      - name: Extrapolate file name
-        run: |
-          S3_FILE_NAME=$(echo '${{ needs.validate-preconditions.outputs.s3_file_name }}' | jq -r '.["${{ github.job }}"]')
-          echo "S3_FILE_NAME=${S3_FILE_NAME}" >> $GITHUB_ENV
-
-      - name: Publish
-        run: |
-          aws s3api put-object --bucket=distribution.concordium.software --key="tools/macos/${{ env.S3_FILE_NAME }}" --body="./scripts/distributables/macOS-package/build/concordium-client-${{ needs.validate-preconditions.outputs.version }}.pkg" --if-none-match='*'
+          name: concordium-client-macos-${{ matrix.arch }}
+          if-no-files-found: error
+          path: scripts/distributables/macOS-package/build/concordium-client-macos-${{ matrix.arch }}.pkg
 
   client-windows:
     needs: [validate-preconditions]
     runs-on: windows-latest
     environment: release
-    if: contains(fromJSON('["rc", "client-windows"]'), needs.validate-preconditions.outputs.release_type)
+    if: contains(fromJSON('["rc", "all", "client-windows"]'), needs.validate-preconditions.outputs.release_type)
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -293,13 +281,6 @@ jobs:
            smctl sign --keypair-alias ${{ env.WINDOWS_SM_KEYPAIR_ALIAS }} --input sha_2.dll --config-file ${{ env.WINDOWS_PKCS11_CONFIG }} --verbose --exit-non-zero-on-fail --failfast
         shell: cmd
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          role-session-name: ${{ github.job }}Session
-          aws-region: "eu-west-1"
-
       - name: Zip the binaries
         shell: bash
         run: |
@@ -307,16 +288,41 @@ jobs:
           bin_dir=$(stack path --local-install-root)/bin
           echo "$bin_dir"
           (cd "$bin_dir" && powershell -Command "Compress-Archive -Path concordium-client.exe,concordium_base.dll,sha_2.dll -DestinationPath concordium-client.zip")
-          mv -f "$bin_dir/concordium-client.zip" out/concordium-client.zip
+          mv -f "$bin_dir/concordium-client.zip" out/concordium-client-windows.zip
 
-      - name: Extrapolate file name
-        shell: bash
-        run: |
-          S3_FILE_NAME=$(echo '${{ needs.validate-preconditions.outputs.s3_file_name }}' | jq -r '.["${{ github.job }}"]')
-          echo "S3_FILE_NAME=${S3_FILE_NAME}" >> $GITHUB_ENV
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: concordium-client-windows
+          if-no-files-found: error
+          path: out/concordium-client-windows.zip
 
-      - name: Publish
-        shell: bash
-        run: |
-          aws s3api put-object --bucket=distribution.concordium.software --key="tools/windows/${{ env.S3_FILE_NAME }}" --body=out/concordium-client.zip --if-none-match='*'
+  publish-release:
+    needs: [validate-preconditions, client-linux, client-macos, client-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: concordium-client-*
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Concordium Client ${{ needs.validate-preconditions.outputs.version }}"
+          draft: true
+          files: |
+            concordium-client-linux/concordium-client-linux
+            concordium-client-macos-intel/concordium-client-macos-intel.pkg
+            concordium-client-macos-arm/concordium-client-macos-arm.pkg
+            concordium-client-windows/concordium-client-windows.zip
+          body: |
+            # Concordium Client ${{ needs.validate-preconditions.outputs.version }}
+            
+            ## Binaries
+            
+            - **Linux**: `concordium-client-linux`
+            - **macOS Intel**: `concordium-client-macos-intel.pkg`
+            - **macOS ARM**: `concordium-client-macos-arm.pkg`
+            - **Windows**: `concordium-client-windows.zip`
 
