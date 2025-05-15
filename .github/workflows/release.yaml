@@ -309,7 +309,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "Concordium Client ${{ needs.validate-preconditions.outputs.version }}"
+          name: "Concordium Client ${{ needs.validate-preconditions.outputs.base_version }}"
           draft: true
           files: |
             concordium-client-linux/concordium-client-linux
@@ -317,8 +317,6 @@ jobs:
             concordium-client-macos-arm/concordium-client-macos-arm.pkg
             concordium-client-windows/concordium-client-windows.zip
           body: |
-            # Concordium Client ${{ needs.validate-preconditions.outputs.version }}
-            
             ## Binaries
             
             - **Linux**: `concordium-client-linux`
