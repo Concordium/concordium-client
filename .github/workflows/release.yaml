@@ -301,24 +301,21 @@ jobs:
     needs: [validate-preconditions, client-linux, client-macos, client-windows]
     runs-on: ubuntu-latest
     steps:
-      - name: Download all artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
-
-      - name: List artifacts
-        run: find artifacts -type f | sort
+          pattern: concordium-client-*
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: "Concordium Client ${{ needs.validate-preconditions.outputs.version }}"
-          draft: true,
+          draft: true
           files: |
-            artifacts/concordium-client-linux/concordium-client-linux
-            artifacts/concordium-client-macos-intel/concordium-client-macos-intel.pkg
-            artifacts/concordium-client-macos-arm/concordium-client-macos-arm.pkg
-            artifacts/concordium-client-windows/concordium-client-windows.zip
+            concordium-client-linux/concordium-client-linux
+            concordium-client-macos-intel/concordium-client-macos-intel.pkg
+            concordium-client-macos-arm/concordium-client-macos-arm.pkg
+            concordium-client-windows/concordium-client-windows.zip
           body: |
             # Concordium Client ${{ needs.validate-preconditions.outputs.version }}
             
