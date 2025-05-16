@@ -905,7 +905,7 @@ processTransactionCmd action baseCfgDir verbose backend =
 
             receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
             let receiverAccount = naAddr receiverAddress
-            let tokenReceiver = CBOR.accountTokenReceiver receiverAccount
+            let tokenReceiver = CBOR.accountTokenHolder receiverAccount
 
             withClient backend $ do
                 cs <- getResponseValueOrDie =<< getConsensusInfo
