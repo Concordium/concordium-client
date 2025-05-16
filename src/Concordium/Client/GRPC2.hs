@@ -2329,7 +2329,7 @@ instance FromProto Proto.AccountTransactionDetails where
                             return $ TokenModuleEvent (TokenEvent{..})
                         )
                         protoEvents
-                return (Just TTTokenGovernance, TxSuccess tokenEvents)
+                return (Just TTTokenHolder, TxSuccess tokenEvents)
 
 instance FromProto (ProtoKernel.AccountAddress, Proto.DelegationEvent) where
     type Output (ProtoKernel.AccountAddress, Proto.DelegationEvent) = SupplementedEvent
