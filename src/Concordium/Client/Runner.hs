@@ -996,6 +996,40 @@ handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount tokenI
         let outFile = toOutFile txOpts
         signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend
 
+-- TODO
+        -- TransactionPLTModifyList account actionText listNameText symbolText txOpts -> do
+        --     baseCfg <- getBaseConfig baseCfgDir verbose
+        --     when verbose $ do
+        --         runPrinter $ printBaseConfig baseCfg
+        --         putStrLn ""
+
+        --     accountAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) account
+        --     let tokenHolder = CBOR.accountTokenHolder $ naAddr accountAddress
+
+        --     withClient backend $ do
+        --         tokenGovernanceOperation <- case (actionText, listNameText) of
+        --             ("add", "allow") -> pure $ CBOR.TokenAddAllowList tokenHolder
+        --             ("remove", "allow") -> pure $ CBOR.TokenRemoveAllowList tokenHolder
+        --             ("add", "deny") -> pure $ CBOR.TokenAddDenyList tokenHolder
+        --             ("remove", "deny") -> pure $ CBOR.TokenRemoveDenyList tokenHolder
+        --             _ -> logFatal ["Only `add` or `remove` supported for the `action` option and only `allow` or `deny` supported for the `nameList` option."]
+
+        --         let tokenGovernanceTransaction = CBOR.TokenGovernanceTransaction (Seq.fromList [tokenGovernanceOperation])
+        --         let bytes = CBOR.tokenGovernanceTransactionToBytes tokenGovernanceTransaction
+        --         let tokenParameter = Types.TokenParameter $ BS.toShort bytes
+
+        --         let symbol = tokenIdFromText symbolText
+
+        --         let payload = Types.TokenGovernance symbol tokenParameter
+        --         let encodedPayload = Types.encodePayload payload
+
+        --         let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize encodedPayload
+        --         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
+
+        --         let intOpts = toInteractionOpts txOpts
+        --         let outFile = toOutFile txOpts
+        --         signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend
+
 -- | Construct a transaction config for registering data.
 --   The data is read from the 'FilePath' provided.
 --   Fails if the data can't be read or it violates the size limit checked by 'Types.registeredDataFromBSS'.

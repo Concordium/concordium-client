@@ -231,6 +231,9 @@ data TransactionCmd
 data TokenSupplyAction = Mint | Burn
     deriving (Show, Eq)
 
+data ModifyListAction = AddAllowList | RemoveAllowList | AddDenyList | RemoveDenyList
+    deriving (Show, Eq)
+
 data PLTCmd
     = TransactionPLTTransfer
         { tptReceiver :: !Text,
@@ -244,6 +247,12 @@ data PLTCmd
           tpusAmount :: !TokenAmount,
           tpusSymbol :: !Text,
           tpusOpts :: !(TransactionOpts (Maybe Energy))
+        }
+    | TransactionPLTModifyList
+        { tpmlAction :: !ModifyListAction,
+          tpmlAccount :: !Text,
+          tpmlSymbol :: !Text,
+          tpmlOpts :: !(TransactionOpts (Maybe Energy))
         }
     deriving (Show)
 
@@ -751,6 +760,10 @@ pltCmds =
                     ( transactionPLTTransferCmd
                         <> transactionPLTMintCmd
                         <> transactionPLTBurnCmd
+                        <> transactionAddAllowListCmd
+                        <> transactionAddDenyListCmd
+                        <> transactionRemoveAllowListCmd
+                        <> transactionRemoveDenyListCmd
                     )
             )
             (progDesc "Commands for PLTs (protocol level tokens) transactions.")
@@ -906,6 +919,62 @@ transactionPLTBurnCmd =
                 <*> transactionOptsParser
             )
             (progDesc "Burn PLTs (protocol level tokens).")
+        )
+
+transactionAddAllowListCmd :: Mod CommandFields PLTCmd
+transactionAddAllowListCmd =
+    command
+        "add-to-allowList"
+        ( info
+            ( TransactionPLTModifyList
+                <$> pure AddAllowList
+                <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add or remove to/from the list.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (Symbol) of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Add an account to the allow list.")
+        )
+
+transactionAddDenyListCmd :: Mod CommandFields PLTCmd
+transactionAddDenyListCmd =
+    command
+        "add-to-denyList"
+        ( info
+            ( TransactionPLTModifyList
+                <$> pure RemoveAllowList
+                <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add or remove to/from the list.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (Symbol) of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Add an account to the deny list.")
+        )
+
+transactionRemoveAllowListCmd :: Mod CommandFields PLTCmd
+transactionRemoveAllowListCmd =
+    command
+        "remove-from-allowList"
+        ( info
+            ( TransactionPLTModifyList
+                <$> pure AddDenyList
+                <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add or remove to/from the list.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (Symbol) of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Remove an account from the allow list.")
+        )
+
+transactionRemoveDenyListCmd :: Mod CommandFields PLTCmd
+transactionRemoveDenyListCmd =
+    command
+        "remove-from-denyList"
+        ( info
+            ( TransactionPLTModifyList
+                <$> pure RemoveDenyList
+                <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add or remove to/from the list.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (Symbol) of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Remove an account from the deny list.")
         )
 
 transactionWithScheduleCmd :: Mod CommandFields TransactionCmd
