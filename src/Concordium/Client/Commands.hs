@@ -236,6 +236,13 @@ data TransactionCmd
           tpusSymbol :: !Text,
           tpusOpts :: !(TransactionOpts (Maybe Energy))
         }
+    | TransactionPLTModifyList
+        { tpmlAccount :: !Text,
+          tpmlAction :: !Text,
+          tpmlListName :: !Text,
+          tpmlSymbol :: !Text,
+          tpmlOpts :: !(TransactionOpts (Maybe Energy))
+        }
     deriving (Show)
 
 data AccountCmd
@@ -728,6 +735,7 @@ transactionCmds =
                         <> transactionRegisterDataCmd
                         <> transactionPLTTransferCmd
                         <> transactionPLTUpdateSupplyCmd
+                        <> transactionPLTModifyListCmd
                     )
             )
             (progDesc "Commands for submitting and inspecting transactions.")
@@ -869,6 +877,21 @@ transactionPLTUpdateSupplyCmd =
                 <*> transactionOptsParser
             )
             (progDesc "Mint or burn plt tokens.")
+        )
+
+transactionPLTModifyListCmd :: Mod CommandFields TransactionCmd
+transactionPLTModifyListCmd =
+    command
+        "modify-list-plt"
+        ( info
+            ( TransactionPLTModifyList
+                <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add or remove to/from the list.")
+                <*> strOption (long "action" <> metavar "ACTION" <> help "The action (either `add` or `remove`)")
+                <*> strOption (long "listName" <> metavar "LIST_NAME" <> help "The list name (either `allow` or `deny`)")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (Symbol) of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Add/remove an account to/from the allow/deny list.")
         )
 
 transactionWithScheduleCmd :: Mod CommandFields TransactionCmd

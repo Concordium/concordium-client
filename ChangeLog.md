@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `transaction modify-list-plt` command to add/remove an account to/from the allow/deny list by the governance account.
 - Add `transaction update-supply-plt` command to mint or burn protocol level tokens by the governance account.
 
 ## 9.0.0 - 2025-05-09
