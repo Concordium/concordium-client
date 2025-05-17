@@ -937,6 +937,33 @@ processTransactionCmd action baseCfgDir verbose backend =
                 let intOpts = toInteractionOpts txOpts
                 let outFile = toOutFile txOpts
                 signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend
+        TransactionPLTUpdateSupply actionText amount symbolText txOpts -> do
+            baseCfg <- getBaseConfig baseCfgDir verbose
+            when verbose $ do
+                runPrinter $ printBaseConfig baseCfg
+                putStrLn ""
+
+            withClient backend $ do
+                tokenGovernanceOperation <- case actionText of
+                    "mint" -> pure $ CBOR.TokenMint amount
+                    "burn" -> pure $ CBOR.TokenBurn amount
+                    _ -> logFatal ["Only `mint` or `burn` supported for the `action` option."]
+
+                let tokenGovernanceTransaction = CBOR.TokenGovernanceTransaction (Seq.fromList [tokenGovernanceOperation])
+                let bytes = CBOR.tokenGovernanceTransactionToBytes tokenGovernanceTransaction
+                let tokenParameter = Types.TokenParameter $ BS.toShort bytes
+
+                let symbol = tokenIdFromText symbolText
+
+                let payload = Types.TokenGovernance symbol tokenParameter
+                let encodedPayload = Types.encodePayload payload
+
+                let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize encodedPayload
+                txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
+
+                let intOpts = toInteractionOpts txOpts
+                let outFile = toOutFile txOpts
+                signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend
 
 -- | Construct a transaction config for registering data.
 --   The data is read from the 'FilePath' provided.
