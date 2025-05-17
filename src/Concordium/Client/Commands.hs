@@ -224,11 +224,17 @@ data TransactionCmd
           trdTransactionOptions :: !(TransactionOpts (Maybe Energy))
         }
     | TransactionPLTTransfer
-        { tthReceiver :: !Text,
-          tthAmount :: !TokenAmount,
-          tthSymbol :: !Text,
-          tthMemo :: !(Maybe MemoInput),
-          tthOpts :: !(TransactionOpts (Maybe Energy))
+        { tptReceiver :: !Text,
+          tptAmount :: !TokenAmount,
+          tptSymbol :: !Text,
+          tptMemo :: !(Maybe MemoInput),
+          tptOpts :: !(TransactionOpts (Maybe Energy))
+        }
+    | TransactionPLTUpdateSupply
+        { tpusAction :: !Text,
+          tpusAmount :: !TokenAmount,
+          tpusSymbol :: !Text,
+          tpusOpts :: !(TransactionOpts (Maybe Energy))
         }
     deriving (Show)
 
@@ -721,6 +727,7 @@ transactionCmds =
                         <> transactionDeployCredentialCmd
                         <> transactionRegisterDataCmd
                         <> transactionPLTTransferCmd
+                        <> transactionPLTUpdateSupplyCmd
                     )
             )
             (progDesc "Commands for submitting and inspecting transactions.")
@@ -848,6 +855,20 @@ transactionPLTTransferCmd =
                 <*> transactionOptsParser
             )
             (progDesc "Transfer tokens from one account to another.")
+        )
+
+transactionPLTUpdateSupplyCmd :: Mod CommandFields TransactionCmd
+transactionPLTUpdateSupplyCmd =
+    command
+        "update-supply-plt"
+        ( info
+            ( TransactionPLTUpdateSupply
+                <$> strOption (long "action" <> metavar "ACTION" <> help "The action (either `mint` or `burn`)")
+                <*> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (Symbol) of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Mint or burn plt tokens.")
         )
 
 transactionWithScheduleCmd :: Mod CommandFields TransactionCmd
