@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- Add `transaction update-supply-plt` command to mint or burn protocol level tokens by the governance account.
+- Add `transaction plt mint` command to mint protocol level tokens by the governance account.
+- Add `transaction plt burn` command to burn protocol level tokens by the governance account.
+- Refactore plt commands into its own subcommand.
 
 ## 9.0.0 - 2025-05-09
 
