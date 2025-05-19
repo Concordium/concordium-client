@@ -13,6 +13,8 @@ module Concordium.Client.Commands (
     Interval (..),
     InteractionOpts (..),
     TransactionCmd (..),
+    PLTCmd (..),
+    TokenSupplyAction (..),
     AccountCmd (..),
     ModuleCmd (..),
     ContractCmd (..),
@@ -223,12 +225,25 @@ data TransactionCmd
           -- | Options for transaction.
           trdTransactionOptions :: !(TransactionOpts (Maybe Energy))
         }
-    | TransactionPLTTransfer
-        { tthReceiver :: !Text,
-          tthAmount :: !TokenAmount,
-          tthSymbol :: !Text,
-          tthMemo :: !(Maybe MemoInput),
-          tthOpts :: !(TransactionOpts (Maybe Energy))
+    | PLTCmd PLTCmd
+    deriving (Show)
+
+data TokenSupplyAction = Mint | Burn
+    deriving (Show, Eq)
+
+data PLTCmd
+    = TransactionPLTTransfer
+        { tptReceiver :: !Text,
+          tptAmount :: !TokenAmount,
+          tptSymbol :: !Text,
+          tptMemo :: !(Maybe MemoInput),
+          tptOpts :: !(TransactionOpts (Maybe Energy))
+        }
+    | TransactionPLTUpdateSupply
+        { tpusAction :: !TokenSupplyAction,
+          tpusAmount :: !TokenAmount,
+          tpusSymbol :: !Text,
+          tpusOpts :: !(TransactionOpts (Maybe Energy))
         }
     deriving (Show)
 
@@ -720,10 +735,25 @@ transactionCmds =
                         <> transactionWithScheduleCmd
                         <> transactionDeployCredentialCmd
                         <> transactionRegisterDataCmd
-                        <> transactionPLTTransferCmd
+                        <> pltCmds
                     )
             )
             (progDesc "Commands for submitting and inspecting transactions.")
+        )
+
+pltCmds :: Mod CommandFields TransactionCmd
+pltCmds =
+    command
+        "plt"
+        ( info
+            ( PLTCmd
+                <$> hsubparser
+                    ( transactionPLTTransferCmd
+                        <> transactionPLTMintCmd
+                        <> transactionPLTBurnCmd
+                    )
+            )
+            (progDesc "Commands for PLTs (protocol level tokens) transactions.")
         )
 
 transactionSubmitCmd :: Mod CommandFields TransactionCmd
@@ -835,19 +865,47 @@ transactionSendCcdCmd =
             (progDesc "Transfer CCD from one account to another.")
         )
 
-transactionPLTTransferCmd :: Mod CommandFields TransactionCmd
+transactionPLTTransferCmd :: Mod CommandFields PLTCmd
 transactionPLTTransferCmd =
     command
-        "transfer-plt"
+        "send"
         ( info
             ( TransactionPLTTransfer
                 <$> strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.")
                 <*> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
-                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (Symbol) of the token.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
                 <*> memoInputParser
                 <*> transactionOptsParser
             )
             (progDesc "Transfer tokens from one account to another.")
+        )
+
+transactionPLTMintCmd :: Mod CommandFields PLTCmd
+transactionPLTMintCmd =
+    command
+        "mint"
+        ( info
+            ( TransactionPLTUpdateSupply
+                <$> pure Mint
+                <*> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Mint PLTs (protocol level tokens).")
+        )
+
+transactionPLTBurnCmd :: Mod CommandFields PLTCmd
+transactionPLTBurnCmd =
+    command
+        "burn"
+        ( info
+            ( TransactionPLTUpdateSupply
+                <$> pure Burn
+                <*> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Burn PLTs (protocol level tokens).")
         )
 
 transactionWithScheduleCmd :: Mod CommandFields TransactionCmd
