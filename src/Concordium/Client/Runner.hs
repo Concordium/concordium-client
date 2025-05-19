@@ -915,7 +915,7 @@ handlePLTTransfer ::
     Maybe MemoInput ->
     TransactionOpts (Maybe Types.Energy) ->
     IO ()
-handlePLTTransfer backend baseCfgDir verbose receiver amount symbolText maybeMemo txOpts = do
+handlePLTTransfer backend baseCfgDir verbose receiver amount tokenIdText maybeMemo txOpts = do
     baseCfg <- getBaseConfig baseCfgDir verbose
     when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -940,16 +940,18 @@ handlePLTTransfer backend baseCfgDir verbose receiver amount symbolText maybeMem
             Right val -> return val
             Left err -> logFatal ["Error creating token transfer body:", err]
         let tokenHolderTransfer = CBOR.TokenHolderTransfer tokenTransferBody
-        let tokenHolderTransaction = CBOR.TokenHolderTransaction (Seq.fromList [tokenHolderTransfer])
+        let tokenHolderTransaction = CBOR.TokenHolderTransaction (Seq.singleton tokenHolderTransfer)
         let bytes = CBOR.tokenHolderTransactionToBytes tokenHolderTransaction
         let tokenParameter = Types.TokenParameter $ BS.toShort bytes
 
-        let symbol = tokenIdFromText symbolText
+        tokenId <- case tokenIdFromText tokenIdText of
+            Right val -> return val
+            Left err -> logFatal ["Error couldn't parse token id:", err]
 
-        let payload = Types.TokenHolder symbol tokenParameter
+        let payload = Types.TokenHolder tokenId tokenParameter
         let encodedPayload = Types.encodePayload payload
 
-        let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize encodedPayload
+        let nrgCost _ = return $ Just $ tokenHolderTransactionEnergyCost $ Types.payloadSize encodedPayload
         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
         let intOpts = toInteractionOpts txOpts
@@ -965,7 +967,7 @@ handlePLTUpdateSupply ::
     Text ->
     TransactionOpts (Maybe Types.Energy) ->
     IO ()
-handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount symbolText txOpts = do
+handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount tokenIdText txOpts = do
     baseCfg <- getBaseConfig baseCfgDir verbose
     when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -976,16 +978,18 @@ handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount symbol
             Mint -> pure $ CBOR.TokenMint amount
             Burn -> pure $ CBOR.TokenBurn amount
 
-        let tokenGovernanceTransaction = CBOR.TokenGovernanceTransaction (Seq.fromList [tokenGovernanceOperation])
+        let tokenGovernanceTransaction = CBOR.TokenGovernanceTransaction (Seq.singleton tokenGovernanceOperation)
         let bytes = CBOR.tokenGovernanceTransactionToBytes tokenGovernanceTransaction
         let tokenParameter = Types.TokenParameter $ BS.toShort bytes
 
-        let symbol = tokenIdFromText symbolText
+        tokenId <- case tokenIdFromText tokenIdText of
+            Right val -> return val
+            Left err -> logFatal ["Error couldn't parse token id:", err]
 
-        let payload = Types.TokenGovernance symbol tokenParameter
+        let payload = Types.TokenGovernance tokenId tokenParameter
         let encodedPayload = Types.encodePayload payload
 
-        let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize encodedPayload
+        let nrgCost _ = return $ Just $ tokenGovernanceTransactionEnergyCost $ Types.payloadSize encodedPayload
         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
         let intOpts = toInteractionOpts txOpts

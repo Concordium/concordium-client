@@ -33,6 +33,26 @@ simpleTransferEnergyCost ::
     Energy
 simpleTransferEnergyCost psize numSigs = minimumCost psize numSigs + Cost.simpleTransferCost
 
+-- | Cost of a token holder transaction.
+--  This must be kept in sync with the cost in Concordium.Scheduler.Cost
+tokenHolderTransactionEnergyCost ::
+    -- | Size of the payload
+    PayloadSize ->
+    -- | Number of signatures
+    Int ->
+    Energy
+tokenHolderTransactionEnergyCost psize numSigs = minimumCost psize numSigs + Cost.tokenHolderBaseCost
+
+-- | Cost of a token governance transaction.
+--  This must be kept in sync with the cost in Concordium.Scheduler.Cost
+tokenGovernanceTransactionEnergyCost ::
+    -- | Size of the payload
+    PayloadSize ->
+    -- | Number of signatures
+    Int ->
+    Energy
+tokenGovernanceTransactionEnergyCost psize numSigs = minimumCost psize numSigs + Cost.tokenGovernanceBaseCost
+
 simpleTransferPayloadSize :: PayloadSize
 simpleTransferPayloadSize = 41
 
