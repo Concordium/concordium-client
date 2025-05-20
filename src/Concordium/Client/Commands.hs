@@ -923,7 +923,7 @@ transactionPLTBurnCmd =
 transactionPLTAddAllowListCmd :: Mod CommandFields PLTCmd
 transactionPLTAddAllowListCmd =
     command
-        "add-to-allowList"
+        "add-to-allow-list"
         ( info
             ( TransactionPLTModifyList AddAllowList
                 <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add to the list.")
@@ -936,7 +936,7 @@ transactionPLTAddAllowListCmd =
 transactionPLTAddDenyListCmd :: Mod CommandFields PLTCmd
 transactionPLTAddDenyListCmd =
     command
-        "add-to-denyList"
+        "add-to-deny-list"
         ( info
             ( TransactionPLTModifyList AddDenyList
                 <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add to the list.")
@@ -949,7 +949,7 @@ transactionPLTAddDenyListCmd =
 transactionPLTRemoveAllowListCmd :: Mod CommandFields PLTCmd
 transactionPLTRemoveAllowListCmd =
     command
-        "remove-from-allowList"
+        "remove-from-allow-list"
         ( info
             ( TransactionPLTModifyList RemoveAllowList
                 <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to remove from the list.")
@@ -962,7 +962,7 @@ transactionPLTRemoveAllowListCmd =
 transactionPLTRemoveDenyListCmd :: Mod CommandFields PLTCmd
 transactionPLTRemoveDenyListCmd =
     command
-        "remove-from-denyList"
+        "remove-from-deny-list"
         ( info
             ( TransactionPLTModifyList RemoveDenyList
                 <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to remove from the list.")

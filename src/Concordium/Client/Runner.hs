@@ -1023,7 +1023,7 @@ handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenIdT
             AddDenyList -> pure $ CBOR.TokenAddDenyList tokenHolder
             RemoveDenyList -> pure $ CBOR.TokenRemoveDenyList tokenHolder
 
-        let tokenGovernanceTransaction = CBOR.TokenGovernanceTransaction (Seq.fromList [tokenGovernanceOperation])
+        let tokenGovernanceTransaction = CBOR.TokenGovernanceTransaction (Seq.singleton tokenGovernanceOperation)
         let bytes = CBOR.tokenGovernanceTransactionToBytes tokenGovernanceTransaction
         let tokenParameter = Types.TokenParameter $ BS.toShort bytes
 
