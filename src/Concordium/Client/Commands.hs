@@ -926,7 +926,7 @@ transactionPLTAddAllowListCmd =
         "add-to-allowList"
         ( info
             ( TransactionPLTModifyList AddAllowList
-                <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add or remove to/from the list.")
+                <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add to the list.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
                 <*> transactionOptsParser
             )
@@ -939,7 +939,7 @@ transactionPLTAddDenyListCmd =
         "add-to-denyList"
         ( info
             ( TransactionPLTModifyList AddDenyList
-                <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add or remove to/from the list.")
+                <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add to the list.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
                 <*> transactionOptsParser
             )
@@ -952,7 +952,7 @@ transactionPLTRemoveAllowListCmd =
         "remove-from-allowList"
         ( info
             ( TransactionPLTModifyList RemoveAllowList
-                <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add or remove to/from the list.")
+                <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to remove from the list.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
                 <*> transactionOptsParser
             )
@@ -965,8 +965,8 @@ transactionPLTRemoveDenyListCmd =
         "remove-from-denyList"
         ( info
             ( TransactionPLTModifyList RemoveDenyList
-                <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add or remove to/from the list.")
-                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (s) of the token.")
+                <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to remove from the list.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
                 <*> transactionOptsParser
             )
             (progDesc "Remove an account from the deny list.")
