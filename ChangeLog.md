@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 9.1.0 - 2025-05-20
+
 - Add `transaction plt add-to-allow-list` to add an account to the allow list by the governance account.
 - Add `transaction plt add-to-deny-list` to add an account to the deny list by the governance account.
 - Add `transaction plt remove-from-allow-list` to remove an account from the allow list by the governance account.
