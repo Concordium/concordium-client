@@ -904,6 +904,8 @@ processTransactionCmd action baseCfgDir verbose backend =
                     handlePLTTransfer backend baseCfgDir verbose receiver amount symbol maybeMemo txOpts
                 TransactionPLTUpdateSupply tokenSupplyAction amount symbol txOpts ->
                     handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount symbol txOpts
+                TransactionPLTModifyList modifyListAction account symbol txOpts ->
+                    handlePLTModifyList backend baseCfgDir verbose modifyListAction account symbol txOpts
 
 handlePLTTransfer ::
     Backend ->
@@ -977,6 +979,49 @@ handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount tokenI
         tokenGovernanceOperation <- case tokenSupplyAction of
             Mint -> pure $ CBOR.TokenMint amount
             Burn -> pure $ CBOR.TokenBurn amount
+
+        let tokenGovernanceTransaction = CBOR.TokenGovernanceTransaction (Seq.singleton tokenGovernanceOperation)
+        let bytes = CBOR.tokenGovernanceTransactionToBytes tokenGovernanceTransaction
+        let tokenParameter = Types.TokenParameter $ BS.toShort bytes
+
+        tokenId <- case tokenIdFromText tokenIdText of
+            Right val -> return val
+            Left err -> logFatal ["Error couldn't parse token id:", err]
+
+        let payload = Types.TokenGovernance tokenId tokenParameter
+        let encodedPayload = Types.encodePayload payload
+
+        let nrgCost _ = return $ Just $ tokenGovernanceTransactionEnergyCost $ Types.payloadSize encodedPayload
+        txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
+
+        let intOpts = toInteractionOpts txOpts
+        let outFile = toOutFile txOpts
+        signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend
+
+handlePLTModifyList ::
+    Backend ->
+    Maybe FilePath ->
+    Bool ->
+    ModifyListAction ->
+    Text ->
+    Text ->
+    TransactionOpts (Maybe Types.Energy) ->
+    IO ()
+handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenIdText txOpts = do
+    baseCfg <- getBaseConfig baseCfgDir verbose
+    when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+    accountAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) account
+    let tokenHolder = CBOR.accountTokenHolder $ naAddr accountAddress
+
+    withClient backend $ do
+        tokenGovernanceOperation <- case modifyListAction of
+            AddAllowList -> pure $ CBOR.TokenAddAllowList tokenHolder
+            RemoveAllowList -> pure $ CBOR.TokenRemoveAllowList tokenHolder
+            AddDenyList -> pure $ CBOR.TokenAddDenyList tokenHolder
+            RemoveDenyList -> pure $ CBOR.TokenRemoveDenyList tokenHolder
 
         let tokenGovernanceTransaction = CBOR.TokenGovernanceTransaction (Seq.singleton tokenGovernanceOperation)
         let bytes = CBOR.tokenGovernanceTransactionToBytes tokenGovernanceTransaction
