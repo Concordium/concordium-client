@@ -15,6 +15,7 @@ module Concordium.Client.Commands (
     TransactionCmd (..),
     PLTCmd (..),
     TokenSupplyAction (..),
+    ModifyListAction (..),
     AccountCmd (..),
     ModuleCmd (..),
     ContractCmd (..),
@@ -760,10 +761,10 @@ pltCmds =
                     ( transactionPLTTransferCmd
                         <> transactionPLTMintCmd
                         <> transactionPLTBurnCmd
-                        <> transactionAddAllowListCmd
-                        <> transactionAddDenyListCmd
-                        <> transactionRemoveAllowListCmd
-                        <> transactionRemoveDenyListCmd
+                        <> transactionPLTAddAllowListCmd
+                        <> transactionPLTAddDenyListCmd
+                        <> transactionPLTRemoveAllowListCmd
+                        <> transactionPLTRemoveDenyListCmd
                     )
             )
             (progDesc "Commands for PLTs (protocol level tokens) transactions.")
@@ -898,9 +899,8 @@ transactionPLTMintCmd =
     command
         "mint"
         ( info
-            ( TransactionPLTUpdateSupply
-                <$> pure Mint
-                <*> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
+            ( TransactionPLTUpdateSupply Mint
+                <$> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
                 <*> transactionOptsParser
             )
@@ -912,66 +912,61 @@ transactionPLTBurnCmd =
     command
         "burn"
         ( info
-            ( TransactionPLTUpdateSupply
-                <$> pure Burn
-                <*> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
+            ( TransactionPLTUpdateSupply Burn
+                <$> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
                 <*> transactionOptsParser
             )
             (progDesc "Burn PLTs (protocol level tokens).")
         )
 
-transactionAddAllowListCmd :: Mod CommandFields PLTCmd
-transactionAddAllowListCmd =
+transactionPLTAddAllowListCmd :: Mod CommandFields PLTCmd
+transactionPLTAddAllowListCmd =
     command
         "add-to-allowList"
         ( info
-            ( TransactionPLTModifyList
-                <$> pure AddAllowList
-                <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add or remove to/from the list.")
-                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (Symbol) of the token.")
+            ( TransactionPLTModifyList AddAllowList
+                <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add or remove to/from the list.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
                 <*> transactionOptsParser
             )
             (progDesc "Add an account to the allow list.")
         )
 
-transactionAddDenyListCmd :: Mod CommandFields PLTCmd
-transactionAddDenyListCmd =
+transactionPLTAddDenyListCmd :: Mod CommandFields PLTCmd
+transactionPLTAddDenyListCmd =
     command
         "add-to-denyList"
         ( info
-            ( TransactionPLTModifyList
-                <$> pure RemoveAllowList
-                <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add or remove to/from the list.")
-                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (Symbol) of the token.")
+            ( TransactionPLTModifyList AddDenyList
+                <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add or remove to/from the list.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
                 <*> transactionOptsParser
             )
             (progDesc "Add an account to the deny list.")
         )
 
-transactionRemoveAllowListCmd :: Mod CommandFields PLTCmd
-transactionRemoveAllowListCmd =
+transactionPLTRemoveAllowListCmd :: Mod CommandFields PLTCmd
+transactionPLTRemoveAllowListCmd =
     command
         "remove-from-allowList"
         ( info
-            ( TransactionPLTModifyList
-                <$> pure AddDenyList
-                <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add or remove to/from the list.")
-                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (Symbol) of the token.")
+            ( TransactionPLTModifyList RemoveAllowList
+                <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add or remove to/from the list.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
                 <*> transactionOptsParser
             )
             (progDesc "Remove an account from the allow list.")
         )
 
-transactionRemoveDenyListCmd :: Mod CommandFields PLTCmd
-transactionRemoveDenyListCmd =
+transactionPLTRemoveDenyListCmd :: Mod CommandFields PLTCmd
+transactionPLTRemoveDenyListCmd =
     command
         "remove-from-denyList"
         ( info
-            ( TransactionPLTModifyList
-                <$> pure RemoveDenyList
-                <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add or remove to/from the list.")
-                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (Symbol) of the token.")
+            ( TransactionPLTModifyList RemoveDenyList
+                <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add or remove to/from the list.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (s) of the token.")
                 <*> transactionOptsParser
             )
             (progDesc "Remove an account from the deny list.")

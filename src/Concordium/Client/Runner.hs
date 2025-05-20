@@ -904,6 +904,8 @@ processTransactionCmd action baseCfgDir verbose backend =
                     handlePLTTransfer backend baseCfgDir verbose receiver amount symbol maybeMemo txOpts
                 TransactionPLTUpdateSupply tokenSupplyAction amount symbol txOpts ->
                     handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount symbol txOpts
+                TransactionPLTModifyList modifyListAction account symbol txOpts ->
+                    handlePLTModifyList backend baseCfgDir verbose modifyListAction account symbol txOpts
 
 handlePLTTransfer ::
     Backend ->
@@ -996,39 +998,48 @@ handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount tokenI
         let outFile = toOutFile txOpts
         signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend
 
--- TODO
-        -- TransactionPLTModifyList account actionText listNameText symbolText txOpts -> do
-        --     baseCfg <- getBaseConfig baseCfgDir verbose
-        --     when verbose $ do
-        --         runPrinter $ printBaseConfig baseCfg
-        --         putStrLn ""
+handlePLTModifyList ::
+    Backend ->
+    Maybe FilePath ->
+    Bool ->
+    ModifyListAction ->
+    Text ->
+    Text ->
+    TransactionOpts (Maybe Types.Energy) ->
+    IO ()
+handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenIdText txOpts = do
+    baseCfg <- getBaseConfig baseCfgDir verbose
+    when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
 
-        --     accountAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) account
-        --     let tokenHolder = CBOR.accountTokenHolder $ naAddr accountAddress
+    accountAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) account
+    let tokenHolder = CBOR.accountTokenHolder $ naAddr accountAddress
 
-        --     withClient backend $ do
-        --         tokenGovernanceOperation <- case (actionText, listNameText) of
-        --             ("add", "allow") -> pure $ CBOR.TokenAddAllowList tokenHolder
-        --             ("remove", "allow") -> pure $ CBOR.TokenRemoveAllowList tokenHolder
-        --             ("add", "deny") -> pure $ CBOR.TokenAddDenyList tokenHolder
-        --             ("remove", "deny") -> pure $ CBOR.TokenRemoveDenyList tokenHolder
-        --             _ -> logFatal ["Only `add` or `remove` supported for the `action` option and only `allow` or `deny` supported for the `nameList` option."]
+    withClient backend $ do
+        tokenGovernanceOperation <- case modifyListAction of
+            AddAllowList -> pure $ CBOR.TokenAddAllowList tokenHolder
+            RemoveAllowList -> pure $ CBOR.TokenRemoveAllowList tokenHolder
+            AddDenyList -> pure $ CBOR.TokenAddDenyList tokenHolder
+            RemoveDenyList -> pure $ CBOR.TokenRemoveDenyList tokenHolder
 
-        --         let tokenGovernanceTransaction = CBOR.TokenGovernanceTransaction (Seq.fromList [tokenGovernanceOperation])
-        --         let bytes = CBOR.tokenGovernanceTransactionToBytes tokenGovernanceTransaction
-        --         let tokenParameter = Types.TokenParameter $ BS.toShort bytes
+        let tokenGovernanceTransaction = CBOR.TokenGovernanceTransaction (Seq.fromList [tokenGovernanceOperation])
+        let bytes = CBOR.tokenGovernanceTransactionToBytes tokenGovernanceTransaction
+        let tokenParameter = Types.TokenParameter $ BS.toShort bytes
 
-        --         let symbol = tokenIdFromText symbolText
+        tokenId <- case tokenIdFromText tokenIdText of
+            Right val -> return val
+            Left err -> logFatal ["Error couldn't parse token id:", err]
 
-        --         let payload = Types.TokenGovernance symbol tokenParameter
-        --         let encodedPayload = Types.encodePayload payload
+        let payload = Types.TokenGovernance tokenId tokenParameter
+        let encodedPayload = Types.encodePayload payload
 
-        --         let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize encodedPayload
-        --         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
+        let nrgCost _ = return $ Just $ tokenGovernanceTransactionEnergyCost $ Types.payloadSize encodedPayload
+        txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
-        --         let intOpts = toInteractionOpts txOpts
-        --         let outFile = toOutFile txOpts
-        --         signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend
+        let intOpts = toInteractionOpts txOpts
+        let outFile = toOutFile txOpts
+        signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend
 
 -- | Construct a transaction config for registering data.
 --   The data is read from the 'FilePath' provided.
