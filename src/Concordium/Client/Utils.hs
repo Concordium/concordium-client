@@ -8,7 +8,8 @@ import Concordium.Types
 import qualified Concordium.Wasm as Wasm
 import Control.Monad.Except
 import Data.Aeson as AE
-import qualified Data.ByteString.Short as BS (toShort)
+import qualified Data.ByteString as BS (length)
+import qualified Data.ByteString.Short as SBS (toShort)
 import qualified Data.Char as Char
 import Data.Maybe (mapMaybe)
 import Data.String.Interpolate (i, iii)
@@ -86,10 +87,13 @@ tokenAmountFromString s
     decimals = fromIntegral fracLen
     combinedStr = intPart ++ fracPart
 
--- | Parse a token id (symbol) from a Text.
-tokenIdFromText :: Text.Text -> TokenId
+-- | Safely parse a token id (symbol) from Text, ensuring it does not exceed 255 bytes.
+tokenIdFromText :: Text.Text -> Either String TokenId
 tokenIdFromText s =
-    TokenId $ BS.toShort $ Text.encodeUtf8 s
+    let encoded = Text.encodeUtf8 s
+    in  if BS.length encoded <= 255
+            then Right $ TokenId $ SBS.toShort encoded
+            else Left "Token symbol must be at most 255 bytes when UTF-8 encoded."
 
 amountFractionFromStringInform :: String -> Either String AmountFraction
 amountFractionFromStringInform s =

@@ -81,6 +81,7 @@ import Codec.CBOR.JSON
 import Codec.CBOR.Write
 import Concordium.Client.Types.Contract.BuildInfo (extractBuildInfo)
 import qualified Concordium.Types.ProtocolLevelTokens.CBOR as CBOR
+import Concordium.Types.Queries.Tokens (TokenAmount)
 import Control.Arrow (Arrow (second))
 import Control.Concurrent (threadDelay)
 import Control.Exception
@@ -897,46 +898,148 @@ processTransactionCmd action baseCfgDir verbose backend =
                     Nothing -> return ()
                     Just (Left err) -> logFatal ["Registering data failed:", err]
                     Just (Right _) -> logSuccess ["Data succesfully registered."]
-        TransactionPLTTransfer receiver amount symbolText maybeMemo txOpts -> do
-            baseCfg <- getBaseConfig baseCfgDir verbose
-            when verbose $ do
-                runPrinter $ printBaseConfig baseCfg
-                putStrLn ""
+        PLTCmd pltCmd ->
+            case pltCmd of
+                TransactionPLTTransfer receiver amount symbol maybeMemo txOpts ->
+                    handlePLTTransfer backend baseCfgDir verbose receiver amount symbol maybeMemo txOpts
+                TransactionPLTUpdateSupply tokenSupplyAction amount symbol txOpts ->
+                    handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount symbol txOpts
+                TransactionPLTModifyList modifyListAction account symbol txOpts ->
+                    handlePLTModifyList backend baseCfgDir verbose modifyListAction account symbol txOpts
 
-            receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
-            let receiverAccount = naAddr receiverAddress
-            let tokenReceiver = CBOR.accountTokenReceiver receiverAccount
+handlePLTTransfer ::
+    Backend ->
+    Maybe FilePath ->
+    Bool ->
+    Text ->
+    TokenAmount ->
+    Text ->
+    Maybe MemoInput ->
+    TransactionOpts (Maybe Types.Energy) ->
+    IO ()
+handlePLTTransfer backend baseCfgDir verbose receiver amount tokenIdText maybeMemo txOpts = do
+    baseCfg <- getBaseConfig baseCfgDir verbose
+    when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
 
-            withClient backend $ do
-                cs <- getResponseValueOrDie =<< getConsensusInfo
+    receiverAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) receiver
+    let receiverAccount = naAddr receiverAddress
+    let tokenReceiver = CBOR.accountTokenHolder receiverAccount
 
-                maybeCborMemo <- case maybeMemo of
-                    Nothing -> return Nothing
-                    Just memoInput -> do
-                        memo <- liftIO $ checkAndGetMemo memoInput $ Queries.csProtocolVersion cs
-                        return $ Just $ CBOR.CBORMemo memo
+    withClient backend $ do
+        cs <- getResponseValueOrDie =<< getConsensusInfo
 
-                let operation = CBOR.TokenTransferBuilder (Just amount) (Just tokenReceiver) maybeCborMemo
-                let eitherTokenTranfserBody = CBOR.buildTokenTransfer operation
-                tokenTransferBody <- case eitherTokenTranfserBody of
-                    Right val -> return val
-                    Left err -> logFatal ["Error creating token transfer body:", err]
-                let tokenHolderTransfer = CBOR.TokenHolderTransfer tokenTransferBody
-                let tokenHolderTransaction = CBOR.TokenHolderTransaction (Seq.fromList [tokenHolderTransfer])
-                let bytes = CBOR.tokenHolderTransactionToBytes tokenHolderTransaction
-                let tokenParameter = Types.TokenParameter $ BS.toShort bytes
+        maybeCborMemo <- case maybeMemo of
+            Nothing -> return Nothing
+            Just memoInput -> do
+                memo <- liftIO $ checkAndGetMemo memoInput $ Queries.csProtocolVersion cs
+                return $ Just $ CBOR.CBORMemo memo
 
-                let symbol = tokenIdFromText symbolText
+        let operation = CBOR.TokenTransferBuilder (Just amount) (Just tokenReceiver) maybeCborMemo
+        let eitherTokenTranfserBody = CBOR.buildTokenTransfer operation
+        tokenTransferBody <- case eitherTokenTranfserBody of
+            Right val -> return val
+            Left err -> logFatal ["Error creating token transfer body:", err]
+        let tokenHolderTransfer = CBOR.TokenHolderTransfer tokenTransferBody
+        let tokenHolderTransaction = CBOR.TokenHolderTransaction (Seq.singleton tokenHolderTransfer)
+        let bytes = CBOR.tokenHolderTransactionToBytes tokenHolderTransaction
+        let tokenParameter = Types.TokenParameter $ BS.toShort bytes
 
-                let payload = Types.TokenHolder symbol tokenParameter
-                let encodedPayload = Types.encodePayload payload
+        tokenId <- case tokenIdFromText tokenIdText of
+            Right val -> return val
+            Left err -> logFatal ["Error couldn't parse token id:", err]
 
-                let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize encodedPayload
-                txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
+        let payload = Types.TokenHolder tokenId tokenParameter
+        let encodedPayload = Types.encodePayload payload
 
-                let intOpts = toInteractionOpts txOpts
-                let outFile = toOutFile txOpts
-                signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend
+        let nrgCost _ = return $ Just $ tokenHolderTransactionEnergyCost $ Types.payloadSize encodedPayload
+        txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
+
+        let intOpts = toInteractionOpts txOpts
+        let outFile = toOutFile txOpts
+        signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend
+
+handlePLTUpdateSupply ::
+    Backend ->
+    Maybe FilePath ->
+    Bool ->
+    TokenSupplyAction ->
+    TokenAmount ->
+    Text ->
+    TransactionOpts (Maybe Types.Energy) ->
+    IO ()
+handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount tokenIdText txOpts = do
+    baseCfg <- getBaseConfig baseCfgDir verbose
+    when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+    withClient backend $ do
+        tokenGovernanceOperation <- case tokenSupplyAction of
+            Mint -> pure $ CBOR.TokenMint amount
+            Burn -> pure $ CBOR.TokenBurn amount
+
+        let tokenGovernanceTransaction = CBOR.TokenGovernanceTransaction (Seq.singleton tokenGovernanceOperation)
+        let bytes = CBOR.tokenGovernanceTransactionToBytes tokenGovernanceTransaction
+        let tokenParameter = Types.TokenParameter $ BS.toShort bytes
+
+        tokenId <- case tokenIdFromText tokenIdText of
+            Right val -> return val
+            Left err -> logFatal ["Error couldn't parse token id:", err]
+
+        let payload = Types.TokenGovernance tokenId tokenParameter
+        let encodedPayload = Types.encodePayload payload
+
+        let nrgCost _ = return $ Just $ tokenGovernanceTransactionEnergyCost $ Types.payloadSize encodedPayload
+        txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
+
+        let intOpts = toInteractionOpts txOpts
+        let outFile = toOutFile txOpts
+        signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend
+
+handlePLTModifyList ::
+    Backend ->
+    Maybe FilePath ->
+    Bool ->
+    ModifyListAction ->
+    Text ->
+    Text ->
+    TransactionOpts (Maybe Types.Energy) ->
+    IO ()
+handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenIdText txOpts = do
+    baseCfg <- getBaseConfig baseCfgDir verbose
+    when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+    accountAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) account
+    let tokenHolder = CBOR.accountTokenHolder $ naAddr accountAddress
+
+    withClient backend $ do
+        tokenGovernanceOperation <- case modifyListAction of
+            AddAllowList -> pure $ CBOR.TokenAddAllowList tokenHolder
+            RemoveAllowList -> pure $ CBOR.TokenRemoveAllowList tokenHolder
+            AddDenyList -> pure $ CBOR.TokenAddDenyList tokenHolder
+            RemoveDenyList -> pure $ CBOR.TokenRemoveDenyList tokenHolder
+
+        let tokenGovernanceTransaction = CBOR.TokenGovernanceTransaction (Seq.singleton tokenGovernanceOperation)
+        let bytes = CBOR.tokenGovernanceTransactionToBytes tokenGovernanceTransaction
+        let tokenParameter = Types.TokenParameter $ BS.toShort bytes
+
+        tokenId <- case tokenIdFromText tokenIdText of
+            Right val -> return val
+            Left err -> logFatal ["Error couldn't parse token id:", err]
+
+        let payload = Types.TokenGovernance tokenId tokenParameter
+        let encodedPayload = Types.encodePayload payload
+
+        let nrgCost _ = return $ Just $ tokenGovernanceTransactionEnergyCost $ Types.payloadSize encodedPayload
+        txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
+
+        let intOpts = toInteractionOpts txOpts
+        let outFile = toOutFile txOpts
+        signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend
 
 -- | Construct a transaction config for registering data.
 --   The data is read from the 'FilePath' provided.

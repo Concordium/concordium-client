@@ -728,8 +728,8 @@ instance FromProto Proto.AccountInfo'Token where
 instance FromProto ProtoPLT.TokenAccountState where
     type Output ProtoPLT.TokenAccountState = Tokens.TokenAccountState
     fromProto tokenAccountState = do
-        let memberAllowList = tokenAccountState ^. ProtoFieldsPLT.memberAllowList
-        let memberDenyList = tokenAccountState ^. ProtoFieldsPLT.memberDenyList
+        let memberAllowList = tokenAccountState ^. ProtoFieldsPLT.maybe'memberAllowList
+        let memberDenyList = tokenAccountState ^. ProtoFieldsPLT.maybe'memberDenyList
         balance <- fromProto $ tokenAccountState ^. ProtoFieldsPLT.balance
         return Tokens.TokenAccountState{..}
 
@@ -3725,9 +3725,12 @@ getPrePreCooldownAccounts bhInput =
 
 -- | Get the info of a protocol level token after a given block.
 getTokenInfo :: (MonadIO m) => Text -> BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult Tokens.TokenInfo))
-getTokenInfo tokenId bhInput = withUnary (call @"getTokenInfo") msg (fmap fromProto)
-  where
-    msg = defMessage & ProtoFields.blockHash .~ toProto bhInput & ProtoFields.tokenId .~ toProto (tokenIdFromText tokenId)
+getTokenInfo tokenIdText bhInput = do
+    tokenId <- case tokenIdFromText tokenIdText of
+        Right val -> return val
+        Left err -> logFatal ["Error couldn't parse token id:", err]
+    let msg = defMessage & ProtoFields.blockHash .~ toProto bhInput & ProtoFields.tokenId .~ toProto tokenId
+    withUnary (call @"getTokenInfo") msg (fmap fromProto)
 
 -- | Get information related to the baker election for a particular block.
 getElectionInfo :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult BlockBirkParameters))
