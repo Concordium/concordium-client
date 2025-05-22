@@ -2298,38 +2298,40 @@ instance FromProto Proto.AccountTransactionDetails where
                               [TransferredWithSchedule{..}, TransferMemo{..}]
                             )
                 return (Just tType, TxSuccess{..})
-            ProtoFields.AccountTransactionEffects'TokenGovernanceEffect pltTokenGovernanceEvent -> do
-                let protoEvents = pltTokenGovernanceEvent ^. PLTFields.events
-                tokenEvents <-
-                    mapM
-                        ( \ev -> do
-                            _teSymbol <- fromProto $ ev ^. ProtoFieldsPLT.tokenSymbol
+            ProtoFields.AccountTransactionEffects'TokenGovernanceEffect _pltTokenGovernanceEvent -> do
+                -- TODO: COR-1420
+                -- let protoEvents = pltTokenGovernanceEvent ^. PLTFields.events
+                -- tokenEvents <-
+                --     mapM
+                --         ( \ev -> do
+                --             _teSymbol <- fromProto $ ev ^. ProtoFieldsPLT.tokenSymbol
 
-                            let textType = ev ^. ProtoFieldsPLT.type'
-                            let byteString = TE.encodeUtf8 textType
-                            let _teType = TokenEventType $ BSS.toShort byteString
+                --             let textType = ev ^. ProtoFieldsPLT.type'
+                --             let byteString = TE.encodeUtf8 textType
+                --             let _teType = TokenEventType $ BSS.toShort byteString
 
-                            _teDetails <- (fromProto . CBorAsTokenEventDetails) (ev ^. PLTFields.details)
-                            return $ TokenModuleEvent (TokenEvent{..})
-                        )
-                        protoEvents
-                return (Just TTTokenGovernance, TxSuccess tokenEvents)
-            ProtoFields.AccountTransactionEffects'TokenHolderEffect pltTokenHolderEvent -> do
-                let protoEvents = pltTokenHolderEvent ^. PLTFields.events
-                tokenEvents <-
-                    mapM
-                        ( \ev -> do
-                            _teSymbol <- fromProto $ ev ^. ProtoFieldsPLT.tokenSymbol
+                --             _teDetails <- (fromProto . CBorAsTokenEventDetails) (ev ^. PLTFields.details)
+                --             return $ TokenModuleEvent (TokenEvent{..})
+                --         )
+                --         protoEvents
+                return (Just TTTokenGovernance, TxSuccess [])
+            ProtoFields.AccountTransactionEffects'TokenHolderEffect _pltTokenHolderEvent -> do
+                -- TODO: COR-1420
+                -- let protoEvents = pltTokenHolderEvent ^. PLTFields.events
+                -- tokenEvents <-
+                --     mapM
+                --         ( \ev -> do
+                --             _teSymbol <- fromProto $ ev ^. ProtoFieldsPLT.tokenSymbol
 
-                            let textType = ev ^. ProtoFieldsPLT.type'
-                            let byteString = TE.encodeUtf8 textType
-                            let _teType = TokenEventType $ BSS.toShort byteString
+                --             let textType = ev ^. ProtoFieldsPLT.type'
+                --             let byteString = TE.encodeUtf8 textType
+                --             let _teType = TokenEventType $ BSS.toShort byteString
 
-                            _teDetails <- (fromProto . CBorAsTokenEventDetails) (ev ^. PLTFields.details)
-                            return $ TokenModuleEvent (TokenEvent{..})
-                        )
-                        protoEvents
-                return (Just TTTokenHolder, TxSuccess tokenEvents)
+                --             _teDetails <- (fromProto . CBorAsTokenEventDetails) (ev ^. PLTFields.details)
+                --             return $ TokenModuleEvent (TokenEvent{..})
+                --         )
+                --         protoEvents
+                return (Just TTTokenHolder, TxSuccess [])
 
 instance FromProto (ProtoKernel.AccountAddress, Proto.DelegationEvent) where
     type Output (ProtoKernel.AccountAddress, Proto.DelegationEvent) = SupplementedEvent
