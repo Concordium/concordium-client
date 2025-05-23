@@ -87,7 +87,7 @@ tokenAmountFromString s
     decimals = fromIntegral fracLen
     combinedStr = intPart ++ fracPart
 
--- | Safely parse a token id (symbol) from Text, ensuring it does not exceed 255 bytes.
+-- | Safely parse a token id from Text, ensuring it does not exceed 255 bytes.
 tokenIdFromText :: Text.Text -> Either String TokenId
 tokenIdFromText s =
     let encoded = Text.encodeUtf8 s

@@ -900,12 +900,12 @@ processTransactionCmd action baseCfgDir verbose backend =
                     Just (Right _) -> logSuccess ["Data succesfully registered."]
         PLTCmd pltCmd ->
             case pltCmd of
-                TransactionPLTTransfer receiver amount symbol maybeMemo txOpts ->
-                    handlePLTTransfer backend baseCfgDir verbose receiver amount symbol maybeMemo txOpts
-                TransactionPLTUpdateSupply tokenSupplyAction amount symbol txOpts ->
-                    handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount symbol txOpts
-                TransactionPLTModifyList modifyListAction account symbol txOpts ->
-                    handlePLTModifyList backend baseCfgDir verbose modifyListAction account symbol txOpts
+                TransactionPLTTransfer receiver amount tokenId maybeMemo txOpts ->
+                    handlePLTTransfer backend baseCfgDir verbose receiver amount tokenId maybeMemo txOpts
+                TransactionPLTUpdateSupply tokenSupplyAction amount tokenId txOpts ->
+                    handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount tokenId txOpts
+                TransactionPLTModifyList modifyListAction account tokenId txOpts ->
+                    handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenId txOpts
 
 handlePLTTransfer ::
     Backend ->
