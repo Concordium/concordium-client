@@ -912,7 +912,7 @@ showEvent verbose ciM = \case
             invalidCBOR =
                 printf
                     "Could not decode token event details of token module event with token id %s and type %s as valid CBOR. The hex value of the event details is %s."
-                    (show $ Types._teSymbol tokenEvent)
+                    (show $ Types._teTokenId tokenEvent)
                     (show $ Types._teType tokenEvent)
                     (show bss)
             bsl = BSL.fromStrict $ BSS.fromShort bss
@@ -925,7 +925,7 @@ showEvent verbose ciM = \case
         in  Just $
                 printf
                     "Token module event of token id %s and type %s occured with event details: \n%s"
-                    (show $ Types._teSymbol tokenEvent)
+                    (show $ Types._teTokenId tokenEvent)
                     (show $ Types._teType tokenEvent)
                     eventDetailsJSON
   where
@@ -1123,13 +1123,13 @@ showRejectReason verbose = \case
             Nothing ->
                 printf
                     "%s token-holder transaction was rejected due to: %s"
-                    (show $ Types.tmrrTokenSymbol reason)
+                    (show $ Types.tmrrTokenId reason)
                     (show $ Types.tmrrType reason)
             Just detail -> do
                 let invalidCBOR =
                         printf
                             "%s token-holder transaction was rejected due to: %s\n   details (undecoded CBOR): %s"
-                            (show $ Types.tmrrTokenSymbol reason)
+                            (show $ Types.tmrrTokenId reason)
                             (show $ Types.tmrrType reason)
                             (show detail)
                 let detailsShortByteString = Types.tokenEventDetailsBytes detail
@@ -1141,7 +1141,7 @@ showRejectReason verbose = \case
                             then
                                 printf
                                     "%s token-holder transaction was rejected due to: %s\n   details (undecoded CBOR): %s\n   details (decoded CBOR):"
-                                    (show $ Types.tmrrTokenSymbol reason)
+                                    (show $ Types.tmrrTokenId reason)
                                     (show $ Types.tmrrType reason)
                                     (show details)
                                     (showPrettyJSON x)
@@ -1152,13 +1152,13 @@ showRejectReason verbose = \case
             Nothing ->
                 printf
                     "%s token-governance transaction was rejected due to: %s"
-                    (show $ Types.tmrrTokenSymbol reason)
+                    (show $ Types.tmrrTokenId reason)
                     (show $ Types.tmrrType reason)
             Just detail -> do
                 let invalidCBOR =
                         printf
                             "%s token-governance transaction was rejected due to: %s\n   details (undecoded CBOR): %s"
-                            (show $ Types.tmrrTokenSymbol reason)
+                            (show $ Types.tmrrTokenId reason)
                             (show $ Types.tmrrType reason)
                             (show detail)
                 let detailsShortByteString = Types.tokenEventDetailsBytes detail
@@ -1170,7 +1170,7 @@ showRejectReason verbose = \case
                             then
                                 printf
                                     "%s token-governance transaction was rejected due to: %s\n   details (undecoded CBOR): %s\n   details (decoded CBOR):"
-                                    (show $ Types.tmrrTokenSymbol reason)
+                                    (show $ Types.tmrrTokenId reason)
                                     (show $ Types.tmrrType reason)
                                     (show details)
                                     (showPrettyJSON x)

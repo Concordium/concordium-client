@@ -93,7 +93,7 @@ tokenIdFromText s =
     let encoded = Text.encodeUtf8 s
     in  if BS.length encoded <= 255
             then Right $ TokenId $ SBS.toShort encoded
-            else Left "Token symbol must be at most 255 bytes when UTF-8 encoded."
+            else Left "Token Id must be at most 255 bytes when UTF-8 encoded."
 
 amountFractionFromStringInform :: String -> Either String AmountFraction
 amountFractionFromStringInform s =
