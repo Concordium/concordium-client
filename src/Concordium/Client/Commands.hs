@@ -1799,7 +1799,7 @@ consensusChainUpdateCmd =
                       "      \"payload\":{",
                       "         \"updateType\":\"createPLT\",",
                       "         \"update\":{",
-                      "             \"tokenSymbol\":\"EUROSTABLE\",",
+                      "             \"tokenId\":\"EUROSTABLE\",",
                       "             \"tokenModule\":\"6b7eef36dc48bb59ef9290cdbf123dad7e85efa76caf7df1ae8775735f8f59d3\",",
                       "             \"governanceAccount\":\"4FmiTW2L2AccyR9VjzsnpWFSAcohXWf7Vf797i36y526mqiEcp\",",
                       "             \"decimals\":6,",

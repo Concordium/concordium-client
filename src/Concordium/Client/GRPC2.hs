@@ -745,7 +745,7 @@ instance FromProto ProtoPLT.TokenAmount where
 instance FromProto ProtoPLT.TokenId where
     type Output ProtoPLT.TokenId = TokenId
     fromProto tokenId = do
-        let textSymbol = tokenId ^. ProtoFieldsPLT.symbol
+        let textSymbol = tokenId ^. ProtoFieldsPLT.value
         let byteString = TE.encodeUtf8 textSymbol
         let symbol = BSS.toShort byteString
         return $ TokenId symbol
@@ -1341,7 +1341,7 @@ instance FromProto Proto.RejectReason where
 instance FromProto ProtoPLT.TokenModuleRejectReason where
     type Output ProtoPLT.TokenModuleRejectReason = TokenModuleRejectReason
     fromProto reason = do
-        tmrrTokenSymbol <- fromProto $ reason ^. PLTFields.tokenSymbol
+        tmrrTokenId <- fromProto $ reason ^. PLTFields.tokenId
         let rawType = reason ^. PLTFields.type'
         let bs = TE.encodeUtf8 rawType
         let tmrrType = TokenEventType (BSS.toShort bs)
@@ -1965,7 +1965,7 @@ instance FromProto ProtoPLT.TokenModuleRef where
 instance FromProto ProtoPLT.CreatePLT where
     type Output ProtoPLT.CreatePLT = CreatePLT
     fromProto cpUpdate = do
-        _cpltTokenSymbol <- fromProto $ cpUpdate ^. PLTFields.tokenSymbol
+        _cpltTokenId <- fromProto $ cpUpdate ^. PLTFields.tokenId
         _cpltGovernanceAccount <- fromProto $ cpUpdate ^. PLTFields.governanceAccount
         _cpltDecimals <- case toIntegralSized (cpUpdate ^. PLTFields.decimals) of
             Nothing -> fromProtoFail "CreatePLT: decimals out of range"
