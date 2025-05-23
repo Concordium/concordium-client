@@ -239,20 +239,20 @@ data PLTCmd
     = TransactionPLTTransfer
         { tptReceiver :: !Text,
           tptAmount :: !TokenAmount,
-          tptSymbol :: !Text,
+          tptTokenId :: !Text,
           tptMemo :: !(Maybe MemoInput),
           tptOpts :: !(TransactionOpts (Maybe Energy))
         }
     | TransactionPLTUpdateSupply
         { tpusAction :: !TokenSupplyAction,
           tpusAmount :: !TokenAmount,
-          tpusSymbol :: !Text,
+          tpusTokenId :: !Text,
           tpusOpts :: !(TransactionOpts (Maybe Energy))
         }
     | TransactionPLTModifyList
         { tpmlAction :: !ModifyListAction,
           tpmlAccount :: !Text,
-          tpmlSymbol :: !Text,
+          tpmlTokenId :: !Text,
           tpmlOpts :: !(TransactionOpts (Maybe Energy))
         }
     deriving (Show)
@@ -887,7 +887,7 @@ transactionPLTTransferCmd =
             ( TransactionPLTTransfer
                 <$> strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.")
                 <*> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
-                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> memoInputParser
                 <*> transactionOptsParser
             )
@@ -901,7 +901,7 @@ transactionPLTMintCmd =
         ( info
             ( TransactionPLTUpdateSupply Mint
                 <$> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
-                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
             )
             (progDesc "Mint PLTs (protocol level tokens).")
@@ -914,7 +914,7 @@ transactionPLTBurnCmd =
         ( info
             ( TransactionPLTUpdateSupply Burn
                 <$> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
-                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
             )
             (progDesc "Burn PLTs (protocol level tokens).")
@@ -927,7 +927,7 @@ transactionPLTAddAllowListCmd =
         ( info
             ( TransactionPLTModifyList AddAllowList
                 <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add to the list.")
-                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
             )
             (progDesc "Add an account to the allow list.")
@@ -940,7 +940,7 @@ transactionPLTAddDenyListCmd =
         ( info
             ( TransactionPLTModifyList AddDenyList
                 <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add to the list.")
-                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
             )
             (progDesc "Add an account to the deny list.")
@@ -953,7 +953,7 @@ transactionPLTRemoveAllowListCmd =
         ( info
             ( TransactionPLTModifyList RemoveAllowList
                 <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to remove from the list.")
-                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
             )
             (progDesc "Remove an account from the allow list.")
@@ -966,7 +966,7 @@ transactionPLTRemoveDenyListCmd =
         ( info
             ( TransactionPLTModifyList RemoveDenyList
                 <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to remove from the list.")
-                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "Token id (symbol) of the token.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
             )
             (progDesc "Remove an account from the deny list.")

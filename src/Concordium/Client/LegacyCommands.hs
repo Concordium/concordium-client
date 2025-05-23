@@ -467,7 +467,7 @@ getTokenInfoCommand =
         "GetTokenInfo"
         ( info
             ( GetTokenInfo
-                <$> strArgument (metavar "TOKEN_ID" <> help "Token id (Symbol) of the token.")
+                <$> strArgument (metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
             )
             (progDesc "Query the gRPC server for the info of a protocol level token.")

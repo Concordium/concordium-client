@@ -745,10 +745,9 @@ instance FromProto ProtoPLT.TokenAmount where
 instance FromProto ProtoPLT.TokenId where
     type Output ProtoPLT.TokenId = TokenId
     fromProto tokenId = do
-        let textSymbol = tokenId ^. ProtoFieldsPLT.value
-        let byteString = TE.encodeUtf8 textSymbol
-        let symbol = BSS.toShort byteString
-        return $ TokenId symbol
+        let textTokenId = tokenId ^. ProtoFieldsPLT.value
+        let byteString = TE.encodeUtf8 textTokenId
+        return $ TokenId $ BSS.toShort byteString
 
 instance FromProto Proto.AccountInfo where
     type Output Proto.AccountInfo = AccountInfo
