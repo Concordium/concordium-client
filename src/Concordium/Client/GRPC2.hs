@@ -14,6 +14,7 @@
 --  type equivalents.
 module Concordium.Client.GRPC2 where
 
+import Concordium.Types.Tokens (TokenRawAmount (..))
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception
@@ -85,6 +86,7 @@ import qualified Data.Text.Encoding as TE
 
 import Concordium.Client.Types.ConsensusStatus
 import qualified Concordium.Crypto.BlockSignature as BlockSignature
+import qualified Concordium.Types.ProtocolLevelTokens.CBOR as Cbor
 import qualified Proto.V2.Concordium.Kernel as ProtoKernel
 import qualified Proto.V2.Concordium.ProtocolLevelTokens as ProtoPLT
 import qualified Proto.V2.Concordium.ProtocolLevelTokens_Fields as ProtoFieldsPLT
@@ -736,8 +738,8 @@ instance FromProto ProtoPLT.TokenAccountState where
 instance FromProto ProtoPLT.TokenAmount where
     type Output ProtoPLT.TokenAmount = Tokens.TokenAmount
     fromProto tokenAmount = do
-        let digits = tokenAmount ^. ProtoFieldsPLT.digits
-        nrDecimals <- case toIntegralSized (tokenAmount ^. ProtoFieldsPLT.nrOfDecimals) of
+        let value = TokenRawAmount $ tokenAmount ^. ProtoFieldsPLT.digits
+        decimals <- case toIntegralSized (tokenAmount ^. ProtoFieldsPLT.nrOfDecimals) of
             Nothing -> fromProtoFail "TokenAmount: decimals out of range"
             Just converted -> return converted
         return Tokens.TokenAmount{..}
@@ -745,7 +747,8 @@ instance FromProto ProtoPLT.TokenAmount where
 instance FromProto ProtoPLT.TokenId where
     type Output ProtoPLT.TokenId = TokenId
     fromProto tokenId = do
-        let textTokenId = tokenId ^. ProtoFieldsPLT.value
+        -- TODO: Revert once submodule link is on top of plt branch.
+        let textTokenId = tokenId ^. ProtoFieldsPLT.symbol
         let byteString = TE.encodeUtf8 textTokenId
         return $ TokenId $ BSS.toShort byteString
 
@@ -1340,7 +1343,8 @@ instance FromProto Proto.RejectReason where
 instance FromProto ProtoPLT.TokenModuleRejectReason where
     type Output ProtoPLT.TokenModuleRejectReason = TokenModuleRejectReason
     fromProto reason = do
-        tmrrTokenId <- fromProto $ reason ^. PLTFields.tokenId
+        -- TODO: Revert once submodule link is on top of plt branch.
+        tmrrTokenSymbol <- fromProto $ reason ^. PLTFields.tokenSymbol
         let rawType = reason ^. PLTFields.type'
         let bs = TE.encodeUtf8 rawType
         let tmrrType = TokenEventType (BSS.toShort bs)
@@ -1964,7 +1968,8 @@ instance FromProto ProtoPLT.TokenModuleRef where
 instance FromProto ProtoPLT.CreatePLT where
     type Output ProtoPLT.CreatePLT = CreatePLT
     fromProto cpUpdate = do
-        _cpltTokenId <- fromProto $ cpUpdate ^. PLTFields.tokenId
+        -- TODO: Revert once submodule link is on top of plt branch.
+        _cpltTokenSymbol <- fromProto $ cpUpdate ^. PLTFields.tokenSymbol
         _cpltGovernanceAccount <- fromProto $ cpUpdate ^. PLTFields.governanceAccount
         _cpltDecimals <- case toIntegralSized (cpUpdate ^. PLTFields.decimals) of
             Nothing -> fromProtoFail "CreatePLT: decimals out of range"
@@ -1991,6 +1996,19 @@ instance FromProto ProtoPLT.TokenState where
         tsTotalSupply <- fromProto $ tokenInfo ^. ProtoFieldsPLT.totalSupply
         tsModuleState <- (fromProto . CBorAsModuleState) (tokenInfo ^. PLTFields.moduleState)
         return Tokens.TokenState{..}
+
+instance FromProto ProtoPLT.TokenHolder where
+    type Output ProtoPLT.TokenHolder = Cbor.TokenHolder
+    fromProto tokehHolder = do
+        protoAddress <- case tokehHolder ^. Proto.maybe'address of
+            Nothing ->
+                fromProtoFail "Unable to convert 'TokenHolder' due to missing field 'address' in response payload."
+            Just v -> return v
+        case protoAddress of
+            ProtoPLT.TokenHolder'Account accountField -> do
+                case fromProto accountField of
+                    Left err -> fromProtoFail $ "Unable to convert 'account' field from 'TokenHolder' type in response payload." <> err
+                    Right account -> return $ Cbor.accountTokenHolder account
 
 instance FromProto Proto.TransactionFeeDistribution where
     type Output Proto.TransactionFeeDistribution = Parameters.TransactionFeeDistribution
@@ -2297,40 +2315,90 @@ instance FromProto Proto.AccountTransactionDetails where
                               [TransferredWithSchedule{..}, TransferMemo{..}]
                             )
                 return (Just tType, TxSuccess{..})
-            ProtoFields.AccountTransactionEffects'TokenGovernanceEffect _pltTokenGovernanceEvent -> do
-                -- TODO: COR-1420
-                -- let protoEvents = pltTokenGovernanceEvent ^. PLTFields.events
-                -- tokenEvents <-
-                --     mapM
-                --         ( \ev -> do
-                --             _teSymbol <- fromProto $ ev ^. ProtoFieldsPLT.tokenSymbol
+            ProtoFields.AccountTransactionEffects'TokenGovernanceEffect pltTokenGovernanceEvent -> do
+                let protoEvents = pltTokenGovernanceEvent ^. PLTFields.events
+                tokenEvents <- forM protoEvents $ \ev -> do
+                    teSymbol <- fromProto $ ev ^. ProtoFieldsPLT.tokenSymbol
 
-                --             let textType = ev ^. ProtoFieldsPLT.type'
-                --             let byteString = TE.encodeUtf8 textType
-                --             let _teType = TokenEventType $ BSS.toShort byteString
+                    protoEvent <- case ev ^. Proto.maybe'event of
+                        Nothing ->
+                            fromProtoFail
+                                "Unable to convert 'TokenEvent' due to missing field 'event' in response payload."
+                        Just v -> return v
+                    case protoEvent of
+                        ProtoPLT.TokenEvent'TransferEvent e -> do
+                            fromAccountField <- fromProto $ e ^. ProtoFieldsPLT.from
+                            fromAccount <- Right $ Cbor.holderAccountAddress fromAccountField
 
-                --             _teDetails <- (fromProto . CBorAsTokenEventDetails) (ev ^. PLTFields.details)
-                --             return $ TokenModuleEvent (TokenEvent{..})
-                --         )
-                --         protoEvents
-                return (Just TTTokenGovernance, TxSuccess [])
-            ProtoFields.AccountTransactionEffects'TokenHolderEffect _pltTokenHolderEvent -> do
-                -- TODO: COR-1420
-                -- let protoEvents = pltTokenHolderEvent ^. PLTFields.events
-                -- tokenEvents <-
-                --     mapM
-                --         ( \ev -> do
-                --             _teSymbol <- fromProto $ ev ^. ProtoFieldsPLT.tokenSymbol
+                            toAccountField <- fromProto $ e ^. ProtoFieldsPLT.to
+                            toAccount <- Right $ Cbor.holderAccountAddress toAccountField
 
-                --             let textType = ev ^. ProtoFieldsPLT.type'
-                --             let byteString = TE.encodeUtf8 textType
-                --             let _teType = TokenEventType $ BSS.toShort byteString
+                            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
+                            memo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
+                            return $ TokenTransfer teSymbol fromAccount toAccount amount memo
+                        ProtoPLT.TokenEvent'ModuleEvent e -> do
+                            let textType = e ^. ProtoFieldsPLT.type'
+                            let byteString = TE.encodeUtf8 textType
+                            let type' = TokenEventType $ BSS.toShort byteString
 
-                --             _teDetails <- (fromProto . CBorAsTokenEventDetails) (ev ^. PLTFields.details)
-                --             return $ TokenModuleEvent (TokenEvent{..})
-                --         )
-                --         protoEvents
-                return (Just TTTokenHolder, TxSuccess [])
+                            details <- (fromProto . CBorAsTokenEventDetails) (e ^. PLTFields.details)
+
+                            return $ TokenModuleEvent teSymbol type' details
+                        ProtoPLT.TokenEvent'MintEvent e -> do
+                            targetAccountField <- fromProto $ e ^. ProtoFieldsPLT.target
+                            target <- Right $ Cbor.holderAccountAddress targetAccountField
+
+                            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
+                            return $ TokenMint teSymbol target amount
+                        ProtoPLT.TokenEvent'BurnEvent e -> do
+                            targetAccountField <- fromProto $ e ^. ProtoFieldsPLT.target
+                            target <- Right $ Cbor.holderAccountAddress targetAccountField
+
+                            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
+                            return $ TokenMint teSymbol target amount
+                return (Just TTTokenGovernance, TxSuccess tokenEvents)
+            ProtoFields.AccountTransactionEffects'TokenHolderEffect pltTokenHolderEvent -> do
+                let protoEvents = pltTokenHolderEvent ^. PLTFields.events
+                tokenEvents <- forM protoEvents $ \ev -> do
+                    teSymbol <- fromProto $ ev ^. ProtoFieldsPLT.tokenSymbol
+
+                    protoEvent <- case ev ^. Proto.maybe'event of
+                        Nothing ->
+                            fromProtoFail
+                                "Unable to convert 'TokenEvent' due to missing field 'event' in response payload."
+                        Just v -> return v
+                    case protoEvent of
+                        ProtoPLT.TokenEvent'TransferEvent e -> do
+                            fromAccountField <- fromProto $ e ^. ProtoFieldsPLT.from
+                            fromAccount <- Right $ Cbor.holderAccountAddress fromAccountField
+
+                            toAccountField <- fromProto $ e ^. ProtoFieldsPLT.to
+                            toAccount <- Right $ Cbor.holderAccountAddress toAccountField
+
+                            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
+                            memo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
+                            return $ TokenTransfer teSymbol fromAccount toAccount amount memo
+                        ProtoPLT.TokenEvent'ModuleEvent e -> do
+                            let textType = e ^. ProtoFieldsPLT.type'
+                            let byteString = TE.encodeUtf8 textType
+                            let type' = TokenEventType $ BSS.toShort byteString
+
+                            details <- (fromProto . CBorAsTokenEventDetails) (e ^. PLTFields.details)
+
+                            return $ TokenModuleEvent teSymbol type' details
+                        ProtoPLT.TokenEvent'MintEvent e -> do
+                            targetAccountField <- fromProto $ e ^. ProtoFieldsPLT.target
+                            target <- Right $ Cbor.holderAccountAddress targetAccountField
+
+                            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
+                            return $ TokenMint teSymbol target amount
+                        ProtoPLT.TokenEvent'BurnEvent e -> do
+                            targetAccountField <- fromProto $ e ^. ProtoFieldsPLT.target
+                            target <- Right $ Cbor.holderAccountAddress targetAccountField
+
+                            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
+                            return $ TokenMint teSymbol target amount
+                return (Just TTTokenHolder, TxSuccess tokenEvents)
 
 instance FromProto (ProtoKernel.AccountAddress, Proto.DelegationEvent) where
     type Output (ProtoKernel.AccountAddress, Proto.DelegationEvent) = SupplementedEvent

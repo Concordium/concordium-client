@@ -907,27 +907,72 @@ showEvent verbose ciM = \case
         verboseOrNothing $ printf "baker %s with account %s suspended" (show bID) (show acc)
     Types.BakerResumed bID acc ->
         verboseOrNothing $ printf "baker %s with account %s resumed" (show bID) (show acc)
-    Types.TokenModuleEvent tokenEvent ->
-        let Types.TokenEventDetails bss = Types._teDetails tokenEvent
-            invalidCBOR =
+    Types.TokenModuleEvent{..} ->
+        let baseInfo =
                 printf
-                    "Could not decode token event details of token module event with token id %s and type %s as valid CBOR. The hex value of the event details is %s."
-                    (show $ Types._teTokenId tokenEvent)
-                    (show $ Types._teType tokenEvent)
-                    (show bss)
-            bsl = BSL.fromStrict $ BSS.fromShort bss
-            eventDetailsJSON = case deserialiseFromBytes (decodeValue False) bsl of
-                Left _ -> invalidCBOR -- if not possible, the event details is not written in valid CBOR
-                Right (rest, x) ->
-                    if rest == BSL.empty
-                        then showPrettyJSON x
-                        else invalidCBOR
-        in  Just $
+                    "%s token module event of type %s occured."
+                    (show etmeTokenId)
+                    (show etmeType)
+
+            eventDetails =
+                let
+                    (Types.TokenEventDetails bss) = etmeDetails
+                    bsl = BSL.fromStrict $ BSS.fromShort bss
+
+                    invalidCBOR =
+                        printf
+                            " Could not decode event details as valid CBOR. The hex value of the event details is %s."
+                            (show etmeDetails)
+
+                    details = case deserialiseFromBytes (decodeValue False) bsl of
+                        Left _ -> invalidCBOR -- if not possible, the event details is not written in valid CBOR
+                        Right (rest, x) ->
+                            if rest == BSL.empty
+                                then showPrettyJSON x
+                                else invalidCBOR
+                in
+                    " Decoded event details:\n" ++ details
+        in  Just $ baseInfo ++ eventDetails
+    Types.TokenTransfer{..} ->
+        let baseInfo =
                 printf
-                    "Token module event of token id %s and type %s occured with event details: \n%s"
-                    (show $ Types._teTokenId tokenEvent)
-                    (show $ Types._teType tokenEvent)
-                    eventDetailsJSON
+                    "%s token transfer with amount %s from %s to %s."
+                    (show ettTokenId)
+                    (show ettAmount)
+                    (show ettFrom)
+                    (show ettTo)
+
+            memoInfo = case ettMemo of
+                Nothing -> ""
+                Just (Types.Memo bss) ->
+                    let
+                        bsl = BSL.fromStrict $ BSS.fromShort bss
+
+                        invalidCBOR =
+                            printf
+                                " Could not decode memo as valid CBOR. The hex value of the memo is %s."
+                                (show ettMemo)
+
+                        memo = case deserialiseFromBytes decodeString bsl of
+                            Left _ -> json
+                            Right (rest, x) ->
+                                if rest == BSL.empty
+                                    then Text.unpack x
+                                    else invalidCBOR
+
+                        json = case deserialiseFromBytes (decodeValue False) bsl of
+                            Left _ -> invalidCBOR
+                            Right (rest, x) ->
+                                if rest == BSL.empty
+                                    then showPrettyJSON x
+                                    else invalidCBOR
+                    in
+                        " Decoded memo:\n" ++ memo
+        in  Just $ baseInfo ++ memoInfo
+    Types.TokenMint{..} ->
+        verboseOrNothing $ printf "%s token mint of amount %s to %s." (show etmTokenId) (show etmAmount) (show etmTarget)
+    Types.TokenBurn{..} ->
+        verboseOrNothing $ printf "%s token burn of amount %s from %s." (show etbTokenId) (show etbAmount) (show etbTarget)
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
@@ -1123,13 +1168,15 @@ showRejectReason verbose = \case
             Nothing ->
                 printf
                     "%s token-holder transaction was rejected due to: %s"
-                    (show $ Types.tmrrTokenId reason)
+                    -- TODO: Revert once submodule link is on top of plt branch.
+                    (show $ Types.tmrrTokenSymbol reason)
                     (show $ Types.tmrrType reason)
             Just detail -> do
                 let invalidCBOR =
                         printf
                             "%s token-holder transaction was rejected due to: %s\n   details (undecoded CBOR): %s"
-                            (show $ Types.tmrrTokenId reason)
+                            -- TODO: Revert once submodule link is on top of plt branch.
+                            (show $ Types.tmrrTokenSymbol reason)
                             (show $ Types.tmrrType reason)
                             (show detail)
                 let detailsShortByteString = Types.tokenEventDetailsBytes detail
@@ -1141,7 +1188,8 @@ showRejectReason verbose = \case
                             then
                                 printf
                                     "%s token-holder transaction was rejected due to: %s\n   details (undecoded CBOR): %s\n   details (decoded CBOR):"
-                                    (show $ Types.tmrrTokenId reason)
+                                    -- TODO: Revert once submodule link is on top of plt branch.
+                                    (show $ Types.tmrrTokenSymbol reason)
                                     (show $ Types.tmrrType reason)
                                     (show details)
                                     (showPrettyJSON x)
@@ -1152,13 +1200,15 @@ showRejectReason verbose = \case
             Nothing ->
                 printf
                     "%s token-governance transaction was rejected due to: %s"
-                    (show $ Types.tmrrTokenId reason)
+                    -- TODO: Revert once submodule link is on top of plt branch.
+                    (show $ Types.tmrrTokenSymbol reason)
                     (show $ Types.tmrrType reason)
             Just detail -> do
                 let invalidCBOR =
                         printf
                             "%s token-governance transaction was rejected due to: %s\n   details (undecoded CBOR): %s"
-                            (show $ Types.tmrrTokenId reason)
+                            -- TODO: Revert once submodule link is on top of plt branch.
+                            (show $ Types.tmrrTokenSymbol reason)
                             (show $ Types.tmrrType reason)
                             (show detail)
                 let detailsShortByteString = Types.tokenEventDetailsBytes detail
@@ -1170,7 +1220,8 @@ showRejectReason verbose = \case
                             then
                                 printf
                                     "%s token-governance transaction was rejected due to: %s\n   details (undecoded CBOR): %s\n   details (decoded CBOR):"
-                                    (show $ Types.tmrrTokenId reason)
+                                    -- TODO: Revert once submodule link is on top of plt branch.
+                                    (show $ Types.tmrrTokenSymbol reason)
                                     (show $ Types.tmrrType reason)
                                     (show details)
                                     (showPrettyJSON x)
