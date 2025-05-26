@@ -2326,36 +2326,26 @@ instance FromProto Proto.AccountTransactionDetails where
                                 "Unable to convert 'TokenEvent' due to missing field 'event' in response payload."
                         Just v -> return v
                     case protoEvent of
-                        ProtoPLT.TokenEvent'TransferEvent e -> do
-                            fromAccountField <- fromProto $ e ^. ProtoFieldsPLT.from
-                            fromAccount <- Right $ Cbor.holderAccountAddress fromAccountField
-
-                            toAccountField <- fromProto $ e ^. ProtoFieldsPLT.to
-                            toAccount <- Right $ Cbor.holderAccountAddress toAccountField
-
-                            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
-                            memo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
-                            return $ TokenTransfer teSymbol fromAccount toAccount amount memo
                         ProtoPLT.TokenEvent'ModuleEvent e -> do
                             let textType = e ^. ProtoFieldsPLT.type'
                             let byteString = TE.encodeUtf8 textType
                             let type' = TokenEventType $ BSS.toShort byteString
-
                             details <- (fromProto . CBorAsTokenEventDetails) (e ^. PLTFields.details)
-
                             return $ TokenModuleEvent teSymbol type' details
                         ProtoPLT.TokenEvent'MintEvent e -> do
-                            targetAccountField <- fromProto $ e ^. ProtoFieldsPLT.target
-                            target <- Right $ Cbor.holderAccountAddress targetAccountField
-
+                            target <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.target)
                             amount <- fromProto $ e ^. ProtoFieldsPLT.amount
                             return $ TokenMint teSymbol target amount
                         ProtoPLT.TokenEvent'BurnEvent e -> do
-                            targetAccountField <- fromProto $ e ^. ProtoFieldsPLT.target
-                            target <- Right $ Cbor.holderAccountAddress targetAccountField
-
+                            target <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.target)
                             amount <- fromProto $ e ^. ProtoFieldsPLT.amount
                             return $ TokenMint teSymbol target amount
+                        ProtoPLT.TokenEvent'TransferEvent e -> do
+                            fromAccount <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.from)
+                            toAccount <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.to)
+                            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
+                            memo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
+                            return $ TokenTransfer teSymbol fromAccount toAccount amount memo
                 return (Just TTTokenGovernance, TxSuccess tokenEvents)
             ProtoFields.AccountTransactionEffects'TokenHolderEffect pltTokenHolderEvent -> do
                 let protoEvents = pltTokenHolderEvent ^. PLTFields.events
@@ -2368,36 +2358,26 @@ instance FromProto Proto.AccountTransactionDetails where
                                 "Unable to convert 'TokenEvent' due to missing field 'event' in response payload."
                         Just v -> return v
                     case protoEvent of
-                        ProtoPLT.TokenEvent'TransferEvent e -> do
-                            fromAccountField <- fromProto $ e ^. ProtoFieldsPLT.from
-                            fromAccount <- Right $ Cbor.holderAccountAddress fromAccountField
-
-                            toAccountField <- fromProto $ e ^. ProtoFieldsPLT.to
-                            toAccount <- Right $ Cbor.holderAccountAddress toAccountField
-
-                            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
-                            memo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
-                            return $ TokenTransfer teSymbol fromAccount toAccount amount memo
                         ProtoPLT.TokenEvent'ModuleEvent e -> do
                             let textType = e ^. ProtoFieldsPLT.type'
                             let byteString = TE.encodeUtf8 textType
                             let type' = TokenEventType $ BSS.toShort byteString
-
                             details <- (fromProto . CBorAsTokenEventDetails) (e ^. PLTFields.details)
-
                             return $ TokenModuleEvent teSymbol type' details
                         ProtoPLT.TokenEvent'MintEvent e -> do
-                            targetAccountField <- fromProto $ e ^. ProtoFieldsPLT.target
-                            target <- Right $ Cbor.holderAccountAddress targetAccountField
-
+                            target <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.target)
                             amount <- fromProto $ e ^. ProtoFieldsPLT.amount
                             return $ TokenMint teSymbol target amount
                         ProtoPLT.TokenEvent'BurnEvent e -> do
-                            targetAccountField <- fromProto $ e ^. ProtoFieldsPLT.target
-                            target <- Right $ Cbor.holderAccountAddress targetAccountField
-
+                            target <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.target)
                             amount <- fromProto $ e ^. ProtoFieldsPLT.amount
                             return $ TokenMint teSymbol target amount
+                        ProtoPLT.TokenEvent'TransferEvent e -> do
+                            fromAccount <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.from)
+                            toAccount <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.to)
+                            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
+                            memo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
+                            return $ TokenTransfer teSymbol fromAccount toAccount amount memo
                 return (Just TTTokenHolder, TxSuccess tokenEvents)
 
 instance FromProto (ProtoKernel.AccountAddress, Proto.DelegationEvent) where

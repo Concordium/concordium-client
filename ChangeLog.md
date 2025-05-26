@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add handling of plt events `TokenModuleEvent`, `TokenMint`, `TokenBurn`, and `TokenTransfer`.
+
 ## 9.1.0 - 2025-05-20
 
 - Add `transaction plt add-to-allow-list` to add an account to the allow list by the governance account.
