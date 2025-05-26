@@ -738,8 +738,8 @@ instance FromProto ProtoPLT.TokenAccountState where
 instance FromProto ProtoPLT.TokenAmount where
     type Output ProtoPLT.TokenAmount = Tokens.TokenAmount
     fromProto tokenAmount = do
-        let value = TokenRawAmount $ tokenAmount ^. ProtoFieldsPLT.digits
-        decimals <- case toIntegralSized (tokenAmount ^. ProtoFieldsPLT.nrOfDecimals) of
+        let taValue = TokenRawAmount $ tokenAmount ^. ProtoFieldsPLT.value
+        taDecimals <- case toIntegralSized (tokenAmount ^. ProtoFieldsPLT.decimals) of
             Nothing -> fromProtoFail "TokenAmount: decimals out of range"
             Just converted -> return converted
         return Tokens.TokenAmount{..}
@@ -747,8 +747,7 @@ instance FromProto ProtoPLT.TokenAmount where
 instance FromProto ProtoPLT.TokenId where
     type Output ProtoPLT.TokenId = TokenId
     fromProto tokenId = do
-        -- TODO: Revert once submodule link is on top of plt branch.
-        let textTokenId = tokenId ^. ProtoFieldsPLT.symbol
+        let textTokenId = tokenId ^. ProtoFieldsPLT.value
         let byteString = TE.encodeUtf8 textTokenId
         return $ TokenId $ BSS.toShort byteString
 
@@ -1343,8 +1342,7 @@ instance FromProto Proto.RejectReason where
 instance FromProto ProtoPLT.TokenModuleRejectReason where
     type Output ProtoPLT.TokenModuleRejectReason = TokenModuleRejectReason
     fromProto reason = do
-        -- TODO: Revert once submodule link is on top of plt branch.
-        tmrrTokenSymbol <- fromProto $ reason ^. PLTFields.tokenSymbol
+        tmrrTokenId <- fromProto $ reason ^. PLTFields.tokenId
         let rawType = reason ^. PLTFields.type'
         let bs = TE.encodeUtf8 rawType
         let tmrrType = TokenEventType (BSS.toShort bs)
@@ -1968,8 +1966,7 @@ instance FromProto ProtoPLT.TokenModuleRef where
 instance FromProto ProtoPLT.CreatePLT where
     type Output ProtoPLT.CreatePLT = CreatePLT
     fromProto cpUpdate = do
-        -- TODO: Revert once submodule link is on top of plt branch.
-        _cpltTokenSymbol <- fromProto $ cpUpdate ^. PLTFields.tokenSymbol
+        _cpltTokenId <- fromProto $ cpUpdate ^. PLTFields.tokenId
         _cpltGovernanceAccount <- fromProto $ cpUpdate ^. PLTFields.governanceAccount
         _cpltDecimals <- case toIntegralSized (cpUpdate ^. PLTFields.decimals) of
             Nothing -> fromProtoFail "CreatePLT: decimals out of range"
@@ -1990,7 +1987,7 @@ instance FromProto ProtoPLT.TokenState where
     fromProto tokenInfo = do
         tsTokenModuleRef <- fromProto $ tokenInfo ^. ProtoFieldsPLT.tokenModuleRef
         tsIssuer <- fromProto $ tokenInfo ^. ProtoFieldsPLT.issuer
-        tsDecimals <- case toIntegralSized (tokenInfo ^. ProtoFieldsPLT.nrOfDecimals) of
+        tsDecimals <- case toIntegralSized (tokenInfo ^. ProtoFieldsPLT.decimals) of
             Nothing -> fromProtoFail "TokenState: decimals out of range"
             Just converted -> return converted
         tsTotalSupply <- fromProto $ tokenInfo ^. ProtoFieldsPLT.totalSupply
@@ -2318,7 +2315,7 @@ instance FromProto Proto.AccountTransactionDetails where
             ProtoFields.AccountTransactionEffects'TokenGovernanceEffect pltTokenGovernanceEvent -> do
                 let protoEvents = pltTokenGovernanceEvent ^. PLTFields.events
                 tokenEvents <- forM protoEvents $ \ev -> do
-                    teSymbol <- fromProto $ ev ^. ProtoFieldsPLT.tokenSymbol
+                    tokenId <- fromProto $ ev ^. ProtoFieldsPLT.tokenId
 
                     protoEvent <- case ev ^. Proto.maybe'event of
                         Nothing ->
@@ -2331,26 +2328,26 @@ instance FromProto Proto.AccountTransactionDetails where
                             let byteString = TE.encodeUtf8 textType
                             let type' = TokenEventType $ BSS.toShort byteString
                             details <- (fromProto . CBorAsTokenEventDetails) (e ^. PLTFields.details)
-                            return $ TokenModuleEvent teSymbol type' details
+                            return $ TokenModuleEvent tokenId type' details
                         ProtoPLT.TokenEvent'MintEvent e -> do
                             target <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.target)
                             amount <- fromProto $ e ^. ProtoFieldsPLT.amount
-                            return $ TokenMint teSymbol target amount
+                            return $ TokenMint tokenId target amount
                         ProtoPLT.TokenEvent'BurnEvent e -> do
                             target <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.target)
                             amount <- fromProto $ e ^. ProtoFieldsPLT.amount
-                            return $ TokenMint teSymbol target amount
+                            return $ TokenMint tokenId target amount
                         ProtoPLT.TokenEvent'TransferEvent e -> do
                             fromAccount <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.from)
                             toAccount <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.to)
                             amount <- fromProto $ e ^. ProtoFieldsPLT.amount
                             memo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
-                            return $ TokenTransfer teSymbol fromAccount toAccount amount memo
+                            return $ TokenTransfer tokenId fromAccount toAccount amount memo
                 return (Just TTTokenGovernance, TxSuccess tokenEvents)
             ProtoFields.AccountTransactionEffects'TokenHolderEffect pltTokenHolderEvent -> do
                 let protoEvents = pltTokenHolderEvent ^. PLTFields.events
                 tokenEvents <- forM protoEvents $ \ev -> do
-                    teSymbol <- fromProto $ ev ^. ProtoFieldsPLT.tokenSymbol
+                    tokenId <- fromProto $ ev ^. ProtoFieldsPLT.tokenId
 
                     protoEvent <- case ev ^. Proto.maybe'event of
                         Nothing ->
@@ -2363,21 +2360,21 @@ instance FromProto Proto.AccountTransactionDetails where
                             let byteString = TE.encodeUtf8 textType
                             let type' = TokenEventType $ BSS.toShort byteString
                             details <- (fromProto . CBorAsTokenEventDetails) (e ^. PLTFields.details)
-                            return $ TokenModuleEvent teSymbol type' details
+                            return $ TokenModuleEvent tokenId type' details
                         ProtoPLT.TokenEvent'MintEvent e -> do
                             target <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.target)
                             amount <- fromProto $ e ^. ProtoFieldsPLT.amount
-                            return $ TokenMint teSymbol target amount
+                            return $ TokenMint tokenId target amount
                         ProtoPLT.TokenEvent'BurnEvent e -> do
                             target <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.target)
                             amount <- fromProto $ e ^. ProtoFieldsPLT.amount
-                            return $ TokenMint teSymbol target amount
+                            return $ TokenMint tokenId target amount
                         ProtoPLT.TokenEvent'TransferEvent e -> do
                             fromAccount <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.from)
                             toAccount <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.to)
                             amount <- fromProto $ e ^. ProtoFieldsPLT.amount
                             memo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
-                            return $ TokenTransfer teSymbol fromAccount toAccount amount memo
+                            return $ TokenTransfer tokenId fromAccount toAccount amount memo
                 return (Just TTTokenHolder, TxSuccess tokenEvents)
 
 instance FromProto (ProtoKernel.AccountAddress, Proto.DelegationEvent) where

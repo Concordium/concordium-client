@@ -1168,15 +1168,13 @@ showRejectReason verbose = \case
             Nothing ->
                 printf
                     "%s token-holder transaction was rejected due to: %s"
-                    -- TODO: Revert once submodule link is on top of plt branch.
-                    (show $ Types.tmrrTokenSymbol reason)
+                    (show $ Types.tmrrTokenId reason)
                     (show $ Types.tmrrType reason)
             Just detail -> do
                 let invalidCBOR =
                         printf
                             "%s token-holder transaction was rejected due to: %s\n   details (undecoded CBOR): %s"
-                            -- TODO: Revert once submodule link is on top of plt branch.
-                            (show $ Types.tmrrTokenSymbol reason)
+                            (show $ Types.tmrrTokenId reason)
                             (show $ Types.tmrrType reason)
                             (show detail)
                 let detailsShortByteString = Types.tokenEventDetailsBytes detail
@@ -1188,8 +1186,7 @@ showRejectReason verbose = \case
                             then
                                 printf
                                     "%s token-holder transaction was rejected due to: %s\n   details (undecoded CBOR): %s\n   details (decoded CBOR):"
-                                    -- TODO: Revert once submodule link is on top of plt branch.
-                                    (show $ Types.tmrrTokenSymbol reason)
+                                    (show $ Types.tmrrTokenId reason)
                                     (show $ Types.tmrrType reason)
                                     (show details)
                                     (showPrettyJSON x)
@@ -1200,15 +1197,13 @@ showRejectReason verbose = \case
             Nothing ->
                 printf
                     "%s token-governance transaction was rejected due to: %s"
-                    -- TODO: Revert once submodule link is on top of plt branch.
-                    (show $ Types.tmrrTokenSymbol reason)
+                    (show $ Types.tmrrTokenId reason)
                     (show $ Types.tmrrType reason)
             Just detail -> do
                 let invalidCBOR =
                         printf
                             "%s token-governance transaction was rejected due to: %s\n   details (undecoded CBOR): %s"
-                            -- TODO: Revert once submodule link is on top of plt branch.
-                            (show $ Types.tmrrTokenSymbol reason)
+                            (show $ Types.tmrrTokenId reason)
                             (show $ Types.tmrrType reason)
                             (show detail)
                 let detailsShortByteString = Types.tokenEventDetailsBytes detail
@@ -1220,8 +1215,7 @@ showRejectReason verbose = \case
                             then
                                 printf
                                     "%s token-governance transaction was rejected due to: %s\n   details (undecoded CBOR): %s\n   details (decoded CBOR):"
-                                    -- TODO: Revert once submodule link is on top of plt branch.
-                                    (show $ Types.tmrrTokenSymbol reason)
+                                    (show $ Types.tmrrTokenId reason)
                                     (show $ Types.tmrrType reason)
                                     (show details)
                                     (showPrettyJSON x)

@@ -51,7 +51,7 @@ import Data.Time.Format.ISO8601
 import Data.Version (showVersion)
 import Data.Word (Word64)
 import Network.HTTP2.Client
-import Options.Applicative as QA
+import Options.Applicative
 import Options.Applicative.Help.Pretty (fillCat, hang, softline)
 import Paths_concordium_client (version)
 import qualified Prettyprinter as P
@@ -614,7 +614,7 @@ hostParser =
     strOption
         ( long "grpc-ip"
             <> metavar "GRPC-IP"
-            <> QA.value "127.0.0.1"
+            <> value "127.0.0.1"
             <> showDefault -- matches the default RPC listen address for the node
             <> help "Address on which the gRPC server is listening. Either an IP address or a hostname."
         )
@@ -625,7 +625,7 @@ portParser =
         auto
         ( long "grpc-port"
             <> metavar "GRPC-PORT"
-            <> QA.value 20000
+            <> value 20000
             <> showDefault -- default value to match the node default GRPC port
             <> help "Port where the gRPC server is listening."
         )
@@ -646,7 +646,7 @@ retryNumParser =
         auto
         ( hidden
             <> long "grpc-retry"
-            <> QA.value 0
+            <> value 0
             <> showDefault -- default is to only try once
             <> metavar "GRPC-RETRY"
             <> help "How many times to retry the connection if it fails the first time."
@@ -1370,7 +1370,7 @@ contractInitCmd =
                     (eitherReader amountFromStringInform)
                     ( long "amount"
                         <> metavar "CCD-AMOUNT"
-                        <> QA.value 0
+                        <> value 0
                         <> help "Amount of CCD to transfer to the contract."
                     )
                 <*> requiredEnergyTransactionOptsParser
@@ -1404,7 +1404,7 @@ contractUpdateCmd =
                     (eitherReader amountFromStringInform)
                     ( long "amount"
                         <> metavar "CCD-AMOUNT"
-                        <> QA.value 0
+                        <> value 0
                         <> help "Amount of CCD to transfer to the contract."
                     )
                 <*> requiredEnergyTransactionOptsParser
@@ -1438,7 +1438,7 @@ contractInvokeCmd =
                     (eitherReader amountFromStringInform)
                     ( long "amount"
                         <> metavar "CCD-AMOUNT"
-                        <> QA.value 0
+                        <> value 0
                         <> help "Amount of CCD to transfer to the contract."
                     )
                 <*> invokerParser
@@ -1591,7 +1591,7 @@ configAccountImportCmd =
             ( ConfigAccountImport
                 <$> strArgument (metavar "FILE" <> help "File with one or more accounts exported from the wallet.")
                 <*> optional (strOption (long "name" <> metavar "NAME" <> help nameOptionHelp))
-                <*> option readAccountExportFormat (long "format" <> metavar "FORMAT" <> QA.value FormatMobile <> help "Export format. Supported values are 'mobile' and 'genesis' (default: 'mobile').")
+                <*> option readAccountExportFormat (long "format" <> metavar "FORMAT" <> value FormatMobile <> help "Export format. Supported values are 'mobile' and 'genesis' (default: 'mobile').")
                 <*> switch (long "skip-existing" <> short 's' <> help "Automatically skip importing accounts when the keydirectory already exists")
             )
             (progDesc "Import an account to persistent config.")
