@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fix a bug in displaying the decoded CBOR from rejected PLT transactions.
+
+
 ## 9.1.0 - 2025-05-20
 
 - Add `transaction plt add-to-allow-list` to add an account to the allow list by the governance account.
