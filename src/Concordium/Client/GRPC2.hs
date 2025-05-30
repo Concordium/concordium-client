@@ -2127,6 +2127,37 @@ instance FromProto Proto.UpdatePayload where
                 cp <- fromProto cpUpdate
                 return $ Updates.CreatePLTUpdatePayload cp
 
+protoToTokenEvent :: ProtoPLT.TokenEvent -> Either String (Event' s)
+protoToTokenEvent event = do
+    tokenId <- fromProto $ event ^. ProtoFieldsPLT.tokenId
+
+    protoEvent <- case event ^. Proto.maybe'event of
+        Nothing ->
+            fromProtoFail
+                "Unable to convert 'TokenEvent' due to missing field 'event' in response payload."
+        Just v -> return v
+    case protoEvent of
+        ProtoPLT.TokenEvent'ModuleEvent e -> do
+            let textType = e ^. ProtoFieldsPLT.type'
+            let byteString = TE.encodeUtf8 textType
+            let type' = TokenEventType $ BSS.toShort byteString
+            details <- (fromProto . CBorAsTokenEventDetails) (e ^. PLTFields.details)
+            return $ TokenModuleEvent tokenId type' details
+        ProtoPLT.TokenEvent'MintEvent e -> do
+            target <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.target)
+            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
+            return $ TokenMint tokenId target amount
+        ProtoPLT.TokenEvent'BurnEvent e -> do
+            target <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.target)
+            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
+            return $ TokenMint tokenId target amount
+        ProtoPLT.TokenEvent'TransferEvent e -> do
+            fromAccount <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.from)
+            toAccount <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.to)
+            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
+            memo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
+            return $ TokenTransfer tokenId fromAccount toAccount amount memo
+
 instance FromProto Proto.BlockItemSummary where
     type Output Proto.BlockItemSummary = SupplementedTransactionSummary
     fromProto biSummary = do
@@ -2138,7 +2169,7 @@ instance FromProto Proto.BlockItemSummary where
         bis <- case biSummary ^. Proto.maybe'details of
             Nothing ->
                 fromProtoFail
-                    "Unable to convert 'BlockItemSummary' due to missing field in response payload."
+                    "Unable to convert 'BlockItemSummary' due to missing 'details' field in response payload."
             Just v -> return v
         case bis of
             -- Account creation
@@ -2157,6 +2188,7 @@ instance FromProto Proto.BlockItemSummary where
                 (tType, tsResult) <- fromProto aTransaction
                 let tsType = TSTAccountTransaction tType
                 return TransactionSummary{..}
+            -- Chain update transaction (except create PLT token)
             ProtoFields.BlockItemSummary'Update update -> do
                 let tsSender = Nothing
                 let tsCost = Amount 0
@@ -2167,7 +2199,22 @@ instance FromProto Proto.BlockItemSummary where
                     return (ueType, TxSuccess [UpdateEnqueued{..}])
                 let tsType = TSTUpdateTransaction tType
                 return TransactionSummary{..}
+            -- Chain update transaction (create PLT token)
+            ProtoFields.BlockItemSummary'TokenCreation update -> do
+                let tsSender = Nothing
+                let tsCost = Amount 0
 
+                createPLT <- fromProto $ update ^. PLTFields.createPlt
+
+                let protoEvents = update ^. ProtoFields.events
+                initEvents <- mapM protoToTokenEvent protoEvents
+                let events = TokenCreated createPLT : initEvents
+
+                let tType = Updates.UpdateCreatePLT
+                let tsType = TSTUpdateTransaction tType
+                let tsResult = TxSuccess events
+
+                return TransactionSummary{..}
 instance FromProto Proto.AccountTransactionDetails where
     type Output Proto.AccountTransactionDetails = (Maybe TransactionType, SupplementedValidResult)
     fromProto atDetails = do
@@ -2314,67 +2361,11 @@ instance FromProto Proto.AccountTransactionDetails where
                 return (Just tType, TxSuccess{..})
             ProtoFields.AccountTransactionEffects'TokenGovernanceEffect pltTokenGovernanceEvent -> do
                 let protoEvents = pltTokenGovernanceEvent ^. PLTFields.events
-                tokenEvents <- forM protoEvents $ \ev -> do
-                    tokenId <- fromProto $ ev ^. ProtoFieldsPLT.tokenId
-
-                    protoEvent <- case ev ^. Proto.maybe'event of
-                        Nothing ->
-                            fromProtoFail
-                                "Unable to convert 'TokenEvent' due to missing field 'event' in response payload."
-                        Just v -> return v
-                    case protoEvent of
-                        ProtoPLT.TokenEvent'ModuleEvent e -> do
-                            let textType = e ^. ProtoFieldsPLT.type'
-                            let byteString = TE.encodeUtf8 textType
-                            let type' = TokenEventType $ BSS.toShort byteString
-                            details <- (fromProto . CBorAsTokenEventDetails) (e ^. PLTFields.details)
-                            return $ TokenModuleEvent tokenId type' details
-                        ProtoPLT.TokenEvent'MintEvent e -> do
-                            target <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.target)
-                            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
-                            return $ TokenMint tokenId target amount
-                        ProtoPLT.TokenEvent'BurnEvent e -> do
-                            target <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.target)
-                            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
-                            return $ TokenMint tokenId target amount
-                        ProtoPLT.TokenEvent'TransferEvent e -> do
-                            fromAccount <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.from)
-                            toAccount <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.to)
-                            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
-                            memo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
-                            return $ TokenTransfer tokenId fromAccount toAccount amount memo
+                tokenEvents <- mapM protoToTokenEvent protoEvents
                 return (Just TTTokenGovernance, TxSuccess tokenEvents)
             ProtoFields.AccountTransactionEffects'TokenHolderEffect pltTokenHolderEvent -> do
                 let protoEvents = pltTokenHolderEvent ^. PLTFields.events
-                tokenEvents <- forM protoEvents $ \ev -> do
-                    tokenId <- fromProto $ ev ^. ProtoFieldsPLT.tokenId
-
-                    protoEvent <- case ev ^. Proto.maybe'event of
-                        Nothing ->
-                            fromProtoFail
-                                "Unable to convert 'TokenEvent' due to missing field 'event' in response payload."
-                        Just v -> return v
-                    case protoEvent of
-                        ProtoPLT.TokenEvent'ModuleEvent e -> do
-                            let textType = e ^. ProtoFieldsPLT.type'
-                            let byteString = TE.encodeUtf8 textType
-                            let type' = TokenEventType $ BSS.toShort byteString
-                            details <- (fromProto . CBorAsTokenEventDetails) (e ^. PLTFields.details)
-                            return $ TokenModuleEvent tokenId type' details
-                        ProtoPLT.TokenEvent'MintEvent e -> do
-                            target <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.target)
-                            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
-                            return $ TokenMint tokenId target amount
-                        ProtoPLT.TokenEvent'BurnEvent e -> do
-                            target <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.target)
-                            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
-                            return $ TokenMint tokenId target amount
-                        ProtoPLT.TokenEvent'TransferEvent e -> do
-                            fromAccount <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.from)
-                            toAccount <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.to)
-                            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
-                            memo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
-                            return $ TokenTransfer tokenId fromAccount toAccount amount memo
+                tokenEvents <- mapM protoToTokenEvent protoEvents
                 return (Just TTTokenHolder, TxSuccess tokenEvents)
 
 instance FromProto (ProtoKernel.AccountAddress, Proto.DelegationEvent) where

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Add handling of plt events `TokenModuleEvent`, `TokenMint`, `TokenBurn`, and `TokenTransfer`.
+- Add handling of plt events `TokenModuleEvent`, `TokenMint`, `TokenBurn`, `TokenTransfer`, and `TokenCreated`.
 
 ## 9.1.0 - 2025-05-20
 

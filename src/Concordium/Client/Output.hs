@@ -200,13 +200,19 @@ prettyPrintTokens :: [Types.Token] -> [String]
 prettyPrintTokens = map formatToken
   where
     indent = replicate 24 ' '
-    formatToken (Types.Token tid (Types.TokenAccountState (Types.TokenAmount digits decs) inAllowList inDenyList)) =
-        let amount = fromIntegral digits / (10 ^ decs :: Double)
-        in  unlines
-                [ indent ++ "Balance:             " ++ printf ("%." ++ show decs ++ "f ") amount ++ show tid,
-                  indent ++ "In Allow List:       " ++ show inAllowList,
-                  indent ++ "In Deny List:        " ++ show inDenyList
-                ]
+    formatToken (Types.Token tid (Types.TokenAccountState tokenAmount inAllowList inDenyList)) =
+        unlines
+            [ indent ++ "Balance:             " ++ (prettyPrintTokenAmounts tokenAmount) ++ " " ++ show tid,
+              indent ++ "In Allow List:       " ++ show inAllowList,
+              indent ++ "In Deny List:        " ++ show inDenyList
+            ]
+
+prettyPrintTokenAmounts :: Types.TokenAmount -> String
+prettyPrintTokenAmounts (Types.TokenAmount digits decs) =
+    printf ("%." ++ show decs ++ "f") amount
+  where
+    factor = (10 :: Integer) ^ decs
+    amount = fromIntegral digits / fromIntegral factor :: Double
 
 printAccountInfo :: NamedAddress -> Types.AccountInfo -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
 printAccountInfo addr a verbose showEncrypted mEncKey = do
@@ -936,9 +942,9 @@ showEvent verbose ciM = \case
     Types.TokenTransfer{..} ->
         let baseInfo =
                 printf
-                    "%s token transfer with amount %s from %s to %s."
+                    "%s %s tokens transferred from %s to %s."
+                    (prettyPrintTokenAmounts ettAmount)
                     (show ettTokenId)
-                    (show ettAmount)
                     (show ettFrom)
                     (show ettTo)
 
@@ -970,9 +976,11 @@ showEvent verbose ciM = \case
                         " Decoded memo:\n" ++ memo
         in  Just $ baseInfo ++ memoInfo
     Types.TokenMint{..} ->
-        verboseOrNothing $ printf "%s token mint of amount %s to %s." (show etmTokenId) (show etmAmount) (show etmTarget)
+        verboseOrNothing $ printf "%s %s tokens minted to %s." (prettyPrintTokenAmounts etmAmount) (show etmTokenId) (show etmTarget)
     Types.TokenBurn{..} ->
-        verboseOrNothing $ printf "%s token burn of amount %s from %s." (show etbTokenId) (show etbAmount) (show etbTarget)
+        verboseOrNothing $ printf "%s %s tokens burned from %s." (prettyPrintTokenAmounts etbAmount) (show etbTokenId) (show etbTarget)
+    Types.TokenCreated{..} ->
+        verboseOrNothing $ printf "Token created:\n %s" (showPrettyJSON etcPayload)
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
