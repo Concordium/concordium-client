@@ -200,13 +200,19 @@ prettyPrintTokens :: [Types.Token] -> [String]
 prettyPrintTokens = map formatToken
   where
     indent = replicate 24 ' '
-    formatToken (Types.Token tid (Types.TokenAccountState (Types.TokenAmount digits decs) inAllowList inDenyList)) =
-        let amount = fromIntegral digits / (10 ^ decs :: Double)
-        in  unlines
-                [ indent ++ "Balance:             " ++ printf ("%." ++ show decs ++ "f ") amount ++ show tid,
-                  indent ++ "In Allow List:       " ++ show inAllowList,
-                  indent ++ "In Deny List:        " ++ show inDenyList
-                ]
+    formatToken (Types.Token tid (Types.TokenAccountState tokenAmount inAllowList inDenyList)) =
+        unlines
+            [ indent ++ "Balance:             " ++ (prettyPrintTokenAmounts tokenAmount) ++ " " ++ show tid,
+              indent ++ "In Allow List:       " ++ show inAllowList,
+              indent ++ "In Deny List:        " ++ show inDenyList
+            ]
+
+prettyPrintTokenAmounts :: Types.TokenAmount -> String
+prettyPrintTokenAmounts (Types.TokenAmount digits decs) =
+    printf ("%." ++ show decs ++ "f") amount
+  where
+    factor = (10 :: Integer) ^ decs
+    amount = fromIntegral digits / fromIntegral factor :: Double
 
 printAccountInfo :: NamedAddress -> Types.AccountInfo -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
 printAccountInfo addr a verbose showEncrypted mEncKey = do
@@ -907,27 +913,74 @@ showEvent verbose ciM = \case
         verboseOrNothing $ printf "baker %s with account %s suspended" (show bID) (show acc)
     Types.BakerResumed bID acc ->
         verboseOrNothing $ printf "baker %s with account %s resumed" (show bID) (show acc)
-    Types.TokenModuleEvent tokenEvent ->
-        let Types.TokenEventDetails bss = Types._teDetails tokenEvent
-            invalidCBOR =
+    Types.TokenModuleEvent{..} ->
+        let baseInfo =
                 printf
-                    "Could not decode token event details of token module event with token id %s and type %s as valid CBOR. The hex value of the event details is %s."
-                    (show $ Types._teTokenId tokenEvent)
-                    (show $ Types._teType tokenEvent)
-                    (show bss)
-            bsl = BSL.fromStrict $ BSS.fromShort bss
-            eventDetailsJSON = case deserialiseFromBytes (decodeValue False) bsl of
-                Left _ -> invalidCBOR -- if not possible, the event details is not written in valid CBOR
-                Right (rest, x) ->
-                    if rest == BSL.empty
-                        then showPrettyJSON x
-                        else invalidCBOR
-        in  Just $
+                    "%s token module event of type %s occured."
+                    (show etmeTokenId)
+                    (show etmeType)
+
+            eventDetails =
+                let
+                    (Types.TokenEventDetails bss) = etmeDetails
+                    bsl = BSL.fromStrict $ BSS.fromShort bss
+
+                    invalidCBOR =
+                        printf
+                            " Could not decode event details as valid CBOR. The hex value of the event details is %s."
+                            (show etmeDetails)
+
+                    details = case deserialiseFromBytes (decodeValue False) bsl of
+                        Left _ -> invalidCBOR -- if not possible, the event details is not written in valid CBOR
+                        Right (rest, x) ->
+                            if rest == BSL.empty
+                                then showPrettyJSON x
+                                else invalidCBOR
+                in
+                    " Decoded event details:\n" ++ details
+        in  Just $ baseInfo ++ eventDetails
+    Types.TokenTransfer{..} ->
+        let baseInfo =
                 printf
-                    "Token module event of token id %s and type %s occured with event details: \n%s"
-                    (show $ Types._teTokenId tokenEvent)
-                    (show $ Types._teType tokenEvent)
-                    eventDetailsJSON
+                    "%s %s tokens transferred from %s to %s."
+                    (prettyPrintTokenAmounts ettAmount)
+                    (show ettTokenId)
+                    (show ettFrom)
+                    (show ettTo)
+
+            memoInfo = case ettMemo of
+                Nothing -> ""
+                Just (Types.Memo bss) ->
+                    let
+                        bsl = BSL.fromStrict $ BSS.fromShort bss
+
+                        invalidCBOR =
+                            printf
+                                " Could not decode memo as valid CBOR. The hex value of the memo is %s."
+                                (show ettMemo)
+
+                        memo = case deserialiseFromBytes decodeString bsl of
+                            Left _ -> json
+                            Right (rest, x) ->
+                                if rest == BSL.empty
+                                    then Text.unpack x
+                                    else invalidCBOR
+
+                        json = case deserialiseFromBytes (decodeValue False) bsl of
+                            Left _ -> invalidCBOR
+                            Right (rest, x) ->
+                                if rest == BSL.empty
+                                    then showPrettyJSON x
+                                    else invalidCBOR
+                    in
+                        " Decoded memo:\n" ++ memo
+        in  Just $ baseInfo ++ memoInfo
+    Types.TokenMint{..} ->
+        verboseOrNothing $ printf "%s %s tokens minted to %s." (prettyPrintTokenAmounts etmAmount) (show etmTokenId) (show etmTarget)
+    Types.TokenBurn{..} ->
+        verboseOrNothing $ printf "%s %s tokens burned from %s." (prettyPrintTokenAmounts etbAmount) (show etbTokenId) (show etbTarget)
+    Types.TokenCreated{..} ->
+        verboseOrNothing $ printf "Token created:\n %s" (showPrettyJSON etcPayload)
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
