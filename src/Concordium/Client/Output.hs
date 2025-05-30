@@ -1140,7 +1140,7 @@ showRejectReason verbose = \case
                         if rest == BSL.empty
                             then
                                 printf
-                                    "%s token-holder transaction was rejected due to: %s\n   details (undecoded CBOR): %s\n   details (decoded CBOR):"
+                                    "%s token-holder transaction was rejected due to: %s\n   details (undecoded CBOR): %s\n   details (decoded CBOR): %s"
                                     (show $ Types.tmrrTokenId reason)
                                     (show $ Types.tmrrType reason)
                                     (show details)
@@ -1169,7 +1169,7 @@ showRejectReason verbose = \case
                         if rest == BSL.empty
                             then
                                 printf
-                                    "%s token-governance transaction was rejected due to: %s\n   details (undecoded CBOR): %s\n   details (decoded CBOR):"
+                                    "%s token-governance transaction was rejected due to: %s\n   details (undecoded CBOR): %s\n   details (decoded CBOR): %s"
                                     (show $ Types.tmrrTokenId reason)
                                     (show $ Types.tmrrType reason)
                                     (show details)
