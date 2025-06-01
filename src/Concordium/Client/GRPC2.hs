@@ -2127,6 +2127,9 @@ instance FromProto Proto.UpdatePayload where
                 cp <- fromProto cpUpdate
                 return $ Updates.CreatePLTUpdatePayload cp
 
+-- | Converts a protocol buffer token event message using 'fromProto' into an 'Event'' type,
+--   which represents an event generated during the execution of a committed transaction.
+--   Returns 'Right' with the converted value on success, or 'Left' with an error message if the conversion fails.
 protoToTokenEvent :: ProtoPLT.TokenEvent -> Either String (Event' s)
 protoToTokenEvent event = do
     tokenId <- fromProto $ event ^. ProtoFieldsPLT.tokenId

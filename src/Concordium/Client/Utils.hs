@@ -87,6 +87,16 @@ tokenAmountFromString s
     decimals = fromIntegral fracLen
     combinedStr = intPart ++ fracPart
 
+-- | Converts an amount to its decimal representation.
+tokenAmountToString :: TokenAmount -> String
+tokenAmountToString (TokenAmount digits decs) =
+    let
+        high = show $ digits `div` 10 ^ (fromIntegral decs :: Integer)
+        low = show $ digits `mod` 10 ^ (fromIntegral decs :: Integer)
+        pad = replicate (fromIntegral decs - length low) '0'
+    in
+        high ++ "." ++ pad ++ low
+
 -- | Safely parse a token id from Text, ensuring it does not exceed 255 bytes.
 tokenIdFromText :: Text.Text -> Either String TokenId
 tokenIdFromText s =
