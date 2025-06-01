@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Add handling of plt events `TokenModuleEvent`, `TokenMint`, `TokenBurn`, `TokenTransfer`, and `TokenCreated`.
+- Fix a bug in displaying the decoded CBOR from rejected PLT transactions.
 
 ## 9.1.0 - 2025-05-20
 
