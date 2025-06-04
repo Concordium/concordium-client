@@ -18,7 +18,7 @@ import Concordium.Client.Types.Contract.Info as CI
 import qualified Concordium.Client.Types.Contract.Parameter as PA
 import Concordium.Client.Types.Contract.Schema as CS
 import Concordium.Client.Types.TransactionStatus
-import Concordium.Client.Utils (durationToText)
+import Concordium.Client.Utils (durationToText, tokenAmountToString)
 import qualified Concordium.Common.Time as Time
 import Concordium.Common.Version
 import qualified Concordium.Crypto.EncryptedTransfers as Enc
@@ -44,7 +44,9 @@ import qualified Concordium.Client.Types.ConsensusStatus as ConsensusStatus
 import Concordium.Client.Types.Contract.BuildInfo (showBuildInfo)
 import Concordium.Common.Time (DurationSeconds (durationSeconds))
 import Concordium.Types.Execution (Event' (ecEvents), SupplementedEvent)
+import qualified Concordium.Types.ProtocolLevelTokens.CBOR as Cbor
 import qualified Concordium.Types.Queries.Tokens as Types
+import Control.Applicative ((<|>))
 import Control.Monad
 import Control.Monad.Writer
 import qualified Data.Aeson as AE
@@ -200,13 +202,12 @@ prettyPrintTokens :: [Types.Token] -> [String]
 prettyPrintTokens = map formatToken
   where
     indent = replicate 24 ' '
-    formatToken (Types.Token tid (Types.TokenAccountState (Types.TokenAmount digits decs) inAllowList inDenyList)) =
-        let amount = fromIntegral digits / (10 ^ decs :: Double)
-        in  unlines
-                [ indent ++ "Balance:             " ++ printf ("%." ++ show decs ++ "f ") amount ++ show tid,
-                  indent ++ "In Allow List:       " ++ show inAllowList,
-                  indent ++ "In Deny List:        " ++ show inDenyList
-                ]
+    formatToken (Types.Token tid (Types.TokenAccountState tokenAmount inAllowList inDenyList)) =
+        unlines
+            [ indent ++ "Balance:             " ++ tokenAmountToString tokenAmount ++ " " ++ show tid,
+              indent ++ "In Allow List:       " ++ show inAllowList,
+              indent ++ "In Deny List:        " ++ show inDenyList
+            ]
 
 printAccountInfo :: NamedAddress -> Types.AccountInfo -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
 printAccountInfo addr a verbose showEncrypted mEncKey = do
@@ -907,27 +908,92 @@ showEvent verbose ciM = \case
         verboseOrNothing $ printf "baker %s with account %s suspended" (show bID) (show acc)
     Types.BakerResumed bID acc ->
         verboseOrNothing $ printf "baker %s with account %s resumed" (show bID) (show acc)
-    Types.TokenModuleEvent tokenEvent ->
-        let Types.TokenEventDetails bss = Types._teDetails tokenEvent
-            invalidCBOR =
+    Types.TokenModuleEvent{..} ->
+        let baseInfo =
                 printf
-                    "Could not decode token event details of token module event with token id %s and type %s as valid CBOR. The hex value of the event details is %s."
-                    (show $ Types._teTokenId tokenEvent)
-                    (show $ Types._teType tokenEvent)
-                    (show bss)
-            bsl = BSL.fromStrict $ BSS.fromShort bss
-            eventDetailsJSON = case deserialiseFromBytes (decodeValue False) bsl of
-                Left _ -> invalidCBOR -- if not possible, the event details is not written in valid CBOR
-                Right (rest, x) ->
-                    if rest == BSL.empty
-                        then showPrettyJSON x
-                        else invalidCBOR
-        in  Just $
+                    "%s token module event of type %s occured."
+                    (show etmeTokenId)
+                    (show etmeType)
+
+            eventDetails =
+                let
+                    (Types.TokenEventDetails bss) = etmeDetails
+                    bsl = BSL.fromStrict $ BSS.fromShort bss
+
+                    -- First decoding attempt using the token event decoder for the add/remove to/from allow/deny list events.
+                    decodedTokenEvent = Cbor.decodeTokenEvent (Cbor.EncodedTokenEvent (Types.tokenEventTypeBytes etmeType) (Just bss))
+
+                    decodedCustomTokenEvent = case decodedTokenEvent of
+                        Right (Cbor.AddAllowListEvent holder) ->
+                            Just $ printf "Account %s was added to the allow list." (show $ Cbor.holderAccountAddress holder)
+                        Right (Cbor.AddDenyListEvent holder) ->
+                            Just $ printf "Account %s was added to the deny list." (show $ Cbor.holderAccountAddress holder)
+                        Right (Cbor.RemoveAllowListEvent holder) ->
+                            Just $ printf "Account %s was removed from the allow list." (show $ Cbor.holderAccountAddress holder)
+                        Right (Cbor.RemoveDenyListEvent holder) ->
+                            Just $ printf "Account %s was removed from the deny list." (show $ Cbor.holderAccountAddress holder)
+                        Left _ -> Nothing
+
+                    -- Second decoding attempt using generic CBOR deserialization.
+                    decodedGenericCBOR = case deserialiseFromBytes (decodeValue False) bsl of
+                        Left _ -> Nothing -- if not possible, the event details is not written in valid CBOR
+                        Right (rest, x) ->
+                            if rest == BSL.empty
+                                then Just (showPrettyJSON x)
+                                else Nothing
+
+                    invalidCBOR =
+                        printf
+                            " Could not decode event details as valid CBOR. The hex value of the event details is %s."
+                            (show etmeDetails)
+
+                    -- Use whichever decoding succeeded first, or fallback to `invalidCBOR` message.
+                    details = fromMaybe invalidCBOR (decodedCustomTokenEvent <|> decodedGenericCBOR)
+                in
+                    " Decoded event details:\n" ++ details
+        in  Just $ baseInfo ++ eventDetails
+    Types.TokenTransfer{..} ->
+        let baseInfo =
                 printf
-                    "Token module event of token id %s and type %s occured with event details: \n%s"
-                    (show $ Types._teTokenId tokenEvent)
-                    (show $ Types._teType tokenEvent)
-                    eventDetailsJSON
+                    "%s %s transferred from %s to %s."
+                    (tokenAmountToString ettAmount)
+                    (show ettTokenId)
+                    (show ettFrom)
+                    (show ettTo)
+
+            memoInfo = case ettMemo of
+                Nothing -> ""
+                Just (Types.Memo bss) ->
+                    let
+                        bsl = BSL.fromStrict $ BSS.fromShort bss
+
+                        invalidCBOR =
+                            printf
+                                " Could not decode memo as valid CBOR. The hex value of the memo is %s."
+                                (show ettMemo)
+
+                        memo = case deserialiseFromBytes decodeString bsl of
+                            Left _ -> json
+                            Right (rest, x) ->
+                                if rest == BSL.empty
+                                    then Text.unpack x
+                                    else invalidCBOR
+
+                        json = case deserialiseFromBytes (decodeValue False) bsl of
+                            Left _ -> invalidCBOR
+                            Right (rest, x) ->
+                                if rest == BSL.empty
+                                    then showPrettyJSON x
+                                    else invalidCBOR
+                    in
+                        " Decoded memo:\n" ++ memo
+        in  Just $ baseInfo ++ memoInfo
+    Types.TokenMint{..} ->
+        verboseOrNothing $ printf "%s %s minted to %s." (tokenAmountToString etmAmount) (show etmTokenId) (show etmTarget)
+    Types.TokenBurn{..} ->
+        verboseOrNothing $ printf "%s %s burned from %s." (tokenAmountToString etbAmount) (show etbTokenId) (show etbTarget)
+    Types.TokenCreated{..} ->
+        verboseOrNothing $ printf "Token created:\n %s" (showPrettyJSON etcPayload)
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing

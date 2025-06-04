@@ -14,6 +14,7 @@
 --  type equivalents.
 module Concordium.Client.GRPC2 where
 
+import Concordium.Types.Tokens (TokenRawAmount (..))
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception
@@ -85,6 +86,7 @@ import qualified Data.Text.Encoding as TE
 
 import Concordium.Client.Types.ConsensusStatus
 import qualified Concordium.Crypto.BlockSignature as BlockSignature
+import qualified Concordium.Types.ProtocolLevelTokens.CBOR as Cbor
 import qualified Proto.V2.Concordium.Kernel as ProtoKernel
 import qualified Proto.V2.Concordium.ProtocolLevelTokens as ProtoPLT
 import qualified Proto.V2.Concordium.ProtocolLevelTokens_Fields as ProtoFieldsPLT
@@ -736,8 +738,8 @@ instance FromProto ProtoPLT.TokenAccountState where
 instance FromProto ProtoPLT.TokenAmount where
     type Output ProtoPLT.TokenAmount = Tokens.TokenAmount
     fromProto tokenAmount = do
-        let digits = tokenAmount ^. ProtoFieldsPLT.digits
-        nrDecimals <- case toIntegralSized (tokenAmount ^. ProtoFieldsPLT.nrOfDecimals) of
+        let taValue = TokenRawAmount $ tokenAmount ^. ProtoFieldsPLT.value
+        taDecimals <- case toIntegralSized (tokenAmount ^. ProtoFieldsPLT.decimals) of
             Nothing -> fromProtoFail "TokenAmount: decimals out of range"
             Just converted -> return converted
         return Tokens.TokenAmount{..}
@@ -1985,12 +1987,25 @@ instance FromProto ProtoPLT.TokenState where
     fromProto tokenInfo = do
         tsTokenModuleRef <- fromProto $ tokenInfo ^. ProtoFieldsPLT.tokenModuleRef
         tsIssuer <- fromProto $ tokenInfo ^. ProtoFieldsPLT.issuer
-        tsDecimals <- case toIntegralSized (tokenInfo ^. ProtoFieldsPLT.nrOfDecimals) of
+        tsDecimals <- case toIntegralSized (tokenInfo ^. ProtoFieldsPLT.decimals) of
             Nothing -> fromProtoFail "TokenState: decimals out of range"
             Just converted -> return converted
         tsTotalSupply <- fromProto $ tokenInfo ^. ProtoFieldsPLT.totalSupply
         tsModuleState <- (fromProto . CBorAsModuleState) (tokenInfo ^. PLTFields.moduleState)
         return Tokens.TokenState{..}
+
+instance FromProto ProtoPLT.TokenHolder where
+    type Output ProtoPLT.TokenHolder = Cbor.TokenHolder
+    fromProto tokehHolder = do
+        protoAddress <- case tokehHolder ^. Proto.maybe'address of
+            Nothing ->
+                fromProtoFail "Unable to convert 'TokenHolder' due to missing field 'address' in response payload."
+            Just v -> return v
+        case protoAddress of
+            ProtoPLT.TokenHolder'Account accountField -> do
+                case fromProto accountField of
+                    Left err -> fromProtoFail $ "Unable to convert 'account' field from 'TokenHolder' type in response payload." <> err
+                    Right account -> return $ Cbor.accountTokenHolder account
 
 instance FromProto Proto.TransactionFeeDistribution where
     type Output Proto.TransactionFeeDistribution = Parameters.TransactionFeeDistribution
@@ -2112,6 +2127,40 @@ instance FromProto Proto.UpdatePayload where
                 cp <- fromProto cpUpdate
                 return $ Updates.CreatePLTUpdatePayload cp
 
+-- | Converts a protocol buffer token event message using 'fromProto' into an 'Event'' type,
+--   which represents an event generated during the execution of a committed transaction.
+--   Returns 'Right' with the converted value on success, or 'Left' with an error message if the conversion fails.
+protoToTokenEvent :: ProtoPLT.TokenEvent -> Either String (Event' s)
+protoToTokenEvent event = do
+    tokenId <- fromProto $ event ^. ProtoFieldsPLT.tokenId
+
+    protoEvent <- case event ^. Proto.maybe'event of
+        Nothing ->
+            fromProtoFail
+                "Unable to convert 'TokenEvent' due to missing field 'event' in response payload."
+        Just v -> return v
+    case protoEvent of
+        ProtoPLT.TokenEvent'ModuleEvent e -> do
+            let textType = e ^. ProtoFieldsPLT.type'
+            let byteString = TE.encodeUtf8 textType
+            let type' = TokenEventType $ BSS.toShort byteString
+            details <- (fromProto . CBorAsTokenEventDetails) (e ^. PLTFields.details)
+            return $ TokenModuleEvent tokenId type' details
+        ProtoPLT.TokenEvent'MintEvent e -> do
+            target <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.target)
+            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
+            return $ TokenMint tokenId target amount
+        ProtoPLT.TokenEvent'BurnEvent e -> do
+            target <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.target)
+            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
+            return $ TokenMint tokenId target amount
+        ProtoPLT.TokenEvent'TransferEvent e -> do
+            fromAccount <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.from)
+            toAccount <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.to)
+            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
+            memo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
+            return $ TokenTransfer tokenId fromAccount toAccount amount memo
+
 instance FromProto Proto.BlockItemSummary where
     type Output Proto.BlockItemSummary = SupplementedTransactionSummary
     fromProto biSummary = do
@@ -2123,7 +2172,7 @@ instance FromProto Proto.BlockItemSummary where
         bis <- case biSummary ^. Proto.maybe'details of
             Nothing ->
                 fromProtoFail
-                    "Unable to convert 'BlockItemSummary' due to missing field in response payload."
+                    "Unable to convert 'BlockItemSummary' due to missing 'details' field in response payload."
             Just v -> return v
         case bis of
             -- Account creation
@@ -2142,6 +2191,7 @@ instance FromProto Proto.BlockItemSummary where
                 (tType, tsResult) <- fromProto aTransaction
                 let tsType = TSTAccountTransaction tType
                 return TransactionSummary{..}
+            -- Chain update transaction (except create PLT token)
             ProtoFields.BlockItemSummary'Update update -> do
                 let tsSender = Nothing
                 let tsCost = Amount 0
@@ -2152,7 +2202,22 @@ instance FromProto Proto.BlockItemSummary where
                     return (ueType, TxSuccess [UpdateEnqueued{..}])
                 let tsType = TSTUpdateTransaction tType
                 return TransactionSummary{..}
+            -- Chain update transaction (create PLT token)
+            ProtoFields.BlockItemSummary'TokenCreation update -> do
+                let tsSender = Nothing
+                let tsCost = Amount 0
 
+                createPLT <- fromProto $ update ^. PLTFields.createPlt
+
+                let protoEvents = update ^. ProtoFields.events
+                initEvents <- mapM protoToTokenEvent protoEvents
+                let events = TokenCreated createPLT : initEvents
+
+                let tType = Updates.UpdateCreatePLT
+                let tsType = TSTUpdateTransaction tType
+                let tsResult = TxSuccess events
+
+                return TransactionSummary{..}
 instance FromProto Proto.AccountTransactionDetails where
     type Output Proto.AccountTransactionDetails = (Maybe TransactionType, SupplementedValidResult)
     fromProto atDetails = do
@@ -2297,40 +2362,14 @@ instance FromProto Proto.AccountTransactionDetails where
                               [TransferredWithSchedule{..}, TransferMemo{..}]
                             )
                 return (Just tType, TxSuccess{..})
-            ProtoFields.AccountTransactionEffects'TokenGovernanceEffect _pltTokenGovernanceEvent -> do
-                -- TODO: COR-1420
-                -- let protoEvents = pltTokenGovernanceEvent ^. PLTFields.events
-                -- tokenEvents <-
-                --     mapM
-                --         ( \ev -> do
-                --             _teSymbol <- fromProto $ ev ^. ProtoFieldsPLT.tokenSymbol
-
-                --             let textType = ev ^. ProtoFieldsPLT.type'
-                --             let byteString = TE.encodeUtf8 textType
-                --             let _teType = TokenEventType $ BSS.toShort byteString
-
-                --             _teDetails <- (fromProto . CBorAsTokenEventDetails) (ev ^. PLTFields.details)
-                --             return $ TokenModuleEvent (TokenEvent{..})
-                --         )
-                --         protoEvents
-                return (Just TTTokenGovernance, TxSuccess [])
-            ProtoFields.AccountTransactionEffects'TokenHolderEffect _pltTokenHolderEvent -> do
-                -- TODO: COR-1420
-                -- let protoEvents = pltTokenHolderEvent ^. PLTFields.events
-                -- tokenEvents <-
-                --     mapM
-                --         ( \ev -> do
-                --             _teSymbol <- fromProto $ ev ^. ProtoFieldsPLT.tokenSymbol
-
-                --             let textType = ev ^. ProtoFieldsPLT.type'
-                --             let byteString = TE.encodeUtf8 textType
-                --             let _teType = TokenEventType $ BSS.toShort byteString
-
-                --             _teDetails <- (fromProto . CBorAsTokenEventDetails) (ev ^. PLTFields.details)
-                --             return $ TokenModuleEvent (TokenEvent{..})
-                --         )
-                --         protoEvents
-                return (Just TTTokenHolder, TxSuccess [])
+            ProtoFields.AccountTransactionEffects'TokenGovernanceEffect pltTokenGovernanceEvent -> do
+                let protoEvents = pltTokenGovernanceEvent ^. PLTFields.events
+                tokenEvents <- mapM protoToTokenEvent protoEvents
+                return (Just TTTokenGovernance, TxSuccess tokenEvents)
+            ProtoFields.AccountTransactionEffects'TokenHolderEffect pltTokenHolderEvent -> do
+                let protoEvents = pltTokenHolderEvent ^. PLTFields.events
+                tokenEvents <- mapM protoToTokenEvent protoEvents
+                return (Just TTTokenHolder, TxSuccess tokenEvents)
 
 instance FromProto (ProtoKernel.AccountAddress, Proto.DelegationEvent) where
     type Output (ProtoKernel.AccountAddress, Proto.DelegationEvent) = SupplementedEvent
