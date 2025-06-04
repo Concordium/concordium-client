@@ -953,7 +953,7 @@ handlePLTTransfer backend baseCfgDir verbose receiver amount tokenIdText maybeMe
         let payload = Types.TokenHolder tokenId tokenParameter
         let encodedPayload = Types.encodePayload payload
 
-        let nrgCost _ = return $ Just $ tokenHolderTransactionEnergyCost $ Types.payloadSize encodedPayload
+        let nrgCost _ = return $ Just $ tokenHolderTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenTransferCost
         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
         let intOpts = toInteractionOpts txOpts
@@ -991,7 +991,11 @@ handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount tokenI
         let payload = Types.TokenGovernance tokenId tokenParameter
         let encodedPayload = Types.encodePayload payload
 
-        let nrgCost _ = return $ Just $ tokenGovernanceTransactionEnergyCost $ Types.payloadSize encodedPayload
+        let opCost
+                | Mint <- tokenSupplyAction = Cost.tokenMintCost
+                | Burn <- tokenSupplyAction = Cost.tokenBurnCost
+
+        let nrgCost _ = return $ Just $ tokenGovernanceTransactionEnergyCost (Types.payloadSize encodedPayload) opCost
         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
         let intOpts = toInteractionOpts txOpts
@@ -1034,7 +1038,7 @@ handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenIdT
         let payload = Types.TokenGovernance tokenId tokenParameter
         let encodedPayload = Types.encodePayload payload
 
-        let nrgCost _ = return $ Just $ tokenGovernanceTransactionEnergyCost $ Types.payloadSize encodedPayload
+        let nrgCost _ = return $ Just $ tokenGovernanceTransactionEnergyCost (Types.payloadSize encodedPayload) (Cost.tokenListOperationCost)
         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
         let intOpts = toInteractionOpts txOpts
