@@ -921,20 +921,18 @@ showEvent verbose ciM = \case
                     bsl = BSL.fromStrict $ BSS.fromShort bss
 
                     -- First decoding attempt using the token event decoder for the add/remove to/from allow/deny list events.
-                    decodedTokenEvent = case Cbor.decodeTokenEvent (Cbor.EncodedTokenEvent (Types.tokenEventTypeBytes etmeType) (Just bss)) of
-                        Left _ -> Nothing -- continue trying to decode with `details`
-                        Right value -> Just value
+                    decodedTokenEvent = Cbor.decodeTokenEvent (Cbor.EncodedTokenEvent (Types.tokenEventTypeBytes etmeType) (Just bss))
 
                     decodedCustomTokenEvent = case decodedTokenEvent of
-                        Just (Cbor.AddAllowListEvent holder) ->
+                        Right (Cbor.AddAllowListEvent holder) ->
                             Just $ printf "Account %s was added to the allow list." (show $ Cbor.holderAccountAddress holder)
-                        Just (Cbor.AddDenyListEvent holder) ->
+                        Right (Cbor.AddDenyListEvent holder) ->
                             Just $ printf "Account %s was added to the deny list." (show $ Cbor.holderAccountAddress holder)
-                        Just (Cbor.RemoveAllowListEvent holder) ->
+                        Right (Cbor.RemoveAllowListEvent holder) ->
                             Just $ printf "Account %s was removed from the allow list." (show $ Cbor.holderAccountAddress holder)
-                        Just (Cbor.RemoveDenyListEvent holder) ->
+                        Right (Cbor.RemoveDenyListEvent holder) ->
                             Just $ printf "Account %s was removed from the deny list." (show $ Cbor.holderAccountAddress holder)
-                        Nothing -> Nothing
+                        Left _ -> Nothing
 
                     -- Second decoding attempt using generic CBOR deserialization.
                     decodedGenericCBOR = case deserialiseFromBytes (decodeValue False) bsl of
@@ -957,7 +955,7 @@ showEvent verbose ciM = \case
     Types.TokenTransfer{..} ->
         let baseInfo =
                 printf
-                    "%s %s tokens transferred from %s to %s."
+                    "%s %s transferred from %s to %s."
                     (tokenAmountToString ettAmount)
                     (show ettTokenId)
                     (show ettFrom)
@@ -991,9 +989,9 @@ showEvent verbose ciM = \case
                         " Decoded memo:\n" ++ memo
         in  Just $ baseInfo ++ memoInfo
     Types.TokenMint{..} ->
-        verboseOrNothing $ printf "%s %s tokens minted to %s." (tokenAmountToString etmAmount) (show etmTokenId) (show etmTarget)
+        verboseOrNothing $ printf "%s %s minted to %s." (tokenAmountToString etmAmount) (show etmTokenId) (show etmTarget)
     Types.TokenBurn{..} ->
-        verboseOrNothing $ printf "%s %s tokens burned from %s." (tokenAmountToString etbAmount) (show etbTokenId) (show etbTarget)
+        verboseOrNothing $ printf "%s %s burned from %s." (tokenAmountToString etbAmount) (show etbTokenId) (show etbTarget)
     Types.TokenCreated{..} ->
         verboseOrNothing $ printf "Token created:\n %s" (showPrettyJSON etcPayload)
   where
