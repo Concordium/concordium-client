@@ -1038,7 +1038,7 @@ handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenIdT
         let payload = Types.TokenGovernance tokenId tokenParameter
         let encodedPayload = Types.encodePayload payload
 
-        let nrgCost _ = return $ Just $ tokenGovernanceTransactionEnergyCost (Types.payloadSize encodedPayload) (Cost.tokenListOperationCost)
+        let nrgCost _ = return $ Just $ tokenGovernanceTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenListOperationCost
         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
         let intOpts = toInteractionOpts txOpts
