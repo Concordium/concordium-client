@@ -921,7 +921,7 @@ showEvent verbose ciM = \case
                     bsl = BSL.fromStrict $ BSS.fromShort bss
 
                     -- First decoding attempt using the token event decoder for the add/remove to/from allow/deny list events.
-                    decodedTokenEvent = Cbor.decodeTokenEvent (Cbor.EncodedTokenEvent (Types.tokenEventTypeBytes etmeType) (Just bss))
+                    decodedTokenEvent = Cbor.decodeTokenEvent (Cbor.EncodedTokenEvent etmeType etmeDetails)
 
                     decodedCustomTokenEvent = case decodedTokenEvent of
                         Right (Cbor.AddAllowListEvent holder) ->
