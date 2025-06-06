@@ -4490,7 +4490,7 @@ processLegacyCmd action backend =
         GetTokenInfo tokenId block -> do
             b <- readBlockHashOrDefault Best block
             withClient backend $
-                getTokenInfo tokenId b
+                getTokenInfoFromText tokenId b
                     >>= printResponseValueAsJSON
         GetScheduledReleaseAccounts block ->
             withClient backend $
