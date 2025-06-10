@@ -101,4 +101,3 @@ jobs:
         run: stack build --test --no-run-tests --ghc-options "-Werror"
       - name: Stack test # run the tests
         run: stack build --test
-
