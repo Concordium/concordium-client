@@ -1,6 +1,8 @@
 # Changelog for concordium-client
 
-## 9.1.1-alpha - 2025-06-10
+## Unreleased
+
+## 9.1.1-alpha (Compatible with node version 9.0.2) - 2025-06-10
 
 - Add handling of plt events `TokenModuleEvent`, `TokenMint`, `TokenBurn`, `TokenTransfer`, and `TokenCreated`.
 - Fix a bug in displaying the decoded CBOR from rejected PLT transactions.
