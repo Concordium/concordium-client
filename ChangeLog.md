@@ -1,11 +1,11 @@
 # Changelog for concordium-client
 
-## Unreleased
+## 9.1.1-alpha - 2025-06-10
 
 - Add handling of plt events `TokenModuleEvent`, `TokenMint`, `TokenBurn`, `TokenTransfer`, and `TokenCreated`.
 - Fix a bug in displaying the decoded CBOR from rejected PLT transactions.
 
-## 9.1.0 - 2025-05-20
+## 9.1.0-alpha - 2025-05-20
 
 - Add `transaction plt add-to-allow-list` to add an account to the allow list by the governance account.
 - Add `transaction plt add-to-deny-list` to add an account to the deny list by the governance account.
@@ -15,7 +15,7 @@
 - Add `transaction plt burn` command to burn protocol level tokens by the governance account.
 - Refactore plt commands into its own subcommand.
 
-## 9.0.0 - 2025-05-09
+## 9.0.0-alpha - 2025-05-09
 
 - Add `raw GetTokenInfo` command to display the info of a protocol level token.
 - Subcommand `account show` now displays protocol level tokens info.
