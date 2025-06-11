@@ -42,11 +42,11 @@ jobs:
       - name: Validate version
         id: versions_derivation
         run: |
-          CARGO_VERSION=$(yq .version package.yaml)
+          CLIENT_VERSION=$(yq .version package.yaml)
           if [ -z "${{ env.SERVICE }}" ]; then
             IFS='-' read -r VERSION BUILD RELEASE_TYPE <<< "${{ github.ref_name }}"
-            if [ ! "$VERSION" = "$CARGO_VERSION" ]; then
-              echo "::error::${CARGO_VERSION} does not match ${VERSION}."
+            if [ ! "$VERSION" = "$CLIENT_VERSION" ] || [ ! "$VERSION-$BUILD" = "$CLIENT_VERSION" ]; then
+              echo "::error::${CLIENT_VERSION} does not match ${VERSION}."
               exit 1
             fi
           else
@@ -55,8 +55,8 @@ jobs:
           fi
           echo "::notice::RELEASE_TYPE=${RELEASE_TYPE}"
           echo "release_type=${RELEASE_TYPE}" >> "$GITHUB_OUTPUT"
-          echo "version=${CARGO_VERSION}-${BUILD}" >> "$GITHUB_OUTPUT"
-          echo "base_version=${CARGO_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "version=${CLIENT_VERSION}-${BUILD}" >> "$GITHUB_OUTPUT"
+          echo "base_version=${CLIENT_VERSION}" >> "$GITHUB_OUTPUT"
 
   client-linux:
     needs: [validate-preconditions]
