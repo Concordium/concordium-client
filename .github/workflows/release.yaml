@@ -66,7 +66,7 @@ jobs:
     needs: [validate-preconditions]
     runs-on: ubuntu-latest
     environment: release
-    if: contains(fromJSON('["rc", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
+    if: contains(fromJSON('["rc", "alpha", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -106,7 +106,7 @@ jobs:
     needs: [validate-preconditions]
     runs-on: ${{ matrix.runner }}
     environment: release
-    if: contains(fromJSON('["rc", "client-macos"]'), needs.validate-preconditions.outputs.release_type)
+    if: contains(fromJSON('["rc", "alpha", "client-macos"]'), needs.validate-preconditions.outputs.release_type)
     strategy:
       matrix:
         include:
@@ -205,7 +205,7 @@ jobs:
     needs: [validate-preconditions]
     runs-on: windows-latest
     environment: release
-    if: contains(fromJSON('["rc", "client-windows"]'), needs.validate-preconditions.outputs.release_type)
+    if: contains(fromJSON('["rc", "alpha", "client-windows"]'), needs.validate-preconditions.outputs.release_type)
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
