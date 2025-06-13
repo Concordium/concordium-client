@@ -730,9 +730,10 @@ instance FromProto Proto.AccountInfo'Token where
 instance FromProto ProtoPLT.TokenAccountState where
     type Output ProtoPLT.TokenAccountState = Tokens.TokenAccountState
     fromProto tokenAccountState = do
-        let memberAllowList = tokenAccountState ^. ProtoFieldsPLT.maybe'memberAllowList
-        let memberDenyList = tokenAccountState ^. ProtoFieldsPLT.maybe'memberDenyList
         balance <- fromProto $ tokenAccountState ^. ProtoFieldsPLT.balance
+        moduleAccountState <-
+            fromProtoMaybe $
+                CBorAsModuleState <$> tokenAccountState ^. ProtoFieldsPLT.maybe'moduleState
         return Tokens.TokenAccountState{..}
 
 instance FromProto ProtoPLT.TokenAmount where

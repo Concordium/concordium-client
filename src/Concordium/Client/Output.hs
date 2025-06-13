@@ -202,12 +202,29 @@ prettyPrintTokens :: [Types.Token] -> [String]
 prettyPrintTokens = map formatToken
   where
     indent = replicate 24 ' '
-    formatToken (Types.Token tid (Types.TokenAccountState tokenAmount inAllowList inDenyList)) =
-        unlines
-            [ indent ++ "Balance:             " ++ tokenAmountToString tokenAmount ++ " " ++ show tid,
-              indent ++ "In Allow List:       " ++ show inAllowList,
-              indent ++ "In Deny List:        " ++ show inDenyList
-            ]
+    formatToken (Types.Token tid (Types.TokenAccountState tokenAmount cborState)) =
+        unlines $
+            (indent ++ tokenAmountToString tokenAmount ++ " " ++ show tid)
+                : case Cbor.tokenModuleAccountStateFromBytes . BSL.fromStrict <$> cborState of
+                    Nothing -> []
+                    Just (Left err) -> [indent ++ "State could not be decoded: " ++ err]
+                    Just (Right Cbor.TokenModuleAccountState{..}) ->
+                        let allowMsg = case tmasAllowList of
+                                Just True -> [indent ++ "- Account is on the allow list"]
+                                Just False -> [indent ++ "- Account is not on the allow list"]
+                                Nothing -> []
+                            denyMsg = case tmasDenyList of
+                                Just True -> [indent ++ "- Account is on the deny list"]
+                                Just False -> [indent ++ "- Account is not on the deny list"]
+                                Nothing -> []
+                            transferMsg =
+                                [ indent
+                                    ++ ( if tmasAllowList == Just False || tmasDenyList == Just True
+                                            then "Transfers are not permitted"
+                                            else "Transfers are permitted"
+                                       )
+                                ]
+                        in  filter (not . null) (transferMsg <> allowMsg <> denyMsg)
 
 printAccountInfo :: NamedAddress -> Types.AccountInfo -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
 printAccountInfo addr a verbose showEncrypted mEncKey = do
