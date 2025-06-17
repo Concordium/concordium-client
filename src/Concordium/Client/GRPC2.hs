@@ -76,6 +76,7 @@ import Concordium.Types.Block (AbsoluteBlockHeight (..))
 import Concordium.Types.Execution
 import qualified Concordium.Types.InvokeContract as InvokeContract
 import qualified Concordium.Types.Parameters as Parameters
+import qualified Concordium.Types.ProtocolVersion as Parameters
 import Concordium.Types.Queries
 import qualified Concordium.Types.Queries.KonsensusV1 as KonsensusV1
 import qualified Concordium.Types.Queries.Tokens as Tokens
@@ -1779,10 +1780,15 @@ instance FromProto Proto.AuthorizationsV0 where
         asAddIdentityProvider <- fromProto $ auth ^. ProtoFields.addIdentityProvider
         let asCooldownParameters = Parameters.CFalse
         let asTimeParameters = Parameters.CFalse
+        let asCreatePLT = Parameters.CFalse
         return Updates.Authorizations{..}
 
 instance FromProto Proto.AuthorizationsV1 where
-    type Output Proto.AuthorizationsV1 = Updates.Authorizations 'Parameters.AuthorizationsVersion1
+    type
+        Output Proto.AuthorizationsV1 =
+            Either
+                (Updates.Authorizations 'Parameters.AuthorizationsVersion1)
+                (Updates.Authorizations 'Parameters.AuthorizationsVersion2)
     fromProto auth = do
         let v0 = auth ^. ProtoFields.v0
         asKeys <- Vec.fromList <$> mapM fromProto (v0 ^. ProtoFields.keys)
@@ -1800,7 +1806,14 @@ instance FromProto Proto.AuthorizationsV1 where
         asAddIdentityProvider <- fromProto $ v0 ^. ProtoFields.addIdentityProvider
         asCooldownParameters <- fmap Parameters.CTrue $ fromProto $ auth ^. ProtoFields.parameterCooldown
         asTimeParameters <- fmap Parameters.CTrue $ fromProto $ auth ^. ProtoFields.parameterTime
-        return Updates.Authorizations{..}
+        maybeAs <- fromProtoMaybe $ auth ^. ProtoFields.maybe'createPlt
+        case maybeAs of
+            Nothing -> do
+                let asCreatePLT = Parameters.CFalse
+                return $ Left Updates.Authorizations{..}
+            Just as -> do
+                let asCreatePLT = Parameters.CTrue as
+                return $ Right Updates.Authorizations{..}
 
 instance FromProto Proto.Level1Update where
     type Output Proto.Level1Update = Updates.Level1Update
@@ -1818,8 +1831,12 @@ instance FromProto Proto.Level1Update where
                 l2kl1uAuthorizations <- fromProto l2kUpdateV0
                 return Updates.Level2KeysLevel1Update{..}
             ProtoFields.Level1Update'Level2KeysUpdateV1 l2kUpdateV1 -> do
-                l2kl1uAuthorizationsV1 <- fromProto l2kUpdateV1
-                return Updates.Level2KeysLevel1UpdateV1{..}
+                auth <- fromProto l2kUpdateV1
+                case auth of
+                    Left l2kl1uAuthorizationsV1 -> do
+                        return Updates.Level2KeysLevel1UpdateV1{..}
+                    Right l2kl1uAuthorizationsV2 -> do
+                        return Updates.Level2KeysLevel1UpdateV2{..}
 
 instance FromProto Proto.UpdatePublicKey where
     type Output Proto.UpdatePublicKey = Updates.UpdatePublicKey
@@ -1862,10 +1879,11 @@ instance FromProto Proto.RootUpdate where
                 fmap Updates.Level2KeysRootUpdate
                     . fromProto
                     $ rUpdate ^. ProtoFields.level2KeysUpdateV0
-            ProtoFields.RootUpdate'Level2KeysUpdateV1 _ ->
-                fmap Updates.Level2KeysRootUpdateV1
-                    . fromProto
-                    $ rUpdate ^. ProtoFields.level2KeysUpdateV1
+            ProtoFields.RootUpdate'Level2KeysUpdateV1 _ -> do
+                auth <- fromProto $ rUpdate ^. ProtoFields.level2KeysUpdateV1
+                case auth of
+                    Left as -> return $ Updates.Level2KeysRootUpdateV1 as
+                    Right as -> return $ Updates.Level2KeysRootUpdateV2 as
 
 instance FromProto Proto.HigherLevelKeys where
     type
@@ -2082,8 +2100,10 @@ instance FromProto Proto.UpdatePayload where
                         l2kl1uAuthorizations <- fromProto l2kUpdateV0
                         return $ Updates.Level1UpdatePayload Updates.Level2KeysLevel1Update{..}
                     ProtoFields.Level1Update'Level2KeysUpdateV1 l2kUpdateV1 -> do
-                        l2kl1uAuthorizationsV1 <- fromProto l2kUpdateV1
-                        return $ Updates.Level1UpdatePayload Updates.Level2KeysLevel1UpdateV1{..}
+                        auth <- fromProto l2kUpdateV1
+                        case auth of
+                            Left l2kl1uAuthorizationsV1 -> return $ Updates.Level1UpdatePayload Updates.Level2KeysLevel1UpdateV1{..}
+                            Right l2kl1uAuthorizationsV2 -> return $ Updates.Level1UpdatePayload Updates.Level2KeysLevel1UpdateV2{..}
             ProtoFields.UpdatePayload'MicroCcdPerEuroUpdate mcpeUpdate -> do
                 er <- fromProto mcpeUpdate
                 return $ Updates.MicroGTUPerEuroUpdatePayload er
@@ -2773,7 +2793,12 @@ instance FromProto Proto.ChainParametersV1 where
             let ecpParams = Parameters.ChainParameters{..}
             rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
             level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
-            level2Keys <- fromProto $ cParams ^. ProtoFields.level2Keys
+            auth <- fromProto $ cParams ^. ProtoFields.level2Keys
+            level2Keys <- case auth of
+                Left keys -> return keys
+                Right _ ->
+                    fromProtoFail
+                        "Unable to convert 'Authorization' due to unexpected field"
             let ecpKeys = Updates.UpdateKeysCollection{..}
             return $ EChainParametersAndKeys ecpParams ecpKeys
 
@@ -2810,7 +2835,12 @@ instance FromProto Proto.ChainParametersV2 where
             let ecpParams = Parameters.ChainParameters{..}
             rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
             level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
-            level2Keys <- fromProto $ cParams ^. ProtoFields.level2Keys
+            auth <- fromProto $ cParams ^. ProtoFields.level2Keys
+            level2Keys <- case auth of
+                Left keys -> return keys
+                Right _ ->
+                    fromProtoFail
+                        "Unable to convert 'Authorization' due to unexpected field"
             let ecpKeys = Updates.UpdateKeysCollection{..}
             return $ EChainParametersAndKeys ecpParams ecpKeys
 
@@ -2847,9 +2877,14 @@ instance FromProto Proto.ChainParametersV3 where
             let ecpParams = Parameters.ChainParameters{..}
             rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
             level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
-            level2Keys <- fromProto $ cParams ^. ProtoFields.level2Keys
-            let ecpKeys = Updates.UpdateKeysCollection{..}
-            return $ EChainParametersAndKeys ecpParams ecpKeys
+            auth <- fromProto $ cParams ^. ProtoFields.level2Keys
+            case auth of
+                Left level2Keys -> do
+                    let ecpKeys = Updates.UpdateKeysCollection{..}
+                    return $ EChainParametersAndKeys ecpParams ecpKeys
+                Right level2Keys -> do
+                    let ecpKeys = Updates.UpdateKeysCollection{..}
+                    return $ EChainParametersAndKeys ecpParams ecpKeys
 
 instance FromProto Proto.Epoch where
     type Output Proto.Epoch = Epoch
@@ -3098,7 +3133,10 @@ instance FromProto Proto.PendingUpdate where
                 ProtoFields.PendingUpdate'Level2KeysCpv0 l2Keys -> do
                     PUELevel2KeysV0 <$> fromProto l2Keys
                 ProtoFields.PendingUpdate'Level2KeysCpv1 l2Keys -> do
-                    PUELevel2KeysV1 <$> fromProto l2Keys
+                    auth <- fromProto l2Keys
+                    case auth of
+                        Left keys -> return $ PUELevel2KeysV1 keys
+                        Right keys -> return $ PUELevel2KeysV2 keys
                 ProtoFields.PendingUpdate'Protocol protocol -> do
                     PUEProtocol <$> fromProto protocol
                 ProtoFields.PendingUpdate'ElectionDifficulty eDifficulty -> do
