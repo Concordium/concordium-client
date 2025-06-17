@@ -1352,7 +1352,6 @@ printChainParameters cp = do
         SChainParametersV1 -> printChainParametersV1 cp
         SChainParametersV2 -> printChainParametersV2 cp
         SChainParametersV3 -> printChainParametersV3 cp
-        SChainParametersV4 -> printChainParametersV4 cp
 
 -- | Prints the chain parameters for version 0.
 printChainParametersV0 :: ChainParameters' 'ChainParametersV0 -> Printer
@@ -1408,24 +1407,6 @@ printChainParametersV2 ChainParameters{..} = do
 
 printChainParametersV3 :: ChainParameters' 'ChainParametersV3 -> Printer
 printChainParametersV3 ChainParameters{..} = do
-    printPoolAndCooldownParametersV1
-        _cpPoolParameters
-        _cpCooldownParameters
-    printExchangeRateParameters _cpExchangeRates
-    printRewardAndTimeParameters _cpRewardParameters _cpTimeParameters
-    printConsensusParametersV1 _cpConsensusParameters
-    mapM_ printFinalizationCommitteeParameters _cpFinalizationCommitteeParameters
-    mapM_ printValidatorScoreParameters _cpValidatorScoreParameters
-    tell
-        [ "",
-          [i|\# Other parameters: |],
-          [i|  + foundation account index: #{_cpFoundationAccount}|],
-          [i|  + maximum credential deployments per block: #{_cpAccountCreationLimit}|]
-        ]
-
--- TODO: Add new chain parameters
-printChainParametersV4 :: ChainParameters' 'ChainParametersV4 -> Printer
-printChainParametersV4 ChainParameters{..} = do
     printPoolAndCooldownParametersV1
         _cpPoolParameters
         _cpCooldownParameters
