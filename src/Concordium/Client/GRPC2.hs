@@ -3765,13 +3765,17 @@ getPrePreCooldownAccounts bhInput =
     msg = toProto bhInput
 
 -- | Get the info of a protocol level token after a given block.
-getTokenInfo :: (MonadIO m) => Text -> BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult Tokens.TokenInfo))
-getTokenInfo tokenIdText bhInput = do
+getTokenInfo :: (MonadIO m) => TokenId -> BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult Tokens.TokenInfo))
+getTokenInfo tokenId bhInput = do
+    let msg = defMessage & ProtoFields.blockHash .~ toProto bhInput & ProtoFields.tokenId .~ toProto tokenId
+    withUnary (call @"getTokenInfo") msg (fmap fromProto)
+
+getTokenInfoFromText :: (MonadIO m) => Text -> BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult Tokens.TokenInfo))
+getTokenInfoFromText tokenIdText bhInput = do
     tokenId <- case tokenIdFromText tokenIdText of
         Right val -> return val
         Left err -> logFatal ["Error couldn't parse token id:", err]
-    let msg = defMessage & ProtoFields.blockHash .~ toProto bhInput & ProtoFields.tokenId .~ toProto tokenId
-    withUnary (call @"getTokenInfo") msg (fmap fromProto)
+    getTokenInfo tokenId bhInput
 
 -- | Get information related to the baker election for a particular block.
 getElectionInfo :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult BlockBirkParameters))
