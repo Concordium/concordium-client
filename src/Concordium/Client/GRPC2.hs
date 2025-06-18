@@ -87,7 +87,6 @@ import qualified Data.Text.Encoding as TE
 
 import Concordium.Client.Types.ConsensusStatus
 import qualified Concordium.Crypto.BlockSignature as BlockSignature
-import qualified Concordium.Types.ProtocolLevelTokens.CBOR as Cbor
 import qualified Proto.V2.Concordium.Kernel as ProtoKernel
 import qualified Proto.V2.Concordium.ProtocolLevelTokens as ProtoPLT
 import qualified Proto.V2.Concordium.ProtocolLevelTokens_Fields as ProtoFieldsPLT
@@ -2014,7 +2013,7 @@ instance FromProto ProtoPLT.TokenState where
         return Tokens.TokenState{..}
 
 instance FromProto ProtoPLT.TokenHolder where
-    type Output ProtoPLT.TokenHolder = Cbor.TokenHolder
+    type Output ProtoPLT.TokenHolder = TokenHolderEvent
     fromProto tokehHolder = do
         protoAddress <- case tokehHolder ^. Proto.maybe'address of
             Nothing ->
@@ -2024,7 +2023,7 @@ instance FromProto ProtoPLT.TokenHolder where
             ProtoPLT.TokenHolder'Account accountField -> do
                 case fromProto accountField of
                     Left err -> fromProtoFail $ "Unable to convert 'account' field from 'TokenHolder' type in response payload." <> err
-                    Right account -> return $ Cbor.accountTokenHolder account
+                    Right account -> return $ HolderAccountEvent account
 
 instance FromProto Proto.TransactionFeeDistribution where
     type Output Proto.TransactionFeeDistribution = Parameters.TransactionFeeDistribution
@@ -2168,19 +2167,19 @@ protoToTokenEvent event = do
             details <- (fromProto . CBorAsTokenEventDetails) (e ^. PLTFields.details)
             return $ TokenModuleEvent tokenId type' details
         ProtoPLT.TokenEvent'MintEvent e -> do
-            target <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.target)
+            target <- fromProto $ e ^. ProtoFieldsPLT.target
             amount <- fromProto $ e ^. ProtoFieldsPLT.amount
             return $ TokenMint tokenId target amount
         ProtoPLT.TokenEvent'BurnEvent e -> do
-            target <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.target)
+            target <- fromProto $ e ^. ProtoFieldsPLT.target
             amount <- fromProto $ e ^. ProtoFieldsPLT.amount
-            return $ TokenMint tokenId target amount
+            return $ TokenBurn tokenId target amount
         ProtoPLT.TokenEvent'TransferEvent e -> do
-            fromAccount <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.from)
-            toAccount <- Cbor.holderAccountAddress <$> fromProto (e ^. ProtoFieldsPLT.to)
-            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
+            fromField <- fromProto $ e ^. ProtoFieldsPLT.from
+            toField <- fromProto $ e ^. ProtoFieldsPLT.to
             memo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
-            return $ TokenTransfer tokenId fromAccount toAccount amount memo
+            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
+            return $ TokenTransfer tokenId fromField toField amount memo
 
 instance FromProto Proto.BlockItemSummary where
     type Output Proto.BlockItemSummary = SupplementedTransactionSummary
