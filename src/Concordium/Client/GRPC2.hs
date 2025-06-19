@@ -1334,12 +1334,8 @@ instance FromProto Proto.RejectReason where
                 return PoolClosed
             Proto.RejectReason'NonExistentTokenId tokenId -> do
                 NonExistentTokenId <$> fromProto tokenId
-            Proto.RejectReason'TokenHolderTransactionFailed reason -> do
-                TokenHolderTransactionFailed <$> fromProto reason
-            Proto.RejectReason'TokenGovernanceTransactionFailed reason -> do
-                TokenGovernanceTransactionFailed <$> fromProto reason
-            Proto.RejectReason'UnauthorizedTokenGovernance tokenId -> do
-                UnauthorizedTokenGovernance <$> fromProto tokenId
+            Proto.RejectReason'TokenTransactionFailed reason -> do
+                TokenTransactionFailed <$> fromProto reason
 
 instance FromProto ProtoPLT.TokenModuleRejectReason where
     type Output ProtoPLT.TokenModuleRejectReason = TokenModuleRejectReason
@@ -1589,8 +1585,7 @@ instance FromProto Proto.TransactionType where
     fromProto Proto.TRANSFER_WITH_SCHEDULE_AND_MEMO = return TTTransferWithScheduleAndMemo
     fromProto Proto.CONFIGURE_BAKER = return TTConfigureBaker
     fromProto Proto.CONFIGURE_DELEGATION = return TTConfigureDelegation
-    fromProto Proto.TOKEN_HOLDER = return TTTokenHolder
-    fromProto Proto.TOKEN_GOVERNANCE = return TTTokenGovernance
+    fromProto Proto.TOKEN_UPDATE = return TTTokenUpdate
     fromProto (ProtoFields.TransactionType'Unrecognized variant) =
         fromProtoFail $
             "Unable to convert 'InvokeInstanceResponse': "
@@ -1986,7 +1981,6 @@ instance FromProto ProtoPLT.CreatePLT where
     type Output ProtoPLT.CreatePLT = CreatePLT
     fromProto cpUpdate = do
         _cpltTokenId <- fromProto $ cpUpdate ^. PLTFields.tokenId
-        _cpltGovernanceAccount <- fromProto $ cpUpdate ^. PLTFields.governanceAccount
         _cpltDecimals <- case toIntegralSized (cpUpdate ^. PLTFields.decimals) of
             Nothing -> fromProtoFail "CreatePLT: decimals out of range"
             Just converted -> return converted
@@ -2005,7 +1999,6 @@ instance FromProto ProtoPLT.TokenState where
     type Output ProtoPLT.TokenState = Tokens.TokenState
     fromProto tokenInfo = do
         tsTokenModuleRef <- fromProto $ tokenInfo ^. ProtoFieldsPLT.tokenModuleRef
-        tsIssuer <- fromProto $ tokenInfo ^. ProtoFieldsPLT.issuer
         tsDecimals <- case toIntegralSized (tokenInfo ^. ProtoFieldsPLT.decimals) of
             Nothing -> fromProtoFail "TokenState: decimals out of range"
             Just converted -> return converted
@@ -2383,14 +2376,10 @@ instance FromProto Proto.AccountTransactionDetails where
                               [TransferredWithSchedule{..}, TransferMemo{..}]
                             )
                 return (Just tType, TxSuccess{..})
-            ProtoFields.AccountTransactionEffects'TokenGovernanceEffect pltTokenGovernanceEvent -> do
-                let protoEvents = pltTokenGovernanceEvent ^. PLTFields.events
+            ProtoFields.AccountTransactionEffects'TokenEffect pltTokenEvent -> do
+                let protoEvents = pltTokenEvent ^. PLTFields.events
                 tokenEvents <- mapM protoToTokenEvent protoEvents
-                return (Just TTTokenGovernance, TxSuccess tokenEvents)
-            ProtoFields.AccountTransactionEffects'TokenHolderEffect pltTokenHolderEvent -> do
-                let protoEvents = pltTokenHolderEvent ^. PLTFields.events
-                tokenEvents <- mapM protoToTokenEvent protoEvents
-                return (Just TTTokenHolder, TxSuccess tokenEvents)
+                return (Just TTTokenUpdate, TxSuccess tokenEvents)
 
 instance FromProto (ProtoKernel.AccountAddress, Proto.DelegationEvent) where
     type Output (ProtoKernel.AccountAddress, Proto.DelegationEvent) = SupplementedEvent
