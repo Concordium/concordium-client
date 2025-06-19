@@ -2013,7 +2013,7 @@ instance FromProto ProtoPLT.TokenState where
         return Tokens.TokenState{..}
 
 instance FromProto ProtoPLT.TokenHolder where
-    type Output ProtoPLT.TokenHolder = TokenHolderEvent
+    type Output ProtoPLT.TokenHolder = TokenHolder
     fromProto tokehHolder = do
         protoAddress <- case tokehHolder ^. Proto.maybe'address of
             Nothing ->
@@ -2023,7 +2023,7 @@ instance FromProto ProtoPLT.TokenHolder where
             ProtoPLT.TokenHolder'Account accountField -> do
                 case fromProto accountField of
                     Left err -> fromProtoFail $ "Unable to convert 'account' field from 'TokenHolder' type in response payload." <> err
-                    Right account -> return $ HolderAccountEvent account
+                    Right account -> return $ HolderAccount account
 
 instance FromProto Proto.TransactionFeeDistribution where
     type Output Proto.TransactionFeeDistribution = Parameters.TransactionFeeDistribution
@@ -2175,11 +2175,11 @@ protoToTokenEvent event = do
             amount <- fromProto $ e ^. ProtoFieldsPLT.amount
             return $ TokenBurn tokenId target amount
         ProtoPLT.TokenEvent'TransferEvent e -> do
-            fromField <- fromProto $ e ^. ProtoFieldsPLT.from
-            toField <- fromProto $ e ^. ProtoFieldsPLT.to
-            memo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
+            fromAddress <- fromProto $ e ^. ProtoFieldsPLT.from
+            toAddress <- fromProto $ e ^. ProtoFieldsPLT.to
             amount <- fromProto $ e ^. ProtoFieldsPLT.amount
-            return $ TokenTransfer tokenId fromField toField amount memo
+            memo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
+            return $ TokenTransfer tokenId fromAddress toAddress amount memo
 
 instance FromProto Proto.BlockItemSummary where
     type Output Proto.BlockItemSummary = SupplementedTransactionSummary
