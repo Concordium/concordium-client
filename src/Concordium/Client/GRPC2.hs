@@ -2161,25 +2161,29 @@ protoToTokenEvent event = do
         Just v -> return v
     case protoEvent of
         ProtoPLT.TokenEvent'ModuleEvent e -> do
+            let etmeTokenId = tokenId
             let textType = e ^. ProtoFieldsPLT.type'
             let byteString = TE.encodeUtf8 textType
-            let type' = TokenEventType $ BSS.toShort byteString
-            details <- (fromProto . CBorAsTokenEventDetails) (e ^. PLTFields.details)
-            return $ TokenModuleEvent tokenId type' details
+            let etmeType = TokenEventType $ BSS.toShort byteString
+            etmeDetails <- (fromProto . CBorAsTokenEventDetails) (e ^. PLTFields.details)
+            return $ TokenModuleEvent{..}
         ProtoPLT.TokenEvent'MintEvent e -> do
-            target <- fromProto $ e ^. ProtoFieldsPLT.target
-            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
-            return $ TokenMint tokenId target amount
+            let etmTokenId = tokenId
+            etmTarget <- fromProto $ e ^. ProtoFieldsPLT.target
+            etmAmount <- fromProto $ e ^. ProtoFieldsPLT.amount
+            return $ TokenMint{..}
         ProtoPLT.TokenEvent'BurnEvent e -> do
-            target <- fromProto $ e ^. ProtoFieldsPLT.target
-            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
-            return $ TokenBurn tokenId target amount
+            let etbTokenId = tokenId
+            etbTarget <- fromProto $ e ^. ProtoFieldsPLT.target
+            etbAmount <- fromProto $ e ^. ProtoFieldsPLT.amount
+            return $ TokenBurn{..}
         ProtoPLT.TokenEvent'TransferEvent e -> do
-            fromAddress <- fromProto $ e ^. ProtoFieldsPLT.from
-            toAddress <- fromProto $ e ^. ProtoFieldsPLT.to
-            amount <- fromProto $ e ^. ProtoFieldsPLT.amount
-            memo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
-            return $ TokenTransfer tokenId fromAddress toAddress amount memo
+            let ettTokenId = tokenId
+            ettFrom <- fromProto $ e ^. ProtoFieldsPLT.from
+            ettTo <- fromProto $ e ^. ProtoFieldsPLT.to
+            ettAmount <- fromProto $ e ^. ProtoFieldsPLT.amount
+            ettMemo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
+            return $ TokenTransfer{..}
 
 instance FromProto Proto.BlockItemSummary where
     type Output Proto.BlockItemSummary = SupplementedTransactionSummary

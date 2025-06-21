@@ -942,13 +942,13 @@ showEvent verbose ciM = \case
 
                     decodedCustomTokenEvent = case decodedTokenEvent of
                         Right (Cbor.AddAllowListEvent holder) ->
-                            Just $ printf "Account %s was added to the allow list." (show $ Cbor.holderAccountAddress holder)
+                            Just $ printf "Account %s was added to the allow list." (show $ Cbor.chaAccount holder)
                         Right (Cbor.AddDenyListEvent holder) ->
-                            Just $ printf "Account %s was added to the deny list." (show $ Cbor.holderAccountAddress holder)
+                            Just $ printf "Account %s was added to the deny list." (show $ Cbor.chaAccount holder)
                         Right (Cbor.RemoveAllowListEvent holder) ->
-                            Just $ printf "Account %s was removed from the allow list." (show $ Cbor.holderAccountAddress holder)
+                            Just $ printf "Account %s was removed from the allow list." (show $ Cbor.chaAccount holder)
                         Right (Cbor.RemoveDenyListEvent holder) ->
-                            Just $ printf "Account %s was removed from the deny list." (show $ Cbor.holderAccountAddress holder)
+                            Just $ printf "Account %s was removed from the deny list." (show $ Cbor.chaAccount holder)
                         Left _ -> Nothing
 
                     -- Second decoding attempt using generic CBOR deserialization.
