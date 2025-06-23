@@ -1334,8 +1334,8 @@ instance FromProto Proto.RejectReason where
                 return PoolClosed
             Proto.RejectReason'NonExistentTokenId tokenId -> do
                 NonExistentTokenId <$> fromProto tokenId
-            Proto.RejectReason'TokenTransactionFailed reason -> do
-                TokenTransactionFailed <$> fromProto reason
+            Proto.RejectReason'TokenUpdateTransactionFailed reason -> do
+                TokenUpdateTransactionFailed <$> fromProto reason
 
 instance FromProto ProtoPLT.TokenModuleRejectReason where
     type Output ProtoPLT.TokenModuleRejectReason = TokenModuleRejectReason
@@ -2376,7 +2376,7 @@ instance FromProto Proto.AccountTransactionDetails where
                               [TransferredWithSchedule{..}, TransferMemo{..}]
                             )
                 return (Just tType, TxSuccess{..})
-            ProtoFields.AccountTransactionEffects'TokenEffect pltTokenEvent -> do
+            ProtoFields.AccountTransactionEffects'TokenUpdateEffect pltTokenEvent -> do
                 let protoEvents = pltTokenEvent ^. PLTFields.events
                 tokenEvents <- mapM protoToTokenEvent protoEvents
                 return (Just TTTokenUpdate, TxSuccess tokenEvents)
