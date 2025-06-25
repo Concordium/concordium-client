@@ -942,8 +942,8 @@ handlePLTTransfer backend baseCfgDir verbose receiver amount tokenIdText maybeMe
             Right val -> return val
             Left err -> logFatal ["Error creating token transfer body:", err]
         let tokenTransfer = CBOR.TokenTransfer tokenTransferBody
-        let tokenTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenTransfer)
-        let bytes = CBOR.tokenTransactionToBytes tokenTransaction
+        let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenTransfer)
+        let bytes = CBOR.tokenTransactionToBytes tokenUpdateTransaction
         let tokenParameter = Types.TokenParameter $ BS.toShort bytes
 
         tokenId <- case tokenIdFromText tokenIdText of
@@ -953,7 +953,7 @@ handlePLTTransfer backend baseCfgDir verbose receiver amount tokenIdText maybeMe
         let payload = Types.TokenUpdate tokenId tokenParameter
         let encodedPayload = Types.encodePayload payload
 
-        let nrgCost _ = return $ Just $ tokenTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenTransferCost
+        let nrgCost _ = return $ Just $ tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenTransferCost
         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
         let intOpts = toInteractionOpts txOpts
@@ -980,8 +980,8 @@ handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount tokenI
             Mint -> pure $ CBOR.TokenMint amount
             Burn -> pure $ CBOR.TokenBurn amount
 
-        let tokenTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
-        let bytes = CBOR.tokenTransactionToBytes tokenTransaction
+        let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
+        let bytes = CBOR.tokenTransactionToBytes tokenUpdateTransaction
         let tokenParameter = Types.TokenParameter $ BS.toShort bytes
 
         tokenId <- case tokenIdFromText tokenIdText of
@@ -995,7 +995,7 @@ handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount tokenI
                 | Mint <- tokenSupplyAction = Cost.tokenMintCost
                 | Burn <- tokenSupplyAction = Cost.tokenBurnCost
 
-        let nrgCost _ = return $ Just $ tokenTransactionEnergyCost (Types.payloadSize encodedPayload) opCost
+        let nrgCost _ = return $ Just $ tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) opCost
         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
         let intOpts = toInteractionOpts txOpts
@@ -1038,7 +1038,7 @@ handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenIdT
         let payload = Types.TokenUpdate tokenId tokenParameter
         let encodedPayload = Types.encodePayload payload
 
-        let nrgCost _ = return $ Just $ tokenTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenListOperationCost
+        let nrgCost _ = return $ Just $ tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenListOperationCost
         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
         let intOpts = toInteractionOpts txOpts

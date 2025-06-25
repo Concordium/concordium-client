@@ -1205,13 +1205,13 @@ showRejectReason verbose = \case
         case details of
             Nothing ->
                 printf
-                    "%s token transaction was rejected due to: %s"
+                    "%s token update transaction was rejected due to: %s"
                     (show $ Types.tmrrTokenId reason)
                     (show $ Types.tmrrType reason)
             Just detail -> do
                 let invalidCBOR =
                         printf
-                            "%s token transaction was rejected due to: %s\n   details (undecoded CBOR): %s"
+                            "%s token update transaction was rejected due to: %s\n   details (undecoded CBOR): %s"
                             (show $ Types.tmrrTokenId reason)
                             (show $ Types.tmrrType reason)
                             (show detail)
@@ -1223,7 +1223,7 @@ showRejectReason verbose = \case
                         if rest == BSL.empty
                             then
                                 printf
-                                    "%s token transaction was rejected due to: %s\n   details (undecoded CBOR): %s\n   details (decoded CBOR): %s"
+                                    "%s token update transaction was rejected due to: %s\n   details (undecoded CBOR): %s\n   details (decoded CBOR): %s"
                                     (show $ Types.tmrrTokenId reason)
                                     (show $ Types.tmrrType reason)
                                     (show details)
