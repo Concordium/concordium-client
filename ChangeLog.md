@@ -4,7 +4,7 @@
 
 - Compatibility with node version 9.0.3:
   - `account show` and `raw GetAccountInfo` change how the account PLT state is handled.
-- Unified token holder/governance transactions to a single transaction type.
+- Unified token holder/governance transaction handling for a single transaction type `TokenUpdateTransaction`.
 
 ## 9.1.1-alpha (Compatible with node version 9.0.2) - 2025-06-10
 
