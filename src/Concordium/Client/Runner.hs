@@ -943,7 +943,7 @@ handlePLTTransfer backend baseCfgDir verbose receiver amount tokenIdText maybeMe
             Left err -> logFatal ["Error creating token transfer body:", err]
         let tokenTransfer = CBOR.TokenTransfer tokenTransferBody
         let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenTransfer)
-        let bytes = CBOR.tokenTransactionToBytes tokenUpdateTransaction
+        let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
         let tokenParameter = Types.TokenParameter $ BS.toShort bytes
 
         tokenId <- case tokenIdFromText tokenIdText of
@@ -981,7 +981,7 @@ handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount tokenI
             Burn -> pure $ CBOR.TokenBurn amount
 
         let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
-        let bytes = CBOR.tokenTransactionToBytes tokenUpdateTransaction
+        let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
         let tokenParameter = Types.TokenParameter $ BS.toShort bytes
 
         tokenId <- case tokenIdFromText tokenIdText of
@@ -1027,8 +1027,8 @@ handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenIdT
             AddDenyList -> pure $ CBOR.TokenAddDenyList tokenHolder
             RemoveDenyList -> pure $ CBOR.TokenRemoveDenyList tokenHolder
 
-        let tokenTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
-        let bytes = CBOR.tokenTransactionToBytes tokenTransaction
+        let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
+        let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
         let tokenParameter = Types.TokenParameter $ BS.toShort bytes
 
         tokenId <- case tokenIdFromText tokenIdText of

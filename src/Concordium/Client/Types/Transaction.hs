@@ -43,7 +43,7 @@ tokenUpdateTransactionEnergyCost ::
     -- | Number of signatures
     Int ->
     Energy
-tokenUpdateTransactionEnergyCost psize opCost numSigs = minimumCost psize numSigs + Cost.tokenBaseCost + opCost
+tokenUpdateTransactionEnergyCost psize opCost numSigs = minimumCost psize numSigs + Cost.tokenUpdateBaseCost + opCost
 
 simpleTransferPayloadSize :: PayloadSize
 simpleTransferPayloadSize = 41
