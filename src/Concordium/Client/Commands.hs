@@ -16,6 +16,7 @@ module Concordium.Client.Commands (
     PLTCmd (..),
     TokenSupplyAction (..),
     ModifyListAction (..),
+    TokenPauseAction (..),
     AccountCmd (..),
     ModuleCmd (..),
     ContractCmd (..),

@@ -906,6 +906,8 @@ processTransactionCmd action baseCfgDir verbose backend =
                     handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount tokenId txOpts
                 TransactionPLTModifyList modifyListAction account tokenId txOpts ->
                     handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenId txOpts
+                TransactionPLTPausation pauseAction tokenId txOpts ->
+                    handlePLTPausation backend baseCfgDir verbose pauseAction tokenId txOpts                    
 
 handlePLTTransfer ::
     Backend ->
@@ -1044,6 +1046,43 @@ handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenIdT
         let intOpts = toInteractionOpts txOpts
         let outFile = toOutFile txOpts
         signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend
+
+handlePLTPausation ::
+    Backend ->
+    Maybe FilePath ->
+    Bool ->
+    TokenPauseAction ->
+    Text ->
+    TransactionOpts (Maybe Types.Energy) ->
+    IO ()
+handlePLTPausation backend baseCfgDir verbose pauseAction tokenIdText txOpts = do
+    baseCfg <- getBaseConfig baseCfgDir verbose
+    when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+    withClient backend $ do
+        tokenOperation <- case pauseAction of
+            Pause -> pure $ CBOR.TokenPause True
+            Unpause -> pure $ CBOR.TokenPause False
+
+        let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
+        let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
+        let tokenParameter = Types.TokenParameter $ BS.toShort bytes
+
+        tokenId <- case tokenIdFromText tokenIdText of
+            Right val -> return val
+            Left err -> logFatal ["Error couldn't parse token id:", err]
+
+        let payload = Types.TokenUpdate tokenId tokenParameter
+        let encodedPayload = Types.encodePayload payload
+
+        let nrgCost _ = return $ Just $ tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenListOperationCost -- todo ar update cost
+        txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
+
+        let intOpts = toInteractionOpts txOpts
+        let outFile = toOutFile txOpts
+        signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend        
 
 -- | Construct a transaction config for registering data.
 --   The data is read from the 'FilePath' provided.
