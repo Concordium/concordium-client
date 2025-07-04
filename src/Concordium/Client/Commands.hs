@@ -263,7 +263,7 @@ data PLTCmd
         { tppAction :: !TokenPauseAction,
           tppTokenId :: !Text,
           tppOpts :: !(TransactionOpts (Maybe Energy))
-        }        
+        }
     deriving (Show)
 
 data AccountCmd
@@ -1006,7 +1006,6 @@ transactionPLTUnpauseCmd =
             )
             (progDesc "Unpause PLT (protocol level token).")
         )
-
 
 transactionWithScheduleCmd :: Mod CommandFields TransactionCmd
 transactionWithScheduleCmd =

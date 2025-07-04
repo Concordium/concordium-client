@@ -907,7 +907,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                 TransactionPLTModifyList modifyListAction account tokenId txOpts ->
                     handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenId txOpts
                 TransactionPLTPausation pauseAction tokenId txOpts ->
-                    handlePLTPausation backend baseCfgDir verbose pauseAction tokenId txOpts                    
+                    handlePLTPausation backend baseCfgDir verbose pauseAction tokenId txOpts
 
 handlePLTTransfer ::
     Backend ->
@@ -1082,7 +1082,7 @@ handlePLTPausation backend baseCfgDir verbose pauseAction tokenIdText txOpts = d
 
         let intOpts = toInteractionOpts txOpts
         let outFile = toOutFile txOpts
-        signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend        
+        signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend
 
 -- | Construct a transaction config for registering data.
 --   The data is read from the 'FilePath' provided.
