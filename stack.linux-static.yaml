@@ -2,6 +2,7 @@ resolver: lts-22.39
 
 packages:
 - .
+- ./deps/concordium-base
 
 extra-deps:
 # http2-client was never included in stackage
@@ -22,8 +23,6 @@ extra-deps:
 # fixed in newer versions.  This should be removed once we update to an lts that uses a new
 # enough version of Cabal.
 - Cabal-3.10.1.0
-
-- ./deps/concordium-base
 
 extra-lib-dirs:
 - ./deps/concordium-base/rust-src/target/x86_64-unknown-linux-musl/release
