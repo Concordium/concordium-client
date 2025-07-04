@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Support PLT pause/unpause operations
+
 ## 9.1.2-alpha (Compatible with node version 9.0.5) - 2025-06-30
 
 - Compatibility with node version 9.0.5:
