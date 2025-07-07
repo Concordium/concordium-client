@@ -35,6 +35,8 @@ resolver: lts-22.39
 
 packages:
 - .
+- ./deps/concordium-base
+
 # Dependency packages to be pulled from upstream that are not in the resolver
 # using the same syntax as the packages field.
 # (e.g., acme-missiles-0.3)
@@ -58,8 +60,6 @@ extra-deps:
 # fixed in newer versions.  This should be removed once we update to an lts that uses a new
 # enough version of Cabal.
 - Cabal-3.10.1.0
-
-- ./deps/concordium-base
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

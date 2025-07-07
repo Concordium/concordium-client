@@ -100,4 +100,4 @@ jobs:
       - name: Stack build # build all the binaries and tests, but don't run the tests
         run: stack build --test --no-run-tests --ghc-options "-Werror"
       - name: Stack test # run the tests
-        run: stack build --test
+        run: stack build --test concordium-client
