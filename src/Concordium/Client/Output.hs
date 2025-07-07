@@ -1905,7 +1905,7 @@ printPoolInfo Queries.BakerPoolStatus{..} =
     current (Just Queries.CurrentPaydayBakerPoolStatus{..}) =
         [ printf "Blocks produced:             %s" (show bpsBlocksBaked),
           printf "Contributed to finalization: %s" (yesno bpsFinalizationLive),
-          printf "Accrued transactionacti:    %s" (showCcd bpsTransactionFeesEarned)
+          printf "Accrued transaction fees:    %s" (showCcd bpsTransactionFeesEarned)
         ]
             ++ missedRounds bpsMissedRounds bpsIsPrimedForSuspension
             ++ [ "",
