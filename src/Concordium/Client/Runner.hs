@@ -69,6 +69,7 @@ import Concordium.Types.HashableTo
 import qualified Concordium.Types.InvokeContract as InvokeContract
 import Concordium.Types.Parameters
 import qualified Concordium.Types.Queries as Queries
+import Concordium.Types.Tokens
 import qualified Concordium.Types.Transactions as Types
 import qualified Concordium.Types.Updates as Updates
 import qualified Concordium.Utils.Encryption as Password
@@ -81,7 +82,7 @@ import Codec.CBOR.JSON
 import Codec.CBOR.Write
 import Concordium.Client.Types.Contract.BuildInfo (extractBuildInfo)
 import qualified Concordium.Types.ProtocolLevelTokens.CBOR as CBOR
-import Concordium.Types.Queries.Tokens (TokenAmount)
+import Concordium.Types.Queries.Tokens (TokenInfo (..), TokenState (..))
 import Control.Arrow (Arrow (second))
 import Control.Concurrent (threadDelay)
 import Control.Exception
@@ -907,6 +908,23 @@ processTransactionCmd action baseCfgDir verbose backend =
                 TransactionPLTModifyList modifyListAction account tokenId txOpts ->
                     handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenId txOpts
 
+-- | Renormalize a 'TokenAmount' to conform to the number of decimal places expected by the
+--  token. If more than the expected number of decimals are given, this fails with an error.
+--  Similarly, if the resulting value would exceed the maximum representatable amount of the token,
+--  this fails with an error.
+renormalizeTokenAmount :: (MonadIO m) => TokenInfo -> TokenAmount -> m TokenAmount
+renormalizeTokenAmount ti amount
+    | amountDecimals > expectDecimals =
+        logFatal [[i|Token amount #{tokenAmountToString amount} has #{amountDecimals} decimals, but #{tiTokenId ti} only supports #{expectDecimals}.|]]
+    | amountDecimals == expectDecimals = return amount
+    | preNorm > fromIntegral (maxBound :: TokenRawAmount) =
+        logFatal [[i|Token amount #{tokenAmountToString amount} exceeds the maximum representable token amount for #{tiTokenId ti}.|]]
+    | otherwise = return TokenAmount{taValue = fromIntegral preNorm, taDecimals = expectDecimals}
+  where
+    amountDecimals = taDecimals amount
+    expectDecimals = tsDecimals (tiTokenState ti)
+    preNorm = toInteger (taValue amount) * 10 ^ (expectDecimals - amountDecimals)
+
 handlePLTTransfer ::
     Backend ->
     Maybe FilePath ->
@@ -930,13 +948,23 @@ handlePLTTransfer backend baseCfgDir verbose receiver amount tokenIdText maybeMe
     withClient backend $ do
         cs <- getResponseValueOrDie =<< getConsensusInfo
 
+        tokenId <- case tokenIdFromText tokenIdText of
+            Right val -> return val
+            Left err -> logFatal ["Error couldn't parse token id:", err]
+        -- Check if the token exists
+        tokenInfoResponse <- getTokenInfo tokenId LastFinal
+        tokenInfo <- case tokenInfoResponse of
+            StatusNotOk (NOT_FOUND, _) -> logFatal [[i|Token named '#{tokenId}' not found.|]]
+            _ -> getResponseValueOrDie tokenInfoResponse
+        normAmount <- renormalizeTokenAmount tokenInfo amount
+
         maybeCborMemo <- case maybeMemo of
             Nothing -> return Nothing
             Just memoInput -> do
                 memo <- liftIO $ checkAndGetMemo memoInput $ Queries.csProtocolVersion cs
                 return $ Just $ CBOR.CBORMemo memo
 
-        let operation = CBOR.TokenTransferBuilder (Just amount) (Just tokenReceiver) maybeCborMemo
+        let operation = CBOR.TokenTransferBuilder (Just normAmount) (Just tokenReceiver) maybeCborMemo
         let eitherTokenTranfserBody = CBOR.buildTokenTransfer operation
         tokenTransferBody <- case eitherTokenTranfserBody of
             Right val -> return val
@@ -945,10 +973,6 @@ handlePLTTransfer backend baseCfgDir verbose receiver amount tokenIdText maybeMe
         let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenTransfer)
         let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
         let tokenParameter = Types.TokenParameter $ BS.toShort bytes
-
-        tokenId <- case tokenIdFromText tokenIdText of
-            Right val -> return val
-            Left err -> logFatal ["Error couldn't parse token id:", err]
 
         let payload = Types.TokenUpdate tokenId tokenParameter
         let encodedPayload = Types.encodePayload payload
@@ -976,17 +1000,23 @@ handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount tokenI
         putStrLn ""
 
     withClient backend $ do
+        tokenId <- case tokenIdFromText tokenIdText of
+            Right val -> return val
+            Left err -> logFatal ["Error couldn't parse token id:", err]
+        -- Check if the token exists
+        tokenInfoResponse <- getTokenInfo tokenId LastFinal
+        tokenInfo <- case tokenInfoResponse of
+            StatusNotOk (NOT_FOUND, _) -> logFatal [[i|Token named '#{tokenId}' not found.|]]
+            _ -> getResponseValueOrDie tokenInfoResponse
+        normAmount <- renormalizeTokenAmount tokenInfo amount
+
         tokenOperation <- case tokenSupplyAction of
-            Mint -> pure $ CBOR.TokenMint amount
-            Burn -> pure $ CBOR.TokenBurn amount
+            Mint -> pure $ CBOR.TokenMint normAmount
+            Burn -> pure $ CBOR.TokenBurn normAmount
 
         let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
         let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
         let tokenParameter = Types.TokenParameter $ BS.toShort bytes
-
-        tokenId <- case tokenIdFromText tokenIdText of
-            Right val -> return val
-            Left err -> logFatal ["Error couldn't parse token id:", err]
 
         let payload = Types.TokenUpdate tokenId tokenParameter
         let encodedPayload = Types.encodePayload payload
