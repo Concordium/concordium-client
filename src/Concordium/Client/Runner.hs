@@ -1077,7 +1077,7 @@ handlePLTPausation backend baseCfgDir verbose pauseAction tokenIdText txOpts = d
         let payload = Types.TokenUpdate tokenId tokenParameter
         let encodedPayload = Types.encodePayload payload
 
-        let nrgCost _ = return $ Just $ tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenListOperationCost -- todo ar update cost
+        let nrgCost _ = return $ Just $ tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenPauseUnpauseCost
         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
         let intOpts = toInteractionOpts txOpts
