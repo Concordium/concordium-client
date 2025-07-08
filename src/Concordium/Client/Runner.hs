@@ -1063,8 +1063,8 @@ handlePLTPausation backend baseCfgDir verbose pauseAction tokenIdText txOpts = d
 
     withClient backend $ do
         tokenOperation <- case pauseAction of
-            Pause -> pure $ CBOR.TokenPause True
-            Unpause -> pure $ CBOR.TokenPause False
+            Pause -> pure CBOR.TokenPause
+            Unpause -> pure CBOR.TokenUnpause
 
         let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
         let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
