@@ -910,27 +910,21 @@ processTransactionCmd action baseCfgDir verbose backend =
 
 -- | Renormalize a 'TokenAmount' to conform to the number of decimal places expected by the
 --  token. If more than the expected number of decimals are given, this fails with an error.
---  Similarly, if the resulting value would exceed the maximum representatable amount of the token,
+--  Similarly, if the resulting value would exceed the maximum representable amount of the token,
 --  this fails with an error.
-renormalizeTokenAmount :: (MonadIO m) => TokenInfo -> TokenAmount -> m TokenAmount
-renormalizeTokenAmount ti amount
-    | amountDecimals > expectDecimals =
-        logFatal [[i|Token amount #{tokenAmountToString amount} has #{amountDecimals} decimals, but #{tiTokenId ti} only supports #{expectDecimals}.|]]
-    | amountDecimals == expectDecimals = return amount
-    | preNorm > fromIntegral (maxBound :: TokenRawAmount) =
-        logFatal [[i|Token amount #{tokenAmountToString amount} exceeds the maximum representable token amount for #{tiTokenId ti}.|]]
-    | otherwise = return TokenAmount{taValue = fromIntegral preNorm, taDecimals = expectDecimals}
+normalizeTokenAmountOrDie :: (MonadIO m) => TokenInfo -> PreTokenAmount -> m TokenAmount
+normalizeTokenAmountOrDie ti amount = case normalizeTokenAmount (tiTokenId ti) expectDecimals amount of
+    Left err -> logFatal [err]
+    Right normAmount -> return normAmount
   where
-    amountDecimals = taDecimals amount
     expectDecimals = tsDecimals (tiTokenState ti)
-    preNorm = toInteger (taValue amount) * 10 ^ (expectDecimals - amountDecimals)
 
 handlePLTTransfer ::
     Backend ->
     Maybe FilePath ->
     Bool ->
     Text ->
-    TokenAmount ->
+    PreTokenAmount ->
     Text ->
     Maybe MemoInput ->
     TransactionOpts (Maybe Types.Energy) ->
@@ -956,7 +950,7 @@ handlePLTTransfer backend baseCfgDir verbose receiver amount tokenIdText maybeMe
         tokenInfo <- case tokenInfoResponse of
             StatusNotOk (NOT_FOUND, _) -> logFatal [[i|Token named '#{tokenId}' not found.|]]
             _ -> getResponseValueOrDie tokenInfoResponse
-        normAmount <- renormalizeTokenAmount tokenInfo amount
+        normAmount <- normalizeTokenAmountOrDie tokenInfo amount
 
         maybeCborMemo <- case maybeMemo of
             Nothing -> return Nothing
@@ -989,7 +983,7 @@ handlePLTUpdateSupply ::
     Maybe FilePath ->
     Bool ->
     TokenSupplyAction ->
-    TokenAmount ->
+    PreTokenAmount ->
     Text ->
     TransactionOpts (Maybe Types.Energy) ->
     IO ()
@@ -1008,7 +1002,7 @@ handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount tokenI
         tokenInfo <- case tokenInfoResponse of
             StatusNotOk (NOT_FOUND, _) -> logFatal [[i|Token named '#{tokenId}' not found.|]]
             _ -> getResponseValueOrDie tokenInfoResponse
-        normAmount <- renormalizeTokenAmount tokenInfo amount
+        normAmount <- normalizeTokenAmountOrDie tokenInfo amount
 
         tokenOperation <- case tokenSupplyAction of
             Mint -> pure $ CBOR.TokenMint normAmount

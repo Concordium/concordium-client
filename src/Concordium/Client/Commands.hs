@@ -42,7 +42,6 @@ import Concordium.Common.Time
 import Concordium.ID.Types (AccountThreshold, CredentialIndex, CredentialRegistrationID, KeyIndex)
 import Concordium.Types
 import Concordium.Types.Execution
-import Concordium.Types.Queries.Tokens
 import qualified Concordium.Wasm as Wasm
 import Control.Monad
 import Data.String
@@ -238,14 +237,14 @@ data ModifyListAction = AddAllowList | RemoveAllowList | AddDenyList | RemoveDen
 data PLTCmd
     = TransactionPLTTransfer
         { tptReceiver :: !Text,
-          tptAmount :: !TokenAmount,
+          tptAmount :: !PreTokenAmount,
           tptTokenId :: !Text,
           tptMemo :: !(Maybe MemoInput),
           tptOpts :: !(TransactionOpts (Maybe Energy))
         }
     | TransactionPLTUpdateSupply
         { tpusAction :: !TokenSupplyAction,
-          tpusAmount :: !TokenAmount,
+          tpusAmount :: !PreTokenAmount,
           tpusTokenId :: !Text,
           tpusOpts :: !(TransactionOpts (Maybe Energy))
         }
@@ -886,7 +885,7 @@ transactionPLTTransferCmd =
         ( info
             ( TransactionPLTTransfer
                 <$> strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.")
-                <*> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
+                <*> option (eitherReader preTokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> memoInputParser
                 <*> transactionOptsParser
@@ -900,7 +899,7 @@ transactionPLTMintCmd =
         "mint"
         ( info
             ( TransactionPLTUpdateSupply Mint
-                <$> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
+                <$> option (eitherReader preTokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
             )
@@ -913,7 +912,7 @@ transactionPLTBurnCmd =
         "burn"
         ( info
             ( TransactionPLTUpdateSupply Burn
-                <$> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
+                <$> option (eitherReader preTokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
             )
