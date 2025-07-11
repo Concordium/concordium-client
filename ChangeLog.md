@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The number of decimals in PLT amounts for the `plt` `send`, `mint` and `burn` operations is checked and adjusted if necessary.
+  This allows specifying 10 instead of 10.000000 for a PLT with 6 decimal places, for instance.
+
 ## 9.1.2-alpha (Compatible with node version 9.0.5) - 2025-06-30
 
 - Compatibility with node version 9.0.5:

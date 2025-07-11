@@ -11,6 +11,7 @@ import SimpleClientTests.ContractSpec
 import SimpleClientTests.LogSpec
 import SimpleClientTests.ParseSpec
 import SimpleClientTests.SchemaParsingSpec
+import SimpleClientTests.TokenAmountSpec
 import SimpleClientTests.TransactionSpec
 
 tests :: Spec
@@ -25,3 +26,4 @@ tests = do
     logSpec
     parseSpec
     schemaParsingSpec
+    tokenAmountSpec
