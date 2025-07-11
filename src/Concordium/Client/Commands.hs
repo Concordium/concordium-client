@@ -16,6 +16,7 @@ module Concordium.Client.Commands (
     PLTCmd (..),
     TokenSupplyAction (..),
     ModifyListAction (..),
+    TokenPauseAction (..),
     AccountCmd (..),
     ModuleCmd (..),
     ContractCmd (..),
@@ -234,6 +235,9 @@ data TokenSupplyAction = Mint | Burn
 data ModifyListAction = AddAllowList | RemoveAllowList | AddDenyList | RemoveDenyList
     deriving (Show, Eq)
 
+data TokenPauseAction = Pause | Unpause
+    deriving (Show, Eq)
+
 data PLTCmd
     = TransactionPLTTransfer
         { tptReceiver :: !Text,
@@ -253,6 +257,11 @@ data PLTCmd
           tpmlAccount :: !Text,
           tpmlTokenId :: !Text,
           tpmlOpts :: !(TransactionOpts (Maybe Energy))
+        }
+    | TransactionPLTPausation
+        { tppAction :: !TokenPauseAction,
+          tppTokenId :: !Text,
+          tppOpts :: !(TransactionOpts (Maybe Energy))
         }
     deriving (Show)
 
@@ -764,6 +773,8 @@ pltCmds =
                         <> transactionPLTAddDenyListCmd
                         <> transactionPLTRemoveAllowListCmd
                         <> transactionPLTRemoveDenyListCmd
+                        <> transactionPLTPauseCmd
+                        <> transactionPLTUnpauseCmd
                     )
             )
             (progDesc "Commands for PLTs (protocol level tokens) transactions.")
@@ -969,6 +980,30 @@ transactionPLTRemoveDenyListCmd =
                 <*> transactionOptsParser
             )
             (progDesc "Remove an account from the deny list.")
+        )
+
+transactionPLTPauseCmd :: Mod CommandFields PLTCmd
+transactionPLTPauseCmd =
+    command
+        "pause"
+        ( info
+            ( TransactionPLTPausation Pause
+                <$> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Pause PLT (protocol level token).")
+        )
+
+transactionPLTUnpauseCmd :: Mod CommandFields PLTCmd
+transactionPLTUnpauseCmd =
+    command
+        "unpause"
+        ( info
+            ( TransactionPLTPausation Unpause
+                <$> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Unpause PLT (protocol level token).")
         )
 
 transactionWithScheduleCmd :: Mod CommandFields TransactionCmd

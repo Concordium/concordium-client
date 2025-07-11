@@ -949,6 +949,10 @@ showEvent verbose ciM = \case
                             Just $ printf "Account %s was removed from the allow list." (show $ Cbor.chaAccount holder)
                         Right (Cbor.RemoveDenyListEvent holder) ->
                             Just $ printf "Account %s was removed from the deny list." (show $ Cbor.chaAccount holder)
+                        Right Cbor.Pause ->
+                            Just $ printf "%s paused." (show etmeTokenId)
+                        Right Cbor.Unpause ->
+                            Just $ printf "%s unpaused." (show etmeTokenId)
                         Left _ -> Nothing
 
                     -- Second decoding attempt using generic CBOR deserialization.
