@@ -43,7 +43,6 @@ import Concordium.Common.Time
 import Concordium.ID.Types (AccountThreshold, CredentialIndex, CredentialRegistrationID, KeyIndex)
 import Concordium.Types
 import Concordium.Types.Execution
-import Concordium.Types.Queries.Tokens
 import qualified Concordium.Wasm as Wasm
 import Control.Monad
 import Data.String
@@ -242,14 +241,14 @@ data TokenPauseAction = Pause | Unpause
 data PLTCmd
     = TransactionPLTTransfer
         { tptReceiver :: !Text,
-          tptAmount :: !TokenAmount,
+          tptAmount :: !PreTokenAmount,
           tptTokenId :: !Text,
           tptMemo :: !(Maybe MemoInput),
           tptOpts :: !(TransactionOpts (Maybe Energy))
         }
     | TransactionPLTUpdateSupply
         { tpusAction :: !TokenSupplyAction,
-          tpusAmount :: !TokenAmount,
+          tpusAmount :: !PreTokenAmount,
           tpusTokenId :: !Text,
           tpusOpts :: !(TransactionOpts (Maybe Energy))
         }
@@ -897,7 +896,7 @@ transactionPLTTransferCmd =
         ( info
             ( TransactionPLTTransfer
                 <$> strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.")
-                <*> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
+                <*> option (eitherReader preTokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> memoInputParser
                 <*> transactionOptsParser
@@ -911,7 +910,7 @@ transactionPLTMintCmd =
         "mint"
         ( info
             ( TransactionPLTUpdateSupply Mint
-                <$> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
+                <$> option (eitherReader preTokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
             )
@@ -924,7 +923,7 @@ transactionPLTBurnCmd =
         "burn"
         ( info
             ( TransactionPLTUpdateSupply Burn
-                <$> option (eitherReader tokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
+                <$> option (eitherReader preTokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
             )
@@ -1835,15 +1834,15 @@ consensusChainUpdateCmd =
                       "         \"updateType\":\"createPLT\",",
                       "         \"update\":{",
                       "             \"tokenId\":\"EUROSTABLE\",",
-                      "             \"tokenModule\":\"6b7eef36dc48bb59ef9290cdbf123dad7e85efa76caf7df1ae8775735f8f59d3\",",
-                      "             \"governanceAccount\":\"4FmiTW2L2AccyR9VjzsnpWFSAcohXWf7Vf797i36y526mqiEcp\",",
+                      "             \"tokenModule\":\"5c5c2645db84a7026d78f2501740f60a8ccb8fae5c166dc2428077fd9a699a4a\",",
+                      "             \"governanceAccount\":{\"type\":\"account\",\"address\":\"3mfCUaeqmnExXSpocuvw3NQvq4bJhPRG4aGL34WvushmVCUZW4\"},",
                       "             \"decimals\":6,",
                       "             \"initializationParameters\":{",
                       "                 \"name\":\"Stablecoin\",",
-                      "                 \"metadata\":\"https://myUrl.com\",",
+                      "                 \"metadata\":{\"url\":\"https://test.plt\"},",
                       "                 \"allowList\":false,",
                       "                 \"denyList\":false,",
-                      "                 \"initialSupply\":12345,",
+                      "                 \"initialSupply\":{\"value\":\"1000000000\",\"decimals\":6},",
                       "                 \"mintable\":true,",
                       "                 \"burnable\":true",
                       "             }",
