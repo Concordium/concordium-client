@@ -36,7 +36,7 @@ on:
 
 env:
   RUST: 1.82
-  GHC: 9.6.6
+  GHC: 9.8.4
 
 jobs:
   fourmolu:
