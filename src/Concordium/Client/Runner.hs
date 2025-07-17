@@ -32,6 +32,7 @@ module Concordium.Client.Runner (
     withClientJson,
     TransactionConfig (..),
     getFromJson,
+    normalizeTokenAmountOrDie,
 ) where
 
 import Concordium.Client.Cli
