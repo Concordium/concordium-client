@@ -58,7 +58,7 @@ import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Short as BSS
 import Data.Either (isRight)
 import Data.Functor
-import Data.List (elemIndex, foldl', intercalate, nub, partition, sortOn)
+import Data.List (elemIndex, intercalate, nub, partition, sortOn)
 import qualified Data.Map.Strict as Map
 import Data.Maybe
 import Data.Ratio

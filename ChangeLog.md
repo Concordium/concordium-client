@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Bump GHC version to 9.8.4 (lts-23.27).
+- Bump GHC version to 9.10.2 (lts-24.0).
 
 ## 9.1.3-alpha (Compatible with node version 9.0.6) - 2025-07-14
 
