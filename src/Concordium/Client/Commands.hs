@@ -807,8 +807,7 @@ transactionAddSignatureCmd =
                 <$> strArgument (metavar "FILE" <> help "File containing a signed transaction in JSON format.")
                 <*> optional
                     ( strOption
-                        ( long "signers" <> metavar "SIGNERS" <> help "Specification of which (local) keys to sign with. Example: \"0:1,0:2,3:0,3:1\" specifies that credential holder 0 signs with keys 1 and 2, while credential holder 3 signs with keys 0 and 1"
-                        )
+                        (long "signers" <> metavar "SIGNERS" <> help "Specification of which (local) keys to sign with. Example: \"0:1,0:2,3:0,3:1\" specifies that credential holder 0 signs with keys 1 and 2, while credential holder 3 signs with keys 0 and 1")
                     )
                 <*> optional
                     (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file."))

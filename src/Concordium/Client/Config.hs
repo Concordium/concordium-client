@@ -29,7 +29,7 @@ import Concordium.Common.Version
 import Data.Aeson ((.:), (.=))
 
 import Data.Char
-import Data.List (find, foldl', sortOn)
+import Data.List (find, sortOn)
 import Data.List.Split
 import qualified Data.Map.Strict as M
 import Data.String (IsString)
@@ -215,7 +215,6 @@ initBaseConfig f verbose = do
     if baseCfgDirExists
         then when verbose $ logInfo [[i|skipping '#{baseCfgDir}': directory already exists|]]
         else -- Only explicitly handle a permission error since that is likely the most common one.
-
             handleJust
                 (guard . isPermissionError)
                 (\_ -> logFatal ["cannot create directory, permission denied"])

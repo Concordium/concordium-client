@@ -36,7 +36,7 @@ on:
 
 env:
   RUST: 1.82
-  GHC: 9.6.6
+  GHC: 9.8.4
 
 jobs:
   fourmolu:
@@ -47,9 +47,9 @@ jobs:
     - name: Download fourmolu
       uses: supplypike/setup-bin@v1
       with:
-        uri: 'https://github.com/fourmolu/fourmolu/releases/download/v0.13.1.0/fourmolu-0.13.1.0-linux-x86_64'
+        uri: 'https://github.com/fourmolu/fourmolu/releases/download/v0.18.0.0/fourmolu-0.18.0.0-linux-x86_64'
         name: 'fourmolu'
-        version: '0.13.1.0'
+        version: '0.18.0.0'
 
     - name: Checkout project
       uses: actions/checkout@v2

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Bump GHC version to 9.10.2 (lts-24.0).
+
 ## 9.1.3-alpha (Compatible with node version 9.0.6) - 2025-07-14
 
 - The number of decimals in PLT amounts for the `plt` `send`, `mint` and `burn` operations is checked and adjusted if necessary.
