@@ -193,8 +193,29 @@ function collectDylibs() {
 
     logInfo "Collecting dylibs with dylibbundler..."
 
-    concordiumDylibDir=$(stack --stack-yaml "$clientDir/stack.yaml" path --local-install-root)"/lib/$ghcVariant"
-    stackSnapshotDir=$(stack --stack-yaml "$clientDir/stack.yaml" path --snapshot-install-root)"/lib/$ghcVariant"
+    concordiumDylibDir=$(stack --stack-yaml "$clientDir/stack.yaml" path --local-install-root)"/lib"
+    concordiumDylibGhcDirs=()
+    while IFS= read -r dir; do
+        concordiumDylibGhcDirs+=("$dir")
+    done < <(find "$concordiumDylibDir" -maxdepth 1 -type d -name "*-${ghcVersion}*")
+    if [[ ${#concordiumDylibGhcDirs[@]} -ne 1 ]]; then
+        echo "ERROR: Expected exactly one directory matching '*-${ghcVersion}*' in '$concordiumDylibDir', but found ${#concordiumDylibGhcDirs[@]} directories."
+        echo "Directories found: ${concordiumDylibGhcDirs[@]}"
+        exit 1
+    fi
+    concordiumDylibDir="${concordiumDylibGhcDirs[0]}"
+
+    stackSnapshotDir=$(stack --stack-yaml "$clientDir/stack.yaml" path --snapshot-install-root)"/lib"
+    stackSnapshotGhcDirs=()
+    while IFS= read -r dir; do
+        stackSnapshotGhcDirs+=("$dir")
+    done < <(find "$stackSnapshotDir" -maxdepth 1 -type d -name "*-${ghcVersion}*")
+    if [[ ${#stackSnapshotGhcDirs[@]} -ne 1 ]]; then
+        echo "ERROR: Expected exactly one directory matching '*-${ghcVersion}*' in '$stackSnapshotDir', but found ${#stackSnapshotGhcDirs[@]} directories."
+        echo "Directories found: ${stackSnapshotGhcDirs[@]}"
+        exit 1
+    fi
+    stackSnapshotDir="${stackSnapshotGhcDirs[0]}"
     # Use awk to preprend '-s ' to each dylib, to be used as argument for dylibbundler directly.
     stackLibDirs=$(find "$(stack --stack-yaml "$clientDir/stack.yaml" ghc -- --print-libdir)" -maxdepth 1 -type d | awk '{print "-s "$0}')
     readonly concordiumDylibDir
