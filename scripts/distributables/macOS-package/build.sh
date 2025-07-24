@@ -197,9 +197,9 @@ function collectDylibs() {
     concordiumDylibGhcDirs=()
     while IFS= read -r dir; do
         concordiumDylibGhcDirs+=("$dir")
-    done < <(find "$concordiumDyLibDir" -maxdepth 1 -type d -name "${ghcVariant}*")
+    done < <(find "$concordiumDylibDir" -maxdepth 1 -type d -name "*-${ghcVersion}*")
     if [[ ${#concordiumDylibGhcDirs[@]} -ne 1 ]]; then
-        echo "ERROR: Expected exactly one directory matching '${ghcVariant}*' in '$concordiumDylibDir', but found ${#concordiumDylibGhcDirs[@]} directories."
+        echo "ERROR: Expected exactly one directory matching '*-${ghcVersion}*' in '$concordiumDylibDir', but found ${#concordiumDylibGhcDirs[@]} directories."
         echo "Directories found: ${concordiumDylibGhcDirs[@]}"
         exit 1
     fi
@@ -209,9 +209,9 @@ function collectDylibs() {
     stackSnapshotGhcDirs=()
     while IFS= read -r dir; do
         stackSnapshotGhcDirs+=("$dir")
-    done < <(find "$stackSnapshotDir" -maxdepth 1 -type d -name "${ghcVariant}*")
+    done < <(find "$stackSnapshotDir" -maxdepth 1 -type d -name "*-${ghcVersion}*")
     if [[ ${#stackSnapshotGhcDirs[@]} -ne 1 ]]; then
-        echo "ERROR: Expected exactly one directory matching '${ghcVariant}*' in '$stackSnapshotDir', but found ${#stackSnapshotGhcDirs[@]} directories."
+        echo "ERROR: Expected exactly one directory matching '*-${ghcVersion}*' in '$stackSnapshotDir', but found ${#stackSnapshotGhcDirs[@]} directories."
         echo "Directories found: ${stackSnapshotGhcDirs[@]}"
         exit 1
     fi
