@@ -24,3 +24,4 @@ main =
         simpleUserHooks
             { confHook = autoConfHook
             }
+
