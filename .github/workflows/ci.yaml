@@ -1,7 +1,7 @@
 name: Build and test
 
 # Builds dependencies
-# Builds and tests concordium client
+# Builds and tests Concordium Client
 
 on:
   pull_request:
