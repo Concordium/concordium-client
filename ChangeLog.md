@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Bump GHC version to 9.10.2 (lts-24.0).
+- Attempt to decode token module reject reasons for better formatted messages, fallback to the previous formatting.
 
 ## 9.1.3-alpha (Compatible with node version 9.0.6) - 2025-07-14
 

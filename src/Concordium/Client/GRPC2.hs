@@ -1346,9 +1346,9 @@ instance FromProto ProtoPLT.TokenModuleRejectReason where
         tmrrDetails <- traverse (fromProto . CBorAsTokenEventDetails) (reason ^. PLTFields.maybe'details)
         return TokenModuleRejectReason{..}
 
-newtype CBorAsTokenEventDetails = CBorAsTokenEventDetails ProtoPLT.CBor
-newtype CBorAsTokenParameter = CBorAsTokenParameter ProtoPLT.CBor
-newtype CBorAsModuleState = CBorAsModuleState ProtoPLT.CBor
+newtype CBorAsTokenEventDetails = CBorAsTokenEventDetails ProtoPLT.Cbor
+newtype CBorAsTokenParameter = CBorAsTokenParameter ProtoPLT.Cbor
+newtype CBorAsModuleState = CBorAsModuleState ProtoPLT.Cbor
 
 instance FromProto CBorAsTokenEventDetails where
     type Output CBorAsTokenEventDetails = TokenEventDetails

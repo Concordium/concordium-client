@@ -1204,35 +1204,75 @@ showRejectReason verbose = \case
     Types.InsufficientDelegationStake -> "not allowed to add delegator with 0 stake"
     Types.DelegationTargetNotABaker bid -> printf "delegation target %s is not a validator id" (show bid)
     Types.NonExistentTokenId tokenId -> printf "token id %s does not exist on-chain" (show tokenId)
-    Types.TokenUpdateTransactionFailed reason -> do
-        let details = Types.tmrrDetails reason
-        case details of
-            Nothing ->
-                printf
-                    "%s token update transaction was rejected due to: %s"
-                    (show $ Types.tmrrTokenId reason)
-                    (show $ Types.tmrrType reason)
-            Just detail -> do
-                let invalidCBOR =
-                        printf
-                            "%s token update transaction was rejected due to: %s\n   details (undecoded CBOR): %s"
-                            (show $ Types.tmrrTokenId reason)
-                            (show $ Types.tmrrType reason)
-                            (show detail)
-                let detailsShortByteString = Types.tokenEventDetailsBytes detail
-                let bsl = BSL.fromStrict $ BSS.fromShort detailsShortByteString
-                case deserialiseFromBytes (decodeValue False) bsl of
-                    Left _ -> invalidCBOR -- if not possible, the reject details is not written in valid CBOR
-                    Right (rest, x) ->
-                        if rest == BSL.empty
-                            then
+    Types.TokenUpdateTransactionFailed reason ->
+        printf
+            "%s token update transaction was rejected due to: %s"
+            (show $ Types.tmrrTokenId reason)
+            details
+      where
+        details = case Types.decodeTokenModuleRejectReason reason of
+            Right decodedReason -> printTokenModuleRejectDetails decodedReason
+            Left _ -> do
+                let tmrrDetails = Types.tmrrDetails reason
+                case tmrrDetails of
+                    Nothing -> show $ Types.tmrrType reason
+                    Just detail -> do
+                        let detailsShortByteString = Types.tokenEventDetailsBytes detail
+                        let bsl = BSL.fromStrict $ BSS.fromShort detailsShortByteString
+
+                        case deserialiseFromBytes (decodeValue False) bsl of
+                            Right (rest, x)
+                                | rest /= BSL.empty ->
+                                    printf
+                                        "%s\n   details (undecoded CBOR): %s\n   details (decoded CBOR): %s"
+                                        (show $ Types.tmrrTokenId reason)
+                                        (show $ Types.tmrrType reason)
+                                        (show tmrrDetails)
+                                        (showPrettyJSON x)
+                            _ ->
                                 printf
-                                    "%s token update transaction was rejected due to: %s\n   details (undecoded CBOR): %s\n   details (decoded CBOR): %s"
+                                    "%s\n   details (undecoded CBOR): %s"
                                     (show $ Types.tmrrTokenId reason)
                                     (show $ Types.tmrrType reason)
-                                    (show details)
-                                    (showPrettyJSON x)
-                            else invalidCBOR
+                                    (show detail)
+
+printTokenModuleRejectDetails :: Cbor.TokenRejectReason -> String
+printTokenModuleRejectDetails = \case
+    Cbor.AddressNotFound{..} ->
+        printf
+            "operation with index %d failed: address '%s' not found"
+            trrOperationIndex
+            $ case trrAddress of
+                Cbor.CborHolderAccount{..} -> show chaAccount
+    Cbor.TokenBalanceInsufficient{..} ->
+        printf
+            "operation with index %d failed: insufficient token balance for the sender address\n   required: %s\n   available: %s"
+            trrOperationIndex
+            (tokenAmountToString trrRequiredBalance)
+            (tokenAmountToString trrAvailableBalance)
+    Cbor.DeserializationFailure{..} ->
+        printf
+            "failed to deserialize operations %s"
+            (maybe "" (\cause -> "with cause: " ++ show cause) trrCause)
+    Cbor.UnsupportedOperation{..} ->
+        printf
+            "operation with index %d failed: unsupported operation of type %s\n   reason: %s"
+            trrOperationIndex
+            (show trrOperationType)
+            (maybe "" show trrReason)
+    Cbor.MintWouldOverflow{..} ->
+        printf
+            "operation with index %d failed: minting would cause an overflow\n   current total supply:%s\n   max total supply: %s\n   failed to mint: %s"
+            trrOperationIndex
+            (tokenAmountToString trrCurrentSupply)
+            (tokenAmountToString trrMaxRepresentableAmount)
+            (tokenAmountToString trrRequestedAmount)
+    Cbor.OperationNotPermitted{..} ->
+        printf
+            "operation with index %d failed: operation not permitted %s%s"
+            trrOperationIndex
+            (maybe "" (\reason -> "\n   reason: " ++ Text.unpack reason) trrReason)
+            (maybe "" (\(Cbor.CborHolderAccount{..}) -> "\n   address: " ++ (show chaAccount)) trrAddressNotPermitted)
 
 -- CONSENSUS
 
