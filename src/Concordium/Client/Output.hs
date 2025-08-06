@@ -1242,13 +1242,14 @@ printTokenModuleRejectDetails = \case
         printf
             "operation with index %d failed: address '%s' not found"
             trrOperationIndex
-            (show trrAddress)
+            $ case trrAddress of
+                Cbor.CborHolderAccount{..} -> show chaAccount
     Cbor.TokenBalanceInsufficient{..} ->
         printf
             "operation with index %d failed: insufficient token balance for the sender address\n   required: %s\n   available: %s"
             trrOperationIndex
-            (show trrRequiredBalance)
-            (show trrAvailableBalance)
+            (tokenAmountToString trrRequiredBalance)
+            (tokenAmountToString trrAvailableBalance)
     Cbor.DeserializationFailure{..} ->
         printf
             "failed to deserialize operations %s"
@@ -1263,15 +1264,15 @@ printTokenModuleRejectDetails = \case
         printf
             "operation with index %d failed: minting would cause an overflow\n   current total supply:%s\n   max total supply: %s\n   failed to mint: %s"
             trrOperationIndex
-            (show trrCurrentSupply)
-            (show trrMaxRepresentableAmount)
-            (show trrRequestedAmount)
+            (tokenAmountToString trrCurrentSupply)
+            (tokenAmountToString trrMaxRepresentableAmount)
+            (tokenAmountToString trrRequestedAmount)
     Cbor.OperationNotPermitted{..} ->
         printf
-            "operation with index %d failed: operation not permitted %s"
+            "operation with index %d failed: operation not permitted %s%s"
             trrOperationIndex
-            (maybe "" show trrReason)
-            (maybe "" (\holder -> "\n   address: %s" ++ (show holder)) trrAddressNotPermitted)
+            (maybe "" (\reason -> "\n   reason: " ++ Text.unpack reason) trrReason)
+            (maybe "" (\(Cbor.CborHolderAccount{..}) -> "\n   address: " ++ (show chaAccount)) trrAddressNotPermitted)
 
 -- CONSENSUS
 
