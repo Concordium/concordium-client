@@ -7,7 +7,6 @@ on:
   pull_request:
     branches:
       - main
-      - plt
     paths:
     - '.github/workflows/ci.yaml'
     - '**.hs'
@@ -21,7 +20,6 @@ on:
   push:
     branches:
       - main
-      - plt
     paths:
     - '.github/workflows/ci.yaml'
     - '**.hs'
