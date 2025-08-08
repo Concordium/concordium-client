@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+- Bump GHC version to 9.10.2 (lts-24.0).
+- Attempt to decode token module reject reasons for better formatted messages, fallback to the previous formatting.
+
+## 9.1.3-alpha (Compatible with node version 9.0.6) - 2025-07-14
+
+- The number of decimals in PLT amounts for the `plt` `send`, `mint` and `burn` operations is checked and adjusted if necessary.
+  This allows specifying 10 instead of 10.000000 for a PLT with 6 decimal places, for instance.
+- Support PLT pause/unpause operations
+
+## 9.1.2-alpha (Compatible with node version 9.0.5) - 2025-06-30
+
+- Compatibility with node version 9.0.5:
+  - `account show` and `raw GetAccountInfo` change how the account PLT state is handled.
+- Unified token holder/governance transaction handling for a single transaction type `TokenUpdateTransaction`.
+
+## 9.1.1-alpha (Compatible with node version 9.0.2) - 2025-06-10
+
+- Add handling of plt events `TokenModuleEvent`, `TokenMint`, `TokenBurn`, `TokenTransfer`, and `TokenCreated`.
+- Fix a bug in displaying the decoded CBOR from rejected PLT transactions.
+
+## 9.1.0-alpha - 2025-05-20
+
+- Add `transaction plt add-to-allow-list` to add an account to the allow list by the governance account.
+- Add `transaction plt add-to-deny-list` to add an account to the deny list by the governance account.
+- Add `transaction plt remove-from-allow-list` to remove an account from the allow list by the governance account.
+- Add `transaction plt remove-from-deny-list` to remove an account from the deny list by the governance account.
+- Add `transaction plt mint` command to mint protocol level tokens by the governance account.
+- Add `transaction plt burn` command to burn protocol level tokens by the governance account.
+- Refactore plt commands into its own subcommand.
+
+## 9.0.0-alpha - 2025-05-09
+
+- Add `raw GetTokenInfo` command to display the info of a protocol level token.
+- Subcommand `account show` now displays protocol level tokens info.
+- Subcommand `raw GetAccountInfo` now displays protocol level tokens info.
+- Add `transaction transfer-plt` command to transfer protocol level tokens from one account to another.
+- Add `raw GetTokenList` command to display the list of protocol level tokens.
+- Subcommand `raw GetNextUpdateSequenceNumbers` now displays the next update sequence number for protocol level tokens chain updates.
+- The `consensus chain-update` command supports creating protocol level tokens now.
+
 ## 8.1.0
 
 - The `transaction status` command output includes the `parameter` for

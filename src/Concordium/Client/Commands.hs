@@ -13,6 +13,10 @@ module Concordium.Client.Commands (
     Interval (..),
     InteractionOpts (..),
     TransactionCmd (..),
+    PLTCmd (..),
+    TokenSupplyAction (..),
+    ModifyListAction (..),
+    TokenPauseAction (..),
     AccountCmd (..),
     ModuleCmd (..),
     ContractCmd (..),
@@ -221,6 +225,43 @@ data TransactionCmd
           trdData :: !RegisterDataInput,
           -- | Options for transaction.
           trdTransactionOptions :: !(TransactionOpts (Maybe Energy))
+        }
+    | PLTCmd PLTCmd
+    deriving (Show)
+
+data TokenSupplyAction = Mint | Burn
+    deriving (Show, Eq)
+
+data ModifyListAction = AddAllowList | RemoveAllowList | AddDenyList | RemoveDenyList
+    deriving (Show, Eq)
+
+data TokenPauseAction = Pause | Unpause
+    deriving (Show, Eq)
+
+data PLTCmd
+    = TransactionPLTTransfer
+        { tptReceiver :: !Text,
+          tptAmount :: !PreTokenAmount,
+          tptTokenId :: !Text,
+          tptMemo :: !(Maybe MemoInput),
+          tptOpts :: !(TransactionOpts (Maybe Energy))
+        }
+    | TransactionPLTUpdateSupply
+        { tpusAction :: !TokenSupplyAction,
+          tpusAmount :: !PreTokenAmount,
+          tpusTokenId :: !Text,
+          tpusOpts :: !(TransactionOpts (Maybe Energy))
+        }
+    | TransactionPLTModifyList
+        { tpmlAction :: !ModifyListAction,
+          tpmlAccount :: !Text,
+          tpmlTokenId :: !Text,
+          tpmlOpts :: !(TransactionOpts (Maybe Energy))
+        }
+    | TransactionPLTPausation
+        { tppAction :: !TokenPauseAction,
+          tppTokenId :: !Text,
+          tppOpts :: !(TransactionOpts (Maybe Energy))
         }
     deriving (Show)
 
@@ -712,9 +753,31 @@ transactionCmds =
                         <> transactionWithScheduleCmd
                         <> transactionDeployCredentialCmd
                         <> transactionRegisterDataCmd
+                        <> pltCmds
                     )
             )
             (progDesc "Commands for submitting and inspecting transactions.")
+        )
+
+pltCmds :: Mod CommandFields TransactionCmd
+pltCmds =
+    command
+        "plt"
+        ( info
+            ( PLTCmd
+                <$> hsubparser
+                    ( transactionPLTTransferCmd
+                        <> transactionPLTMintCmd
+                        <> transactionPLTBurnCmd
+                        <> transactionPLTAddAllowListCmd
+                        <> transactionPLTAddDenyListCmd
+                        <> transactionPLTRemoveAllowListCmd
+                        <> transactionPLTRemoveDenyListCmd
+                        <> transactionPLTPauseCmd
+                        <> transactionPLTUnpauseCmd
+                    )
+            )
+            (progDesc "Commands for PLTs (protocol level tokens) transactions.")
         )
 
 transactionSubmitCmd :: Mod CommandFields TransactionCmd
@@ -744,8 +807,7 @@ transactionAddSignatureCmd =
                 <$> strArgument (metavar "FILE" <> help "File containing a signed transaction in JSON format.")
                 <*> optional
                     ( strOption
-                        ( long "signers" <> metavar "SIGNERS" <> help "Specification of which (local) keys to sign with. Example: \"0:1,0:2,3:0,3:1\" specifies that credential holder 0 signs with keys 1 and 2, while credential holder 3 signs with keys 0 and 1"
-                        )
+                        (long "signers" <> metavar "SIGNERS" <> help "Specification of which (local) keys to sign with. Example: \"0:1,0:2,3:0,3:1\" specifies that credential holder 0 signs with keys 1 and 2, while credential holder 3 signs with keys 0 and 1")
                     )
                 <*> optional
                     (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file."))
@@ -824,6 +886,123 @@ transactionSendCcdCmd =
                 <*> transactionOptsParser
             )
             (progDesc "Transfer CCD from one account to another.")
+        )
+
+transactionPLTTransferCmd :: Mod CommandFields PLTCmd
+transactionPLTTransferCmd =
+    command
+        "send"
+        ( info
+            ( TransactionPLTTransfer
+                <$> strOption (long "receiver" <> metavar "RECEIVER-ACCOUNT" <> help "Address of the receiver.")
+                <*> option (eitherReader preTokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
+                <*> memoInputParser
+                <*> transactionOptsParser
+            )
+            (progDesc "Transfer tokens from one account to another.")
+        )
+
+transactionPLTMintCmd :: Mod CommandFields PLTCmd
+transactionPLTMintCmd =
+    command
+        "mint"
+        ( info
+            ( TransactionPLTUpdateSupply Mint
+                <$> option (eitherReader preTokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Mint PLTs (protocol level tokens).")
+        )
+
+transactionPLTBurnCmd :: Mod CommandFields PLTCmd
+transactionPLTBurnCmd =
+    command
+        "burn"
+        ( info
+            ( TransactionPLTUpdateSupply Burn
+                <$> option (eitherReader preTokenAmountFromStringInform) (long "amount" <> metavar "TOKEN-AMOUNT" <> help "Amount of tokens to send.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Burn PLTs (protocol level tokens).")
+        )
+
+transactionPLTAddAllowListCmd :: Mod CommandFields PLTCmd
+transactionPLTAddAllowListCmd =
+    command
+        "add-to-allow-list"
+        ( info
+            ( TransactionPLTModifyList AddAllowList
+                <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add to the list.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Add an account to the allow list.")
+        )
+
+transactionPLTAddDenyListCmd :: Mod CommandFields PLTCmd
+transactionPLTAddDenyListCmd =
+    command
+        "add-to-deny-list"
+        ( info
+            ( TransactionPLTModifyList AddDenyList
+                <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to add to the list.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Add an account to the deny list.")
+        )
+
+transactionPLTRemoveAllowListCmd :: Mod CommandFields PLTCmd
+transactionPLTRemoveAllowListCmd =
+    command
+        "remove-from-allow-list"
+        ( info
+            ( TransactionPLTModifyList RemoveAllowList
+                <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to remove from the list.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Remove an account from the allow list.")
+        )
+
+transactionPLTRemoveDenyListCmd :: Mod CommandFields PLTCmd
+transactionPLTRemoveDenyListCmd =
+    command
+        "remove-from-deny-list"
+        ( info
+            ( TransactionPLTModifyList RemoveDenyList
+                <$> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to remove from the list.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Remove an account from the deny list.")
+        )
+
+transactionPLTPauseCmd :: Mod CommandFields PLTCmd
+transactionPLTPauseCmd =
+    command
+        "pause"
+        ( info
+            ( TransactionPLTPausation Pause
+                <$> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Pause PLT (protocol level token).")
+        )
+
+transactionPLTUnpauseCmd :: Mod CommandFields PLTCmd
+transactionPLTUnpauseCmd =
+    command
+        "unpause"
+        ( info
+            ( TransactionPLTPausation Unpause
+                <$> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Unpause PLT (protocol level token).")
         )
 
 transactionWithScheduleCmd :: Mod CommandFields TransactionCmd
@@ -1041,7 +1220,7 @@ accountShowAliasCmd =
         ( info
             ( AccountShowAlias
                 <$> strArgument (metavar "ACCOUNT" <> help "Name or address of the account.")
-                <*> (option (eitherReader aliasFromStringInform) (long "alias" <> metavar "ALIAS" <> help "Which alias to generate."))
+                <*> option (eitherReader aliasFromStringInform) (long "alias" <> metavar "ALIAS" <> help "Which alias to generate.")
             )
             (progDesc "Generate an alias based on an account address and counter.")
         )
@@ -1642,7 +1821,39 @@ consensusChainUpdateCmd =
                 <*> some (strOption (long "key" <> metavar "FILE" <> help "File containing key-pair to sign the update command. This option can be provided multiple times, once for each key-pair to use."))
                 <*> interactionOptsParser
             )
-            (progDesc "Send a chain-update command to the chain.")
+            ( progDescDoc $
+                docFromLines
+                    [ "Send a chain-update command to the chain.",
+                      "For instance, when creating a new Protocol Level Token (PLT), the `UPDATE` file must contain a JSON object structured as follows:",
+                      "    {",
+                      "      \"seqNumber\":1,",
+                      "      \"effectiveTime\":0,",
+                      "      \"timeout\":1234,",
+                      "      \"payload\":{",
+                      "         \"updateType\":\"createPLT\",",
+                      "         \"update\":{",
+                      "             \"tokenId\":\"EUROSTABLE\",",
+                      "             \"tokenModule\":\"5c5c2645db84a7026d78f2501740f60a8ccb8fae5c166dc2428077fd9a699a4a\",",
+                      "             \"governanceAccount\":{\"type\":\"account\",\"address\":\"3mfCUaeqmnExXSpocuvw3NQvq4bJhPRG4aGL34WvushmVCUZW4\"},",
+                      "             \"decimals\":6,",
+                      "             \"initializationParameters\":{",
+                      "                 \"name\":\"Stablecoin\",",
+                      "                 \"metadata\":{\"url\":\"https://test.plt\"},",
+                      "                 \"allowList\":false,",
+                      "                 \"denyList\":false,",
+                      "                 \"initialSupply\":{\"value\":\"1000000000\",\"decimals\":6},",
+                      "                 \"mintable\":true,",
+                      "                 \"burnable\":true",
+                      "             }",
+                      "         }",
+                      "       }",
+                      "    }",
+                      "Note:",
+                      "Creating a new PLT token is effective immediately, hence the `effectiveTime` has to be set to 0.",
+                      "All fields are required when creating a new PLT token except the `initialSupply` field which is optional and",
+                      "the `allowList`, `denyList`, `mintable`, and `burnable` values which are set to `false` if not present."
+                    ]
+            )
         )
 
 blockCmds :: Mod CommandFields Cmd
@@ -1759,11 +1970,11 @@ bakerAddCmd =
                 <*> (not <$> switch (long "no-restake" <> help "If supplied, the earnings will not be added to the validator stake automatically."))
                 <*> optional
                     ( ExtraBakerAddData
-                        <$> (option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> help helpOpenDelegationFor))
+                        <$> option (eitherReader openStatusFromStringInform) (long "open-delegation-for" <> metavar "SELECTION" <> help helpOpenDelegationFor)
                         <*> bakerOrValidatorUrl
-                        <*> (option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission")))
+                        <*> option (eitherReader amountFractionFromStringInform) (long "delegation-transaction-fee-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on transaction fee rewards. " ++ rangesHelpString "transaction fee commission"))
                         <*> blockCommission
-                        <*> (option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission")))
+                        <*> option (eitherReader amountFractionFromStringInform) (long "delegation-finalization-commission" <> metavar "DECIMAL-FRACTION" <> help ("Fraction the validator takes in commission from delegators on finalization rewards. " ++ rangesHelpString "finalization reward commission"))
                     )
                 <*> optional (strOption (long "validator-credentials-out" <> metavar "FILE" <> help "File to write the validator credentials to, in case of successful transaction. These can be used to start the node."))
             )

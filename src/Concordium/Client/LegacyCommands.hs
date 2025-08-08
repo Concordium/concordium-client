@@ -158,6 +158,12 @@ data LegacyCmd
         {legacyBlockHash :: !(Maybe Text)}
     | GetNextUpdateSequenceNumbers
         {legacyBlockHash :: !(Maybe Text)}
+    | GetTokenList
+        {legacyBlockHash :: !(Maybe Text)}
+    | GetTokenInfo
+        { tokenId :: !Text,
+          legacyBlockHash :: !(Maybe Text)
+        }
     | GetBakersRewardPeriod
         {legacyBlockHash :: !(Maybe Text)}
     | GetBlockCertificates
@@ -225,6 +231,8 @@ legacyProgramOptions =
             <> getAnonymityRevokersCommand
             <> getCryptographicParametersCommand
             <> getNextUpdateSequenceNumbersCommand
+            <> getTokenListCommand
+            <> getTokenInfoCommand
             <> getScheduledReleaseAccountsCommand
             <> getCooldownAccountsCommand
             <> getPreCooldownAccountsCommand
@@ -440,6 +448,29 @@ getNextUpdateSequenceNumbersCommand =
                 <$> optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
             )
             (progDesc "Query the gRPC server for the next update sequence numbers for all update queues.")
+        )
+
+getTokenListCommand :: Mod CommandFields LegacyCmd
+getTokenListCommand =
+    command
+        "GetTokenList"
+        ( info
+            ( GetTokenList
+                <$> optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
+            )
+            (progDesc "Query the gRPC server for the protocol level token list.")
+        )
+
+getTokenInfoCommand :: Mod CommandFields LegacyCmd
+getTokenInfoCommand =
+    command
+        "GetTokenInfo"
+        ( info
+            ( GetTokenInfo
+                <$> strArgument (metavar "TOKEN_ID" <> help "ID of the token.")
+                <*> optional (strArgument (metavar "BLOCK-HASH" <> help "Hash of the block to query (default: Query the best block)"))
+            )
+            (progDesc "Query the gRPC server for the info of a protocol level token.")
         )
 
 getScheduledReleaseAccountsCommand :: Mod CommandFields LegacyCmd

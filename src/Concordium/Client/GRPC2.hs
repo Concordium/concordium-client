@@ -14,12 +14,14 @@
 --  type equivalents.
 module Concordium.Client.GRPC2 where
 
+import Concordium.Types.Tokens (TokenRawAmount (..))
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception
 import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.State.Strict
+import Data.Bits (toIntegralSized)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
@@ -46,12 +48,14 @@ import Network.GRPC.Client.Helpers hiding (Address)
 import Network.GRPC.HTTP2.ProtoLens
 import Network.GRPC.HTTP2.Types (GRPCStatusCode (DEADLINE_EXCEEDED, RESOURCE_EXHAUSTED))
 import Network.HTTP2.Client (ClientError, ClientIO, ExceptT, HostName, PortNumber, TooMuchConcurrency, runExceptT)
+import qualified Proto.V2.Concordium.ProtocolLevelTokens_Fields as PLTFields
 import qualified Web.Cookie as Cookie
 
 import Concordium.Client.Cli (TransactionStatusQuery (..), logFatal, wait)
 import Concordium.Client.RWLock
 import Concordium.Client.Runner.Helper
 import Concordium.Client.Types.TransactionStatus (transactionStatusToTransactionStatusResult)
+import Concordium.Client.Utils
 import Concordium.Common.Time
 import Concordium.Common.Version
 import Concordium.Crypto.EncryptedTransfers
@@ -72,14 +76,20 @@ import Concordium.Types.Block (AbsoluteBlockHeight (..))
 import Concordium.Types.Execution
 import qualified Concordium.Types.InvokeContract as InvokeContract
 import qualified Concordium.Types.Parameters as Parameters
+import qualified Concordium.Types.ProtocolVersion as Parameters
 import Concordium.Types.Queries
 import qualified Concordium.Types.Queries.KonsensusV1 as KonsensusV1
+import qualified Concordium.Types.Queries.Tokens as Tokens
 import qualified Concordium.Types.Transactions as Transactions
 import qualified Concordium.Types.Updates as Updates
 import qualified Concordium.Wasm as Wasm
+import qualified Data.Text.Encoding as TE
 
 import Concordium.Client.Types.ConsensusStatus
 import qualified Concordium.Crypto.BlockSignature as BlockSignature
+import qualified Proto.V2.Concordium.Kernel as ProtoKernel
+import qualified Proto.V2.Concordium.ProtocolLevelTokens as ProtoPLT
+import qualified Proto.V2.Concordium.ProtocolLevelTokens_Fields as ProtoFieldsPLT
 import qualified Proto.V2.Concordium.Service as CS
 import qualified Proto.V2.Concordium.Types as Proto
 import qualified Proto.V2.Concordium.Types as ProtoFields
@@ -283,8 +293,8 @@ instance FromProto Proto.AccountIndex where
     type Output Proto.AccountIndex = AccountIndex
     fromProto = return . deMkWord64
 
-instance FromProto Proto.AccountAddress where
-    type Output Proto.AccountAddress = AccountAddress
+instance FromProto ProtoKernel.AccountAddress where
+    type Output ProtoKernel.AccountAddress = AccountAddress
     fromProto aa =
         case deMkSerialize aa of
             Left err -> fromProtoFail $ "Unable to convert 'AccountAddress': " <> err
@@ -710,12 +720,45 @@ instance FromProto Proto.Cooldown where
         cooldownStatus <- fromProto $ c ^. ProtoFields.status
         return Cooldown{..}
 
+instance FromProto Proto.AccountInfo'Token where
+    type Output Proto.AccountInfo'Token = Tokens.Token
+    fromProto token = do
+        tokenId <- fromProto $ token ^. ProtoFields.tokenId
+        tokenAccountState <- fromProto $ token ^. ProtoFields.tokenAccountState
+        return Tokens.Token{..}
+
+instance FromProto ProtoPLT.TokenAccountState where
+    type Output ProtoPLT.TokenAccountState = Tokens.TokenAccountState
+    fromProto tokenAccountState = do
+        balance <- fromProto $ tokenAccountState ^. ProtoFieldsPLT.balance
+        moduleAccountState <-
+            fromProtoMaybe $
+                CBorAsModuleState <$> tokenAccountState ^. ProtoFieldsPLT.maybe'moduleState
+        return Tokens.TokenAccountState{..}
+
+instance FromProto ProtoPLT.TokenAmount where
+    type Output ProtoPLT.TokenAmount = Tokens.TokenAmount
+    fromProto tokenAmount = do
+        let taValue = TokenRawAmount $ tokenAmount ^. ProtoFieldsPLT.value
+        taDecimals <- case toIntegralSized (tokenAmount ^. ProtoFieldsPLT.decimals) of
+            Nothing -> fromProtoFail "TokenAmount: decimals out of range"
+            Just converted -> return converted
+        return Tokens.TokenAmount{..}
+
+instance FromProto ProtoPLT.TokenId where
+    type Output ProtoPLT.TokenId = TokenId
+    fromProto tokenId = do
+        let textTokenId = tokenId ^. ProtoFieldsPLT.value
+        let byteString = TE.encodeUtf8 textTokenId
+        return $ TokenId $ BSS.toShort byteString
+
 instance FromProto Proto.AccountInfo where
     type Output Proto.AccountInfo = AccountInfo
     fromProto ai = do
         aiAccountNonce <- fromProto $ ai ^. ProtoFields.sequenceNumber
         aiAccountAmount <- fromProto $ ai ^. ProtoFields.amount
         aiAccountReleaseSchedule <- fromProto $ ai ^. ProtoFields.schedule
+        aiAccountTokens <- mapM fromProto (ai ^. ProtoFields.tokens)
         aiAccountCredentials <-
             do
                 fmap Map.fromAscList
@@ -844,6 +887,7 @@ instance FromProto Proto.ProtocolVersion where
         Proto.PROTOCOL_VERSION_6 -> return P6
         Proto.PROTOCOL_VERSION_7 -> return P7
         Proto.PROTOCOL_VERSION_8 -> return P8
+        Proto.PROTOCOL_VERSION_9 -> return P9
         Proto.ProtocolVersion'Unrecognized _ ->
             fromProtoFail "Unable to convert 'ProtocolVersion'."
 
@@ -1287,6 +1331,41 @@ instance FromProto Proto.RejectReason where
                 return PoolWouldBecomeOverDelegated
             Proto.RejectReason'PoolClosed _ -> do
                 return PoolClosed
+            Proto.RejectReason'NonExistentTokenId tokenId -> do
+                NonExistentTokenId <$> fromProto tokenId
+            Proto.RejectReason'TokenUpdateTransactionFailed reason -> do
+                TokenUpdateTransactionFailed <$> fromProto reason
+
+instance FromProto ProtoPLT.TokenModuleRejectReason where
+    type Output ProtoPLT.TokenModuleRejectReason = TokenModuleRejectReason
+    fromProto reason = do
+        tmrrTokenId <- fromProto $ reason ^. PLTFields.tokenId
+        let rawType = reason ^. PLTFields.type'
+        let bs = TE.encodeUtf8 rawType
+        let tmrrType = TokenEventType (BSS.toShort bs)
+        tmrrDetails <- traverse (fromProto . CBorAsTokenEventDetails) (reason ^. PLTFields.maybe'details)
+        return TokenModuleRejectReason{..}
+
+newtype CBorAsTokenEventDetails = CBorAsTokenEventDetails ProtoPLT.Cbor
+newtype CBorAsTokenParameter = CBorAsTokenParameter ProtoPLT.Cbor
+newtype CBorAsModuleState = CBorAsModuleState ProtoPLT.Cbor
+
+instance FromProto CBorAsTokenEventDetails where
+    type Output CBorAsTokenEventDetails = TokenEventDetails
+    fromProto (CBorAsTokenEventDetails protoCbor) = do
+        let bs = protoCbor ^. PLTFields.value
+        pure $ TokenEventDetails (BSS.toShort bs)
+
+instance FromProto CBorAsTokenParameter where
+    type Output CBorAsTokenParameter = TokenParameter
+    fromProto (CBorAsTokenParameter protoCbor) = do
+        let bs = protoCbor ^. PLTFields.value
+        pure $ TokenParameter (BSS.toShort bs)
+
+instance FromProto CBorAsModuleState where
+    type Output CBorAsModuleState = ByteString
+    fromProto (CBorAsModuleState protoCbor) = do
+        pure $ protoCbor ^. PLTFields.value
 
 instance FromProto Proto.InvokeInstanceResponse where
     type Output Proto.InvokeInstanceResponse = InvokeContract.InvokeContractResult
@@ -1378,6 +1457,7 @@ instance FromProto Proto.NextUpdateSequenceNumbers where
         _nusnBlockEnergyLimit <- fromProto $ nums ^. ProtoFields.blockEnergyLimit
         _nusnFinalizationCommitteeParameters <- fromProto $ nums ^. ProtoFields.finalizationCommitteeParameters
         _nusnValidatorScoreParameters <- fromProto $ nums ^. ProtoFields.validatorScoreParameters
+        _nusnProtocolLevelTokensParameters <- fromProto $ nums ^. ProtoFields.protocolLevelTokens
         return NextUpdateSequenceNumbers{..}
 
 instance FromProto Proto.IpAddress where
@@ -1473,6 +1553,7 @@ instance FromProto Proto.UpdateType where
     fromProto ProtoFields.UPDATE_BLOCK_ENERGY_LIMIT = return Updates.UpdateBlockEnergyLimit
     fromProto ProtoFields.UPDATE_FINALIZATION_COMMITTEE_PARAMETERS = return Updates.UpdateFinalizationCommitteeParameters
     fromProto ProtoFields.UPDATE_VALIDATOR_SCORE_PARAMETERS = return Updates.UpdateValidatorScoreParameters
+    fromProto ProtoFields.UPDATE_CREATE_PLT = return Updates.UpdateCreatePLT
     fromProto (Proto.UpdateType'Unrecognized variant) =
         fromProtoFail $
             "Unable to convert 'InvokeInstanceResponse': "
@@ -1503,6 +1584,7 @@ instance FromProto Proto.TransactionType where
     fromProto Proto.TRANSFER_WITH_SCHEDULE_AND_MEMO = return TTTransferWithScheduleAndMemo
     fromProto Proto.CONFIGURE_BAKER = return TTConfigureBaker
     fromProto Proto.CONFIGURE_DELEGATION = return TTConfigureDelegation
+    fromProto Proto.TOKEN_UPDATE = return TTTokenUpdate
     fromProto (ProtoFields.TransactionType'Unrecognized variant) =
         fromProtoFail $
             "Unable to convert 'InvokeInstanceResponse': "
@@ -1547,8 +1629,8 @@ instance FromProto Proto.NewRelease where
         amount <- fromProto $ nRelease ^. ProtoFields.amount
         return (tStamp, amount)
 
-instance FromProto Proto.Memo where
-    type Output Proto.Memo = Memo
+instance FromProto ProtoKernel.Memo where
+    type Output ProtoKernel.Memo = Memo
     fromProto memo = return . Memo . BSS.toShort $ memo ^. ProtoFields.value
 
 instance FromProto Proto.ArInfo'ArIdentity where
@@ -1693,10 +1775,15 @@ instance FromProto Proto.AuthorizationsV0 where
         asAddIdentityProvider <- fromProto $ auth ^. ProtoFields.addIdentityProvider
         let asCooldownParameters = Parameters.CFalse
         let asTimeParameters = Parameters.CFalse
+        let asCreatePLT = Parameters.CFalse
         return Updates.Authorizations{..}
 
 instance FromProto Proto.AuthorizationsV1 where
-    type Output Proto.AuthorizationsV1 = Updates.Authorizations 'Parameters.AuthorizationsVersion1
+    type
+        Output Proto.AuthorizationsV1 =
+            Either
+                (Updates.Authorizations 'Parameters.AuthorizationsVersion1)
+                (Updates.Authorizations 'Parameters.AuthorizationsVersion2)
     fromProto auth = do
         let v0 = auth ^. ProtoFields.v0
         asKeys <- Vec.fromList <$> mapM fromProto (v0 ^. ProtoFields.keys)
@@ -1714,7 +1801,14 @@ instance FromProto Proto.AuthorizationsV1 where
         asAddIdentityProvider <- fromProto $ v0 ^. ProtoFields.addIdentityProvider
         asCooldownParameters <- fmap Parameters.CTrue $ fromProto $ auth ^. ProtoFields.parameterCooldown
         asTimeParameters <- fmap Parameters.CTrue $ fromProto $ auth ^. ProtoFields.parameterTime
-        return Updates.Authorizations{..}
+        maybeAs <- fromProtoMaybe $ auth ^. ProtoFields.maybe'createPlt
+        case maybeAs of
+            Nothing -> do
+                let asCreatePLT = Parameters.CFalse
+                return $ Left Updates.Authorizations{..}
+            Just as -> do
+                let asCreatePLT = Parameters.CTrue as
+                return $ Right Updates.Authorizations{..}
 
 instance FromProto Proto.Level1Update where
     type Output Proto.Level1Update = Updates.Level1Update
@@ -1732,8 +1826,12 @@ instance FromProto Proto.Level1Update where
                 l2kl1uAuthorizations <- fromProto l2kUpdateV0
                 return Updates.Level2KeysLevel1Update{..}
             ProtoFields.Level1Update'Level2KeysUpdateV1 l2kUpdateV1 -> do
-                l2kl1uAuthorizationsV1 <- fromProto l2kUpdateV1
-                return Updates.Level2KeysLevel1UpdateV1{..}
+                auth <- fromProto l2kUpdateV1
+                case auth of
+                    Left l2kl1uAuthorizationsV1 -> do
+                        return Updates.Level2KeysLevel1UpdateV1{..}
+                    Right l2kl1uAuthorizationsV2 -> do
+                        return Updates.Level2KeysLevel1UpdateV2{..}
 
 instance FromProto Proto.UpdatePublicKey where
     type Output Proto.UpdatePublicKey = Updates.UpdatePublicKey
@@ -1776,10 +1874,11 @@ instance FromProto Proto.RootUpdate where
                 fmap Updates.Level2KeysRootUpdate
                     . fromProto
                     $ rUpdate ^. ProtoFields.level2KeysUpdateV0
-            ProtoFields.RootUpdate'Level2KeysUpdateV1 _ ->
-                fmap Updates.Level2KeysRootUpdateV1
-                    . fromProto
-                    $ rUpdate ^. ProtoFields.level2KeysUpdateV1
+            ProtoFields.RootUpdate'Level2KeysUpdateV1 _ -> do
+                auth <- fromProto $ rUpdate ^. ProtoFields.level2KeysUpdateV1
+                case auth of
+                    Left as -> return $ Updates.Level2KeysRootUpdateV1 as
+                    Right as -> return $ Updates.Level2KeysRootUpdateV2 as
 
 instance FromProto Proto.HigherLevelKeys where
     type
@@ -1870,6 +1969,55 @@ instance FromProto Proto.ProtocolUpdate where
         let puSpecificationAuxiliaryData = pUpdate ^. ProtoFields.specificationAuxiliaryData
         return Updates.ProtocolUpdate{..}
 
+instance FromProto ProtoPLT.TokenModuleRef where
+    type Output ProtoPLT.TokenModuleRef = TokenModuleRef
+    fromProto th =
+        case deMkSerialize th of
+            Left err -> fromProtoFail $ "Unable to convert 'TokenModuleRef': " <> err
+            Right v -> return (TokenModuleRef v)
+
+instance FromProto ProtoPLT.CreatePLT where
+    type Output ProtoPLT.CreatePLT = CreatePLT
+    fromProto cpUpdate = do
+        _cpltTokenId <- fromProto $ cpUpdate ^. PLTFields.tokenId
+        _cpltDecimals <- case toIntegralSized (cpUpdate ^. PLTFields.decimals) of
+            Nothing -> fromProtoFail "CreatePLT: decimals out of range"
+            Just converted -> return converted
+        _cpltTokenModule <- fromProto $ cpUpdate ^. PLTFields.tokenModule
+        _cpltInitializationParameters <- (fromProto . CBorAsTokenParameter) (cpUpdate ^. PLTFields.initializationParameters)
+        return CreatePLT{..}
+
+instance FromProto Proto.TokenInfo where
+    type Output Proto.TokenInfo = Tokens.TokenInfo
+    fromProto tokenInfo = do
+        tiTokenId <- fromProto $ tokenInfo ^. Proto.tokenId
+        tiTokenState <- fromProto $ tokenInfo ^. Proto.tokenState
+        return Tokens.TokenInfo{..}
+
+instance FromProto ProtoPLT.TokenState where
+    type Output ProtoPLT.TokenState = Tokens.TokenState
+    fromProto tokenInfo = do
+        tsTokenModuleRef <- fromProto $ tokenInfo ^. ProtoFieldsPLT.tokenModuleRef
+        tsDecimals <- case toIntegralSized (tokenInfo ^. ProtoFieldsPLT.decimals) of
+            Nothing -> fromProtoFail "TokenState: decimals out of range"
+            Just converted -> return converted
+        tsTotalSupply <- fromProto $ tokenInfo ^. ProtoFieldsPLT.totalSupply
+        tsModuleState <- (fromProto . CBorAsModuleState) (tokenInfo ^. PLTFields.moduleState)
+        return Tokens.TokenState{..}
+
+instance FromProto ProtoPLT.TokenHolder where
+    type Output ProtoPLT.TokenHolder = TokenHolder
+    fromProto tokehHolder = do
+        protoAddress <- case tokehHolder ^. Proto.maybe'address of
+            Nothing ->
+                fromProtoFail "Unable to convert 'TokenHolder' due to missing field 'address' in response payload."
+            Just v -> return v
+        case protoAddress of
+            ProtoPLT.TokenHolder'Account accountField -> do
+                case fromProto accountField of
+                    Left err -> fromProtoFail $ "Unable to convert 'account' field from 'TokenHolder' type in response payload." <> err
+                    Right account -> return $ HolderAccount account
+
 instance FromProto Proto.TransactionFeeDistribution where
     type Output Proto.TransactionFeeDistribution = Parameters.TransactionFeeDistribution
     fromProto tfDistribution = do
@@ -1945,8 +2093,10 @@ instance FromProto Proto.UpdatePayload where
                         l2kl1uAuthorizations <- fromProto l2kUpdateV0
                         return $ Updates.Level1UpdatePayload Updates.Level2KeysLevel1Update{..}
                     ProtoFields.Level1Update'Level2KeysUpdateV1 l2kUpdateV1 -> do
-                        l2kl1uAuthorizationsV1 <- fromProto l2kUpdateV1
-                        return $ Updates.Level1UpdatePayload Updates.Level2KeysLevel1UpdateV1{..}
+                        auth <- fromProto l2kUpdateV1
+                        case auth of
+                            Left l2kl1uAuthorizationsV1 -> return $ Updates.Level1UpdatePayload Updates.Level2KeysLevel1UpdateV1{..}
+                            Right l2kl1uAuthorizationsV2 -> return $ Updates.Level1UpdatePayload Updates.Level2KeysLevel1UpdateV2{..}
             ProtoFields.UpdatePayload'MicroCcdPerEuroUpdate mcpeUpdate -> do
                 er <- fromProto mcpeUpdate
                 return $ Updates.MicroGTUPerEuroUpdatePayload er
@@ -1986,6 +2136,47 @@ instance FromProto Proto.UpdatePayload where
             ProtoFields.UpdatePayload'ValidatorScoreParametersUpdate vspUpdate -> do
                 vsp <- fromProto vspUpdate
                 return $ Updates.ValidatorScoreParametersUpdatePayload vsp
+            ProtoFields.UpdatePayload'CreatePltUpdate cpUpdate -> do
+                cp <- fromProto cpUpdate
+                return $ Updates.CreatePLTUpdatePayload cp
+
+-- | Converts a protocol buffer token event message using 'fromProto' into an 'Event'' type,
+--   which represents an event generated during the execution of a committed transaction.
+--   Returns 'Right' with the converted value on success, or 'Left' with an error message if the conversion fails.
+protoToTokenEvent :: ProtoPLT.TokenEvent -> Either String (Event' s)
+protoToTokenEvent event = do
+    tokenId <- fromProto $ event ^. ProtoFieldsPLT.tokenId
+
+    protoEvent <- case event ^. Proto.maybe'event of
+        Nothing ->
+            fromProtoFail
+                "Unable to convert 'TokenEvent' due to missing field 'event' in response payload."
+        Just v -> return v
+    case protoEvent of
+        ProtoPLT.TokenEvent'ModuleEvent e -> do
+            let etmeTokenId = tokenId
+            let textType = e ^. ProtoFieldsPLT.type'
+            let byteString = TE.encodeUtf8 textType
+            let etmeType = TokenEventType $ BSS.toShort byteString
+            etmeDetails <- (fromProto . CBorAsTokenEventDetails) (e ^. PLTFields.details)
+            return $ TokenModuleEvent{..}
+        ProtoPLT.TokenEvent'MintEvent e -> do
+            let etmTokenId = tokenId
+            etmTarget <- fromProto $ e ^. ProtoFieldsPLT.target
+            etmAmount <- fromProto $ e ^. ProtoFieldsPLT.amount
+            return $ TokenMint{..}
+        ProtoPLT.TokenEvent'BurnEvent e -> do
+            let etbTokenId = tokenId
+            etbTarget <- fromProto $ e ^. ProtoFieldsPLT.target
+            etbAmount <- fromProto $ e ^. ProtoFieldsPLT.amount
+            return $ TokenBurn{..}
+        ProtoPLT.TokenEvent'TransferEvent e -> do
+            let ettTokenId = tokenId
+            ettFrom <- fromProto $ e ^. ProtoFieldsPLT.from
+            ettTo <- fromProto $ e ^. ProtoFieldsPLT.to
+            ettAmount <- fromProto $ e ^. ProtoFieldsPLT.amount
+            ettMemo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
+            return $ TokenTransfer{..}
 
 instance FromProto Proto.BlockItemSummary where
     type Output Proto.BlockItemSummary = SupplementedTransactionSummary
@@ -1998,7 +2189,7 @@ instance FromProto Proto.BlockItemSummary where
         bis <- case biSummary ^. Proto.maybe'details of
             Nothing ->
                 fromProtoFail
-                    "Unable to convert 'BlockItemSummary' due to missing field in response payload."
+                    "Unable to convert 'BlockItemSummary' due to missing 'details' field in response payload."
             Just v -> return v
         case bis of
             -- Account creation
@@ -2017,6 +2208,7 @@ instance FromProto Proto.BlockItemSummary where
                 (tType, tsResult) <- fromProto aTransaction
                 let tsType = TSTAccountTransaction tType
                 return TransactionSummary{..}
+            -- Chain update transaction (except create PLT token)
             ProtoFields.BlockItemSummary'Update update -> do
                 let tsSender = Nothing
                 let tsCost = Amount 0
@@ -2027,7 +2219,22 @@ instance FromProto Proto.BlockItemSummary where
                     return (ueType, TxSuccess [UpdateEnqueued{..}])
                 let tsType = TSTUpdateTransaction tType
                 return TransactionSummary{..}
+            -- Chain update transaction (create PLT token)
+            ProtoFields.BlockItemSummary'TokenCreation update -> do
+                let tsSender = Nothing
+                let tsCost = Amount 0
 
+                createPLT <- fromProto $ update ^. PLTFields.createPlt
+
+                let protoEvents = update ^. ProtoFields.events
+                initEvents <- mapM protoToTokenEvent protoEvents
+                let events = TokenCreated createPLT : initEvents
+
+                let tType = Updates.UpdateCreatePLT
+                let tsType = TSTUpdateTransaction tType
+                let tsResult = TxSuccess events
+
+                return TransactionSummary{..}
 instance FromProto Proto.AccountTransactionDetails where
     type Output Proto.AccountTransactionDetails = (Maybe TransactionType, SupplementedValidResult)
     fromProto atDetails = do
@@ -2172,9 +2379,13 @@ instance FromProto Proto.AccountTransactionDetails where
                               [TransferredWithSchedule{..}, TransferMemo{..}]
                             )
                 return (Just tType, TxSuccess{..})
+            ProtoFields.AccountTransactionEffects'TokenUpdateEffect pltTokenEvent -> do
+                let protoEvents = pltTokenEvent ^. PLTFields.events
+                tokenEvents <- mapM protoToTokenEvent protoEvents
+                return (Just TTTokenUpdate, TxSuccess tokenEvents)
 
-instance FromProto (Proto.AccountAddress, Proto.DelegationEvent) where
-    type Output (Proto.AccountAddress, Proto.DelegationEvent) = SupplementedEvent
+instance FromProto (ProtoKernel.AccountAddress, Proto.DelegationEvent) where
+    type Output (ProtoKernel.AccountAddress, Proto.DelegationEvent) = SupplementedEvent
     fromProto (senderAcc, dEvent) = do
         sender <- fromProto senderAcc
         de <- case dEvent ^. Proto.maybe'event of
@@ -2216,8 +2427,8 @@ instance FromProto (Proto.AccountAddress, Proto.DelegationEvent) where
                 ebrBakerId <- fromProto $ bkrRemoved ^. ProtoFields.bakerId
                 return BakerRemoved{..}
 
-instance FromProto (Proto.AccountAddress, Proto.BakerEvent) where
-    type Output (Proto.AccountAddress, Proto.BakerEvent) = SupplementedEvent
+instance FromProto (ProtoKernel.AccountAddress, Proto.BakerEvent) where
+    type Output (ProtoKernel.AccountAddress, Proto.BakerEvent) = SupplementedEvent
     fromProto (senderAcc, bEvent) = do
         sender <- fromProto senderAcc
         be <- case bEvent ^. Proto.maybe'event of
@@ -2575,7 +2786,12 @@ instance FromProto Proto.ChainParametersV1 where
             let ecpParams = Parameters.ChainParameters{..}
             rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
             level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
-            level2Keys <- fromProto $ cParams ^. ProtoFields.level2Keys
+            auth <- fromProto $ cParams ^. ProtoFields.level2Keys
+            level2Keys <- case auth of
+                Left keys -> return keys
+                Right _ ->
+                    fromProtoFail
+                        "Unable to convert 'Authorization' due to unexpected field"
             let ecpKeys = Updates.UpdateKeysCollection{..}
             return $ EChainParametersAndKeys ecpParams ecpKeys
 
@@ -2612,7 +2828,12 @@ instance FromProto Proto.ChainParametersV2 where
             let ecpParams = Parameters.ChainParameters{..}
             rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
             level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
-            level2Keys <- fromProto $ cParams ^. ProtoFields.level2Keys
+            auth <- fromProto $ cParams ^. ProtoFields.level2Keys
+            level2Keys <- case auth of
+                Left keys -> return keys
+                Right _ ->
+                    fromProtoFail
+                        "Unable to convert 'Authorization' due to unexpected field"
             let ecpKeys = Updates.UpdateKeysCollection{..}
             return $ EChainParametersAndKeys ecpParams ecpKeys
 
@@ -2649,9 +2870,14 @@ instance FromProto Proto.ChainParametersV3 where
             let ecpParams = Parameters.ChainParameters{..}
             rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
             level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
-            level2Keys <- fromProto $ cParams ^. ProtoFields.level2Keys
-            let ecpKeys = Updates.UpdateKeysCollection{..}
-            return $ EChainParametersAndKeys ecpParams ecpKeys
+            auth <- fromProto $ cParams ^. ProtoFields.level2Keys
+            case auth of
+                Left level2Keys -> do
+                    let ecpKeys = Updates.UpdateKeysCollection{..}
+                    return $ EChainParametersAndKeys ecpParams ecpKeys
+                Right level2Keys -> do
+                    let ecpKeys = Updates.UpdateKeysCollection{..}
+                    return $ EChainParametersAndKeys ecpParams ecpKeys
 
 instance FromProto Proto.Epoch where
     type Output Proto.Epoch = Epoch
@@ -2900,7 +3126,10 @@ instance FromProto Proto.PendingUpdate where
                 ProtoFields.PendingUpdate'Level2KeysCpv0 l2Keys -> do
                     PUELevel2KeysV0 <$> fromProto l2Keys
                 ProtoFields.PendingUpdate'Level2KeysCpv1 l2Keys -> do
-                    PUELevel2KeysV1 <$> fromProto l2Keys
+                    auth <- fromProto l2Keys
+                    case auth of
+                        Left keys -> return $ PUELevel2KeysV1 keys
+                        Right keys -> return $ PUELevel2KeysV2 keys
                 ProtoFields.PendingUpdate'Protocol protocol -> do
                     PUEProtocol <$> fromProto protocol
                 ProtoFields.PendingUpdate'ElectionDifficulty eDifficulty -> do
@@ -3531,6 +3760,12 @@ getNextUpdateSequenceNumbers bhInput = withUnary (call @"getNextUpdateSequenceNu
   where
     msg = toProto bhInput
 
+-- | Get the list of all protocol level tokens after a given block.
+getTokenList :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq TokenId)))
+getTokenList bhInput = withServerStreamCollect (call @"getTokenList") msg ((fmap . mapM) fromProto)
+  where
+    msg = toProto bhInput
+
 -- | Get all accounts that have scheduled releases.
 getScheduledReleaseAccounts :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult (Seq.Seq AccountPending)))
 getScheduledReleaseAccounts bhInput =
@@ -3558,6 +3793,19 @@ getPrePreCooldownAccounts bhInput =
     withServerStreamCollect (call @"getPrePreCooldownAccounts") msg (fmap (mapM fromProto))
   where
     msg = toProto bhInput
+
+-- | Get the info of a protocol level token after a given block.
+getTokenInfo :: (MonadIO m) => TokenId -> BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult Tokens.TokenInfo))
+getTokenInfo tokenId bhInput = do
+    let msg = defMessage & ProtoFields.blockHash .~ toProto bhInput & ProtoFields.tokenId .~ toProto tokenId
+    withUnary (call @"getTokenInfo") msg (fmap fromProto)
+
+getTokenInfoFromText :: (MonadIO m) => Text -> BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult Tokens.TokenInfo))
+getTokenInfoFromText tokenIdText bhInput = do
+    tokenId <- case tokenIdFromText tokenIdText of
+        Right val -> return val
+        Left err -> logFatal ["Error couldn't parse token id:", err]
+    getTokenInfo tokenId bhInput
 
 -- | Get information related to the baker election for a particular block.
 getElectionInfo :: (MonadIO m) => BlockHashInput -> ClientMonad m (GRPCResult (FromProtoResult BlockBirkParameters))
@@ -3682,7 +3930,7 @@ withUnary ::
     -- | A mapping of the result.
     (GRPCResult o -> b) ->
     ClientMonad n b
-withUnary method input k = withGRPCCore callHelper k
+withUnary method input = withGRPCCore callHelper
   where
     -- This is here so we may leverage @withGRPCCore@.
     callHelper client = do
@@ -3742,7 +3990,7 @@ withServerStreamCallback method input acc handler =
     -- This is simply a handler which conforms to the one required by
     -- @rawStreamServer@. This is here, so we may ignore the response
     -- headers in the handler, just for the sake of ergonomics.
-    handler' acc' _hds streamObj = handler acc' streamObj
+    handler' acc' _hds = handler acc'
     -- Helper that invokes the streaming call with the above callback.
     -- This is here so we may leverage @withGRPCCore@.
     callHelper client = do

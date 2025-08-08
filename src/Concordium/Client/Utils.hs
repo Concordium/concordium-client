@@ -5,16 +5,21 @@ module Concordium.Client.Utils where
 import Concordium.Crypto.ByteStringHelpers
 import qualified Concordium.ID.Types as IDTypes
 import Concordium.Types
+import Concordium.Types.Queries.Tokens
+import Concordium.Types.Tokens
 import qualified Concordium.Wasm as Wasm
 import Control.Monad.Except
 import Data.Aeson as AE
+import qualified Data.ByteString as BS (length)
+import qualified Data.ByteString.Short as SBS (toShort)
 import qualified Data.Char as Char
 import Data.Maybe (mapMaybe)
 import Data.String.Interpolate (i, iii)
 import qualified Data.Text as Text
+import qualified Data.Text.Encoding as Text
 import qualified Data.Text.Lazy as Lazy.Text
 import qualified Data.Text.Lazy.Encoding as Lazy.Text
-import Data.Word (Word64)
+import Data.Word (Word64, Word8)
 import Text.Read
 
 -- | In the 'Left' case of an 'Either', transform the error using the given function and
@@ -56,6 +61,80 @@ amountFromStringInform s =
     case amountFromString s of
         Just a -> Right a
         Nothing -> Left $ "Invalid CCD amount '" ++ s ++ "'. Amounts must be of the form n[.m] where m, if present,\n must have at least one and at most 6 digits."
+
+-- | A parsed amount of a protocol-level token. This is not normalized to the correct number
+--  of decimals for the token.
+data PreTokenAmount = PreTokenAmount
+    { ptaValue :: !Word64,
+      ptaDecimals :: !Word8
+    }
+    deriving (Eq)
+
+instance Show PreTokenAmount where
+    show PreTokenAmount{..} = tokenAmountToString (TokenAmount (TokenRawAmount ptaValue) ptaDecimals)
+
+-- | Try to parse a token amount from a string, and if failing, try to inform the user
+--  what the expected format is. This is intended to be used by the options
+--  parsers.
+preTokenAmountFromStringInform :: String -> Either String PreTokenAmount
+preTokenAmountFromStringInform s =
+    case preTokenAmountFromString s of
+        Just a -> Right a
+        Nothing -> Left $ "Invalid protocol level token amount '" ++ s ++ "'. Amounts must be of the form n[.m] where m, if present,\n must have no more digits than the token decimals value."
+
+preTokenAmountFromString :: String -> Maybe PreTokenAmount
+preTokenAmountFromString s
+    | null combinedStr = Nothing
+    | fracLen > fromIntegral (maxBound :: Word8) = Nothing
+    | otherwise = do
+        num <- readMaybe combinedStr
+        if num <= toInteger (maxBound :: Word64)
+            then Just $ PreTokenAmount (fromInteger num) decimals
+            else Nothing
+  where
+    (intPart, fracRaw) = break (== '.') s
+    fracPart = drop 1 fracRaw
+    fracLen = length fracPart
+    decimals = fromIntegral fracLen
+    combinedStr = intPart ++ fracPart
+
+-- | Normalize a token amount to the expected number of decimals for the given protocol-level token.
+normalizeTokenAmount ::
+    -- | The token id of the protocol-level token (used for error messages).
+    TokenId ->
+    -- | The expected number of decimals for the token.
+    Word8 ->
+    -- | The un-normalized token amount.
+    PreTokenAmount ->
+    -- | Either an error message or the normalized token amount.
+    Either String TokenAmount
+normalizeTokenAmount tid expectDecimals pta@PreTokenAmount{..}
+    | ptaDecimals > expectDecimals =
+        Left [i|Token amount #{pta} has #{ptaDecimals} decimals, but #{tid} only supports #{expectDecimals}.|]
+    | ptaDecimals == expectDecimals = Right $ TokenAmount{taValue = TokenRawAmount ptaValue, taDecimals = expectDecimals}
+    | preNorm > fromIntegral (maxBound :: TokenRawAmount) =
+        Left [i|Token amount #{pta} exceeds the maximum representable token amount for #{tid}.|]
+    | otherwise = Right TokenAmount{taValue = fromIntegral preNorm, taDecimals = expectDecimals}
+  where
+    preNorm = toInteger ptaValue * 10 ^ (expectDecimals - ptaDecimals)
+
+-- | Converts an amount to its decimal representation.
+tokenAmountToString :: TokenAmount -> String
+tokenAmountToString (TokenAmount digits decs)
+    | decs == 0 = show digits
+    | otherwise = high ++ "." ++ pad ++ low
+  where
+    high = show $ digits `div` 10 ^ (fromIntegral decs :: Integer)
+    low = show $ digits `mod` 10 ^ (fromIntegral decs :: Integer)
+    pad = replicate (fromIntegral decs - length low) '0'
+
+-- | Safely parse a token id from Text, ensuring it does not exceed 255 bytes.
+tokenIdFromText :: Text.Text -> Either String TokenId
+tokenIdFromText s =
+    let encoded = Text.encodeUtf8 s
+    in  if BS.length encoded <= 255
+            then Right $ TokenId $ SBS.toShort encoded
+            else Left "Token Id must be at most 255 bytes when UTF-8 encoded."
 
 amountFractionFromStringInform :: String -> Either String AmountFraction
 amountFractionFromStringInform s =

@@ -18,7 +18,7 @@ import Concordium.Client.Types.Contract.Info as CI
 import qualified Concordium.Client.Types.Contract.Parameter as PA
 import Concordium.Client.Types.Contract.Schema as CS
 import Concordium.Client.Types.TransactionStatus
-import Concordium.Client.Utils (durationToText)
+import Concordium.Client.Utils (durationToText, tokenAmountToString)
 import qualified Concordium.Common.Time as Time
 import Concordium.Common.Version
 import qualified Concordium.Crypto.EncryptedTransfers as Enc
@@ -44,6 +44,9 @@ import qualified Concordium.Client.Types.ConsensusStatus as ConsensusStatus
 import Concordium.Client.Types.Contract.BuildInfo (showBuildInfo)
 import Concordium.Common.Time (DurationSeconds (durationSeconds))
 import Concordium.Types.Execution (Event' (ecEvents), SupplementedEvent)
+import qualified Concordium.Types.ProtocolLevelTokens.CBOR as Cbor
+import qualified Concordium.Types.Queries.Tokens as Types
+import Control.Applicative ((<|>))
 import Control.Monad
 import Control.Monad.Writer
 import qualified Data.Aeson as AE
@@ -55,7 +58,7 @@ import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Short as BSS
 import Data.Either (isRight)
 import Data.Functor
-import Data.List (elemIndex, foldl', intercalate, nub, partition, sortOn)
+import Data.List (elemIndex, intercalate, nub, partition, sortOn)
 import qualified Data.Map.Strict as Map
 import Data.Maybe
 import Data.Ratio
@@ -195,9 +198,38 @@ showRevealedAttributes as =
         Just k -> Text.unpack k
     showAttr (t, IDTypes.AttributeValue v) = printf "%s=%s" (showTag t) (show v)
 
+prettyPrintTokens :: [Types.Token] -> [String]
+prettyPrintTokens = map formatToken
+  where
+    indent = replicate 24 ' '
+    formatToken (Types.Token tid (Types.TokenAccountState tokenAmount cborState)) =
+        unlines $
+            (indent ++ tokenAmountToString tokenAmount ++ " " ++ show tid)
+                : case Cbor.tokenModuleAccountStateFromBytes . BSL.fromStrict <$> cborState of
+                    Nothing -> []
+                    Just (Left err) -> [indent ++ "State could not be decoded: " ++ err]
+                    Just (Right Cbor.TokenModuleAccountState{..}) ->
+                        let allowMsg = case tmasAllowList of
+                                Just True -> [indent ++ "- Account is on the allow list"]
+                                Just False -> [indent ++ "- Account is not on the allow list"]
+                                Nothing -> []
+                            denyMsg = case tmasDenyList of
+                                Just True -> [indent ++ "- Account is on the deny list"]
+                                Just False -> [indent ++ "- Account is not on the deny list"]
+                                Nothing -> []
+                            transferMsg =
+                                [ indent
+                                    ++ ( if tmasAllowList == Just False || tmasDenyList == Just True
+                                            then "Transfers are not permitted"
+                                            else "Transfers are permitted"
+                                       )
+                                ]
+                        in  filter (not . null) (transferMsg <> allowMsg <> denyMsg)
+
 printAccountInfo :: NamedAddress -> Types.AccountInfo -> Verbose -> Bool -> Maybe (ElgamalSecretKey, GlobalContext) -> Printer
 printAccountInfo addr a verbose showEncrypted mEncKey = do
     let balance = showCcd $ Types.aiAccountAmount a
+    let tokens = prettyPrintTokens (Types.aiAccountTokens a)
     let rjustCcd amt = let t = showCcd amt in replicate (length balance - length t) ' ' ++ t
     tell
         ( [ [i|Local names:            #{showNameList $ naNames addr}|],
@@ -205,10 +237,14 @@ printAccountInfo addr a verbose showEncrypted mEncKey = do
             [i|Balance:                #{balance}|],
             [i| - At disposal:         #{rjustCcd (Types.aiAccountAvailableAmount a)}|]
           ]
+            ++ ( if not (null tokens)
+                    then [[i|Tokens:|], [i|#{unlines tokens}|]]
+                    else []
+               )
             ++ case Types.releaseTotal $ Types.aiAccountReleaseSchedule a of
                 0 -> []
                 tot ->
-                    (printf "Release schedule:       total %s" (showCcd tot))
+                    printf "Release schedule:       total %s" (showCcd tot)
                         : map
                             ( \Types.ScheduledRelease{..} ->
                                 printf
@@ -889,6 +925,96 @@ showEvent verbose ciM = \case
         verboseOrNothing $ printf "baker %s with account %s suspended" (show bID) (show acc)
     Types.BakerResumed bID acc ->
         verboseOrNothing $ printf "baker %s with account %s resumed" (show bID) (show acc)
+    Types.TokenModuleEvent{..} ->
+        let baseInfo =
+                printf
+                    "%s token module event of type %s occured."
+                    (show etmeTokenId)
+                    (show etmeType)
+
+            eventDetails =
+                let
+                    (Types.TokenEventDetails bss) = etmeDetails
+                    bsl = BSL.fromStrict $ BSS.fromShort bss
+
+                    -- First decoding attempt using the token event decoder for the add/remove to/from allow/deny list events.
+                    decodedTokenEvent = Cbor.decodeTokenEvent (Cbor.EncodedTokenEvent etmeType etmeDetails)
+
+                    decodedCustomTokenEvent = case decodedTokenEvent of
+                        Right (Cbor.AddAllowListEvent holder) ->
+                            Just $ printf "Account %s was added to the allow list." (show $ Cbor.chaAccount holder)
+                        Right (Cbor.AddDenyListEvent holder) ->
+                            Just $ printf "Account %s was added to the deny list." (show $ Cbor.chaAccount holder)
+                        Right (Cbor.RemoveAllowListEvent holder) ->
+                            Just $ printf "Account %s was removed from the allow list." (show $ Cbor.chaAccount holder)
+                        Right (Cbor.RemoveDenyListEvent holder) ->
+                            Just $ printf "Account %s was removed from the deny list." (show $ Cbor.chaAccount holder)
+                        Right Cbor.Pause ->
+                            Just $ printf "%s paused." (show etmeTokenId)
+                        Right Cbor.Unpause ->
+                            Just $ printf "%s unpaused." (show etmeTokenId)
+                        Left _ -> Nothing
+
+                    -- Second decoding attempt using generic CBOR deserialization.
+                    decodedGenericCBOR = case deserialiseFromBytes (decodeValue False) bsl of
+                        Left _ -> Nothing -- if not possible, the event details is not written in valid CBOR
+                        Right (rest, x) ->
+                            if rest == BSL.empty
+                                then Just (showPrettyJSON x)
+                                else Nothing
+
+                    invalidCBOR =
+                        printf
+                            " Could not decode event details as valid CBOR. The hex value of the event details is %s."
+                            (show etmeDetails)
+
+                    -- Use whichever decoding succeeded first, or fallback to `invalidCBOR` message.
+                    details = fromMaybe invalidCBOR (decodedCustomTokenEvent <|> decodedGenericCBOR)
+                in
+                    " Decoded event details:\n" ++ details
+        in  Just $ baseInfo ++ eventDetails
+    Types.TokenTransfer{..} ->
+        let baseInfo =
+                printf
+                    "%s %s transferred from %s to %s."
+                    (tokenAmountToString ettAmount)
+                    (show ettTokenId)
+                    (show ettFrom)
+                    (show ettTo)
+
+            memoInfo = case ettMemo of
+                Nothing -> ""
+                Just (Types.Memo bss) ->
+                    let
+                        bsl = BSL.fromStrict $ BSS.fromShort bss
+
+                        invalidCBOR =
+                            printf
+                                " Could not decode memo as valid CBOR. The hex value of the memo is %s."
+                                (show ettMemo)
+
+                        memo = case deserialiseFromBytes decodeString bsl of
+                            Left _ -> json
+                            Right (rest, x) ->
+                                if rest == BSL.empty
+                                    then Text.unpack x
+                                    else invalidCBOR
+
+                        json = case deserialiseFromBytes (decodeValue False) bsl of
+                            Left _ -> invalidCBOR
+                            Right (rest, x) ->
+                                if rest == BSL.empty
+                                    then showPrettyJSON x
+                                    else invalidCBOR
+                    in
+                        " Decoded memo:\n" ++ memo
+        in  Just $ baseInfo ++ memoInfo
+    Types.TokenMint{..} ->
+        verboseOrNothing $ printf "%s %s minted to %s." (tokenAmountToString etmAmount) (show etmTokenId) (show etmTarget)
+    Types.TokenBurn{..} ->
+        verboseOrNothing $ printf "%s %s burned from %s." (tokenAmountToString etbAmount) (show etbTokenId) (show etbTarget)
+    Types.TokenCreated{..} ->
+        verboseOrNothing $ printf "Token created:\n %s" (showPrettyJSON etcPayload)
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
@@ -1077,6 +1203,76 @@ showRejectReason verbose = \case
     Types.PoolClosed -> "pool not open for delegation"
     Types.InsufficientDelegationStake -> "not allowed to add delegator with 0 stake"
     Types.DelegationTargetNotABaker bid -> printf "delegation target %s is not a validator id" (show bid)
+    Types.NonExistentTokenId tokenId -> printf "token id %s does not exist on-chain" (show tokenId)
+    Types.TokenUpdateTransactionFailed reason ->
+        printf
+            "%s token update transaction was rejected due to: %s"
+            (show $ Types.tmrrTokenId reason)
+            details
+      where
+        details = case Types.decodeTokenModuleRejectReason reason of
+            Right decodedReason -> printTokenModuleRejectDetails decodedReason
+            Left _ -> do
+                let tmrrDetails = Types.tmrrDetails reason
+                case tmrrDetails of
+                    Nothing -> show $ Types.tmrrType reason
+                    Just detail -> do
+                        let detailsShortByteString = Types.tokenEventDetailsBytes detail
+                        let bsl = BSL.fromStrict $ BSS.fromShort detailsShortByteString
+
+                        case deserialiseFromBytes (decodeValue False) bsl of
+                            Right (rest, x)
+                                | rest /= BSL.empty ->
+                                    printf
+                                        "%s\n   details (undecoded CBOR): %s\n   details (decoded CBOR): %s"
+                                        (show $ Types.tmrrTokenId reason)
+                                        (show $ Types.tmrrType reason)
+                                        (show tmrrDetails)
+                                        (showPrettyJSON x)
+                            _ ->
+                                printf
+                                    "%s\n   details (undecoded CBOR): %s"
+                                    (show $ Types.tmrrTokenId reason)
+                                    (show $ Types.tmrrType reason)
+                                    (show detail)
+
+printTokenModuleRejectDetails :: Cbor.TokenRejectReason -> String
+printTokenModuleRejectDetails = \case
+    Cbor.AddressNotFound{..} ->
+        printf
+            "operation with index %d failed: address '%s' not found"
+            trrOperationIndex
+            $ case trrAddress of
+                Cbor.CborHolderAccount{..} -> show chaAccount
+    Cbor.TokenBalanceInsufficient{..} ->
+        printf
+            "operation with index %d failed: insufficient token balance for the sender address\n   required: %s\n   available: %s"
+            trrOperationIndex
+            (tokenAmountToString trrRequiredBalance)
+            (tokenAmountToString trrAvailableBalance)
+    Cbor.DeserializationFailure{..} ->
+        printf
+            "failed to deserialize operations %s"
+            (maybe "" (\cause -> "with cause: " ++ show cause) trrCause)
+    Cbor.UnsupportedOperation{..} ->
+        printf
+            "operation with index %d failed: unsupported operation of type %s\n   reason: %s"
+            trrOperationIndex
+            (show trrOperationType)
+            (maybe "" show trrReason)
+    Cbor.MintWouldOverflow{..} ->
+        printf
+            "operation with index %d failed: minting would cause an overflow\n   current total supply:%s\n   max total supply: %s\n   failed to mint: %s"
+            trrOperationIndex
+            (tokenAmountToString trrCurrentSupply)
+            (tokenAmountToString trrMaxRepresentableAmount)
+            (tokenAmountToString trrRequestedAmount)
+    Cbor.OperationNotPermitted{..} ->
+        printf
+            "operation with index %d failed: operation not permitted %s%s"
+            trrOperationIndex
+            (maybe "" (\reason -> "\n   reason: " ++ Text.unpack reason) trrReason)
+            (maybe "" (\(Cbor.CborHolderAccount{..}) -> "\n   address: " ++ (show chaAccount)) trrAddressNotPermitted)
 
 -- CONSENSUS
 

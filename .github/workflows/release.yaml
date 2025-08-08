@@ -13,11 +13,13 @@ on:
 
   push:
     tags:
-     - '*.*.*-*-rc'
+    ## The tag should follow the convention: VERSION - DOCKER_BUILD_COUNTER - RELEASE_TYPE
+    ## Example tags: "9.1.1-0-rc" or "9.1.1-1-alpha"
+    - '*.*.*-*-*'
 
 env:
-  STACK_VERSION: '3.1.1'
-  GHC_VERSION: '9.6.6'
+  STACK_VERSION: '3.7.1'
+  GHC_VERSION: '9.10.2'
   RUST_VERSION: '1.82'
   SERVICE: "${{ inputs.service }}"
   PROTOC_VERSION: '28.3'
@@ -45,8 +47,10 @@ jobs:
           CLIENT_VERSION=$(yq .version package.yaml)
           if [ -z "${{ env.SERVICE }}" ]; then
             IFS='-' read -r VERSION BUILD RELEASE_TYPE <<< "${{ github.ref_name }}"
-            if [ ! "$VERSION" = "$CLIENT_VERSION" ] || [ ! "$VERSION-$BUILD" = "$CLIENT_VERSION" ]; then
-              echo "::error::${CLIENT_VERSION} does not match ${VERSION}."
+            ## The first condition handles a `$CLIENT_VERSION` without RELEASE_TYPE (e.g. "9.1.1") where the pipeline was triggered by the tag (e.g. "9.1.1-0-rc").
+            ## The second condition handles a `$CLIENT_VERSION` with RELEASE_TYPE (e.g. "9.1.1-alpha") where the pipeline was triggered by the tag (e.g. "9.1.1-0-alpha").
+            if [ ! "$VERSION" = "$CLIENT_VERSION" ] && [ ! "$VERSION-$RELEASE_TYPE" = "$CLIENT_VERSION" ]; then
+              echo "::error::${CLIENT_VERSION} does not match ${VERSION} or ${VERSION}-${RELEASE_TYPE}."
               exit 1
             fi
           else
@@ -62,7 +66,7 @@ jobs:
     needs: [validate-preconditions]
     runs-on: ubuntu-latest
     environment: release
-    if: contains(fromJSON('["rc", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
+    if: contains(fromJSON('["rc", "alpha", "client-linux"]'), needs.validate-preconditions.outputs.release_type)
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -102,7 +106,7 @@ jobs:
     needs: [validate-preconditions]
     runs-on: ${{ matrix.runner }}
     environment: release
-    if: contains(fromJSON('["rc", "client-macos"]'), needs.validate-preconditions.outputs.release_type)
+    if: contains(fromJSON('["rc", "alpha", "client-macos"]'), needs.validate-preconditions.outputs.release_type)
     strategy:
       matrix:
         include:
@@ -201,7 +205,7 @@ jobs:
     needs: [validate-preconditions]
     runs-on: windows-latest
     environment: release
-    if: contains(fromJSON('["rc", "client-windows"]'), needs.validate-preconditions.outputs.release_type)
+    if: contains(fromJSON('["rc", "alpha", "client-windows"]'), needs.validate-preconditions.outputs.release_type)
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
