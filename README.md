@@ -33,7 +33,7 @@ The tool has commands to
 - inspect and manage the node.
 
 For more information, please [read our
-documentation](https://developer.concordium.software/en/mainnet/net/references/concordium-client.html).
+documentation](https://docs.concordium.com/en/mainnet/tools/concordium-client.html).
 
 [Binary distributions are available for Linux, macOS, and
 Windows](https://developer.concordium.software/en/mainnet/net/installation/downloads.html#concordium-client).
