@@ -1,5 +1,5 @@
 name:                concordium-client
-version:             9.1.3-alpha
+version:             9.1.4
 github:              "Concordium/concordium-client"
 author:              "Concordium"
 maintainer:          "developers@concordium.com"
