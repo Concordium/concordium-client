@@ -1,5 +1,7 @@
 # Changelog for concordium-client
 
+## Unreleased
+
 ## 9.1.4 (Compatible with node version 9.0.7) - 2025-08-14
 
 - Bump GHC version to 9.10.2 (lts-24.0).
