@@ -93,6 +93,7 @@ import Control.Monad.State.Strict
 import Data.Aeson as AE
 import qualified Data.Aeson.Encode.Pretty as AE
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Builder as BSBuilder
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Lazy.Char8 as BSL8
 import qualified Data.ByteString.Short as BS (toShort)
@@ -3123,7 +3124,53 @@ processConsensusCmd action _baseCfgDir verbose backend =
             let authorized = Updates.checkAuthorizedUpdate keyCollectionStore ui
             unless authorized $ do
                 logWarn ["The update instruction is not authorized by the keys used to sign it."]
-            when (ioConfirm intOpts) $ unless (expiryOK && effectiveTimeOK && authorized) $ do
+            -- Look at concrete chain update and if CreatePLT, then check that
+            -- \* gov account exists
+            -- \* token id is not a duplicate
+            -- \* decimals of initial supply match the decimals of the token
+            pltOK <- case ruiPayload of
+                Updates.CreatePLTUpdatePayload Types.CreatePLT{..} -> do
+                    tokenIdOK <- withClient backend $ do
+                        tid <- getTokenInfo _cpltTokenId Best
+                        case tid of
+                            StatusOk _ -> do
+                                logWarn [printf "Desired token ID %s already exists." (show $ _cpltTokenId)]
+                                return False
+                            StatusNotOk _ -> return True
+                            StatusInvalid -> do
+                                logFatal ["Error getting token ID: GRPC response contained an invalid status code."]
+                            RequestFailed err -> logFatal ["Error getting token ID: I/O error: " <> err]
+                    let maybeInitParams =
+                            CBOR.tokenInitializationParametersFromBytes $
+                                BSBuilder.toLazyByteString $
+                                    BSBuilder.shortByteString $
+                                        Types.parameterBytes _cpltInitializationParameters
+                    case maybeInitParams of
+                        Left _ -> do
+                            logWarn ["Could not parse token initialization parameter bytes."]
+                            return False
+                        Right CBOR.TokenInitializationParameters{..} -> do
+                            decimalsOK <- case tipInitialSupply of
+                                Nothing -> return True
+                                Just TokenAmount{..} ->
+                                    if taDecimals == _cpltDecimals
+                                        then return True
+                                        else do
+                                            logWarn ["Decimals of initial supply and token itself should match."]
+                                            return False
+                            govAccOK <- withClient backend $ do
+                                acc <- getAccountInfo (Types.AccAddress $ CBOR.chaAccount tipGovernanceAccount) Best
+                                case acc of
+                                    StatusOk _ -> return True
+                                    StatusNotOk _ -> do
+                                        logWarn [printf "Desired governance account %s not found." (show $ CBOR.chaAccount tipGovernanceAccount)]
+                                        return False
+                                    StatusInvalid -> do
+                                        logFatal ["Error getting account: GRPC response contained an invalid status code."]
+                                    RequestFailed err -> logFatal ["Error getting account: I/O error: " <> err]
+                            return (govAccOK && tokenIdOK && decimalsOK)
+                _ -> return True
+            when (ioConfirm intOpts) $ unless (expiryOK && effectiveTimeOK && authorized && pltOK) $ do
                 confirmed <- askConfirmation $ Just "Proceed anyway? Confirm"
                 unless confirmed exitTransactionCancelled
             withClient backend $ do
