@@ -56,6 +56,7 @@ import qualified Concordium.Crypto.BlockSignature as BlockSig
 import qualified Concordium.Crypto.BlsSignature as Bls
 import qualified Concordium.Crypto.EncryptedTransfers as Enc
 import qualified Concordium.Crypto.Proofs as Proofs
+import qualified Concordium.Crypto.SHA256 as Hash
 import qualified Concordium.Crypto.SignatureScheme as SigScheme
 import qualified Concordium.Crypto.VRF as VRF
 import Concordium.GRPC2
@@ -3125,11 +3126,18 @@ processConsensusCmd action _baseCfgDir verbose backend =
             unless authorized $ do
                 logWarn ["The update instruction is not authorized by the keys used to sign it."]
             -- Look at concrete chain update and if CreatePLT, then check that
+            -- \* Token module is 5c5c2645db84a7026d78f2501740f60a8ccb8fae5c166dc2428077fd9a699a4a
             -- \* gov account exists
             -- \* token id is not a duplicate
             -- \* decimals of initial supply match the decimals of the token
             pltOK <- case ruiPayload of
                 Updates.CreatePLTUpdatePayload Types.CreatePLT{..} -> do
+                    tokenModuleOK <-
+                        if _cpltTokenModule == (Types.TokenModuleRef $ Hash.hash "TokenModuleV0") --  5c5c2645db84a7026d78f2501740f60a8ccb8fae5c166dc2428077fd9a699a4a
+                            then return True
+                            else do
+                                logWarn [printf "Token module %s does not exist." (show $ _cpltTokenModule)]
+                                return False
                     tokenIdOK <- withClient backend $ do
                         tid <- getTokenInfo _cpltTokenId Best
                         case tid of
@@ -3168,7 +3176,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
                                     StatusInvalid -> do
                                         logFatal ["Error getting account: GRPC response contained an invalid status code."]
                                     RequestFailed err -> logFatal ["Error getting account: I/O error: " <> err]
-                            return (govAccOK && tokenIdOK && decimalsOK)
+                            return (tokenModuleOK && govAccOK && tokenIdOK && decimalsOK)
                 _ -> return True
             when (ioConfirm intOpts) $ unless (expiryOK && effectiveTimeOK && authorized && pltOK) $ do
                 confirmed <- askConfirmation $ Just "Proceed anyway? Confirm"
