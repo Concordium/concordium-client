@@ -1242,7 +1242,8 @@ printTokenModuleRejectDetails = \case
         printf
             "operation with index %d failed: address '%s' not found"
             trrOperationIndex
-            $ show $ Cbor.chaAccount trrAddress 
+            $ show
+            $ Cbor.chaAccount trrAddress
     Cbor.TokenBalanceInsufficient{..} ->
         printf
             "operation with index %d failed: insufficient token balance for the sender address\n   required: %s\n   available: %s"
