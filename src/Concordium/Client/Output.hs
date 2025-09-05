@@ -1242,8 +1242,7 @@ printTokenModuleRejectDetails = \case
         printf
             "operation with index %d failed: address '%s' not found"
             trrOperationIndex
-            $ case trrAddress of
-                Cbor.CborHolderAccount{..} -> show chaAccount
+            $ show $ Cbor.chaAccount trrAddress 
     Cbor.TokenBalanceInsufficient{..} ->
         printf
             "operation with index %d failed: insufficient token balance for the sender address\n   required: %s\n   available: %s"
@@ -1272,7 +1271,7 @@ printTokenModuleRejectDetails = \case
             "operation with index %d failed: operation not permitted %s%s"
             trrOperationIndex
             (maybe "" (\reason -> "\n   reason: " ++ Text.unpack reason) trrReason)
-            (maybe "" (\(Cbor.CborHolderAccount{..}) -> "\n   address: " ++ (show chaAccount)) trrAddressNotPermitted)
+            (maybe "" (\(Cbor.CborAccountAddress{..}) -> "\n   address: " ++ (show chaAccount)) trrAddressNotPermitted)
 
 -- CONSENSUS
 

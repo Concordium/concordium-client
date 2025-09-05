@@ -3158,6 +3158,44 @@ processConsensusCmd action _baseCfgDir verbose backend =
                             logWarn ["Could not parse token initialization parameter bytes."]
                             return False
                         Right CBOR.TokenInitializationParameters{..} -> do
+                            additionalOK <-
+                                if null tipAdditional
+                                    then do
+                                        logWarn ["Unknown additional parameters: " ++ show (Map.keys tipAdditional)]
+                                        return False
+                                    else return True
+                            nameOK <-
+                                if isNothing tipName
+                                    then do
+                                        logWarn ["Token name is missing"]
+                                        return False
+                                    else return True
+                            metadataOK <-
+                                if isNothing tipMetadata
+                                    then do
+                                        logWarn ["Token metadata is missing"]
+                                        return False
+                                    else return True
+                            govAccOK <-
+                                maybe
+                                    ( do
+                                        logWarn ["Token governance account is missing"]
+                                        return False
+                                    )
+                                    ( \govAcc ->
+                                        withClient backend $ do
+                                            acc <- getAccountInfo (Types.AccAddress $ CBOR.chaAccount govAcc) Best
+                                            case acc of
+                                                StatusOk _ -> return True
+                                                StatusNotOk _ -> do
+                                                    logWarn [printf "Desired governance account %s not found." (show $ CBOR.chaAccount govAcc)]
+                                                    return False
+                                                StatusInvalid -> do
+                                                    logFatal ["Error getting account: GRPC response contained an invalid status code."]
+                                                RequestFailed err -> logFatal ["Error getting account: I/O error: " <> err]
+                                    )
+                                    tipGovernanceAccount
+
                             decimalsOK <- case tipInitialSupply of
                                 Nothing -> return True
                                 Just TokenAmount{..} ->
@@ -3166,17 +3204,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
                                         else do
                                             logWarn ["Decimals of initial supply and token itself should match."]
                                             return False
-                            govAccOK <- withClient backend $ do
-                                acc <- getAccountInfo (Types.AccAddress $ CBOR.chaAccount tipGovernanceAccount) Best
-                                case acc of
-                                    StatusOk _ -> return True
-                                    StatusNotOk _ -> do
-                                        logWarn [printf "Desired governance account %s not found." (show $ CBOR.chaAccount tipGovernanceAccount)]
-                                        return False
-                                    StatusInvalid -> do
-                                        logFatal ["Error getting account: GRPC response contained an invalid status code."]
-                                    RequestFailed err -> logFatal ["Error getting account: I/O error: " <> err]
-                            return (tokenModuleOK && govAccOK && tokenIdOK && decimalsOK)
+                            return (tokenModuleOK && govAccOK && tokenIdOK && decimalsOK && additionalOK && nameOK && metadataOK)
                 _ -> return True
             when (ioConfirm intOpts) $ unless (expiryOK && effectiveTimeOK && authorized && pltOK) $ do
                 confirmed <- askConfirmation $ Just "Proceed anyway? Confirm"
