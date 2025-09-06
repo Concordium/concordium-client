@@ -3160,10 +3160,10 @@ processConsensusCmd action _baseCfgDir verbose backend =
                         Right CBOR.TokenInitializationParameters{..} -> do
                             additionalOK <-
                                 if null tipAdditional
-                                    then do
+                                    then return True
+                                    else do
                                         logWarn ["Unknown additional parameters: " ++ show (Map.keys tipAdditional)]
                                         return False
-                                    else return True
                             nameOK <-
                                 if isNothing tipName
                                     then do
