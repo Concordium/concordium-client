@@ -3,6 +3,10 @@
 ## Unreleased
 
 - Warn user if trying to do a CreatePLT transaction that would get rejected.
+- Updated the client to validate token initialization parameters according to
+  the adjustments to the PLT speficication <https://proposals.concordium.com/CIS/cis-7.html>
+  where token name, metadata and governance account are now optional in the token module interface
+  (but still required by the current token module implementation).
 
 ## 9.1.4 (Compatible with node version 9.0.7) - 2025-08-14
 
