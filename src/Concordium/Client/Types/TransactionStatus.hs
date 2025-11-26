@@ -9,7 +9,6 @@ import Data.Aeson.TH
 import qualified Data.Map.Strict as Map
 
 import Concordium.Types
-import Concordium.Types.Execution
 import qualified Concordium.Types.Queries as Queries
 import Concordium.Utils
 
@@ -17,17 +16,13 @@ data TransactionState = Received | Committed | Finalized | Absent deriving (Eq, 
 
 $(deriveJSON defaultOptions{constructorTagModifier = firstLower} ''TransactionState)
 
-type TransactionBlockResults' a = Map.Map BlockHash (TransactionSummary' a)
+type TransactionBlockResults = Map.Map BlockHash Queries.SupplementedTransactionSummary
 
-type TransactionBlockResults = TransactionBlockResults' SupplementedValidResult
-
-data TransactionStatusResult' a = TransactionStatusResult
+data TransactionStatusResult = TransactionStatusResult
     { tsrState :: !TransactionState,
-      tsrResults :: !(TransactionBlockResults' a) -- TODO Rename to "blocks".
+      tsrResults :: !TransactionBlockResults -- TODO Rename to "blocks".
     }
     deriving (Eq, Show)
-
-type TransactionStatusResult = TransactionStatusResult' SupplementedValidResult
 
 -- | Convert a @TransactionStatus@ instance into a @TransactionStatusResult@ instance.
 --  Returns a @Left@ wrapping an error message if either the transaction summary contained in the
@@ -59,14 +54,14 @@ transactionStatusToTransactionStatusResult tStatus = do
   where
     err bh = Left $ "Transaction summary missing for blockhash '" <> show bh <> "'."
 
-instance (FromJSON a) => FromJSON (TransactionStatusResult' a) where
+instance FromJSON (TransactionStatusResult) where
     parseJSON Null = return TransactionStatusResult{tsrState = Absent, tsrResults = Map.empty}
     parseJSON v = flip (withObject "Transaction status") v $ \obj -> do
         tsrState <- obj .: "status"
         tsrResults <- obj .:? "outcomes" .!= Map.empty
         return $ TransactionStatusResult{..}
 
-instance (ToJSON a) => ToJSON (TransactionStatusResult' a) where
+instance ToJSON (TransactionStatusResult) where
     toJSON TransactionStatusResult{..} =
         object $ ("status" .= tsrState) : mapObject
       where

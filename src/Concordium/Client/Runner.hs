@@ -641,14 +641,14 @@ getTxContractInfoWithSchemas schemaFile status = do
         return (bh, evToSt)
     return $ Map.fromList bhToEv
   where
-    getEvents :: Types.SupplementedTransactionSummary -> Either String [Types.SupplementedEvent]
-    getEvents tSum = case Types.tsResult tSum of
+    getEvents :: Queries.SupplementedTransactionSummary -> Either String [Types.SupplementedEvent]
+    getEvents tSum = case Queries.stsResult tSum of
         Types.TxSuccess{..} -> Right vrEvents
         Types.TxReject{..} -> Left $ showRejectReason True vrRejectReason
 
     -- A different variant of extractFromTsr' which also takes into
     -- account MultipleBlocksUnambiguous and MultipleBlocksAmbiguous.
-    extractFromTsr' :: (Types.SupplementedTransactionSummary -> a) -> TransactionStatusResult -> [(Types.BlockHash, a)]
+    extractFromTsr' :: (Queries.SupplementedTransactionSummary -> a) -> TransactionStatusResult -> [(Types.BlockHash, a)]
     extractFromTsr' f tsr =
         case parseTransactionBlockResult tsr of
             NoBlocks -> []
@@ -3024,7 +3024,7 @@ extractFromTsr eventMatcher (Just tsr) = Just $ case parseTransactionBlockResult
     NoBlocks -> Left "transaction not included in any blocks"
     _ -> Left "internal server: Finalized chain has split"
   where
-    getEvents tSum = case Types.tsResult tSum of
+    getEvents tSum = case Queries.stsResult tSum of
         Types.TxSuccess{..} -> Right vrEvents
         Types.TxReject{..} -> Left $ showRejectReason True vrRejectReason
     findModRef = foldr (\e _ -> eventMatcher e) Nothing
@@ -3402,7 +3402,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
     eventsFromTransactionResult (Just result) = do
         case tsrState result of
             Finalized | SingleBlock _ summary <- parseTransactionBlockResult result -> do
-                case Types.tsResult summary of
+                case Queries.stsResult summary of
                     Types.TxReject reason -> logWarn [showRejectReason True reason] >> return []
                     Types.TxSuccess es -> return es
             Absent ->
@@ -3619,7 +3619,7 @@ processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarn
     eventsFromTransactionResult (Just result) = do
         case tsrState result of
             Finalized | SingleBlock _ summary <- parseTransactionBlockResult result -> do
-                case Types.tsResult summary of
+                case Queries.stsResult summary of
                     Types.TxReject reason -> logWarn [showRejectReason True reason] >> return []
                     Types.TxSuccess es -> return es
             Absent ->
@@ -3780,7 +3780,7 @@ processBakerSetKeysCmd baseCfgDir verbose backend txOpts inputKeysFile outputKey
     eventsFromTransactionResult (Just result) = do
         case tsrState result of
             Finalized | SingleBlock _ summary <- parseTransactionBlockResult result -> do
-                case Types.tsResult summary of
+                case Queries.stsResult summary of
                     Types.TxReject reason -> logWarn [showRejectReason True reason] >> return []
                     Types.TxSuccess es -> return es
             Absent ->
@@ -4301,7 +4301,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
     warnAboutFailedResult (Just result) =
         case tsrState result of
             Finalized | SingleBlock _ summary <- parseTransactionBlockResult result -> do
-                case Types.tsResult summary of
+                case Queries.stsResult summary of
                     Types.TxReject reason -> logWarn [showRejectReason True reason]
                     Types.TxSuccess _ -> return ()
             Absent ->

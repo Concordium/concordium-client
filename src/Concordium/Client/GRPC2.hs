@@ -888,6 +888,7 @@ instance FromProto Proto.ProtocolVersion where
         Proto.PROTOCOL_VERSION_7 -> return P7
         Proto.PROTOCOL_VERSION_8 -> return P8
         Proto.PROTOCOL_VERSION_9 -> return P9
+        Proto.PROTOCOL_VERSION_10 -> return P10
         Proto.ProtocolVersion'Unrecognized _ ->
             fromProtoFail "Unable to convert 'ProtocolVersion'."
 
@@ -2178,13 +2179,20 @@ protoToTokenEvent event = do
             ettMemo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
             return $ TokenTransfer{..}
 
+instance FromProto Proto.SponsorDetails where
+    type Output Proto.SponsorDetails = SponsorDetails
+    fromProto sponsorDetails = do
+        sdSponsor <- fromProto $ sponsorDetails ^. ProtoFields.sponsor
+        sdCost <- fromProto $ sponsorDetails ^. ProtoFields.cost
+        return $ SponsorDetails{..}
+
 instance FromProto Proto.BlockItemSummary where
     type Output Proto.BlockItemSummary = SupplementedTransactionSummary
     fromProto biSummary = do
         -- Common block item summary fields
-        let tsIndex = deMkWord64 $ biSummary ^. ProtoFields.index
-        tsEnergyCost <- fromProto $ biSummary ^. ProtoFields.energyCost
-        tsHash <- fromProto $ biSummary ^. ProtoFields.hash
+        let stsIndex = deMkWord64 $ biSummary ^. ProtoFields.index
+        stsEnergyCost <- fromProto $ biSummary ^. ProtoFields.energyCost
+        stsHash <- fromProto $ biSummary ^. ProtoFields.hash
         -- Discern between transactions
         bis <- case biSummary ^. Proto.maybe'details of
             Nothing ->
@@ -2194,35 +2202,38 @@ instance FromProto Proto.BlockItemSummary where
         case bis of
             -- Account creation
             ProtoFields.BlockItemSummary'AccountCreation aCreation -> do
-                let tsSender = Nothing
-                let tsCost = Amount 0
+                let stsSender = Nothing
+                let stsCost = Amount 0
                 credType <- fromProto $ aCreation ^. ProtoFields.credentialType
-                let tsType = TSTCredentialDeploymentTransaction credType
-                tsResult <- fromProto aCreation
-                return TransactionSummary{..}
+                let stsType = TSTCredentialDeploymentTransaction credType
+                stsResult <- fromProto aCreation
+                let stsSponsorDetails = Nothing
+                return SupplementedTransactionSummary{..}
             -- Account transaction
             ProtoFields.BlockItemSummary'AccountTransaction aTransaction -> do
                 let sender = aTransaction ^. ProtoFields.sender
-                tsSender <- Just <$> fromProto sender
-                tsCost <- fromProto $ aTransaction ^. ProtoFields.cost
-                (tType, tsResult) <- fromProto aTransaction
-                let tsType = TSTAccountTransaction tType
-                return TransactionSummary{..}
+                stsSender <- Just <$> fromProto sender
+                stsCost <- fromProto $ aTransaction ^. ProtoFields.cost
+                (tType, stsResult) <- fromProto aTransaction
+                let stsType = TSTAccountTransaction tType
+                stsSponsorDetails <- mapM fromProto $ aTransaction ^. ProtoFields.maybe'sponsor
+                return SupplementedTransactionSummary{..}
             -- Chain update transaction (except create PLT token)
             ProtoFields.BlockItemSummary'Update update -> do
-                let tsSender = Nothing
-                let tsCost = Amount 0
-                (tType, tsResult) <- do
+                let stsSender = Nothing
+                let stsCost = Amount 0
+                (tType, stsResult) <- do
                     ueEffectiveTime <- fromProto $ update ^. ProtoFields.effectiveTime
                     uePayload <- fromProto $ update ^. ProtoFields.payload
                     let ueType = Updates.updateType uePayload
                     return (ueType, TxSuccess [UpdateEnqueued{..}])
-                let tsType = TSTUpdateTransaction tType
-                return TransactionSummary{..}
+                let stsType = TSTUpdateTransaction tType
+                let stsSponsorDetails = Nothing
+                return SupplementedTransactionSummary{..}
             -- Chain update transaction (create PLT token)
             ProtoFields.BlockItemSummary'TokenCreation update -> do
-                let tsSender = Nothing
-                let tsCost = Amount 0
+                let stsSender = Nothing
+                let stsCost = Amount 0
 
                 createPLT <- fromProto $ update ^. PLTFields.createPlt
 
@@ -2231,10 +2242,11 @@ instance FromProto Proto.BlockItemSummary where
                 let events = TokenCreated createPLT : initEvents
 
                 let tType = Updates.UpdateCreatePLT
-                let tsType = TSTUpdateTransaction tType
-                let tsResult = TxSuccess events
+                let stsType = TSTUpdateTransaction tType
+                let stsResult = TxSuccess events
+                let stsSponsorDetails = Nothing
 
-                return TransactionSummary{..}
+                return SupplementedTransactionSummary{..}
 instance FromProto Proto.AccountTransactionDetails where
     type Output Proto.AccountTransactionDetails = (Maybe TransactionType, SupplementedValidResult)
     fromProto atDetails = do
