@@ -1182,7 +1182,8 @@ data TransactionConfig = TransactionConfig
       tcNonce :: Maybe Types.Nonce,
       tcEnergy :: Types.Energy,
       tcExpiry :: Types.TransactionExpiryTime,
-      tcAlias :: Maybe Word
+      tcAlias :: Maybe Word,
+      tcExtended :: Bool
     }
 
 -- | Resolve transaction config based on persisted config and CLI flags.
@@ -1214,7 +1215,8 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
               tcNonce = toNonce txOpts,
               tcEnergy = energy,
               tcExpiry = expiry,
-              tcAlias = toAlias txOpts
+              tcAlias = toAlias txOpts,
+              tcExtended = toForceExtended txOpts
             }
   where
     promptEnergyUpdate energy actualFee
@@ -1246,7 +1248,8 @@ getRequiredEnergyTransactionCfg baseCfg txOpts = do
               tcNonce = toNonce txOpts,
               tcEnergy = energy,
               tcExpiry = expiry,
-              tcAlias = toAlias txOpts
+              tcAlias = toAlias txOpts,
+              tcExtended = toForceExtended txOpts
             }
 
 -- | Warn if expiry is in the past or very near or distant future.
