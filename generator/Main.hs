@@ -170,7 +170,7 @@ main = do
                             TransactionHeader
                                 { thSender = selfAddress,
                                   thNonce = nonce,
-                                  thEnergyAmount = encryptedTransferEnergyCost (payloadSize body) (length keysList),
+                                  thEnergyAmount = encryptedTransferEnergyCost (payloadSize body) (length keysList) Nothing,
                                   thPayloadSize = payloadSize body,
                                   ..
                                 }

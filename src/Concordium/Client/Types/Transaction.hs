@@ -10,6 +10,27 @@ import Concordium.Types.Execution as Types
 import qualified Concordium.Types.Transactions as Types
 import Data.Aeson as AE
 
+-- | Base cost of checking the normal (i.e. non-extended) transaction.
+-- The cost is always at least this, but in most cases it will have a
+-- transaction specific cost.
+minimumCostNormal ::
+    -- | Size of the transaction payload in bytes
+    PayloadSize ->
+    -- | Number of signatures.
+    Int ->
+    Energy
+minimumCostNormal psize numSigs = Cost.baseCost totalSize numSigs
+  where
+    -- the total size of the transaction. The +1 is for the payload tag.
+    totalSize = fromIntegral psize + Types.transactionHeaderSize
+
+data ExtendedCostOptions = ExtendedCostOptions
+    { -- | Whether the transaction is sponsored
+      hasSponsor :: !Bool
+    }
+
+--
+
 -- | Base cost of checking the transaction. The cost is always at least this,
 -- but in most cases it will have a transaction specific cost.
 minimumCost ::
@@ -17,11 +38,28 @@ minimumCost ::
     PayloadSize ->
     -- | Number of signatures.
     Int ->
+    -- | The extended transaction options influencing the transaction cost
+    Maybe ExtendedCostOptions ->
     Energy
-minimumCost psize numSigs = Cost.baseCost totalSize numSigs
+minimumCost psize numSigs (Just extOpts) = minimumCostExtended psize numSigs extOpts
+minimumCost psize numSigs Nothing = minimumCostNormal psize numSigs
+
+-- | Base cost of checking the extended transaction. The cost is always at least this,
+-- but in most cases it will have a transaction specific cost.
+minimumCostExtended ::
+    -- | Size of the transaction payload in bytes
+    PayloadSize ->
+    -- | Number of signatures.
+    Int ->
+    -- | The extended transaction options influencing the transaction cost
+    ExtendedCostOptions ->
+    Energy
+minimumCostExtended psize numSigs extOpts = Cost.baseCost totalSize numSigs
   where
-    -- the total size of the transaction. The +1 is for the payload tag.
-    totalSize = fromIntegral psize + Types.transactionHeaderSize
+    -- the size of the options specified for the extended transactions.
+    optsSize = if (hasSponsor extOpts) then 32 else 0
+    -- the total size of the transaction. 2 is for the bitmap in the v1 transaction format.
+    totalSize = 2 + Types.transactionHeaderSize + fromIntegral psize + optsSize
 
 -- | Cost of a simple transfer transaction.
 --  This must be kept in sync with the cost in Concordium.Scheduler.Cost
@@ -30,8 +68,10 @@ simpleTransferEnergyCost ::
     PayloadSize ->
     -- | Number of signatures
     Int ->
+    -- | The extended transaction options influencing the transaction cost
+    Maybe ExtendedCostOptions ->
     Energy
-simpleTransferEnergyCost psize numSigs = minimumCost psize numSigs + Cost.simpleTransferCost
+simpleTransferEnergyCost psize numSigs = (+ Cost.simpleTransferCost) . minimumCost psize numSigs
 
 -- | Cost of a token transaction.
 --  This must be kept in sync with the cost in Concordium.Scheduler.Cost
@@ -42,8 +82,10 @@ tokenUpdateTransactionEnergyCost ::
     Energy ->
     -- | Number of signatures
     Int ->
+    -- | The extended transaction options influencing the transaction cost
+    Maybe ExtendedCostOptions ->
     Energy
-tokenUpdateTransactionEnergyCost psize opCost numSigs = minimumCost psize numSigs + Cost.tokenUpdateBaseCost + opCost
+tokenUpdateTransactionEnergyCost psize opCost numSigs = (+ (Cost.tokenUpdateBaseCost + opCost)) . minimumCost psize numSigs
 
 simpleTransferPayloadSize :: PayloadSize
 simpleTransferPayloadSize = 41
@@ -55,8 +97,10 @@ encryptedTransferEnergyCost ::
     PayloadSize ->
     -- | Number of signatures
     Int ->
+    -- | The extended transaction options influencing the transaction cost
+    Maybe ExtendedCostOptions ->
     Energy
-encryptedTransferEnergyCost psize numSigs = minimumCost psize numSigs + Cost.encryptedTransferCost
+encryptedTransferEnergyCost psize numSigs = (+ Cost.encryptedTransferCost) . minimumCost psize numSigs
 
 encryptedTransferPayloadSize :: PayloadSize
 encryptedTransferPayloadSize = 2617
@@ -72,8 +116,10 @@ accountUpdateKeysEnergyCost ::
     Int ->
     -- | Number of signatures that will sign the transaction.
     Int ->
+    -- | The extended transaction options influencing the transaction cost
+    Maybe ExtendedCostOptions ->
     Energy
-accountUpdateKeysEnergyCost psize credentialCount keyCount numSigs = minimumCost psize numSigs + Cost.updateCredentialKeysCost credentialCount keyCount
+accountUpdateKeysEnergyCost psize credentialCount keyCount numSigs = (+ Cost.updateCredentialKeysCost credentialCount keyCount) . minimumCost psize numSigs
 
 -- | Cost of updating the credentials.
 --  This must be kept in sync with Concordium.Scheduler.Cost
@@ -86,8 +132,10 @@ accountUpdateCredentialsEnergyCost ::
     [Int] ->
     -- | Number of signatures that will sign the transaction.
     Int ->
+    -- | The extended transaction options influencing the transaction cost
+    Maybe ExtendedCostOptions ->
     Energy
-accountUpdateCredentialsEnergyCost psize credentialCount keyCountList numSigs = minimumCost psize numSigs + Cost.updateCredentialsCost credentialCount keyCountList
+accountUpdateCredentialsEnergyCost psize credentialCount keyCountList numSigs = (+ Cost.updateCredentialsCost credentialCount keyCountList) . minimumCost psize numSigs
 
 -- | Cost of a baker add transaction.
 --  This must be kept in sync with the cost in Concordium.Scheduler.Cost
@@ -97,7 +145,7 @@ bakerAddEnergyCost ::
     -- | Number of signatures
     Int ->
     Energy
-bakerAddEnergyCost psize numSigs = minimumCost psize numSigs + Cost.addBakerCost
+bakerAddEnergyCost psize numSigs = minimumCostNormal psize numSigs + Cost.addBakerCost
 
 -- | Cost of a baker configure transaction without keys.
 bakerConfigureEnergyCostWithoutKeys ::
@@ -105,8 +153,10 @@ bakerConfigureEnergyCostWithoutKeys ::
     PayloadSize ->
     -- | Number of signatures
     Int ->
+    -- | The extended transaction options influencing the transaction cost
+    Maybe ExtendedCostOptions ->
     Energy
-bakerConfigureEnergyCostWithoutKeys psize numSigs = minimumCost psize numSigs + Cost.configureBakerCostWithoutKeys
+bakerConfigureEnergyCostWithoutKeys psize numSigs = (+ Cost.configureBakerCostWithoutKeys) . minimumCost psize numSigs
 
 -- | Cost of a baker configure transaction with keys.
 bakerConfigureEnergyCostWithKeys ::
@@ -114,8 +164,10 @@ bakerConfigureEnergyCostWithKeys ::
     PayloadSize ->
     -- | Number of signatures
     Int ->
+    -- | The extended transaction options influencing the transaction cost
+    Maybe ExtendedCostOptions ->
     Energy
-bakerConfigureEnergyCostWithKeys psize numSigs = minimumCost psize numSigs + Cost.configureBakerCostWithKeys
+bakerConfigureEnergyCostWithKeys psize numSigs = (+ Cost.configureBakerCostWithKeys) . minimumCost psize numSigs
 
 -- | The payload size of a configure baker transaction.
 bakerConfigurePayloadSize ::
@@ -158,7 +210,7 @@ bakerSetKeysEnergyCost ::
     -- | Number of signatures
     Int ->
     Energy
-bakerSetKeysEnergyCost psize numSigs = minimumCost psize numSigs + Cost.updateBakerKeysCost
+bakerSetKeysEnergyCost psize numSigs = minimumCostNormal psize numSigs + Cost.updateBakerKeysCost
 
 -- | Cost of a baker remove transaction.
 --  This must be kept in sync with the cost in Concordium.Scheduler.Cost
@@ -168,7 +220,7 @@ bakerRemoveEnergyCost ::
     -- | Number of signatures
     Int ->
     Energy
-bakerRemoveEnergyCost psize numSigs = minimumCost psize numSigs + Cost.removeBakerCost
+bakerRemoveEnergyCost psize numSigs = minimumCostNormal psize numSigs + Cost.removeBakerCost
 
 -- | Cost to update a baker's stake.
 --  This must be kept in sync with the cost in Concordium.Scheduler.Cost
@@ -178,7 +230,7 @@ bakerUpdateStakeEnergyCost ::
     -- | Number of signatures
     Int ->
     Energy
-bakerUpdateStakeEnergyCost psize numSigs = minimumCost psize numSigs + Cost.updateBakerStakeCost
+bakerUpdateStakeEnergyCost psize numSigs = minimumCostNormal psize numSigs + Cost.updateBakerStakeCost
 
 -- | Cost to update a baker's re-staking option.
 --  This must be kept in sync with the cost in Concordium.Scheduler.Cost
@@ -188,7 +240,7 @@ bakerUpdateRestakeEnergyCost ::
     -- | Number of signatures
     Int ->
     Energy
-bakerUpdateRestakeEnergyCost psize numSigs = minimumCost psize numSigs + Cost.updateBakerRestakeCost
+bakerUpdateRestakeEnergyCost psize numSigs = minimumCostNormal psize numSigs + Cost.updateBakerRestakeCost
 
 -- | Cost of a delegation configure transaction.
 delegationConfigureEnergyCost ::
@@ -196,8 +248,10 @@ delegationConfigureEnergyCost ::
     PayloadSize ->
     -- | Number of signatures
     Int ->
+    -- | The extended transaction options influencing the transaction cost
+    Maybe ExtendedCostOptions ->
     Energy
-delegationConfigureEnergyCost psize numSigs = minimumCost psize numSigs + Cost.configureDelegationCost
+delegationConfigureEnergyCost psize numSigs = (+ Cost.configureDelegationCost) . minimumCost psize numSigs
 
 -- | Payload size for a register delegation transaction
 registerDelegationPayloadSize ::
@@ -236,7 +290,7 @@ accountEncryptEnergyCost ::
     -- | Number of signatures
     Int ->
     Energy
-accountEncryptEnergyCost psize numSigs = minimumCost psize numSigs + Cost.transferToEncryptedCost
+accountEncryptEnergyCost psize numSigs = minimumCostNormal psize numSigs + Cost.transferToEncryptedCost
 
 accountEncryptPayloadSize :: PayloadSize
 accountEncryptPayloadSize = 9
@@ -248,8 +302,10 @@ accountDecryptEnergyCost ::
     PayloadSize ->
     -- | Number of signatures
     Int ->
+    -- | The extended transaction options influencing the transaction cost
+    Maybe ExtendedCostOptions ->
     Energy
-accountDecryptEnergyCost psize numSigs = minimumCost psize numSigs + Cost.transferToPublicCost
+accountDecryptEnergyCost psize numSigs = (+ Cost.transferToPublicCost) . minimumCost psize numSigs
 
 accountDecryptPayloadSize :: PayloadSize
 accountDecryptPayloadSize = 1405
@@ -262,8 +318,10 @@ transferWithScheduleEnergyCost ::
     Int ->
     -- | Number of signatures.
     Int ->
+    -- | The extended transaction options influencing the transaction cost
+    Maybe ExtendedCostOptions ->
     Energy
-transferWithScheduleEnergyCost psize numRels numSigs = minimumCost psize numSigs + Cost.scheduledTransferCost numRels
+transferWithScheduleEnergyCost psize numRels numSigs = (+ Cost.scheduledTransferCost numRels) . minimumCost psize numSigs
 
 transferWithSchedulePayloadSize ::
     -- | Number of releases.
