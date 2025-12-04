@@ -330,18 +330,24 @@ transferWithSchedulePayloadSize ::
     PayloadSize
 transferWithSchedulePayloadSize numRels = 32 + 1 + 1 + fromIntegral numRels * 16
 
+-- | Contains possible transaction variants.
 data Transaction
-    = NormalTransaction {tnTransaction :: Types.AccountTransaction}
-    | ExtendedTransaction {teTransaction :: Types.AccountTransactionV1}
+    = -- | A "normal" transaction, i.e. the original transaction format
+      NormalTransaction {tnTransaction :: Types.AccountTransaction}
+    | -- | An "extended" transaction, i.e. the extended transaction format
+      ExtendedTransaction {teTransaction :: Types.AccountTransactionV1}
 
+-- | converts a 'Transaction' to its corresponding block item representation.
 transactionBlockItem :: Transaction -> Types.BareBlockItem
 transactionBlockItem NormalTransaction{tnTransaction = tx} = Types.NormalTransaction{biTransaction = tx}
 transactionBlockItem ExtendedTransaction{teTransaction = tx} = Types.ExtendedTransaction{biTransactionV1 = tx}
 
+-- | converts a 'Transaction' to a 'SignedTransaction'.
 transactionToSigned :: ProtocolVersion -> Transaction -> Either String SignedTransaction
 transactionToSigned pv NormalTransaction{tnTransaction = tx} = transactionToSigned' pv tx
 transactionToSigned pv ExtendedTransaction{teTransaction = tx} = transactionToSigned' pv tx
 
+-- | converts any 'TransactionData' instance to a 'SignedTransaction'.
 transactionToSigned' :: forall t. (Types.TransactionData t) => ProtocolVersion -> t -> Either String SignedTransaction
 transactionToSigned' pv tx = do
     payload <- case Types.promoteProtocolVersion pv of

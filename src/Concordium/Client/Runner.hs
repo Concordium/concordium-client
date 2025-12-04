@@ -690,12 +690,14 @@ readSignedTransactionFromFile fname = do
             return tx
         Left parseError -> logFatal [[i| Failed to decode file content into signedTransaction type: #{parseError}.|]]
 
+-- | get the "ExtendedCostOptions" corresponding to a "TransactionOpts" structure.
 extendedCostFromOpts :: TransactionOpts a -> Maybe ExtendedCostOptions
 extendedCostFromOpts txOpts =
     if not $ toForceExtended txOpts
         then Nothing
         else Just ExtendedCostOptions{hasSponsor = False}
 
+-- | get the "ExtendedCostOptions" corresponding to a "TransactionConfig".
 extendedCostFromConfig :: TransactionConfig -> Maybe ExtendedCostOptions
 extendedCostFromConfig tc =
     if not $ tcExtended tc
@@ -1198,8 +1200,11 @@ data TransactionConfig = TransactionConfig
       tcExtended :: Bool
     }
 
+-- | An enum for the different transaction formats.
 data TransactionFormat = NormalFormat | ExtendedFormat
 
+-- | Gets the "TransactionFormat" for any "TransactionConfig" combination. Usable for
+-- figuring out which transaction format a transaction configuration should convert to.
 getTransactionFormat :: TransactionConfig -> TransactionFormat
 getTransactionFormat TransactionConfig {tcExtended = True} = ExtendedFormat
 getTransactionFormat _ = NormalFormat
@@ -4944,6 +4949,8 @@ signEncodedTransaction encPayload header accKeys =
     let keys = Map.toList $ fmap Map.toList accKeys
     in  Types.signTransaction keys header encPayload
 
+-- | Sign an encoded transaction payload, and header with the account key map
+-- and return an "extended" AccountTransaction.
 signEncodedTransactionExt ::
     Types.EncodedPayload ->
     Types.TransactionHeaderV1 ->
