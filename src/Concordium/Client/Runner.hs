@@ -691,16 +691,16 @@ readSignedTransactionFromFile fname = do
         Left parseError -> logFatal [[i| Failed to decode file content into signedTransaction type: #{parseError}.|]]
 
 extendedCostFromOpts :: TransactionOpts a -> Maybe ExtendedCostOptions
-extendedCostFromOpts txOpts = 
-    if not $ toForceExtended txOpts 
-    then Nothing
-    else Just ExtendedCostOptions{hasSponsor = False}
+extendedCostFromOpts txOpts =
+    if not $ toForceExtended txOpts
+        then Nothing
+        else Just ExtendedCostOptions{hasSponsor = False}
 
 extendedCostFromConfig :: TransactionConfig -> Maybe ExtendedCostOptions
-extendedCostFromConfig tc = 
-    if not $ tcExtended tc 
-    then Nothing
-    else Just ExtendedCostOptions{hasSponsor = False}
+extendedCostFromConfig tc =
+    if not $ tcExtended tc
+        then Nothing
+        else Just ExtendedCostOptions{hasSponsor = False}
 
 -- | Process a 'transaction ...' command.
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -1197,6 +1197,12 @@ data TransactionConfig = TransactionConfig
       tcAlias :: Maybe Word,
       tcExtended :: Bool
     }
+
+data TransactionFormat = NormalFormat | ExtendedFormat
+
+getTransactionFormat :: TransactionConfig -> TransactionFormat
+getTransactionFormat TransactionConfig {tcExtended = True} = ExtendedFormat
+getTransactionFormat _ = NormalFormat
 
 -- | Resolve transaction config based on persisted config and CLI flags.
 --  If an energy cost function is provided and it returns a value which
@@ -1755,7 +1761,7 @@ startTransaction ::
     -- | The decrypted account signing keys. If not provided, the encrypted keys
     -- from the 'TransactionConfig' will be used, and for each the password will be queried.
     Maybe AccountKeyMap ->
-    ClientMonad m Types.AccountTransaction
+    ClientMonad m Transaction
 startTransaction txCfg pl confirmNonce maybeAccKeys = do
     let TransactionConfig
             { tcEnergy = energy,
@@ -1769,7 +1775,7 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
         Just acKeys' -> return acKeys'
         Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys Nothing Nothing
     let sender = applyAlias tcAlias naAddr
-    let tx = formatAndSignTransaction pl sender energy nonce expiry accountKeyMap
+    let tx = formatAndSignTransaction pl sender energy nonce expiry accountKeyMap $ getTransactionFormat txCfg
 
     when (isJust tcAlias) $
         logInfo [[i|Using the alias #{sender} as the sender of the transaction instead of #{naAddr}.|]]
@@ -1848,23 +1854,9 @@ signAndProcessTransaction verbose txCfg pl intOpts outFile backend = do
                 cs <- getResponseValueOrDie =<< getConsensusInfo
                 return $ Queries.csProtocolVersion cs
 
-            -- Decode the payload from the transaction
-            let decPl = case Types.promoteProtocolVersion pv of
-                    Types.SomeProtocolVersion spv -> Types.decodePayload spv pl
-            decPayload <- case decPl of
-                Right decPL -> return decPL
+            signedTransaction <- case transactionToSigned pv tx of
+                Right st -> return st
                 Left err -> logFatal ["Decoding of payload failed: " <> err]
-
-            -- Create signedTransaction
-            let header = Types.atrHeader tx
-            let signedTransaction =
-                    CT.SignedTransaction
-                        (Types.thEnergyAmount header)
-                        (Types.thExpiry header)
-                        (Types.thNonce header)
-                        (Types.thSender header)
-                        decPayload
-                        (Types.atrSignature tx)
 
             -- Write signedTransaction to file
             liftIO $ writeSignedTransactionToFile signedTransaction filePath verbose PromptBeforeOverwrite
@@ -1873,7 +1865,7 @@ signAndProcessTransaction verbose txCfg pl intOpts outFile backend = do
             logInfo [[i| Will send signed transaction to node.|]]
 
             -- Send transaction on chain
-            let bareBlockItem = Types.NormalTransaction tx
+            let bareBlockItem = transactionBlockItem tx
             sbiRes <- sendBlockItem bareBlockItem
             let res = case sbiRes of
                     StatusOk resp -> Right resp
@@ -4911,7 +4903,8 @@ encodeAndSignTransaction ::
     Types.Nonce ->
     Types.TransactionExpiryTime ->
     AccountKeyMap ->
-    Types.AccountTransaction
+    TransactionFormat ->
+    Transaction
 encodeAndSignTransaction txPayload = formatAndSignTransaction (Types.encodePayload txPayload)
 
 -- | Format the header of the transaction and sign it together with the encoded transaction payload and return a "normal" AccountTransaction.
@@ -4922,8 +4915,14 @@ formatAndSignTransaction ::
     Types.Nonce ->
     Types.TransactionExpiryTime ->
     AccountKeyMap ->
-    Types.AccountTransaction
-formatAndSignTransaction encPayload sender energy nonce expiry = signEncodedTransaction encPayload header
+    TransactionFormat ->
+    Transaction
+formatAndSignTransaction encPayload sender energy nonce expiry keys version = case version of
+    NormalFormat -> NormalTransaction{tnTransaction = signEncodedTransaction encPayload header keys}
+    ExtendedFormat -> 
+        -- TODO: add sponsor address
+        let v1Header = Types.TransactionHeaderV1{ thv1Sponsor=Nothing, thv1HeaderV0=header }
+        in  ExtendedTransaction{ teTransaction=signEncodedTransactionExt encPayload v1Header keys}
   where
     header =
         Types.TransactionHeader
@@ -4944,3 +4943,12 @@ signEncodedTransaction ::
 signEncodedTransaction encPayload header accKeys =
     let keys = Map.toList $ fmap Map.toList accKeys
     in  Types.signTransaction keys header encPayload
+
+signEncodedTransactionExt ::
+    Types.EncodedPayload ->
+    Types.TransactionHeaderV1 ->
+    AccountKeyMap ->
+    Types.AccountTransactionV1
+signEncodedTransactionExt encPayload header accKeys =
+    let keys = Map.toList $ fmap Map.toList accKeys
+    in  Types.signTransactionV1 keys header encPayload
