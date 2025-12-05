@@ -25,9 +25,9 @@ minimumCostNormal psize numSigs = Cost.baseCost totalSize numSigs
     -- the total size of the transaction. The +1 is for the payload tag.
     totalSize = fromIntegral psize + Types.transactionHeaderSize
 
-data ExtendedCostOptions = ExtendedCostOptions
+newtype ExtendedCostOptions = ExtendedCostOptions
     { -- | Whether the transaction is sponsored
-      hasSponsor :: !Bool
+      hasSponsor :: Bool
     }
 
 -- | Base cost of checking the transaction. The cost is always at least this,
