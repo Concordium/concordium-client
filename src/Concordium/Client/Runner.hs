@@ -712,10 +712,16 @@ processTransactionCmd action baseCfgDir verbose backend =
             -- Read signedTransaction from file
             signableTransaction <- readSignableTransactionFromFile fname
 
-            -- Warn the user that no signature is included in the transaction. This is still useful to allow, to test
+            -- Warn the user that no sender signature is included in the transaction. This is still useful to allow, to test
             -- that the node behaves as expected.
-            when (isNothing $ CT.stSignature signableTransaction) $ do
-                logWarn ["No sender signature found in the transaction"]
+            when (Types.getTransactionNumSigs (CT.stSignature signableTransaction) == 0) $ do
+                logWarn ["No sender signature found in transaction"]
+
+            -- Warn the user that no sponsor signature is included in the "sponsored" transaction. This is still useful to
+            -- allow, to test that the node behaves as expected.
+            let numSponsorSigs = maybe 0 Types.getTransactionNumSigs $ CT.stSponsorSignature signableTransaction
+            when ((isJust $ CT.stSponsor signableTransaction) && numSponsorSigs == 0) $ do
+                logWarn ["No sponsor signature found in sponsored transaction"]
 
             -- Confirm to submit transaction on chain
             when (ioConfirm intOpts) $ do
