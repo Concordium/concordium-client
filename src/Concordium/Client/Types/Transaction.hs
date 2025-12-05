@@ -58,7 +58,7 @@ minimumCostExtended ::
 minimumCostExtended psize numSigs extOpts = Cost.baseCost totalSize numSigs
   where
     -- the size of the options specified for the extended transactions.
-    optsSize = if (hasSponsor extOpts) then 32 else 0
+    optsSize = if hasSponsor extOpts then 32 else 0
     -- the total size of the transaction. 2 is for the bitmap in the v1 transaction format.
     totalSize = 2 + Types.transactionHeaderSize + fromIntegral psize + optsSize
 
