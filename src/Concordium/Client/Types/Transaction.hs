@@ -9,6 +9,7 @@ import Concordium.Types.Execution as Types
 
 import Concordium.Client.Types.Account
 import qualified Concordium.Types as Types
+import Concordium.Types.Transactions (AccountTransaction (AccountTransaction), AccountTransactionV1 (AccountTransactionV1))
 import qualified Concordium.Types.Transactions as Types
 import Data.Aeson as AE
 import qualified Data.Map as Map
@@ -387,6 +388,32 @@ transactionFromSignable stx =
                     teTransaction = Types.AccountTransactionV1 signatures headerV1 encPayload signHash
                 in  ExtendedTransaction{..}
 
+-- | Format the header of the transaction encoded transaction payload and return a Transaction.
+unsignedTransaction ::
+    Types.EncodedPayload ->
+    Types.AccountAddress ->
+    Types.Energy ->
+    Types.Nonce ->
+    Types.TransactionExpiryTime ->
+    TransactionFormat ->
+    Transaction
+unsignedTransaction encPayload sender energy nonce expiry version = case version of
+    NormalFormat -> NormalTransaction{tnTransaction = Types.makeAccountTransaction emptySignature headerV0 encPayload}
+    ExtendedFormat ->
+        -- TODO: SPO-65 add sponsor address
+        let headerV1 = Types.TransactionHeaderV1{thv1Sponsor = Nothing, thv1HeaderV0 = headerV0}
+        in  ExtendedTransaction{teTransaction = Types.makeAccountTransactionV1 (Types.TransactionSignaturesV1 emptySignature Nothing) headerV1 encPayload}
+  where
+    headerV0 =
+        Types.TransactionHeader
+            { thSender = sender,
+              thPayloadSize = Types.payloadSize encPayload,
+              thNonce = nonce,
+              thEnergyAmount = energy,
+              thExpiry = expiry
+            }
+    emptySignature = Types.TransactionSignature mempty
+
 -- | An enum for the different transaction formats.
 data TransactionFormat = NormalFormat | ExtendedFormat
 
@@ -412,21 +439,13 @@ formatAndSignTransaction ::
     AccountKeyMap ->
     TransactionFormat ->
     Transaction
-formatAndSignTransaction encPayload sender energy nonce expiry keys version = case version of
-    NormalFormat -> NormalTransaction{tnTransaction = signEncodedTransaction encPayload header keys}
-    ExtendedFormat ->
-        -- TODO: SPO-65 add sponsor address
-        let v1Header = Types.TransactionHeaderV1{thv1Sponsor = Nothing, thv1HeaderV0 = header}
-        in  ExtendedTransaction{teTransaction = signEncodedTransactionExt encPayload v1Header keys}
+formatAndSignTransaction encPayload sender energy nonce expiry keys version = case unsigned of
+    NormalTransaction{tnTransaction = AccountTransaction{..}} ->
+        NormalTransaction{tnTransaction = signEncodedTransaction atrPayload atrHeader keys}
+    ExtendedTransaction{teTransaction = AccountTransactionV1{..}} ->
+        ExtendedTransaction{teTransaction = signEncodedTransactionExt atrv1Payload atrv1Header keys}
   where
-    header =
-        Types.TransactionHeader
-            { thSender = sender,
-              thPayloadSize = Types.payloadSize encPayload,
-              thNonce = nonce,
-              thEnergyAmount = energy,
-              thExpiry = expiry
-            }
+    unsigned = unsignedTransaction encPayload sender energy nonce expiry version
 
 -- | Sign an encoded transaction payload, and header with the account key map
 -- and return a "normal" AccountTransaction.
