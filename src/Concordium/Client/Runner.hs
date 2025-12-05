@@ -690,6 +690,20 @@ readSignedTransactionFromFile fname = do
             return tx
         Left parseError -> logFatal [[i| Failed to decode file content into signedTransaction type: #{parseError}.|]]
 
+-- | get the "ExtendedCostOptions" corresponding to a "TransactionOpts" structure.
+extendedCostFromOpts :: TransactionOpts a -> Maybe ExtendedCostOptions
+extendedCostFromOpts txOpts =
+    if not $ toForceExtended txOpts
+        then Nothing
+        else Just ExtendedCostOptions{hasSponsor = False}
+
+-- | get the "ExtendedCostOptions" corresponding to a "TransactionConfig".
+extendedCostFromConfig :: TransactionConfig -> Maybe ExtendedCostOptions
+extendedCostFromConfig tc =
+    if not $ tcExtended tc
+        then Nothing
+        else Just ExtendedCostOptions{hasSponsor = False}
+
 -- | Process a 'transaction ...' command.
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
 processTransactionCmd action baseCfgDir verbose backend =
@@ -804,7 +818,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                             memo <- checkAndGetMemo memoInput $ Queries.csProtocolVersion cs
                             return $ Types.TransferWithMemo (naAddr receiverAddress) memo amount
                     return $ Types.encodePayload res
-                let nrgCost _ = return $ Just $ simpleTransferEnergyCost $ Types.payloadSize pl
+                let nrgCost _ = return $ Just $ flip (simpleTransferEnergyCost (Types.payloadSize pl)) $ extendedCostFromOpts txOpts
                 txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
                 let ttxCfg =
@@ -850,7 +864,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                             memo <- checkAndGetMemo memoInput $ Queries.csProtocolVersion cs
                             return $ Types.TransferWithScheduleAndMemo (naAddr receiverAddress) memo realSchedule
                     return $ Types.encodePayload res
-                let nrgCost _ = return $ Just $ transferWithScheduleEnergyCost (Types.payloadSize pl) (length realSchedule)
+                let nrgCost _ = return $ Just $ flip (transferWithScheduleEnergyCost (Types.payloadSize pl) (length realSchedule)) $ extendedCostFromOpts txOpts
                 txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
                 let ttxCfg =
                         TransferWithScheduleTransactionConfig
@@ -975,7 +989,7 @@ handlePLTTransfer backend baseCfgDir verbose receiver amount tokenIdText maybeMe
         let payload = Types.TokenUpdate tokenId tokenParameter
         let encodedPayload = Types.encodePayload payload
 
-        let nrgCost _ = return $ Just $ tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenTransferCost
+        let nrgCost _ = return $ Just $ flip (tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenTransferCost) $ extendedCostFromOpts txOpts
         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
         let intOpts = toInteractionOpts txOpts
@@ -1023,7 +1037,7 @@ handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount tokenI
                 | Mint <- tokenSupplyAction = Cost.tokenMintCost
                 | Burn <- tokenSupplyAction = Cost.tokenBurnCost
 
-        let nrgCost _ = return $ Just $ tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) opCost
+        let nrgCost _ = return $ Just $ flip (tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) opCost) $ extendedCostFromOpts txOpts
         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
         let intOpts = toInteractionOpts txOpts
@@ -1066,7 +1080,7 @@ handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenIdT
         let payload = Types.TokenUpdate tokenId tokenParameter
         let encodedPayload = Types.encodePayload payload
 
-        let nrgCost _ = return $ Just $ tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenListOperationCost
+        let nrgCost _ = return $ Just $ flip (tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenListOperationCost) $ extendedCostFromOpts txOpts
         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
         let intOpts = toInteractionOpts txOpts
@@ -1103,7 +1117,7 @@ handlePLTPausation backend baseCfgDir verbose pauseAction tokenIdText txOpts = d
         let payload = Types.TokenUpdate tokenId tokenParameter
         let encodedPayload = Types.encodePayload payload
 
-        let nrgCost _ = return $ Just $ tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenPauseUnpauseCost
+        let nrgCost _ = return $ Just $ flip (tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenPauseUnpauseCost) $ extendedCostFromOpts txOpts
         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
         let intOpts = toInteractionOpts txOpts
@@ -1141,7 +1155,7 @@ getRegisterDataTransactionCfg baseCfg txOpts dataInput = do
     registerDataEnergyCost :: Types.RegisteredData -> EncryptedSigningData -> IO (Maybe (Int -> Types.Energy))
     registerDataEnergyCost rd encSignData =
         pure . Just . const $
-            Cost.registerDataCost + minimumCost payloadSize signatureCount
+            Cost.registerDataCost + minimumCost payloadSize signatureCount (extendedCostFromOpts txOpts)
       where
         signatureCount = mapNumKeys (esdKeys encSignData)
         payloadSize = Types.payloadSize . Types.encodePayload . Types.RegisterData $ rd
@@ -1182,8 +1196,18 @@ data TransactionConfig = TransactionConfig
       tcNonce :: Maybe Types.Nonce,
       tcEnergy :: Types.Energy,
       tcExpiry :: Types.TransactionExpiryTime,
-      tcAlias :: Maybe Word
+      tcAlias :: Maybe Word,
+      tcExtended :: Bool
     }
+
+-- | An enum for the different transaction formats.
+data TransactionFormat = NormalFormat | ExtendedFormat
+
+-- | Gets the "TransactionFormat" for any "TransactionConfig" combination. Usable for
+-- figuring out which transaction format a transaction configuration should convert to.
+getTransactionFormat :: TransactionConfig -> TransactionFormat
+getTransactionFormat TransactionConfig {tcExtended = True} = ExtendedFormat
+getTransactionFormat _ = NormalFormat
 
 -- | Resolve transaction config based on persisted config and CLI flags.
 --  If an energy cost function is provided and it returns a value which
@@ -1214,7 +1238,8 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
               tcNonce = toNonce txOpts,
               tcEnergy = energy,
               tcExpiry = expiry,
-              tcAlias = toAlias txOpts
+              tcAlias = toAlias txOpts,
+              tcExtended = toForceExtended txOpts
             }
   where
     promptEnergyUpdate energy actualFee
@@ -1246,7 +1271,8 @@ getRequiredEnergyTransactionCfg baseCfg txOpts = do
               tcNonce = toNonce txOpts,
               tcEnergy = energy,
               tcExpiry = expiry,
-              tcAlias = toAlias txOpts
+              tcAlias = toAlias txOpts,
+              tcExtended = toForceExtended txOpts
             }
 
 -- | Warn if expiry is in the past or very near or distant future.
@@ -1740,7 +1766,7 @@ startTransaction ::
     -- | The decrypted account signing keys. If not provided, the encrypted keys
     -- from the 'TransactionConfig' will be used, and for each the password will be queried.
     Maybe AccountKeyMap ->
-    ClientMonad m Types.AccountTransaction
+    ClientMonad m Transaction
 startTransaction txCfg pl confirmNonce maybeAccKeys = do
     let TransactionConfig
             { tcEnergy = energy,
@@ -1754,7 +1780,7 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
         Just acKeys' -> return acKeys'
         Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys Nothing Nothing
     let sender = applyAlias tcAlias naAddr
-    let tx = formatAndSignTransaction pl sender energy nonce expiry accountKeyMap
+    let tx = formatAndSignTransaction pl sender energy nonce expiry accountKeyMap $ getTransactionFormat txCfg
 
     when (isJust tcAlias) $
         logInfo [[i|Using the alias #{sender} as the sender of the transaction instead of #{naAddr}.|]]
@@ -1833,23 +1859,9 @@ signAndProcessTransaction verbose txCfg pl intOpts outFile backend = do
                 cs <- getResponseValueOrDie =<< getConsensusInfo
                 return $ Queries.csProtocolVersion cs
 
-            -- Decode the payload from the transaction
-            let decPl = case Types.promoteProtocolVersion pv of
-                    Types.SomeProtocolVersion spv -> Types.decodePayload spv pl
-            decPayload <- case decPl of
-                Right decPL -> return decPL
+            signedTransaction <- case transactionToSigned pv tx of
+                Right st -> return st
                 Left err -> logFatal ["Decoding of payload failed: " <> err]
-
-            -- Create signedTransaction
-            let header = Types.atrHeader tx
-            let signedTransaction =
-                    CT.SignedTransaction
-                        (Types.thEnergyAmount header)
-                        (Types.thExpiry header)
-                        (Types.thNonce header)
-                        (Types.thSender header)
-                        decPayload
-                        (Types.atrSignature tx)
 
             -- Write signedTransaction to file
             liftIO $ writeSignedTransactionToFile signedTransaction filePath verbose PromptBeforeOverwrite
@@ -1858,7 +1870,7 @@ signAndProcessTransaction verbose txCfg pl intOpts outFile backend = do
             logInfo [[i| Will send signed transaction to node.|]]
 
             -- Send transaction on chain
-            let bareBlockItem = Types.NormalTransaction tx
+            let bareBlockItem = transactionBlockItem tx
             sbiRes <- sendBlockItem bareBlockItem
             let res = case sbiRes of
                     StatusOk resp -> Right resp
@@ -2066,7 +2078,7 @@ processAccountCmd action baseCfgDir verbose backend =
                 accInfo <- getAccountInfoOrDie (Types.AccAddress senderAddress) Best
                 let numCredentials = Map.size $ Types.aiAccountCredentials accInfo
                 let numKeys = length $ ID.credKeys keys
-                let nrgCost _ = return $ Just $ accountUpdateKeysEnergyCost (Types.payloadSize pl) numCredentials numKeys
+                let nrgCost _ = return $ Just $ flip (accountUpdateKeysEnergyCost (Types.payloadSize pl) numCredentials numKeys) $ extendedCostFromOpts txOpts
 
                 txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
@@ -2096,7 +2108,7 @@ processAccountCmd action baseCfgDir verbose backend =
                 accInfo <- getAccountInfoOrDie (Types.AccAddress senderAddress) Best
                 (epayload, numKeys, newCredentials, removedCredentials) <- liftIO $ getAccountUpdateCredentialsTransactionData cdisFile removeCidsFile newThreshold
                 let numExistingCredentials = Map.size (Types.aiAccountCredentials accInfo)
-                let nrgCost _ = return $ Just $ accountUpdateCredentialsEnergyCost (Types.payloadSize epayload) numExistingCredentials numKeys
+                let nrgCost _ = return $ Just $ flip (accountUpdateCredentialsEnergyCost (Types.payloadSize epayload) numExistingCredentials numKeys) $ extendedCostFromOpts txOpts
                 txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
                 when verbose $ liftIO $ do
                     runPrinter $ printSelectedKeyConfig $ tcEncryptedSigningData txCfg
@@ -2128,7 +2140,7 @@ processAccountCmd action baseCfgDir verbose backend =
                 transferData <- getAccountDecryptTransferData (naAddr senderAddr) adAmount secretKey adIndex
                 let pl = Types.encodePayload $ Types.TransferToPublic transferData
 
-                let nrgCost _ = return $ Just $ accountDecryptEnergyCost $ Types.payloadSize pl
+                let nrgCost _ = return $ Just $ flip (accountDecryptEnergyCost (Types.payloadSize pl)) $ extendedCostFromOpts adTransactionOpts
                 txCfg <- liftIO (getTransactionCfg baseCfg adTransactionOpts nrgCost)
 
                 let adtxCfg =
@@ -2291,14 +2303,14 @@ getModuleDeployTransactionCfg baseCfg txOpts moduleFile mWasmVersion = do
                 unless confirmed $ exitTransactionCancelled
         Right (Just _) ->
             return ()
-    txCfg <- getTransactionCfg baseCfg txOpts $ moduleDeployEnergyCost wasmModule
+    txCfg <- getTransactionCfg baseCfg txOpts $ moduleDeployEnergyCost wasmModule $ extendedCostFromOpts txOpts
     return $ ModuleDeployTransactionCfg txCfg wasmModule
 
 -- | Calculate the energy cost of deploying a module.
-moduleDeployEnergyCost :: Wasm.WasmModule -> EncryptedSigningData -> IO (Maybe (Int -> Types.Energy))
-moduleDeployEnergyCost wasmMod encSignData =
+moduleDeployEnergyCost :: Wasm.WasmModule -> Maybe ExtendedCostOptions -> EncryptedSigningData -> IO (Maybe (Int -> Types.Energy))
+moduleDeployEnergyCost wasmMod opts encSignData =
     pure . Just . const $
-        Cost.deployModuleCost (fromIntegral payloadSize) + minimumCost payloadSize signatureCount
+        Cost.deployModuleCost (fromIntegral payloadSize) + minimumCost payloadSize signatureCount opts
   where
     signatureCount = mapNumKeys (esdKeys encSignData)
     payloadSize = Types.payloadSize . Types.encodePayload . Types.DeployModule $ wasmMod
@@ -2614,7 +2626,7 @@ processContractCmd action baseCfgDir verbose backend =
     -- The minimum will not cover the full initialization, but enough of it, so that a potential 'Not enough energy' error
     -- can be shown.
     contractInitMinimumEnergy :: ContractInitTransactionCfg -> EncryptedSigningData -> Types.Energy
-    contractInitMinimumEnergy ContractInitTransactionCfg{..} encSignData = minimumCost (fromIntegral payloadSize) signatureCount
+    contractInitMinimumEnergy ContractInitTransactionCfg{..} encSignData = minimumCost (fromIntegral payloadSize) signatureCount $ extendedCostFromConfig citcTransactionCfg
       where
         payloadSize =
             1 -- tag
@@ -2629,7 +2641,7 @@ processContractCmd action baseCfgDir verbose backend =
     -- The minimum will not cover the full update, but enough of it, so that a potential 'Not enough energy' error
     -- can be shown.
     contractUpdateMinimumEnergy :: ContractUpdateTransactionCfg -> EncryptedSigningData -> Types.Energy
-    contractUpdateMinimumEnergy ContractUpdateTransactionCfg{..} encSignData = minimumCost (fromIntegral payloadSize) signatureCount
+    contractUpdateMinimumEnergy ContractUpdateTransactionCfg{..} encSignData = minimumCost (fromIntegral payloadSize) signatureCount $ extendedCostFromConfig cutcTransactionCfg
       where
         payloadSize =
             1 -- tag
@@ -3480,8 +3492,8 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
         (bakerKeys, cbKeysWithProofs) <- readInputKeysFile baseCfg
         let payload = Types.encodePayload Types.ConfigureBaker{..}
             nrgCost _ = case cbKeysWithProofs of
-                Nothing -> return . Just $ bakerConfigureEnergyCostWithoutKeys (Types.payloadSize payload)
-                Just _ -> return . Just $ bakerConfigureEnergyCostWithKeys (Types.payloadSize payload)
+                Nothing -> return . Just $ (\numSigs -> bakerConfigureEnergyCostWithoutKeys (Types.payloadSize payload) numSigs $ extendedCostFromOpts txOpts)
+                Just _ -> return . Just $ (\numSigs -> bakerConfigureEnergyCostWithKeys (Types.payloadSize payload) numSigs $ extendedCostFromOpts txOpts)
         txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
         logSuccess
             ( [ printf "configuring validator with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData)),
@@ -4315,7 +4327,7 @@ processDelegatorConfigureCmd baseCfgDir verbose backend txOpts cdCapital cdResta
             runPrinter $ printBaseConfig baseCfg
             putStrLn ""
         let payload = Types.encodePayload Types.ConfigureDelegation{..}
-            nrgCost _ = return . Just $ delegationConfigureEnergyCost (Types.payloadSize payload)
+            nrgCost _ = return . Just $ (flip $ delegationConfigureEnergyCost $ Types.payloadSize payload) $ extendedCostFromOpts txOpts
         txCfg@TransactionConfig{..} <- getTransactionCfg baseCfg txOpts nrgCost
         logSuccess
             ( [ printf "configuring delegator with account %s" (show (naAddr $ esdAddress tcEncryptedSigningData)),
@@ -4896,7 +4908,8 @@ encodeAndSignTransaction ::
     Types.Nonce ->
     Types.TransactionExpiryTime ->
     AccountKeyMap ->
-    Types.AccountTransaction
+    TransactionFormat ->
+    Transaction
 encodeAndSignTransaction txPayload = formatAndSignTransaction (Types.encodePayload txPayload)
 
 -- | Format the header of the transaction and sign it together with the encoded transaction payload and return a "normal" AccountTransaction.
@@ -4907,8 +4920,14 @@ formatAndSignTransaction ::
     Types.Nonce ->
     Types.TransactionExpiryTime ->
     AccountKeyMap ->
-    Types.AccountTransaction
-formatAndSignTransaction encPayload sender energy nonce expiry = signEncodedTransaction encPayload header
+    TransactionFormat ->
+    Transaction
+formatAndSignTransaction encPayload sender energy nonce expiry keys version = case version of
+    NormalFormat -> NormalTransaction{tnTransaction = signEncodedTransaction encPayload header keys}
+    ExtendedFormat -> 
+        -- TODO: add sponsor address
+        let v1Header = Types.TransactionHeaderV1{ thv1Sponsor=Nothing, thv1HeaderV0=header }
+        in  ExtendedTransaction{ teTransaction=signEncodedTransactionExt encPayload v1Header keys}
   where
     header =
         Types.TransactionHeader
@@ -4929,3 +4948,14 @@ signEncodedTransaction ::
 signEncodedTransaction encPayload header accKeys =
     let keys = Map.toList $ fmap Map.toList accKeys
     in  Types.signTransaction keys header encPayload
+
+-- | Sign an encoded transaction payload, and header with the account key map
+-- and return an "extended" AccountTransaction.
+signEncodedTransactionExt ::
+    Types.EncodedPayload ->
+    Types.TransactionHeaderV1 ->
+    AccountKeyMap ->
+    Types.AccountTransactionV1
+signEncodedTransactionExt encPayload header accKeys =
+    let keys = Map.toList $ fmap Map.toList accKeys
+    in  Types.signTransactionV1 keys header encPayload

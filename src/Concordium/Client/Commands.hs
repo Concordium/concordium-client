@@ -460,6 +460,9 @@ data TransactionOpts energyOrMaybe = TransactionOpts
       -- | Optional file name and path to output the signed/partially-signed
       --  transaction to instead of submitting the transaction on-chain.
       toOutFile :: !(Maybe FilePath),
+      -- | Forces the 'ExtendedTransaction' format to be used when set. In general,
+      -- automatic derivation of the best suited transaction format is favourable.
+      toForceExtended :: !Bool,
       toInteractionOpts :: !InteractionOpts
     }
     deriving (Show)
@@ -694,6 +697,7 @@ transactionOptsParserBuilder energyOrMaybeParser =
         <*> energyOrMaybeParser
         <*> optional (strOption (long "expiry" <> metavar "EXPIRY" <> help "Expiration time of a transaction, specified as a relative duration (\"30s\", \"5m\", etc.) or UNIX epoch timestamp."))
         <*> optional (strOption (long "out" <> metavar "FILE" <> help "File to output the signed/partially-signed transaction to instead of submitting the transaction on-chain."))
+        <*> switch (long "force-extended" <> help "Whether to force the transaction to created in the extended transaction format. This should generally not be used, as the format best suited to the transaction will be automatically derived.")
         <*> interactionOptsParser
 
 interactionOptsParser :: Parser InteractionOpts
