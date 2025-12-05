@@ -7,9 +7,11 @@ import qualified Concordium.Cost as Cost
 import Concordium.Types
 import Concordium.Types.Execution as Types
 
+import Concordium.Client.Types.Account
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Transactions as Types
 import Data.Aeson as AE
+import qualified Data.Map as Map
 
 -- | Base cost of checking the normal (i.e. non-extended) transaction.
 -- The cost is always at least this, but in most cases it will have a
@@ -342,28 +344,112 @@ transactionBlockItem :: Transaction -> Types.BareBlockItem
 transactionBlockItem NormalTransaction{tnTransaction = tx} = Types.NormalTransaction{biTransaction = tx}
 transactionBlockItem ExtendedTransaction{teTransaction = tx} = Types.ExtendedTransaction{biTransactionV1 = tx}
 
--- | converts a 'Transaction' to a 'SignedTransaction'.
-transactionToSigned :: ProtocolVersion -> Transaction -> Either String SignedTransaction
+-- | converts a 'Transaction' to a 'SignableTransaction'.
+transactionToSigned :: ProtocolVersion -> Transaction -> Either String SignableTransaction
 transactionToSigned pv NormalTransaction{tnTransaction = tx} = transactionToSigned' pv tx
 transactionToSigned pv ExtendedTransaction{teTransaction = tx} = transactionToSigned' pv tx
 
--- | converts any 'TransactionData' instance to a 'SignedTransaction'.
-transactionToSigned' :: forall t. (Types.TransactionData t) => ProtocolVersion -> t -> Either String SignedTransaction
+-- | converts any 'TransactionData' instance to a 'SignableTransaction'.
+transactionToSigned' :: forall t. (Types.TransactionData t) => ProtocolVersion -> t -> Either String SignableTransaction
 transactionToSigned' pv tx = do
     payload <- case Types.promoteProtocolVersion pv of
         Types.SomeProtocolVersion spv -> Types.decodePayload spv $ Types.transactionPayload tx
     let header = Types.transactionHeader tx
     return
-        SignedTransaction
+        SignableTransaction
             { stEnergy = Types.transactionGasAmount tx,
               stExpiryTime = Types.thExpiry header,
               stNonce = Types.thNonce header,
               stSigner = Types.thSender header,
-              stSponsor = Nothing,
+              stSponsor = Types.transactionSponsor tx,
               stPayload = payload,
-              stSignature = Types.transactionSignature tx,
-              stSignatureSponsor = Nothing
+              stSignature = Just $ Types.transactionSignature tx,
+              stSponsorSignature = Types.transactionSponsorSignature tx,
+              stExtended = Types.transactionIsExtended tx
             }
+
+-- | converts a 'SignableTransaction to a 'Transaction'. This potentially constructs an invalid transaction
+-- due to missing signature from transaction sender, so this should be checked.
+transactionFromSignable :: SignableTransaction -> Transaction
+transactionFromSignable stx =
+    let SignableTransaction{..} = stx
+        encPayload = Types.encodePayload $ stPayload
+        headerV0 = Types.TransactionHeader stSigner stNonce stEnergy (Types.payloadSize encPayload) stExpiryTime
+        signature = maybe (Types.TransactionSignature mempty) id $ stSignature
+    in  case stExtended of
+            False ->
+                let signHash = Types.transactionSignHashFromHeaderPayload headerV0 encPayload
+                    tnTransaction = Types.AccountTransaction signature headerV0 encPayload signHash
+                in  NormalTransaction{..}
+            True ->
+                let headerV1 = Types.TransactionHeaderV1 headerV0 stSponsor
+                    signHash = Types.transactionV1SignHashFromHeaderPayload headerV1 encPayload
+                    signatures = Types.TransactionSignaturesV1{tsv1Sponsor = stSponsorSignature, tsv1Sender = signature}
+                    teTransaction = Types.AccountTransactionV1 signatures headerV1 encPayload signHash
+                in  ExtendedTransaction{..}
+
+-- | An enum for the different transaction formats.
+data TransactionFormat = NormalFormat | ExtendedFormat
+
+-- | Sign a transaction payload and configuration into a "normal" AccountTransaction.
+encodeAndSignTransaction ::
+    Types.Payload ->
+    Types.AccountAddress ->
+    Types.Energy ->
+    Types.Nonce ->
+    Types.TransactionExpiryTime ->
+    AccountKeyMap ->
+    TransactionFormat ->
+    Transaction
+encodeAndSignTransaction txPayload = formatAndSignTransaction (Types.encodePayload txPayload)
+
+-- | Format the header of the transaction and sign it together with the encoded transaction payload and return a Transaction.
+formatAndSignTransaction ::
+    Types.EncodedPayload ->
+    Types.AccountAddress ->
+    Types.Energy ->
+    Types.Nonce ->
+    Types.TransactionExpiryTime ->
+    AccountKeyMap ->
+    TransactionFormat ->
+    Transaction
+formatAndSignTransaction encPayload sender energy nonce expiry keys version = case version of
+    NormalFormat -> NormalTransaction{tnTransaction = signEncodedTransaction encPayload header keys}
+    ExtendedFormat ->
+        -- TODO: add sponsor address
+        let v1Header = Types.TransactionHeaderV1{thv1Sponsor = Nothing, thv1HeaderV0 = header}
+        in  ExtendedTransaction{teTransaction = signEncodedTransactionExt encPayload v1Header keys}
+  where
+    header =
+        Types.TransactionHeader
+            { thSender = sender,
+              thPayloadSize = Types.payloadSize encPayload,
+              thNonce = nonce,
+              thEnergyAmount = energy,
+              thExpiry = expiry
+            }
+
+-- | Sign an encoded transaction payload, and header with the account key map
+-- and return a "normal" AccountTransaction.
+signEncodedTransaction ::
+    Types.EncodedPayload ->
+    Types.TransactionHeader ->
+    AccountKeyMap ->
+    Types.AccountTransaction
+signEncodedTransaction encPayload header accKeys =
+    let keys = Map.toList $ fmap Map.toList accKeys
+    in  Types.signTransaction keys header encPayload
+
+-- | Sign an encoded transaction payload, and header with the account key map
+-- and return an "extended" AccountTransaction.
+signEncodedTransactionExt ::
+    Types.EncodedPayload ->
+    Types.TransactionHeaderV1 ->
+    AccountKeyMap ->
+    Types.AccountTransactionV1
+signEncodedTransactionExt encPayload header accKeys =
+    let keys = Map.toList $ fmap Map.toList accKeys
+    in  Types.signTransactionV1 keys header encPayload
 
 -----------------------------------------------------------------
 
@@ -371,9 +457,9 @@ transactionToSigned' pv tx = do
 
 -----------------------------------------------------------------
 
--- | A 'SignedTransaction' is a transaction that is signed by an account (the signer)
+-- | A 'SignableTransaction' is a transaction that can be signed by an account
 -- with some keys. The representation might be a fully signed transaction ready to be
--- sent on-chain or a partially-signed transaction that needs additional signatures
+-- sent on-chain or a partially-/non-signed transaction that needs additional signatures
 -- added to be ready to be sent on-chain.
 --
 -- The `ToJSON` instance has the purpose converting the object into a human-readable
@@ -384,7 +470,7 @@ transactionToSigned' pv tx = do
 -- 'TransactionSignHash' which is the value that is signed by the signer. The
 -- 'TransactionSignHash' should be re-computed when processing a 'SignedTransaction'
 -- (e.g. when adding signatures or sending the transaction on-chain).
-data SignedTransaction = SignedTransaction
+data SignableTransaction = SignableTransaction
     { -- | Amount of energy dedicated to the execution of this transaction.
       stEnergy :: !Energy,
       -- | Absolute expiration time after which transaction will not be executed.
@@ -399,16 +485,18 @@ data SignedTransaction = SignedTransaction
       stPayload :: !Types.Payload,
       -- | Signatures generated for the sender account. This map might contain enough signatures to send the transaction on-chain or
       -- additional signatures are needed before the transaction is considered fully signed.
-      stSignature :: !Types.TransactionSignature,
+      stSignature :: !(Maybe Types.TransactionSignature),
       -- | Signatures generated for the sponsor account. This map might contain enough signatures to send the transaction on-chain or
       -- additional signatures are needed before the transaction is considered fully signed.
-      stSignatureSponsor :: !(Maybe Types.TransactionSignature)
+      stSponsorSignature :: !(Maybe Types.TransactionSignature),
+      -- | Whether the signed transaction should be represented in its extended format.
+      stExtended :: !Bool
     }
     deriving (Eq, Show)
 
--- | Implement `ToJSON` instance for `SignedTransaction`.
-instance ToJSON SignedTransaction where
-    toJSON SignedTransaction{..} =
+-- | Implement `ToJSON` instance for `SignableTransaction`.
+instance ToJSON SignableTransaction where
+    toJSON SignableTransaction{..} =
         AE.object
             ( [ "version" AE..= signedTransactionVersion,
                 "energy" AE..= stEnergy,
@@ -416,15 +504,16 @@ instance ToJSON SignedTransaction where
                 "nonce" AE..= stNonce,
                 "signer" AE..= stSigner,
                 "payload" AE..= stPayload,
-                "signature" AE..= stSignature
+                "extended" AE..= stExtended
               ]
+                ++ maybe [] (\s -> ["signature" AE..= s]) stSignature
                 ++ maybe [] (\s -> ["sponsor" AE..= s]) stSponsor
-                ++ maybe [] (\s -> ["signatureSponsor" AE..= s]) stSignatureSponsor
+                ++ maybe [] (\s -> ["signatureSponsor" AE..= s]) stSponsorSignature
             )
 
--- Implement `FromJSON` instance for `SignedTransaction`.
-instance FromJSON SignedTransaction where
-    parseJSON = AE.withObject "SignedTransaction" $ \obj -> do
+-- Implement `FromJSON` instance for `SignableTransaction`.
+instance FromJSON SignableTransaction where
+    parseJSON = AE.withObject "SignableTransaction" $ \obj -> do
         stVersion <- obj AE..: "version"
         if stVersion /= signedTransactionVersion
             then fail $ "Unexpected version: " ++ show stVersion
@@ -434,12 +523,33 @@ instance FromJSON SignedTransaction where
                 stNonce <- obj AE..: "nonce"
                 stSigner <- obj AE..: "signer"
                 stSponsor <- obj AE..:? "sponsor"
-                stSignature <- obj AE..: "signature"
-                stSignatureSponsor <- obj AE..:? "signatureSponsor"
+                stSignature <- obj AE..:? "signature"
+                stSponsorSignature <- obj AE..:? "signatureSponsor"
                 stPayload <- obj AE..: "payload"
-                return SignedTransaction{..}
+                stExtended <- obj AE..: "extended"
+                return SignableTransaction{..}
 
--- | The initial version of the above `SignedTransaction` JSON representation.
+-- | The initial version of the above `SignableTransaction` JSON representation.
 -- The version will be incremented when introducing a new format in the future.
 signedTransactionVersion :: Int
-signedTransactionVersion = 1
+signedTransactionVersion = 2
+
+-- | Sign a "SignableTransaction", adding the signature corresponding to the given "AccountKeyMap" onto
+-- the transaction. If signatures already exist, they will be merged with the ones created.
+signSignableTransaction :: SignableTransaction -> AccountKeyMap -> SignableTransaction
+signSignableTransaction stx keys =
+    let existingSignature = maybe mempty Types.tsSignatures (stSignature stx)
+        headerV0 = Types.TransactionHeader (stSigner stx) (stNonce stx) (stEnergy stx) (Types.payloadSize encPayload) (stExpiryTime stx)
+        encPayload = Types.encodePayload $ stPayload stx
+
+        newSignature = case (stExtended stx) of
+            False ->
+                let signed = signEncodedTransaction encPayload headerV0 keys
+                in  Types.tsSignatures $ Types.atrSignature signed
+            True ->
+                let headerV1 = Types.TransactionHeaderV1 headerV0 (stSponsor stx)
+                    signed = signEncodedTransactionExt encPayload headerV1 keys
+                in  Types.tsSignatures $ Types.tsv1Sender $ Types.atrv1Signature signed
+
+        mergedSignature = Types.TransactionSignature $ Map.unionWith Map.union existingSignature newSignature
+    in  stx{stSignature = Just mergedSignature}

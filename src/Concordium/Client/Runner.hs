@@ -656,9 +656,9 @@ getTxContractInfoWithSchemas schemaFile status = do
             MultipleBlocksUnambiguous bhs ts -> map (,f ts) bhs
             MultipleBlocksAmbiguous bhts -> map (second f) bhts
 
--- | Write a `SignedTransaction` to a JSON file.
-writeSignedTransactionToFile :: CT.SignedTransaction -> FilePath -> Bool -> OverwriteSetting -> IO ()
-writeSignedTransactionToFile signedTransaction outFile verbose overwriteSetting = do
+-- | Write a `SignableTransaction` to a JSON file.
+writeSignableTransactionToFile :: CT.SignableTransaction -> FilePath -> Bool -> OverwriteSetting -> IO ()
+writeSignableTransactionToFile signedTransaction outFile verbose overwriteSetting = do
     let txJson = AE.encodePretty signedTransaction
     success <- liftIO $ handleWriteFile BSL.writeFile overwriteSetting verbose outFile txJson
 
@@ -666,16 +666,16 @@ writeSignedTransactionToFile signedTransaction outFile verbose overwriteSetting 
         then logSuccess [[i|Wrote transaction successfully to the file '#{outFile}'|]]
         else logError [[i|Failed to write transaction to the file '#{outFile}'|]]
 
--- | Read and display a `SignedTransaction` from a JSON file.
---  Returns the associated `SignedTransaction`.
-readSignedTransactionFromFile :: FilePath -> IO CT.SignedTransaction
-readSignedTransactionFromFile fname = do
+-- | Read and display a `SignableTransaction` from a JSON file.
+--  Returns the associated `SignableTransaction`.
+readSignableTransactionFromFile :: FilePath -> IO CT.SignableTransaction
+readSignableTransactionFromFile fname = do
     fileContent <- liftIO $ BSL8.readFile fname
 
-    -- Decode JSON file content into a `SignedTransaction` type.
-    let parsedSignedTransaction :: Either String CT.SignedTransaction
-        parsedSignedTransaction = eitherDecode fileContent
-    case parsedSignedTransaction of
+    -- Decode JSON file content into a `SignableTransaction` type.
+    let parsedSignableTransaction :: Either String CT.SignableTransaction
+        parsedSignableTransaction = eitherDecode fileContent
+    case parsedSignableTransaction of
         Right tx -> do
             logInfo ["Transaction in file: "]
             logInfo [[i| #{showPrettyJSON tx}.|]]
@@ -710,7 +710,12 @@ processTransactionCmd action baseCfgDir verbose backend =
     case action of
         TransactionSubmit fname intOpts -> do
             -- Read signedTransaction from file
-            signedTransaction <- readSignedTransactionFromFile fname
+            signableTransaction <- readSignableTransactionFromFile fname
+
+            -- Warn the user that no signature is included in the transaction. This is still useful to allow, to test
+            -- that the node behaves as expected.
+            when (isNothing $ CT.stSignature signableTransaction) $ do
+                logWarn ["No sender signature found in the transaction"]
 
             -- Confirm to submit transaction on chain
             when (ioConfirm intOpts) $ do
@@ -718,11 +723,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                 unless confirmed exitTransactionCancelled
 
             -- Create the associated `bareBlockItem`
-            let encPayload = Types.encodePayload $ CT.stPayload signedTransaction
-            let header = Types.TransactionHeader (CT.stSigner signedTransaction) (CT.stNonce signedTransaction) (CT.stEnergy signedTransaction) (Types.payloadSize encPayload) (CT.stExpiryTime signedTransaction)
-            let signHash = Types.transactionSignHashFromHeaderPayload header encPayload
-            let tx = Types.NormalTransaction $ Types.AccountTransaction (CT.stSignature signedTransaction) header encPayload signHash
-
+            let tx = transactionBlockItem $ transactionFromSignable signableTransaction
             withClient backend $ do
                 -- Send transaction on chain
                 sbiRes <- sendBlockItem tx
@@ -742,15 +743,11 @@ processTransactionCmd action baseCfgDir verbose backend =
                         logSuccess ["transaction successfully completed"]
         TransactionAddSignature fname signers toKeys -> do
             -- Read transaction from file
-            signedTransaction <- readSignedTransactionFromFile fname
-
-            -- Create the encoded paylaod and header
-            let encPayload = Types.encodePayload $ CT.stPayload signedTransaction
-            let header = Types.TransactionHeader (CT.stSigner signedTransaction) (CT.stNonce signedTransaction) (CT.stEnergy signedTransaction) (Types.payloadSize encPayload) (CT.stExpiryTime signedTransaction)
+            signableTransaction <- readSignableTransactionFromFile fname
 
             -- Extract accountKeyMap to be used to sign the transaction
             baseCfg <- getBaseConfig baseCfgDir verbose
-            let signerAccountText = Text.pack $ show (Types.thSender header)
+            let signerAccountText = Text.pack $ show (CT.stSigner signableTransaction)
 
             -- TODO: we could check if the `nonce` still makes sense as read from the file vs the one on-chain.
 
@@ -765,21 +762,10 @@ processTransactionCmd action baseCfgDir verbose backend =
             encryptedSigningData <- getAccountCfg baseCfg signers (Just signerAccountText) keysArg
             accountKeyMap <- liftIO $ failOnError $ decryptAccountKeyMapInteractive (esdKeys encryptedSigningData) Nothing Nothing
 
-            -- Sign transaction and extract the signature map B (new signatures to be added)
-            let transactionB = signEncodedTransaction encPayload header accountKeyMap
-            let sigBMap = Types.tsSignatures (Types.atrSignature transactionB)
-
-            -- Extract the signature map A (original signatures as stored in the file)
-            let sigAMap = Types.tsSignatures (CT.stSignature signedTransaction)
-
-            -- Create the union of the signature map A and the signature map B
-            let unionSignaturesMap = Map.unionWith Map.union sigAMap sigBMap
-
-            -- Create final signed transaction including signtures A and B
-            let finalTransaction = signedTransaction{CT.stSignature = Types.TransactionSignature unionSignaturesMap}
+            let finalTransaction = signSignableTransaction signableTransaction accountKeyMap
 
             -- Write final signed transaction to file
-            liftIO $ writeSignedTransactionToFile finalTransaction fname verbose AllowOverwrite
+            liftIO $ writeSignableTransactionToFile finalTransaction fname verbose AllowOverwrite
         TransactionDeployCredential fname intOpts -> do
             source <- handleReadFile BSL.readFile fname
             withClient backend $ do
@@ -1200,13 +1186,10 @@ data TransactionConfig = TransactionConfig
       tcExtended :: Bool
     }
 
--- | An enum for the different transaction formats.
-data TransactionFormat = NormalFormat | ExtendedFormat
-
 -- | Gets the "TransactionFormat" for any "TransactionConfig" combination. Usable for
 -- figuring out which transaction format a transaction configuration should convert to.
 getTransactionFormat :: TransactionConfig -> TransactionFormat
-getTransactionFormat TransactionConfig {tcExtended = True} = ExtendedFormat
+getTransactionFormat TransactionConfig{tcExtended = True} = ExtendedFormat
 getTransactionFormat _ = NormalFormat
 
 -- | Resolve transaction config based on persisted config and CLI flags.
@@ -1864,7 +1847,7 @@ signAndProcessTransaction verbose txCfg pl intOpts outFile backend = do
                 Left err -> logFatal ["Decoding of payload failed: " <> err]
 
             -- Write signedTransaction to file
-            liftIO $ writeSignedTransactionToFile signedTransaction filePath verbose PromptBeforeOverwrite
+            liftIO $ writeSignableTransactionToFile signedTransaction filePath verbose PromptBeforeOverwrite
             return Nothing
         Nothing -> do
             logInfo [[i| Will send signed transaction to node.|]]
@@ -4899,63 +4882,3 @@ processCredential source =
                     AE.Error err -> fail $ "Cannot parse credential according to V0: " ++ err
             | otherwise ->
                 fail $ "Unsupported credential version: " ++ show (vVersion vCred)
-
--- | Sign a transaction payload and configuration into a "normal" AccountTransaction.
-encodeAndSignTransaction ::
-    Types.Payload ->
-    Types.AccountAddress ->
-    Types.Energy ->
-    Types.Nonce ->
-    Types.TransactionExpiryTime ->
-    AccountKeyMap ->
-    TransactionFormat ->
-    Transaction
-encodeAndSignTransaction txPayload = formatAndSignTransaction (Types.encodePayload txPayload)
-
--- | Format the header of the transaction and sign it together with the encoded transaction payload and return a "normal" AccountTransaction.
-formatAndSignTransaction ::
-    Types.EncodedPayload ->
-    Types.AccountAddress ->
-    Types.Energy ->
-    Types.Nonce ->
-    Types.TransactionExpiryTime ->
-    AccountKeyMap ->
-    TransactionFormat ->
-    Transaction
-formatAndSignTransaction encPayload sender energy nonce expiry keys version = case version of
-    NormalFormat -> NormalTransaction{tnTransaction = signEncodedTransaction encPayload header keys}
-    ExtendedFormat -> 
-        -- TODO: add sponsor address
-        let v1Header = Types.TransactionHeaderV1{ thv1Sponsor=Nothing, thv1HeaderV0=header }
-        in  ExtendedTransaction{ teTransaction=signEncodedTransactionExt encPayload v1Header keys}
-  where
-    header =
-        Types.TransactionHeader
-            { thSender = sender,
-              thPayloadSize = Types.payloadSize encPayload,
-              thNonce = nonce,
-              thEnergyAmount = energy,
-              thExpiry = expiry
-            }
-
--- | Sign an encoded transaction payload, and header with the account key map
--- and return a "normal" AccountTransaction.
-signEncodedTransaction ::
-    Types.EncodedPayload ->
-    Types.TransactionHeader ->
-    AccountKeyMap ->
-    Types.AccountTransaction
-signEncodedTransaction encPayload header accKeys =
-    let keys = Map.toList $ fmap Map.toList accKeys
-    in  Types.signTransaction keys header encPayload
-
--- | Sign an encoded transaction payload, and header with the account key map
--- and return an "extended" AccountTransaction.
-signEncodedTransactionExt ::
-    Types.EncodedPayload ->
-    Types.TransactionHeaderV1 ->
-    AccountKeyMap ->
-    Types.AccountTransactionV1
-signEncodedTransactionExt encPayload header accKeys =
-    let keys = Map.toList $ fmap Map.toList accKeys
-    in  Types.signTransactionV1 keys header encPayload
