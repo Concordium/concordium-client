@@ -1768,19 +1768,19 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
               ..
             } = txCfg
     nonce <- getNonce naAddr n confirmNonce
-    accountKeyMap <- case maybeAccKeys of
-        Just acKeys' -> return acKeys'
-        Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys Nothing Nothing
-    let sender = applyAlias tcAlias naAddr
-    let format = getTransactionFormat txCfg
-    let tx = if tcUnsigned
-        then unsignedTransaction pl sender energy nonce expiry format
-        else formatAndSignTransaction pl sender energy nonce expiry accountKeyMap format
 
+    let sender = applyAlias tcAlias naAddr
     when (isJust tcAlias) $
         logInfo [[i|Using the alias #{sender} as the sender of the transaction instead of #{naAddr}.|]]
 
-    return tx
+    let format = getTransactionFormat txCfg
+    if tcUnsigned
+        then return $ unsignedTransaction pl sender energy nonce expiry format 
+        else do
+            accountKeyMap <- case maybeAccKeys of
+                Just acKeys' -> return acKeys'
+                Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys Nothing Nothing
+            return $ formatAndSignTransaction pl sender energy nonce expiry accountKeyMap format
 
 -- | Fetch next nonces relative to the account's most recently committed and
 --  pending transactions, respectively.
