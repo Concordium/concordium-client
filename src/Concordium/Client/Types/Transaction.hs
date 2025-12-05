@@ -526,8 +526,7 @@ instance FromJSON SignableTransaction where
                 stSponsorSignature <- obj AE..:? "signatureSponsor"
                 stPayload <- obj AE..: "payload"
 
-                extended <- obj AE..:? "extended"
-                let stExtended = maybe False id $ extended
+                stExtended <- obj AE..:? "extended" AE..!= False
 
                 case (stExtended, stSponsor, stSponsorSignature) of
                     (False, Just _, _) -> fail "Non-extended transaction cannot have sponsor"
@@ -548,14 +547,14 @@ signSignableTransaction stx keys =
         headerV0 = Types.TransactionHeader stSigner stNonce stEnergy (Types.payloadSize encPayload) stExpiryTime
         encPayload = Types.encodePayload $ stPayload
 
-        newSignature = case (stExtended) of
-            False ->
-                let signed = signEncodedTransaction encPayload headerV0 keys
-                in  Types.tsSignatures $ Types.atrSignature signed
-            True ->
+        newSignature
+            | stExtended =
                 let headerV1 = Types.TransactionHeaderV1 headerV0 (stSponsor)
                     signed = signEncodedTransactionExt encPayload headerV1 keys
                 in  Types.tsSignatures $ Types.tsv1Sender $ Types.atrv1Signature signed
+            | otherwise =
+                let signed = signEncodedTransaction encPayload headerV0 keys
+                in  Types.tsSignatures $ Types.atrSignature signed
 
         mergedSignature = Types.TransactionSignature $ Map.unionWith Map.union existingSignature newSignature
     in  stx{stSignature = mergedSignature}
