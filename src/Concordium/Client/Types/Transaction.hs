@@ -30,8 +30,6 @@ data ExtendedCostOptions = ExtendedCostOptions
       hasSponsor :: !Bool
     }
 
---
-
 -- | Base cost of checking the transaction. The cost is always at least this,
 -- but in most cases it will have a transaction specific cost.
 minimumCost ::
