@@ -452,9 +452,14 @@ data ContractCmd
 -- | The type parameter 'energyOrMaybe' should be Energy or Maybe Energy.
 data TransactionOpts energyOrMaybe = TransactionOpts
     { toSender :: !(Maybe Text),
+      -- | Alias to use for the sender account
       toAlias :: !(Maybe Word),
+      -- | Keys of the sender account to use
       toKeys :: !(Maybe FilePath),
+      -- | Signer specification for the sender account in the format
+      -- "<cred-index>:<key-index>,<cred-index>:<key-index> .."
       toSigners :: !(Maybe Text),
+      -- | The nonce of the sender account to use.
       toNonce :: !(Maybe Nonce),
       toMaxEnergyAmount :: !energyOrMaybe,
       toExpiration :: !(Maybe Text),
@@ -466,6 +471,9 @@ data TransactionOpts energyOrMaybe = TransactionOpts
       toForceExtended :: !Bool,
       -- | Can be set to skip signing the transaction upon creation.
       toUnsigned :: !Bool,
+      -- | The sponsor options of the transaction, specifying configuration option
+      -- similar to what is available for the transaction sender.
+      toSponsorOpts :: !(Maybe TransactionSponsorOpts),
       toInteractionOpts :: !InteractionOpts
     }
     deriving (Show)
@@ -473,6 +481,19 @@ data TransactionOpts energyOrMaybe = TransactionOpts
 data InteractionOpts = InteractionOpts
     { ioConfirm :: !Bool,
       ioTail :: !Bool
+    }
+    deriving (Show)
+
+-- | The options related to sponsoring transactions
+data TransactionSponsorOpts = TransactionSponsorOpts
+    { tsoSponsor :: Text,
+      -- | Keys of the sender account to use
+      tsoSponsorKeys :: !(Maybe FilePath),
+      -- | Signer specification for the sponsor account in the format
+      -- "<cred-index>:<key-index>,<cred-index>:<key-index> .."
+      tsoSponsorSigners :: !(Maybe Text),
+      -- | whether the transaction should be signed by the sponsor keys immediately
+      tsoSponsorSign :: !Bool
     }
     deriving (Show)
 
@@ -703,14 +724,34 @@ transactionOptsParserBuilder energyOrMaybeParser =
                 <*> optional (strOption (long "out" <> metavar "FILE" <> help "File to output the signed/partially-signed transaction to instead of submitting the transaction on-chain."))
                 <*> switch (long "force-extended" <> help "Whether to force the transaction to created in the extended transaction format. This should generally not be used, as the format best suited to the transaction will be automatically derived.")
                 <*> switch (long "unsigned" <> help "Can be set to skip transaction signing. Can be used to create a transaction to be signed elsewhere.")
+                <*> optional transactionSponsorOptsParser
                 <*> interactionOptsParser
     in  validateParsedOpts <$> opts
   where
     validateParsedOpts o
         | isNothing (toOutFile o) && toUnsigned o = error "Cannot use '--unsigned' without '--out'"
-        | isJust (toSigners o) && toUnsigned o = error "Cannot use '--unsigned' with'--signers"
-        | isJust (toKeys o) && toUnsigned o = error "Cannot use '--unsigned' with'--keys"
+        | isJust (toSigners o) && toUnsigned o = error "Cannot use '--unsigned' with '--signers'"
+        | isJust (toKeys o) && toUnsigned o = error "Cannot use '--unsigned' with '--keys'"
+        | isJust (toSponsorOpts o) && isNothing (toOutFile o) && not (hasSponsorSigningInfo o) =
+            error "When using '--sponsor' without '--out', you must specify one of: '--sponsor-sign', '--sponsor-keys', or '--sponsor-signers'"
         | otherwise = o
+    hasSponsorSigningInfo o = case toSponsorOpts o of
+        Nothing -> False
+        Just sponsorOpts ->
+            tsoSponsorSign sponsorOpts
+                || isJust (tsoSponsorKeys sponsorOpts)
+                || isJust (tsoSponsorSigners sponsorOpts)
+
+transactionSponsorOptsParser :: Parser TransactionSponsorOpts
+transactionSponsorOptsParser =
+    TransactionSponsorOpts
+        <$> strOption (long "sponsor" <> metavar "ACCOUNT" <> help "Name or address of the transaction sponsor.")
+        <*>
+        -- TODO Specify / refer to format of JSON file when new commands (e.g. account add-keys) that accept same format are
+        -- added.
+        optional (strOption (long "sponsor-keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file."))
+        <*> optional (strOption (long "sponsor-signers" <> metavar "SIGNERS" <> help "Specification of which (local) keys to sign with. Example: \"0:1,0:2,3:0,3:1\" specifies that credential holder 0 signs with keys 1 and 2, while credential holder 3 signs with keys 0 and 1"))
+        <*> switch (long "sign" <> help "Can be set to sign the transaction with the keys corresponding to the specified sponsor account.")
 
 interactionOptsParser :: Parser InteractionOpts
 interactionOptsParser =
