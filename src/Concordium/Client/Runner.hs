@@ -1189,6 +1189,7 @@ data TransactionConfig = TransactionConfig
       tcEnergy :: Types.Energy,
       tcExpiry :: Types.TransactionExpiryTime,
       tcAlias :: Maybe Word,
+      tcUnsigned :: Bool,
       tcExtended :: Bool
     }
 
@@ -1228,7 +1229,8 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
               tcEnergy = energy,
               tcExpiry = expiry,
               tcAlias = toAlias txOpts,
-              tcExtended = toForceExtended txOpts
+              tcExtended = toForceExtended txOpts,
+              tcUnsigned = toUnsigned txOpts
             }
   where
     promptEnergyUpdate energy actualFee
@@ -1261,7 +1263,8 @@ getRequiredEnergyTransactionCfg baseCfg txOpts = do
               tcEnergy = energy,
               tcExpiry = expiry,
               tcAlias = toAlias txOpts,
-              tcExtended = toForceExtended txOpts
+              tcExtended = toForceExtended txOpts,
+              tcUnsigned = toUnsigned txOpts
             }
 
 -- | Warn if expiry is in the past or very near or distant future.
@@ -1765,16 +1768,19 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
               ..
             } = txCfg
     nonce <- getNonce naAddr n confirmNonce
-    accountKeyMap <- case maybeAccKeys of
-        Just acKeys' -> return acKeys'
-        Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys Nothing Nothing
-    let sender = applyAlias tcAlias naAddr
-    let tx = formatAndSignTransaction pl sender energy nonce expiry accountKeyMap $ getTransactionFormat txCfg
 
+    let sender = applyAlias tcAlias naAddr
     when (isJust tcAlias) $
         logInfo [[i|Using the alias #{sender} as the sender of the transaction instead of #{naAddr}.|]]
 
-    return tx
+    let format = getTransactionFormat txCfg
+    if tcUnsigned
+        then return $ unsignedTransaction pl sender energy nonce expiry format 
+        else do
+            accountKeyMap <- case maybeAccKeys of
+                Just acKeys' -> return acKeys'
+                Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys Nothing Nothing
+            return $ formatAndSignTransaction pl sender energy nonce expiry accountKeyMap format
 
 -- | Fetch next nonces relative to the account's most recently committed and
 --  pending transactions, respectively.
