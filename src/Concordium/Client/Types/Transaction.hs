@@ -388,7 +388,7 @@ transactionFromSignable stx =
                     teTransaction = Types.AccountTransactionV1 signatures headerV1 encPayload signHash
                 in  ExtendedTransaction{..}
 
--- | Format the header of the transaction encoded transaction payload and return a Transaction.
+-- | Format the header and the encoded transaction payload and return a Transaction.
 unsignedTransaction ::
     Types.EncodedPayload ->
     Types.AccountAddress ->
