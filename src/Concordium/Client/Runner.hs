@@ -1190,7 +1190,8 @@ data TransactionConfig = TransactionConfig
       tcExpiry :: Types.TransactionExpiryTime,
       tcAlias :: Maybe Word,
       tcUnsigned :: Bool,
-      tcExtended :: Bool
+      tcExtended :: Bool,
+      tcEncryptedSponsorSigningData :: Maybe EncryptedSigningData
     }
 
 -- | Gets the "TransactionFormat" for any "TransactionConfig" combination. Usable for
@@ -1205,11 +1206,12 @@ getTransactionFormat _ = NormalFormat
 --  If the energy allocation is too low, the user is prompted to increase it.
 getTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> GetComputeEnergyCost -> IO TransactionConfig
 getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
-    encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
-    energyCostFunc <- getEnergyCostFunc encSignData
+    tcEncryptedSigningData <- getAccountCfgFromTxOpts baseCfg $ toSender txOpts
+    tcEncryptedSponsorSigningData <- mapM (\sponsorOpts -> getAccountCfgFromTxOpts baseCfg $ tsoSponsor sponsorOpts) (toSponsor txOpts) 
+    energyCostFunc <- getEnergyCostFunc tcEncryptedSigningData
     let computedCost = case energyCostFunc of
             Nothing -> Nothing
-            Just ec -> Just $ ec (mapNumKeys (esdKeys encSignData))
+            Just ec -> Just $ ec (mapNumKeys (esdKeys tcEncryptedSigningData))
     energy <- case (toMaxEnergyAmount txOpts, computedCost) of
         (Nothing, Nothing) -> logFatal ["energy amount not specified"]
         (Nothing, Just c) -> do
@@ -1224,13 +1226,13 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
 
     return
         TransactionConfig
-            { tcEncryptedSigningData = encSignData,
-              tcNonce = toNonce txOpts,
+            { tcNonce = toNonce txOpts,
               tcEnergy = energy,
               tcExpiry = expiry,
               tcAlias = toAlias txOpts,
               tcExtended = toForceExtended txOpts,
-              tcUnsigned = toUnsigned txOpts
+              tcUnsigned = toUnsigned txOpts,
+              ..
             }
   where
     promptEnergyUpdate energy actualFee
@@ -1250,7 +1252,8 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
 --  Used for transactions where a specification of maxEnergy is required.
 getRequiredEnergyTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> IO TransactionConfig
 getRequiredEnergyTransactionCfg baseCfg txOpts = do
-    encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
+    tcEncryptedSigningData <- getAccountCfgFromTxOpts baseCfg $ toSender txOpts
+    tcEncryptedSponsorSigningData <- mapM (\sponsorOpts -> getAccountCfgFromTxOpts baseCfg $ tsoSponsor sponsorOpts) (toSponsor txOpts) 
     let energy = toMaxEnergyAmount txOpts
     now <- getCurrentTimeUnix
     expiry <- getExpiryArg "expiry" now $ toExpiration txOpts
@@ -1258,13 +1261,13 @@ getRequiredEnergyTransactionCfg baseCfg txOpts = do
 
     return
         TransactionConfig
-            { tcEncryptedSigningData = encSignData,
-              tcNonce = toNonce txOpts,
+            { tcNonce = toNonce txOpts,
               tcEnergy = energy,
               tcExpiry = expiry,
               tcAlias = toAlias txOpts,
               tcExtended = toForceExtended txOpts,
-              tcUnsigned = toUnsigned txOpts
+              tcUnsigned = toUnsigned txOpts,
+              ..
             }
 
 -- | Warn if expiry is in the past or very near or distant future.
@@ -1293,13 +1296,13 @@ warnSuspiciousExpiry expiryArg now
 -- The function throws an error:
 -- - if a key file is provided via a flag but the keys cannot be read from the file.
 -- - if NO key file is provided via a flag and the lookup of local keys from the key directory fails.
-getAccountCfgFromTxOpts :: BaseConfig -> TransactionOpts energyOrMaybe -> IO EncryptedSigningData
-getAccountCfgFromTxOpts baseCfg txOpts = do
-    keysArg <- case toKeys txOpts of
+getAccountCfgFromTxOpts :: BaseConfig -> TransactionSignerOpts -> IO EncryptedSigningData
+getAccountCfgFromTxOpts baseCfg signerOpts = do
+    keysArg <- case tsoKeys signerOpts of
         Nothing -> return Nothing
         Just filePath -> AE.eitherDecodeFileStrict filePath `withLogFatalIO` ("cannot decode keys: " ++)
-    let chosenKeysText = toSigners txOpts
-    let signerAccountText = toSender txOpts
+    let chosenKeysText = tsoSigners signerOpts
+    let signerAccountText = tsoAccount signerOpts
     getAccountCfg baseCfg chosenKeysText signerAccountText keysArg
 
 -- | Extract the account configuration and return the EncryptedSigningData (the encrypted keys/data to be used for e.g. singing a transaction).
@@ -2063,7 +2066,7 @@ processAccountCmd action baseCfgDir verbose backend =
                 runPrinter $ printBaseConfig baseCfg
                 putStrLn ""
 
-            accCfg <- liftIO $ getAccountCfgFromTxOpts baseCfg txOpts
+            accCfg <- liftIO $ getAccountCfgFromTxOpts baseCfg $ toSender txOpts
             let senderAddress = naAddr $ esdAddress accCfg
 
             withClient backend $ do
@@ -2096,7 +2099,7 @@ processAccountCmd action baseCfgDir verbose backend =
                 runPrinter $ printBaseConfig baseCfg
                 putStrLn ""
 
-            accCfg <- liftIO $ getAccountCfgFromTxOpts baseCfg txOpts
+            accCfg <- liftIO $ getAccountCfgFromTxOpts baseCfg $ toSender txOpts
             let senderAddress = naAddr $ esdAddress accCfg
 
             withClient backend $ do
@@ -2125,7 +2128,7 @@ processAccountCmd action baseCfgDir verbose backend =
                 runPrinter $ printBaseConfig baseCfg
                 putStrLn ""
 
-            accCfg <- getAccountCfgFromTxOpts baseCfg adTransactionOpts
+            accCfg <- getAccountCfgFromTxOpts baseCfg $ toSender adTransactionOpts
             let senderAddr = esdAddress accCfg
 
             encryptedSecretKey <- maybe (logFatal ["Missing account encryption secret key for account: " ++ show senderAddr]) return (esdEncryptionKey accCfg)
@@ -3543,7 +3546,7 @@ processBakerConfigureCmd baseCfgDir verbose backend txOpts isBakerConfigure cbCa
             Just fee -> [printf "finalization reward commission from delegators will be %s" (show fee)]
 
     readInputKeysFile baseCfg = do
-        encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
+        encSignData <- getAccountCfgFromTxOpts baseCfg $ toSender txOpts
         case inputKeysFile of
             Nothing -> return (Nothing, Nothing)
             Just inf -> do
@@ -3712,7 +3715,7 @@ processBakerAddCmd baseCfgDir verbose backend txOpts abBakingStake abRestakeEarn
             False -> ["rewards will _not_ be added to the validator stake automatically"]
 
     readInputKeysFile baseCfg = do
-        encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
+        encSignData <- getAccountCfgFromTxOpts baseCfg $ toSender txOpts
         bakerKeysMaybeEncrypted <- handleReadFile BS.readFile inputKeysFile
         let pwdAction = askPassword "Enter password for decrypting baker keys: "
         Password.decodeMaybeEncrypted pwdAction bakerKeysMaybeEncrypted >>= \case
@@ -3833,7 +3836,7 @@ processBakerSetKeysCmd baseCfgDir verbose backend txOpts inputKeysFile outputKey
         return (bakerKeys, txCfg, payload)
 
     readInputKeysFile baseCfg = do
-        encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
+        encSignData <- getAccountCfgFromTxOpts baseCfg $ toSender txOpts
         bakerKeysMaybeEncrypted <- handleReadFile BS.readFile inputKeysFile
         let pwdAction = askPassword "Enter password for decrypting validator keys: "
         Password.decodeMaybeEncrypted pwdAction bakerKeysMaybeEncrypted >>= \case
