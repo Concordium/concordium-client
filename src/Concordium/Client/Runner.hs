@@ -1207,7 +1207,7 @@ getTransactionFormat _ = NormalFormat
 getTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> GetComputeEnergyCost -> IO TransactionConfig
 getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
     tcEncryptedSigningData <- getAccountCfgFromTxOpts baseCfg txOpts
-    tcEncryptedSponsorSigningData <- mapM (\sponsorOpts -> getAccountCfgFromTxOpts baseCfg sponsorOpts) (toSponsor txOpts) 
+    tcEncryptedSponsorSigningData <- mapM (getAccountCfgFromTxOpts baseCfg) (toSponsor txOpts) 
     energyCostFunc <- getEnergyCostFunc tcEncryptedSigningData
     let computedCost = case energyCostFunc of
             Nothing -> Nothing
@@ -1253,7 +1253,7 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
 getRequiredEnergyTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> IO TransactionConfig
 getRequiredEnergyTransactionCfg baseCfg txOpts = do
     tcEncryptedSigningData <- getAccountCfgFromTxOpts baseCfg txOpts
-    tcEncryptedSponsorSigningData <- mapM (\sponsorOpts -> getAccountCfgFromTxOpts baseCfg sponsorOpts) (toSponsor txOpts) 
+    tcEncryptedSponsorSigningData <- mapM (getAccountCfgFromTxOpts baseCfg) (toSponsor txOpts) 
     let energy = toMaxEnergyAmount txOpts
     now <- getCurrentTimeUnix
     expiry <- getExpiryArg "expiry" now $ toExpiration txOpts

@@ -451,6 +451,8 @@ data ContractCmd
         }
     deriving (Show)
 
+-- | Describes any type defining the necessary information to create a transaction signer
+-- from it.
 class TransactionSigner s where
     -- | The name or account identifier for the sender account
     tsAccount :: s -> (Maybe Text)
@@ -732,12 +734,12 @@ requiredEnergyTransactionOptsParser =
     transactionOptsParserBuilder $
         option (eitherReader energyFromStringInform) (long "energy" <> metavar "MAX-ENERGY" <> help "Maximum allowed amount of energy to spend on transaction.")
 
--- | Helper function to build an transactionOptsParser with or without a required energy flag
+-- | Helper function to build a transactionOptsParser with or without a required energy flag
 transactionOptsParserBuilder :: Parser energyOrMaybe -> Parser (TransactionOpts energyOrMaybe)
 transactionOptsParserBuilder energyOrMaybeParser =
     let opts =
             TransactionOpts
-                <$> optional (strOption (long "sender" <> metavar "ACCOUNT" <> help ("Name or address of the transaction sponsor.")))
+                <$> optional (strOption (long "sender" <> metavar "ACCOUNT" <> help "Name or address of the transaction sender."))
                 <*> optional (option (eitherReader aliasFromStringInform) (long "alias" <> metavar "ALIAS" <> help "Which alias to use as the sender address."))
                 <*>
                 -- TODO Specify / refer to format of JSON file when new commands (e.g. account add-keys) that accept same format are
@@ -768,16 +770,17 @@ transactionOptsParserBuilder energyOrMaybeParser =
                 || isJust (tsoKeys sponsorOpts)
                 || isJust (tsoSigners sponsorOpts)
 
+-- | Helper function to build a parser for transaction sponsor opts
 transactionSponsorOptsParser :: Parser (Maybe TransactionSponsorOpts)
 transactionSponsorOptsParser =
     validateAndBuild
-        <$> optional (strOption (long "sponsor" <> metavar "ACCOUNT" <> help ("Name or address of the transaction sponsor.")))
+        <$> optional (strOption (long "sponsor" <> metavar "ACCOUNT" <> help "Name or address of the transaction sponsor."))
         <*>
         -- TODO Specify / refer to format of JSON file when new commands (e.g. account add-keys) that accept same format are
         -- added.
         optional (strOption (long "sponsor-keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file. Can only be used with '--sponsor'"))
         <*> optional (strOption (long "sponsor-signers" <> metavar "SIGNERS" <> help "Specification of which (local) keys to sign with. Example: \"0:1,0:2,3:0,3:1\" specifies that credential holder 0 signs with keys 1 and 2, while credential holder 3 signs with keys 0 and 1. Can only be used with '--sponsor'."))
-        <*> switch (long "sponsor-sign" <> help "Can be set to sign the transaction with the keys corresponding to the specified sponsor account. Can only be used with '--sponsor'.")
+        <*> switch (long "sponsor-sign" <> help "Sign the transaction with the keys corresponding to the specified sponsor account. Can only be used with '--sponsor'.")
   where
     validateAndBuild (Just sponsor) maybeKeys maybeSigners sponsorSign =
         Just $ TransactionSponsorOpts sponsor maybeKeys maybeSigners sponsorSign
