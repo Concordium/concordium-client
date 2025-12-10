@@ -692,17 +692,14 @@ readSignableTransactionFromFile fname = do
 
 -- | get the "ExtendedCostOptions" corresponding to a "TransactionOpts" structure.
 extendedCostFromOpts :: TransactionOpts a -> Maybe ExtendedCostOptions
-extendedCostFromOpts txOpts =
-    if not $ toForceExtended txOpts
-        then Nothing
-        else Just ExtendedCostOptions{hasSponsor = False}
+extendedCostFromOpts TransactionOpts{toSponsor = Just _} = Just ExtendedCostOptions{hasSponsor = True}
+extendedCostFromOpts TransactionOpts{toForceExtended = True, ..} = Just ExtendedCostOptions{hasSponsor = isJust toSponsor}
+extendedCostFromOpts _ = Nothing
 
 -- | get the "ExtendedCostOptions" corresponding to a "TransactionConfig".
 extendedCostFromConfig :: TransactionConfig -> Maybe ExtendedCostOptions
-extendedCostFromConfig tc =
-    if not $ tcExtended tc
-        then Nothing
-        else Just ExtendedCostOptions{hasSponsor = False}
+extendedCostFromConfig TransactionConfig{tcExtended = False} = Nothing
+extendedCostFromConfig TransactionConfig{..} = Just ExtendedCostOptions{hasSponsor = isJust tcEncryptedSponsorSigningData}
 
 -- | Process a 'transaction ...' command.
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -1198,6 +1195,7 @@ data TransactionConfig = TransactionConfig
 -- figuring out which transaction format a transaction configuration should convert to.
 getTransactionFormat :: TransactionConfig -> TransactionFormat
 getTransactionFormat TransactionConfig{tcExtended = True} = ExtendedFormat
+getTransactionFormat TransactionConfig{tcEncryptedSponsorSigningData = Just _} = ExtendedFormat
 getTransactionFormat _ = NormalFormat
 
 -- | Resolve transaction config based on persisted config and CLI flags.
@@ -1209,9 +1207,11 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
     tcEncryptedSigningData <- getAccountCfgFromTxOpts baseCfg txOpts
     tcEncryptedSponsorSigningData <- mapM (\sponsorOpts -> getAccountCfgFromTxOpts baseCfg sponsorOpts) (toSponsor txOpts) 
     energyCostFunc <- getEnergyCostFunc tcEncryptedSigningData
-    let computedCost = case energyCostFunc of
+    let numSenderKeys = mapNumKeys (esdKeys tcEncryptedSigningData)
+        numSponsorKeys = maybe 0 (mapNumKeys . esdKeys) tcEncryptedSponsorSigningData
+        computedCost = case energyCostFunc of
             Nothing -> Nothing
-            Just ec -> Just $ ec (mapNumKeys (esdKeys tcEncryptedSigningData))
+            Just ec -> Just $ ec $ numSenderKeys + numSponsorKeys
     energy <- case (toMaxEnergyAmount txOpts, computedCost) of
         (Nothing, Nothing) -> logFatal ["energy amount not specified"]
         (Nothing, Just c) -> do
