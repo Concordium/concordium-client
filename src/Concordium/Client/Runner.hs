@@ -1758,11 +1758,8 @@ startTransaction ::
     TransactionConfig ->
     Types.EncodedPayload ->
     Bool ->
-    -- | The decrypted account signing keys. If not provided, the encrypted keys
-    -- from the 'TransactionConfig' will be used, and for each the password will be queried.
-    Maybe AccountKeyMap ->
     ClientMonad m Transaction
-startTransaction txCfg pl confirmNonce maybeAccKeys = do
+startTransaction txCfg pl confirmNonce = do
     let TransactionConfig
             { tcEnergy = energy,
               tcExpiry = expiry,
@@ -1775,15 +1772,16 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
     let sender = applyAlias tcAlias naAddr
     when (isJust tcAlias) $
         logInfo [[i|Using the alias #{sender} as the sender of the transaction instead of #{naAddr}.|]]
+    let sponsorAddress = fmap (\EncryptedSigningData{esdAddress = NamedAddress{naAddr = _addr}} -> _addr) tcEncryptedSponsorSigningData
+        sponsorKeys = fmap (\EncryptedSigningData{esdKeys = _keys} -> _keys) tcEncryptedSponsorSigningData
 
     let format = getTransactionFormat txCfg
     if tcUnsigned
-        then return $ unsignedTransaction pl sender energy nonce expiry format 
+        then failOnError' $ unsignedTransaction pl sender energy nonce expiry format sponsorAddress
         else do
-            accountKeyMap <- case maybeAccKeys of
-                Just acKeys' -> return acKeys'
-                Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys Nothing Nothing
-            return $ formatAndSignTransaction pl sender energy nonce expiry accountKeyMap format
+            senderKeyMap <- liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys Nothing Nothing
+            sponsorKeyMap <- traverse (\keys -> liftIO $ failOnError $ decryptAccountKeyMapInteractive keys Nothing Nothing) sponsorKeys
+            failOnError' $ formatAndSignTransaction pl sender energy nonce expiry senderKeyMap format sponsorAddress sponsorKeyMap
 
 -- | Fetch next nonces relative to the account's most recently committed and
 --  pending transactions, respectively.
@@ -1846,7 +1844,7 @@ signAndProcessTransaction ::
     Backend ->
     ClientMonad m (Maybe TransactionStatusResult)
 signAndProcessTransaction verbose txCfg pl intOpts outFile backend = do
-    tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
+    tx <- startTransaction txCfg pl (ioConfirm intOpts)
 
     case outFile of
         Just filePath -> do
