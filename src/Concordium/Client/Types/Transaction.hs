@@ -346,13 +346,13 @@ transactionBlockItem NormalTransaction{tnTransaction = tx} = Types.NormalTransac
 transactionBlockItem ExtendedTransaction{teTransaction = tx} = Types.ExtendedTransaction{biTransactionV1 = tx}
 
 -- | converts a 'Transaction' to a 'SignableTransaction'.
-transactionToSigned :: ProtocolVersion -> Transaction -> Either String SignableTransaction
-transactionToSigned pv NormalTransaction{tnTransaction = tx} = transactionToSigned' pv tx
-transactionToSigned pv ExtendedTransaction{teTransaction = tx} = transactionToSigned' pv tx
+transactionToSignable :: ProtocolVersion -> Transaction -> Either String SignableTransaction
+transactionToSignable pv NormalTransaction{tnTransaction = tx} = transactionToSignable' pv tx
+transactionToSignable pv ExtendedTransaction{teTransaction = tx} = transactionToSignable' pv tx
 
 -- | converts any 'TransactionData' instance to a 'SignableTransaction'.
-transactionToSigned' :: forall t. (Types.TransactionData t) => ProtocolVersion -> t -> Either String SignableTransaction
-transactionToSigned' pv tx = do
+transactionToSignable' :: forall t. (Types.TransactionData t) => ProtocolVersion -> t -> Either String SignableTransaction
+transactionToSignable' pv tx = do
     payload <- case Types.promoteProtocolVersion pv of
         Types.SomeProtocolVersion spv -> Types.decodePayload spv $ Types.transactionPayload tx
     let header = Types.transactionHeader tx

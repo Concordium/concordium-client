@@ -1190,7 +1190,8 @@ data TransactionConfig = TransactionConfig
       tcExpiry :: Types.TransactionExpiryTime,
       tcAlias :: Maybe Word,
       tcUnsigned :: Bool,
-      tcExtended :: Bool
+      tcExtended :: Bool,
+      tcEncryptedSponsorSigningData :: Maybe EncryptedSigningData
     }
 
 -- | Gets the "TransactionFormat" for any "TransactionConfig" combination. Usable for
@@ -1205,11 +1206,12 @@ getTransactionFormat _ = NormalFormat
 --  If the energy allocation is too low, the user is prompted to increase it.
 getTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> GetComputeEnergyCost -> IO TransactionConfig
 getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
-    encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
-    energyCostFunc <- getEnergyCostFunc encSignData
+    tcEncryptedSigningData <- getAccountCfgFromTxOpts baseCfg txOpts
+    tcEncryptedSponsorSigningData <- mapM (getAccountCfgFromTxOpts baseCfg) (toSponsor txOpts) 
+    energyCostFunc <- getEnergyCostFunc tcEncryptedSigningData
     let computedCost = case energyCostFunc of
             Nothing -> Nothing
-            Just ec -> Just $ ec (mapNumKeys (esdKeys encSignData))
+            Just ec -> Just $ ec (mapNumKeys (esdKeys tcEncryptedSigningData))
     energy <- case (toMaxEnergyAmount txOpts, computedCost) of
         (Nothing, Nothing) -> logFatal ["energy amount not specified"]
         (Nothing, Just c) -> do
@@ -1224,13 +1226,13 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
 
     return
         TransactionConfig
-            { tcEncryptedSigningData = encSignData,
-              tcNonce = toNonce txOpts,
+            { tcNonce = toNonce txOpts,
               tcEnergy = energy,
               tcExpiry = expiry,
               tcAlias = toAlias txOpts,
               tcExtended = toForceExtended txOpts,
-              tcUnsigned = toUnsigned txOpts
+              tcUnsigned = toUnsigned txOpts,
+              ..
             }
   where
     promptEnergyUpdate energy actualFee
@@ -1250,7 +1252,8 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
 --  Used for transactions where a specification of maxEnergy is required.
 getRequiredEnergyTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> IO TransactionConfig
 getRequiredEnergyTransactionCfg baseCfg txOpts = do
-    encSignData <- getAccountCfgFromTxOpts baseCfg txOpts
+    tcEncryptedSigningData <- getAccountCfgFromTxOpts baseCfg txOpts
+    tcEncryptedSponsorSigningData <- mapM (getAccountCfgFromTxOpts baseCfg) (toSponsor txOpts) 
     let energy = toMaxEnergyAmount txOpts
     now <- getCurrentTimeUnix
     expiry <- getExpiryArg "expiry" now $ toExpiration txOpts
@@ -1258,13 +1261,13 @@ getRequiredEnergyTransactionCfg baseCfg txOpts = do
 
     return
         TransactionConfig
-            { tcEncryptedSigningData = encSignData,
-              tcNonce = toNonce txOpts,
+            { tcNonce = toNonce txOpts,
               tcEnergy = energy,
               tcExpiry = expiry,
               tcAlias = toAlias txOpts,
               tcExtended = toForceExtended txOpts,
-              tcUnsigned = toUnsigned txOpts
+              tcUnsigned = toUnsigned txOpts,
+              ..
             }
 
 -- | Warn if expiry is in the past or very near or distant future.
@@ -1293,13 +1296,13 @@ warnSuspiciousExpiry expiryArg now
 -- The function throws an error:
 -- - if a key file is provided via a flag but the keys cannot be read from the file.
 -- - if NO key file is provided via a flag and the lookup of local keys from the key directory fails.
-getAccountCfgFromTxOpts :: BaseConfig -> TransactionOpts energyOrMaybe -> IO EncryptedSigningData
-getAccountCfgFromTxOpts baseCfg txOpts = do
-    keysArg <- case toKeys txOpts of
+getAccountCfgFromTxOpts :: forall t . TransactionSigner t => BaseConfig -> t -> IO EncryptedSigningData
+getAccountCfgFromTxOpts baseCfg signerOpts = do
+    keysArg <- case tsKeys signerOpts of
         Nothing -> return Nothing
         Just filePath -> AE.eitherDecodeFileStrict filePath `withLogFatalIO` ("cannot decode keys: " ++)
-    let chosenKeysText = toSigners txOpts
-    let signerAccountText = toSender txOpts
+    let chosenKeysText = tsSigners signerOpts
+    let signerAccountText = tsAccount signerOpts
     getAccountCfg baseCfg chosenKeysText signerAccountText keysArg
 
 -- | Extract the account configuration and return the EncryptedSigningData (the encrypted keys/data to be used for e.g. singing a transaction).
@@ -1854,7 +1857,7 @@ signAndProcessTransaction verbose txCfg pl intOpts outFile backend = do
                 cs <- getResponseValueOrDie =<< getConsensusInfo
                 return $ Queries.csProtocolVersion cs
 
-            signedTransaction <- case transactionToSigned pv tx of
+            signedTransaction <- case transactionToSignable pv tx of
                 Right st -> return st
                 Left err -> logFatal ["Decoding of payload failed: " <> err]
 
