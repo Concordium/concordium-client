@@ -750,7 +750,11 @@ processTransactionCmd action baseCfgDir verbose backend =
 
             -- Extract accountKeyMap to be used to sign the transaction
             baseCfg <- getBaseConfig baseCfgDir verbose
-            let signerAccountText = Text.pack $ show (CT.stSigner signableTransaction)
+            let signerAccountText = if asSponsor
+                then case CT.stSponsor signableTransaction of
+                    Just sponsor -> Text.pack $ show sponsor
+                    Nothing -> error "Transaction has no sponsor but --as-sponsor flag was provided"
+                else Text.pack $ show (CT.stSigner signableTransaction)
 
             -- TODO: we could check if the `nonce` still makes sense as read from the file vs the one on-chain.
 
