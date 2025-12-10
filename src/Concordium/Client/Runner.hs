@@ -1857,7 +1857,7 @@ signAndProcessTransaction verbose txCfg pl intOpts outFile backend = do
                 cs <- getResponseValueOrDie =<< getConsensusInfo
                 return $ Queries.csProtocolVersion cs
 
-            signedTransaction <- case transactionToSigned pv tx of
+            signedTransaction <- case transactionToSignable pv tx of
                 Right st -> return st
                 Left err -> logFatal ["Decoding of payload failed: " <> err]
 
