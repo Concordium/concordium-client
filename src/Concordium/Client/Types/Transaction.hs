@@ -417,6 +417,30 @@ unsignedTransaction encPayload sender energy nonce expiry version sponsor = case
             }
     emptySignature = Types.TransactionSignature mempty
 
+--
+
+-- | Format the header of the transaction and sponsor it together with the encoded transaction payload and return a Transaction.
+formatAndSponsorTransaction ::
+    Types.EncodedPayload ->
+    -- | The transaction sender
+    Types.AccountAddress ->
+    Types.Energy ->
+    Types.Nonce ->
+    Types.TransactionExpiryTime ->
+    TransactionFormat ->
+    -- | The transaction sponsor
+    Types.AccountAddress ->
+    -- | The transaction sponsor keys
+    AccountKeyMap ->
+    Either String Transaction
+formatAndSponsorTransaction encPayload sender energy nonce expiry version sponsor sponsorKeys = do
+    unsigned <- unsignedTransaction encPayload sender energy nonce expiry version (Just sponsor)
+    case unsigned of
+        NormalTransaction{tnTransaction = AccountTransaction{..}} ->
+            pure NormalTransaction{tnTransaction = signEncodedTransaction atrPayload atrHeader sponsorKeys}
+        ExtendedTransaction{teTransaction = AccountTransactionV1{..}} ->
+            pure ExtendedTransaction{teTransaction = sponsorEncodedTransactionExt atrv1Payload atrv1Header sponsorKeys}
+
 -- | An enum for the different transaction formats.
 data TransactionFormat = NormalFormat | ExtendedFormat
 

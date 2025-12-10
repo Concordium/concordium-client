@@ -744,7 +744,7 @@ processTransactionCmd action baseCfgDir verbose backend =
                         when (ioTail intOpts) $ do
                             tailTransaction_ verbose hash
                         logSuccess ["transaction successfully completed"]
-        TransactionAddSignature fname signers toKeys -> do
+        TransactionAddSignature fname signers toKeys asSponsor -> do
             -- Read transaction from file
             signableTransaction <- readSignableTransactionFromFile fname
 
@@ -764,8 +764,9 @@ processTransactionCmd action baseCfgDir verbose backend =
 
             encryptedSigningData <- getAccountCfg baseCfg signers (Just signerAccountText) keysArg
             accountKeyMap <- liftIO $ failOnError $ decryptAccountKeyMapInteractive (esdKeys encryptedSigningData) Nothing Nothing
-
-            let finalTransaction = signSignableTransaction signableTransaction accountKeyMap
+            finalTransaction <- failOnError' $ if asSponsor
+                then sponsorSignableTransaction signableTransaction accountKeyMap
+                else pure $ signSignableTransaction signableTransaction accountKeyMap
 
             -- Write final signed transaction to file
             liftIO $ writeSignableTransactionToFile finalTransaction fname verbose AllowOverwrite
@@ -1186,8 +1187,9 @@ data TransactionConfig = TransactionConfig
       tcEnergy :: Types.Energy,
       tcExpiry :: Types.TransactionExpiryTime,
       tcAlias :: Maybe Word,
-      tcUnsigned :: Bool,
+      tcSign :: Bool,
       tcExtended :: Bool,
+      tcSponsorSign :: Bool,
       tcEncryptedSponsorSigningData :: Maybe EncryptedSigningData
     }
 
@@ -1231,7 +1233,8 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
               tcExpiry = expiry,
               tcAlias = toAlias txOpts,
               tcExtended = toForceExtended txOpts,
-              tcUnsigned = toUnsigned txOpts,
+              tcSign = tsSign txOpts,
+              tcSponsorSign = maybe False tsSign $ toSponsor txOpts,
               ..
             }
   where
@@ -1266,7 +1269,8 @@ getRequiredEnergyTransactionCfg baseCfg txOpts = do
               tcExpiry = expiry,
               tcAlias = toAlias txOpts,
               tcExtended = toForceExtended txOpts,
-              tcUnsigned = toUnsigned txOpts,
+              tcSign = tsSign txOpts,
+              tcSponsorSign = maybe False tsSign $ toSponsor txOpts,
               ..
             }
 
@@ -1773,12 +1777,20 @@ startTransaction txCfg pl confirmNonce = do
     when (isJust tcAlias) $
         logInfo [[i|Using the alias #{sender} as the sender of the transaction instead of #{naAddr}.|]]
     let sponsorAddress = fmap (\EncryptedSigningData{esdAddress = NamedAddress{naAddr = _addr}} -> _addr) tcEncryptedSponsorSigningData
-        sponsorKeys = fmap (\EncryptedSigningData{esdKeys = _keys} -> _keys) tcEncryptedSponsorSigningData
+        sponsorKeys = if tcSponsorSign 
+            then fmap (\EncryptedSigningData{esdKeys = _keys} -> _keys) tcEncryptedSponsorSigningData 
+            else Nothing
 
     let format = getTransactionFormat txCfg
-    if tcUnsigned
-        then failOnError' $ unsignedTransaction pl sender energy nonce expiry format sponsorAddress
-        else do
+    case (tcSign, tcSponsorSign) of
+        (False, False) -> failOnError' $ unsignedTransaction pl sender energy nonce expiry format sponsorAddress
+        (False, True) -> do
+            case (sponsorAddress, sponsorKeys) of
+                (Just sponsor, Just encKeys) -> do
+                    sponsorKeyMap <- liftIO $ failOnError $ decryptAccountKeyMapInteractive encKeys Nothing Nothing
+                    failOnError' $ formatAndSponsorTransaction pl sender energy nonce expiry format sponsor sponsorKeyMap
+                _ -> fail "Could not get sponsor signing data for sponsor"
+        (True, _) -> do
             senderKeyMap <- liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys Nothing Nothing
             sponsorKeyMap <- traverse (\keys -> liftIO $ failOnError $ decryptAccountKeyMapInteractive keys Nothing Nothing) sponsorKeys
             failOnError' $ formatAndSignTransaction pl sender energy nonce expiry senderKeyMap format sponsorAddress sponsorKeyMap
