@@ -8,6 +8,19 @@
   where token name, metadata and governance account are now optional in the token module interface
   (but still required by the current token module implementation).
 
+## 10.0.0-alpha (Compatible with node version 10.0.0)
+
+- `--extended` transaction configuration option has been added as a means to submit a transaction in the v1 transaction format.
+- `--unsigned` transaction configuration option has been added to support constructing unsigned transactions. These can be
+  signed at a later point by using `transaction add-signature`. This option can only be used when `--out` is also specified.
+- All transaction commands can now be configured to construct sponsored transactions by using `--sponsor <ACCOUNT>`
+  enabling a new set of optional configuration options:
+  - `--sponsor-keys` to specify a file holding the sponsor keys to use for signing. Similar to `--keys`.
+  - `--sponsor-signers` to specify the credential and key indices to sign with for the sponsor account. Similar to `--signers`.
+  - `--sponsor-sign` to sign the transaction on behalf of the sponsor as part of transaction construction. Inverse of `--unsigned`
+    for the transaction sender.
+- `transaction add-signature` now supports signing on behalf of a sponsor by specifying the `--sponsor` flag.
+
 ## 9.1.4 (Compatible with node version 9.0.7) - 2025-08-14
 
 - Bump GHC version to 9.10.2 (lts-24.0).
