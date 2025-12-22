@@ -391,18 +391,21 @@ transactionFromSignable stx =
 -- | Format the header and the encoded transaction payload and return a Transaction.
 unsignedTransaction ::
     Types.EncodedPayload ->
+    -- | The transaction sender
     Types.AccountAddress ->
     Types.Energy ->
     Types.Nonce ->
     Types.TransactionExpiryTime ->
     TransactionFormat ->
-    Transaction
-unsignedTransaction encPayload sender energy nonce expiry version = case version of
-    NormalFormat -> NormalTransaction{tnTransaction = Types.makeAccountTransaction emptySignature headerV0 encPayload}
+    -- | The transaction sponsor
+    Maybe Types.AccountAddress ->
+    Either String Transaction
+unsignedTransaction _ _ _ _ _ NormalFormat (Just _) = Left "Must use the extended transaction format when creating sponsored transactions"
+unsignedTransaction encPayload sender energy nonce expiry version sponsor = case version of
+    NormalFormat -> pure $ NormalTransaction{tnTransaction = Types.makeAccountTransaction emptySignature headerV0 encPayload}
     ExtendedFormat ->
-        -- TODO: SPO-65 add sponsor address
-        let headerV1 = Types.TransactionHeaderV1{thv1Sponsor = Nothing, thv1HeaderV0 = headerV0}
-        in  ExtendedTransaction{teTransaction = Types.makeAccountTransactionV1 (Types.TransactionSignaturesV1 emptySignature Nothing) headerV1 encPayload}
+        let headerV1 = Types.TransactionHeaderV1{thv1Sponsor = sponsor, thv1HeaderV0 = headerV0}
+        in  pure ExtendedTransaction{teTransaction = Types.makeAccountTransactionV1 (Types.TransactionSignaturesV1 emptySignature Nothing) headerV1 encPayload}
   where
     headerV0 =
         Types.TransactionHeader
@@ -414,38 +417,75 @@ unsignedTransaction encPayload sender energy nonce expiry version = case version
             }
     emptySignature = Types.TransactionSignature mempty
 
+--
+
+-- | Format the header of the transaction and sign it as a sponsor together with the encoded
+-- transaction payload and return a Transaction.
+formatAndSponsorTransaction ::
+    Types.EncodedPayload ->
+    -- | The transaction sender
+    Types.AccountAddress ->
+    Types.Energy ->
+    Types.Nonce ->
+    Types.TransactionExpiryTime ->
+    TransactionFormat ->
+    -- | The transaction sponsor
+    Types.AccountAddress ->
+    -- | The transaction sponsor keys
+    AccountKeyMap ->
+    Either String Transaction
+formatAndSponsorTransaction encPayload sender energy nonce expiry version sponsor sponsorKeys = do
+    unsigned <- unsignedTransaction encPayload sender energy nonce expiry version (Just sponsor)
+    case unsigned of
+        NormalTransaction{} ->
+            Left "Expected an extended transaction (internal error)."
+        ExtendedTransaction{teTransaction = AccountTransactionV1{..}} ->
+            pure ExtendedTransaction{teTransaction = sponsorEncodedTransactionExt atrv1Payload atrv1Header sponsorKeys}
+
 -- | An enum for the different transaction formats.
 data TransactionFormat = NormalFormat | ExtendedFormat
 
 -- | Sign a transaction payload and configuration into a "normal" AccountTransaction.
 encodeAndSignTransaction ::
     Types.Payload ->
+    -- | The transaction sender
     Types.AccountAddress ->
     Types.Energy ->
     Types.Nonce ->
     Types.TransactionExpiryTime ->
+    -- | The keys related to the transaction sender
     AccountKeyMap ->
     TransactionFormat ->
-    Transaction
+    -- | The transaction sponsor
+    Maybe Types.AccountAddress ->
+    -- | The transaction sponsor keys
+    Maybe AccountKeyMap ->
+    Either String Transaction
 encodeAndSignTransaction txPayload = formatAndSignTransaction (Types.encodePayload txPayload)
 
 -- | Format the header of the transaction and sign it together with the encoded transaction payload and return a Transaction.
 formatAndSignTransaction ::
     Types.EncodedPayload ->
+    -- | The transaction sender
     Types.AccountAddress ->
     Types.Energy ->
     Types.Nonce ->
     Types.TransactionExpiryTime ->
+    -- | The transaction sender keys
     AccountKeyMap ->
     TransactionFormat ->
-    Transaction
-formatAndSignTransaction encPayload sender energy nonce expiry keys version = case unsigned of
-    NormalTransaction{tnTransaction = AccountTransaction{..}} ->
-        NormalTransaction{tnTransaction = signEncodedTransaction atrPayload atrHeader keys}
-    ExtendedTransaction{teTransaction = AccountTransactionV1{..}} ->
-        ExtendedTransaction{teTransaction = signEncodedTransactionExt atrv1Payload atrv1Header keys}
-  where
-    unsigned = unsignedTransaction encPayload sender energy nonce expiry version
+    -- | The transaction sponsor
+    Maybe Types.AccountAddress ->
+    -- | The transaction sponsor keys
+    Maybe AccountKeyMap ->
+    Either String Transaction
+formatAndSignTransaction encPayload sender energy nonce expiry keys version sponsor sponsorKeys = do
+    unsigned <- unsignedTransaction encPayload sender energy nonce expiry version sponsor
+    case unsigned of
+        NormalTransaction{tnTransaction = AccountTransaction{..}} ->
+            pure NormalTransaction{tnTransaction = signEncodedTransaction atrPayload atrHeader keys}
+        ExtendedTransaction{teTransaction = AccountTransactionV1{..}} ->
+            pure ExtendedTransaction{teTransaction = signEncodedTransactionExt atrv1Payload atrv1Header keys sponsorKeys}
 
 -- | Sign an encoded transaction payload, and header with the account key map
 -- and return a "normal" AccountTransaction.
@@ -463,11 +503,32 @@ signEncodedTransaction encPayload header accKeys =
 signEncodedTransactionExt ::
     Types.EncodedPayload ->
     Types.TransactionHeaderV1 ->
+    -- | transaction sender keys
+    AccountKeyMap ->
+    -- | transaction sponsor keys
+    Maybe AccountKeyMap ->
+    Types.AccountTransactionV1
+signEncodedTransactionExt encPayload header accKeys sponsorKeys =
+    let keys = Map.toList $ fmap Map.toList accKeys
+        signedBySender = Types.signTransactionV1 keys header encPayload
+    in  case sponsorKeys of
+            Nothing -> signedBySender
+            Just spKeys ->
+                let spKeysFormatted = Map.toList $ fmap Map.toList spKeys
+                in  Types.sponsorTransactionV1 spKeysFormatted signedBySender
+
+-- | Sign an encoded transaction payload, and header with the account key map
+-- of the transaction sponsor, and return an "extended" AccountTransaction.
+sponsorEncodedTransactionExt ::
+    Types.EncodedPayload ->
+    Types.TransactionHeaderV1 ->
+    -- | transaction sponsor keys
     AccountKeyMap ->
     Types.AccountTransactionV1
-signEncodedTransactionExt encPayload header accKeys =
+sponsorEncodedTransactionExt encPayload header accKeys =
     let keys = Map.toList $ fmap Map.toList accKeys
-    in  Types.signTransactionV1 keys header encPayload
+        emptySignature = Types.TransactionSignaturesV1 (Types.TransactionSignature mempty) Nothing
+    in  Types.sponsorTransactionV1 keys $ Types.makeAccountTransactionV1 emptySignature header encPayload
 
 -----------------------------------------------------------------
 
@@ -569,7 +630,7 @@ signSignableTransaction stx keys =
         newSignature
             | stExtended =
                 let headerV1 = Types.TransactionHeaderV1 headerV0 (stSponsor)
-                    signed = signEncodedTransactionExt encPayload headerV1 keys
+                    signed = signEncodedTransactionExt encPayload headerV1 keys Nothing
                 in  Types.tsSignatures $ Types.tsv1Sender $ Types.atrv1Signature signed
             | otherwise =
                 let signed = signEncodedTransaction encPayload headerV0 keys
@@ -577,3 +638,19 @@ signSignableTransaction stx keys =
 
         mergedSignature = Types.TransactionSignature $ Map.unionWith Map.union existingSignature newSignature
     in  stx{stSignature = mergedSignature}
+
+-- | Sign a "SignableTransaction" on behalf of the transaction sponsor, adding the signature
+-- corresponding to the given "AccountKeyMap" onto the transaction. If signatures already exist,
+-- they will be merged with the ones created.
+sponsorSignableTransaction :: SignableTransaction -> AccountKeyMap -> Either String SignableTransaction
+sponsorSignableTransaction SignableTransaction{stExtended = False} _ = Left "Cannot sponsor a transaction based on the non-extended transaction format"
+sponsorSignableTransaction stx accKeys =
+    let SignableTransaction{..} = stx
+        existingSignature = maybe mempty (\sig -> Types.tsSignatures sig) stSponsorSignature
+        headerV0 = Types.TransactionHeader stSigner stNonce stEnergy (Types.payloadSize encPayload) stExpiryTime
+        headerV1 = Types.TransactionHeaderV1 headerV0 (stSponsor)
+        encPayload = Types.encodePayload $ stPayload
+        keys = Map.toList $ fmap Map.toList accKeys
+        newSignature = Types.tsSignatures $ Types.createTransactionV1Signature keys headerV1 encPayload
+        mergedSignature = Types.TransactionSignature $ Map.unionWith Map.union existingSignature newSignature
+    in  pure stx{stSponsorSignature = Just mergedSignature}

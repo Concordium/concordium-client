@@ -692,17 +692,13 @@ readSignableTransactionFromFile fname = do
 
 -- | get the "ExtendedCostOptions" corresponding to a "TransactionOpts" structure.
 extendedCostFromOpts :: TransactionOpts a -> Maybe ExtendedCostOptions
-extendedCostFromOpts txOpts =
-    if not $ toForceExtended txOpts
-        then Nothing
-        else Just ExtendedCostOptions{hasSponsor = False}
+extendedCostFromOpts TransactionOpts{toSponsor = Nothing, toForceExtended = False} = Nothing
+extendedCostFromOpts TransactionOpts{..} = Just ExtendedCostOptions{hasSponsor = isJust toSponsor}
 
 -- | get the "ExtendedCostOptions" corresponding to a "TransactionConfig".
 extendedCostFromConfig :: TransactionConfig -> Maybe ExtendedCostOptions
-extendedCostFromConfig tc =
-    if not $ tcExtended tc
-        then Nothing
-        else Just ExtendedCostOptions{hasSponsor = False}
+extendedCostFromConfig TransactionConfig{tcExtended = False} = Nothing
+extendedCostFromConfig TransactionConfig{..} = Just ExtendedCostOptions{hasSponsor = isJust tcEncryptedSponsorSigningData}
 
 -- | Process a 'transaction ...' command.
 processTransactionCmd :: TransactionCmd -> Maybe FilePath -> Verbose -> Backend -> IO ()
@@ -747,13 +743,17 @@ processTransactionCmd action baseCfgDir verbose backend =
                         when (ioTail intOpts) $ do
                             tailTransaction_ verbose hash
                         logSuccess ["transaction successfully completed"]
-        TransactionAddSignature fname signers toKeys -> do
+        TransactionAddSignature fname signers toKeys asSponsor -> do
             -- Read transaction from file
             signableTransaction <- readSignableTransactionFromFile fname
 
             -- Extract accountKeyMap to be used to sign the transaction
             baseCfg <- getBaseConfig baseCfgDir verbose
-            let signerAccountText = Text.pack $ show (CT.stSigner signableTransaction)
+            let signerAccountText
+                    | asSponsor = case CT.stSponsor signableTransaction of
+                        Just sponsor -> Text.pack $ show sponsor
+                        Nothing -> error "Transaction has no sponsor but --as-sponsor flag was provided"
+                    | otherwise = Text.pack $ show (CT.stSigner signableTransaction)
 
             -- TODO: we could check if the `nonce` still makes sense as read from the file vs the one on-chain.
 
@@ -767,8 +767,9 @@ processTransactionCmd action baseCfgDir verbose backend =
 
             encryptedSigningData <- getAccountCfg baseCfg signers (Just signerAccountText) keysArg
             accountKeyMap <- liftIO $ failOnError $ decryptAccountKeyMapInteractive (esdKeys encryptedSigningData) Nothing Nothing
-
-            let finalTransaction = signSignableTransaction signableTransaction accountKeyMap
+            finalTransaction <- failOnError' $ if asSponsor
+                then sponsorSignableTransaction signableTransaction accountKeyMap
+                else pure $ signSignableTransaction signableTransaction accountKeyMap
 
             -- Write final signed transaction to file
             liftIO $ writeSignableTransactionToFile finalTransaction fname verbose AllowOverwrite
@@ -1189,8 +1190,9 @@ data TransactionConfig = TransactionConfig
       tcEnergy :: Types.Energy,
       tcExpiry :: Types.TransactionExpiryTime,
       tcAlias :: Maybe Word,
-      tcUnsigned :: Bool,
+      tcSign :: Bool,
       tcExtended :: Bool,
+      tcSponsorSign :: Bool,
       tcEncryptedSponsorSigningData :: Maybe EncryptedSigningData
     }
 
@@ -1198,6 +1200,7 @@ data TransactionConfig = TransactionConfig
 -- figuring out which transaction format a transaction configuration should convert to.
 getTransactionFormat :: TransactionConfig -> TransactionFormat
 getTransactionFormat TransactionConfig{tcExtended = True} = ExtendedFormat
+getTransactionFormat TransactionConfig{tcEncryptedSponsorSigningData = Just _} = ExtendedFormat
 getTransactionFormat _ = NormalFormat
 
 -- | Resolve transaction config based on persisted config and CLI flags.
@@ -1209,9 +1212,9 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
     tcEncryptedSigningData <- getAccountCfgFromTxOpts baseCfg txOpts
     tcEncryptedSponsorSigningData <- mapM (getAccountCfgFromTxOpts baseCfg) (toSponsor txOpts) 
     energyCostFunc <- getEnergyCostFunc tcEncryptedSigningData
-    let computedCost = case energyCostFunc of
-            Nothing -> Nothing
-            Just ec -> Just $ ec (mapNumKeys (esdKeys tcEncryptedSigningData))
+    let numSenderKeys = mapNumKeys (esdKeys tcEncryptedSigningData)
+        numSponsorKeys = maybe 0 (mapNumKeys . esdKeys) tcEncryptedSponsorSigningData
+        computedCost = ($ (numSenderKeys + numSponsorKeys)) <$> energyCostFunc
     energy <- case (toMaxEnergyAmount txOpts, computedCost) of
         (Nothing, Nothing) -> logFatal ["energy amount not specified"]
         (Nothing, Just c) -> do
@@ -1231,7 +1234,8 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
               tcExpiry = expiry,
               tcAlias = toAlias txOpts,
               tcExtended = toForceExtended txOpts,
-              tcUnsigned = toUnsigned txOpts,
+              tcSign = tsSign txOpts,
+              tcSponsorSign = maybe False tsSign $ toSponsor txOpts,
               ..
             }
   where
@@ -1266,7 +1270,8 @@ getRequiredEnergyTransactionCfg baseCfg txOpts = do
               tcExpiry = expiry,
               tcAlias = toAlias txOpts,
               tcExtended = toForceExtended txOpts,
-              tcUnsigned = toUnsigned txOpts,
+              tcSign = tsSign txOpts,
+              tcSponsorSign = maybe False tsSign $ toSponsor txOpts,
               ..
             }
 
@@ -1758,16 +1763,13 @@ startTransaction ::
     TransactionConfig ->
     Types.EncodedPayload ->
     Bool ->
-    -- | The decrypted account signing keys. If not provided, the encrypted keys
-    -- from the 'TransactionConfig' will be used, and for each the password will be queried.
-    Maybe AccountKeyMap ->
     ClientMonad m Transaction
-startTransaction txCfg pl confirmNonce maybeAccKeys = do
+startTransaction txCfg pl confirmNonce = do
     let TransactionConfig
             { tcEnergy = energy,
               tcExpiry = expiry,
               tcNonce = n,
-              tcEncryptedSigningData = EncryptedSigningData{esdAddress = NamedAddress{..}, ..},
+              tcEncryptedSigningData = EncryptedSigningData{esdAddress = NamedAddress{..}, esdKeys = encKeys},
               ..
             } = txCfg
     nonce <- getNonce naAddr n confirmNonce
@@ -1775,15 +1777,24 @@ startTransaction txCfg pl confirmNonce maybeAccKeys = do
     let sender = applyAlias tcAlias naAddr
     when (isJust tcAlias) $
         logInfo [[i|Using the alias #{sender} as the sender of the transaction instead of #{naAddr}.|]]
+    let sponsorAddress = fmap (\EncryptedSigningData{esdAddress = NamedAddress{naAddr = _addr}} -> _addr) tcEncryptedSponsorSigningData
+        sponsorKeys
+            | tcSponsorSign = esdKeys <$> tcEncryptedSponsorSigningData
+            | otherwise = Nothing
 
     let format = getTransactionFormat txCfg
-    if tcUnsigned
-        then return $ unsignedTransaction pl sender energy nonce expiry format 
-        else do
-            accountKeyMap <- case maybeAccKeys of
-                Just acKeys' -> return acKeys'
-                Nothing -> liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys Nothing Nothing
-            return $ formatAndSignTransaction pl sender energy nonce expiry accountKeyMap format
+    case (tcSign, tcSponsorSign) of
+        (False, False) -> failOnError' $ unsignedTransaction pl sender energy nonce expiry format sponsorAddress
+        (False, True) -> do
+            case (sponsorAddress, sponsorKeys) of
+                (Just sponsor, Just keys) -> do
+                    sponsorKeyMap <- liftIO $ failOnError $ decryptAccountKeyMapInteractive keys Nothing Nothing
+                    failOnError' $ formatAndSponsorTransaction pl sender energy nonce expiry format sponsor sponsorKeyMap
+                _ -> fail "Could not get sponsor signing data for sponsor"
+        (True, _) -> do
+            senderKeyMap <- liftIO $ failOnError $ decryptAccountKeyMapInteractive encKeys Nothing Nothing
+            sponsorKeyMap <- traverse (\keys -> liftIO $ failOnError $ decryptAccountKeyMapInteractive keys Nothing Nothing) sponsorKeys
+            failOnError' $ formatAndSignTransaction pl sender energy nonce expiry senderKeyMap format sponsorAddress sponsorKeyMap
 
 -- | Fetch next nonces relative to the account's most recently committed and
 --  pending transactions, respectively.
@@ -1846,7 +1857,7 @@ signAndProcessTransaction ::
     Backend ->
     ClientMonad m (Maybe TransactionStatusResult)
 signAndProcessTransaction verbose txCfg pl intOpts outFile backend = do
-    tx <- startTransaction txCfg pl (ioConfirm intOpts) Nothing
+    tx <- startTransaction txCfg pl (ioConfirm intOpts)
 
     case outFile of
         Just filePath -> do

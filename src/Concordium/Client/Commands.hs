@@ -198,7 +198,9 @@ data TransactionCmd
     | TransactionAddSignature
         { tasFile :: !FilePath,
           tasSigners :: !(Maybe Text),
-          tasToKeys :: !(Maybe FilePath)
+          tasToKeys :: !(Maybe FilePath),
+          -- | whether to sign as a sponsor
+          tasSponsor :: !Bool
         }
     | TransactionStatus
         { tsHash :: !Text,
@@ -464,6 +466,9 @@ class TransactionSigner s where
     -- "<cred-index>:<key-index>,<cred-index>:<key-index> .."
     tsSigners :: s -> (Maybe Text)
 
+    -- | Whether a signature should be added with the signer configuration.
+    tsSign :: s -> Bool
+
 -- | The type parameter 'energyOrMaybe' should be Energy or Maybe Energy.
 data TransactionOpts energyOrMaybe = TransactionOpts
     { -- | The name or account identifier for the sender account
@@ -499,6 +504,7 @@ instance TransactionSigner (TransactionOpts energyOrMaybe) where
     tsAccount = toSender
     tsKeys = toKeys
     tsSigners = toSigners
+    tsSign = not . toUnsigned
 
 data InteractionOpts = InteractionOpts
     { ioConfirm :: !Bool,
@@ -524,6 +530,10 @@ instance TransactionSigner TransactionSponsorOpts where
     tsAccount = pure . tsoAccount
     tsKeys = tsoKeys
     tsSigners = tsoSigners
+    tsSign TransactionSponsorOpts{tsoSponsorSign = True} = True
+    tsSign TransactionSponsorOpts{tsoSigners = Just _} = True
+    tsSign TransactionSponsorOpts{tsoKeys = Just _} = True
+    tsSign _ = False
 
 data ConsensusCmd
     = ConsensusStatus
@@ -904,6 +914,7 @@ transactionAddSignatureCmd =
                     )
                 <*> optional
                     (strOption (long "keys" <> metavar "KEYS" <> help "Any number of sign/verify keys specified in a JSON file."))
+                <*> switch (long "sponsor" <> help "Sign the transaction on behalf of a transaction sponsor")
             )
             ( progDescDoc $
                 docFromLines $
