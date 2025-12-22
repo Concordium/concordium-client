@@ -203,7 +203,7 @@ jobs:
 
   client-windows:
     needs: [validate-preconditions]
-    runs-on: windows-latest
+    runs-on: windows-2022
     environment: release
     if: contains(fromJSON('["rc", "alpha", "client-windows"]'), needs.validate-preconditions.outputs.release_type)
     steps:
