@@ -692,9 +692,8 @@ readSignableTransactionFromFile fname = do
 
 -- | get the "ExtendedCostOptions" corresponding to a "TransactionOpts" structure.
 extendedCostFromOpts :: TransactionOpts a -> Maybe ExtendedCostOptions
-extendedCostFromOpts TransactionOpts{toSponsor = Just _} = Just ExtendedCostOptions{hasSponsor = True}
-extendedCostFromOpts TransactionOpts{toForceExtended = True, ..} = Just ExtendedCostOptions{hasSponsor = isJust toSponsor}
-extendedCostFromOpts _ = Nothing
+extendedCostFromOpts TransactionOpts{toSponsor = Nothing, toForceExtended = False} = Nothing
+extendedCostFromOpts TransactionOpts{..} = Just ExtendedCostOptions{hasSponsor = isJust toSponsor}
 
 -- | get the "ExtendedCostOptions" corresponding to a "TransactionConfig".
 extendedCostFromConfig :: TransactionConfig -> Maybe ExtendedCostOptions
@@ -750,11 +749,11 @@ processTransactionCmd action baseCfgDir verbose backend =
 
             -- Extract accountKeyMap to be used to sign the transaction
             baseCfg <- getBaseConfig baseCfgDir verbose
-            let signerAccountText = if asSponsor
-                then case CT.stSponsor signableTransaction of
-                    Just sponsor -> Text.pack $ show sponsor
-                    Nothing -> error "Transaction has no sponsor but --as-sponsor flag was provided"
-                else Text.pack $ show (CT.stSigner signableTransaction)
+            let signerAccountText
+                    | asSponsor = case CT.stSponsor signableTransaction of
+                        Just sponsor -> Text.pack $ show sponsor
+                        Nothing -> error "Transaction has no sponsor but --as-sponsor flag was provided"
+                    | otherwise = Text.pack $ show (CT.stSigner signableTransaction)
 
             -- TODO: we could check if the `nonce` still makes sense as read from the file vs the one on-chain.
 
@@ -1215,9 +1214,7 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
     energyCostFunc <- getEnergyCostFunc tcEncryptedSigningData
     let numSenderKeys = mapNumKeys (esdKeys tcEncryptedSigningData)
         numSponsorKeys = maybe 0 (mapNumKeys . esdKeys) tcEncryptedSponsorSigningData
-        computedCost = case energyCostFunc of
-            Nothing -> Nothing
-            Just ec -> Just $ ec $ numSenderKeys + numSponsorKeys
+        computedCost = ($ (numSenderKeys + numSponsorKeys)) <$> energyCostFunc
     energy <- case (toMaxEnergyAmount txOpts, computedCost) of
         (Nothing, Nothing) -> logFatal ["energy amount not specified"]
         (Nothing, Just c) -> do
@@ -1772,7 +1769,7 @@ startTransaction txCfg pl confirmNonce = do
             { tcEnergy = energy,
               tcExpiry = expiry,
               tcNonce = n,
-              tcEncryptedSigningData = EncryptedSigningData{esdAddress = NamedAddress{..}, ..},
+              tcEncryptedSigningData = EncryptedSigningData{esdAddress = NamedAddress{..}, esdKeys = encKeys},
               ..
             } = txCfg
     nonce <- getNonce naAddr n confirmNonce
@@ -1781,21 +1778,21 @@ startTransaction txCfg pl confirmNonce = do
     when (isJust tcAlias) $
         logInfo [[i|Using the alias #{sender} as the sender of the transaction instead of #{naAddr}.|]]
     let sponsorAddress = fmap (\EncryptedSigningData{esdAddress = NamedAddress{naAddr = _addr}} -> _addr) tcEncryptedSponsorSigningData
-        sponsorKeys = if tcSponsorSign 
-            then fmap (\EncryptedSigningData{esdKeys = _keys} -> _keys) tcEncryptedSponsorSigningData 
-            else Nothing
+        sponsorKeys
+            | tcSponsorSign = esdKeys <$> tcEncryptedSponsorSigningData
+            | otherwise = Nothing
 
     let format = getTransactionFormat txCfg
     case (tcSign, tcSponsorSign) of
         (False, False) -> failOnError' $ unsignedTransaction pl sender energy nonce expiry format sponsorAddress
         (False, True) -> do
             case (sponsorAddress, sponsorKeys) of
-                (Just sponsor, Just encKeys) -> do
-                    sponsorKeyMap <- liftIO $ failOnError $ decryptAccountKeyMapInteractive encKeys Nothing Nothing
+                (Just sponsor, Just keys) -> do
+                    sponsorKeyMap <- liftIO $ failOnError $ decryptAccountKeyMapInteractive keys Nothing Nothing
                     failOnError' $ formatAndSponsorTransaction pl sender energy nonce expiry format sponsor sponsorKeyMap
                 _ -> fail "Could not get sponsor signing data for sponsor"
         (True, _) -> do
-            senderKeyMap <- liftIO $ failOnError $ decryptAccountKeyMapInteractive esdKeys Nothing Nothing
+            senderKeyMap <- liftIO $ failOnError $ decryptAccountKeyMapInteractive encKeys Nothing Nothing
             sponsorKeyMap <- traverse (\keys -> liftIO $ failOnError $ decryptAccountKeyMapInteractive keys Nothing Nothing) sponsorKeys
             failOnError' $ formatAndSignTransaction pl sender energy nonce expiry senderKeyMap format sponsorAddress sponsorKeyMap
 

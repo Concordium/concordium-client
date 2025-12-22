@@ -419,7 +419,8 @@ unsignedTransaction encPayload sender energy nonce expiry version sponsor = case
 
 --
 
--- | Format the header of the transaction and sponsor it together with the encoded transaction payload and return a Transaction.
+-- | Format the header of the transaction and sign it as a sponsor together with the encoded
+-- transaction payload and return a Transaction.
 formatAndSponsorTransaction ::
     Types.EncodedPayload ->
     -- | The transaction sender
@@ -436,8 +437,8 @@ formatAndSponsorTransaction ::
 formatAndSponsorTransaction encPayload sender energy nonce expiry version sponsor sponsorKeys = do
     unsigned <- unsignedTransaction encPayload sender energy nonce expiry version (Just sponsor)
     case unsigned of
-        NormalTransaction{tnTransaction = AccountTransaction{..}} ->
-            pure NormalTransaction{tnTransaction = signEncodedTransaction atrPayload atrHeader sponsorKeys}
+        NormalTransaction{} ->
+            Left "Expected an extended transaction (internal error)."
         ExtendedTransaction{teTransaction = AccountTransactionV1{..}} ->
             pure ExtendedTransaction{teTransaction = sponsorEncodedTransactionExt atrv1Payload atrv1Header sponsorKeys}
 
@@ -470,6 +471,7 @@ formatAndSignTransaction ::
     Types.Energy ->
     Types.Nonce ->
     Types.TransactionExpiryTime ->
+    -- | The transaction sender keys
     AccountKeyMap ->
     TransactionFormat ->
     -- | The transaction sponsor
