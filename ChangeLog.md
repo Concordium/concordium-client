@@ -8,7 +8,7 @@
   where token name, metadata and governance account are now optional in the token module interface
   (but still required by the current token module implementation).
 
-## 10.0.0-alpha (Compatible with node version 10.0.0)
+## 10.0.0-alpha (Compatible with node version 10.0.0) - 2025-12-22
 
 - `--extended` transaction configuration option has been added as a means to submit a transaction in the v1 transaction format.
 - `--unsigned` transaction configuration option has been added to support constructing unsigned transactions. These can be
