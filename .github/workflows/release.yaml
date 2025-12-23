@@ -7,80 +7,30 @@ on:
         type: choice
         description: Choose which workflow should be ran
         options:
-          - test-signtool
           - client-macos
           - client-windows
           - client-linux
 
   push:
     tags:
-      ## The tag should follow the convention: VERSION - DOCKER_BUILD_COUNTER - RELEASE_TYPE
-      ## Example tags: "9.1.1-0-rc" or "9.1.1-1-alpha"
-      - "*.*.*-*-*"
+    ## The tag should follow the convention: VERSION - DOCKER_BUILD_COUNTER - RELEASE_TYPE
+    ## Example tags: "9.1.1-0-rc" or "9.1.1-1-alpha"
+    - '*.*.*-*-*'
 
 env:
-  STACK_VERSION: "3.7.1"
-  GHC_VERSION: "9.10.2"
-  RUST_VERSION: "1.82"
+  STACK_VERSION: '3.7.1'
+  GHC_VERSION: '9.10.2'
+  RUST_VERSION: '1.82'
   SERVICE: "${{ inputs.service }}"
-  PROTOC_VERSION: "28.3"
-  FLATBUFFERS_VERSION: "23.5.26"
+  PROTOC_VERSION: '28.3'
+  FLATBUFFERS_VERSION: '23.5.26'
 
 permissions:
   id-token: write
   contents: write
 
 jobs:
-  test-signtool:
-    if: inputs.service == 'test-signtool'
-    runs-on: windows-latest
-    steps:
-      - name: Test signtool availability
-        shell: bash
-        run: |
-          echo "Testing signtool in bash shell..."
-          which signtool || echo "signtool not found with 'which'"
-          where signtool || echo "signtool not found with 'where'"
-          echo "PATH: $PATH"
-
-      - name: Test signtool availability (PowerShell)
-        shell: pwsh
-        run: |
-          Write-Host "Testing signtool in PowerShell..."
-          Get-Command signtool -ErrorAction SilentlyContinue
-          Write-Host "PATH: $env:PATH"
-
-      - name: Find Windows SDK
-        shell: pwsh
-        run: |
-          $kitsPath = "C:\Program Files (x86)\Windows Kits\10\bin"
-          if (Test-Path $kitsPath) {
-            Get-ChildItem $kitsPath -Directory | Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' }
-          }
-
-      - name: Test adding signtool to PATH
-        shell: bash
-        run: |
-          echo "Finding signtool directory..."
-          SIGNTOOL_EXE=$(find "/c/Program Files (x86)/Windows Kits/10/bin" -type f -name "signtool.exe" -path "*/x64/*" | head -n 1)
-          SIGNTOOL_PATH=$(dirname "$SIGNTOOL_EXE")
-          echo "Found exe: $SIGNTOOL_EXE"
-          echo "Found dir: $SIGNTOOL_PATH"
-          
-          if [ -z "$SIGNTOOL_PATH" ]; then
-            echo "Error: Could not find signtool.exe"
-            exit 1
-          fi
-          
-          echo "Adding to PATH..."
-          export PATH="$SIGNTOOL_PATH:$PATH"
-          
-          echo "Testing signtool after adding to PATH..."
-          which signtool
-          signtool /? || echo "signtool executed but returned error"
-
   validate-preconditions:
-    if: inputs.service != 'test-signtool'
     runs-on: ubuntu-latest
     outputs:
       release_type: ${{ steps.versions_derivation.outputs.release_type }}
@@ -139,7 +89,7 @@ jobs:
             stack_version=${{ env.STACK_VERSION }}
             rust_version=${{ env.RUST_VERSION }}
             ghc_version=${{ env.GHC_VERSION }}
-
+          
       - name: Create container and Extract Artifact
         run: |
           id=$(docker create ${{ github.job }}:${{ github.run_id }})
@@ -304,7 +254,7 @@ jobs:
       - name: Install DigiCert Client tools (Windows only)
         id: digicert_client
         uses: digicert/code-signing-software-trust-action@v1.0.0
-
+        
       - name: Import Windows certificate (Windows only)
         id: windows_certificate
         env:
@@ -329,14 +279,10 @@ jobs:
           SM_CLIENT_CERT_FILE: ${{ steps.windows_certificate.outputs.CERTIFICATE_PATH }}
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.WINDOWS_SM_CLIENT_CERT_PASSWORD }}
         run: |
-          # Add Windows SDK signtool to PATH
-          SIGNTOOL_PATH=$(find "/c/Program Files (x86)/Windows Kits/10/bin" -type d -name "x64" | sort -V | tail -n 1)
-          export PATH="$SIGNTOOL_PATH:$PATH"
-
-          smctl sign --keypair-alias ${{ env.WINDOWS_SM_KEYPAIR_ALIAS }} --input concordium-client.exe --config-file ${{ env.WINDOWS_PKCS11_CONFIG }} --verbose --exit-non-zero-on-fail --failfast
-          smctl sign --keypair-alias ${{ env.WINDOWS_SM_KEYPAIR_ALIAS }} --input concordium_base.dll --config-file ${{ env.WINDOWS_PKCS11_CONFIG }} --verbose --exit-non-zero-on-fail --failfast
-          smctl sign --keypair-alias ${{ env.WINDOWS_SM_KEYPAIR_ALIAS }} --input sha_2.dll --config-file ${{ env.WINDOWS_PKCS11_CONFIG }} --verbose --exit-non-zero-on-fail --failfast
-        shell: bash
+           smctl sign --keypair-alias ${{ env.WINDOWS_SM_KEYPAIR_ALIAS }} --input concordium-client.exe --config-file ${{ env.WINDOWS_PKCS11_CONFIG }} --verbose --exit-non-zero-on-fail --failfast
+           smctl sign --keypair-alias ${{ env.WINDOWS_SM_KEYPAIR_ALIAS }} --input concordium_base.dll --config-file ${{ env.WINDOWS_PKCS11_CONFIG }} --verbose --exit-non-zero-on-fail --failfast
+           smctl sign --keypair-alias ${{ env.WINDOWS_SM_KEYPAIR_ALIAS }} --input sha_2.dll --config-file ${{ env.WINDOWS_PKCS11_CONFIG }} --verbose --exit-non-zero-on-fail --failfast
+        shell: cmd
 
       - name: Zip the binaries
         shell: bash
@@ -375,8 +321,9 @@ jobs:
             concordium-client-windows/concordium-client-windows.zip
           body: |
             ## Binaries
-
+            
             - **Linux**: `concordium-client-linux`
             - **macOS Intel**: `concordium-client-macos-intel.pkg`
             - **macOS ARM**: `concordium-client-macos-arm.pkg`
             - **Windows**: `concordium-client-windows.zip`
+
