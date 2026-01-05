@@ -767,9 +767,11 @@ processTransactionCmd action baseCfgDir verbose backend =
 
             encryptedSigningData <- getAccountCfg baseCfg signers (Just signerAccountText) keysArg
             accountKeyMap <- liftIO $ failOnError $ decryptAccountKeyMapInteractive (esdKeys encryptedSigningData) Nothing Nothing
-            finalTransaction <- failOnError' $ if asSponsor
-                then sponsorSignableTransaction signableTransaction accountKeyMap
-                else pure $ signSignableTransaction signableTransaction accountKeyMap
+            finalTransaction <-
+                failOnError' $
+                    if asSponsor
+                        then sponsorSignableTransaction signableTransaction accountKeyMap
+                        else pure $ signSignableTransaction signableTransaction accountKeyMap
 
             -- Write final signed transaction to file
             liftIO $ writeSignableTransactionToFile finalTransaction fname verbose AllowOverwrite
@@ -1210,7 +1212,7 @@ getTransactionFormat _ = NormalFormat
 getTransactionCfg :: BaseConfig -> TransactionOpts (Maybe Types.Energy) -> GetComputeEnergyCost -> IO TransactionConfig
 getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
     tcEncryptedSigningData <- getAccountCfgFromTxOpts baseCfg txOpts
-    tcEncryptedSponsorSigningData <- mapM (getAccountCfgFromTxOpts baseCfg) (toSponsor txOpts) 
+    tcEncryptedSponsorSigningData <- mapM (getAccountCfgFromTxOpts baseCfg) (toSponsor txOpts)
     energyCostFunc <- getEnergyCostFunc tcEncryptedSigningData
     let numSenderKeys = mapNumKeys (esdKeys tcEncryptedSigningData)
         numSponsorKeys = maybe 0 (mapNumKeys . esdKeys) tcEncryptedSponsorSigningData
@@ -1257,7 +1259,7 @@ getTransactionCfg baseCfg txOpts getEnergyCostFunc = do
 getRequiredEnergyTransactionCfg :: BaseConfig -> TransactionOpts Types.Energy -> IO TransactionConfig
 getRequiredEnergyTransactionCfg baseCfg txOpts = do
     tcEncryptedSigningData <- getAccountCfgFromTxOpts baseCfg txOpts
-    tcEncryptedSponsorSigningData <- mapM (getAccountCfgFromTxOpts baseCfg) (toSponsor txOpts) 
+    tcEncryptedSponsorSigningData <- mapM (getAccountCfgFromTxOpts baseCfg) (toSponsor txOpts)
     let energy = toMaxEnergyAmount txOpts
     now <- getCurrentTimeUnix
     expiry <- getExpiryArg "expiry" now $ toExpiration txOpts
@@ -1301,7 +1303,7 @@ warnSuspiciousExpiry expiryArg now
 -- The function throws an error:
 -- - if a key file is provided via a flag but the keys cannot be read from the file.
 -- - if NO key file is provided via a flag and the lookup of local keys from the key directory fails.
-getAccountCfgFromTxOpts :: forall t . TransactionSigner t => BaseConfig -> t -> IO EncryptedSigningData
+getAccountCfgFromTxOpts :: forall t. (TransactionSigner t) => BaseConfig -> t -> IO EncryptedSigningData
 getAccountCfgFromTxOpts baseCfg signerOpts = do
     keysArg <- case tsKeys signerOpts of
         Nothing -> return Nothing
