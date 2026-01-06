@@ -9,6 +9,7 @@ import qualified Concordium.Crypto.SignatureScheme as ID
 import qualified Concordium.ID.Types as IDTypes
 import qualified Concordium.Types as Types
 import qualified Concordium.Types.Execution as Types
+import qualified Concordium.Types.Queries as Types
 
 import SimpleClientTests.QueryTransaction
 
@@ -57,15 +58,18 @@ exampleCredentialSignatureMapEmpty = Map.empty
 exampleCredentialSignatureMap :: Map.Map IDTypes.CredentialIndex (Map.Map IDTypes.KeyIndex ID.Signature)
 exampleCredentialSignatureMap = Map.insert (1 :: IDTypes.CredentialIndex) exampleSignatureMap exampleCredentialSignatureMapEmpty
 
-exampleSignedTransaction :: SignedTransaction
-exampleSignedTransaction =
-    SignedTransaction
+exampleSignableTransaction :: SignableTransaction
+exampleSignableTransaction =
+    SignableTransaction
         { stEnergy = Types.Energy 1,
           stExpiryTime = Types.TransactionTime 2,
           stNonce = Types.Nonce 3,
           stSigner = exampleAccountAddr1,
           stPayload = exampleRegisterDataPayload,
-          stSignature = TransactionSignature exampleCredentialSignatureMap
+          stSignature = TransactionSignature exampleCredentialSignatureMap,
+          stExtended = False,
+          stSponsor = Nothing,
+          stSponsorSignature = Nothing
         }
 
 exampleTransactionHash :: Types.TransactionHash
@@ -91,50 +95,54 @@ exampleRejectReason = Types.AmountTooLarge (Types.AddressAccount exampleAccountA
 
 outcomeSuccess1a :: Types.SupplementedTransactionSummary
 outcomeSuccess1a =
-    Types.TransactionSummary
-        { Types.tsSender = Just exampleAccountAddr1,
-          Types.tsHash = exampleTransactionHash,
-          Types.tsCost = 10,
-          Types.tsEnergyCost = 10,
-          Types.tsType = Types.TSTAccountTransaction $ Just Types.TTTransfer,
-          Types.tsResult = Types.TxSuccess{Types.vrEvents = [exampleEvent]},
-          Types.tsIndex = Types.TransactionIndex 0
+    Types.SupplementedTransactionSummary
+        { Types.stsSender = Just exampleAccountAddr1,
+          Types.stsHash = exampleTransactionHash,
+          Types.stsCost = 10,
+          Types.stsEnergyCost = 10,
+          Types.stsType = Types.TSTAccountTransaction $ Just Types.TTTransfer,
+          Types.stsResult = Types.TxSuccess{Types.vrEvents = [exampleEvent]},
+          Types.stsIndex = Types.TransactionIndex 0,
+          Types.stsSponsorDetails = Nothing
         }
 
 outcomeSuccess1b :: Types.SupplementedTransactionSummary
 outcomeSuccess1b =
-    Types.TransactionSummary
-        { Types.tsSender = Just exampleAccountAddr1,
-          Types.tsHash = exampleTransactionHash,
-          Types.tsCost = 10,
-          Types.tsEnergyCost = 10,
-          Types.tsType = Types.TSTAccountTransaction $ Just Types.TTTransfer,
-          Types.tsResult = Types.TxSuccess{Types.vrEvents = [exampleEvent]},
-          Types.tsIndex = 0
+    Types.SupplementedTransactionSummary
+        { Types.stsSender = Just exampleAccountAddr1,
+          Types.stsHash = exampleTransactionHash,
+          Types.stsCost = 10,
+          Types.stsEnergyCost = 10,
+          Types.stsType = Types.TSTAccountTransaction $ Just Types.TTTransfer,
+          Types.stsResult = Types.TxSuccess{Types.vrEvents = [exampleEvent]},
+          Types.stsIndex = 0,
+          Types.stsSponsorDetails = Nothing
         }
 
 outcomeSuccess2 :: Types.SupplementedTransactionSummary
 outcomeSuccess2 =
-    Types.TransactionSummary
-        { Types.tsSender = Just exampleAccountAddr1,
-          Types.tsHash = exampleTransactionHash,
-          Types.tsCost = 20,
-          Types.tsEnergyCost = 20,
-          Types.tsType = Types.TSTAccountTransaction $ Just Types.TTTransfer,
-          Types.tsResult = Types.TxSuccess{Types.vrEvents = [exampleEvent]},
-          Types.tsIndex = 0
+    Types.SupplementedTransactionSummary
+        { Types.stsSender = Just exampleAccountAddr1,
+          Types.stsHash = exampleTransactionHash,
+          Types.stsCost = 20,
+          Types.stsEnergyCost = 20,
+          Types.stsType = Types.TSTAccountTransaction $ Just Types.TTTransfer,
+          Types.stsResult = Types.TxSuccess{Types.vrEvents = [exampleEvent]},
+          Types.stsIndex = 0,
+          Types.stsSponsorDetails = Nothing
         }
 
 outcomeFailure :: Types.SupplementedTransactionSummary
 outcomeFailure =
-    Types.TransactionSummary
-        { Types.tsSender = Just exampleAccountAddr1,
-          Types.tsHash = exampleTransactionHash,
-          Types.tsCost = 20,
-          Types.tsEnergyCost = 20,
-          Types.tsType = Types.TSTAccountTransaction $ Just Types.TTTransfer,
-          Types.tsResult = Types.TxReject{Types.vrRejectReason = exampleRejectReason},
-          Types.tsIndex = 0
+    Types.SupplementedTransactionSummary
+        { Types.stsSender = Just exampleAccountAddr1,
+          Types.stsHash = exampleTransactionHash,
+          Types.stsCost = 20,
+          Types.stsEnergyCost = 20,
+          Types.stsType = Types.TSTAccountTransaction $ Just Types.TTTransfer,
+          Types.stsResult = Types.TxReject{Types.vrRejectReason = exampleRejectReason},
+          Types.stsIndex = 0,
+          Types.stsSponsorDetails = Nothing
         }
 
 received :: TransactionStatusResult
@@ -250,7 +258,7 @@ awaitStateTests = describe "await state" $ do
             specify "wait called 3 times" $ waitCount `shouldBe` 3
 
     describe "JSON encoding and decoding" $ do
-        specify "for 'SignedTransaction'" $ (AE.eitherDecode . AE.encode $ exampleSignedTransaction) `shouldBe` Right exampleSignedTransaction
+        specify "for 'SignableTransaction'" $ (AE.eitherDecode . AE.encode $ exampleSignableTransaction) `shouldBe` Right exampleSignableTransaction
 
 printTransactionStatusTests :: Spec
 printTransactionStatusTests = describe "print transaction status" $ do

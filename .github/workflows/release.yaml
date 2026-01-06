@@ -13,17 +13,17 @@ on:
 
   push:
     tags:
-    ## The tag should follow the convention: VERSION - DOCKER_BUILD_COUNTER - RELEASE_TYPE
-    ## Example tags: "9.1.1-0-rc" or "9.1.1-1-alpha"
-    - '*.*.*-*-*'
+      ## The tag should follow the convention: VERSION - DOCKER_BUILD_COUNTER - RELEASE_TYPE
+      ## Example tags: "9.1.1-0-rc" or "9.1.1-1-alpha"
+      - "*.*.*-*-*"
 
 env:
-  STACK_VERSION: '3.7.1'
-  GHC_VERSION: '9.10.2'
-  RUST_VERSION: '1.82'
+  STACK_VERSION: "3.7.1"
+  GHC_VERSION: "9.10.2"
+  RUST_VERSION: "1.82"
   SERVICE: "${{ inputs.service }}"
-  PROTOC_VERSION: '28.3'
-  FLATBUFFERS_VERSION: '23.5.26'
+  PROTOC_VERSION: "28.3"
+  FLATBUFFERS_VERSION: "23.5.26"
 
 permissions:
   id-token: write
@@ -89,7 +89,7 @@ jobs:
             stack_version=${{ env.STACK_VERSION }}
             rust_version=${{ env.RUST_VERSION }}
             ghc_version=${{ env.GHC_VERSION }}
-          
+
       - name: Create container and Extract Artifact
         run: |
           id=$(docker create ${{ github.job }}:${{ github.run_id }})
@@ -254,7 +254,7 @@ jobs:
       - name: Install DigiCert Client tools (Windows only)
         id: digicert_client
         uses: digicert/code-signing-software-trust-action@v1.0.0
-        
+
       - name: Import Windows certificate (Windows only)
         id: windows_certificate
         env:
@@ -279,10 +279,15 @@ jobs:
           SM_CLIENT_CERT_FILE: ${{ steps.windows_certificate.outputs.CERTIFICATE_PATH }}
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.WINDOWS_SM_CLIENT_CERT_PASSWORD }}
         run: |
-           smctl sign --keypair-alias ${{ env.WINDOWS_SM_KEYPAIR_ALIAS }} --input concordium-client.exe --config-file ${{ env.WINDOWS_PKCS11_CONFIG }} --verbose --exit-non-zero-on-fail --failfast
-           smctl sign --keypair-alias ${{ env.WINDOWS_SM_KEYPAIR_ALIAS }} --input concordium_base.dll --config-file ${{ env.WINDOWS_PKCS11_CONFIG }} --verbose --exit-non-zero-on-fail --failfast
-           smctl sign --keypair-alias ${{ env.WINDOWS_SM_KEYPAIR_ALIAS }} --input sha_2.dll --config-file ${{ env.WINDOWS_PKCS11_CONFIG }} --verbose --exit-non-zero-on-fail --failfast
-        shell: cmd
+          # Add Windows SDK signtool to PATH
+          SIGNTOOL_EXE=$(find "/c/Program Files (x86)/Windows Kits/10/bin" -type f -name "signtool.exe" -path "*/x64/*" | head -n 1)
+          SIGNTOOL_PATH=$(dirname "$SIGNTOOL_EXE")
+          export PATH="$SIGNTOOL_PATH:$PATH"
+
+          smctl sign --keypair-alias ${{ env.WINDOWS_SM_KEYPAIR_ALIAS }} --input concordium-client.exe --config-file ${{ env.WINDOWS_PKCS11_CONFIG }} --verbose --exit-non-zero-on-fail --failfast
+          smctl sign --keypair-alias ${{ env.WINDOWS_SM_KEYPAIR_ALIAS }} --input concordium_base.dll --config-file ${{ env.WINDOWS_PKCS11_CONFIG }} --verbose --exit-non-zero-on-fail --failfast
+          smctl sign --keypair-alias ${{ env.WINDOWS_SM_KEYPAIR_ALIAS }} --input sha_2.dll --config-file ${{ env.WINDOWS_PKCS11_CONFIG }} --verbose --exit-non-zero-on-fail --failfast
+        shell: bash
 
       - name: Zip the binaries
         shell: bash
@@ -321,9 +326,8 @@ jobs:
             concordium-client-windows/concordium-client-windows.zip
           body: |
             ## Binaries
-            
+
             - **Linux**: `concordium-client-linux`
             - **macOS Intel**: `concordium-client-macos-intel.pkg`
             - **macOS ARM**: `concordium-client-macos-arm.pkg`
             - **Windows**: `concordium-client-windows.zip`
-
