@@ -646,9 +646,9 @@ showAccountKeyPair = showPrettyJSON
 
 data TransactionBlockResult
     = NoBlocks
-    | SingleBlock Types.BlockHash Types.SupplementedTransactionSummary
-    | MultipleBlocksUnambiguous [Types.BlockHash] Types.SupplementedTransactionSummary
-    | MultipleBlocksAmbiguous [(Types.BlockHash, Types.SupplementedTransactionSummary)]
+    | SingleBlock Types.BlockHash Queries.SupplementedTransactionSummary
+    | MultipleBlocksUnambiguous [Types.BlockHash] Queries.SupplementedTransactionSummary
+    | MultipleBlocksAmbiguous [(Types.BlockHash, Queries.SupplementedTransactionSummary)]
 
 parseTransactionBlockResult :: TransactionStatusResult -> TransactionBlockResult
 parseTransactionBlockResult status =
@@ -691,7 +691,7 @@ printTransactionStatus status verbose contrInfoWithSchemas =
                             (show hash)
                             (showOutcomeFragment outcome)
                         ]
-                    tell $ showOutcomeResult verbose (lookupContrInfo hash) $ Types.tsResult outcome
+                    tell $ showOutcomeResult verbose (lookupContrInfo hash) $ Queries.stsResult outcome
                 MultipleBlocksUnambiguous hashes outcome -> do
                     tell
                         [ printf
@@ -701,7 +701,7 @@ printTransactionStatus status verbose contrInfoWithSchemas =
                         ]
                     tell $ hashes <&> printf "- %s" . show
                     case hashes of
-                        hash : _ -> tell $ showOutcomeResult verbose (lookupContrInfo hash) $ Types.tsResult outcome
+                        hash : _ -> tell $ showOutcomeResult verbose (lookupContrInfo hash) $ Queries.stsResult outcome
                         _ -> return ()
                 MultipleBlocksAmbiguous blocks -> do
                     tell
@@ -717,7 +717,7 @@ printTransactionStatus status verbose contrInfoWithSchemas =
                                     (show hash)
                                     (showOutcomeFragment outcome)
                                 ]
-                            tell $ showOutcomeResult True (lookupContrInfo hash) (Types.tsResult outcome) <&> ("  * " ++)
+                            tell $ showOutcomeResult True (lookupContrInfo hash) (Queries.stsResult outcome) <&> ("  * " ++)
         Finalized ->
             case parseTransactionBlockResult status of
                 NoBlocks ->
@@ -729,7 +729,7 @@ printTransactionStatus status verbose contrInfoWithSchemas =
                             (show hash)
                             (showOutcomeFragment outcome)
                         ]
-                    tell $ showOutcomeResult verbose (lookupContrInfo hash) $ Types.tsResult outcome
+                    tell $ showOutcomeResult verbose (lookupContrInfo hash) $ Queries.stsResult outcome
                 MultipleBlocksUnambiguous _ _ ->
                     tell ["Transaction is finalized into multiple blocks - this should never happen and may indicate a serious problem with the chain!"]
                 MultipleBlocksAmbiguous _ ->
@@ -739,18 +739,18 @@ printTransactionStatus status verbose contrInfoWithSchemas =
     lookupContrInfo :: Types.BlockHash -> Maybe [(SupplementedEvent, Maybe CI.ContractInfo)]
     lookupContrInfo h = contrInfoWithSchemas >>= (Map.!? h)
 
-    showOutcomeFragment :: Types.SupplementedTransactionSummary -> String
+    showOutcomeFragment :: Queries.SupplementedTransactionSummary -> String
     showOutcomeFragment outcome =
         printf
             "status \"%s\" and cost %s"
-            (showOutcomeStatusFragment $ Types.tsResult outcome :: String)
+            (showOutcomeStatusFragment $ Queries.stsResult outcome :: String)
             (showOutcomeCost outcome)
     showOutcomeStatusFragment = \case
         Types.TxSuccess _ -> "success"
         Types.TxReject _ -> "rejected"
 
-showOutcomeCost :: Types.SupplementedTransactionSummary -> String
-showOutcomeCost outcome = showCost (Types.tsCost outcome) (Types.tsEnergyCost outcome)
+showOutcomeCost :: Queries.SupplementedTransactionSummary -> String
+showOutcomeCost outcome = showCost (Queries.stsCost outcome) (Queries.stsEnergyCost outcome)
 
 showCost :: Types.Amount -> Types.Energy -> String
 showCost gtu nrg = printf "%s (%s)" (showCcd gtu) (showNrg nrg)

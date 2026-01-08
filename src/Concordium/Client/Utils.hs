@@ -36,11 +36,12 @@ failWith act f = act >>= flip embedErr f
 -- | Like 'failWith', but use MonadFail and just fail with the given message
 --  without tranforming it.
 failOnError :: (MonadFail m) => m (Either String a) -> m a
-failOnError act =
-    act
-        >>= \case
-            Left err -> fail err
-            Right x -> return x
+failOnError act = act >>= failOnError'
+
+-- | Like 'failWith', but use MonadFail and just fail with the given message
+--  without tranforming it.
+failOnError' :: (MonadFail m) => (Either String a) -> m a
+failOnError' = either fail return
 
 -- | 'embedErr' for IO.
 embedErrIO :: Either e' a -> (e' -> String) -> IO a
