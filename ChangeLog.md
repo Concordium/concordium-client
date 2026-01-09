@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 10.0.0
+
 - Warn user if trying to do a CreatePLT transaction that would get rejected.
 - Updated the client to validate token initialization parameters according to
   the adjustments to the PLT speficication <https://proposals.concordium.com/CIS/cis-7.html>
