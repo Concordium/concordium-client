@@ -1,0 +1,14 @@
+{                                                                                                                                                                                                                                                                                                                             
+  "seqNumber": 1,
+  "effectiveTime": 1689750311,
+  "timeout": 1689750310,
+  "payload": {
+     "updateType": "protocol",
+     "update": {
+         "message": "Enable protocol version P6 (Reboot)",
+         "specificationURL": "http://concordium.com",
+         "specificationHash": "8a984071ee285404c6148581369cf46ed325d1405d85e79cb6dfd5a8f5a70553",
+         "specificationAuxiliaryData": "00000000000007d0000000000000000300000000000000020000000000000004000000000000000500000000000003e800000000002dc6c0000000010000000200000000"
+     }
+   }
+}

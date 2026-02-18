@@ -1,0 +1,20 @@
+{
+    "seqNumber": 4,
+    "effectiveTime": 1686512285,
+    "timeout": 1686512280,
+    "payload": {
+        "updateType": "level1",
+        "update": {
+            "typeOfUpdate": "level1KeysUpdate",
+            "updatePayload": {
+                "keys": [
+                    {
+                        "schemeId": "Ed25519",
+                        "verifyKey": "072c75499ec82c826b31a1f2bc1db24b2d5da48dd8db75e9ed13ee8f65861422"
+                    }
+                ],
+                "threshold": 1
+            }
+        }
+    }
+}

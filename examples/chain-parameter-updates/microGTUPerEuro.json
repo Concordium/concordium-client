@@ -1,0 +1,9 @@
+{
+    "seqNumber": 1,
+    "effectiveTime": 1686305225,
+    "timeout": 1686305220,
+    "payload": {
+        "updateType": "microGTUPerEuro",
+        "update": 100000000
+    }
+}

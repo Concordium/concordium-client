@@ -1,0 +1,9 @@
+{
+    "seqNumber": 1,
+    "effectiveTime": 1686309245,
+    "timeout": 1686309240,
+    "payload": {
+        "updateType": "foundationAccount",
+        "update": "3ojymqKfjEN9rbEVE87phoEvxpBJ1nQxSF5mdJdVN4s3RFuCdG"
+    }
+}

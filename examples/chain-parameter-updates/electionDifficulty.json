@@ -1,0 +1,9 @@
+{
+    "seqNumber": 1,
+    "effectiveTime": 1687177653,
+    "timeout": 1687177650,
+    "payload": {
+        "updateType": "electionDifficulty",
+        "update": 0.025
+    }
+}

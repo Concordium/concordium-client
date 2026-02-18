@@ -1,0 +1,12 @@
+{
+    "seqNumber": 3,
+    "effectiveTime": 1689331201,
+    "timeout": 1689331200,
+    "payload": {
+        "updateType": "transactionFeeDistribution",
+        "update": {
+            "baker": 0.45,
+            "gasAccount": 0.45
+        }
+    }
+}

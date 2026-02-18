@@ -1,0 +1,9 @@
+{
+    "seqNumber": 1,
+    "effectiveTime": 1688558345,
+    "timeout": 1688558340,
+    "payload": {
+        "updateType": "minBlockTime",
+        "update": 0
+    }
+}

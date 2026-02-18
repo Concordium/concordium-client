@@ -1,0 +1,17 @@
+{
+    "seqNumber": 2,
+    "effectiveTime": 1686314165,
+    "timeout": 1686314160,
+    "payload": {
+        "updateType": "addAnonymityRevoker",
+        "update": {
+            "arIdentity": 4,
+            "arDescription": {
+                "name": "AR-1",
+                "url": "www.test.dk",
+                "description": "testing :)"
+            },
+            "arPublicKey": "993fdc40bb8af4cb75caf8a53928d247be6285784b29578a06df312c28854c1bfac2fd0183967338b578772398d412018a4afcfaae1ba3ccd63a5b0868a8a9c49deec35a8817d35d0082761b39c0c6bd2357ef997c0f319fefd5b336e6667b7b"
+        }
+    }
+}

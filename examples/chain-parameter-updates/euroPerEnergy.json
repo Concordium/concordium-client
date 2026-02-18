@@ -1,0 +1,9 @@
+{
+    "seqNumber": 1,
+    "effectiveTime": 1686304805,
+    "timeout": 1686304800,
+    "payload": {
+        "updateType": "euroPerEnergy",
+        "update": 0.000001
+    }
+}
