@@ -1,0 +1,12 @@
+{
+    "seqNumber": 1,
+    "effectiveTime": 1686227885,
+    "timeout": 1686227880,
+    "payload": {
+        "updateType": "timeParametersCPV1",
+        "update": {
+            "rewardPeriodLength": 2,
+            "mintPerPayday": 0.261157877
+        }
+    }
+}

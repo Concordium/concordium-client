@@ -1,0 +1,9 @@
+{
+    "seqNumber": 2,
+    "effectiveTime": 1686553805,
+    "timeout": 1686553800,
+    "payload": {
+        "updateType": "blockEnergyLimit",
+        "update": 4000000
+    }
+}

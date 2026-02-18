@@ -1,0 +1,13 @@
+{
+    "seqNumber": 3,
+    "effectiveTime": 1689331201,
+    "timeout": 1689331200,
+    "payload": {
+        "updateType": "mintDistributionCPV1",
+        "update": {
+            "mintPerSlot": 0.00025997,
+            "bakingReward": 0.6,
+            "finalizationReward": 0.3
+        }
+    }
+}

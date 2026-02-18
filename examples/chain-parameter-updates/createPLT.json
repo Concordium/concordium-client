@@ -1,0 +1,23 @@
+{
+    "seqNumber": 1,
+    "effectiveTime": 0,
+    "timeout": 194498994508,
+    "payload": {
+        "updateType": "createPLT",
+        "update": {
+            "tokenId": "ETH",
+            "tokenModule": "5c5c2645db84a7026d78f2501740f60a8ccb8fae5c166dc2428077fd9a699a4a",
+            "decimals": 2, 
+            "initializationParameters": {
+                "name": "Protocol-level token",
+                "metadata": {"url":"https://test.plt"},
+                "governanceAccount":{"type":"account","address":"35irZU4zSvdH5jfxoXUvWHApgs3giSkQ7gC2wp3Ld8ETBCbeP4"},
+                "initialSupply":{"value":"50000","decimals":2},
+                "allowList": true,
+                "denyList": true,
+                "mintable": true,
+                "burnable": true
+            }
+        }
+    }
+}

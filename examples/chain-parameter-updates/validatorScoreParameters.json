@@ -1,0 +1,11 @@
+{                                                                                                                                                                                                                                                                                                                             
+  "seqNumber": 1,
+  "effectiveTime": 1689750311,
+  "timeout": 1689750310,
+  "payload": {
+     "updateType": "validatorScoreParameters",
+     "update": {
+         "maximumMissedRounds": 4
+     }
+   }
+}

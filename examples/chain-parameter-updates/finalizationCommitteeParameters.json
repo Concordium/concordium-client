@@ -1,0 +1,13 @@
+{
+    "seqNumber": 1,
+    "effectiveTime": 1688628625,
+    "timeout": 1688628620,
+    "payload": {
+        "updateType": "finalizationCommitteeParameters",
+        "update": {
+            "minimumFinalizers": 5,
+            "maximumFinalizers": 10,
+            "finalizerRelativeStakeThreshold": 0.1
+        }
+    }
+}

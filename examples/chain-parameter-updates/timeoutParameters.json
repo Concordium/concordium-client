@@ -1,0 +1,13 @@
+{
+    "seqNumber": 1,
+    "effectiveTime": 1686554405,
+    "timeout": 1686554400,
+    "payload": {
+        "updateType": "timeoutParameters",
+        "update": {
+            "timeoutBase": 8,
+            "timeoutIncrease": 1.3,
+            "timeoutDecrease": 0.9
+        }
+    }
+}

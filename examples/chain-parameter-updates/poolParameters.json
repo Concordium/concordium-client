@@ -1,0 +1,28 @@
+{
+    "seqNumber": 5,
+    "effectiveTime": 1689331201,
+    "timeout": 1689331200,
+    "payload": {
+        "updateType": "poolParametersCPV1",
+        "update": {
+            "passiveFinalizationCommission": 0.1,
+            "passiveBakingCommission": 1,
+            "passiveTransactionCommission": 1,
+            "finalizationCommissionRange": {
+                "min": 0.1,
+                "max": 0.1
+            },
+            "bakingCommissionRange": {
+                "min": 1,
+                "max": 1
+            },
+            "transactionCommissionRange": {
+                "min": 1,
+                "max": 1
+            },
+            "minimumEquityCapital": "14000000000",
+            "capitalBound": 0.1,
+            "leverageBound": 3
+        }
+    }
+}

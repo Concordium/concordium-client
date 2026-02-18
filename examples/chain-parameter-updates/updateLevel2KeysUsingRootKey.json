@@ -1,0 +1,113 @@
+{
+    "seqNumber": 1,
+    "effectiveTime": 1686513065,
+    "timeout": 1686513060,
+    "payload": {
+        "updateType": "root",
+        "update": {
+            "typeOfUpdate": "level2KeysUpdateV1",
+            "updatePayload": {
+                "keys": [
+                    {
+                        "schemeId": "Ed25519",
+                        "verifyKey": "3acd0c8f11351254b0c1efbce0a69f7a5de738fdf5a01758649455cca3ef7c5e"
+                    },
+                    {
+                        "schemeId": "Ed25519",
+                        "verifyKey": "f6ace1c6ef950f76e78016e0af045037a600749c2db134503798ce7da032f557"
+                    }
+                ],
+                "emergency": {
+                    "authorizedKeys": [
+                        0
+                    ],
+                    "threshold": 1
+                },
+                "protocol": {
+                    "authorizedKeys": [
+                        0
+                    ],
+                    "threshold": 1
+                },
+                "electionDifficulty": {
+                    "authorizedKeys": [
+                        0
+                    ],
+                    "threshold": 1
+                },
+                "euroPerEnergy": {
+                    "authorizedKeys": [
+                        0
+                    ],
+                    "threshold": 1
+                },
+                "microGTUPerEuro": {
+                    "authorizedKeys": [
+                        0
+                    ],
+                    "threshold": 1
+                },
+                "foundationAccount": {
+                    "authorizedKeys": [
+                        0
+                    ],
+                    "threshold": 1
+                },
+                "mintDistribution": {
+                    "authorizedKeys": [
+                        0
+                    ],
+                    "threshold": 1
+                },
+                "paramGASRewards": {
+                    "authorizedKeys": [
+                        0
+                    ],
+                    "threshold": 1
+                },
+                "transactionFeeDistribution": {
+                    "authorizedKeys": [
+                        0
+                    ],
+                    "threshold": 1
+                },
+                "bakerStakeThreshold": {
+                    "authorizedKeys": [
+                        0
+                    ],
+                    "threshold": 1
+                },
+                "addAnonymityRevoker": {
+                    "authorizedKeys": [
+                        0
+                    ],
+                    "threshold": 1
+                },
+                "addIdentityProvider": {
+                    "authorizedKeys": [
+                        0
+                    ],
+                    "threshold": 1
+                },
+                "poolParameters": {
+                    "authorizedKeys": [
+                        0
+                    ],
+                    "threshold": 1
+                },
+                "cooldownParameters": {
+                    "authorizedKeys": [
+                        0
+                    ],
+                    "threshold": 1
+                },
+                "timeParameters": {
+                    "authorizedKeys": [
+                        0
+                    ],
+                    "threshold": 1
+                }
+            }
+        }
+    }
+}

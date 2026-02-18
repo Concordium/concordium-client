@@ -1,0 +1,12 @@
+{
+    "seqNumber": 3,
+    "effectiveTime": 1687930325,
+    "timeout": 1687930320,
+    "payload": {
+        "updateType": "cooldownParametersCPV1",
+        "update": {
+            "poolOwnerCooldown": 600,
+            "delegatorCooldown": 300
+        }
+    }
+}
