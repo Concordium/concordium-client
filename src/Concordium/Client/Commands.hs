@@ -44,7 +44,7 @@ import Concordium.Client.Utils
 import Concordium.Common.Time
 import Concordium.ID.Types (AccountThreshold, CredentialIndex, CredentialRegistrationID, KeyIndex)
 import Concordium.Types
-import Concordium.Types.Execution
+import Concordium.Types.Execution hiding (TokenBurn, TokenMint)
 import qualified Concordium.Wasm as Wasm
 import Control.Monad
 import Data.Maybe
@@ -240,6 +240,9 @@ data TokenSupplyAction = Mint | Burn
 data ModifyListAction = AddAllowList | RemoveAllowList | AddDenyList | RemoveDenyList
     deriving (Show, Eq)
 
+data ModifyAdminRoles = AssignAdminRole | RevokeAdminRole
+    deriving (Show, Eq)
+
 data TokenPauseAction = Pause | Unpause
     deriving (Show, Eq)
 
@@ -268,7 +271,38 @@ data PLTCmd
           tppTokenId :: !Text,
           tppOpts :: !(TransactionOpts (Maybe Energy))
         }
+    | TransactionPLTModifyAdminRoles
+        { tpmarAction :: !ModifyAdminRoles,
+          tpmarRole :: !AdminRole,
+          tpmarAccount :: !Text,
+          tpmarOpts :: !(TransactionOpts (Maybe Energy))
+        }
+    | TransactionPLTUpdateMetadata
+        { tpumMetadata :: !Text, -- TODO: update type to url and hash
+          tpumOpts :: !(TransactionOpts (Maybe Energy))
+        }
     deriving (Show)
+
+data AdminRole
+    = UpdateAdminRole
+    | TokenMint
+    | TokenBurn
+    | UpdateAllowList
+    | UpdateDenyList
+    | TokenPause
+    | UpdateMetadata
+    deriving (Show)
+
+parseAdminRole :: ReadM AdminRole
+parseAdminRole = eitherReader $ \s -> case s of
+    "UpdateAdminRole" -> Right UpdateAdminRole
+    "TokenMint" -> Right TokenMint
+    "TokenBurn" -> Right TokenBurn
+    "UpdateAllowList" -> Right UpdateAllowList
+    "UpdateDenyList" -> Right UpdateDenyList
+    "TokenPause" -> Right TokenPause
+    "UpdateMetadata" -> Right UpdateMetadata
+    _ -> Left "Invalid role"
 
 data AccountCmd
     = AccountShow
@@ -878,6 +912,9 @@ pltCmds =
                         <> transactionPLTRemoveDenyListCmd
                         <> transactionPLTPauseCmd
                         <> transactionPLTUnpauseCmd
+                        <> transactionPLTAssignRolesCmd
+                        <> transactionPLTRevokeRolesCmd
+                        <> transactionPLTUpdateMetadataCmd
                     )
             )
             (progDesc "Commands for PLTs (protocol level tokens) transactions.")
@@ -1107,6 +1144,45 @@ transactionPLTUnpauseCmd =
                 <*> transactionOptsParser
             )
             (progDesc "Unpause PLT (protocol level token).")
+        )
+
+transactionPLTAssignRolesCmd :: Mod CommandFields PLTCmd
+transactionPLTAssignRolesCmd =
+    command
+        "assign-roles"
+        ( info
+            ( TransactionPLTModifyAdminRoles AssignAdminRole
+                <$> option parseAdminRole (long "role" <> metavar "Role" <> help "The account role (UpdateAdminRole | TokenMint | TokenBurn | UpdateAllowList | UpdateDenyList | TokenPause | UpdateMetadata).")
+                <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to revoke the role.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Assign admin roles to the token.")
+        )
+
+transactionPLTRevokeRolesCmd :: Mod CommandFields PLTCmd
+transactionPLTRevokeRolesCmd =
+    command
+        "revoke-roles"
+        ( info
+            ( TransactionPLTModifyAdminRoles RevokeAdminRole
+                <$> option parseAdminRole (long "role" <> metavar "Role" <> help "The account role (UpdateAdminRole | TokenMint | TokenBurn | UpdateAllowList | UpdateDenyList | TokenPause | UpdateMetadata).")
+                <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to revoke the role.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Revoke admin roles from the token.")
+        )
+
+transactionPLTUpdateMetadataCmd :: Mod CommandFields PLTCmd
+transactionPLTUpdateMetadataCmd =
+    command
+        "update-metadata"
+        ( info
+            ( TransactionPLTUpdateMetadata
+                <$> strOption (long "url" <> metavar "URL" <> help "The metadata URL.")
+                -- <*> strOption (long "hash" <> metavar "HASH" <> help "The metadata hash.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Update the metadata of the token.")
         )
 
 transactionWithScheduleCmd :: Mod CommandFields TransactionCmd
