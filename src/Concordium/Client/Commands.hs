@@ -18,6 +18,8 @@ module Concordium.Client.Commands (
     PLTCmd (..),
     TokenSupplyAction (..),
     ModifyListAction (..),
+    ModifyAdminAction (..),
+    AdminRole (..),
     TokenPauseAction (..),
     AccountCmd (..),
     ModuleCmd (..),
@@ -240,7 +242,7 @@ data TokenSupplyAction = Mint | Burn
 data ModifyListAction = AddAllowList | RemoveAllowList | AddDenyList | RemoveDenyList
     deriving (Show, Eq)
 
-data ModifyAdminRoles = AssignAdminRole | RevokeAdminRole
+data ModifyAdminAction = AssignAdminRole | RevokeAdminRole
     deriving (Show, Eq)
 
 data TokenPauseAction = Pause | Unpause
@@ -272,13 +274,15 @@ data PLTCmd
           tppOpts :: !(TransactionOpts (Maybe Energy))
         }
     | TransactionPLTModifyAdminRoles
-        { tpmarAction :: !ModifyAdminRoles,
+        { tpmarAction :: !ModifyAdminAction,
           tpmarRole :: !AdminRole,
           tpmarAccount :: !Text,
+          tpmarTokenId :: !Text,
           tpmarOpts :: !(TransactionOpts (Maybe Energy))
         }
     | TransactionPLTUpdateMetadata
         { tpumMetadata :: !Text, -- TODO: update type to url and hash
+          tpumTokenId :: !Text,
           tpumOpts :: !(TransactionOpts (Maybe Energy))
         }
     deriving (Show)
@@ -1154,6 +1158,7 @@ transactionPLTAssignRolesCmd =
             ( TransactionPLTModifyAdminRoles AssignAdminRole
                 <$> option parseAdminRole (long "role" <> metavar "Role" <> help "The account role (UpdateAdminRole | TokenMint | TokenBurn | UpdateAllowList | UpdateDenyList | TokenPause | UpdateMetadata).")
                 <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to revoke the role.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
             )
             (progDesc "Assign admin roles to the token.")
@@ -1167,6 +1172,7 @@ transactionPLTRevokeRolesCmd =
             ( TransactionPLTModifyAdminRoles RevokeAdminRole
                 <$> option parseAdminRole (long "role" <> metavar "Role" <> help "The account role (UpdateAdminRole | TokenMint | TokenBurn | UpdateAllowList | UpdateDenyList | TokenPause | UpdateMetadata).")
                 <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to revoke the role.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
             )
             (progDesc "Revoke admin roles from the token.")
@@ -1180,6 +1186,7 @@ transactionPLTUpdateMetadataCmd =
             ( TransactionPLTUpdateMetadata
                 <$> strOption (long "url" <> metavar "URL" <> help "The metadata URL.")
                 -- <*> strOption (long "hash" <> metavar "HASH" <> help "The metadata hash.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
             )
             (progDesc "Update the metadata of the token.")
