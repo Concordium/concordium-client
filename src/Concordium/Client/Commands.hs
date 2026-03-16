@@ -1156,12 +1156,12 @@ transactionPLTAssignRolesCmd =
         "assign-roles"
         ( info
             ( TransactionPLTModifyAdminRoles AssignAdminRole
-                <$> option parseAdminRole (long "role" <> metavar "Role" <> help "The account role (UpdateAdminRole | TokenMint | TokenBurn | UpdateAllowList | UpdateDenyList | TokenPause | UpdateMetadata).")
+                <$> option parseAdminRole (long "role" <> metavar "ROLE" <> help "The account role (UpdateAdminRole | TokenMint | TokenBurn | UpdateAllowList | UpdateDenyList | TokenPause | UpdateMetadata).")
                 <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to revoke the role.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
             )
-            (progDesc "Assign admin roles to the token.")
+            (progDesc "Assign an admin role to the token.")
         )
 
 transactionPLTRevokeRolesCmd :: Mod CommandFields PLTCmd
@@ -1170,12 +1170,12 @@ transactionPLTRevokeRolesCmd =
         "revoke-roles"
         ( info
             ( TransactionPLTModifyAdminRoles RevokeAdminRole
-                <$> option parseAdminRole (long "role" <> metavar "Role" <> help "The account role (UpdateAdminRole | TokenMint | TokenBurn | UpdateAllowList | UpdateDenyList | TokenPause | UpdateMetadata).")
+                <$> option parseAdminRole (long "role" <> metavar "ROLE" <> help "The account role (UpdateAdminRole | TokenMint | TokenBurn | UpdateAllowList | UpdateDenyList | TokenPause | UpdateMetadata).")
                 <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to revoke the role.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
             )
-            (progDesc "Revoke admin roles from the token.")
+            (progDesc "Revoke an admin role from the token.")
         )
 
 transactionPLTUpdateMetadataCmd :: Mod CommandFields PLTCmd
