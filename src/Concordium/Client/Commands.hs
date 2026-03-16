@@ -19,7 +19,6 @@ module Concordium.Client.Commands (
     TokenSupplyAction (..),
     ModifyListAction (..),
     ModifyAdminAction (..),
-    AdminRole (..),
     TokenPauseAction (..),
     AccountCmd (..),
     ModuleCmd (..),
@@ -46,7 +45,8 @@ import Concordium.Client.Utils
 import Concordium.Common.Time
 import Concordium.ID.Types (AccountThreshold, CredentialIndex, CredentialRegistrationID, KeyIndex)
 import Concordium.Types
-import Concordium.Types.Execution hiding (TokenBurn, TokenMint)
+import Concordium.Types.Execution
+import qualified Concordium.Types.ProtocolLevelTokens.CBOR as CBOR
 import qualified Concordium.Wasm as Wasm
 import Control.Monad
 import Data.Maybe
@@ -275,7 +275,7 @@ data PLTCmd
         }
     | TransactionPLTModifyAdminRoles
         { tpmarAction :: !ModifyAdminAction,
-          tpmarRole :: !AdminRole,
+          tpmarRole :: !CBOR.TokenAdminRole,
           tpmarAccount :: !Text,
           tpmarTokenId :: !Text,
           tpmarOpts :: !(TransactionOpts (Maybe Energy))
@@ -287,25 +287,15 @@ data PLTCmd
         }
     deriving (Show)
 
-data AdminRole
-    = UpdateAdminRole
-    | TokenMint
-    | TokenBurn
-    | UpdateAllowList
-    | UpdateDenyList
-    | TokenPause
-    | UpdateMetadata
-    deriving (Show)
-
-parseAdminRole :: ReadM AdminRole
+parseAdminRole :: ReadM CBOR.TokenAdminRole
 parseAdminRole = eitherReader $ \s -> case s of
-    "UpdateAdminRole" -> Right UpdateAdminRole
-    "TokenMint" -> Right TokenMint
-    "TokenBurn" -> Right TokenBurn
-    "UpdateAllowList" -> Right UpdateAllowList
-    "UpdateDenyList" -> Right UpdateDenyList
-    "TokenPause" -> Right TokenPause
-    "UpdateMetadata" -> Right UpdateMetadata
+    "UpdateAdminRole" -> Right CBOR.RoleUpdateAdminRoles
+    "Mint" -> Right CBOR.RoleMint
+    "Burn" -> Right CBOR.RoleBurn
+    "UpdateAllowList" -> Right CBOR.RoleUpdateAllowList
+    "UpdateDenyList" -> Right CBOR.RoleUpdateDenyList
+    "PauseUnpause" -> Right CBOR.RolePause
+    "UpdateMetadata" -> Right CBOR.RoleUpdateMetadata
     _ -> Left "Invalid role"
 
 data AccountCmd
@@ -1156,7 +1146,7 @@ transactionPLTAssignRolesCmd =
         "assign-roles"
         ( info
             ( TransactionPLTModifyAdminRoles AssignAdminRole
-                <$> option parseAdminRole (long "role" <> metavar "ROLE" <> help "The account role (UpdateAdminRole | TokenMint | TokenBurn | UpdateAllowList | UpdateDenyList | TokenPause | UpdateMetadata).")
+                <$> option parseAdminRole (long "role" <> metavar "ROLE" <> help "The account role (UpdateAdminRole | Mint | Burn | UpdateAllowList | UpdateDenyList | PauseUnpause | UpdateMetadata).")
                 <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to revoke the role.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
@@ -1170,7 +1160,7 @@ transactionPLTRevokeRolesCmd =
         "revoke-roles"
         ( info
             ( TransactionPLTModifyAdminRoles RevokeAdminRole
-                <$> option parseAdminRole (long "role" <> metavar "ROLE" <> help "The account role (UpdateAdminRole | TokenMint | TokenBurn | UpdateAllowList | UpdateDenyList | TokenPause | UpdateMetadata).")
+                <$> option parseAdminRole (long "role" <> metavar "ROLE" <> help "The account role (UpdateAdminRole | Mint | Burn | UpdateAllowList | UpdateDenyList | PauseUnpause | UpdateMetadata).")
                 <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to revoke the role.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser

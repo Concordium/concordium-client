@@ -954,14 +954,16 @@ showEvent verbose ciM = \case
                         Right Cbor.Unpause ->
                             Just $ printf "%s unpaused." (show etmeTokenId)
                         Right (Cbor.UpdateMetadataEvent metadata) ->
-                            Just $ printf "Metadata URL %s%s updated at token %s."
-                                (show (Cbor.tmUrl metadata))
-                                (maybe "" (\c -> printf " with checksum %s" (show c) :: String) (Cbor.tmChecksumSha256 metadata)) 
-                                (show etmeTokenId)
+                            Just $
+                                printf
+                                    "Metadata URL %s%s updated at token %s."
+                                    (show (Cbor.tmUrl metadata))
+                                    (maybe "" (\c -> printf " with checksum %s" (show c) :: String) (Cbor.tmChecksumSha256 metadata))
+                                    (show etmeTokenId)
                         Right (Cbor.AssignAdminRolesEvent adminRolesDetails) ->
-                            Just $ printf "Admin %s assigned role %s at token %s." (show (Cbor.uardAccount adminRolesDetails)) (show (Cbor.uardRoles adminRolesDetails)) (show etmeTokenId) 
+                            Just $ printf "Admin %s assigned role %s at token %s." (show (Cbor.uardAccount adminRolesDetails)) (show (Cbor.uardRoles adminRolesDetails)) (show etmeTokenId)
                         Right (Cbor.RevokeAdminRolesEvent adminRolesDetails) ->
-                            Just $ printf "Admin %s revoked role %s at token %s." (show (Cbor.uardAccount adminRolesDetails)) (show (Cbor.uardRoles adminRolesDetails)) (show etmeTokenId) 
+                            Just $ printf "Admin %s revoked role %s at token %s." (show (Cbor.uardAccount adminRolesDetails)) (show (Cbor.uardRoles adminRolesDetails)) (show etmeTokenId)
                         Left _ -> Nothing
 
                     -- Second decoding attempt using generic CBOR deserialization.
