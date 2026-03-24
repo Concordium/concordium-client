@@ -922,8 +922,8 @@ processTransactionCmd action baseCfgDir verbose backend =
                     handlePLTPausation backend baseCfgDir verbose pauseAction tokenId txOpts
                 TransactionPLTModifyAdminRoles adminAction role account tokenId txOpts ->
                     handlePLTModifyAdminRoles backend baseCfgDir verbose adminAction role account tokenId txOpts
-                TransactionPLTUpdateMetadata metadataURL tokenId txOpts ->
-                    handlePLTUpdateMetadata backend baseCfgDir verbose metadataURL tokenId txOpts
+                TransactionPLTUpdateMetadata metadataURL maybeMetadataChecksum tokenId txOpts ->
+                    handlePLTUpdateMetadata backend baseCfgDir verbose metadataURL maybeMetadataChecksum tokenId txOpts
 
 -- | Renormalize a 'TokenAmount' to conform to the number of decimal places expected by the
 --  token. If more than the expected number of decimals are given, this fails with an error.
@@ -1138,17 +1138,25 @@ handlePLTUpdateMetadata ::
     Maybe FilePath ->
     Bool ->
     Text ->
+    Maybe Text ->
     Text ->
     TransactionOpts (Maybe Types.Energy) ->
     IO ()
-handlePLTUpdateMetadata backend baseCfgDir verbose metadataUrlText tokenIdText txOpts = do
+handlePLTUpdateMetadata backend baseCfgDir verbose metadataUrlText maybeMetadataChecksum tokenIdText txOpts = do
     baseCfg <- getBaseConfig baseCfgDir verbose
     when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-    -- TODO: handle checksum and additional fields: createTokenMetadataUrlWithSha256 url checksum = TokenMetadataUrl{tmUrl = url, tmChecksumSha256 = Just checksum, tmAdditional = Map.empty}
-    let metadata = CBOR.createTokenMetadataUrl metadataUrlText
+    metadata <- case maybeMetadataChecksum of
+        Just checksumStr ->
+            case parseChecksum checksumStr of
+                Nothing ->
+                    logFatal [printf "invalid checksum hash '%s'" checksumStr]
+                Just hash ->
+                    return $ CBOR.createTokenMetadataUrlWithSha256 metadataUrlText hash
+        Nothing ->
+            return $ CBOR.createTokenMetadataUrl metadataUrlText
 
     withClient backend $ do
         tokenOperation <- pure $ CBOR.TokenUpdateMetadata metadata

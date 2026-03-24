@@ -281,7 +281,8 @@ data PLTCmd
           tpmarOpts :: !(TransactionOpts (Maybe Energy))
         }
     | TransactionPLTUpdateMetadata
-        { tpumMetadata :: !Text, -- TODO: update type to url and hash
+        { tpumMetadataHash :: !Text,
+          tpumMetadataChecksum :: !(Maybe Text),
           tpumTokenId :: !Text,
           tpumOpts :: !(TransactionOpts (Maybe Energy))
         }
@@ -1175,7 +1176,7 @@ transactionPLTUpdateMetadataCmd =
         ( info
             ( TransactionPLTUpdateMetadata
                 <$> strOption (long "url" <> metavar "URL" <> help "The metadata URL.")
-                -- <*> strOption (long "hash" <> metavar "HASH" <> help "The metadata hash.")
+                <*> option auto (long "metadataChecksum" <> metavar "METADATA_CHECKSUM" <> help "The checksum of the metadata file that the url points to.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
             )
