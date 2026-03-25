@@ -1176,7 +1176,13 @@ transactionPLTUpdateMetadataCmd =
         ( info
             ( TransactionPLTUpdateMetadata
                 <$> strOption (long "url" <> metavar "URL" <> help "The metadata URL.")
-                <*> option auto (long "metadataChecksum" <> metavar "METADATA_CHECKSUM" <> help "The checksum of the metadata file that the url points to.")
+                <*> optional
+                    ( strOption
+                        ( long "metadataChecksum"
+                            <> metavar "METADATA_CHECKSUM"
+                            <> help "The checksum of the metadata file that the url points to."
+                        )
+                    )
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
             )
