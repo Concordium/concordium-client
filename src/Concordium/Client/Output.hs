@@ -57,6 +57,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Short as BSS
 import Data.Either (isRight)
+import Data.Foldable as Foldable
 import Data.Functor
 import Data.List (elemIndex, intercalate, nub, partition, sortOn)
 import qualified Data.Map.Strict as Map
@@ -961,9 +962,9 @@ showEvent verbose ciM = \case
                                     (maybe "" (\c -> printf " with checksum %s" (show c) :: String) (Cbor.tmChecksumSha256 metadata))
                                     (show etmeTokenId)
                         Right (Cbor.AssignAdminRolesEvent adminRolesDetails) ->
-                            Just $ printf "Admin %s assigned role %s at token %s." (show (Cbor.uardAccount adminRolesDetails)) (show (Cbor.uardRoles adminRolesDetails)) (show etmeTokenId)
+                            Just $ printf "Account %s assigned admin roles %s for token %s." (show (Cbor.chaAccount $ Cbor.uardAccount adminRolesDetails)) (show $ Foldable.toList (Cbor.uardRoles adminRolesDetails)) (show etmeTokenId)
                         Right (Cbor.RevokeAdminRolesEvent adminRolesDetails) ->
-                            Just $ printf "Admin %s revoked role %s at token %s." (show (Cbor.uardAccount adminRolesDetails)) (show (Cbor.uardRoles adminRolesDetails)) (show etmeTokenId)
+                            Just $ printf "Account %s revoked admin roles %s for token %s." (show (Cbor.chaAccount $ Cbor.uardAccount adminRolesDetails)) (show $ Foldable.toList (Cbor.uardRoles adminRolesDetails)) (show etmeTokenId)
                         Left _ -> Nothing
 
                     -- Second decoding attempt using generic CBOR deserialization.

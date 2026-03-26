@@ -920,10 +920,10 @@ processTransactionCmd action baseCfgDir verbose backend =
                     handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenId txOpts
                 TransactionPLTPausation pauseAction tokenId txOpts ->
                     handlePLTPausation backend baseCfgDir verbose pauseAction tokenId txOpts
-                TransactionPLTModifyAdminRoles adminAction role account tokenId txOpts ->
-                    handlePLTModifyAdminRoles backend baseCfgDir verbose adminAction role account tokenId txOpts
-                TransactionPLTUpdateMetadata metadataURL maybeMetadataChecksum tokenId txOpts ->
-                    handlePLTUpdateMetadata backend baseCfgDir verbose metadataURL maybeMetadataChecksum tokenId txOpts
+                TransactionPLTModifyAdminRoles adminAction roles account tokenId txOpts ->
+                    handlePLTModifyAdminRoles backend baseCfgDir verbose adminAction roles account tokenId txOpts
+                TransactionPLTUpdateMetadata metadataURL maybeChecksum tokenId txOpts ->
+                    handlePLTUpdateMetadata backend baseCfgDir verbose metadataURL maybeChecksum tokenId txOpts
 
 -- | Renormalize a 'TokenAmount' to conform to the number of decimal places expected by the
 --  token. If more than the expected number of decimals are given, this fails with an error.
@@ -1091,12 +1091,12 @@ handlePLTModifyAdminRoles ::
     Maybe FilePath ->
     Bool ->
     ModifyAdminAction ->
-    CBOR.TokenAdminRole ->
+    [CBOR.TokenAdminRole] ->
     Text ->
     Text ->
     TransactionOpts (Maybe Types.Energy) ->
     IO ()
-handlePLTModifyAdminRoles backend baseCfgDir verbose adminAction role account tokenIdText txOpts = do
+handlePLTModifyAdminRoles backend baseCfgDir verbose adminAction roles account tokenIdText txOpts = do
     baseCfg <- getBaseConfig baseCfgDir verbose
     when verbose $ do
         runPrinter $ printBaseConfig baseCfg
@@ -1105,7 +1105,7 @@ handlePLTModifyAdminRoles backend baseCfgDir verbose adminAction role account to
     adminAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) account
     let cborAdminAddress = CBOR.accountTokenHolder $ naAddr adminAddress
 
-    let updateAdminRolesDetails = CBOR.UpdateAdminRolesDetailsBuilder (Just cborAdminAddress) (Just (Seq.singleton role))
+    let updateAdminRolesDetails = CBOR.UpdateAdminRolesDetailsBuilder (Just cborAdminAddress) (Just (Seq.fromList roles))
     let eitherUpdateAdminRolesDetails = CBOR.buildUpdateAdminRolesDetails updateAdminRolesDetails
     updateAdminRolesDetailsBody <- case eitherUpdateAdminRolesDetails of
         Right val -> return val
@@ -1142,13 +1142,13 @@ handlePLTUpdateMetadata ::
     Text ->
     TransactionOpts (Maybe Types.Energy) ->
     IO ()
-handlePLTUpdateMetadata backend baseCfgDir verbose metadataUrlText maybeMetadataChecksum tokenIdText txOpts = do
+handlePLTUpdateMetadata backend baseCfgDir verbose metadataUrlText maybeChecksum tokenIdText txOpts = do
     baseCfg <- getBaseConfig baseCfgDir verbose
     when verbose $ do
         runPrinter $ printBaseConfig baseCfg
         putStrLn ""
 
-    metadata <- case maybeMetadataChecksum of
+    metadata <- case maybeChecksum of
         Just checksumStr ->
             case parseChecksum checksumStr of
                 Nothing ->

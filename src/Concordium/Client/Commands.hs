@@ -275,14 +275,14 @@ data PLTCmd
         }
     | TransactionPLTModifyAdminRoles
         { tpmarAction :: !ModifyAdminAction,
-          tpmarRole :: !CBOR.TokenAdminRole,
+          tpmarRoles :: ![CBOR.TokenAdminRole],
           tpmarAccount :: !Text,
           tpmarTokenId :: !Text,
           tpmarOpts :: !(TransactionOpts (Maybe Energy))
         }
     | TransactionPLTUpdateMetadata
-        { tpumMetadataHash :: !Text,
-          tpumMetadataChecksum :: !(Maybe Text),
+        { tpumMetadataUrl :: !Text,
+          tpumChecksum :: !(Maybe Text),
           tpumTokenId :: !Text,
           tpumOpts :: !(TransactionOpts (Maybe Energy))
         }
@@ -1147,8 +1147,8 @@ transactionPLTAssignRolesCmd =
         "assign-roles"
         ( info
             ( TransactionPLTModifyAdminRoles AssignAdminRole
-                <$> option parseAdminRole (long "role" <> metavar "ROLE" <> help "The account role (UpdateAdminRole | Mint | Burn | UpdateAllowList | UpdateDenyList | PauseUnpause | UpdateMetadata).")
-                <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to revoke the role.")
+                <$> many (option parseAdminRole (long "role" <> metavar "ROLE" <> help "The account role (UpdateAdminRole | Mint | Burn | UpdateAllowList | UpdateDenyList | PauseUnpause | UpdateMetadata)."))
+                <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to assign the role.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
             )
@@ -1161,7 +1161,7 @@ transactionPLTRevokeRolesCmd =
         "revoke-roles"
         ( info
             ( TransactionPLTModifyAdminRoles RevokeAdminRole
-                <$> option parseAdminRole (long "role" <> metavar "ROLE" <> help "The account role (UpdateAdminRole | Mint | Burn | UpdateAllowList | UpdateDenyList | PauseUnpause | UpdateMetadata).")
+                <$> many (option parseAdminRole (long "role" <> metavar "ROLE" <> help "The account role (UpdateAdminRole | Mint | Burn | UpdateAllowList | UpdateDenyList | PauseUnpause | UpdateMetadata)."))
                 <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to revoke the role.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
@@ -1178,8 +1178,8 @@ transactionPLTUpdateMetadataCmd =
                 <$> strOption (long "url" <> metavar "URL" <> help "The metadata URL.")
                 <*> optional
                     ( strOption
-                        ( long "metadataChecksum"
-                            <> metavar "METADATA_CHECKSUM"
+                        ( long "checksum"
+                            <> metavar "CHECKSUM"
                             <> help "The checksum of the metadata file that the url points to."
                         )
                     )
