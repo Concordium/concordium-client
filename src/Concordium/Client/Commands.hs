@@ -18,6 +18,7 @@ module Concordium.Client.Commands (
     PLTCmd (..),
     TokenSupplyAction (..),
     ModifyListAction (..),
+    ModifyAdminAction (..),
     TokenPauseAction (..),
     AccountCmd (..),
     ModuleCmd (..),
@@ -45,6 +46,7 @@ import Concordium.Common.Time
 import Concordium.ID.Types (AccountThreshold, CredentialIndex, CredentialRegistrationID, KeyIndex)
 import Concordium.Types
 import Concordium.Types.Execution
+import qualified Concordium.Types.ProtocolLevelTokens.CBOR as CBOR
 import qualified Concordium.Wasm as Wasm
 import Control.Monad
 import Data.Maybe
@@ -240,6 +242,9 @@ data TokenSupplyAction = Mint | Burn
 data ModifyListAction = AddAllowList | RemoveAllowList | AddDenyList | RemoveDenyList
     deriving (Show, Eq)
 
+data ModifyAdminAction = AssignAdminRole | RevokeAdminRole
+    deriving (Show, Eq)
+
 data TokenPauseAction = Pause | Unpause
     deriving (Show, Eq)
 
@@ -268,7 +273,31 @@ data PLTCmd
           tppTokenId :: !Text,
           tppOpts :: !(TransactionOpts (Maybe Energy))
         }
+    | TransactionPLTModifyAdminRoles
+        { tpmarAction :: !ModifyAdminAction,
+          tpmarRoles :: ![CBOR.TokenAdminRole],
+          tpmarAccount :: !Text,
+          tpmarTokenId :: !Text,
+          tpmarOpts :: !(TransactionOpts (Maybe Energy))
+        }
+    | TransactionPLTUpdateMetadata
+        { tpumMetadataUrl :: !Text,
+          tpumChecksum :: !(Maybe Text),
+          tpumTokenId :: !Text,
+          tpumOpts :: !(TransactionOpts (Maybe Energy))
+        }
     deriving (Show)
+
+parseAdminRole :: ReadM CBOR.TokenAdminRole
+parseAdminRole = eitherReader $ \s -> case s of
+    "updateAdminRole" -> Right CBOR.RoleUpdateAdminRoles
+    "mint" -> Right CBOR.RoleMint
+    "burn" -> Right CBOR.RoleBurn
+    "updateAllowList" -> Right CBOR.RoleUpdateAllowList
+    "updateDenyList" -> Right CBOR.RoleUpdateDenyList
+    "pause" -> Right CBOR.RolePause
+    "updateMetadata" -> Right CBOR.RoleUpdateMetadata
+    _ -> Left "Invalid role"
 
 data AccountCmd
     = AccountShow
@@ -878,6 +907,9 @@ pltCmds =
                         <> transactionPLTRemoveDenyListCmd
                         <> transactionPLTPauseCmd
                         <> transactionPLTUnpauseCmd
+                        <> transactionPLTAssignRolesCmd
+                        <> transactionPLTRevokeRolesCmd
+                        <> transactionPLTUpdateMetadataCmd
                     )
             )
             (progDesc "Commands for PLTs (protocol level tokens) transactions.")
@@ -1107,6 +1139,54 @@ transactionPLTUnpauseCmd =
                 <*> transactionOptsParser
             )
             (progDesc "Unpause PLT (protocol level token).")
+        )
+
+transactionPLTAssignRolesCmd :: Mod CommandFields PLTCmd
+transactionPLTAssignRolesCmd =
+    command
+        "assign-roles"
+        ( info
+            ( TransactionPLTModifyAdminRoles AssignAdminRole
+                <$> many (option parseAdminRole (long "role" <> metavar "ROLE" <> help "The account role (updateAdminRole | mint | burn | updateAllowList | updateDenyList | pause | updateMetadata)."))
+                <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to assign the role.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Assign an admin role to the token.")
+        )
+
+transactionPLTRevokeRolesCmd :: Mod CommandFields PLTCmd
+transactionPLTRevokeRolesCmd =
+    command
+        "revoke-roles"
+        ( info
+            ( TransactionPLTModifyAdminRoles RevokeAdminRole
+                <$> many (option parseAdminRole (long "role" <> metavar "ROLE" <> help "The account role (updateAdminRole | mint | burn | updateAllowList | updateDenyList | pause | updateMetadata)."))
+                <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to revoke the role.")
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Revoke an admin role from the token.")
+        )
+
+transactionPLTUpdateMetadataCmd :: Mod CommandFields PLTCmd
+transactionPLTUpdateMetadataCmd =
+    command
+        "update-metadata"
+        ( info
+            ( TransactionPLTUpdateMetadata
+                <$> strOption (long "url" <> metavar "URL" <> help "The metadata URL.")
+                <*> optional
+                    ( strOption
+                        ( long "checksum"
+                            <> metavar "CHECKSUM"
+                            <> help "The checksum of the metadata file that the url points to."
+                        )
+                    )
+                <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
+                <*> transactionOptsParser
+            )
+            (progDesc "Update the metadata of the token.")
         )
 
 transactionWithScheduleCmd :: Mod CommandFields TransactionCmd
