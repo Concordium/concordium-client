@@ -295,7 +295,7 @@ parseAdminRole = eitherReader $ \s -> case s of
     "Burn" -> Right CBOR.RoleBurn
     "UpdateAllowList" -> Right CBOR.RoleUpdateAllowList
     "UpdateDenyList" -> Right CBOR.RoleUpdateDenyList
-    "PauseUnpause" -> Right CBOR.RolePause
+    "Pause" -> Right CBOR.RolePause
     "UpdateMetadata" -> Right CBOR.RoleUpdateMetadata
     _ -> Left "Invalid role"
 
