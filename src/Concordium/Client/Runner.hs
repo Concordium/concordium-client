@@ -920,6 +920,10 @@ processTransactionCmd action baseCfgDir verbose backend =
                     handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenId txOpts
                 TransactionPLTPausation pauseAction tokenId txOpts ->
                     handlePLTPausation backend baseCfgDir verbose pauseAction tokenId txOpts
+                TransactionPLTModifyAdminRoles adminAction roles account tokenId txOpts ->
+                    handlePLTModifyAdminRoles backend baseCfgDir verbose adminAction roles account tokenId txOpts
+                TransactionPLTUpdateMetadata metadataURL maybeChecksum tokenId txOpts ->
+                    handlePLTUpdateMetadata backend baseCfgDir verbose metadataURL maybeChecksum tokenId txOpts
 
 -- | Renormalize a 'TokenAmount' to conform to the number of decimal places expected by the
 --  token. If more than the expected number of decimals are given, this fails with an error.
@@ -1076,6 +1080,98 @@ handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenIdT
         let encodedPayload = Types.encodePayload payload
 
         let nrgCost _ = return $ Just $ flip (tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenListOperationCost) $ extendedCostFromOpts txOpts
+        txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
+
+        let intOpts = toInteractionOpts txOpts
+        let outFile = toOutFile txOpts
+        signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend
+
+handlePLTModifyAdminRoles ::
+    Backend ->
+    Maybe FilePath ->
+    Bool ->
+    ModifyAdminAction ->
+    [CBOR.TokenAdminRole] ->
+    Text ->
+    Text ->
+    TransactionOpts (Maybe Types.Energy) ->
+    IO ()
+handlePLTModifyAdminRoles backend baseCfgDir verbose adminAction roles account tokenIdText txOpts = do
+    baseCfg <- getBaseConfig baseCfgDir verbose
+    when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+    adminAddress <- getAccountAddressArg (bcAccountNameMap baseCfg) account
+    let cborAdminAddress = CBOR.accountTokenHolder $ naAddr adminAddress
+
+    let updateAdminRolesDetails = CBOR.UpdateAdminRolesDetailsBuilder (Just cborAdminAddress) (Just (Seq.fromList roles))
+    let eitherUpdateAdminRolesDetails = CBOR.buildUpdateAdminRolesDetails updateAdminRolesDetails
+    updateAdminRolesDetailsBody <- case eitherUpdateAdminRolesDetails of
+        Right val -> return val
+        Left err -> logFatal ["Error creating token update admin roles details:", err]
+
+    withClient backend $ do
+        tokenOperation <- case adminAction of
+            AssignAdminRole -> pure $ CBOR.TokenAssignAdminRoles updateAdminRolesDetailsBody
+            RevokeAdminRole -> pure $ CBOR.TokenRevokeAdminRoles updateAdminRolesDetailsBody
+        let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
+        let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
+        let tokenParameter = Types.TokenParameter $ BS.toShort bytes
+
+        tokenId <- case tokenIdFromText tokenIdText of
+            Right val -> return val
+            Left err -> logFatal ["Error couldn't parse token id:", err]
+
+        let payload = Types.TokenUpdate tokenId tokenParameter
+        let encodedPayload = Types.encodePayload payload
+
+        let nrgCost _ = return $ Just $ flip (tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenAssignRevokeRolesCost) $ extendedCostFromOpts txOpts
+        txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
+
+        let intOpts = toInteractionOpts txOpts
+        let outFile = toOutFile txOpts
+        signAndProcessTransaction_ verbose txCfg encodedPayload intOpts outFile backend
+
+handlePLTUpdateMetadata ::
+    Backend ->
+    Maybe FilePath ->
+    Bool ->
+    Text ->
+    Maybe Text ->
+    Text ->
+    TransactionOpts (Maybe Types.Energy) ->
+    IO ()
+handlePLTUpdateMetadata backend baseCfgDir verbose metadataUrlText maybeChecksum tokenIdText txOpts = do
+    baseCfg <- getBaseConfig baseCfgDir verbose
+    when verbose $ do
+        runPrinter $ printBaseConfig baseCfg
+        putStrLn ""
+
+    metadata <- case maybeChecksum of
+        Just checksumStr ->
+            case parseChecksum checksumStr of
+                Nothing ->
+                    logFatal [printf "invalid checksum hash '%s'" checksumStr]
+                Just hash ->
+                    return $ CBOR.createTokenMetadataUrlWithSha256 metadataUrlText hash
+        Nothing ->
+            return $ CBOR.createTokenMetadataUrl metadataUrlText
+
+    withClient backend $ do
+        tokenOperation <- pure $ CBOR.TokenUpdateMetadata metadata
+        let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
+        let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
+        let tokenParameter = Types.TokenParameter $ BS.toShort bytes
+
+        tokenId <- case tokenIdFromText tokenIdText of
+            Right val -> return val
+            Left err -> logFatal ["Error couldn't parse token id:", err]
+
+        let payload = Types.TokenUpdate tokenId tokenParameter
+        let encodedPayload = Types.encodePayload payload
+
+        let nrgCost _ = return $ Just $ flip (tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenUpdateTokenMetadataCost) $ extendedCostFromOpts txOpts
         txCfg <- liftIO $ getTransactionCfg baseCfg txOpts nrgCost
 
         let intOpts = toInteractionOpts txOpts
