@@ -290,13 +290,13 @@ data PLTCmd
 
 parseAdminRole :: ReadM CBOR.TokenAdminRole
 parseAdminRole = eitherReader $ \s -> case s of
-    "UpdateAdminRole" -> Right CBOR.RoleUpdateAdminRoles
-    "Mint" -> Right CBOR.RoleMint
-    "Burn" -> Right CBOR.RoleBurn
-    "UpdateAllowList" -> Right CBOR.RoleUpdateAllowList
-    "UpdateDenyList" -> Right CBOR.RoleUpdateDenyList
-    "Pause" -> Right CBOR.RolePause
-    "UpdateMetadata" -> Right CBOR.RoleUpdateMetadata
+    "updateAdminRole" -> Right CBOR.RoleUpdateAdminRoles
+    "mint" -> Right CBOR.RoleMint
+    "burn" -> Right CBOR.RoleBurn
+    "updateAllowList" -> Right CBOR.RoleUpdateAllowList
+    "updateDenyList" -> Right CBOR.RoleUpdateDenyList
+    "pause" -> Right CBOR.RolePause
+    "updateMetadata" -> Right CBOR.RoleUpdateMetadata
     _ -> Left "Invalid role"
 
 data AccountCmd
@@ -1147,7 +1147,7 @@ transactionPLTAssignRolesCmd =
         "assign-roles"
         ( info
             ( TransactionPLTModifyAdminRoles AssignAdminRole
-                <$> many (option parseAdminRole (long "role" <> metavar "ROLE" <> help "The account role (UpdateAdminRole | Mint | Burn | UpdateAllowList | UpdateDenyList | PauseUnpause | UpdateMetadata)."))
+                <$> many (option parseAdminRole (long "role" <> metavar "ROLE" <> help "The account role (updateAdminRole | mint | burn | updateAllowList | updateDenyList | pause | updateMetadata)."))
                 <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to assign the role.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
@@ -1161,7 +1161,7 @@ transactionPLTRevokeRolesCmd =
         "revoke-roles"
         ( info
             ( TransactionPLTModifyAdminRoles RevokeAdminRole
-                <$> many (option parseAdminRole (long "role" <> metavar "ROLE" <> help "The account role (UpdateAdminRole | Mint | Burn | UpdateAllowList | UpdateDenyList | PauseUnpause | UpdateMetadata)."))
+                <$> many (option parseAdminRole (long "role" <> metavar "ROLE" <> help "The account role (updateAdminRole | mint | burn | updateAllowList | updateDenyList | pause | updateMetadata)."))
                 <*> strOption (long "account" <> metavar "ACCOUNT" <> help "The account to revoke the role.")
                 <*> strOption (long "tokenId" <> metavar "TOKEN_ID" <> help "ID of the token.")
                 <*> transactionOptsParser
