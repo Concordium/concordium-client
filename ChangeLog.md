@@ -2,10 +2,6 @@
 
 ## Unreleased
 
-- Add `transaction plt assign-roles` to assign admin roles on a token.
-- Add `transaction plt revoke-roles` to revoke admin roles on a token.
-- Add `transaction plt update-metadata` to update the token metadata.
-
 ## 10.0.0
 
 - Warn user if trying to do a CreatePLT transaction that would get rejected.

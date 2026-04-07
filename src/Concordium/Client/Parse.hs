@@ -1,7 +1,6 @@
 module Concordium.Client.Parse (
     parseTransactionHash,
     parseBlockHash,
-    parseChecksum,
     parseTime,
     parseCredExpiry,
     parseExpiry,
@@ -22,9 +21,6 @@ parseTransactionHash = readMaybe . unpack
 
 parseBlockHash :: Text -> Maybe Hash
 parseBlockHash = readMaybe . unpack
-
-parseChecksum :: Text -> Maybe Hash
-parseChecksum = readMaybe . unpack
 
 data DurationUnit = Second | Minute | Hour
 

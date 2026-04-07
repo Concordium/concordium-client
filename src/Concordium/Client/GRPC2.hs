@@ -889,7 +889,6 @@ instance FromProto Proto.ProtocolVersion where
         Proto.PROTOCOL_VERSION_8 -> return P8
         Proto.PROTOCOL_VERSION_9 -> return P9
         Proto.PROTOCOL_VERSION_10 -> return P10
-        Proto.PROTOCOL_VERSION_11 -> return P11
         Proto.ProtocolVersion'Unrecognized _ ->
             fromProtoFail "Unable to convert 'ProtocolVersion'."
 
