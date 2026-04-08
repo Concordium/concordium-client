@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 11.0.0-alpha (Compatible with node version 11.1.0) - 2026-04-08
+
 - Add `transaction plt assign-roles` to assign admin roles on a token.
 - Add `transaction plt revoke-roles` to revoke admin roles on a token.
 - Add `transaction plt update-metadata` to update the token metadata.
