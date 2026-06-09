@@ -1027,6 +1027,10 @@ showEvent verbose ciM = \case
         verboseOrNothing $ printf "%s %s burned from %s." (tokenAmountToString etbAmount) (show etbTokenId) (show etbTarget)
     Types.TokenCreated{..} ->
         verboseOrNothing $ printf "Token created:\n %s" (showPrettyJSON etcPayload)
+    Types.LockCreated{..} ->
+        verboseOrNothing $ printf "lock '%s' created" (show elcLockId)
+    Types.LockDestroyed{..} ->
+        verboseOrNothing $ printf "lock '%s' destroyed" (show eldLockId)
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
@@ -1247,6 +1251,14 @@ showRejectReason verbose = \case
                                     (show $ Types.tmrrTokenId reason)
                                     (show $ Types.tmrrType reason)
                                     (show detail)
+    Types.NonExistentLockId lockId -> printf "lock id %s does not exist" (show lockId)
+    Types.LockExpired lockId -> printf "lock %s has expired" (show lockId)
+    Types.LockFundNotAuthorized lockId account -> printf "account %s is not authorized to fund lock %s" (show account) (show lockId)
+    Types.LockSendNotAuthorized lockId account -> printf "account %s is not authorized to send from lock %s" (show account) (show lockId)
+    Types.LockReturnNotAuthorized lockId account -> printf "account %s is not authorized to return from lock %s" (show account) (show lockId)
+    Types.LockCancelNotAuthorized lockId account -> printf "account %s is not authorized to cancel lock %s" (show account) (show lockId)
+    Types.LockTokenNotPermitted lockId tokenId -> printf "token %s is not permitted by lock %s" (show tokenId) (show lockId)
+    Types.LockRecipientNotPermitted lockId account -> printf "account %s is not a permitted recipient for lock %s" (show account) (show lockId)
 
 printTokenModuleRejectDetails :: Cbor.TokenRejectReason -> String
 printTokenModuleRejectDetails = \case

@@ -94,7 +94,6 @@ import Control.Monad.State.Strict
 import Data.Aeson as AE
 import qualified Data.Aeson.Encode.Pretty as AE
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Builder as BSBuilder
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Lazy.Char8 as BSL8
 import qualified Data.ByteString.Short as BS (toShort)
@@ -983,9 +982,9 @@ handlePLTTransfer backend baseCfgDir verbose receiver amount tokenIdText maybeMe
         let tokenTransfer = CBOR.TokenTransfer tokenTransferBody
         let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenTransfer)
         let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
-        let tokenParameter = Types.TokenParameter $ BS.toShort bytes
+        let operations = Types.rawCborFromBytes bytes
 
-        let payload = Types.TokenUpdate tokenId tokenParameter
+        let payload = Types.TokenUpdate tokenId operations
         let encodedPayload = Types.encodePayload payload
 
         let nrgCost _ = return $ Just $ flip (tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenTransferCost) $ extendedCostFromOpts txOpts
@@ -1027,9 +1026,9 @@ handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount tokenI
 
         let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
         let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
-        let tokenParameter = Types.TokenParameter $ BS.toShort bytes
+        let operations = Types.rawCborFromBytes bytes
 
-        let payload = Types.TokenUpdate tokenId tokenParameter
+        let payload = Types.TokenUpdate tokenId operations
         let encodedPayload = Types.encodePayload payload
 
         let opCost
@@ -1070,13 +1069,13 @@ handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenIdT
 
         let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
         let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
-        let tokenParameter = Types.TokenParameter $ BS.toShort bytes
+        let operations = Types.rawCborFromBytes bytes
 
         tokenId <- case tokenIdFromText tokenIdText of
             Right val -> return val
             Left err -> logFatal ["Error couldn't parse token id:", err]
 
-        let payload = Types.TokenUpdate tokenId tokenParameter
+        let payload = Types.TokenUpdate tokenId operations
         let encodedPayload = Types.encodePayload payload
 
         let nrgCost _ = return $ Just $ flip (tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenListOperationCost) $ extendedCostFromOpts txOpts
@@ -1117,13 +1116,13 @@ handlePLTModifyAdminRoles backend baseCfgDir verbose adminAction roles account t
             RevokeAdminRole -> pure $ CBOR.TokenRevokeAdminRoles updateAdminRolesDetailsBody
         let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
         let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
-        let tokenParameter = Types.TokenParameter $ BS.toShort bytes
+        let operations = Types.rawCborFromBytes bytes
 
         tokenId <- case tokenIdFromText tokenIdText of
             Right val -> return val
             Left err -> logFatal ["Error couldn't parse token id:", err]
 
-        let payload = Types.TokenUpdate tokenId tokenParameter
+        let payload = Types.TokenUpdate tokenId operations
         let encodedPayload = Types.encodePayload payload
 
         let nrgCost _ = return $ Just $ flip (tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenAssignRevokeRolesCost) $ extendedCostFromOpts txOpts
@@ -1162,13 +1161,13 @@ handlePLTUpdateMetadata backend baseCfgDir verbose metadataUrlText maybeChecksum
         tokenOperation <- pure $ CBOR.TokenUpdateMetadata metadata
         let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
         let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
-        let tokenParameter = Types.TokenParameter $ BS.toShort bytes
+        let operations = Types.rawCborFromBytes bytes
 
         tokenId <- case tokenIdFromText tokenIdText of
             Right val -> return val
             Left err -> logFatal ["Error couldn't parse token id:", err]
 
-        let payload = Types.TokenUpdate tokenId tokenParameter
+        let payload = Types.TokenUpdate tokenId operations
         let encodedPayload = Types.encodePayload payload
 
         let nrgCost _ = return $ Just $ flip (tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenUpdateTokenMetadataCost) $ extendedCostFromOpts txOpts
@@ -1199,13 +1198,13 @@ handlePLTPausation backend baseCfgDir verbose pauseAction tokenIdText txOpts = d
 
         let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
         let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
-        let tokenParameter = Types.TokenParameter $ BS.toShort bytes
+        let operations = Types.rawCborFromBytes bytes
 
         tokenId <- case tokenIdFromText tokenIdText of
             Right val -> return val
             Left err -> logFatal ["Error couldn't parse token id:", err]
 
-        let payload = Types.TokenUpdate tokenId tokenParameter
+        let payload = Types.TokenUpdate tokenId operations
         let encodedPayload = Types.encodePayload payload
 
         let nrgCost _ = return $ Just $ flip (tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenPauseUnpauseCost) $ extendedCostFromOpts txOpts
@@ -3269,9 +3268,7 @@ processConsensusCmd action _baseCfgDir verbose backend =
                             RequestFailed err -> logFatal ["Error getting token ID: I/O error: " <> err]
                     let maybeInitParams =
                             CBOR.tokenInitializationParametersFromBytes $
-                                BSBuilder.toLazyByteString $
-                                    BSBuilder.shortByteString $
-                                        Types.parameterBytes _cpltInitializationParameters
+                                Types.rawCborToLazyBytes _cpltInitializationParameters
                     case maybeInitParams of
                         Left _ -> do
                             logWarn ["Could not parse token initialization parameter bytes."]
