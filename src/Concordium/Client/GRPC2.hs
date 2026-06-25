@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -1344,27 +1345,27 @@ instance FromProto Proto.RejectReason where
             Proto.RejectReason'LockFundNotAuthorized reason -> do
                 lockId <- fromProto $ reason ^. ProtoFields.lockId
                 account <- fromProto $ reason ^. ProtoFields.account
-                return $ LockFundNotAuthorized lockId account
+                return $ LockFundNotAuthorized LockAccountRejectReasonDetails{lockId, account}
             Proto.RejectReason'LockSendNotAuthorized reason -> do
                 lockId <- fromProto $ reason ^. ProtoFields.lockId
                 account <- fromProto $ reason ^. ProtoFields.account
-                return $ LockSendNotAuthorized lockId account
+                return $ LockSendNotAuthorized LockAccountRejectReasonDetails{lockId, account}
             Proto.RejectReason'LockReturnNotAuthorized reason -> do
                 lockId <- fromProto $ reason ^. ProtoFields.lockId
                 account <- fromProto $ reason ^. ProtoFields.account
-                return $ LockReturnNotAuthorized lockId account
+                return $ LockReturnNotAuthorized LockAccountRejectReasonDetails{lockId, account}
             Proto.RejectReason'LockCancelNotAuthorized reason -> do
                 lockId <- fromProto $ reason ^. ProtoFields.lockId
                 account <- fromProto $ reason ^. ProtoFields.account
-                return $ LockCancelNotAuthorized lockId account
+                return $ LockCancelNotAuthorized LockAccountRejectReasonDetails{lockId, account}
             Proto.RejectReason'LockTokenNotPermitted' reason -> do
                 lockId <- fromProto $ reason ^. ProtoFields.lockId
                 tokenId <- fromProto $ reason ^. ProtoFields.tokenId
-                return $ LockTokenNotPermitted lockId tokenId
+                return $ LockTokenNotPermitted LockTokenRejectReasonDetails{lockId, tokenId}
             Proto.RejectReason'LockRecipientNotPermitted reason -> do
                 lockId <- fromProto $ reason ^. ProtoFields.lockId
                 account <- fromProto $ reason ^. ProtoFields.account
-                return $ LockRecipientNotPermitted lockId account
+                return $ LockRecipientNotPermitted LockAccountRejectReasonDetails{lockId, account}
 
 instance FromProto ProtoPLT.TokenModuleRejectReason where
     type Output ProtoPLT.TokenModuleRejectReason = TokenModuleRejectReason

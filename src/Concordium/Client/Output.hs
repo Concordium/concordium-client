@@ -1253,12 +1253,12 @@ showRejectReason verbose = \case
                                     (show detail)
     Types.NonExistentLockId lockId -> printf "lock id %s does not exist" (show lockId)
     Types.LockExpired lockId -> printf "lock %s has expired" (show lockId)
-    Types.LockFundNotAuthorized lockId account -> printf "account %s is not authorized to fund lock %s" (show account) (show lockId)
-    Types.LockSendNotAuthorized lockId account -> printf "account %s is not authorized to send from lock %s" (show account) (show lockId)
-    Types.LockReturnNotAuthorized lockId account -> printf "account %s is not authorized to return from lock %s" (show account) (show lockId)
-    Types.LockCancelNotAuthorized lockId account -> printf "account %s is not authorized to cancel lock %s" (show account) (show lockId)
-    Types.LockTokenNotPermitted lockId tokenId -> printf "token %s is not permitted by lock %s" (show tokenId) (show lockId)
-    Types.LockRecipientNotPermitted lockId account -> printf "account %s is not a permitted recipient for lock %s" (show account) (show lockId)
+    Types.LockFundNotAuthorized Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not authorized to fund lock %s" (show account) (show lockId)
+    Types.LockSendNotAuthorized Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not authorized to send from lock %s" (show account) (show lockId)
+    Types.LockReturnNotAuthorized Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not authorized to return from lock %s" (show account) (show lockId)
+    Types.LockCancelNotAuthorized Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not authorized to cancel lock %s" (show account) (show lockId)
+    Types.LockTokenNotPermitted Types.LockTokenRejectReasonDetails{..} -> printf "token %s is not permitted by lock %s" (show tokenId) (show lockId)
+    Types.LockRecipientNotPermitted Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not a permitted recipient for lock %s" (show account) (show lockId)
 
 printTokenModuleRejectDetails :: Cbor.TokenRejectReason -> String
 printTokenModuleRejectDetails = \case
