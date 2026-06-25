@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -889,6 +890,7 @@ instance FromProto Proto.ProtocolVersion where
         Proto.PROTOCOL_VERSION_8 -> return P8
         Proto.PROTOCOL_VERSION_9 -> return P9
         Proto.PROTOCOL_VERSION_10 -> return P10
+        Proto.PROTOCOL_VERSION_11 -> return P11
         Proto.ProtocolVersion'Unrecognized _ ->
             fromProtoFail "Unable to convert 'ProtocolVersion'."
 
@@ -1336,6 +1338,34 @@ instance FromProto Proto.RejectReason where
                 NonExistentTokenId <$> fromProto tokenId
             Proto.RejectReason'TokenUpdateTransactionFailed reason -> do
                 TokenUpdateTransactionFailed <$> fromProto reason
+            Proto.RejectReason'NonExistentLockId lockId -> do
+                NonExistentLockId <$> fromProto lockId
+            Proto.RejectReason'LockExpired lockId -> do
+                LockExpired <$> fromProto lockId
+            Proto.RejectReason'LockFundNotAuthorized reason -> do
+                lockId <- fromProto $ reason ^. ProtoFields.lockId
+                account <- fromProto $ reason ^. ProtoFields.account
+                return $ LockFundNotAuthorized LockAccountRejectReasonDetails{lockId, account}
+            Proto.RejectReason'LockSendNotAuthorized reason -> do
+                lockId <- fromProto $ reason ^. ProtoFields.lockId
+                account <- fromProto $ reason ^. ProtoFields.account
+                return $ LockSendNotAuthorized LockAccountRejectReasonDetails{lockId, account}
+            Proto.RejectReason'LockReturnNotAuthorized reason -> do
+                lockId <- fromProto $ reason ^. ProtoFields.lockId
+                account <- fromProto $ reason ^. ProtoFields.account
+                return $ LockReturnNotAuthorized LockAccountRejectReasonDetails{lockId, account}
+            Proto.RejectReason'LockCancelNotAuthorized reason -> do
+                lockId <- fromProto $ reason ^. ProtoFields.lockId
+                account <- fromProto $ reason ^. ProtoFields.account
+                return $ LockCancelNotAuthorized LockAccountRejectReasonDetails{lockId, account}
+            Proto.RejectReason'LockTokenNotPermitted' reason -> do
+                lockId <- fromProto $ reason ^. ProtoFields.lockId
+                tokenId <- fromProto $ reason ^. ProtoFields.tokenId
+                return $ LockTokenNotPermitted LockTokenRejectReasonDetails{lockId, tokenId}
+            Proto.RejectReason'LockRecipientNotPermitted reason -> do
+                lockId <- fromProto $ reason ^. ProtoFields.lockId
+                account <- fromProto $ reason ^. ProtoFields.account
+                return $ LockRecipientNotPermitted LockAccountRejectReasonDetails{lockId, account}
 
 instance FromProto ProtoPLT.TokenModuleRejectReason where
     type Output ProtoPLT.TokenModuleRejectReason = TokenModuleRejectReason
@@ -1348,7 +1378,7 @@ instance FromProto ProtoPLT.TokenModuleRejectReason where
         return TokenModuleRejectReason{..}
 
 newtype CBorAsTokenEventDetails = CBorAsTokenEventDetails ProtoPLT.Cbor
-newtype CBorAsTokenParameter = CBorAsTokenParameter ProtoPLT.Cbor
+newtype CBorAsRawCbor = CBorAsRawCbor ProtoPLT.Cbor
 newtype CBorAsModuleState = CBorAsModuleState ProtoPLT.Cbor
 
 instance FromProto CBorAsTokenEventDetails where
@@ -1357,16 +1387,23 @@ instance FromProto CBorAsTokenEventDetails where
         let bs = protoCbor ^. PLTFields.value
         pure $ TokenEventDetails (BSS.toShort bs)
 
-instance FromProto CBorAsTokenParameter where
-    type Output CBorAsTokenParameter = TokenParameter
-    fromProto (CBorAsTokenParameter protoCbor) = do
-        let bs = protoCbor ^. PLTFields.value
-        pure $ TokenParameter (BSS.toShort bs)
+instance FromProto CBorAsRawCbor where
+    type Output CBorAsRawCbor = RawCbor
+    fromProto (CBorAsRawCbor protoCbor) = do
+        pure $ rawCborFromBytes (protoCbor ^. PLTFields.value)
 
 instance FromProto CBorAsModuleState where
     type Output CBorAsModuleState = ByteString
     fromProto (CBorAsModuleState protoCbor) = do
         pure $ protoCbor ^. PLTFields.value
+
+instance FromProto ProtoPLT.LockId where
+    type Output ProtoPLT.LockId = LockId
+    fromProto lockId = do
+        let liAccountIndex = lockId ^. PLTFields.accountIndex
+        let liSequenceNumber = lockId ^. PLTFields.sequenceNumber
+        let liCreationOrder = lockId ^. PLTFields.creationOrder
+        pure LockId{..}
 
 instance FromProto Proto.InvokeInstanceResponse where
     type Output Proto.InvokeInstanceResponse = InvokeContract.InvokeContractResult
@@ -1586,6 +1623,7 @@ instance FromProto Proto.TransactionType where
     fromProto Proto.CONFIGURE_BAKER = return TTConfigureBaker
     fromProto Proto.CONFIGURE_DELEGATION = return TTConfigureDelegation
     fromProto Proto.TOKEN_UPDATE = return TTTokenUpdate
+    fromProto Proto.META_UPDATE = return TTMetaUpdate
     fromProto (ProtoFields.TransactionType'Unrecognized variant) =
         fromProtoFail $
             "Unable to convert 'InvokeInstanceResponse': "
@@ -1985,7 +2023,7 @@ instance FromProto ProtoPLT.CreatePLT where
             Nothing -> fromProtoFail "CreatePLT: decimals out of range"
             Just converted -> return converted
         _cpltTokenModule <- fromProto $ cpUpdate ^. PLTFields.tokenModule
-        _cpltInitializationParameters <- (fromProto . CBorAsTokenParameter) (cpUpdate ^. PLTFields.initializationParameters)
+        _cpltInitializationParameters <- (fromProto . CBorAsRawCbor) (cpUpdate ^. PLTFields.initializationParameters)
         return CreatePLT{..}
 
 instance FromProto Proto.TokenInfo where
@@ -2144,6 +2182,17 @@ instance FromProto Proto.UpdatePayload where
 -- | Converts a protocol buffer token event message using 'fromProto' into an 'Event'' type,
 --   which represents an event generated during the execution of a committed transaction.
 --   Returns 'Right' with the converted value on success, or 'Left' with an error message if the conversion fails.
+protoToTokenTransferEvent :: TokenId -> ProtoPLT.TokenTransferEvent -> Either String (Event' s)
+protoToTokenTransferEvent tokenId e = do
+    let ettTokenId = tokenId
+    ettFrom <- fromProto $ e ^. ProtoFieldsPLT.from
+    ettTo <- fromProto $ e ^. ProtoFieldsPLT.to
+    ettAmount <- fromProto $ e ^. ProtoFieldsPLT.amount
+    ettMemo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
+    ettFromLock <- fromProtoMaybe $ e ^. PLTFields.maybe'fromLock
+    ettToLock <- fromProtoMaybe $ e ^. PLTFields.maybe'toLock
+    return $ TokenTransfer{..}
+
 protoToTokenEvent :: ProtoPLT.TokenEvent -> Either String (Event' s)
 protoToTokenEvent event = do
     tokenId <- fromProto $ event ^. ProtoFieldsPLT.tokenId
@@ -2171,13 +2220,43 @@ protoToTokenEvent event = do
             etbTarget <- fromProto $ e ^. ProtoFieldsPLT.target
             etbAmount <- fromProto $ e ^. ProtoFieldsPLT.amount
             return $ TokenBurn{..}
-        ProtoPLT.TokenEvent'TransferEvent e -> do
-            let ettTokenId = tokenId
-            ettFrom <- fromProto $ e ^. ProtoFieldsPLT.from
-            ettTo <- fromProto $ e ^. ProtoFieldsPLT.to
-            ettAmount <- fromProto $ e ^. ProtoFieldsPLT.amount
-            ettMemo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
-            return $ TokenTransfer{..}
+        ProtoPLT.TokenEvent'TransferEvent e -> protoToTokenTransferEvent tokenId e
+
+protoToMetaEvent :: ProtoPLT.MetaEvent -> Either String (Event' s)
+protoToMetaEvent event = do
+    protoEvent <- case event ^. PLTFields.maybe'event of
+        Nothing ->
+            fromProtoFail
+                "Unable to convert 'MetaEvent' due to missing field 'event' in response payload."
+        Just v -> return v
+    case protoEvent of
+        ProtoPLT.MetaEvent'ModuleEvent e -> do
+            etmeTokenId <- fromProto $ e ^. PLTFields.tokenId
+            let textType = e ^. ProtoFieldsPLT.type'
+            let byteString = TE.encodeUtf8 textType
+            let etmeType = TokenEventType $ BSS.toShort byteString
+            etmeDetails <- (fromProto . CBorAsTokenEventDetails) (e ^. PLTFields.details)
+            return $ TokenModuleEvent{..}
+        ProtoPLT.MetaEvent'TransferEvent e -> do
+            tokenId <- fromProto $ e ^. PLTFields.tokenId
+            protoToTokenTransferEvent tokenId e
+        ProtoPLT.MetaEvent'MintEvent e -> do
+            etmTokenId <- fromProto $ e ^. PLTFields.tokenId
+            etmTarget <- fromProto $ e ^. ProtoFieldsPLT.target
+            etmAmount <- fromProto $ e ^. ProtoFieldsPLT.amount
+            return $ TokenMint{..}
+        ProtoPLT.MetaEvent'BurnEvent e -> do
+            etbTokenId <- fromProto $ e ^. PLTFields.tokenId
+            etbTarget <- fromProto $ e ^. ProtoFieldsPLT.target
+            etbAmount <- fromProto $ e ^. ProtoFieldsPLT.amount
+            return $ TokenBurn{..}
+        ProtoPLT.MetaEvent'LockCreateEvent e -> do
+            elcLockId <- fromProto $ e ^. PLTFields.lockId
+            elcLockConfig <- (fromProto . CBorAsRawCbor) (e ^. PLTFields.lockConfig)
+            return $ LockCreated{..}
+        ProtoPLT.MetaEvent'LockDestroyEvent e -> do
+            eldLockId <- fromProto $ e ^. PLTFields.lockId
+            return $ LockDestroyed{..}
 
 instance FromProto Proto.SponsorDetails where
     type Output Proto.SponsorDetails = SponsorDetails
@@ -2395,6 +2474,10 @@ instance FromProto Proto.AccountTransactionDetails where
                 let protoEvents = pltTokenEvent ^. PLTFields.events
                 tokenEvents <- mapM protoToTokenEvent protoEvents
                 return (Just TTTokenUpdate, TxSuccess tokenEvents)
+            ProtoFields.AccountTransactionEffects'MetaUpdateEffect metaEffect -> do
+                let protoEvents = metaEffect ^. PLTFields.events
+                metaEvents <- mapM protoToMetaEvent protoEvents
+                return (Just TTMetaUpdate, TxSuccess metaEvents)
 
 instance FromProto (ProtoKernel.AccountAddress, Proto.DelegationEvent) where
     type Output (ProtoKernel.AccountAddress, Proto.DelegationEvent) = SupplementedEvent

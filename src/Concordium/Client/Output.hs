@@ -57,6 +57,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Short as BSS
 import Data.Either (isRight)
+import Data.Foldable as Foldable
 import Data.Functor
 import Data.List (elemIndex, intercalate, nub, partition, sortOn)
 import qualified Data.Map.Strict as Map
@@ -953,6 +954,17 @@ showEvent verbose ciM = \case
                             Just $ printf "%s paused." (show etmeTokenId)
                         Right Cbor.Unpause ->
                             Just $ printf "%s unpaused." (show etmeTokenId)
+                        Right (Cbor.UpdateMetadataEvent metadata) ->
+                            Just $
+                                printf
+                                    "Metadata URL %s%s updated at token %s."
+                                    (show (Cbor.tmUrl metadata))
+                                    (maybe "" (\c -> printf " with checksum %s" (show c) :: String) (Cbor.tmChecksumSha256 metadata))
+                                    (show etmeTokenId)
+                        Right (Cbor.AssignAdminRolesEvent adminRolesDetails) ->
+                            Just $ printf "Account %s assigned admin roles %s for token %s." (show (Cbor.chaAccount $ Cbor.uardAccount adminRolesDetails)) (show $ Foldable.toList (Cbor.uardRoles adminRolesDetails)) (show etmeTokenId)
+                        Right (Cbor.RevokeAdminRolesEvent adminRolesDetails) ->
+                            Just $ printf "Account %s revoked admin roles %s for token %s." (show (Cbor.chaAccount $ Cbor.uardAccount adminRolesDetails)) (show $ Foldable.toList (Cbor.uardRoles adminRolesDetails)) (show etmeTokenId)
                         Left _ -> Nothing
 
                     -- Second decoding attempt using generic CBOR deserialization.
@@ -1015,6 +1027,10 @@ showEvent verbose ciM = \case
         verboseOrNothing $ printf "%s %s burned from %s." (tokenAmountToString etbAmount) (show etbTokenId) (show etbTarget)
     Types.TokenCreated{..} ->
         verboseOrNothing $ printf "Token created:\n %s" (showPrettyJSON etcPayload)
+    Types.LockCreated{..} ->
+        verboseOrNothing $ printf "lock '%s' created" (show elcLockId)
+    Types.LockDestroyed{..} ->
+        verboseOrNothing $ printf "lock '%s' destroyed" (show eldLockId)
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
@@ -1235,6 +1251,14 @@ showRejectReason verbose = \case
                                     (show $ Types.tmrrTokenId reason)
                                     (show $ Types.tmrrType reason)
                                     (show detail)
+    Types.NonExistentLockId lockId -> printf "lock id %s does not exist" (show lockId)
+    Types.LockExpired lockId -> printf "lock %s has expired" (show lockId)
+    Types.LockFundNotAuthorized Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not authorized to fund lock %s" (show account) (show lockId)
+    Types.LockSendNotAuthorized Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not authorized to send from lock %s" (show account) (show lockId)
+    Types.LockReturnNotAuthorized Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not authorized to return from lock %s" (show account) (show lockId)
+    Types.LockCancelNotAuthorized Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not authorized to cancel lock %s" (show account) (show lockId)
+    Types.LockTokenNotPermitted Types.LockTokenRejectReasonDetails{..} -> printf "token %s is not permitted by lock %s" (show tokenId) (show lockId)
+    Types.LockRecipientNotPermitted Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not a permitted recipient for lock %s" (show account) (show lockId)
 
 printTokenModuleRejectDetails :: Cbor.TokenRejectReason -> String
 printTokenModuleRejectDetails = \case
