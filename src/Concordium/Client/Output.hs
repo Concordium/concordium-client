@@ -1031,6 +1031,10 @@ showEvent verbose ciM = \case
         verboseOrNothing $ printf "lock '%s' created" (show elcLockId)
     Types.LockDestroyed{..} ->
         verboseOrNothing $ printf "lock '%s' destroyed" (show eldLockId)
+    Types.LockAmount{..} ->
+        verboseOrNothing $ printf "%s %s locked for %s by %s." (tokenAmountToString elaAmount) (show elaTokenId) (show elaTokenHolder) (show elaLockId)
+    Types.UnlockAmount{..} ->
+        verboseOrNothing $ printf "%s %s unlocked for %s from %s." (tokenAmountToString euaAmount) (show euaTokenId) (show euaTokenHolder) (show euaLockId)
   where
     verboseOrNothing :: String -> Maybe String
     verboseOrNothing msg = if verbose then Just msg else Nothing
@@ -1252,13 +1256,14 @@ showRejectReason verbose = \case
                                     (show $ Types.tmrrType reason)
                                     (show detail)
     Types.NonExistentLockId lockId -> printf "lock id %s does not exist" (show lockId)
+    Types.LockDurationTooLong lockId -> printf "lock %s exceeds the maximum duration" (show lockId)
     Types.LockExpired lockId -> printf "lock %s has expired" (show lockId)
-    Types.LockFundNotAuthorized Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not authorized to fund lock %s" (show account) (show lockId)
-    Types.LockSendNotAuthorized Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not authorized to send from lock %s" (show account) (show lockId)
-    Types.LockReturnNotAuthorized Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not authorized to return from lock %s" (show account) (show lockId)
-    Types.LockCancelNotAuthorized Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not authorized to cancel lock %s" (show account) (show lockId)
-    Types.LockTokenNotPermitted Types.LockTokenRejectReasonDetails{..} -> printf "token %s is not permitted by lock %s" (show tokenId) (show lockId)
-    Types.LockRecipientNotPermitted Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not a permitted recipient for lock %s" (show account) (show lockId)
+    Types.LockFundNotAuthorized Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not authorized to fund lock %s" (show larrdAccount) (show larrdLockId)
+    Types.LockSendNotAuthorized Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not authorized to send from lock %s" (show larrdAccount) (show larrdLockId)
+    Types.LockReleaseNotAuthorized Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not authorized to release from lock %s" (show larrdAccount) (show larrdLockId)
+    Types.LockCancelNotAuthorized Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not authorized to cancel lock %s" (show larrdAccount) (show larrdLockId)
+    Types.LockTokenNotPermitted Types.LockTokenRejectReasonDetails{..} -> printf "token %s is not permitted by lock %s" (show ltrrdTokenId) (show ltrrdLockId)
+    Types.LockRecipientNotPermitted Types.LockAccountRejectReasonDetails{..} -> printf "account %s is not a permitted recipient for lock %s" (show larrdAccount) (show larrdLockId)
 
 printTokenModuleRejectDetails :: Cbor.TokenRejectReason -> String
 printTokenModuleRejectDetails = \case
