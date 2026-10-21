@@ -13,8 +13,9 @@ on:
   workflow_dispatch: # allow manual trigger
 
 env:
-  RUST: 1.82
-  GHC: 9.8.4
+  RUST: 1.89
+  GHC: 9.10.2
+  STACK: 3.9.3
 
 jobs:
   fourmolu:
@@ -50,10 +51,11 @@ jobs:
           profile: minimal
           toolchain: ${{ env.RUST }}
           override: true
-      - uses: haskell/actions/setup@v1
+      - uses: haskell-actions/setup@v2
         with:
           ghc-version: ${{ env.GHC }}
           enable-stack: true
+          stack-version: ${{ env.STACK }}
           stack-no-global: true
       - name: Install protoc
         run: |
@@ -73,7 +75,7 @@ jobs:
             deps/concordium-base/rust-src/target/release/
           # Cache based on dependency versions, as well as the contents of the rust dependencies.
           # This is a bit hacky, but we do not currently version the packages religously, so we need to do something like this.
-          key: ${{ runner.os }}-rust-stack-deps-${{ env.RUST }}-${{ hashFiles('stack.yaml', 'package.yaml', 'deps/concordium-base/haskell-src/**.hs', 'deps/concordium-base/rust-src/Cargo.toml', 'deps/concordium-base/rust-src/**.rs') }}
+          key: ${{ runner.os }}-rust-stack-deps-${{ env.RUST }}-${{ env.STACK }}-${{ hashFiles('stack.yaml', 'package.yaml', 'deps/concordium-base/haskell-src/**.hs', 'deps/concordium-base/rust-src/Cargo.toml', 'deps/concordium-base/rust-src/**.rs') }}
 
       - name: Stack build # build all the binaries and tests, but don't run the tests
         run: stack build --test --no-run-tests --ghc-options "-Werror"
