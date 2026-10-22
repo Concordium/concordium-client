@@ -974,17 +974,17 @@ handlePLTTransfer backend baseCfgDir verbose receiver amount tokenIdText maybeMe
                 memo <- liftIO $ checkAndGetMemo memoInput $ Queries.csProtocolVersion cs
                 return $ Just $ CBOR.CBORMemo memo
 
-        let operation = CBOR.TokenTransferBuilder (Just normAmount) (Just tokenReceiver) maybeCborMemo
-        let eitherTokenTranfserBody = CBOR.buildTokenTransfer operation
+        let operation = CBOR.TokenTransferBodyBuilder (Just normAmount) (Just tokenReceiver) maybeCborMemo
+        let eitherTokenTranfserBody = CBOR.buildTokenTransferBody operation
         tokenTransferBody <- case eitherTokenTranfserBody of
             Right val -> return val
             Left err -> logFatal ["Error creating token transfer body:", err]
         let tokenTransfer = CBOR.TokenTransfer tokenTransferBody
-        let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenTransfer)
-        let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
-        let operations = Types.rawCborFromBytes bytes
+        let tokenUpdateTransaction = CBOR.TokenOperations (Seq.singleton tokenTransfer)
+        let bytes = CBOR.tokenOperationsToBytes tokenUpdateTransaction
+        let operations = Types.EncodedTokenOperations (Types.rawCborFromBytes bytes)
 
-        let payload = Types.TokenUpdate tokenId operations
+        let payload = Types.TokenUpdate (Types.ScopedTokenUpdate tokenId operations)
         let encodedPayload = Types.encodePayload payload
 
         let nrgCost _ = return $ Just $ flip (tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenTransferCost) $ extendedCostFromOpts txOpts
@@ -1024,11 +1024,11 @@ handlePLTUpdateSupply backend baseCfgDir verbose tokenSupplyAction amount tokenI
             Mint -> pure $ CBOR.TokenMint normAmount
             Burn -> pure $ CBOR.TokenBurn normAmount
 
-        let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
-        let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
-        let operations = Types.rawCborFromBytes bytes
+        let tokenUpdateTransaction = CBOR.TokenOperations (Seq.singleton tokenOperation)
+        let bytes = CBOR.tokenOperationsToBytes tokenUpdateTransaction
+        let operations = Types.EncodedTokenOperations (Types.rawCborFromBytes bytes)
 
-        let payload = Types.TokenUpdate tokenId operations
+        let payload = Types.TokenUpdate (Types.ScopedTokenUpdate tokenId operations)
         let encodedPayload = Types.encodePayload payload
 
         let opCost
@@ -1067,15 +1067,15 @@ handlePLTModifyList backend baseCfgDir verbose modifyListAction account tokenIdT
             AddDenyList -> pure $ CBOR.TokenAddDenyList tokenHolder
             RemoveDenyList -> pure $ CBOR.TokenRemoveDenyList tokenHolder
 
-        let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
-        let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
-        let operations = Types.rawCborFromBytes bytes
+        let tokenUpdateTransaction = CBOR.TokenOperations (Seq.singleton tokenOperation)
+        let bytes = CBOR.tokenOperationsToBytes tokenUpdateTransaction
+        let operations = Types.EncodedTokenOperations (Types.rawCborFromBytes bytes)
 
         tokenId <- case tokenIdFromText tokenIdText of
             Right val -> return val
             Left err -> logFatal ["Error couldn't parse token id:", err]
 
-        let payload = Types.TokenUpdate tokenId operations
+        let payload = Types.TokenUpdate (Types.ScopedTokenUpdate tokenId operations)
         let encodedPayload = Types.encodePayload payload
 
         let nrgCost _ = return $ Just $ flip (tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenListOperationCost) $ extendedCostFromOpts txOpts
@@ -1114,15 +1114,15 @@ handlePLTModifyAdminRoles backend baseCfgDir verbose adminAction roles account t
         tokenOperation <- case adminAction of
             AssignAdminRole -> pure $ CBOR.TokenAssignAdminRoles updateAdminRolesDetailsBody
             RevokeAdminRole -> pure $ CBOR.TokenRevokeAdminRoles updateAdminRolesDetailsBody
-        let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
-        let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
-        let operations = Types.rawCborFromBytes bytes
+        let tokenUpdateTransaction = CBOR.TokenOperations (Seq.singleton tokenOperation)
+        let bytes = CBOR.tokenOperationsToBytes tokenUpdateTransaction
+        let operations = Types.EncodedTokenOperations (Types.rawCborFromBytes bytes)
 
         tokenId <- case tokenIdFromText tokenIdText of
             Right val -> return val
             Left err -> logFatal ["Error couldn't parse token id:", err]
 
-        let payload = Types.TokenUpdate tokenId operations
+        let payload = Types.TokenUpdate (Types.ScopedTokenUpdate tokenId operations)
         let encodedPayload = Types.encodePayload payload
 
         let nrgCost _ = return $ Just $ flip (tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenAssignRevokeRolesCost) $ extendedCostFromOpts txOpts
@@ -1159,15 +1159,15 @@ handlePLTUpdateMetadata backend baseCfgDir verbose metadataUrlText maybeChecksum
 
     withClient backend $ do
         tokenOperation <- pure $ CBOR.TokenUpdateMetadata metadata
-        let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
-        let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
-        let operations = Types.rawCborFromBytes bytes
+        let tokenUpdateTransaction = CBOR.TokenOperations (Seq.singleton tokenOperation)
+        let bytes = CBOR.tokenOperationsToBytes tokenUpdateTransaction
+        let operations = Types.EncodedTokenOperations (Types.rawCborFromBytes bytes)
 
         tokenId <- case tokenIdFromText tokenIdText of
             Right val -> return val
             Left err -> logFatal ["Error couldn't parse token id:", err]
 
-        let payload = Types.TokenUpdate tokenId operations
+        let payload = Types.TokenUpdate (Types.ScopedTokenUpdate tokenId operations)
         let encodedPayload = Types.encodePayload payload
 
         let nrgCost _ = return $ Just $ flip (tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenUpdateTokenMetadataCost) $ extendedCostFromOpts txOpts
@@ -1196,15 +1196,15 @@ handlePLTPausation backend baseCfgDir verbose pauseAction tokenIdText txOpts = d
             Pause -> pure CBOR.TokenPause
             Unpause -> pure CBOR.TokenUnpause
 
-        let tokenUpdateTransaction = CBOR.TokenUpdateTransaction (Seq.singleton tokenOperation)
-        let bytes = CBOR.tokenUpdateTransactionToBytes tokenUpdateTransaction
-        let operations = Types.rawCborFromBytes bytes
+        let tokenUpdateTransaction = CBOR.TokenOperations (Seq.singleton tokenOperation)
+        let bytes = CBOR.tokenOperationsToBytes tokenUpdateTransaction
+        let operations = Types.EncodedTokenOperations (Types.rawCborFromBytes bytes)
 
         tokenId <- case tokenIdFromText tokenIdText of
             Right val -> return val
             Left err -> logFatal ["Error couldn't parse token id:", err]
 
-        let payload = Types.TokenUpdate tokenId operations
+        let payload = Types.TokenUpdate (Types.ScopedTokenUpdate tokenId operations)
         let encodedPayload = Types.encodePayload payload
 
         let nrgCost _ = return $ Just $ flip (tokenUpdateTransactionEnergyCost (Types.payloadSize encodedPayload) Cost.tokenPauseUnpauseCost) $ extendedCostFromOpts txOpts

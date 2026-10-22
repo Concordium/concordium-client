@@ -1340,32 +1340,33 @@ instance FromProto Proto.RejectReason where
                 TokenUpdateTransactionFailed <$> fromProto reason
             Proto.RejectReason'NonExistentLockId lockId -> do
                 NonExistentLockId <$> fromProto lockId
+            Proto.RejectReason'LockDurationTooLong lockId -> LockDurationTooLong <$> fromProto lockId
             Proto.RejectReason'LockExpired lockId -> do
                 LockExpired <$> fromProto lockId
             Proto.RejectReason'LockFundNotAuthorized reason -> do
                 lockId <- fromProto $ reason ^. ProtoFields.lockId
                 account <- fromProto $ reason ^. ProtoFields.account
-                return $ LockFundNotAuthorized LockAccountRejectReasonDetails{lockId, account}
+                return $ LockFundNotAuthorized LockAccountRejectReasonDetails{larrdLockId = lockId, larrdAccount = account}
             Proto.RejectReason'LockSendNotAuthorized reason -> do
                 lockId <- fromProto $ reason ^. ProtoFields.lockId
                 account <- fromProto $ reason ^. ProtoFields.account
-                return $ LockSendNotAuthorized LockAccountRejectReasonDetails{lockId, account}
-            Proto.RejectReason'LockReturnNotAuthorized reason -> do
+                return $ LockSendNotAuthorized LockAccountRejectReasonDetails{larrdLockId = lockId, larrdAccount = account}
+            Proto.RejectReason'LockReleaseNotAuthorized reason -> do
                 lockId <- fromProto $ reason ^. ProtoFields.lockId
                 account <- fromProto $ reason ^. ProtoFields.account
-                return $ LockReturnNotAuthorized LockAccountRejectReasonDetails{lockId, account}
+                return $ LockReleaseNotAuthorized LockAccountRejectReasonDetails{larrdLockId = lockId, larrdAccount = account}
             Proto.RejectReason'LockCancelNotAuthorized reason -> do
                 lockId <- fromProto $ reason ^. ProtoFields.lockId
                 account <- fromProto $ reason ^. ProtoFields.account
-                return $ LockCancelNotAuthorized LockAccountRejectReasonDetails{lockId, account}
+                return $ LockCancelNotAuthorized LockAccountRejectReasonDetails{larrdLockId = lockId, larrdAccount = account}
             Proto.RejectReason'LockTokenNotPermitted' reason -> do
                 lockId <- fromProto $ reason ^. ProtoFields.lockId
                 tokenId <- fromProto $ reason ^. ProtoFields.tokenId
-                return $ LockTokenNotPermitted LockTokenRejectReasonDetails{lockId, tokenId}
+                return $ LockTokenNotPermitted LockTokenRejectReasonDetails{ltrrdLockId = lockId, ltrrdTokenId = tokenId}
             Proto.RejectReason'LockRecipientNotPermitted reason -> do
                 lockId <- fromProto $ reason ^. ProtoFields.lockId
                 account <- fromProto $ reason ^. ProtoFields.account
-                return $ LockRecipientNotPermitted LockAccountRejectReasonDetails{lockId, account}
+                return $ LockRecipientNotPermitted LockAccountRejectReasonDetails{larrdLockId = lockId, larrdAccount = account}
 
 instance FromProto ProtoPLT.TokenModuleRejectReason where
     type Output ProtoPLT.TokenModuleRejectReason = TokenModuleRejectReason
@@ -1496,6 +1497,7 @@ instance FromProto Proto.NextUpdateSequenceNumbers where
         _nusnFinalizationCommitteeParameters <- fromProto $ nums ^. ProtoFields.finalizationCommitteeParameters
         _nusnValidatorScoreParameters <- fromProto $ nums ^. ProtoFields.validatorScoreParameters
         _nusnProtocolLevelTokensParameters <- fromProto $ nums ^. ProtoFields.protocolLevelTokens
+        _nusnMaxLockDuration <- fromProto $ nums ^. ProtoFields.maxLockDuration
         return NextUpdateSequenceNumbers{..}
 
 instance FromProto Proto.IpAddress where
@@ -1592,6 +1594,7 @@ instance FromProto Proto.UpdateType where
     fromProto ProtoFields.UPDATE_FINALIZATION_COMMITTEE_PARAMETERS = return Updates.UpdateFinalizationCommitteeParameters
     fromProto ProtoFields.UPDATE_VALIDATOR_SCORE_PARAMETERS = return Updates.UpdateValidatorScoreParameters
     fromProto ProtoFields.UPDATE_CREATE_PLT = return Updates.UpdateCreatePLT
+    fromProto ProtoFields.UPDATE_MAX_LOCK_DURATION = return Updates.UpdateMaxLockDuration
     fromProto (Proto.UpdateType'Unrecognized variant) =
         fromProtoFail $
             "Unable to convert 'InvokeInstanceResponse': "
@@ -1623,7 +1626,6 @@ instance FromProto Proto.TransactionType where
     fromProto Proto.CONFIGURE_BAKER = return TTConfigureBaker
     fromProto Proto.CONFIGURE_DELEGATION = return TTConfigureDelegation
     fromProto Proto.TOKEN_UPDATE = return TTTokenUpdate
-    fromProto Proto.META_UPDATE = return TTMetaUpdate
     fromProto (ProtoFields.TransactionType'Unrecognized variant) =
         fromProtoFail $
             "Unable to convert 'InvokeInstanceResponse': "
@@ -1815,6 +1817,7 @@ instance FromProto Proto.AuthorizationsV0 where
         let asCooldownParameters = Parameters.CFalse
         let asTimeParameters = Parameters.CFalse
         let asCreatePLT = Parameters.CFalse
+        let asTokenParameters = Parameters.CFalse
         return Updates.Authorizations{..}
 
 instance FromProto Proto.AuthorizationsV1 where
@@ -1822,7 +1825,7 @@ instance FromProto Proto.AuthorizationsV1 where
         Output Proto.AuthorizationsV1 =
             Either
                 (Updates.Authorizations 'Parameters.AuthorizationsVersion1)
-                (Updates.Authorizations 'Parameters.AuthorizationsVersion2)
+                (Either (Updates.Authorizations 'Parameters.AuthorizationsVersion2) (Updates.Authorizations 'Parameters.AuthorizationsVersion3))
     fromProto auth = do
         let v0 = auth ^. ProtoFields.v0
         asKeys <- Vec.fromList <$> mapM fromProto (v0 ^. ProtoFields.keys)
@@ -1841,13 +1844,21 @@ instance FromProto Proto.AuthorizationsV1 where
         asCooldownParameters <- fmap Parameters.CTrue $ fromProto $ auth ^. ProtoFields.parameterCooldown
         asTimeParameters <- fmap Parameters.CTrue $ fromProto $ auth ^. ProtoFields.parameterTime
         maybeAs <- fromProtoMaybe $ auth ^. ProtoFields.maybe'createPlt
-        case maybeAs of
-            Nothing -> do
+        maybeTokenParameters <- fromProtoMaybe $ auth ^. ProtoFields.maybe'tokenParameters
+        case (maybeAs, maybeTokenParameters) of
+            (Nothing, Nothing) -> do
                 let asCreatePLT = Parameters.CFalse
+                let asTokenParameters = Parameters.CFalse
                 return $ Left Updates.Authorizations{..}
-            Just as -> do
+            (Just as, Nothing) -> do
                 let asCreatePLT = Parameters.CTrue as
-                return $ Right Updates.Authorizations{..}
+                let asTokenParameters = Parameters.CFalse
+                return $ Right $ Left Updates.Authorizations{..}
+            (Just as, Just tokenParameters) -> do
+                let asCreatePLT = Parameters.CTrue as
+                let asTokenParameters = Parameters.CTrue tokenParameters
+                return $ Right $ Right Updates.Authorizations{..}
+            (Nothing, Just _) -> fromProtoFail "Unable to convert 'AuthorizationsV1': tokenParameters requires createPlt."
 
 instance FromProto Proto.Level1Update where
     type Output Proto.Level1Update = Updates.Level1Update
@@ -1869,8 +1880,9 @@ instance FromProto Proto.Level1Update where
                 case auth of
                     Left l2kl1uAuthorizationsV1 -> do
                         return Updates.Level2KeysLevel1UpdateV1{..}
-                    Right l2kl1uAuthorizationsV2 -> do
+                    Right (Left l2kl1uAuthorizationsV2) -> do
                         return Updates.Level2KeysLevel1UpdateV2{..}
+                    Right (Right l2kl1uAuthorizationsV3) -> return Updates.Level2KeysLevel1UpdateV3{..}
 
 instance FromProto Proto.UpdatePublicKey where
     type Output Proto.UpdatePublicKey = Updates.UpdatePublicKey
@@ -1917,7 +1929,8 @@ instance FromProto Proto.RootUpdate where
                 auth <- fromProto $ rUpdate ^. ProtoFields.level2KeysUpdateV1
                 case auth of
                     Left as -> return $ Updates.Level2KeysRootUpdateV1 as
-                    Right as -> return $ Updates.Level2KeysRootUpdateV2 as
+                    Right (Left as) -> return $ Updates.Level2KeysRootUpdateV2 as
+                    Right (Right as) -> return $ Updates.Level2KeysRootUpdateV3 as
 
 instance FromProto Proto.HigherLevelKeys where
     type
@@ -2135,7 +2148,8 @@ instance FromProto Proto.UpdatePayload where
                         auth <- fromProto l2kUpdateV1
                         case auth of
                             Left l2kl1uAuthorizationsV1 -> return $ Updates.Level1UpdatePayload Updates.Level2KeysLevel1UpdateV1{..}
-                            Right l2kl1uAuthorizationsV2 -> return $ Updates.Level1UpdatePayload Updates.Level2KeysLevel1UpdateV2{..}
+                            Right (Left l2kl1uAuthorizationsV2) -> return $ Updates.Level1UpdatePayload Updates.Level2KeysLevel1UpdateV2{..}
+                            Right (Right l2kl1uAuthorizationsV3) -> return $ Updates.Level1UpdatePayload Updates.Level2KeysLevel1UpdateV3{..}
             ProtoFields.UpdatePayload'MicroCcdPerEuroUpdate mcpeUpdate -> do
                 er <- fromProto mcpeUpdate
                 return $ Updates.MicroGTUPerEuroUpdatePayload er
@@ -2175,6 +2189,7 @@ instance FromProto Proto.UpdatePayload where
             ProtoFields.UpdatePayload'ValidatorScoreParametersUpdate vspUpdate -> do
                 vsp <- fromProto vspUpdate
                 return $ Updates.ValidatorScoreParametersUpdatePayload vsp
+            ProtoFields.UpdatePayload'MaxLockDurationUpdate duration -> Updates.MaxLockDurationUpdatePayload <$> fromProto duration
             ProtoFields.UpdatePayload'CreatePltUpdate cpUpdate -> do
                 cp <- fromProto cpUpdate
                 return $ Updates.CreatePLTUpdatePayload cp
@@ -2189,8 +2204,6 @@ protoToTokenTransferEvent tokenId e = do
     ettTo <- fromProto $ e ^. ProtoFieldsPLT.to
     ettAmount <- fromProto $ e ^. ProtoFieldsPLT.amount
     ettMemo <- fromProtoMaybe $ e ^. ProtoFields.maybe'memo
-    ettFromLock <- fromProtoMaybe $ e ^. PLTFields.maybe'fromLock
-    ettToLock <- fromProtoMaybe $ e ^. PLTFields.maybe'toLock
     return $ TokenTransfer{..}
 
 protoToTokenEvent :: ProtoPLT.TokenEvent -> Either String (Event' s)
@@ -2222,41 +2235,38 @@ protoToTokenEvent event = do
             return $ TokenBurn{..}
         ProtoPLT.TokenEvent'TransferEvent e -> protoToTokenTransferEvent tokenId e
 
-protoToMetaEvent :: ProtoPLT.MetaEvent -> Either String (Event' s)
-protoToMetaEvent event = do
+protoToOperationEvent :: ProtoPLT.OperationEvent -> Either String (Event' s)
+protoToOperationEvent event =
+    case event ^. PLTFields.maybe'event of
+        Nothing -> fromProtoFail "Unable to convert 'OperationEvent' due to missing field 'event' in response payload."
+        Just (ProtoPLT.OperationEvent'TokenEvent e) -> protoToTokenEvent e
+        Just (ProtoPLT.OperationEvent'LockEvent e) -> protoToLockEvent e
+
+protoToLockEvent :: ProtoPLT.LockEvent -> Either String (Event' s)
+protoToLockEvent event = do
     protoEvent <- case event ^. PLTFields.maybe'event of
-        Nothing ->
-            fromProtoFail
-                "Unable to convert 'MetaEvent' due to missing field 'event' in response payload."
+        Nothing -> fromProtoFail "Unable to convert 'LockEvent' due to missing field 'event' in response payload."
         Just v -> return v
     case protoEvent of
-        ProtoPLT.MetaEvent'ModuleEvent e -> do
-            etmeTokenId <- fromProto $ e ^. PLTFields.tokenId
-            let textType = e ^. ProtoFieldsPLT.type'
-            let byteString = TE.encodeUtf8 textType
-            let etmeType = TokenEventType $ BSS.toShort byteString
-            etmeDetails <- (fromProto . CBorAsTokenEventDetails) (e ^. PLTFields.details)
-            return $ TokenModuleEvent{..}
-        ProtoPLT.MetaEvent'TransferEvent e -> do
-            tokenId <- fromProto $ e ^. PLTFields.tokenId
-            protoToTokenTransferEvent tokenId e
-        ProtoPLT.MetaEvent'MintEvent e -> do
-            etmTokenId <- fromProto $ e ^. PLTFields.tokenId
-            etmTarget <- fromProto $ e ^. ProtoFieldsPLT.target
-            etmAmount <- fromProto $ e ^. ProtoFieldsPLT.amount
-            return $ TokenMint{..}
-        ProtoPLT.MetaEvent'BurnEvent e -> do
-            etbTokenId <- fromProto $ e ^. PLTFields.tokenId
-            etbTarget <- fromProto $ e ^. ProtoFieldsPLT.target
-            etbAmount <- fromProto $ e ^. ProtoFieldsPLT.amount
-            return $ TokenBurn{..}
-        ProtoPLT.MetaEvent'LockCreateEvent e -> do
+        ProtoPLT.LockEvent'LockCreateEvent e -> do
             elcLockId <- fromProto $ e ^. PLTFields.lockId
             elcLockConfig <- (fromProto . CBorAsRawCbor) (e ^. PLTFields.lockConfig)
             return $ LockCreated{..}
-        ProtoPLT.MetaEvent'LockDestroyEvent e -> do
+        ProtoPLT.LockEvent'LockDestroyEvent e -> do
             eldLockId <- fromProto $ e ^. PLTFields.lockId
             return $ LockDestroyed{..}
+        ProtoPLT.LockEvent'LockAmountEvent e -> do
+            elaTokenHolder <- fromProto $ e ^. PLTFields.tokenHolder
+            elaLockId <- fromProto $ e ^. PLTFields.lockId
+            elaTokenId <- fromProto $ e ^. PLTFields.tokenId
+            elaAmount <- fromProto $ e ^. PLTFields.amount
+            return $ LockAmount{..}
+        ProtoPLT.LockEvent'UnlockAmountEvent e -> do
+            euaTokenHolder <- fromProto $ e ^. PLTFields.tokenHolder
+            euaLockId <- fromProto $ e ^. PLTFields.lockId
+            euaTokenId <- fromProto $ e ^. PLTFields.tokenId
+            euaAmount <- fromProto $ e ^. PLTFields.amount
+            return $ UnlockAmount{..}
 
 instance FromProto Proto.SponsorDetails where
     type Output Proto.SponsorDetails = SponsorDetails
@@ -2470,14 +2480,12 @@ instance FromProto Proto.AccountTransactionDetails where
                               [TransferredWithSchedule{..}, TransferMemo{..}]
                             )
                 return (Just tType, TxSuccess{..})
-            ProtoFields.AccountTransactionEffects'TokenUpdateEffect pltTokenEvent -> do
-                let protoEvents = pltTokenEvent ^. PLTFields.events
-                tokenEvents <- mapM protoToTokenEvent protoEvents
-                return (Just TTTokenUpdate, TxSuccess tokenEvents)
-            ProtoFields.AccountTransactionEffects'MetaUpdateEffect metaEffect -> do
-                let protoEvents = metaEffect ^. PLTFields.events
-                metaEvents <- mapM protoToMetaEvent protoEvents
-                return (Just TTMetaUpdate, TxSuccess metaEvents)
+            ProtoFields.AccountTransactionEffects'TokenUpdateEffect tokenEffect -> do
+                events <-
+                    if null (tokenEffect ^. PLTFields.events)
+                        then mapM protoToTokenEvent (tokenEffect ^. PLTFields.tokenEvents)
+                        else mapM protoToOperationEvent (tokenEffect ^. PLTFields.events)
+                return (Just TTTokenUpdate, TxSuccess events)
 
 instance FromProto (ProtoKernel.AccountAddress, Proto.DelegationEvent) where
     type Output (ProtoKernel.AccountAddress, Proto.DelegationEvent) = SupplementedEvent
@@ -2830,6 +2838,7 @@ instance FromProto Proto.ChainParametersV0 where
                 return $ Parameters.PoolParametersV0 thresh
             let _cpFinalizationCommitteeParameters = Parameters.NoParam
             let _cpValidatorScoreParameters = Parameters.NoParam
+            let _cpMaxLockDuration = Parameters.NoParam
             let ecpParams = Parameters.ChainParameters{..}
             rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
             level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
@@ -2878,6 +2887,7 @@ instance FromProto Proto.ChainParametersV1 where
             _cpPoolParameters <- fromProto $ cParams ^. ProtoFields.poolParameters
             let _cpFinalizationCommitteeParameters = Parameters.NoParam
             let _cpValidatorScoreParameters = Parameters.NoParam
+            let _cpMaxLockDuration = Parameters.NoParam
             let ecpParams = Parameters.ChainParameters{..}
             rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
             level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
@@ -2920,6 +2930,7 @@ instance FromProto Proto.ChainParametersV2 where
             _cpPoolParameters <- fromProto $ cParams ^. ProtoFields.poolParameters
             _cpFinalizationCommitteeParameters <- fmap Parameters.SomeParam $ fromProto $ cParams ^. ProtoFields.finalizationCommitteeParameters
             let _cpValidatorScoreParameters = Parameters.NoParam
+            let _cpMaxLockDuration = Parameters.NoParam
             let ecpParams = Parameters.ChainParameters{..}
             rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
             level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
@@ -2962,6 +2973,7 @@ instance FromProto Proto.ChainParametersV3 where
             _cpPoolParameters <- fromProto $ cParams ^. ProtoFields.poolParameters
             _cpFinalizationCommitteeParameters <- fmap Parameters.SomeParam $ fromProto $ cParams ^. ProtoFields.finalizationCommitteeParameters
             _cpValidatorScoreParameters <- fmap Parameters.SomeParam $ fromProto $ cParams ^. ProtoFields.validatorScoreParameters
+            _cpMaxLockDuration <- fmap Parameters.SomeParam $ fromProtoMaybe $ cParams ^. ProtoFields.maybe'maxLockDuration
             let ecpParams = Parameters.ChainParameters{..}
             rootKeys <- fmap snd . fromProto $ cParams ^. ProtoFields.rootKeys
             level1Keys <- fmap fst . fromProto $ cParams ^. ProtoFields.level1Keys
@@ -2970,7 +2982,10 @@ instance FromProto Proto.ChainParametersV3 where
                 Left level2Keys -> do
                     let ecpKeys = Updates.UpdateKeysCollection{..}
                     return $ EChainParametersAndKeys ecpParams ecpKeys
-                Right level2Keys -> do
+                Right (Left level2Keys) -> do
+                    let ecpKeys = Updates.UpdateKeysCollection{..}
+                    return $ EChainParametersAndKeys ecpParams ecpKeys
+                Right (Right level2Keys) -> do
                     let ecpKeys = Updates.UpdateKeysCollection{..}
                     return $ EChainParametersAndKeys ecpParams ecpKeys
 
@@ -3224,7 +3239,8 @@ instance FromProto Proto.PendingUpdate where
                     auth <- fromProto l2Keys
                     case auth of
                         Left keys -> return $ PUELevel2KeysV1 keys
-                        Right keys -> return $ PUELevel2KeysV2 keys
+                        Right (Left keys) -> return $ PUELevel2KeysV2 keys
+                        Right (Right keys) -> return $ PUELevel2KeysV3 keys
                 ProtoFields.PendingUpdate'Protocol protocol -> do
                     PUEProtocol <$> fromProto protocol
                 ProtoFields.PendingUpdate'ElectionDifficulty eDifficulty -> do
@@ -3265,6 +3281,7 @@ instance FromProto Proto.PendingUpdate where
                     PUEBlockEnergyLimit <$> fromProto beLimit
                 ProtoFields.PendingUpdate'FinalizationCommitteeParameters fcParams -> do
                     PUEFinalizationCommitteeParameters <$> fromProto fcParams
+                ProtoFields.PendingUpdate'MaxLockDuration duration -> PUEMaxLockDuration <$> fromProto duration
                 ProtoFields.PendingUpdate'ValidatorScoreParameters vsParams -> do
                     PUEValidatorScoreParameters <$> fromProto vsParams
         return PendingUpdate{..}
