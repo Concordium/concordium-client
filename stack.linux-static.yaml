@@ -25,7 +25,7 @@ extra-deps:
 allow-newer: true
 
 extra-lib-dirs:
-- ./deps/concordium-base/rust-src/target/x86_64-unknown-linux-musl/release
+- ./deps/concordium-base/rust-src/target/release
 
 flags:
   concordium-client:
